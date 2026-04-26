@@ -42,6 +42,7 @@ import type { SidebarContent } from "../sidebar-content.ts";
 import { detectTextDirection } from "../text-direction.ts";
 import type {
   GatewaySessionRow,
+  PersonalAutoSendUxSettings,
   ProductProactivityQueueItem,
   SessionsListResult,
 } from "../types.ts";
@@ -77,6 +78,9 @@ export type ChatProps = {
   productProactivityLoading?: boolean;
   productProactivityError?: string | null;
   productProactivityQueue?: ProductProactivityQueueItem[];
+  personalAutoSendUx?: PersonalAutoSendUxSettings | null;
+  personalAutoSendUxLoading?: boolean;
+  personalAutoSendUxError?: string | null;
   connected: boolean;
   canSend: boolean;
   disabledReason: string | null;
@@ -110,6 +114,7 @@ export type ChatProps = {
   onProductProactivityApproveSend?: (id: string) => void;
   onProductProactivityDismiss?: (id: string) => void;
   onProductProactivitySnooze?: (id: string) => void;
+  onPersonalAutoSendDisable?: () => void;
   onDismissSideResult?: () => void;
   onNewSession: () => void;
   onClearHistory?: () => void;
@@ -1128,6 +1133,63 @@ function formatProactivityClass(messageClass: ProductProactivityQueueItem["messa
     : "Suggestion available";
 }
 
+function renderPersonalAutoSendProductUx(props: ChatProps): TemplateResult | typeof nothing {
+  const settings = props.personalAutoSendUx;
+  if (!settings && !props.personalAutoSendUxLoading && !props.personalAutoSendUxError) {
+    return nothing;
+  }
+  return html`
+    <section class="personal-autosend-panel" aria-label="Personal auto-send settings">
+      <div class="product-proactivity-panel__header">
+        <div>
+          <div class="product-proactivity-panel__eyebrow">Model Memory</div>
+          <h3>Personal auto-send</h3>
+        </div>
+        <span class="product-proactivity-panel__count"
+          >${settings?.mode.replace(/_/g, " ") ?? "loading"}</span
+        >
+      </div>
+      ${props.personalAutoSendUxLoading
+        ? html`<div class="product-proactivity-panel__empty">Loading auto-send settings...</div>`
+        : nothing}
+      ${props.personalAutoSendUxError
+        ? html`<div class="callout danger">${props.personalAutoSendUxError}</div>`
+        : nothing}
+      ${settings
+        ? html`
+            <div class="personal-autosend-panel__grid">
+              <div class="operator-row">
+                <span>Current mode</span>
+                <span>${settings.mode.replace(/_/g, " ")}</span>
+              </div>
+              <div class="operator-row">
+                <span>Auto-send class</span>
+                <span>${settings.allowedAutoSendClass}</span>
+              </div>
+              <div class="operator-row">
+                <span>Manual-only</span>
+                <span>${settings.manualOnlyMessageClasses.join(", ")}</span>
+              </div>
+              <div class="operator-row">
+                <span>Kill switches</span>
+                <span>${settings.killSwitchEnvVars.join(", ")}</span>
+              </div>
+            </div>
+            <div class="product-proactivity-item__actions">
+              <button
+                class="btn btn--sm btn--ghost personal-autosend-disable"
+                type="button"
+                @click=${() => props.onPersonalAutoSendDisable?.()}
+              >
+                Disable / Return to Manual
+              </button>
+            </div>
+          `
+        : nothing}
+    </section>
+  `;
+}
+
 function renderProductProactivityQueue(props: ChatProps): TemplateResult | typeof nothing {
   const items = props.productProactivityQueue ?? [];
   if (!props.productProactivityLoading && !props.productProactivityError && items.length === 0) {
@@ -2035,7 +2097,8 @@ export function renderChat(props: ChatProps) {
           diagnosticBundle,
           requestUpdate,
         })}
-        ${renderProductProactivityNotifications(props)} ${renderProductProactivityQueue(props)}
+        ${renderProductProactivityNotifications(props)} ${renderPersonalAutoSendProductUx(props)}
+        ${renderProductProactivityQueue(props)}
         ${props.loading
           ? html`
               <div class="chat-loading-skeleton" aria-label="Loading chat">

@@ -106,6 +106,8 @@ import type {
   ToolsEffectiveResult,
   ProductProactivityQueueItem,
   ProductProactivityQueueResult,
+  PersonalAutoSendUxResult,
+  PersonalAutoSendUxSettings,
 } from "./types.ts";
 import { type ChatAttachment, type ChatQueueItem, type CronFormState } from "./ui-types.ts";
 import { generateUUID } from "./uuid.ts";
@@ -194,6 +196,9 @@ export class OpenClawApp extends LitElement {
   @state() productProactivityLoading = false;
   @state() productProactivityError: string | null = null;
   @state() productProactivityQueue: ProductProactivityQueueItem[] = [];
+  @state() personalAutoSendUx: PersonalAutoSendUxSettings | null = null;
+  @state() personalAutoSendUxLoading = false;
+  @state() personalAutoSendUxError: string | null = null;
   @state() navDrawerOpen = false;
 
   onSlashAction?: (action: string) => void;
@@ -577,6 +582,7 @@ export class OpenClawApp extends LitElement {
       this.tab === "chat"
     ) {
       void this.loadProductProactivityQueue();
+      void this.loadPersonalAutoSendUx();
     }
     if (!changed.has("sessionKey") || this.agentsPanel !== "tools") {
       return;
@@ -726,6 +732,30 @@ export class OpenClawApp extends LitElement {
     } finally {
       this.productProactivityLoading = false;
     }
+  }
+
+  async loadPersonalAutoSendUx(userDisabled = false) {
+    if (!this.client || !this.connected || this.personalAutoSendUxLoading) {
+      return;
+    }
+    this.personalAutoSendUxLoading = true;
+    this.personalAutoSendUxError = null;
+    try {
+      const res = await this.client.request<PersonalAutoSendUxResult>(
+        "modelMemory.proactivity.personalAutosendUx",
+        { userDisabled },
+      );
+      this.personalAutoSendUx = res.settings;
+    } catch (err) {
+      this.personalAutoSendUxError = String(err);
+      this.personalAutoSendUx = null;
+    } finally {
+      this.personalAutoSendUxLoading = false;
+    }
+  }
+
+  async handlePersonalAutoSendDisable() {
+    await this.loadPersonalAutoSendUx(true);
   }
 
   async handleProductProactivityApproveSend(queueItemId: string) {

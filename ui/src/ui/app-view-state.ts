@@ -41,6 +41,7 @@ import type {
   SkillStatusReport,
   StatusSummary,
   ToolsCatalogResult,
+  PersonalAutoSendUxSettings,
   ProductProactivityQueueItem,
 } from "./types.ts";
 import type { ChatAttachment, ChatQueueItem } from "./ui-types.ts";
@@ -95,6 +96,9 @@ export type AppViewState = {
   productProactivityLoading: boolean;
   productProactivityError: string | null;
   productProactivityQueue: ProductProactivityQueueItem[];
+  personalAutoSendUx: PersonalAutoSendUxSettings | null;
+  personalAutoSendUxLoading: boolean;
+  personalAutoSendUxError: string | null;
   nodesLoading: boolean;
   nodes: Array<Record<string, unknown>>;
   chatNewMessagesBelow: boolean;
@@ -427,6 +431,8 @@ export type AppViewState = {
     handleProductProactivityApproveSend: (queueItemId: string) => Promise<void>;
     handleProductProactivityDismiss: (queueItemId: string) => void;
     handleProductProactivitySnooze: (queueItemId: string) => void;
+    loadPersonalAutoSendUx: (userDisabled?: boolean) => Promise<void>;
+    handlePersonalAutoSendDisable: () => Promise<void>;
     removeQueuedMessage: (id: string) => void;
     handleChatScroll: (event: Event) => void;
     resetToolStream: () => void;

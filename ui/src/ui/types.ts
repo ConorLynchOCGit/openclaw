@@ -81,6 +81,36 @@ export type ProductProactivityQueueResult = {
   };
 };
 
+export type PersonalAutoSendUxMode =
+  | "manual_only"
+  | "controlled_autosend_trial"
+  | "disabled_by_kill_switch";
+
+export type PersonalAutoSendUxSettings = {
+  settingsId: string;
+  mode: PersonalAutoSendUxMode;
+  personalTrialOptedIn: boolean;
+  userDisabled: boolean;
+  visibleInProductUx: boolean;
+  allowedAutoSendClass: "operator_approved_suggestion_available";
+  manualOnlyMessageClasses: ["operator_approved_follow_up_available"];
+  controls: string[];
+  killSwitchEnvVars: string[];
+};
+
+export type PersonalAutoSendUxResult = {
+  ok: boolean;
+  reportId: string;
+  decision: string;
+  settings: PersonalAutoSendUxSettings;
+  telemetry?: {
+    toggleOffReturnsManual?: boolean;
+    manualSendWorkflowPreserved?: boolean;
+    killSwitchActive?: boolean;
+    blockedReasonCodes?: string[];
+  };
+};
+
 export const CRON_CHANNEL_LAST = "last";
 
 export type ChannelAccountSnapshot = {

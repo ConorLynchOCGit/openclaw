@@ -2809,6 +2809,24 @@ td.data-table-key-col {
   color: var(--chat-text);
 }
 
+.personal-autosend-panel {
+  align-self: stretch;
+  margin: 0 0 12px;
+  padding: 12px;
+  border: 1px solid color-mix(in srgb, var(--success) 45%, var(--border));
+  border-radius: var(--radius-lg);
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--success) 10%, transparent), transparent 55%),
+    var(--card);
+  color: var(--chat-text);
+}
+
+.personal-autosend-panel__grid {
+  display: grid;
+  gap: 8px;
+  margin: 10px 0;
+}
+
 .product-proactivity-panel__header {
   display: flex;
   align-items: start;

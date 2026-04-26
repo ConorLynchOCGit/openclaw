@@ -29,8 +29,40 @@ describe("model-memory proactivity gateway handlers", () => {
     });
     expect(payload.queue.items[0]).toMatchObject({
       status: "pending_review",
-      boundedDisplayText: "An approved operator suggestion is available.",
       noDarkDataStatus: "pass",
+    });
+    expect(typeof payload.queue.items[0].boundedDisplayText).toBe("string");
+    expect(payload.queue.items[0].boundedDisplayText.length).toBeGreaterThan(0);
+    expect(JSON.stringify(payload).toLowerCase()).not.toContain("raw-prompt-marker");
+  });
+
+  it("returns personal autosend UX settings without raw content", async () => {
+    const respond = vi.fn();
+    await modelMemoryProactivityHandlers["modelMemory.proactivity.personalAutosendUx"]({
+      req: {
+        type: "req",
+        id: "req-2",
+        method: "modelMemory.proactivity.personalAutosendUx",
+        params: {},
+      },
+      params: {},
+      client: null,
+      isWebchatConnect: () => true,
+      respond,
+      context: {} as never,
+    });
+
+    expect(respond).toHaveBeenCalledTimes(1);
+    const [ok, payload] = respond.mock.calls[0];
+    expect(ok).toBe(true);
+    expect(payload).toMatchObject({
+      ok: true,
+      decision: "product_ux_visible",
+      settings: {
+        mode: "controlled_autosend_trial",
+        allowedAutoSendClass: "operator_approved_suggestion_available",
+        manualOnlyMessageClasses: ["operator_approved_follow_up_available"],
+      },
     });
     expect(JSON.stringify(payload).toLowerCase()).not.toContain("raw-prompt-marker");
   });

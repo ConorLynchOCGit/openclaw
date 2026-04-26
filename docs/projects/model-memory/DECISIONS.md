@@ -3558,3 +3558,27 @@ Reasoning:
 - proactive memory needs explicit user quality signals to become useful, but
   those signals are control-plane feedback about ranking/suppression, not new
   source-of-truth memory
+
+## 2026-04-26 - personal auto-send trial must be visible and reversible in product UX
+
+Decision:
+
+- Slice 50 adds normal product UX state for the personal auto-send trial with
+  visible modes: `manual_only`, `controlled_autosend_trial`, and
+  `disabled_by_kill_switch`
+- the only auto-send class shown as allowed is
+  `operator_approved_suggestion_available`; `operator_approved_follow_up_available`
+  remains visible as manual-only
+- product UX exposes a Disable / Return to Manual control that preserves manual
+  send behavior and does not weaken queue, approval, provenance, or no-dark-data
+  requirements
+- `MODEL_MEMORY_PHASE2_AUTOSEND_DISABLED` and
+  `MODEL_MEMORY_PHASE2_PERSONAL_AUTOSEND_TRIAL_DISABLED` must show disabled state
+  and return delivery behavior to manual-only
+- no action execution is triggered by the UX state or toggle
+
+Reasoning:
+
+- a personal auto-send trial is only acceptable if the user can see the current
+  mode, understand the narrow allowed class, and immediately return to manual
+  control from ordinary OpenClaw UX

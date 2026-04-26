@@ -1865,6 +1865,9 @@ export function renderApp(state: AppViewState) {
               productProactivityLoading: state.productProactivityLoading,
               productProactivityError: state.productProactivityError,
               productProactivityQueue: state.productProactivityQueue,
+              personalAutoSendUx: state.personalAutoSendUx,
+              personalAutoSendUxLoading: state.personalAutoSendUxLoading,
+              personalAutoSendUxError: state.personalAutoSendUxError,
               connected: state.connected,
               canSend: state.connected,
               disabledReason: chatDisabledReason,
@@ -1879,6 +1882,7 @@ export function renderApp(state: AppViewState) {
                   loadChatHistory(state),
                   refreshChatAvatar(state),
                   state.loadProductProactivityQueue(),
+                  state.loadPersonalAutoSendUx(),
                 ]);
               },
               onToggleFocusMode: () => {
@@ -1904,6 +1908,7 @@ export function renderApp(state: AppViewState) {
                 state.handleProductProactivityApproveSend(id),
               onProductProactivityDismiss: (id) => state.handleProductProactivityDismiss(id),
               onProductProactivitySnooze: (id) => state.handleProductProactivitySnooze(id),
+              onPersonalAutoSendDisable: () => state.handlePersonalAutoSendDisable(),
               onDismissSideResult: () => {
                 state.chatSideResult = null;
               },

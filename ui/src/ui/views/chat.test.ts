@@ -736,6 +736,82 @@ describe("chat view", () => {
     expect(onSnooze).toHaveBeenCalledWith("queue-item-1");
   });
 
+  it("renders personal auto-send product UX with disable control and manual-only follow-up", () => {
+    const container = document.createElement("div");
+    const onDisable = vi.fn();
+    render(
+      renderChat(
+        createProps({
+          personalAutoSendUx: {
+            settingsId: "personal-autosend-settings-1",
+            mode: "controlled_autosend_trial",
+            personalTrialOptedIn: true,
+            userDisabled: false,
+            visibleInProductUx: true,
+            allowedAutoSendClass: "operator_approved_suggestion_available",
+            manualOnlyMessageClasses: ["operator_approved_follow_up_available"],
+            controls: [
+              "enable_personal_trial",
+              "disable_return_to_manual",
+              "view_kill_switch_state",
+            ],
+            killSwitchEnvVars: [
+              "MODEL_MEMORY_PHASE2_AUTOSEND_DISABLED",
+              "MODEL_MEMORY_PHASE2_PERSONAL_AUTOSEND_TRIAL_DISABLED",
+            ],
+          },
+          onPersonalAutoSendDisable: onDisable,
+        }),
+      ),
+      container,
+    );
+
+    expect(container.querySelector(".personal-autosend-panel")).not.toBeNull();
+    expect(container.textContent).toContain("Personal auto-send");
+    expect(container.textContent).toContain("controlled autosend trial");
+    expect(container.textContent).toContain("operator_approved_suggestion_available");
+    expect(container.textContent).toContain("operator_approved_follow_up_available");
+    container.querySelector<HTMLButtonElement>(".personal-autosend-disable")?.click();
+    expect(onDisable).toHaveBeenCalledTimes(1);
+    expect(container.textContent).not.toContain("raw-prompt-marker");
+  });
+
+  it("keeps return-to-manual control available in manual-only mode", () => {
+    const container = document.createElement("div");
+    const onDisable = vi.fn();
+    render(
+      renderChat(
+        createProps({
+          personalAutoSendUx: {
+            settingsId: "personal-autosend-settings-2",
+            mode: "manual_only",
+            personalTrialOptedIn: false,
+            userDisabled: true,
+            visibleInProductUx: true,
+            allowedAutoSendClass: "operator_approved_suggestion_available",
+            manualOnlyMessageClasses: ["operator_approved_follow_up_available"],
+            controls: [
+              "enable_personal_trial",
+              "disable_return_to_manual",
+              "view_kill_switch_state",
+            ],
+            killSwitchEnvVars: [
+              "MODEL_MEMORY_PHASE2_AUTOSEND_DISABLED",
+              "MODEL_MEMORY_PHASE2_PERSONAL_AUTOSEND_TRIAL_DISABLED",
+            ],
+          },
+          onPersonalAutoSendDisable: onDisable,
+        }),
+      ),
+      container,
+    );
+
+    const button = container.querySelector<HTMLButtonElement>(".personal-autosend-disable");
+    expect(button?.disabled).toBe(false);
+    button?.click();
+    expect(onDisable).toHaveBeenCalledTimes(1);
+  });
+
   it("dismisses BTW side results from the dismiss button", () => {
     const container = document.createElement("div");
     const onDismissSideResult = vi.fn();

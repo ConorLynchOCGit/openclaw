@@ -573,6 +573,13 @@ For each implementation wave:
   free-form text, trigger delivery, or execute actions; rollback via
   `MODEL_MEMORY_PHASE2_PROACTIVITY_FEEDBACK_LOOP_DISABLED` preserves the product
   queue without feedback learning
+- personal auto-send trial controls must appear in normal product UX before
+  further rollout: the UX must show manual-only, controlled-trial, and
+  kill-switch-disabled modes, expose only
+  `operator_approved_suggestion_available` as auto-send eligible, keep
+  `operator_approved_follow_up_available` manual-only, and provide a visible
+  Disable / Return to Manual control that preserves manual send and action-free
+  delivery behavior
 - capture at least one durable evidence artifact per wave
 - update the relevant human test prompt pack before declaring the wave ready for
   live validation
