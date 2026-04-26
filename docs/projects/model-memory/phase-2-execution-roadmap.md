@@ -440,6 +440,10 @@ For each implementation wave:
   approval-required, and blocked outputs, but proactive user messages and action
   execution remain disabled until a future controlled rollout proves approval
   and rollback semantics
+- controlled proactivity suggestions may be generated only inside explicit
+  operator/eval scope; they remain operator-visible report artifacts with no
+  user-facing proactive messages, hidden chat injection, or action execution
+  until approval workflow and controlled execution slices prove the next gates
 - capture at least one durable evidence artifact per wave
 - update the relevant human test prompt pack before declaring the wave ready for
   live validation

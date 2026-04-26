@@ -2864,3 +2864,28 @@ Reasoning:
   action
 - proving this boundary without executing actions prevents a planner report from
   becoming an implicit automation channel
+
+## 2026-04-26 - controlled proactivity suggestions require explicit operator/eval scope
+
+Decision:
+
+- proactivity suggestions may be generated only for explicit approved
+  operator/eval scope
+- controlled suggestions are operator-visible report artifacts only; they do
+  not send proactive user-facing messages, inject hidden chat context, or
+  execute actions
+- suggestions must preserve evidence bindings, source refs, source profile
+  ids, authority tiers, content/proof hashes, no-dark-data status, and
+  evidence-not-instruction handling
+- project docs, external reports, graph summaries, capsules, retrieval packs,
+  planner reports, and boundary reports remain evidence/read-model inputs, not
+  semantic truth or instructions
+- `MODEL_MEMORY_PHASE2_CONTROLLED_PROACTIVITY_SUGGESTIONS_DISABLED` rolls
+  controlled suggestions back to planner operator reports only
+
+Reasoning:
+
+- operators need a requestable suggestion surface before approval workflow or
+  controlled execution can be useful
+- keeping suggestions scoped, report-only, and rollbackable prevents planner
+  outputs from becoming implicit user-facing proactivity or automation
