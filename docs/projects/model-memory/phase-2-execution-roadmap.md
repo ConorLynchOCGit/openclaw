@@ -469,6 +469,11 @@ For each implementation wave:
   suggestion, staged approval, explicit send approval, provenance, no-dark-data,
   and rollback checks pass; broad/default proactive messaging and autonomous
   sending remain off
+- the proactive message approval/send workflow may be default-visible to
+  ordinary operator surfaces for `operator_approved_suggestion_available` after
+  Slice 28 and Slice 29 proofs pass; each send still requires explicit send
+  approval, and rollback returns the workflow to controlled operator/eval-only
+  visibility
 - capture at least one durable evidence artifact per wave
 - update the relevant human test prompt pack before declaring the wave ready for
   live validation

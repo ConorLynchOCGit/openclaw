@@ -3042,3 +3042,28 @@ Reasoning:
   infrastructure
 - fixing delivered prose and keeping all evidence in reports prevents raw or
   private content from becoming a proactive user-facing message
+
+## 2026-04-26 - proactive message send workflow may be default-visible to operators
+
+Decision:
+
+- ordinary operator surfaces may expose the proactive message review/approval/send
+  workflow for `operator_approved_suggestion_available` by default
+- default-visible means operators can see and use the workflow; every message
+  still requires an approved suggestion, staged approval, explicit send
+  approval, provenance, no-dark-data pass, and inactive rollback
+- autonomous sending, broad/default user-facing proactivity, and action execution
+  during delivery remain disabled
+- blocked message classes include unapproved suggestions, external-instruction
+  messages, private/secret content, raw prompt/transcript content, and
+  autonomous action requests
+- `MODEL_MEMORY_PHASE2_PROACTIVE_MESSAGE_OPERATOR_DEFAULT_DISABLED` rolls the
+  workflow back to controlled operator/eval-only visibility
+
+Reasoning:
+
+- the Slice 29 live gateway delivery seam proves actual delivery for the single
+  low-risk class, so exposing the approval/send workflow to operators by default
+  adds utility without authorizing automatic sends
+- keeping the message class fixed and the send approval explicit preserves the
+  user-facing proactivity boundary for later controlled expansion
