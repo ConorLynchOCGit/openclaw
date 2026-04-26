@@ -2652,3 +2652,30 @@ Reasoning:
   promotion
 - keeping the controlled proof separate from default promotion makes rollback
   and partial approval explicit
+
+## 2026-04-26 - hierarchical retrieval default promotion is proof-bound
+
+Decision:
+
+- `hierarchical_retrieval` may become ordinary/default retrieval behavior only
+  through a typed default-promotion decision bound to the controlled
+  hierarchical proof artifact and the prior default graph/capsule/context
+  promotion artifact
+- default hierarchical retrieval must keep bounded subquery and merge budgets,
+  preserve source memory ids/source refs/source profile ids/authority tiers, and
+  expose deterministic merge/dedupe/exclusion telemetry
+- exact recent evidence must continue to win over stale older evidence, and
+  stale/conflicted/inspection-only material must remain excluded or visibly
+  blocked
+- `MODEL_MEMORY_PHASE2_HIERARCHICAL_DEFAULT_DISABLED` is the rollback switch
+  that restores shadow/single-pass behavior
+- planner/proactivity remains deferred
+
+Reasoning:
+
+- the controlled proof demonstrated that hierarchical retrieval can run inside
+  approved operator/eval scope; default promotion needs a separate ordinary-path
+  proof with rollback before fan-out can be treated as default retrieval
+  behavior
+- binding the decision to approved proof hashes prevents accidental promotion
+  from unreviewed artifacts or partial evidence

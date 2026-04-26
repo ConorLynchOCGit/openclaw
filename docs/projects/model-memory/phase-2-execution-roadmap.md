@@ -415,6 +415,9 @@ For each implementation wave:
 - production-capable Phase 2 retrieval/context behavior must pass through the
   typed rollout config seam; proof-green status alone is not permission to
   change defaults
+- hierarchical retrieval default promotion requires its own ordinary-path
+  proof artifact, bounded fan-out telemetry, and rollback validation even after
+  controlled operator/eval proof passes
 - capture at least one durable evidence artifact per wave
 - update the relevant human test prompt pack before declaring the wave ready for
   live validation
