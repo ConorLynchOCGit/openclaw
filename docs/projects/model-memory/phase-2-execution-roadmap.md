@@ -460,6 +460,10 @@ For each implementation wave:
   ordinary operator surfaces after proof-bound promotion; execution remains
   staged-approval and explicit-execution-approval gated, and rollback returns it
   to controlled operator/eval-only visibility
+- controlled user-facing proactivity starts with the low-risk
+  `operator_approved_suggestion_available` message class as a bounded
+  proof-delivery artifact only; broad/default proactive messaging remains off
+  until a later promotion slice proves an actual safe notification seam
 - capture at least one durable evidence artifact per wave
 - update the relevant human test prompt pack before declaring the wave ready for
   live validation

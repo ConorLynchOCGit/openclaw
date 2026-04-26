@@ -2985,3 +2985,31 @@ Reasoning:
   utility without changing the execution boundary
 - the default-visible decision is proof-bound to the two harmless action classes
   and keeps all action execution explicit, audited, and rollbackable
+
+## 2026-04-26 - first controlled user-facing proactive message path is proof-delivered
+
+Decision:
+
+- the first low-risk proactive message class is
+  `operator_approved_suggestion_available`
+- controlled message delivery requires an approved controlled suggestion,
+  staged approval, explicit send approval, approved operator/eval scope,
+  provenance, no-dark-data pass, and inactive rollback
+- because no broad safe notification seam is being introduced here, delivery is
+  represented as a bounded proof-delivery artifact rather than a default live
+  user notification
+- blocked message classes include unapproved suggestions, external-instruction
+  messages, private/secret content, raw prompt/transcript content, and
+  autonomous action requests
+- `MODEL_MEMORY_PHASE2_CONTROLLED_USER_FACING_PROACTIVITY_DISABLED` disables the
+  controlled message proof path
+- broad/default proactive user-facing messages and autonomous action execution
+  remain disabled
+
+Reasoning:
+
+- proof-delivery validates the policy, approval, audit, and no-dark-data
+  boundary without inventing a broad notification channel
+- the message payload is intentionally narrow and contains only safe ids,
+  source refs, source profile ids, authority tiers, hashes, and bounded display
+  text

@@ -62,6 +62,7 @@ export * from "./runtime/phase2-staged-action-approval-workflow.ts";
 export * from "./runtime/phase2-controlled-action-execution.ts";
 export * from "./runtime/phase2-controlled-action-expansion.ts";
 export * from "./runtime/phase2-action-execution-operator-default.ts";
+export * from "./runtime/phase2-controlled-user-facing-proactivity.ts";
 export * from "./runtime/phase2-ingestion-default-promotion.ts";
 export * from "./runtime/phase2-operator-ingestion-rollout.ts";
 export * from "./runtime/phase2-planner-readiness.ts";
