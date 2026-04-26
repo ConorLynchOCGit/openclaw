@@ -3487,3 +3487,24 @@ Reasoning:
 - the first actual auto-send capability must be narrow enough to prove usefulness
   without creating broad autonomy; exact scope plus a kill switch keeps the
   rollout reversible and operationally bounded
+
+## 2026-04-26 - controlled auto-send requires global kill switch observability
+
+Decision:
+
+- Slice 47 adds an operator-visible health and abuse-regression report for
+  controlled auto-send attempts, deliveries, blocked reason codes, scope ids,
+  source refs, source profile ids, authority tiers, content/proof hashes,
+  no-dark-data status, rollback state, and latency placeholders
+- `MODEL_MEMORY_PHASE2_AUTOSEND_DISABLED` is the global kill switch for all
+  auto-send behavior and must preserve the manual send workflow
+- outside-scope sends, repeated sends, raw/private content, external instruction
+  escalation, rollback bypass, missing provenance, missing source profile, and
+  no-dark-data failures degrade or block health with deterministic reason codes
+- delivery-triggered action execution remains disabled
+
+Reasoning:
+
+- a scoped auto-send proof is not operationally safe until operators can see
+  attempts, failures, and an immediate global stop control that does not break
+  manual review/send behavior

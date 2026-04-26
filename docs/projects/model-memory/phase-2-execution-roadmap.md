@@ -553,6 +553,11 @@ For each implementation wave:
   follow-up messages and non-scoped sessions remain manual-only, rollback via
   `MODEL_MEMORY_PHASE2_LOW_RISK_AUTOSEND_DISABLED` disables all controlled
   auto-send, and delivery-triggered action execution remains disabled
+- controlled auto-send must be covered by global kill-switch observability:
+  `MODEL_MEMORY_PHASE2_AUTOSEND_DISABLED` stops all auto-send while preserving
+  manual send, and health reports must expose attempts, deliveries, blocked
+  reasons, exact scope ids, source/provenance hashes, no-dark-data status, and
+  abuse-regression outcomes before larger rollout
 - capture at least one durable evidence artifact per wave
 - update the relevant human test prompt pack before declaring the wave ready for
   live validation
