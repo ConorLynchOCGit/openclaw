@@ -423,8 +423,9 @@ For each implementation wave:
   planner work depends on it as live-operable behavior
 - maintenance surfacing and non-user-prompt/soft-source ingestion may go live
   only as operator-visible paths with typed authority/provenance metadata and
-  bounded no-dark-data reports; broad default ingestion remains a later proof
-  gate
+  bounded no-dark-data reports; default ingestion promotion requires a separate
+  source-profile-limited decision bound to operator ingestion proof and
+  production observability proof
 - capture at least one durable evidence artifact per wave
 - update the relevant human test prompt pack before declaring the wave ready for
   live validation

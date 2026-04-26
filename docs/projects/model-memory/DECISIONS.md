@@ -2730,3 +2730,28 @@ Reasoning:
   the promoted behavior remains safe over time and can be reversed quickly
 - modeling rollback as a proof artifact keeps operational reversibility subject
   to the same no-dark-data and provenance rules as promotion
+
+## 2026-04-26 - default ingestion promotion is proof-bound and source-profile limited
+
+Decision:
+
+- `tool_grounded_capture`, `daily_continuity_capture`,
+  `researcher_cited_soft_capture`, and `cited_assistant_fact_capture` may be
+  default-enabled only after the operator ingestion proof and production
+  observability proof are both green
+- cited assistant output is never authority as prose; only the underlying cited
+  facts/source refs may be captured under the `cited_assistant_answer` profile
+- soft-source and non-user-prompt ingestion default enablement must preserve
+  source profile id, authority tier, source refs, lower-authority labels, and
+  no-promotion-by-corroboration semantics
+- raw prompts, full transcripts, raw tool logs, secrets, and private phrases
+  remain rejected or inspection-only and excluded from normal retrieval
+- `MODEL_MEMORY_PHASE2_DEFAULT_INGESTION_DISABLED` returns promoted ingestion
+  paths to operator-enabled modes
+
+Reasoning:
+
+- default ingestion is higher risk than operator-only surfacing, so it depends
+  on both the source-authority proof and live production observability
+- keeping source types capability-scoped avoids turning broad ingestion into an
+  implicit semantic authority path
