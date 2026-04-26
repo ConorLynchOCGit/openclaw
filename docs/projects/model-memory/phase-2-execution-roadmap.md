@@ -558,6 +558,13 @@ For each implementation wave:
   manual send, and health reports must expose attempts, deliveries, blocked
   reasons, exact scope ids, source/provenance hashes, no-dark-data status, and
   abuse-regression outcomes before larger rollout
+- personal auto-send trial decisions must consume clean Slice 45 telemetry,
+  successful Slice 46 controlled-scope proof, healthy Slice 47 kill-switch
+  health, active personal default scope, explicit personal opt-in, and visible
+  UX controls; only `operator_approved_suggestion_available` may auto-send,
+  follow-up messages and non-personal scopes remain manual-only, and
+  `MODEL_MEMORY_PHASE2_PERSONAL_AUTOSEND_TRIAL_DISABLED` returns the personal
+  workspace to manual-send mode
 - capture at least one durable evidence artifact per wave
 - update the relevant human test prompt pack before declaring the wave ready for
   live validation

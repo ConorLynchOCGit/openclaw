@@ -3508,3 +3508,27 @@ Reasoning:
 - a scoped auto-send proof is not operationally safe until operators can see
   attempts, failures, and an immediate global stop control that does not break
   manual review/send behavior
+
+## 2026-04-26 - personal auto-send trial requires explicit opt-in and disable path
+
+Decision:
+
+- Slice 48 adds a capability decision for a personal auto-send trial limited to
+  `operator_approved_suggestion_available`
+- approval requires clean Slice 45 simulation telemetry, successful Slice 46
+  controlled-scope proof, healthy Slice 47 kill-switch health, active personal
+  default proactivity scope, explicit personal opt-in, visible UX controls,
+  provenance/source profile metadata, no-dark-data pass, and inactive rollback
+- `operator_approved_follow_up_available` remains manual-send only, and
+  non-personal scopes remain manual-only
+- `MODEL_MEMORY_PHASE2_PERSONAL_AUTOSEND_TRIAL_DISABLED` disables the personal
+  trial and returns behavior to manual-send mode; the global
+  `MODEL_MEMORY_PHASE2_AUTOSEND_DISABLED` kill switch also disables the trial
+- feedback or auto-send decisions do not create semantic truth or trigger action
+  execution
+
+Reasoning:
+
+- a personal trial is useful only if the user can explicitly opt in, see and
+  disable the behavior, and rely on the same kill-switch/abuse observability
+  proven before the trial decision
