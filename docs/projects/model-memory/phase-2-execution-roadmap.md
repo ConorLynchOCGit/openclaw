@@ -489,6 +489,11 @@ For each implementation wave:
   include send approvals, delivery ids, source refs, source profiles, authority
   tiers, content/proof hashes, no-dark-data status, rollback state, latency,
   budget status, and deterministic blocked reason codes
+- controlled real-user-facing proactive delivery may run only for an explicit
+  selected live user/project/session/operator/recipient scope after expanded
+  operator-default proof and healthy proactive delivery observability pass; both
+  approved low-risk classes remain send-approval required, and broad/default
+  proactive messaging remains off
 - capture at least one durable evidence artifact per wave
 - update the relevant human test prompt pack before declaring the wave ready for
   live validation

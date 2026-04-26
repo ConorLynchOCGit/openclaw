@@ -3147,3 +3147,33 @@ Reasoning:
 - abuse/regression checks make approval, scope, provenance, and no-dark-data
   failures visible as deterministic reason codes instead of relying on manual
   inspection
+
+## 2026-04-26 - controlled real user-facing proactive delivery may run in a narrow approved scope
+
+Decision:
+
+- proactive user-facing delivery may run for selected live users/projects/
+  sessions only under a typed `controlled_user_scope` rollout
+- the approved message classes remain limited to
+  `operator_approved_suggestion_available` and
+  `operator_approved_follow_up_available`
+- delivery requires Slice 32 expanded operator-default proof, Slice 33 healthy
+  observability, exact session/project/user/recipient/operator scope match,
+  approved suggestion, staged approval, explicit send approval, provenance,
+  no-dark-data pass, and inactive rollback
+- wildcard/global scopes, outside-scope requests, missing proof, degraded
+  observability, blocked message classes, missing send approval, missing
+  provenance, no-dark-data failure, and rollback do not deliver
+- `MODEL_MEMORY_PHASE2_CONTROLLED_USER_FACING_PROACTIVITY_SCOPE_DISABLED`
+  disables scoped real-user delivery and returns to operator-default-visible
+  workflow only
+- broad/default proactive messaging, autonomous sending, and action execution
+  during delivery remain disabled
+
+Reasoning:
+
+- this is the first narrow real-user-facing proactive rollout and therefore
+  must be exact-scope, proof-bound, observable, and rollbackable
+- requiring a green observability report before scoped delivery prevents
+  expanding delivery when approval, leakage, stale/repeat, provenance, or
+  rollback regressions are visible
