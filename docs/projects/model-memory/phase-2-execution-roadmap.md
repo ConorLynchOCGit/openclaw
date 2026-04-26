@@ -547,6 +547,12 @@ For each implementation wave:
   track usefulness/noise signals, and block or degrade on urgency, stale/repeat,
   provenance, source-profile, no-dark-data, leakage, and external-instruction
   regressions while automatic delivery remains off
+- low-risk controlled auto-send may run only for the exact typed
+  `controlled_auto_send_scope`, only after explicit opt-in and healthy Slice 45
+  observability, and only for `operator_approved_suggestion_available`;
+  follow-up messages and non-scoped sessions remain manual-only, rollback via
+  `MODEL_MEMORY_PHASE2_LOW_RISK_AUTOSEND_DISABLED` disables all controlled
+  auto-send, and delivery-triggered action execution remains disabled
 - capture at least one durable evidence artifact per wave
 - update the relevant human test prompt pack before declaring the wave ready for
   live validation

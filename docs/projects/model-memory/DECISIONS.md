@@ -3463,3 +3463,27 @@ Reasoning:
 - controlled auto-send should be based on measurable product behavior rather
   than speculation; comparing simulations with manual decisions shows whether
   auto-send would be useful or noisy without sending automatically
+
+## 2026-04-26 - low-risk auto-send is allowed only in explicit controlled scope
+
+Decision:
+
+- Slice 46 introduces a typed `controlled_auto_send_scope` for the single
+  low-risk class `operator_approved_suggestion_available`
+- controlled auto-send requires explicit per-scope opt-in, healthy Slice 45
+  simulation observability, provenance, source profile metadata, no-dark-data
+  pass, freshness/repeat suppression pass, exact user/recipient/project/session/
+  operator scope match, and inactive rollback
+- `operator_approved_follow_up_available` remains manual-send only, and unknown
+  or external-instruction classes are blocked
+- non-scoped sessions remain manual-send only; wildcard/global scopes are
+  rejected
+- `MODEL_MEMORY_PHASE2_LOW_RISK_AUTOSEND_DISABLED` disables controlled
+  auto-send and preserves the manual send workflow
+- delivery-triggered action execution remains disabled
+
+Reasoning:
+
+- the first actual auto-send capability must be narrow enough to prove usefulness
+  without creating broad autonomy; exact scope plus a kill switch keeps the
+  rollout reversible and operationally bounded
