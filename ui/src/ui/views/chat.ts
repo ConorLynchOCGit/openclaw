@@ -2,6 +2,7 @@ import { html, nothing, type TemplateResult } from "lit";
 import { ref } from "lit/directives/ref.js";
 import { repeat } from "lit/directives/repeat.js";
 import { unsafeHTML } from "lit/directives/unsafe-html.js";
+import { parseAssistantTextSignature } from "../../../../src/shared/chat-message-content.js";
 import type { CompactionStatus, FallbackStatus } from "../app-tool-stream.ts";
 import {
   CHAT_ATTACHMENT_ACCEPT,
@@ -1510,6 +1511,151 @@ function getHeartbeatProactivityItems(
     return contextualItems.slice(0, 3);
   }
   return getActionableInboxItems(props.proactivityInboxDigest).slice(0, 3);
+}
+
+function readInlineAssistantMessageIds(group: MessageGroup): string[] {
+  if (normalizeRoleForGrouping(group.role) !== "assistant") {
+    return [];
+  }
+  const ids = new Set<string>();
+  for (const entry of group.messages) {
+    const message = entry.message;
+    if (!message || typeof message !== "object") {
+      continue;
+    }
+    const record = message as {
+      id?: unknown;
+      __openclaw?: { id?: unknown };
+      content?: unknown;
+    };
+    if (typeof record.id === "string" && record.id.trim()) {
+      ids.add(record.id.trim());
+    }
+    if (typeof record.__openclaw?.id === "string" && record.__openclaw.id.trim()) {
+      ids.add(record.__openclaw.id.trim());
+    }
+    if (!Array.isArray(record.content)) {
+      continue;
+    }
+    for (const block of record.content) {
+      if (!block || typeof block !== "object") {
+        continue;
+      }
+      const signature = parseAssistantTextSignature(
+        (block as { textSignature?: unknown }).textSignature,
+      );
+      if (signature?.id) {
+        ids.add(signature.id);
+      }
+    }
+  }
+  return [...ids];
+}
+
+function getInlineProactivityItems(
+  props: ChatProps,
+  group: MessageGroup,
+): ProductProactivityQueueItem[] {
+  const messageIds = readInlineAssistantMessageIds(group);
+  if (messageIds.length === 0) {
+    return [];
+  }
+  const sourceRefs = new Set(
+    messageIds.map((messageId) => `chat://${props.sessionKey}/assistant_turn/${messageId}`),
+  );
+  return getActionableQueueItems(props)
+    .filter((item) => item.sourceRefs.some((sourceRef) => sourceRefs.has(sourceRef)))
+    .slice(0, 2);
+}
+
+function renderInlineProactivityCard(
+  props: ChatProps,
+  group: MessageGroup,
+): TemplateResult | typeof nothing {
+  const items = getInlineProactivityItems(props, group);
+  if (items.length === 0) {
+    return nothing;
+  }
+  return html`
+    <section class="inline-proactivity-card" aria-label="Follow-ups from this answer">
+      <div class="inline-proactivity-card__header">
+        <div class="inline-proactivity-card__eyebrow">Follow-ups from this answer</div>
+        <button
+          class="btn btn--xs btn--ghost"
+          type="button"
+          @click=${() => props.onOpenSidebar?.({ kind: "proactivityInbox" })}
+        >
+          Open inbox
+        </button>
+      </div>
+      ${items.map((item) => {
+        const primaryAction = getProactivityPrimaryActionType(item);
+        const proposedLabel = getProactivityPrimaryStepLabel(item);
+        return html`
+          <article
+            class="inline-proactivity-card__item"
+            data-queue-item-id=${item.queueItemId}
+            data-work-item-id=${item.workItemId ?? item.queueItemId}
+          >
+            <div class="inline-proactivity-card__meta">
+              <span>${item.workItemKind?.replace(/_/g, " ") ?? "planning request"}</span>
+              ${item.draftReady ? html`<span>draft ready</span>` : nothing}
+              <span>${item.confidence ?? "medium"} confidence</span>
+            </div>
+            <h4>${getProactivityPlanTitle(item)}</h4>
+            <div class="inline-proactivity-card__section">
+              <span>Why now</span>
+              <div>${getProactivityProblem(item)}</div>
+            </div>
+            <div class="inline-proactivity-card__section">
+              <span>${proposedLabel}</span>
+              <div>${getProactivityProposedMessage(props, item)}</div>
+            </div>
+            ${renderProactivityDraftSection(item)}
+            <details class="inline-proactivity-card__details">
+              <summary>Evidence and provenance</summary>
+              <div class="operator-row">
+                <span>Evidence</span>
+                <span>${getProactivityEvidenceSummary(item)}</span>
+              </div>
+              <div class="operator-row">
+                <span>Sources</span>
+                <span>${item.sourceRefs.slice(0, 4).join(", ") || "missing"}</span>
+              </div>
+            </details>
+            <div class="inline-proactivity-card__actions">
+              ${primaryAction
+                ? html`<button
+                    class="btn btn--sm"
+                    type="button"
+                    @click=${() =>
+                      primaryAction === "send_message"
+                        ? props.onProductProactivityApproveSend?.(item.queueItemId)
+                        : props.onProductProactivityWorkAction?.(item.queueItemId, primaryAction)}
+                  >
+                    ${getProactivityPrimaryActionLabel(item)}
+                  </button>`
+                : nothing}
+              <button
+                class="btn btn--sm btn--ghost"
+                type="button"
+                @click=${() => props.onProductProactivitySnooze?.(item.queueItemId)}
+              >
+                Snooze
+              </button>
+              <button
+                class="btn btn--sm btn--ghost"
+                type="button"
+                @click=${() => props.onProductProactivityDismiss?.(item.queueItemId)}
+              >
+                Dismiss
+              </button>
+            </div>
+          </article>
+        `;
+      })}
+    </section>
+  `;
 }
 
 function renderContextualProactivityCard(props: ChatProps): TemplateResult | typeof nothing {
@@ -3110,35 +3256,39 @@ export function renderChat(props: ChatProps) {
               if (deleted.has(item.key)) {
                 return nothing;
               }
-              return renderMessageGroup(item, {
-                onOpenSidebar: props.onOpenSidebar,
-                showReasoning,
-                showToolCalls: props.showToolCalls,
-                autoExpandToolCalls: Boolean(props.autoExpandToolCalls),
-                isToolMessageExpanded: (messageId: string) =>
-                  expandedToolCards.get(messageId) ?? false,
-                onToggleToolMessageExpanded: (messageId: string) => {
-                  expandedToolCards.set(messageId, !expandedToolCards.get(messageId));
-                  requestUpdate();
-                },
-                isToolExpanded: (toolCardId: string) => expandedToolCards.get(toolCardId) ?? false,
-                onToggleToolExpanded: toggleToolCardExpanded,
-                onRequestUpdate: requestUpdate,
-                assistantName: props.assistantName,
-                assistantAvatar: assistantIdentity.avatar,
-                basePath: props.basePath,
-                localMediaPreviewRoots: props.localMediaPreviewRoots ?? [],
-                assistantAttachmentAuthToken: props.assistantAttachmentAuthToken ?? null,
-                canvasHostUrl: props.canvasHostUrl,
-                embedSandboxMode: props.embedSandboxMode ?? "scripts",
-                allowExternalEmbedUrls: props.allowExternalEmbedUrls ?? false,
-                contextWindow:
-                  activeSession?.contextTokens ?? props.sessions?.defaults?.contextTokens ?? null,
-                onDelete: () => {
-                  deleted.delete(item.key);
-                  requestUpdate();
-                },
-              });
+              return html`
+                ${renderMessageGroup(item, {
+                  onOpenSidebar: props.onOpenSidebar,
+                  showReasoning,
+                  showToolCalls: props.showToolCalls,
+                  autoExpandToolCalls: Boolean(props.autoExpandToolCalls),
+                  isToolMessageExpanded: (messageId: string) =>
+                    expandedToolCards.get(messageId) ?? false,
+                  onToggleToolMessageExpanded: (messageId: string) => {
+                    expandedToolCards.set(messageId, !expandedToolCards.get(messageId));
+                    requestUpdate();
+                  },
+                  isToolExpanded: (toolCardId: string) =>
+                    expandedToolCards.get(toolCardId) ?? false,
+                  onToggleToolExpanded: toggleToolCardExpanded,
+                  onRequestUpdate: requestUpdate,
+                  assistantName: props.assistantName,
+                  assistantAvatar: assistantIdentity.avatar,
+                  basePath: props.basePath,
+                  localMediaPreviewRoots: props.localMediaPreviewRoots ?? [],
+                  assistantAttachmentAuthToken: props.assistantAttachmentAuthToken ?? null,
+                  canvasHostUrl: props.canvasHostUrl,
+                  embedSandboxMode: props.embedSandboxMode ?? "scripts",
+                  allowExternalEmbedUrls: props.allowExternalEmbedUrls ?? false,
+                  contextWindow:
+                    activeSession?.contextTokens ?? props.sessions?.defaults?.contextTokens ?? null,
+                  onDelete: () => {
+                    deleted.delete(item.key);
+                    requestUpdate();
+                  },
+                })}
+                ${renderInlineProactivityCard(props, item)}
+              `;
             }
             return nothing;
           },

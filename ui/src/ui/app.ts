@@ -747,6 +747,20 @@ export class OpenClawApp extends LitElement {
     });
   };
 
+  private formatProactivitySyncError(err: unknown): string {
+    if (err instanceof Error) {
+      return err.message;
+    }
+    if (typeof err === "string") {
+      return err;
+    }
+    try {
+      return JSON.stringify(err);
+    } catch {
+      return "unknown error";
+    }
+  }
+
   private async recordProactivityChatActivity(
     sourceKind: "assistant_turn" | "planning_output" | "user_turn" | "system_followup",
     text: string,
@@ -760,6 +774,7 @@ export class OpenClawApp extends LitElement {
     if (!this.client || !this.connected || !text.trim()) {
       return;
     }
+    let refreshError: unknown = null;
     try {
       await this.client.request("modelMemory.proactivity.recordChatActivity", {
         sessionKey: this.sessionKey,
@@ -776,12 +791,19 @@ export class OpenClawApp extends LitElement {
           .join("\n")
           .slice(0, 480),
       });
-      if (input.refreshAfter) {
+    } catch (err) {
+      refreshError = err;
+    }
+    if (input.refreshAfter) {
+      try {
         await this.loadProductProactivityQueue();
         await this.loadProactivityInbox();
+      } catch (err) {
+        refreshError = refreshError ?? err;
       }
-    } catch (err) {
-      this.productProactivityError = `Proactivity sync failed: ${String(err)}`;
+    }
+    if (refreshError) {
+      this.productProactivityError = `Proactivity sync failed: ${this.formatProactivitySyncError(refreshError)}`;
     }
   }
 

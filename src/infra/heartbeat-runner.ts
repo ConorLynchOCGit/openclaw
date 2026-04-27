@@ -90,6 +90,7 @@ import {
   setHeartbeatsEnabled,
   setHeartbeatWakeHandler,
 } from "./heartbeat-wake.js";
+import { buildHeartbeatProactivityReviewText } from "./model-memory-proactivity-runtime.js";
 import type { OutboundSendDeps } from "./outbound/deliver.js";
 import { deliverOutboundPayloads } from "./outbound/deliver.js";
 import { buildOutboundSessionContext } from "./outbound/session-context.js";
@@ -616,6 +617,16 @@ type HeartbeatPromptResolution = {
   hasCronEvents: boolean;
 };
 
+function buildHeartbeatProactivityPrompt(reviewText: string): string {
+  return [
+    "A real bounded proactivity review exists for the current live OpenClaw session.",
+    "Return the proactive review below exactly, preserving line breaks.",
+    "Do not reply HEARTBEAT_OK when this review is present.",
+    "",
+    reviewText,
+  ].join("\n");
+}
+
 function appendHeartbeatWorkspacePathHint(prompt: string, workspaceDir: string): string {
   if (!/heartbeat\.md/i.test(prompt)) {
     return prompt;
@@ -816,6 +827,12 @@ export async function runHeartbeatOnce(opts: {
     delivery.channel !== "none" && delivery.to && visibility.showAlerts,
   );
   const workspaceDir = resolveAgentWorkspaceDir(cfg, agentId);
+  const proactivityReview = await buildHeartbeatProactivityReviewText({
+    cfg,
+    sessionKey,
+    projectId: process.env.OPENCLAW_PROJECT_ID ?? "openclaw",
+    operatorId: process.env.USER ?? "local-openclaw-operator",
+  }).catch(() => null);
   const { prompt, hasExecCompletion, hasCronEvents } = resolveHeartbeatRunPrompt({
     cfg,
     heartbeat,
@@ -825,9 +842,15 @@ export async function runHeartbeatOnce(opts: {
     startedAt,
     heartbeatFileContent: preflight.heartbeatFileContent,
   });
+  const promptWithProactivity =
+    proactivityReview?.text && proactivityReview.text.trim()
+      ? prompt
+        ? `${prompt}\n\n${buildHeartbeatProactivityPrompt(proactivityReview.text)}`
+        : buildHeartbeatProactivityPrompt(proactivityReview.text)
+      : prompt;
 
   // If no tasks are due, skip heartbeat entirely
-  if (prompt === null) {
+  if (promptWithProactivity === null) {
     const suppressingInternalExecCompletion =
       hasExecCompletion && preflight.shouldInspectPendingEvents && !canRelayToUser;
     // Wake-triggered events should stay queued when the run short-circuits:
@@ -951,7 +974,7 @@ export async function runHeartbeatOnce(opts: {
   };
 
   const ctx = {
-    Body: appendCronStyleCurrentTimeLine(prompt, cfg, startedAt),
+    Body: appendCronStyleCurrentTimeLine(promptWithProactivity, cfg, startedAt),
     From: sender,
     To: sender,
     OriginatingChannel:
@@ -1036,6 +1059,18 @@ export async function runHeartbeatOnce(opts: {
       : [];
 
     if (!replyPayload || !hasOutboundReplyContent(replyPayload)) {
+      if (proactivityReview?.text?.trim()) {
+        const fallbackPreview = proactivityReview.text.slice(0, 200);
+        emitHeartbeatEvent({
+          status: "sent",
+          reason: "proactivity-review-fallback",
+          preview: fallbackPreview,
+          durationMs: Date.now() - startedAt,
+          channel: delivery.channel !== "none" ? delivery.channel : undefined,
+          accountId: delivery.accountId,
+          indicatorType: visibility.useIndicator ? resolveIndicatorType("sent") : undefined,
+        });
+      }
       await restoreHeartbeatUpdatedAt({
         storePath,
         sessionKey,
@@ -1059,6 +1094,15 @@ export async function runHeartbeatOnce(opts: {
 
     const ackMaxChars = resolveHeartbeatAckMaxChars(cfg, heartbeat);
     const normalized = normalizeHeartbeatReply(replyPayload, responsePrefix, ackMaxChars);
+    if (
+      proactivityReview?.text?.trim() &&
+      normalized.shouldSkip &&
+      !normalized.hasMedia &&
+      !hasExecCompletion
+    ) {
+      normalized.text = proactivityReview.text;
+      normalized.shouldSkip = false;
+    }
     // For exec completion events, don't skip even if the response looks like HEARTBEAT_OK.
     // The model should be responding with exec results, not ack tokens.
     // Also, if normalized.text is empty due to token stripping but we have exec completion,

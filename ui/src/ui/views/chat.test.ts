@@ -931,6 +931,99 @@ describe("chat view", () => {
     expect(container.querySelector(".contextual-proactivity-card")).toBeNull();
   });
 
+  it("renders inline follow-ups from the assistant answer without opening the inbox", () => {
+    const container = document.createElement("div");
+    const onWorkAction = vi.fn();
+    render(
+      renderChat(
+        createProps({
+          sessionKey: "main",
+          messages: [
+            {
+              role: "assistant",
+              content: [
+                {
+                  type: "text",
+                  text: "Plan the runtime seam reset and investigate the live heartbeat path.",
+                  textSignature: JSON.stringify({
+                    v: 1,
+                    id: "msg_inline_followup",
+                    phase: "final_answer",
+                  }),
+                },
+              ],
+              timestamp: Date.parse("2026-04-27T16:00:15.000Z"),
+            },
+          ],
+          productProactivityQueue: [
+            {
+              queueItemId: "queue-inline-1",
+              candidateId: "candidate-inline-1",
+              messageClass: "operator_approved_suggestion_available",
+              boundedDisplayText: "Plan the runtime seam reset.",
+              candidateSummary: "The latest assistant answer identified a concrete next step.",
+              planTitle: "Plan runtime seam reset",
+              problem: "Assistant output identified a real same-session follow-up opportunity.",
+              suggestedAction: "Start a bounded planning handoff for the runtime seam reset.",
+              messagePreview: "Plan a bounded next step for the runtime seam reset.",
+              proposedMessage: "Plan a bounded next step for the runtime seam reset.",
+              expectedUserValue:
+                "Turns a concrete assistant answer into immediate next-step momentum.",
+              userBenefit: "Turns a concrete assistant answer into immediate next-step momentum.",
+              evidenceSummary: "Derived from the immediately preceding assistant final answer.",
+              confidence: "medium",
+              blockedIfMissing: [],
+              status: "pending_review",
+              layer: "actionable",
+              workItemKind: "planning_request",
+              primaryAction: {
+                actionType: "plan_this",
+                label: "Plan this",
+                description: "Start a bounded planning handoff in chat.",
+                requiresChatInject: false,
+                executesAction: false,
+              },
+              eligibleScope: {
+                environment: "live",
+                userId: "conorlynch",
+                recipientId: "conorlynch",
+                projectId: "openclaw",
+                sessionKey: "main",
+                operatorId: "operator-conorlynch",
+                allowedMessageClasses: ["operator_approved_suggestion_available"],
+                proofPrerequisiteIds: [],
+                proofPrerequisiteHashes: [],
+              },
+              sourceRefs: ["chat://main/assistant_turn/msg_inline_followup"],
+              sourceProfileIds: ["tool_result_capture"],
+              authorityTiers: ["tool_grounded"],
+              contentHashes: ["content-hash-inline-1"],
+              proofHashes: ["proof-hash-inline-1"],
+              noDarkDataStatus: "pass",
+              staleLabels: [],
+              conflictLabels: [],
+              blockedReasonCodes: [],
+              generatedAt: "2026-04-27T16:00:16.000Z",
+              updatedAt: "2026-04-27T16:00:16.000Z",
+            },
+          ],
+          onProductProactivityWorkAction: onWorkAction,
+        }),
+      ),
+      container,
+    );
+
+    const card = container.querySelector(".inline-proactivity-card");
+    expect(card).not.toBeNull();
+    expect(card?.textContent).toContain("Follow-ups from this answer");
+    expect(card?.textContent).toContain("Plan runtime seam reset");
+    expect(card?.textContent).toContain("Plan this");
+    Array.from(card?.querySelectorAll<HTMLButtonElement>("button") ?? [])
+      .find((button) => button.textContent?.includes("Plan this"))
+      ?.click();
+    expect(onWorkAction).toHaveBeenCalledWith("queue-inline-1", "plan_this");
+  });
+
   it("adds proactivity to the visible heartbeat review surface with an inbox path", () => {
     const container = document.createElement("div");
     const onOpenSidebar = vi.fn();

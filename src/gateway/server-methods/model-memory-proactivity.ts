@@ -1,35 +1,13 @@
 import { createHash } from "node:crypto";
-import { buildPhase2LiveProactivityDetectionReport } from "../../../extensions/model-memory/src/runtime/phase2-live-proactivity-signals.js";
-import type {
-  Phase2LiveProactivitySignalKind,
-  Phase2LiveProactivitySignalSource,
-  Phase2LiveProactivitySignalSourceType,
-} from "../../../extensions/model-memory/src/runtime/phase2-live-proactivity-signals.js";
-import {
-  classifySystemEventForProactivity,
-  convertCoverageSourceToLiveSignalSource,
-  type Phase2LiveSignalCoverageSource,
-} from "../../../extensions/model-memory/src/runtime/phase2-live-signal-coverage-expansion.js";
 import { buildPhase2PersonalAutoSendProductUxReport } from "../../../extensions/model-memory/src/runtime/phase2-personal-autosend-product-ux.js";
-import { buildPhase2ProactivityAutonomousInternalDraftingReport } from "../../../extensions/model-memory/src/runtime/phase2-proactivity-autonomous-internal-drafting.js";
 import { buildPhase2ProactivityInboxReport } from "../../../extensions/model-memory/src/runtime/phase2-proactivity-inbox.js";
-import {
-  buildPhase2ProactivityOpportunityExtractionReport,
-  type Phase2OpportunityExtractionSource,
-  type Phase2OpportunityExtractionSourceKind,
-} from "../../../extensions/model-memory/src/runtime/phase2-proactivity-opportunity-extraction.js";
-import {
-  buildPhase2ProactivityOpportunityLedgerReport,
-  type Phase2OpportunityLedgerLifecycleOverride,
-  type Phase2OpportunityLedgerSource,
-} from "../../../extensions/model-memory/src/runtime/phase2-proactivity-opportunity-ledger.js";
-import { buildPhase2ProactivityOutcomeFollowupReport } from "../../../extensions/model-memory/src/runtime/phase2-proactivity-outcome-followup-loop.js";
-import { buildPhase2ProactivityRecurringPatternReport } from "../../../extensions/model-memory/src/runtime/phase2-proactivity-recurring-pattern-loop.js";
-import { buildPhase2ProactivityNoiseBudgetReport } from "../../../extensions/model-memory/src/runtime/phase2-proactivity-signal-noise-budget.js";
 import { buildPhase2ProactivityUxRemediationReport } from "../../../extensions/model-memory/src/runtime/phase2-proactivity-ux-remediation.js";
-import { buildPhase2ProductProactivitySurfacingReport } from "../../../extensions/model-memory/src/runtime/phase2-product-proactivity-surfacing.js";
-import { getLastHeartbeatEvent } from "../../infra/heartbeat-events.js";
-import { peekSystemEventEntries } from "../../infra/system-events.js";
+import {
+  buildModelMemoryProactivityRuntimeState,
+  recordPersistedProactivityChatActivity,
+  recordPersistedProactivityLiveEvent,
+  updatePersistedProactivityLifecycleOverride,
+} from "../../infra/model-memory-proactivity-runtime.js";
 import { ErrorCodes, errorShape } from "../protocol/index.js";
 import type { GatewayRequestHandlers } from "./types.js";
 
@@ -39,63 +17,6 @@ function readString(value: unknown): string | undefined {
 
 function resolveOperatorId(params: Record<string, unknown>, clientId: string | undefined): string {
   return readString(params.operatorId) ?? clientId ?? process.env.USER ?? "local-openclaw-operator";
-}
-
-type RecordedLiveProactivityEvent = Phase2LiveProactivitySignalSource & {
-  recordedAt: string;
-};
-
-const liveProactivityEvents: RecordedLiveProactivityEvent[] = [];
-const MAX_LIVE_PROACTIVITY_EVENTS = 50;
-
-type RecordedChatActivity = Phase2OpportunityExtractionSource & {
-  recordedAt: string;
-};
-
-const chatActivitySources: RecordedChatActivity[] = [];
-const MAX_CHAT_ACTIVITY_SOURCES = 200;
-
-type StoredLifecycleOverride = Phase2OpportunityLedgerLifecycleOverride & {
-  projectId: string;
-  sessionKey: string;
-};
-
-const opportunityLifecycleOverrides = new Map<string, StoredLifecycleOverride>();
-
-function readSignalKind(value: unknown): Phase2LiveProactivitySignalKind {
-  const kind = readString(value);
-  if (
-    kind === "active_work_state" ||
-    kind === "unresolved_question" ||
-    kind === "recent_failure" ||
-    kind === "repeated_friction" ||
-    kind === "incomplete_follow_up" ||
-    kind === "stale_decision" ||
-    kind === "maintenance_candidate" ||
-    kind === "project_state_capsule" ||
-    kind === "recent_memory_update" ||
-    kind === "session_event"
-  ) {
-    return kind;
-  }
-  return "session_event";
-}
-
-function readSourceType(value: unknown): Phase2LiveProactivitySignalSourceType {
-  const type = readString(value);
-  if (
-    type === "ordinary_turn_capture" ||
-    type === "session_runtime_event" ||
-    type === "task_or_queue_state" ||
-    type === "maintenance_loop_output" ||
-    type === "project_state_capsule" ||
-    type === "derived_memory_artifact" ||
-    type === "operator_feedback_event" ||
-    type === "gateway_delivery_or_error_event"
-  ) {
-    return type;
-  }
-  return "session_runtime_event";
 }
 
 function sha256(value: unknown): string {
@@ -119,18 +40,7 @@ function boundedMultilineSummary(value: unknown): string {
     .trim();
 }
 
-function isSafeBoundedSummary(value: string): boolean {
-  const lower = value.toLowerCase();
-  return !(
-    lower.includes("raw-prompt-marker") ||
-    lower.includes("raw-transcript-marker") ||
-    lower.includes("raw-tool-log-marker") ||
-    lower.includes("secret-marker") ||
-    lower.includes("private-phrase-marker")
-  );
-}
-
-function readSourceKind(value: unknown): Phase2OpportunityExtractionSourceKind {
+function readSourceKind(value: unknown) {
   const kind = readString(value);
   if (
     kind === "assistant_turn" ||
@@ -143,230 +53,40 @@ function readSourceKind(value: unknown): Phase2OpportunityExtractionSourceKind {
   return "assistant_turn";
 }
 
-function eventsForScope(
-  projectId: string,
-  sessionKey: string,
-): Phase2LiveProactivitySignalSource[] {
-  const recordedSources = liveProactivityEvents
-    .filter((event) => event.projectId === projectId && event.sessionKey === sessionKey)
-    .slice(-10);
-  const systemEventSources = peekSystemEventEntries(sessionKey)
-    .slice(-5)
-    .filter((event) => isSafeBoundedSummary(boundedSummary(event.text)))
-    .map((event, index): Phase2LiveProactivitySignalSource => {
-      const summary = boundedSummary(event.text);
-      const classification = classifySystemEventForProactivity({
-        text: summary,
-        contextKey: event.contextKey,
-      });
-      const sourceId = `system-event-${sha256({
-        sessionKey,
-        projectId,
-        ts: event.ts,
-        contextKey: event.contextKey ?? null,
-        summary,
-      }).slice(0, 16)}`;
-      const sourceRef = `gateway://system-events/${sessionKey}/${classification.seam}/${sourceId}`;
-      const coverageSource: Phase2LiveSignalCoverageSource = {
-        sourceId,
-        seam: classification.seam,
-        reasonCode: classification.reasonCode,
-        projectId,
-        sessionKey,
-        boundedSummary: summary,
-        sourceRefs: [sourceRef],
-        sourceProfileId:
-          classification.seam === "ordinary_chat_turn"
-            ? "explicit_user_turn"
-            : event.trusted === false
-              ? "daily_continuity"
-              : "tool_result_capture",
-        authorityTier:
-          classification.seam === "ordinary_chat_turn"
-            ? "user_authoritative"
-            : event.trusted === false
-              ? "cited_soft"
-              : "tool_grounded",
-        contentHash: sha256({ sourceId, summary, index }),
-        proofHash: sha256({ sourceRef, sessionKey, projectId }),
-        freshness: "recent",
-        conflictState: "clear",
-      };
-      return convertCoverageSourceToLiveSignalSource(coverageSource);
-    });
-  const heartbeat = getLastHeartbeatEvent();
-  const heartbeatSummary = heartbeat
-    ? boundedSummary(
-        heartbeat.preview ??
-          heartbeat.reason ??
-          `Heartbeat ${heartbeat.status.replace(/-/g, " ")} for current OpenClaw session.`,
-      )
-    : null;
-  const heartbeatSources: Phase2LiveProactivitySignalSource[] =
-    heartbeat && heartbeatSummary && isSafeBoundedSummary(heartbeatSummary)
-      ? [
-          {
-            sourceId: `heartbeat-${sha256({
-              ts: heartbeat.ts,
-              status: heartbeat.status,
-              preview: heartbeat.preview ?? "",
-              reason: heartbeat.reason ?? "",
-              sessionKey,
-            }).slice(0, 16)}`,
-            sourceType:
-              heartbeat.status === "failed"
-                ? "gateway_delivery_or_error_event"
-                : "session_runtime_event",
-            signalKind: heartbeat.status === "failed" ? "recent_failure" : "session_event",
-            projectId,
-            sessionKey,
-            boundedSummary: heartbeatSummary,
-            sourceRefs: [`gateway://heartbeat/last/${heartbeat.ts}`],
-            sourceProfileId: "daily_continuity",
-            authorityTier: "cited_soft",
-            contentHash: sha256({ heartbeat, projectId, sessionKey }),
-            proofHash: sha256({ ts: heartbeat.ts, status: heartbeat.status, sessionKey }),
-            freshness: "recent",
-            conflictState: "clear",
-            inspectionOnly: false,
-            noDarkDataStatus: "pass",
-            limitations: ["bounded_heartbeat_event_summary_only"],
-          },
-        ]
-      : [];
-  return [...recordedSources, ...systemEventSources, ...heartbeatSources].slice(-10);
+function readSignalKind(value: unknown) {
+  const kind = readString(value);
+  if (
+    kind === "active_work_state" ||
+    kind === "unresolved_question" ||
+    kind === "recent_failure" ||
+    kind === "repeated_friction" ||
+    kind === "incomplete_follow_up" ||
+    kind === "stale_decision" ||
+    kind === "maintenance_candidate" ||
+    kind === "project_state_capsule" ||
+    kind === "recent_memory_update" ||
+    kind === "session_event"
+  ) {
+    return kind;
+  }
+  return "session_event";
 }
 
-function chatActivitiesForScope(
-  projectId: string,
-  sessionKey: string,
-): Phase2OpportunityExtractionSource[] {
-  return chatActivitySources
-    .filter((source) => source.projectId === projectId && source.sessionKey === sessionKey)
-    .slice(-40);
-}
-
-function lifecycleOverridesForScope(projectId: string, sessionKey: string) {
-  return [...opportunityLifecycleOverrides.values()].filter(
-    (override) => override.projectId === projectId && override.sessionKey === sessionKey,
-  );
-}
-
-async function buildGeneratorResetProactivityState(params: {
-  projectId: string;
-  sessionKey: string;
-  operatorId: string;
-  userId: string;
-  recipientId: string;
-}) {
-  const eligibleSources = (
-    await buildPhase2ProactivityNoiseBudgetReport({
-      sources: eventsForScope(params.projectId, params.sessionKey),
-      env: process.env,
-    })
-  ).eligibleSources;
-  const liveDetectionReport = await buildPhase2LiveProactivityDetectionReport({
-    sources: eligibleSources,
-    env: process.env,
-  });
-  const extractionSources = chatActivitiesForScope(params.projectId, params.sessionKey);
-  const extractionReport = await buildPhase2ProactivityOpportunityExtractionReport({
-    sources: extractionSources,
-    env: process.env,
-  });
-  const recurringPatternReport = await buildPhase2ProactivityRecurringPatternReport({
-    sources: extractionSources,
-    env: process.env,
-  });
-  const ledgerSources: Phase2OpportunityLedgerSource[] = [
-    ...liveDetectionReport.opportunities.map((opportunity) => ({
-      ...opportunity,
-      sourceFamily: "live_signal" as const,
-      projectId: params.projectId,
-      sessionKey: params.sessionKey,
-      generatedAt: new Date().toISOString(),
-    })),
-    ...extractionReport.candidates.map((candidate) => ({
-      ...candidate,
-      sourceFamily: "assistant_output" as const,
-    })),
-    ...recurringPatternReport.opportunities.map((opportunity) => ({
-      ...opportunity,
-      sourceFamily: "pattern_or_followup" as const,
-      generatedAt: new Date().toISOString(),
-    })),
-  ];
-  const ledgerReport = await buildPhase2ProactivityOpportunityLedgerReport({
-    repoRoot: process.cwd(),
-    opportunities: ledgerSources,
-    activitySources: extractionSources,
-    lifecycleOverrides: lifecycleOverridesForScope(params.projectId, params.sessionKey),
-    env: process.env,
-  });
-  const followupReport = await buildPhase2ProactivityOutcomeFollowupReport({
-    entries: ledgerReport.ledger.entries,
-    env: process.env,
-  });
-  const effectiveLedgerReport =
-    followupReport.decisions.length === 0
-      ? ledgerReport
-      : {
-          ...ledgerReport,
-          ledger: {
-            ...ledgerReport.ledger,
-            entries: ledgerReport.ledger.entries.map((entry) => {
-              const decision = followupReport.decisions.find(
-                (candidate) => candidate.opportunityId === entry.opportunityId,
-              );
-              return decision
-                ? {
-                    ...entry,
-                    status: decision.nextStatus,
-                    updatedAt: new Date().toISOString(),
-                  }
-                : entry;
-            }),
-          },
-        };
-  const topDraftEntries = effectiveLedgerReport.ledger.entries
-    .filter(
-      (entry) =>
-        entry.status === "open" ||
-        entry.status === "surfaced" ||
-        entry.status === "planning_started",
-    )
-    .toSorted(
-      (left, right) =>
-        Number(right.attentionRequired) - Number(left.attentionRequired) ||
-        right.generatedAt.localeCompare(left.generatedAt),
-    )
-    .slice(0, 3);
-  const draftReport = await buildPhase2ProactivityAutonomousInternalDraftingReport({
-    topEntries: topDraftEntries,
-    env: process.env,
-  });
-  const productSurfacingReport = await buildPhase2ProductProactivitySurfacingReport({
-    eligibilityScope: {
-      userId: params.userId,
-      recipientId: params.recipientId,
-      projectId: params.projectId,
-      sessionKey: params.sessionKey,
-      operatorId: params.operatorId,
-    },
-    liveDetectionReport,
-    ledgerReport: effectiveLedgerReport,
-    draftReport,
-    env: process.env,
-  });
-  return {
-    liveDetectionReport,
-    extractionReport,
-    recurringPatternReport,
-    ledgerReport: effectiveLedgerReport,
-    followupReport,
-    draftReport,
-    productSurfacingReport,
-  };
+function readSourceType(value: unknown) {
+  const type = readString(value);
+  if (
+    type === "ordinary_turn_capture" ||
+    type === "session_runtime_event" ||
+    type === "task_or_queue_state" ||
+    type === "maintenance_loop_output" ||
+    type === "project_state_capsule" ||
+    type === "derived_memory_artifact" ||
+    type === "operator_feedback_event" ||
+    type === "gateway_delivery_or_error_event"
+  ) {
+    return type;
+  }
+  return "session_runtime_event";
 }
 
 export const modelMemoryProactivityHandlers: GatewayRequestHandlers = {
@@ -383,27 +103,15 @@ export const modelMemoryProactivityHandlers: GatewayRequestHandlers = {
       readString(params.sourceId) ??
       `chat-activity-${sha256({ projectId, sessionKey, sourceKind, sourceMessageId }).slice(0, 16)}`;
     const sourceRef = `chat://${sessionKey}/${sourceKind}/${sourceMessageId}`;
-    const source: RecordedChatActivity = {
-      sourceId,
+    await recordPersistedProactivityChatActivity({
+      sessionKey,
+      projectId,
       sourceKind,
       sourceMessageId,
       sourceRunId,
-      projectId,
-      sessionKey,
-      boundedText,
       userPromptSummary: readString(params.userPromptSummary),
-      sourceRefs: [sourceRef],
-      sourceProfileId: sourceKind === "user_turn" ? "explicit_user_turn" : "manual_note",
-      authorityTier: sourceKind === "user_turn" ? "user_authoritative" : "tool_grounded",
-      contentHash: sha256({ sourceMessageId, boundedText, sourceKind, projectId, sessionKey }),
-      proofHash: sha256({ sourceRef, sourceRunId, sourceKind }),
-      noDarkDataStatus: "pass",
-      recordedAt: new Date().toISOString(),
-    };
-    chatActivitySources.push(source);
-    if (chatActivitySources.length > MAX_CHAT_ACTIVITY_SOURCES) {
-      chatActivitySources.splice(0, chatActivitySources.length - MAX_CHAT_ACTIVITY_SOURCES);
-    }
+      boundedText,
+    });
     respond(true, {
       ok: true,
       sourceId,
@@ -425,14 +133,26 @@ export const modelMemoryProactivityHandlers: GatewayRequestHandlers = {
     }
     const projectId = readString(params.projectId) ?? process.env.OPENCLAW_PROJECT_ID ?? "openclaw";
     const sessionKey = readString(params.sessionKey) ?? "main";
-    opportunityLifecycleOverrides.set(opportunityId, {
-      opportunityId,
-      projectId,
+    await updatePersistedProactivityLifecycleOverride({
       sessionKey,
-      status: status as StoredLifecycleOverride["status"],
-      updatedAt: new Date().toISOString(),
-      resolvedByChatMessageId: readString(params.resolvedByChatMessageId) ?? null,
-      supersededByOpportunityId: readString(params.supersededByOpportunityId) ?? null,
+      projectId,
+      override: {
+        opportunityId,
+        status: status as
+          | "open"
+          | "surfaced"
+          | "draft_ready"
+          | "planning_started"
+          | "planned"
+          | "in_progress"
+          | "done"
+          | "dismissed"
+          | "snoozed"
+          | "superseded",
+        updatedAt: new Date().toISOString(),
+        resolvedByChatMessageId: readString(params.resolvedByChatMessageId) ?? null,
+        supersededByOpportunityId: readString(params.supersededByOpportunityId) ?? null,
+      },
     });
     respond(true, { ok: true, opportunityId, status });
   },
@@ -446,37 +166,38 @@ export const modelMemoryProactivityHandlers: GatewayRequestHandlers = {
       readString(params.sourceId) ??
       `gateway-live-event-${sha256({ projectId, sessionKey, sourceType, signalKind, summary }).slice(0, 16)}`;
     const sourceRef = `gateway://model-memory/proactivity/live-event/${sourceId}`;
-    const event: RecordedLiveProactivityEvent = {
-      sourceId,
-      sourceType,
-      signalKind,
-      projectId,
-      sessionKey,
-      boundedSummary: summary,
-      sourceRefs: [sourceRef],
-      sourceProfileId:
-        sourceType === "ordinary_turn_capture" ? "explicit_user_turn" : "manual_note",
-      authorityTier:
-        sourceType === "ordinary_turn_capture" ? "user_authoritative" : "tool_grounded",
-      contentHash: sha256({ sourceId, projectId, sessionKey, sourceType, signalKind, summary }),
-      proofHash: sha256({ sourceRef, sourceId, signalKind }),
-      freshness: "recent",
-      conflictState: "clear",
-      inspectionOnly: false,
-      noDarkDataStatus: "pass",
-      limitations: ["bounded_runtime_event_summary_only"],
-      recordedAt: new Date().toISOString(),
-    };
-    liveProactivityEvents.push(event);
-    if (liveProactivityEvents.length > MAX_LIVE_PROACTIVITY_EVENTS) {
-      liveProactivityEvents.splice(0, liveProactivityEvents.length - MAX_LIVE_PROACTIVITY_EVENTS);
-    }
+    await recordPersistedProactivityLiveEvent({
+      event: {
+        sourceId,
+        sourceType: readSourceType(params.sourceType),
+        signalKind: readSignalKind(params.signalKind),
+        projectId,
+        sessionKey,
+        boundedSummary: summary,
+        sourceRefs: [sourceRef],
+        sourceProfileId:
+          readSourceType(params.sourceType) === "ordinary_turn_capture"
+            ? "explicit_user_turn"
+            : "manual_note",
+        authorityTier:
+          readSourceType(params.sourceType) === "ordinary_turn_capture"
+            ? "user_authoritative"
+            : "tool_grounded",
+        contentHash: sha256({ sourceId, projectId, sessionKey, sourceType, signalKind, summary }),
+        proofHash: sha256({ sourceRef, sourceId, signalKind }),
+        freshness: "recent",
+        conflictState: "clear",
+        inspectionOnly: false,
+        noDarkDataStatus: "pass",
+        limitations: ["bounded_runtime_event_summary_only"],
+      },
+    });
     respond(true, {
       ok: true,
-      sourceId: event.sourceId,
+      sourceId,
       sourceRef,
-      signalKind: event.signalKind,
-      sourceType: event.sourceType,
+      signalKind,
+      sourceType,
       projectId,
       sessionKey,
     });
@@ -493,7 +214,7 @@ export const modelMemoryProactivityHandlers: GatewayRequestHandlers = {
         process.env.OPENCLAW_RECIPIENT_ID ??
         process.env.OPENCLAW_USER_ID ??
         "local-openclaw-recipient";
-      const state = await buildGeneratorResetProactivityState({
+      const state = await buildModelMemoryProactivityRuntimeState({
         sessionKey,
         projectId,
         operatorId,
@@ -581,7 +302,7 @@ export const modelMemoryProactivityHandlers: GatewayRequestHandlers = {
         process.env.OPENCLAW_RECIPIENT_ID ??
         process.env.OPENCLAW_USER_ID ??
         "local-openclaw-recipient";
-      const state = await buildGeneratorResetProactivityState({
+      const state = await buildModelMemoryProactivityRuntimeState({
         sessionKey,
         projectId,
         operatorId,
