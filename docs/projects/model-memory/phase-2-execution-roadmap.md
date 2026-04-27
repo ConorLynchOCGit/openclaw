@@ -320,6 +320,12 @@ Validation gate:
 - candidates surface in real operator-visible channels
 - no hidden review queue becomes the only review path
 - urgency/relevance thresholds can be observed and tuned
+- proactive work items use one canonical lifecycle state across inbox,
+  heartbeat, contextual surfacing, and history
+- planning/investigation/drafting CTAs use bounded chat handoff rather than
+  send-like transcript injection
+- history views derive from real state transitions, not synthetic placeholder
+  rows
 
 ### Wave 5: skill and tool synthesis
 

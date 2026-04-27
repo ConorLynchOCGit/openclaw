@@ -142,10 +142,18 @@ primary chat workspace remains preserved:
 - planning, investigation, drafting, and scoped-task CTAs start a bounded
   user-visible handoff in chat and update the work item outcome state; they do
   not call `chat.inject`, send external messages, or execute actions
+- `Plan this` is a pure handoff action. It must not create a send-like record,
+  require edit-before-start, or remain simultaneously actionable and
+  historical.
 - Send message remains explicit for `message_candidate` items only; the inbox
   must show success/failure feedback after any send action
 - diagnostics such as auto-send simulation, blocked preflight, proof metadata,
   and why-not-shown records must remain outside the primary actionable count
+- history views must reflect canonical lifecycle transitions for the same
+  deterministic work item id; synthetic placeholder history rows are not a
+  valid UX model
+- the primary card keeps one concise next-step line and moves redundant detail
+  into disclosure
 
 ## Live generation gate
 
@@ -194,3 +202,15 @@ sequence:
 - Acceptance reports must aggregate generation, surfacing, handoff, feedback,
   dismissal, snooze, suppression, leakage, unsafe action, autonomous-send, and
   static fallback metrics to decide whether proactivity can move to Skills.
+
+## Handoff formatting contract
+
+Operator-visible handoff text must read like a clean structured request, not a
+raw concatenated template. Required sections:
+
+- opening line
+- why now
+- bounded context
+- evidence summary
+- expected output
+- safety boundary

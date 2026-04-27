@@ -214,13 +214,18 @@ Must show:
   task, Open in current chat, Add to Daily Review, and Send message only for
   message candidates
 - clear explanation of what each CTA will do before it starts
-- status after handoff: planning, planned, investigating, drafted,
+- status after handoff: planning_started, planned, investigating, drafted,
   execution_proposed, done, dismissed, snoozed, or blocked
 - success/failure feedback after handoff or `chat.inject`
 - Open in chat / View sent message after successful handoff or send
 - sent/snoozed/dismissed history separate from actionable work
 - diagnostics for blocked/preflight/simulation/why-not-shown items behind a
   Diagnostics view
+- one canonical state per work item across inbox, heartbeat, contextual
+  surfacing, and history
+- no duplicate `Suggested action` / `Proposed next step` copy in the primary
+  card when the item is a planning handoff
+- `Plan this` behaves as a pure handoff action, not a send-like action
 
 ### Proactivity Heartbeat / Daily Review
 
@@ -236,6 +241,7 @@ Must show:
 - the same candidate/work item ids used by the inbox and contextual chat cards
 - direct path to start the next useful work step or open the inbox detail
 - why-not-shown diagnostics only behind diagnostics/debug detail
+- the same lifecycle state shown in the inbox for the same work item id
 
 Must not show:
 

@@ -353,6 +353,9 @@ The Control UI surfaces Model Memory proactivity through normal chat chrome:
 - Planning, investigation, drafting, and scoped-task CTAs start a bounded
   user-visible handoff in the current chat and show Open in chat after handoff.
   They do not use `chat.inject` and do not execute actions.
+- Planning handoffs are pure work-start actions, not send-like actions. The
+  same deterministic work item id and lifecycle state must stay consistent
+  across inbox, heartbeat, contextual cards, and history.
 - Send message calls `chat.inject` only for message candidates after explicit
   approval. Success/failure feedback appears on the card, and successful sends
   expose View sent message.

@@ -149,6 +149,10 @@ proposed next step, expected user value, evidence summary, confidence or
 limitation, and provenance disclosure. It must not be hidden only inside an
 operator diagnostics accordion.
 
+Primary cards should keep one concise next-step line. Supporting detail may be
+expanded, but `Suggested action` and `Proposed next step` should not both be
+prominent when they restate the same planning handoff.
+
 Optional later surfaces:
 
 - dedicated operator-review artifact pack
@@ -184,7 +188,7 @@ Primary actions:
 Outcome states:
 
 - `not_started`
-- `planning`
+- `planning_started`
 - `planned`
 - `investigating`
 - `drafted`
@@ -194,11 +198,16 @@ Outcome states:
 - `dismissed`
 - `snoozed`
 - `blocked`
+- `reopened`
 
 Planning, investigation, drafting, and scoped-task actions should hand off
 bounded context into the current chat as a normal user-visible agent turn. They
 must not use `chat.inject`, send external messages, or execute actions merely
 because the proactive item surfaced.
+
+`Plan this` is a pure handoff action, not a send-like action. Once planning
+starts, the item should move out of the primary actionable backlog and into a
+planned/history state unless explicitly reopened.
 
 ## Three surfacing lanes
 

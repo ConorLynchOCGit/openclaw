@@ -4022,3 +4022,33 @@ Reasoning:
   noise, and whether engaging those opportunities creates useful agent work.
   Slices 60-64 therefore gate exit from the proactivity bucket on observed
   product usefulness rather than more rollout controls.
+
+## 2026-04-27 - proactivity lifecycle hotfix makes planning a pure handoff
+
+Decision:
+
+- `Plan this` is a bounded chat handoff action, not a send-like action.
+- One canonical work-item state must be visible at a time across inbox,
+  heartbeat, contextual surfacing, and history.
+- The main actionable card keeps one concise next-step line and must not
+  duplicate `Suggested action` and `Proposed next step` when both restate the
+  same planning handoff.
+- Planning handoff text must render as a clean structured request with bounded
+  context, evidence summary, expected output, and safety boundary rather than a
+  raw concatenated plumbing template.
+- Lifecycle must explicitly support `planning_started`, `planned`, `done`, and
+  `reopened`.
+- Once planning starts, the item leaves the actionable backlog and appears in
+  planned/history state unless explicitly reopened.
+- Rollback remains kill-switch safe and must not re-enable autonomous sending
+  or action execution.
+
+Reasoning:
+
+- The prior UX mixed backlog opportunity, sent-record behavior, and
+  message-candidate behavior into one item.
+- Synthetic history rows created duplicate truth and made the same item appear
+  actionable and historical at once.
+- Operator trust requires deterministic ids, canonical lifecycle state, and a
+  smoother handoff presentation that matches what the product is actually
+  doing.
