@@ -326,6 +326,10 @@ function safeString(value: unknown, fallback: string): string {
   return typeof value === "string" && value.trim() ? value.trim() : fallback;
 }
 
+function trimTrailingSentencePunctuation(value: string): string {
+  return value.trim().replace(/[.!?]+$/u, "");
+}
+
 function buildEligibilityScope(input: {
   generatedAt: string;
   defaultPromotionReport: Phase2UserFacingProactivityDefaultPromotionReport;
@@ -494,13 +498,14 @@ function contentFieldsForMessageClass(input: {
   const why = input.realCandidate?.whyThisAppeared ?? boundedSummary;
   if (input.realCandidate) {
     const isFollowUp = input.messageClass === "operator_approved_follow_up_available";
+    const safeSummary = trimTrailingSentencePunctuation(boundedSummary);
     const planTitle = isFollowUp
       ? `Investigate unresolved follow-up for ${input.scope.projectId}`
       : `Plan the next ${input.scope.projectId} step`;
     const problem = `${boundedSummary} Source: ${sourceLabel}.`;
     const proposedMessage = isFollowUp
-      ? `Investigate this unresolved follow-up for ${input.scope.projectId}: ${boundedSummary}. Summarize whether it still matters, what evidence supports it, and the smallest safe next step.`
-      : `Plan this ${input.scope.projectId} opportunity: ${boundedSummary}. Produce concrete next steps from bounded Model Memory evidence and do not edit files unless approved.`;
+      ? `Investigate this unresolved follow-up for ${input.scope.projectId}: ${safeSummary}. Summarize whether it still matters, what evidence supports it, and the smallest safe next step.`
+      : `Plan this ${input.scope.projectId} opportunity: ${safeSummary}. Produce concrete next steps from bounded Model Memory evidence and do not edit files unless approved.`;
     return {
       candidateSummary: boundedSummary,
       suggestedAction: isFollowUp

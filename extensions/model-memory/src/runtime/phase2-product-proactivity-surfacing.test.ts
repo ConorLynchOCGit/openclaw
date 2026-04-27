@@ -25,9 +25,15 @@ describe("phase2 product proactivity surfacing", () => {
     expect(report.queue.items[0]).toMatchObject({
       status: "pending_review",
       boundedDisplayText: "Fix the broken Proactivity Inbox before expanding capability.",
-      planTitle: "Act on current openclaw proactivity work",
+      planTitle: "Plan the next openclaw step",
       proposedMessage:
-        "I found a concrete openclaw proactivity item: Fix the broken Proactivity Inbox before expanding capability. Do you want me to apply this next?",
+        "Plan this openclaw opportunity: Fix the broken Proactivity Inbox before expanding capability. Produce concrete next steps from bounded Model Memory evidence and do not edit files unless approved.",
+      workItemKind: "planning_request",
+      primaryAction: {
+        actionType: "plan_this",
+        requiresChatInject: false,
+        executesAction: false,
+      },
       layer: "actionable",
       noDarkDataStatus: "pass",
     });
