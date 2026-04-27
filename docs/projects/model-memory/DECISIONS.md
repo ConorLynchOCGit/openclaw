@@ -3713,3 +3713,31 @@ Reasoning:
 - proactive memory should not steal the primary chat workspace; users need a
   persistent low-friction entry point, clear information scent, and an explicit
   action path before any further proactivity expansion is useful
+
+## 2026-04-26 - proactive suggestions require concrete safe preview content
+
+Decision:
+
+- Slice 56 promotes real suggestion content fields into a capability contract:
+  `messagePreview`, `suggestedAction`, `candidateSummary`, and
+  `expectedUserValue`
+- actionable candidates must derive these fields from bounded memory evidence
+  and preserve source refs, source profile ids, authority tiers, content/proof
+  hashes, freshness/conflict labels, and no-dark-data status
+- generic placeholder-only candidates such as “An approved suggestion is
+  available” are blocked as non-actionable rather than shown as sendable UI
+  suggestions
+- missing provenance, missing source profile, missing authority, no-dark-data
+  failure, stale/conflict evidence without labeling, external instruction
+  escalation, or lower-authority self-promotion blocks actionable preview output
+- rollback via `MODEL_MEMORY_PHASE2_REAL_SUGGESTION_CONTENT_DISABLED` returns to
+  blocking generic/unsafe candidates while preserving manual review
+- proof artifact target:
+  `.artifacts/model-memory/phase2-real-suggestion-content-contract-proof/<timestamp>/`
+- broad autonomous sending remains disabled and delivery-triggered action
+  execution remains disabled
+
+Reasoning:
+
+- proactivity is only useful when the user can recognize the actual proposed
+  message and understand why it is valuable before approving it

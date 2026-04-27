@@ -618,6 +618,13 @@ For each implementation wave:
   entry point while preserving manual send paths. Proof artifact target:
   `.artifacts/model-memory/phase2-proactivity-ux-remediation-proof/<timestamp>/`.
   Broad autonomous sending and delivery-triggered action execution remain off.
+- Slice 56 requires real suggestion content before a candidate can be
+  actionable: `messagePreview`, `suggestedAction`, `candidateSummary`, and
+  `expectedUserValue` must be present, bounded, no-dark-data clean, and tied to
+  provenance/source profile/authority/hash evidence. Generic placeholder-only
+  candidates are blocked as non-actionable, and approval/send uses the exact
+  safe preview text. Proof artifact target:
+  `.artifacts/model-memory/phase2-real-suggestion-content-contract-proof/<timestamp>/`.
 - capture at least one durable evidence artifact per wave
 - update the relevant human test prompt pack before declaring the wave ready for
   live validation
