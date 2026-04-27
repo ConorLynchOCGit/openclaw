@@ -3995,6 +3995,10 @@ Decision:
   today?”, ranks by urgency, freshness, recurrence, expected value, active
   context match, feedback/noise state, and confidence, and preserves the same
   work item ids as inbox/contextual/chat handoff.
+- The Slice 63 heartbeat surface is considered failed if it is diagnostics-only,
+  lacks a direct handoff CTA, loses the shared work item id, or cannot show a
+  bounded title/why-now/next-step/value card. Suppressed/background items remain
+  diagnostics.
 - Slice 64 adds an acceptance gate. Proactivity may move to Skills only if live
   generation frequency, useful/actioned rate, low noise, heartbeat reliability,
   handoff quality, zero leakage, zero unsafe action execution, zero autonomous
