@@ -2994,6 +2994,75 @@ td.data-table-key-col {
   border-color: color-mix(in srgb, var(--ok) 50%, var(--border));
 }
 
+.contextual-proactivity-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: start;
+  margin: 0 0 12px;
+  padding: 12px;
+  border: 1px solid color-mix(in srgb, var(--accent) 48%, var(--border));
+  border-radius: var(--radius-lg);
+  background:
+    radial-gradient(
+      circle at top left,
+      color-mix(in srgb, var(--accent) 14%, transparent),
+      transparent 42%
+    ),
+    color-mix(in srgb, var(--card) 90%, var(--secondary) 10%);
+  color: var(--chat-text);
+}
+
+.contextual-proactivity-card__body {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.contextual-proactivity-card__eyebrow,
+.contextual-proactivity-card__section > span {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--muted);
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.contextual-proactivity-card__section {
+  display: grid;
+  gap: 3px;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.contextual-proactivity-card__section > strong,
+.contextual-proactivity-card__section > div {
+  color: var(--text-strong);
+}
+
+.contextual-proactivity-card__why {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.contextual-proactivity-card__details {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.contextual-proactivity-card__details summary {
+  cursor: pointer;
+  color: var(--text);
+  margin-bottom: 6px;
+}
+
+.contextual-proactivity-card__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: end;
+}
+
 .proactivity-notification-stack {
   display: grid;
   gap: 10px;
@@ -3062,6 +3131,14 @@ td.data-table-key-col {
   }
 
   .product-proactivity-item__actions {
+    justify-content: start;
+  }
+
+  .contextual-proactivity-card {
+    grid-template-columns: 1fr;
+  }
+
+  .contextual-proactivity-card__actions {
     justify-content: start;
   }
 

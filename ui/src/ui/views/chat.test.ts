@@ -805,6 +805,96 @@ describe("chat view", () => {
     expect(onDisable).toHaveBeenCalledTimes(1);
   });
 
+  it("shows contextual proactivity only for exact active session matches", () => {
+    const container = document.createElement("div");
+    const onApproveSend = vi.fn();
+    const onDismiss = vi.fn();
+    const onSnooze = vi.fn();
+    const matchingItem = {
+      queueItemId: "queue-context-1",
+      candidateId: "candidate-context-1",
+      messageClass: "operator_approved_suggestion_available" as const,
+      boundedDisplayText: "Follow up on the unresolved gateway rebuild issue.",
+      candidateSummary: "Gateway rebuild follow-up is still unresolved.",
+      suggestedAction: "Approve and send the gateway rebuild follow-up if it still applies.",
+      messagePreview: "Should we rerun the live gateway rebuild now that proactivity UX changed?",
+      expectedUserValue: "Keeps the live UI aligned with the latest deployed proactivity surface.",
+      status: "pending_review" as const,
+      eligibleScope: {
+        environment: "live" as const,
+        userId: "conorlynch",
+        recipientId: "conorlynch",
+        projectId: "openclaw-platform",
+        sessionKey: "main",
+        operatorId: "operator-conorlynch",
+        allowedMessageClasses: ["operator_approved_suggestion_available"],
+        proofPrerequisiteIds: ["proof-1"],
+        proofPrerequisiteHashes: ["hash-1"],
+      },
+      sourceRefs: ["docs/projects/model-memory/phase-2-execution-roadmap.md"],
+      sourceProfileIds: ["curated_repo_doc"],
+      authorityTiers: ["curated_authoritative"],
+      contentHashes: ["content-hash-1"],
+      proofHashes: ["proof-hash-1"],
+      noDarkDataStatus: "pass" as const,
+      staleLabels: [],
+      conflictLabels: [],
+      blockedReasonCodes: [],
+      generatedAt: "2026-04-26T22:00:00.000Z",
+      updatedAt: "2026-04-26T22:00:00.000Z",
+    };
+
+    render(
+      renderChat(
+        createProps({
+          sessionKey: "main",
+          productProactivityQueue: [
+            matchingItem,
+            {
+              ...matchingItem,
+              queueItemId: "queue-context-2",
+              candidateId: "candidate-context-2",
+              eligibleScope: { ...matchingItem.eligibleScope, sessionKey: "other" },
+              messagePreview: "This non-matching session item should stay in the inbox.",
+            },
+          ],
+          onProductProactivityApproveSend: onApproveSend,
+          onProductProactivityDismiss: onDismiss,
+          onProductProactivitySnooze: onSnooze,
+        }),
+      ),
+      container,
+    );
+
+    const card = container.querySelector(".contextual-proactivity-card");
+    expect(card).not.toBeNull();
+    expect(card?.textContent).toContain("Gateway rebuild follow-up is still unresolved.");
+    expect(card?.textContent).toContain("Suggested action");
+    expect(card?.textContent).toContain("Message preview");
+    expect(card?.textContent).toContain("Shown because this session matches project");
+    expect(card?.textContent).toContain("Approve & Send");
+    expect(card?.textContent).not.toContain("This non-matching session item");
+    card?.querySelector<HTMLButtonElement>(".btn")?.click();
+    expect(onApproveSend).toHaveBeenCalledWith("queue-context-1");
+
+    render(
+      renderChat(
+        createProps({
+          sessionKey: "other",
+          productProactivityQueue: [
+            {
+              ...matchingItem,
+              staleLabels: ["stale"],
+              eligibleScope: { ...matchingItem.eligibleScope, sessionKey: "other" },
+            },
+          ],
+        }),
+      ),
+      container,
+    );
+    expect(container.querySelector(".contextual-proactivity-card")).toBeNull();
+  });
+
   it("renders proactivity as a compact entry point and opens inbox in the side panel", () => {
     const container = document.createElement("div");
     const onOpenSidebar = vi.fn();

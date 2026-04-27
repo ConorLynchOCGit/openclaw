@@ -625,6 +625,12 @@ For each implementation wave:
   candidates are blocked as non-actionable, and approval/send uses the exact
   safe preview text. Proof artifact target:
   `.artifacts/model-memory/phase2-real-suggestion-content-contract-proof/<timestamp>/`.
+- Slice 57 adds contextual surfacing lanes: `must_surface`, `context_surface`,
+  and `background_only`. Chat inline surfacing is compact and allowed only for
+  exact typed active-context overlap; non-relevant, stale, repeated, dismissed,
+  snoozed, or background-only candidates remain in the Proactivity Inbox/digest.
+  Proof artifact target:
+  `.artifacts/model-memory/phase2-contextual-proactivity-surfacing-proof/<timestamp>/`.
 - capture at least one durable evidence artifact per wave
 - update the relevant human test prompt pack before declaring the wave ready for
   live validation

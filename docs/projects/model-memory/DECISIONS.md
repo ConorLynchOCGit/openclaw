@@ -3741,3 +3741,29 @@ Reasoning:
 
 - proactivity is only useful when the user can recognize the actual proposed
   message and understand why it is valuable before approving it
+
+## 2026-04-26 - contextual proactivity surfaces only on typed active-context overlap
+
+Decision:
+
+- Slice 57 adds typed surfacing lanes for proactive suggestions:
+  `must_surface`, `context_surface`, and `background_only`
+- chat inline surfacing is compact and only allowed when bounded candidate
+  evidence overlaps the active typed user/session/project/operator context
+- non-matching, background-only, stale, repeated, dismissed, or snoozed
+  candidates remain in the Proactivity Inbox/digest instead of reappearing as
+  chat noise
+- relevance explanations must state the typed match, for example “shown because
+  this session matches project X / session Y”; fuzzy semantic matching and
+  keyword/topic routers are not authority
+- rollback via `MODEL_MEMORY_PHASE2_CONTEXTUAL_PROACTIVITY_DISABLED` disables
+  inline contextual cards and returns to drawer-only review
+- proof artifact target:
+  `.artifacts/model-memory/phase2-contextual-proactivity-surfacing-proof/<timestamp>/`
+- broad autonomous sending and delivery-triggered action execution remain
+  disabled
+
+Reasoning:
+
+- proactivity should appear during normal work only when the current context
+  makes the suggestion actionable; otherwise it belongs in the inbox/digest

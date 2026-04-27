@@ -1181,6 +1181,90 @@ function getProactivityExpectedUserValue(
   );
 }
 
+function getContextualProactivityItems(props: ChatProps): ProductProactivityQueueItem[] {
+  return (props.productProactivityQueue ?? [])
+    .filter((item) => item.status === "pending_review")
+    .filter((item) => item.noDarkDataStatus === "pass")
+    .filter((item) => item.eligibleScope.sessionKey === props.sessionKey)
+    .filter((item) => !item.staleLabels.includes("stale"))
+    .filter((item) => !item.staleLabels.includes("repeated"))
+    .slice(0, 1);
+}
+
+function renderContextualProactivityCard(props: ChatProps): TemplateResult | typeof nothing {
+  const item = getContextualProactivityItems(props)[0];
+  if (!item) {
+    return nothing;
+  }
+  const whyShown = `Shown because this session matches project ${item.eligibleScope.projectId} / session ${item.eligibleScope.sessionKey}.`;
+  return html`
+    <section
+      class="contextual-proactivity-card"
+      aria-label="Relevant Model Memory suggestion"
+      data-queue-item-id=${item.queueItemId}
+    >
+      <div class="contextual-proactivity-card__body">
+        <div class="contextual-proactivity-card__eyebrow">Relevant proactivity</div>
+        <div class="contextual-proactivity-card__section">
+          <span>Candidate summary</span>
+          <strong>${getProactivityCandidateSummary(item)}</strong>
+        </div>
+        <div class="contextual-proactivity-card__section">
+          <span>Suggested action</span>
+          <strong>${getProactivitySuggestedAction(item)}</strong>
+        </div>
+        <div class="contextual-proactivity-card__section">
+          <span>Message preview</span>
+          <div>${getProactivityMessagePreview(item)}</div>
+        </div>
+        <div class="contextual-proactivity-card__why">${whyShown}</div>
+        <details class="contextual-proactivity-card__details">
+          <summary>Provenance</summary>
+          <div class="operator-row">
+            <span>Sources</span>
+            <span>${item.sourceRefs.slice(0, 4).join(", ") || "missing"}</span>
+          </div>
+          <div class="operator-row">
+            <span>Profiles</span>
+            <span>${item.sourceProfileIds.slice(0, 4).join(", ") || "missing"}</span>
+          </div>
+          <div class="operator-row">
+            <span>Authority</span>
+            <span>${item.authorityTiers.slice(0, 4).join(", ") || "missing"}</span>
+          </div>
+          <div class="operator-row">
+            <span>Safety</span>
+            <span>${item.noDarkDataStatus}; bounded preview only</span>
+          </div>
+        </details>
+      </div>
+      <div class="contextual-proactivity-card__actions">
+        <button
+          class="btn btn--sm"
+          type="button"
+          @click=${() => props.onProductProactivityApproveSend?.(item.queueItemId)}
+        >
+          Approve & Send
+        </button>
+        <button
+          class="btn btn--sm btn--ghost"
+          type="button"
+          @click=${() => props.onProductProactivityDismiss?.(item.queueItemId)}
+        >
+          Dismiss
+        </button>
+        <button
+          class="btn btn--sm btn--ghost"
+          type="button"
+          @click=${() => props.onProductProactivitySnooze?.(item.queueItemId)}
+        >
+          Snooze
+        </button>
+      </div>
+    </section>
+  `;
+}
+
 function renderProactivityEntryPoint(props: ChatProps): TemplateResult | typeof nothing {
   const digest = props.proactivityInboxDigest;
   const queueItems = props.productProactivityQueue ?? [];
@@ -2246,7 +2330,8 @@ export function renderChat(props: ChatProps) {
           diagnosticBundle,
           requestUpdate,
         })}
-        ${renderProductProactivityNotifications(props)} ${renderPersonalAutoSendProductUx(props)}
+        ${renderContextualProactivityCard(props)} ${renderProductProactivityNotifications(props)}
+        ${renderPersonalAutoSendProductUx(props)}
         ${props.loading
           ? html`
               <div class="chat-loading-skeleton" aria-label="Loading chat">
