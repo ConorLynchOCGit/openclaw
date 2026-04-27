@@ -698,6 +698,37 @@ For each implementation wave:
   applies to Skills, tools, and workflow synthesis: do not build extensive
   rollout/control scaffolding until real useful outputs from real work inputs
   are proven.
+
+## Slices 60-64 - proactivity live-usefulness acceptance sequence
+
+- Slice 60 expands live signal coverage across normal OpenClaw work seams:
+  ordinary chat turns, task state changes, gateway errors, failed commands,
+  repeated user friction, unresolved questions, session/workflow transitions,
+  heartbeat events, maintenance output, and project-state capsules. Each seam
+  emits typed source refs and reason codes, and static/default candidates remain
+  diagnostics only. Proof artifact target:
+  `.artifacts/model-memory/phase2-live-signal-coverage-expansion-proof/<timestamp>/`.
+- Slice 61 adds a signal quality/noise budget with thresholds, cooldowns,
+  deterministic dedupe windows, recurrence limits, feedback-aware suppression,
+  and why-not-shown diagnostics. Proof artifact target:
+  `.artifacts/model-memory/phase2-proactivity-signal-noise-budget-proof/<timestamp>/`.
+- Slice 62 improves proactive planning handoffs. Intent CTAs start bounded chat
+  turns with evidence, goal, constraints, safety boundaries, and expected output
+  shape; non-message handoffs do not call `chat.inject`. Proof artifact target:
+  `.artifacts/model-memory/phase2-proactive-planning-handoff-quality-proof/<timestamp>/`.
+- Slice 63 hardens Heartbeat / Daily Operator Review as a primary proactivity
+  surface, with top ranked live opportunities and direct handoff CTAs that
+  preserve the same work item ids as inbox and contextual cards. Proof artifact
+  target:
+  `.artifacts/model-memory/phase2-heartbeat-proactivity-reliability-proof/<timestamp>/`.
+- Slice 64 adds the proactivity acceptance gate. It aggregates generation,
+  surfacing, handoff, feedback, dismissal, suppression, leakage, and safety
+  metrics and decides whether to move to Skills, continue tuning, pause
+  automation, or roll back to manual-only. Proof artifact target:
+  `.artifacts/model-memory/phase2-proactivity-acceptance-gate-proof/<timestamp>/`.
+- Broad autonomous sending, auto-send scope expansion, semantic truth writes
+  from feedback, and action execution from surfacing remain blocked throughout
+  the sequence.
 - capture at least one durable evidence artifact per wave
 - update the relevant human test prompt pack before declaring the wave ready for
   live validation

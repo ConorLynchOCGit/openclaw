@@ -3957,3 +3957,50 @@ Reasoning:
   the surrounding system accumulated gates, dashboards, controls, and proof
   paths. Product usefulness now requires generator-first proof before any
   further expansion.
+
+## 2026-04-27 - proactivity live-usefulness acceptance sequence
+
+Decision:
+
+- Slices 60-64 are the usefulness acceptance sequence for proactive memory.
+  They do not expand autonomous sending, auto-send scope, or delivery-triggered
+  action execution.
+- Slice 60 expands live signal coverage from normal OpenClaw work seams:
+  ordinary chat turns, task state changes, gateway errors, failed commands,
+  repeated user friction, unresolved questions, session/workflow transitions,
+  heartbeat events, maintenance output, and project-state capsules. Each seam
+  must emit typed source refs and explicit reason codes such as
+  `ordinary_turn_has_open_loop`, `failed_command_observed`, and
+  `unresolved_question_observed`.
+- Slice 61 adds a signal quality/noise budget. Per-signal thresholds,
+  cooldowns, deterministic dedupe windows, recurrence limits, and bounded
+  feedback metadata decide whether a signal is surfaced, downranked, or shown
+  only in why-not-shown diagnostics. Feedback remains control-plane metadata,
+  not semantic truth.
+- Slice 62 upgrades the planning/investigation/drafting handoff contract so
+  `Plan this`, `Investigate`, and `Draft next steps` start bounded chat turns
+  with goal, evidence, constraints, safety boundary, and expected output shape.
+  Non-message handoffs do not call `chat.inject`.
+- Slice 63 makes Heartbeat / Daily Operator Review a primary proactivity
+  surface. It shows top live opportunities under “What would help this user
+  today?”, ranks by urgency, freshness, recurrence, expected value, active
+  context match, feedback/noise state, and confidence, and preserves the same
+  work item ids as inbox/contextual/chat handoff.
+- Slice 64 adds an acceptance gate. Proactivity may move to Skills only if live
+  generation frequency, useful/actioned rate, low noise, heartbeat reliability,
+  handoff quality, zero leakage, zero unsafe action execution, zero autonomous
+  send expansion, and zero primary static fallback criteria pass.
+- Rollback switches:
+  `MODEL_MEMORY_PHASE2_LIVE_SIGNAL_COVERAGE_DISABLED`,
+  `MODEL_MEMORY_PHASE2_PROACTIVITY_NOISE_BUDGET_DISABLED`,
+  `MODEL_MEMORY_PHASE2_PROACTIVE_HANDOFF_QUALITY_DISABLED`,
+  `MODEL_MEMORY_PHASE2_HEARTBEAT_PROACTIVITY_RELIABILITY_DISABLED`, and
+  `MODEL_MEMORY_PHASE2_PROACTIVITY_ACCEPTANCE_GATE_DISABLED`.
+
+Reasoning:
+
+- The remaining proactivity risk is not insufficient scaffolding. It is whether
+  normal work generates useful opportunities often enough, with low enough
+  noise, and whether engaging those opportunities creates useful agent work.
+  Slices 60-64 therefore gate exit from the proactivity bucket on observed
+  product usefulness rather than more rollout controls.

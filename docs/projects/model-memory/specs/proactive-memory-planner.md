@@ -430,6 +430,34 @@ This spec does not authorize:
 7. only later consider stronger automation after proof and operator feedback
 8. use the maintenance loop for event, heartbeat, and daily cadence
 
+## Live-Usefulness Acceptance
+
+Before proactivity exits the Phase 2 proactivity bucket, it must satisfy the
+live-usefulness acceptance sequence:
+
+- Live coverage: normal work seams emit typed signals with source refs and
+  reason codes. Required seams include ordinary chat turns, task state changes,
+  gateway errors, failed commands, repeated user friction, unresolved questions,
+  session/workflow transitions, heartbeat events, maintenance output, and
+  project-state capsules.
+- Noise budget: thresholds, cooldowns, deterministic dedupe windows, recurrence
+  limits, and bounded feedback metadata suppress low-value or repeated
+  opportunities. Suppressed items produce why-not-shown diagnostics instead of
+  primary UI noise.
+- Handoff quality: `Plan this`, `Investigate`, and `Draft next steps` start
+  bounded chat handoffs with goal, evidence, constraints, safety boundary, and
+  expected output shape. These handoffs are not `chat.inject` sends and do not
+  execute actions.
+- Heartbeat reliability: the Daily Operator Review / Heartbeat surface is a
+  primary place for “What would help this user today?” items, ranked by urgency,
+  freshness, recurrence, expected value, active context match, feedback/noise
+  state, and confidence.
+- Acceptance gate: a bounded operator-visible report must decide whether to
+  move to Skills, continue tuning, pause automation, or roll back based on live
+  generation frequency, useful/actioned rate, low noise, heartbeat reliability,
+  handoff quality, zero leakage, zero unsafe action execution, zero autonomous
+  send expansion, and zero primary static fallback count.
+
 ## Related specs
 
 - [Planner Review Artifacts And Surfacing](/projects/model-memory/specs/planner-review-artifacts-and-surfacing)

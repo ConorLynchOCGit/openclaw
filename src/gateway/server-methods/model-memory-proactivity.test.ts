@@ -142,8 +142,52 @@ describe("model-memory proactivity gateway handlers", () => {
       primaryAction: { actionType: "plan_this", requiresChatInject: false },
     });
     expect(payload.queue.items[0].sourceRefs[0]).toContain("gateway://system-events/");
+    expect(payload.queue.items[0].sourceRefs[0]).toContain("/ordinary_chat_turn/");
     expect(payload.queue.items[0].proposedMessage).toContain("verification plan");
     expect(JSON.stringify(payload).toLowerCase()).not.toContain("raw-prompt-marker");
+  });
+
+  it("classifies failed command system events as investigation opportunities", async () => {
+    resetSystemEventsForTest();
+    const sessionKey = "gateway-failed-command-live-test";
+    enqueueSystemEvent("Exec finished (node=local id=run-1, code 1)\nGateway rebuild failed.", {
+      sessionKey,
+      contextKey: "exec:run-1",
+      trusted: false,
+    });
+
+    const respond = vi.fn();
+    await modelMemoryProactivityHandlers["modelMemory.proactivity.queue"]({
+      req: {
+        type: "req",
+        id: "req-failed-command-event",
+        method: "modelMemory.proactivity.queue",
+        params: {},
+      },
+      params: {
+        sessionKey,
+        userId: "conor",
+        recipientId: "conor",
+        projectId: "openclaw",
+        operatorId: "operator-conor",
+      },
+      client: null,
+      isWebchatConnect: () => true,
+      respond,
+      context: {} as never,
+    });
+
+    const [ok, payload] = respond.mock.calls[0];
+    expect(ok).toBe(true);
+    expect(payload.queue.items[0]).toMatchObject({
+      layer: "actionable",
+      workItemKind: "investigation_request",
+      primaryAction: { actionType: "investigate", requiresChatInject: false },
+    });
+    expect(payload.queue.items[0].sourceRefs[0]).toContain("/failed_command/");
+    expect(payload.queue.items[0].blockedReasonCodes).not.toContain(
+      "static_default_candidate_demoted",
+    );
   });
 
   it("turns heartbeat events into live proactive opportunities", async () => {

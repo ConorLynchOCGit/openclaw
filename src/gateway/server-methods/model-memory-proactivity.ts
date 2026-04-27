@@ -5,6 +5,11 @@ import type {
   Phase2LiveProactivitySignalSource,
   Phase2LiveProactivitySignalSourceType,
 } from "../../../extensions/model-memory/src/runtime/phase2-live-proactivity-signals.js";
+import {
+  classifySystemEventForProactivity,
+  convertCoverageSourceToLiveSignalSource,
+  type Phase2LiveSignalCoverageSource,
+} from "../../../extensions/model-memory/src/runtime/phase2-live-signal-coverage-expansion.js";
 import { buildPhase2PersonalAutoSendProductUxReport } from "../../../extensions/model-memory/src/runtime/phase2-personal-autosend-product-ux.js";
 import { buildPhase2ProactivityInboxReport } from "../../../extensions/model-memory/src/runtime/phase2-proactivity-inbox.js";
 import { buildPhase2ProactivityUxRemediationReport } from "../../../extensions/model-memory/src/runtime/phase2-proactivity-ux-remediation.js";
@@ -97,6 +102,10 @@ function eventsForScope(
     .filter((event) => isSafeBoundedSummary(boundedSummary(event.text)))
     .map((event, index): Phase2LiveProactivitySignalSource => {
       const summary = boundedSummary(event.text);
+      const classification = classifySystemEventForProactivity({
+        text: summary,
+        contextKey: event.contextKey,
+      });
       const sourceId = `system-event-${sha256({
         sessionKey,
         projectId,
@@ -104,25 +113,33 @@ function eventsForScope(
         contextKey: event.contextKey ?? null,
         summary,
       }).slice(0, 16)}`;
-      const sourceRef = `gateway://system-events/${sessionKey}/${sourceId}`;
-      return {
+      const sourceRef = `gateway://system-events/${sessionKey}/${classification.seam}/${sourceId}`;
+      const coverageSource: Phase2LiveSignalCoverageSource = {
         sourceId,
-        sourceType: "session_runtime_event",
-        signalKind: "active_work_state",
+        seam: classification.seam,
+        reasonCode: classification.reasonCode,
         projectId,
         sessionKey,
         boundedSummary: summary,
         sourceRefs: [sourceRef],
-        sourceProfileId: event.trusted === false ? "daily_continuity" : "tool_result_capture",
-        authorityTier: event.trusted === false ? "cited_soft" : "tool_grounded",
+        sourceProfileId:
+          classification.seam === "ordinary_chat_turn"
+            ? "explicit_user_turn"
+            : event.trusted === false
+              ? "daily_continuity"
+              : "tool_result_capture",
+        authorityTier:
+          classification.seam === "ordinary_chat_turn"
+            ? "user_authoritative"
+            : event.trusted === false
+              ? "cited_soft"
+              : "tool_grounded",
         contentHash: sha256({ sourceId, summary, index }),
         proofHash: sha256({ sourceRef, sessionKey, projectId }),
         freshness: "recent",
         conflictState: "clear",
-        inspectionOnly: false,
-        noDarkDataStatus: "pass",
-        limitations: ["bounded_system_event_summary_only"],
       };
+      return convertCoverageSourceToLiveSignalSource(coverageSource);
     });
   const heartbeat = getLastHeartbeatEvent();
   const heartbeatSummary = heartbeat

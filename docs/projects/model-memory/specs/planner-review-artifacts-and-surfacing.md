@@ -175,3 +175,22 @@ not opportunities.
 This gate applies to future Skills, tools, and workflow synthesis work too:
 real useful candidate generation must be proven before adding broad rollout,
 default-promotion, auto-installation, or dashboard scaffolding.
+
+## Acceptance-Oriented Surfacing
+
+The review surface must now support the proactivity live-usefulness acceptance
+sequence:
+
+- Primary inbox/actionable counts include only live, unsuppressed actionable
+  work opportunities.
+- Heartbeat / Daily Operator Review is a primary workflow-boundary surface for
+  top ranked “What would help this user today?” items, not a diagnostics-only
+  report.
+- Contextual cards appear only on exact active context match.
+- Suppressed, repeated, stale, blocked, or static fallback items remain in
+  Diagnostics with why-not-shown reason codes.
+- Planning/investigation/drafting CTAs start bounded chat handoffs with
+  expected output contracts and never call `chat.inject`.
+- Acceptance reports must aggregate generation, surfacing, handoff, feedback,
+  dismissal, snooze, suppression, leakage, unsafe action, autonomous-send, and
+  static fallback metrics to decide whether proactivity can move to Skills.
