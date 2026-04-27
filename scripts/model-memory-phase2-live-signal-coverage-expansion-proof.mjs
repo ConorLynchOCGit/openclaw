@@ -161,7 +161,7 @@ async function main() {
     );
     assertNoProhibitedContent({ report, uiState });
   } finally {
-    await harness.stop();
+    await harness.close();
   }
 
   const finalReport = {
