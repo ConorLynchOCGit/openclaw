@@ -1401,6 +1401,20 @@ function getContextMismatchDiagnostics(props: ChatProps): string[] {
     .filter((reason): reason is string => Boolean(reason));
 }
 
+function getActionableQueueItems(props: ChatProps): ProductProactivityQueueItem[] {
+  return (props.productProactivityQueue ?? []).filter(
+    (item) =>
+      item.status === "pending_review" &&
+      item.layer !== "diagnostic" &&
+      item.noDarkDataStatus === "pass" &&
+      Boolean(item.proposedMessage?.trim()) &&
+      Boolean(item.planTitle?.trim()) &&
+      !isGenericPlaceholder(item.proposedMessage) &&
+      !isGenericPlaceholder(item.planTitle) &&
+      (item.blockedIfMissing?.length ?? 0) === 0,
+  );
+}
+
 function getVisibleInboxItems(
   digest: ProactivityInboxDigest | null | undefined,
   view: ProactivityInboxView,
@@ -1442,15 +1456,21 @@ function contextMismatchReason(
 
 function getContextualProactivityItems(props: ChatProps): ProductProactivityQueueItem[] {
   const context = getActiveProactivityContext(props);
-  return (props.productProactivityQueue ?? [])
-    .filter((item) => item.status === "pending_review")
-    .filter((item) => item.noDarkDataStatus === "pass")
-    .filter((item) => item.layer !== "diagnostic")
+  return getActionableQueueItems(props)
     .filter((item) => !contextMismatchReason(item, context))
     .filter((item) => !item.staleLabels.includes("stale"))
     .filter((item) => !item.staleLabels.includes("repeated"))
-    .filter((item) => Boolean(item.proposedMessage?.trim()))
     .slice(0, 1);
+}
+
+function getHeartbeatProactivityItems(
+  props: ChatProps,
+): Array<ProductProactivityQueueItem | ProactivityInboxItem> {
+  const contextualItems = getContextualProactivityItems(props);
+  if (contextualItems.length) {
+    return contextualItems.slice(0, 3);
+  }
+  return getActionableInboxItems(props.proactivityInboxDigest).slice(0, 3);
 }
 
 function renderContextualProactivityCard(props: ChatProps): TemplateResult | typeof nothing {
@@ -1577,7 +1597,7 @@ function renderContextualProactivityCard(props: ChatProps): TemplateResult | typ
 }
 
 function renderHeartbeatProactivityReview(props: ChatProps): TemplateResult | typeof nothing {
-  const items = getContextualProactivityItems(props).slice(0, 3);
+  const items = getHeartbeatProactivityItems(props);
   const diagnosticCount = getContextMismatchDiagnostics(props).length;
   if (!items.length) {
     return nothing;
@@ -1601,6 +1621,7 @@ function renderHeartbeatProactivityReview(props: ChatProps): TemplateResult | ty
         const primaryAction = getProactivityPrimaryActionType(item);
         const proposedLabel =
           item.workItemKind === "message_candidate" ? "Message to send" : "Proposed next step";
+        const queueItemId = item.queueItemId ?? "";
         return html`
           <article
             class="heartbeat-proactivity-review__card"
@@ -1649,10 +1670,15 @@ function renderHeartbeatProactivityReview(props: ChatProps): TemplateResult | ty
                 ? html`<button
                     class="btn btn--sm"
                     type="button"
+                    ?disabled=${!queueItemId}
                     @click=${() =>
                       primaryAction === "send_message"
-                        ? props.onProductProactivityApproveSend?.(item.queueItemId)
-                        : props.onProductProactivityWorkAction?.(item.queueItemId, primaryAction)}
+                        ? queueItemId
+                          ? props.onProductProactivityApproveSend?.(queueItemId)
+                          : undefined
+                        : queueItemId
+                          ? props.onProductProactivityWorkAction?.(queueItemId, primaryAction)
+                          : undefined}
                   >
                     ${getProactivityPrimaryActionLabel(item)}
                   </button>`
@@ -1660,14 +1686,18 @@ function renderHeartbeatProactivityReview(props: ChatProps): TemplateResult | ty
               <button
                 class="btn btn--sm btn--ghost"
                 type="button"
-                @click=${() => props.onProductProactivitySnooze?.(item.queueItemId)}
+                ?disabled=${!queueItemId}
+                @click=${() =>
+                  queueItemId ? props.onProductProactivitySnooze?.(queueItemId) : undefined}
               >
                 Snooze
               </button>
               <button
                 class="btn btn--sm btn--ghost"
                 type="button"
-                @click=${() => props.onProductProactivityDismiss?.(item.queueItemId)}
+                ?disabled=${!queueItemId}
+                @click=${() =>
+                  queueItemId ? props.onProductProactivityDismiss?.(queueItemId) : undefined}
               >
                 Dismiss
               </button>
@@ -1742,15 +1772,15 @@ function renderProactivityEntryPoint(props: ChatProps): TemplateResult | typeof 
   const digest = props.proactivityInboxDigest;
   const queueItems = props.productProactivityQueue ?? [];
   const actionableCount =
-    digest?.layerCounts?.actionable ??
-    digest?.counts.actionable ??
-    queueItems.filter((item) => item.status === "pending_review" && item.layer !== "diagnostic")
-      .length;
+    digest !== null && digest !== undefined
+      ? getActionableInboxItems(digest).length
+      : getActionableQueueItems(props).length;
   const diagnosticCount =
-    digest?.layerCounts?.diagnostic ??
-    digest?.counts.diagnostics ??
-    queueItems.filter((item) => item.status === "blocked" || item.layer === "diagnostic").length;
-  const heartbeatCount = getContextualProactivityItems(props).length;
+    digest !== null && digest !== undefined
+      ? getDiagnosticInboxItems(digest).length
+      : queueItems.filter((item) => item.status === "blocked" || item.layer === "diagnostic")
+          .length;
+  const heartbeatCount = getHeartbeatProactivityItems(props).length;
   const statusLabel = props.proactivityInboxError
     ? "blocked"
     : diagnosticCount > 0

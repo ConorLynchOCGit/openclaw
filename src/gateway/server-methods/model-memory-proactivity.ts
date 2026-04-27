@@ -9,6 +9,8 @@ import { buildPhase2PersonalAutoSendProductUxReport } from "../../../extensions/
 import { buildPhase2ProactivityInboxReport } from "../../../extensions/model-memory/src/runtime/phase2-proactivity-inbox.js";
 import { buildPhase2ProactivityUxRemediationReport } from "../../../extensions/model-memory/src/runtime/phase2-proactivity-ux-remediation.js";
 import { buildPhase2ProductProactivitySurfacingReport } from "../../../extensions/model-memory/src/runtime/phase2-product-proactivity-surfacing.js";
+import { getLastHeartbeatEvent } from "../../infra/heartbeat-events.js";
+import { peekSystemEventEntries } from "../../infra/system-events.js";
 import { ErrorCodes, errorShape } from "../protocol/index.js";
 import type { GatewayRequestHandlers } from "./types.js";
 
@@ -72,13 +74,97 @@ function boundedSummary(value: unknown): string {
   return summary.replace(/\s+/gu, " ").slice(0, 480).trim();
 }
 
+function isSafeBoundedSummary(value: string): boolean {
+  const lower = value.toLowerCase();
+  return !(
+    lower.includes("raw-prompt-marker") ||
+    lower.includes("raw-transcript-marker") ||
+    lower.includes("raw-tool-log-marker") ||
+    lower.includes("secret-marker") ||
+    lower.includes("private-phrase-marker")
+  );
+}
+
 function eventsForScope(
   projectId: string,
   sessionKey: string,
 ): Phase2LiveProactivitySignalSource[] {
-  return liveProactivityEvents
+  const recordedSources = liveProactivityEvents
     .filter((event) => event.projectId === projectId && event.sessionKey === sessionKey)
     .slice(-10);
+  const systemEventSources = peekSystemEventEntries(sessionKey)
+    .slice(-5)
+    .filter((event) => isSafeBoundedSummary(boundedSummary(event.text)))
+    .map((event, index): Phase2LiveProactivitySignalSource => {
+      const summary = boundedSummary(event.text);
+      const sourceId = `system-event-${sha256({
+        sessionKey,
+        projectId,
+        ts: event.ts,
+        contextKey: event.contextKey ?? null,
+        summary,
+      }).slice(0, 16)}`;
+      const sourceRef = `gateway://system-events/${sessionKey}/${sourceId}`;
+      return {
+        sourceId,
+        sourceType: "session_runtime_event",
+        signalKind: "active_work_state",
+        projectId,
+        sessionKey,
+        boundedSummary: summary,
+        sourceRefs: [sourceRef],
+        sourceProfileId: event.trusted === false ? "daily_continuity" : "tool_result_capture",
+        authorityTier: event.trusted === false ? "cited_soft" : "tool_grounded",
+        contentHash: sha256({ sourceId, summary, index }),
+        proofHash: sha256({ sourceRef, sessionKey, projectId }),
+        freshness: "recent",
+        conflictState: "clear",
+        inspectionOnly: false,
+        noDarkDataStatus: "pass",
+        limitations: ["bounded_system_event_summary_only"],
+      };
+    });
+  const heartbeat = getLastHeartbeatEvent();
+  const heartbeatSummary = heartbeat
+    ? boundedSummary(
+        heartbeat.preview ??
+          heartbeat.reason ??
+          `Heartbeat ${heartbeat.status.replace(/-/g, " ")} for current OpenClaw session.`,
+      )
+    : null;
+  const heartbeatSources: Phase2LiveProactivitySignalSource[] =
+    heartbeat && heartbeatSummary && isSafeBoundedSummary(heartbeatSummary)
+      ? [
+          {
+            sourceId: `heartbeat-${sha256({
+              ts: heartbeat.ts,
+              status: heartbeat.status,
+              preview: heartbeat.preview ?? "",
+              reason: heartbeat.reason ?? "",
+              sessionKey,
+            }).slice(0, 16)}`,
+            sourceType:
+              heartbeat.status === "failed"
+                ? "gateway_delivery_or_error_event"
+                : "session_runtime_event",
+            signalKind: heartbeat.status === "failed" ? "recent_failure" : "session_event",
+            projectId,
+            sessionKey,
+            boundedSummary: heartbeatSummary,
+            sourceRefs: [`gateway://heartbeat/last/${heartbeat.ts}`],
+            sourceProfileId: "daily_continuity",
+            authorityTier: "cited_soft",
+            contentHash: sha256({ heartbeat, projectId, sessionKey }),
+            proofHash: sha256({ ts: heartbeat.ts, status: heartbeat.status, sessionKey }),
+            freshness: "recent",
+            conflictState: "clear",
+            inspectionOnly: false,
+            noDarkDataStatus: "pass",
+            limitations: ["bounded_heartbeat_event_summary_only"],
+          },
+        ]
+      : [];
+  return [...recordedSources, ...systemEventSources, ...heartbeatSources].slice(-10);
 }
 
 export const modelMemoryProactivityHandlers: GatewayRequestHandlers = {

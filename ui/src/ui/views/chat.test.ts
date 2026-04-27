@@ -1009,6 +1009,97 @@ describe("chat view", () => {
     expect(onOpenSidebar).toHaveBeenCalledWith({ kind: "proactivityInbox" });
   });
 
+  it("renders heartbeat actions from the same actionable inbox source of truth", () => {
+    const container = document.createElement("div");
+    const onWorkAction = vi.fn();
+    render(
+      renderChat(
+        createProps({
+          productProactivityQueue: [],
+          onProductProactivityWorkAction: onWorkAction,
+          proactivityInboxDigest: {
+            digestId: "digest-heartbeat-source",
+            generatedAt: "2026-04-27T06:00:00.000Z",
+            filters: ["actionable", "pending", "diagnostics"],
+            counts: {
+              actionable: 2,
+              pending: 2,
+              sent: 0,
+              snoozed: 0,
+              dismissed: 0,
+              blocked: 0,
+              autosend_trial: 0,
+              diagnostics: 1,
+            },
+            layerCounts: { actionable: 2, history: 0, diagnostic: 1 },
+            items: [
+              {
+                itemId: "inbox-heartbeat-item",
+                sourceArtifactReportId: "report-heartbeat-source",
+                candidateId: "candidate-heartbeat-source",
+                queueItemId: "queue-heartbeat-source",
+                workItemKind: "planning_request",
+                primaryAction: {
+                  actionType: "plan_this",
+                  label: "Plan this",
+                  description: "Start a bounded planning handoff in chat.",
+                  requiresChatInject: false,
+                  executesAction: false,
+                },
+                messageClass: "operator_approved_suggestion_available",
+                boundedDisplayText: "Plan the real live proactivity generation follow-up.",
+                candidateSummary: "Plan the real live proactivity generation follow-up.",
+                planTitle: "Live proactivity generation follow-up",
+                problem:
+                  "The inbox and heartbeat need to use the same actionable live item source.",
+                suggestedAction: "Plan the live proactivity generation follow-up.",
+                messagePreview: "Plan the live proactivity generation follow-up.",
+                proposedMessage: "Plan the live proactivity generation follow-up.",
+                expectedUserValue:
+                  "Makes the heartbeat card actionable even when the inbox is the source of truth.",
+                userBenefit:
+                  "Makes the heartbeat card actionable even when the inbox is the source of truth.",
+                evidenceSummary: "The inbox contains a bounded live actionable item.",
+                confidence: "high",
+                blockedIfMissing: [],
+                status: "pending_review",
+                filterTags: ["actionable", "pending"],
+                layer: "actionable",
+                sourceRefs: ["gateway://system-events/main/system-event-1"],
+                sourceProfileIds: ["tool_result_capture"],
+                authorityTiers: ["tool_grounded"],
+                contentHashes: ["content-hash-heartbeat"],
+                proofHashes: ["proof-hash-heartbeat"],
+                noDarkDataStatus: "pass",
+                feedbackSummary: {
+                  usefulCount: 0,
+                  notUsefulCount: 0,
+                  tooRepetitiveCount: 0,
+                  wrongContextCount: 0,
+                  unsafePrivateCount: 0,
+                },
+                whyThisAppearedSummary: "Generated from a live runtime event.",
+                blockedReasonCodes: [],
+              },
+            ],
+          },
+        }),
+      ),
+      container,
+    );
+
+    const entryPoint = container.querySelector(".proactivity-entrypoint__button");
+    expect(entryPoint?.textContent).toContain("1 actionable");
+    expect(entryPoint?.textContent).toContain("1 heartbeat");
+    const review = container.querySelector(".heartbeat-proactivity-review");
+    expect(review?.textContent).toContain("What would help this user today?");
+    expect(review?.textContent).toContain("Live proactivity generation follow-up");
+    review
+      ?.querySelector<HTMLButtonElement>(".heartbeat-proactivity-review__actions button")
+      ?.click();
+    expect(onWorkAction).toHaveBeenCalledWith("queue-heartbeat-source", "plan_this");
+  });
+
   it("does not surface static diagnostic fallbacks as actionable heartbeat traffic", () => {
     const container = document.createElement("div");
     render(
@@ -1120,8 +1211,8 @@ describe("chat view", () => {
               "diagnostics",
             ],
             counts: {
-              actionable: 1,
-              pending: 1,
+              actionable: 2,
+              pending: 2,
               sent: 1,
               snoozed: 1,
               dismissed: 1,
@@ -1129,7 +1220,7 @@ describe("chat view", () => {
               autosend_trial: 1,
               diagnostics: 1,
             },
-            layerCounts: { actionable: 1, history: 3, diagnostic: 1 },
+            layerCounts: { actionable: 2, history: 3, diagnostic: 1 },
             items: [
               {
                 itemId: "inbox-item-1",
@@ -1239,8 +1330,8 @@ describe("chat view", () => {
               "diagnostics",
             ],
             counts: {
-              actionable: 1,
-              pending: 1,
+              actionable: 2,
+              pending: 2,
               sent: 1,
               snoozed: 1,
               dismissed: 1,
@@ -1248,7 +1339,7 @@ describe("chat view", () => {
               autosend_trial: 1,
               diagnostics: 1,
             },
-            layerCounts: { actionable: 1, history: 3, diagnostic: 1 },
+            layerCounts: { actionable: 2, history: 3, diagnostic: 1 },
             items: [
               {
                 itemId: "inbox-item-1",

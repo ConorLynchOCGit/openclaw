@@ -1,4 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
+import { emitHeartbeatEvent, resetHeartbeatEventsForTest } from "../../infra/heartbeat-events.js";
+import { enqueueSystemEvent, resetSystemEventsForTest } from "../../infra/system-events.js";
 import { modelMemoryProactivityHandlers } from "./model-memory-proactivity.js";
 
 describe("model-memory proactivity gateway handlers", () => {
@@ -98,6 +100,92 @@ describe("model-memory proactivity gateway handlers", () => {
       planTitle: "Advance current openclaw work",
     });
     expect(payload.queue.items[0].proposedMessage).toContain("concrete planning handoff");
+  });
+
+  it("turns queued runtime system events into live proactive opportunities", async () => {
+    resetSystemEventsForTest();
+    const sessionKey = "gateway-system-event-live-test";
+    enqueueSystemEvent(
+      "Gateway rebuild completed and the user needs a concrete verification plan for proactivity.",
+      { sessionKey, contextKey: "gateway:rebuild" },
+    );
+
+    const respond = vi.fn();
+    await modelMemoryProactivityHandlers["modelMemory.proactivity.queue"]({
+      req: {
+        type: "req",
+        id: "req-system-event",
+        method: "modelMemory.proactivity.queue",
+        params: {},
+      },
+      params: {
+        sessionKey,
+        userId: "conor",
+        recipientId: "conor",
+        projectId: "openclaw",
+        operatorId: "operator-conor",
+      },
+      client: null,
+      isWebchatConnect: () => true,
+      respond,
+      context: {} as never,
+    });
+
+    const [ok, payload] = respond.mock.calls[0];
+    expect(ok).toBe(true);
+    expect(payload.liveDetectionReport).toMatchObject({
+      decision: "live_opportunities_detected",
+    });
+    expect(payload.queue.items[0]).toMatchObject({
+      layer: "actionable",
+      workItemKind: "planning_request",
+      primaryAction: { actionType: "plan_this", requiresChatInject: false },
+    });
+    expect(payload.queue.items[0].sourceRefs[0]).toContain("gateway://system-events/");
+    expect(payload.queue.items[0].proposedMessage).toContain("verification plan");
+    expect(JSON.stringify(payload).toLowerCase()).not.toContain("raw-prompt-marker");
+  });
+
+  it("turns heartbeat events into live proactive opportunities", async () => {
+    resetHeartbeatEventsForTest();
+    emitHeartbeatEvent({
+      status: "failed",
+      reason: "Heartbeat failed while checking the active OpenClaw workflow boundary.",
+      durationMs: 1200,
+    });
+
+    const respond = vi.fn();
+    await modelMemoryProactivityHandlers["modelMemory.proactivity.queue"]({
+      req: {
+        type: "req",
+        id: "req-heartbeat-event",
+        method: "modelMemory.proactivity.queue",
+        params: {},
+      },
+      params: {
+        sessionKey: "gateway-heartbeat-live-test",
+        userId: "conor",
+        recipientId: "conor",
+        projectId: "openclaw",
+        operatorId: "operator-conor",
+      },
+      client: null,
+      isWebchatConnect: () => true,
+      respond,
+      context: {} as never,
+    });
+
+    const [ok, payload] = respond.mock.calls[0];
+    expect(ok).toBe(true);
+    expect(payload.liveDetectionReport).toMatchObject({
+      decision: "live_opportunities_detected",
+    });
+    expect(payload.queue.items[0]).toMatchObject({
+      layer: "actionable",
+      workItemKind: "investigation_request",
+      primaryAction: { actionType: "investigate", requiresChatInject: false },
+    });
+    expect(payload.queue.items[0].sourceRefs[0]).toContain("gateway://heartbeat/last/");
   });
 
   it("returns personal autosend UX settings without raw content", async () => {

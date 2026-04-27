@@ -117,13 +117,13 @@ async function main() {
     projectId: "openclaw",
     sessionKey,
     boundedSummary,
-    sourceRefs: [`gateway://model-memory/proactivity/live-event/${eventSourceId}`],
-    sourceProfileId: "manual_note",
+    sourceRefs: [`gateway://system-events/${sessionKey}/${eventSourceId}`],
+    sourceProfileId: "tool_result_capture",
     authorityTier: "tool_grounded",
     freshness: "recent",
     conflictState: "clear",
     noDarkDataStatus: "pass",
-    limitations: ["proof_used_normal_gateway_live_event_endpoint"],
+    limitations: ["proof_used_normal_gateway_system_event_endpoint"],
   });
 
   const harness = await new OperatorBrowserHarness({ headless: true, origin }).start();
@@ -163,15 +163,18 @@ async function main() {
       report: runtimeReport,
       artifactDir: outputDir,
     });
-    const recorded = await harness.page.evaluate(async (event) => {
+    const recorded = await harness.page.evaluate(async (summary) => {
       const app = document.querySelector("openclaw-app");
       if (!app?.client) {
         throw new Error("openclaw app client is unavailable");
       }
-      return await app.client.request("modelMemory.proactivity.recordLiveEvent", event);
-    }, liveSource);
-    uiEvidence.realEventRecordedViaGateway =
-      recorded?.sourceId === eventSourceId && recorded?.sessionKey === effectiveSessionKey;
+      return await app.client.request("system-event", {
+        text: summary,
+        reason: "model-memory-live-proactivity-proof",
+        mode: "live-proactivity-generation",
+      });
+    }, boundedSummary);
+    uiEvidence.realEventRecordedViaGateway = recorded?.ok === true;
 
     const uiState = await refreshProactivityInUi(harness.page);
     const queueItem = uiState.queueItems?.find((item) => item.layer === "actionable") ?? null;
@@ -261,7 +264,7 @@ async function main() {
         decision: runtimeReport.decision,
         signalId: runtimeReport.signals[0]?.signalId ?? null,
         opportunityId: runtimeReport.opportunities[0]?.opportunityId ?? null,
-        eventSource: "gateway_modelMemory.proactivity.recordLiveEvent",
+        eventSource: "gateway_system-event",
         manualCandidateSeeding: false,
         observedHeartbeatTextSha256: sha256(observedHeartbeatText),
         observedInboxTextSha256: sha256(observedInboxText),

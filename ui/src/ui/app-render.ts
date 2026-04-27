@@ -1895,6 +1895,7 @@ export function renderApp(state: AppViewState) {
                   loadChatHistory(state),
                   refreshChatAvatar(state),
                   state.loadProductProactivityQueue(),
+                  state.loadProactivityInbox(),
                   state.loadPersonalAutoSendUx(),
                 ]);
               },

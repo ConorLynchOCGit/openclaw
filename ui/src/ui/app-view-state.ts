@@ -437,6 +437,7 @@ export type AppViewState = {
     handleSendChat: (messageOverride?: string, opts?: { restoreDraft?: boolean }) => Promise<void>;
     handleAbortChat: () => Promise<void>;
     loadProductProactivityQueue: () => Promise<void>;
+    loadProactivityInbox: () => Promise<void>;
     handleProductProactivityApproveSend: (queueItemId: string) => Promise<void>;
     handleProductProactivityWorkAction: (
       queueItemId: string,
