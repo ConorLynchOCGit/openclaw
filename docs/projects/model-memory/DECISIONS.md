@@ -4003,6 +4003,11 @@ Decision:
   generation frequency, useful/actioned rate, low noise, heartbeat reliability,
   handoff quality, zero leakage, zero unsafe action execution, zero autonomous
   send expansion, and zero primary static fallback criteria pass.
+- The Slice 64 decision outcomes are
+  `proactivity_accepted_move_to_skills`, `continue_tuning`,
+  `pause_automation`, and `rollback_to_manual_only`. A green decision is an
+  evidence gate, not a new automation permission; broad autonomous sending and
+  action execution from surfacing remain blocked after acceptance.
 - Rollback switches:
   `MODEL_MEMORY_PHASE2_LIVE_SIGNAL_COVERAGE_DISABLED`,
   `MODEL_MEMORY_PHASE2_PROACTIVITY_NOISE_BUDGET_DISABLED`,
