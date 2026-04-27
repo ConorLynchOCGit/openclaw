@@ -8,6 +8,11 @@ import {
 } from "../derived-artifact.ts";
 import { sha256JsonValue } from "../hashing.ts";
 import type { SourceAuthorityTier, SourceProfileId } from "../source-authority.ts";
+import type {
+  Phase2ProactivityWorkItemAction,
+  Phase2ProactivityWorkItemKind,
+  Phase2ProactivityWorkItemStatus,
+} from "./phase2-proactivity-work-items.ts";
 import {
   buildPhase2RealMemoryProactivityCandidateReport,
   type Phase2RealMemoryCandidateReport,
@@ -66,6 +71,15 @@ export type Phase2ProductProactivitySurfaceConfig = {
 export type Phase2ProductProactivityQueueItem = {
   queueItemId: string;
   candidateId: string;
+  workItemId: string;
+  workItemKind: Phase2ProactivityWorkItemKind;
+  workItemStatus: Phase2ProactivityWorkItemStatus;
+  primaryAction: Phase2ProactivityWorkItemAction | null;
+  secondaryActions: Phase2ProactivityWorkItemAction[];
+  ctaExplanation: string;
+  handoffStatus: "idle" | "starting" | "started" | "failed";
+  handoffError: string | null;
+  handoffMessageAnchor: string | null;
   messageClass: Phase2UserFacingProactivityDefaultMessageClass;
   boundedDisplayText: string;
   messagePreview: string;
@@ -367,6 +381,94 @@ function displayTextForMessageClass(
   return "An approved operator suggestion is available.";
 }
 
+function workItemKindForMessageClass(
+  messageClass: Phase2UserFacingProactivityDefaultMessageClass,
+): Phase2ProactivityWorkItemKind {
+  if (messageClass === "operator_approved_follow_up_available") {
+    return "investigation_request";
+  }
+  return "planning_request";
+}
+
+function actionForWorkItemKind(
+  kind: Phase2ProactivityWorkItemKind,
+): Phase2ProactivityWorkItemAction {
+  const actions: Record<
+    Exclude<Phase2ProactivityWorkItemKind, "diagnostic">,
+    Phase2ProactivityWorkItemAction
+  > = {
+    planning_request: {
+      actionType: "plan_this",
+      label: "Plan this",
+      description: "Starts a bounded planning request in the current chat.",
+      requiresChatInject: false,
+      executesAction: false,
+    },
+    investigation_request: {
+      actionType: "investigate",
+      label: "Investigate",
+      description: "Starts a bounded investigation request in the current chat.",
+      requiresChatInject: false,
+      executesAction: false,
+    },
+    draft_next_steps: {
+      actionType: "draft_next_steps",
+      label: "Draft next steps",
+      description: "Starts a bounded drafting request in the current chat.",
+      requiresChatInject: false,
+      executesAction: false,
+    },
+    execution_candidate: {
+      actionType: "start_scoped_task",
+      label: "Start scoped task",
+      description: "Creates a scoped task proposal; it does not execute actions.",
+      requiresChatInject: false,
+      executesAction: false,
+    },
+    message_candidate: {
+      actionType: "send_message",
+      label: "Send message",
+      description: "Sends the reviewed message through the explicit message path.",
+      requiresChatInject: true,
+      executesAction: false,
+    },
+    reminder: {
+      actionType: "open_in_current_chat",
+      label: "Open in current chat",
+      description: "Starts a bounded reminder handoff in the current chat.",
+      requiresChatInject: false,
+      executesAction: false,
+    },
+  };
+  return actions[kind === "diagnostic" ? "planning_request" : kind];
+}
+
+function secondaryWorkItemActions(): Phase2ProactivityWorkItemAction[] {
+  return [
+    {
+      actionType: "add_to_daily_review",
+      label: "Add to Daily Review",
+      description: "Keep this opportunity visible at the next review boundary.",
+      requiresChatInject: false,
+      executesAction: false,
+    },
+    {
+      actionType: "snooze",
+      label: "Snooze",
+      description: "Hide this opportunity until a later review boundary.",
+      requiresChatInject: false,
+      executesAction: false,
+    },
+    {
+      actionType: "dismiss",
+      label: "Dismiss",
+      description: "Remove this opportunity from the actionable backlog.",
+      requiresChatInject: false,
+      executesAction: false,
+    },
+  ];
+}
+
 function contentFieldsForMessageClass(input: {
   messageClass: Phase2UserFacingProactivityDefaultMessageClass;
   boundedDisplayText: string;
@@ -393,17 +495,17 @@ function contentFieldsForMessageClass(input: {
   if (input.realCandidate) {
     const isFollowUp = input.messageClass === "operator_approved_follow_up_available";
     const planTitle = isFollowUp
-      ? `Review unresolved follow-up for ${input.scope.projectId}`
-      : `Act on current ${input.scope.projectId} proactivity work`;
+      ? `Investigate unresolved follow-up for ${input.scope.projectId}`
+      : `Plan the next ${input.scope.projectId} step`;
     const problem = `${boundedSummary} Source: ${sourceLabel}.`;
     const proposedMessage = isFollowUp
-      ? `I found an unresolved follow-up tied to ${input.scope.projectId}: ${boundedSummary} Do you want me to handle or close this now?`
-      : `I found a concrete ${input.scope.projectId} proactivity item: ${boundedSummary} Do you want me to apply this next?`;
+      ? `Investigate this unresolved follow-up for ${input.scope.projectId}: ${boundedSummary}. Summarize whether it still matters, what evidence supports it, and the smallest safe next step.`
+      : `Plan this ${input.scope.projectId} opportunity: ${boundedSummary}. Produce concrete next steps from bounded Model Memory evidence and do not edit files unless approved.`;
     return {
       candidateSummary: boundedSummary,
       suggestedAction: isFollowUp
-        ? `Review the follow-up for ${input.scope.projectId} and send it if it still applies.`
-        : `Review this concrete ${input.scope.projectId} suggestion and send the proposed message if useful.`,
+        ? `Investigate the follow-up for ${input.scope.projectId} and decide whether to keep, close, or plan it.`
+        : `Start a bounded planning turn for this concrete ${input.scope.projectId} opportunity.`,
       messagePreview: proposedMessage,
       expectedUserValue: `Helps advance ${input.scope.projectId} by turning bounded memory evidence into a reviewable next step.`,
       planTitle,
@@ -736,14 +838,50 @@ export async function buildPhase2ProductProactivitySurfacingReport(
     realCandidate,
     scope,
   });
+  const candidateId = buildDerivedArtifactId({
+    family: "context_artifact",
+    artifactType: "phase2_product_proactivity_candidate",
+    targetId: queueItemId,
+    seed: realCandidate?.candidateId ?? defaultPromotionReport.reportId,
+  });
+  const workItemKind =
+    decision === "product_queue_enabled" &&
+    Boolean(contentFields.proposedMessage) &&
+    contentFields.blockedIfMissing.length === 0
+      ? workItemKindForMessageClass(effectiveMessageClass)
+      : "diagnostic";
+  const workItemId = buildDerivedArtifactId({
+    family: "context_artifact",
+    artifactType: "phase2_proactivity_work_item",
+    targetId: candidateId,
+    seed: {
+      workItemKind,
+      sourceRefs: uniqueSortedStrings([
+        ...defaultPromotionReport.telemetry.sourceRefs,
+        ...(realCandidate?.sourceRefs ?? []),
+      ]),
+      contentHashes: uniqueSortedStrings([
+        ...defaultPromotionReport.telemetry.contentHashes,
+        ...(realCandidate?.contentHashes ?? []),
+      ]),
+    },
+  });
+  const primaryAction = workItemKind === "diagnostic" ? null : actionForWorkItemKind(workItemKind);
   const queueItem: Phase2ProductProactivityQueueItem = {
     queueItemId,
-    candidateId: buildDerivedArtifactId({
-      family: "context_artifact",
-      artifactType: "phase2_product_proactivity_candidate",
-      targetId: queueItemId,
-      seed: realCandidate?.candidateId ?? defaultPromotionReport.reportId,
-    }),
+    candidateId,
+    workItemId,
+    workItemKind,
+    workItemStatus: workItemKind === "diagnostic" ? "blocked" : "not_started",
+    primaryAction,
+    secondaryActions: workItemKind === "diagnostic" ? [] : secondaryWorkItemActions(),
+    ctaExplanation:
+      workItemKind === "diagnostic"
+        ? "Diagnostic evidence is review-only and cannot start work directly."
+        : "Starts a bounded agent handoff in the current chat; no external action executes without approval.",
+    handoffStatus: "idle",
+    handoffError: null,
+    handoffMessageAnchor: null,
     messageClass: effectiveMessageClass,
     boundedDisplayText,
     ...contentFields,

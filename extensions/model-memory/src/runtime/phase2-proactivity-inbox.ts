@@ -20,6 +20,11 @@ import {
   buildPhase2ProactivityFeedbackReport,
   type Phase2ProactivityFeedbackReport,
 } from "./phase2-proactivity-feedback-loop.ts";
+import type {
+  Phase2ProactivityWorkItemAction,
+  Phase2ProactivityWorkItemKind,
+  Phase2ProactivityWorkItemStatus,
+} from "./phase2-proactivity-work-items.ts";
 import {
   buildPhase2ProductProactivitySurfacingReport,
   type Phase2ProductProactivityQueueItem,
@@ -45,6 +50,15 @@ export type Phase2ProactivityInboxItem = {
   sourceArtifactReportId: string;
   candidateId: string;
   queueItemId?: string;
+  workItemId?: string;
+  workItemKind?: Phase2ProactivityWorkItemKind;
+  workItemStatus?: Phase2ProactivityWorkItemStatus;
+  primaryAction?: Phase2ProactivityWorkItemAction | null;
+  secondaryActions?: Phase2ProactivityWorkItemAction[];
+  ctaExplanation?: string;
+  handoffStatus?: "idle" | "starting" | "started" | "failed";
+  handoffError?: string | null;
+  handoffMessageAnchor?: string | null;
   messageClass:
     | "operator_approved_suggestion_available"
     | "operator_approved_follow_up_available"
@@ -384,6 +398,22 @@ function cloneQueueItemForInbox(input: {
     sourceArtifactReportId: input.sourceArtifactReportId,
     candidateId: input.queueItem.candidateId,
     queueItemId: input.queueItem.queueItemId,
+    workItemId: input.queueItem.workItemId,
+    workItemKind: input.queueItem.workItemKind,
+    workItemStatus:
+      input.status === "sent"
+        ? "done"
+        : input.status === "snoozed"
+          ? "snoozed"
+          : input.status === "dismissed"
+            ? "dismissed"
+            : input.queueItem.workItemStatus,
+    primaryAction: input.layer === "actionable" ? input.queueItem.primaryAction : null,
+    secondaryActions: input.queueItem.secondaryActions,
+    ctaExplanation: input.queueItem.ctaExplanation,
+    handoffStatus: input.queueItem.handoffStatus,
+    handoffError: input.queueItem.handoffError,
+    handoffMessageAnchor: input.queueItem.handoffMessageAnchor,
     messageClass: input.queueItem.messageClass,
     boundedDisplayText: input.displayText ?? input.queueItem.boundedDisplayText,
     messagePreview: input.displayText ?? input.queueItem.messagePreview,
