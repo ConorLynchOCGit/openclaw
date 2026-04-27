@@ -116,8 +116,13 @@ async function main() {
     });
     Object.assign(uiEvidence, {
       heartbeatVisible: true,
-      heartbeatConcretePlanVisible:
-        observedText.includes("Why now") && observedText.includes("Expected value"),
+      heartbeatConcretePlanVisible: (() => {
+        const normalizedObservedText = observedText.toLowerCase();
+        return (
+          normalizedObservedText.includes("why now") &&
+          normalizedObservedText.includes("expected value")
+        );
+      })(),
       inboxSameWorkItemVisible: inboxWorkItemCount > 0,
       headerCountVisible: (
         await harness.page.locator(".proactivity-entrypoint__button").innerText()
