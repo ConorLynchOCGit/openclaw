@@ -359,6 +359,12 @@ The Control UI surfaces Model Memory proactivity through normal chat chrome:
 - Daily Operator Review / Heartbeat shows a visible “What would help this user
   today?” section with top concrete work opportunity cards instead of hiding
   proactivity only inside diagnostics.
+- Primary actionable proactivity is live-signal only. Static bundled/default or
+  doc-seeded fallback candidates appear in Diagnostics and do not inflate the
+  Proactivity count, heartbeat count, or contextual chat card.
+- Live proactivity cards must name the real work event, why it matters now, the
+  proposed next step, expected value, evidence summary, and
+  confidence/limitations before any CTA is available.
 - Feedback controls are secondary “Was this useful?” controls, not primary CTAs.
 - Proactivity UI payloads must remain bounded and exclude raw prompts, full
   transcripts, raw tool logs, secrets, and private phrases.

@@ -352,6 +352,37 @@ than waiting for the operator to ask for them. The default channel is heartbeat
 for persistent candidates, with turn-level surfacing when the candidate is
 directly relevant to the current work.
 
+The planner must prove usefulness before rollout scaffolding. A capability is
+not ready merely because it can safely surface an artifact. It must prove that a
+real live work signal creates a useful output. For proactivity, that means a
+real ordinary-turn capture, session/runtime event, task or queue state,
+maintenance-loop output, project-state capsule, derived memory artifact,
+operator feedback event, or gateway delivery/error event produces a concrete
+work item without manual proof-fixture seeding.
+
+Static bundled/default/doc-derived candidates are diagnostics and fallback
+evidence only. They must not appear as primary actionable suggestions, inflate
+primary counts, or occupy the heartbeat “What would help this user today?”
+surface unless promoted by a live signal.
+
+The same generator-first rule applies to Skills, tools, and workflows: prove
+that real work inputs produce concrete useful candidate outputs before adding
+default promotion, broad rollout controls, auto-installation scaffolding, or
+extensive operator dashboards.
+
+Every actionable live opportunity must include:
+
+- specific title
+- why-now explanation
+- proposed next step
+- expected user value
+- evidence summary
+- confidence and limitations
+- source refs, source profile ids, authority tiers, content hashes, and proof
+  hashes
+- freshness/conflict labels
+- no-dark-data status
+
 ## Privacy, trust, and prompt injection
 
 Phase 2 should let the planner observe:

@@ -146,3 +146,32 @@ primary chat workspace remains preserved:
   must show success/failure feedback after any send action
 - diagnostics such as auto-send simulation, blocked preflight, proof metadata,
   and why-not-shown records must remain outside the primary actionable count
+
+## Live generation gate
+
+Review surfacing is not proof of usefulness by itself. A planner/proactivity
+item may enter the primary actionable inbox, heartbeat, or contextual chat card
+only when a live work signal produced it. Static bundled/default/doc-seeded
+items are diagnostics/fallbacks and must carry a reason such as
+`static_default_candidate_demoted`.
+
+Live signals may come from:
+
+- ordinary-turn capture
+- session/runtime events
+- task or queue state
+- maintenance-loop output
+- project-state capsules
+- derived memory artifacts
+- operator feedback events
+- gateway delivery or error events
+
+Primary actionable items require concrete content fields: title, why now,
+proposed next step, expected user value, evidence summary, confidence or
+limitations, provenance/source profile/authority/hash metadata, freshness or
+conflict labels, and no-dark-data pass. Generic placeholders are diagnostics,
+not opportunities.
+
+This gate applies to future Skills, tools, and workflow synthesis work too:
+real useful candidate generation must be proven before adding broad rollout,
+default-promotion, auto-installation, or dashboard scaffolding.

@@ -3914,3 +3914,46 @@ Reasoning:
   proactivity should create momentum by starting planning, investigation,
   drafting, or a scoped execution proposal while preserving explicit approval
   boundaries.
+
+## 2026-04-27 - proactivity must prove live generation before more rollout scaffolding
+
+Decision:
+
+- Safety, surfacing, telemetry, and approval proofs are not sufficient evidence
+  that a proactive feature is useful. A proactivity capability is not product
+  ready until a real live event creates a useful concrete work item without
+  manual proof-fixture candidate seeding.
+- Static bundled/default/doc-seeded candidates are allowed only as diagnostics
+  or fallback evidence. They must not inflate primary actionable counts, appear
+  in the “What would help this user today?” heartbeat surface, or become
+  primary user-facing work opportunities.
+- Live proactivity generation must use bounded real signals such as ordinary
+  turn capture, session/runtime events, task or queue state, maintenance-loop
+  output, project-state capsules, derived memory artifacts, operator feedback,
+  and gateway delivery/error events.
+- Every live opportunity must include a specific title, why-now explanation,
+  proposed next step, expected user value, evidence summary, confidence or
+  limitations, provenance/source profile/authority metadata, deterministic
+  ids/hashes, freshness/conflict labels, and no-dark-data status.
+- Generic placeholder-only text such as “a suggestion is available” or “review
+  the memory-derived suggestion” is not actionable.
+- The live generation rollback switch is
+  `MODEL_MEMORY_PHASE2_LIVE_PROACTIVITY_SIGNALS_DISABLED`; rollback returns
+  live generation to diagnostics/static-fallback mode, not primary fake
+  suggestions.
+- Future Memory Phase 2 buckets, including Skills and tool/workflow synthesis,
+  must prove real useful output from real work inputs before building extensive
+  rollout controls, dashboards, default-promotion gates, or automation
+  scaffolding.
+- No-dark-data, provenance, external-text-as-evidence, explicit approval,
+  no autonomous-send expansion, and no action execution from surfacing remain
+  mandatory.
+
+Reasoning:
+
+- The concrete failure was treating “can safely surface/deliver a proactive
+  artifact” as equivalent to “can generate useful proactive opportunities from
+  live work.” Candidate generation stayed mostly doc/default/proof-derived while
+  the surrounding system accumulated gates, dashboards, controls, and proof
+  paths. Product usefulness now requires generator-first proof before any
+  further expansion.

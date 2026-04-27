@@ -680,6 +680,24 @@ For each implementation wave:
   chat without `chat.inject`, autonomous send expansion, or action execution.
   Proof artifact target:
   `.artifacts/model-memory/phase2-proactivity-work-items-heartbeat-proof/<timestamp>/`.
+- The next proactivity usefulness correction gates product readiness on live
+  generation, not just safe surfacing. Static bundled/default/doc-seeded
+  candidates are demoted to Diagnostics/fallback and excluded from primary
+  actionable counts, heartbeat cards, and contextual surfacing. Live
+  opportunities must come from real OpenClaw work signals such as ordinary turn
+  capture, session/runtime events, task or queue state, maintenance-loop output,
+  project-state capsules, derived memory artifacts, operator feedback, or
+  gateway delivery/error events. Every actionable item must include a specific
+  title, why now, proposed next step, expected user value, evidence summary,
+  confidence/limitations, provenance, source profile, authority, deterministic
+  ids/hashes, freshness/conflict labels, and no-dark-data status. The live proof
+  must show a real event creating a new proactive work item without manual
+  candidate seeding. Rollback via
+  `MODEL_MEMORY_PHASE2_LIVE_PROACTIVITY_SIGNALS_DISABLED` returns to
+  diagnostics-only/static fallback behavior. This generator-first standard also
+  applies to Skills, tools, and workflow synthesis: do not build extensive
+  rollout/control scaffolding until real useful outputs from real work inputs
+  are proven.
 - capture at least one durable evidence artifact per wave
 - update the relevant human test prompt pack before declaring the wave ready for
   live validation

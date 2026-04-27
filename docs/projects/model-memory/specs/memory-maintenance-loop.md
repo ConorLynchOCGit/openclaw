@@ -119,6 +119,21 @@ one-liners.
 - No hidden review queue may be the only review path.
 - Lack of review never promotes risky or low-authority items.
 
+## Live Usefulness Gate
+
+Maintenance-loop output is useful only when it creates bounded review work from
+real runtime evidence. Heartbeat and daily review must not treat static
+bundled/default planner candidates as primary actionable items. Static fallback
+items may appear in diagnostics only.
+
+When maintenance produces a proactive opportunity, it must preserve source refs,
+source profile ids, authority tiers, content/proof hashes, freshness/conflict
+state, and no-dark-data status. The opportunity must name a specific problem,
+why it matters now, the smallest safe next step, and expected user value.
+
+The same standard applies to future Skills, tool, and workflow candidates before
+any rollout scaffolding, default promotion, or automation controls are added.
+
 ## Related Specs
 
 - [Memory Ops Closed Loop](/projects/model-memory/specs/memory-ops-closed-loop)

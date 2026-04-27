@@ -242,7 +242,29 @@ Must not show:
 - raw prompts, full transcripts, raw tool logs, secrets, or private phrases
 - proof/debug artifacts in the primary actionable count
 - generic placeholder-only suggestions as actionable cards
+- static bundled/default/doc-seeded fallback candidates as primary actionable
+  cards; those belong in diagnostics unless a live signal promotes them
 - auto-send or action execution without a separate approved capability decision
+
+### Live Generation Before Rollout
+
+Operator UX work must not repeat the proactivity failure mode where safe
+surfacing infrastructure outpaced useful generation. For proactivity, Skills,
+tools, and workflow synthesis, a primary product surface should not be expanded
+until a real work event produces a useful bounded item without manual
+proof-fixture seeding.
+
+The UX-ready item must show:
+
+- what happened in real work
+- why it matters now
+- what the agent can do next
+- the smallest safe next step
+- expected user value
+- provenance and confidence/limitations
+
+Static fallback candidates, simulations, proof metadata, and blocked
+preflights stay in diagnostics and never inflate primary counts.
 
 ### Diff, Test, and Build Status Cards
 
