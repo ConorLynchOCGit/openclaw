@@ -310,6 +310,18 @@ function entryFromOpportunity(
   };
 }
 
+function clearAttentionForInactiveStatus(entry: Phase2OpportunityLedgerEntry): void {
+  if (
+    entry.status === "done" ||
+    entry.status === "superseded" ||
+    entry.status === "stale" ||
+    entry.status === "dismissed" ||
+    entry.status === "snoozed"
+  ) {
+    entry.attentionRequired = false;
+  }
+}
+
 export async function buildPhase2ProactivityOpportunityLedgerReport(
   input: Phase2OpportunityLedgerInput = {},
 ): Promise<Phase2OpportunityLedgerReport> {
@@ -334,6 +346,7 @@ export async function buildPhase2ProactivityOpportunityLedgerReport(
       existing.status = "superseded";
       existing.supersededByOpportunityId = entry.opportunityId;
       existing.updatedAt = generatedAt;
+      clearAttentionForInactiveStatus(existing);
       duplicateSignals.push({
         signalId: buildDerivedArtifactId({
           family: "context_artifact",
@@ -359,6 +372,7 @@ export async function buildPhase2ProactivityOpportunityLedgerReport(
       entry.updatedAt = override.updatedAt ?? generatedAt;
       entry.resolvedByChatMessageId = override.resolvedByChatMessageId ?? null;
       entry.supersededByOpportunityId = override.supersededByOpportunityId ?? null;
+      clearAttentionForInactiveStatus(entry);
     }
 
     for (const source of input.activitySources ?? []) {
@@ -374,6 +388,7 @@ export async function buildPhase2ProactivityOpportunityLedgerReport(
         entry.status = "done";
         entry.resolvedByChatMessageId = source.sourceMessageId;
         entry.updatedAt = generatedAt;
+        clearAttentionForInactiveStatus(entry);
         resolutionSignals.push({
           signalId: buildDerivedArtifactId({
             family: "context_artifact",
@@ -391,6 +406,7 @@ export async function buildPhase2ProactivityOpportunityLedgerReport(
       } else if (SUPERSESSION_MARKERS.test(source.boundedText)) {
         entry.status = "superseded";
         entry.updatedAt = generatedAt;
+        clearAttentionForInactiveStatus(entry);
         supersessionSignals.push({
           signalId: buildDerivedArtifactId({
             family: "context_artifact",
@@ -420,6 +436,7 @@ export async function buildPhase2ProactivityOpportunityLedgerReport(
             "source_ref_state_changed",
           ]);
           entry.updatedAt = generatedAt;
+          clearAttentionForInactiveStatus(entry);
           supersessionSignals.push({
             signalId: buildDerivedArtifactId({
               family: "context_artifact",

@@ -70,4 +70,33 @@ describe("phase2 proactivity opportunity extraction", () => {
       report.checks.find((check) => check.reasonCode === "generic_placeholder_blocked")?.status,
     ).toBe("pass");
   });
+
+  it("treats bounded implementation next steps as concrete opportunities", async () => {
+    const report = await buildPhase2ProactivityOpportunityExtractionReport({
+      sources: [
+        {
+          sourceId: "assistant-implement-1",
+          sourceKind: "assistant_turn",
+          sourceMessageId: "msg-assistant-implement-1",
+          projectId: "openclaw",
+          sessionKey: "main",
+          boundedText: [
+            "1. **Title:** Runtime-authoritative assistant-output proactivity capture",
+            "- **Why now:** The live workflow still drops normal assistant answers before they become same-session opportunities.",
+            "- **Proposed next step:** Implement a bounded runtime packet that captures assistant final answers at session-persistence time and writes canonical proactivity opportunity records without relying on UI-originated chat-activity callbacks.",
+          ].join("\n"),
+          sourceRefs: ["chat://main/assistant_turn/msg-assistant-implement-1"],
+          sourceProfileId: "manual_note",
+          authorityTier: "tool_grounded",
+          noDarkDataStatus: "pass",
+        },
+      ],
+    });
+
+    expect(report.decision).toBe("opportunities_extracted");
+    expect(report.candidates).toHaveLength(1);
+    expect(report.candidates[0]?.proposedNextStep).toContain(
+      "captures assistant final answers at session-persistence time",
+    );
+  });
 });

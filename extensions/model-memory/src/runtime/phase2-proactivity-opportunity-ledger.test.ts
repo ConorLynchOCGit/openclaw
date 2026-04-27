@@ -83,12 +83,14 @@ describe("phase2 proactivity opportunity ledger", () => {
       ],
     });
 
+    expect(report.decision).toBe("ledger_ready");
     expect(report.ledger.entries).toHaveLength(2);
     expect(
       report.ledger.entries.find((entry) => entry.opportunityId === "opp-ledger-1"),
     ).toMatchObject({
       status: "superseded",
       supersededByOpportunityId: "opp-ledger-2",
+      attentionRequired: false,
     });
     expect(
       report.supersessionSignals.some((signal) => signal.reasonCode === "duplicate_replaced"),

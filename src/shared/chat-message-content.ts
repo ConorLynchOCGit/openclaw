@@ -90,6 +90,19 @@ export function resolveAssistantMessagePhase(message: unknown): AssistantPhase |
   return explicitPhases.size === 1 ? [...explicitPhases][0] : undefined;
 }
 
+function hasExplicitAssistantTextPhases(content: unknown[]): boolean {
+  return content.some((block) => {
+    if (!block || typeof block !== "object") {
+      return false;
+    }
+    const record = block as { type?: unknown; textSignature?: unknown };
+    if (record.type !== "text") {
+      return false;
+    }
+    return Boolean(parseAssistantTextSignature(record.textSignature)?.phase);
+  });
+}
+
 export function extractAssistantTextForPhase(
   message: unknown,
   options?: {
@@ -136,16 +149,7 @@ export function extractAssistantTextForPhase(
     return undefined;
   }
 
-  const hasExplicitPhasedTextBlocks = entry.content.some((block) => {
-    if (!block || typeof block !== "object") {
-      return false;
-    }
-    const record = block as { type?: unknown; textSignature?: unknown };
-    if (record.type !== "text") {
-      return false;
-    }
-    return Boolean(parseAssistantTextSignature(record.textSignature)?.phase);
-  });
+  const hasExplicitPhasedTextBlocks = hasExplicitAssistantTextPhases(entry.content);
 
   // Once explicit phased blocks exist, unphased extraction should not revive
   // legacy text from the same message.
@@ -185,4 +189,41 @@ export function extractAssistantVisibleText(message: unknown): string | undefine
     return finalAnswerText;
   }
   return extractAssistantTextForPhase(message);
+}
+
+export function extractAssistantTextSignatureId(
+  message: unknown,
+  options?: { phase?: AssistantPhase },
+): string | undefined {
+  if (!message || typeof message !== "object") {
+    return undefined;
+  }
+  const entry = message as { phase?: unknown; content?: unknown };
+  if (!Array.isArray(entry.content)) {
+    return undefined;
+  }
+  const requestedPhase = options?.phase;
+  const messagePhase = normalizeAssistantPhase(entry.phase);
+  const hasExplicitPhasedTextBlocks = hasExplicitAssistantTextPhases(entry.content);
+  for (const block of entry.content) {
+    if (!block || typeof block !== "object") {
+      continue;
+    }
+    const record = block as { type?: unknown; textSignature?: unknown };
+    if (record.type !== "text") {
+      continue;
+    }
+    const parsed = parseAssistantTextSignature(record.textSignature);
+    if (!parsed?.id) {
+      continue;
+    }
+    if (!requestedPhase) {
+      return parsed.id;
+    }
+    const resolvedPhase = parsed.phase ?? (hasExplicitPhasedTextBlocks ? undefined : messagePhase);
+    if (resolvedPhase === requestedPhase) {
+      return parsed.id;
+    }
+  }
+  return undefined;
 }

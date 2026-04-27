@@ -3095,6 +3095,13 @@ td.data-table-key-col {
   flex-wrap: wrap;
 }
 
+.heartbeat-proactivity-review__header-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
 .heartbeat-proactivity-review__eyebrow,
 .heartbeat-proactivity-review__meta,
 .heartbeat-proactivity-review__section > span {
@@ -3103,6 +3110,13 @@ td.data-table-key-col {
   color: var(--muted);
   letter-spacing: 0.03em;
   text-transform: uppercase;
+}
+
+.heartbeat-proactivity-review__count,
+.inline-proactivity-card__count {
+  color: var(--text-strong);
+  font-size: 12px;
+  line-height: 1.35;
 }
 
 .heartbeat-proactivity-review h3,
@@ -3123,6 +3137,29 @@ td.data-table-key-col {
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
+}
+
+.proactivity-surface-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--card) 78%, var(--secondary) 22%);
+  color: var(--text);
+}
+
+.proactivity-surface-chip--accent {
+  border-color: color-mix(in srgb, var(--accent) 48%, var(--border));
+  background: color-mix(in srgb, var(--accent) 12%, var(--card));
+  color: var(--text-strong);
+}
+
+.proactivity-surface-chip--draft {
+  border-color: color-mix(in srgb, var(--ok) 44%, var(--border));
+  background: color-mix(in srgb, var(--ok) 12%, var(--card));
+  color: color-mix(in srgb, var(--ok) 78%, var(--text-strong));
 }
 
 .heartbeat-proactivity-review__section {
@@ -3196,6 +3233,9 @@ td.data-table-key-col {
 
 .inline-proactivity-card__item h4 {
   margin: 0;
+  color: var(--text-strong);
+  font-size: 15px;
+  line-height: 1.35;
 }
 
 .inline-proactivity-card__section {

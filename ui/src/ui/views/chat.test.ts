@@ -1024,6 +1024,147 @@ describe("chat view", () => {
     expect(onWorkAction).toHaveBeenCalledWith("queue-inline-1", "plan_this");
   });
 
+  it("prioritizes visible assistant-derived opportunities in contextual and heartbeat surfaces", () => {
+    const container = document.createElement("div");
+    render(
+      renderChat(
+        createProps({
+          sessionKey: "main",
+          messages: [
+            {
+              role: "assistant",
+              content: [
+                {
+                  type: "text",
+                  text: "Implement the assistant-final capture filter and verify the heartbeat path.",
+                  textSignature: JSON.stringify({
+                    v: 1,
+                    id: "msg_recent_followup",
+                    phase: "final_answer",
+                  }),
+                },
+              ],
+              timestamp: Date.parse("2026-04-27T18:05:00.000Z"),
+            },
+          ],
+          activeProactivityContext: {
+            userId: "conorlynch",
+            recipientId: "conorlynch",
+            projectId: "openclaw-platform",
+            sessionKey: "main",
+            operatorId: "operator-conorlynch",
+            source: "chat_active_session",
+          },
+          productProactivityQueue: [
+            {
+              queueItemId: "queue-older-contextual",
+              candidateId: "candidate-older-contextual",
+              workItemId: "work-item-older-contextual",
+              messageClass: "operator_approved_suggestion_available",
+              boundedDisplayText: "Planner candidate-plan generation",
+              candidateSummary:
+                "An older contextual item should not displace the visible answer follow-up.",
+              planTitle: "Planner candidate-plan generation",
+              problem: "Older contextual planner work is still open.",
+              suggestedAction: "Review the planner item if nothing more current exists.",
+              messagePreview: "Review the older planner item.",
+              proposedMessage: "Review the older planner item.",
+              expectedUserValue: "Keeps background planner work visible.",
+              userBenefit: "Keeps background planner work visible.",
+              evidenceSummary: "Older contextual item.",
+              confidence: "medium",
+              blockedIfMissing: [],
+              status: "pending_review",
+              layer: "actionable",
+              workItemKind: "planning_request",
+              eligibleScope: {
+                environment: "live",
+                userId: "conorlynch",
+                recipientId: "conorlynch",
+                projectId: "openclaw-platform",
+                sessionKey: "main",
+                operatorId: "operator-conorlynch",
+                allowedMessageClasses: ["operator_approved_suggestion_available"],
+                proofPrerequisiteIds: [],
+                proofPrerequisiteHashes: [],
+              },
+              sourceRefs: ["docs/projects/model-memory/specs/proactive-memory-planner.md"],
+              sourceProfileIds: ["curated_repo_doc"],
+              authorityTiers: ["curated_authoritative"],
+              contentHashes: ["content-hash-older"],
+              proofHashes: ["proof-hash-older"],
+              noDarkDataStatus: "pass",
+              staleLabels: [],
+              conflictLabels: [],
+              blockedReasonCodes: [],
+              generatedAt: "2026-04-27T17:00:00.000Z",
+              updatedAt: "2026-04-27T17:00:00.000Z",
+            },
+            {
+              queueItemId: "queue-recent-answer",
+              candidateId: "candidate-recent-answer",
+              workItemId: "work-item-recent-answer",
+              messageClass: "operator_approved_suggestion_available",
+              boundedDisplayText: "Implement assistant-final capture filter",
+              candidateSummary: "The visible assistant answer created a current-session follow-up.",
+              planTitle: "Implement assistant-final capture filter",
+              problem: "The latest assistant answer identified a concrete same-session next step.",
+              suggestedAction: "Plan the assistant-final capture filter change now.",
+              messagePreview: "Plan the assistant-final capture filter change now.",
+              proposedMessage: "Plan the assistant-final capture filter change now.",
+              expectedUserValue: "Turns the visible answer into immediate workflow momentum.",
+              userBenefit: "Turns the visible answer into immediate workflow momentum.",
+              evidenceSummary: "Derived from the visible assistant final answer.",
+              confidence: "high",
+              blockedIfMissing: [],
+              status: "pending_review",
+              layer: "actionable",
+              workItemKind: "planning_request",
+              eligibleScope: {
+                environment: "live",
+                userId: "conorlynch",
+                recipientId: "conorlynch",
+                projectId: "openclaw-platform",
+                sessionKey: "main",
+                operatorId: "operator-conorlynch",
+                allowedMessageClasses: ["operator_approved_suggestion_available"],
+                proofPrerequisiteIds: [],
+                proofPrerequisiteHashes: [],
+              },
+              sourceRefs: ["chat://main/assistant_turn/msg_recent_followup"],
+              sourceProfileIds: ["tool_result_capture"],
+              authorityTiers: ["tool_grounded"],
+              contentHashes: ["content-hash-recent"],
+              proofHashes: ["proof-hash-recent"],
+              noDarkDataStatus: "pass",
+              staleLabels: [],
+              conflictLabels: [],
+              blockedReasonCodes: [],
+              generatedAt: "2026-04-27T18:05:00.000Z",
+              updatedAt: "2026-04-27T18:05:00.000Z",
+            },
+          ],
+        }),
+      ),
+      container,
+    );
+
+    const contextualCard = container.querySelector(".contextual-proactivity-card");
+    expect(contextualCard?.textContent).toContain("Implement assistant-final capture filter");
+    expect(contextualCard?.textContent).not.toContain("Planner candidate-plan generation");
+
+    const heartbeatCards = Array.from(
+      container.querySelectorAll<HTMLElement>(".heartbeat-proactivity-review [data-work-item-id]"),
+    );
+    expect(heartbeatCards).toHaveLength(2);
+    expect(heartbeatCards[0]?.getAttribute("data-work-item-id")).toBe("work-item-recent-answer");
+    expect(
+      heartbeatCards.some(
+        (card) => card.getAttribute("data-work-item-id") === "work-item-older-contextual",
+      ),
+    ).toBe(true);
+  });
+
   it("adds proactivity to the visible heartbeat review surface with an inbox path", () => {
     const container = document.createElement("div");
     const onOpenSidebar = vi.fn();

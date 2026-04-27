@@ -1494,13 +1494,114 @@ function contextMismatchReason(
   return null;
 }
 
+function isOperationalAssistantMessage(message: unknown): boolean {
+  if (!message || typeof message !== "object") {
+    return false;
+  }
+  const record = message as {
+    model?: unknown;
+    __openclaw?: { kind?: unknown };
+  };
+  if (
+    record.__openclaw?.kind === "turn_activity" ||
+    record.__openclaw?.kind === "model_memory_activity"
+  ) {
+    return true;
+  }
+  if (record.model === "turn-activity" || record.model === "memory-activity") {
+    return true;
+  }
+  const text = extractTextCached(message)?.trim().toLowerCase() ?? "";
+  return text.startsWith("turn activity:") || text.startsWith("[memory activity]");
+}
+
+function readAssistantMessageIds(message: unknown): string[] {
+  if (!message || typeof message !== "object") {
+    return [];
+  }
+  const record = message as {
+    id?: unknown;
+    __openclaw?: { id?: unknown };
+    content?: unknown;
+  };
+  const ids = new Set<string>();
+  if (typeof record.id === "string" && record.id.trim()) {
+    ids.add(record.id.trim());
+  }
+  if (typeof record.__openclaw?.id === "string" && record.__openclaw.id.trim()) {
+    ids.add(record.__openclaw.id.trim());
+  }
+  if (!Array.isArray(record.content)) {
+    return [...ids];
+  }
+  for (const block of record.content) {
+    if (!block || typeof block !== "object") {
+      continue;
+    }
+    const signature = parseAssistantTextSignature(
+      (block as { textSignature?: unknown }).textSignature,
+    );
+    if (signature?.id) {
+      ids.add(signature.id);
+    }
+  }
+  return [...ids];
+}
+
+function getVisibleAssistantSourceRefs(props: ChatProps): Set<string> {
+  const refs = new Set<string>();
+  for (const message of props.messages) {
+    const normalized = normalizeMessage(message);
+    if (normalizeRoleForGrouping(normalized.role ?? "") !== "assistant") {
+      continue;
+    }
+    if (isOperationalAssistantMessage(message)) {
+      continue;
+    }
+    for (const messageId of readAssistantMessageIds(message)) {
+      refs.add(`chat://${props.sessionKey}/assistant_turn/${messageId}`);
+    }
+  }
+  return refs;
+}
+
+function currentSessionAssistantPriority(
+  item: ProductProactivityQueueItem,
+  visibleAssistantSourceRefs: Set<string>,
+): number {
+  const matchingVisibleSource = item.sourceRefs.some((sourceRef) =>
+    visibleAssistantSourceRefs.has(sourceRef),
+  );
+  const sessionAssistantSource = item.sourceRefs.some(
+    (sourceRef) =>
+      sourceRef.startsWith(`chat://${item.eligibleScope.sessionKey}/assistant_turn/`) ||
+      sourceRef.startsWith(`chat://${item.eligibleScope.sessionKey}/planning_output/`),
+  );
+  const updatedAtMs = Date.parse(item.updatedAt);
+  const recencyBonus = Number.isFinite(updatedAtMs) ? updatedAtMs : 0;
+  return (
+    (matchingVisibleSource ? 10_000 : 0) +
+    (sessionAssistantSource ? 1_000 : 0) +
+    (item.draftReady ? 100 : 0) +
+    recencyBonus
+  );
+}
+
 function getContextualProactivityItems(props: ChatProps): ProductProactivityQueueItem[] {
   const context = getActiveProactivityContext(props);
+  const visibleAssistantSourceRefs = getVisibleAssistantSourceRefs(props);
   return getActionableQueueItems(props)
     .filter((item) => !contextMismatchReason(item, context))
     .filter((item) => !item.staleLabels.includes("stale"))
     .filter((item) => !item.staleLabels.includes("repeated"))
-    .slice(0, 1);
+    .toSorted(
+      (left, right) =>
+        currentSessionAssistantPriority(right, visibleAssistantSourceRefs) -
+          currentSessionAssistantPriority(left, visibleAssistantSourceRefs) ||
+        right.updatedAt.localeCompare(left.updatedAt) ||
+        left.queueItemId.localeCompare(right.queueItemId),
+    )
+    .slice(0, 3);
 }
 
 function getHeartbeatProactivityItems(
@@ -1519,34 +1620,11 @@ function readInlineAssistantMessageIds(group: MessageGroup): string[] {
   }
   const ids = new Set<string>();
   for (const entry of group.messages) {
-    const message = entry.message;
-    if (!message || typeof message !== "object") {
+    if (isOperationalAssistantMessage(entry.message)) {
       continue;
     }
-    const record = message as {
-      id?: unknown;
-      __openclaw?: { id?: unknown };
-      content?: unknown;
-    };
-    if (typeof record.id === "string" && record.id.trim()) {
-      ids.add(record.id.trim());
-    }
-    if (typeof record.__openclaw?.id === "string" && record.__openclaw.id.trim()) {
-      ids.add(record.__openclaw.id.trim());
-    }
-    if (!Array.isArray(record.content)) {
-      continue;
-    }
-    for (const block of record.content) {
-      if (!block || typeof block !== "object") {
-        continue;
-      }
-      const signature = parseAssistantTextSignature(
-        (block as { textSignature?: unknown }).textSignature,
-      );
-      if (signature?.id) {
-        ids.add(signature.id);
-      }
+    for (const id of readAssistantMessageIds(entry.message)) {
+      ids.add(id);
     }
   }
   return [...ids];
@@ -1579,7 +1657,12 @@ function renderInlineProactivityCard(
   return html`
     <section class="inline-proactivity-card" aria-label="Follow-ups from this answer">
       <div class="inline-proactivity-card__header">
-        <div class="inline-proactivity-card__eyebrow">Follow-ups from this answer</div>
+        <div>
+          <div class="inline-proactivity-card__eyebrow">Follow-ups from this answer</div>
+          <div class="inline-proactivity-card__count">
+            ${items.length} ready ${items.length === 1 ? "next step" : "next steps"}
+          </div>
+        </div>
         <button
           class="btn btn--xs btn--ghost"
           type="button"
@@ -1598,9 +1681,20 @@ function renderInlineProactivityCard(
             data-work-item-id=${item.workItemId ?? item.queueItemId}
           >
             <div class="inline-proactivity-card__meta">
-              <span>${item.workItemKind?.replace(/_/g, " ") ?? "planning request"}</span>
-              ${item.draftReady ? html`<span>draft ready</span>` : nothing}
-              <span>${item.confidence ?? "medium"} confidence</span>
+              <span class="proactivity-surface-chip">
+                ${item.workItemKind?.replace(/_/g, " ") ?? "planning request"}
+              </span>
+              <span class="proactivity-surface-chip proactivity-surface-chip--accent"
+                >ready now</span
+              >
+              ${item.draftReady
+                ? html`<span class="proactivity-surface-chip proactivity-surface-chip--draft"
+                    >draft ready</span
+                  >`
+                : nothing}
+              <span class="proactivity-surface-chip"
+                >${item.confidence ?? "medium"} confidence</span
+              >
             </div>
             <h4>${getProactivityPlanTitle(item)}</h4>
             <div class="inline-proactivity-card__section">
@@ -1792,13 +1886,18 @@ function renderHeartbeatProactivityReview(props: ChatProps): TemplateResult | ty
           <div class="heartbeat-proactivity-review__eyebrow">Daily Operator Review</div>
           <h3>What would help this user today?</h3>
         </div>
-        <button
-          class="btn btn--sm btn--ghost heartbeat-proactivity-review__inbox"
-          type="button"
-          @click=${() => props.onOpenSidebar?.({ kind: "proactivityInbox" })}
-        >
-          Open inbox · ${items.length} top
-        </button>
+        <div class="heartbeat-proactivity-review__header-actions">
+          <div class="heartbeat-proactivity-review__count">
+            ${items.length} top ${items.length === 1 ? "item" : "items"}
+          </div>
+          <button
+            class="btn btn--sm btn--ghost heartbeat-proactivity-review__inbox"
+            type="button"
+            @click=${() => props.onOpenSidebar?.({ kind: "proactivityInbox" })}
+          >
+            Open inbox
+          </button>
+        </div>
       </div>
       ${items.map((item) => {
         const primaryAction = getProactivityPrimaryActionType(item);
@@ -1812,9 +1911,20 @@ function renderHeartbeatProactivityReview(props: ChatProps): TemplateResult | ty
             data-queue-item-id=${item.queueItemId}
           >
             <div class="heartbeat-proactivity-review__meta">
-              <span>${item.workItemKind?.replace(/_/g, " ") ?? "planning request"}</span>
-              ${item.draftReady ? html`<span>draft ready</span>` : nothing}
-              <span>${item.confidence ?? "medium"} confidence</span>
+              <span class="proactivity-surface-chip">
+                ${item.workItemKind?.replace(/_/g, " ") ?? "planning request"}
+              </span>
+              <span class="proactivity-surface-chip proactivity-surface-chip--accent"
+                >ready now</span
+              >
+              ${item.draftReady
+                ? html`<span class="proactivity-surface-chip proactivity-surface-chip--draft"
+                    >draft ready</span
+                  >`
+                : nothing}
+              <span class="proactivity-surface-chip"
+                >${item.confidence ?? "medium"} confidence</span
+              >
             </div>
             <h4>${getProactivityPlanTitle(item)}</h4>
             <div class="heartbeat-proactivity-review__section">

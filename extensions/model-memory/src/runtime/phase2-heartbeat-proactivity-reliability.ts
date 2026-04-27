@@ -154,11 +154,28 @@ function confidenceScore(confidence: "high" | "medium" | "low"): number {
   return confidence === "high" ? 3 : confidence === "medium" ? 2 : 1;
 }
 
+function recencyScore(updatedAt: string, now: Date): number {
+  const updatedAtMs = Date.parse(updatedAt);
+  if (!Number.isFinite(updatedAtMs)) {
+    return 0;
+  }
+  const ageMinutes = Math.max(0, (now.getTime() - updatedAtMs) / 60_000);
+  if (ageMinutes <= 15) {
+    return 4;
+  }
+  if (ageMinutes <= 60) {
+    return 2;
+  }
+  return 0;
+}
+
 export function rankHeartbeatProactivityItems(input: {
   queueItems: Phase2ProductProactivityQueueItem[];
   activeContextWorkItemIds?: string[];
+  now?: Date;
 }): Phase2HeartbeatProactivityRanking[] {
   const active = new Set(input.activeContextWorkItemIds ?? []);
+  const now = input.now ?? new Date();
   return input.queueItems
     .filter((item) => item.layer === "actionable" && item.status === "pending_review")
     .map((item) => {
@@ -167,6 +184,11 @@ export function rankHeartbeatProactivityItems(input: {
       const recurrence = item.blockedReasonCodes.includes("recurrence_limit_exceeded") ? 0 : 2;
       const expectedUserValue = item.expectedUserValue.length > 24 ? 3 : 1;
       const activeContextMatch = active.size === 0 || active.has(item.workItemId);
+      const recentAssistantOpportunity =
+        recencyScore(item.updatedAt, now) > 0 &&
+        item.sourceRefs.some((sourceRef) =>
+          /\/(?:assistant_turn|planning_output)\//u.test(sourceRef),
+        );
       const feedbackNoisePenalty = item.blockedReasonCodes.some((code) =>
         ["feedback_suppressed_signal", "cooldown_same_content"].includes(code),
       )
@@ -178,6 +200,8 @@ export function rankHeartbeatProactivityItems(input: {
         recurrence +
         expectedUserValue +
         confidenceScore(item.confidence) +
+        recencyScore(item.updatedAt, now) +
+        (recentAssistantOpportunity ? 5 : 0) +
         (activeContextMatch ? 2 : 0) -
         feedbackNoisePenalty;
       return {
@@ -201,6 +225,9 @@ export function rankHeartbeatProactivityItems(input: {
           "ranked_by_freshness",
           "ranked_by_recurrence",
           "ranked_by_expected_value",
+          ...(recentAssistantOpportunity
+            ? ["recent_assistant_output"]
+            : ["older_or_non_assistant_source"]),
           ...(activeContextMatch ? ["active_context_match"] : ["background_context"]),
         ],
       };
@@ -239,6 +266,7 @@ export async function buildPhase2HeartbeatProactivityReliabilityReport(
   const rankings = rankHeartbeatProactivityItems({
     queueItems,
     activeContextWorkItemIds: input.activeContextWorkItemIds,
+    now: input.now,
   });
   const rankedIds = new Set(rankings.map((ranking) => ranking.workItemId));
   const topItems = rankings

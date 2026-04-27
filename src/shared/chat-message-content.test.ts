@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   extractAssistantTextForPhase,
+  extractAssistantTextSignatureId,
   extractAssistantVisibleText,
   extractFirstTextBlock,
   resolveAssistantMessagePhase,
@@ -194,6 +195,49 @@ describe("resolveAssistantMessagePhase", () => {
           },
         ],
       }),
+    ).toBeUndefined();
+  });
+});
+
+describe("extractAssistantTextSignatureId", () => {
+  it("prefers the final_answer text signature id when requested", () => {
+    expect(
+      extractAssistantTextSignatureId(
+        {
+          role: "assistant",
+          content: [
+            {
+              type: "text",
+              text: "Working...",
+              textSignature: JSON.stringify({ v: 1, id: "msg_commentary", phase: "commentary" }),
+            },
+            {
+              type: "text",
+              text: "Done.",
+              textSignature: JSON.stringify({ v: 1, id: "msg_final", phase: "final_answer" }),
+            },
+          ],
+        },
+        { phase: "final_answer" },
+      ),
+    ).toBe("msg_final");
+  });
+
+  it("does not return commentary ids when requesting final_answer", () => {
+    expect(
+      extractAssistantTextSignatureId(
+        {
+          role: "assistant",
+          content: [
+            {
+              type: "text",
+              text: "Still thinking",
+              textSignature: JSON.stringify({ v: 1, id: "msg_commentary", phase: "commentary" }),
+            },
+          ],
+        },
+        { phase: "final_answer" },
+      ),
     ).toBeUndefined();
   });
 });

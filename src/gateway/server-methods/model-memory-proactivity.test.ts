@@ -306,6 +306,38 @@ describe("model-memory proactivity gateway handlers", () => {
     ).toBe(true);
   });
 
+  it("skips assistant-turn fallback capture when bounded text is missing", async () => {
+    const respond = vi.fn();
+    await modelMemoryProactivityHandlers["modelMemory.proactivity.recordChatActivity"]({
+      req: {
+        type: "req",
+        id: "req-chat-activity-missing-text",
+        method: "modelMemory.proactivity.recordChatActivity",
+        params: {},
+      },
+      params: {
+        sessionKey: "main",
+        projectId: "openclaw",
+        sourceKind: "assistant_turn",
+        sourceMessageId: "assistant-missing-text",
+      },
+      client: null,
+      isWebchatConnect: () => true,
+      respond,
+      context: {} as never,
+    });
+
+    expect(respond).toHaveBeenCalledWith(
+      true,
+      expect.objectContaining({
+        ok: true,
+        skipped: true,
+        reasonCode: "missing_bounded_text",
+        sourceKind: "assistant_turn",
+      }),
+    );
+  });
+
   it("returns personal autosend UX settings without raw content", async () => {
     const respond = vi.fn();
     await modelMemoryProactivityHandlers["modelMemory.proactivity.personalAutosendUx"]({

@@ -149,7 +149,7 @@ const GENERIC_PLACEHOLDER_PATTERNS = [
 ];
 
 const ACTIONABLE_VERB_PATTERN =
-  /\b(plan|investigate|draft|review|advance|fix|check|validate|resolve|follow up|compare|audit|stabilize|clean up|document|ship|close|reduce|verify)\b/i;
+  /\b(plan|investigate|draft|review|advance|fix|check|validate|resolve|follow up|compare|audit|stabilize|clean up|document|ship|close|reduce|verify|implement|build|move|wire)\b/i;
 
 const RESOLUTION_MARKER_PATTERN =
   /\b(done|completed|implemented|resolved|handled|closed|superseded|obsolete|already done)\b/i;

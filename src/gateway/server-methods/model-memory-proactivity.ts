@@ -40,6 +40,14 @@ function boundedMultilineSummary(value: unknown): string {
     .trim();
 }
 
+function boundedMultilineSummaryOrUndefined(value: unknown): string | undefined {
+  const raw = readString(value);
+  if (!raw) {
+    return undefined;
+  }
+  return boundedMultilineSummary(raw);
+}
+
 function readSourceKind(value: unknown) {
   const kind = readString(value);
   if (
@@ -93,11 +101,20 @@ export const modelMemoryProactivityHandlers: GatewayRequestHandlers = {
   "modelMemory.proactivity.recordChatActivity": async ({ params, respond }) => {
     const sessionKey = readString(params.sessionKey) ?? "main";
     const projectId = readString(params.projectId) ?? process.env.OPENCLAW_PROJECT_ID ?? "openclaw";
-    const boundedText = boundedMultilineSummary(params.boundedText);
     const sourceKind = readSourceKind(params.sourceKind);
+    const boundedText = boundedMultilineSummaryOrUndefined(params.boundedText);
+    if (!boundedText && (sourceKind === "assistant_turn" || sourceKind === "planning_output")) {
+      respond(true, {
+        ok: true,
+        skipped: true,
+        reasonCode: "missing_bounded_text",
+        sourceKind,
+      });
+      return;
+    }
     const sourceMessageId =
       readString(params.sourceMessageId) ??
-      `chat-message-${sha256({ sessionKey, projectId, sourceKind, boundedText }).slice(0, 16)}`;
+      `chat-message-${sha256({ sessionKey, projectId, sourceKind, boundedText: boundedText ?? null }).slice(0, 16)}`;
     const sourceRunId = readString(params.sourceRunId);
     const sourceId =
       readString(params.sourceId) ??
@@ -110,7 +127,7 @@ export const modelMemoryProactivityHandlers: GatewayRequestHandlers = {
       sourceMessageId,
       sourceRunId,
       userPromptSummary: readString(params.userPromptSummary),
-      boundedText,
+      boundedText: boundedText ?? boundedMultilineSummary(params.boundedText),
     });
     respond(true, {
       ok: true,

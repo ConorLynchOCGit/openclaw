@@ -45,9 +45,12 @@ import {
   readSessionMessages,
 } from "../gateway/session-utils.js";
 import {
+  extractAssistantTextForPhase,
+  extractAssistantTextSignatureId,
   extractFirstTextBlock,
   extractAssistantVisibleText,
   parseAssistantTextSignature,
+  resolveAssistantMessagePhase,
 } from "../shared/chat-message-content.js";
 import { getLastHeartbeatEvent } from "./heartbeat-events.js";
 import { peekSystemEventEntries } from "./system-events.js";
@@ -300,6 +303,36 @@ function readTextSignatureId(message: unknown): string | undefined {
   return undefined;
 }
 
+function isOperationalAssistantText(text: string): boolean {
+  const normalized = text.trim().toLowerCase();
+  return (
+    normalized.startsWith("turn activity:") ||
+    normalized.startsWith("[memory activity]") ||
+    normalized === "heartbeat_ok"
+  );
+}
+
+function isOperationalAssistantMessage(message: unknown, text: string): boolean {
+  if (!message || typeof message !== "object") {
+    return false;
+  }
+  const record = message as {
+    model?: unknown;
+    __openclaw?: {
+      kind?: unknown;
+    };
+  };
+  const kind = readString(record.__openclaw?.kind);
+  const model = readString(record.model);
+  return (
+    kind === "turn_activity" ||
+    kind === "model_memory_activity" ||
+    model === "turn-activity" ||
+    model === "memory-activity" ||
+    isOperationalAssistantText(text)
+  );
+}
+
 function transcriptMessagesToAuthoritativeRecords(input: {
   messages: unknown[];
   projectId: string;
@@ -349,11 +382,21 @@ function transcriptMessagesToAuthoritativeRecords(input: {
     if (role !== "assistant") {
       continue;
     }
-    const text = boundedMultilineSummary(extractAssistantVisibleText(message));
-    if (!text || !isSafeBoundedSummary(text)) {
+    const messagePhase = resolveAssistantMessagePhase(message);
+    if (messagePhase === "commentary") {
+      continue;
+    }
+    const finalAnswerText = extractAssistantTextForPhase(message, { phase: "final_answer" });
+    const assistantVisibleText = finalAnswerText ?? extractAssistantVisibleText(message);
+    if (!assistantVisibleText) {
+      continue;
+    }
+    const text = boundedMultilineSummary(assistantVisibleText);
+    if (!text || !isSafeBoundedSummary(text) || isOperationalAssistantMessage(message, text)) {
       continue;
     }
     const sourceMessageId =
+      extractAssistantTextSignatureId(message, { phase: "final_answer" }) ??
       readTextSignatureId(message) ??
       readString((message as { __openclaw?: { id?: unknown } }).__openclaw?.id) ??
       `assistant:${sha256({ sessionKey: input.sessionKey, text, timestamp: messageTimestamp }).slice(0, 16)}`;

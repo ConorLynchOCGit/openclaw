@@ -89,6 +89,29 @@ describe("phase2 heartbeat proactivity reliability", () => {
     expect(rankings[0]?.reasonCodes).toContain("ranked_by_expected_value");
   });
 
+  it("prefers recent assistant-output opportunities over older heartbeat-only items", () => {
+    const rankings = rankHeartbeatProactivityItems({
+      now: new Date("2026-04-27T00:20:00.000Z"),
+      queueItems: [
+        item("heartbeat", {
+          sourceRefs: ["gateway://heartbeat/old"],
+          updatedAt: "2026-04-27T00:00:00.000Z",
+        }),
+        item("assistant", {
+          workItemId: "work-assistant",
+          sourceRefs: ["chat://main/assistant_turn/msg-assistant"],
+          updatedAt: "2026-04-27T00:15:00.000Z",
+          attentionRequired: false,
+        }),
+      ],
+    });
+
+    expect(rankings[0]).toMatchObject({
+      workItemId: "work-assistant",
+    });
+    expect(rankings[0]?.reasonCodes).toContain("recent_assistant_output");
+  });
+
   it("builds primary heartbeat surface with shared work item ids", async () => {
     const queueItem = item("top");
     const report = await buildPhase2HeartbeatProactivityReliabilityReport({
