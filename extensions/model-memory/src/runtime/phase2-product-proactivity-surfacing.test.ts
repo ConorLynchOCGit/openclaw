@@ -24,7 +24,11 @@ describe("phase2 product proactivity surfacing", () => {
     expect(report.queue.items).toHaveLength(1);
     expect(report.queue.items[0]).toMatchObject({
       status: "pending_review",
-      boundedDisplayText: "A recent Model Memory task has a follow-up ready for review.",
+      boundedDisplayText: "Fix the broken Proactivity Inbox before expanding capability.",
+      planTitle: "Act on current openclaw proactivity work",
+      proposedMessage:
+        "I found a concrete openclaw proactivity item: Fix the broken Proactivity Inbox before expanding capability. Do you want me to apply this next?",
+      layer: "actionable",
       noDarkDataStatus: "pass",
     });
     expect(report.realCandidateReport?.decision).toBe("real_candidates_generated");

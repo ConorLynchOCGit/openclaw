@@ -196,6 +196,32 @@ Capabilities:
 - pause/resume long jobs
 - show blocked state and reason
 
+### Proactivity Inbox
+
+Make proactive memory review visible without taking over the chat transcript.
+
+Status: product-correctness remediation keeps Proactivity as a compact chat
+chrome entry point and opens the full inbox in the side drawer.
+
+Must show:
+
+- actionable count separate from history and diagnostics
+- concrete plan title, problem, proposed message, expected value, evidence
+  summary, and confidence
+- Review plan and Edit message before send before Approve & Send
+- success/failure feedback after `chat.inject`
+- View sent message after successful send
+- sent/snoozed/dismissed history separate from actionable work
+- diagnostics for blocked/preflight/simulation/why-not-shown items behind a
+  Diagnostics view
+
+Must not show:
+
+- raw prompts, full transcripts, raw tool logs, secrets, or private phrases
+- proof/debug artifacts in the primary actionable count
+- generic placeholder-only suggestions as actionable cards
+- auto-send or action execution without a separate approved capability decision
+
 ### Diff, Test, and Build Status Cards
 
 Represent engineering work as structured status cards instead of prose.

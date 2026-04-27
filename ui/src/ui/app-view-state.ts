@@ -43,6 +43,7 @@ import type {
   ToolsCatalogResult,
   PersonalAutoSendUxSettings,
   ProactivityInboxDigest,
+  ProactivityInboxView,
   ProductProactivityFeedbackControl,
   ProductProactivityQueueItem,
 } from "./types.ts";
@@ -101,6 +102,8 @@ export type AppViewState = {
   proactivityInboxDigest: ProactivityInboxDigest | null;
   proactivityInboxLoading: boolean;
   proactivityInboxError: string | null;
+  proactivityInboxView: ProactivityInboxView;
+  productProactivityEditedMessages: Record<string, string>;
   personalAutoSendUx: PersonalAutoSendUxSettings | null;
   personalAutoSendUxLoading: boolean;
   personalAutoSendUxError: string | null;
@@ -440,6 +443,8 @@ export type AppViewState = {
       queueItemId: string,
       control: ProductProactivityFeedbackControl,
     ) => void;
+    handleProductProactivityEditMessage: (queueItemId: string, value: string) => void;
+    setProactivityInboxView: (view: ProactivityInboxView) => void;
     loadPersonalAutoSendUx: (userDisabled?: boolean) => Promise<void>;
     handlePersonalAutoSendDisable: () => Promise<void>;
     removeQueuedMessage: (id: string) => void;

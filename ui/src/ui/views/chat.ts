@@ -43,7 +43,9 @@ import { detectTextDirection } from "../text-direction.ts";
 import type {
   GatewaySessionRow,
   PersonalAutoSendUxSettings,
+  ProductProactivityActiveContext,
   ProactivityInboxDigest,
+  ProactivityInboxView,
   ProactivityInboxItem,
   ProductProactivityFeedbackControl,
   ProductProactivityQueueItem,
@@ -84,6 +86,9 @@ export type ChatProps = {
   proactivityInboxDigest?: ProactivityInboxDigest | null;
   proactivityInboxLoading?: boolean;
   proactivityInboxError?: string | null;
+  proactivityInboxView?: ProactivityInboxView;
+  activeProactivityContext?: ProductProactivityActiveContext | null;
+  productProactivityEditedMessages?: Record<string, string>;
   personalAutoSendUx?: PersonalAutoSendUxSettings | null;
   personalAutoSendUxLoading?: boolean;
   personalAutoSendUxError?: string | null;
@@ -121,6 +126,8 @@ export type ChatProps = {
   onProductProactivityDismiss?: (id: string) => void;
   onProductProactivitySnooze?: (id: string) => void;
   onProductProactivityFeedback?: (id: string, control: ProductProactivityFeedbackControl) => void;
+  onProductProactivityEditMessage?: (id: string, value: string) => void;
+  onProactivityInboxViewChange?: (view: ProactivityInboxView) => void;
   onPersonalAutoSendDisable?: () => void;
   onDismissSideResult?: () => void;
   onNewSession: () => void;
@@ -1001,12 +1008,11 @@ function renderOperatorExperiencePanel(params: {
     .map((name) => ({ name, kind: classifyEngineeringTool(name) }))
     .filter((entry): entry is { name: string; kind: string } => Boolean(entry.kind));
   const sessions = props.sessions?.sessions?.slice(0, 5) ?? [];
-  const proactivityItems = props.proactivityInboxDigest?.items ?? [];
   const mustSurfaceItems = getContextualProactivityItems(props);
   const pendingProactivityCount =
-    props.proactivityInboxDigest?.counts.pending ??
+    props.proactivityInboxDigest?.counts.actionable ??
     (props.productProactivityQueue ?? []).filter((item) => item.status === "pending_review").length;
-  const backgroundProactivityCount = Math.max(0, proactivityItems.length - mustSurfaceItems.length);
+  const backgroundProactivityCount = getDiagnosticInboxItems(props.proactivityInboxDigest).length;
   const hostStatus = props.hostOperatorStatus ?? {
     state: "ordinary" as const,
     reason: "host-operator status not loaded in this client view",
@@ -1108,7 +1114,7 @@ function renderOperatorExperiencePanel(params: {
                       )
                     : html`<div>No must-surface proactivity for this active context.</div>`}
                   <div class="operator-row">
-                    <span>Grouped lower-priority/background</span>
+                    <span>Grouped diagnostics/background</span>
                     <span>${backgroundProactivityCount}</span>
                   </div>
                   <div class="operator-row">
@@ -1224,13 +1230,147 @@ function getProactivityExpectedUserValue(
   );
 }
 
+function getProactivityPlanTitle(item: ProductProactivityQueueItem | ProactivityInboxItem): string {
+  return item.planTitle ?? getProactivityCandidateSummary(item);
+}
+
+function getProactivityProblem(item: ProductProactivityQueueItem | ProactivityInboxItem): string {
+  return item.problem ?? getProactivityCandidateSummary(item);
+}
+
+function getProactivityProposedMessage(
+  props: ChatProps,
+  item: ProductProactivityQueueItem | ProactivityInboxItem,
+): string {
+  const id = "itemId" in item ? (item.queueItemId ?? item.itemId) : item.queueItemId;
+  return (
+    props.productProactivityEditedMessages?.[id] ??
+    item.proposedMessage ??
+    getProactivityMessagePreview(item)
+  );
+}
+
+function getProactivityUserBenefit(
+  item: ProductProactivityQueueItem | ProactivityInboxItem,
+): string {
+  return item.userBenefit ?? getProactivityExpectedUserValue(item);
+}
+
+function getProactivityEvidenceSummary(
+  item: ProductProactivityQueueItem | ProactivityInboxItem,
+): string {
+  return (
+    item.evidenceSummary ??
+    ("whyThisAppearedSummary" in item
+      ? item.whyThisAppearedSummary
+      : `Evidence: ${item.sourceRefs.slice(0, 2).join(", ") || "missing"}.`)
+  );
+}
+
+function isGenericPlaceholder(text: string | undefined): boolean {
+  if (!text) {
+    return true;
+  }
+  return /approved (operator |follow-up )?suggestion is available|suggestion available|has a follow-up ready for review/i.test(
+    text,
+  );
+}
+
+function isActionableProactivityItem(item: ProactivityInboxItem): boolean {
+  return (
+    item.layer === "actionable" &&
+    item.status === "pending_review" &&
+    item.noDarkDataStatus === "pass" &&
+    Boolean(item.proposedMessage?.trim()) &&
+    Boolean(item.planTitle?.trim()) &&
+    !isGenericPlaceholder(item.proposedMessage) &&
+    !isGenericPlaceholder(item.planTitle) &&
+    (item.blockedIfMissing?.length ?? 0) === 0
+  );
+}
+
+function getActionableInboxItems(
+  digest: ProactivityInboxDigest | null | undefined,
+): ProactivityInboxItem[] {
+  return (digest?.items ?? []).filter(isActionableProactivityItem);
+}
+
+function getHistoryInboxItems(
+  digest: ProactivityInboxDigest | null | undefined,
+  view: Extract<ProactivityInboxView, "sent" | "snoozed" | "dismissed">,
+): ProactivityInboxItem[] {
+  return (digest?.items ?? []).filter(
+    (item) => item.status === view && item.layer !== "diagnostic",
+  );
+}
+
+function getDiagnosticInboxItems(
+  digest: ProactivityInboxDigest | null | undefined,
+): ProactivityInboxItem[] {
+  return (digest?.items ?? []).filter(
+    (item) =>
+      item.layer === "diagnostic" ||
+      item.status === "blocked" ||
+      item.messageClass === "autosend_simulation",
+  );
+}
+
+function getContextMismatchDiagnostics(props: ChatProps): string[] {
+  const context = getActiveProactivityContext(props);
+  return (props.productProactivityQueue ?? [])
+    .map((item) => contextMismatchReason(item, context))
+    .filter((reason): reason is string => Boolean(reason));
+}
+
+function getVisibleInboxItems(
+  digest: ProactivityInboxDigest | null | undefined,
+  view: ProactivityInboxView,
+): ProactivityInboxItem[] {
+  if (view === "actionable") {
+    return getActionableInboxItems(digest);
+  }
+  if (view === "diagnostics") {
+    return getDiagnosticInboxItems(digest);
+  }
+  return getHistoryInboxItems(digest, view);
+}
+
+function getActiveProactivityContext(props: ChatProps): ProductProactivityActiveContext {
+  return (
+    props.activeProactivityContext ?? {
+      userId: "local-openclaw-user",
+      recipientId: "local-openclaw-recipient",
+      projectId: "openclaw",
+      sessionKey: props.sessionKey,
+      operatorId: "local-openclaw-operator",
+      source: "chat_active_session",
+    }
+  );
+}
+
+function contextMismatchReason(
+  item: ProductProactivityQueueItem,
+  context: ProductProactivityActiveContext,
+): string | null {
+  if (item.eligibleScope.projectId !== context.projectId) {
+    return `not shown because candidate project=${item.eligibleScope.projectId}, active project=${context.projectId}`;
+  }
+  if (item.eligibleScope.sessionKey !== context.sessionKey) {
+    return `not shown because candidate session=${item.eligibleScope.sessionKey}, active session=${context.sessionKey}`;
+  }
+  return null;
+}
+
 function getContextualProactivityItems(props: ChatProps): ProductProactivityQueueItem[] {
+  const context = getActiveProactivityContext(props);
   return (props.productProactivityQueue ?? [])
     .filter((item) => item.status === "pending_review")
     .filter((item) => item.noDarkDataStatus === "pass")
-    .filter((item) => item.eligibleScope.sessionKey === props.sessionKey)
+    .filter((item) => item.layer !== "diagnostic")
+    .filter((item) => !contextMismatchReason(item, context))
     .filter((item) => !item.staleLabels.includes("stale"))
     .filter((item) => !item.staleLabels.includes("repeated"))
+    .filter((item) => Boolean(item.proposedMessage?.trim()))
     .slice(0, 1);
 }
 
@@ -1239,7 +1379,9 @@ function renderContextualProactivityCard(props: ChatProps): TemplateResult | typ
   if (!item) {
     return nothing;
   }
-  const whyShown = `Shown because this session matches project ${item.eligibleScope.projectId} / session ${item.eligibleScope.sessionKey}.`;
+  const context = getActiveProactivityContext(props);
+  const whyShown = `Shown because this session matches project ${context.projectId} / session ${context.sessionKey}.`;
+  const proposedMessage = getProactivityProposedMessage(props, item);
   return html`
     <section
       class="contextual-proactivity-card"
@@ -1248,17 +1390,49 @@ function renderContextualProactivityCard(props: ChatProps): TemplateResult | typ
     >
       <div class="contextual-proactivity-card__body">
         <div class="contextual-proactivity-card__eyebrow">Relevant proactivity</div>
+        <h3 class="contextual-proactivity-card__title">${getProactivityPlanTitle(item)}</h3>
         <div class="contextual-proactivity-card__section">
-          <span>Candidate summary</span>
-          <strong>${getProactivityCandidateSummary(item)}</strong>
+          <span>Problem</span>
+          <strong>${getProactivityProblem(item)}</strong>
         </div>
         <div class="contextual-proactivity-card__section">
-          <span>Suggested action</span>
-          <strong>${getProactivitySuggestedAction(item)}</strong>
+          <span>Proposed message</span>
+          <div>${proposedMessage}</div>
         </div>
+        <details class="contextual-proactivity-card__details">
+          <summary>Review plan</summary>
+          <div class="operator-row">
+            <span>Suggested action</span>
+            <span>${getProactivitySuggestedAction(item)}</span>
+          </div>
+          <div class="operator-row">
+            <span>User benefit</span>
+            <span>${getProactivityUserBenefit(item)}</span>
+          </div>
+          <div class="operator-row">
+            <span>Evidence</span>
+            <span>${getProactivityEvidenceSummary(item)}</span>
+          </div>
+          <div class="operator-row">
+            <span>Confidence</span>
+            <span>${item.confidence ?? "medium"}</span>
+          </div>
+        </details>
+        <label class="proactivity-message-editor">
+          <span>Edit message before send</span>
+          <textarea
+            rows="3"
+            .value=${proposedMessage}
+            @input=${(event: Event) =>
+              props.onProductProactivityEditMessage?.(
+                item.queueItemId,
+                (event.currentTarget as HTMLTextAreaElement).value,
+              )}
+          ></textarea>
+        </label>
         <div class="contextual-proactivity-card__section">
-          <span>Message preview</span>
-          <div>${getProactivityMessagePreview(item)}</div>
+          <span>Expected value</span>
+          <div>${getProactivityUserBenefit(item)}</div>
         </div>
         <div class="contextual-proactivity-card__why">${whyShown}</div>
         <details class="contextual-proactivity-card__details">
@@ -1319,6 +1493,7 @@ function renderProactivityFeedbackControls(props: ChatProps, queueItemId: string
   ];
   return html`
     <div class="proactivity-feedback-controls" aria-label="Proactivity usefulness feedback">
+      <span class="proactivity-feedback-controls__label">Was this useful?</span>
       ${controls.map(
         ({ label, control }) => html`
           <button
@@ -1338,14 +1513,19 @@ function renderProactivityFeedbackControls(props: ChatProps, queueItemId: string
 function renderProactivityEntryPoint(props: ChatProps): TemplateResult | typeof nothing {
   const digest = props.proactivityInboxDigest;
   const queueItems = props.productProactivityQueue ?? [];
-  const pendingCount =
-    digest?.counts.pending ?? queueItems.filter((item) => item.status === "pending_review").length;
-  const blockedCount =
-    digest?.counts.blocked ?? queueItems.filter((item) => item.status === "blocked").length;
+  const actionableCount =
+    digest?.layerCounts?.actionable ??
+    digest?.counts.actionable ??
+    queueItems.filter((item) => item.status === "pending_review" && item.layer !== "diagnostic")
+      .length;
+  const diagnosticCount =
+    digest?.layerCounts?.diagnostic ??
+    digest?.counts.diagnostics ??
+    queueItems.filter((item) => item.status === "blocked" || item.layer === "diagnostic").length;
   const statusLabel = props.proactivityInboxError
     ? "blocked"
-    : blockedCount > 0
-      ? `${blockedCount} blocked`
+    : diagnosticCount > 0
+      ? `${diagnosticCount} diagnostic`
       : props.personalAutoSendUx?.mode === "controlled_autosend_trial"
         ? "autosend trial"
         : "manual";
@@ -1368,7 +1548,7 @@ function renderProactivityEntryPoint(props: ChatProps): TemplateResult | typeof 
         aria-label="Open Proactivity Inbox"
       >
         <span class="proactivity-entrypoint__label">Proactivity</span>
-        <span class="proactivity-entrypoint__count">${pendingCount} pending</span>
+        <span class="proactivity-entrypoint__count">${actionableCount} actionable</span>
         <span class="proactivity-entrypoint__status">${statusLabel}</span>
       </button>
     </div>
@@ -1501,10 +1681,29 @@ function renderProductProactivityNotifications(props: ChatProps): TemplateResult
 
 function renderProactivityInbox(props: ChatProps): TemplateResult | typeof nothing {
   const digest = props.proactivityInboxDigest;
-  const items = digest?.items ?? [];
+  const view = props.proactivityInboxView ?? "actionable";
+  const visibleItems = getVisibleInboxItems(digest, view);
+  const actionableCount = getActionableInboxItems(digest).length;
+  const historyCount =
+    getHistoryInboxItems(digest, "sent").length +
+    getHistoryInboxItems(digest, "snoozed").length +
+    getHistoryInboxItems(digest, "dismissed").length;
+  const diagnosticCount = getDiagnosticInboxItems(digest).length;
+  const contextDiagnostics = getContextMismatchDiagnostics(props);
   if (!digest && !props.proactivityInboxLoading && !props.proactivityInboxError) {
     return nothing;
   }
+  const tabs: Array<{ view: ProactivityInboxView; label: string; count: number }> = [
+    { view: "actionable", label: "Actionable", count: actionableCount },
+    { view: "sent", label: "Sent", count: getHistoryInboxItems(digest, "sent").length },
+    { view: "snoozed", label: "Snoozed", count: getHistoryInboxItems(digest, "snoozed").length },
+    {
+      view: "dismissed",
+      label: "Dismissed",
+      count: getHistoryInboxItems(digest, "dismissed").length,
+    },
+    { view: "diagnostics", label: "Diagnostics", count: diagnosticCount },
+  ];
   return html`
     <section class="proactivity-inbox product-proactivity-panel" aria-label="Proactivity Inbox">
       <div class="product-proactivity-panel__header">
@@ -1513,7 +1712,8 @@ function renderProactivityInbox(props: ChatProps): TemplateResult | typeof nothi
           <h3>Proactivity Inbox</h3>
         </div>
         <span class="product-proactivity-panel__count"
-          >${items.length} item${items.length === 1 ? "" : "s"}</span
+          >${actionableCount} actionable · ${historyCount} history · ${diagnosticCount}
+          diagnostic</span
         >
       </div>
       ${props.proactivityInboxLoading
@@ -1525,49 +1725,108 @@ function renderProactivityInbox(props: ChatProps): TemplateResult | typeof nothi
       ${digest
         ? html`
             <div class="proactivity-inbox__filters" aria-label="Proactivity inbox filters">
-              ${digest.filters.map(
-                (filter) => html`
-                  <span class="pill proactivity-inbox__filter" data-filter=${filter}>
-                    ${filter.replace(/_/g, " ")} ${digest.counts[filter] ?? 0}
-                  </span>
+              ${tabs.map(
+                (tab) => html`
+                  <button
+                    class="pill proactivity-inbox__filter ${view === tab.view
+                      ? "proactivity-inbox__filter--active"
+                      : ""}"
+                    type="button"
+                    data-filter=${tab.view}
+                    aria-pressed=${String(view === tab.view)}
+                    @click=${() => props.onProactivityInboxViewChange?.(tab.view)}
+                  >
+                    ${tab.label} ${tab.count}
+                  </button>
                 `,
               )}
             </div>
             <div class="product-proactivity-panel__list">
-              ${items.map(
+              ${visibleItems.length === 0
+                ? html`<div class="product-proactivity-panel__empty">
+                    No ${view.replace(/_/g, " ")} proactivity items.
+                  </div>`
+                : nothing}
+              ${view === "diagnostics" && contextDiagnostics.length
+                ? html`<article class="product-proactivity-item proactivity-inbox__item">
+                    <div class="product-proactivity-item__main">
+                      <h4 class="product-proactivity-item__title">Why not shown inline</h4>
+                      ${contextDiagnostics.map(
+                        (reason) => html`<div class="operator-row">
+                          <span>Context</span>
+                          <span>${reason}</span>
+                        </div>`,
+                      )}
+                    </div>
+                  </article>`
+                : nothing}
+              ${visibleItems.map(
                 (item) => html`
                   <article
                     class="product-proactivity-item proactivity-inbox__item proactivity-inbox__item--${item.status}"
+                    data-layer=${item.layer ?? "actionable"}
+                    data-queue-item-id=${item.queueItemId ?? ""}
                   >
                     <div class="product-proactivity-item__main">
                       <div class="product-proactivity-item__meta">
                         <span>${formatInboxMessageClass(item.messageClass)}</span>
                         <span>${item.status.replace(/_/g, " ")}</span>
-                        <span
-                          >${item.filterTags.map((tag) => tag.replace(/_/g, " ")).join(", ")}</span
-                        >
+                        <span>${item.layer ?? "actionable"}</span>
                       </div>
+                      <h4 class="product-proactivity-item__title">
+                        ${getProactivityPlanTitle(item)}
+                      </h4>
                       <div class="product-proactivity-item__section">
-                        <span>Candidate summary</span>
-                        <strong>${getProactivityCandidateSummary(item)}</strong>
+                        <span>Problem</span>
+                        <strong>${getProactivityProblem(item)}</strong>
                       </div>
                       <div class="product-proactivity-item__section">
                         <span>Suggested action</span>
                         <strong>${getProactivitySuggestedAction(item)}</strong>
                       </div>
                       <div class="product-proactivity-item__section">
-                        <span>Message preview</span>
+                        <span>Proposed message</span>
                         <div class="product-proactivity-item__text">
-                          ${getProactivityMessagePreview(item)}
+                          ${getProactivityProposedMessage(props, item)}
                         </div>
                       </div>
+                      ${item.status === "pending_review" &&
+                      item.layer === "actionable" &&
+                      item.queueItemId
+                        ? html`<label class="proactivity-message-editor">
+                            <span>Edit message before send</span>
+                            <textarea
+                              rows="4"
+                              .value=${getProactivityProposedMessage(props, item)}
+                              @input=${(event: Event) =>
+                                props.onProductProactivityEditMessage?.(
+                                  item.queueItemId!,
+                                  (event.currentTarget as HTMLTextAreaElement).value,
+                                )}
+                            ></textarea>
+                          </label>`
+                        : nothing}
                       <div class="product-proactivity-item__section">
                         <span>Expected value</span>
-                        <div>${getProactivityExpectedUserValue(item)}</div>
+                        <div>${getProactivityUserBenefit(item)}</div>
                       </div>
                       <details class="product-proactivity-item__details">
-                        <summary>Why this appeared</summary>
+                        <summary>Review plan</summary>
                         <p>${item.whyThisAppearedSummary}</p>
+                        <div class="operator-row">
+                          <span>Evidence</span>
+                          <span>${getProactivityEvidenceSummary(item)}</span>
+                        </div>
+                        <div class="operator-row">
+                          <span>Confidence</span>
+                          <span>${item.confidence ?? "medium"}</span>
+                        </div>
+                        ${item.blockedIfMissing?.length
+                          ? html`<div class="operator-row">
+                              <span>Blocked if missing</span>
+                              <span>${item.blockedIfMissing.join(", ")}</span>
+                            </div>`
+                          : nothing}
                         <div class="operator-row">
                           <span>Sources</span>
                           <span>${item.sourceRefs.slice(0, 4).join(", ") || "missing"}</span>
@@ -1608,8 +1867,28 @@ function renderProactivityInbox(props: ChatProps): TemplateResult | typeof nothi
                           <span>${item.sourceArtifactReportId}</span>
                         </div>
                       </details>
+                      ${item.sendStatus === "sent" || item.status === "sent"
+                        ? html`<div class="callout success proactivity-send-status">
+                            Sent via chat.inject.
+                            <button
+                              class="btn btn--xs btn--ghost proactivity-open-chat"
+                              type="button"
+                              @click=${props.onScrollToBottom}
+                            >
+                              View sent message
+                            </button>
+                          </div>`
+                        : nothing}
+                      ${item.sendStatus === "failed" || item.sendError
+                        ? html`<div class="callout danger proactivity-send-status">
+                            ${item.sendError ?? "Proactive send failed."}
+                          </div>`
+                        : nothing}
+                      ${item.queueItemId
+                        ? renderProactivityFeedbackControls(props, item.queueItemId)
+                        : nothing}
                     </div>
-                    ${item.queueItemId
+                    ${item.queueItemId && item.layer === "actionable"
                       ? html`
                           <div class="product-proactivity-item__actions">
                             <button
@@ -1637,7 +1916,6 @@ function renderProactivityInbox(props: ChatProps): TemplateResult | typeof nothi
                             >
                               Snooze
                             </button>
-                            ${renderProactivityFeedbackControls(props, item.queueItemId)}
                           </div>
                         `
                       : nothing}

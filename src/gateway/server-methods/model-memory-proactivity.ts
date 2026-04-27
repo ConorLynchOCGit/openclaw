@@ -80,9 +80,29 @@ export const modelMemoryProactivityHandlers: GatewayRequestHandlers = {
       );
     }
   },
-  "modelMemory.proactivity.inbox": async ({ respond }) => {
+  "modelMemory.proactivity.inbox": async ({ params, respond, client }) => {
     try {
-      const report = await buildPhase2ProactivityInboxReport({ env: process.env });
+      const sessionKey = readString(params.sessionKey) ?? "main";
+      const operatorId = resolveOperatorId(params, client?.connect?.device?.id);
+      const productSurfacingReport = await buildPhase2ProductProactivitySurfacingReport({
+        eligibilityScope: {
+          userId:
+            readString(params.userId) ?? process.env.OPENCLAW_USER_ID ?? "local-openclaw-user",
+          recipientId:
+            readString(params.recipientId) ??
+            process.env.OPENCLAW_RECIPIENT_ID ??
+            process.env.OPENCLAW_USER_ID ??
+            "local-openclaw-recipient",
+          projectId: readString(params.projectId) ?? process.env.OPENCLAW_PROJECT_ID ?? "openclaw",
+          sessionKey,
+          operatorId,
+        },
+        env: process.env,
+      });
+      const report = await buildPhase2ProactivityInboxReport({
+        env: process.env,
+        productSurfacingReport,
+      });
       respond(true, {
         ok: true,
         reportId: report.reportId,

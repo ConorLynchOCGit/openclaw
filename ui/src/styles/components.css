@@ -2923,7 +2923,7 @@ td.data-table-key-col {
 
 .product-proactivity-item {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr);
   gap: 12px;
   padding: 12px;
   border: 1px solid var(--border);
@@ -2943,6 +2943,14 @@ td.data-table-key-col {
   flex-wrap: wrap;
   text-transform: none;
   letter-spacing: 0;
+}
+
+.product-proactivity-item__title,
+.contextual-proactivity-card__title {
+  margin: 0;
+  color: var(--text-strong);
+  font-size: 15px;
+  line-height: 1.35;
 }
 
 .product-proactivity-item__text {
@@ -2987,7 +2995,64 @@ td.data-table-key-col {
   flex-wrap: wrap;
   gap: 8px;
   align-content: start;
-  justify-content: end;
+  justify-content: flex-start;
+}
+
+.proactivity-inbox__filter {
+  cursor: pointer;
+}
+
+.proactivity-inbox__filter--active {
+  color: var(--text-strong);
+  border-color: color-mix(in srgb, var(--accent) 56%, var(--border));
+  background: color-mix(in srgb, var(--accent) 16%, var(--card));
+}
+
+.proactivity-message-editor {
+  display: grid;
+  gap: 5px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.proactivity-message-editor textarea {
+  width: 100%;
+  min-height: 86px;
+  resize: vertical;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--text);
+  padding: 8px;
+  font: inherit;
+  line-height: 1.4;
+}
+
+.proactivity-message-editor textarea:focus {
+  outline: 2px solid color-mix(in srgb, var(--accent) 50%, transparent);
+  outline-offset: 2px;
+}
+
+.proactivity-feedback-controls {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding-top: 4px;
+  border-top: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+}
+
+.proactivity-feedback-controls__label {
+  color: var(--muted);
+  font-size: 12px;
+  margin-right: 2px;
+}
+
+.proactivity-send-status {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
 }
 
 .product-proactivity-item--sent {

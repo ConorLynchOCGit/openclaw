@@ -105,6 +105,8 @@ import type {
   ToolsCatalogResult,
   ToolsEffectiveResult,
   ProductProactivityFeedbackControl,
+  ProactivityInboxFilter,
+  ProactivityInboxView,
   ProductProactivityQueueItem,
   ProductProactivityQueueResult,
   ProactivityInboxDigest,
@@ -202,6 +204,8 @@ export class OpenClawApp extends LitElement {
   @state() proactivityInboxDigest: ProactivityInboxDigest | null = null;
   @state() proactivityInboxLoading = false;
   @state() proactivityInboxError: string | null = null;
+  @state() proactivityInboxView: ProactivityInboxView = "actionable";
+  @state() productProactivityEditedMessages: Record<string, string> = {};
   @state() personalAutoSendUx: PersonalAutoSendUxSettings | null = null;
   @state() personalAutoSendUxLoading = false;
   @state() personalAutoSendUxError: string | null = null;
@@ -770,7 +774,10 @@ export class OpenClawApp extends LitElement {
     try {
       const res = await this.client.request<ProactivityInboxResult>(
         "modelMemory.proactivity.inbox",
-        {},
+        {
+          sessionKey: this.sessionKey,
+          projectId: "openclaw",
+        },
       );
       this.proactivityInboxDigest = res.digest ?? null;
     } catch (err) {
@@ -785,34 +792,141 @@ export class OpenClawApp extends LitElement {
     await this.loadPersonalAutoSendUx(true);
   }
 
+  setProactivityInboxView(view: ProactivityInboxView) {
+    this.proactivityInboxView = view;
+  }
+
+  handleProductProactivityEditMessage(queueItemId: string, value: string) {
+    this.productProactivityEditedMessages = {
+      ...this.productProactivityEditedMessages,
+      [queueItemId]: value,
+    };
+  }
+
+  private recomputeProactivityDigest(
+    digest: ProactivityInboxDigest | null,
+  ): ProactivityInboxDigest | null {
+    if (!digest) {
+      return null;
+    }
+    const count = (filter: ProactivityInboxFilter) =>
+      digest.items.filter((item) => item.filterTags.includes(filter)).length;
+    return {
+      ...digest,
+      counts: {
+        actionable: count("actionable"),
+        pending: count("pending"),
+        sent: count("sent"),
+        snoozed: count("snoozed"),
+        dismissed: count("dismissed"),
+        blocked: count("blocked"),
+        autosend_trial: count("autosend_trial"),
+        diagnostics: count("diagnostics"),
+      },
+      layerCounts: {
+        actionable: digest.items.filter((item) => item.layer === "actionable").length,
+        history: digest.items.filter((item) => item.layer === "history").length,
+        diagnostic: digest.items.filter((item) => item.layer === "diagnostic").length,
+      },
+    };
+  }
+
   async handleProductProactivityApproveSend(queueItemId: string) {
-    const item = this.productProactivityQueue.find((entry) => entry.queueItemId === queueItemId);
-    if (!item || !this.client || item.status !== "pending_review") {
+    const inboxItem = this.proactivityInboxDigest?.items.find(
+      (entry) => entry.queueItemId === queueItemId || entry.itemId === queueItemId,
+    );
+    const queueItem = this.productProactivityQueue.find(
+      (entry) => entry.queueItemId === queueItemId,
+    );
+    const item = inboxItem ?? queueItem;
+    if (!item || item.status !== "pending_review") {
+      this.productProactivityError = "Proactive send failed: item is no longer pending review.";
       return;
     }
+    if (!this.client) {
+      this.productProactivityError = "Proactive send failed: gateway client is unavailable.";
+      return;
+    }
+    const message =
+      this.productProactivityEditedMessages[queueItemId] ??
+      item.proposedMessage ??
+      item.messagePreview ??
+      item.boundedDisplayText;
+    if (!message.trim()) {
+      this.productProactivityError = "Proactive send failed: proposed message is empty.";
+      return;
+    }
+    const now = new Date().toISOString();
+    this.proactivityInboxDigest = this.recomputeProactivityDigest(
+      this.proactivityInboxDigest
+        ? {
+            ...this.proactivityInboxDigest,
+            items: this.proactivityInboxDigest.items.map((entry) =>
+              entry.queueItemId === queueItemId || entry.itemId === queueItemId
+                ? { ...entry, sendStatus: "sending", sendError: null }
+                : entry,
+            ),
+          }
+        : null,
+    );
     try {
       await this.client.request("chat.inject", {
         sessionKey: this.sessionKey,
-        message: item.messagePreview ?? item.boundedDisplayText,
+        message,
         label: "Model Memory",
       });
       this.productProactivityQueue = this.productProactivityQueue.map((entry) =>
         entry.queueItemId === queueItemId
-          ? { ...entry, status: "sent", updatedAt: new Date().toISOString() }
+          ? {
+              ...entry,
+              status: "sent",
+              sendStatus: "sent",
+              sentMessageAnchor: `chat-message:${queueItemId}`,
+              updatedAt: now,
+            }
           : entry,
       );
-      this.proactivityInboxDigest = this.proactivityInboxDigest
-        ? {
-            ...this.proactivityInboxDigest,
-            items: this.proactivityInboxDigest.items.map((entry) =>
-              entry.queueItemId === queueItemId ? { ...entry, status: "sent" } : entry,
-            ),
-          }
-        : null;
+      this.proactivityInboxDigest = this.recomputeProactivityDigest(
+        this.proactivityInboxDigest
+          ? {
+              ...this.proactivityInboxDigest,
+              items: this.proactivityInboxDigest.items.map((entry) =>
+                entry.queueItemId === queueItemId || entry.itemId === queueItemId
+                  ? {
+                      ...entry,
+                      status: "sent",
+                      layer: "history",
+                      filterTags: ["sent"],
+                      sendStatus: "sent",
+                      sendError: null,
+                      proposedMessage: message,
+                      messagePreview: message,
+                      sentMessageAnchor: `chat-message:${queueItemId}`,
+                    }
+                  : entry,
+              ),
+            }
+          : null,
+      );
+      this.productProactivityError = null;
+      this.proactivityInboxView = "sent";
       await loadChatHistory(this as unknown as ChatState);
       this.scrollToBottom({ smooth: true });
     } catch (err) {
-      this.productProactivityError = `Proactive send failed: ${String(err)}`;
+      const messageText = `Proactive send failed: ${String(err)}`;
+      this.productProactivityError = messageText;
+      this.proactivityInboxDigest = this.recomputeProactivityDigest(
+        this.proactivityInboxDigest
+          ? {
+              ...this.proactivityInboxDigest,
+              items: this.proactivityInboxDigest.items.map((entry) =>
+                entry.queueItemId === queueItemId || entry.itemId === queueItemId
+                  ? { ...entry, sendStatus: "failed", sendError: messageText }
+                  : entry,
+              ),
+            }
+          : null,
+      );
     }
   }
 
@@ -822,14 +936,18 @@ export class OpenClawApp extends LitElement {
         ? { ...entry, status: "dismissed", updatedAt: new Date().toISOString() }
         : entry,
     );
-    this.proactivityInboxDigest = this.proactivityInboxDigest
-      ? {
-          ...this.proactivityInboxDigest,
-          items: this.proactivityInboxDigest.items.map((entry) =>
-            entry.queueItemId === queueItemId ? { ...entry, status: "dismissed" } : entry,
-          ),
-        }
-      : null;
+    this.proactivityInboxDigest = this.recomputeProactivityDigest(
+      this.proactivityInboxDigest
+        ? {
+            ...this.proactivityInboxDigest,
+            items: this.proactivityInboxDigest.items.map((entry) =>
+              entry.queueItemId === queueItemId
+                ? { ...entry, status: "dismissed", layer: "history", filterTags: ["dismissed"] }
+                : entry,
+            ),
+          }
+        : null,
+    );
   }
 
   handleProductProactivitySnooze(queueItemId: string) {
@@ -838,14 +956,18 @@ export class OpenClawApp extends LitElement {
         ? { ...entry, status: "snoozed", updatedAt: new Date().toISOString() }
         : entry,
     );
-    this.proactivityInboxDigest = this.proactivityInboxDigest
-      ? {
-          ...this.proactivityInboxDigest,
-          items: this.proactivityInboxDigest.items.map((entry) =>
-            entry.queueItemId === queueItemId ? { ...entry, status: "snoozed" } : entry,
-          ),
-        }
-      : null;
+    this.proactivityInboxDigest = this.recomputeProactivityDigest(
+      this.proactivityInboxDigest
+        ? {
+            ...this.proactivityInboxDigest,
+            items: this.proactivityInboxDigest.items.map((entry) =>
+              entry.queueItemId === queueItemId
+                ? { ...entry, status: "snoozed", layer: "history", filterTags: ["snoozed"] }
+                : entry,
+            ),
+          }
+        : null,
+    );
   }
 
   handleProductProactivityFeedback(

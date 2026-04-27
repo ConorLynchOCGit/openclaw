@@ -644,6 +644,25 @@ For each implementation wave:
   exposes "why not shown" diagnostics without semantic truth writes. Proof
   artifact target:
   `.artifacts/model-memory/phase2-proactivity-usefulness-tuning-proof/<timestamp>/`.
+- The proactivity product-correctness remediation after Slice 59 fixes the
+  broken user-facing experience before any more capability expansion. Approve &
+  Send now resolves the same actionable item rendered in the inbox, sends the
+  reviewed or edited `proposedMessage` through `chat.inject`, and shows
+  success/failure plus View sent message state. The default inbox shows
+  actionable suggestions only; sent/snoozed/dismissed items are history and
+  auto-send simulations, blocked preflight, proof metadata, and why-not-shown
+  records are diagnostics. Actionable suggestions require concrete
+  `planTitle`, `problem`, `proposedMessage`, `userBenefit`, `evidenceSummary`,
+  `confidence`, and `blockedIfMissing` fields; generic “suggestion available”
+  placeholders are blocked from actionable UX. Active-context surfacing uses
+  exact typed user/project/session/operator/task matching and emits diagnostics
+  for mismatches. A concrete heartbeat/review loop asks “What would help this
+  user today?” from active work, unresolved questions, recent failures, repeated
+  friction, stale decisions, incomplete follow-ups, and feedback while retaining
+  explicit approval boundaries. Proof artifact target:
+  `.artifacts/model-memory/phase2-proactivity-product-correctness-proof/<timestamp>/`.
+  Broad autonomous sending, auto-send scope expansion, and delivery-triggered
+  action execution remain off.
 - capture at least one durable evidence artifact per wave
 - update the relevant human test prompt pack before declaring the wave ready for
   live validation

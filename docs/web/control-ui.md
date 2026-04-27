@@ -331,6 +331,27 @@ Notes:
 - `gateway.controlUi.dangerouslyAllowHostHeaderOriginFallback=true` enables
   Host-header origin fallback mode, but it is a dangerous security mode.
 
+## Model Memory Proactivity UX
+
+The Control UI surfaces Model Memory proactivity through normal chat chrome:
+
+- The chat header/toolbar shows a compact `Proactivity` entry point with the
+  actionable count.
+- The full Proactivity Inbox opens in the side drawer and must not render inside
+  the chat transcript or consume transcript height by default.
+- The default inbox tab is actionable suggestions. History tabs cover sent,
+  snoozed, and dismissed items. Diagnostics contains blocked/preflight/simulation
+  and why-not-shown records.
+- Actionable cards show the concrete plan title, problem, proposed message,
+  expected user value, evidence summary, confidence, Review plan details, and
+  Edit message before send.
+- Approve & Send calls `chat.inject` only after the user explicitly approves the
+  visible or edited proposed message. Success/failure feedback appears on the
+  card, and successful sends expose View sent message.
+- Feedback controls are secondary “Was this useful?” controls, not primary CTAs.
+- Proactivity UI payloads must remain bounded and exclude raw prompts, full
+  transcripts, raw tool logs, secrets, and private phrases.
+
 Example:
 
 ```json5

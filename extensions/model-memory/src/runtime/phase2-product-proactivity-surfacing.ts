@@ -72,6 +72,18 @@ export type Phase2ProductProactivityQueueItem = {
   suggestedAction: string;
   candidateSummary: string;
   expectedUserValue: string;
+  planTitle: string;
+  problem: string;
+  proposedMessage: string;
+  userBenefit: string;
+  evidenceSummary: string;
+  confidence: "high" | "medium" | "low";
+  blockedIfMissing: string[];
+  layer: "actionable" | "history" | "diagnostic";
+  attentionRequired: boolean;
+  sendStatus: "idle" | "sending" | "sent" | "failed";
+  sendError: string | null;
+  sentMessageAnchor: string | null;
   status: Phase2ProductProactivityQueueItemStatus;
   eligibleScope: Phase2ProductProactivityEligibilityScope;
   sourceRefs: string[];
@@ -167,7 +179,12 @@ export type Phase2ProductProactivitySurfacingReport = {
   decision: "product_queue_enabled" | "blocked" | "rollback_disabled";
   config: Phase2ProductProactivitySurfaceConfig;
   defaultPromotionReport: Phase2UserFacingProactivityDefaultPromotionReport;
-  realCandidateReport?: Phase2RealMemoryCandidateReport;
+  realCandidateReport?: {
+    reportId: string;
+    decision: Phase2RealMemoryCandidateReport["decision"];
+    noDarkDataStatus: Phase2RealMemoryCandidateReport["noDarkDataStatus"];
+    telemetry: Phase2RealMemoryCandidateReport["telemetry"];
+  };
   queue: Phase2ProductProactivityQueue;
   checks: Phase2ProductProactivityCheck[];
   approvalDecisions: Phase2ProductProactivityApprovalDecision[];
@@ -357,18 +374,48 @@ function contentFieldsForMessageClass(input: {
   scope: Phase2ProductProactivityEligibilityScope;
 }): Pick<
   Phase2ProductProactivityQueueItem,
-  "messagePreview" | "suggestedAction" | "candidateSummary" | "expectedUserValue"
+  | "messagePreview"
+  | "suggestedAction"
+  | "candidateSummary"
+  | "expectedUserValue"
+  | "planTitle"
+  | "problem"
+  | "proposedMessage"
+  | "userBenefit"
+  | "evidenceSummary"
+  | "confidence"
+  | "blockedIfMissing"
 > {
+  const sourceLabel =
+    input.realCandidate?.sourceRefs[0] ?? `${input.scope.projectId}/${input.scope.sessionKey}`;
+  const boundedSummary = input.realCandidate?.boundedDisplayText ?? input.boundedDisplayText;
+  const why = input.realCandidate?.whyThisAppeared ?? boundedSummary;
   if (input.realCandidate) {
+    const isFollowUp = input.messageClass === "operator_approved_follow_up_available";
+    const planTitle = isFollowUp
+      ? `Review unresolved follow-up for ${input.scope.projectId}`
+      : `Act on current ${input.scope.projectId} proactivity work`;
+    const problem = `${boundedSummary} Source: ${sourceLabel}.`;
+    const proposedMessage = isFollowUp
+      ? `I found an unresolved follow-up tied to ${input.scope.projectId}: ${boundedSummary} Do you want me to handle or close this now?`
+      : `I found a concrete ${input.scope.projectId} proactivity item: ${boundedSummary} Do you want me to apply this next?`;
     return {
-      candidateSummary: input.realCandidate.boundedDisplayText,
-      suggestedAction:
-        input.messageClass === "operator_approved_follow_up_available"
-          ? `Review the follow-up for ${input.scope.projectId} and send it if it still applies.`
-          : `Review the memory-derived suggestion for ${input.scope.projectId} and send it if useful.`,
-      messagePreview: input.realCandidate.boundedDisplayText,
-      expectedUserValue:
-        "Surfaces a bounded memory-derived item tied to source refs, authority tiers, and proof hashes.",
+      candidateSummary: boundedSummary,
+      suggestedAction: isFollowUp
+        ? `Review the follow-up for ${input.scope.projectId} and send it if it still applies.`
+        : `Review this concrete ${input.scope.projectId} suggestion and send the proposed message if useful.`,
+      messagePreview: proposedMessage,
+      expectedUserValue: `Helps advance ${input.scope.projectId} by turning bounded memory evidence into a reviewable next step.`,
+      planTitle,
+      problem,
+      proposedMessage,
+      userBenefit: `Reduces forgotten follow-up work by surfacing a specific safe next step for ${input.scope.projectId}.`,
+      evidenceSummary: `${why} Evidence source: ${sourceLabel}.`,
+      confidence:
+        input.realCandidate.staleLabels.length || input.realCandidate.conflictLabels.length
+          ? "medium"
+          : "high",
+      blockedIfMissing: [],
     };
   }
   if (input.messageClass === "operator_approved_follow_up_available") {
@@ -379,6 +426,15 @@ function contentFieldsForMessageClass(input: {
         "Model Memory has an approved follow-up candidate for this workspace. Review provenance before sending.",
       expectedUserValue:
         "Helps close an approved follow-up without exposing raw prompts, transcripts, or tool logs.",
+      planTitle: `Review approved follow-up for ${input.scope.projectId}`,
+      problem:
+        "The candidate lacks a concrete memory-derived summary, so it is blocked from actionable UX until a specific preview is available.",
+      proposedMessage: "",
+      userBenefit:
+        "Prevents blind follow-up sends when the underlying suggestion is not specific enough.",
+      evidenceSummary: `Fallback evidence for ${sourceLabel}; specific preview missing.`,
+      confidence: "low",
+      blockedIfMissing: ["specific_memory_summary", "safe_proposed_message"],
     };
   }
   return {
@@ -388,6 +444,14 @@ function contentFieldsForMessageClass(input: {
       "Model Memory has an approved suggestion for this workspace. Review provenance before sending.",
     expectedUserValue:
       "Surfaces a low-risk memory-derived suggestion while keeping manual approval in control.",
+    planTitle: `Review approved suggestion for ${input.scope.projectId}`,
+    problem:
+      "The candidate lacks a concrete memory-derived summary, so it is blocked from actionable UX until a specific preview is available.",
+    proposedMessage: "",
+    userBenefit: "Prevents blind suggestion sends when the underlying plan is not specific enough.",
+    evidenceSummary: `Fallback evidence for ${sourceLabel}; specific preview missing.`,
+    confidence: "low",
+    blockedIfMissing: ["specific_memory_summary", "safe_proposed_message"],
   };
 }
 
@@ -711,8 +775,24 @@ export async function buildPhase2ProductProactivitySurfacingReport(
     conflictLabels: realCandidate?.conflictLabels ?? [],
     blockedReasonCodes: uniqueSortedStrings([
       ...reasonCodes,
+      ...(!contentFields.proposedMessage || contentFields.blockedIfMissing.length
+        ? ["safe_specific_plan_required"]
+        : []),
       ...(realCandidate?.blockedReasonCodes ?? []),
     ]),
+    layer:
+      decision === "product_queue_enabled" &&
+      Boolean(contentFields.proposedMessage) &&
+      contentFields.blockedIfMissing.length === 0
+        ? "actionable"
+        : "diagnostic",
+    attentionRequired:
+      decision === "product_queue_enabled" &&
+      Boolean(contentFields.proposedMessage) &&
+      contentFields.blockedIfMissing.length === 0,
+    sendStatus: "idle",
+    sendError: null,
+    sentMessageAnchor: null,
     generatedAt,
     updatedAt: generatedAt,
   };
@@ -741,7 +821,7 @@ export async function buildPhase2ProductProactivitySurfacingReport(
       decision: decision === "product_queue_enabled" ? "send_via_chat_inject" : "blocked",
       deliveryAdapterKind: "chat.inject",
       explicitSendApproval: true,
-      messageText: queueItem.messagePreview,
+      messageText: queueItem.proposedMessage || queueItem.messagePreview,
       label: "Model Memory",
       actionExecution: false,
       autonomousSending: false,
@@ -809,7 +889,14 @@ export async function buildPhase2ProductProactivitySurfacingReport(
     decision,
     config,
     defaultPromotionReport,
-    realCandidateReport,
+    realCandidateReport: realCandidateReport
+      ? {
+          reportId: realCandidateReport.reportId,
+          decision: realCandidateReport.decision,
+          noDarkDataStatus: realCandidateReport.noDarkDataStatus,
+          telemetry: realCandidateReport.telemetry,
+        }
+      : undefined,
     queue,
     checks,
     approvalDecisions,

@@ -24,7 +24,7 @@ describe("phase2 user-facing proactivity notification ux", () => {
     expect(sent.decision).toBe("notification_ux_enabled");
     expect(sent.notificationState.items[0]).toMatchObject({
       status: "visible",
-      boundedDisplayText: "A recent Model Memory task has a follow-up ready for review.",
+      boundedDisplayText: "Fix the broken Proactivity Inbox before expanding capability.",
     });
     expect(sent.telemetry.notificationSurfaceIsTranscriptOnly).toBe(false);
     expect(sent.telemetry.transcriptDeliveryStillAvailable).toBe(true);

@@ -620,8 +620,19 @@ describe("chat view", () => {
               queueItemId: "queue-item-1",
               candidateId: "candidate-1",
               messageClass: "operator_approved_suggestion_available",
-              boundedDisplayText: "An approved operator suggestion is available.",
+              boundedDisplayText: "Review the unresolved gateway rebuild follow-up.",
+              planTitle: "Gateway rebuild follow-up",
+              problem: "The live gateway may not include the latest proactivity UX changes.",
+              proposedMessage:
+                "Should we rerun the live gateway rebuild now that the proactivity UX changed?",
+              userBenefit:
+                "Keeps the visible OpenClaw UI aligned with the current proactivity implementation.",
+              evidenceSummary:
+                "The active remediation work changed runtime, gateway, and UI proactivity files.",
+              confidence: "medium" as const,
+              blockedIfMissing: [],
               status: "pending_review",
+              layer: "actionable",
               eligibleScope: {
                 environment: "live",
                 userId: "conor",
@@ -657,7 +668,7 @@ describe("chat view", () => {
     );
     expect(entryPoint).not.toBeNull();
     expect(entryPoint?.textContent).toContain("Proactivity");
-    expect(entryPoint?.textContent).toContain("1 pending");
+    expect(entryPoint?.textContent).toContain("1 actionable");
     expect(container.querySelector(".chat-thread .product-proactivity-panel")).toBeNull();
     entryPoint?.click();
     expect(onOpenSidebar).toHaveBeenCalledWith({ kind: "proactivityInbox" });
@@ -816,10 +827,19 @@ describe("chat view", () => {
       messageClass: "operator_approved_suggestion_available" as const,
       boundedDisplayText: "Follow up on the unresolved gateway rebuild issue.",
       candidateSummary: "Gateway rebuild follow-up is still unresolved.",
+      planTitle: "Gateway rebuild follow-up",
+      problem: "The live gateway may not include the latest proactivity UX changes.",
       suggestedAction: "Approve and send the gateway rebuild follow-up if it still applies.",
       messagePreview: "Should we rerun the live gateway rebuild now that proactivity UX changed?",
+      proposedMessage: "Should we rerun the live gateway rebuild now that proactivity UX changed?",
       expectedUserValue: "Keeps the live UI aligned with the latest deployed proactivity surface.",
+      userBenefit: "Keeps the live UI aligned with the latest deployed proactivity surface.",
+      evidenceSummary:
+        "The active session is working on proactivity UX remediation and gateway rebuild evidence.",
+      confidence: "medium" as const,
+      blockedIfMissing: [],
       status: "pending_review" as const,
+      layer: "actionable" as const,
       eligibleScope: {
         environment: "live" as const,
         userId: "conorlynch",
@@ -848,6 +868,14 @@ describe("chat view", () => {
       renderChat(
         createProps({
           sessionKey: "main",
+          activeProactivityContext: {
+            userId: "conorlynch",
+            recipientId: "conorlynch",
+            projectId: "openclaw-platform",
+            sessionKey: "main",
+            operatorId: "operator-conorlynch",
+            source: "chat_active_session",
+          },
           productProactivityQueue: [
             matchingItem,
             {
@@ -868,9 +896,9 @@ describe("chat view", () => {
 
     const card = container.querySelector(".contextual-proactivity-card");
     expect(card).not.toBeNull();
-    expect(card?.textContent).toContain("Gateway rebuild follow-up is still unresolved.");
+    expect(card?.textContent).toContain("Gateway rebuild follow-up");
     expect(card?.textContent).toContain("Suggested action");
-    expect(card?.textContent).toContain("Message preview");
+    expect(card?.textContent).toContain("Proposed message");
     expect(card?.textContent).toContain("Shown because this session matches project");
     expect(card?.textContent).toContain("Approve & Send");
     expect(card?.textContent).not.toContain("This non-matching session item");
@@ -881,6 +909,14 @@ describe("chat view", () => {
       renderChat(
         createProps({
           sessionKey: "other",
+          activeProactivityContext: {
+            userId: "conorlynch",
+            recipientId: "conorlynch",
+            projectId: "openclaw-platform",
+            sessionKey: "other",
+            operatorId: "operator-conorlynch",
+            source: "chat_active_session",
+          },
           productProactivityQueue: [
             {
               ...matchingItem,
@@ -908,10 +944,19 @@ describe("chat view", () => {
           messageClass: "operator_approved_suggestion_available",
           boundedDisplayText: "Review the daily operator proactivity item.",
           candidateSummary: "Daily review should include this must-surface item.",
+          planTitle: "Daily review proactivity follow-up",
+          problem:
+            "The operator daily loop needs to surface the active proactivity remediation item.",
           suggestedAction: "Open the inbox detail and approve the message if still useful.",
           messagePreview: "Should we review the proactivity remediation follow-up today?",
+          proposedMessage: "Should we review the proactivity remediation follow-up today?",
           expectedUserValue: "Keeps the normal operator loop aware of proactive work.",
+          userBenefit: "Keeps the normal operator loop aware of proactive work.",
+          evidenceSummary: "The active session has a matching daily-review proactivity candidate.",
+          confidence: "medium" as const,
+          blockedIfMissing: [],
           status: "pending_review",
+          layer: "actionable",
           eligibleScope: {
             environment: "live",
             userId: "conorlynch",
@@ -938,6 +983,14 @@ describe("chat view", () => {
           updatedAt: "2026-04-26T22:00:00.000Z",
         },
       ],
+      activeProactivityContext: {
+        userId: "conorlynch",
+        recipientId: "conorlynch",
+        projectId: "openclaw-platform",
+        sessionKey: "daily-review-proactivity-test",
+        operatorId: "operator-conorlynch",
+        source: "chat_active_session",
+      },
     });
     render(renderChat(props), container);
 
@@ -947,7 +1000,7 @@ describe("chat view", () => {
     expect(review).not.toBeNull();
     expect(review?.textContent).toContain("Daily review / heartbeat proactivity");
     expect(review?.textContent).toContain("candidate-review-1");
-    expect(review?.textContent).toContain("Grouped lower-priority/background");
+    expect(review?.textContent).toContain("Grouped diagnostics/background");
     review?.querySelector<HTMLButtonElement>(".proactivity-review-open")?.click();
     expect(onOpenSidebar).toHaveBeenCalledWith({ kind: "proactivityInbox" });
   });
@@ -966,15 +1019,27 @@ describe("chat view", () => {
           proactivityInboxDigest: {
             digestId: "digest-1",
             generatedAt: "2026-04-26T22:00:00.000Z",
-            filters: ["pending", "sent", "snoozed", "dismissed", "blocked", "autosend_trial"],
+            filters: [
+              "actionable",
+              "pending",
+              "sent",
+              "snoozed",
+              "dismissed",
+              "blocked",
+              "autosend_trial",
+              "diagnostics",
+            ],
             counts: {
+              actionable: 1,
               pending: 1,
               sent: 1,
               snoozed: 1,
               dismissed: 1,
               blocked: 1,
               autosend_trial: 1,
+              diagnostics: 1,
             },
+            layerCounts: { actionable: 1, history: 3, diagnostic: 1 },
             items: [
               {
                 itemId: "inbox-item-1",
@@ -984,11 +1049,20 @@ describe("chat view", () => {
                 messageClass: "operator_approved_suggestion_available",
                 boundedDisplayText: "An approved operator suggestion is available.",
                 candidateSummary: "Follow up on the unresolved gateway rebuild issue.",
+                planTitle: "Gateway rebuild follow-up",
+                problem: "The live gateway may not include the latest proactivity UX changes.",
                 suggestedAction: "Review the gateway rebuild follow-up and send it if still true.",
                 messagePreview: "Should we rerun the live gateway rebuild now that UX changed?",
+                proposedMessage: "Should we rerun the live gateway rebuild now that UX changed?",
                 expectedUserValue: "Keeps the live UI aligned with the latest proactivity changes.",
+                userBenefit: "Keeps the live UI aligned with the latest proactivity changes.",
+                evidenceSummary:
+                  "The active remediation changed proactivity UX and gateway behavior.",
+                confidence: "medium" as const,
+                blockedIfMissing: [],
                 status: "pending_review",
-                filterTags: ["pending"],
+                filterTags: ["actionable", "pending"],
+                layer: "actionable",
                 sourceRefs: ["docs/projects/model-memory/phase-2-execution-roadmap.md"],
                 sourceProfileIds: ["curated_repo_doc"],
                 authorityTiers: ["curated_authoritative"],
@@ -1014,7 +1088,8 @@ describe("chat view", () => {
                 boundedDisplayText:
                   "Auto-send simulation compared would-have-sent behavior to manual decisions.",
                 status: "autosend_trial",
-                filterTags: ["autosend_trial"],
+                filterTags: ["diagnostics", "autosend_trial"],
+                layer: "diagnostic",
                 sourceRefs: ["phase2-autosend-simulation"],
                 sourceProfileIds: ["manual_note"],
                 authorityTiers: ["operator_evaluation"],
@@ -1045,7 +1120,7 @@ describe("chat view", () => {
     const thread = container.querySelector(".chat-thread");
     expect(entryPoint).not.toBeNull();
     expect(entryPoint?.textContent).toContain("Proactivity");
-    expect(entryPoint?.textContent).toContain("1 pending");
+    expect(entryPoint?.textContent).toContain("1 actionable");
     expect(container.querySelector(".chat-proactivity-rail")).toBeNull();
     expect(container.querySelector(".proactivity-inbox")).toBeNull();
     expect(thread?.querySelector(".proactivity-inbox")).toBeNull();
@@ -1063,15 +1138,27 @@ describe("chat view", () => {
           proactivityInboxDigest: {
             digestId: "digest-1",
             generatedAt: "2026-04-26T22:00:00.000Z",
-            filters: ["pending", "sent", "snoozed", "dismissed", "blocked", "autosend_trial"],
+            filters: [
+              "actionable",
+              "pending",
+              "sent",
+              "snoozed",
+              "dismissed",
+              "blocked",
+              "autosend_trial",
+              "diagnostics",
+            ],
             counts: {
+              actionable: 1,
               pending: 1,
               sent: 1,
               snoozed: 1,
               dismissed: 1,
               blocked: 1,
               autosend_trial: 1,
+              diagnostics: 1,
             },
+            layerCounts: { actionable: 1, history: 3, diagnostic: 1 },
             items: [
               {
                 itemId: "inbox-item-1",
@@ -1081,11 +1168,20 @@ describe("chat view", () => {
                 messageClass: "operator_approved_suggestion_available",
                 boundedDisplayText: "An approved operator suggestion is available.",
                 candidateSummary: "Follow up on the unresolved gateway rebuild issue.",
+                planTitle: "Gateway rebuild follow-up",
+                problem: "The live gateway may not include the latest proactivity UX changes.",
                 suggestedAction: "Review the gateway rebuild follow-up and send it if still true.",
                 messagePreview: "Should we rerun the live gateway rebuild now that UX changed?",
+                proposedMessage: "Should we rerun the live gateway rebuild now that UX changed?",
                 expectedUserValue: "Keeps the live UI aligned with the latest proactivity changes.",
+                userBenefit: "Keeps the live UI aligned with the latest proactivity changes.",
+                evidenceSummary:
+                  "The active remediation changed proactivity UX and gateway behavior.",
+                confidence: "medium" as const,
+                blockedIfMissing: [],
                 status: "pending_review",
-                filterTags: ["pending"],
+                filterTags: ["actionable", "pending"],
+                layer: "actionable",
                 sourceRefs: ["docs/projects/model-memory/phase-2-execution-roadmap.md"],
                 sourceProfileIds: ["curated_repo_doc"],
                 authorityTiers: ["curated_authoritative"],
@@ -1111,7 +1207,8 @@ describe("chat view", () => {
                 boundedDisplayText:
                   "Auto-send simulation compared would-have-sent behavior to manual decisions.",
                 status: "autosend_trial",
-                filterTags: ["autosend_trial"],
+                filterTags: ["diagnostics", "autosend_trial"],
+                layer: "diagnostic",
                 sourceRefs: ["phase2-autosend-simulation"],
                 sourceProfileIds: ["manual_note"],
                 authorityTiers: ["operator_evaluation"],
@@ -1140,15 +1237,14 @@ describe("chat view", () => {
     expect(inbox).not.toBeNull();
     expect(container.querySelector(".chat-thread .proactivity-inbox")).toBeNull();
     expect(container.textContent).toContain("Proactivity Inbox");
-    expect(container.textContent).toContain("pending 1");
-    expect(container.textContent).toContain("sent 1");
-    expect(container.textContent).toContain("snoozed 1");
-    expect(container.textContent).toContain("dismissed 1");
-    expect(container.textContent).toContain("blocked 1");
-    expect(container.textContent).toContain("autosend trial 1");
-    expect(container.textContent).toContain("Auto-send simulation");
+    expect(container.textContent).toContain("1 actionable");
+    expect(container.textContent).toContain("0 history");
+    expect(container.textContent).toContain("1 diagnostic");
+    expect(container.textContent).toContain("Actionable 1");
+    expect(container.textContent).toContain("Diagnostics 1");
+    expect(container.textContent).not.toContain("Auto-send simulation");
     expect(container.textContent).toContain("Suggested action");
-    expect(container.textContent).toContain("Message preview");
+    expect(container.textContent).toContain("Proposed message");
     expect(container.textContent).toContain("Should we rerun the live gateway rebuild");
     expect(container.textContent).toContain("Approve & Send");
     expect(container.textContent).toContain("Dismiss");
@@ -1158,11 +1254,13 @@ describe("chat view", () => {
     expect(container.textContent).toContain("Too repetitive");
     expect(container.textContent).toContain("Wrong context");
     expect(container.textContent).toContain("Unsafe/private");
-    expect(container.textContent).toContain("Why this appeared");
+    expect(container.textContent).toContain("Review plan");
     expect(container.textContent).toContain("curated_repo_doc");
     expect(container.textContent).toContain("Feedback");
     expect(container.textContent).not.toContain("raw-prompt-marker");
-    container.querySelector<HTMLButtonElement>(".proactivity-inbox .btn")?.click();
+    Array.from(container.querySelectorAll<HTMLButtonElement>(".proactivity-inbox button"))
+      .find((button) => button.textContent?.includes("Approve & Send"))
+      ?.click();
     expect(onApproveSend).toHaveBeenCalledWith("queue-item-1");
     container.querySelector<HTMLButtonElement>('[data-feedback-control="wrong_context"]')?.click();
     expect(onFeedback).toHaveBeenCalledWith("queue-item-1", "wrong_context");

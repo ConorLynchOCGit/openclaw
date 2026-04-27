@@ -109,4 +109,20 @@ Default lifecycle:
 - explicit pinning prevents expiry until the candidate is unpinned or resolved
 
 Phase 2 v1 stores review items as bounded artifacts plus a lightweight runtime
-index. A dedicated review inbox UI is deferred.
+index. A dedicated review inbox UI is now active in the Control UI, but the
+primary chat workspace remains preserved:
+
+- chat chrome exposes a compact `Proactivity` entry point with actionable count
+- the full Proactivity Inbox opens in the side drawer, not inside the transcript
+- the default view shows actionable suggestions only
+- sent, snoozed, and dismissed items are history views
+- auto-send simulations, blocked preflight, blocked candidates, proof metadata,
+  and why-not-shown records live behind Diagnostics
+- actionable suggestions must include `planTitle`, `problem`,
+  `proposedMessage`, `userBenefit`, `evidenceSummary`, `confidence`, and
+  `blockedIfMissing`
+- generic placeholder-only candidates are not actionable
+- active-context surfacing uses exact user/project/session/operator/task matches
+  and records why-not-shown diagnostics for mismatches
+- Approve & Send sends only the reviewed or edited proposed message and remains
+  explicit; the inbox must show success/failure feedback after the action

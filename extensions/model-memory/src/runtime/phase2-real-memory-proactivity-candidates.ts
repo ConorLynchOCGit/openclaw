@@ -16,6 +16,11 @@ export const PHASE2_REAL_MEMORY_PROACTIVITY_CANDIDATE_REPORT_SCHEMA_VERSION =
   "phase2_real_memory_proactivity_candidate_report.v1" as const;
 
 export type Phase2RealMemorySignalKind =
+  | "active_work_state"
+  | "unresolved_question"
+  | "recent_failure"
+  | "repeated_friction"
+  | "incomplete_follow_up"
   | "recent_task"
   | "unresolved_follow_up"
   | "stale_decision"
@@ -184,6 +189,11 @@ export type Phase2RealMemoryCandidateArtifact = {
 };
 
 const ALL_SIGNAL_KINDS: Phase2RealMemorySignalKind[] = [
+  "active_work_state",
+  "unresolved_question",
+  "recent_failure",
+  "repeated_friction",
+  "incomplete_follow_up",
   "recent_task",
   "unresolved_follow_up",
   "stale_decision",
@@ -314,9 +324,55 @@ async function buildDefaultSignals(repoRoot: string): Promise<Phase2RealMemorySi
   const generated = await Promise.all([
     fileSignal({
       repoRoot,
+      kind: "active_work_state",
+      relativePath: "docs/projects/model-memory/phase-2-execution-roadmap.md",
+      summary:
+        "Active work is Proactivity UX correctness: fix no-op sends, misleading counts, inert filters, and blind approval before adding capability.",
+      sourceProfileId: "curated_repo_doc",
+      authorityTier: "curated_authoritative",
+    }),
+    fileSignal({
+      repoRoot,
+      kind: "unresolved_question",
+      relativePath: "docs/projects/model-memory/DECISIONS.md",
+      summary:
+        "The user still has not seen a concrete proactive plan surfaced in the active chat session; verify contextual surfacing and plan review.",
+      sourceProfileId: "curated_repo_doc",
+      authorityTier: "curated_authoritative",
+    }),
+    fileSignal({
+      repoRoot,
+      kind: "recent_failure",
+      relativePath: "docs/projects/operator-experience/STATUS.md",
+      summary:
+        "Live gateway rebuild pickup was previously unclear after proactivity UI changes; verify the rebuilt gateway serves the current Proactivity Inbox before judging UX.",
+      sourceProfileId: "curated_repo_doc",
+      authorityTier: "curated_authoritative",
+    }),
+    fileSignal({
+      repoRoot,
+      kind: "repeated_friction",
+      relativePath: "docs/projects/model-memory/DECISIONS.md",
+      summary:
+        "Repeated proactivity friction: notes say a plan exists without showing the plan; suppress placeholders and show concrete reviewable plan cards.",
+      sourceProfileId: "curated_repo_doc",
+      authorityTier: "curated_authoritative",
+    }),
+    fileSignal({
+      repoRoot,
+      kind: "incomplete_follow_up",
+      relativePath: "docs/projects/model-memory/phase-2-execution-roadmap.md",
+      summary:
+        "Follow up on whether the latest Proactivity UX changes are visible in the real live chat session after gateway rebuild.",
+      sourceProfileId: "curated_repo_doc",
+      authorityTier: "curated_authoritative",
+    }),
+    fileSignal({
+      repoRoot,
       kind: "recent_task",
       relativePath: "docs/projects/model-memory/phase-2-execution-roadmap.md",
-      summary: "Recent Model Memory rollout work has a follow-up ready for operator review.",
+      summary:
+        "Recent Model Memory rollout work needs a product UX check: approve/send, filters, counts, and concrete plan cards must work in the real chat flow.",
       sourceProfileId: "curated_repo_doc",
       authorityTier: "curated_authoritative",
     }),
@@ -375,8 +431,18 @@ async function buildDefaultSignals(repoRoot: string): Promise<Phase2RealMemorySi
 
 function displayTextForSignal(signal: Phase2RealMemorySignal): string {
   switch (signal.kind) {
+    case "active_work_state":
+      return "Fix the broken Proactivity Inbox before expanding capability.";
+    case "unresolved_question":
+      return "Verify why no concrete proactive plan has surfaced in the active chat session.";
+    case "recent_failure":
+      return "Confirm the rebuilt live gateway is serving the current Proactivity UX.";
+    case "repeated_friction":
+      return "Replace placeholder proactivity notes with concrete reviewable plan cards.";
+    case "incomplete_follow_up":
+      return "Follow up on whether the latest Proactivity UX appears in the real workspace.";
     case "recent_task":
-      return "A recent Model Memory task has a follow-up ready for review.";
+      return "Check the current Model Memory proactivity remediation in the live chat flow.";
     case "unresolved_follow_up":
       return "An unresolved Model Memory follow-up is ready for review.";
     case "stale_decision":
@@ -428,7 +494,10 @@ function candidateFromSignal(signal: Phase2RealMemorySignal): Phase2RealMemoryCa
   return {
     candidateId,
     messageClass:
-      signal.kind === "unresolved_follow_up" || signal.kind === "stale_decision"
+      signal.kind === "unresolved_follow_up" ||
+      signal.kind === "stale_decision" ||
+      signal.kind === "unresolved_question" ||
+      signal.kind === "incomplete_follow_up"
         ? "operator_approved_follow_up_available"
         : "operator_approved_suggestion_available",
     boundedDisplayText: displayTextForSignal(signal),

@@ -43,6 +43,32 @@ export type ProductProactivityFeedbackControl =
   | "wrong_context"
   | "unsafe_private";
 
+export type ProductProactivityConfidence = "high" | "medium" | "low";
+
+export type ProductProactivityLayer = "actionable" | "history" | "diagnostic";
+
+export type ProductProactivitySendStatus = "idle" | "sending" | "sent" | "failed";
+
+export type ProductProactivityPlanFields = {
+  planTitle?: string;
+  problem?: string;
+  proposedMessage?: string;
+  userBenefit?: string;
+  evidenceSummary?: string;
+  confidence?: ProductProactivityConfidence;
+  blockedIfMissing?: string[];
+};
+
+export type ProductProactivityActiveContext = {
+  userId: string;
+  recipientId: string;
+  projectId: string;
+  sessionKey: string;
+  operatorId: string;
+  taskId?: string;
+  source: "chat_active_session" | "gateway_eligibility_scope" | "proof_fixture" | "unknown";
+};
+
 export type ProductProactivityQueueItem = {
   queueItemId: string;
   candidateId: string;
@@ -52,6 +78,18 @@ export type ProductProactivityQueueItem = {
   suggestedAction?: string;
   candidateSummary?: string;
   expectedUserValue?: string;
+  planTitle?: string;
+  problem?: string;
+  proposedMessage?: string;
+  userBenefit?: string;
+  evidenceSummary?: string;
+  confidence?: ProductProactivityConfidence;
+  blockedIfMissing?: string[];
+  layer?: ProductProactivityLayer;
+  attentionRequired?: boolean;
+  sendStatus?: ProductProactivitySendStatus;
+  sendError?: string | null;
+  sentMessageAnchor?: string | null;
   status: ProductProactivityQueueItemStatus;
   eligibleScope: {
     environment: "live";
@@ -123,12 +161,16 @@ export type PersonalAutoSendUxResult = {
 };
 
 export type ProactivityInboxFilter =
+  | "actionable"
   | "pending"
   | "sent"
   | "snoozed"
   | "dismissed"
   | "blocked"
-  | "autosend_trial";
+  | "autosend_trial"
+  | "diagnostics";
+
+export type ProactivityInboxView = "actionable" | "sent" | "snoozed" | "dismissed" | "diagnostics";
 
 export type ProactivityInboxItem = {
   itemId: string;
@@ -144,6 +186,18 @@ export type ProactivityInboxItem = {
   suggestedAction?: string;
   candidateSummary?: string;
   expectedUserValue?: string;
+  planTitle?: string;
+  problem?: string;
+  proposedMessage?: string;
+  userBenefit?: string;
+  evidenceSummary?: string;
+  confidence?: ProductProactivityConfidence;
+  blockedIfMissing?: string[];
+  layer?: ProductProactivityLayer;
+  attentionRequired?: boolean;
+  sendStatus?: ProductProactivitySendStatus;
+  sendError?: string | null;
+  sentMessageAnchor?: string | null;
   status: "pending_review" | "sent" | "snoozed" | "dismissed" | "blocked" | "autosend_trial";
   filterTags: ProactivityInboxFilter[];
   sourceRefs: string[];
@@ -168,6 +222,7 @@ export type ProactivityInboxDigest = {
   filters: ProactivityInboxFilter[];
   items: ProactivityInboxItem[];
   counts: Record<ProactivityInboxFilter, number>;
+  layerCounts?: Record<ProductProactivityLayer, number>;
   generatedAt: string;
 };
 

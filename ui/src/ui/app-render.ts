@@ -1868,6 +1868,16 @@ export function renderApp(state: AppViewState) {
               proactivityInboxDigest: state.proactivityInboxDigest,
               proactivityInboxLoading: state.proactivityInboxLoading,
               proactivityInboxError: state.proactivityInboxError,
+              proactivityInboxView: state.proactivityInboxView,
+              productProactivityEditedMessages: state.productProactivityEditedMessages,
+              activeProactivityContext: {
+                userId: "local-openclaw-user",
+                recipientId: "local-openclaw-recipient",
+                projectId: "openclaw",
+                sessionKey: state.sessionKey,
+                operatorId: "local-openclaw-operator",
+                source: "chat_active_session",
+              },
               personalAutoSendUx: state.personalAutoSendUx,
               personalAutoSendUxLoading: state.personalAutoSendUxLoading,
               personalAutoSendUxError: state.personalAutoSendUxError,
@@ -1913,6 +1923,9 @@ export function renderApp(state: AppViewState) {
               onProductProactivitySnooze: (id) => state.handleProductProactivitySnooze(id),
               onProductProactivityFeedback: (id, control) =>
                 state.handleProductProactivityFeedback(id, control),
+              onProductProactivityEditMessage: (id, value) =>
+                state.handleProductProactivityEditMessage(id, value),
+              onProactivityInboxViewChange: (view) => state.setProactivityInboxView(view),
               onPersonalAutoSendDisable: () => state.handlePersonalAutoSendDisable(),
               onDismissSideResult: () => {
                 state.chatSideResult = null;

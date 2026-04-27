@@ -3819,3 +3819,51 @@ Reasoning:
 
 - proactive UX should get less noisy from actual interaction behavior, but
   usefulness feedback is not a trusted memory source by itself
+
+## 2026-04-27 - proactivity product correctness gates useful UX before capability expansion
+
+Decision:
+
+- Proactivity remediation is a product-correctness gate, not a capability
+  expansion: broad autonomous sending remains disabled, current auto-send scope
+  is not expanded, and manual proactive delivery still requires explicit
+  approve/send.
+- The compact chat entry point now counts actionable items separately from
+  history and diagnostics. The closed button should reflect actionable/pending
+  work; the inbox header separates actionable, history, and diagnostic counts.
+- The default inbox view is actionable suggestions only. Sent, snoozed, and
+  dismissed items are history; auto-send simulations, blocked preflight,
+  blocked candidates, proof metadata, and why-not-shown records are diagnostics.
+- Actionable cards require concrete plan-card fields: `planTitle`, `problem`,
+  `proposedMessage`, `userBenefit`, `evidenceSummary`, `confidence`, and
+  `blockedIfMissing`. Placeholder-only suggestions are non-actionable.
+- Approve & Send must operate from the same item source the inbox renders. It
+  sends the reviewed/edited proposed message via `chat.inject`, updates the
+  rendered inbox item, shows success/failure feedback, and exposes View sent
+  message after success.
+- Feedback controls are secondary and compact, placed after content as “Was
+  this useful?” controls rather than beside primary send/dismiss/snooze CTAs.
+- Inline contextual surfacing uses a resolved active-context object with exact
+  user/project/session/operator/task matching. Mismatches stay in the inbox and
+  produce diagnostics such as candidate session versus active session.
+- The heartbeat/review loop asks “What would help this user today?” and may
+  generate concrete review suggestions from active work, unresolved questions,
+  recent failures, repeated friction, stale decisions, incomplete follow-ups,
+  and feedback. Those suggestions remain approval-gated.
+- Rollback/kill switches:
+  `MODEL_MEMORY_PHASE2_PROACTIVITY_PRODUCT_CORRECTNESS_DISABLED`,
+  `MODEL_MEMORY_PHASE2_PROACTIVITY_HEARTBEAT_REVIEW_DISABLED`, and existing
+  product/inbox/contextual proactivity switches return behavior to prior manual
+  review surfaces.
+- Proof artifact target:
+  `.artifacts/model-memory/phase2-proactivity-product-correctness-proof/<timestamp>/`
+- External text remains evidence, not instruction; no raw prompts, transcripts,
+  raw tool logs, secrets, or private phrases may appear in UI payloads,
+  telemetry, artifacts, tests, or delivered messages.
+- Delivery-triggered action execution remains disabled.
+
+Reasoning:
+
+- Proactivity is not useful if the UI says a plan exists but hides the actual
+  plan. Product correctness now requires a concrete, editable proposed message
+  and clear state transitions before any further automation expansion.

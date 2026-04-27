@@ -31,12 +31,14 @@ export const PHASE2_PROACTIVITY_INBOX_REPORT_SCHEMA_VERSION =
   "phase2_proactivity_inbox_report.v1" as const;
 
 export type Phase2ProactivityInboxFilter =
+  | "actionable"
   | "pending"
   | "sent"
   | "snoozed"
   | "dismissed"
   | "blocked"
-  | "autosend_trial";
+  | "autosend_trial"
+  | "diagnostics";
 
 export type Phase2ProactivityInboxItem = {
   itemId: string;
@@ -52,6 +54,18 @@ export type Phase2ProactivityInboxItem = {
   suggestedAction: string;
   candidateSummary: string;
   expectedUserValue: string;
+  planTitle: string;
+  problem: string;
+  proposedMessage: string;
+  userBenefit: string;
+  evidenceSummary: string;
+  confidence: "high" | "medium" | "low";
+  blockedIfMissing: string[];
+  layer: "actionable" | "history" | "diagnostic";
+  attentionRequired: boolean;
+  sendStatus: "idle" | "sending" | "sent" | "failed";
+  sendError: string | null;
+  sentMessageAnchor: string | null;
   status: "pending_review" | "sent" | "snoozed" | "dismissed" | "blocked" | "autosend_trial";
   filterTags: Phase2ProactivityInboxFilter[];
   sourceRefs: string[];
@@ -84,6 +98,7 @@ export type Phase2ProactivityInboxDigest = {
   filters: Phase2ProactivityInboxFilter[];
   items: Phase2ProactivityInboxItem[];
   counts: Record<Phase2ProactivityInboxFilter, number>;
+  layerCounts: Record<"actionable" | "history" | "diagnostic", number>;
   generatedAt: string;
 };
 
@@ -197,12 +212,14 @@ export type Phase2ProactivityInboxArtifact = {
 };
 
 const FILTERS = [
+  "actionable",
   "pending",
   "sent",
   "snoozed",
   "dismissed",
   "blocked",
   "autosend_trial",
+  "diagnostics",
 ] as const satisfies readonly Phase2ProactivityInboxFilter[];
 
 const PROHIBITED_KEYS = new Set([
@@ -351,6 +368,7 @@ function cloneQueueItemForInbox(input: {
   sourceArtifactReportId: string;
   status: Phase2ProactivityInboxItem["status"];
   filter: Phase2ProactivityInboxFilter;
+  layer: Phase2ProactivityInboxItem["layer"];
   generatedAt: string;
   feedbackReport?: Phase2ProactivityFeedbackReport;
   blockedReasonCodes?: string[];
@@ -372,8 +390,26 @@ function cloneQueueItemForInbox(input: {
     suggestedAction: input.queueItem.suggestedAction,
     candidateSummary: input.queueItem.candidateSummary,
     expectedUserValue: input.queueItem.expectedUserValue,
+    planTitle: input.queueItem.planTitle,
+    problem: input.queueItem.problem,
+    proposedMessage: input.displayText ?? input.queueItem.proposedMessage,
+    userBenefit: input.queueItem.userBenefit,
+    evidenceSummary: input.queueItem.evidenceSummary,
+    confidence: input.queueItem.confidence,
+    blockedIfMissing: input.queueItem.blockedIfMissing,
+    layer: input.layer,
+    attentionRequired: input.layer === "actionable",
+    sendStatus: input.status === "sent" ? "sent" : "idle",
+    sendError: null,
+    sentMessageAnchor:
+      input.status === "sent" ? `chat-message:${input.queueItem.queueItemId}` : null,
     status: input.status,
-    filterTags: [input.filter],
+    filterTags:
+      input.layer === "actionable"
+        ? ["actionable", input.filter]
+        : input.layer === "diagnostic"
+          ? ["diagnostics", input.filter]
+          : [input.filter],
     sourceRefs: input.queueItem.sourceRefs,
     sourceProfileIds: input.queueItem.sourceProfileIds,
     authorityTiers: input.queueItem.authorityTiers,
@@ -403,6 +439,7 @@ function buildInboxItems(input: {
         sourceArtifactReportId: input.productSurfacingReport.reportId,
         status: "pending_review",
         filter: "pending",
+        layer: queueItem.layer === "actionable" ? "actionable" : "diagnostic",
         generatedAt: input.generatedAt,
         feedbackReport: input.feedbackReport,
       }),
@@ -411,6 +448,7 @@ function buildInboxItems(input: {
         sourceArtifactReportId: input.productSurfacingReport.reportId,
         status: "sent",
         filter: "sent",
+        layer: "history",
         generatedAt: input.generatedAt,
         feedbackReport: input.feedbackReport,
         displayText: "Approved proactive message was sent through chat.inject.",
@@ -420,6 +458,7 @@ function buildInboxItems(input: {
         sourceArtifactReportId: input.productSurfacingReport.reportId,
         status: "snoozed",
         filter: "snoozed",
+        layer: "history",
         generatedAt: input.generatedAt,
         feedbackReport: input.feedbackReport,
         displayText: "A proactive suggestion is snoozed until the next eligible review.",
@@ -429,6 +468,7 @@ function buildInboxItems(input: {
         sourceArtifactReportId: input.productSurfacingReport.reportId,
         status: "dismissed",
         filter: "dismissed",
+        layer: "history",
         generatedAt: input.generatedAt,
         feedbackReport: input.feedbackReport,
         displayText: "A proactive suggestion was dismissed and will not send.",
@@ -456,8 +496,22 @@ function buildInboxItems(input: {
       candidateSummary: "Report-only auto-send simulation observation.",
       expectedUserValue:
         "Shows whether auto-send would be useful or noisy without sending automatically.",
+      planTitle: "Review auto-send simulation diagnostics",
+      problem:
+        "This is diagnostic-only evidence about what might have auto-sent; it is not an actionable message.",
+      proposedMessage: "",
+      userBenefit:
+        "Keeps automation evaluation visible without adding noise to the actionable inbox.",
+      evidenceSummary: "Report-only simulation telemetry; no automatic delivery occurred.",
+      confidence: "medium",
+      blockedIfMissing: ["manual_send_policy_approval"],
+      layer: "diagnostic",
+      attentionRequired: false,
+      sendStatus: "idle",
+      sendError: null,
+      sentMessageAnchor: null,
       status: "autosend_trial",
-      filterTags: ["autosend_trial"],
+      filterTags: ["diagnostics", "autosend_trial"],
       sourceRefs: simulation.sourceRefs,
       sourceProfileIds: simulation.sourceProfileIds,
       authorityTiers: simulation.authorityTiers,
@@ -491,8 +545,23 @@ function buildInboxItems(input: {
       suggestedAction: "Review simulation fallback evidence before changing any auto-send policy.",
       candidateSummary: "Auto-send simulation fallback from product queue evidence.",
       expectedUserValue: "Keeps auto-send evaluation visible while preserving manual-send control.",
+      planTitle: "Review auto-send simulation fallback",
+      problem:
+        "Simulation proof was unavailable in product runtime, so this diagnostic item is not actionable.",
+      proposedMessage: "",
+      userBenefit:
+        "Keeps missing simulation evidence visible without polluting actionable suggestions.",
+      evidenceSummary:
+        "Generated from product queue fallback evidence; no automatic delivery occurred.",
+      confidence: "low",
+      blockedIfMissing: ["simulation_artifact"],
+      layer: "diagnostic",
+      attentionRequired: false,
+      sendStatus: "idle",
+      sendError: null,
+      sentMessageAnchor: null,
       status: "autosend_trial",
-      filterTags: ["autosend_trial"],
+      filterTags: ["diagnostics", "autosend_trial"],
       sourceRefs: queueItem.sourceRefs,
       sourceProfileIds: queueItem.sourceProfileIds,
       authorityTiers: queueItem.authorityTiers,
@@ -533,8 +602,20 @@ function buildInboxItems(input: {
       candidateSummary: "Follow-up auto-send preflight candidate.",
       expectedUserValue:
         "Prevents repeated or wrong-context follow-ups from becoming automatic sends.",
+      planTitle: "Review follow-up auto-send preflight",
+      problem: "Follow-up auto-send is preflight-only and remains manual-send.",
+      proposedMessage: "",
+      userBenefit: "Prevents repeated or wrong-context follow-ups from becoming automatic sends.",
+      evidenceSummary: "Generated from follow-up auto-send preflight evidence.",
+      confidence: "medium",
+      blockedIfMissing: ["follow_up_autosend_promotion"],
+      layer: "diagnostic",
+      attentionRequired: false,
+      sendStatus: "idle",
+      sendError: null,
+      sentMessageAnchor: null,
       status: "blocked",
-      filterTags: ["blocked"],
+      filterTags: ["diagnostics", "blocked"],
       sourceRefs: followUp.sourceRefs,
       sourceProfileIds: followUp.sourceProfileIds,
       authorityTiers: followUp.authorityTiers,
@@ -569,8 +650,20 @@ function buildInboxItems(input: {
       candidateSummary: "Manual-only follow-up fallback.",
       expectedUserValue:
         "Preserves the follow-up manual-send boundary when preflight evidence is incomplete.",
+      planTitle: "Review manual-only follow-up fallback",
+      problem: "Follow-up preflight evidence is incomplete, so this item stays diagnostic-only.",
+      proposedMessage: "",
+      userBenefit: "Prevents blind follow-up automation when preflight evidence is missing.",
+      evidenceSummary: "Generated as a bounded follow-up fallback from product queue evidence.",
+      confidence: "low",
+      blockedIfMissing: ["follow_up_preflight_artifact"],
+      layer: "diagnostic",
+      attentionRequired: false,
+      sendStatus: "idle",
+      sendError: null,
+      sentMessageAnchor: null,
       status: "blocked",
-      filterTags: ["blocked"],
+      filterTags: ["diagnostics", "blocked"],
       sourceRefs: queueItem.sourceRefs,
       sourceProfileIds: queueItem.sourceProfileIds,
       authorityTiers: queueItem.authorityTiers,
@@ -665,7 +758,9 @@ export async function buildPhase2ProactivityInboxReport(
   addCheck(
     checks,
     "filters_available",
-    FILTERS.every((filter) => countItems(items, filter) > 0),
+    ["actionable", "sent", "snoozed", "dismissed", "diagnostics"].every(
+      (filter) => countItems(items, filter as Phase2ProactivityInboxFilter) > 0,
+    ),
   );
   addCheck(checks, "provenance_required", provenanceOk);
   addCheck(checks, "source_profile_required", sourceProfileOk);
@@ -724,12 +819,19 @@ export async function buildPhase2ProactivityInboxReport(
     filters: [...FILTERS],
     items,
     counts: {
+      actionable: countItems(items, "actionable"),
       pending: countItems(items, "pending"),
       sent: countItems(items, "sent"),
       snoozed: countItems(items, "snoozed"),
       dismissed: countItems(items, "dismissed"),
       blocked: countItems(items, "blocked"),
       autosend_trial: countItems(items, "autosend_trial"),
+      diagnostics: countItems(items, "diagnostics"),
+    },
+    layerCounts: {
+      actionable: items.filter((item) => item.layer === "actionable").length,
+      history: items.filter((item) => item.layer === "history").length,
+      diagnostic: items.filter((item) => item.layer === "diagnostic").length,
     },
     generatedAt,
   };
