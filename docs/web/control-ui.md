@@ -374,6 +374,10 @@ The Control UI surfaces Model Memory proactivity through normal chat chrome:
 - The canonical proactivity model is ledger-first. Inbox, heartbeat,
   contextual cards, history, and follow-up states derive from one opportunity
   record rather than separate queue/history truths.
+- Same-session assistant-output-derived opportunities depend on authoritative
+  transcript sync persisting only substantive assistant final answers.
+  Operational assistant markers such as turn-activity and memory-activity are
+  excluded from assistant-turn proactivity persistence.
 - Top heartbeat opportunities may show `Draft ready` when the system generated
   an internal planning or investigation brief. These drafts remain bounded,
   reviewable, and non-executing.

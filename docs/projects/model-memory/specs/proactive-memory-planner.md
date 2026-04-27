@@ -499,6 +499,12 @@ The next proactivity standard is generator-first usefulness, not queue polish.
   history/runtime capture first.
 - UI callbacks may still eagerly refresh or annotate the surface, but they are
   not allowed to be the only path that makes a same-session opportunity exist.
+- Authoritative transcript sync must persist only substantive assistant final
+  answers for assistant-output-derived opportunities.
+- Operational assistant messages such as turn-activity and memory-activity are
+  not proactivity assistant-turn sources.
+- Placeholder fallback summaries must not replace real assistant final answers.
+- Explicit `final_answer` phased text is preferred whenever available.
 - Heartbeat and inline chat follow-ups must derive from the same canonical
   persisted bounded opportunity state as inbox and handoff surfaces.
 

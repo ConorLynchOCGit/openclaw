@@ -222,6 +222,9 @@ surfacing.
 
 - Assistant-output-derived opportunities are first-class review inputs when the
   output contains bounded, concrete next-step content.
+- For assistant-output-derived opportunities, authoritative transcript sync must
+  persist only substantive assistant final answers. Operational assistant
+  markers and placeholder fallback summaries are not valid review sources.
 - The same canonical opportunity id must drive inbox, heartbeat, contextual
   cards, history, autonomous drafts, and follow-up.
 - Review surfaces must be able to show `draft_ready` state for top heartbeat

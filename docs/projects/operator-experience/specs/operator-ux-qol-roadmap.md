@@ -294,6 +294,8 @@ The next ambient proactivity correction is specifically about normal workflow:
 
 - same-session assistant answers should produce visible follow-up surfaces
   without the user opening the inbox
+- same-session assistant answers must come from authoritative assistant-final
+  capture, not operational assistant noise or placeholder summaries
 - heartbeat should show a bounded proactive review when live opportunities
   exist instead of remaining a legacy `HEARTBEAT_OK` no-op
 - persisted proactivity state should survive refresh/restart and auto-retire

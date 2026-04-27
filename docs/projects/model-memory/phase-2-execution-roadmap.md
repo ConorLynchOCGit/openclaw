@@ -778,6 +778,11 @@ For each implementation wave:
   proof seeding.
 - Server-side authoritative transcript/session capture replaces UI callback
   dependence as the primary proactivity extraction seam.
+- Authoritative transcript sync must persist only substantive assistant final
+  answers for `assistant_turn` opportunity extraction. `Turn activity`,
+  `[Memory Activity]`, and similar operational assistant markers are excluded.
+- Placeholder fallback summaries must not replace a real assistant final answer.
+- Explicit `final_answer` phased text and ids are preferred whenever available.
 - Heartbeat must stop acting like a legacy liveness ping when real opportunity
   traffic exists. It should emit a bounded proactive review with top items and
   `Draft ready` when applicable.

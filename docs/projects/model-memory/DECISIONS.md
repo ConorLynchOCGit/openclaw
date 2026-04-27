@@ -5,6 +5,31 @@ title: "Model Memory Decisions"
 
 # Model Memory Decisions
 
+## 2026-04-27 - Same-session proactivity must capture only substantive assistant finals
+
+Decision:
+
+- authoritative transcript sync is the primary source for assistant-output
+  proactivity generation in live workflow
+- only substantive assistant final answers may persist as `assistant_turn`
+  activity records for assistant-output-derived opportunities
+- operational assistant messages such as `turn_activity`,
+  `model_memory_activity`, and similar bounded runtime markers are not valid
+  proactivity assistant-turn sources
+- placeholder fallback summaries must not replace a real assistant final answer
+- explicit `final_answer` phased text and ids are preferred whenever available
+- success is measured in same-session live workflow correctness, not proof-only
+  coverage
+
+Reasoning:
+
+- the real `agent:main:main` workflow showed substantive assistant answers in
+  the transcript, but persisted proactivity state was dominated by operational
+  noise and occasional placeholder assistant records
+- heartbeat, inline surfacing, and same-session queue generation all depend on
+  clean persisted assistant-final capture; proof-only coverage is not enough
+  when the live path still fails
+
 ## 2026-04-25 - Comprehensive Phase 2 eval gates planner and proactive behavior
 
 Decision:
