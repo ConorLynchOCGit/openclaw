@@ -230,3 +230,13 @@ surfacing.
   canonical opportunity/work item record instead of creating parallel truths.
 - Why-not-shown diagnostics stay available, but primary usefulness is judged by
   whether real work and real agent output create useful surfaced items.
+
+## Ambient workflow surfacing
+
+- Inline “Follow-ups from this answer” surfacing is a required first-class
+  review surface for eligible assistant finals in the active chat.
+- Heartbeat must show a bounded proactive review whenever canonical live
+  opportunity state has actionable items, and fall back to `HEARTBEAT_OK` only
+  when no bounded opportunity exists.
+- The same canonical item id must be preserved across inline chat surfacing,
+  inbox, heartbeat, contextual cards, and handoff.

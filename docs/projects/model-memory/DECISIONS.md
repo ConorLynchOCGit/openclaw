@@ -4101,3 +4101,23 @@ Reasoning:
   failures, not acceptable deferred work.
 - A ledger-backed model is required to stop stale, duplicate, superseded, or
   already-resolved opportunities from lingering as if they were still current.
+
+## 2026-04-27 - runtime seam and heartbeat reset for live ambient proactivity
+
+Decision:
+
+- Authoritative runtime/session capture is now the primary source for
+  assistant-output-derived proactivity. UI callbacks are fallback and
+  acceleration paths, not the sole source of truth.
+- Heartbeat must return a bounded proactive review when real opportunities
+  exist, and only return `HEARTBEAT_OK` when no genuine bounded opportunity is
+  available.
+- Ambient inline in-chat surfacing is a first-class workflow surface. Useful
+  follow-ups should appear directly after eligible assistant answers without
+  requiring an inbox visit.
+- Proactivity state must survive refresh/restart through persisted bounded
+  activity records plus persisted lifecycle overrides/ledger inputs.
+- Completion, supersession, and recurring follow-up loops remain mandatory for
+  keeping live workflow state clean and useful.
+- Future buckets must not claim success on proof-only paths when live runtime
+  paths still fail.

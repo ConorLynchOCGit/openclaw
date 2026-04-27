@@ -290,6 +290,15 @@ The next operator-facing proactivity pass is explicitly usefulness-first:
 This is the guardrail for Skills and later buckets too: operator UX should not
 grow broader control surfaces until useful generation from real work is proven.
 
+The next ambient proactivity correction is specifically about normal workflow:
+
+- same-session assistant answers should produce visible follow-up surfaces
+  without the user opening the inbox
+- heartbeat should show a bounded proactive review when live opportunities
+  exist instead of remaining a legacy `HEARTBEAT_OK` no-op
+- persisted proactivity state should survive refresh/restart and auto-retire
+  handled items
+
 ### Diff, Test, and Build Status Cards
 
 Represent engineering work as structured status cards instead of prose.

@@ -771,6 +771,21 @@ For each implementation wave:
 - This generator-first rule also applies to future Skills, tools, and workflow
   synthesis: do not expand scaffolding before real work proves useful outputs.
 
+## Runtime and heartbeat reset after the generator-first pass
+
+- The next correction is live-runtime-first: assistant final answers in real
+  `agent:main:main` workflow must create same-session opportunities without
+  proof seeding.
+- Server-side authoritative transcript/session capture replaces UI callback
+  dependence as the primary proactivity extraction seam.
+- Heartbeat must stop acting like a legacy liveness ping when real opportunity
+  traffic exists. It should emit a bounded proactive review with top items and
+  `Draft ready` when applicable.
+- Inline ambient follow-ups in chat are now required so useful work appears in
+  normal workflow, not only in the inbox.
+- Persisted bounded activity records and lifecycle overrides must survive
+  refresh/restart and auto-retire handled/superseded items.
+
 ## Explicitly deferred
 
 Deferred beyond this first Phase 2 roadmap:

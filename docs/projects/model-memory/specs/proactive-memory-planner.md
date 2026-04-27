@@ -493,6 +493,15 @@ The next proactivity standard is generator-first usefulness, not queue polish.
   generation from real work before building broad rollout or control
   infrastructure.
 
+## Live runtime source-of-truth rule
+
+- Assistant-output-derived opportunities must come from authoritative session
+  history/runtime capture first.
+- UI callbacks may still eagerly refresh or annotate the surface, but they are
+  not allowed to be the only path that makes a same-session opportunity exist.
+- Heartbeat and inline chat follow-ups must derive from the same canonical
+  persisted bounded opportunity state as inbox and handoff surfaces.
+
 ## Related specs
 
 - [Planner Review Artifacts And Surfacing](/projects/model-memory/specs/planner-review-artifacts-and-surfacing)

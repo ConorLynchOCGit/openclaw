@@ -380,6 +380,9 @@ The Control UI surfaces Model Memory proactivity through normal chat chrome:
 - Completion, supersession, and follow-up behavior should automatically retire
   obsolete items and reopen unfinished ones without requiring manual inbox
   cleanup.
+- Inline follow-up cards may appear directly after eligible assistant answers
+  in chat using the same canonical proactivity item ids as inbox, heartbeat,
+  contextual cards, and handoff.
 - Feedback controls are secondary “Was this useful?” controls, not primary CTAs.
 - Proactivity UI payloads must remain bounded and exclude raw prompts, full
   transcripts, raw tool logs, secrets, and private phrases.

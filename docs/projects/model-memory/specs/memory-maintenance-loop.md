@@ -148,6 +148,11 @@ It still must not execute actions, edit files, send outbound messages, or
 persist raw prompts, full transcripts, raw tool logs, secrets, or private
 phrases.
 
+The same no-dark-data rule applies to persisted proactivity activity records
+derived from authoritative transcript/session capture: only bounded summaries,
+deterministic ids, source refs, timestamps, and provenance metadata may be
+stored for ambient proactivity reuse.
+
 ## Related Specs
 
 - [Memory Ops Closed Loop](/projects/model-memory/specs/memory-ops-closed-loop)
