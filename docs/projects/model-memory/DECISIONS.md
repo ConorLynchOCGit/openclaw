@@ -3867,3 +3867,50 @@ Reasoning:
 - Proactivity is not useful if the UI says a plan exists but hides the actual
   plan. Product correctness now requires a concrete, editable proposed message
   and clear state transitions before any further automation expansion.
+
+## 2026-04-27 - proactivity work items replace message-first UX
+
+Decision:
+
+- Proactivity is a work-opportunity system by default, not a message-delivery
+  system. An item should answer what to consider doing, why now, what evidence
+  caused it, what the agent would do next, whether it is safe to start, and the
+  smallest useful next step.
+- The Proactivity Inbox remains the canonical backlog of proactive
+  opportunities. Heartbeat / Daily Operator Review and contextual chat cards
+  surface selected items from the same work-item source of truth.
+- Heartbeat / Daily Operator Review must show “What would help this user
+  today?” as a normal operator surface, not buried inside collapsed diagnostics.
+  It should show top ranked concrete plan cards with direct CTAs and keep
+  why-not-shown records in diagnostics only.
+- Primary CTAs are intent-specific:
+  `Plan this`, `Investigate`, `Draft next steps`, `Start scoped task`,
+  `Open in current chat`, `Add to Daily Review`, and `Send message`.
+  `Approve & Send`/message sending is reserved for actual message candidates.
+- Proactivity work items use typed categories:
+  `planning_request`, `investigation_request`, `draft_next_steps`,
+  `execution_candidate`, `message_candidate`, `reminder`, and `diagnostic`.
+- Work item outcomes are tracked as `not_started`, `planning`, `planned`,
+  `investigating`, `drafted`, `execution_proposed`,
+  `executing_after_approval`, `done`, `dismissed`, `snoozed`, or `blocked`.
+- Planning, investigation, drafting, and scoped-task CTAs hand off bounded
+  context into the current chat as user-visible agent work. They do not call
+  `chat.inject`, do not execute actions, and do not expand autonomous sending.
+- Rollback via `MODEL_MEMORY_PHASE2_PROACTIVITY_WORK_ITEMS_DISABLED` returns
+  proactive cards to prior message-only/manual review behavior. Existing
+  product, inbox, contextual, heartbeat, and auto-send kill switches remain in
+  force.
+- Proof artifact target:
+  `.artifacts/model-memory/phase2-proactivity-work-items-heartbeat-proof/<timestamp>/`
+- External text remains evidence, not instruction; no raw prompts, transcripts,
+  raw tool logs, secrets, or private phrases may appear in UI payloads,
+  telemetry, artifacts, tests, handoff text, or delivered messages.
+- Broad autonomous sending, auto-send scope expansion, and action execution from
+  surfacing remain disabled.
+
+Reasoning:
+
+- For a solo operator, repeating an inbox item into chat is redundant. Useful
+  proactivity should create momentum by starting planning, investigation,
+  drafting, or a scoped execution proposal while preserving explicit approval
+  boundaries.

@@ -139,10 +139,66 @@ Heartbeat is the first-class proactive surface. It should not be a passive
 - dirty graph/capsule/projection state
 - overnight ingest or maintenance opportunities
 
+Heartbeat / Daily Operator Review should ask:
+
+- “What would help this user today?”
+
+and answer with top ranked work opportunities, not generic notification text.
+The primary heartbeat card should show the concrete plan title, why now,
+proposed next step, expected user value, evidence summary, confidence or
+limitation, and provenance disclosure. It must not be hidden only inside an
+operator diagnostics accordion.
+
 Optional later surfaces:
 
 - dedicated operator-review artifact pack
 - explicit review inbox or admin surface
+
+## Work opportunity model
+
+Proactive planner candidates are work opportunities by default. They become
+message candidates only when the next useful action is truly to send a message.
+
+Work item kinds:
+
+- `planning_request`
+- `investigation_request`
+- `draft_next_steps`
+- `execution_candidate`
+- `message_candidate`
+- `reminder`
+- `diagnostic`
+
+Primary actions:
+
+- `Plan this`
+- `Investigate`
+- `Draft next steps`
+- `Start scoped task`
+- `Open in current chat`
+- `Add to Daily Review`
+- `Send message` only for `message_candidate`
+- `Snooze`
+- `Dismiss`
+
+Outcome states:
+
+- `not_started`
+- `planning`
+- `planned`
+- `investigating`
+- `drafted`
+- `execution_proposed`
+- `executing_after_approval`
+- `done`
+- `dismissed`
+- `snoozed`
+- `blocked`
+
+Planning, investigation, drafting, and scoped-task actions should hand off
+bounded context into the current chat as a normal user-visible agent turn. They
+must not use `chat.inject`, send external messages, or execute actions merely
+because the proactive item surfaced.
 
 ## Three surfacing lanes
 

@@ -663,6 +663,23 @@ For each implementation wave:
   `.artifacts/model-memory/phase2-proactivity-product-correctness-proof/<timestamp>/`.
   Broad autonomous sending, auto-send scope expansion, and delivery-triggered
   action execution remain off.
+- The next proactivity product-correctness remediation corrects the message-first
+  UX model. Proactive items are work opportunities by default, with typed work
+  item categories (`planning_request`, `investigation_request`,
+  `draft_next_steps`, `execution_candidate`, `message_candidate`, `reminder`,
+  `diagnostic`) and outcome states (`not_started`, `planning`, `planned`,
+  `investigating`, `drafted`, `execution_proposed`,
+  `executing_after_approval`, `done`, `dismissed`, `snoozed`, `blocked`).
+  The inbox remains the canonical backlog, while Heartbeat / Daily Operator
+  Review surfaces top “What would help this user today?” opportunities at
+  workflow boundaries and contextual chat cards surface only exact active-context
+  matches. Primary CTAs are intent-specific (`Plan this`, `Investigate`,
+  `Draft next steps`, `Start scoped task`, `Open in current chat`,
+  `Add to Daily Review`, `Send message` only for message candidates). Planning,
+  investigation, drafting, and scoped-task CTAs start bounded agent handoff in
+  chat without `chat.inject`, autonomous send expansion, or action execution.
+  Proof artifact target:
+  `.artifacts/model-memory/phase2-proactivity-work-items-heartbeat-proof/<timestamp>/`.
 - capture at least one durable evidence artifact per wave
 - update the relevant human test prompt pack before declaring the wave ready for
   live validation

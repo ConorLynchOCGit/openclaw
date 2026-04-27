@@ -201,19 +201,41 @@ Capabilities:
 Make proactive memory review visible without taking over the chat transcript.
 
 Status: product-correctness remediation keeps Proactivity as a compact chat
-chrome entry point and opens the full inbox in the side drawer.
+chrome entry point and opens the full inbox in the side drawer. The next
+correction treats proactive items as work opportunities, not messages by
+default.
 
 Must show:
 
 - actionable count separate from history and diagnostics
-- concrete plan title, problem, proposed message, expected value, evidence
-  summary, and confidence
-- Review plan and Edit message before send before Approve & Send
-- success/failure feedback after `chat.inject`
-- View sent message after successful send
+- concrete plan title, problem, proposed next step or message, expected value,
+  evidence summary, and confidence
+- intent-specific CTAs: Plan this, Investigate, Draft next steps, Start scoped
+  task, Open in current chat, Add to Daily Review, and Send message only for
+  message candidates
+- clear explanation of what each CTA will do before it starts
+- status after handoff: planning, planned, investigating, drafted,
+  execution_proposed, done, dismissed, snoozed, or blocked
+- success/failure feedback after handoff or `chat.inject`
+- Open in chat / View sent message after successful handoff or send
 - sent/snoozed/dismissed history separate from actionable work
 - diagnostics for blocked/preflight/simulation/why-not-shown items behind a
   Diagnostics view
+
+### Proactivity Heartbeat / Daily Review
+
+Make proactive memory part of the normal operating loop rather than a hidden
+diagnostic card.
+
+Must show:
+
+- visible “What would help this user today?” section in the Daily Operator
+  Review / Heartbeat location
+- top ranked proactive work cards with plan title, why now, proposed next step,
+  expected value, evidence summary, confidence/limitations, and provenance
+- the same candidate/work item ids used by the inbox and contextual chat cards
+- direct path to start the next useful work step or open the inbox detail
+- why-not-shown diagnostics only behind diagnostics/debug detail
 
 Must not show:
 

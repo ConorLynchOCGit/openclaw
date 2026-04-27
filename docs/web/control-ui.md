@@ -336,18 +336,29 @@ Notes:
 The Control UI surfaces Model Memory proactivity through normal chat chrome:
 
 - The chat header/toolbar shows a compact `Proactivity` entry point with the
-  actionable count.
+  actionable count and a heartbeat count/link when top “What would help this
+  user today?” items exist.
 - The full Proactivity Inbox opens in the side drawer and must not render inside
   the chat transcript or consume transcript height by default.
 - The default inbox tab is actionable suggestions. History tabs cover sent,
   snoozed, and dismissed items. Diagnostics contains blocked/preflight/simulation
   and why-not-shown records.
-- Actionable cards show the concrete plan title, problem, proposed message,
-  expected user value, evidence summary, confidence, Review plan details, and
-  Edit message before send.
-- Approve & Send calls `chat.inject` only after the user explicitly approves the
-  visible or edited proposed message. Success/failure feedback appears on the
-  card, and successful sends expose View sent message.
+- Actionable cards show the concrete plan title, problem, proposed next step or
+  message, expected user value, evidence summary, confidence, and Review plan
+  details.
+- Proactive items are work opportunities by default. Primary CTAs are
+  intent-specific: Plan this, Investigate, Draft next steps, Start scoped task,
+  Open in current chat, Add to Daily Review, or Send message only for actual
+  message candidates.
+- Planning, investigation, drafting, and scoped-task CTAs start a bounded
+  user-visible handoff in the current chat and show Open in chat after handoff.
+  They do not use `chat.inject` and do not execute actions.
+- Send message calls `chat.inject` only for message candidates after explicit
+  approval. Success/failure feedback appears on the card, and successful sends
+  expose View sent message.
+- Daily Operator Review / Heartbeat shows a visible “What would help this user
+  today?” section with top concrete work opportunity cards instead of hiding
+  proactivity only inside diagnostics.
 - Feedback controls are secondary “Was this useful?” controls, not primary CTAs.
 - Proactivity UI payloads must remain bounded and exclude raw prompts, full
   transcripts, raw tool logs, secrets, and private phrases.

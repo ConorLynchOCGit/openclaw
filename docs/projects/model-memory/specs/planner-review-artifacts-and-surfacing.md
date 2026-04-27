@@ -58,6 +58,12 @@ Heartbeat is also the first runtime surface for proactive planner maintenance.
 When planner work exists, heartbeat should report bounded activity instead of
 returning only `HEARTBEAT_OK`.
 
+Heartbeat / Daily Operator Review is a product surface, not a diagnostics-only
+surface. It must include a visible “What would help this user today?” section
+when top proactive work opportunities exist. Each top item should render as a
+concrete plan card with the same candidate/work item id used by the inbox and
+chat contextual card.
+
 Heartbeat may surface:
 
 - skill candidates
@@ -80,11 +86,16 @@ Show:
 - grouped pending candidates
 - top-ranked by urgency and age
 - enough evidence to act
+- direct intent-specific CTAs for the next useful work step
 
 ## Identity rule
 
 The same `candidateId` must appear across turn, heartbeat, and daily review so
 operator cognition is not wasted on duplicated but renamed items.
+
+For work-item based proactivity, the same deterministic `workItemId` should also
+appear across the inbox, heartbeat, daily review, contextual card, chat handoff,
+and outcome telemetry.
 
 ## Dedupe and expiry
 
@@ -124,5 +135,14 @@ primary chat workspace remains preserved:
 - generic placeholder-only candidates are not actionable
 - active-context surfacing uses exact user/project/session/operator/task matches
   and records why-not-shown diagnostics for mismatches
-- Approve & Send sends only the reviewed or edited proposed message and remains
-  explicit; the inbox must show success/failure feedback after the action
+- proactive cards are work opportunities by default. The primary CTA should be
+  intent-specific: Plan this, Investigate, Draft next steps, Start scoped task,
+  Open in current chat, Add to Daily Review, or Send message only for actual
+  message candidates
+- planning, investigation, drafting, and scoped-task CTAs start a bounded
+  user-visible handoff in chat and update the work item outcome state; they do
+  not call `chat.inject`, send external messages, or execute actions
+- Send message remains explicit for `message_candidate` items only; the inbox
+  must show success/failure feedback after any send action
+- diagnostics such as auto-send simulation, blocked preflight, proof metadata,
+  and why-not-shown records must remain outside the primary actionable count
