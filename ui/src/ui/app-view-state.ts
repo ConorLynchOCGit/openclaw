@@ -44,6 +44,7 @@ import type {
   PersonalAutoSendUxSettings,
   ProactivityInboxDigest,
   ProactivityInboxView,
+  ProductProactivityActionType,
   ProductProactivityFeedbackControl,
   ProductProactivityQueueItem,
 } from "./types.ts";
@@ -437,6 +438,10 @@ export type AppViewState = {
     handleAbortChat: () => Promise<void>;
     loadProductProactivityQueue: () => Promise<void>;
     handleProductProactivityApproveSend: (queueItemId: string) => Promise<void>;
+    handleProductProactivityWorkAction: (
+      queueItemId: string,
+      action: ProductProactivityActionType,
+    ) => Promise<void>;
     handleProductProactivityDismiss: (queueItemId: string) => void;
     handleProductProactivitySnooze: (queueItemId: string) => void;
     handleProductProactivityFeedback: (

@@ -1919,6 +1919,8 @@ export function renderApp(state: AppViewState) {
               onQueueRemove: (id) => state.removeQueuedMessage(id),
               onProductProactivityApproveSend: (id) =>
                 state.handleProductProactivityApproveSend(id),
+              onProductProactivityWorkAction: (id, action) =>
+                state.handleProductProactivityWorkAction(id, action),
               onProductProactivityDismiss: (id) => state.handleProductProactivityDismiss(id),
               onProductProactivitySnooze: (id) => state.handleProductProactivitySnooze(id),
               onProductProactivityFeedback: (id, control) =>

@@ -21,6 +21,21 @@ function actionableInboxItem(overrides: Partial<ProactivityInboxItem> = {}): Pro
     sourceArtifactReportId: "report-1",
     candidateId: "candidate-1",
     queueItemId: "queue-item-1",
+    workItemId: "work-item-1",
+    workItemKind: "planning_request",
+    workItemStatus: "not_started",
+    primaryAction: {
+      actionType: "plan_this",
+      label: "Plan this",
+      description: "Starts a bounded planning request in the current chat.",
+      requiresChatInject: false,
+      executesAction: false,
+    },
+    secondaryActions: [],
+    ctaExplanation: "Starts a bounded planning request in chat; no action executes.",
+    handoffStatus: "idle",
+    handoffError: null,
+    handoffMessageAnchor: null,
     messageClass: "operator_approved_suggestion_available",
     boundedDisplayText: "Fix the broken Proactivity Inbox before expanding capability.",
     candidateSummary: "Fix the broken Proactivity Inbox before expanding capability.",
@@ -94,12 +109,64 @@ function inboxDigest(item: ProactivityInboxItem): ProactivityInboxDigest {
 }
 
 describe("OpenClawApp proactivity product correctness", () => {
-  it("approve/send uses the inbox item source of truth and sends the edited message", async () => {
+  it("Plan this uses normal chat handoff instead of chat.inject", async () => {
     const request = vi.fn(async () => ({ ok: true }));
     const app = new OpenClawApp();
     app.client = { request } as never;
     app.sessionKey = "main";
     app.proactivityInboxDigest = inboxDigest(actionableInboxItem());
+    app.productProactivityQueue = [];
+    const sendChat = vi.spyOn(app, "handleSendChat").mockResolvedValue(undefined);
+
+    await app.handleProductProactivityWorkAction("queue-item-1", "plan_this");
+
+    expect(request).not.toHaveBeenCalledWith("chat.inject", expect.any(Object));
+    expect(sendChat).toHaveBeenCalledTimes(1);
+    expect(sendChat.mock.calls[0]?.[0]).toContain("I found a proactive item");
+    expect(sendChat.mock.calls[0]?.[0]).toContain("Safety boundary");
+    const item = app.proactivityInboxDigest?.items[0];
+    expect(item).toMatchObject({
+      workItemStatus: "planning",
+      handoffStatus: "started",
+      handoffMessageAnchor: "chat-message:queue-item-1",
+    });
+  });
+
+  it("handoff failure is visible and preserves the pending item", async () => {
+    const app = new OpenClawApp();
+    app.sessionKey = "main";
+    app.proactivityInboxDigest = inboxDigest(actionableInboxItem());
+    app.productProactivityQueue = [];
+    vi.spyOn(app, "handleSendChat").mockRejectedValue(new Error("simulated handoff failure"));
+
+    await app.handleProductProactivityWorkAction("queue-item-1", "investigate");
+
+    const item = app.proactivityInboxDigest?.items[0];
+    expect(item).toMatchObject({
+      status: "pending_review",
+      handoffStatus: "failed",
+    });
+    expect(item?.handoffError).toContain("simulated handoff failure");
+    expect(app.productProactivityError).toContain("simulated handoff failure");
+  });
+
+  it("approve/send uses the inbox item source of truth and sends the edited message", async () => {
+    const request = vi.fn(async () => ({ ok: true }));
+    const app = new OpenClawApp();
+    app.client = { request } as never;
+    app.sessionKey = "main";
+    app.proactivityInboxDigest = inboxDigest(
+      actionableInboxItem({
+        workItemKind: "message_candidate",
+        primaryAction: {
+          actionType: "send_message",
+          label: "Send message",
+          description: "Sends the reviewed message through the explicit message path.",
+          requiresChatInject: true,
+          executesAction: false,
+        },
+      }),
+    );
     app.productProactivityQueue = [];
     app.productProactivityEditedMessages = {
       "queue-item-1": "Edited proactive message before send.",
