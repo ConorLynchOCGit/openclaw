@@ -36,6 +36,13 @@ export type ProductProactivityQueueItemStatus =
   | "blocked"
   | "rollback_disabled";
 
+export type ProductProactivityFeedbackControl =
+  | "useful"
+  | "not_useful"
+  | "too_repetitive"
+  | "wrong_context"
+  | "unsafe_private";
+
 export type ProductProactivityQueueItem = {
   queueItemId: string;
   candidateId: string;

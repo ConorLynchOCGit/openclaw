@@ -3791,3 +3791,31 @@ Reasoning:
 
 - must-surface proactivity belongs in the operator loop where daily operational
   review already happens, while background items should remain summarized
+
+## 2026-04-26 - proactivity usefulness tuning is control-plane only
+
+Decision:
+
+- Slice 59 instruments bounded UX events for proactive suggestions: viewed,
+  opened detail, approved, sent, dismissed, snoozed, ignored, marked useful, and
+  marked not useful
+- quality reports group behavior by signal type, source, message class,
+  surfacing lane, and project/session scope
+- noisy sources may be downranked and repeated candidates may be suppressed
+  using deterministic reason codes
+- "why not shown" diagnostics are exposed only in operator/debug proactivity
+  detail, not as intrusive chat content
+- feedback remains control-plane metadata only; it does not create semantic
+  truth and does not write memory corrections
+- rollback via `MODEL_MEMORY_PHASE2_PROACTIVITY_USEFULNESS_TUNING_DISABLED`
+  disables tuning effects and returns to neutral ranking while preserving queue
+  and inbox behavior
+- proof artifact target:
+  `.artifacts/model-memory/phase2-proactivity-usefulness-tuning-proof/<timestamp>/`
+- broad autonomous sending and delivery-triggered action execution remain
+  disabled
+
+Reasoning:
+
+- proactive UX should get less noisy from actual interaction behavior, but
+  usefulness feedback is not a trusted memory source by itself

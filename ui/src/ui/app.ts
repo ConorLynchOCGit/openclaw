@@ -104,6 +104,7 @@ import type {
   NostrProfile,
   ToolsCatalogResult,
   ToolsEffectiveResult,
+  ProductProactivityFeedbackControl,
   ProductProactivityQueueItem,
   ProductProactivityQueueResult,
   ProactivityInboxDigest,
@@ -843,6 +844,41 @@ export class OpenClawApp extends LitElement {
           items: this.proactivityInboxDigest.items.map((entry) =>
             entry.queueItemId === queueItemId ? { ...entry, status: "snoozed" } : entry,
           ),
+        }
+      : null;
+  }
+
+  handleProductProactivityFeedback(
+    queueItemId: string,
+    control: ProductProactivityFeedbackControl,
+  ) {
+    this.proactivityInboxDigest = this.proactivityInboxDigest
+      ? {
+          ...this.proactivityInboxDigest,
+          items: this.proactivityInboxDigest.items.map((entry) => {
+            if (entry.queueItemId !== queueItemId) {
+              return entry;
+            }
+            return {
+              ...entry,
+              feedbackSummary: {
+                ...entry.feedbackSummary,
+                usefulCount: entry.feedbackSummary.usefulCount + (control === "useful" ? 1 : 0),
+                notUsefulCount:
+                  entry.feedbackSummary.notUsefulCount + (control === "not_useful" ? 1 : 0),
+                tooRepetitiveCount:
+                  entry.feedbackSummary.tooRepetitiveCount + (control === "too_repetitive" ? 1 : 0),
+                wrongContextCount:
+                  entry.feedbackSummary.wrongContextCount + (control === "wrong_context" ? 1 : 0),
+                unsafePrivateCount:
+                  entry.feedbackSummary.unsafePrivateCount + (control === "unsafe_private" ? 1 : 0),
+              },
+              blockedReasonCodes:
+                control === "unsafe_private"
+                  ? [...entry.blockedReasonCodes, "feedback_unsafe_private_block_future_surfacing"]
+                  : entry.blockedReasonCodes,
+            };
+          }),
         }
       : null;
   }

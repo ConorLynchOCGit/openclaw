@@ -43,6 +43,7 @@ import type {
   ToolsCatalogResult,
   PersonalAutoSendUxSettings,
   ProactivityInboxDigest,
+  ProductProactivityFeedbackControl,
   ProductProactivityQueueItem,
 } from "./types.ts";
 import type { ChatAttachment, ChatQueueItem } from "./ui-types.ts";
@@ -435,6 +436,10 @@ export type AppViewState = {
     handleProductProactivityApproveSend: (queueItemId: string) => Promise<void>;
     handleProductProactivityDismiss: (queueItemId: string) => void;
     handleProductProactivitySnooze: (queueItemId: string) => void;
+    handleProductProactivityFeedback: (
+      queueItemId: string,
+      control: ProductProactivityFeedbackControl,
+    ) => void;
     loadPersonalAutoSendUx: (userDisabled?: boolean) => Promise<void>;
     handlePersonalAutoSendDisable: () => Promise<void>;
     removeQueuedMessage: (id: string) => void;

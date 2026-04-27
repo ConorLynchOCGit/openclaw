@@ -956,11 +956,13 @@ describe("chat view", () => {
     const container = document.createElement("div");
     const onOpenSidebar = vi.fn();
     const onApproveSend = vi.fn();
+    const onFeedback = vi.fn();
     render(
       renderChat(
         createProps({
           onOpenSidebar,
           onProductProactivityApproveSend: onApproveSend,
+          onProductProactivityFeedback: onFeedback,
           proactivityInboxDigest: {
             digestId: "digest-1",
             generatedAt: "2026-04-26T22:00:00.000Z",
@@ -1057,6 +1059,7 @@ describe("chat view", () => {
           sidebarContent: { kind: "proactivityInbox" },
           onCloseSidebar: () => undefined,
           onProductProactivityApproveSend: onApproveSend,
+          onProductProactivityFeedback: onFeedback,
           proactivityInboxDigest: {
             digestId: "digest-1",
             generatedAt: "2026-04-26T22:00:00.000Z",
@@ -1150,12 +1153,19 @@ describe("chat view", () => {
     expect(container.textContent).toContain("Approve & Send");
     expect(container.textContent).toContain("Dismiss");
     expect(container.textContent).toContain("Snooze");
+    expect(container.textContent).toContain("Useful");
+    expect(container.textContent).toContain("Not useful");
+    expect(container.textContent).toContain("Too repetitive");
+    expect(container.textContent).toContain("Wrong context");
+    expect(container.textContent).toContain("Unsafe/private");
     expect(container.textContent).toContain("Why this appeared");
     expect(container.textContent).toContain("curated_repo_doc");
     expect(container.textContent).toContain("Feedback");
     expect(container.textContent).not.toContain("raw-prompt-marker");
     container.querySelector<HTMLButtonElement>(".proactivity-inbox .btn")?.click();
     expect(onApproveSend).toHaveBeenCalledWith("queue-item-1");
+    container.querySelector<HTMLButtonElement>('[data-feedback-control="wrong_context"]')?.click();
+    expect(onFeedback).toHaveBeenCalledWith("queue-item-1", "wrong_context");
   });
 
   it("dismisses BTW side results from the dismiss button", () => {

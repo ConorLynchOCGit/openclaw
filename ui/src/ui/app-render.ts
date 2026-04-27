@@ -1911,6 +1911,8 @@ export function renderApp(state: AppViewState) {
                 state.handleProductProactivityApproveSend(id),
               onProductProactivityDismiss: (id) => state.handleProductProactivityDismiss(id),
               onProductProactivitySnooze: (id) => state.handleProductProactivitySnooze(id),
+              onProductProactivityFeedback: (id, control) =>
+                state.handleProductProactivityFeedback(id, control),
               onPersonalAutoSendDisable: () => state.handlePersonalAutoSendDisable(),
               onDismissSideResult: () => {
                 state.chatSideResult = null;

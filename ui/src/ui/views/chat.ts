@@ -45,6 +45,7 @@ import type {
   PersonalAutoSendUxSettings,
   ProactivityInboxDigest,
   ProactivityInboxItem,
+  ProductProactivityFeedbackControl,
   ProductProactivityQueueItem,
   SessionsListResult,
 } from "../types.ts";
@@ -119,6 +120,7 @@ export type ChatProps = {
   onProductProactivityApproveSend?: (id: string) => void;
   onProductProactivityDismiss?: (id: string) => void;
   onProductProactivitySnooze?: (id: string) => void;
+  onProductProactivityFeedback?: (id: string, control: ProductProactivityFeedbackControl) => void;
   onPersonalAutoSendDisable?: () => void;
   onDismissSideResult?: () => void;
   onNewSession: () => void;
@@ -1302,7 +1304,34 @@ function renderContextualProactivityCard(props: ChatProps): TemplateResult | typ
           Snooze
         </button>
       </div>
+      ${renderProactivityFeedbackControls(props, item.queueItemId)}
     </section>
+  `;
+}
+
+function renderProactivityFeedbackControls(props: ChatProps, queueItemId: string): TemplateResult {
+  const controls: Array<{ label: string; control: ProductProactivityFeedbackControl }> = [
+    { label: "Useful", control: "useful" },
+    { label: "Not useful", control: "not_useful" },
+    { label: "Too repetitive", control: "too_repetitive" },
+    { label: "Wrong context", control: "wrong_context" },
+    { label: "Unsafe/private", control: "unsafe_private" },
+  ];
+  return html`
+    <div class="proactivity-feedback-controls" aria-label="Proactivity usefulness feedback">
+      ${controls.map(
+        ({ label, control }) => html`
+          <button
+            class="btn btn--xs btn--ghost proactivity-feedback-control"
+            type="button"
+            data-feedback-control=${control}
+            @click=${() => props.onProductProactivityFeedback?.(queueItemId, control)}
+          >
+            ${label}
+          </button>
+        `,
+      )}
+    </div>
   `;
 }
 
@@ -1608,6 +1637,7 @@ function renderProactivityInbox(props: ChatProps): TemplateResult | typeof nothi
                             >
                               Snooze
                             </button>
+                            ${renderProactivityFeedbackControls(props, item.queueItemId)}
                           </div>
                         `
                       : nothing}

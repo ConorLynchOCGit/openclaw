@@ -637,6 +637,13 @@ For each implementation wave:
   grouped as counts, and the direct action path opens the Proactivity Inbox
   detail/send surface. Proof artifact target:
   `.artifacts/model-memory/phase2-proactivity-daily-review-heartbeat-proof/<timestamp>/`.
+- Slice 59 adds usefulness tuning from bounded UX events and explicit feedback.
+  The system records viewed/opened/approved/sent/dismissed/snoozed/ignored and
+  useful/not-useful signals as control-plane metadata, reports quality by
+  source/lane/message class, downranks or suppresses noisy candidates, and
+  exposes "why not shown" diagnostics without semantic truth writes. Proof
+  artifact target:
+  `.artifacts/model-memory/phase2-proactivity-usefulness-tuning-proof/<timestamp>/`.
 - capture at least one durable evidence artifact per wave
 - update the relevant human test prompt pack before declaring the wave ready for
   live validation
