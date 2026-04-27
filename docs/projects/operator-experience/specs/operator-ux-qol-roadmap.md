@@ -272,6 +272,24 @@ The UX-ready item must show:
 Static fallback candidates, simulations, proof metadata, and blocked
 preflights stay in diagnostics and never inflate primary counts.
 
+### Generator-first proactivity reset
+
+The next operator-facing proactivity pass is explicitly usefulness-first:
+
+- a normal roadmap/planning prompt should be able to create a new proactivity
+  opportunity without manual seeding
+- a normal assistant answer with concrete next steps should create structured
+  inbox items automatically
+- top heartbeat items may arrive with bounded `Draft ready` planning or
+  investigation briefs
+- stale/resolved/superseded items should disappear automatically from primary
+  actionable UX
+- recurring asks, repeated errors, manual workarounds, and postponed decisions
+  should create bounded follow-up opportunities
+
+This is the guardrail for Skills and later buckets too: operator UX should not
+grow broader control surfaces until useful generation from real work is proven.
+
 ### Diff, Test, and Build Status Cards
 
 Represent engineering work as structured status cards instead of prose.

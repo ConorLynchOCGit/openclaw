@@ -134,6 +134,20 @@ why it matters now, the smallest safe next step, and expected user value.
 The same standard applies to future Skills, tool, and workflow candidates before
 any rollout scaffolding, default promotion, or automation controls are added.
 
+The maintenance loop is also a valid generator/follow-up seam for the
+generator-first proactivity reset:
+
+- it may contribute bounded evidence for autonomous internal drafts attached to
+  top heartbeat opportunities
+- it may reopen unfinished or stale opportunities when explicit bounded
+  follow-up conditions are met
+- it may help retire obsolete opportunities when later maintenance/docs state
+  proves the original opportunity was resolved or superseded
+
+It still must not execute actions, edit files, send outbound messages, or
+persist raw prompts, full transcripts, raw tool logs, secrets, or private
+phrases.
+
 ## Related Specs
 
 - [Memory Ops Closed Loop](/projects/model-memory/specs/memory-ops-closed-loop)

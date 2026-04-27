@@ -214,3 +214,19 @@ raw concatenated template. Required sections:
 - evidence summary
 - expected output
 - safety boundary
+
+## Ledger-backed review surfaces
+
+The next proactivity pass replaces queue-first surfacing with ledger-first
+surfacing.
+
+- Assistant-output-derived opportunities are first-class review inputs when the
+  output contains bounded, concrete next-step content.
+- The same canonical opportunity id must drive inbox, heartbeat, contextual
+  cards, history, autonomous drafts, and follow-up.
+- Review surfaces must be able to show `draft_ready` state for top heartbeat
+  opportunities without requiring the operator to open the inbox first.
+- Already-resolved, superseded, stale, or reopened items must update the same
+  canonical opportunity/work item record instead of creating parallel truths.
+- Why-not-shown diagnostics stay available, but primary usefulness is judged by
+  whether real work and real agent output create useful surfaced items.

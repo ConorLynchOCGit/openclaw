@@ -467,6 +467,32 @@ live-usefulness acceptance sequence:
   handoff quality, zero leakage, zero unsafe action execution, zero autonomous
   send expansion, and zero primary static fallback count.
 
+## Generator-first reset
+
+The next proactivity standard is generator-first usefulness, not queue polish.
+
+- Assistant planning/output turns are a first-class proactive source when they
+  contain bounded concrete next-step ideas.
+- Proactivity is ledger-first: one canonical opportunity record drives inbox,
+  heartbeat, contextual surfacing, handoff, history, and follow-up.
+- Completion and supersession must retire obsolete items automatically using
+  deterministic bounded evidence such as later assistant turns, user approval
+  records, linked handoffs, roadmap/docs transitions, or explicit handled
+  outcomes.
+- Heartbeat is both a surfacing surface and a generator/follow-up loop. It may
+  rank, reopen, and attach bounded draft-ready planning/investigation briefs for
+  top opportunities.
+- Autonomous internal drafting is allowed only for planning/investigation
+  briefs. It must not edit files, execute actions, or send outbound messages.
+- Recurring-pattern loops should detect repeated asks, repeated errors,
+  repeated manual workarounds, and postponed decisions using typed bounded
+  counters/windows rather than semantic-similarity truth.
+- Static fallback/proof/doc defaults remain diagnostics-only. They do not count
+  as primary useful proactive traffic.
+- Future Skills and adjacent buckets must adopt the same rule: prove useful
+  generation from real work before building broad rollout or control
+  infrastructure.
+
 ## Related specs
 
 - [Planner Review Artifacts And Surfacing](/projects/model-memory/specs/planner-review-artifacts-and-surfacing)

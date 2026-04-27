@@ -368,6 +368,18 @@ The Control UI surfaces Model Memory proactivity through normal chat chrome:
 - Live proactivity cards must name the real work event, why it matters now, the
   proposed next step, expected value, evidence summary, and
   confidence/limitations before any CTA is available.
+- Assistant planning/output turns may now create new proactivity opportunities
+  automatically when they contain bounded concrete next-step ideas; the Control
+  UI should surface those opportunities without manual proof seeding.
+- The canonical proactivity model is ledger-first. Inbox, heartbeat,
+  contextual cards, history, and follow-up states derive from one opportunity
+  record rather than separate queue/history truths.
+- Top heartbeat opportunities may show `Draft ready` when the system generated
+  an internal planning or investigation brief. These drafts remain bounded,
+  reviewable, and non-executing.
+- Completion, supersession, and follow-up behavior should automatically retire
+  obsolete items and reopen unfinished ones without requiring manual inbox
+  cleanup.
 - Feedback controls are secondary “Was this useful?” controls, not primary CTAs.
 - Proactivity UI payloads must remain bounded and exclude raw prompts, full
   transcripts, raw tool logs, secrets, and private phrases.

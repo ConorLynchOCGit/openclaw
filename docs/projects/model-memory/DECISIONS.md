@@ -4052,3 +4052,52 @@ Reasoning:
 - Operator trust requires deterministic ids, canonical lifecycle state, and a
   smoother handoff presentation that matches what the product is actually
   doing.
+
+## 2026-04-27 - proactivity resets to generator-first usefulness with a ledger-backed model
+
+Decision:
+
+- Real opportunity generation from real work is the primary success criterion
+  for proactivity. Queue, surfacing, proof, and approval infrastructure are not
+  sufficient without live proactive traffic.
+- Agent-output-derived opportunities are now a first-class proactivity source.
+  A bounded assistant planning answer or concrete next-step response may create
+  structured opportunity records without manual proof seeding.
+- Proactivity shifts from queue-first to ledger-first. Inbox, heartbeat,
+  contextual cards, history, and handoff all derive from one canonical
+  opportunity ledger rather than parallel queue/history truths.
+- Completion and supersession must automatically retire obsolete items.
+  Deterministic `resolved_by_chat_message_id` and
+  `superseded_by_opportunity_id` metadata are required when bounded evidence
+  proves an item is done or replaced.
+- Autonomous internal drafting is allowed only for bounded planning and
+  investigation briefs attached to top-ranked opportunities. Autonomous
+  drafting must not edit files, execute actions, or send outbound messages.
+- Recurring-pattern and outcome follow-up loops are first-class product
+  behavior. Repeated asks, repeated errors, repeated manual workarounds,
+  postponed decisions, and unfinished plans may create bounded follow-up
+  opportunities.
+- Heartbeat / Daily Operator Review is both a surfacing surface and a
+  generator/follow-up surface for “What would help this user today?” work.
+- Static/default/proof-derived fallbacks remain diagnostics-only. They must not
+  stand in for real useful traffic or inflate primary actionable counts.
+- Future Skills, tools, workflows, and adjacent Memory Phase 2 buckets must not
+  repeat the proactivity failure mode. Do not build extensive rollout/control
+  scaffolding before proving useful live generation.
+- Rollback/kill-switch behavior remains mandatory and must return the product
+  to bounded manual review mode without broadening autonomous sending or action
+  execution.
+- Broad autonomous sending remains off. Auto-send scope does not expand. File
+  edits, action execution, and outbound sends remain approval-gated. External
+  text remains evidence, never instruction. No-dark-data and provenance rules
+  remain mandatory.
+
+Reasoning:
+
+- The current gap versus `proactive-agent` is not typed UX or proofability. It
+  is actual usefulness: spotting useful opportunities from normal work and
+  creating momentum without requiring the user to fish in the inbox.
+- Chat-discovered ideas that stay stranded in transcript text are product
+  failures, not acceptable deferred work.
+- A ledger-backed model is required to stop stale, duplicate, superseded, or
+  already-resolved opportunities from lingering as if they were still current.

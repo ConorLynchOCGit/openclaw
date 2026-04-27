@@ -739,6 +739,38 @@ For each implementation wave:
 - update the relevant human test prompt pack before declaring the wave ready for
   live validation
 
+## Generator-first reset after Slice 64
+
+- The next proactivity sequence is a bold generator-first usefulness reset, not
+  another safe surfacing/control pass.
+- The primary product gap is that OpenClaw can surface, rank, and hand off
+  bounded work items but still under-generates useful opportunities from real
+  work and from the agent’s own planning output.
+- The new required capability order is:
+  1. bounded opportunity extraction from assistant planning/output turns
+  2. canonical opportunity ledger with completion/supersession handling
+  3. autonomous internal drafting for top heartbeat opportunities only
+  4. recurring-pattern and friction loops
+  5. outcome follow-up / reopen / close loops
+- Success is not declared on infrastructure. The live gate requires:
+  - a normal roadmap/planning prompt to create at least one new inbox item
+    without manual seeding
+  - a normal assistant answer with concrete next steps to create structured
+    opportunities automatically
+  - top heartbeat opportunities to surface draft-ready planning or
+    investigation briefs
+  - already-resolved items to disappear automatically from primary actionable UX
+  - recurring asks/friction to create useful follow-up opportunities
+- The comparison bar is the public `proactive-agent` skill. OpenClaw must at
+  least tie it on recurring-pattern detection, follow-up generation, heartbeat
+  usefulness, and reverse-prompt/surprise value while exceeding it on
+  provenance, boundedness, approval safety, and no-dark-data discipline.
+- Rollback/kill-switch behavior remains mandatory. Broad autonomous sending,
+  auto-send scope expansion, and action execution from proactivity remain
+  blocked.
+- This generator-first rule also applies to future Skills, tools, and workflow
+  synthesis: do not expand scaffolding before real work proves useful outputs.
+
 ## Explicitly deferred
 
 Deferred beyond this first Phase 2 roadmap:
