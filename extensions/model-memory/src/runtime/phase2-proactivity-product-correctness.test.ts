@@ -2,6 +2,7 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { buildPhase2LiveProactivityDetectionReport } from "./phase2-live-proactivity-signals.ts";
 import {
   decidePhase2ProactivityContextMatch,
   resolvePhase2ProactivityActiveContext,
@@ -10,10 +11,42 @@ import {
   buildPhase2ProactivityHeartbeatReviewReport,
   writePhase2ProactivityHeartbeatReviewArtifact,
 } from "./phase2-proactivity-heartbeat-review-loop.ts";
+import { buildPhase2ProactivityInboxReport } from "./phase2-proactivity-inbox.ts";
 import {
   buildPhase2ProactivityProductCorrectnessReport,
   writePhase2ProactivityProductCorrectnessArtifact,
 } from "./phase2-proactivity-product-correctness.ts";
+import { buildPhase2ProductProactivitySurfacingReport } from "./phase2-product-proactivity-surfacing.ts";
+
+async function buildLiveInboxReport(now: Date) {
+  const liveDetectionReport = await buildPhase2LiveProactivityDetectionReport({
+    now,
+    sources: [
+      {
+        sourceId: "product-correctness-live-source-1",
+        sourceType: "session_runtime_event",
+        signalKind: "active_work_state",
+        projectId: "openclaw",
+        sessionKey: "main",
+        boundedSummary:
+          "OpenClaw product correctness validation has a concrete live proactivity item.",
+        sourceRefs: [
+          "gateway://model-memory/proactivity/live-event/product-correctness-live-source-1",
+        ],
+        sourceProfileId: "manual_note",
+        authorityTier: "tool_grounded",
+        freshness: "recent",
+        conflictState: "clear",
+        noDarkDataStatus: "pass",
+      },
+    ],
+  });
+  const productSurfacingReport = await buildPhase2ProductProactivitySurfacingReport({
+    now,
+    liveDetectionReport,
+  });
+  return buildPhase2ProactivityInboxReport({ now, productSurfacingReport });
+}
 
 describe("phase2 proactivity product correctness", () => {
   it("surfaces only exact active-context matches and explains mismatches", () => {
@@ -83,8 +116,11 @@ describe("phase2 proactivity product correctness", () => {
   });
 
   it("requires concrete plan cards, layered diagnostics, and reconciled counts", async () => {
+    const now = new Date("2026-04-27T04:00:00.000Z");
+    const inboxReport = await buildLiveInboxReport(now);
     const report = await buildPhase2ProactivityProductCorrectnessReport({
-      now: new Date("2026-04-27T04:00:00.000Z"),
+      now,
+      inboxReport,
       uiEvidence: {
         compactEntryPointVisible: true,
         actionableDefaultVisible: true,

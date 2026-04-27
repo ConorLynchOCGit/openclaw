@@ -8,6 +8,11 @@ import {
 } from "../derived-artifact.ts";
 import { sha256JsonValue } from "../hashing.ts";
 import type { SourceAuthorityTier, SourceProfileId } from "../source-authority.ts";
+import type {
+  Phase2LiveProactivityDetectionReport,
+  Phase2LiveProactivityOpportunity,
+  Phase2LiveProactivitySignalKind,
+} from "./phase2-live-proactivity-signals.ts";
 import type { Phase2UserFacingProactivityDefaultMessageClass } from "./phase2-user-facing-proactivity-default-promotion.ts";
 
 export const PHASE2_REAL_MEMORY_PROACTIVITY_CANDIDATE_SCHEMA_VERSION =
@@ -16,6 +21,7 @@ export const PHASE2_REAL_MEMORY_PROACTIVITY_CANDIDATE_REPORT_SCHEMA_VERSION =
   "phase2_real_memory_proactivity_candidate_report.v1" as const;
 
 export type Phase2RealMemorySignalKind =
+  | Phase2LiveProactivitySignalKind
   | "active_work_state"
   | "unresolved_question"
   | "recent_failure"
@@ -59,6 +65,17 @@ export type Phase2RealMemoryCandidateEvidence = {
 
 export type Phase2RealMemoryCandidate = {
   candidateId: string;
+  sourceMode: "live_signal" | "static_fallback";
+  liveOpportunityId?: string;
+  liveSignalKind?: Phase2LiveProactivitySignalKind;
+  workItemKind?: Phase2LiveProactivityOpportunity["workItemKind"];
+  title?: string;
+  whyNow?: string;
+  proposedNextStep?: string;
+  expectedUserValue?: string;
+  evidenceSummary?: string;
+  confidence?: "high" | "medium" | "low";
+  limitations?: string[];
   messageClass: Phase2UserFacingProactivityDefaultMessageClass;
   boundedDisplayText: string;
   whyThisAppeared: string;
@@ -172,6 +189,8 @@ export type Phase2RealMemoryCandidateInput = {
   now?: Date;
   repoRoot?: string;
   signals?: Phase2RealMemorySignal[];
+  liveDetectionReport?: Phase2LiveProactivityDetectionReport | null;
+  primarySourceMode?: "live_only" | "allow_static_fallback";
   dedupeState?: Phase2RealMemoryCandidateDedupeState;
   env?: Record<string, string | undefined>;
   maxCandidates?: number;
@@ -493,6 +512,7 @@ function candidateFromSignal(signal: Phase2RealMemorySignal): Phase2RealMemoryCa
     signal.conflictState === "conflicted" ? ["conflicted_evidence_labeled"] : [];
   return {
     candidateId,
+    sourceMode: "static_fallback",
     messageClass:
       signal.kind === "unresolved_follow_up" ||
       signal.kind === "stale_decision" ||
@@ -513,6 +533,70 @@ function candidateFromSignal(signal: Phase2RealMemorySignal): Phase2RealMemoryCa
     blockedReasonCodes: [],
     suppressed: false,
     noDarkDataStatus: signal.noDarkDataStatus,
+  };
+}
+
+function candidateFromLiveOpportunity(
+  opportunity: Phase2LiveProactivityOpportunity,
+): Phase2RealMemoryCandidate {
+  const evidence: Phase2RealMemoryCandidateEvidence = {
+    evidenceId: buildDerivedArtifactId({
+      family: "context_artifact",
+      artifactType: "phase2_live_proactivity_candidate_evidence",
+      targetId: opportunity.signalId,
+      seed: opportunity.opportunityId,
+    }),
+    signalId: opportunity.signalId,
+    signalKind: opportunity.signalKind,
+    sourceRefs: opportunity.sourceRefs,
+    sourceProfileId: opportunity.sourceProfileIds[0] ?? "manual_note",
+    authorityTier: opportunity.authorityTiers[0] ?? "tool_grounded",
+    contentHash:
+      opportunity.contentHashes[0] ?? sha256JsonValue(opportunity as unknown as JsonLike),
+    proofHash:
+      opportunity.proofHashes[0] ?? sha256JsonValue({ opportunityId: opportunity.opportunityId }),
+    freshness: opportunity.staleLabels.length ? "stale" : "recent",
+    conflictState: opportunity.conflictLabels.length ? "conflicted" : "clear",
+  };
+  return {
+    candidateId: buildDerivedArtifactId({
+      family: "context_artifact",
+      artifactType: "phase2_real_memory_proactivity_candidate",
+      targetId: opportunity.opportunityId,
+      seed: {
+        sourceRefs: opportunity.sourceRefs,
+        contentHashes: opportunity.contentHashes,
+        proofHashes: opportunity.proofHashes,
+      },
+    }),
+    sourceMode: "live_signal",
+    liveOpportunityId: opportunity.opportunityId,
+    liveSignalKind: opportunity.signalKind,
+    workItemKind: opportunity.workItemKind,
+    title: opportunity.title,
+    whyNow: opportunity.whyNow,
+    proposedNextStep: opportunity.proposedNextStep,
+    expectedUserValue: opportunity.expectedUserValue,
+    evidenceSummary: opportunity.evidenceSummary,
+    confidence: opportunity.confidence,
+    limitations: opportunity.limitations,
+    messageClass:
+      opportunity.workItemKind === "draft_next_steps"
+        ? "operator_approved_follow_up_available"
+        : "operator_approved_suggestion_available",
+    boundedDisplayText: opportunity.title,
+    whyThisAppeared: opportunity.whyNow,
+    evidence: [evidence],
+    sourceRefs: opportunity.sourceRefs,
+    sourceProfileIds: opportunity.sourceProfileIds,
+    authorityTiers: opportunity.authorityTiers,
+    contentHashes: opportunity.contentHashes,
+    proofHashes: opportunity.proofHashes,
+    staleLabels: opportunity.staleLabels,
+    conflictLabels: opportunity.conflictLabels,
+    blockedReasonCodes: opportunity.blockedReasonCodes,
+    suppressed: false,
+    noDarkDataStatus: opportunity.noDarkDataStatus,
   };
 }
 
@@ -553,7 +637,16 @@ export async function buildPhase2RealMemoryProactivityCandidateReport(
   const repoRoot = input.repoRoot ?? process.cwd();
   const rollback = readRollback(input.env);
   const maxCandidates = input.maxCandidates ?? 3;
-  const rawSignals = (input.signals ?? (await buildDefaultSignals(repoRoot))).slice(0, 12);
+  const primarySourceMode = input.primarySourceMode ?? "allow_static_fallback";
+  const liveOpportunities =
+    input.liveDetectionReport?.decision === "live_opportunities_detected"
+      ? input.liveDetectionReport.opportunities
+      : [];
+  const rawSignals =
+    input.signals ??
+    (primarySourceMode === "allow_static_fallback" && liveOpportunities.length === 0
+      ? await buildDefaultSignals(repoRoot)
+      : []);
   const signals = rawSignals.map((signal) => ({
     ...signal,
     sourceRefs: input.forceMissingProvenance ? [] : signal.sourceRefs,
@@ -641,8 +734,12 @@ export async function buildPhase2RealMemoryProactivityCandidateReport(
     failedChecks.length === 0
       ? signals.filter((signal) => signal.noDarkDataStatus === "pass" && !signal.inspectionOnly)
       : [];
+  const sourceCandidates =
+    liveOpportunities.length > 0
+      ? liveOpportunities.map(candidateFromLiveOpportunity)
+      : eligibleSignals.map(candidateFromSignal);
   const deduped = applyDedupe({
-    candidates: eligibleSignals.map(candidateFromSignal).slice(0, maxCandidates),
+    candidates: sourceCandidates.slice(0, maxCandidates),
     dedupeState: input.dedupeState ?? { suppressedCandidateIds: [], suppressedContentHashes: [] },
   });
   const candidates = deduped.candidates.filter((candidate) => !candidate.suppressed);

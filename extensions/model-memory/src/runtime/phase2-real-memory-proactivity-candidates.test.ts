@@ -2,6 +2,7 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { buildPhase2LiveProactivityDetectionReport } from "./phase2-live-proactivity-signals.ts";
 import {
   buildPhase2RealMemoryProactivityCandidateReport,
   writePhase2RealMemoryProactivityCandidateArtifact,
@@ -26,6 +27,53 @@ function signal(kind: Phase2RealMemorySignal["kind"]): Phase2RealMemorySignal {
 }
 
 describe("phase2 real memory proactivity candidates", () => {
+  it("generates primary candidates from live opportunities", async () => {
+    const liveDetectionReport = await buildPhase2LiveProactivityDetectionReport({
+      sources: [
+        {
+          sourceId: "live-session-event-1",
+          sourceType: "session_runtime_event",
+          signalKind: "recent_failure",
+          projectId: "openclaw",
+          sessionKey: "main",
+          boundedSummary:
+            "The live session observed repeated gateway rebuild confusion that needs investigation.",
+          sourceRefs: ["gateway://event/live-session-event-1"],
+          sourceProfileId: "manual_note",
+          authorityTier: "tool_grounded",
+          freshness: "recent",
+          conflictState: "clear",
+          inspectionOnly: false,
+          noDarkDataStatus: "pass",
+        },
+      ],
+    });
+    const report = await buildPhase2RealMemoryProactivityCandidateReport({
+      liveDetectionReport,
+      primarySourceMode: "live_only",
+    });
+
+    expect(report.decision).toBe("real_candidates_generated");
+    expect(report.candidates).toHaveLength(1);
+    expect(report.candidates[0]).toMatchObject({
+      sourceMode: "live_signal",
+      liveSignalKind: "recent_failure",
+      workItemKind: "investigation_request",
+      title: "Investigate recent openclaw failure",
+      proposedNextStep: expect.stringContaining("gateway rebuild confusion"),
+    });
+  });
+
+  it("does not promote static fallback in live-only mode", async () => {
+    const report = await buildPhase2RealMemoryProactivityCandidateReport({
+      primarySourceMode: "live_only",
+    });
+
+    expect(report.decision).toBe("real_candidates_generated");
+    expect(report.candidates).toHaveLength(0);
+    expect(report.telemetry.candidateCount).toBe(0);
+  });
+
   it("generates candidates from all required real-memory signal kinds", async () => {
     const report = await buildPhase2RealMemoryProactivityCandidateReport({
       now: new Date("2026-04-26T17:00:00.000Z"),

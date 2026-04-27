@@ -3,16 +3,45 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { buildPhase2FollowUpAutoSendPreflightReport } from "./phase2-follow-up-autosend-preflight.ts";
+import { buildPhase2LiveProactivityDetectionReport } from "./phase2-live-proactivity-signals.ts";
 import {
   assertPhase2ProactivityInboxVisible,
   buildPhase2ProactivityInboxReport,
   writePhase2ProactivityInboxArtifact,
 } from "./phase2-proactivity-inbox.ts";
+import { buildPhase2ProductProactivitySurfacingReport } from "./phase2-product-proactivity-surfacing.ts";
+
+async function buildLiveProductSurfacingReport(now: Date) {
+  const liveDetectionReport = await buildPhase2LiveProactivityDetectionReport({
+    now,
+    sources: [
+      {
+        sourceId: "inbox-live-source-1",
+        sourceType: "session_runtime_event",
+        signalKind: "active_work_state",
+        projectId: "openclaw",
+        sessionKey: "main",
+        boundedSummary:
+          "OpenClaw proactivity inbox validation has a concrete live work item to review.",
+        sourceRefs: ["gateway://model-memory/proactivity/live-event/inbox-live-source-1"],
+        sourceProfileId: "manual_note",
+        authorityTier: "tool_grounded",
+        freshness: "recent",
+        conflictState: "clear",
+        noDarkDataStatus: "pass",
+      },
+    ],
+  });
+  return buildPhase2ProductProactivitySurfacingReport({ now, liveDetectionReport });
+}
 
 describe("phase2 proactivity inbox", () => {
   it("groups pending, sent, snoozed, dismissed, blocked, and autosend-trial items", async () => {
+    const now = new Date("2026-04-27T03:00:00.000Z");
+    const productSurfacingReport = await buildLiveProductSurfacingReport(now);
     const report = await buildPhase2ProactivityInboxReport({
-      now: new Date("2026-04-27T03:00:00.000Z"),
+      now,
+      productSurfacingReport,
     });
 
     expect(report.decision).toBe("inbox_visible");

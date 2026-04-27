@@ -1,3 +1,10 @@
+import { createHash } from "node:crypto";
+import { buildPhase2LiveProactivityDetectionReport } from "../../../extensions/model-memory/src/runtime/phase2-live-proactivity-signals.js";
+import type {
+  Phase2LiveProactivitySignalKind,
+  Phase2LiveProactivitySignalSource,
+  Phase2LiveProactivitySignalSourceType,
+} from "../../../extensions/model-memory/src/runtime/phase2-live-proactivity-signals.js";
 import { buildPhase2PersonalAutoSendProductUxReport } from "../../../extensions/model-memory/src/runtime/phase2-personal-autosend-product-ux.js";
 import { buildPhase2ProactivityInboxReport } from "../../../extensions/model-memory/src/runtime/phase2-proactivity-inbox.js";
 import { buildPhase2ProactivityUxRemediationReport } from "../../../extensions/model-memory/src/runtime/phase2-proactivity-ux-remediation.js";
@@ -13,11 +20,122 @@ function resolveOperatorId(params: Record<string, unknown>, clientId: string | u
   return readString(params.operatorId) ?? clientId ?? process.env.USER ?? "local-openclaw-operator";
 }
 
+type RecordedLiveProactivityEvent = Phase2LiveProactivitySignalSource & {
+  recordedAt: string;
+};
+
+const liveProactivityEvents: RecordedLiveProactivityEvent[] = [];
+const MAX_LIVE_PROACTIVITY_EVENTS = 50;
+
+function readSignalKind(value: unknown): Phase2LiveProactivitySignalKind {
+  const kind = readString(value);
+  if (
+    kind === "active_work_state" ||
+    kind === "unresolved_question" ||
+    kind === "recent_failure" ||
+    kind === "repeated_friction" ||
+    kind === "incomplete_follow_up" ||
+    kind === "stale_decision" ||
+    kind === "maintenance_candidate" ||
+    kind === "project_state_capsule" ||
+    kind === "recent_memory_update" ||
+    kind === "session_event"
+  ) {
+    return kind;
+  }
+  return "session_event";
+}
+
+function readSourceType(value: unknown): Phase2LiveProactivitySignalSourceType {
+  const type = readString(value);
+  if (
+    type === "ordinary_turn_capture" ||
+    type === "session_runtime_event" ||
+    type === "task_or_queue_state" ||
+    type === "maintenance_loop_output" ||
+    type === "project_state_capsule" ||
+    type === "derived_memory_artifact" ||
+    type === "operator_feedback_event" ||
+    type === "gateway_delivery_or_error_event"
+  ) {
+    return type;
+  }
+  return "session_runtime_event";
+}
+
+function sha256(value: unknown): string {
+  return createHash("sha256").update(JSON.stringify(value)).digest("hex");
+}
+
+function boundedSummary(value: unknown): string {
+  const summary = readString(value) ?? "A bounded OpenClaw runtime event is ready for review.";
+  return summary.replace(/\s+/gu, " ").slice(0, 480).trim();
+}
+
+function eventsForScope(
+  projectId: string,
+  sessionKey: string,
+): Phase2LiveProactivitySignalSource[] {
+  return liveProactivityEvents
+    .filter((event) => event.projectId === projectId && event.sessionKey === sessionKey)
+    .slice(-10);
+}
+
 export const modelMemoryProactivityHandlers: GatewayRequestHandlers = {
+  "modelMemory.proactivity.recordLiveEvent": async ({ params, respond }) => {
+    const sessionKey = readString(params.sessionKey) ?? "main";
+    const projectId = readString(params.projectId) ?? process.env.OPENCLAW_PROJECT_ID ?? "openclaw";
+    const summary = boundedSummary(params.boundedSummary);
+    const sourceType = readSourceType(params.sourceType);
+    const signalKind = readSignalKind(params.signalKind);
+    const sourceId =
+      readString(params.sourceId) ??
+      `gateway-live-event-${sha256({ projectId, sessionKey, sourceType, signalKind, summary }).slice(0, 16)}`;
+    const sourceRef = `gateway://model-memory/proactivity/live-event/${sourceId}`;
+    const event: RecordedLiveProactivityEvent = {
+      sourceId,
+      sourceType,
+      signalKind,
+      projectId,
+      sessionKey,
+      boundedSummary: summary,
+      sourceRefs: [sourceRef],
+      sourceProfileId:
+        sourceType === "ordinary_turn_capture" ? "explicit_user_turn" : "manual_note",
+      authorityTier:
+        sourceType === "ordinary_turn_capture" ? "user_authoritative" : "tool_grounded",
+      contentHash: sha256({ sourceId, projectId, sessionKey, sourceType, signalKind, summary }),
+      proofHash: sha256({ sourceRef, sourceId, signalKind }),
+      freshness: "recent",
+      conflictState: "clear",
+      inspectionOnly: false,
+      noDarkDataStatus: "pass",
+      limitations: ["bounded_runtime_event_summary_only"],
+      recordedAt: new Date().toISOString(),
+    };
+    liveProactivityEvents.push(event);
+    if (liveProactivityEvents.length > MAX_LIVE_PROACTIVITY_EVENTS) {
+      liveProactivityEvents.splice(0, liveProactivityEvents.length - MAX_LIVE_PROACTIVITY_EVENTS);
+    }
+    respond(true, {
+      ok: true,
+      sourceId: event.sourceId,
+      sourceRef,
+      signalKind: event.signalKind,
+      sourceType: event.sourceType,
+      projectId,
+      sessionKey,
+    });
+  },
   "modelMemory.proactivity.queue": async ({ params, respond, client }) => {
     const sessionKey = readString(params.sessionKey) ?? "main";
     const operatorId = resolveOperatorId(params, client?.connect?.device?.id);
+    const projectId = readString(params.projectId) ?? process.env.OPENCLAW_PROJECT_ID ?? "openclaw";
     try {
+      const liveDetectionReport = await buildPhase2LiveProactivityDetectionReport({
+        sources: eventsForScope(projectId, sessionKey),
+        env: process.env,
+      });
       const report = await buildPhase2ProductProactivitySurfacingReport({
         eligibilityScope: {
           userId:
@@ -27,10 +145,11 @@ export const modelMemoryProactivityHandlers: GatewayRequestHandlers = {
             process.env.OPENCLAW_RECIPIENT_ID ??
             process.env.OPENCLAW_USER_ID ??
             "local-openclaw-recipient",
-          projectId: readString(params.projectId) ?? process.env.OPENCLAW_PROJECT_ID ?? "openclaw",
+          projectId,
           sessionKey,
           operatorId,
         },
+        liveDetectionReport,
         env: process.env,
       });
       respond(true, {
@@ -38,6 +157,11 @@ export const modelMemoryProactivityHandlers: GatewayRequestHandlers = {
         reportId: report.reportId,
         decision: report.decision,
         config: report.config,
+        liveDetectionReport: {
+          reportId: liveDetectionReport.reportId,
+          decision: liveDetectionReport.decision,
+          telemetry: liveDetectionReport.telemetry,
+        },
         queue: report.queue,
         rollbackPlan: report.rollbackPlan,
         telemetry: report.telemetry,
@@ -84,6 +208,12 @@ export const modelMemoryProactivityHandlers: GatewayRequestHandlers = {
     try {
       const sessionKey = readString(params.sessionKey) ?? "main";
       const operatorId = resolveOperatorId(params, client?.connect?.device?.id);
+      const projectId =
+        readString(params.projectId) ?? process.env.OPENCLAW_PROJECT_ID ?? "openclaw";
+      const liveDetectionReport = await buildPhase2LiveProactivityDetectionReport({
+        sources: eventsForScope(projectId, sessionKey),
+        env: process.env,
+      });
       const productSurfacingReport = await buildPhase2ProductProactivitySurfacingReport({
         eligibilityScope: {
           userId:
@@ -93,10 +223,11 @@ export const modelMemoryProactivityHandlers: GatewayRequestHandlers = {
             process.env.OPENCLAW_RECIPIENT_ID ??
             process.env.OPENCLAW_USER_ID ??
             "local-openclaw-recipient",
-          projectId: readString(params.projectId) ?? process.env.OPENCLAW_PROJECT_ID ?? "openclaw",
+          projectId,
           sessionKey,
           operatorId,
         },
+        liveDetectionReport,
         env: process.env,
       });
       const report = await buildPhase2ProactivityInboxReport({

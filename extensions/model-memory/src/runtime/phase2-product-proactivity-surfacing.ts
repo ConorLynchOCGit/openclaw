@@ -8,6 +8,7 @@ import {
 } from "../derived-artifact.ts";
 import { sha256JsonValue } from "../hashing.ts";
 import type { SourceAuthorityTier, SourceProfileId } from "../source-authority.ts";
+import type { Phase2LiveProactivityDetectionReport } from "./phase2-live-proactivity-signals.ts";
 import type {
   Phase2ProactivityWorkItemAction,
   Phase2ProactivityWorkItemKind,
@@ -221,6 +222,7 @@ export type Phase2ProductProactivitySurfacingInput = {
   now?: Date;
   defaultPromotionReport?: Phase2UserFacingProactivityDefaultPromotionReport | null;
   realCandidateReport?: Phase2RealMemoryCandidateReport | null;
+  liveDetectionReport?: Phase2LiveProactivityDetectionReport | null;
   eligibilityScope?: Partial<Phase2ProductProactivityEligibilityScope>;
   messageClass?: Phase2UserFacingProactivityDefaultMessageClass | "external_instruction_message";
   env?: Record<string, string | undefined>;
@@ -376,15 +378,6 @@ function isProofFixtureScope(scope: Phase2ProductProactivityEligibilityScope): b
   ].some((value) => /proof[-_ ]?fixture/i.test(value));
 }
 
-function displayTextForMessageClass(
-  messageClass: Phase2UserFacingProactivityDefaultMessageClass,
-): string {
-  if (messageClass === "operator_approved_follow_up_available") {
-    return "An approved follow-up suggestion is available.";
-  }
-  return "An approved operator suggestion is available.";
-}
-
 function workItemKindForMessageClass(
   messageClass: Phase2UserFacingProactivityDefaultMessageClass,
 ): Phase2ProactivityWorkItemKind {
@@ -499,29 +492,39 @@ function contentFieldsForMessageClass(input: {
   if (input.realCandidate) {
     const isFollowUp = input.messageClass === "operator_approved_follow_up_available";
     const safeSummary = trimTrailingSentencePunctuation(boundedSummary);
-    const planTitle = isFollowUp
-      ? `Investigate unresolved follow-up for ${input.scope.projectId}`
-      : `Plan the next ${input.scope.projectId} step`;
-    const problem = `${boundedSummary} Source: ${sourceLabel}.`;
-    const proposedMessage = isFollowUp
-      ? `Investigate this unresolved follow-up for ${input.scope.projectId}: ${safeSummary}. Summarize whether it still matters, what evidence supports it, and the smallest safe next step.`
-      : `Plan this ${input.scope.projectId} opportunity: ${safeSummary}. Produce concrete next steps from bounded Model Memory evidence and do not edit files unless approved.`;
+    const planTitle =
+      input.realCandidate.title ??
+      (isFollowUp
+        ? `Investigate unresolved follow-up for ${input.scope.projectId}`
+        : `Plan the next ${input.scope.projectId} step`);
+    const problem = input.realCandidate.whyNow ?? `${boundedSummary} Source: ${sourceLabel}.`;
+    const proposedMessage =
+      input.realCandidate.proposedNextStep ??
+      (isFollowUp
+        ? `Investigate this unresolved follow-up for ${input.scope.projectId}: ${safeSummary}. Summarize whether it still matters, what evidence supports it, and the smallest safe next step.`
+        : `Plan this ${input.scope.projectId} opportunity: ${safeSummary}. Produce concrete next steps from bounded Model Memory evidence and do not edit files unless approved.`);
     return {
       candidateSummary: boundedSummary,
       suggestedAction: isFollowUp
         ? `Investigate the follow-up for ${input.scope.projectId} and decide whether to keep, close, or plan it.`
         : `Start a bounded planning turn for this concrete ${input.scope.projectId} opportunity.`,
       messagePreview: proposedMessage,
-      expectedUserValue: `Helps advance ${input.scope.projectId} by turning bounded memory evidence into a reviewable next step.`,
+      expectedUserValue:
+        input.realCandidate.expectedUserValue ??
+        `Helps advance ${input.scope.projectId} by turning bounded memory evidence into a reviewable next step.`,
       planTitle,
       problem,
       proposedMessage,
-      userBenefit: `Reduces forgotten follow-up work by surfacing a specific safe next step for ${input.scope.projectId}.`,
-      evidenceSummary: `${why} Evidence source: ${sourceLabel}.`,
+      userBenefit:
+        input.realCandidate.expectedUserValue ??
+        `Reduces forgotten follow-up work by surfacing a specific safe next step for ${input.scope.projectId}.`,
+      evidenceSummary:
+        input.realCandidate.evidenceSummary ?? `${why} Evidence source: ${sourceLabel}.`,
       confidence:
-        input.realCandidate.staleLabels.length || input.realCandidate.conflictLabels.length
+        input.realCandidate.confidence ??
+        (input.realCandidate.staleLabels.length || input.realCandidate.conflictLabels.length
           ? "medium"
-          : "high",
+          : "high"),
       blockedIfMissing: [],
     };
   }
@@ -744,6 +747,7 @@ async function loadDefaultPromotionReport(input: {
 async function loadRealCandidateReport(input: {
   now?: Date;
   realCandidateReport?: Phase2RealMemoryCandidateReport | null;
+  liveDetectionReport?: Phase2LiveProactivityDetectionReport | null;
   env?: Record<string, string | undefined>;
 }): Promise<Phase2RealMemoryCandidateReport | undefined> {
   if (input.realCandidateReport === null) {
@@ -752,7 +756,12 @@ async function loadRealCandidateReport(input: {
   if (input.realCandidateReport) {
     return input.realCandidateReport;
   }
-  return buildPhase2RealMemoryProactivityCandidateReport({ now: input.now, env: input.env });
+  return buildPhase2RealMemoryProactivityCandidateReport({
+    now: input.now,
+    env: input.env,
+    liveDetectionReport: input.liveDetectionReport,
+    primarySourceMode: "live_only",
+  });
 }
 
 export async function buildPhase2ProductProactivitySurfacingReport(
@@ -770,6 +779,7 @@ export async function buildPhase2ProductProactivitySurfacingReport(
   const realCandidateReport = await loadRealCandidateReport({
     now: input.now,
     realCandidateReport: input.realCandidateReport,
+    liveDetectionReport: input.liveDetectionReport,
     env: input.env,
   });
   const realCandidate = realCandidateReport?.candidates.find((candidate) => !candidate.suppressed);
@@ -835,8 +845,9 @@ export async function buildPhase2ProductProactivitySurfacingReport(
       : decision === "rollback_disabled"
         ? "rollback_disabled"
         : "blocked";
+  const staticDemoted = !realCandidate || realCandidate.sourceMode !== "live_signal";
   const boundedDisplayText =
-    realCandidate?.boundedDisplayText ?? displayTextForMessageClass(effectiveMessageClass);
+    realCandidate?.boundedDisplayText ?? "No live proactivity opportunities detected.";
   const contentFields = contentFieldsForMessageClass({
     messageClass: effectiveMessageClass,
     boundedDisplayText,
@@ -851,9 +862,10 @@ export async function buildPhase2ProductProactivitySurfacingReport(
   });
   const workItemKind =
     decision === "product_queue_enabled" &&
+    !staticDemoted &&
     Boolean(contentFields.proposedMessage) &&
     contentFields.blockedIfMissing.length === 0
-      ? workItemKindForMessageClass(effectiveMessageClass)
+      ? (realCandidate?.workItemKind ?? workItemKindForMessageClass(effectiveMessageClass))
       : "diagnostic";
   const workItemId = buildDerivedArtifactId({
     family: "context_artifact",
@@ -921,16 +933,23 @@ export async function buildPhase2ProductProactivitySurfacingReport(
       ...(!contentFields.proposedMessage || contentFields.blockedIfMissing.length
         ? ["safe_specific_plan_required"]
         : []),
+      ...(staticDemoted
+        ? realCandidate
+          ? ["static_default_candidate_demoted"]
+          : ["no_live_opportunities_detected"]
+        : []),
       ...(realCandidate?.blockedReasonCodes ?? []),
     ]),
     layer:
       decision === "product_queue_enabled" &&
+      !staticDemoted &&
       Boolean(contentFields.proposedMessage) &&
       contentFields.blockedIfMissing.length === 0
         ? "actionable"
         : "diagnostic",
     attentionRequired:
       decision === "product_queue_enabled" &&
+      !staticDemoted &&
       Boolean(contentFields.proposedMessage) &&
       contentFields.blockedIfMissing.length === 0,
     sendStatus: "idle",

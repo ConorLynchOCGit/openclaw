@@ -1009,6 +1009,92 @@ describe("chat view", () => {
     expect(onOpenSidebar).toHaveBeenCalledWith({ kind: "proactivityInbox" });
   });
 
+  it("does not surface static diagnostic fallbacks as actionable heartbeat traffic", () => {
+    const container = document.createElement("div");
+    render(
+      renderChat(
+        createProps({
+          sessionKey: "main",
+          activeProactivityContext: {
+            userId: "local-openclaw-user",
+            recipientId: "local-openclaw-recipient",
+            projectId: "openclaw",
+            sessionKey: "main",
+            operatorId: "local-openclaw-operator",
+            source: "chat_active_session",
+          },
+          productProactivityQueue: [
+            {
+              queueItemId: "queue-static-diagnostic",
+              candidateId: "candidate-static-diagnostic",
+              workItemId: "work-item-static-diagnostic",
+              workItemKind: "diagnostic",
+              workItemStatus: "blocked",
+              primaryAction: null,
+              secondaryActions: [],
+              ctaExplanation:
+                "Static fallback is diagnostics-only until live work creates an item.",
+              handoffStatus: "idle",
+              handoffError: null,
+              handoffMessageAnchor: null,
+              messageClass: "operator_approved_suggestion_available",
+              boundedDisplayText: "No live proactivity opportunities detected.",
+              candidateSummary: "No live proactivity opportunities detected.",
+              suggestedAction: "Diagnostics only.",
+              expectedUserValue: "Explains why no proactive item is currently shown.",
+              planTitle: "No live proactivity opportunities detected",
+              problem: "Static/default candidates are no longer primary actionable UX.",
+              proposedMessage: "",
+              userBenefit: "Prevents fake proactive work from inflating the inbox.",
+              evidenceSummary: "No live signal matched the active session.",
+              confidence: "low",
+              blockedIfMissing: ["live_signal"],
+              status: "blocked",
+              layer: "diagnostic",
+              attentionRequired: false,
+              sendStatus: "idle",
+              sendError: null,
+              sentMessageAnchor: null,
+              eligibleScope: {
+                environment: "live",
+                userId: "local-openclaw-user",
+                recipientId: "local-openclaw-recipient",
+                projectId: "openclaw",
+                sessionKey: "main",
+                operatorId: "local-openclaw-operator",
+                allowedMessageClasses: ["operator_approved_suggestion_available"],
+                proofPrerequisiteIds: ["live-generation-gate"],
+                proofPrerequisiteHashes: ["proof-hash-1"],
+              },
+              sourceRefs: ["diagnostics://model-memory/proactivity/no-live-signal"],
+              sourceProfileIds: ["manual_note"],
+              authorityTiers: ["tool_grounded"],
+              contentHashes: ["content-hash-1"],
+              proofHashes: ["proof-hash-1"],
+              noDarkDataStatus: "pass",
+              staleLabels: [],
+              conflictLabels: [],
+              blockedReasonCodes: [
+                "no_live_opportunities_detected",
+                "static_default_candidate_demoted",
+              ],
+              generatedAt: "2026-04-27T05:00:00.000Z",
+              updatedAt: "2026-04-27T05:00:00.000Z",
+            },
+          ],
+        }),
+      ),
+      container,
+    );
+
+    const entryPoint = container.querySelector(".proactivity-entrypoint__button");
+    expect(entryPoint?.textContent).toContain("0 actionable");
+    expect(entryPoint?.textContent).toContain("1 diagnostic");
+    expect(entryPoint?.textContent).not.toContain("heartbeat");
+    expect(container.querySelector(".heartbeat-proactivity-review")).toBeNull();
+    expect(container.querySelector(".contextual-proactivity-card")).toBeNull();
+  });
+
   it("renders proactivity as a compact entry point and opens inbox in the side panel", () => {
     const container = document.createElement("div");
     const onOpenSidebar = vi.fn();

@@ -2,15 +2,37 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { buildPhase2LiveProactivityDetectionReport } from "./phase2-live-proactivity-signals.ts";
 import {
   buildPhase2ProductProactivitySurfacingReport,
   writePhase2ProductProactivitySurfacingArtifact,
 } from "./phase2-product-proactivity-surfacing.ts";
 
 describe("phase2 product proactivity surfacing", () => {
-  it("builds a product-visible queue item from approved proactivity evidence", async () => {
+  it("builds a product-visible queue item from live proactivity evidence", async () => {
+    const liveDetectionReport = await buildPhase2LiveProactivityDetectionReport({
+      sources: [
+        {
+          sourceId: "ordinary-turn-live-event-1",
+          sourceType: "ordinary_turn_capture",
+          signalKind: "active_work_state",
+          projectId: "openclaw",
+          sessionKey: "main",
+          boundedSummary:
+            "The active OpenClaw session is ready to plan the Skills path after proactivity remediation.",
+          sourceRefs: ["gateway://event/ordinary-turn-live-event-1"],
+          sourceProfileId: "explicit_user_turn",
+          authorityTier: "user_authoritative",
+          freshness: "recent",
+          conflictState: "clear",
+          inspectionOnly: false,
+          noDarkDataStatus: "pass",
+        },
+      ],
+    });
     const report = await buildPhase2ProductProactivitySurfacingReport({
       now: new Date("2026-04-26T16:00:00.000Z"),
+      liveDetectionReport,
       eligibilityScope: {
         userId: "conor",
         recipientId: "conor",
@@ -24,10 +46,9 @@ describe("phase2 product proactivity surfacing", () => {
     expect(report.queue.items).toHaveLength(1);
     expect(report.queue.items[0]).toMatchObject({
       status: "pending_review",
-      boundedDisplayText: "Fix the broken Proactivity Inbox before expanding capability.",
-      planTitle: "Plan the next openclaw step",
-      proposedMessage:
-        "Plan this openclaw opportunity: Fix the broken Proactivity Inbox before expanding capability. Produce concrete next steps from bounded Model Memory evidence and do not edit files unless approved.",
+      boundedDisplayText: "Advance current openclaw work",
+      planTitle: "Advance current openclaw work",
+      proposedMessage: expect.stringContaining("Skills path after proactivity remediation"),
       workItemKind: "planning_request",
       primaryAction: {
         actionType: "plan_this",
@@ -38,6 +59,7 @@ describe("phase2 product proactivity surfacing", () => {
       noDarkDataStatus: "pass",
     });
     expect(report.realCandidateReport?.decision).toBe("real_candidates_generated");
+    expect(report.realCandidateReport?.telemetry.candidateCount).toBe(1);
     expect(report.queue.items[0].sourceRefs.length).toBeGreaterThan(0);
     expect(report.queue.items[0].sourceProfileIds.length).toBeGreaterThan(0);
     expect(report.queue.items[0].authorityTiers.length).toBeGreaterThan(0);
@@ -47,6 +69,29 @@ describe("phase2 product proactivity surfacing", () => {
       actionExecution: false,
       autonomousSending: false,
     });
+  });
+
+  it("demotes static/default fallback when no live signal exists", async () => {
+    const report = await buildPhase2ProductProactivitySurfacingReport({
+      now: new Date("2026-04-26T16:00:00.000Z"),
+      eligibilityScope: {
+        userId: "conor",
+        recipientId: "conor",
+        projectId: "openclaw",
+        sessionKey: "main",
+        operatorId: "operator-conor",
+      },
+    });
+
+    expect(report.decision).toBe("product_queue_enabled");
+    expect(report.queue.items[0]).toMatchObject({
+      layer: "diagnostic",
+      attentionRequired: false,
+      workItemKind: "diagnostic",
+    });
+    expect(report.queue.items[0].blockedReasonCodes).toContain("no_live_opportunities_detected");
+    expect(report.queue.items[0].blockedReasonCodes).toContain("safe_specific_plan_required");
+    expect(report.queue.items[0].planTitle).not.toBe("Plan the next openclaw step");
   });
 
   it("rejects proof fixture scope and rollback disables surfacing", async () => {

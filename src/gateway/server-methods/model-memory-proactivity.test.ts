@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { modelMemoryProactivityHandlers } from "./model-memory-proactivity.js";
 
 describe("model-memory proactivity gateway handlers", () => {
-  it("returns bounded product proactivity queue data for the active session", async () => {
+  it("returns diagnostics-only proactivity when no live event exists", async () => {
     const respond = vi.fn();
     await modelMemoryProactivityHandlers["modelMemory.proactivity.queue"]({
       req: { type: "req", id: "req-1", method: "modelMemory.proactivity.queue", params: {} },
@@ -29,11 +29,75 @@ describe("model-memory proactivity gateway handlers", () => {
     });
     expect(payload.queue.items[0]).toMatchObject({
       status: "pending_review",
+      layer: "diagnostic",
+      attentionRequired: false,
       noDarkDataStatus: "pass",
+    });
+    expect(payload.liveDetectionReport).toMatchObject({
+      decision: "no_live_opportunities",
     });
     expect(typeof payload.queue.items[0].boundedDisplayText).toBe("string");
     expect(payload.queue.items[0].boundedDisplayText.length).toBeGreaterThan(0);
     expect(JSON.stringify(payload).toLowerCase()).not.toContain("raw-prompt-marker");
+  });
+
+  it("records a live event and returns it as an actionable queue item", async () => {
+    const recordRespond = vi.fn();
+    await modelMemoryProactivityHandlers["modelMemory.proactivity.recordLiveEvent"]({
+      req: {
+        type: "req",
+        id: "req-live-event",
+        method: "modelMemory.proactivity.recordLiveEvent",
+        params: {},
+      },
+      params: {
+        sourceId: "gateway-test-live-event",
+        sourceType: "ordinary_turn_capture",
+        signalKind: "active_work_state",
+        sessionKey: "gateway-live-test",
+        projectId: "openclaw",
+        boundedSummary:
+          "A real gateway test event says the current OpenClaw work needs a concrete planning handoff.",
+      },
+      client: null,
+      isWebchatConnect: () => true,
+      respond: recordRespond,
+      context: {} as never,
+    });
+    expect(recordRespond).toHaveBeenCalledWith(
+      true,
+      expect.objectContaining({ ok: true, sourceId: "gateway-test-live-event" }),
+    );
+
+    const respond = vi.fn();
+    await modelMemoryProactivityHandlers["modelMemory.proactivity.queue"]({
+      req: { type: "req", id: "req-1b", method: "modelMemory.proactivity.queue", params: {} },
+      params: {
+        sessionKey: "gateway-live-test",
+        userId: "conor",
+        recipientId: "conor",
+        projectId: "openclaw",
+        operatorId: "operator-conor",
+      },
+      client: null,
+      isWebchatConnect: () => true,
+      respond,
+      context: {} as never,
+    });
+
+    const [ok, payload] = respond.mock.calls[0];
+    expect(ok).toBe(true);
+    expect(payload.liveDetectionReport).toMatchObject({
+      decision: "live_opportunities_detected",
+    });
+    expect(payload.queue.items[0]).toMatchObject({
+      layer: "actionable",
+      attentionRequired: true,
+      workItemKind: "planning_request",
+      primaryAction: { actionType: "plan_this", requiresChatInject: false },
+      planTitle: "Advance current openclaw work",
+    });
+    expect(payload.queue.items[0].proposedMessage).toContain("concrete planning handoff");
   });
 
   it("returns personal autosend UX settings without raw content", async () => {

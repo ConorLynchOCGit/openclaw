@@ -2,19 +2,48 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { buildPhase2LiveProactivityDetectionReport } from "./phase2-live-proactivity-signals.ts";
+import { buildPhase2ProductProactivitySurfacingReport } from "./phase2-product-proactivity-surfacing.ts";
 import {
   buildPhase2ProactivityNotificationReport,
   writePhase2ProactivityNotificationArtifact,
 } from "./phase2-user-facing-proactivity-notification-ux.ts";
 
+async function buildLiveProductSurfacingReport(now: Date) {
+  const liveDetectionReport = await buildPhase2LiveProactivityDetectionReport({
+    now,
+    sources: [
+      {
+        sourceId: "notification-live-source-1",
+        sourceType: "session_runtime_event",
+        signalKind: "active_work_state",
+        projectId: "openclaw",
+        sessionKey: "main",
+        boundedSummary: "OpenClaw notification validation has a concrete live proactivity item.",
+        sourceRefs: ["gateway://model-memory/proactivity/live-event/notification-live-source-1"],
+        sourceProfileId: "manual_note",
+        authorityTier: "tool_grounded",
+        freshness: "recent",
+        conflictState: "clear",
+        noDarkDataStatus: "pass",
+      },
+    ],
+  });
+  return buildPhase2ProductProactivitySurfacingReport({ now, liveDetectionReport });
+}
+
 describe("phase2 user-facing proactivity notification ux", () => {
   it("renders notification only for approved/send-approved items", async () => {
+    const now = new Date("2026-04-26T18:00:00.000Z");
+    const productSurfacingReport = await buildLiveProductSurfacingReport(now);
     const pending = await buildPhase2ProactivityNotificationReport({
-      now: new Date("2026-04-26T18:00:00.000Z"),
+      now,
+      productSurfacingReport,
       queueItemStatus: "pending_review",
     });
     const sent = await buildPhase2ProactivityNotificationReport({
-      now: new Date("2026-04-26T18:00:00.000Z"),
+      now,
+      productSurfacingReport,
       queueItemStatus: "sent",
     });
 
@@ -24,7 +53,7 @@ describe("phase2 user-facing proactivity notification ux", () => {
     expect(sent.decision).toBe("notification_ux_enabled");
     expect(sent.notificationState.items[0]).toMatchObject({
       status: "visible",
-      boundedDisplayText: "Fix the broken Proactivity Inbox before expanding capability.",
+      boundedDisplayText: "Advance current openclaw work",
     });
     expect(sent.telemetry.notificationSurfaceIsTranscriptOnly).toBe(false);
     expect(sent.telemetry.transcriptDeliveryStillAvailable).toBe(true);
