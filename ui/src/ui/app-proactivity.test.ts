@@ -123,6 +123,8 @@ describe("OpenClawApp proactivity product correctness", () => {
     expect(request).not.toHaveBeenCalledWith("chat.inject", expect.any(Object));
     expect(sendChat).toHaveBeenCalledTimes(1);
     expect(sendChat.mock.calls[0]?.[0]).toContain("I found a proactive item");
+    expect(sendChat.mock.calls[0]?.[0]).toContain("Goal: produce a concise plan");
+    expect(sendChat.mock.calls[0]?.[0]).toContain("Expected output");
     expect(sendChat.mock.calls[0]?.[0]).toContain("Safety boundary");
     const item = app.proactivityInboxDigest?.items[0];
     expect(item).toMatchObject({

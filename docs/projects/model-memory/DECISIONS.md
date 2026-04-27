@@ -3985,6 +3985,11 @@ Decision:
   `Plan this`, `Investigate`, and `Draft next steps` start bounded chat turns
   with goal, evidence, constraints, safety boundary, and expected output shape.
   Non-message handoffs do not call `chat.inject`.
+- The Slice 62 live handoff text must tell the user what the agent will produce:
+  a concise plan with options/risks/next steps, an investigation with evidence
+  and uncertainty, a next-step draft, or an execution proposal only. The handoff
+  may update work item status to planning/investigating/drafting, but it does
+  not execute the proposed work.
 - Slice 63 makes Heartbeat / Daily Operator Review a primary proactivity
   surface. It shows top live opportunities under “What would help this user
   today?”, ranks by urgency, freshness, recurrence, expected value, active
