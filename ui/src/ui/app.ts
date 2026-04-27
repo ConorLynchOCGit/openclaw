@@ -143,6 +143,7 @@ function resolveOnboardingMode(): boolean {
 @customElement("openclaw-app")
 export class OpenClawApp extends LitElement {
   private i18nController = new I18nController(this);
+  private lastProactivityUserPromptSummary: string | null = null;
   clientInstanceId = generateUUID();
   connectGeneration = 0;
   @state() settings: UiSettings = loadSettings();
@@ -723,6 +724,91 @@ export class OpenClawApp extends LitElement {
     );
   }
 
+  onProactivityUserMessage = (payload: { text: string; runId: string }) => {
+    this.lastProactivityUserPromptSummary = payload.text.trim().slice(0, 240);
+    void this.recordProactivityChatActivity("user_turn", payload.text, {
+      sourceMessageId: `user:${payload.runId}`,
+      sourceRunId: payload.runId,
+      refreshAfter: false,
+    });
+  };
+
+  onProactivityAssistantMessage = (payload: {
+    text: string;
+    runId?: string;
+    messageId?: string;
+  }) => {
+    const summary = this.lastProactivityUserPromptSummary;
+    void this.recordProactivityChatActivity("assistant_turn", payload.text, {
+      sourceMessageId: payload.messageId ?? `assistant:${payload.runId ?? generateUUID()}`,
+      sourceRunId: payload.runId,
+      userPromptSummary: summary ?? undefined,
+      refreshAfter: true,
+    });
+  };
+
+  private async recordProactivityChatActivity(
+    sourceKind: "assistant_turn" | "planning_output" | "user_turn" | "system_followup",
+    text: string,
+    input: {
+      sourceMessageId: string;
+      sourceRunId?: string;
+      userPromptSummary?: string;
+      refreshAfter: boolean;
+    },
+  ) {
+    if (!this.client || !this.connected || !text.trim()) {
+      return;
+    }
+    try {
+      await this.client.request("modelMemory.proactivity.recordChatActivity", {
+        sessionKey: this.sessionKey,
+        projectId: "openclaw",
+        sourceKind,
+        sourceMessageId: input.sourceMessageId,
+        sourceRunId: input.sourceRunId,
+        userPromptSummary: input.userPromptSummary,
+        boundedText: text
+          .replace(/\r\n/gu, "\n")
+          .split("\n")
+          .map((line) => line.replace(/[ \t]+/gu, " ").trim())
+          .filter(Boolean)
+          .join("\n")
+          .slice(0, 480),
+      });
+      if (input.refreshAfter) {
+        await this.loadProductProactivityQueue();
+        await this.loadProactivityInbox();
+      }
+    } catch (err) {
+      this.productProactivityError = `Proactivity sync failed: ${String(err)}`;
+    }
+  }
+
+  private async persistProactivityOpportunityState(
+    queueItemId: string,
+    status: "planning_started" | "planned" | "dismissed" | "snoozed" | "done",
+    extras?: { resolvedByChatMessageId?: string | null },
+  ) {
+    const opportunityId = this.productProactivityQueue.find(
+      (entry) => entry.queueItemId === queueItemId,
+    )?.opportunityId;
+    if (!this.client || !this.connected || !opportunityId) {
+      return;
+    }
+    try {
+      await this.client.request("modelMemory.proactivity.updateOpportunityState", {
+        opportunityId,
+        status,
+        sessionKey: this.sessionKey,
+        projectId: "openclaw",
+        resolvedByChatMessageId: extras?.resolvedByChatMessageId ?? null,
+      });
+    } catch (err) {
+      this.productProactivityError = `Proactivity state sync failed: ${String(err)}`;
+    }
+  }
+
   async loadProductProactivityQueue() {
     if (!this.client || !this.connected || this.productProactivityLoading) {
       return;
@@ -895,6 +981,14 @@ export class OpenClawApp extends LitElement {
         ? proposedNextStep
         : (item.userBenefit ?? item.candidateSummary ?? item.boundedDisplayText);
     const evidence = item.evidenceSummary ?? item.sourceRefs.slice(0, 3).join(", ");
+    const draftContext =
+      item.draftReady && item.autonomousDraft
+        ? [
+            `Prepared approach: ${item.autonomousDraft.recommendedApproach}`,
+            `Next safe step: ${item.autonomousDraft.nextSafeStep}`,
+            `Uncertainty: ${item.autonomousDraft.uncertainty}`,
+          ].join(" ")
+        : null;
     const expectedOutput =
       action === "investigate"
         ? "findings, evidence, uncertainty, and the smallest safe next step"
@@ -912,6 +1006,7 @@ export class OpenClawApp extends LitElement {
       "",
       `Context to use: ${boundedContext}`,
       "",
+      ...(draftContext ? [`Prepared draft: ${draftContext}`, ""] : []),
       `Evidence summary: ${evidence}`,
       `Source refs: ${item.sourceRefs.slice(0, 3).join(", ") || "none"}.`,
       "",
@@ -930,11 +1025,11 @@ export class OpenClawApp extends LitElement {
       return;
     }
     if (action === "snooze") {
-      this.handleProductProactivitySnooze(queueItemId);
+      await this.handleProductProactivitySnooze(queueItemId);
       return;
     }
     if (action === "dismiss") {
-      this.handleProductProactivityDismiss(queueItemId);
+      await this.handleProductProactivityDismiss(queueItemId);
       return;
     }
     const { item } = this.resolveProactivityItem(queueItemId);
@@ -1004,6 +1099,9 @@ export class OpenClawApp extends LitElement {
             }
           : null,
       );
+      await this.persistProactivityOpportunityState(queueItemId, "planned");
+      await this.loadProductProactivityQueue();
+      await this.loadProactivityInbox();
       this.productProactivityError = null;
       this.proactivityInboxView = "planned";
       this.lastError = this.proactivityStartedLabel(action);
@@ -1102,6 +1200,9 @@ export class OpenClawApp extends LitElement {
             }
           : null,
       );
+      await this.persistProactivityOpportunityState(queueItemId, "done");
+      await this.loadProductProactivityQueue();
+      await this.loadProactivityInbox();
       this.productProactivityError = null;
       this.proactivityInboxView = "sent";
       await loadChatHistory(this as unknown as ChatState);
@@ -1124,7 +1225,7 @@ export class OpenClawApp extends LitElement {
     }
   }
 
-  handleProductProactivityDismiss(queueItemId: string) {
+  async handleProductProactivityDismiss(queueItemId: string) {
     this.productProactivityQueue = this.productProactivityQueue.map((entry) =>
       entry.queueItemId === queueItemId
         ? { ...entry, status: "dismissed", updatedAt: new Date().toISOString() }
@@ -1142,9 +1243,12 @@ export class OpenClawApp extends LitElement {
           }
         : null,
     );
+    await this.persistProactivityOpportunityState(queueItemId, "dismissed");
+    await this.loadProductProactivityQueue();
+    await this.loadProactivityInbox();
   }
 
-  handleProductProactivitySnooze(queueItemId: string) {
+  async handleProductProactivitySnooze(queueItemId: string) {
     this.productProactivityQueue = this.productProactivityQueue.map((entry) =>
       entry.queueItemId === queueItemId
         ? { ...entry, status: "snoozed", updatedAt: new Date().toISOString() }
@@ -1162,6 +1266,9 @@ export class OpenClawApp extends LitElement {
           }
         : null,
     );
+    await this.persistProactivityOpportunityState(queueItemId, "snoozed");
+    await this.loadProductProactivityQueue();
+    await this.loadProactivityInbox();
   }
 
   handleProductProactivityFeedback(

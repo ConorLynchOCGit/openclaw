@@ -11,7 +11,20 @@ import {
   type Phase2LiveSignalCoverageSource,
 } from "../../../extensions/model-memory/src/runtime/phase2-live-signal-coverage-expansion.js";
 import { buildPhase2PersonalAutoSendProductUxReport } from "../../../extensions/model-memory/src/runtime/phase2-personal-autosend-product-ux.js";
+import { buildPhase2ProactivityAutonomousInternalDraftingReport } from "../../../extensions/model-memory/src/runtime/phase2-proactivity-autonomous-internal-drafting.js";
 import { buildPhase2ProactivityInboxReport } from "../../../extensions/model-memory/src/runtime/phase2-proactivity-inbox.js";
+import {
+  buildPhase2ProactivityOpportunityExtractionReport,
+  type Phase2OpportunityExtractionSource,
+  type Phase2OpportunityExtractionSourceKind,
+} from "../../../extensions/model-memory/src/runtime/phase2-proactivity-opportunity-extraction.js";
+import {
+  buildPhase2ProactivityOpportunityLedgerReport,
+  type Phase2OpportunityLedgerLifecycleOverride,
+  type Phase2OpportunityLedgerSource,
+} from "../../../extensions/model-memory/src/runtime/phase2-proactivity-opportunity-ledger.js";
+import { buildPhase2ProactivityOutcomeFollowupReport } from "../../../extensions/model-memory/src/runtime/phase2-proactivity-outcome-followup-loop.js";
+import { buildPhase2ProactivityRecurringPatternReport } from "../../../extensions/model-memory/src/runtime/phase2-proactivity-recurring-pattern-loop.js";
 import { buildPhase2ProactivityNoiseBudgetReport } from "../../../extensions/model-memory/src/runtime/phase2-proactivity-signal-noise-budget.js";
 import { buildPhase2ProactivityUxRemediationReport } from "../../../extensions/model-memory/src/runtime/phase2-proactivity-ux-remediation.js";
 import { buildPhase2ProductProactivitySurfacingReport } from "../../../extensions/model-memory/src/runtime/phase2-product-proactivity-surfacing.js";
@@ -34,6 +47,20 @@ type RecordedLiveProactivityEvent = Phase2LiveProactivitySignalSource & {
 
 const liveProactivityEvents: RecordedLiveProactivityEvent[] = [];
 const MAX_LIVE_PROACTIVITY_EVENTS = 50;
+
+type RecordedChatActivity = Phase2OpportunityExtractionSource & {
+  recordedAt: string;
+};
+
+const chatActivitySources: RecordedChatActivity[] = [];
+const MAX_CHAT_ACTIVITY_SOURCES = 200;
+
+type StoredLifecycleOverride = Phase2OpportunityLedgerLifecycleOverride & {
+  projectId: string;
+  sessionKey: string;
+};
+
+const opportunityLifecycleOverrides = new Map<string, StoredLifecycleOverride>();
 
 function readSignalKind(value: unknown): Phase2LiveProactivitySignalKind {
   const kind = readString(value);
@@ -80,6 +107,18 @@ function boundedSummary(value: unknown): string {
   return summary.replace(/\s+/gu, " ").slice(0, 480).trim();
 }
 
+function boundedMultilineSummary(value: unknown): string {
+  const raw = readString(value) ?? "A bounded OpenClaw chat activity is ready for review.";
+  return raw
+    .replace(/\r\n/gu, "\n")
+    .split("\n")
+    .map((line) => line.replace(/[ \t]+/gu, " ").trim())
+    .filter(Boolean)
+    .join("\n")
+    .slice(0, 480)
+    .trim();
+}
+
 function isSafeBoundedSummary(value: string): boolean {
   const lower = value.toLowerCase();
   return !(
@@ -89,6 +128,19 @@ function isSafeBoundedSummary(value: string): boolean {
     lower.includes("secret-marker") ||
     lower.includes("private-phrase-marker")
   );
+}
+
+function readSourceKind(value: unknown): Phase2OpportunityExtractionSourceKind {
+  const kind = readString(value);
+  if (
+    kind === "assistant_turn" ||
+    kind === "planning_output" ||
+    kind === "user_turn" ||
+    kind === "system_followup"
+  ) {
+    return kind;
+  }
+  return "assistant_turn";
 }
 
 function eventsForScope(
@@ -185,7 +237,205 @@ function eventsForScope(
   return [...recordedSources, ...systemEventSources, ...heartbeatSources].slice(-10);
 }
 
+function chatActivitiesForScope(
+  projectId: string,
+  sessionKey: string,
+): Phase2OpportunityExtractionSource[] {
+  return chatActivitySources
+    .filter((source) => source.projectId === projectId && source.sessionKey === sessionKey)
+    .slice(-40);
+}
+
+function lifecycleOverridesForScope(projectId: string, sessionKey: string) {
+  return [...opportunityLifecycleOverrides.values()].filter(
+    (override) => override.projectId === projectId && override.sessionKey === sessionKey,
+  );
+}
+
+async function buildGeneratorResetProactivityState(params: {
+  projectId: string;
+  sessionKey: string;
+  operatorId: string;
+  userId: string;
+  recipientId: string;
+}) {
+  const eligibleSources = (
+    await buildPhase2ProactivityNoiseBudgetReport({
+      sources: eventsForScope(params.projectId, params.sessionKey),
+      env: process.env,
+    })
+  ).eligibleSources;
+  const liveDetectionReport = await buildPhase2LiveProactivityDetectionReport({
+    sources: eligibleSources,
+    env: process.env,
+  });
+  const extractionSources = chatActivitiesForScope(params.projectId, params.sessionKey);
+  const extractionReport = await buildPhase2ProactivityOpportunityExtractionReport({
+    sources: extractionSources,
+    env: process.env,
+  });
+  const recurringPatternReport = await buildPhase2ProactivityRecurringPatternReport({
+    sources: extractionSources,
+    env: process.env,
+  });
+  const ledgerSources: Phase2OpportunityLedgerSource[] = [
+    ...liveDetectionReport.opportunities.map((opportunity) => ({
+      ...opportunity,
+      sourceFamily: "live_signal" as const,
+      projectId: params.projectId,
+      sessionKey: params.sessionKey,
+      generatedAt: new Date().toISOString(),
+    })),
+    ...extractionReport.candidates.map((candidate) => ({
+      ...candidate,
+      sourceFamily: "assistant_output" as const,
+    })),
+    ...recurringPatternReport.opportunities.map((opportunity) => ({
+      ...opportunity,
+      sourceFamily: "pattern_or_followup" as const,
+      generatedAt: new Date().toISOString(),
+    })),
+  ];
+  const ledgerReport = await buildPhase2ProactivityOpportunityLedgerReport({
+    repoRoot: process.cwd(),
+    opportunities: ledgerSources,
+    activitySources: extractionSources,
+    lifecycleOverrides: lifecycleOverridesForScope(params.projectId, params.sessionKey),
+    env: process.env,
+  });
+  const followupReport = await buildPhase2ProactivityOutcomeFollowupReport({
+    entries: ledgerReport.ledger.entries,
+    env: process.env,
+  });
+  const effectiveLedgerReport =
+    followupReport.decisions.length === 0
+      ? ledgerReport
+      : {
+          ...ledgerReport,
+          ledger: {
+            ...ledgerReport.ledger,
+            entries: ledgerReport.ledger.entries.map((entry) => {
+              const decision = followupReport.decisions.find(
+                (candidate) => candidate.opportunityId === entry.opportunityId,
+              );
+              return decision
+                ? {
+                    ...entry,
+                    status: decision.nextStatus,
+                    updatedAt: new Date().toISOString(),
+                  }
+                : entry;
+            }),
+          },
+        };
+  const topDraftEntries = effectiveLedgerReport.ledger.entries
+    .filter(
+      (entry) =>
+        entry.status === "open" ||
+        entry.status === "surfaced" ||
+        entry.status === "planning_started",
+    )
+    .toSorted(
+      (left, right) =>
+        Number(right.attentionRequired) - Number(left.attentionRequired) ||
+        right.generatedAt.localeCompare(left.generatedAt),
+    )
+    .slice(0, 3);
+  const draftReport = await buildPhase2ProactivityAutonomousInternalDraftingReport({
+    topEntries: topDraftEntries,
+    env: process.env,
+  });
+  const productSurfacingReport = await buildPhase2ProductProactivitySurfacingReport({
+    eligibilityScope: {
+      userId: params.userId,
+      recipientId: params.recipientId,
+      projectId: params.projectId,
+      sessionKey: params.sessionKey,
+      operatorId: params.operatorId,
+    },
+    liveDetectionReport,
+    ledgerReport: effectiveLedgerReport,
+    draftReport,
+    env: process.env,
+  });
+  return {
+    liveDetectionReport,
+    extractionReport,
+    recurringPatternReport,
+    ledgerReport: effectiveLedgerReport,
+    followupReport,
+    draftReport,
+    productSurfacingReport,
+  };
+}
+
 export const modelMemoryProactivityHandlers: GatewayRequestHandlers = {
+  "modelMemory.proactivity.recordChatActivity": async ({ params, respond }) => {
+    const sessionKey = readString(params.sessionKey) ?? "main";
+    const projectId = readString(params.projectId) ?? process.env.OPENCLAW_PROJECT_ID ?? "openclaw";
+    const boundedText = boundedMultilineSummary(params.boundedText);
+    const sourceKind = readSourceKind(params.sourceKind);
+    const sourceMessageId =
+      readString(params.sourceMessageId) ??
+      `chat-message-${sha256({ sessionKey, projectId, sourceKind, boundedText }).slice(0, 16)}`;
+    const sourceRunId = readString(params.sourceRunId);
+    const sourceId =
+      readString(params.sourceId) ??
+      `chat-activity-${sha256({ projectId, sessionKey, sourceKind, sourceMessageId }).slice(0, 16)}`;
+    const sourceRef = `chat://${sessionKey}/${sourceKind}/${sourceMessageId}`;
+    const source: RecordedChatActivity = {
+      sourceId,
+      sourceKind,
+      sourceMessageId,
+      sourceRunId,
+      projectId,
+      sessionKey,
+      boundedText,
+      userPromptSummary: readString(params.userPromptSummary),
+      sourceRefs: [sourceRef],
+      sourceProfileId: sourceKind === "user_turn" ? "explicit_user_turn" : "manual_note",
+      authorityTier: sourceKind === "user_turn" ? "user_authoritative" : "tool_grounded",
+      contentHash: sha256({ sourceMessageId, boundedText, sourceKind, projectId, sessionKey }),
+      proofHash: sha256({ sourceRef, sourceRunId, sourceKind }),
+      noDarkDataStatus: "pass",
+      recordedAt: new Date().toISOString(),
+    };
+    chatActivitySources.push(source);
+    if (chatActivitySources.length > MAX_CHAT_ACTIVITY_SOURCES) {
+      chatActivitySources.splice(0, chatActivitySources.length - MAX_CHAT_ACTIVITY_SOURCES);
+    }
+    respond(true, {
+      ok: true,
+      sourceId,
+      sourceMessageId,
+      sourceKind,
+      sourceRef,
+    });
+  },
+  "modelMemory.proactivity.updateOpportunityState": async ({ params, respond }) => {
+    const opportunityId = readString(params.opportunityId);
+    const status = readString(params.status);
+    if (!opportunityId || !status) {
+      respond(
+        false,
+        undefined,
+        errorShape(ErrorCodes.INVALID_REQUEST, "invalid opportunity state update params"),
+      );
+      return;
+    }
+    const projectId = readString(params.projectId) ?? process.env.OPENCLAW_PROJECT_ID ?? "openclaw";
+    const sessionKey = readString(params.sessionKey) ?? "main";
+    opportunityLifecycleOverrides.set(opportunityId, {
+      opportunityId,
+      projectId,
+      sessionKey,
+      status: status as StoredLifecycleOverride["status"],
+      updatedAt: new Date().toISOString(),
+      resolvedByChatMessageId: readString(params.resolvedByChatMessageId) ?? null,
+      supersededByOpportunityId: readString(params.supersededByOpportunityId) ?? null,
+    });
+    respond(true, { ok: true, opportunityId, status });
+  },
   "modelMemory.proactivity.recordLiveEvent": async ({ params, respond }) => {
     const sessionKey = readString(params.sessionKey) ?? "main";
     const projectId = readString(params.projectId) ?? process.env.OPENCLAW_PROJECT_ID ?? "openclaw";
@@ -236,40 +486,45 @@ export const modelMemoryProactivityHandlers: GatewayRequestHandlers = {
     const operatorId = resolveOperatorId(params, client?.connect?.device?.id);
     const projectId = readString(params.projectId) ?? process.env.OPENCLAW_PROJECT_ID ?? "openclaw";
     try {
-      const liveDetectionReport = await buildPhase2LiveProactivityDetectionReport({
-        sources: (
-          await buildPhase2ProactivityNoiseBudgetReport({
-            sources: eventsForScope(projectId, sessionKey),
-            env: process.env,
-          })
-        ).eligibleSources,
-        env: process.env,
+      const userId =
+        readString(params.userId) ?? process.env.OPENCLAW_USER_ID ?? "local-openclaw-user";
+      const recipientId =
+        readString(params.recipientId) ??
+        process.env.OPENCLAW_RECIPIENT_ID ??
+        process.env.OPENCLAW_USER_ID ??
+        "local-openclaw-recipient";
+      const state = await buildGeneratorResetProactivityState({
+        sessionKey,
+        projectId,
+        operatorId,
+        userId,
+        recipientId,
       });
-      const report = await buildPhase2ProductProactivitySurfacingReport({
-        eligibilityScope: {
-          userId:
-            readString(params.userId) ?? process.env.OPENCLAW_USER_ID ?? "local-openclaw-user",
-          recipientId:
-            readString(params.recipientId) ??
-            process.env.OPENCLAW_RECIPIENT_ID ??
-            process.env.OPENCLAW_USER_ID ??
-            "local-openclaw-recipient",
-          projectId,
-          sessionKey,
-          operatorId,
-        },
-        liveDetectionReport,
-        env: process.env,
-      });
+      const report = state.productSurfacingReport;
       respond(true, {
         ok: true,
         reportId: report.reportId,
         decision: report.decision,
         config: report.config,
         liveDetectionReport: {
-          reportId: liveDetectionReport.reportId,
-          decision: liveDetectionReport.decision,
-          telemetry: liveDetectionReport.telemetry,
+          reportId: state.liveDetectionReport.reportId,
+          decision: state.liveDetectionReport.decision,
+          telemetry: state.liveDetectionReport.telemetry,
+        },
+        extractionReport: {
+          reportId: state.extractionReport.reportId,
+          decision: state.extractionReport.decision,
+          candidateCount: state.extractionReport.telemetry.candidateCount,
+        },
+        ledgerReport: {
+          reportId: state.ledgerReport.reportId,
+          decision: state.ledgerReport.decision,
+          entryCount: state.ledgerReport.telemetry.entryCount,
+        },
+        draftReport: {
+          reportId: state.draftReport.reportId,
+          decision: state.draftReport.decision,
+          draftCount: state.draftReport.telemetry.draftCount,
         },
         queue: report.queue,
         rollbackPlan: report.rollbackPlan,
@@ -319,34 +574,23 @@ export const modelMemoryProactivityHandlers: GatewayRequestHandlers = {
       const operatorId = resolveOperatorId(params, client?.connect?.device?.id);
       const projectId =
         readString(params.projectId) ?? process.env.OPENCLAW_PROJECT_ID ?? "openclaw";
-      const liveDetectionReport = await buildPhase2LiveProactivityDetectionReport({
-        sources: (
-          await buildPhase2ProactivityNoiseBudgetReport({
-            sources: eventsForScope(projectId, sessionKey),
-            env: process.env,
-          })
-        ).eligibleSources,
-        env: process.env,
-      });
-      const productSurfacingReport = await buildPhase2ProductProactivitySurfacingReport({
-        eligibilityScope: {
-          userId:
-            readString(params.userId) ?? process.env.OPENCLAW_USER_ID ?? "local-openclaw-user",
-          recipientId:
-            readString(params.recipientId) ??
-            process.env.OPENCLAW_RECIPIENT_ID ??
-            process.env.OPENCLAW_USER_ID ??
-            "local-openclaw-recipient",
-          projectId,
-          sessionKey,
-          operatorId,
-        },
-        liveDetectionReport,
-        env: process.env,
+      const userId =
+        readString(params.userId) ?? process.env.OPENCLAW_USER_ID ?? "local-openclaw-user";
+      const recipientId =
+        readString(params.recipientId) ??
+        process.env.OPENCLAW_RECIPIENT_ID ??
+        process.env.OPENCLAW_USER_ID ??
+        "local-openclaw-recipient";
+      const state = await buildGeneratorResetProactivityState({
+        sessionKey,
+        projectId,
+        operatorId,
+        userId,
+        recipientId,
       });
       const report = await buildPhase2ProactivityInboxReport({
         env: process.env,
-        productSurfacingReport,
+        productSurfacingReport: state.productSurfacingReport,
       });
       respond(true, {
         ok: true,

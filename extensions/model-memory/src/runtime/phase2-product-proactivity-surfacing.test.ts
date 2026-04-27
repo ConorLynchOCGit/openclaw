@@ -63,8 +63,12 @@ describe("phase2 product proactivity surfacing", () => {
     expect(report.queue.items[0].sourceRefs.length).toBeGreaterThan(0);
     expect(report.queue.items[0].sourceProfileIds.length).toBeGreaterThan(0);
     expect(report.queue.items[0].authorityTiers.length).toBeGreaterThan(0);
+    expect(report.approvalDecisions[0]).toMatchObject({
+      decision: "approved_for_send",
+      explicitOperatorAction: true,
+    });
     expect(report.sendDecisions[0]).toMatchObject({
-      decision: "send_via_chat_inject",
+      decision: "blocked",
       explicitSendApproval: true,
       actionExecution: false,
       autonomousSending: false,

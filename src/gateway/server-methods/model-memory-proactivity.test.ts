@@ -232,6 +232,80 @@ describe("model-memory proactivity gateway handlers", () => {
     expect(payload.queue.items[0].sourceRefs[0]).toContain("gateway://heartbeat/last/");
   });
 
+  it("turns assistant planning output into ledger-backed inbox traffic without manual candidate seeding", async () => {
+    const recordRespond = vi.fn();
+    await modelMemoryProactivityHandlers["modelMemory.proactivity.recordChatActivity"]({
+      req: {
+        type: "req",
+        id: "req-chat-activity-1",
+        method: "modelMemory.proactivity.recordChatActivity",
+        params: {},
+      },
+      params: {
+        sessionKey: "generator-reset-chat-test",
+        projectId: "openclaw",
+        sourceKind: "assistant_turn",
+        sourceMessageId: "assistant-generator-reset-1",
+        boundedText: [
+          "Potential next steps:",
+          "1. Plan the generator reset so roadmap review results become inbox opportunities automatically.",
+          "2. Investigate stale proactivity items that still surface after the work is already done.",
+        ].join("\n"),
+        userPromptSummary:
+          "Review the roadmap and active work to generate potential proactivity plans.",
+      },
+      client: null,
+      isWebchatConnect: () => true,
+      respond: recordRespond,
+      context: {} as never,
+    });
+
+    expect(recordRespond).toHaveBeenCalledWith(
+      true,
+      expect.objectContaining({ ok: true, sourceKind: "assistant_turn" }),
+    );
+
+    const respond = vi.fn();
+    await modelMemoryProactivityHandlers["modelMemory.proactivity.queue"]({
+      req: {
+        type: "req",
+        id: "req-generator-reset-chat-queue",
+        method: "modelMemory.proactivity.queue",
+        params: {},
+      },
+      params: {
+        sessionKey: "generator-reset-chat-test",
+        userId: "conor",
+        recipientId: "conor",
+        projectId: "openclaw",
+        operatorId: "operator-conor",
+      },
+      client: null,
+      isWebchatConnect: () => true,
+      respond,
+      context: {} as never,
+    });
+
+    const [ok, payload] = respond.mock.calls[0];
+    expect(ok).toBe(true);
+    expect(payload.extractionReport).toMatchObject({
+      decision: "opportunities_extracted",
+    });
+    expect(payload.extractionReport.candidateCount).toBeGreaterThanOrEqual(1);
+    expect(payload.ledgerReport).toMatchObject({
+      decision: "ledger_ready",
+    });
+    expect(payload.draftReport).toMatchObject({
+      decision: "drafts_ready",
+    });
+    expect(
+      payload.queue.items.some(
+        (item: { layer: string; draftReady?: boolean; opportunityId?: string }) =>
+          item.layer === "actionable" && item.draftReady === true && Boolean(item.opportunityId),
+      ),
+    ).toBe(true);
+  });
+
   it("returns personal autosend UX settings without raw content", async () => {
     const respond = vi.fn();
     await modelMemoryProactivityHandlers["modelMemory.proactivity.personalAutosendUx"]({
@@ -364,11 +438,13 @@ describe("model-memory proactivity gateway handlers", () => {
     const sentItems = payload.digest.items.filter(
       (item: { status?: string }) => item.status === "sent",
     );
-    expect(actionableItems).toHaveLength(1);
+    expect(actionableItems.length).toBeGreaterThanOrEqual(1);
     expect(plannedItems).toHaveLength(0);
     expect(sentItems).toHaveLength(0);
     expect(payload.digest.counts.planned).toBe(0);
-    expect(payload.digest.items[0]?.status).toBe("pending_review");
+    expect(
+      actionableItems.every((item: { status?: string }) => item.status === "pending_review"),
+    ).toBe(true);
   });
 
   it("returns compact proactivity UX remediation state", async () => {

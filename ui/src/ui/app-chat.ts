@@ -47,6 +47,12 @@ export type ChatHost = {
   refreshSessionsAfterChat: Set<string>;
   /** Callback for slash-command side effects that need app-level access. */
   onSlashAction?: (action: string) => void;
+  onProactivityUserMessage?: (payload: { text: string; runId: string }) => void;
+  onProactivityAssistantMessage?: (payload: {
+    text: string;
+    runId?: string;
+    messageId?: string;
+  }) => void;
 };
 
 export const CHAT_SESSIONS_ACTIVE_MINUTES = 120;

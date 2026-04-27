@@ -1436,6 +1436,37 @@ function getProactivityPrimaryStepLabel(
   return item.workItemKind === "message_candidate" ? "Message to send" : "What happens next";
 }
 
+function renderProactivityDraftSection(
+  item:
+    | Pick<ProductProactivityQueueItem, "draftReady" | "autonomousDraft">
+    | Pick<ProactivityInboxItem, "draftReady" | "autonomousDraft">,
+): TemplateResult | typeof nothing {
+  if (!item.draftReady || !item.autonomousDraft) {
+    return nothing;
+  }
+  return html`
+    <div class="product-proactivity-item__section">
+      <span>Draft ready</span>
+      <div>${item.autonomousDraft.recommendedApproach}</div>
+    </div>
+    <details class="product-proactivity-item__details">
+      <summary>Review draft</summary>
+      <div class="operator-row">
+        <span>Next safe step</span>
+        <span>${item.autonomousDraft.nextSafeStep}</span>
+      </div>
+      <div class="operator-row">
+        <span>Uncertainty</span>
+        <span>${item.autonomousDraft.uncertainty}</span>
+      </div>
+      <div class="operator-row">
+        <span>Safety boundary</span>
+        <span>${item.autonomousDraft.safetyBoundary}</span>
+      </div>
+    </details>
+  `;
+}
+
 function getActiveProactivityContext(props: ChatProps): ProductProactivityActiveContext {
   return (
     props.activeProactivityContext ?? {
@@ -1546,6 +1577,7 @@ function renderContextualProactivityCard(props: ChatProps): TemplateResult | typ
           <span>Expected value</span>
           <div>${getProactivityUserBenefit(item)}</div>
         </div>
+        ${renderProactivityDraftSection(item)}
         <div class="contextual-proactivity-card__why">${whyShown}</div>
         <details class="contextual-proactivity-card__details">
           <summary>Provenance</summary>
@@ -1635,6 +1667,7 @@ function renderHeartbeatProactivityReview(props: ChatProps): TemplateResult | ty
           >
             <div class="heartbeat-proactivity-review__meta">
               <span>${item.workItemKind?.replace(/_/g, " ") ?? "planning request"}</span>
+              ${item.draftReady ? html`<span>draft ready</span>` : nothing}
               <span>${item.confidence ?? "medium"} confidence</span>
             </div>
             <h4>${getProactivityPlanTitle(item)}</h4>
@@ -1650,6 +1683,7 @@ function renderHeartbeatProactivityReview(props: ChatProps): TemplateResult | ty
               <span>Expected value</span>
               <div>${getProactivityUserBenefit(item)}</div>
             </div>
+            ${renderProactivityDraftSection(item)}
             <details class="heartbeat-proactivity-review__details">
               <summary>Evidence and provenance</summary>
               <div class="operator-row">
@@ -2041,6 +2075,7 @@ function renderProactivityInbox(props: ChatProps): TemplateResult | typeof nothi
                     <div class="product-proactivity-item__meta">
                       <span>${formatInboxMessageClass(item.messageClass)}</span>
                       <span>${item.workItemKind?.replace(/_/g, " ") ?? "work item"}</span>
+                      ${item.draftReady ? html`<span>draft ready</span>` : nothing}
                       <span>${item.status.replace(/_/g, " ")}</span>
                       <span>${item.layer ?? "actionable"}</span>
                     </div>
@@ -2078,6 +2113,7 @@ function renderProactivityInbox(props: ChatProps): TemplateResult | typeof nothi
                       <span>Expected value</span>
                       <div>${getProactivityUserBenefit(item)}</div>
                     </div>
+                    ${renderProactivityDraftSection(item)}
                     <details class="product-proactivity-item__details">
                       <summary>Review plan</summary>
                       <p>${item.whyThisAppearedSummary}</p>

@@ -75,6 +75,29 @@ describe("handleChatEvent", () => {
     expect(handleChatEvent(state, payload)).toBe(null);
   });
 
+  it("accepts agent-prefixed session keys that target the active session", () => {
+    const state = createState({
+      sessionKey: "main",
+      chatRunId: "run-1",
+      chatStream: "Working...",
+      chatStreamStartedAt: 123,
+    });
+    const payload: ChatEventPayload = {
+      runId: "run-1",
+      sessionKey: "agent:main:main",
+      state: "final",
+      message: {
+        id: "assistant-msg-1",
+        role: "assistant",
+        content: [{ type: "text", text: "Reply from agent-scoped session" }],
+      },
+    };
+
+    expect(handleChatEvent(state, payload)).toBe("final");
+    expect(state.chatMessages).toEqual([payload.message]);
+    expect(state.chatRunId).toBeNull();
+  });
+
   it("returns null for delta from another run", () => {
     const state = createState({
       sessionKey: "main",
@@ -683,6 +706,46 @@ describe("loadChatHistory", () => {
     await loadChatHistory(state);
 
     expect(state.chatMessages).toEqual([messages[0], messages[2]]);
+  });
+
+  it("captures a new assistant history message for proactivity after a sent run", async () => {
+    const onProactivityUserMessage = vi.fn();
+    const onProactivityAssistantMessage = vi.fn();
+    const request = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: true })
+      .mockResolvedValueOnce({
+        messages: [
+          { role: "user", content: [{ type: "text", text: "Plan next steps" }], timestamp: 1 },
+          {
+            id: "assistant-msg-1",
+            role: "assistant",
+            content: [{ type: "text", text: "- Plan the next bounded OpenClaw step." }],
+            timestamp: 2,
+          },
+        ],
+        thinkingLevel: "low",
+      });
+    const state = createState({
+      client: { request } as unknown as ChatState["client"],
+      connected: true,
+      onProactivityUserMessage,
+      onProactivityAssistantMessage,
+    });
+
+    const runId = await sendChatMessage(state, "Plan next steps");
+    await loadChatHistory(state);
+
+    expect(runId).toBeTruthy();
+    expect(onProactivityUserMessage).toHaveBeenCalledWith({
+      text: "Plan next steps",
+      runId,
+    });
+    expect(onProactivityAssistantMessage).toHaveBeenCalledWith({
+      text: "- Plan the next bounded OpenClaw step.",
+      runId,
+      messageId: "assistant-msg-1",
+    });
   });
 
   it("keeps a user message even if it matches the synthetic repair text", async () => {

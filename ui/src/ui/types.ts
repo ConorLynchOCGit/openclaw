@@ -117,6 +117,19 @@ export type ProductProactivityActiveContext = {
 export type ProductProactivityQueueItem = {
   queueItemId: string;
   candidateId: string;
+  opportunityId?: string;
+  opportunityStatus?:
+    | "open"
+    | "surfaced"
+    | "draft_ready"
+    | "planning_started"
+    | "planned"
+    | "in_progress"
+    | "done"
+    | "dismissed"
+    | "snoozed"
+    | "superseded"
+    | "stale";
   workItemId?: string;
   workItemKind?: ProductProactivityWorkItemKind;
   workItemStatus?: ProductProactivityWorkItemStatus;
@@ -139,6 +152,17 @@ export type ProductProactivityQueueItem = {
   evidenceSummary?: string;
   confidence?: ProductProactivityConfidence;
   blockedIfMissing?: string[];
+  draftReady?: boolean;
+  autonomousDraft?: {
+    draftId: string;
+    draftKind: string;
+    recommendedApproach: string;
+    nextSafeStep: string;
+    uncertainty: string;
+    safetyBoundary: string;
+  } | null;
+  resolvedByChatMessageId?: string | null;
+  supersededByOpportunityId?: string | null;
   layer?: ProductProactivityLayer;
   attentionRequired?: boolean;
   sendStatus?: ProductProactivitySendStatus;
@@ -237,6 +261,8 @@ export type ProactivityInboxItem = {
   itemId: string;
   sourceArtifactReportId: string;
   candidateId: string;
+  opportunityId?: string;
+  opportunityStatus?: ProductProactivityQueueItem["opportunityStatus"];
   queueItemId?: string;
   workItemId?: string;
   workItemKind?: ProductProactivityWorkItemKind;
@@ -263,6 +289,10 @@ export type ProactivityInboxItem = {
   evidenceSummary?: string;
   confidence?: ProductProactivityConfidence;
   blockedIfMissing?: string[];
+  draftReady?: boolean;
+  autonomousDraft?: ProductProactivityQueueItem["autonomousDraft"];
+  resolvedByChatMessageId?: string | null;
+  supersededByOpportunityId?: string | null;
   layer?: ProductProactivityLayer;
   attentionRequired?: boolean;
   sendStatus?: ProductProactivitySendStatus;

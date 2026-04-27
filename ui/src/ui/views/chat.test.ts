@@ -1101,6 +1101,129 @@ describe("chat view", () => {
     expect(onWorkAction).toHaveBeenCalledWith("queue-heartbeat-source", "plan_this");
   });
 
+  it("renders draft-ready heartbeat and inbox items from the canonical work item", () => {
+    const container = document.createElement("div");
+    render(
+      renderChat(
+        createProps({
+          sessionKey: "draft-ready-test",
+          proactivityInboxDigest: {
+            digestId: "digest-draft-ready",
+            generatedAt: "2026-04-27T16:00:00.000Z",
+            filters: [
+              "actionable",
+              "pending",
+              "planned",
+              "sent",
+              "snoozed",
+              "dismissed",
+              "blocked",
+              "autosend_trial",
+              "diagnostics",
+            ],
+            counts: {
+              actionable: 1,
+              pending: 1,
+              planned: 0,
+              sent: 0,
+              snoozed: 0,
+              dismissed: 0,
+              blocked: 0,
+              autosend_trial: 0,
+              diagnostics: 0,
+            },
+            layerCounts: { actionable: 1, history: 0, diagnostic: 0 },
+            items: [
+              {
+                itemId: "draft-ready-item-1",
+                sourceArtifactReportId: "draft-ready-report-1",
+                candidateId: "draft-ready-candidate-1",
+                opportunityId: "draft-ready-opportunity-1",
+                opportunityStatus: "draft_ready",
+                queueItemId: "draft-ready-queue-1",
+                workItemId: "draft-ready-work-item-1",
+                workItemKind: "planning_request",
+                workItemStatus: "planned",
+                primaryAction: {
+                  actionType: "plan_this",
+                  label: "Plan this",
+                  description: "Starts a bounded planning request in the current chat.",
+                  requiresChatInject: false,
+                  executesAction: false,
+                },
+                secondaryActions: [],
+                ctaExplanation: "Opens the draft in a bounded planning handoff without execution.",
+                handoffStatus: "idle",
+                handoffError: null,
+                handoffMessageAnchor: null,
+                messageClass: "operator_approved_suggestion_available",
+                boundedDisplayText: "Plan the generator reset from real assistant output.",
+                candidateSummary: "Plan the generator reset from real assistant output.",
+                suggestedAction: "Turn the generated opportunity into a bounded planning turn.",
+                messagePreview: "Plan the generator reset from real assistant output.",
+                planTitle: "Plan the generator reset",
+                problem:
+                  "Assistant-generated next steps should become proactive work automatically.",
+                proposedMessage: "Plan the generator reset from real assistant output.",
+                expectedUserValue:
+                  "Creates momentum without waiting for the inbox to be opened first.",
+                userBenefit: "Creates momentum without waiting for the inbox to be opened first.",
+                evidenceSummary:
+                  "Assistant planning output produced a concrete next-step opportunity.",
+                confidence: "high",
+                blockedIfMissing: [],
+                draftReady: true,
+                autonomousDraft: {
+                  draftId: "draft-ready-draft-1",
+                  draftKind: "planning_brief",
+                  recommendedApproach: "Turn the assistant output into a concise bounded plan.",
+                  nextSafeStep: "Review the draft and decide whether to start a planning handoff.",
+                  uncertainty: "The draft may already be partly resolved by newer work.",
+                  safetyBoundary:
+                    "This is an internal bounded draft only. Do not edit files, execute actions, or send outbound messages without explicit approval.",
+                },
+                resolvedByChatMessageId: null,
+                supersededByOpportunityId: null,
+                status: "pending_review",
+                filterTags: ["actionable", "pending"],
+                layer: "actionable",
+                attentionRequired: true,
+                sendStatus: "idle",
+                sendError: null,
+                sentMessageAnchor: null,
+                sourceRefs: ["chat://draft-ready-test/assistant_turn/msg-1"],
+                sourceProfileIds: ["manual_note"],
+                authorityTiers: ["tool_grounded"],
+                contentHashes: ["content-hash-draft-ready"],
+                proofHashes: ["proof-hash-draft-ready"],
+                noDarkDataStatus: "pass",
+                feedbackSummary: {
+                  usefulCount: 0,
+                  notUsefulCount: 0,
+                  tooRepetitiveCount: 0,
+                  wrongContextCount: 0,
+                  unsafePrivateCount: 0,
+                },
+                whyThisAppearedSummary:
+                  "Generated from the canonical opportunity ledger and elevated because a bounded internal draft is ready for review.",
+                blockedReasonCodes: [],
+              },
+            ],
+          },
+          productProactivityQueue: [],
+        }),
+      ),
+      container,
+    );
+
+    expect(container.textContent).toContain("draft ready");
+    expect(container.textContent).toContain(
+      "Turn the assistant output into a concise bounded plan.",
+    );
+    expect(container.textContent).toContain("Review draft");
+    expect(container.textContent).toContain("Next safe step");
+  });
+
   it("does not surface static diagnostic fallbacks as actionable heartbeat traffic", () => {
     const container = document.createElement("div");
     render(

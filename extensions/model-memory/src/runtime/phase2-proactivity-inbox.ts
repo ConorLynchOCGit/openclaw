@@ -50,6 +50,19 @@ export type Phase2ProactivityInboxItem = {
   itemId: string;
   sourceArtifactReportId: string;
   candidateId: string;
+  opportunityId?: string;
+  opportunityStatus?:
+    | "open"
+    | "surfaced"
+    | "draft_ready"
+    | "planning_started"
+    | "planned"
+    | "in_progress"
+    | "done"
+    | "dismissed"
+    | "snoozed"
+    | "superseded"
+    | "stale";
   queueItemId?: string;
   workItemId?: string;
   workItemKind?: Phase2ProactivityWorkItemKind;
@@ -76,6 +89,17 @@ export type Phase2ProactivityInboxItem = {
   evidenceSummary: string;
   confidence: "high" | "medium" | "low";
   blockedIfMissing: string[];
+  draftReady?: boolean;
+  autonomousDraft?: {
+    draftId: string;
+    draftKind: string;
+    recommendedApproach: string;
+    nextSafeStep: string;
+    uncertainty: string;
+    safetyBoundary: string;
+  } | null;
+  resolvedByChatMessageId?: string | null;
+  supersededByOpportunityId?: string | null;
   layer: "actionable" | "history" | "diagnostic";
   attentionRequired: boolean;
   sendStatus: "idle" | "sending" | "sent" | "failed";
@@ -443,6 +467,8 @@ function cloneQueueItemForInbox(input: {
     }),
     sourceArtifactReportId: input.sourceArtifactReportId,
     candidateId: input.queueItem.candidateId,
+    opportunityId: input.queueItem.opportunityId,
+    opportunityStatus: input.queueItem.opportunityStatus,
     queueItemId: input.queueItem.queueItemId,
     workItemId: input.queueItem.workItemId,
     workItemKind: input.queueItem.workItemKind,
@@ -466,6 +492,10 @@ function cloneQueueItemForInbox(input: {
     evidenceSummary: input.queueItem.evidenceSummary,
     confidence: input.queueItem.confidence,
     blockedIfMissing: input.queueItem.blockedIfMissing,
+    draftReady: input.queueItem.draftReady,
+    autonomousDraft: input.queueItem.autonomousDraft,
+    resolvedByChatMessageId: input.queueItem.resolvedByChatMessageId,
+    supersededByOpportunityId: input.queueItem.supersededByOpportunityId,
     layer: input.queueItem.layer,
     attentionRequired: input.queueItem.attentionRequired,
     sendStatus: input.queueItem.sendStatus,
@@ -485,8 +515,9 @@ function cloneQueueItemForInbox(input: {
     proofHashes: input.queueItem.proofHashes,
     noDarkDataStatus: input.queueItem.noDarkDataStatus,
     feedbackSummary: feedbackSummaryFrom(input.feedbackReport),
-    whyThisAppearedSummary:
-      "Generated from approved Model Memory proactivity queue evidence with source refs, authority tiers, source profiles, and proof hashes preserved.",
+    whyThisAppearedSummary: input.queueItem.draftReady
+      ? "Generated from the canonical opportunity ledger and elevated because a bounded internal draft is ready for review."
+      : "Generated from the canonical Model Memory opportunity ledger with source refs, authority tiers, source profiles, and proof hashes preserved.",
     blockedReasonCodes: input.blockedReasonCodes ?? input.queueItem.blockedReasonCodes,
   };
 }

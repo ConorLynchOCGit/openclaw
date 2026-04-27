@@ -9,6 +9,12 @@ import {
 import { sha256JsonValue } from "../hashing.ts";
 import type { SourceAuthorityTier, SourceProfileId } from "../source-authority.ts";
 import type { Phase2LiveProactivityDetectionReport } from "./phase2-live-proactivity-signals.ts";
+import type { Phase2AutonomousDraftReport } from "./phase2-proactivity-autonomous-internal-drafting.ts";
+import type {
+  Phase2OpportunityLedgerEntry,
+  Phase2OpportunityLedgerReport,
+  Phase2OpportunityLifecycleStatus,
+} from "./phase2-proactivity-opportunity-ledger.ts";
 import type {
   Phase2ProactivityWorkItemAction,
   Phase2ProactivityWorkItemKind,
@@ -74,6 +80,8 @@ export type Phase2ProductProactivityQueueItem = {
   queueItemId: string;
   candidateId: string;
   workItemId: string;
+  opportunityId?: string;
+  opportunityStatus?: Phase2OpportunityLifecycleStatus;
   workItemKind: Phase2ProactivityWorkItemKind;
   workItemStatus: Phase2ProactivityWorkItemStatus;
   primaryAction: Phase2ProactivityWorkItemAction | null;
@@ -95,6 +103,17 @@ export type Phase2ProductProactivityQueueItem = {
   evidenceSummary: string;
   confidence: "high" | "medium" | "low";
   blockedIfMissing: string[];
+  draftReady?: boolean;
+  autonomousDraft?: {
+    draftId: string;
+    draftKind: string;
+    recommendedApproach: string;
+    nextSafeStep: string;
+    uncertainty: string;
+    safetyBoundary: string;
+  } | null;
+  resolvedByChatMessageId?: string | null;
+  supersededByOpportunityId?: string | null;
   layer: "actionable" | "history" | "diagnostic";
   attentionRequired: boolean;
   sendStatus: "idle" | "sending" | "sent" | "failed";
@@ -224,6 +243,8 @@ export type Phase2ProductProactivitySurfacingInput = {
   defaultPromotionReport?: Phase2UserFacingProactivityDefaultPromotionReport | null;
   realCandidateReport?: Phase2RealMemoryCandidateReport | null;
   liveDetectionReport?: Phase2LiveProactivityDetectionReport | null;
+  ledgerReport?: Phase2OpportunityLedgerReport | null;
+  draftReport?: Phase2AutonomousDraftReport | null;
   eligibilityScope?: Partial<Phase2ProductProactivityEligibilityScope>;
   messageClass?: Phase2UserFacingProactivityDefaultMessageClass | "external_instruction_message";
   env?: Record<string, string | undefined>;
@@ -765,6 +786,162 @@ async function loadRealCandidateReport(input: {
   });
 }
 
+function queueStatusForOpportunityStatus(
+  status: Phase2OpportunityLifecycleStatus,
+): Phase2ProductProactivityQueueItemStatus {
+  switch (status) {
+    case "dismissed":
+      return "dismissed";
+    case "snoozed":
+      return "snoozed";
+    case "done":
+      return "sent";
+    case "superseded":
+    case "stale":
+      return "blocked";
+    case "planning_started":
+    case "planned":
+    case "in_progress":
+      return "planned";
+    default:
+      return "pending_review";
+  }
+}
+
+function layerForOpportunityStatus(
+  status: Phase2OpportunityLifecycleStatus,
+): Phase2ProductProactivityQueueItem["layer"] {
+  switch (status) {
+    case "done":
+    case "dismissed":
+    case "snoozed":
+    case "planning_started":
+    case "planned":
+    case "in_progress":
+      return "history";
+    case "superseded":
+    case "stale":
+      return "diagnostic";
+    default:
+      return "actionable";
+  }
+}
+
+function workItemStatusForOpportunityStatus(
+  entry: Phase2OpportunityLedgerEntry,
+): Phase2ProactivityWorkItemStatus {
+  switch (entry.status) {
+    case "draft_ready":
+      return "drafted";
+    case "planning_started":
+      return "planning_started";
+    case "planned":
+      return "planned";
+    case "in_progress":
+      return "execution_proposed";
+    case "done":
+      return "done";
+    case "dismissed":
+      return "dismissed";
+    case "snoozed":
+      return "snoozed";
+    case "superseded":
+    case "stale":
+      return "blocked";
+    default:
+      return "not_started";
+  }
+}
+
+function queueItemsFromLedger(input: {
+  entries: Phase2OpportunityLedgerEntry[];
+  scope: Phase2ProductProactivityEligibilityScope;
+  generatedAt: string;
+  draftReport?: Phase2AutonomousDraftReport | null;
+}): Phase2ProductProactivityQueueItem[] {
+  const draftsByOpportunityId = new Map(
+    (input.draftReport?.drafts ?? []).map((draft) => [draft.opportunityId, draft]),
+  );
+  return input.entries.map((entry) => {
+    const draft = draftsByOpportunityId.get(entry.opportunityId);
+    const workItemStatus = draft ? "drafted" : workItemStatusForOpportunityStatus(entry);
+    const status = queueStatusForOpportunityStatus(entry.status);
+    const layer = layerForOpportunityStatus(entry.status);
+    const primaryAction =
+      entry.status === "done" || entry.status === "dismissed" || entry.status === "snoozed"
+        ? null
+        : actionForWorkItemKind(entry.workItemKind);
+    return {
+      queueItemId: entry.queueItemId,
+      candidateId: entry.candidateId,
+      workItemId: entry.workItemId,
+      opportunityId: entry.opportunityId,
+      opportunityStatus: entry.status,
+      workItemKind: entry.workItemKind,
+      workItemStatus,
+      primaryAction,
+      secondaryActions: primaryAction ? secondaryWorkItemActions() : [],
+      ctaExplanation: draft
+        ? "A bounded internal draft is ready. Review it, then start the next chat handoff only if useful."
+        : "Starts bounded work from the canonical proactivity ledger; no file edit, action execution, or outbound send occurs without approval.",
+      handoffStatus: "idle",
+      handoffError: null,
+      handoffMessageAnchor: null,
+      messageClass:
+        entry.workItemKind === "draft_next_steps"
+          ? "operator_approved_follow_up_available"
+          : "operator_approved_suggestion_available",
+      boundedDisplayText: entry.title,
+      messagePreview: entry.proposedNextStep,
+      suggestedAction: draft
+        ? "Review the bounded internal draft and decide whether to start the next chat handoff."
+        : `Start bounded work for ${entry.title}.`,
+      candidateSummary: entry.title,
+      expectedUserValue: entry.expectedUserValue,
+      planTitle: entry.title,
+      problem: entry.whyNow,
+      proposedMessage: entry.proposedNextStep,
+      userBenefit: entry.expectedUserValue,
+      evidenceSummary: entry.evidenceSummary,
+      confidence: entry.confidence,
+      blockedIfMissing: [],
+      draftReady: Boolean(draft),
+      autonomousDraft: draft
+        ? {
+            draftId: draft.draftId,
+            draftKind: draft.draftKind,
+            recommendedApproach: draft.recommendedApproach,
+            nextSafeStep: draft.nextSafeStep,
+            uncertainty: draft.uncertainty,
+            safetyBoundary: draft.safetyBoundary,
+          }
+        : null,
+      resolvedByChatMessageId: entry.resolvedByChatMessageId,
+      supersededByOpportunityId: entry.supersededByOpportunityId,
+      layer,
+      attentionRequired: layer === "actionable" ? entry.attentionRequired : false,
+      sendStatus: "idle",
+      sendError: null,
+      sentMessageAnchor: entry.resolvedByChatMessageId
+        ? `chat-message:${entry.resolvedByChatMessageId}`
+        : null,
+      status,
+      eligibleScope: input.scope,
+      sourceRefs: entry.sourceRefs,
+      sourceProfileIds: entry.sourceProfileIds,
+      authorityTiers: entry.authorityTiers,
+      contentHashes: entry.contentHashes,
+      proofHashes: entry.proofHashes,
+      noDarkDataStatus: entry.noDarkDataStatus,
+      staleLabels: entry.staleLabels,
+      conflictLabels: entry.conflictLabels,
+      blockedReasonCodes: entry.blockedReasonCodes,
+      generatedAt: entry.generatedAt,
+      updatedAt: entry.updatedAt,
+    };
+  });
+}
+
 export async function buildPhase2ProductProactivitySurfacingReport(
   input: Phase2ProductProactivitySurfacingInput = {},
 ): Promise<Phase2ProductProactivitySurfacingReport> {
@@ -783,6 +960,8 @@ export async function buildPhase2ProductProactivitySurfacingReport(
     liveDetectionReport: input.liveDetectionReport,
     env: input.env,
   });
+  const ledgerEntries =
+    input.ledgerReport?.decision === "ledger_ready" ? input.ledgerReport.ledger.entries : [];
   const realCandidate = realCandidateReport?.candidates.find((candidate) => !candidate.suppressed);
   const messageClass =
     input.messageClass ?? realCandidate?.messageClass ?? "operator_approved_suggestion_available";
@@ -833,164 +1012,188 @@ export async function buildPhase2ProductProactivitySurfacingReport(
     targetId: `${scope.projectId}:${scope.sessionKey}`,
     seed: { generatedAt, decision, messageClass, defaultReportId: defaultPromotionReport.reportId },
   });
-  const queueItemId = buildDerivedArtifactId({
-    family: "context_artifact",
-    artifactType: "phase2_product_proactivity_queue_item",
-    targetId: `${scope.projectId}:${scope.sessionKey}`,
-    seed: { messageClass: effectiveMessageClass, defaultReportId: defaultPromotionReport.reportId },
-  });
   const reasonCodes = failedChecks.map((check) => check.reasonCode);
-  const itemStatus: Phase2ProductProactivityQueueItemStatus =
-    decision === "product_queue_enabled"
-      ? "pending_review"
-      : decision === "rollback_disabled"
-        ? "rollback_disabled"
-        : "blocked";
-  const staticDemoted = !realCandidate || realCandidate.sourceMode !== "live_signal";
-  const boundedDisplayText =
-    realCandidate?.boundedDisplayText ?? "No live proactivity opportunities detected.";
-  const contentFields = contentFieldsForMessageClass({
-    messageClass: effectiveMessageClass,
-    boundedDisplayText,
-    realCandidate,
-    scope,
-  });
-  const candidateId = buildDerivedArtifactId({
-    family: "context_artifact",
-    artifactType: "phase2_product_proactivity_candidate",
-    targetId: queueItemId,
-    seed: realCandidate?.candidateId ?? defaultPromotionReport.reportId,
-  });
-  const workItemKind =
-    decision === "product_queue_enabled" &&
-    !staticDemoted &&
-    Boolean(contentFields.proposedMessage) &&
-    contentFields.blockedIfMissing.length === 0
-      ? (realCandidate?.workItemKind ?? workItemKindForMessageClass(effectiveMessageClass))
-      : "diagnostic";
-  const workItemId = buildDerivedArtifactId({
-    family: "context_artifact",
-    artifactType: "phase2_proactivity_work_item",
-    targetId: candidateId,
-    seed: {
-      workItemKind,
-      sourceRefs: uniqueSortedStrings([
-        ...defaultPromotionReport.telemetry.sourceRefs,
-        ...(realCandidate?.sourceRefs ?? []),
-      ]),
-      contentHashes: uniqueSortedStrings([
-        ...defaultPromotionReport.telemetry.contentHashes,
-        ...(realCandidate?.contentHashes ?? []),
-      ]),
-    },
-  });
-  const primaryAction = workItemKind === "diagnostic" ? null : actionForWorkItemKind(workItemKind);
-  const queueItem: Phase2ProductProactivityQueueItem = {
-    queueItemId,
-    candidateId,
-    workItemId,
-    workItemKind,
-    workItemStatus: workItemKind === "diagnostic" ? "blocked" : "not_started",
-    primaryAction,
-    secondaryActions: workItemKind === "diagnostic" ? [] : secondaryWorkItemActions(),
-    ctaExplanation:
-      workItemKind === "diagnostic"
-        ? "Diagnostic evidence is review-only and cannot start work directly."
-        : "Starts a bounded agent handoff in the current chat; no external action executes without approval.",
-    handoffStatus: "idle",
-    handoffError: null,
-    handoffMessageAnchor: null,
-    messageClass: effectiveMessageClass,
-    boundedDisplayText,
-    ...contentFields,
-    status: itemStatus,
-    eligibleScope: scope,
-    sourceRefs: uniqueSortedStrings([
-      ...defaultPromotionReport.telemetry.sourceRefs,
-      ...(realCandidate?.sourceRefs ?? []),
-    ]),
-    sourceProfileIds: uniqueSortedStrings([
-      ...defaultPromotionReport.telemetry.sourceProfileIds,
-      ...(realCandidate?.sourceProfileIds ?? []),
-    ]) as SourceProfileId[],
-    authorityTiers: uniqueSortedStrings([
-      ...defaultPromotionReport.telemetry.authorityTiers,
-      ...(realCandidate?.authorityTiers ?? []),
-    ]) as SourceAuthorityTier[],
-    contentHashes: uniqueSortedStrings([
-      ...defaultPromotionReport.telemetry.contentHashes,
-      ...(realCandidate?.contentHashes ?? []),
-    ]),
-    proofHashes: uniqueSortedStrings([
-      ...defaultPromotionReport.telemetry.proofHashes,
-      ...(realCandidate?.proofHashes ?? []),
-      ...(realCandidateReport ? [reportHash(realCandidateReport as JsonLike)].filter(Boolean) : []),
-    ]),
-    noDarkDataStatus: noDarkDataOk ? "pass" : "fail",
-    staleLabels: realCandidate?.staleLabels ?? [],
-    conflictLabels: realCandidate?.conflictLabels ?? [],
-    blockedReasonCodes: uniqueSortedStrings([
-      ...reasonCodes,
-      ...(!contentFields.proposedMessage || contentFields.blockedIfMissing.length
-        ? ["safe_specific_plan_required"]
-        : []),
-      ...(staticDemoted
-        ? realCandidate
-          ? ["static_default_candidate_demoted"]
-          : ["no_live_opportunities_detected"]
-        : []),
-      ...(realCandidate?.blockedReasonCodes ?? []),
-    ]),
-    layer:
-      decision === "product_queue_enabled" &&
-      !staticDemoted &&
-      Boolean(contentFields.proposedMessage) &&
-      contentFields.blockedIfMissing.length === 0
-        ? "actionable"
-        : "diagnostic",
-    attentionRequired:
-      decision === "product_queue_enabled" &&
-      !staticDemoted &&
-      Boolean(contentFields.proposedMessage) &&
-      contentFields.blockedIfMissing.length === 0,
-    sendStatus: "idle",
-    sendError: null,
-    sentMessageAnchor: null,
-    generatedAt,
-    updatedAt: generatedAt,
-  };
+  const queueItems: Phase2ProductProactivityQueueItem[] =
+    decision === "product_queue_enabled" && ledgerEntries.length > 0
+      ? queueItemsFromLedger({
+          entries: ledgerEntries,
+          scope,
+          generatedAt,
+          draftReport: input.draftReport,
+        })
+      : (() => {
+          const queueItemId = buildDerivedArtifactId({
+            family: "context_artifact",
+            artifactType: "phase2_product_proactivity_queue_item",
+            targetId: `${scope.projectId}:${scope.sessionKey}`,
+            seed: {
+              messageClass: effectiveMessageClass,
+              defaultReportId: defaultPromotionReport.reportId,
+            },
+          });
+          const itemStatus: Phase2ProductProactivityQueueItemStatus =
+            decision === "product_queue_enabled"
+              ? "pending_review"
+              : decision === "rollback_disabled"
+                ? "rollback_disabled"
+                : "blocked";
+          const staticDemoted = !realCandidate || realCandidate.sourceMode !== "live_signal";
+          const boundedDisplayText =
+            realCandidate?.boundedDisplayText ?? "No live proactivity opportunities detected.";
+          const contentFields = contentFieldsForMessageClass({
+            messageClass: effectiveMessageClass,
+            boundedDisplayText,
+            realCandidate,
+            scope,
+          });
+          const candidateId = buildDerivedArtifactId({
+            family: "context_artifact",
+            artifactType: "phase2_product_proactivity_candidate",
+            targetId: queueItemId,
+            seed: realCandidate?.candidateId ?? defaultPromotionReport.reportId,
+          });
+          const workItemKind =
+            decision === "product_queue_enabled" &&
+            !staticDemoted &&
+            Boolean(contentFields.proposedMessage) &&
+            contentFields.blockedIfMissing.length === 0
+              ? (realCandidate?.workItemKind ?? workItemKindForMessageClass(effectiveMessageClass))
+              : "diagnostic";
+          const workItemId = buildDerivedArtifactId({
+            family: "context_artifact",
+            artifactType: "phase2_proactivity_work_item",
+            targetId: candidateId,
+            seed: {
+              workItemKind,
+              sourceRefs: uniqueSortedStrings([
+                ...defaultPromotionReport.telemetry.sourceRefs,
+                ...(realCandidate?.sourceRefs ?? []),
+              ]),
+              contentHashes: uniqueSortedStrings([
+                ...defaultPromotionReport.telemetry.contentHashes,
+                ...(realCandidate?.contentHashes ?? []),
+              ]),
+            },
+          });
+          const primaryAction =
+            workItemKind === "diagnostic" ? null : actionForWorkItemKind(workItemKind);
+          return [
+            {
+              queueItemId,
+              candidateId,
+              workItemId,
+              workItemKind,
+              workItemStatus: workItemKind === "diagnostic" ? "blocked" : "not_started",
+              primaryAction,
+              secondaryActions: workItemKind === "diagnostic" ? [] : secondaryWorkItemActions(),
+              ctaExplanation:
+                workItemKind === "diagnostic"
+                  ? "Diagnostic evidence is review-only and cannot start work directly."
+                  : "Starts a bounded agent handoff in the current chat; no external action executes without approval.",
+              handoffStatus: "idle",
+              handoffError: null,
+              handoffMessageAnchor: null,
+              messageClass: effectiveMessageClass,
+              boundedDisplayText,
+              ...contentFields,
+              status: itemStatus,
+              eligibleScope: scope,
+              sourceRefs: uniqueSortedStrings([
+                ...defaultPromotionReport.telemetry.sourceRefs,
+                ...(realCandidate?.sourceRefs ?? []),
+              ]),
+              sourceProfileIds: uniqueSortedStrings([
+                ...defaultPromotionReport.telemetry.sourceProfileIds,
+                ...(realCandidate?.sourceProfileIds ?? []),
+              ]) as SourceProfileId[],
+              authorityTiers: uniqueSortedStrings([
+                ...defaultPromotionReport.telemetry.authorityTiers,
+                ...(realCandidate?.authorityTiers ?? []),
+              ]) as SourceAuthorityTier[],
+              contentHashes: uniqueSortedStrings([
+                ...defaultPromotionReport.telemetry.contentHashes,
+                ...(realCandidate?.contentHashes ?? []),
+              ]),
+              proofHashes: uniqueSortedStrings([
+                ...defaultPromotionReport.telemetry.proofHashes,
+                ...(realCandidate?.proofHashes ?? []),
+                ...(realCandidateReport
+                  ? [reportHash(realCandidateReport as JsonLike)].filter(Boolean)
+                  : []),
+              ]),
+              noDarkDataStatus: noDarkDataOk ? "pass" : "fail",
+              staleLabels: realCandidate?.staleLabels ?? [],
+              conflictLabels: realCandidate?.conflictLabels ?? [],
+              blockedReasonCodes: uniqueSortedStrings([
+                ...reasonCodes,
+                ...(!contentFields.proposedMessage || contentFields.blockedIfMissing.length
+                  ? ["safe_specific_plan_required"]
+                  : []),
+                ...(staticDemoted
+                  ? realCandidate
+                    ? ["static_default_candidate_demoted"]
+                    : ["no_live_opportunities_detected"]
+                  : []),
+                ...(realCandidate?.blockedReasonCodes ?? []),
+              ]),
+              layer:
+                decision === "product_queue_enabled" &&
+                !staticDemoted &&
+                Boolean(contentFields.proposedMessage) &&
+                contentFields.blockedIfMissing.length === 0
+                  ? "actionable"
+                  : "diagnostic",
+              attentionRequired:
+                decision === "product_queue_enabled" &&
+                !staticDemoted &&
+                Boolean(contentFields.proposedMessage) &&
+                contentFields.blockedIfMissing.length === 0,
+              sendStatus: "idle",
+              sendError: null,
+              sentMessageAnchor: null,
+              generatedAt,
+              updatedAt: generatedAt,
+            } satisfies Phase2ProductProactivityQueueItem,
+          ];
+        })();
   const queue: Phase2ProductProactivityQueue = {
     queueId: buildDerivedArtifactId({
       family: "context_artifact",
       artifactType: "phase2_product_proactivity_queue",
       targetId: `${scope.projectId}:${scope.sessionKey}`,
-      seed: { reportId, itemId: queueItemId },
+      seed: { reportId, itemIds: queueItems.map((item) => item.queueItemId) },
     }),
     surface: "chat",
-    items: [queueItem],
+    items: queueItems,
     generatedAt,
   };
-  const approvalDecisions: Phase2ProductProactivityApprovalDecision[] = [
-    {
-      queueItemId,
-      decision: decision === "product_queue_enabled" ? "approved_for_send" : "blocked",
-      explicitOperatorAction: true,
+  const approvalDecisions: Phase2ProductProactivityApprovalDecision[] = queueItems.map((item) => {
+    const approvalDecision: Phase2ProductProactivityApprovalDecision["decision"] =
+      decision === "product_queue_enabled" && item.primaryAction ? "approved_for_send" : "blocked";
+    return {
+      queueItemId: item.queueItemId,
+      decision: approvalDecision,
+      explicitOperatorAction: true as const,
       reasonCodes,
-    },
-  ];
-  const sendDecisions: Phase2ProductProactivitySendDecision[] = [
-    {
-      queueItemId,
-      decision: decision === "product_queue_enabled" ? "send_via_chat_inject" : "blocked",
-      deliveryAdapterKind: "chat.inject",
-      explicitSendApproval: true,
-      messageText: queueItem.proposedMessage || queueItem.messagePreview,
-      label: "Model Memory",
-      actionExecution: false,
-      autonomousSending: false,
+    };
+  });
+  const sendDecisions: Phase2ProductProactivitySendDecision[] = queueItems.map((item) => {
+    const sendDecision: Phase2ProductProactivitySendDecision["decision"] =
+      decision === "product_queue_enabled" && item.primaryAction?.actionType === "send_message"
+        ? "send_via_chat_inject"
+        : "blocked";
+    return {
+      queueItemId: item.queueItemId,
+      decision: sendDecision,
+      deliveryAdapterKind: "chat.inject" as const,
+      explicitSendApproval: true as const,
+      messageText: item.proposedMessage || item.messagePreview || item.boundedDisplayText,
+      label: "Model Memory" as const,
+      actionExecution: false as const,
+      autonomousSending: false as const,
       reasonCodes,
-    },
-  ];
+    };
+  });
   const config: Phase2ProductProactivitySurfaceConfig = {
     schemaVersion: PHASE2_PRODUCT_PROACTIVITY_SURFACING_SCHEMA_VERSION,
     configId: buildDerivedArtifactId({
@@ -1033,12 +1236,18 @@ export async function buildPhase2ProductProactivitySurfacingReport(
     dismissedCount: queue.items.filter((item) => item.status === "dismissed").length,
     snoozedCount: queue.items.filter((item) => item.status === "snoozed").length,
     approvedMessageClasses: [...ALLOWED_MESSAGE_CLASSES],
-    sourceRefs: queueItem.sourceRefs,
-    sourceProfileIds: queueItem.sourceProfileIds,
-    authorityTiers: queueItem.authorityTiers,
-    contentHashes: queueItem.contentHashes,
-    proofHashes: queueItem.proofHashes,
-    noDarkDataStatus: queueItem.noDarkDataStatus,
+    sourceRefs: uniqueSortedStrings(queue.items.flatMap((item) => item.sourceRefs)),
+    sourceProfileIds: uniqueSortedStrings(
+      queue.items.flatMap((item) => item.sourceProfileIds),
+    ) as SourceProfileId[],
+    authorityTiers: uniqueSortedStrings(
+      queue.items.flatMap((item) => item.authorityTiers),
+    ) as SourceAuthorityTier[],
+    contentHashes: uniqueSortedStrings(queue.items.flatMap((item) => item.contentHashes)),
+    proofHashes: uniqueSortedStrings(queue.items.flatMap((item) => item.proofHashes)),
+    noDarkDataStatus: queue.items.some((item) => item.noDarkDataStatus === "fail")
+      ? "fail"
+      : "pass",
     rollbackObserved: rollback,
     explicitApproveSendRequired: true,
     chatInjectDeliveryAvailable: true,
