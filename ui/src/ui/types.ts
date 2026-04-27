@@ -49,6 +49,49 @@ export type ProductProactivityLayer = "actionable" | "history" | "diagnostic";
 
 export type ProductProactivitySendStatus = "idle" | "sending" | "sent" | "failed";
 
+export type ProductProactivityWorkItemKind =
+  | "planning_request"
+  | "investigation_request"
+  | "draft_next_steps"
+  | "execution_candidate"
+  | "message_candidate"
+  | "reminder"
+  | "diagnostic";
+
+export type ProductProactivityWorkItemStatus =
+  | "not_started"
+  | "planning"
+  | "planned"
+  | "investigating"
+  | "drafted"
+  | "execution_proposed"
+  | "executing_after_approval"
+  | "done"
+  | "dismissed"
+  | "snoozed"
+  | "blocked";
+
+export type ProductProactivityActionType =
+  | "plan_this"
+  | "investigate"
+  | "draft_next_steps"
+  | "start_scoped_task"
+  | "open_in_current_chat"
+  | "add_to_daily_review"
+  | "send_message"
+  | "snooze"
+  | "dismiss";
+
+export type ProductProactivityWorkItemAction = {
+  actionType: ProductProactivityActionType;
+  label: string;
+  description: string;
+  requiresChatInject: boolean;
+  executesAction: false;
+};
+
+export type ProductProactivityHandoffStatus = "idle" | "starting" | "started" | "failed";
+
 export type ProductProactivityPlanFields = {
   planTitle?: string;
   problem?: string;
@@ -72,6 +115,15 @@ export type ProductProactivityActiveContext = {
 export type ProductProactivityQueueItem = {
   queueItemId: string;
   candidateId: string;
+  workItemId?: string;
+  workItemKind?: ProductProactivityWorkItemKind;
+  workItemStatus?: ProductProactivityWorkItemStatus;
+  primaryAction?: ProductProactivityWorkItemAction | null;
+  secondaryActions?: ProductProactivityWorkItemAction[];
+  ctaExplanation?: string;
+  handoffStatus?: ProductProactivityHandoffStatus;
+  handoffError?: string | null;
+  handoffMessageAnchor?: string | null;
   messageClass: "operator_approved_suggestion_available" | "operator_approved_follow_up_available";
   boundedDisplayText: string;
   messagePreview?: string;
@@ -177,6 +229,15 @@ export type ProactivityInboxItem = {
   sourceArtifactReportId: string;
   candidateId: string;
   queueItemId?: string;
+  workItemId?: string;
+  workItemKind?: ProductProactivityWorkItemKind;
+  workItemStatus?: ProductProactivityWorkItemStatus;
+  primaryAction?: ProductProactivityWorkItemAction | null;
+  secondaryActions?: ProductProactivityWorkItemAction[];
+  ctaExplanation?: string;
+  handoffStatus?: ProductProactivityHandoffStatus;
+  handoffError?: string | null;
+  handoffMessageAnchor?: string | null;
   messageClass:
     | "operator_approved_suggestion_available"
     | "operator_approved_follow_up_available"

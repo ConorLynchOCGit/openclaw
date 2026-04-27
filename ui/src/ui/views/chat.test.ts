@@ -818,7 +818,7 @@ describe("chat view", () => {
 
   it("shows contextual proactivity only for exact active session matches", () => {
     const container = document.createElement("div");
-    const onApproveSend = vi.fn();
+    const onWorkAction = vi.fn();
     const onDismiss = vi.fn();
     const onSnooze = vi.fn();
     const matchingItem = {
@@ -886,7 +886,7 @@ describe("chat view", () => {
               messagePreview: "This non-matching session item should stay in the inbox.",
             },
           ],
-          onProductProactivityApproveSend: onApproveSend,
+          onProductProactivityWorkAction: onWorkAction,
           onProductProactivityDismiss: onDismiss,
           onProductProactivitySnooze: onSnooze,
         }),
@@ -898,12 +898,12 @@ describe("chat view", () => {
     expect(card).not.toBeNull();
     expect(card?.textContent).toContain("Gateway rebuild follow-up");
     expect(card?.textContent).toContain("Suggested action");
-    expect(card?.textContent).toContain("Proposed message");
+    expect(card?.textContent).toContain("Proposed next step");
     expect(card?.textContent).toContain("Shown because this session matches project");
-    expect(card?.textContent).toContain("Approve & Send");
+    expect(card?.textContent).toContain("Plan this");
     expect(card?.textContent).not.toContain("This non-matching session item");
     card?.querySelector<HTMLButtonElement>(".btn")?.click();
-    expect(onApproveSend).toHaveBeenCalledWith("queue-context-1");
+    expect(onWorkAction).toHaveBeenCalledWith("queue-context-1", "plan_this");
 
     render(
       renderChat(
@@ -931,12 +931,14 @@ describe("chat view", () => {
     expect(container.querySelector(".contextual-proactivity-card")).toBeNull();
   });
 
-  it("adds proactivity to the operator review heartbeat panel with an inbox path", () => {
+  it("adds proactivity to the visible heartbeat review surface with an inbox path", () => {
     const container = document.createElement("div");
     const onOpenSidebar = vi.fn();
+    const onWorkAction = vi.fn();
     const props = createProps({
       sessionKey: "daily-review-proactivity-test",
       onOpenSidebar,
+      onProductProactivityWorkAction: onWorkAction,
       productProactivityQueue: [
         {
           queueItemId: "queue-review-1",
@@ -994,27 +996,29 @@ describe("chat view", () => {
     });
     render(renderChat(props), container);
 
-    container.querySelector<HTMLButtonElement>(".operator-experience-panel__toggle")?.click();
-    render(renderChat(props), container);
-    const review = container.querySelector(".operator-card--proactivity-review");
+    const review = container.querySelector(".heartbeat-proactivity-review");
     expect(review).not.toBeNull();
-    expect(review?.textContent).toContain("Daily review / heartbeat proactivity");
-    expect(review?.textContent).toContain("candidate-review-1");
-    expect(review?.textContent).toContain("Grouped diagnostics/background");
-    review?.querySelector<HTMLButtonElement>(".proactivity-review-open")?.click();
+    expect(review?.textContent).toContain("What would help this user today?");
+    expect(review?.textContent).toContain("Daily review proactivity follow-up");
+    expect(review?.textContent).toContain("Plan this");
+    Array.from(review?.querySelectorAll<HTMLButtonElement>("button") ?? [])
+      .find((button) => button.textContent?.includes("Plan this"))
+      ?.click();
+    expect(onWorkAction).toHaveBeenCalledWith("queue-review-1", "plan_this");
+    review?.querySelector<HTMLButtonElement>(".heartbeat-proactivity-review__inbox")?.click();
     expect(onOpenSidebar).toHaveBeenCalledWith({ kind: "proactivityInbox" });
   });
 
   it("renders proactivity as a compact entry point and opens inbox in the side panel", () => {
     const container = document.createElement("div");
     const onOpenSidebar = vi.fn();
-    const onApproveSend = vi.fn();
+    const onWorkAction = vi.fn();
     const onFeedback = vi.fn();
     render(
       renderChat(
         createProps({
           onOpenSidebar,
-          onProductProactivityApproveSend: onApproveSend,
+          onProductProactivityWorkAction: onWorkAction,
           onProductProactivityFeedback: onFeedback,
           proactivityInboxDigest: {
             digestId: "digest-1",
@@ -1133,7 +1137,7 @@ describe("chat view", () => {
           sidebarOpen: true,
           sidebarContent: { kind: "proactivityInbox" },
           onCloseSidebar: () => undefined,
-          onProductProactivityApproveSend: onApproveSend,
+          onProductProactivityWorkAction: onWorkAction,
           onProductProactivityFeedback: onFeedback,
           proactivityInboxDigest: {
             digestId: "digest-1",
@@ -1244,9 +1248,9 @@ describe("chat view", () => {
     expect(container.textContent).toContain("Diagnostics 1");
     expect(container.textContent).not.toContain("Auto-send simulation");
     expect(container.textContent).toContain("Suggested action");
-    expect(container.textContent).toContain("Proposed message");
+    expect(container.textContent).toContain("Proposed next step");
     expect(container.textContent).toContain("Should we rerun the live gateway rebuild");
-    expect(container.textContent).toContain("Approve & Send");
+    expect(container.textContent).toContain("Plan this");
     expect(container.textContent).toContain("Dismiss");
     expect(container.textContent).toContain("Snooze");
     expect(container.textContent).toContain("Useful");
@@ -1259,9 +1263,9 @@ describe("chat view", () => {
     expect(container.textContent).toContain("Feedback");
     expect(container.textContent).not.toContain("raw-prompt-marker");
     Array.from(container.querySelectorAll<HTMLButtonElement>(".proactivity-inbox button"))
-      .find((button) => button.textContent?.includes("Approve & Send"))
+      .find((button) => button.textContent?.includes("Plan this"))
       ?.click();
-    expect(onApproveSend).toHaveBeenCalledWith("queue-item-1");
+    expect(onWorkAction).toHaveBeenCalledWith("queue-item-1", "plan_this");
     container.querySelector<HTMLButtonElement>('[data-feedback-control="wrong_context"]')?.click();
     expect(onFeedback).toHaveBeenCalledWith("queue-item-1", "wrong_context");
   });
