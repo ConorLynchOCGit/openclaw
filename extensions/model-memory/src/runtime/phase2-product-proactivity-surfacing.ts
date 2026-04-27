@@ -68,6 +68,10 @@ export type Phase2ProductProactivityQueueItem = {
   candidateId: string;
   messageClass: Phase2UserFacingProactivityDefaultMessageClass;
   boundedDisplayText: string;
+  messagePreview: string;
+  suggestedAction: string;
+  candidateSummary: string;
+  expectedUserValue: string;
   status: Phase2ProductProactivityQueueItemStatus;
   eligibleScope: Phase2ProductProactivityEligibilityScope;
   sourceRefs: string[];
@@ -346,6 +350,47 @@ function displayTextForMessageClass(
   return "An approved operator suggestion is available.";
 }
 
+function contentFieldsForMessageClass(input: {
+  messageClass: Phase2UserFacingProactivityDefaultMessageClass;
+  boundedDisplayText: string;
+  realCandidate?: Phase2RealMemoryCandidateReport["candidates"][number];
+  scope: Phase2ProductProactivityEligibilityScope;
+}): Pick<
+  Phase2ProductProactivityQueueItem,
+  "messagePreview" | "suggestedAction" | "candidateSummary" | "expectedUserValue"
+> {
+  if (input.realCandidate) {
+    return {
+      candidateSummary: input.realCandidate.boundedDisplayText,
+      suggestedAction:
+        input.messageClass === "operator_approved_follow_up_available"
+          ? `Review the follow-up for ${input.scope.projectId} and send it if it still applies.`
+          : `Review the memory-derived suggestion for ${input.scope.projectId} and send it if useful.`,
+      messagePreview: input.realCandidate.boundedDisplayText,
+      expectedUserValue:
+        "Surfaces a bounded memory-derived item tied to source refs, authority tiers, and proof hashes.",
+    };
+  }
+  if (input.messageClass === "operator_approved_follow_up_available") {
+    return {
+      candidateSummary: `Follow-up candidate for ${input.scope.projectId}/${input.scope.sessionKey}.`,
+      suggestedAction: `Review the approved follow-up for ${input.scope.projectId} before sending.`,
+      messagePreview:
+        "Model Memory has an approved follow-up candidate for this workspace. Review provenance before sending.",
+      expectedUserValue:
+        "Helps close an approved follow-up without exposing raw prompts, transcripts, or tool logs.",
+    };
+  }
+  return {
+    candidateSummary: `Suggestion candidate for ${input.scope.projectId}/${input.scope.sessionKey}.`,
+    suggestedAction: `Review the approved suggestion for ${input.scope.projectId} before sending.`,
+    messagePreview:
+      "Model Memory has an approved suggestion for this workspace. Review provenance before sending.",
+    expectedUserValue:
+      "Surfaces a low-risk memory-derived suggestion while keeping manual approval in control.",
+  };
+}
+
 function buildBundledDefaultPromotionBaselineReport(input: {
   generatedAt: string;
 }): Phase2UserFacingProactivityDefaultPromotionReport {
@@ -619,6 +664,14 @@ export async function buildPhase2ProductProactivitySurfacingReport(
       : decision === "rollback_disabled"
         ? "rollback_disabled"
         : "blocked";
+  const boundedDisplayText =
+    realCandidate?.boundedDisplayText ?? displayTextForMessageClass(effectiveMessageClass);
+  const contentFields = contentFieldsForMessageClass({
+    messageClass: effectiveMessageClass,
+    boundedDisplayText,
+    realCandidate,
+    scope,
+  });
   const queueItem: Phase2ProductProactivityQueueItem = {
     queueItemId,
     candidateId: buildDerivedArtifactId({
@@ -628,8 +681,8 @@ export async function buildPhase2ProductProactivitySurfacingReport(
       seed: realCandidate?.candidateId ?? defaultPromotionReport.reportId,
     }),
     messageClass: effectiveMessageClass,
-    boundedDisplayText:
-      realCandidate?.boundedDisplayText ?? displayTextForMessageClass(effectiveMessageClass),
+    boundedDisplayText,
+    ...contentFields,
     status: itemStatus,
     eligibleScope: scope,
     sourceRefs: uniqueSortedStrings([
@@ -688,7 +741,7 @@ export async function buildPhase2ProductProactivitySurfacingReport(
       decision: decision === "product_queue_enabled" ? "send_via_chat_inject" : "blocked",
       deliveryAdapterKind: "chat.inject",
       explicitSendApproval: true,
-      messageText: queueItem.boundedDisplayText,
+      messageText: queueItem.messagePreview,
       label: "Model Memory",
       actionExecution: false,
       autonomousSending: false,

@@ -41,6 +41,10 @@ export type ProductProactivityQueueItem = {
   candidateId: string;
   messageClass: "operator_approved_suggestion_available" | "operator_approved_follow_up_available";
   boundedDisplayText: string;
+  messagePreview?: string;
+  suggestedAction?: string;
+  candidateSummary?: string;
+  expectedUserValue?: string;
   status: ProductProactivityQueueItemStatus;
   eligibleScope: {
     environment: "live";
@@ -129,6 +133,10 @@ export type ProactivityInboxItem = {
     | "operator_approved_follow_up_available"
     | "autosend_simulation";
   boundedDisplayText: string;
+  messagePreview?: string;
+  suggestedAction?: string;
+  candidateSummary?: string;
+  expectedUserValue?: string;
   status: "pending_review" | "sent" | "snoozed" | "dismissed" | "blocked" | "autosend_trial";
   filterTags: ProactivityInboxFilter[];
   sourceRefs: string[];

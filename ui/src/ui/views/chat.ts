@@ -1145,6 +1145,82 @@ function formatInboxMessageClass(messageClass: ProactivityInboxItem["messageClas
   return formatProactivityClass(messageClass);
 }
 
+function getProactivityCandidateSummary(
+  item: ProductProactivityQueueItem | ProactivityInboxItem,
+): string {
+  return item.candidateSummary ?? item.boundedDisplayText;
+}
+
+function getProactivitySuggestedAction(
+  item: ProductProactivityQueueItem | ProactivityInboxItem,
+): string {
+  if (item.suggestedAction) {
+    return item.suggestedAction;
+  }
+  if (item.messageClass === "operator_approved_follow_up_available") {
+    return "Review the follow-up and send it manually if it is still relevant.";
+  }
+  if (item.messageClass === "autosend_simulation") {
+    return "Review the auto-send simulation before changing any send policy.";
+  }
+  return "Review the suggestion and send it manually if it helps the current work.";
+}
+
+function getProactivityMessagePreview(
+  item: ProductProactivityQueueItem | ProactivityInboxItem,
+): string {
+  return item.messagePreview ?? item.boundedDisplayText;
+}
+
+function getProactivityExpectedUserValue(
+  item: ProductProactivityQueueItem | ProactivityInboxItem,
+): string {
+  return (
+    item.expectedUserValue ??
+    "Surfaces bounded Model Memory evidence without exposing raw prompts, transcripts, tool logs, secrets, or private phrases."
+  );
+}
+
+function renderProactivityEntryPoint(props: ChatProps): TemplateResult | typeof nothing {
+  const digest = props.proactivityInboxDigest;
+  const queueItems = props.productProactivityQueue ?? [];
+  const pendingCount =
+    digest?.counts.pending ?? queueItems.filter((item) => item.status === "pending_review").length;
+  const blockedCount =
+    digest?.counts.blocked ?? queueItems.filter((item) => item.status === "blocked").length;
+  const statusLabel = props.proactivityInboxError
+    ? "blocked"
+    : blockedCount > 0
+      ? `${blockedCount} blocked`
+      : props.personalAutoSendUx?.mode === "controlled_autosend_trial"
+        ? "autosend trial"
+        : "manual";
+
+  if (
+    !digest &&
+    !props.proactivityInboxLoading &&
+    !props.proactivityInboxError &&
+    queueItems.length === 0
+  ) {
+    return nothing;
+  }
+
+  return html`
+    <div class="proactivity-entrypoint" aria-label="Model Memory proactivity">
+      <button
+        class="proactivity-entrypoint__button"
+        type="button"
+        @click=${() => props.onOpenSidebar?.({ kind: "proactivityInbox" })}
+        aria-label="Open Proactivity Inbox"
+      >
+        <span class="proactivity-entrypoint__label">Proactivity</span>
+        <span class="proactivity-entrypoint__count">${pendingCount} pending</span>
+        <span class="proactivity-entrypoint__status">${statusLabel}</span>
+      </button>
+    </div>
+  `;
+}
+
 function renderPersonalAutoSendProductUx(props: ChatProps): TemplateResult | typeof nothing {
   const settings = props.personalAutoSendUx;
   if (!settings && !props.personalAutoSendUxLoading && !props.personalAutoSendUxError) {
@@ -1202,115 +1278,6 @@ function renderPersonalAutoSendProductUx(props: ChatProps): TemplateResult | typ
   `;
 }
 
-function renderProductProactivityQueue(props: ChatProps): TemplateResult | typeof nothing {
-  const items = props.productProactivityQueue ?? [];
-  if (!props.productProactivityLoading && !props.productProactivityError && items.length === 0) {
-    return nothing;
-  }
-  return html`
-    <section class="product-proactivity-panel" aria-label="Pending proactive suggestions">
-      <div class="product-proactivity-panel__header">
-        <div>
-          <div class="product-proactivity-panel__eyebrow">Model Memory</div>
-          <h3>Pending proactive suggestions</h3>
-        </div>
-        <span class="product-proactivity-panel__count"
-          >${items.length} item${items.length === 1 ? "" : "s"}</span
-        >
-      </div>
-      ${props.productProactivityLoading
-        ? html`<div class="product-proactivity-panel__empty">Loading proactive queue...</div>`
-        : nothing}
-      ${props.productProactivityError
-        ? html`<div class="callout danger">${props.productProactivityError}</div>`
-        : nothing}
-      ${items.length
-        ? html`
-            <div class="product-proactivity-panel__list">
-              ${items.map((item) => {
-                const canSend = item.status === "pending_review";
-                return html`
-                  <article
-                    class="product-proactivity-item product-proactivity-item--${item.status}"
-                  >
-                    <div class="product-proactivity-item__main">
-                      <div class="product-proactivity-item__meta">
-                        <span>${formatProactivityClass(item.messageClass)}</span>
-                        <span>${item.status.replace(/_/g, " ")}</span>
-                        <span
-                          >${item.noDarkDataStatus === "pass"
-                            ? "no-dark-data pass"
-                            : "blocked"}</span
-                        >
-                      </div>
-                      <div class="product-proactivity-item__text">${item.boundedDisplayText}</div>
-                      <details class="product-proactivity-item__details">
-                        <summary>Why this appeared</summary>
-                        <div class="operator-row">
-                          <span>Sources</span>
-                          <span>${item.sourceRefs.slice(0, 4).join(", ") || "missing"}</span>
-                        </div>
-                        <div class="operator-row">
-                          <span>Profiles</span>
-                          <span>${item.sourceProfileIds.slice(0, 4).join(", ") || "missing"}</span>
-                        </div>
-                        <div class="operator-row">
-                          <span>Authority</span>
-                          <span>${item.authorityTiers.slice(0, 4).join(", ") || "missing"}</span>
-                        </div>
-                        <div class="operator-row">
-                          <span>Hashes</span>
-                          <span
-                            >${item.contentHashes.slice(0, 2).join(", ") ||
-                            item.proofHashes.slice(0, 2).join(", ")}</span
-                          >
-                        </div>
-                        ${item.blockedReasonCodes.length
-                          ? html`<div class="operator-row">
-                              <span>Blocked</span>
-                              <span>${item.blockedReasonCodes.join(", ")}</span>
-                            </div>`
-                          : nothing}
-                      </details>
-                    </div>
-                    <div class="product-proactivity-item__actions">
-                      <button
-                        class="btn btn--sm"
-                        type="button"
-                        ?disabled=${!canSend}
-                        @click=${() => props.onProductProactivityApproveSend?.(item.queueItemId)}
-                      >
-                        Approve & Send
-                      </button>
-                      <button
-                        class="btn btn--sm btn--ghost"
-                        type="button"
-                        ?disabled=${item.status === "sent"}
-                        @click=${() => props.onProductProactivityDismiss?.(item.queueItemId)}
-                      >
-                        Dismiss
-                      </button>
-                      <button
-                        class="btn btn--sm btn--ghost"
-                        type="button"
-                        ?disabled=${item.status === "sent"}
-                        @click=${() => props.onProductProactivitySnooze?.(item.queueItemId)}
-                      >
-                        Snooze
-                      </button>
-                    </div>
-                  </article>
-                `;
-              })}
-            </div>
-          `
-        : !props.productProactivityLoading
-          ? html`<div class="product-proactivity-panel__empty">No pending suggestions.</div>`
-          : nothing}
-    </section>
-  `;
-}
-
 function renderProductProactivityNotifications(props: ChatProps): TemplateResult | typeof nothing {
   const items = (props.productProactivityQueue ?? []).filter(
     (item) => item.status === "sent" || item.status === "approved_not_sent",
@@ -1325,7 +1292,9 @@ function renderProductProactivityNotifications(props: ChatProps): TemplateResult
           <article class="proactivity-notification" data-queue-item-id=${item.queueItemId}>
             <div class="proactivity-notification__body">
               <div class="proactivity-notification__eyebrow">Approved Model Memory suggestion</div>
-              <div class="proactivity-notification__text">${item.boundedDisplayText}</div>
+              <div class="proactivity-notification__text">
+                ${getProactivityMessagePreview(item)}
+              </div>
               <details class="proactivity-notification__details">
                 <summary>Why this appeared</summary>
                 <div class="operator-row">
@@ -1424,7 +1393,24 @@ function renderProactivityInbox(props: ChatProps): TemplateResult | typeof nothi
                           >${item.filterTags.map((tag) => tag.replace(/_/g, " ")).join(", ")}</span
                         >
                       </div>
-                      <div class="product-proactivity-item__text">${item.boundedDisplayText}</div>
+                      <div class="product-proactivity-item__section">
+                        <span>Candidate summary</span>
+                        <strong>${getProactivityCandidateSummary(item)}</strong>
+                      </div>
+                      <div class="product-proactivity-item__section">
+                        <span>Suggested action</span>
+                        <strong>${getProactivitySuggestedAction(item)}</strong>
+                      </div>
+                      <div class="product-proactivity-item__section">
+                        <span>Message preview</span>
+                        <div class="product-proactivity-item__text">
+                          ${getProactivityMessagePreview(item)}
+                        </div>
+                      </div>
+                      <div class="product-proactivity-item__section">
+                        <span>Expected value</span>
+                        <div>${getProactivityExpectedUserValue(item)}</div>
+                      </div>
                       <details class="product-proactivity-item__details">
                         <summary>Why this appeared</summary>
                         <p>${item.whyThisAppearedSummary}</p>
@@ -1469,12 +1455,60 @@ function renderProactivityInbox(props: ChatProps): TemplateResult | typeof nothi
                         </div>
                       </details>
                     </div>
+                    ${item.queueItemId
+                      ? html`
+                          <div class="product-proactivity-item__actions">
+                            <button
+                              class="btn btn--sm"
+                              type="button"
+                              ?disabled=${item.status !== "pending_review"}
+                              @click=${() =>
+                                props.onProductProactivityApproveSend?.(item.queueItemId!)}
+                            >
+                              Approve & Send
+                            </button>
+                            <button
+                              class="btn btn--sm btn--ghost"
+                              type="button"
+                              ?disabled=${item.status === "sent"}
+                              @click=${() => props.onProductProactivityDismiss?.(item.queueItemId!)}
+                            >
+                              Dismiss
+                            </button>
+                            <button
+                              class="btn btn--sm btn--ghost"
+                              type="button"
+                              ?disabled=${item.status === "sent"}
+                              @click=${() => props.onProductProactivitySnooze?.(item.queueItemId!)}
+                            >
+                              Snooze
+                            </button>
+                          </div>
+                        `
+                      : nothing}
                   </article>
                 `,
               )}
             </div>
           `
         : nothing}
+    </section>
+  `;
+}
+
+function renderProactivityInboxSidebar(props: ChatProps): TemplateResult {
+  return html`
+    <section class="sidebar-panel proactivity-inbox-drawer" aria-label="Proactivity Inbox drawer">
+      <div class="sidebar-header">
+        <div>
+          <div class="product-proactivity-panel__eyebrow">Model Memory</div>
+          <h2 class="sidebar-title">Proactivity Inbox</h2>
+        </div>
+        <button class="btn btn--sm btn--ghost" type="button" @click=${props.onCloseSidebar}>
+          Close
+        </button>
+      </div>
+      <div class="sidebar-content">${renderProactivityInbox(props)}</div>
     </section>
   `;
 }
@@ -2213,7 +2247,6 @@ export function renderChat(props: ChatProps) {
           requestUpdate,
         })}
         ${renderProductProactivityNotifications(props)} ${renderPersonalAutoSendProductUx(props)}
-        ${renderProductProactivityQueue(props)}
         ${props.loading
           ? html`
               <div class="chat-loading-skeleton" aria-label="Loading chat">
@@ -2483,13 +2516,13 @@ export function renderChat(props: ChatProps) {
           `
         : nothing}
       ${renderSearchBar(requestUpdate)} ${renderPinnedSection(props, pinned, requestUpdate)}
+      ${renderProactivityEntryPoint(props)}
 
       <div class="chat-split-container ${sidebarOpen ? "chat-split-container--open" : ""}">
         <div
           class="chat-main"
           style="flex: ${sidebarOpen ? `0 0 ${splitRatio * 100}%` : "1 1 100%"}"
         >
-          <div class="chat-proactivity-rail">${renderProactivityInbox(props)}</div>
           ${thread}
         </div>
 
@@ -2500,30 +2533,37 @@ export function renderChat(props: ChatProps) {
                 @resize=${(e: CustomEvent) => props.onSplitRatioChange?.(e.detail.splitRatio)}
               ></resizable-divider>
               <div class="chat-sidebar">
-                ${renderMarkdownSidebar({
-                  content: props.sidebarContent ?? null,
-                  error: props.sidebarError ?? null,
-                  canvasHostUrl: props.canvasHostUrl,
-                  embedSandboxMode: props.embedSandboxMode ?? "scripts",
-                  allowExternalEmbedUrls: props.allowExternalEmbedUrls ?? false,
-                  onClose: props.onCloseSidebar!,
-                  onViewRawText: () => {
-                    if (!props.sidebarContent || !props.onOpenSidebar) {
-                      return;
-                    }
-                    if (props.sidebarContent.kind === "markdown") {
-                      props.onOpenSidebar(
-                        buildSidebarContent(`\`\`\`\n${props.sidebarContent.content}\n\`\`\``),
-                      );
-                      return;
-                    }
-                    if (props.sidebarContent.rawText?.trim()) {
-                      props.onOpenSidebar(
-                        buildSidebarContent(`\`\`\`json\n${props.sidebarContent.rawText}\n\`\`\``),
-                      );
-                    }
-                  },
-                })}
+                ${props.sidebarContent?.kind === "proactivityInbox"
+                  ? renderProactivityInboxSidebar(props)
+                  : renderMarkdownSidebar({
+                      content: props.sidebarContent ?? null,
+                      error: props.sidebarError ?? null,
+                      canvasHostUrl: props.canvasHostUrl,
+                      embedSandboxMode: props.embedSandboxMode ?? "scripts",
+                      allowExternalEmbedUrls: props.allowExternalEmbedUrls ?? false,
+                      onClose: props.onCloseSidebar!,
+                      onViewRawText: () => {
+                        if (!props.sidebarContent || !props.onOpenSidebar) {
+                          return;
+                        }
+                        if (props.sidebarContent.kind === "markdown") {
+                          props.onOpenSidebar(
+                            buildSidebarContent(`\`\`\`\n${props.sidebarContent.content}\n\`\`\``),
+                          );
+                          return;
+                        }
+                        if (
+                          props.sidebarContent.kind === "canvas" &&
+                          props.sidebarContent.rawText?.trim()
+                        ) {
+                          props.onOpenSidebar(
+                            buildSidebarContent(
+                              `\`\`\`json\n${props.sidebarContent.rawText}\n\`\`\``,
+                            ),
+                          );
+                        }
+                      },
+                    })}
               </div>
             `
           : nothing}

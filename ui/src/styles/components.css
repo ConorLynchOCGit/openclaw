@@ -2797,6 +2797,61 @@ td.data-table-key-col {
   font-size: 11px;
 }
 
+.proactivity-entrypoint {
+  display: flex;
+  justify-content: flex-end;
+  padding: 0 6px 8px;
+}
+
+.proactivity-entrypoint__button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+  padding: 6px 10px;
+  border: 1px solid color-mix(in srgb, var(--accent) 40%, var(--border));
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--card) 88%, var(--accent) 12%);
+  color: var(--text);
+  cursor: pointer;
+  font: inherit;
+}
+
+.proactivity-entrypoint__button:hover,
+.proactivity-entrypoint__button:focus-visible {
+  border-color: var(--accent);
+  color: var(--text-strong);
+  outline: none;
+}
+
+.proactivity-entrypoint__label {
+  font-weight: 650;
+}
+
+.proactivity-entrypoint__count,
+.proactivity-entrypoint__status {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.proactivity-entrypoint__status {
+  padding: 2px 6px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+}
+
+.proactivity-inbox-drawer {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.proactivity-inbox-drawer .sidebar-content {
+  min-height: 0;
+  overflow: auto;
+}
+
 .product-proactivity-panel {
   align-self: stretch;
   margin: 0 0 12px;
@@ -2893,6 +2948,26 @@ td.data-table-key-col {
 .product-proactivity-item__text {
   font-size: 14px;
   line-height: 1.45;
+  color: var(--text-strong);
+}
+
+.product-proactivity-item__section {
+  display: grid;
+  gap: 3px;
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--text);
+}
+
+.product-proactivity-item__section > span {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.product-proactivity-item__section > strong {
   color: var(--text-strong);
 }
 

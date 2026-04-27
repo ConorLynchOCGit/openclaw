@@ -792,7 +792,7 @@ export class OpenClawApp extends LitElement {
     try {
       await this.client.request("chat.inject", {
         sessionKey: this.sessionKey,
-        message: item.boundedDisplayText,
+        message: item.messagePreview ?? item.boundedDisplayText,
         label: "Model Memory",
       });
       this.productProactivityQueue = this.productProactivityQueue.map((entry) =>
@@ -800,6 +800,14 @@ export class OpenClawApp extends LitElement {
           ? { ...entry, status: "sent", updatedAt: new Date().toISOString() }
           : entry,
       );
+      this.proactivityInboxDigest = this.proactivityInboxDigest
+        ? {
+            ...this.proactivityInboxDigest,
+            items: this.proactivityInboxDigest.items.map((entry) =>
+              entry.queueItemId === queueItemId ? { ...entry, status: "sent" } : entry,
+            ),
+          }
+        : null;
       await loadChatHistory(this as unknown as ChatState);
       this.scrollToBottom({ smooth: true });
     } catch (err) {
@@ -813,6 +821,14 @@ export class OpenClawApp extends LitElement {
         ? { ...entry, status: "dismissed", updatedAt: new Date().toISOString() }
         : entry,
     );
+    this.proactivityInboxDigest = this.proactivityInboxDigest
+      ? {
+          ...this.proactivityInboxDigest,
+          items: this.proactivityInboxDigest.items.map((entry) =>
+            entry.queueItemId === queueItemId ? { ...entry, status: "dismissed" } : entry,
+          ),
+        }
+      : null;
   }
 
   handleProductProactivitySnooze(queueItemId: string) {
@@ -821,6 +837,14 @@ export class OpenClawApp extends LitElement {
         ? { ...entry, status: "snoozed", updatedAt: new Date().toISOString() }
         : entry,
     );
+    this.proactivityInboxDigest = this.proactivityInboxDigest
+      ? {
+          ...this.proactivityInboxDigest,
+          items: this.proactivityInboxDigest.items.map((entry) =>
+            entry.queueItemId === queueItemId ? { ...entry, status: "snoozed" } : entry,
+          ),
+        }
+      : null;
   }
 
   async handleWhatsAppStart(force: boolean) {

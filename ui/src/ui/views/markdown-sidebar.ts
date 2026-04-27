@@ -4,17 +4,19 @@ import { resolveCanvasIframeUrl } from "../canvas-url.ts";
 import { resolveEmbedSandbox, type EmbedSandboxMode } from "../embed-sandbox.ts";
 import { icons } from "../icons.ts";
 import { toSanitizedMarkdownHtml } from "../markdown.ts";
-import type { SidebarContent } from "../sidebar-content.ts";
+import type { CanvasSidebarContent, MarkdownSidebarContent } from "../sidebar-content.ts";
+
+type MarkdownSidebarRenderableContent = MarkdownSidebarContent | CanvasSidebarContent;
 
 function resolveSidebarCanvasSandbox(
-  content: SidebarContent,
+  content: MarkdownSidebarRenderableContent,
   embedSandboxMode: EmbedSandboxMode,
 ): string {
   return content.kind === "canvas" ? resolveEmbedSandbox(embedSandboxMode) : "allow-scripts";
 }
 
 export type MarkdownSidebarProps = {
-  content: SidebarContent | null;
+  content: MarkdownSidebarRenderableContent | null;
   error: string | null;
   onClose: () => void;
   onViewRawText: () => void;

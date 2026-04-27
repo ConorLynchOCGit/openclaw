@@ -48,6 +48,10 @@ export type Phase2ProactivityInboxItem = {
     | "operator_approved_follow_up_available"
     | "autosend_simulation";
   boundedDisplayText: string;
+  messagePreview: string;
+  suggestedAction: string;
+  candidateSummary: string;
+  expectedUserValue: string;
   status: "pending_review" | "sent" | "snoozed" | "dismissed" | "blocked" | "autosend_trial";
   filterTags: Phase2ProactivityInboxFilter[];
   sourceRefs: string[];
@@ -364,6 +368,10 @@ function cloneQueueItemForInbox(input: {
     queueItemId: input.queueItem.queueItemId,
     messageClass: input.queueItem.messageClass,
     boundedDisplayText: input.displayText ?? input.queueItem.boundedDisplayText,
+    messagePreview: input.displayText ?? input.queueItem.messagePreview,
+    suggestedAction: input.queueItem.suggestedAction,
+    candidateSummary: input.queueItem.candidateSummary,
+    expectedUserValue: input.queueItem.expectedUserValue,
     status: input.status,
     filterTags: [input.filter],
     sourceRefs: input.queueItem.sourceRefs,
@@ -442,6 +450,12 @@ function buildInboxItems(input: {
       messageClass: "autosend_simulation",
       boundedDisplayText:
         "Auto-send simulation compared would-have-sent behavior to manual decisions.",
+      messagePreview:
+        "Auto-send simulation compared what would have sent with actual manual decisions; no automatic delivery occurred.",
+      suggestedAction: "Review simulation quality before changing any auto-send policy.",
+      candidateSummary: "Report-only auto-send simulation observation.",
+      expectedUserValue:
+        "Shows whether auto-send would be useful or noisy without sending automatically.",
       status: "autosend_trial",
       filterTags: ["autosend_trial"],
       sourceRefs: simulation.sourceRefs,
@@ -472,6 +486,11 @@ function buildInboxItems(input: {
       messageClass: "autosend_simulation",
       boundedDisplayText:
         "Auto-send simulation digest is represented from product queue evidence; automatic delivery remains disabled.",
+      messagePreview:
+        "Auto-send simulation digest is represented from product queue evidence; automatic delivery remains disabled.",
+      suggestedAction: "Review simulation fallback evidence before changing any auto-send policy.",
+      candidateSummary: "Auto-send simulation fallback from product queue evidence.",
+      expectedUserValue: "Keeps auto-send evaluation visible while preserving manual-send control.",
       status: "autosend_trial",
       filterTags: ["autosend_trial"],
       sourceRefs: queueItem.sourceRefs,
@@ -506,6 +525,14 @@ function buildInboxItems(input: {
         followUp.classification === "blocked"
           ? "Follow-up auto-send candidacy is blocked; manual send remains required."
           : "Follow-up auto-send candidacy is report-only; manual send remains required.",
+      messagePreview:
+        followUp.classification === "blocked"
+          ? "Follow-up auto-send candidacy is blocked; manual send remains required."
+          : "Follow-up auto-send candidacy is report-only; manual send remains required.",
+      suggestedAction: "Keep follow-up delivery manual unless a later proof promotes it.",
+      candidateSummary: "Follow-up auto-send preflight candidate.",
+      expectedUserValue:
+        "Prevents repeated or wrong-context follow-ups from becoming automatic sends.",
       status: "blocked",
       filterTags: ["blocked"],
       sourceRefs: followUp.sourceRefs,
@@ -536,6 +563,12 @@ function buildInboxItems(input: {
       messageClass: "operator_approved_follow_up_available",
       boundedDisplayText:
         "Follow-up auto-send remains manual-only; preflight artifact was not available in product runtime.",
+      messagePreview:
+        "Follow-up auto-send remains manual-only; preflight artifact was not available in product runtime.",
+      suggestedAction: "Keep this follow-up manual-only until preflight evidence is available.",
+      candidateSummary: "Manual-only follow-up fallback.",
+      expectedUserValue:
+        "Preserves the follow-up manual-send boundary when preflight evidence is incomplete.",
       status: "blocked",
       filterTags: ["blocked"],
       sourceRefs: queueItem.sourceRefs,

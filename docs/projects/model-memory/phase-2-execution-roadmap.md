@@ -607,6 +607,17 @@ For each implementation wave:
   preserves queue/notification surfaces, while broad autonomous sending and
   follow-up auto-send remain off. Proof artifact:
   `.artifacts/model-memory/phase2-proactivity-inbox-proof/20260426T225516284Z/2981e633-f6c7-5070-b335-4f6edcf27d23.phase2-proactivity-inbox.json`
+- Slice 55 remediates the product UX before further capability expansion:
+  proactive delivery is compact-visible through `Proactivity · N pending` in
+  chat chrome, drawer-visible through the existing side panel, and no longer
+  rendered as an always-open inbox rail or full panel inside `.chat-thread`.
+  Actionable cards must show candidate summary, suggested action, safe message
+  preview, expected value, why-this-appeared, Approve & Send, Dismiss, Snooze,
+  and provenance disclosure. Rollback via
+  `MODEL_MEMORY_PHASE2_PROACTIVITY_UX_REMEDIATION_DISABLED` hides the compact
+  entry point while preserving manual send paths. Proof artifact target:
+  `.artifacts/model-memory/phase2-proactivity-ux-remediation-proof/<timestamp>/`.
+  Broad autonomous sending and delivery-triggered action execution remain off.
 - capture at least one durable evidence artifact per wave
 - update the relevant human test prompt pack before declaring the wave ready for
   live validation

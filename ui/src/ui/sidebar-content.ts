@@ -12,4 +12,11 @@ export type CanvasSidebarContent = {
   rawText?: string | null;
 };
 
-export type SidebarContent = MarkdownSidebarContent | CanvasSidebarContent;
+export type ProactivityInboxSidebarContent = {
+  kind: "proactivityInbox";
+};
+
+export type SidebarContent =
+  | MarkdownSidebarContent
+  | CanvasSidebarContent
+  | ProactivityInboxSidebarContent;

@@ -609,10 +609,9 @@ describe("chat view", () => {
     expect(diagnostic).not.toContain("RAW PROMPT SHOULD NOT ENTER DIAGNOSTIC BUNDLE");
   });
 
-  it("renders pending product proactivity queue with explicit approve and provenance details", () => {
+  it("renders pending product proactivity as compact chrome instead of a transcript panel", () => {
     const container = document.createElement("div");
-    const onApprove = vi.fn();
-    const onDismiss = vi.fn();
+    const onOpenSidebar = vi.fn();
     render(
       renderChat(
         createProps({
@@ -647,27 +646,21 @@ describe("chat view", () => {
               updatedAt: "2026-04-26T16:00:00.000Z",
             },
           ],
-          onProductProactivityApproveSend: onApprove,
-          onProductProactivityDismiss: onDismiss,
+          onOpenSidebar,
         }),
       ),
       container,
     );
 
-    expect(container.querySelector(".product-proactivity-panel")).not.toBeNull();
-    expect(container.textContent).toContain("Pending proactive suggestions");
-    expect(container.textContent).toContain("An approved operator suggestion is available.");
-    expect(container.textContent).toContain("Why this appeared");
-    const approve = Array.from(container.querySelectorAll("button")).find((button) =>
-      button.textContent?.includes("Approve & Send"),
+    const entryPoint = container.querySelector<HTMLButtonElement>(
+      ".proactivity-entrypoint__button",
     );
-    approve?.click();
-    expect(onApprove).toHaveBeenCalledWith("queue-item-1");
-    const dismiss = Array.from(container.querySelectorAll("button")).find((button) =>
-      button.textContent?.includes("Dismiss"),
-    );
-    dismiss?.click();
-    expect(onDismiss).toHaveBeenCalledWith("queue-item-1");
+    expect(entryPoint).not.toBeNull();
+    expect(entryPoint?.textContent).toContain("Proactivity");
+    expect(entryPoint?.textContent).toContain("1 pending");
+    expect(container.querySelector(".chat-thread .product-proactivity-panel")).toBeNull();
+    entryPoint?.click();
+    expect(onOpenSidebar).toHaveBeenCalledWith({ kind: "proactivityInbox" });
   });
 
   it("renders approved proactive messages as notification UX only after send approval", () => {
@@ -812,11 +805,15 @@ describe("chat view", () => {
     expect(onDisable).toHaveBeenCalledTimes(1);
   });
 
-  it("renders proactivity inbox digest with filters and provenance details", () => {
+  it("renders proactivity as a compact entry point and opens inbox in the side panel", () => {
     const container = document.createElement("div");
+    const onOpenSidebar = vi.fn();
+    const onApproveSend = vi.fn();
     render(
       renderChat(
         createProps({
+          onOpenSidebar,
+          onProductProactivityApproveSend: onApproveSend,
           proactivityInboxDigest: {
             digestId: "digest-1",
             generatedAt: "2026-04-26T22:00:00.000Z",
@@ -837,6 +834,10 @@ describe("chat view", () => {
                 queueItemId: "queue-item-1",
                 messageClass: "operator_approved_suggestion_available",
                 boundedDisplayText: "An approved operator suggestion is available.",
+                candidateSummary: "Follow up on the unresolved gateway rebuild issue.",
+                suggestedAction: "Review the gateway rebuild follow-up and send it if still true.",
+                messagePreview: "Should we rerun the live gateway rebuild now that UX changed?",
+                expectedUserValue: "Keeps the live UI aligned with the latest proactivity changes.",
                 status: "pending_review",
                 filterTags: ["pending"],
                 sourceRefs: ["docs/projects/model-memory/phase-2-execution-roadmap.md"],
@@ -889,11 +890,105 @@ describe("chat view", () => {
       container,
     );
 
-    const inbox = container.querySelector(".proactivity-inbox");
+    const entryPoint = container.querySelector<HTMLButtonElement>(
+      ".proactivity-entrypoint__button",
+    );
     const thread = container.querySelector(".chat-thread");
+    expect(entryPoint).not.toBeNull();
+    expect(entryPoint?.textContent).toContain("Proactivity");
+    expect(entryPoint?.textContent).toContain("1 pending");
+    expect(container.querySelector(".chat-proactivity-rail")).toBeNull();
+    expect(container.querySelector(".proactivity-inbox")).toBeNull();
+    expect(thread?.querySelector(".proactivity-inbox")).toBeNull();
+    entryPoint?.click();
+    expect(onOpenSidebar).toHaveBeenCalledWith({ kind: "proactivityInbox" });
+
+    render(
+      renderChat(
+        createProps({
+          sidebarOpen: true,
+          sidebarContent: { kind: "proactivityInbox" },
+          onCloseSidebar: () => undefined,
+          onProductProactivityApproveSend: onApproveSend,
+          proactivityInboxDigest: {
+            digestId: "digest-1",
+            generatedAt: "2026-04-26T22:00:00.000Z",
+            filters: ["pending", "sent", "snoozed", "dismissed", "blocked", "autosend_trial"],
+            counts: {
+              pending: 1,
+              sent: 1,
+              snoozed: 1,
+              dismissed: 1,
+              blocked: 1,
+              autosend_trial: 1,
+            },
+            items: [
+              {
+                itemId: "inbox-item-1",
+                sourceArtifactReportId: "report-1",
+                candidateId: "candidate-1",
+                queueItemId: "queue-item-1",
+                messageClass: "operator_approved_suggestion_available",
+                boundedDisplayText: "An approved operator suggestion is available.",
+                candidateSummary: "Follow up on the unresolved gateway rebuild issue.",
+                suggestedAction: "Review the gateway rebuild follow-up and send it if still true.",
+                messagePreview: "Should we rerun the live gateway rebuild now that UX changed?",
+                expectedUserValue: "Keeps the live UI aligned with the latest proactivity changes.",
+                status: "pending_review",
+                filterTags: ["pending"],
+                sourceRefs: ["docs/projects/model-memory/phase-2-execution-roadmap.md"],
+                sourceProfileIds: ["curated_repo_doc"],
+                authorityTiers: ["curated_authoritative"],
+                contentHashes: ["content-hash-1"],
+                proofHashes: ["proof-hash-1"],
+                noDarkDataStatus: "pass",
+                feedbackSummary: {
+                  usefulCount: 1,
+                  notUsefulCount: 0,
+                  tooRepetitiveCount: 0,
+                  wrongContextCount: 0,
+                  unsafePrivateCount: 0,
+                },
+                whyThisAppearedSummary:
+                  "Generated from approved Model Memory proactivity queue evidence.",
+                blockedReasonCodes: [],
+              },
+              {
+                itemId: "inbox-item-2",
+                sourceArtifactReportId: "report-2",
+                candidateId: "candidate-2",
+                messageClass: "autosend_simulation",
+                boundedDisplayText:
+                  "Auto-send simulation compared would-have-sent behavior to manual decisions.",
+                status: "autosend_trial",
+                filterTags: ["autosend_trial"],
+                sourceRefs: ["phase2-autosend-simulation"],
+                sourceProfileIds: ["manual_note"],
+                authorityTiers: ["operator_evaluation"],
+                contentHashes: ["content-hash-2"],
+                proofHashes: ["proof-hash-2"],
+                noDarkDataStatus: "pass",
+                feedbackSummary: {
+                  usefulCount: 1,
+                  notUsefulCount: 1,
+                  tooRepetitiveCount: 1,
+                  wrongContextCount: 1,
+                  unsafePrivateCount: 0,
+                },
+                whyThisAppearedSummary:
+                  "Generated from report-only auto-send simulation telemetry.",
+                blockedReasonCodes: ["manual_override_required"],
+              },
+            ],
+          },
+        }),
+      ),
+      container,
+    );
+
+    const inbox = container.querySelector(".chat-sidebar .proactivity-inbox");
     expect(inbox).not.toBeNull();
-    expect(container.querySelector(".chat-proactivity-rail .proactivity-inbox")).toBe(inbox);
-    expect(thread?.contains(inbox)).toBe(false);
+    expect(container.querySelector(".chat-thread .proactivity-inbox")).toBeNull();
     expect(container.textContent).toContain("Proactivity Inbox");
     expect(container.textContent).toContain("pending 1");
     expect(container.textContent).toContain("sent 1");
@@ -902,10 +997,18 @@ describe("chat view", () => {
     expect(container.textContent).toContain("blocked 1");
     expect(container.textContent).toContain("autosend trial 1");
     expect(container.textContent).toContain("Auto-send simulation");
+    expect(container.textContent).toContain("Suggested action");
+    expect(container.textContent).toContain("Message preview");
+    expect(container.textContent).toContain("Should we rerun the live gateway rebuild");
+    expect(container.textContent).toContain("Approve & Send");
+    expect(container.textContent).toContain("Dismiss");
+    expect(container.textContent).toContain("Snooze");
     expect(container.textContent).toContain("Why this appeared");
     expect(container.textContent).toContain("curated_repo_doc");
     expect(container.textContent).toContain("Feedback");
     expect(container.textContent).not.toContain("raw-prompt-marker");
+    container.querySelector<HTMLButtonElement>(".proactivity-inbox .btn")?.click();
+    expect(onApproveSend).toHaveBeenCalledWith("queue-item-1");
   });
 
   it("dismisses BTW side results from the dismiss button", () => {

@@ -3685,3 +3685,31 @@ Reasoning:
 - proactive memory is not useful if evidence is scattered across banners and
   proof reports; a bounded inbox gives the user one normal place to inspect,
   filter, and manage proactive memory without weakening safety boundaries
+
+## 2026-04-26 - proactivity must be compact, actionable, and drawer-visible
+
+Decision:
+
+- Slice 55 remediates the Proactivity Inbox UX by removing the always-open
+  inbox rail from the chat workspace and prohibiting the full inbox from
+  rendering inside `.chat-thread`
+- normal chat UX now exposes a compact `Proactivity · N pending` entry point in
+  persistent chat chrome; the full inbox opens in the existing side panel/drawer
+  pattern instead of consuming transcript height
+- actionable cards must show a candidate summary, suggested action, safe message
+  preview, expected user value, why-this-appeared detail, and explicit
+  Approve & Send, Dismiss, Snooze, and provenance controls
+- rollback via `MODEL_MEMORY_PHASE2_PROACTIVITY_UX_REMEDIATION_DISABLED`
+  disables the compact entry point and preserves manual send/inbox data paths
+- proof artifact target:
+  `.artifacts/model-memory/phase2-proactivity-ux-remediation-proof/<timestamp>/`
+- broad autonomous sending remains disabled, action execution from delivery
+  remains disabled, follow-up auto-send remains manual/preflight-only, and raw
+  prompts/transcripts/tool logs/secrets/private phrases remain excluded from UI
+  payloads, reports, telemetry, tests, and artifacts
+
+Reasoning:
+
+- proactive memory should not steal the primary chat workspace; users need a
+  persistent low-friction entry point, clear information scent, and an explicit
+  action path before any further proactivity expansion is useful

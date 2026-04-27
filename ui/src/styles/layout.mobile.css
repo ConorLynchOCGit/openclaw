@@ -493,14 +493,6 @@
     padding: 0 8px 12px;
   }
 
-  .chat-proactivity-rail {
-    padding: 0 8px 8px;
-  }
-
-  .chat-proactivity-rail .proactivity-inbox {
-    max-height: 32vh;
-  }
-
   .chat-msg {
     max-width: 90%;
   }

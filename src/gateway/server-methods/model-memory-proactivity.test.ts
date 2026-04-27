@@ -107,4 +107,45 @@ describe("model-memory proactivity gateway handlers", () => {
     });
     expect(JSON.stringify(payload).toLowerCase()).not.toContain("raw-prompt-marker");
   });
+
+  it("returns compact proactivity UX remediation state", async () => {
+    const respond = vi.fn();
+    await modelMemoryProactivityHandlers["modelMemory.proactivity.uxRemediation"]({
+      req: {
+        type: "req",
+        id: "req-4",
+        method: "modelMemory.proactivity.uxRemediation",
+        params: {},
+      },
+      params: {},
+      client: null,
+      isWebchatConnect: () => true,
+      respond,
+      context: {} as never,
+    });
+
+    expect(respond).toHaveBeenCalledTimes(1);
+    const [ok, payload] = respond.mock.calls[0];
+    expect(ok).toBe(true);
+    expect(payload).toMatchObject({
+      ok: true,
+      decision: "ux_remediated",
+      entryPoint: {
+        label: "Proactivity",
+        visibleInChatChrome: true,
+        consumesTranscriptHeight: false,
+      },
+      drawer: {
+        drawerKind: "existing_side_panel",
+        fullInboxInChatThread: false,
+        alwaysOpenWorkspacePanel: false,
+      },
+    });
+    expect(payload.drawer.cards[0]).toMatchObject({
+      suggestedAction: expect.any(String),
+      messagePreview: expect.any(String),
+      whyThisAppeared: expect.any(String),
+    });
+    expect(JSON.stringify(payload).toLowerCase()).not.toContain("raw-prompt-marker");
+  });
 });
