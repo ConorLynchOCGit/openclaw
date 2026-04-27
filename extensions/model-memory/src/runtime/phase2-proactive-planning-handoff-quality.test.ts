@@ -39,15 +39,20 @@ describe("phase2 proactive planning handoff quality", () => {
     expect(expectedOutputForHandoff("start_scoped_task")).toBe("execution_proposal_only");
   });
 
-  it("builds bounded handoff text with goal, evidence, constraints, and safety boundary", () => {
+  it("builds bounded handoff text with structured context, evidence, and safety boundary", () => {
     const text = buildProactiveHandoffText({
       ...basePayload,
       expectedOutput: "concise_plan_options_risks_next_steps",
     });
-    expect(text).toContain("Goal: produce concise plan options risks next steps");
+    expect(text).toContain("Start a bounded plan this");
+    expect(text).toContain("Title:");
+    expect(text).toContain("Why now:");
+    expect(text).toContain("Context to use:");
     expect(text).toContain("Evidence summary");
-    expect(text).toContain("Constraints");
+    expect(text).toContain("Expected output:");
     expect(text).toContain("Safety boundary");
+    expect(text).not.toContain("Action requested:");
+    expect(text).not.toContain("Goal: produce");
     expect(text.toLowerCase()).not.toContain("raw-prompt-marker");
   });
 

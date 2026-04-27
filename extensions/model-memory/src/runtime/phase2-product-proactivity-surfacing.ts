@@ -31,6 +31,7 @@ export const PHASE2_PRODUCT_PROACTIVITY_SURFACING_REPORT_SCHEMA_VERSION =
 
 export type Phase2ProductProactivityQueueItemStatus =
   | "pending_review"
+  | "planned"
   | "approved_not_sent"
   | "sent"
   | "dismissed"

@@ -304,6 +304,73 @@ describe("model-memory proactivity gateway handlers", () => {
     expect(JSON.stringify(payload).toLowerCase()).not.toContain("raw-prompt-marker");
   });
 
+  it("does not synthesize history rows for a single pending planning item", async () => {
+    const recordRespond = vi.fn();
+    await modelMemoryProactivityHandlers["modelMemory.proactivity.recordLiveEvent"]({
+      req: {
+        type: "req",
+        id: "req-live-event-inbox",
+        method: "modelMemory.proactivity.recordLiveEvent",
+        params: {},
+      },
+      params: {
+        sourceId: "gateway-test-inbox-live-event",
+        sourceType: "ordinary_turn_capture",
+        signalKind: "active_work_state",
+        sessionKey: "gateway-inbox-live-test",
+        projectId: "openclaw",
+        boundedSummary:
+          "A real OpenClaw task left a bounded planning follow-up for the active session.",
+      },
+      client: null,
+      isWebchatConnect: () => true,
+      respond: recordRespond,
+      context: {} as never,
+    });
+    expect(recordRespond).toHaveBeenCalledWith(
+      true,
+      expect.objectContaining({ ok: true, sourceId: "gateway-test-inbox-live-event" }),
+    );
+
+    const respond = vi.fn();
+    await modelMemoryProactivityHandlers["modelMemory.proactivity.inbox"]({
+      req: {
+        type: "req",
+        id: "req-inbox-live",
+        method: "modelMemory.proactivity.inbox",
+        params: {},
+      },
+      params: {
+        sessionKey: "gateway-inbox-live-test",
+        userId: "conor",
+        recipientId: "conor",
+        projectId: "openclaw",
+        operatorId: "operator-conor",
+      },
+      client: null,
+      isWebchatConnect: () => true,
+      respond,
+      context: {} as never,
+    });
+
+    const [ok, payload] = respond.mock.calls[0];
+    expect(ok).toBe(true);
+    const actionableItems = payload.digest.items.filter(
+      (item: { layer?: string }) => item.layer === "actionable",
+    );
+    const plannedItems = payload.digest.items.filter(
+      (item: { status?: string }) => item.status === "planned",
+    );
+    const sentItems = payload.digest.items.filter(
+      (item: { status?: string }) => item.status === "sent",
+    );
+    expect(actionableItems).toHaveLength(1);
+    expect(plannedItems).toHaveLength(0);
+    expect(sentItems).toHaveLength(0);
+    expect(payload.digest.counts.planned).toBe(0);
+    expect(payload.digest.items[0]?.status).toBe("pending_review");
+  });
+
   it("returns compact proactivity UX remediation state", async () => {
     const respond = vi.fn();
     await modelMemoryProactivityHandlers["modelMemory.proactivity.uxRemediation"]({

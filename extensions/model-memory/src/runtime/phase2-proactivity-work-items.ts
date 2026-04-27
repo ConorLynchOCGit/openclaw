@@ -25,7 +25,7 @@ export type Phase2ProactivityWorkItemKind =
 
 export type Phase2ProactivityWorkItemStatus =
   | "not_started"
-  | "planning"
+  | "planning_started"
   | "planned"
   | "investigating"
   | "drafted"
@@ -34,7 +34,8 @@ export type Phase2ProactivityWorkItemStatus =
   | "done"
   | "dismissed"
   | "snoozed"
-  | "blocked";
+  | "blocked"
+  | "reopened";
 
 export type Phase2ProactivityWorkItemActionType =
   | "plan_this"

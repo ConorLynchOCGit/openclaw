@@ -898,7 +898,7 @@ describe("chat view", () => {
     expect(card).not.toBeNull();
     expect(card?.textContent).toContain("Gateway rebuild follow-up");
     expect(card?.textContent).toContain("Suggested action");
-    expect(card?.textContent).toContain("Proposed next step");
+    expect(card?.textContent).toContain("What happens next");
     expect(card?.textContent).toContain("Shown because this session matches project");
     expect(card?.textContent).toContain("Plan this");
     expect(card?.textContent).not.toContain("This non-matching session item");
@@ -1024,6 +1024,7 @@ describe("chat view", () => {
             counts: {
               actionable: 2,
               pending: 2,
+              planned: 0,
               sent: 0,
               snoozed: 0,
               dismissed: 0,
@@ -1203,6 +1204,7 @@ describe("chat view", () => {
             filters: [
               "actionable",
               "pending",
+              "planned",
               "sent",
               "snoozed",
               "dismissed",
@@ -1213,6 +1215,7 @@ describe("chat view", () => {
             counts: {
               actionable: 2,
               pending: 2,
+              planned: 0,
               sent: 1,
               snoozed: 1,
               dismissed: 1,
@@ -1322,6 +1325,7 @@ describe("chat view", () => {
             filters: [
               "actionable",
               "pending",
+              "planned",
               "sent",
               "snoozed",
               "dismissed",
@@ -1332,6 +1336,7 @@ describe("chat view", () => {
             counts: {
               actionable: 2,
               pending: 2,
+              planned: 0,
               sent: 1,
               snoozed: 1,
               dismissed: 1,
@@ -1425,7 +1430,7 @@ describe("chat view", () => {
     expect(container.textContent).toContain("Diagnostics 1");
     expect(container.textContent).not.toContain("Auto-send simulation");
     expect(container.textContent).toContain("Suggested action");
-    expect(container.textContent).toContain("Proposed next step");
+    expect(container.textContent).toContain("What happens next");
     expect(container.textContent).toContain("Should we rerun the live gateway rebuild");
     expect(container.textContent).toContain("Plan this");
     expect(container.textContent).toContain("Dismiss");

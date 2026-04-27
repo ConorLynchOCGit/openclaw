@@ -38,6 +38,7 @@ export const PHASE2_PROACTIVITY_INBOX_REPORT_SCHEMA_VERSION =
 export type Phase2ProactivityInboxFilter =
   | "actionable"
   | "pending"
+  | "planned"
   | "sent"
   | "snoozed"
   | "dismissed"
@@ -80,7 +81,14 @@ export type Phase2ProactivityInboxItem = {
   sendStatus: "idle" | "sending" | "sent" | "failed";
   sendError: string | null;
   sentMessageAnchor: string | null;
-  status: "pending_review" | "sent" | "snoozed" | "dismissed" | "blocked" | "autosend_trial";
+  status:
+    | "pending_review"
+    | "planned"
+    | "sent"
+    | "snoozed"
+    | "dismissed"
+    | "blocked"
+    | "autosend_trial";
   filterTags: Phase2ProactivityInboxFilter[];
   sourceRefs: string[];
   sourceProfileIds: SourceProfileId[];
@@ -228,6 +236,7 @@ export type Phase2ProactivityInboxArtifact = {
 const FILTERS = [
   "actionable",
   "pending",
+  "planned",
   "sent",
   "snoozed",
   "dismissed",
@@ -377,69 +386,98 @@ function feedbackSummaryFrom(report: Phase2ProactivityFeedbackReport | undefined
   };
 }
 
+function inboxFilterForQueueItem(
+  queueItem: Phase2ProductProactivityQueueItem,
+): Phase2ProactivityInboxFilter {
+  if (queueItem.layer === "diagnostic") {
+    if (queueItem.status === "blocked" || queueItem.blockedReasonCodes.length > 0) {
+      return "blocked";
+    }
+    return "diagnostics";
+  }
+  if (queueItem.status === "planned") {
+    return "planned";
+  }
+  if (queueItem.status === "sent") {
+    return "sent";
+  }
+  if (queueItem.status === "snoozed") {
+    return "snoozed";
+  }
+  if (queueItem.status === "dismissed") {
+    return "dismissed";
+  }
+  if (queueItem.status === "blocked") {
+    return "blocked";
+  }
+  return "pending";
+}
+
+function inboxFilterTagsForQueueItem(
+  queueItem: Phase2ProductProactivityQueueItem,
+  filter: Phase2ProactivityInboxFilter,
+): Phase2ProactivityInboxFilter[] {
+  if (queueItem.layer === "actionable") {
+    return ["actionable", "pending"];
+  }
+  if (queueItem.layer === "diagnostic") {
+    return filter === "diagnostics" ? ["diagnostics"] : ["diagnostics", filter];
+  }
+  return [filter];
+}
+
 function cloneQueueItemForInbox(input: {
   queueItem: Phase2ProductProactivityQueueItem;
   sourceArtifactReportId: string;
-  status: Phase2ProactivityInboxItem["status"];
-  filter: Phase2ProactivityInboxFilter;
-  layer: Phase2ProactivityInboxItem["layer"];
   generatedAt: string;
   feedbackReport?: Phase2ProactivityFeedbackReport;
   blockedReasonCodes?: string[];
-  displayText?: string;
 }): Phase2ProactivityInboxItem {
+  const filter = inboxFilterForQueueItem(input.queueItem);
   return {
     itemId: buildDerivedArtifactId({
       family: "context_artifact",
       artifactType: "phase2_proactivity_inbox_item",
       targetId: input.queueItem.queueItemId,
-      seed: { status: input.status, filter: input.filter, generatedAt: input.generatedAt },
+      seed: { status: input.queueItem.status, filter, generatedAt: input.generatedAt },
     }),
     sourceArtifactReportId: input.sourceArtifactReportId,
     candidateId: input.queueItem.candidateId,
     queueItemId: input.queueItem.queueItemId,
     workItemId: input.queueItem.workItemId,
     workItemKind: input.queueItem.workItemKind,
-    workItemStatus:
-      input.status === "sent"
-        ? "done"
-        : input.status === "snoozed"
-          ? "snoozed"
-          : input.status === "dismissed"
-            ? "dismissed"
-            : input.queueItem.workItemStatus,
-    primaryAction: input.layer === "actionable" ? input.queueItem.primaryAction : null,
+    workItemStatus: input.queueItem.workItemStatus,
+    primaryAction: input.queueItem.layer === "actionable" ? input.queueItem.primaryAction : null,
     secondaryActions: input.queueItem.secondaryActions,
     ctaExplanation: input.queueItem.ctaExplanation,
     handoffStatus: input.queueItem.handoffStatus,
     handoffError: input.queueItem.handoffError,
     handoffMessageAnchor: input.queueItem.handoffMessageAnchor,
     messageClass: input.queueItem.messageClass,
-    boundedDisplayText: input.displayText ?? input.queueItem.boundedDisplayText,
-    messagePreview: input.displayText ?? input.queueItem.messagePreview,
+    boundedDisplayText: input.queueItem.boundedDisplayText,
+    messagePreview: input.queueItem.messagePreview,
     suggestedAction: input.queueItem.suggestedAction,
     candidateSummary: input.queueItem.candidateSummary,
     expectedUserValue: input.queueItem.expectedUserValue,
     planTitle: input.queueItem.planTitle,
     problem: input.queueItem.problem,
-    proposedMessage: input.displayText ?? input.queueItem.proposedMessage,
+    proposedMessage: input.queueItem.proposedMessage,
     userBenefit: input.queueItem.userBenefit,
     evidenceSummary: input.queueItem.evidenceSummary,
     confidence: input.queueItem.confidence,
     blockedIfMissing: input.queueItem.blockedIfMissing,
-    layer: input.layer,
-    attentionRequired: input.layer === "actionable",
-    sendStatus: input.status === "sent" ? "sent" : "idle",
-    sendError: null,
-    sentMessageAnchor:
-      input.status === "sent" ? `chat-message:${input.queueItem.queueItemId}` : null,
-    status: input.status,
-    filterTags:
-      input.layer === "actionable"
-        ? ["actionable", input.filter]
-        : input.layer === "diagnostic"
-          ? ["diagnostics", input.filter]
-          : [input.filter],
+    layer: input.queueItem.layer,
+    attentionRequired: input.queueItem.attentionRequired,
+    sendStatus: input.queueItem.sendStatus,
+    sendError: input.queueItem.sendError,
+    sentMessageAnchor: input.queueItem.sentMessageAnchor,
+    status:
+      input.queueItem.status === "approved_not_sent"
+        ? "pending_review"
+        : input.queueItem.status === "rollback_disabled"
+          ? "blocked"
+          : input.queueItem.status,
+    filterTags: inboxFilterTagsForQueueItem(input.queueItem, filter),
     sourceRefs: input.queueItem.sourceRefs,
     sourceProfileIds: input.queueItem.sourceProfileIds,
     authorityTiers: input.queueItem.authorityTiers,
@@ -462,53 +500,18 @@ function buildInboxItems(input: {
 }): Phase2ProactivityInboxItem[] {
   const items: Phase2ProactivityInboxItem[] = [];
   const queueItem = input.productSurfacingReport?.queue.items[0];
-  if (queueItem && input.productSurfacingReport) {
-    const queueItemIsActionable = queueItem.layer === "actionable";
+  const queueItems = input.productSurfacingReport?.queue.items ?? [];
+  if (queueItems.length > 0 && input.productSurfacingReport) {
     items.push(
-      cloneQueueItemForInbox({
-        queueItem,
-        sourceArtifactReportId: input.productSurfacingReport.reportId,
-        status: "pending_review",
-        filter: "pending",
-        layer: queueItemIsActionable ? "actionable" : "diagnostic",
-        generatedAt: input.generatedAt,
-        feedbackReport: input.feedbackReport,
-      }),
+      ...queueItems.map((item) =>
+        cloneQueueItemForInbox({
+          queueItem: item,
+          sourceArtifactReportId: input.productSurfacingReport!.reportId,
+          generatedAt: input.generatedAt,
+          feedbackReport: input.feedbackReport,
+        }),
+      ),
     );
-    if (queueItemIsActionable) {
-      items.push(
-        cloneQueueItemForInbox({
-          queueItem,
-          sourceArtifactReportId: input.productSurfacingReport.reportId,
-          status: "sent",
-          filter: "sent",
-          layer: "history",
-          generatedAt: input.generatedAt,
-          feedbackReport: input.feedbackReport,
-          displayText: "Approved proactive message was sent through chat.inject.",
-        }),
-        cloneQueueItemForInbox({
-          queueItem,
-          sourceArtifactReportId: input.productSurfacingReport.reportId,
-          status: "snoozed",
-          filter: "snoozed",
-          layer: "history",
-          generatedAt: input.generatedAt,
-          feedbackReport: input.feedbackReport,
-          displayText: "A proactive suggestion is snoozed until the next eligible review.",
-        }),
-        cloneQueueItemForInbox({
-          queueItem,
-          sourceArtifactReportId: input.productSurfacingReport.reportId,
-          status: "dismissed",
-          filter: "dismissed",
-          layer: "history",
-          generatedAt: input.generatedAt,
-          feedbackReport: input.feedbackReport,
-          displayText: "A proactive suggestion was dismissed and will not send.",
-        }),
-      );
-    }
   }
 
   const simulation = input.simulationReport?.observations[0];
@@ -777,7 +780,7 @@ export async function buildPhase2ProactivityInboxReport(
   addCheck(
     checks,
     "filters_available",
-    ["actionable", "sent", "snoozed", "dismissed", "diagnostics"].every((filter) =>
+    ["actionable", "planned", "sent", "snoozed", "dismissed", "diagnostics"].every((filter) =>
       FILTERS.includes(filter as Phase2ProactivityInboxFilter),
     ),
   );
@@ -840,6 +843,7 @@ export async function buildPhase2ProactivityInboxReport(
     counts: {
       actionable: countItems(items, "actionable"),
       pending: countItems(items, "pending"),
+      planned: countItems(items, "planned"),
       sent: countItems(items, "sent"),
       snoozed: countItems(items, "snoozed"),
       dismissed: countItems(items, "dismissed"),
@@ -935,8 +939,9 @@ export function assertPhase2ProactivityInboxVisible(report: Phase2ProactivityInb
     throw new Error(`phase2 proactivity inbox not visible: ${report.decision}`);
   }
   for (const filter of FILTERS) {
-    if (report.digest.counts[filter] < 1) {
-      throw new Error(`phase2 proactivity inbox missing filter group: ${filter}`);
+    const count = report.digest.counts[filter];
+    if (typeof count !== "number" || Number.isNaN(count) || count < 0) {
+      throw new Error(`phase2 proactivity inbox missing filter count: ${filter}`);
     }
   }
   if (report.telemetry.rawPrivateContentObserved || report.telemetry.actionExecutionObserved) {

@@ -1376,7 +1376,7 @@ function getActionableInboxItems(
 
 function getHistoryInboxItems(
   digest: ProactivityInboxDigest | null | undefined,
-  view: Extract<ProactivityInboxView, "sent" | "snoozed" | "dismissed">,
+  view: Extract<ProactivityInboxView, "planned" | "sent" | "snoozed" | "dismissed">,
 ): ProactivityInboxItem[] {
   return (digest?.items ?? []).filter(
     (item) => item.status === view && item.layer !== "diagnostic",
@@ -1426,6 +1426,14 @@ function getVisibleInboxItems(
     return getDiagnosticInboxItems(digest);
   }
   return getHistoryInboxItems(digest, view);
+}
+
+function getProactivityPrimaryStepLabel(
+  item:
+    | Pick<ProductProactivityQueueItem, "workItemKind">
+    | Pick<ProactivityInboxItem, "workItemKind">,
+): string {
+  return item.workItemKind === "message_candidate" ? "Message to send" : "What happens next";
 }
 
 function getActiveProactivityContext(props: ChatProps): ProductProactivityActiveContext {
@@ -1483,8 +1491,7 @@ function renderContextualProactivityCard(props: ChatProps): TemplateResult | typ
   const proposedMessage = getProactivityProposedMessage(props, item);
   const primaryAction = getProactivityPrimaryActionType(item);
   const primaryActionLabel = getProactivityPrimaryActionLabel(item);
-  const proposedLabel =
-    item.workItemKind === "message_candidate" ? "Message to send" : "Proposed next step";
+  const proposedLabel = getProactivityPrimaryStepLabel(item);
   return html`
     <section
       class="contextual-proactivity-card"
@@ -1521,22 +1528,20 @@ function renderContextualProactivityCard(props: ChatProps): TemplateResult | typ
             <span>${item.confidence ?? "medium"}</span>
           </div>
         </details>
-        <label class="proactivity-message-editor">
-          <span
-            >${item.workItemKind === "message_candidate"
-              ? "Edit message before send"
-              : "Edit handoff before starting"}</span
-          >
-          <textarea
-            rows="3"
-            .value=${proposedMessage}
-            @input=${(event: Event) =>
-              props.onProductProactivityEditMessage?.(
-                item.queueItemId,
-                (event.currentTarget as HTMLTextAreaElement).value,
-              )}
-          ></textarea>
-        </label>
+        ${item.workItemKind === "message_candidate"
+          ? html`<label class="proactivity-message-editor">
+              <span>Edit message before send</span>
+              <textarea
+                rows="3"
+                .value=${proposedMessage}
+                @input=${(event: Event) =>
+                  props.onProductProactivityEditMessage?.(
+                    item.queueItemId,
+                    (event.currentTarget as HTMLTextAreaElement).value,
+                  )}
+              ></textarea>
+            </label>`
+          : nothing}
         <div class="contextual-proactivity-card__section">
           <span>Expected value</span>
           <div>${getProactivityUserBenefit(item)}</div>
@@ -1619,8 +1624,7 @@ function renderHeartbeatProactivityReview(props: ChatProps): TemplateResult | ty
       </div>
       ${items.map((item) => {
         const primaryAction = getProactivityPrimaryActionType(item);
-        const proposedLabel =
-          item.workItemKind === "message_candidate" ? "Message to send" : "Proposed next step";
+        const proposedLabel = getProactivityPrimaryStepLabel(item);
         const queueItemId = item.queueItemId ?? "";
         return html`
           <article
@@ -1947,6 +1951,7 @@ function renderProactivityInbox(props: ChatProps): TemplateResult | typeof nothi
   const visibleItems = getVisibleInboxItems(digest, view);
   const actionableCount = getActionableInboxItems(digest).length;
   const historyCount =
+    getHistoryInboxItems(digest, "planned").length +
     getHistoryInboxItems(digest, "sent").length +
     getHistoryInboxItems(digest, "snoozed").length +
     getHistoryInboxItems(digest, "dismissed").length;
@@ -1957,6 +1962,7 @@ function renderProactivityInbox(props: ChatProps): TemplateResult | typeof nothi
   }
   const tabs: Array<{ view: ProactivityInboxView; label: string; count: number }> = [
     { view: "actionable", label: "Actionable", count: actionableCount },
+    { view: "planned", label: "Planned", count: getHistoryInboxItems(digest, "planned").length },
     { view: "sent", label: "Sent", count: getHistoryInboxItems(digest, "sent").length },
     { view: "snoozed", label: "Snoozed", count: getHistoryInboxItems(digest, "snoozed").length },
     {
@@ -2024,10 +2030,7 @@ function renderProactivityInbox(props: ChatProps): TemplateResult | typeof nothi
                 : nothing}
               ${visibleItems.map((item) => {
                 const primaryAction = getProactivityPrimaryActionType(item);
-                const proposedLabel =
-                  item.workItemKind === "message_candidate"
-                    ? "Message to send"
-                    : "Proposed next step";
+                const proposedLabel = getProactivityPrimaryStepLabel(item);
                 return html`<article
                   class="product-proactivity-item proactivity-inbox__item proactivity-inbox__item--${item.status}"
                   data-layer=${item.layer ?? "actionable"}
@@ -2049,10 +2052,6 @@ function renderProactivityInbox(props: ChatProps): TemplateResult | typeof nothi
                       <strong>${getProactivityProblem(item)}</strong>
                     </div>
                     <div class="product-proactivity-item__section">
-                      <span>Suggested action</span>
-                      <strong>${getProactivitySuggestedAction(item)}</strong>
-                    </div>
-                    <div class="product-proactivity-item__section">
                       <span>${proposedLabel}</span>
                       <div class="product-proactivity-item__text">
                         ${getProactivityProposedMessage(props, item)}
@@ -2060,13 +2059,10 @@ function renderProactivityInbox(props: ChatProps): TemplateResult | typeof nothi
                     </div>
                     ${item.status === "pending_review" &&
                     item.layer === "actionable" &&
+                    item.workItemKind === "message_candidate" &&
                     item.queueItemId
                       ? html`<label class="proactivity-message-editor">
-                          <span
-                            >${item.workItemKind === "message_candidate"
-                              ? "Edit message before send"
-                              : "Edit handoff before starting"}</span
-                          >
+                          <span>Edit message before send</span>
                           <textarea
                             rows="4"
                             .value=${getProactivityProposedMessage(props, item)}
@@ -2085,6 +2081,10 @@ function renderProactivityInbox(props: ChatProps): TemplateResult | typeof nothi
                     <details class="product-proactivity-item__details">
                       <summary>Review plan</summary>
                       <p>${item.whyThisAppearedSummary}</p>
+                      <div class="operator-row">
+                        <span>Suggested action</span>
+                        <span>${getProactivitySuggestedAction(item)}</span>
+                      </div>
                       <div class="operator-row">
                         <span>Evidence</span>
                         <span>${getProactivityEvidenceSummary(item)}</span>
@@ -2157,7 +2157,7 @@ function renderProactivityInbox(props: ChatProps): TemplateResult | typeof nothi
                         </div>`
                       : nothing}
                     ${item.handoffStatus === "started" ||
-                    ["planning", "investigating", "drafted", "execution_proposed"].includes(
+                    ["planning_started", "investigating", "drafted", "execution_proposed"].includes(
                       item.workItemStatus ?? "",
                     )
                       ? html`<div class="callout success proactivity-handoff-status">

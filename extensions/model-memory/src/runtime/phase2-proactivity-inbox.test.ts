@@ -36,7 +36,7 @@ async function buildLiveProductSurfacingReport(now: Date) {
 }
 
 describe("phase2 proactivity inbox", () => {
-  it("groups pending, sent, snoozed, dismissed, blocked, and autosend-trial items", async () => {
+  it("keeps one canonical inbox row per queue item and separates diagnostics", async () => {
     const now = new Date("2026-04-27T03:00:00.000Z");
     const productSurfacingReport = await buildLiveProductSurfacingReport(now);
     const report = await buildPhase2ProactivityInboxReport({
@@ -46,11 +46,14 @@ describe("phase2 proactivity inbox", () => {
 
     expect(report.decision).toBe("inbox_visible");
     expect(report.digest.counts.pending).toBeGreaterThan(0);
-    expect(report.digest.counts.sent).toBeGreaterThan(0);
-    expect(report.digest.counts.snoozed).toBeGreaterThan(0);
-    expect(report.digest.counts.dismissed).toBeGreaterThan(0);
+    expect(report.digest.counts.planned).toBe(0);
+    expect(report.digest.counts.sent).toBe(0);
+    expect(report.digest.counts.snoozed).toBe(0);
+    expect(report.digest.counts.dismissed).toBe(0);
     expect(report.digest.counts.blocked).toBeGreaterThan(0);
     expect(report.digest.counts.autosend_trial).toBeGreaterThan(0);
+    expect(report.digest.items.filter((item) => item.layer === "actionable")).toHaveLength(1);
+    expect(report.digest.items.filter((item) => item.status === "sent")).toHaveLength(0);
     assertPhase2ProactivityInboxVisible(report);
   });
 

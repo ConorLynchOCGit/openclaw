@@ -82,6 +82,7 @@ function inboxDigest(item: ProactivityInboxItem): ProactivityInboxDigest {
     filters: [
       "actionable",
       "pending",
+      "planned",
       "sent",
       "snoozed",
       "dismissed",
@@ -92,6 +93,7 @@ function inboxDigest(item: ProactivityInboxItem): ProactivityInboxDigest {
     counts: {
       actionable: item.layer === "actionable" && item.status === "pending_review" ? 1 : 0,
       pending: item.status === "pending_review" ? 1 : 0,
+      planned: item.status === "planned" ? 1 : 0,
       sent: item.status === "sent" ? 1 : 0,
       snoozed: item.status === "snoozed" ? 1 : 0,
       dismissed: item.status === "dismissed" ? 1 : 0,
@@ -122,16 +124,20 @@ describe("OpenClawApp proactivity product correctness", () => {
 
     expect(request).not.toHaveBeenCalledWith("chat.inject", expect.any(Object));
     expect(sendChat).toHaveBeenCalledTimes(1);
-    expect(sendChat.mock.calls[0]?.[0]).toContain("I found a proactive item");
-    expect(sendChat.mock.calls[0]?.[0]).toContain("Goal: produce a concise plan");
+    expect(sendChat.mock.calls[0]?.[0]).toContain("Start a bounded plan this");
+    expect(sendChat.mock.calls[0]?.[0]).toContain("Title:");
     expect(sendChat.mock.calls[0]?.[0]).toContain("Expected output");
     expect(sendChat.mock.calls[0]?.[0]).toContain("Safety boundary");
     const item = app.proactivityInboxDigest?.items[0];
     expect(item).toMatchObject({
-      workItemStatus: "planning",
+      status: "planned",
+      layer: "history",
+      filterTags: ["planned"],
+      workItemStatus: "planning_started",
       handoffStatus: "started",
       handoffMessageAnchor: "chat-message:queue-item-1",
     });
+    expect(app.proactivityInboxView).toBe("planned");
   });
 
   it("handoff failure is visible and preserves the pending item", async () => {

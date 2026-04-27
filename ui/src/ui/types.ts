@@ -29,6 +29,7 @@ export type ChannelUiMetaEntry = {
 
 export type ProductProactivityQueueItemStatus =
   | "pending_review"
+  | "planned"
   | "approved_not_sent"
   | "sent"
   | "dismissed"
@@ -60,7 +61,7 @@ export type ProductProactivityWorkItemKind =
 
 export type ProductProactivityWorkItemStatus =
   | "not_started"
-  | "planning"
+  | "planning_started"
   | "planned"
   | "investigating"
   | "drafted"
@@ -69,7 +70,8 @@ export type ProductProactivityWorkItemStatus =
   | "done"
   | "dismissed"
   | "snoozed"
-  | "blocked";
+  | "blocked"
+  | "reopened";
 
 export type ProductProactivityActionType =
   | "plan_this"
@@ -215,6 +217,7 @@ export type PersonalAutoSendUxResult = {
 export type ProactivityInboxFilter =
   | "actionable"
   | "pending"
+  | "planned"
   | "sent"
   | "snoozed"
   | "dismissed"
@@ -222,7 +225,13 @@ export type ProactivityInboxFilter =
   | "autosend_trial"
   | "diagnostics";
 
-export type ProactivityInboxView = "actionable" | "sent" | "snoozed" | "dismissed" | "diagnostics";
+export type ProactivityInboxView =
+  | "actionable"
+  | "planned"
+  | "sent"
+  | "snoozed"
+  | "dismissed"
+  | "diagnostics";
 
 export type ProactivityInboxItem = {
   itemId: string;
@@ -259,7 +268,14 @@ export type ProactivityInboxItem = {
   sendStatus?: ProductProactivitySendStatus;
   sendError?: string | null;
   sentMessageAnchor?: string | null;
-  status: "pending_review" | "sent" | "snoozed" | "dismissed" | "blocked" | "autosend_trial";
+  status:
+    | "pending_review"
+    | "planned"
+    | "sent"
+    | "snoozed"
+    | "dismissed"
+    | "blocked"
+    | "autosend_trial";
   filterTags: ProactivityInboxFilter[];
   sourceRefs: string[];
   sourceProfileIds: string[];
