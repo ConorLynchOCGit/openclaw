@@ -3767,3 +3767,27 @@ Reasoning:
 
 - proactivity should appear during normal work only when the current context
   makes the suggestion actionable; otherwise it belongs in the inbox/digest
+
+## 2026-04-26 - proactivity enters daily review and heartbeat as bounded review work
+
+Decision:
+
+- Slice 58 feeds pending `must_surface` proactivity into the operator review /
+  heartbeat surface with grouped counts for lower-priority/background items
+- review items preserve the same `candidateId` and `queueItemId` used by chat
+  contextual cards and the Proactivity Inbox
+- review items include bounded candidate summary, message preview, suggested
+  action, source refs, source profiles, authority tiers, and proof/content hashes
+- the review surface provides a direct path to the Proactivity Inbox detail/send
+  action, but it does not send messages or execute actions
+- rollback via `MODEL_MEMORY_PHASE2_DAILY_REVIEW_PROACTIVITY_DISABLED` returns
+  proactivity to inbox-only review
+- proof artifact target:
+  `.artifacts/model-memory/phase2-proactivity-daily-review-heartbeat-proof/<timestamp>/`
+- broad autonomous sending and delivery-triggered action execution remain
+  disabled
+
+Reasoning:
+
+- must-surface proactivity belongs in the operator loop where daily operational
+  review already happens, while background items should remain summarized

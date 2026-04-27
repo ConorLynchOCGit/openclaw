@@ -999,6 +999,12 @@ function renderOperatorExperiencePanel(params: {
     .map((name) => ({ name, kind: classifyEngineeringTool(name) }))
     .filter((entry): entry is { name: string; kind: string } => Boolean(entry.kind));
   const sessions = props.sessions?.sessions?.slice(0, 5) ?? [];
+  const proactivityItems = props.proactivityInboxDigest?.items ?? [];
+  const mustSurfaceItems = getContextualProactivityItems(props);
+  const pendingProactivityCount =
+    props.proactivityInboxDigest?.counts.pending ??
+    (props.productProactivityQueue ?? []).filter((item) => item.status === "pending_review").length;
+  const backgroundProactivityCount = Math.max(0, proactivityItems.length - mustSurfaceItems.length);
   const hostStatus = props.hostOperatorStatus ?? {
     state: "ordinary" as const,
     reason: "host-operator status not loaded in this client view",
@@ -1079,6 +1085,41 @@ function renderOperatorExperiencePanel(params: {
                             </div>`,
                         )
                     : html`<div>No retrieval proof events in this visible thread.</div>`}
+                </div>
+              </article>
+
+              <article class="operator-card operator-card--proactivity-review">
+                <div class="operator-card__title">Daily review / heartbeat proactivity</div>
+                <div class="operator-card__body">
+                  ${mustSurfaceItems.length
+                    ? mustSurfaceItems.map(
+                        (item) => html`
+                          <div
+                            class="operator-row"
+                            data-candidate-id=${item.candidateId}
+                            data-queue-item-id=${item.queueItemId}
+                          >
+                            <span>${getProactivityCandidateSummary(item)}</span>
+                            <span>${item.candidateId}</span>
+                          </div>
+                        `,
+                      )
+                    : html`<div>No must-surface proactivity for this active context.</div>`}
+                  <div class="operator-row">
+                    <span>Grouped lower-priority/background</span>
+                    <span>${backgroundProactivityCount}</span>
+                  </div>
+                  <div class="operator-row">
+                    <span>Pending total</span>
+                    <span>${pendingProactivityCount}</span>
+                  </div>
+                  <button
+                    class="btn btn--sm btn--ghost proactivity-review-open"
+                    type="button"
+                    @click=${() => props.onOpenSidebar?.({ kind: "proactivityInbox" })}
+                  >
+                    Open inbox detail/send
+                  </button>
                 </div>
               </article>
 

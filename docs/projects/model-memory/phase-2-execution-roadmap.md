@@ -631,6 +631,12 @@ For each implementation wave:
   snoozed, or background-only candidates remain in the Proactivity Inbox/digest.
   Proof artifact target:
   `.artifacts/model-memory/phase2-contextual-proactivity-surfacing-proof/<timestamp>/`.
+- Slice 58 integrates proactivity with the Daily Operator Review / Heartbeat
+  loop. Pending `must_surface` items appear as bounded review work with the same
+  candidate ids used by chat and inbox; lower-priority/background items are
+  grouped as counts, and the direct action path opens the Proactivity Inbox
+  detail/send surface. Proof artifact target:
+  `.artifacts/model-memory/phase2-proactivity-daily-review-heartbeat-proof/<timestamp>/`.
 - capture at least one durable evidence artifact per wave
 - update the relevant human test prompt pack before declaring the wave ready for
   live validation

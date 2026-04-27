@@ -895,6 +895,63 @@ describe("chat view", () => {
     expect(container.querySelector(".contextual-proactivity-card")).toBeNull();
   });
 
+  it("adds proactivity to the operator review heartbeat panel with an inbox path", () => {
+    const container = document.createElement("div");
+    const onOpenSidebar = vi.fn();
+    const props = createProps({
+      sessionKey: "daily-review-proactivity-test",
+      onOpenSidebar,
+      productProactivityQueue: [
+        {
+          queueItemId: "queue-review-1",
+          candidateId: "candidate-review-1",
+          messageClass: "operator_approved_suggestion_available",
+          boundedDisplayText: "Review the daily operator proactivity item.",
+          candidateSummary: "Daily review should include this must-surface item.",
+          suggestedAction: "Open the inbox detail and approve the message if still useful.",
+          messagePreview: "Should we review the proactivity remediation follow-up today?",
+          expectedUserValue: "Keeps the normal operator loop aware of proactive work.",
+          status: "pending_review",
+          eligibleScope: {
+            environment: "live",
+            userId: "conorlynch",
+            recipientId: "conorlynch",
+            projectId: "openclaw-platform",
+            sessionKey: "daily-review-proactivity-test",
+            operatorId: "operator-conorlynch",
+            allowedMessageClasses: ["operator_approved_suggestion_available"],
+            proofPrerequisiteIds: ["proof-1"],
+            proofPrerequisiteHashes: ["hash-1"],
+          },
+          sourceRefs: [
+            "docs/projects/model-memory/specs/planner-review-artifacts-and-surfacing.md",
+          ],
+          sourceProfileIds: ["curated_repo_doc"],
+          authorityTiers: ["curated_authoritative"],
+          contentHashes: ["content-hash-1"],
+          proofHashes: ["proof-hash-1"],
+          noDarkDataStatus: "pass",
+          staleLabels: [],
+          conflictLabels: [],
+          blockedReasonCodes: [],
+          generatedAt: "2026-04-26T22:00:00.000Z",
+          updatedAt: "2026-04-26T22:00:00.000Z",
+        },
+      ],
+    });
+    render(renderChat(props), container);
+
+    container.querySelector<HTMLButtonElement>(".operator-experience-panel__toggle")?.click();
+    render(renderChat(props), container);
+    const review = container.querySelector(".operator-card--proactivity-review");
+    expect(review).not.toBeNull();
+    expect(review?.textContent).toContain("Daily review / heartbeat proactivity");
+    expect(review?.textContent).toContain("candidate-review-1");
+    expect(review?.textContent).toContain("Grouped lower-priority/background");
+    review?.querySelector<HTMLButtonElement>(".proactivity-review-open")?.click();
+    expect(onOpenSidebar).toHaveBeenCalledWith({ kind: "proactivityInbox" });
+  });
+
   it("renders proactivity as a compact entry point and opens inbox in the side panel", () => {
     const container = document.createElement("div");
     const onOpenSidebar = vi.fn();
