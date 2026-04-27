@@ -3977,6 +3977,10 @@ Decision:
   feedback metadata decide whether a signal is surfaced, downranked, or shown
   only in why-not-shown diagnostics. Feedback remains control-plane metadata,
   not semantic truth.
+- The Slice 61 live behavior is that repeated same-content signals, recurrence
+  beyond threshold, and dismissed/snoozed/ignored/not-useful feedback suppress
+  primary surfacing and create bounded diagnostics instead of adding more inbox
+  noise. Rollback returns to neutral live-signal ranking.
 - Slice 62 upgrades the planning/investigation/drafting handoff contract so
   `Plan this`, `Investigate`, and `Draft next steps` start bounded chat turns
   with goal, evidence, constraints, safety boundary, and expected output shape.

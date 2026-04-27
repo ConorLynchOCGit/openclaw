@@ -12,6 +12,7 @@ import {
 } from "../../../extensions/model-memory/src/runtime/phase2-live-signal-coverage-expansion.js";
 import { buildPhase2PersonalAutoSendProductUxReport } from "../../../extensions/model-memory/src/runtime/phase2-personal-autosend-product-ux.js";
 import { buildPhase2ProactivityInboxReport } from "../../../extensions/model-memory/src/runtime/phase2-proactivity-inbox.js";
+import { buildPhase2ProactivityNoiseBudgetReport } from "../../../extensions/model-memory/src/runtime/phase2-proactivity-signal-noise-budget.js";
 import { buildPhase2ProactivityUxRemediationReport } from "../../../extensions/model-memory/src/runtime/phase2-proactivity-ux-remediation.js";
 import { buildPhase2ProductProactivitySurfacingReport } from "../../../extensions/model-memory/src/runtime/phase2-product-proactivity-surfacing.js";
 import { getLastHeartbeatEvent } from "../../infra/heartbeat-events.js";
@@ -236,7 +237,12 @@ export const modelMemoryProactivityHandlers: GatewayRequestHandlers = {
     const projectId = readString(params.projectId) ?? process.env.OPENCLAW_PROJECT_ID ?? "openclaw";
     try {
       const liveDetectionReport = await buildPhase2LiveProactivityDetectionReport({
-        sources: eventsForScope(projectId, sessionKey),
+        sources: (
+          await buildPhase2ProactivityNoiseBudgetReport({
+            sources: eventsForScope(projectId, sessionKey),
+            env: process.env,
+          })
+        ).eligibleSources,
         env: process.env,
       });
       const report = await buildPhase2ProductProactivitySurfacingReport({
@@ -314,7 +320,12 @@ export const modelMemoryProactivityHandlers: GatewayRequestHandlers = {
       const projectId =
         readString(params.projectId) ?? process.env.OPENCLAW_PROJECT_ID ?? "openclaw";
       const liveDetectionReport = await buildPhase2LiveProactivityDetectionReport({
-        sources: eventsForScope(projectId, sessionKey),
+        sources: (
+          await buildPhase2ProactivityNoiseBudgetReport({
+            sources: eventsForScope(projectId, sessionKey),
+            env: process.env,
+          })
+        ).eligibleSources,
         env: process.env,
       });
       const productSurfacingReport = await buildPhase2ProductProactivitySurfacingReport({
