@@ -1072,21 +1072,36 @@ function buildAssistantPreview(markdown: string) {
   if (!charLimited && !lineLimited) {
     return {
       text: markdown,
+      hiddenText: "",
       truncated: false,
       totalChars: markdown.length,
       totalLines: lines.length,
     };
   }
-  let preview = lineLimited ? lines.slice(0, ASSISTANT_PREVIEW_LINE_LIMIT).join("\n") : markdown;
-  if (preview.length > ASSISTANT_PREVIEW_CHAR_LIMIT) {
-    preview = preview.slice(0, ASSISTANT_PREVIEW_CHAR_LIMIT);
-  }
+  const lineLimitIndex = lineLimited
+    ? indexAfterMarkdownLines(markdown, ASSISTANT_PREVIEW_LINE_LIMIT)
+    : markdown.length;
+  const previewEndIndex = Math.min(lineLimitIndex, ASSISTANT_PREVIEW_CHAR_LIMIT);
+  const preview = markdown.slice(0, previewEndIndex);
   return {
     text: preview.trimEnd(),
+    hiddenText: markdown.slice(previewEndIndex).trimStart(),
     truncated: true,
     totalChars: markdown.length,
     totalLines: lines.length,
   };
+}
+
+function indexAfterMarkdownLines(markdown: string, lineLimit: number): number {
+  let index = 0;
+  for (let lineCount = 0; lineCount < lineLimit; lineCount += 1) {
+    const nextNewline = markdown.indexOf("\n", index);
+    if (nextNewline === -1) {
+      return markdown.length;
+    }
+    index = nextNewline + 1;
+  }
+  return index;
 }
 
 function hasSourceTruncationSignal(message: Record<string, unknown>): boolean {
@@ -1392,9 +1407,12 @@ function renderGroupedMessage(
             ${assistantPreview?.truncated && markdown
               ? html`
                   <details class="chat-full-response">
-                    <summary>Expand full response inline</summary>
-                    <div class="chat-text" dir="${detectTextDirection(markdown)}">
-                      ${unsafeHTML(toSanitizedMarkdownHtml(markdown))}
+                    <summary>Show remaining response inline</summary>
+                    <div
+                      class="chat-text"
+                      dir="${detectTextDirection(assistantPreview.hiddenText)}"
+                    >
+                      ${unsafeHTML(toSanitizedMarkdownHtml(assistantPreview.hiddenText))}
                     </div>
                   </details>
                 `

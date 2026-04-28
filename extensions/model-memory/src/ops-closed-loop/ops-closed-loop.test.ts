@@ -210,6 +210,35 @@ describe("memory ops closed loop", () => {
     expect(hookRecommendations[0]?.category).toBe("hook_health");
   });
 
+  it("does not report clean fixture-safe retrieval observations as live hygiene defects", () => {
+    const cleanInjection = validSignal({
+      signal_id: "signal-clean-injection",
+      severity: "info",
+      related_memory_ids: ["memory-active"],
+      payload: {
+        injected_memory_statuses: [{ memory_id: "memory-active", status: "active" }],
+      },
+    });
+    const cleanDuplicate = validSignal({
+      signal_id: "signal-clean-duplicate",
+      signal_type: "duplicate_hash_observed",
+      severity: "info",
+      consumers: ["dedupe", "reconciliation", "cron_recommendation"],
+      payload: { hash: "hash-clean", duplicate_count: 0, admitted_count: 1 },
+      usage_contract: {
+        used_by: ["dedupe", "reconciliation", "cron_recommendation"],
+        action: "Detect duplicate hashes.",
+      },
+    });
+
+    expect(
+      buildRecommendationsFromSignals({
+        signals: [cleanInjection, cleanDuplicate],
+        nowIso: NOW,
+      }),
+    ).toHaveLength(0);
+  });
+
   it("generates markdown report and latest copy without private content", async () => {
     const signal = validSignal();
     const recommendations = buildRecommendationsFromSignals({ signals: [signal], nowIso: NOW });

@@ -308,7 +308,10 @@ describe("chat view", () => {
     );
 
     expect(container.textContent).toContain("Preview only. Full response preserved");
-    expect(container.querySelector(".chat-full-response")).not.toBeNull();
+    const inlineRemainder = container.querySelector(".chat-full-response");
+    expect(inlineRemainder).not.toBeNull();
+    expect(container.textContent?.match(/Long response line/g)).toHaveLength(120);
+    expect(inlineRemainder?.textContent?.match(/Long response line/g)).toHaveLength(40);
     expect(container.textContent).toContain("FINAL-MARKER");
     expect(container.textContent).toContain("Open full");
     expect(container.textContent).toContain("Copy as markdown");

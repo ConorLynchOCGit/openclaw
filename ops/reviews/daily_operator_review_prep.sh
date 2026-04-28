@@ -146,6 +146,9 @@ write_memory_ops_alias() {
     source_generated_at="$(memory_ops_field generated_at_utc)"
     source_mode="$(memory_ops_field mode)"
     source_label="$(memory_ops_field source)"
+    if [[ "$source_label" == fixture-* ]]; then
+      source_status="fixture-only"
+    fi
   fi
 
   {
@@ -184,13 +187,22 @@ write_memory_ops_alias() {
 
 memory_ops_report_note() {
   if [[ -f "$MEMORY_OPS_REPORT_HOST" ]]; then
-    printf 'resource_id: %s\nalias_resource_id: %s\ncanonical_owner: memory_ops\nproducer_type: repo_owned_report_artifact\nstandalone_host_cron_lane: retired\nlatest_path_host: %s\nlatest_path_runtime: %s\nalias_path_host: %s\nalias_path_runtime: %s\nstatus: present\n' \
+    local source_label
+    local evidence_scope
+    source_label="$(memory_ops_field source)"
+    evidence_scope="runtime_or_operator_evidence"
+    if [[ "$source_label" == fixture-* ]]; then
+      evidence_scope="fixture_only_not_runtime_evidence"
+    fi
+    printf 'resource_id: %s\nalias_resource_id: %s\ncanonical_owner: memory_ops\nproducer_type: repo_owned_report_artifact\nstandalone_host_cron_lane: retired\nlatest_path_host: %s\nlatest_path_runtime: %s\nalias_path_host: %s\nalias_path_runtime: %s\nstatus: present\nevidence_scope: %s\nsource_label: %s\n' \
       "$MEMORY_OPS_RESOURCE_ID" \
       "$MEMORY_OPS_ALIAS_RESOURCE_ID" \
       "$MEMORY_OPS_REPORT_HOST" \
       "$MEMORY_OPS_REPORT_RUNTIME" \
       "$MEMORY_OPS_ALIAS_HOST" \
-      "$MEMORY_OPS_ALIAS_RUNTIME"
+      "$MEMORY_OPS_ALIAS_RUNTIME" \
+      "$evidence_scope" \
+      "${source_label:-unknown}"
     sed -n '1,120p' "$MEMORY_OPS_REPORT_HOST"
   else
     printf 'resource_id: %s\nalias_resource_id: %s\ncanonical_owner: memory_ops\nproducer_type: repo_owned_report_artifact\nstandalone_host_cron_lane: retired\nlatest_path_host: %s\nlatest_path_runtime: %s\nalias_path_host: %s\nalias_path_runtime: %s\nstatus: missing\n' \

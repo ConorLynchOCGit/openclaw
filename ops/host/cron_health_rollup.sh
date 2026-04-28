@@ -33,6 +33,7 @@ done
 HOST_CRONTAB="$HOST_CRONTAB" \
 NATIVE_CRONS_JSON="$NATIVE_CRONS_JSON" \
 NATIVE_RUNS_DIR="$NATIVE_RUNS_DIR" \
+WORKSPACE="$WORKSPACE" \
 OUT="$OUT" \
 DATE_ID="$DATE_ID" \
 python3 - <<'PY'
@@ -44,6 +45,7 @@ from pathlib import Path
 
 out = Path(os.environ["OUT"])
 date_id = os.environ["DATE_ID"]
+workspace = Path(os.environ["WORKSPACE"])
 host_crontab = os.environ["HOST_CRONTAB"]
 host_active_crontab = "\n".join(
     line
@@ -52,6 +54,7 @@ host_active_crontab = "\n".join(
 )
 native_crons = json.loads(os.environ["NATIVE_CRONS_JSON"] or "{}").get("jobs", [])
 runs_dir = Path(os.environ["NATIVE_RUNS_DIR"])
+week_id = datetime.now(timezone.utc).strftime("%G-W%V")
 
 HOST_JOBS = [
     {
@@ -88,6 +91,7 @@ HOST_JOBS = [
         "schedule": "Daily 08:33 America/Nassau",
         "log": "/root/backups/cron-logs/memory_soak_db_report.log",
         "delivery": "not-applicable",
+        "retired_by": "VPS consolidation; host crontab lane is disabled and archived logs are not current health evidence",
     },
     {
         "name": "memory_performance_report.sh",
@@ -95,6 +99,7 @@ HOST_JOBS = [
         "schedule": "Daily 08:37 America/Nassau",
         "log": "/root/backups/cron-logs/memory_performance_report.log",
         "delivery": "not-applicable",
+        "retired_by": "VPS consolidation; host crontab lane is disabled and archived logs are not current health evidence",
     },
     {
         "name": "daily_memory_evidence_rollup.sh",
@@ -102,6 +107,7 @@ HOST_JOBS = [
         "schedule": "Daily 08:42 America/Nassau",
         "log": "/root/backups/cron-logs/daily_memory_evidence_rollup.log",
         "delivery": "not-applicable",
+        "retired_by": "daily operator review prep now generates the current daily memory evidence artifact",
     },
     {
         "name": "daily_operator_review_prep.sh",
@@ -116,6 +122,8 @@ HOST_JOBS = [
         "schedule": "Daily 08:47 America/Nassau",
         "log": "/root/backups/cron-logs/daily_operator_review_sync.log",
         "delivery": "not-applicable",
+        "artifact": "archives/daily_operator_reviews/{date_id}.md",
+        "latest_artifact_glob": "archives/daily_operator_reviews/*.md",
     },
     {
         "name": "n8n_inactive_workflow_review.sh",
@@ -137,6 +145,7 @@ HOST_JOBS = [
         "schedule": "Monday 09:21 America/Nassau",
         "log": "/root/backups/cron-logs/weekly_operator_review_sync.log",
         "delivery": "not-applicable",
+        "artifact": "archives/weekly_operator_reviews/{week_id}.md",
     },
     {
         "name": "weekly_operator_review_telegram_bridge.sh",
@@ -217,6 +226,44 @@ def host_log_info(path_str: str):
         "note": f"log mtime {mtime}; last line: {last_line or 'none'}",
     }
 
+def host_artifact_info(job):
+    artifact_template = job.get("artifact")
+    if not artifact_template:
+        return None
+    artifact_path = workspace / artifact_template.format(date_id=date_id, week_id=week_id)
+    artifact_is_current = True
+    if not artifact_path.exists():
+        latest_glob = job.get("latest_artifact_glob")
+        if not latest_glob:
+            return None
+        candidates = sorted(
+            path
+            for path in workspace.glob(latest_glob)
+            if path.is_file() and path.stat().st_size > 0 and path.stem <= date_id
+        )
+        if not candidates:
+            return None
+        artifact_path = candidates[-1]
+        artifact_is_current = False
+    mtime = datetime.fromtimestamp(artifact_path.stat().st_mtime, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+    relative_path = artifact_path.relative_to(workspace)
+    if artifact_path.stat().st_size <= 0:
+        return {
+            "last_run_status": "problem",
+            "last_successful_run": "none",
+            "consecutive_errors": "unknown-from-log-only",
+            "last_delivery_outcome": "not-applicable",
+            "note": f"expected artifact is empty: {relative_path}",
+        }
+    currency_note = "artifact present" if artifact_is_current else "latest prior artifact present"
+    return {
+        "last_run_status": "ok",
+        "last_successful_run": mtime,
+        "consecutive_errors": "unknown-from-log-only",
+        "last_delivery_outcome": "not-applicable",
+        "note": f"{currency_note}: {relative_path} ({artifact_path.stat().st_size} bytes, mtime {mtime})",
+    }
+
 def native_runs(job_id: str):
     file_name = f"{job_id}.json"
     path = runs_dir / file_name
@@ -233,10 +280,31 @@ def last_ok_run(entries):
 
 host_rows = []
 for job in HOST_JOBS:
-    info = host_log_info(job["log"])
+    enabled = host_enabled(job["pattern"])
+    if enabled:
+        info = host_artifact_info(job) or host_log_info(job["log"])
+        enabled_label = "enabled"
+    elif job.get("retired_by"):
+        info = {
+            "last_run_status": "retired",
+            "last_successful_run": "none",
+            "consecutive_errors": "not-applicable",
+            "last_delivery_outcome": "not-applicable",
+            "note": job["retired_by"],
+        }
+        enabled_label = "retired"
+    else:
+        info = {
+            "last_run_status": "disabled-or-not-installed",
+            "last_successful_run": "none",
+            "consecutive_errors": "not-applicable",
+            "last_delivery_outcome": "not-applicable",
+            "note": "not present in active host crontab; archived logs ignored",
+        }
+        enabled_label = "disabled-or-not-installed"
     host_rows.append({
         "name": job["name"],
-        "enabled": "enabled" if host_enabled(job["pattern"]) else "disabled-or-not-installed",
+        "enabled": enabled_label,
         "schedule": job["schedule"],
         "last_run_status": info["last_run_status"],
         "consecutive_errors": info["consecutive_errors"],

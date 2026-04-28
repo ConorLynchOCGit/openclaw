@@ -33,13 +33,13 @@ function fixtureSignals(api, nowIso) {
       signal_type: "memory_injection_observed",
       observed_at: nowIso,
       session_id: "fixture-session",
-      related_memory_ids: ["mem-superseded", "mem-conflicted"],
-      severity: "warning",
+      related_memory_ids: ["mem-active-001", "mem-active-002"],
+      severity: "info",
       consumers: ["retrieval_quality", "conflict_resolution", "cron_recommendation"],
       payload: {
         injected_memory_statuses: [
-          { memory_id: "mem-superseded", status: "superseded" },
-          { memory_id: "mem-conflicted", status: "conflicted", conflict_marked: false },
+          { memory_id: "mem-active-001", status: "active" },
+          { memory_id: "mem-active-002", status: "active" },
         ],
         prompt_sha256: "fixture-prompt-hash",
       },
@@ -64,8 +64,8 @@ function fixtureSignals(api, nowIso) {
       consumers: ["dedupe", "reconciliation", "cron_recommendation"],
       payload: {
         hash: "fixture-duplicate-hash",
-        duplicate_count: 2,
-        admitted_count: 2,
+        duplicate_count: 0,
+        admitted_count: 1,
       },
       retention: { policy: "aggregate_only", ttl_seconds: 30 * 24 * 60 * 60 },
       privacy: {

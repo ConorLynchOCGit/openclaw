@@ -2,14 +2,20 @@
 set -euo pipefail
 
 WORKSPACE="${OPENCLAW_WORKSPACE_DIR:-/root/.openclaw/workspace}"
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 DATE_ID="${1:-$(date +%F)}"
 ARCHIVE_DIR="$WORKSPACE/archives/daily_memory_evidence"
 MEMORY_DIR="$WORKSPACE/memory"
 PERFORMANCE_DIR="$WORKSPACE/archives/memory_performance_reports"
 SOAK_DIR="$WORKSPACE/archives/memory_soak_db_checks"
 OUT="$ARCHIVE_DIR/${DATE_ID}.md"
+DB_REFRESH_SCRIPT="$REPO_ROOT/ops/reviews/memory_db_evidence_refresh.sh"
 
 mkdir -p "$ARCHIVE_DIR"
+
+if [[ ( ! -s "$PERFORMANCE_DIR/${DATE_ID}.md" || ! -s "$SOAK_DIR/${DATE_ID}.md" ) && -x "$DB_REFRESH_SCRIPT" ]]; then
+  "$DB_REFRESH_SCRIPT" "$DATE_ID" >/dev/null 2>&1 || true
+fi
 
 DATE_ID="$DATE_ID" \
 WORKSPACE="$WORKSPACE" \

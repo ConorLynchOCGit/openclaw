@@ -30,10 +30,12 @@ N8N_CONTAINER=webhook-gateway-n8n-1
 
 mkdir -p "$GENERATED_DIR" "$ARCHIVE_DIR" "$CRON_HEALTH_DIR" "$INACTIVE_WORKFLOW_DIR"
 "$OPS_DIR/daily_memory_evidence_rollup.sh" "$TODAY" >/dev/null
-touch "$ARTIFACT_HOST"
 touch "$CRON_HEALTH_HOST"
 touch "$INACTIVE_WORKFLOW_HOST"
-chown ubuntu:ubuntu "$ARCHIVE_DIR" "$ARTIFACT_HOST" "$CRON_HEALTH_DIR" "$CRON_HEALTH_HOST" "$INACTIVE_WORKFLOW_DIR" "$INACTIVE_WORKFLOW_HOST"
+chown ubuntu:ubuntu "$ARCHIVE_DIR" "$CRON_HEALTH_DIR" "$CRON_HEALTH_HOST" "$INACTIVE_WORKFLOW_DIR" "$INACTIVE_WORKFLOW_HOST"
+if [[ -f "$ARTIFACT_HOST" ]]; then
+  chown ubuntu:ubuntu "$ARTIFACT_HOST"
+fi
 
 get_db_var() {
   docker exec "$N8N_CONTAINER" sh -lc "printf %s \"\${$1}\""
@@ -66,7 +68,12 @@ DB_LOG="$(sed -n '1,120p' /root/backups/cron-logs/db_probe.log 2>/dev/null || tr
 GITHUB_REPOS_WEEK="$(run_sql "select repository_full_name || '|' || count(*)::text || '|' || max(received_at)::text from inbound_events where source = 'github' and signature_valid = true and repository_full_name = any (array['openclaw/openclaw']) and received_at >= now() - interval '7 days' group by repository_full_name order by max(received_at) desc;")"
 GITHUB_NONCANONICAL_REPOS="$(run_sql "select repository_full_name || '|' || count(*)::text || '|' || max(received_at)::text from inbound_events where source = 'github' and signature_valid = true and repository_full_name <> 'openclaw/openclaw' group by repository_full_name order by max(received_at) desc;")"
 INGRESS_COUNTS="$(run_sql "select 'github_inbound_events' || '|' || count(*) || '|' || coalesce(max(received_at)::text,'none') from inbound_events union all select 'intake_events' || '|' || count(*) || '|' || coalesce(max(received_at)::text,'none') from intake_events;")"
-DURABILITY_CAPTURE="$(find "$WORKSPACE/projects/live_app_patches" -maxdepth 2 -mindepth 1 -type d | sort || true)"
+DURABILITY_CAPTURE="$(
+  {
+    find "$REPO_ROOT/docs/projects/live-app-patches" -maxdepth 2 -mindepth 1 -type d 2>/dev/null
+    find "$WORKSPACE/archives" -maxdepth 4 -mindepth 2 -path '*/live_app_patches/*' -type d 2>/dev/null
+  } | sort -u
+)"
 OPENCLAW_RUNBOOK_SNIPPET="$(sed -n '1,200p' "$REPO_ROOT/docs/projects/deployment-topology/runbooks/openclaw-runtime-operations.md" 2>/dev/null || true)"
 WEBHOOK_RUNBOOK_SNIPPET="$(sed -n '1,200p' "$REPO_ROOT/docs/projects/deployment-topology/runbooks/webhook-gateway-operations.md" 2>/dev/null || true)"
 DEPLOYMENT_STATUS_SNIPPET="$(sed -n '1,220p' "$REPO_ROOT/docs/projects/deployment-topology/STATUS.md" 2>/dev/null || true)"
