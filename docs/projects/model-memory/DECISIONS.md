@@ -5,6 +5,69 @@ title: "Model Memory Decisions"
 
 # Model Memory Decisions
 
+## 2026-04-27 - Proactivity becomes an ambient operating loop
+
+Decision:
+
+- OpenClaw proactivity is now an ambient operating loop, not just an
+  inbox/queue layer
+- heartbeat becomes an operating surface, not merely a prompt/check surface
+- reverse prompting is first-class product behavior
+- durable growth loops are first-class product behavior:
+  - curiosity loop
+  - repeated-pattern loop
+  - outcome follow-up loop
+  - delight/surprise loop
+  - self-healing loop
+- compaction/danger-zone recovery for proactivity is first-class product
+  behavior
+- bounded autonomous internal maintenance work is allowed in
+  isolated/background paths when it produces internal planning,
+  investigation, follow-up, continuity, or repair artifacts only
+- self-healing diagnostics and repair plans are first-class product behavior
+- approval boundaries remain mandatory for file edits, actions, and outbound
+  sends
+- provenance, no-dark-data enforcement, boundedness, deterministic ids/hashes,
+  and rollback-safe behavior remain mandatory
+- usefulness in normal workflow is the success gate, not proof-only plumbing
+
+Reasoning:
+
+- same-session assistant-final capture and surfacing fixed the baseline live
+  failure, but the system still feels like surfaced queue infrastructure rather
+  than an ambient proactive partner
+- the remaining gap with `halthelobster/proactive-agent` is driven by missing
+  reverse prompting, durable growth loops, continuity, bounded background
+  maintenance, and self-healing, not by one more inbox or heartbeat formatting
+  pass
+
+## 2026-04-27 - Same-session proactivity must collapse duplicates and strip plumbing from surfaced copy
+
+Decision:
+
+- same-session assistant-derived opportunities must be pruned or collapsed
+  deterministically before they reach primary actionable surfaces
+- older duplicate assistant-derived items must not accumulate indefinitely in
+  inbox, heartbeat, or inline chat surfacing
+- primary user-facing fields such as title, why now, problem, and next step
+  must exclude system text, sender metadata, timestamps, source refs, and
+  control-plane scaffolding
+- provenance remains available in secondary details only
+- heartbeat must prioritize useful user-facing proactive work and may fall back
+  to `HEARTBEAT_OK` if only polluted/control-plane candidates remain
+- inline follow-up and heartbeat surfaces must stay visually coherent with the
+  bounded chat layout
+- success is measured by live usefulness and readability, not by merely
+  surfacing more items
+
+Reasoning:
+
+- the live `agent:main:main` path now generates same-session opportunities, but
+  the resulting UX still feels like queue/log replay because older same-session
+  items keep stacking and primary fields still leak runtime/plumbing text
+- heartbeat surfacing is only useful if ranking and displayed copy both prefer
+  bounded user-facing work rather than internal system chatter
+
 ## 2026-04-27 - Same-session proactivity must capture only substantive assistant finals
 
 Decision:

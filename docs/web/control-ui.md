@@ -127,6 +127,16 @@ Cron jobs panel notes:
 - Re-sending with the same `idempotencyKey` returns `{ status: "in_flight" }` while running, and `{ status: "ok" }` after completion.
 - `chat.history` responses are size-bounded for UI safety. When transcript entries are too large, Gateway may truncate long text fields, omit heavy metadata blocks, and replace oversized messages with a placeholder (`[chat.history omitted: message too large]`).
 - `chat.history` also strips display-only inline directive tags from visible assistant text (for example `[[reply_to_*]]` and `[[audio_as_voice]]`), plain-text tool-call XML payloads (including `<tool_call>...</tool_call>`, `<function_call>...</function_call>`, `<tool_calls>...</tool_calls>`, `<function_calls>...</function_calls>`, and truncated tool-call blocks), and leaked ASCII/full-width model control tokens, and omits assistant entries whose whole visible text is only the exact silent token `NO_REPLY` / `no_reply`.
+- Proactivity surfaces in Chat apply a second user-facing cleanup layer:
+  same-session duplicate assistant-derived items are collapsed before inline or
+  heartbeat surfacing, primary card text strips control-plane/system boilerplate,
+  and provenance/details remain behind disclosure instead of inside the primary
+  prose fields.
+- Proactivity is evolving into an ambient operating loop. Heartbeat uses hidden
+  structured context for top opportunities, reverse prompts, follow-up items,
+  draft-ready signals, and self-healing candidates, while the visible heartbeat
+  reply stays user-facing and strips timestamps, raw source refs, and system
+  instructions from the primary body.
 - `chat.inject` appends an assistant note to the session transcript and broadcasts a `chat` event for UI-only updates (no agent run, no channel delivery).
 - The chat header model and thinking pickers patch the active session immediately through `sessions.patch`; they are persistent session overrides, not one-turn-only send options.
 - Stop:

@@ -61,6 +61,10 @@ The proactive planner should notice when the system ought to:
 - propose a skill or tool candidate
 - propose a workflow candidate
 - queue operator-visible review items
+- ask a reverse prompt that would unlock useful proactive work
+- reopen a stale or aging outcome
+- prepare a bounded delight/surprise candidate
+- prepare a self-healing diagnosis or repair packet
 
 It must not become an unsandboxed autonomous actor.
 
@@ -153,10 +157,51 @@ Primary cards should keep one concise next-step line. Supporting detail may be
 expanded, but `Suggested action` and `Proposed next step` should not both be
 prominent when they restate the same planning handoff.
 
+Primary user-facing fields must be cleaned before surfacing:
+
+- no system prompt scaffolding
+- no sender metadata JSON
+- no timestamps or compaction/control-plane preambles
+- no inline `Source: chat://...` prose
+
+If a candidate cannot produce clean user-facing copy after bounded
+normalization, it must be suppressed from primary actionable surfaces.
+
+Heartbeat may use hidden structured context to produce the visible review. The
+structured context may contain top opportunities, reverse prompts, stale
+outcomes, delight candidates, self-healing candidates, draft-ready signals,
+and bounded provenance. The visible response must stay user-facing and must not
+show timestamps, raw source refs, or system text in the primary body.
+
 Optional later surfaces:
 
 - dedicated operator-review artifact pack
 - explicit review inbox or admin surface
+
+Same-session assistant-derived planner opportunities must also collapse
+deterministically when newer bounded variants supersede older wording for the
+same active thread of work. Heartbeat, inbox, and inline surfacing should show
+the newest canonical item, not a historical tail of near-duplicates.
+
+## Ambient operating loop
+
+The planner is now part of an ambient operating loop rather than a
+queue-first-only system.
+
+Required behaviors:
+
+- reverse prompting from live work, recurring patterns, unresolved decisions,
+  and active roadmap/workstream state
+- persistent growth loops for curiosity, repeated patterns, outcomes, delight,
+  and self-healing
+- bounded working-state capture before compaction-risk boundaries
+- bounded autonomous internal maintenance work in isolated/background paths
+- self-healing diagnosis and repair plan generation for repeated proactivity
+  failures
+
+These behaviors may automatically create internal planning, investigation,
+follow-up, continuity, and repair artifacts. They must not send externally,
+edit files, or execute actions without approval.
 
 ## Work opportunity model
 

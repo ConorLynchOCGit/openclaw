@@ -49,6 +49,17 @@ Phase 2 currently assumes:
   maintenance reports
 - user-visible Phase 2 behavior should ship shadow-first and become default
   only after benchmark, eval, no-dark-data, and trace artifacts are green
+- same-session assistant-derived opportunities must collapse deterministically
+  when they represent the same active thread of work, so heartbeat, inbox, and
+  inline cards remain ambient instead of replaying session history
+- primary user-facing proactivity fields must strip system/control-plane text,
+  sender metadata, timestamps, and raw source refs; provenance remains a
+  secondary disclosure layer
+- live usefulness and readability of surfaced proactivity remain the acceptance
+  gate after authoritative capture correctness
+- the next proactivity phase is an operating-loop leap: reverse prompting,
+  persistent growth loops, compaction continuity, bounded background
+  maintenance, and self-healing become primary product behaviors
 
 Before the larger graph/capsule waves proceed, the project treated the
 Memory Retrieval Runtime, MMV2 capture coverage, closed-loop operational
@@ -314,6 +325,11 @@ Includes:
 - planner review artifacts and surfacing
 - `must_surface` / `context_surface` / `background_only` contract
 - surfacing into turns, heartbeat, and operator-review lanes
+- reverse prompting engine
+- persistent growth-loop state
+- compaction/danger-zone proactivity recovery
+- bounded autonomous internal maintenance outputs
+- self-healing diagnosis and repair proposals
 
 Validation gate:
 
@@ -326,6 +342,12 @@ Validation gate:
   send-like transcript injection
 - history views derive from real state transitions, not synthetic placeholder
   rows
+- reverse prompts, follow-up loops, and self-healing candidates appear from
+  real runtime evidence in ordinary workflow
+- compaction/reload preserves enough proactive continuity to rebuild useful
+  heartbeat and chat surfaces
+- bounded autonomous maintenance outputs remain internal-only and do not send,
+  edit files, or execute actions
 
 ### Wave 5: skill and tool synthesis
 

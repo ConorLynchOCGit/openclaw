@@ -34,6 +34,15 @@ state when safe, and create review candidates. Heartbeat should surface
 actionable deltas. The daily sweep should consolidate stale or repeated
 findings.
 
+The loop also serves as a bounded ambient proactivity generator:
+
+- refresh growth-loop state
+- refresh outcome follow-ups
+- refresh reverse-prompt candidates
+- refresh delight/surprise candidates
+- refresh self-healing diagnostics and repair packets
+- refresh bounded compaction-recovery / working-state artifacts
+
 ## Allowed Automatic Actions
 
 The loop may automatically perform reversible derived work:
@@ -48,6 +57,10 @@ The loop may automatically perform reversible derived work:
 - rotate or prune runtime-state artifacts under retention policy
 
 These actions do not mutate canonical MMV2 semantic truth.
+
+Bounded autonomous internal maintenance work may run in isolated/background
+paths when it only produces internal artifacts for planning, investigation,
+follow-up, repair, or continuity.
 
 ## Review-Gated Actions
 
@@ -143,6 +156,10 @@ generator-first proactivity reset:
   follow-up conditions are met
 - it may help retire obsolete opportunities when later maintenance/docs state
   proves the original opportunity was resolved or superseded
+- it may maintain persistent growth-loop state and compaction-recovery state so
+  proactivity survives refresh/restart and context loss better
+- it may emit self-healing candidates when repeated proactivity/runtime
+  failures recur
 
 It still must not execute actions, edit files, send outbound messages, or
 persist raw prompts, full transcripts, raw tool logs, secrets, or private

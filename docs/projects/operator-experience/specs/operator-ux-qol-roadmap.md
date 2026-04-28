@@ -223,6 +223,11 @@ Must show:
   Diagnostics view
 - one canonical state per work item across inbox, heartbeat, contextual
   surfacing, and history
+- same-session duplicates must collapse before they crowd actionable surfaces
+- primary proactivity copy must read like user-facing work, not like system
+  telemetry or control-plane scaffolding
+- inline follow-up and heartbeat cards must follow the same bounded width and
+  hierarchy rhythm as the assistant transcript cards
 - no duplicate `Suggested action` / `Proposed next step` copy in the primary
   card when the item is a planning handoff
 - `Plan this` behaves as a pure handoff action, not a send-like action
@@ -233,6 +238,19 @@ Make proactive memory part of the normal operating loop rather than a hidden
 diagnostic card.
 
 Must show:
+
+- a clean user-facing “What would help this user today?” briefing generated
+  from hidden structured context rather than pre-rendered system text
+- distinct surface treatment for:
+  - top opportunities
+  - reverse prompts
+  - draft-ready items
+  - follow-up / stale-outcome nudges
+  - self-healing candidates
+- supporting provenance/evidence behind disclosure rather than in the primary
+  body
+- bounded cards that match the chat layout rhythm instead of dashboard or
+  debug-card sprawl
 
 - visible “What would help this user today?” section in the Daily Operator
   Review / Heartbeat location

@@ -64,6 +64,13 @@ when top proactive work opportunities exist. Each top item should render as a
 concrete plan card with the same candidate/work item id used by the inbox and
 chat contextual card.
 
+Heartbeat is now an operating surface. It may receive hidden structured context
+that includes top opportunities, reverse prompts, stale outcomes,
+delight/surprise candidates, self-healing candidates, and draft-ready items.
+The user-visible reply must be model-authored and user-facing. Structured
+evidence, timestamps, source refs, and system text remain secondary details,
+not primary body prose.
+
 Heartbeat may surface:
 
 - skill candidates
@@ -154,6 +161,8 @@ primary chat workspace remains preserved:
   valid UX model
 - the primary card keeps one concise next-step line and moves redundant detail
   into disclosure
+- primary card copy must strip control-plane/system phrasing, metadata JSON,
+  timestamps, and raw source-ref prose; provenance belongs in details only
 
 ## Live generation gate
 
@@ -243,3 +252,12 @@ surfacing.
   when no bounded opportunity exists.
 - The same canonical item id must be preserved across inline chat surfacing,
   inbox, heartbeat, contextual cards, and handoff.
+- Inline and heartbeat cards must remain visually coherent with the bounded
+  assistant transcript layout; they should not sprawl full-width or read like
+  diagnostics dumps.
+- Older same-session assistant-derived duplicates must collapse into the newest
+  canonical item where deterministic title/next-step lineage shows the same
+  active thread of work.
+- Reverse prompts must render distinctly from ordinary work items so the user
+  can tell the difference between “do this next” and “here is a useful
+  question or angle you have not asked for yet”.
