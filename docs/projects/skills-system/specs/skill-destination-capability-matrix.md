@@ -21,6 +21,15 @@ Milestone 1 defines the contract only.
 
 Milestone 2 and Milestone 3 should enforce this matrix in code.
 
+Milestone 3 enforcement scope:
+
+- draft package generation may write only to the allowed workspace-local draft
+  targets
+- no automatic write path may target repo-bundled, machine-wide shared, plugin,
+  or Codex-global skill roots in this milestone
+- workspace-local draft packages must remain review-only and must not silently
+  become promoted active skills
+
 ## Capability dimensions
 
 Each destination must declare:

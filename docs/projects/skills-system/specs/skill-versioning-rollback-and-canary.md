@@ -20,6 +20,13 @@ and rollback behavior.
 - destination write rules remain path-specific; versioning does not override
   destination authority
 
+Milestone 3 draft rule:
+
+- workspace-local draft packages are isolated package paths, not promoted
+  runtime enablement
+- each draft must record a bounded rollback plan that removes or disables the
+  draft package only
+
 ## Registry state
 
 The platform should track at least:

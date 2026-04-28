@@ -30,6 +30,7 @@ Required linked ids:
 - `proactivityOpportunityId`
 - optional `skillPackageId`
 - optional `installOrCanaryId`
+- optional `skillifierReportId`
 
 The same canonical ids must remain stable across surfacing, drafting, canary,
 promotion, disable, and rollback flows.
@@ -41,6 +42,14 @@ Milestone 2 runtime rule:
   same live opportunity
 - repeated same-intent work must update the existing candidate instead of
   creating a second actionable queue row
+
+Milestone 3 runtime rule:
+
+- Skillifier MVP must reuse the same canonical `skillCandidateId`
+- draft-ready state must surface through the existing proactivity queue,
+  heartbeat, inbox, and handoff flows
+- `skillPackageId` and `skillifierReportId` may appear as secondary linked ids,
+  but they must not replace the candidate as the primary surface identity
 
 ## Required statuses
 
@@ -65,3 +74,6 @@ Milestone 2 runtime rule:
 - static seeded placeholders do not count as live skill opportunities
 - destination capability policy may inform install-target metadata, but
   Milestone 2 does not broadly write skill packages into live destinations
+- Milestone 3 may write bounded draft packages only into explicitly allowed
+  workspace-local draft targets; it still must not broadly install or promote
+  skills

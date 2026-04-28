@@ -32,6 +32,14 @@ both OpenClaw and Codex.
 - destination writes must respect the
   [Skill Destination Capability Matrix](/projects/skills-system/specs/skill-destination-capability-matrix)
 
+Milestone 3 draft rule:
+
+- the first generated package is a bounded draft package only
+- Milestone 3 writes only to allowed workspace-local draft targets
+- Codex packaging and broader cross-runtime install remain later milestones
+- draft package metadata must record why the selected target was allowed and
+  why broader runtime targets were not used
+
 ## Non-goals
 
 - no forked skill logic by runtime unless a real compatibility boundary exists

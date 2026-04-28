@@ -120,6 +120,15 @@ Milestone 2 runtime gate:
 - primary user-facing copy remains bounded and concise; evidence and
   provenance stay secondary
 
+Milestone 3 runtime gate:
+
+- a live `skill_candidate` may gain one linked `skillPackageId` and one linked
+  `skillifierReportId`
+- draft-ready state must remain visible through the same inline, heartbeat,
+  inbox, and handoff surfaces
+- draft packages remain bounded review artifacts, not installed/promoted skills
+- the draft target must respect the destination capability matrix
+
 ## Dedupe and expiry
 
 Planner candidates should dedupe by stable candidate id, target id, candidate

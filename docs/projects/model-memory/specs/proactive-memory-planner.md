@@ -51,6 +51,10 @@ Remaining implementation details:
   first-class proactivity opportunity kind with bounded distilled evidence,
   deterministic dedupe, and shared canonical ids across inline, heartbeat,
   inbox, and handoff
+- Skillifier MVP is the second runtime implementation of that rule: it consumes
+  canonical `skill_candidate` ids, writes bounded review-only draft packages to
+  allowed workspace-local draft targets, and surfaces draft-ready state through
+  the same proactivity ids and surfaces
 - maintenance mechanics are owned by
   [Memory Maintenance Loop](/projects/model-memory/specs/memory-maintenance-loop)
 

@@ -49,15 +49,32 @@ Milestone 2 acceptance details:
 
 ## Milestone 3 - Skillifier MVP scaffold/check/report
 
-- Objective: generate portable skill drafts with provenance, tests, eval
-  stubs, and rollout metadata.
-- Scope: scaffold/check/report only.
+- Objective: convert a canonical `skill_candidate` into one bounded draft
+  package with one `SKILL.md`, one deterministic check report, one provenance
+  report, one rollback plan, and one stable `skillPackageId`.
+- Scope: scaffold/check/report only; no install or promotion.
 - Also includes: code-level enforcement of the destination capability matrix for
   draft/install target selection.
-- Non-goals: no full automation ladder yet.
-- Proof: one candidate can produce a bounded skill package draft and checklist.
-- Safety gate: artifact generation only; no live enablement.
-- User-facing behavior: "skillify this" becomes a real bounded workflow.
+- Non-goals: no full automation ladder yet; no broad installer flow; no
+  Skills Studio UI.
+- Proof: one live `skill_candidate` can produce one bounded skill package
+  draft and one deterministic report without creating a parallel review queue.
+- Safety gate: artifact generation only; no live enablement; no forbidden
+  destination writes.
+- User-facing behavior: a live skill candidate can become draft-ready inside
+  the existing proactivity workflow.
+
+Milestone 3 acceptance details:
+
+- Skillifier MVP consumes canonical `skill_candidate` records
+- draft skill packages are bounded draft artifacts, not installed or promoted
+  skills
+- one canonical `skillPackageId` links candidate, draft package, and reports
+- scaffold generation uses bounded distilled evidence only
+- draft generation respects the destination capability matrix
+- default draft targets are limited and explicit
+- `skills/<name>/` remains branch/worktree-only, never silent `main` mutation
+- live usefulness and draft reviewability are the success gate
 
 ## Milestone 4 - Skill decisioning/compliance eval harness
 

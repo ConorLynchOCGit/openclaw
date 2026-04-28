@@ -7,8 +7,34 @@ title: "Skillifier Contract"
 
 ## Objective
 
-Define the future OpenClaw Skillifier inspired by GBrain and adapted to
+Define the OpenClaw Skillifier contract inspired by GBrain and adapted to
 OpenClaw/Codex cross-runtime needs.
+
+Milestone 3 runtime focus:
+
+- consume canonical `skill_candidate` records
+- generate bounded draft packages only
+- produce deterministic draft checks and reports
+- preserve one canonical `skillPackageId`
+- respect destination capability authority
+- stay non-installing and non-promoting
+
+## Milestone 3 draft package contract
+
+Each Skillifier MVP draft must produce:
+
+- one canonical `skillPackageId`
+- one draft package path
+- one generated `SKILL.md`
+- one package metadata file
+- one provenance report
+- one rollback plan
+- one deterministic check report
+- optional placeholder support files only when explicitly justified by the
+  bounded candidate evidence
+
+The originating `skillCandidateId` and linked `proactivityOpportunityId` must
+remain attached to the draft package and report artifacts.
 
 ## Outputs
 
@@ -27,6 +53,40 @@ The Skillifier should eventually produce:
 - install plan
 - rollback plan
 - provenance report
+
+Milestone 3 required outputs are narrower:
+
+- `SKILL.md`
+- package metadata
+- provenance report
+- rollback plan
+- deterministic check report
+
+Milestone 3 does not require executable scripts, eval fixtures, routing
+fixtures, or production install metadata unless a later milestone adds them.
+
+## Milestone 3 `SKILL.md` scaffold rules
+
+Generated `SKILL.md` must stay bounded and reviewable.
+
+Required sections:
+
+- title
+- purpose
+- when to use
+- when not to use
+- safety boundaries
+- expected inputs
+- expected outputs
+- workflow outline
+- success checks
+- open questions
+- provenance summary
+
+The scaffold must not fabricate deep implementation details that are not
+supported by the bounded candidate evidence.
+
+The scaffold must not include raw transcript snippets or raw tool logs.
 
 ## Properly skilled checklist
 
@@ -54,3 +114,5 @@ exist:
 - do not package raw session content into examples
 - make provenance and rollback first-class outputs, not afterthoughts
 - preserve one source-of-truth package even when adapters differ by runtime
+- keep Milestone 3 packages in review-only posture: non-promoted, bounded, and
+  destination-compliant

@@ -7,6 +7,59 @@ title: "Skills System Decisions"
 
 ## Accepted decisions
 
+### 2026-04-28 - Skillifier MVP drafts must stay bounded, linked, and non-installing
+
+Reason:
+
+- Milestone 2 already produces canonical `skill_candidate` records with stable
+  ids across proactivity surfaces
+- the next runtime gap is not candidate detection; it is the lack of one
+  explicit flow that turns a candidate into a reviewable skill draft
+- destination authority becomes operationally meaningful at the moment draft
+  files are written
+
+Decision:
+
+- Skillifier MVP consumes canonical `skill_candidate` records and must not
+  invent a parallel candidate-to-skill path
+- one canonical `skillPackageId` must link the originating candidate, the
+  generated draft package, the provenance report, the rollback plan, and the
+  deterministic check report
+- draft packages are bounded draft artifacts, not installed or promoted skills
+- scaffold generation may use bounded distilled evidence only; raw prompts,
+  full transcripts, raw tool logs, secrets, and private phrases remain
+  forbidden
+- Milestone 3 default draft targets are limited to:
+  - `<workspace>/skills/<name>/`
+  - optional scoped experiment path `<workspace>/.agents/skills/<name>/`
+- `skills/<name>/` remains repo branch/worktree-only and must not be silently
+  mutated on `main`
+- broader targets such as `~/.agents/skills`, `~/.openclaw/skills`, plugin
+  skill directories, and Codex `$CODEX_HOME/skills` remain out of the
+  automatic draft-write path in this milestone
+- draft packages written into workspace-local skill roots must remain review
+  only and non-promoted; they may be discoverable for inspection, but they
+  must not become normal active skill behavior by default
+
+### 2026-04-28 - Draft-ready state must reuse proactivity surfaces
+
+Reason:
+
+- the product already has inline, heartbeat, inbox, and handoff surfaces with
+  canonical ids
+- a separate Skills inbox or draft-only dashboard at Milestone 3 would repeat
+  the same fragmentation that the skill-candidate ledger just removed
+
+Decision:
+
+- the originating `skill_candidate` remains the primary surface identity
+- draft-ready state must surface through the existing proactivity queue, inbox,
+  heartbeat, and handoff flows using the same canonical candidate id
+- supporting package/report/provenance detail may appear as secondary
+  disclosure, but the primary surface remains one bounded operator-facing work
+  item
+- live usefulness and draft reviewability are the Milestone 3 acceptance gate
+
 ### 2026-04-28 - `skill_candidate` becomes a first-class proactivity opportunity kind
 
 Reason:

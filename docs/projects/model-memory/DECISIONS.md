@@ -26,6 +26,10 @@ Decision:
   the existing proactivity ledger, with deterministic ids, deterministic
   dedupe, bounded distilled evidence, and shared surface ids across inline,
   heartbeat, inbox, and handoff
+- the next runtime slice is Skillifier MVP: one canonical `skill_candidate`
+  must be able to produce one bounded draft skill package with one stable
+  `skillPackageId`, one deterministic check report, one provenance report, and
+  one rollback plan, all without broad install or promotion
 
 Reasoning:
 

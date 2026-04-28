@@ -68,6 +68,14 @@ Milestone 2 runtime contract:
 - early eval, vetting, and canary state may remain `not_started`, but the
   fields must already be present
 
+Milestone 3 draft-linkage contract:
+
+- a canonical `skillCandidateId` may gain one linked `skillPackageId`
+- the candidate remains the primary surface identity
+- the linked package/report ids must stay deterministic across reload and
+  follow-up surfacing
+- draft linkage must not require a separate draft-only queue
+
 ## `SkillCandidateSource`
 
 Allowed source families:

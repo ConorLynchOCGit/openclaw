@@ -7,38 +7,37 @@ title: "Skills System Status"
 
 ## Overall
 
-State: `phase2_skill_candidate_ledger_runtime_active`
+State: `phase2_skillifier_mvp_runtime_in_progress`
 
 The repo already has a canonical home for skill loading, ClawHub posture, and
 Skill Vetting.
 
-Milestone 1 defined the platform contract. The active work now is to turn that
-contract into a live proactivity-backed runtime ledger.
+Milestone 1 defined the platform contract. Milestone 2 made `skill_candidate`
+live in the proactivity ledger. The active work now is to turn that canonical
+candidate into a bounded draft package and report flow.
 
 The current outcomes are:
 
-- `skill_candidate` is now the next runtime contract to land as a first-class
-  proactivity opportunity kind
-- candidate creation is constrained to bounded distilled evidence, not raw
-  transcript persistence
-- recurring work must update canonical candidate state instead of piling up
-  duplicates in actionable surfaces
-- candidate ids must remain stable across inline surfacing, heartbeat, inbox,
-  and handoff
-- destination capability authority remains documented policy for now; this
-  slice does not broadly write or install skills
+- `skill_candidate` remains the canonical reusable-work opportunity record
+- Skillifier MVP must consume canonical candidate ids rather than re-deriving
+  skill opportunities from raw session text
+- draft package generation must stay bounded, provenance-aware, and
+  no-dark-data safe
+- draft-ready state must reuse inline surfacing, heartbeat, inbox, and handoff
+  instead of introducing a separate skills queue
+- destination capability authority now moves from docs-only into draft-target
+  enforcement for the MVP write path
+- this slice still does not broadly install or promote skills
 
 ## Current judgment
 
-The biggest missing skill-system capability is still not “more skills.”
-
-It is the lack of one explicit runtime path that turns repeated real work into
-safe, bounded, reviewable skill opportunities without adding a second noisy
-queue.
+The biggest missing skill-system capability is now the lack of one explicit
+runtime path that turns a canonical repeated-work candidate into a bounded,
+reviewable draft skill package without accidentally turning draft generation
+into installation or promotion.
 
 ## Remaining work after this slice
 
-- implement the proactivity-backed skill candidate ledger
 - build the Skillifier scaffold/check/report lane
 - add decisioning/compliance evals
 - integrate risk tiers, canarying, rollback, and low-risk auto-promotion

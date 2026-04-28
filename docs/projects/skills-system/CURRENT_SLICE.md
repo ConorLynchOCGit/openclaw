@@ -7,39 +7,45 @@ title: "Skills System Current Slice"
 
 ## Slice
 
-`phase2-skill-candidate-ledger-proactivity-integration`
+`phase2-skillifier-mvp-scaffold-check-report`
 
 ## Goal
 
-Implement the first runtime slice of the OpenClaw Skills Platform by adding a
-canonical `skill_candidate` ledger path inside the existing proactivity
-system.
+Implement the first Skillifier runtime slice by turning canonical
+`skill_candidate` records into bounded draft skill packages, reports, and
+rollback-safe review artifacts.
 
 This slice establishes:
 
-- one first-class `skill_candidate` opportunity kind in the proactivity ledger
-- one bounded candidate creation path from real OpenClaw or Codex work
-- one deterministic dedupe or supersession model for recurring same-intent
-  skill opportunities
-- one canonical-id contract across inline chat, heartbeat, inbox, and handoff
-- one persistence model that reuses the existing proactivity state store rather
-  than creating a parallel skills queue
+- one first-class Skillifier draft flow that consumes canonical
+  `skill_candidate` ids
+- one bounded draft package contract with `SKILL.md`, metadata, provenance,
+  rollback, and check reports
+- one canonical `skillPackageId` linking candidate, package, and report state
+- one destination-aware draft writer that uses allowed workspace-local skill
+  paths only
+- one shared surfacing contract so draft-ready state appears through the
+  existing proactivity queue, inbox, heartbeat, and handoff surfaces
 
 ## Current outcome
 
-- turns skill candidates from a future concept into a live runtime record type
-- proves recurring work can surface as one bounded same-session skill
-  opportunity without opening a separate skills UI
-- keeps candidate evidence distilled and bounded rather than persisting raw
+- turns a live `skill_candidate` into a bounded draft package and review report
+- keeps draft generation tied to canonical proactivity ids instead of a
+  parallel skill queue
+- keeps scaffold inputs distilled and bounded rather than persisting raw
   prompts, transcripts, or tool logs
-- keeps destination capability authority as a policy reference only; this slice
-  does not broadly write skill packages into skill destinations
+- keeps destination authority strict: the draft lands only in allowed
+  workspace-local draft targets, never by silent repo-main or global skill
+  mutation
+- keeps the generated draft non-promoted and review-only
 
 ## Current judgment
 
-The acceptance gate for this slice is live usefulness, not schema-only
-coverage.
+The acceptance gate for this slice is live usefulness and draft reviewability,
+not package scaffolding alone.
 
-The correct output is one canonical `skill_candidate` opportunity that appears
-cleanly across inline chat, heartbeat, inbox, and handoff, updates itself when
-the same recurring work repeats, and does not reintroduce noisy queue clutter.
+The correct output is one canonical `skill_candidate` that can be skillified
+into one bounded draft package with one stable `skillPackageId`, one
+deterministic check/report result, and one clean draft-ready state that appears
+through the existing proactivity workflow without auto-installing or promoting
+the skill.

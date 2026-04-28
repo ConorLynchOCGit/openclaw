@@ -74,6 +74,10 @@ Phase 2 currently assumes:
   the existing proactivity state path; it must reuse canonical inline,
   heartbeat, inbox, and handoff surfaces instead of creating a second skills
   queue
+- the next skills runtime slice is a Skillifier MVP draft path that consumes a
+  canonical `skill_candidate`, writes only to allowed workspace-local draft
+  targets, and surfaces draft-ready state through the same proactivity ids and
+  surfaces
 - low-risk limited-scope skill automation may later be allowed after
   tests/vetting/canary, but medium-risk and high-risk skill changes remain
   approval-gated
