@@ -1,7 +1,11 @@
 /* @vitest-environment jsdom */
 
 import { describe, expect, it, vi } from "vitest";
-import type { ProactivityInboxDigest, ProactivityInboxItem } from "./types.ts";
+import type {
+  ProductProactivityQueueItem,
+  ProactivityInboxDigest,
+  ProactivityInboxItem,
+} from "./types.ts";
 
 const loadChatHistoryMock = vi.hoisted(() => vi.fn(async () => undefined));
 
@@ -156,6 +160,89 @@ describe("OpenClawApp proactivity product correctness", () => {
     });
     expect(item?.handoffError).toContain("simulated handoff failure");
     expect(app.productProactivityError).toContain("simulated handoff failure");
+  });
+
+  it("preserves started handoff state across queue and inbox reloads", async () => {
+    const queueItem: ProductProactivityQueueItem = {
+      ...actionableInboxItem({
+        status: "planned",
+        layer: "history",
+        handoffStatus: "started",
+        handoffMessageAnchor: "chat-message:queue-item-1",
+      }),
+      queueItemId: "queue-item-1",
+      candidateId: "candidate-1",
+      status: "planned",
+      layer: "history",
+      messageClass: "operator_approved_suggestion_available",
+      eligibleScope: {
+        environment: "live",
+        userId: "user-1",
+        recipientId: "recipient-1",
+        projectId: "openclaw",
+        sessionKey: "main",
+        operatorId: "operator-1",
+        allowedMessageClasses: ["operator_approved_suggestion_available"],
+        proofPrerequisiteIds: [],
+        proofPrerequisiteHashes: [],
+      },
+      staleLabels: [],
+      conflictLabels: [],
+      generatedAt: "2026-04-27T04:00:00.000Z",
+      updatedAt: "2026-04-27T04:00:00.000Z",
+    };
+    const startedInboxItem = actionableInboxItem({
+      status: "planned",
+      layer: "history",
+      handoffStatus: "started",
+      handoffMessageAnchor: "chat-message:queue-item-1",
+    });
+    const request = vi.fn(async (method: string) => {
+      if (method === "modelMemory.proactivity.queue") {
+        return {
+          queue: {
+            items: [
+              {
+                ...queueItem,
+                handoffStatus: "idle",
+                handoffMessageAnchor: null,
+              },
+            ],
+          },
+        };
+      }
+      if (method === "modelMemory.proactivity.inbox") {
+        return {
+          digest: inboxDigest(
+            actionableInboxItem({
+              status: "planned",
+              layer: "history",
+              handoffStatus: "idle",
+              handoffMessageAnchor: null,
+            }),
+          ),
+        };
+      }
+      throw new Error(`unexpected method ${method}`);
+    });
+    const app = new OpenClawApp();
+    app.client = { request } as never;
+    app.connected = true;
+    app.sessionKey = "main";
+    app.productProactivityQueue = [queueItem];
+    app.proactivityInboxDigest = inboxDigest(startedInboxItem);
+
+    await app.loadProductProactivityQueue();
+    await app.loadProactivityInbox();
+
+    expect(app.productProactivityQueue[0]).toMatchObject({
+      handoffStatus: "started",
+      handoffMessageAnchor: "chat-message:queue-item-1",
+    });
+    expect(app.proactivityInboxDigest?.items[0]).toMatchObject({
+      handoffStatus: "started",
+      handoffMessageAnchor: "chat-message:queue-item-1",
+    });
   });
 
   it("approve/send uses the inbox item source of truth and sends the edited message", async () => {

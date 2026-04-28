@@ -119,6 +119,64 @@ import { type ChatAttachment, type ChatQueueItem, type CronFormState } from "./u
 import { generateUUID } from "./uuid.ts";
 import type { NostrProfileFormState } from "./views/channels.nostr-profile-form.ts";
 
+function mergeQueueHandoffState(
+  incoming: ProductProactivityQueueItem[],
+  existing: ProductProactivityQueueItem[],
+): ProductProactivityQueueItem[] {
+  const existingByQueueItemId = new Map(existing.map((entry) => [entry.queueItemId, entry]));
+  return incoming.map((entry) => {
+    const current = existingByQueueItemId.get(entry.queueItemId);
+    if (
+      !current ||
+      (current.handoffStatus !== "starting" &&
+        current.handoffStatus !== "started" &&
+        current.handoffStatus !== "failed") ||
+      entry.handoffStatus !== "idle"
+    ) {
+      return entry;
+    }
+    return {
+      ...entry,
+      handoffStatus: current.handoffStatus,
+      handoffError: current.handoffError ?? entry.handoffError ?? null,
+      handoffMessageAnchor: current.handoffMessageAnchor ?? entry.handoffMessageAnchor ?? null,
+    };
+  });
+}
+
+function mergeInboxHandoffState(
+  incoming: ProactivityInboxDigest | null,
+  existing: ProactivityInboxDigest | null,
+): ProactivityInboxDigest | null {
+  if (!incoming) {
+    return null;
+  }
+  const existingByQueueItemId = new Map(
+    (existing?.items ?? []).map((entry) => [entry.queueItemId ?? entry.itemId, entry]),
+  );
+  return {
+    ...incoming,
+    items: incoming.items.map((entry) => {
+      const current = existingByQueueItemId.get(entry.queueItemId ?? entry.itemId);
+      if (
+        !current ||
+        (current.handoffStatus !== "starting" &&
+          current.handoffStatus !== "started" &&
+          current.handoffStatus !== "failed") ||
+        entry.handoffStatus !== "idle"
+      ) {
+        return entry;
+      }
+      return {
+        ...entry,
+        handoffStatus: current.handoffStatus,
+        handoffError: current.handoffError ?? entry.handoffError ?? null,
+        handoffMessageAnchor: current.handoffMessageAnchor ?? entry.handoffMessageAnchor ?? null,
+      };
+    }),
+  };
+}
+
 declare global {
   interface Window {
     __OPENCLAW_CONTROL_UI_BASE_PATH__?: string;
@@ -845,7 +903,10 @@ export class OpenClawApp extends LitElement {
           projectId: "openclaw",
         },
       );
-      this.productProactivityQueue = Array.isArray(res.queue?.items) ? res.queue.items : [];
+      this.productProactivityQueue = mergeQueueHandoffState(
+        Array.isArray(res.queue?.items) ? res.queue.items : [],
+        this.productProactivityQueue,
+      );
     } catch (err) {
       this.productProactivityError = String(err);
       this.productProactivityQueue = [];
@@ -888,7 +949,10 @@ export class OpenClawApp extends LitElement {
           projectId: "openclaw",
         },
       );
-      this.proactivityInboxDigest = res.digest ?? null;
+      this.proactivityInboxDigest = mergeInboxHandoffState(
+        res.digest ?? null,
+        this.proactivityInboxDigest,
+      );
     } catch (err) {
       this.proactivityInboxError = String(err);
       this.proactivityInboxDigest = null;

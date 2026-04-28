@@ -41,6 +41,12 @@ import { buildPhase2ProactivityOutcomeFollowupReport } from "../../extensions/mo
 import { buildPhase2ProactivityRecurringPatternReport } from "../../extensions/model-memory/src/runtime/phase2-proactivity-recurring-pattern-loop.js";
 import { buildPhase2ProactivityNoiseBudgetReport } from "../../extensions/model-memory/src/runtime/phase2-proactivity-signal-noise-budget.js";
 import { buildPhase2ProductProactivitySurfacingReport } from "../../extensions/model-memory/src/runtime/phase2-product-proactivity-surfacing.js";
+import {
+  buildPhase2SkillCandidateLedgerReport,
+  type Phase2SkillCandidateActivitySource,
+  type Phase2SkillCandidateLedgerReport,
+  type Phase2SkillCandidateRecord,
+} from "../../extensions/model-memory/src/runtime/phase2-skill-candidate-ledger.js";
 import type {
   SourceAuthorityTier,
   SourceProfileId,
@@ -118,6 +124,7 @@ export type Phase2ProactivityActivityStore = {
   workingBuffer?: Phase2ProactivityWorkingBuffer | null;
   maintenanceJobs?: Phase2AutonomousMaintenanceJob[];
   recoveryState?: Phase2ProactivityCompactionRecoveryState | null;
+  skillCandidates?: Phase2SkillCandidateRecord[];
 };
 
 export type Phase2ProactivityActivityStoreDecision =
@@ -171,6 +178,7 @@ type GatewayProactivityBuildState = {
   liveDetectionReport: Awaited<ReturnType<typeof buildPhase2LiveProactivityDetectionReport>>;
   extractionReport: Awaited<ReturnType<typeof buildPhase2ProactivityOpportunityExtractionReport>>;
   recurringPatternReport: Awaited<ReturnType<typeof buildPhase2ProactivityRecurringPatternReport>>;
+  skillCandidateReport: Phase2SkillCandidateLedgerReport;
   growthLoopReport: Phase2GrowthLoopReport;
   ledgerReport: Phase2OpportunityLedgerReport;
   followupReport: Awaited<ReturnType<typeof buildPhase2ProactivityOutcomeFollowupReport>>;
@@ -245,6 +253,7 @@ async function loadActivityStore(storePath: string): Promise<Phase2ProactivityAc
         workingBuffer: parsed.workingBuffer ?? null,
         maintenanceJobs: Array.isArray(parsed.maintenanceJobs) ? parsed.maintenanceJobs : [],
         recoveryState: parsed.recoveryState ?? null,
+        skillCandidates: Array.isArray(parsed.skillCandidates) ? parsed.skillCandidates : [],
       };
     }
   } catch {
@@ -260,6 +269,7 @@ async function loadActivityStore(storePath: string): Promise<Phase2ProactivityAc
     workingBuffer: null,
     maintenanceJobs: [],
     recoveryState: null,
+    skillCandidates: [],
   };
 }
 
@@ -278,12 +288,14 @@ async function updatePersistedOperatingState(params: {
   workingBuffer: Phase2ProactivityWorkingBuffer;
   maintenanceJobs: Phase2AutonomousMaintenanceJob[];
   recoveryState: Phase2ProactivityCompactionRecoveryState;
+  skillCandidates: Phase2SkillCandidateRecord[];
 }): Promise<Phase2ProactivityActivityStore> {
   const store = await loadActivityStore(params.storePath);
   store.growthLoopState = params.growthLoopState;
   store.workingBuffer = params.workingBuffer;
   store.maintenanceJobs = params.maintenanceJobs.slice(0, 6);
   store.recoveryState = params.recoveryState;
+  store.skillCandidates = params.skillCandidates;
   await saveActivityStore(params.storePath, store);
   return store;
 }
@@ -312,6 +324,21 @@ function dedupeOverrides(
     const existing = byId.get(override.opportunityId);
     if (!existing || existing.updatedAt < override.updatedAt) {
       byId.set(override.opportunityId, override);
+    }
+  }
+  return [...byId.values()]
+    .toSorted((left, right) => left.updatedAt.localeCompare(right.updatedAt))
+    .slice(-MAX_LIFECYCLE_OVERRIDES);
+}
+
+function dedupeSkillCandidates(
+  records: Phase2SkillCandidateRecord[],
+): Phase2SkillCandidateRecord[] {
+  const byId = new Map<string, Phase2SkillCandidateRecord>();
+  for (const record of records) {
+    const existing = byId.get(record.skillCandidateId);
+    if (!existing || existing.updatedAt < record.updatedAt) {
+      byId.set(record.skillCandidateId, record);
     }
   }
   return [...byId.values()]
@@ -872,6 +899,21 @@ export async function buildModelMemoryProactivityRuntimeState(
     sources: projectActivitySources,
     env: process.env,
   });
+  const projectAssistantCandidates = (
+    await buildPhase2ProactivityOpportunityExtractionReport({
+      sources: projectActivitySources.filter(
+        (source) =>
+          source.sourceKind === "assistant_turn" || source.sourceKind === "planning_output",
+      ),
+      env: process.env,
+    })
+  ).candidates;
+  const skillCandidateReport = await buildPhase2SkillCandidateLedgerReport({
+    now: new Date(),
+    activities: projectActivitySources as Phase2SkillCandidateActivitySource[],
+    assistantCandidates: projectAssistantCandidates,
+    previousRecords: activityStoreReport.store.skillCandidates ?? [],
+  });
   const baseLedgerSources: Phase2OpportunityLedgerSource[] = [
     ...liveDetectionReport.opportunities.map((opportunity) => ({
       ...opportunity,
@@ -884,6 +926,7 @@ export async function buildModelMemoryProactivityRuntimeState(
       ...candidate,
       sourceFamily: "assistant_output" as const,
     })),
+    ...skillCandidateReport.opportunities,
     ...recurringPatternReport.opportunities.map((opportunity) => ({
       ...opportunity,
       sourceFamily: "pattern_or_followup" as const,
@@ -1031,12 +1074,14 @@ export async function buildModelMemoryProactivityRuntimeState(
     workingBuffer: growthLoopReport.workingBuffer,
     maintenanceJobs: growthLoopReport.maintenanceJobs,
     recoveryState: growthLoopReport.recoveryState,
+    skillCandidates: dedupeSkillCandidates(skillCandidateReport.records),
   });
   return {
     activityStoreReport,
     liveDetectionReport,
     extractionReport,
     recurringPatternReport,
+    skillCandidateReport,
     growthLoopReport,
     ledgerReport: effectiveLedgerReport,
     followupReport,
@@ -1059,12 +1104,14 @@ export async function buildHeartbeatProactivityReviewText(params: {
     workItemId: string;
     queueItemId: string;
     opportunityClass?:
+      | "skill_candidate"
       | "reverse_prompt"
       | "followup"
       | "delight"
       | "self_healing"
       | "recovery"
       | "standard";
+    skillCandidateId?: string;
     title: string;
     whyNow: string;
     proposedNextStep: string;
@@ -1107,6 +1154,7 @@ export async function buildHeartbeatProactivityReviewText(params: {
       workItemId: item.workItemId,
       queueItemId: item.queueItemId,
       opportunityClass: queueItem?.opportunityClass ?? "standard",
+      skillCandidateId: queueItem?.skillCandidate?.skillCandidateId,
       title: item.title,
       whyNow: item.whyNow,
       proposedNextStep: item.proposedNextStep,

@@ -24,6 +24,7 @@ import {
   buildPhase2RealMemoryProactivityCandidateReport,
   type Phase2RealMemoryCandidateReport,
 } from "./phase2-real-memory-proactivity-candidates.ts";
+import type { Phase2SkillCandidateRecord } from "./phase2-skill-candidate-ledger.ts";
 import {
   buildPhase2UserFacingProactivityDefaultPromotionReport,
   type Phase2UserFacingProactivityDefaultMessageClass,
@@ -79,9 +80,16 @@ export type Phase2ProductProactivitySurfaceConfig = {
 export type Phase2ProductProactivityQueueItem = {
   queueItemId: string;
   candidateId: string;
+  skillCandidate?: Phase2SkillCandidateRecord;
   workItemId: string;
   opportunityId?: string;
-  opportunityClass?: "reverse_prompt" | "followup" | "delight" | "self_healing" | "recovery";
+  opportunityClass?:
+    | "skill_candidate"
+    | "reverse_prompt"
+    | "followup"
+    | "delight"
+    | "self_healing"
+    | "recovery";
   opportunityStatus?: Phase2OpportunityLifecycleStatus;
   workItemKind: Phase2ProactivityWorkItemKind;
   workItemStatus: Phase2ProactivityWorkItemStatus;
@@ -875,6 +883,7 @@ function queueItemsFromLedger(input: {
     return {
       queueItemId: entry.queueItemId,
       candidateId: entry.candidateId,
+      skillCandidate: entry.skillCandidate,
       workItemId: entry.workItemId,
       opportunityId: entry.opportunityId,
       opportunityClass: entry.opportunityClass,
@@ -885,7 +894,9 @@ function queueItemsFromLedger(input: {
       secondaryActions: primaryAction ? secondaryWorkItemActions() : [],
       ctaExplanation: draft
         ? "A bounded internal draft is ready. Review it, then start the next chat handoff only if useful."
-        : "Starts bounded work from the canonical proactivity ledger; no file edit, action execution, or outbound send occurs without approval.",
+        : entry.opportunityClass === "skill_candidate"
+          ? "Starts bounded planning for a reusable skill candidate. It does not generate, install, or promote any skill package yet."
+          : "Starts bounded work from the canonical proactivity ledger; no file edit, action execution, or outbound send occurs without approval.",
       handoffStatus: "idle",
       handoffError: null,
       handoffMessageAnchor: null,
@@ -897,7 +908,9 @@ function queueItemsFromLedger(input: {
       messagePreview: entry.proposedNextStep,
       suggestedAction: draft
         ? "Review the bounded internal draft and decide whether to start the next chat handoff."
-        : `Start bounded work for ${entry.title}.`,
+        : entry.opportunityClass === "skill_candidate"
+          ? `Review whether ${entry.skillCandidate?.suggestedSkillName ?? "this repeated workflow"} should become a reusable skill, then plan the smallest safe implementation slice.`
+          : `Start bounded work for ${entry.title}.`,
       candidateSummary: entry.title,
       expectedUserValue: entry.expectedUserValue,
       planTitle: entry.title,

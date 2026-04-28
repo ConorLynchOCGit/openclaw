@@ -1574,6 +1574,9 @@ function getProactivityPrimaryStepLabel(
     | Pick<ProductProactivityQueueItem, "workItemKind" | "opportunityClass">
     | Pick<ProactivityInboxItem, "workItemKind" | "opportunityClass">,
 ): string {
+  if (item.opportunityClass === "skill_candidate") {
+    return "Skill worth creating";
+  }
   if (item.opportunityClass === "reverse_prompt") {
     return "Question worth asking";
   }
@@ -1595,6 +1598,8 @@ function getProactivityOpportunityClassLabel(
     | Pick<ProactivityInboxItem, "opportunityClass" | "workItemKind">,
 ): string {
   switch (item.opportunityClass) {
+    case "skill_candidate":
+      return "skill candidate";
     case "reverse_prompt":
       return "reverse prompt";
     case "followup":
@@ -1616,6 +1621,8 @@ function getProactivityOpportunityClassChipClass(
     | Pick<ProactivityInboxItem, "opportunityClass">,
 ): string {
   switch (item.opportunityClass) {
+    case "skill_candidate":
+      return "proactivity-surface-chip--reverse";
     case "reverse_prompt":
       return "proactivity-surface-chip--reverse";
     case "followup":
@@ -1931,6 +1938,7 @@ function renderInlineProactivityCard(
             class="inline-proactivity-card__item"
             data-queue-item-id=${item.queueItemId}
             data-work-item-id=${item.workItemId ?? item.queueItemId}
+            data-skill-candidate-id=${item.skillCandidate?.skillCandidateId ?? ""}
           >
             <div class="inline-proactivity-card__meta">
               <span
@@ -2163,6 +2171,7 @@ function renderHeartbeatProactivityReview(props: ChatProps): TemplateResult | ty
             data-work-item-id=${item.workItemId ?? item.queueItemId}
             data-candidate-id=${item.candidateId}
             data-queue-item-id=${item.queueItemId}
+            data-skill-candidate-id=${item.skillCandidate?.skillCandidateId ?? ""}
           >
             <div class="heartbeat-proactivity-review__meta">
               <span
@@ -2582,6 +2591,7 @@ function renderProactivityInbox(props: ChatProps): TemplateResult | typeof nothi
                   data-layer=${item.layer ?? "actionable"}
                   data-work-item-id=${item.workItemId ?? item.queueItemId ?? item.itemId}
                   data-queue-item-id=${item.queueItemId ?? ""}
+                  data-skill-candidate-id=${item.skillCandidate?.skillCandidateId ?? ""}
                 >
                   <div class="product-proactivity-item__main">
                     <div class="product-proactivity-item__meta">

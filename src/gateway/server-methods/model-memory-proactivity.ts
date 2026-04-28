@@ -262,6 +262,12 @@ export const modelMemoryProactivityHandlers: GatewayRequestHandlers = {
           maintenanceJobCount: state.growthLoopReport.telemetry.maintenanceJobCount,
           recoveredCount: state.growthLoopReport.telemetry.recoveredCount,
         },
+        skillCandidateReport: {
+          reportId: state.skillCandidateReport.reportId,
+          decision: state.skillCandidateReport.decision,
+          recordCount: state.skillCandidateReport.telemetry.recordCount,
+          opportunityCount: state.skillCandidateReport.telemetry.opportunityCount,
+        },
         ledgerReport: {
           reportId: state.ledgerReport.reportId,
           decision: state.ledgerReport.decision,

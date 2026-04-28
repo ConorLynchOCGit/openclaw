@@ -1027,6 +1027,269 @@ describe("chat view", () => {
     expect(onWorkAction).toHaveBeenCalledWith("queue-inline-1", "plan_this");
   });
 
+  it("preserves the same skill candidate id across inline, heartbeat, and inbox surfaces", () => {
+    const container = document.createElement("div");
+    render(
+      renderChat(
+        createProps({
+          sessionKey: "main",
+          sidebarContent: { kind: "proactivityInbox" },
+          sidebarOpen: true,
+          onCloseSidebar: () => undefined,
+          messages: [
+            {
+              role: "assistant",
+              content: [
+                {
+                  type: "text",
+                  text: "Plan the skill candidate ledger integration so recurring work becomes one canonical opportunity across inline, heartbeat, inbox, and handoff.",
+                  textSignature: JSON.stringify({
+                    v: 1,
+                    id: "msg_skill_candidate_surface",
+                    phase: "final_answer",
+                  }),
+                },
+              ],
+              timestamp: Date.parse("2026-04-28T09:00:15.000Z"),
+            },
+          ],
+          productProactivityQueue: [
+            {
+              queueItemId: "queue-skill-1",
+              candidateId: "candidate-skill-1",
+              opportunityClass: "skill_candidate",
+              skillCandidate: {
+                skillCandidateId: "skill-candidate-1",
+                proactivityOpportunityId: "opportunity-skill-1",
+                normalizedIntentKey: "skill candidate ledger integration",
+                sourceRuntime: "openclaw_session",
+                candidateType: "repeated_work_pattern",
+                evidenceSummary: "Observed repeated bounded assistant opportunities.",
+                recurrenceCount: 3,
+                recurrenceWindow: {
+                  firstSeenAt: "2026-04-28T09:00:00.000Z",
+                  lastSeenAt: "2026-04-28T09:02:00.000Z",
+                },
+                exampleHashes: ["hash-a", "hash-b"],
+                suggestedSkillName: "skill-candidate-ledger-integration",
+                riskTier: "low",
+                autonomyLevelCeiling: 1,
+                lifecycleStatus: "detected",
+                installTargets: ["workspace_skills_dir"],
+                evalStatus: "not_started",
+                vettingStatus: "not_started",
+                canaryStatus: "not_started",
+                createdAt: "2026-04-28T09:00:00.000Z",
+                updatedAt: "2026-04-28T09:02:00.000Z",
+                provenanceRefs: ["chat://main/assistant_turn/msg_skill_candidate_surface"],
+                rollbackPlan: {
+                  rollbackId: "rollback-skill-1",
+                  strategy: "disable_candidate_only",
+                  targetPaths: ["workspace_skills_dir"],
+                  directMainMutationAllowed: false,
+                },
+              },
+              messageClass: "operator_approved_suggestion_available",
+              boundedDisplayText: "Turn skill candidate ledger integration into a reusable skill",
+              candidateSummary: "A repeated workflow now looks reusable.",
+              planTitle: "Turn skill candidate ledger integration into a reusable skill",
+              problem: "The same bounded workflow surfaced repeatedly in recent work.",
+              suggestedAction: "Plan the smallest safe reusable-skill slice.",
+              messagePreview:
+                "Plan a bounded skill candidate ledger skill: define the workflow and success checks.",
+              proposedMessage:
+                "Plan a bounded skill candidate ledger skill: define the workflow and success checks.",
+              expectedUserValue:
+                "Converts repeated work into a reusable skill instead of re-solving it each session.",
+              userBenefit:
+                "Converts repeated work into a reusable skill instead of re-solving it each session.",
+              evidenceSummary: "Supported by repeated same-session assistant opportunities.",
+              confidence: "high",
+              blockedIfMissing: [],
+              status: "pending_review",
+              layer: "actionable",
+              workItemKind: "planning_request",
+              primaryAction: {
+                actionType: "plan_this",
+                label: "Plan this",
+                description: "Start a bounded planning handoff in chat.",
+                requiresChatInject: false,
+                executesAction: false,
+              },
+              eligibleScope: {
+                environment: "live",
+                userId: "conorlynch",
+                recipientId: "conorlynch",
+                projectId: "openclaw",
+                sessionKey: "main",
+                operatorId: "operator-conorlynch",
+                allowedMessageClasses: ["operator_approved_suggestion_available"],
+                proofPrerequisiteIds: [],
+                proofPrerequisiteHashes: [],
+              },
+              sourceRefs: ["chat://main/assistant_turn/msg_skill_candidate_surface"],
+              sourceProfileIds: ["manual_note"],
+              authorityTiers: ["tool_grounded"],
+              contentHashes: ["content-hash-skill-1"],
+              proofHashes: ["proof-hash-skill-1"],
+              noDarkDataStatus: "pass",
+              staleLabels: [],
+              conflictLabels: [],
+              blockedReasonCodes: [],
+              generatedAt: "2026-04-28T09:02:10.000Z",
+              updatedAt: "2026-04-28T09:02:10.000Z",
+            },
+          ],
+          proactivityInboxDigest: {
+            digestId: "digest-skill-1",
+            generatedAt: "2026-04-28T09:02:10.000Z",
+            filters: [
+              "actionable",
+              "pending",
+              "planned",
+              "sent",
+              "snoozed",
+              "dismissed",
+              "blocked",
+              "autosend_trial",
+              "diagnostics",
+            ],
+            counts: {
+              actionable: 1,
+              pending: 1,
+              planned: 0,
+              sent: 0,
+              snoozed: 0,
+              dismissed: 0,
+              blocked: 0,
+              autosend_trial: 0,
+              diagnostics: 0,
+            },
+            layerCounts: {
+              actionable: 1,
+              history: 0,
+              diagnostic: 0,
+            },
+            items: [
+              {
+                itemId: "inbox-skill-1",
+                sourceArtifactReportId: "report-skill-1",
+                candidateId: "candidate-skill-1",
+                skillCandidate: {
+                  skillCandidateId: "skill-candidate-1",
+                  proactivityOpportunityId: "opportunity-skill-1",
+                  normalizedIntentKey: "skill candidate ledger integration",
+                  sourceRuntime: "openclaw_session",
+                  candidateType: "repeated_work_pattern",
+                  evidenceSummary: "Observed repeated bounded assistant opportunities.",
+                  recurrenceCount: 3,
+                  recurrenceWindow: {
+                    firstSeenAt: "2026-04-28T09:00:00.000Z",
+                    lastSeenAt: "2026-04-28T09:02:00.000Z",
+                  },
+                  exampleHashes: ["hash-a", "hash-b"],
+                  suggestedSkillName: "skill-candidate-ledger-integration",
+                  riskTier: "low",
+                  autonomyLevelCeiling: 1,
+                  lifecycleStatus: "detected",
+                  installTargets: ["workspace_skills_dir"],
+                  evalStatus: "not_started",
+                  vettingStatus: "not_started",
+                  canaryStatus: "not_started",
+                  createdAt: "2026-04-28T09:00:00.000Z",
+                  updatedAt: "2026-04-28T09:02:00.000Z",
+                  provenanceRefs: ["chat://main/assistant_turn/msg_skill_candidate_surface"],
+                  rollbackPlan: {
+                    rollbackId: "rollback-skill-1",
+                    strategy: "disable_candidate_only",
+                    targetPaths: ["workspace_skills_dir"],
+                    directMainMutationAllowed: false,
+                  },
+                },
+                opportunityId: "opportunity-skill-1",
+                opportunityClass: "skill_candidate",
+                opportunityStatus: "open",
+                queueItemId: "queue-skill-1",
+                workItemId: "work-item-skill-1",
+                workItemKind: "planning_request",
+                workItemStatus: "not_started",
+                primaryAction: {
+                  actionType: "plan_this",
+                  label: "Plan this",
+                  description: "Start a bounded planning handoff in chat.",
+                  requiresChatInject: false,
+                  executesAction: false,
+                },
+                secondaryActions: [],
+                ctaExplanation: "Starts bounded planning for a reusable skill candidate.",
+                handoffStatus: "idle",
+                handoffError: null,
+                handoffMessageAnchor: null,
+                messageClass: "operator_approved_suggestion_available",
+                boundedDisplayText: "Turn skill candidate ledger integration into a reusable skill",
+                candidateSummary: "A repeated workflow now looks reusable.",
+                suggestedAction: "Plan the smallest safe reusable-skill slice.",
+                messagePreview:
+                  "Plan a bounded skill candidate ledger skill: define the workflow and success checks.",
+                planTitle: "Turn skill candidate ledger integration into a reusable skill",
+                problem: "The same bounded workflow surfaced repeatedly in recent work.",
+                proposedMessage:
+                  "Plan a bounded skill candidate ledger skill: define the workflow and success checks.",
+                expectedUserValue:
+                  "Converts repeated work into a reusable skill instead of re-solving it each session.",
+                userBenefit:
+                  "Converts repeated work into a reusable skill instead of re-solving it each session.",
+                evidenceSummary: "Supported by repeated same-session assistant opportunities.",
+                confidence: "high",
+                blockedIfMissing: [],
+                status: "pending_review",
+                filterTags: ["actionable", "pending"],
+                layer: "actionable",
+                attentionRequired: true,
+                sendStatus: "idle",
+                sendError: null,
+                sentMessageAnchor: null,
+                sourceRefs: ["chat://main/assistant_turn/msg_skill_candidate_surface"],
+                sourceProfileIds: ["manual_note"],
+                authorityTiers: ["tool_grounded"],
+                contentHashes: ["content-hash-skill-1"],
+                proofHashes: ["proof-hash-skill-1"],
+                noDarkDataStatus: "pass",
+                feedbackSummary: {
+                  usefulCount: 0,
+                  notUsefulCount: 0,
+                  tooRepetitiveCount: 0,
+                  wrongContextCount: 0,
+                  unsafePrivateCount: 0,
+                },
+                whyThisAppearedSummary:
+                  "Generated from the canonical Model Memory opportunity ledger with source refs, authority tiers, source profiles, and proof hashes preserved.",
+                blockedReasonCodes: [],
+              },
+            ],
+          },
+        }),
+      ),
+      container,
+    );
+
+    expect(
+      container.querySelector(
+        '[data-skill-candidate-id="skill-candidate-1"].inline-proactivity-card__item',
+      ),
+    ).not.toBeNull();
+    expect(
+      container.querySelector(
+        '[data-skill-candidate-id="skill-candidate-1"].heartbeat-proactivity-review__card',
+      ),
+    ).not.toBeNull();
+    expect(
+      container.querySelector(
+        '[data-skill-candidate-id="skill-candidate-1"].product-proactivity-item',
+      ),
+    ).not.toBeNull();
+  });
+
   it("cleans polluted copy and collapses same-session duplicate inline follow-ups", () => {
     const container = document.createElement("div");
     render(

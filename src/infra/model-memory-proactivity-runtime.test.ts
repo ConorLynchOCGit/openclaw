@@ -93,6 +93,95 @@ async function seedMainSessionTranscript(params: {
   );
 }
 
+async function seedSkillCandidateTranscript(params: {
+  storePath: string;
+  transcriptPath: string;
+  sessionId: string;
+}) {
+  await fs.writeFile(
+    params.storePath,
+    `${JSON.stringify({
+      main: {
+        sessionId: params.sessionId,
+        updatedAt: Date.now(),
+        createdAt: Date.now(),
+        messageCount: 4,
+        lastMessageAt: Date.now(),
+      },
+    })}\n`,
+    "utf8",
+  );
+  const transcriptLines = [
+    {
+      id: "entry-user-skill-1",
+      message: {
+        role: "user",
+        content: [
+          {
+            type: "text",
+            text: "Review recurring work in this repo that should eventually become reusable skills.",
+          },
+        ],
+        timestamp: Date.parse("2026-04-28T09:00:00.000Z"),
+      },
+    },
+    {
+      id: "entry-assistant-skill-1",
+      message: {
+        role: "assistant",
+        content: [
+          {
+            type: "text",
+            text: "Plan the skill candidate ledger integration so recurring work becomes one canonical opportunity across inline, heartbeat, inbox, and handoff.",
+            textSignature: JSON.stringify({
+              v: 1,
+              id: "msg_final_skill_candidate_1",
+              phase: "final_answer",
+            }),
+          },
+        ],
+        timestamp: Date.parse("2026-04-28T09:00:10.000Z"),
+      },
+    },
+    {
+      id: "entry-user-skill-2",
+      message: {
+        role: "user",
+        content: [
+          {
+            type: "text",
+            text: "Stay on the same skill candidate area and identify the next implementation step.",
+          },
+        ],
+        timestamp: Date.parse("2026-04-28T09:01:00.000Z"),
+      },
+    },
+    {
+      id: "entry-assistant-skill-2",
+      message: {
+        role: "assistant",
+        content: [
+          {
+            type: "text",
+            text: "Plan the skill candidate ledger integration so recurring work becomes one canonical opportunity across inline, heartbeat, inbox, and handoff.",
+            textSignature: JSON.stringify({
+              v: 1,
+              id: "msg_final_skill_candidate_2",
+              phase: "final_answer",
+            }),
+          },
+        ],
+        timestamp: Date.parse("2026-04-28T09:01:15.000Z"),
+      },
+    },
+  ];
+  await fs.writeFile(
+    params.transcriptPath,
+    `${transcriptLines.map((line) => JSON.stringify(line)).join("\n")}\n`,
+    "utf8",
+  );
+}
+
 const tmpDirs: string[] = [];
 
 afterEach(async () => {
@@ -164,6 +253,34 @@ describe("model-memory proactivity runtime", () => {
     expect(review?.prompt).not.toContain("Read HEARTBEAT.md");
     expect(review?.items[0]?.title?.toLowerCase()).toContain("runtime seam reset");
     expect(review?.items.some((item) => item.opportunityClass === "delight")).toBe(true);
+  });
+
+  it("creates one canonical skill candidate across ledger, queue, and heartbeat state", async () => {
+    const sandbox = await createRuntimeSandbox();
+    tmpDirs.push(sandbox.tmpDir);
+    await seedSkillCandidateTranscript(sandbox);
+
+    const state = await buildModelMemoryProactivityRuntimeState({
+      cfg: sandbox.cfg,
+      sessionKey: "main",
+      projectId: "openclaw",
+      operatorId: "operator-conor",
+      userId: "conor",
+      recipientId: "conor",
+    });
+
+    expect(state.skillCandidateReport.decision).toBe("skill_candidates_ready");
+    expect(state.skillCandidateReport.records).toHaveLength(1);
+    const skillCandidateId = state.skillCandidateReport.records[0]?.skillCandidateId;
+    expect(skillCandidateId).toBeTruthy();
+    const queueItem = state.productSurfacingReport.queue.items.find(
+      (item) => item.opportunityClass === "skill_candidate",
+    );
+    expect(queueItem?.skillCandidate?.skillCandidateId).toBe(skillCandidateId);
+    const heartbeatItem = state.heartbeatReport.surface.topItems.find(
+      (item) => item.skillCandidate?.skillCandidateId === skillCandidateId,
+    );
+    expect(heartbeatItem?.skillCandidate?.skillCandidateId).toBe(skillCandidateId);
   });
 
   it("excludes operational assistant messages and placeholder fallbacks from authoritative records", async () => {

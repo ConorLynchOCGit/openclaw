@@ -12,6 +12,7 @@ import {
 } from "../derived-artifact.ts";
 import type { SourceAuthorityTier, SourceProfileId } from "../source-authority.ts";
 import type { Phase2ProductProactivityQueueItem } from "./phase2-product-proactivity-surfacing.ts";
+import type { Phase2SkillCandidateRecord } from "./phase2-skill-candidate-ledger.ts";
 
 export const PHASE2_HEARTBEAT_PROACTIVITY_RELIABILITY_SCHEMA_VERSION =
   "phase2_heartbeat_proactivity_reliability.v1" as const;
@@ -37,7 +38,14 @@ export type Phase2HeartbeatProactivityItem = {
   workItemId: string;
   queueItemId: string;
   candidateId: string;
-  opportunityClass?: "reverse_prompt" | "followup" | "delight" | "self_healing" | "recovery";
+  skillCandidate?: Phase2SkillCandidateRecord;
+  opportunityClass?:
+    | "skill_candidate"
+    | "reverse_prompt"
+    | "followup"
+    | "delight"
+    | "self_healing"
+    | "recovery";
   title: string;
   whyNow: string;
   proposedNextStep: string;
@@ -208,15 +216,17 @@ export function rankHeartbeatProactivityItems(input: {
           /\/(?:assistant_turn|planning_output)\//u.test(sourceRef),
         );
       const opportunityClassBonus =
-        item.opportunityClass === "self_healing"
-          ? 4
-          : item.opportunityClass === "delight"
-            ? 3
-            : item.opportunityClass === "reverse_prompt"
-              ? 2
-              : item.opportunityClass === "followup" || item.opportunityClass === "recovery"
+        item.opportunityClass === "skill_candidate"
+          ? 2
+          : item.opportunityClass === "self_healing"
+            ? 4
+            : item.opportunityClass === "delight"
+              ? 3
+              : item.opportunityClass === "reverse_prompt"
                 ? 2
-                : 0;
+                : item.opportunityClass === "followup" || item.opportunityClass === "recovery"
+                  ? 2
+                  : 0;
       const feedbackNoisePenalty = item.blockedReasonCodes.some((code) =>
         ["feedback_suppressed_signal", "cooldown_same_content"].includes(code),
       )
@@ -278,6 +288,7 @@ function itemForHeartbeat(item: Phase2ProductProactivityQueueItem): Phase2Heartb
     workItemId: item.workItemId,
     queueItemId: item.queueItemId,
     candidateId: item.candidateId,
+    skillCandidate: item.skillCandidate,
     opportunityClass: item.opportunityClass,
     title:
       cleanProactivityUserFacingText(item.planTitle, { maxLength: 120 }) ??

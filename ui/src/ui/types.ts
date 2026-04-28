@@ -114,12 +114,57 @@ export type ProductProactivityActiveContext = {
   source: "chat_active_session" | "gateway_eligibility_scope" | "proof_fixture" | "unknown";
 };
 
+export type ProactivitySkillCandidate = {
+  skillCandidateId: string;
+  proactivityOpportunityId: string;
+  normalizedIntentKey: string;
+  sourceRuntime:
+    | "openclaw_session"
+    | "codex_session"
+    | "operator_digest"
+    | "validation_lane"
+    | "user_request"
+    | "recurring_task";
+  candidateType:
+    | "repeated_work_pattern"
+    | "explicit_skill_request"
+    | "recurring_validation_fix"
+    | "manual_workflow";
+  evidenceSummary: string;
+  recurrenceCount: number;
+  recurrenceWindow: {
+    firstSeenAt: string;
+    lastSeenAt: string;
+  };
+  exampleHashes: string[];
+  suggestedSkillName: string;
+  suggestedExistingSkillName?: string;
+  riskTier: "low" | "medium" | "high" | "blocked";
+  autonomyLevelCeiling: 0 | 1 | 2 | 3 | 4 | 5 | 6;
+  lifecycleStatus: "detected" | "superseded" | "rejected" | "disabled";
+  installTargets: string[];
+  evalStatus: "not_started" | "pending" | "passed" | "failed";
+  vettingStatus: "not_started" | "pending" | "passed" | "failed";
+  canaryStatus: "not_started" | "pending" | "passed" | "failed";
+  createdAt: string;
+  updatedAt: string;
+  provenanceRefs: string[];
+  rollbackPlan: {
+    rollbackId: string;
+    strategy: "disable_candidate_only";
+    targetPaths: string[];
+    directMainMutationAllowed: false;
+  };
+};
+
 export type ProductProactivityQueueItem = {
   queueItemId: string;
   candidateId: string;
+  skillCandidate?: ProactivitySkillCandidate;
   opportunityId?: string;
   opportunityClass?:
     | "standard"
+    | "skill_candidate"
     | "reverse_prompt"
     | "followup"
     | "delight"
@@ -268,6 +313,7 @@ export type ProactivityInboxItem = {
   itemId: string;
   sourceArtifactReportId: string;
   candidateId: string;
+  skillCandidate?: ProactivitySkillCandidate;
   opportunityId?: string;
   opportunityClass?: ProductProactivityQueueItem["opportunityClass"];
   opportunityStatus?: ProductProactivityQueueItem["opportunityStatus"];

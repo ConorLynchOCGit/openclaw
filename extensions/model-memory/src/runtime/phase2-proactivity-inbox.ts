@@ -30,6 +30,7 @@ import {
   type Phase2ProductProactivityQueueItem,
   type Phase2ProductProactivitySurfacingReport,
 } from "./phase2-product-proactivity-surfacing.ts";
+import type { Phase2SkillCandidateRecord } from "./phase2-skill-candidate-ledger.ts";
 
 export const PHASE2_PROACTIVITY_INBOX_SCHEMA_VERSION = "phase2_proactivity_inbox.v1" as const;
 export const PHASE2_PROACTIVITY_INBOX_REPORT_SCHEMA_VERSION =
@@ -50,7 +51,15 @@ export type Phase2ProactivityInboxItem = {
   itemId: string;
   sourceArtifactReportId: string;
   candidateId: string;
+  skillCandidate?: Phase2SkillCandidateRecord;
   opportunityId?: string;
+  opportunityClass?:
+    | "skill_candidate"
+    | "reverse_prompt"
+    | "followup"
+    | "delight"
+    | "self_healing"
+    | "recovery";
   opportunityStatus?:
     | "open"
     | "surfaced"
@@ -467,7 +476,9 @@ function cloneQueueItemForInbox(input: {
     }),
     sourceArtifactReportId: input.sourceArtifactReportId,
     candidateId: input.queueItem.candidateId,
+    skillCandidate: input.queueItem.skillCandidate,
     opportunityId: input.queueItem.opportunityId,
+    opportunityClass: input.queueItem.opportunityClass,
     opportunityStatus: input.queueItem.opportunityStatus,
     queueItemId: input.queueItem.queueItemId,
     workItemId: input.queueItem.workItemId,

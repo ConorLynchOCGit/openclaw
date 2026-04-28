@@ -10,6 +10,10 @@ import type {
   Phase2OpportunityExtractionSource,
 } from "./phase2-proactivity-opportunity-extraction.ts";
 import type { Phase2ProactivityWorkItemKind } from "./phase2-proactivity-work-items.ts";
+import type {
+  Phase2SkillCandidateOpportunity,
+  Phase2SkillCandidateRecord,
+} from "./phase2-skill-candidate-ledger.ts";
 
 export const PHASE2_PROACTIVITY_OPPORTUNITY_LEDGER_SCHEMA_VERSION =
   "phase2_proactivity_opportunity_ledger.v1" as const;
@@ -51,6 +55,7 @@ export type Phase2OpportunityLedgerSource =
       generatedAt?: string;
     })
   | (Phase2OpportunityExtractionCandidate & { sourceFamily: "assistant_output" })
+  | Phase2SkillCandidateOpportunity
   | {
       sourceFamily: "pattern_or_followup";
       opportunityClass?: "reverse_prompt" | "followup" | "delight" | "self_healing" | "recovery";
@@ -80,7 +85,14 @@ export type Phase2OpportunityLedgerEntry = {
   candidateId: string;
   queueItemId: string;
   sourceFamily: Phase2OpportunityLedgerSource["sourceFamily"];
-  opportunityClass?: "reverse_prompt" | "followup" | "delight" | "self_healing" | "recovery";
+  opportunityClass?:
+    | "skill_candidate"
+    | "reverse_prompt"
+    | "followup"
+    | "delight"
+    | "self_healing"
+    | "recovery";
+  skillCandidate?: Phase2SkillCandidateRecord;
   projectId: string;
   sessionKey: string;
   title: string;
@@ -287,6 +299,7 @@ function entryFromOpportunity(
     }),
     sourceFamily: opportunity.sourceFamily,
     opportunityClass: "opportunityClass" in opportunity ? opportunity.opportunityClass : undefined,
+    skillCandidate: "skillCandidate" in opportunity ? opportunity.skillCandidate : undefined,
     projectId: opportunity.projectId,
     sessionKey: opportunity.sessionKey,
     title,

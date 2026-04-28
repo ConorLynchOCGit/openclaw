@@ -306,6 +306,94 @@ describe("model-memory proactivity gateway handlers", () => {
     ).toBe(true);
   });
 
+  it("surfaces a repeated skills workflow as one canonical skill candidate", async () => {
+    const firstRecordRespond = vi.fn();
+    await modelMemoryProactivityHandlers["modelMemory.proactivity.recordChatActivity"]({
+      req: {
+        type: "req",
+        id: "req-skill-chat-activity-1",
+        method: "modelMemory.proactivity.recordChatActivity",
+        params: {},
+      },
+      params: {
+        sessionKey: "skill-candidate-chat-test",
+        projectId: "openclaw",
+        sourceKind: "assistant_turn",
+        sourceMessageId: "assistant-skill-candidate-1",
+        boundedText:
+          "Plan the skill candidate ledger integration so recurring work becomes one canonical opportunity across inline, heartbeat, inbox, and handoff.",
+        userPromptSummary:
+          "Review recurring work in this repo that should eventually become reusable skills.",
+      },
+      client: null,
+      isWebchatConnect: () => true,
+      respond: firstRecordRespond,
+      context: {} as never,
+    });
+
+    const secondRecordRespond = vi.fn();
+    await modelMemoryProactivityHandlers["modelMemory.proactivity.recordChatActivity"]({
+      req: {
+        type: "req",
+        id: "req-skill-chat-activity-2",
+        method: "modelMemory.proactivity.recordChatActivity",
+        params: {},
+      },
+      params: {
+        sessionKey: "skill-candidate-chat-test",
+        projectId: "openclaw",
+        sourceKind: "assistant_turn",
+        sourceMessageId: "assistant-skill-candidate-2",
+        boundedText:
+          "Plan the skill candidate ledger integration so recurring work becomes one canonical opportunity across inline, heartbeat, inbox, and handoff.",
+        userPromptSummary:
+          "Stay on the same skill candidate area and identify the next implementation step.",
+      },
+      client: null,
+      isWebchatConnect: () => true,
+      respond: secondRecordRespond,
+      context: {} as never,
+    });
+
+    const respond = vi.fn();
+    await modelMemoryProactivityHandlers["modelMemory.proactivity.queue"]({
+      req: {
+        type: "req",
+        id: "req-skill-candidate-queue",
+        method: "modelMemory.proactivity.queue",
+        params: {},
+      },
+      params: {
+        sessionKey: "skill-candidate-chat-test",
+        userId: "conor",
+        recipientId: "conor",
+        projectId: "openclaw",
+        operatorId: "operator-conor",
+      },
+      client: null,
+      isWebchatConnect: () => true,
+      respond,
+      context: {} as never,
+    });
+
+    const [ok, payload] = respond.mock.calls[0];
+    expect(ok).toBe(true);
+    expect(payload.skillCandidateReport).toMatchObject({
+      decision: "skill_candidates_ready",
+      recordCount: 1,
+      opportunityCount: 1,
+    });
+    const skillItems = payload.queue.items.filter(
+      (item: { opportunityClass?: string }) => item.opportunityClass === "skill_candidate",
+    );
+    expect(skillItems).toHaveLength(1);
+    expect(skillItems[0]?.skillCandidate).toMatchObject({
+      sourceRuntime: "openclaw_session",
+      lifecycleStatus: "detected",
+      installTargets: ["workspace_skills_dir"],
+    });
+  });
+
   it("skips assistant-turn fallback capture when bounded text is missing", async () => {
     const respond = vi.fn();
     await modelMemoryProactivityHandlers["modelMemory.proactivity.recordChatActivity"]({

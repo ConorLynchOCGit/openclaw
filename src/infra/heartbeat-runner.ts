@@ -638,6 +638,7 @@ function buildHeartbeatHiddenContextBlock(params: {
     workItemId: string;
     queueItemId: string;
     opportunityClass?:
+      | "skill_candidate"
       | "reverse_prompt"
       | "followup"
       | "delight"
