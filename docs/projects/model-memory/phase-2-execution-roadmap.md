@@ -60,6 +60,13 @@ Phase 2 currently assumes:
 - the next proactivity phase is an operating-loop leap: reverse prompting,
   persistent growth loops, compaction continuity, bounded background
   maintenance, and self-healing become primary product behaviors
+- canonical daily memory remains `memory/YYYY-MM-DD.md`; same-day daily memory
+  evidence artifacts are fallback evidence only, and an end-of-day finalizer
+  must restore the canonical note only from exact same-day durable evidence
+- the proactivity bucket cannot be considered clean enough to move on unless a
+  live `agent:main:main` gate verifies same-session item creation, inline
+  surfacing, inbox, heartbeat, and handoff share one canonical id without
+  duplicate pile-up or prompt/plumbing text in the visible heartbeat body
 
 Before the larger graph/capsule waves proceed, the project treated the
 Memory Retrieval Runtime, MMV2 capture coverage, closed-loop operational

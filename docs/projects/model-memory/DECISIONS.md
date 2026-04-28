@@ -5,6 +5,35 @@ title: "Model Memory Decisions"
 
 # Model Memory Decisions
 
+## 2026-04-28 - Daily continuity requires an end-of-day finalizer and live proactivity gate
+
+Decision:
+
+- canonical daily memory remains `memory/YYYY-MM-DD.md`
+- `archives/daily_memory_evidence/YYYY-MM-DD.md` is fallback evidence only and
+  is not equivalent to the canonical daily note
+- the retained `session-memory` hook on `/new` and `/reset` remains required,
+  but hook firing alone is not sufficient for daily continuity reliability
+- a repo-owned end-of-day finalizer must create a missing canonical daily note
+  only when exact same-day durable evidence exists
+- missing daily notes must not be backfilled from older DB artifacts, stale
+  weekly summaries, inferred memory, raw transcripts, raw prompts, raw tool
+  logs, secrets, or private phrases
+- daily notes remain lower-authority continuity and ingestion surfaces, not
+  semantic truth authority
+- before moving from proactivity/daily continuity into Skills, a live
+  `agent:main:main` gate must prove clean same-session item creation, inline
+  surfacing, inbox, heartbeat, and handoff canonical-id parity, clean heartbeat
+  visible copy, and duplicate collapse after related prompts
+
+Reasoning:
+
+- recent operator digests showed missing daily notes for multiple days even
+  after the canonical hook repair, so the default OpenClaw daily memory workflow
+  still lacked a reliable fallback
+- proactivity was functionally present but still needed a strict live gate to
+  prove the normal workflow is clean enough to stop iterating on this bucket
+
 ## 2026-04-27 - Proactivity becomes an ambient operating loop
 
 Decision:

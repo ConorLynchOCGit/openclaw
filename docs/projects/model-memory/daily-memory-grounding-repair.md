@@ -158,3 +158,41 @@ Workspace proof path:
 - missing `2026-04-18` coverage is backfillable from exact same-day evidence
 - the broader continuity contract now also lives in
   [Daily Note Generation Contract](/projects/workspace-topology/daily-note-generation-contract)
+
+## 2026-04-28 continuity reliability repair
+
+The later live operator digests showed that canonical daily notes were still
+not appearing reliably:
+
+- `memory/2026-04-23.md` was missing
+- `memory/2026-04-26.md` was missing
+- `memory/2026-04-27.md` was missing
+- `memory/2026-04-28.md` was missing at repair start
+
+The retained hook still owns `/new` and `/reset` capture, but hook firing alone
+is not a sufficient reliability guarantee for the default daily workflow.
+
+Additional repair:
+
+- add bounded hook telemetry under
+  `archives/session_memory_hook/YYYY-MM-DD.md`
+- add repo-owned finalizer
+  `ops/reviews/daily_memory_continuity_finalizer.sh`
+- schedule the finalizer near end of day from host cron
+- create `memory/YYYY-MM-DD.md` only when exact same-day durable evidence
+  exists
+- skip and report when only stale fallback evidence exists
+
+Backfill rule for this repair:
+
+- allowed: same-day session leaf notes, same-day daily operator review
+  artifacts, same-day daily memory evidence artifacts, same-day DB-backed
+  evidence artifacts, and same-day bounded cron/native summaries
+- blocked: older DB artifacts, stale weekly summaries, inferred memory, raw
+  prompts, full transcripts, raw tool logs, secrets, and private phrases
+
+Authority rule:
+
+- canonical daily notes are continuity and ingestion surfaces only
+- they are not semantic truth authority and must not override model-memory
+  lifecycle, conflict, supersession, or provenance state

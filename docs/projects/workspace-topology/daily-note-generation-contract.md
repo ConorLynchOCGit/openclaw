@@ -49,6 +49,16 @@ Current required behavior:
 1. write the slugged leaf note
 2. append a structured entry into the canonical day file
 
+Reliability layer:
+
+- the hook remains required but is no longer sufficient as the only continuity
+  guarantee
+- the repo-owned daily continuity finalizer must run near the end of day and
+  ensure `memory/YYYY-MM-DD.md` exists when exact same-day durable evidence
+  exists
+- the finalizer must skip, report, and avoid creating a note when only stale or
+  older fallback evidence exists
+
 ## Ownership boundary
 
 Auto-generated:
@@ -85,7 +95,12 @@ Operator review truth order for same-day grounding:
 
 1. `memory/YYYY-MM-DD.md` when present
 2. same-day supporting leaf notes
-3. archived daily evidence artifacts when the canonical daily note is missing
+3. same-day archived daily evidence artifacts when the canonical daily note is
+   missing
+
+`archives/daily_memory_evidence/YYYY-MM-DD.md` is fallback evidence only. It is
+not equivalent to the canonical daily memory file and must not be described as
+the canonical daily note.
 
 ## Failure handling
 
@@ -95,9 +110,16 @@ If the canonical daily note is missing:
 - record the gap explicitly
 - repair the generation path
 - backfill only from exact same-day evidence
+- do not backfill from older DB artifacts, stale weekly summaries, or inferred
+  memory
+- preserve human-authored daily content and append only when automation writes
 
 ## Current repair reference
 
 The `2026-04-18` continuity gap and runtime repair are recorded in:
 
 - [Daily Memory Grounding Repair](/projects/model-memory/daily-memory-grounding-repair)
+
+The `2026-04-28` reliability repair adds the end-of-day finalizer and bounded
+hook telemetry. That repair keeps daily notes as lower-authority continuity
+inputs, not semantic truth.
