@@ -31,6 +31,7 @@ import {
   type Phase2ProductProactivitySurfacingReport,
 } from "./phase2-product-proactivity-surfacing.ts";
 import type { Phase2SkillCandidateRecord } from "./phase2-skill-candidate-ledger.ts";
+import type { Phase2UserFacingProactivityBrief } from "./phase2-user-facing-proactivity-briefs.ts";
 
 export const PHASE2_PROACTIVITY_INBOX_SCHEMA_VERSION = "phase2_proactivity_inbox.v1" as const;
 export const PHASE2_PROACTIVITY_INBOX_REPORT_SCHEMA_VERSION =
@@ -98,6 +99,7 @@ export type Phase2ProactivityInboxItem = {
   evidenceSummary: string;
   confidence: "high" | "medium" | "low";
   blockedIfMissing: string[];
+  userFacingBrief?: Phase2UserFacingProactivityBrief;
   draftReady?: boolean;
   skillifierDraft?: {
     skillPackageId: string;
@@ -512,6 +514,7 @@ function cloneQueueItemForInbox(input: {
     evidenceSummary: input.queueItem.evidenceSummary,
     confidence: input.queueItem.confidence,
     blockedIfMissing: input.queueItem.blockedIfMissing,
+    userFacingBrief: input.queueItem.userFacingBrief,
     draftReady: input.queueItem.draftReady,
     skillifierDraft: input.queueItem.skillifierDraft,
     autonomousDraft: input.queueItem.autonomousDraft,

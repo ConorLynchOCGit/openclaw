@@ -185,6 +185,17 @@ function recencyScore(updatedAt: string, now: Date): number {
 }
 
 function hasCleanHeartbeatSurfaceText(item: Phase2ProductProactivityQueueItem): boolean {
+  if (item.userFacingBrief) {
+    return (
+      item.userFacingBrief.quality.status === "pass" &&
+      isMeaningfulProactivityUserFacingText(item.userFacingBrief.title) &&
+      isMeaningfulProactivityUserFacingText(item.userFacingBrief.oneLinePurpose) &&
+      isMeaningfulProactivityUserFacingText(item.userFacingBrief.recommendedNextStep) &&
+      !isInternalProactivityWorkflowText(item.userFacingBrief.title) &&
+      !isInternalProactivityWorkflowText(item.userFacingBrief.oneLinePurpose) &&
+      !isInternalProactivityWorkflowText(item.userFacingBrief.recommendedNextStep)
+    );
+  }
   return (
     isMeaningfulProactivityUserFacingText(item.planTitle) &&
     isMeaningfulProactivityUserFacingText(item.problem) &&
@@ -284,6 +295,7 @@ export function rankHeartbeatProactivityItems(input: {
 }
 
 function itemForHeartbeat(item: Phase2ProductProactivityQueueItem): Phase2HeartbeatProactivityItem {
+  const brief = item.userFacingBrief;
   return {
     workItemId: item.workItemId,
     queueItemId: item.queueItemId,
@@ -291,17 +303,19 @@ function itemForHeartbeat(item: Phase2ProductProactivityQueueItem): Phase2Heartb
     skillCandidate: item.skillCandidate,
     opportunityClass: item.opportunityClass,
     title:
-      cleanProactivityUserFacingText(item.planTitle, { maxLength: 120 }) ??
+      cleanProactivityUserFacingText(brief?.title ?? item.planTitle, { maxLength: 120 }) ??
       item.planTitle ??
       item.candidateSummary ??
       "Proactive work item",
     whyNow:
-      cleanProactivityUserFacingText(item.problem, { maxLength: 180 }) ??
+      cleanProactivityUserFacingText(brief?.oneLinePurpose ?? item.problem, { maxLength: 180 }) ??
       item.problem ??
       item.candidateSummary ??
       "A recent assistant answer identified useful work.",
     proposedNextStep:
-      cleanProactivityUserFacingText(item.proposedMessage, { maxLength: 220 }) ??
+      cleanProactivityUserFacingText(brief?.recommendedNextStep ?? item.proposedMessage, {
+        maxLength: 220,
+      }) ??
       item.proposedMessage ??
       item.messagePreview ??
       item.boundedDisplayText,

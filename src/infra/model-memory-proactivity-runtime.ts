@@ -53,11 +53,13 @@ import {
   type Phase2SkillifierDraftTargetKind,
   type Phase2SkillifierReport,
 } from "../../extensions/model-memory/src/runtime/phase2-skillifier-draft.js";
+import type { Phase2UserFacingProactivityExistingSkill } from "../../extensions/model-memory/src/runtime/phase2-user-facing-proactivity-briefs.js";
 import type {
   SourceAuthorityTier,
   SourceProfileId,
 } from "../../extensions/model-memory/src/source-authority.js";
 import { resolveAgentWorkspaceDir, resolveSessionAgentId } from "../agents/agent-scope.js";
+import { loadWorkspaceSkillEntries } from "../agents/skills.js";
 import { stripInboundMetadata } from "../auto-reply/reply/strip-inbound-meta.js";
 import { loadConfig } from "../config/config.js";
 import { loadSessionStore } from "../config/sessions/store-load.js";
@@ -370,6 +372,28 @@ function dedupeSkillPackageDrafts(records: Phase2SkillPackageDraft[]): Phase2Ski
   return [...byId.values()]
     .toSorted((left, right) => left.updatedAt.localeCompare(right.updatedAt))
     .slice(-MAX_LIFECYCLE_OVERRIDES);
+}
+
+function loadExistingSkillBriefs(params: {
+  cfg: ReturnType<typeof loadConfig>;
+  sessionKey: string;
+}): Phase2UserFacingProactivityExistingSkill[] {
+  const agentId = resolveSessionAgentId({
+    sessionKey: params.sessionKey,
+    config: params.cfg,
+  });
+  const workspaceDir = resolveAgentWorkspaceDir(params.cfg, agentId);
+  return loadWorkspaceSkillEntries(workspaceDir, {
+    config: params.cfg,
+    agentId,
+  })
+    .map((entry) => ({
+      name: entry.skill.name,
+      description: entry.skill.description,
+      source: entry.skill.source,
+    }))
+    .filter((entry) => entry.name.trim().length > 0)
+    .toSorted((left, right) => left.name.localeCompare(right.name));
 }
 
 function summarizePrompt(text: string): string | undefined {
@@ -1072,6 +1096,7 @@ export async function buildModelMemoryProactivityRuntimeState(
     ledgerReport: effectiveLedgerReport,
     draftReport,
     skillPackageDrafts: activityStoreReport.store.skillPackageDrafts ?? [],
+    existingSkills: loadExistingSkillBriefs({ cfg, sessionKey: params.sessionKey }),
     env: process.env,
   });
   const inboxReport = await buildPhase2ProactivityInboxReport({

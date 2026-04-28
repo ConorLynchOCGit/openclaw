@@ -27,6 +27,11 @@ import {
 import type { Phase2SkillCandidateRecord } from "./phase2-skill-candidate-ledger.ts";
 import type { Phase2SkillPackageDraft } from "./phase2-skillifier-draft.ts";
 import {
+  buildUserFacingProactivityBrief,
+  type Phase2UserFacingProactivityBrief,
+  type Phase2UserFacingProactivityExistingSkill,
+} from "./phase2-user-facing-proactivity-briefs.ts";
+import {
   buildPhase2UserFacingProactivityDefaultPromotionReport,
   type Phase2UserFacingProactivityDefaultMessageClass,
   type Phase2UserFacingProactivityDefaultPromotionReport,
@@ -113,6 +118,7 @@ export type Phase2ProductProactivityQueueItem = {
   evidenceSummary: string;
   confidence: "high" | "medium" | "low";
   blockedIfMissing: string[];
+  userFacingBrief?: Phase2UserFacingProactivityBrief;
   draftReady?: boolean;
   skillifierDraft?: {
     skillPackageId: string;
@@ -265,6 +271,7 @@ export type Phase2ProductProactivitySurfacingInput = {
   ledgerReport?: Phase2OpportunityLedgerReport | null;
   draftReport?: Phase2AutonomousDraftReport | null;
   skillPackageDrafts?: Phase2SkillPackageDraft[] | null;
+  existingSkills?: Phase2UserFacingProactivityExistingSkill[] | null;
   eligibilityScope?: Partial<Phase2ProductProactivityEligibilityScope>;
   messageClass?: Phase2UserFacingProactivityDefaultMessageClass | "external_instruction_message";
   env?: Record<string, string | undefined>;
@@ -879,6 +886,7 @@ function queueItemsFromLedger(input: {
   generatedAt: string;
   draftReport?: Phase2AutonomousDraftReport | null;
   skillPackageDrafts?: Phase2SkillPackageDraft[] | null;
+  existingSkills?: Phase2UserFacingProactivityExistingSkill[] | null;
 }): Phase2ProductProactivityQueueItem[] {
   const draftsByOpportunityId = new Map(
     (input.draftReport?.drafts ?? []).map((draft) => [draft.opportunityId, draft]),
@@ -908,6 +916,39 @@ function queueItemsFromLedger(input: {
                 executesAction: false as const,
               }
             : actionForWorkItemKind(entry.workItemKind);
+    const skillifierDraftSummary = skillifierDraft
+      ? {
+          skillPackageId: skillifierDraft.skillPackageId,
+          skillifierReportId: skillifierDraft.skillifierReportId,
+          decision: skillifierDraft.decision,
+          packageTitle: skillifierDraft.packageTitle,
+          draftPath: skillifierDraft.skillDirectoryPath,
+          reviewSummary: skillifierDraft.reportSummary,
+          nextReviewStep: skillifierDraft.nextReviewStep,
+        }
+      : null;
+    const userFacingBrief = buildUserFacingProactivityBrief({
+      opportunityClass: entry.opportunityClass,
+      opportunityStatus: entry.status,
+      workItemKind: entry.workItemKind,
+      title: entry.title,
+      whyNow: entry.whyNow,
+      proposedNextStep: entry.proposedNextStep,
+      expectedUserValue: entry.expectedUserValue,
+      evidenceSummary: entry.evidenceSummary,
+      confidence: entry.confidence,
+      primaryAction,
+      skillCandidate: entry.skillCandidate,
+      skillifierDraft,
+      existingSkills: input.existingSkills ?? [],
+      sourceRefs: entry.sourceRefs,
+      sourceProfileIds: entry.sourceProfileIds,
+    });
+    const presentationDemoted = userFacingBrief.quality.status === "demote";
+    const effectiveLayer = presentationDemoted ? "diagnostic" : layer;
+    const effectiveStatus: Phase2ProductProactivityQueueItemStatus = presentationDemoted
+      ? "blocked"
+      : status;
     return {
       queueItemId: entry.queueItemId,
       candidateId: entry.candidateId,
@@ -918,8 +959,8 @@ function queueItemsFromLedger(input: {
       opportunityStatus: entry.status,
       workItemKind: entry.workItemKind,
       workItemStatus,
-      primaryAction,
-      secondaryActions: primaryAction ? secondaryWorkItemActions() : [],
+      primaryAction: presentationDemoted ? null : primaryAction,
+      secondaryActions: presentationDemoted || !primaryAction ? [] : secondaryWorkItemActions(),
       ctaExplanation: skillifierDraft
         ? "A bounded review-only skill draft is ready. Review the package and report, then use a chat handoff only if the workflow still needs refinement."
         : draft
@@ -952,18 +993,9 @@ function queueItemsFromLedger(input: {
       evidenceSummary: entry.evidenceSummary,
       confidence: entry.confidence,
       blockedIfMissing: [],
+      userFacingBrief,
       draftReady: Boolean(draft || skillifierDraft),
-      skillifierDraft: skillifierDraft
-        ? {
-            skillPackageId: skillifierDraft.skillPackageId,
-            skillifierReportId: skillifierDraft.skillifierReportId,
-            decision: skillifierDraft.decision,
-            packageTitle: skillifierDraft.packageTitle,
-            draftPath: skillifierDraft.skillDirectoryPath,
-            reviewSummary: skillifierDraft.reportSummary,
-            nextReviewStep: skillifierDraft.nextReviewStep,
-          }
-        : null,
+      skillifierDraft: skillifierDraftSummary,
       autonomousDraft: draft
         ? {
             draftId: draft.draftId,
@@ -976,14 +1008,14 @@ function queueItemsFromLedger(input: {
         : null,
       resolvedByChatMessageId: entry.resolvedByChatMessageId,
       supersededByOpportunityId: entry.supersededByOpportunityId,
-      layer,
-      attentionRequired: layer === "actionable" ? entry.attentionRequired : false,
+      layer: effectiveLayer,
+      attentionRequired: effectiveLayer === "actionable" ? entry.attentionRequired : false,
       sendStatus: "idle",
       sendError: null,
       sentMessageAnchor: entry.resolvedByChatMessageId
         ? `chat-message:${entry.resolvedByChatMessageId}`
         : null,
-      status,
+      status: effectiveStatus,
       eligibleScope: input.scope,
       sourceRefs: entry.sourceRefs,
       sourceProfileIds: entry.sourceProfileIds,
@@ -993,7 +1025,11 @@ function queueItemsFromLedger(input: {
       noDarkDataStatus: entry.noDarkDataStatus,
       staleLabels: entry.staleLabels,
       conflictLabels: entry.conflictLabels,
-      blockedReasonCodes: entry.blockedReasonCodes,
+      blockedReasonCodes: uniqueSortedStrings([
+        ...entry.blockedReasonCodes,
+        ...(presentationDemoted ? ["presentation_quality_demoted"] : []),
+        ...userFacingBrief.quality.reasons.map((reason) => `presentation:${reason}`),
+      ]),
       generatedAt: entry.generatedAt,
       updatedAt: entry.updatedAt,
     };
@@ -1079,6 +1115,7 @@ export async function buildPhase2ProductProactivitySurfacingReport(
           generatedAt,
           draftReport: input.draftReport,
           skillPackageDrafts: input.skillPackageDrafts,
+          existingSkills: input.existingSkills,
         })
       : (() => {
           const queueItemId = buildDerivedArtifactId({
@@ -1136,6 +1173,28 @@ export async function buildPhase2ProductProactivitySurfacingReport(
           });
           const primaryAction =
             workItemKind === "diagnostic" ? null : actionForWorkItemKind(workItemKind);
+          const fallbackSourceRefs = uniqueSortedStrings([
+            ...defaultPromotionReport.telemetry.sourceRefs,
+            ...(realCandidate?.sourceRefs ?? []),
+          ]);
+          const fallbackSourceProfileIds = uniqueSortedStrings([
+            ...defaultPromotionReport.telemetry.sourceProfileIds,
+            ...(realCandidate?.sourceProfileIds ?? []),
+          ]) as SourceProfileId[];
+          const userFacingBrief = buildUserFacingProactivityBrief({
+            opportunityClass: "standard",
+            workItemKind,
+            title: contentFields.planTitle,
+            whyNow: contentFields.problem,
+            proposedNextStep: contentFields.proposedMessage || contentFields.messagePreview,
+            expectedUserValue: contentFields.expectedUserValue,
+            evidenceSummary: contentFields.evidenceSummary,
+            confidence: contentFields.confidence,
+            primaryAction,
+            existingSkills: input.existingSkills ?? [],
+            sourceRefs: fallbackSourceRefs,
+            sourceProfileIds: fallbackSourceProfileIds,
+          });
           return [
             {
               queueItemId,
@@ -1155,16 +1214,11 @@ export async function buildPhase2ProductProactivitySurfacingReport(
               messageClass: effectiveMessageClass,
               boundedDisplayText,
               ...contentFields,
+              userFacingBrief,
               status: itemStatus,
               eligibleScope: scope,
-              sourceRefs: uniqueSortedStrings([
-                ...defaultPromotionReport.telemetry.sourceRefs,
-                ...(realCandidate?.sourceRefs ?? []),
-              ]),
-              sourceProfileIds: uniqueSortedStrings([
-                ...defaultPromotionReport.telemetry.sourceProfileIds,
-                ...(realCandidate?.sourceProfileIds ?? []),
-              ]) as SourceProfileId[],
+              sourceRefs: fallbackSourceRefs,
+              sourceProfileIds: fallbackSourceProfileIds,
               authorityTiers: uniqueSortedStrings([
                 ...defaultPromotionReport.telemetry.authorityTiers,
                 ...(realCandidate?.authorityTiers ?? []),
@@ -1194,6 +1248,7 @@ export async function buildPhase2ProductProactivitySurfacingReport(
                     : ["no_live_opportunities_detected"]
                   : []),
                 ...(realCandidate?.blockedReasonCodes ?? []),
+                ...userFacingBrief.quality.reasons.map((reason) => `presentation:${reason}`),
               ]),
               layer:
                 decision === "product_queue_enabled" &&

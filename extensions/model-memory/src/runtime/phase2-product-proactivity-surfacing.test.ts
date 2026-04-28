@@ -48,6 +48,10 @@ describe("phase2 product proactivity surfacing", () => {
       status: "pending_review",
       boundedDisplayText: "Advance current openclaw work",
       planTitle: "Advance current openclaw work",
+      userFacingBrief: {
+        kindLabel: "Follow-up",
+        quality: { status: "pass" },
+      },
       proposedMessage: expect.stringContaining("Skills path after proactivity remediation"),
       workItemKind: "planning_request",
       primaryAction: {
