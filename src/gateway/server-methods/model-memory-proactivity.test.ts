@@ -1,3 +1,4 @@
+import fs from "node:fs/promises";
 import { describe, expect, it, vi } from "vitest";
 import { emitHeartbeatEvent, resetHeartbeatEventsForTest } from "../../infra/heartbeat-events.js";
 import { enqueueSystemEvent, resetSystemEventsForTest } from "../../infra/system-events.js";
@@ -392,6 +393,118 @@ describe("model-memory proactivity gateway handlers", () => {
       lifecycleStatus: "detected",
       installTargets: ["workspace_skills_dir"],
     });
+  });
+
+  it("skillifies one canonical skill candidate into a bounded workspace-local draft", async () => {
+    const sessionKey = "skillifier-gateway-test";
+    const projectId = "openclaw";
+    const userId = "conor";
+    const recipientId = "conor";
+    const operatorId = "operator-conor";
+
+    await modelMemoryProactivityHandlers["modelMemory.proactivity.recordChatActivity"]({
+      req: {
+        type: "req",
+        id: "req-skillifier-chat-activity-1",
+        method: "modelMemory.proactivity.recordChatActivity",
+        params: {},
+      },
+      params: {
+        sessionKey,
+        projectId,
+        sourceKind: "assistant_turn",
+        sourceMessageId: "assistant-skillifier-1",
+        boundedText:
+          "Plan the skill candidate ledger integration so recurring work becomes one canonical opportunity across inline, heartbeat, inbox, and handoff.",
+        userPromptSummary:
+          "Review recurring work in this repo that should eventually become reusable skills.",
+      },
+      client: null,
+      isWebchatConnect: () => true,
+      respond: vi.fn(),
+      context: {} as never,
+    });
+    await modelMemoryProactivityHandlers["modelMemory.proactivity.recordChatActivity"]({
+      req: {
+        type: "req",
+        id: "req-skillifier-chat-activity-2",
+        method: "modelMemory.proactivity.recordChatActivity",
+        params: {},
+      },
+      params: {
+        sessionKey,
+        projectId,
+        sourceKind: "assistant_turn",
+        sourceMessageId: "assistant-skillifier-2",
+        boundedText:
+          "Plan the skill candidate ledger integration so recurring work becomes one canonical opportunity across inline, heartbeat, inbox, and handoff.",
+        userPromptSummary:
+          "Stay on the same skill candidate area and identify the next implementation step.",
+      },
+      client: null,
+      isWebchatConnect: () => true,
+      respond: vi.fn(),
+      context: {} as never,
+    });
+
+    const queueRespond = vi.fn();
+    await modelMemoryProactivityHandlers["modelMemory.proactivity.queue"]({
+      req: {
+        type: "req",
+        id: "req-skillifier-queue",
+        method: "modelMemory.proactivity.queue",
+        params: {},
+      },
+      params: { sessionKey, projectId, userId, recipientId, operatorId },
+      client: null,
+      isWebchatConnect: () => true,
+      respond: queueRespond,
+      context: {} as never,
+    });
+    const [, queuePayload] = queueRespond.mock.calls[0];
+    const skillCandidateId = queuePayload.queue.items.find(
+      (item: { opportunityClass?: string; skillCandidate?: { skillCandidateId?: string } }) =>
+        item.opportunityClass === "skill_candidate",
+    )?.skillCandidate?.skillCandidateId;
+    expect(skillCandidateId).toBeTruthy();
+
+    const respond = vi.fn();
+    await modelMemoryProactivityHandlers["modelMemory.proactivity.skillifyCandidateDraft"]({
+      req: {
+        type: "req",
+        id: "req-skillifier-draft",
+        method: "modelMemory.proactivity.skillifyCandidateDraft",
+        params: {},
+      },
+      params: {
+        sessionKey,
+        projectId,
+        userId,
+        recipientId,
+        operatorId,
+        skillCandidateId,
+      },
+      client: null,
+      isWebchatConnect: () => true,
+      respond,
+      context: {} as never,
+    });
+
+    const [ok, payload] = respond.mock.calls[0];
+    expect(ok).toBe(true);
+    expect(payload).toMatchObject({
+      ok: true,
+      decision: "draft_ready",
+      skillCandidateId,
+      reviewOnly: true,
+      installationEnabled: false,
+      promotionEnabled: false,
+    });
+    expect(payload.draftPath).toContain("/skills/");
+    expect(payload.draftPath).not.toContain("/root/services/openclaw-roles/live/skills/");
+    const reportRaw = await fs.readFile(payload.reportPath, "utf8");
+    expect(reportRaw).toContain("draft_ready");
+    await fs.rm(payload.draftPath, { recursive: true, force: true }).catch(() => undefined);
   });
 
   it("skips assistant-turn fallback capture when bounded text is missing", async () => {

@@ -162,6 +162,79 @@ describe("OpenClawApp proactivity product correctness", () => {
     expect(app.productProactivityError).toContain("simulated handoff failure");
   });
 
+  it("draft skill package calls the bounded skillifier gateway method instead of chat handoff", async () => {
+    const request = vi.fn(async (method: string) => {
+      if (method === "modelMemory.proactivity.skillifyCandidateDraft") {
+        return { ok: true, decision: "draft_ready" };
+      }
+      return { ok: true, queue: { items: [] }, digest: { items: [] } };
+    });
+    const app = new OpenClawApp();
+    app.client = { request } as never;
+    app.sessionKey = "main";
+    app.proactivityInboxDigest = inboxDigest(
+      actionableInboxItem({
+        primaryAction: {
+          actionType: "draft_skill_package",
+          label: "Draft skill package",
+          description: "Creates a bounded review-only skill draft.",
+          requiresChatInject: false,
+          executesAction: false,
+        },
+        skillCandidate: {
+          skillCandidateId: "skill-candidate-1",
+          proactivityOpportunityId: "opportunity-1",
+          normalizedIntentKey: "skill candidate ledger integration",
+          sourceRuntime: "openclaw_session",
+          candidateType: "repeated_work_pattern",
+          evidenceSummary: "Bounded repeated workflow evidence.",
+          recurrenceCount: 2,
+          recurrenceWindow: {
+            firstSeenAt: "2026-04-28T09:00:00.000Z",
+            lastSeenAt: "2026-04-28T09:01:00.000Z",
+          },
+          exampleHashes: ["hash-1"],
+          suggestedSkillName: "skill-candidate-ledger-integration",
+          riskTier: "low",
+          autonomyLevelCeiling: 1,
+          lifecycleStatus: "detected",
+          installTargets: ["workspace_skills_dir"],
+          evalStatus: "not_started",
+          vettingStatus: "not_started",
+          canaryStatus: "not_started",
+          createdAt: "2026-04-28T09:01:00.000Z",
+          updatedAt: "2026-04-28T09:01:00.000Z",
+          provenanceRefs: ["chat://main/assistant_turn/skill-candidate-1"],
+          rollbackPlan: {
+            rollbackId: "rollback-1",
+            strategy: "disable_candidate_only",
+            targetPaths: ["workspace_skills_dir"],
+            directMainMutationAllowed: false,
+          },
+        },
+      }),
+    );
+    app.productProactivityQueue = [];
+    const loadQueue = vi.spyOn(app, "loadProductProactivityQueue").mockResolvedValue(undefined);
+    const loadInbox = vi.spyOn(app, "loadProactivityInbox").mockResolvedValue(undefined);
+    const sendChat = vi.spyOn(app, "handleSendChat").mockResolvedValue(undefined);
+
+    await app.handleProductProactivityWorkAction("queue-item-1", "draft_skill_package");
+
+    expect(sendChat).not.toHaveBeenCalled();
+    expect(request).toHaveBeenCalledWith("modelMemory.proactivity.skillifyCandidateDraft", {
+      sessionKey: "main",
+      projectId: "openclaw",
+      operatorId: undefined,
+      userId: undefined,
+      recipientId: undefined,
+      skillCandidateId: "skill-candidate-1",
+    });
+    expect(loadQueue).toHaveBeenCalledTimes(1);
+    expect(loadInbox).toHaveBeenCalledTimes(1);
+    expect(app.productProactivityError).toBeNull();
+  });
+
   it("preserves started handoff state across queue and inbox reloads", async () => {
     const queueItem: ProductProactivityQueueItem = {
       ...actionableInboxItem({

@@ -47,10 +47,17 @@ import {
   type Phase2SkillCandidateLedgerReport,
   type Phase2SkillCandidateRecord,
 } from "../../extensions/model-memory/src/runtime/phase2-skill-candidate-ledger.js";
+import {
+  createPhase2SkillifierDraft,
+  type Phase2SkillPackageDraft,
+  type Phase2SkillifierDraftTargetKind,
+  type Phase2SkillifierReport,
+} from "../../extensions/model-memory/src/runtime/phase2-skillifier-draft.js";
 import type {
   SourceAuthorityTier,
   SourceProfileId,
 } from "../../extensions/model-memory/src/source-authority.js";
+import { resolveAgentWorkspaceDir, resolveSessionAgentId } from "../agents/agent-scope.js";
 import { stripInboundMetadata } from "../auto-reply/reply/strip-inbound-meta.js";
 import { loadConfig } from "../config/config.js";
 import { loadSessionStore } from "../config/sessions/store-load.js";
@@ -125,6 +132,7 @@ export type Phase2ProactivityActivityStore = {
   maintenanceJobs?: Phase2AutonomousMaintenanceJob[];
   recoveryState?: Phase2ProactivityCompactionRecoveryState | null;
   skillCandidates?: Phase2SkillCandidateRecord[];
+  skillPackageDrafts?: Phase2SkillPackageDraft[];
 };
 
 export type Phase2ProactivityActivityStoreDecision =
@@ -179,6 +187,7 @@ type GatewayProactivityBuildState = {
   extractionReport: Awaited<ReturnType<typeof buildPhase2ProactivityOpportunityExtractionReport>>;
   recurringPatternReport: Awaited<ReturnType<typeof buildPhase2ProactivityRecurringPatternReport>>;
   skillCandidateReport: Phase2SkillCandidateLedgerReport;
+  skillifierDrafts: Phase2SkillPackageDraft[];
   growthLoopReport: Phase2GrowthLoopReport;
   ledgerReport: Phase2OpportunityLedgerReport;
   followupReport: Awaited<ReturnType<typeof buildPhase2ProactivityOutcomeFollowupReport>>;
@@ -254,6 +263,9 @@ async function loadActivityStore(storePath: string): Promise<Phase2ProactivityAc
         maintenanceJobs: Array.isArray(parsed.maintenanceJobs) ? parsed.maintenanceJobs : [],
         recoveryState: parsed.recoveryState ?? null,
         skillCandidates: Array.isArray(parsed.skillCandidates) ? parsed.skillCandidates : [],
+        skillPackageDrafts: Array.isArray(parsed.skillPackageDrafts)
+          ? parsed.skillPackageDrafts
+          : [],
       };
     }
   } catch {
@@ -270,6 +282,7 @@ async function loadActivityStore(storePath: string): Promise<Phase2ProactivityAc
     maintenanceJobs: [],
     recoveryState: null,
     skillCandidates: [],
+    skillPackageDrafts: [],
   };
 }
 
@@ -339,6 +352,19 @@ function dedupeSkillCandidates(
     const existing = byId.get(record.skillCandidateId);
     if (!existing || existing.updatedAt < record.updatedAt) {
       byId.set(record.skillCandidateId, record);
+    }
+  }
+  return [...byId.values()]
+    .toSorted((left, right) => left.updatedAt.localeCompare(right.updatedAt))
+    .slice(-MAX_LIFECYCLE_OVERRIDES);
+}
+
+function dedupeSkillPackageDrafts(records: Phase2SkillPackageDraft[]): Phase2SkillPackageDraft[] {
+  const byId = new Map<string, Phase2SkillPackageDraft>();
+  for (const record of records) {
+    const existing = byId.get(record.skillPackageId);
+    if (!existing || existing.updatedAt < record.updatedAt) {
+      byId.set(record.skillPackageId, record);
     }
   }
   return [...byId.values()]
@@ -1045,6 +1071,7 @@ export async function buildModelMemoryProactivityRuntimeState(
     liveDetectionReport,
     ledgerReport: effectiveLedgerReport,
     draftReport,
+    skillPackageDrafts: activityStoreReport.store.skillPackageDrafts ?? [],
     env: process.env,
   });
   const inboxReport = await buildPhase2ProactivityInboxReport({
@@ -1082,6 +1109,7 @@ export async function buildModelMemoryProactivityRuntimeState(
     extractionReport,
     recurringPatternReport,
     skillCandidateReport,
+    skillifierDrafts: activityStoreReport.store.skillPackageDrafts ?? [],
     growthLoopReport,
     ledgerReport: effectiveLedgerReport,
     followupReport,
@@ -1089,6 +1117,78 @@ export async function buildModelMemoryProactivityRuntimeState(
     productSurfacingReport,
     heartbeatReport,
   };
+}
+
+export async function createSkillifierDraftForCandidate(params: {
+  cfg?: ReturnType<typeof loadConfig>;
+  sessionKey: string;
+  projectId: string;
+  operatorId: string;
+  userId: string;
+  recipientId: string;
+  skillCandidateId: string;
+  requestedTargetKind?: Phase2SkillifierDraftTargetKind;
+}): Promise<{
+  activityStoreReport: Phase2ProactivityActivityStoreReport;
+  report: Phase2SkillifierReport;
+}> {
+  const cfg = params.cfg ?? loadConfig();
+  const state = await buildModelMemoryProactivityRuntimeState({
+    cfg,
+    sessionKey: params.sessionKey,
+    projectId: params.projectId,
+    operatorId: params.operatorId,
+    userId: params.userId,
+    recipientId: params.recipientId,
+  });
+  const skillCandidate = state.skillCandidateReport.records.find(
+    (record) => record.skillCandidateId === params.skillCandidateId,
+  );
+  if (!skillCandidate) {
+    throw new Error(`unknown skill candidate: ${params.skillCandidateId}`);
+  }
+  const ledgerEntry = state.ledgerReport.ledger.entries.find(
+    (entry) => entry.skillCandidate?.skillCandidateId === params.skillCandidateId,
+  );
+  if (!ledgerEntry) {
+    throw new Error(
+      `missing proactivity ledger entry for skill candidate: ${params.skillCandidateId}`,
+    );
+  }
+  const sessionAgentId = resolveSessionAgentId({
+    sessionKey: params.sessionKey,
+    config: cfg,
+  });
+  const workspaceDir = resolveAgentWorkspaceDir(cfg, sessionAgentId);
+  const report = await createPhase2SkillifierDraft({
+    workspaceDir,
+    skillCandidate,
+    ledgerEntry,
+    requestedTargetKind: params.requestedTargetKind,
+  });
+  const store = await loadActivityStore(state.activityStoreReport.storePath);
+  store.skillPackageDrafts = dedupeSkillPackageDrafts([
+    ...(store.skillPackageDrafts ?? []),
+    report.draft,
+  ]);
+  await saveActivityStore(state.activityStoreReport.storePath, store);
+  if (report.decision === "draft_ready") {
+    await updatePersistedProactivityLifecycleOverride({
+      sessionKey: params.sessionKey,
+      projectId: params.projectId,
+      override: {
+        opportunityId: skillCandidate.proactivityOpportunityId,
+        status: "draft_ready",
+        updatedAt: new Date().toISOString(),
+      },
+    });
+  }
+  const activityStoreReport = await syncAuthoritativeProactivityActivities({
+    cfg,
+    sessionKey: params.sessionKey,
+    projectId: params.projectId,
+  });
+  return { activityStoreReport, report };
 }
 
 export async function buildHeartbeatProactivityReviewText(params: {

@@ -1454,15 +1454,26 @@ function collapseSameSessionSurfaceItems<
 >(items: T[]): T[] {
   const confidenceRank = (confidence: string | undefined) =>
     confidence === "high" ? 3 : confidence === "medium" ? 2 : confidence === "low" ? 1 : 0;
+  const surfacePriority = (item: ProductProactivityQueueItem | ProactivityInboxItem) =>
+    (item.skillifierDraft ? 1_000 : 0) +
+    (item.opportunityClass === "skill_candidate" ? 200 : 0) +
+    (item.draftReady ? 100 : 0) +
+    confidenceRank(item.confidence);
   const updatedAtValue = (item: ProductProactivityQueueItem | ProactivityInboxItem) =>
     "updatedAt" in item && typeof item.updatedAt === "string" ? item.updatedAt : "";
   const chooseBest = (bestByKey: Map<string, T>, key: string | null, item: T) => {
     if (key) {
       const existing = bestByKey.get(key);
+      const itemPriority = surfacePriority(item);
+      const existingPriority = existing ? surfacePriority(existing) : -1;
       if (
         !existing ||
-        updatedAtValue(item).localeCompare(updatedAtValue(existing)) > 0 ||
-        confidenceRank(item.confidence) > confidenceRank(existing.confidence)
+        itemPriority > existingPriority ||
+        (itemPriority === existingPriority &&
+          updatedAtValue(item).localeCompare(updatedAtValue(existing)) > 0) ||
+        (itemPriority === existingPriority &&
+          updatedAtValue(item) === updatedAtValue(existing) &&
+          confidenceRank(item.confidence) > confidenceRank(existing.confidence))
       ) {
         bestByKey.set(key, item);
       }
@@ -1539,21 +1550,26 @@ function getContextMismatchDiagnostics(props: ChatProps): string[] {
     .filter((reason): reason is string => Boolean(reason));
 }
 
-function getActionableQueueItems(props: ChatProps): ProductProactivityQueueItem[] {
-  return collapseSameSessionSurfaceItems(
-    (props.productProactivityQueue ?? []).filter(
-      (item) =>
-        item.status === "pending_review" &&
-        item.layer !== "diagnostic" &&
-        item.noDarkDataStatus === "pass" &&
-        Boolean(getStoredProactivityProposedMessage(item).trim()) &&
-        Boolean(getProactivityPlanTitle(item).trim()) &&
-        !isGenericPlaceholder(item.proposedMessage) &&
-        !isGenericPlaceholder(item.planTitle) &&
-        hasCleanPrimaryProactivitySurfaceText(item) &&
-        (item.blockedIfMissing?.length ?? 0) === 0,
-    ),
+function isActionableQueueItem(item: ProductProactivityQueueItem): boolean {
+  return (
+    item.status === "pending_review" &&
+    item.layer !== "diagnostic" &&
+    item.noDarkDataStatus === "pass" &&
+    Boolean(getStoredProactivityProposedMessage(item).trim()) &&
+    Boolean(getProactivityPlanTitle(item).trim()) &&
+    !isGenericPlaceholder(item.proposedMessage) &&
+    !isGenericPlaceholder(item.planTitle) &&
+    hasCleanPrimaryProactivitySurfaceText(item) &&
+    (item.blockedIfMissing?.length ?? 0) === 0
   );
+}
+
+function getRawActionableQueueItems(props: ChatProps): ProductProactivityQueueItem[] {
+  return (props.productProactivityQueue ?? []).filter(isActionableQueueItem);
+}
+
+function getActionableQueueItems(props: ChatProps): ProductProactivityQueueItem[] {
+  return collapseSameSessionSurfaceItems(getRawActionableQueueItems(props));
 }
 
 function getVisibleInboxItems(
@@ -1640,10 +1656,40 @@ function getProactivityOpportunityClassChipClass(
 
 function renderProactivityDraftSection(
   item:
-    | Pick<ProductProactivityQueueItem, "draftReady" | "autonomousDraft">
-    | Pick<ProactivityInboxItem, "draftReady" | "autonomousDraft">,
+    | Pick<ProductProactivityQueueItem, "draftReady" | "skillifierDraft" | "autonomousDraft">
+    | Pick<ProactivityInboxItem, "draftReady" | "skillifierDraft" | "autonomousDraft">,
 ): TemplateResult | typeof nothing {
-  if (!item.draftReady || !item.autonomousDraft) {
+  if (!item.draftReady) {
+    return nothing;
+  }
+  if (item.skillifierDraft) {
+    return html`
+      <div class="product-proactivity-item__section">
+        <span>Draft ready</span>
+        <div>${item.skillifierDraft.reviewSummary}</div>
+      </div>
+      <details class="product-proactivity-item__details">
+        <summary>Review skill draft</summary>
+        <div class="operator-row">
+          <span>Package</span>
+          <span>${item.skillifierDraft.packageTitle}</span>
+        </div>
+        <div class="operator-row">
+          <span>Draft path</span>
+          <span>${item.skillifierDraft.draftPath}</span>
+        </div>
+        <div class="operator-row">
+          <span>Report</span>
+          <span>${item.skillifierDraft.decision}</span>
+        </div>
+        <div class="operator-row">
+          <span>Next review step</span>
+          <span>${item.skillifierDraft.nextReviewStep}</span>
+        </div>
+      </details>
+    `;
+  }
+  if (!item.autonomousDraft) {
     return nothing;
   }
   return html`
@@ -1769,7 +1815,7 @@ function getVisibleAssistantSourceRefs(props: ChatProps): Set<string> {
 function currentSessionAssistantPriority(
   item: ProductProactivityQueueItem,
   visibleAssistantSourceRefs: Set<string>,
-): number {
+): [number, number, number, number, number, number] {
   const matchingVisibleSource = item.sourceRefs.some((sourceRef) =>
     visibleAssistantSourceRefs.has(sourceRef),
   );
@@ -1779,13 +1825,30 @@ function currentSessionAssistantPriority(
       sourceRef.startsWith(`chat://${item.eligibleScope.sessionKey}/planning_output/`),
   );
   const updatedAtMs = Date.parse(item.updatedAt);
-  const recencyBonus = Number.isFinite(updatedAtMs) ? updatedAtMs : 0;
-  return (
-    (matchingVisibleSource ? 10_000 : 0) +
-    (sessionAssistantSource ? 1_000 : 0) +
-    (item.draftReady ? 100 : 0) +
-    recencyBonus
-  );
+  return [
+    matchingVisibleSource ? 1 : 0,
+    sessionAssistantSource ? 1 : 0,
+    item.skillifierDraft ? 1 : 0,
+    item.opportunityClass === "skill_candidate" ? 1 : 0,
+    item.draftReady ? 1 : 0,
+    Number.isFinite(updatedAtMs) ? updatedAtMs : 0,
+  ];
+}
+
+function compareCurrentSessionAssistantPriority(
+  left: ProductProactivityQueueItem,
+  right: ProductProactivityQueueItem,
+  visibleAssistantSourceRefs: Set<string>,
+): number {
+  const leftPriority = currentSessionAssistantPriority(left, visibleAssistantSourceRefs);
+  const rightPriority = currentSessionAssistantPriority(right, visibleAssistantSourceRefs);
+  for (let index = 0; index < leftPriority.length; index += 1) {
+    const delta = rightPriority[index] - leftPriority[index];
+    if (delta !== 0) {
+      return delta;
+    }
+  }
+  return left.queueItemId.localeCompare(right.queueItemId);
 }
 
 function getContextualProactivityItems(props: ChatProps): ProductProactivityQueueItem[] {
@@ -1797,8 +1860,7 @@ function getContextualProactivityItems(props: ChatProps): ProductProactivityQueu
     .filter((item) => !item.staleLabels.includes("repeated"))
     .toSorted(
       (left, right) =>
-        currentSessionAssistantPriority(right, visibleAssistantSourceRefs) -
-          currentSessionAssistantPriority(left, visibleAssistantSourceRefs) ||
+        compareCurrentSessionAssistantPriority(left, right, visibleAssistantSourceRefs) ||
         right.updatedAt.localeCompare(left.updatedAt) ||
         left.queueItemId.localeCompare(right.queueItemId),
     )
@@ -1809,7 +1871,8 @@ function getLatestInlineCandidateSelection(props: ChatProps): {
   items: ProductProactivityQueueItem[];
   messageIds: Set<string>;
 } {
-  const actionableItems = getActionableQueueItems(props);
+  const actionableItems = getRawActionableQueueItems(props);
+  const visibleAssistantSourceRefs = getVisibleAssistantSourceRefs(props);
   if (actionableItems.length === 0) {
     return { items: [], messageIds: new Set() };
   }
@@ -1832,6 +1895,12 @@ function getLatestInlineCandidateSelection(props: ChatProps): {
     );
     const matches = actionableItems
       .filter((item) => item.sourceRefs.some((sourceRef) => sourceRefs.has(sourceRef)))
+      .toSorted(
+        (left, right) =>
+          compareCurrentSessionAssistantPriority(left, right, visibleAssistantSourceRefs) ||
+          right.updatedAt.localeCompare(left.updatedAt) ||
+          left.queueItemId.localeCompare(right.queueItemId),
+      )
       .slice(0, 2);
     if (matches.length > 0) {
       return { items: matches, messageIds: latestAssistantMessageIds };
@@ -1888,8 +1957,15 @@ function getInlineProactivityItems(
   const sourceRefs = new Set(
     messageIds.map((messageId) => `chat://${props.sessionKey}/assistant_turn/${messageId}`),
   );
-  const matches = getActionableQueueItems(props)
+  const visibleAssistantSourceRefs = getVisibleAssistantSourceRefs(props);
+  const matches = getRawActionableQueueItems(props)
     .filter((item) => item.sourceRefs.some((sourceRef) => sourceRefs.has(sourceRef)))
+    .toSorted(
+      (left, right) =>
+        compareCurrentSessionAssistantPriority(left, right, visibleAssistantSourceRefs) ||
+        right.updatedAt.localeCompare(left.updatedAt) ||
+        left.queueItemId.localeCompare(right.queueItemId),
+    )
     .slice(0, 2);
   if (matches.length === 0) {
     return [];

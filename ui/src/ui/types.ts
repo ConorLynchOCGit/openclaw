@@ -77,6 +77,7 @@ export type ProductProactivityActionType =
   | "plan_this"
   | "investigate"
   | "draft_next_steps"
+  | "draft_skill_package"
   | "start_scoped_task"
   | "open_in_current_chat"
   | "add_to_daily_review"
@@ -205,6 +206,15 @@ export type ProductProactivityQueueItem = {
   confidence?: ProductProactivityConfidence;
   blockedIfMissing?: string[];
   draftReady?: boolean;
+  skillifierDraft?: {
+    skillPackageId: string;
+    skillifierReportId: string;
+    decision: string;
+    packageTitle: string;
+    draftPath: string;
+    reviewSummary: string;
+    nextReviewStep: string;
+  } | null;
   autonomousDraft?: {
     draftId: string;
     draftKind: string;
@@ -344,6 +354,7 @@ export type ProactivityInboxItem = {
   confidence?: ProductProactivityConfidence;
   blockedIfMissing?: string[];
   draftReady?: boolean;
+  skillifierDraft?: ProductProactivityQueueItem["skillifierDraft"];
   autonomousDraft?: ProductProactivityQueueItem["autonomousDraft"];
   resolvedByChatMessageId?: string | null;
   supersededByOpportunityId?: string | null;

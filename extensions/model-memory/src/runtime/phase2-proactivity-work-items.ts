@@ -41,6 +41,7 @@ export type Phase2ProactivityWorkItemActionType =
   | "plan_this"
   | "investigate"
   | "draft_next_steps"
+  | "draft_skill_package"
   | "start_scoped_task"
   | "open_in_current_chat"
   | "add_to_daily_review"

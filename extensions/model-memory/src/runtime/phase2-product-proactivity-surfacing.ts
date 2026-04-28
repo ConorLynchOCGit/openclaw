@@ -25,6 +25,7 @@ import {
   type Phase2RealMemoryCandidateReport,
 } from "./phase2-real-memory-proactivity-candidates.ts";
 import type { Phase2SkillCandidateRecord } from "./phase2-skill-candidate-ledger.ts";
+import type { Phase2SkillPackageDraft } from "./phase2-skillifier-draft.ts";
 import {
   buildPhase2UserFacingProactivityDefaultPromotionReport,
   type Phase2UserFacingProactivityDefaultMessageClass,
@@ -113,6 +114,15 @@ export type Phase2ProductProactivityQueueItem = {
   confidence: "high" | "medium" | "low";
   blockedIfMissing: string[];
   draftReady?: boolean;
+  skillifierDraft?: {
+    skillPackageId: string;
+    skillifierReportId: string;
+    decision: string;
+    packageTitle: string;
+    draftPath: string;
+    reviewSummary: string;
+    nextReviewStep: string;
+  } | null;
   autonomousDraft?: {
     draftId: string;
     draftKind: string;
@@ -254,6 +264,7 @@ export type Phase2ProductProactivitySurfacingInput = {
   liveDetectionReport?: Phase2LiveProactivityDetectionReport | null;
   ledgerReport?: Phase2OpportunityLedgerReport | null;
   draftReport?: Phase2AutonomousDraftReport | null;
+  skillPackageDrafts?: Phase2SkillPackageDraft[] | null;
   eligibilityScope?: Partial<Phase2ProductProactivityEligibilityScope>;
   messageClass?: Phase2UserFacingProactivityDefaultMessageClass | "external_instruction_message";
   env?: Record<string, string | undefined>;
@@ -867,19 +878,36 @@ function queueItemsFromLedger(input: {
   scope: Phase2ProductProactivityEligibilityScope;
   generatedAt: string;
   draftReport?: Phase2AutonomousDraftReport | null;
+  skillPackageDrafts?: Phase2SkillPackageDraft[] | null;
 }): Phase2ProductProactivityQueueItem[] {
   const draftsByOpportunityId = new Map(
     (input.draftReport?.drafts ?? []).map((draft) => [draft.opportunityId, draft]),
   );
+  const skillifierDraftsByOpportunityId = new Map(
+    (input.skillPackageDrafts ?? []).map((draft) => [draft.proactivityOpportunityId, draft]),
+  );
   return input.entries.map((entry) => {
     const draft = draftsByOpportunityId.get(entry.opportunityId);
-    const workItemStatus = draft ? "drafted" : workItemStatusForOpportunityStatus(entry);
+    const skillifierDraft = skillifierDraftsByOpportunityId.get(entry.opportunityId);
+    const workItemStatus =
+      draft || skillifierDraft ? "drafted" : workItemStatusForOpportunityStatus(entry);
     const status = queueStatusForOpportunityStatus(entry.status);
     const layer = layerForOpportunityStatus(entry.status);
     const primaryAction =
       entry.status === "done" || entry.status === "dismissed" || entry.status === "snoozed"
         ? null
-        : actionForWorkItemKind(entry.workItemKind);
+        : skillifierDraft
+          ? actionForWorkItemKind(entry.workItemKind)
+          : entry.opportunityClass === "skill_candidate"
+            ? {
+                actionType: "draft_skill_package" as const,
+                label: "Draft skill package",
+                description:
+                  "Creates a bounded review-only skill draft in an allowed workspace-local path. It does not install or promote the skill.",
+                requiresChatInject: false,
+                executesAction: false as const,
+              }
+            : actionForWorkItemKind(entry.workItemKind);
     return {
       queueItemId: entry.queueItemId,
       candidateId: entry.candidateId,
@@ -892,11 +920,13 @@ function queueItemsFromLedger(input: {
       workItemStatus,
       primaryAction,
       secondaryActions: primaryAction ? secondaryWorkItemActions() : [],
-      ctaExplanation: draft
-        ? "A bounded internal draft is ready. Review it, then start the next chat handoff only if useful."
-        : entry.opportunityClass === "skill_candidate"
-          ? "Starts bounded planning for a reusable skill candidate. It does not generate, install, or promote any skill package yet."
-          : "Starts bounded work from the canonical proactivity ledger; no file edit, action execution, or outbound send occurs without approval.",
+      ctaExplanation: skillifierDraft
+        ? "A bounded review-only skill draft is ready. Review the package and report, then use a chat handoff only if the workflow still needs refinement."
+        : draft
+          ? "A bounded internal draft is ready. Review it, then start the next chat handoff only if useful."
+          : entry.opportunityClass === "skill_candidate"
+            ? "Creates a bounded review-only skill draft for the reusable workflow. It does not install or promote any skill package."
+            : "Starts bounded work from the canonical proactivity ledger; no file edit, action execution, or outbound send occurs without approval.",
       handoffStatus: "idle",
       handoffError: null,
       handoffMessageAnchor: null,
@@ -906,11 +936,13 @@ function queueItemsFromLedger(input: {
           : "operator_approved_suggestion_available",
       boundedDisplayText: entry.title,
       messagePreview: entry.proposedNextStep,
-      suggestedAction: draft
-        ? "Review the bounded internal draft and decide whether to start the next chat handoff."
-        : entry.opportunityClass === "skill_candidate"
-          ? `Review whether ${entry.skillCandidate?.suggestedSkillName ?? "this repeated workflow"} should become a reusable skill, then plan the smallest safe implementation slice.`
-          : `Start bounded work for ${entry.title}.`,
+      suggestedAction: skillifierDraft
+        ? "Review the generated skill draft and deterministic report, then decide whether a bounded chat handoff should refine it further."
+        : draft
+          ? "Review the bounded internal draft and decide whether to start the next chat handoff."
+          : entry.opportunityClass === "skill_candidate"
+            ? `Create a bounded draft package for ${entry.skillCandidate?.suggestedSkillName ?? "this repeated workflow"} in an allowed workspace-local path.`
+            : `Start bounded work for ${entry.title}.`,
       candidateSummary: entry.title,
       expectedUserValue: entry.expectedUserValue,
       planTitle: entry.title,
@@ -920,7 +952,18 @@ function queueItemsFromLedger(input: {
       evidenceSummary: entry.evidenceSummary,
       confidence: entry.confidence,
       blockedIfMissing: [],
-      draftReady: Boolean(draft),
+      draftReady: Boolean(draft || skillifierDraft),
+      skillifierDraft: skillifierDraft
+        ? {
+            skillPackageId: skillifierDraft.skillPackageId,
+            skillifierReportId: skillifierDraft.skillifierReportId,
+            decision: skillifierDraft.decision,
+            packageTitle: skillifierDraft.packageTitle,
+            draftPath: skillifierDraft.skillDirectoryPath,
+            reviewSummary: skillifierDraft.reportSummary,
+            nextReviewStep: skillifierDraft.nextReviewStep,
+          }
+        : null,
       autonomousDraft: draft
         ? {
             draftId: draft.draftId,
@@ -1035,6 +1078,7 @@ export async function buildPhase2ProductProactivitySurfacingReport(
           scope,
           generatedAt,
           draftReport: input.draftReport,
+          skillPackageDrafts: input.skillPackageDrafts,
         })
       : (() => {
           const queueItemId = buildDerivedArtifactId({

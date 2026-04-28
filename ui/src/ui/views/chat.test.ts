@@ -1290,6 +1290,314 @@ describe("chat view", () => {
     ).not.toBeNull();
   });
 
+  it("prefers a draft-ready skill candidate over sibling reverse prompts on the same assistant source", () => {
+    const container = document.createElement("div");
+    render(
+      renderChat(
+        createProps({
+          sessionKey: "main",
+          messages: [
+            {
+              role: "assistant",
+              content: [
+                {
+                  type: "text",
+                  text: "Turn the recurring workflow into a reusable skill draft.",
+                  textSignature: JSON.stringify({
+                    v: 1,
+                    id: "msg_skill_priority",
+                    phase: "final_answer",
+                  }),
+                },
+              ],
+              timestamp: Date.parse("2026-04-28T16:22:00.000Z"),
+            },
+          ],
+          productProactivityQueue: [
+            {
+              queueItemId: "queue-draft-priority",
+              candidateId: "candidate-draft-priority",
+              workItemId: "work-item-draft-priority",
+              opportunityId: "opportunity-draft-priority",
+              opportunityClass: "standard",
+              opportunityStatus: "open",
+              workItemKind: "draft_next_steps",
+              workItemStatus: "drafted",
+              primaryAction: {
+                actionType: "draft_next_steps",
+                label: "Draft next steps",
+                description: "Prepare a bounded next-step draft in chat.",
+                requiresChatInject: false,
+                executesAction: false,
+              },
+              secondaryActions: [],
+              ctaExplanation:
+                "A same-source draft exists, but the canonical skill candidate should still be preferred.",
+              handoffStatus: "idle",
+              handoffError: null,
+              handoffMessageAnchor: null,
+              messageClass: "operator_approved_suggestion_available",
+              boundedDisplayText: "Draft the follow-up brief for the same workflow.",
+              candidateSummary: "Draft the follow-up brief for the same workflow.",
+              suggestedAction: "Prepare a short bounded follow-up brief.",
+              messagePreview: "Prepare a short bounded follow-up brief.",
+              planTitle: "Draft the follow-up brief",
+              problem: "A non-canonical draft shares the same assistant source.",
+              proposedMessage: "Prepare a short bounded follow-up brief.",
+              expectedUserValue:
+                "Keeps a useful sibling draft available without displacing the skill candidate.",
+              userBenefit:
+                "Keeps a useful sibling draft available without displacing the skill candidate.",
+              evidenceSummary: "Sibling draft from the same assistant source.",
+              confidence: "high",
+              blockedIfMissing: [],
+              draftReady: true,
+              autonomousDraft: {
+                draftId: "autonomous-draft-followup",
+                draftKind: "planning_brief",
+                recommendedApproach: "Prepare a short bounded follow-up brief.",
+                nextSafeStep: "Review this only if the skill draft needs extra context.",
+                uncertainty:
+                  "The follow-up brief may be redundant once the skill draft is reviewed.",
+                safetyBoundary:
+                  "This is an internal bounded draft only. Do not edit files, execute actions, or send outbound messages without explicit approval.",
+              },
+              resolvedByChatMessageId: null,
+              supersededByOpportunityId: null,
+              status: "pending_review",
+              layer: "actionable",
+              attentionRequired: true,
+              sendStatus: "idle",
+              sendError: null,
+              sentMessageAnchor: null,
+              eligibleScope: {
+                environment: "live",
+                userId: "local-openclaw-user",
+                recipientId: "local-openclaw-recipient",
+                projectId: "openclaw",
+                sessionKey: "main",
+                operatorId: "local-openclaw-operator",
+                allowedMessageClasses: ["operator_approved_suggestion_available"],
+                proofPrerequisiteIds: ["live-generation-gate"],
+                proofPrerequisiteHashes: ["proof-hash-draft-priority"],
+              },
+              sourceRefs: ["chat://main/assistant_turn/msg_skill_priority"],
+              sourceProfileIds: ["manual_note"],
+              authorityTiers: ["tool_grounded"],
+              contentHashes: ["content-hash-draft-priority"],
+              proofHashes: ["proof-hash-draft-priority"],
+              noDarkDataStatus: "pass",
+              staleLabels: [],
+              conflictLabels: [],
+              blockedReasonCodes: [],
+              generatedAt: "2026-04-28T16:22:03.000Z",
+              updatedAt: "2026-04-28T16:22:50.000Z",
+            },
+            {
+              queueItemId: "queue-skill-priority",
+              candidateId: "candidate-skill-priority",
+              skillCandidate: {
+                skillCandidateId: "skill-candidate-priority",
+                proactivityOpportunityId: "opportunity-skill-priority",
+                normalizedIntentKey: "memory observability reporting skill",
+                sourceRuntime: "openclaw_session",
+                candidateType: "repeated_work_pattern",
+                evidenceSummary: "Repeated same-session workflow plus a generated draft package.",
+                recurrenceCount: 3,
+                recurrenceWindow: {
+                  firstSeenAt: "2026-04-28T16:22:00.000Z",
+                  lastSeenAt: "2026-04-28T16:22:30.000Z",
+                },
+                exampleHashes: ["example-hash-skill-priority"],
+                suggestedSkillName: "memory-observability-reporting-skill",
+                riskTier: "low",
+                autonomyLevelCeiling: 1,
+                lifecycleStatus: "detected",
+                installTargets: ["workspace_skills_dir"],
+                evalStatus: "not_started",
+                vettingStatus: "not_started",
+                canaryStatus: "not_started",
+                createdAt: "2026-04-28T16:22:05.000Z",
+                updatedAt: "2026-04-28T16:22:30.000Z",
+                provenanceRefs: ["chat://main/assistant_turn/msg_skill_priority"],
+                rollbackPlan: {
+                  rollbackId: "rollback-skill-priority",
+                  strategy: "disable_candidate_only",
+                  targetPaths: ["workspace_skills_dir"],
+                  directMainMutationAllowed: false,
+                },
+              },
+              workItemId: "work-item-skill-priority",
+              opportunityId: "opportunity-skill-priority",
+              opportunityClass: "skill_candidate",
+              opportunityStatus: "draft_ready",
+              workItemKind: "planning_request",
+              workItemStatus: "drafted",
+              primaryAction: {
+                actionType: "plan_this",
+                label: "Plan this",
+                description: "Start a bounded planning handoff in chat.",
+                requiresChatInject: false,
+                executesAction: false,
+              },
+              secondaryActions: [],
+              ctaExplanation: "Review the bounded draft before any later eval or install work.",
+              handoffStatus: "idle",
+              handoffError: null,
+              handoffMessageAnchor: null,
+              messageClass: "operator_approved_suggestion_available",
+              boundedDisplayText: "Draft the recurring workflow skill.",
+              candidateSummary: "Draft the recurring workflow skill.",
+              suggestedAction: "Review the review-only skill package and plan next eval work.",
+              messagePreview: "Review the review-only skill package and plan next eval work.",
+              planTitle: "Draft the recurring workflow skill",
+              problem: "This same workflow keeps recurring in the live repo work.",
+              proposedMessage: "Review the review-only skill package and plan next eval work.",
+              expectedUserValue:
+                "Keeps the canonical skill candidate in view even when sibling prompts are generated.",
+              userBenefit:
+                "Keeps the canonical skill candidate in view even when sibling prompts are generated.",
+              evidenceSummary: "Repeated same-session workflow plus a generated draft package.",
+              confidence: "high",
+              blockedIfMissing: [],
+              draftReady: true,
+              skillifierDraft: {
+                skillPackageId: "skill-package-priority",
+                skillifierReportId: "skillifier-report-priority",
+                decision: "draft_ready",
+                packageTitle: "Recurring Workflow Skill Draft",
+                draftPath:
+                  "/home/node/.openclaw/workspace/skills/recurring-workflow--draft-priority",
+                reviewSummary:
+                  "A review-only draft package is ready in the allowed workspace root.",
+                nextReviewStep: "Review the SKILL.md contract and define the Milestone 4 evals.",
+              },
+              resolvedByChatMessageId: null,
+              supersededByOpportunityId: null,
+              status: "pending_review",
+              layer: "actionable",
+              attentionRequired: true,
+              sendStatus: "idle",
+              sendError: null,
+              sentMessageAnchor: null,
+              eligibleScope: {
+                environment: "live",
+                userId: "local-openclaw-user",
+                recipientId: "local-openclaw-recipient",
+                projectId: "openclaw",
+                sessionKey: "main",
+                operatorId: "local-openclaw-operator",
+                allowedMessageClasses: ["operator_approved_suggestion_available"],
+                proofPrerequisiteIds: ["live-generation-gate"],
+                proofPrerequisiteHashes: ["proof-hash-skill-priority"],
+              },
+              sourceRefs: ["chat://main/assistant_turn/msg_skill_priority"],
+              sourceProfileIds: ["manual_note"],
+              authorityTiers: ["tool_grounded"],
+              contentHashes: ["content-hash-skill-priority"],
+              proofHashes: ["proof-hash-skill-priority"],
+              noDarkDataStatus: "pass",
+              staleLabels: [],
+              conflictLabels: [],
+              blockedReasonCodes: [],
+              generatedAt: "2026-04-28T16:22:05.000Z",
+              updatedAt: "2026-04-28T16:22:30.000Z",
+            },
+            {
+              queueItemId: "queue-reverse-priority",
+              candidateId: "candidate-reverse-priority",
+              workItemId: "work-item-reverse-priority",
+              opportunityId: "opportunity-reverse-priority",
+              opportunityClass: "reverse_prompt",
+              opportunityStatus: "open",
+              workItemKind: "draft_next_steps",
+              workItemStatus: "drafted",
+              primaryAction: {
+                actionType: "open_in_current_chat",
+                label: "Open in current chat",
+                description: "Uses the current chat to continue with the prompt.",
+                requiresChatInject: false,
+                executesAction: false,
+              },
+              secondaryActions: [],
+              ctaExplanation:
+                "A useful sibling prompt exists, but it should not displace the canonical skill candidate.",
+              handoffStatus: "idle",
+              handoffError: null,
+              handoffMessageAnchor: null,
+              messageClass: "operator_approved_suggestion_available",
+              boundedDisplayText: "Question worth asking before the skill draft.",
+              candidateSummary: "Question worth asking before the skill draft.",
+              suggestedAction: "Ask the adjacent question if the draft needs refinement.",
+              messagePreview: "Ask the adjacent question if the draft needs refinement.",
+              planTitle: "Question worth asking before the skill draft",
+              problem: "A sibling reverse prompt was generated from the same assistant source.",
+              proposedMessage: "Ask the adjacent question if the draft needs refinement.",
+              expectedUserValue: "Provides a secondary path if the draft needs more context.",
+              userBenefit: "Provides a secondary path if the draft needs more context.",
+              evidenceSummary: "Sibling prompt from the same live assistant source.",
+              confidence: "medium",
+              blockedIfMissing: [],
+              draftReady: true,
+              autonomousDraft: {
+                draftId: "autonomous-draft-priority",
+                draftKind: "planning_brief",
+                recommendedApproach: "Turn the sibling prompt into a short bounded plan.",
+                nextSafeStep: "Review the prompt only if the canonical draft is insufficient.",
+                uncertainty: "The sibling prompt may already be covered by the skill draft.",
+                safetyBoundary:
+                  "This is an internal bounded draft only. Do not edit files, execute actions, or send outbound messages without explicit approval.",
+              },
+              resolvedByChatMessageId: null,
+              supersededByOpportunityId: null,
+              status: "pending_review",
+              layer: "actionable",
+              attentionRequired: true,
+              sendStatus: "idle",
+              sendError: null,
+              sentMessageAnchor: null,
+              eligibleScope: {
+                environment: "live",
+                userId: "local-openclaw-user",
+                recipientId: "local-openclaw-recipient",
+                projectId: "openclaw",
+                sessionKey: "main",
+                operatorId: "local-openclaw-operator",
+                allowedMessageClasses: ["operator_approved_suggestion_available"],
+                proofPrerequisiteIds: ["live-generation-gate"],
+                proofPrerequisiteHashes: ["proof-hash-reverse-priority"],
+              },
+              sourceRefs: ["chat://main/assistant_turn/msg_skill_priority"],
+              sourceProfileIds: ["manual_note"],
+              authorityTiers: ["tool_grounded"],
+              contentHashes: ["content-hash-reverse-priority"],
+              proofHashes: ["proof-hash-reverse-priority"],
+              noDarkDataStatus: "pass",
+              staleLabels: [],
+              conflictLabels: [],
+              blockedReasonCodes: [],
+              generatedAt: "2026-04-28T16:22:06.000Z",
+              updatedAt: "2026-04-28T16:22:45.000Z",
+            },
+          ],
+        }),
+      ),
+      container,
+    );
+
+    expect(
+      container.querySelector(
+        '[data-skill-candidate-id="skill-candidate-priority"].inline-proactivity-card__item',
+      ),
+    ).not.toBeNull();
+    expect(
+      container.querySelector(
+        '[data-skill-candidate-id="skill-candidate-priority"].heartbeat-proactivity-review__card',
+      ),
+    ).not.toBeNull();
+    expect(container.textContent).toContain("Recurring Workflow Skill Draft");
+  });
+
   it("cleans polluted copy and collapses same-session duplicate inline follow-ups", () => {
     const container = document.createElement("div");
     render(
@@ -1968,6 +2276,138 @@ describe("chat view", () => {
     );
     expect(container.textContent).toContain("Review draft");
     expect(container.textContent).toContain("Next safe step");
+  });
+
+  it("renders skillifier draft-ready items from the canonical work item", () => {
+    const container = document.createElement("div");
+    render(
+      renderChat(
+        createProps({
+          sessionKey: "skillifier-test",
+          proactivityInboxDigest: {
+            digestId: "digest-skillifier",
+            generatedAt: "2026-04-28T18:42:00.000Z",
+            filters: [
+              "actionable",
+              "pending",
+              "planned",
+              "sent",
+              "snoozed",
+              "dismissed",
+              "blocked",
+              "autosend_trial",
+              "diagnostics",
+            ],
+            counts: {
+              actionable: 1,
+              pending: 1,
+              planned: 0,
+              sent: 0,
+              snoozed: 0,
+              dismissed: 0,
+              blocked: 0,
+              autosend_trial: 0,
+              diagnostics: 0,
+            },
+            layerCounts: { actionable: 1, history: 0, diagnostic: 0 },
+            items: [
+              {
+                itemId: "skillifier-item-1",
+                sourceArtifactReportId: "skillifier-report-1",
+                candidateId: "skillifier-candidate-1",
+                opportunityId: "skillifier-opportunity-1",
+                opportunityStatus: "draft_ready",
+                queueItemId: "skillifier-queue-1",
+                workItemId: "skillifier-work-item-1",
+                workItemKind: "planning_request",
+                workItemStatus: "planned",
+                primaryAction: {
+                  actionType: "plan_this",
+                  label: "Plan this",
+                  description: "Starts a bounded planning request in the current chat.",
+                  requiresChatInject: false,
+                  executesAction: false,
+                },
+                secondaryActions: [],
+                ctaExplanation:
+                  "Opens the review-only skill draft in a bounded planning handoff without installation.",
+                handoffStatus: "idle",
+                handoffError: null,
+                handoffMessageAnchor: null,
+                messageClass: "operator_approved_suggestion_available",
+                boundedDisplayText: "Draft the recurring workflow as a reusable review-only skill.",
+                candidateSummary: "Draft the recurring workflow as a reusable review-only skill.",
+                suggestedAction:
+                  "Review the generated skill package and decide what Milestone 4 should validate next.",
+                messagePreview:
+                  "Review the generated skill package and decide what Milestone 4 should validate next.",
+                planTitle: "Draft the recurring workflow skill",
+                problem: "The same bounded workflow keeps recurring across skills-platform work.",
+                proposedMessage:
+                  "Review the generated skill package and decide what Milestone 4 should validate next.",
+                expectedUserValue:
+                  "Turns repeated workflow knowledge into a reusable draft without installing anything.",
+                userBenefit:
+                  "Turns repeated workflow knowledge into a reusable draft without installing anything.",
+                evidenceSummary:
+                  "Recurring skill-platform workflow signals converged on one bounded candidate.",
+                confidence: "high",
+                blockedIfMissing: [],
+                draftReady: true,
+                skillifierDraft: {
+                  skillPackageId: "skill-package-1",
+                  skillifierReportId: "skillifier-report-1",
+                  decision: "draft_ready",
+                  packageTitle: "Recurring Workflow Skill Draft",
+                  draftPath:
+                    "/home/node/.openclaw/workspace/skills/recurring-workflow--draft-1234abcd",
+                  reviewSummary: "The draft package is ready for bounded review and eval design.",
+                  nextReviewStep:
+                    "Inspect the SKILL.md contract and define the first decisioning eval cases.",
+                },
+                resolvedByChatMessageId: null,
+                supersededByOpportunityId: null,
+                status: "pending_review",
+                filterTags: ["actionable", "pending"],
+                layer: "actionable",
+                attentionRequired: true,
+                sendStatus: "idle",
+                sendError: null,
+                sentMessageAnchor: null,
+                sourceRefs: ["chat://skillifier-test/assistant_turn/msg-1"],
+                sourceProfileIds: ["manual_note"],
+                authorityTiers: ["tool_grounded"],
+                contentHashes: ["content-hash-skillifier"],
+                proofHashes: ["proof-hash-skillifier"],
+                noDarkDataStatus: "pass",
+                feedbackSummary: {
+                  usefulCount: 0,
+                  notUsefulCount: 0,
+                  tooRepetitiveCount: 0,
+                  wrongContextCount: 0,
+                  unsafePrivateCount: 0,
+                },
+                whyThisAppearedSummary:
+                  "Generated from the canonical opportunity ledger and elevated because a bounded skill draft is ready for review.",
+                blockedReasonCodes: [],
+              },
+            ],
+          },
+          productProactivityQueue: [],
+        }),
+      ),
+      container,
+    );
+
+    expect(container.textContent).toContain("draft ready");
+    expect(container.textContent).toContain(
+      "The draft package is ready for bounded review and eval design.",
+    );
+    expect(container.textContent).toContain("Recurring Workflow Skill Draft");
+    expect(container.textContent).toContain("/home/node/.openclaw/workspace/skills/");
+    expect(container.textContent).toContain(
+      "Inspect the SKILL.md contract and define the first decisioning eval cases.",
+    );
   });
 
   it("does not surface static diagnostic fallbacks as actionable heartbeat traffic", () => {

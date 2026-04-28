@@ -4,6 +4,7 @@ import { buildPhase2ProactivityInboxReport } from "../../../extensions/model-mem
 import { buildPhase2ProactivityUxRemediationReport } from "../../../extensions/model-memory/src/runtime/phase2-proactivity-ux-remediation.js";
 import {
   buildModelMemoryProactivityRuntimeState,
+  createSkillifierDraftForCandidate,
   recordPersistedProactivityChatActivity,
   recordPersistedProactivityLiveEvent,
   updatePersistedProactivityLifecycleOverride,
@@ -291,6 +292,68 @@ export const modelMemoryProactivityHandlers: GatewayRequestHandlers = {
           ErrorCodes.UNAVAILABLE,
           `model-memory proactivity queue unavailable: ${message}`,
         ),
+      );
+    }
+  },
+  "modelMemory.proactivity.skillifyCandidateDraft": async ({ params, respond, client }) => {
+    const sessionKey = readString(params.sessionKey) ?? "main";
+    const operatorId = resolveOperatorId(params, client?.connect?.device?.id);
+    const projectId = readString(params.projectId) ?? process.env.OPENCLAW_PROJECT_ID ?? "openclaw";
+    const skillCandidateId = readString(params.skillCandidateId);
+    if (!skillCandidateId) {
+      respond(
+        false,
+        undefined,
+        errorShape(
+          ErrorCodes.INVALID_REQUEST,
+          "model-memory skillifier draft requires skillCandidateId",
+        ),
+      );
+      return;
+    }
+    try {
+      const userId =
+        readString(params.userId) ?? process.env.OPENCLAW_USER_ID ?? "local-openclaw-user";
+      const recipientId =
+        readString(params.recipientId) ??
+        process.env.OPENCLAW_RECIPIENT_ID ??
+        process.env.OPENCLAW_USER_ID ??
+        "local-openclaw-recipient";
+      const requestedTargetKind =
+        readString(params.requestedTargetKind) === "workspace_agents_skills_dir"
+          ? "workspace_agents_skills_dir"
+          : readString(params.requestedTargetKind) === "workspace_skills_dir"
+            ? "workspace_skills_dir"
+            : undefined;
+      const result = await createSkillifierDraftForCandidate({
+        sessionKey,
+        projectId,
+        operatorId,
+        userId,
+        recipientId,
+        skillCandidateId,
+        requestedTargetKind,
+      });
+      respond(true, {
+        ok: true,
+        skillCandidateId,
+        reportId: result.report.reportId,
+        decision: result.report.decision,
+        skillPackageId: result.report.skillPackageId,
+        draftPath: result.report.draft.skillDirectoryPath,
+        reportPath: result.report.draft.reportFilePath,
+        provenanceReportPath: result.report.draft.provenanceReportPath,
+        rollbackPlanPath: result.report.draft.rollbackPlanPath,
+        reviewOnly: true,
+        installationEnabled: false,
+        promotionEnabled: false,
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      respond(
+        false,
+        undefined,
+        errorShape(ErrorCodes.UNAVAILABLE, `model-memory skillifier draft unavailable: ${message}`),
       );
     }
   },

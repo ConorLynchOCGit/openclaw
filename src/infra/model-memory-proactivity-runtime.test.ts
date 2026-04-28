@@ -6,6 +6,7 @@ import type { OpenClawConfig } from "../config/types.openclaw.js";
 import {
   buildHeartbeatProactivityReviewText,
   buildModelMemoryProactivityRuntimeState,
+  createSkillifierDraftForCandidate,
 } from "./model-memory-proactivity-runtime.js";
 
 async function createRuntimeSandbox() {
@@ -281,6 +282,56 @@ describe("model-memory proactivity runtime", () => {
       (item) => item.skillCandidate?.skillCandidateId === skillCandidateId,
     );
     expect(heartbeatItem?.skillCandidate?.skillCandidateId).toBe(skillCandidateId);
+  });
+
+  it("persists one bounded skillifier draft and surfaces it through the same candidate id", async () => {
+    const sandbox = await createRuntimeSandbox();
+    tmpDirs.push(sandbox.tmpDir);
+    await seedSkillCandidateTranscript(sandbox);
+
+    const initial = await buildModelMemoryProactivityRuntimeState({
+      cfg: sandbox.cfg,
+      sessionKey: "main",
+      projectId: "openclaw",
+      operatorId: "operator-conor",
+      userId: "conor",
+      recipientId: "conor",
+    });
+    const skillCandidateId = initial.skillCandidateReport.records[0]?.skillCandidateId;
+    expect(skillCandidateId).toBeTruthy();
+
+    const created = await createSkillifierDraftForCandidate({
+      cfg: sandbox.cfg,
+      sessionKey: "main",
+      projectId: "openclaw",
+      operatorId: "operator-conor",
+      userId: "conor",
+      recipientId: "conor",
+      skillCandidateId,
+    });
+
+    expect(created.report.decision).toBe("draft_ready");
+    expect(created.report.draft.skillDirectoryPath).toContain(path.join(sandbox.tmpDir, "skills"));
+
+    const refreshed = await buildModelMemoryProactivityRuntimeState({
+      cfg: sandbox.cfg,
+      sessionKey: "main",
+      projectId: "openclaw",
+      operatorId: "operator-conor",
+      userId: "conor",
+      recipientId: "conor",
+    });
+    const queueItem = refreshed.productSurfacingReport.queue.items.find(
+      (item) => item.skillCandidate?.skillCandidateId === skillCandidateId,
+    );
+    expect(queueItem?.draftReady).toBe(true);
+    expect(queueItem?.skillifierDraft).toMatchObject({
+      skillPackageId: created.report.skillPackageId,
+      skillifierReportId: created.report.reportId,
+      draftPath: created.report.draft.skillDirectoryPath,
+    });
+    expect(refreshed.skillifierDrafts).toHaveLength(1);
+    expect(refreshed.skillifierDrafts[0]?.skillCandidateId).toBe(skillCandidateId);
   });
 
   it("excludes operational assistant messages and placeholder fallbacks from authoritative records", async () => {

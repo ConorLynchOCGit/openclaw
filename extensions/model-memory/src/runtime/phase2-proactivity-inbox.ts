@@ -99,6 +99,15 @@ export type Phase2ProactivityInboxItem = {
   confidence: "high" | "medium" | "low";
   blockedIfMissing: string[];
   draftReady?: boolean;
+  skillifierDraft?: {
+    skillPackageId: string;
+    skillifierReportId: string;
+    decision: string;
+    packageTitle: string;
+    draftPath: string;
+    reviewSummary: string;
+    nextReviewStep: string;
+  } | null;
   autonomousDraft?: {
     draftId: string;
     draftKind: string;
@@ -504,6 +513,7 @@ function cloneQueueItemForInbox(input: {
     confidence: input.queueItem.confidence,
     blockedIfMissing: input.queueItem.blockedIfMissing,
     draftReady: input.queueItem.draftReady,
+    skillifierDraft: input.queueItem.skillifierDraft,
     autonomousDraft: input.queueItem.autonomousDraft,
     resolvedByChatMessageId: input.queueItem.resolvedByChatMessageId,
     supersededByOpportunityId: input.queueItem.supersededByOpportunityId,
@@ -526,9 +536,11 @@ function cloneQueueItemForInbox(input: {
     proofHashes: input.queueItem.proofHashes,
     noDarkDataStatus: input.queueItem.noDarkDataStatus,
     feedbackSummary: feedbackSummaryFrom(input.feedbackReport),
-    whyThisAppearedSummary: input.queueItem.draftReady
-      ? "Generated from the canonical opportunity ledger and elevated because a bounded internal draft is ready for review."
-      : "Generated from the canonical Model Memory opportunity ledger with source refs, authority tiers, source profiles, and proof hashes preserved.",
+    whyThisAppearedSummary: input.queueItem.skillifierDraft
+      ? "Generated from the canonical opportunity ledger and elevated because a bounded review-only skill draft is ready for review."
+      : input.queueItem.draftReady
+        ? "Generated from the canonical opportunity ledger and elevated because a bounded internal draft is ready for review."
+        : "Generated from the canonical Model Memory opportunity ledger with source refs, authority tiers, source profiles, and proof hashes preserved.",
     blockedReasonCodes: input.blockedReasonCodes ?? input.queueItem.blockedReasonCodes,
   };
 }

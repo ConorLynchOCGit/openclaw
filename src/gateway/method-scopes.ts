@@ -147,6 +147,7 @@ const METHOD_SCOPE_GROUPS: Record<OperatorScope, readonly string[]> = {
     "doctor.memory.resetGroundedShortTerm",
     "doctor.memory.repairDreamingArtifacts",
     "doctor.memory.dedupeDreamDiary",
+    "modelMemory.proactivity.skillifyCandidateDraft",
     "push.test",
     "node.pending.enqueue",
   ],

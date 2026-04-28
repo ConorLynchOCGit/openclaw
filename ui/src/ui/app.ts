@@ -1019,6 +1019,9 @@ export class OpenClawApp extends LitElement {
     if (action === "investigate") {
       return "investigating" as const;
     }
+    if (action === "draft_skill_package") {
+      return "drafted" as const;
+    }
     if (action === "draft_next_steps") {
       return "drafted" as const;
     }
@@ -1031,6 +1034,9 @@ export class OpenClawApp extends LitElement {
   private proactivityStartedLabel(action: ProductProactivityActionType): string {
     if (action === "investigate") {
       return "Investigation started in chat";
+    }
+    if (action === "draft_skill_package") {
+      return "Skill draft created";
     }
     if (action === "draft_next_steps") {
       return "Drafting started in chat";
@@ -1068,13 +1074,19 @@ export class OpenClawApp extends LitElement {
         : (item.userBenefit ?? item.candidateSummary ?? item.boundedDisplayText);
     const evidence = item.evidenceSummary ?? item.sourceRefs.slice(0, 3).join(", ");
     const draftContext =
-      item.draftReady && item.autonomousDraft
+      item.draftReady && item.skillifierDraft
         ? [
-            `Prepared approach: ${item.autonomousDraft.recommendedApproach}`,
-            `Next safe step: ${item.autonomousDraft.nextSafeStep}`,
-            `Uncertainty: ${item.autonomousDraft.uncertainty}`,
+            `Draft package: ${item.skillifierDraft.packageTitle}`,
+            `Draft path: ${item.skillifierDraft.draftPath}`,
+            `Next review step: ${item.skillifierDraft.nextReviewStep}`,
           ].join(" ")
-        : null;
+        : item.draftReady && item.autonomousDraft
+          ? [
+              `Prepared approach: ${item.autonomousDraft.recommendedApproach}`,
+              `Next safe step: ${item.autonomousDraft.nextSafeStep}`,
+              `Uncertainty: ${item.autonomousDraft.uncertainty}`,
+            ].join(" ")
+          : null;
     const expectedOutput =
       action === "investigate"
         ? "findings, evidence, uncertainty, and the smallest safe next step"
@@ -1116,6 +1128,10 @@ export class OpenClawApp extends LitElement {
     }
     if (action === "dismiss") {
       await this.handleProductProactivityDismiss(queueItemId);
+      return;
+    }
+    if (action === "draft_skill_package") {
+      await this.handleSkillifierDraft(queueItemId);
       return;
     }
     const { item } = this.resolveProactivityItem(queueItemId);
@@ -1212,6 +1228,35 @@ export class OpenClawApp extends LitElement {
             }
           : null,
       );
+    }
+  }
+
+  async handleSkillifierDraft(queueItemId: string) {
+    const { item } = this.resolveProactivityItem(queueItemId);
+    if (!item?.skillCandidate?.skillCandidateId) {
+      this.productProactivityError = "Skill draft failed: missing canonical skill candidate id.";
+      return;
+    }
+    if (!this.client) {
+      this.productProactivityError = "Skill draft failed: gateway client is unavailable.";
+      return;
+    }
+    const eligibilityScope = "eligibleScope" in item ? item.eligibleScope : null;
+    try {
+      await this.client.request("modelMemory.proactivity.skillifyCandidateDraft", {
+        sessionKey: this.sessionKey,
+        projectId: eligibilityScope?.projectId ?? "openclaw",
+        operatorId: eligibilityScope?.operatorId,
+        userId: eligibilityScope?.userId,
+        recipientId: eligibilityScope?.recipientId,
+        skillCandidateId: item.skillCandidate.skillCandidateId,
+      });
+      await this.loadProductProactivityQueue();
+      await this.loadProactivityInbox();
+      this.productProactivityError = null;
+      this.lastError = "Skill draft created";
+    } catch (err) {
+      this.productProactivityError = `Skill draft failed: ${String(err)}`;
     }
   }
 
