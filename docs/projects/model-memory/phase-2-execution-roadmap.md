@@ -70,6 +70,10 @@ Phase 2 currently assumes:
 - the Skills bucket begins with a docs/spec milestone that makes the skills
   platform proactivity-integrated, cross-runtime, partially autonomous, and
   rollback-safe before runtime implementation starts
+- the first skills runtime slice is a persisted `skill_candidate` ledger inside
+  the existing proactivity state path; it must reuse canonical inline,
+  heartbeat, inbox, and handoff surfaces instead of creating a second skills
+  queue
 - low-risk limited-scope skill automation may later be allowed after
   tests/vetting/canary, but medium-risk and high-risk skill changes remain
   approval-gated

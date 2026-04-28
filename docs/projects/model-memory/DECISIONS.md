@@ -22,6 +22,10 @@ Decision:
   medium-risk and high-risk changes remain approval-gated
 - future skills implementation milestones must not claim success on docs-only
   or proof-only paths when live usefulness or runtime safety is still missing
+- the first runtime slice is a canonical `skill_candidate` opportunity kind in
+  the existing proactivity ledger, with deterministic ids, deterministic
+  dedupe, bounded distilled evidence, and shared surface ids across inline,
+  heartbeat, inbox, and handoff
 
 Reasoning:
 

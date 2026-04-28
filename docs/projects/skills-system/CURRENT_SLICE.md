@@ -7,41 +7,39 @@ title: "Skills System Current Slice"
 
 ## Slice
 
-`phase2-skills-platform-specs-and-autonomy-policy`
+`phase2-skill-candidate-ledger-proactivity-integration`
 
 ## Goal
 
-Define the durable contract for the OpenClaw Skills Platform before runtime
-implementation begins.
+Implement the first runtime slice of the OpenClaw Skills Platform by adding a
+canonical `skill_candidate` ledger path inside the existing proactivity
+system.
 
 This slice establishes:
 
-- one canonical lifecycle model for skill candidates, drafts, canaries, and
-  promotions
-- one autonomy ladder for low-risk versus high-risk skill automation
-- one risk-tier policy for vetting, evals, install scope, and approval gates
-- one proactivity-integrated surfacing contract for skill candidates
-- one cross-runtime packaging contract for OpenClaw and Codex
-- one rollback/version-control policy for automatic skill changes
+- one first-class `skill_candidate` opportunity kind in the proactivity ledger
+- one bounded candidate creation path from real OpenClaw or Codex work
+- one deterministic dedupe or supersession model for recurring same-intent
+  skill opportunities
+- one canonical-id contract across inline chat, heartbeat, inbox, and handoff
+- one persistence model that reuses the existing proactivity state store rather
+  than creating a parallel skills queue
 
 ## Current outcome
 
-- broadens the project from loading/vetting into a lifecycle-managed skills
-  platform
-- upgrades the docs pack so later milestones can land without inventing new
-  policy ad hoc
-- encodes the product decision that low-risk skill work must not make the user
-  a chokepoint for every candidate
-- ties future skill candidates to the existing proactivity surfaces instead of
-  creating a second review queue
-- defines the milestone sequence for candidate ledger, Skillifier, evals,
-  canarying, low-risk auto-promotion, and cross-runtime install
+- turns skill candidates from a future concept into a live runtime record type
+- proves recurring work can surface as one bounded same-session skill
+  opportunity without opening a separate skills UI
+- keeps candidate evidence distilled and bounded rather than persisting raw
+  prompts, transcripts, or tool logs
+- keeps destination capability authority as a policy reference only; this slice
+  does not broadly write skill packages into skill destinations
 
 ## Current judgment
 
-The correct next move after this slice is to implement the skill candidate
-ledger inside the existing proactivity system.
+The acceptance gate for this slice is live usefulness, not schema-only
+coverage.
 
-That is the leverage point that turns real Codex/OpenClaw work into bounded
-skill opportunities, rather than expanding skill docs or marketplace installs
-in isolation.
+The correct output is one canonical `skill_candidate` opportunity that appears
+cleanly across inline chat, heartbeat, inbox, and handoff, updates itself when
+the same recurring work repeats, and does not reintroduce noisy queue clutter.

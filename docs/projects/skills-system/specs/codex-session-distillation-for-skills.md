@@ -46,3 +46,15 @@ memory promotion.
 
 The output must be bounded, reviewable, provenance-preserving, and safe to
 install into both OpenClaw and Codex later.
+
+Milestone 2 runtime usage:
+
+- distilled Codex or OpenClaw evidence may create or update a `skill_candidate`
+  only when the evidence is strong enough to cross a deterministic creation
+  threshold
+- acceptable thresholds are conservative:
+  - repeated bounded work signals
+  - or an explicit user request plus one repeated or successful follow-on
+    signal
+- a single weak or generic signal is not enough to create a live
+  `skill_candidate`

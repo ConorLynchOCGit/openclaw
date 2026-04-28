@@ -218,6 +218,10 @@ Must show:
   execution_proposed, done, dismissed, snoozed, or blocked
 - success/failure feedback after handoff or `chat.inject`
 - Open in chat / View sent message after successful handoff or send
+- future `skill_candidate` opportunities must reuse this same Proactivity
+  entry point, heartbeat card, inbox drawer, and handoff workflow rather than
+  introducing a separate skills review panel before the shared surfacing model
+  is proven live
 - sent/snoozed/dismissed history separate from actionable work
 - diagnostics for blocked/preflight/simulation/why-not-shown items behind a
   Diagnostics view

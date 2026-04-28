@@ -111,6 +111,15 @@ and outcome telemetry.
 Skill candidates must reuse this model rather than creating a second skills-only
 inbox identity layer.
 
+Milestone 2 runtime gate:
+
+- a live `skill_candidate` must be able to appear as a normal actionable
+  proactivity item without opening a separate skills surface
+- recurring same-intent skill opportunities must update the existing canonical
+  item instead of piling up duplicates
+- primary user-facing copy remains bounded and concise; evidence and
+  provenance stay secondary
+
 ## Dedupe and expiry
 
 Planner candidates should dedupe by stable candidate id, target id, candidate

@@ -7,47 +7,34 @@ title: "Skills System Status"
 
 ## Overall
 
-State: `phase2_skills_platform_specs_active`
+State: `phase2_skill_candidate_ledger_runtime_active`
 
 The repo already has a canonical home for skill loading, ClawHub posture, and
 Skill Vetting.
 
-This slice upgrades that project into the contract owner for a broader Skills
-Platform.
+Milestone 1 defined the platform contract. The active work now is to turn that
+contract into a live proactivity-backed runtime ledger.
 
 The current outcomes are:
 
-- the skills project now explicitly owns lifecycle-managed capabilities rather
-  than only installed skill folders
-- the canonical policy is now being defined for:
-  - skill candidate detection
-  - Skillifier packaging
-  - evals and routing coverage
-  - vetting and risk classification
-  - canary and rollback
-  - low-risk auto-promotion
-  - Codex/OpenClaw cross-runtime packaging
-  - proactivity-integrated surfacing
-- Skill Vetting remains the external-skill review workstream under this larger
-  platform
-- existing runtime/loading primitives remain the implementation substrate:
-  - `SKILL.md` loading and precedence
-  - agent allowlists
-  - metadata gating
-  - installer scan posture
-  - ClawHub search/install/update
-  - plugin-provided skills
+- `skill_candidate` is now the next runtime contract to land as a first-class
+  proactivity opportunity kind
+- candidate creation is constrained to bounded distilled evidence, not raw
+  transcript persistence
+- recurring work must update canonical candidate state instead of piling up
+  duplicates in actionable surfaces
+- candidate ids must remain stable across inline surfacing, heartbeat, inbox,
+  and handoff
+- destination capability authority remains documented policy for now; this
+  slice does not broadly write or install skills
 
 ## Current judgment
 
 The biggest missing skill-system capability is still not “more skills.”
 
-It is the lack of one explicit system for turning repeated work into safe,
-reviewable, and sometimes automatable skill improvements.
-
-The project now has the right project home to solve that with one coherent
-contract instead of fragmented docs across vetting, proactivity, and local
-skill creation.
+It is the lack of one explicit runtime path that turns repeated real work into
+safe, bounded, reviewable skill opportunities without adding a second noisy
+queue.
 
 ## Remaining work after this slice
 

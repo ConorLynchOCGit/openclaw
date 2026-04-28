@@ -7,6 +7,38 @@ title: "Skills System Decisions"
 
 ## Accepted decisions
 
+### 2026-04-28 - `skill_candidate` becomes a first-class proactivity opportunity kind
+
+Reason:
+
+- Milestone 1 established that skills must reuse the proactivity substrate
+  rather than introducing a second review queue
+- the runtime still lacked one canonical, persisted, bounded record for
+  recurring work that should become a skill
+- candidate quality and duplicate control are the main risks in the first
+  runtime slice
+
+Decision:
+
+- `skill_candidate` is now a first-class proactivity opportunity kind
+- the canonical runtime state for skill candidates lives in the existing
+  proactivity storage and surfacing path
+- candidate creation must use bounded distilled evidence only:
+  - repeated task pattern summaries
+  - repeated command or workflow summaries
+  - repeated user correction summaries
+  - recurring validation failure summaries
+  - bounded before or after outcome summaries
+- raw prompts, full transcripts, raw tool logs, secrets, and private phrases
+  remain forbidden inputs and artifacts
+- candidate ids must remain canonical across inline surfacing, heartbeat,
+  inbox, and handoff
+- recurring work updates the existing canonical candidate when the
+  deterministic intent key matches instead of creating duplicate actionable
+  rows
+- destination capability authority remains a policy reference in this
+  milestone; broad runtime writing of skill packages is still out of scope
+
 ### 2026-04-28 - Skills become a proactivity-integrated lifecycle platform
 
 Reason:

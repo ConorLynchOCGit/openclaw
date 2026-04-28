@@ -27,13 +27,25 @@ and rollback.
 
 - Objective: create typed `skill_candidate` records inside the existing
   proactivity system.
-- Scope: bounded candidate extraction, deterministic ids, dedupe, lifecycle
-  states, and shared surface ids.
+- Scope: bounded candidate extraction from real work, deterministic ids,
+  dedupe, persisted ledger state, lifecycle states, and shared surface ids.
 - Non-goals: no auto-promotion or broad installer work.
 - Proof: same real work event creates one canonical skill candidate visible
   across inline, heartbeat, inbox, and handoff.
-- Safety gate: no raw transcript persistence; no executable promotion.
+- Safety gate: no raw transcript persistence; no executable promotion; no
+  broad destination writes.
 - User-facing behavior: recurring work starts surfacing as skill opportunities.
+
+Milestone 2 acceptance details:
+
+- `skill_candidate` is a first-class proactivity opportunity kind
+- candidate creation uses bounded distilled evidence, not raw transcripts
+- the ledger is the canonical skill-candidate state
+- the same canonical id must survive across inline, heartbeat, inbox, and
+  handoff
+- recurring work updates an existing candidate when the deterministic intent
+  key matches instead of piling up duplicates
+- candidate generation quality and live usefulness are the success gate
 
 ## Milestone 3 - Skillifier MVP scaffold/check/report
 

@@ -47,6 +47,10 @@ Remaining implementation details:
 - future skill candidates should enter the shared skills candidate ledger and
   reuse the same proactivity ids and surfaces rather than creating a parallel
   review queue
+- `skill_candidate` is the first runtime implementation of that rule: it is a
+  first-class proactivity opportunity kind with bounded distilled evidence,
+  deterministic dedupe, and shared canonical ids across inline, heartbeat,
+  inbox, and handoff
 - maintenance mechanics are owned by
   [Memory Maintenance Loop](/projects/model-memory/specs/memory-maintenance-loop)
 

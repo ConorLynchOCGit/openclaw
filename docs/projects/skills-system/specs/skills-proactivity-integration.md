@@ -34,6 +34,14 @@ Required linked ids:
 The same canonical ids must remain stable across surfacing, drafting, canary,
 promotion, disable, and rollback flows.
 
+Milestone 2 runtime rule:
+
+- the same `skillCandidateId` must be visible in the canonical ledger, inline
+  chat surface, heartbeat surface, inbox item, and handoff metadata for the
+  same live opportunity
+- repeated same-intent work must update the existing candidate instead of
+  creating a second actionable queue row
+
 ## Required statuses
 
 - `detected`
@@ -55,3 +63,5 @@ promotion, disable, and rollback flows.
 - evidence and provenance may be shown in secondary details
 - primary user-facing copy must remain bounded and actionable
 - static seeded placeholders do not count as live skill opportunities
+- destination capability policy may inform install-target metadata, but
+  Milestone 2 does not broadly write skill packages into live destinations
