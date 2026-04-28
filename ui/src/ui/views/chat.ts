@@ -1204,15 +1204,25 @@ function formatInboxMessageClass(messageClass: ProactivityInboxItem["messageClas
   return formatProactivityClass(messageClass);
 }
 
-function getProactivityCandidateSummary(
-  item: ProductProactivityQueueItem | ProactivityInboxItem,
-): string {
+type ProactivitySurfaceItem = ProductProactivityQueueItem | ProactivityInboxItem;
+
+function getProactivityBrief(item: ProactivitySurfaceItem) {
+  return item.userFacingBrief ?? null;
+}
+
+function uniqueUiStrings(values: Array<string | undefined>): string[] {
+  return [
+    ...new Set(
+      values.map((value) => value?.trim()).filter((value): value is string => Boolean(value)),
+    ),
+  ].toSorted((left, right) => left.localeCompare(right));
+}
+
+function getProactivityCandidateSummary(item: ProactivitySurfaceItem): string {
   return item.candidateSummary ?? item.boundedDisplayText;
 }
 
-function getProactivitySuggestedAction(
-  item: ProductProactivityQueueItem | ProactivityInboxItem,
-): string {
+function getProactivitySuggestedAction(item: ProactivitySurfaceItem): string {
   if (item.suggestedAction) {
     return item.suggestedAction;
   }
@@ -1226,7 +1236,7 @@ function getProactivitySuggestedAction(
 }
 
 function defaultWorkItemAction(
-  item: ProductProactivityQueueItem | ProactivityInboxItem,
+  item: ProactivitySurfaceItem,
 ): ProductProactivityWorkItemAction | null {
   if (item.primaryAction) {
     return item.primaryAction;
@@ -1279,21 +1289,17 @@ function defaultWorkItemAction(
   };
 }
 
-function getProactivityPrimaryActionLabel(
-  item: ProductProactivityQueueItem | ProactivityInboxItem,
-) {
-  return defaultWorkItemAction(item)?.label ?? "";
+function getProactivityPrimaryActionLabel(item: ProactivitySurfaceItem) {
+  return getProactivityBrief(item)?.primaryActionLabel ?? defaultWorkItemAction(item)?.label ?? "";
 }
 
 function getProactivityPrimaryActionType(
-  item: ProductProactivityQueueItem | ProactivityInboxItem,
+  item: ProactivitySurfaceItem,
 ): ProductProactivityActionType | null {
   return defaultWorkItemAction(item)?.actionType ?? null;
 }
 
-function getProactivityCtaExplanation(
-  item: ProductProactivityQueueItem | ProactivityInboxItem,
-): string {
+function getProactivityCtaExplanation(item: ProactivitySurfaceItem): string {
   return (
     item.ctaExplanation ??
     defaultWorkItemAction(item)?.description ??
@@ -1301,9 +1307,7 @@ function getProactivityCtaExplanation(
   );
 }
 
-function getProactivityMessagePreview(
-  item: ProductProactivityQueueItem | ProactivityInboxItem,
-): string {
+function getProactivityMessagePreview(item: ProactivitySurfaceItem): string {
   return (
     cleanProactivityUserFacingText(item.messagePreview, { maxLength: 220 }) ??
     cleanProactivityUserFacingText(item.boundedDisplayText, { maxLength: 220 }) ??
@@ -1312,64 +1316,114 @@ function getProactivityMessagePreview(
   );
 }
 
-function getStoredProactivityProposedMessage(
-  item: ProductProactivityQueueItem | ProactivityInboxItem,
-): string {
+function getStoredProactivityProposedMessage(item: ProactivitySurfaceItem): string {
   return (
     cleanProactivityUserFacingText(item.proposedMessage, { maxLength: 220 }) ??
     getProactivityMessagePreview(item)
   );
 }
 
-function getProactivityExpectedUserValue(
-  item: ProductProactivityQueueItem | ProactivityInboxItem,
-): string {
+function getProactivityExpectedUserValue(item: ProactivitySurfaceItem): string {
   return (
+    cleanProactivityUserFacingText(getProactivityBrief(item)?.oneLinePurpose, { maxLength: 180 }) ??
     cleanProactivityUserFacingText(item.expectedUserValue, { maxLength: 180 }) ??
     "Surfaces bounded Model Memory evidence without exposing raw prompts, transcripts, tool logs, secrets, or private phrases."
   );
 }
 
-function getProactivityPlanTitle(item: ProductProactivityQueueItem | ProactivityInboxItem): string {
+function getProactivityPlanTitle(item: ProactivitySurfaceItem): string {
   return (
+    cleanProactivityUserFacingText(getProactivityBrief(item)?.title, { maxLength: 120 }) ??
     cleanProactivityUserFacingText(item.planTitle, { maxLength: 120 }) ??
     cleanProactivityUserFacingText(getProactivityCandidateSummary(item), { maxLength: 120 }) ??
     "Proactive next step"
   );
 }
 
-function getProactivityProblem(item: ProductProactivityQueueItem | ProactivityInboxItem): string {
+function getProactivityProblem(item: ProactivitySurfaceItem): string {
   return (
+    cleanProactivityUserFacingText(getProactivityBrief(item)?.oneLinePurpose, { maxLength: 180 }) ??
     cleanProactivityUserFacingText(item.problem, { maxLength: 180 }) ??
     cleanProactivityUserFacingText(getProactivityCandidateSummary(item), { maxLength: 180 }) ??
     "A recent assistant answer identified a bounded next step."
   );
 }
 
-function getProactivityProposedMessage(
-  props: ChatProps,
-  item: ProductProactivityQueueItem | ProactivityInboxItem,
-): string {
+function getProactivityProposedMessage(props: ChatProps, item: ProactivitySurfaceItem): string {
   const id = "itemId" in item ? (item.queueItemId ?? item.itemId) : item.queueItemId;
-  return props.productProactivityEditedMessages?.[id] ?? getStoredProactivityProposedMessage(item);
+  return (
+    props.productProactivityEditedMessages?.[id] ??
+    (item.workItemKind === "message_candidate"
+      ? getStoredProactivityProposedMessage(item)
+      : (cleanProactivityUserFacingText(getProactivityBrief(item)?.recommendedNextStep, {
+          maxLength: 220,
+        }) ?? getStoredProactivityProposedMessage(item)))
+  );
 }
 
-function getProactivityUserBenefit(
-  item: ProductProactivityQueueItem | ProactivityInboxItem,
-): string {
+function getProactivityUserBenefit(item: ProactivitySurfaceItem): string {
   return item.userBenefit ?? getProactivityExpectedUserValue(item);
 }
 
-function getProactivityEvidenceSummary(
-  item: ProductProactivityQueueItem | ProactivityInboxItem,
-): string {
+function getProactivityEvidenceSummary(item: ProactivitySurfaceItem): string {
   return (
+    cleanProactivityUserFacingText(getProactivityBrief(item)?.hiddenDiagnostics.evidenceSummary, {
+      maxLength: 180,
+    }) ??
     cleanProactivityUserFacingText(item.evidenceSummary, { maxLength: 180 }) ??
     ("whyThisAppearedSummary" in item
       ? (cleanProactivityUserFacingText(item.whyThisAppearedSummary, { maxLength: 180 }) ??
         item.whyThisAppearedSummary)
       : `Evidence: ${item.sourceRefs.slice(0, 2).join(", ") || "missing"}.`)
   );
+}
+
+function getProactivityDiagnosticWhyNow(item: ProactivitySurfaceItem): string {
+  return (
+    cleanProactivityUserFacingText(getProactivityBrief(item)?.hiddenDiagnostics.whyNow, {
+      maxLength: 220,
+    }) ??
+    cleanProactivityUserFacingText(item.problem, { maxLength: 220 }) ??
+    "No why-now diagnostic was provided."
+  );
+}
+
+function getProactivityPresentationDiagnostics(item: ProactivitySurfaceItem): string[] {
+  const brief = getProactivityBrief(item);
+  return uniqueUiStrings([
+    ...(brief?.hiddenDiagnostics.limitations ?? []),
+    ...(brief?.quality.reasons ?? []),
+  ]);
+}
+
+function renderProactivityEvidenceDetails(
+  item: ProactivitySurfaceItem,
+  summary = "Evidence and provenance",
+): TemplateResult {
+  const diagnostics = getProactivityPresentationDiagnostics(item);
+  return html`
+    <details class="product-proactivity-item__details">
+      <summary>${summary}</summary>
+      <div class="operator-row">
+        <span>Why surfaced</span>
+        <span>${getProactivityDiagnosticWhyNow(item)}</span>
+      </div>
+      <div class="operator-row">
+        <span>Evidence</span>
+        <span>${getProactivityEvidenceSummary(item)}</span>
+      </div>
+      <div class="operator-row">
+        <span>Sources</span>
+        <span>${item.sourceRefs.slice(0, 4).join(", ") || "missing"}</span>
+      </div>
+      ${diagnostics.length
+        ? html`<div class="operator-row">
+            <span>Diagnostics</span>
+            <span>${diagnostics.join(", ")}</span>
+          </div>`
+        : nothing}
+    </details>
+  `;
 }
 
 function isGenericPlaceholder(text: string | undefined): boolean {
@@ -1381,9 +1435,19 @@ function isGenericPlaceholder(text: string | undefined): boolean {
   );
 }
 
-function hasCleanPrimaryProactivitySurfaceText(
-  item: ProductProactivityQueueItem | ProactivityInboxItem,
-): boolean {
+function hasCleanPrimaryProactivitySurfaceText(item: ProactivitySurfaceItem): boolean {
+  const brief = getProactivityBrief(item);
+  if (brief) {
+    return (
+      brief.quality.status !== "demote" &&
+      isMeaningfulProactivityUserFacingText(brief.title) &&
+      isMeaningfulProactivityUserFacingText(brief.oneLinePurpose) &&
+      isMeaningfulProactivityUserFacingText(brief.recommendedNextStep) &&
+      !isInternalProactivityWorkflowText(brief.title) &&
+      !isInternalProactivityWorkflowText(brief.oneLinePurpose) &&
+      !isInternalProactivityWorkflowText(brief.recommendedNextStep)
+    );
+  }
   const title = getProactivityPlanTitle(item);
   const problem = getProactivityProblem(item);
   const proposed = getStoredProactivityProposedMessage(item);
@@ -1397,9 +1461,7 @@ function hasCleanPrimaryProactivitySurfaceText(
   );
 }
 
-function sameSessionAssistantSourceRefKey(
-  item: ProductProactivityQueueItem | ProactivityInboxItem,
-): string | null {
+function sameSessionAssistantSourceRefKey(item: ProactivitySurfaceItem): string | null {
   const sessionKey =
     "eligibleScope" in item && item.eligibleScope?.sessionKey
       ? item.eligibleScope.sessionKey
@@ -1425,9 +1487,7 @@ function sameSessionAssistantSourceRefKey(
   );
 }
 
-function sameSessionAssistantFocusKey(
-  item: ProductProactivityQueueItem | ProactivityInboxItem,
-): string | null {
+function sameSessionAssistantFocusKey(item: ProactivitySurfaceItem): string | null {
   const sessionKey =
     "eligibleScope" in item && item.eligibleScope?.sessionKey
       ? item.eligibleScope.sessionKey
@@ -1449,17 +1509,15 @@ function sameSessionAssistantFocusKey(
   );
 }
 
-function collapseSameSessionSurfaceItems<
-  T extends ProductProactivityQueueItem | ProactivityInboxItem,
->(items: T[]): T[] {
+function collapseSameSessionSurfaceItems<T extends ProactivitySurfaceItem>(items: T[]): T[] {
   const confidenceRank = (confidence: string | undefined) =>
     confidence === "high" ? 3 : confidence === "medium" ? 2 : confidence === "low" ? 1 : 0;
-  const surfacePriority = (item: ProductProactivityQueueItem | ProactivityInboxItem) =>
+  const surfacePriority = (item: ProactivitySurfaceItem) =>
     (item.skillifierDraft ? 1_000 : 0) +
     (item.opportunityClass === "skill_candidate" ? 200 : 0) +
     (item.draftReady ? 100 : 0) +
     confidenceRank(item.confidence);
-  const updatedAtValue = (item: ProductProactivityQueueItem | ProactivityInboxItem) =>
+  const updatedAtValue = (item: ProactivitySurfaceItem) =>
     "updatedAt" in item && typeof item.updatedAt === "string" ? item.updatedAt : "";
   const chooseBest = (bestByKey: Map<string, T>, key: string | null, item: T) => {
     if (key) {
@@ -1585,34 +1643,25 @@ function getVisibleInboxItems(
   return getHistoryInboxItems(digest, view);
 }
 
-function getProactivityPrimaryStepLabel(
-  item:
-    | Pick<ProductProactivityQueueItem, "workItemKind" | "opportunityClass">
-    | Pick<ProactivityInboxItem, "workItemKind" | "opportunityClass">,
-): string {
-  if (item.opportunityClass === "skill_candidate") {
-    return "Skill worth creating";
+function getProactivityPrimaryStepLabel(item: ProactivitySurfaceItem): string {
+  const brief = getProactivityBrief(item);
+  if (brief?.kindLabel === "Question") {
+    return "Decision";
   }
-  if (item.opportunityClass === "reverse_prompt") {
-    return "Question worth asking";
+  if (brief?.kindLabel === "Draft ready") {
+    return "Draft review step";
   }
-  if (item.opportunityClass === "followup" || item.opportunityClass === "recovery") {
-    return "Follow-up worth revisiting";
-  }
-  if (item.opportunityClass === "delight") {
-    return "Useful surprise";
-  }
-  if (item.opportunityClass === "self_healing") {
-    return "Repair path";
+  if (brief) {
+    return "Next step";
   }
   return item.workItemKind === "message_candidate" ? "Message to send" : "What happens next";
 }
 
-function getProactivityOpportunityClassLabel(
-  item:
-    | Pick<ProductProactivityQueueItem, "opportunityClass" | "workItemKind">
-    | Pick<ProactivityInboxItem, "opportunityClass" | "workItemKind">,
-): string {
+function getProactivityOpportunityClassLabel(item: ProactivitySurfaceItem): string {
+  const brief = getProactivityBrief(item);
+  if (brief) {
+    return brief.kindLabel.toLowerCase();
+  }
   switch (item.opportunityClass) {
     case "skill_candidate":
       return "skill candidate";
@@ -1631,11 +1680,7 @@ function getProactivityOpportunityClassLabel(
   }
 }
 
-function getProactivityOpportunityClassChipClass(
-  item:
-    | Pick<ProductProactivityQueueItem, "opportunityClass">
-    | Pick<ProactivityInboxItem, "opportunityClass">,
-): string {
+function getProactivityOpportunityClassChipClass(item: ProactivitySurfaceItem): string {
   switch (item.opportunityClass) {
     case "skill_candidate":
       return "proactivity-surface-chip--reverse";
@@ -1664,12 +1709,12 @@ function renderProactivityDraftSection(
   }
   if (item.skillifierDraft) {
     return html`
-      <div class="product-proactivity-item__section">
-        <span>Draft ready</span>
-        <div>${item.skillifierDraft.reviewSummary}</div>
-      </div>
       <details class="product-proactivity-item__details">
-        <summary>Review skill draft</summary>
+        <summary>Draft package details</summary>
+        <div class="operator-row">
+          <span>Summary</span>
+          <span>${item.skillifierDraft.reviewSummary}</span>
+        </div>
         <div class="operator-row">
           <span>Package</span>
           <span>${item.skillifierDraft.packageTitle}</span>
@@ -1693,12 +1738,12 @@ function renderProactivityDraftSection(
     return nothing;
   }
   return html`
-    <div class="product-proactivity-item__section">
-      <span>Draft ready</span>
-      <div>${item.autonomousDraft.recommendedApproach}</div>
-    </div>
     <details class="product-proactivity-item__details">
-      <summary>Review draft</summary>
+      <summary>Draft details</summary>
+      <div class="operator-row">
+        <span>Summary</span>
+        <span>${item.autonomousDraft.recommendedApproach}</span>
+      </div>
       <div class="operator-row">
         <span>Next safe step</span>
         <span>${item.autonomousDraft.nextSafeStep}</span>
@@ -2036,25 +2081,14 @@ function renderInlineProactivityCard(
             </div>
             <h4>${getProactivityPlanTitle(item)}</h4>
             <div class="inline-proactivity-card__section">
-              <span>Why now</span>
+              <span>Purpose</span>
               <div>${getProactivityProblem(item)}</div>
             </div>
             <div class="inline-proactivity-card__section">
               <span>${proposedLabel}</span>
               <div>${getProactivityProposedMessage(props, item)}</div>
             </div>
-            ${renderProactivityDraftSection(item)}
-            <details class="inline-proactivity-card__details">
-              <summary>Evidence and provenance</summary>
-              <div class="operator-row">
-                <span>Evidence</span>
-                <span>${getProactivityEvidenceSummary(item)}</span>
-              </div>
-              <div class="operator-row">
-                <span>Sources</span>
-                <span>${item.sourceRefs.slice(0, 4).join(", ") || "missing"}</span>
-              </div>
-            </details>
+            ${renderProactivityDraftSection(item)} ${renderProactivityEvidenceDetails(item)}
             <div class="inline-proactivity-card__actions">
               ${primaryAction
                 ? html`<button
@@ -2111,7 +2145,7 @@ function renderContextualProactivityCard(props: ChatProps): TemplateResult | typ
         <div class="contextual-proactivity-card__eyebrow">Relevant proactivity</div>
         <h3 class="contextual-proactivity-card__title">${getProactivityPlanTitle(item)}</h3>
         <div class="contextual-proactivity-card__section">
-          <span>Why now</span>
+          <span>Purpose</span>
           <strong>${getProactivityProblem(item)}</strong>
         </div>
         <div class="contextual-proactivity-card__section">
@@ -2123,6 +2157,10 @@ function renderContextualProactivityCard(props: ChatProps): TemplateResult | typ
           <div class="operator-row">
             <span>Suggested action</span>
             <span>${getProactivitySuggestedAction(item)}</span>
+          </div>
+          <div class="operator-row">
+            <span>Why surfaced</span>
+            <span>${getProactivityDiagnosticWhyNow(item)}</span>
           </div>
           <div class="operator-row">
             <span>User benefit</span>
@@ -2151,10 +2189,6 @@ function renderContextualProactivityCard(props: ChatProps): TemplateResult | typ
               ></textarea>
             </label>`
           : nothing}
-        <div class="contextual-proactivity-card__section">
-          <span>Expected value</span>
-          <div>${getProactivityUserBenefit(item)}</div>
-        </div>
         ${renderProactivityDraftSection(item)}
         <div class="contextual-proactivity-card__why">${whyShown}</div>
         <details class="contextual-proactivity-card__details">
@@ -2269,20 +2303,20 @@ function renderHeartbeatProactivityReview(props: ChatProps): TemplateResult | ty
             </div>
             <h4>${getProactivityPlanTitle(item)}</h4>
             <div class="heartbeat-proactivity-review__section">
-              <span>Why now</span>
+              <span>Purpose</span>
               <div>${getProactivityProblem(item)}</div>
             </div>
             <div class="heartbeat-proactivity-review__section">
               <span>${proposedLabel}</span>
               <div>${getProactivityProposedMessage(props, item)}</div>
             </div>
-            <div class="heartbeat-proactivity-review__section">
-              <span>Expected value</span>
-              <div>${getProactivityUserBenefit(item)}</div>
-            </div>
             ${renderProactivityDraftSection(item)}
             <details class="heartbeat-proactivity-review__details">
               <summary>Evidence and provenance</summary>
+              <div class="operator-row">
+                <span>Why surfaced</span>
+                <span>${getProactivityDiagnosticWhyNow(item)}</span>
+              </div>
               <div class="operator-row">
                 <span>Evidence</span>
                 <span>${getProactivityEvidenceSummary(item)}</span>
@@ -2681,7 +2715,7 @@ function renderProactivityInbox(props: ChatProps): TemplateResult | typeof nothi
                       ${getProactivityPlanTitle(item)}
                     </h4>
                     <div class="product-proactivity-item__section">
-                      <span>Why now</span>
+                      <span>Purpose</span>
                       <strong>${getProactivityProblem(item)}</strong>
                     </div>
                     <div class="product-proactivity-item__section">
@@ -2707,14 +2741,14 @@ function renderProactivityInbox(props: ChatProps): TemplateResult | typeof nothi
                           ></textarea>
                         </label>`
                       : nothing}
-                    <div class="product-proactivity-item__section">
-                      <span>Expected value</span>
-                      <div>${getProactivityUserBenefit(item)}</div>
-                    </div>
                     ${renderProactivityDraftSection(item)}
                     <details class="product-proactivity-item__details">
                       <summary>Review plan</summary>
-                      <p>${item.whyThisAppearedSummary}</p>
+                      <p>${item.userFacingBrief?.detailSummary ?? item.whyThisAppearedSummary}</p>
+                      <div class="operator-row">
+                        <span>Why surfaced</span>
+                        <span>${getProactivityDiagnosticWhyNow(item)}</span>
+                      </div>
                       <div class="operator-row">
                         <span>Suggested action</span>
                         <span>${getProactivitySuggestedAction(item)}</span>
@@ -2766,6 +2800,12 @@ function renderProactivityInbox(props: ChatProps): TemplateResult | typeof nothi
                         ? html`<div class="operator-row">
                             <span>Blocked</span>
                             <span>${item.blockedReasonCodes.join(", ")}</span>
+                          </div>`
+                        : nothing}
+                      ${getProactivityPresentationDiagnostics(item).length
+                        ? html`<div class="operator-row">
+                            <span>Presentation</span>
+                            <span>${getProactivityPresentationDiagnostics(item).join(", ")}</span>
                           </div>`
                         : nothing}
                       <div class="operator-row">

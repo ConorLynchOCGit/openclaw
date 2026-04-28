@@ -158,6 +158,40 @@ export type ProactivitySkillCandidate = {
   };
 };
 
+export type UserFacingProactivityBrief = {
+  title: string;
+  kindLabel:
+    | "New skill"
+    | "Improve skill"
+    | "Merge skill"
+    | "Follow-up"
+    | "Question"
+    | "Draft ready"
+    | "Repair";
+  oneLinePurpose: string;
+  recommendedNextStep: string;
+  primaryActionLabel: string;
+  statusLabel?: string;
+  detailSummary?: string;
+  skillPresentationKind?:
+    | "new_skill_candidate"
+    | "existing_skill_enhancement"
+    | "merge_or_extend_candidate"
+    | "not_skill_worthy";
+  possibleExistingSkillName?: string;
+  hiddenDiagnostics: {
+    whyNow?: string;
+    evidenceSummary?: string;
+    provenanceRefs: string[];
+    limitations: string[];
+    sourceRefs?: string[];
+  };
+  quality: {
+    status: "pass" | "demote" | "repair";
+    reasons: string[];
+  };
+};
+
 export type ProductProactivityQueueItem = {
   queueItemId: string;
   candidateId: string;
@@ -205,6 +239,7 @@ export type ProductProactivityQueueItem = {
   evidenceSummary?: string;
   confidence?: ProductProactivityConfidence;
   blockedIfMissing?: string[];
+  userFacingBrief?: UserFacingProactivityBrief;
   draftReady?: boolean;
   skillifierDraft?: {
     skillPackageId: string;
@@ -353,6 +388,7 @@ export type ProactivityInboxItem = {
   evidenceSummary?: string;
   confidence?: ProductProactivityConfidence;
   blockedIfMissing?: string[];
+  userFacingBrief?: UserFacingProactivityBrief;
   draftReady?: boolean;
   skillifierDraft?: ProductProactivityQueueItem["skillifierDraft"];
   autonomousDraft?: ProductProactivityQueueItem["autonomousDraft"];

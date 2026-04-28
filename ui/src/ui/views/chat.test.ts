@@ -15,8 +15,12 @@ import {
 import { resetAssistantAttachmentAvailabilityCacheForTest } from "../chat/grouped-render.ts";
 import { normalizeMessage } from "../chat/message-normalizer.ts";
 import type { GatewayBrowserClient } from "../gateway.ts";
-import type { ModelCatalogEntry } from "../types.ts";
-import type { SessionsListResult } from "../types.ts";
+import type {
+  ModelCatalogEntry,
+  ProactivityInboxItem,
+  ProductProactivityQueueItem,
+  SessionsListResult,
+} from "../types.ts";
 import { renderChat, type ChatProps } from "./chat.ts";
 import { renderOverview, type OverviewProps } from "./overview.ts";
 
@@ -2274,7 +2278,7 @@ describe("chat view", () => {
     expect(container.textContent).toContain(
       "Turn the assistant output into a concise bounded plan.",
     );
-    expect(container.textContent).toContain("Review draft");
+    expect(container.textContent).toContain("Draft details");
     expect(container.textContent).toContain("Next safe step");
   });
 
@@ -5239,6 +5243,217 @@ describe("chat view", () => {
 
     expect(container.textContent).not.toContain("Tool input");
     expect(container.textContent).toContain('"status": "error"');
+  });
+
+  it("renders skill candidates from decision briefs instead of raw planning packets", () => {
+    const container = document.createElement("div");
+    const skillCandidate = {
+      skillCandidateId: "skill-candidate-brief",
+      proactivityOpportunityId: "opportunity-brief",
+      normalizedIntentKey: "first bounded draft package should include only what is",
+      sourceRuntime: "openclaw_session" as const,
+      candidateType: "explicit_skill_request" as const,
+      evidenceSummary: "Repeated bounded draft-package scoping work.",
+      recurrenceCount: 2,
+      recurrenceWindow: {
+        firstSeenAt: "2026-04-28T00:00:00.000Z",
+        lastSeenAt: "2026-04-28T00:10:00.000Z",
+      },
+      exampleHashes: ["example-hash"],
+      suggestedSkillName: "first bounded draft package should include only what is",
+      riskTier: "low" as const,
+      autonomyLevelCeiling: 1 as const,
+      lifecycleStatus: "detected" as const,
+      installTargets: ["workspace_skills_dir"],
+      evalStatus: "not_started" as const,
+      vettingStatus: "not_started" as const,
+      canaryStatus: "not_started" as const,
+      createdAt: "2026-04-28T00:00:00.000Z",
+      updatedAt: "2026-04-28T00:10:00.000Z",
+      provenanceRefs: ["chat://main/assistant_turn/msg_bad_skill_card"],
+      rollbackPlan: {
+        rollbackId: "rollback-brief",
+        strategy: "disable_candidate_only" as const,
+        targetPaths: ["workspace_skills_dir"],
+        directMainMutationAllowed: false as const,
+      },
+    };
+    const userFacingBrief = {
+      title: "New skill: draft-skill-package-checklist",
+      kindLabel: "New skill" as const,
+      oneLinePurpose:
+        "Define what belongs in the first bounded Skillifier draft package before any install or promotion.",
+      recommendedNextStep: "Next step: Draft the skill contract and routing or workflow checks.",
+      primaryActionLabel: "Draft skill package",
+      statusLabel: "detected",
+      detailSummary: "Candidate evidence and why-surfaced diagnostics are available in details.",
+      skillPresentationKind: "new_skill_candidate" as const,
+      hiddenDiagnostics: {
+        whyNow:
+          "The user explicitly asked for skill-oriented reuse and recent OpenClaw work produced a bounded example.",
+        evidenceSummary: "Bounded skillifier draft evidence.",
+        provenanceRefs: ["chat://main/assistant_turn/msg_bad_skill_card"],
+        limitations: ["source_title_was_transformation_instruction"],
+        sourceRefs: ["chat://main/assistant_turn/msg_bad_skill_card"],
+      },
+      quality: { status: "pass" as const, reasons: [] },
+    };
+    const queueItem: ProductProactivityQueueItem = {
+      queueItemId: "queue-brief",
+      candidateId: "candidate-brief",
+      skillCandidate,
+      opportunityId: "opportunity-brief",
+      opportunityClass: "skill_candidate",
+      opportunityStatus: "surfaced",
+      workItemId: "work-brief",
+      workItemKind: "planning_request",
+      workItemStatus: "not_started",
+      primaryAction: {
+        actionType: "draft_skill_package",
+        label: "Draft skill package",
+        description: "Creates a bounded review-only skill draft.",
+        requiresChatInject: false,
+        executesAction: false,
+      },
+      secondaryActions: [],
+      ctaExplanation: "Creates a bounded review-only skill draft.",
+      handoffStatus: "idle",
+      handoffError: null,
+      handoffMessageAnchor: null,
+      messageClass: "operator_approved_suggestion_available",
+      boundedDisplayText: "Turn First bounded draft package should include only what is.",
+      candidateSummary: "Turn First bounded draft package should include only what is.",
+      planTitle:
+        "Turn First bounded draft package should include only what is into a reusable skill",
+      problem:
+        "The user explicitly asked for skill-oriented reuse and recent OpenClaw work already produced a concrete bounded example.",
+      proposedMessage:
+        "Turn Turn First bounded draft package should include only what is into a short bounded plan.",
+      suggestedAction: "Draft a bounded skill package.",
+      expectedUserValue: "Reduce repeated Skillifier draft-scoping work.",
+      userBenefit: "Reduce repeated Skillifier draft-scoping work.",
+      evidenceSummary: "Bounded skillifier draft evidence.",
+      confidence: "high",
+      blockedIfMissing: [],
+      userFacingBrief,
+      status: "pending_review",
+      layer: "actionable",
+      attentionRequired: true,
+      sendStatus: "idle",
+      sendError: null,
+      sentMessageAnchor: null,
+      eligibleScope: {
+        environment: "live",
+        userId: "conor",
+        recipientId: "conor",
+        projectId: "openclaw",
+        sessionKey: "main",
+        operatorId: "operator",
+        allowedMessageClasses: ["operator_approved_suggestion_available"],
+        proofPrerequisiteIds: [],
+        proofPrerequisiteHashes: [],
+      },
+      sourceRefs: ["chat://main/assistant_turn/msg_bad_skill_card"],
+      sourceProfileIds: ["tool_result_capture"],
+      authorityTiers: ["tool_grounded"],
+      contentHashes: ["content-hash-brief"],
+      proofHashes: ["proof-hash-brief"],
+      noDarkDataStatus: "pass",
+      staleLabels: [],
+      conflictLabels: [],
+      blockedReasonCodes: [],
+      generatedAt: "2026-04-28T00:10:00.000Z",
+      updatedAt: "2026-04-28T00:10:00.000Z",
+    };
+    const inboxItem: ProactivityInboxItem = {
+      ...queueItem,
+      itemId: "inbox-brief",
+      sourceArtifactReportId: "report-brief",
+      status: "pending_review",
+      filterTags: ["actionable", "pending"],
+      feedbackSummary: {
+        usefulCount: 0,
+        notUsefulCount: 0,
+        tooRepetitiveCount: 0,
+        wrongContextCount: 0,
+        unsafePrivateCount: 0,
+      },
+      whyThisAppearedSummary: "Generated from bounded skill-candidate evidence.",
+    };
+
+    render(
+      renderChat(
+        createProps({
+          sessionKey: "main",
+          sidebarOpen: true,
+          sidebarContent: { kind: "proactivityInbox" },
+          onCloseSidebar: () => undefined,
+          messages: [
+            {
+              role: "assistant",
+              content: [
+                {
+                  type: "text",
+                  text: "Turn the recurring workflow into the smallest bounded reusable skill concept.",
+                  textSignature: JSON.stringify({
+                    v: 1,
+                    id: "msg_bad_skill_card",
+                    phase: "final_answer",
+                  }),
+                },
+              ],
+              timestamp: Date.parse("2026-04-28T00:10:00.000Z"),
+            },
+          ],
+          productProactivityQueue: [queueItem],
+          proactivityInboxDigest: {
+            digestId: "digest-brief",
+            generatedAt: "2026-04-28T00:10:00.000Z",
+            filters: [
+              "actionable",
+              "pending",
+              "planned",
+              "sent",
+              "snoozed",
+              "dismissed",
+              "blocked",
+              "autosend_trial",
+              "diagnostics",
+            ],
+            counts: {
+              actionable: 1,
+              pending: 1,
+              planned: 0,
+              sent: 0,
+              snoozed: 0,
+              dismissed: 0,
+              blocked: 0,
+              autosend_trial: 0,
+              diagnostics: 0,
+            },
+            layerCounts: { actionable: 1, history: 0, diagnostic: 0 },
+            items: [inboxItem],
+          },
+        }),
+      ),
+      container,
+    );
+
+    const inlineCard = container.querySelector(".inline-proactivity-card__item");
+    expect(inlineCard?.textContent).toContain("New skill: draft-skill-package-checklist");
+    expect(inlineCard?.textContent).toContain("Define what belongs");
+    expect(inlineCard?.textContent).toContain("Next step");
+    expect(inlineCard?.textContent).toContain("Draft the skill contract");
+    expect(inlineCard?.textContent).toContain("Why surfaced");
+    expect(inlineCard?.textContent).not.toContain("Why now");
+    expect(inlineCard?.textContent).not.toContain("Skill worth creating");
+    expect(inlineCard?.textContent).not.toContain("Turn Turn");
+
+    const inboxItemElement = container.querySelector(".proactivity-inbox__item");
+    expect(inboxItemElement?.textContent).toContain("New skill: draft-skill-package-checklist");
+    expect(inboxItemElement?.textContent).toContain("Purpose");
+    expect(inboxItemElement?.textContent).not.toContain("Skill worth creating");
+    expect(inboxItemElement?.textContent).not.toContain("Turn Turn");
   });
 
   it("lets a tool call collapse when the matching tool output comes from toolMessages", async () => {

@@ -1055,24 +1055,36 @@ export class OpenClawApp extends LitElement {
     if (!item) {
       return null;
     }
-    const title = item.planTitle ?? item.candidateSummary ?? item.boundedDisplayText;
-    const whyNow = item.problem ?? item.evidenceSummary ?? item.boundedDisplayText;
+    const brief = item.userFacingBrief;
+    const title =
+      brief?.title ?? item.planTitle ?? item.candidateSummary ?? item.boundedDisplayText;
+    const purpose =
+      brief?.oneLinePurpose ?? item.userBenefit ?? item.problem ?? item.boundedDisplayText;
+    const whySurfaced =
+      brief?.hiddenDiagnostics.whyNow ??
+      item.problem ??
+      item.evidenceSummary ??
+      item.boundedDisplayText;
     const proposedNextStep =
       this.productProactivityEditedMessages[queueItemId] ??
+      brief?.recommendedNextStep ??
       item.proposedMessage ??
       item.messagePreview ??
       item.suggestedAction ??
       item.boundedDisplayText;
     const compact = (value: string) => value.replace(/\s+/g, " ").trim();
-    const normalizedWhyNow = compact(whyNow).replace(/[.!?]+$/g, "");
+    const normalizedPurpose = compact(purpose).replace(/[.!?]+$/g, "");
     const normalizedNextStep = compact(proposedNextStep).replace(/[.!?]+$/g, "");
     const boundedContext =
       normalizedNextStep &&
-      normalizedNextStep.toLowerCase() !== normalizedWhyNow.toLowerCase() &&
-      !normalizedNextStep.toLowerCase().includes(normalizedWhyNow.toLowerCase())
+      normalizedNextStep.toLowerCase() !== normalizedPurpose.toLowerCase() &&
+      !normalizedNextStep.toLowerCase().includes(normalizedPurpose.toLowerCase())
         ? proposedNextStep
         : (item.userBenefit ?? item.candidateSummary ?? item.boundedDisplayText);
-    const evidence = item.evidenceSummary ?? item.sourceRefs.slice(0, 3).join(", ");
+    const evidence =
+      brief?.hiddenDiagnostics.evidenceSummary ??
+      item.evidenceSummary ??
+      item.sourceRefs.slice(0, 3).join(", ");
     const draftContext =
       item.draftReady && item.skillifierDraft
         ? [
@@ -1100,12 +1112,15 @@ export class OpenClawApp extends LitElement {
       "",
       `Title: ${title}`,
       "",
-      `Why now: ${whyNow}`,
+      `Purpose: ${purpose}`,
+      "",
+      `Recommended next step: ${proposedNextStep}`,
       "",
       `Context to use: ${boundedContext}`,
       "",
       ...(draftContext ? [`Prepared draft: ${draftContext}`, ""] : []),
       `Evidence summary: ${evidence}`,
+      `Why surfaced diagnostic: ${whySurfaced}`,
       `Source refs: ${item.sourceRefs.slice(0, 3).join(", ") || "none"}.`,
       "",
       `Expected output: ${expectedOutput}. State assumptions and uncertainty.`,
