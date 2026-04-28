@@ -62,6 +62,40 @@ Decision:
 - all automatic skill changes must be versioned, provenance-bearing, and
   rollback-safe
 
+### 2026-04-28 - Skill destination authority must be explicit and path-specific
+
+Reason:
+
+- OpenClaw can discover skills from multiple destinations, but destination
+  readability is not the same thing as destination write authority
+- using one blanket write policy would blur repo-owned bundled skills,
+  workspace-scoped experiments, machine-wide shared skills, plugin-owned
+  assets, and Codex-global installs
+
+Decision:
+
+- the Skills Platform must define a destination capability matrix covering:
+  - readable
+  - writable
+  - installable
+  - auto-promotable
+  - requires host-operator
+  - requires repo branch or worktree
+  - requires explicit approval
+  - forbidden
+- `skills/<name>/` is repo-owned and writable only through branch/worktree
+  flow, never by silent direct mutation on `main`
+- `<workspace>/skills/<name>/` is the default future low-risk auto-draft and
+  limited-promotion target
+- `<workspace>/.agents/skills/<name>/` is valid for agent-local scoped
+  experiments
+- `~/.agents/skills/<name>/` and `~/.openclaw/skills/<name>/` remain broadly
+  readable, but writes stay approval-gated until later proof
+- plugin skill directories remain approval-gated and are not early
+  auto-written targets
+- Codex `$CODEX_HOME/skills/<name>/` may be written only through the
+  cross-runtime install adapter with explicit capability checks
+
 ### 2026-04-18 - Skills System gets its own canonical project
 
 Reason:

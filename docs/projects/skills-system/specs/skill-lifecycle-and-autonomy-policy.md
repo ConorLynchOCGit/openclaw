@@ -117,3 +117,20 @@ The core product decision is explicit:
 - broad runtime enablement
 - outbound sends
 - runtime code edits outside a later explicitly approved skill-generation slice
+
+## Destination authority interaction
+
+Autonomy level alone is not enough to authorize a write.
+
+A lifecycle action must also be valid for the chosen destination according to
+the [Skill Destination Capability Matrix](/projects/skills-system/specs/skill-destination-capability-matrix).
+
+Examples:
+
+- a low-risk candidate may still be blocked from direct promotion into
+  `skills/<name>/` because repo-bundled writes require a branch or worktree
+  flow
+- a low-risk candidate may be eligible for limited promotion into
+  `<workspace>/skills/<name>/`
+- a candidate may be draftable but not installable into a machine-wide or
+  Codex-global destination without explicit approval

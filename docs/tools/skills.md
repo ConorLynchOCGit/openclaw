@@ -20,6 +20,7 @@ surface. The broader lifecycle contract now lives under
 - low-risk skill automation may later auto-draft, auto-test, auto-canary, and
   in bounded cases auto-promote
 - medium-risk and high-risk skill changes remain approval-gated
+- write authority is destination-specific; readable roots are not all writable
 
 ## Locations and precedence
 
@@ -53,6 +54,10 @@ In **multi-agent** setups, each agent has its own workspace. That means:
 If the same skill name exists in more than one place, the usual precedence
 applies: workspace wins, then project agent skills, then personal agent skills,
 then managed/local, then bundled, then extra dirs.
+
+Destination write authority is intentionally different from read precedence. The
+canonical path-level contract lives in
+[Skill Destination Capability Matrix](/projects/skills-system/specs/skill-destination-capability-matrix).
 
 ## Agent skill allowlists
 

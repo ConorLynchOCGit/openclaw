@@ -15,7 +15,8 @@ and rollback.
 ## Milestone 1 - Specs and autonomy policy
 
 - Objective: define the canonical lifecycle, autonomy ladder, risk tiers,
-  proactivity integration, packaging, rollback, and roadmap contracts.
+  proactivity integration, packaging, destination authority, rollback, and
+  roadmap contracts.
 - Scope: docs/specs/decisions only.
 - Non-goals: no runtime ledger, Skillifier, UI, or installers.
 - Proof: docs validation and coherent cross-project links.
@@ -39,6 +40,8 @@ and rollback.
 - Objective: generate portable skill drafts with provenance, tests, eval
   stubs, and rollout metadata.
 - Scope: scaffold/check/report only.
+- Also includes: code-level enforcement of the destination capability matrix for
+  draft/install target selection.
 - Non-goals: no full automation ladder yet.
 - Proof: one candidate can produce a bounded skill package draft and checklist.
 - Safety gate: artifact generation only; no live enablement.

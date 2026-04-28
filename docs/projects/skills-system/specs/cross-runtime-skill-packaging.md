@@ -29,6 +29,8 @@ both OpenClaw and Codex.
 - discovery verification must prove the installed package is visible in both
   runtimes
 - provenance must be preserved across adapters
+- destination writes must respect the
+  [Skill Destination Capability Matrix](/projects/skills-system/specs/skill-destination-capability-matrix)
 
 ## Non-goals
 

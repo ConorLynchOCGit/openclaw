@@ -17,6 +17,8 @@ and rollback behavior.
 - every automatic change must include provenance and rollback instructions
 - human-authored skill content must not be auto-deleted without explicit
   approval
+- destination write rules remain path-specific; versioning does not override
+  destination authority
 
 ## Registry state
 

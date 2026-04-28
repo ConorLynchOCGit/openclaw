@@ -40,3 +40,15 @@ Key inherited principle:
 
 - the durable/generated split is explicit and enforceable
 - the repo uses one compatible contract rather than multiple drifting patterns
+
+## Skills implication
+
+For the Skills Platform:
+
+- durable human-owned policy and project docs live under
+  `docs/projects/skills-system/*`
+- repo-owned runnable bundled skills live under `skills/*`
+- generated drafts, canaries, and installs must land in explicit bounded skill
+  destinations, not inside durable project-doc trees
+- automatic skill writes must respect destination-specific authority rather than
+  treating every readable skill root as writable

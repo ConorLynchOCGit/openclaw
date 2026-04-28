@@ -96,6 +96,10 @@ Supports bounded enablement targets such as:
 - shared local machine scope
 - plugin bundle scope
 
+Destination selection must follow an explicit capability matrix. Readability,
+write authority, installability, auto-promotion eligibility, branch/worktree
+requirements, host-operator requirements, and approval rules are path-specific.
+
 ### 9. Canary and shadow mode
 
 Allows drafted skills to run in limited scopes before broader promotion.

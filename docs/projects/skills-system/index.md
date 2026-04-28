@@ -17,6 +17,7 @@ This project owns:
 - skill candidate detection and ledger contracts
 - Skillifier lifecycle and "properly skilled" quality bar
 - cross-runtime OpenClaw and Codex packaging rules
+- destination-specific write and promotion authority
 - autonomy, canary, rollback, and low-risk auto-promotion policy
 - proactivity-integrated surfacing for skill opportunities and maintenance
 

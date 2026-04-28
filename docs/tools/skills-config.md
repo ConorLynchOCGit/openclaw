@@ -144,5 +144,6 @@ It is not the future source of truth for:
 - canary outcome tracking
 - rollback history
 - low-risk auto-promotion policy
+- destination-specific write authority
 
 Those contracts live under [Skills System](/projects/skills-system).

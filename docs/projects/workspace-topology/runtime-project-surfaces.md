@@ -86,9 +86,18 @@ Ownership is now determined by source-of-truth function:
 | Surface type                                                                 | Authoritative home                                                           |
 | ---------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
 | project docs, startup/status/current-slice packs, specs, decisions, roadmaps | repo-owned `docs/projects/*`                                                 |
+| repo-owned runnable bundled skills                                           | repo-owned `skills/*`                                                        |
 | committed automation assets, schemas, workflows, helper scripts              | repo-owned `ops/*`, `scripts/*`, and related code paths                      |
 | runtime-generated current artifacts                                          | workspace-owned writable locations such as `projects/ops/generated_current/` |
 | compatibility aliases for old runbook paths                                  | `workspace/projects/*` pointing back to canonical repo surfaces              |
+
+Skills-specific implication:
+
+- `docs/projects/skills-system/*` owns policy, specs, reports, and roadmap
+  truth
+- `skills/*` owns repo-bundled runnable skill packages
+- workspace and user skill roots own scoped overlays or generated packages only
+  within the destination authority rules defined by the Skills System project
 
 ## Resolution rule inside OpenClaw
 
