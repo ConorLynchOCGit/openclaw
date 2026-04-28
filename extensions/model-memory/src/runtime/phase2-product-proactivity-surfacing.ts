@@ -81,6 +81,7 @@ export type Phase2ProductProactivityQueueItem = {
   candidateId: string;
   workItemId: string;
   opportunityId?: string;
+  opportunityClass?: "reverse_prompt" | "followup" | "delight" | "self_healing" | "recovery";
   opportunityStatus?: Phase2OpportunityLifecycleStatus;
   workItemKind: Phase2ProactivityWorkItemKind;
   workItemStatus: Phase2ProactivityWorkItemStatus;
@@ -876,6 +877,7 @@ function queueItemsFromLedger(input: {
       candidateId: entry.candidateId,
       workItemId: entry.workItemId,
       opportunityId: entry.opportunityId,
+      opportunityClass: entry.opportunityClass,
       opportunityStatus: entry.status,
       workItemKind: entry.workItemKind,
       workItemStatus,

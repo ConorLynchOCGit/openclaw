@@ -1024,6 +1024,152 @@ describe("chat view", () => {
     expect(onWorkAction).toHaveBeenCalledWith("queue-inline-1", "plan_this");
   });
 
+  it("cleans polluted copy and collapses same-session duplicate inline follow-ups", () => {
+    const container = document.createElement("div");
+    render(
+      renderChat(
+        createProps({
+          sessionKey: "main",
+          messages: [
+            {
+              role: "assistant",
+              content: [
+                {
+                  type: "text",
+                  text: "Plan the heartbeat proactivity review cleanup.",
+                  textSignature: JSON.stringify({
+                    v: 1,
+                    id: "msg_inline_cleanup",
+                    phase: "final_answer",
+                  }),
+                },
+              ],
+              timestamp: Date.parse("2026-04-27T20:15:15.000Z"),
+            },
+          ],
+          productProactivityQueue: [
+            {
+              queueItemId: "queue-inline-older",
+              candidateId: "candidate-inline-older",
+              workItemId: "work-inline-older",
+              messageClass: "operator_approved_suggestion_available",
+              boundedDisplayText: "Plan the heartbeat proactivity review item only.",
+              candidateSummary: "Older same-session variant.",
+              planTitle: "Plan the **heartbeat proactivity review** item only",
+              problem:
+                "System: [2026-04-27 20:15 UTC] [Post-compaction context refresh] The current item still leaks system text. Source: chat://main/assistant_turn/msg_inline_cleanup.",
+              suggestedAction: "Plan the cleanup.",
+              messagePreview:
+                "Plan the **heartbeat proactivity review** item only, with no code changes yet.",
+              proposedMessage:
+                "Plan the **heartbeat proactivity review** item only, with no code changes yet.",
+              expectedUserValue:
+                "Expected value: keep same-session work readable. Source: chat://main/assistant_turn/msg_inline_cleanup.",
+              userBenefit: "Expected value: keep same-session work readable.",
+              evidenceSummary:
+                'Sender (untrusted metadata): {"label":"openclaw-control-ui","id":"openclaw-control-ui"}',
+              confidence: "medium",
+              blockedIfMissing: [],
+              status: "pending_review",
+              layer: "actionable",
+              workItemKind: "planning_request",
+              primaryAction: {
+                actionType: "plan_this",
+                label: "Plan this",
+                description: "Start a bounded planning handoff in chat.",
+                requiresChatInject: false,
+                executesAction: false,
+              },
+              eligibleScope: {
+                environment: "live",
+                userId: "conorlynch",
+                recipientId: "conorlynch",
+                projectId: "openclaw",
+                sessionKey: "main",
+                operatorId: "operator-conorlynch",
+                allowedMessageClasses: ["operator_approved_suggestion_available"],
+                proofPrerequisiteIds: [],
+                proofPrerequisiteHashes: [],
+              },
+              sourceRefs: ["chat://main/assistant_turn/msg_inline_cleanup"],
+              sourceProfileIds: ["tool_result_capture"],
+              authorityTiers: ["tool_grounded"],
+              contentHashes: ["content-hash-inline-older"],
+              proofHashes: ["proof-hash-inline-older"],
+              noDarkDataStatus: "pass",
+              staleLabels: [],
+              conflictLabels: [],
+              blockedReasonCodes: [],
+              generatedAt: "2026-04-27T20:15:16.000Z",
+              updatedAt: "2026-04-27T20:15:16.000Z",
+            },
+            {
+              queueItemId: "queue-inline-newer",
+              candidateId: "candidate-inline-newer",
+              workItemId: "work-inline-newer",
+              messageClass: "operator_approved_suggestion_available",
+              boundedDisplayText: "Heartbeat proactivity review cleanup.",
+              candidateSummary: "Newest same-session canonical variant.",
+              planTitle: "Heartbeat proactivity review cleanup",
+              problem: "The current follow-up still leaks system text into user-facing copy.",
+              suggestedAction: "Plan the cleanup.",
+              messagePreview:
+                "Plan the cleanup so heartbeat and inline cards show only clean user-facing text.",
+              proposedMessage:
+                "Plan the cleanup so heartbeat and inline cards show only clean user-facing text.",
+              expectedUserValue: "Makes surfaced proactivity readable and ambient again.",
+              userBenefit: "Makes surfaced proactivity readable and ambient again.",
+              evidenceSummary: "Derived from the visible assistant final answer.",
+              confidence: "high",
+              blockedIfMissing: [],
+              status: "pending_review",
+              layer: "actionable",
+              workItemKind: "planning_request",
+              primaryAction: {
+                actionType: "plan_this",
+                label: "Plan this",
+                description: "Start a bounded planning handoff in chat.",
+                requiresChatInject: false,
+                executesAction: false,
+              },
+              eligibleScope: {
+                environment: "live",
+                userId: "conorlynch",
+                recipientId: "conorlynch",
+                projectId: "openclaw",
+                sessionKey: "main",
+                operatorId: "operator-conorlynch",
+                allowedMessageClasses: ["operator_approved_suggestion_available"],
+                proofPrerequisiteIds: [],
+                proofPrerequisiteHashes: [],
+              },
+              sourceRefs: ["chat://main/assistant_turn/msg_inline_cleanup"],
+              sourceProfileIds: ["tool_result_capture"],
+              authorityTiers: ["tool_grounded"],
+              contentHashes: ["content-hash-inline-newer"],
+              proofHashes: ["proof-hash-inline-newer"],
+              noDarkDataStatus: "pass",
+              staleLabels: [],
+              conflictLabels: [],
+              blockedReasonCodes: [],
+              generatedAt: "2026-04-27T20:16:16.000Z",
+              updatedAt: "2026-04-27T20:16:16.000Z",
+            },
+          ],
+        }),
+      ),
+      container,
+    );
+
+    const card = container.querySelector(".inline-proactivity-card");
+    expect(card?.querySelectorAll(".inline-proactivity-card__item")).toHaveLength(1);
+    expect(card?.textContent).toContain("Heartbeat proactivity review cleanup");
+    expect(card?.textContent).not.toContain("Read HEARTBEAT.md");
+    expect(card?.textContent).not.toContain("Post-compaction context refresh");
+    expect(card?.textContent).not.toContain("Sender (untrusted metadata)");
+    expect(card?.textContent).not.toContain("Source: chat://");
+  });
+
   it("prioritizes visible assistant-derived opportunities in contextual and heartbeat surfaces", () => {
     const container = document.createElement("div");
     render(
@@ -1163,6 +1309,106 @@ describe("chat view", () => {
         (card) => card.getAttribute("data-work-item-id") === "work-item-older-contextual",
       ),
     ).toBe(true);
+  });
+
+  it("keeps inline follow-ups attached to the latest assistant answer that still has actionable items", () => {
+    const container = document.createElement("div");
+    render(
+      renderChat(
+        createProps({
+          sessionKey: "main",
+          messages: [
+            {
+              role: "assistant",
+              content: [
+                {
+                  type: "text",
+                  text: "Implement the assistant-final capture filter and verify the heartbeat path.",
+                  textSignature: JSON.stringify({
+                    v: 1,
+                    id: "msg_recent_followup",
+                    phase: "final_answer",
+                  }),
+                },
+              ],
+              timestamp: Date.parse("2026-04-27T18:05:00.000Z"),
+            },
+            {
+              role: "assistant",
+              content: [
+                {
+                  type: "text",
+                  text: "HEARTBEAT_OK",
+                  textSignature: JSON.stringify({
+                    v: 1,
+                    id: "msg_heartbeat_ok",
+                    phase: "final_answer",
+                  }),
+                },
+              ],
+              timestamp: Date.parse("2026-04-27T18:06:00.000Z"),
+            },
+          ],
+          productProactivityQueue: [
+            {
+              queueItemId: "queue-recent-answer",
+              candidateId: "candidate-recent-answer",
+              workItemId: "work-item-recent-answer",
+              messageClass: "operator_approved_suggestion_available",
+              boundedDisplayText: "Implement assistant-final capture filter",
+              candidateSummary: "The visible assistant answer created a current-session follow-up.",
+              planTitle: "Implement assistant-final capture filter",
+              problem: "The latest assistant answer identified a concrete same-session next step.",
+              suggestedAction: "Plan the assistant-final capture filter change now.",
+              messagePreview: "Plan the assistant-final capture filter change now.",
+              proposedMessage: "Plan the assistant-final capture filter change now.",
+              expectedUserValue: "Turns the visible answer into immediate workflow momentum.",
+              userBenefit: "Turns the visible answer into immediate workflow momentum.",
+              evidenceSummary: "Derived from the visible assistant final answer.",
+              confidence: "high",
+              blockedIfMissing: [],
+              status: "pending_review",
+              layer: "actionable",
+              workItemKind: "planning_request",
+              primaryAction: {
+                actionType: "plan_this",
+                label: "Plan this",
+                description: "Start a bounded planning handoff in chat.",
+                requiresChatInject: false,
+                executesAction: false,
+              },
+              eligibleScope: {
+                environment: "live",
+                userId: "conorlynch",
+                recipientId: "conorlynch",
+                projectId: "openclaw",
+                sessionKey: "main",
+                operatorId: "operator-conorlynch",
+                allowedMessageClasses: ["operator_approved_suggestion_available"],
+                proofPrerequisiteIds: [],
+                proofPrerequisiteHashes: [],
+              },
+              sourceRefs: ["chat://main/assistant_turn/msg_recent_followup"],
+              sourceProfileIds: ["tool_result_capture"],
+              authorityTiers: ["tool_grounded"],
+              contentHashes: ["content-hash-recent"],
+              proofHashes: ["proof-hash-recent"],
+              noDarkDataStatus: "pass",
+              staleLabels: [],
+              conflictLabels: [],
+              blockedReasonCodes: [],
+              generatedAt: "2026-04-27T18:05:00.000Z",
+              updatedAt: "2026-04-27T18:05:00.000Z",
+            },
+          ],
+        }),
+      ),
+      container,
+    );
+
+    const card = container.querySelector(".inline-proactivity-card");
+    expect(card?.textContent).toContain("Implement assistant-final capture filter");
+    expect(card?.textContent).not.toContain("HEARTBEAT_OK");
   });
 
   it("adds proactivity to the visible heartbeat review surface with an inbox path", () => {

@@ -96,4 +96,49 @@ describe("phase2 proactivity opportunity ledger", () => {
       report.supersessionSignals.some((signal) => signal.reasonCode === "duplicate_replaced"),
     ).toBe(true);
   });
+
+  it("collapses same-session assistant-derived title-lineage duplicates to the newest canonical item", async () => {
+    const older = extractionCandidate();
+    const newer = {
+      ...extractionCandidate(),
+      opportunityId: "opp-ledger-newer",
+      sourceMessageId: "assistant-message-newer",
+      title: "Heartbeat proactivity review",
+      proposedNextStep:
+        "Plan the heartbeat proactivity review so it surfaces a clean bounded next step instead of system boilerplate.",
+      contentHashes: ["content-hash-ledger-newer"],
+      proofHashes: ["proof-hash-ledger-newer"],
+      sourceRefs: ["chat://main/assistant_turn/assistant-message-newer"],
+      generatedAt: "2026-04-27T16:00:00.000Z",
+    };
+    const report = await buildPhase2ProactivityOpportunityLedgerReport({
+      now: new Date("2026-04-27T16:30:00.000Z"),
+      opportunities: [
+        {
+          ...older,
+          title: "Plan the heartbeat proactivity review item only",
+          proposedNextStep:
+            "Plan the heartbeat proactivity review item only, with no code changes yet.",
+          sourceFamily: "assistant_output",
+        },
+        { ...newer, sourceFamily: "assistant_output" },
+      ],
+    });
+
+    const oldEntry = report.ledger.entries.find((entry) => entry.opportunityId === "opp-ledger-1");
+    const newEntry = report.ledger.entries.find(
+      (entry) => entry.opportunityId === "opp-ledger-newer",
+    );
+    expect(oldEntry).toMatchObject({
+      status: "superseded",
+      supersededByOpportunityId: "opp-ledger-newer",
+      attentionRequired: false,
+    });
+    expect(newEntry?.sourceRefs).toEqual(
+      expect.arrayContaining([
+        "chat://main/assistant_turn/assistant-message-1",
+        "chat://main/assistant_turn/assistant-message-newer",
+      ]),
+    );
+  });
 });

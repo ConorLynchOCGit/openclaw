@@ -1,9 +1,16 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildProactivityUserFacingFocusKey,
+  cleanProactivityUserFacingText,
   extractAssistantTextForPhase,
   extractAssistantTextSignatureId,
   extractAssistantVisibleText,
   extractFirstTextBlock,
+  isInternalProactivityWorkflowText,
+  isMetaProactivityTitleText,
+  isMeaningfulProactivityUserFacingText,
+  isOperationalProactivityUserFacingText,
+  isPromptScaffoldProactivityText,
   resolveAssistantMessagePhase,
 } from "./chat-message-content.js";
 
@@ -239,5 +246,74 @@ describe("extractAssistantTextSignatureId", () => {
         { phase: "final_answer" },
       ),
     ).toBeUndefined();
+  });
+});
+
+describe("proactivity user-facing cleanup", () => {
+  it("removes system/control-plane text and raw source refs from surfaced copy", () => {
+    expect(
+      cleanProactivityUserFacingText(
+        "System: [2026-04-27 20:15 UTC] [Post-compaction context refresh] Review the current queue item. Source: chat://main/assistant_turn/msg_1.",
+      ),
+    ).toBe("Review the current queue item.");
+  });
+
+  it("suppresses heartbeat boilerplate and metadata-only text", () => {
+    expect(
+      cleanProactivityUserFacingText(
+        'Sender (untrusted metadata): {"label":"openclaw-control-ui","id":"openclaw-control-ui"}',
+      ),
+    ).toBeUndefined();
+    expect(
+      cleanProactivityUserFacingText(
+        "Read HEARTBEAT.md if it exists (workspace context). Follow it strictly.",
+      ),
+    ).toBeUndefined();
+  });
+
+  it("flags internal proactivity handoff and proof text as non-user-facing workflow text", () => {
+    expect(
+      isInternalProactivityWorkflowText(
+        "I found a proactive item: Plan the next step. Action requested: plan this.",
+      ),
+    ).toBe(true);
+    expect(
+      isInternalProactivityWorkflowText(
+        "Operator Phase 2 staged action approval proof. Proof marker: TEST. Approve the staged proposal for audit only. Do not execute.",
+      ),
+    ).toBe(true);
+    expect(
+      isInternalProactivityWorkflowText(
+        "Review the roadmap and identify the top 4 concrete next implementation steps.",
+      ),
+    ).toBe(false);
+  });
+
+  it("detects prompt-scaffold and meta-title text for proactivity normalization", () => {
+    expect(
+      isPromptScaffoldProactivityText(
+        "Review the current OpenClaw roadmap and active proactivity runtime work.",
+      ),
+    ).toBe(true);
+    expect(
+      isPromptScaffoldProactivityText("The current queue still leaks junk into surfaced copy."),
+    ).toBe(false);
+    expect(
+      isMetaProactivityTitleText("Runtime-authoritative assistant-output proactivity capture"),
+    ).toBe(true);
+    expect(isMetaProactivityTitleText("Move assistant-output capture into the runtime path")).toBe(
+      false,
+    );
+  });
+
+  it("detects operational proactivity text and builds stable focus keys", () => {
+    expect(isOperationalProactivityUserFacingText("HEARTBEAT_OK")).toBe(true);
+    expect(
+      isMeaningfulProactivityUserFacingText("Plan the heartbeat proactivity review item."),
+    ).toBe(true);
+    expect(
+      buildProactivityUserFacingFocusKey("Plan the **heartbeat proactivity review** item only."),
+    ).toBe("heartbeat proactivity review");
+    expect(cleanProactivityUserFacingText("## Next concrete fix")).toBe("Next concrete fix");
   });
 });

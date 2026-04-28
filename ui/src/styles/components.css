@@ -3074,6 +3074,7 @@ td.data-table-key-col {
   display: grid;
   gap: 12px;
   margin: 0 0 12px;
+  max-width: min(700px, 82%);
   padding: 14px;
   border: 1px solid color-mix(in srgb, var(--accent) 38%, var(--border));
   border-radius: var(--radius-lg);
@@ -3131,6 +3132,7 @@ td.data-table-key-col {
   border: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
   border-radius: var(--radius);
   background: color-mix(in srgb, var(--card) 86%, var(--secondary) 14%);
+  box-shadow: var(--shadow-xs);
 }
 
 .heartbeat-proactivity-review__meta {
@@ -3162,6 +3164,31 @@ td.data-table-key-col {
   color: color-mix(in srgb, var(--ok) 78%, var(--text-strong));
 }
 
+.proactivity-surface-chip--reverse {
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
+  background: color-mix(in srgb, var(--accent) 14%, var(--card));
+  color: color-mix(in srgb, var(--accent) 82%, var(--text-strong));
+}
+
+.proactivity-surface-chip--followup,
+.proactivity-surface-chip--recovery {
+  border-color: color-mix(in srgb, var(--warning) 40%, var(--border));
+  background: color-mix(in srgb, var(--warning) 14%, var(--card));
+  color: color-mix(in srgb, var(--warning) 82%, var(--text-strong));
+}
+
+.proactivity-surface-chip--delight {
+  border-color: color-mix(in srgb, var(--ok) 40%, var(--border));
+  background: color-mix(in srgb, var(--ok) 14%, var(--card));
+  color: color-mix(in srgb, var(--ok) 78%, var(--text-strong));
+}
+
+.proactivity-surface-chip--repair {
+  border-color: color-mix(in srgb, var(--danger) 40%, var(--border));
+  background: color-mix(in srgb, var(--danger) 12%, var(--card));
+  color: color-mix(in srgb, var(--danger) 78%, var(--text-strong));
+}
+
 .heartbeat-proactivity-review__section {
   display: grid;
   gap: 3px;
@@ -3190,6 +3217,8 @@ td.data-table-key-col {
   display: grid;
   gap: 10px;
   margin: 8px 0 14px 58px;
+  width: min(700px, calc(82% - 58px));
+  max-width: calc(100% - 58px);
   padding: 12px;
   border-left: 3px solid color-mix(in srgb, var(--accent) 55%, transparent);
   border-radius: 0 var(--radius-lg) var(--radius-lg) var(--radius);
@@ -3229,6 +3258,7 @@ td.data-table-key-col {
   border: 1px solid color-mix(in srgb, var(--border) 82%, transparent);
   border-radius: var(--radius);
   background: color-mix(in srgb, var(--card) 88%, var(--secondary) 12%);
+  box-shadow: var(--shadow-xs);
 }
 
 .inline-proactivity-card__item h4 {
@@ -3389,6 +3419,10 @@ td.data-table-key-col {
 }
 
 @media (max-width: 760px) {
+  .heartbeat-proactivity-review {
+    max-width: none;
+  }
+
   .product-proactivity-item {
     grid-template-columns: 1fr;
   }
@@ -3398,6 +3432,8 @@ td.data-table-key-col {
   }
 
   .inline-proactivity-card {
+    width: auto;
+    max-width: none;
     margin-left: 0;
   }
 

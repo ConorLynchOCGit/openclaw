@@ -112,6 +112,34 @@ describe("phase2 heartbeat proactivity reliability", () => {
     expect(rankings[0]?.reasonCodes).toContain("recent_assistant_output");
   });
 
+  it("downranks dirty system-sounding copy behind clean user-facing opportunities", () => {
+    const rankings = rankHeartbeatProactivityItems({
+      queueItems: [
+        item("dirty", {
+          workItemId: "work-dirty",
+          planTitle: "Heartbeat proactivity review",
+          problem:
+            "Read HEARTBEAT.md if it exists (workspace context). Follow it strictly. HEARTBEAT_OK.",
+          proposedMessage: "Canonically verify the active session's planning state.",
+          sourceRefs: ["chat://main/assistant_turn/msg-dirty"],
+        }),
+        item("clean", {
+          workItemId: "work-clean",
+          planTitle: "Prune duplicate same-session opportunities",
+          problem: "Older assistant-derived items are still crowding the actionable surfaces.",
+          proposedMessage:
+            "Plan the deterministic same-session collapse so only the newest canonical item stays actionable.",
+          sourceRefs: ["chat://main/assistant_turn/msg-clean"],
+        }),
+      ],
+    });
+
+    expect(rankings[0]?.workItemId).toBe("work-clean");
+    expect(rankings.find((ranking) => ranking.workItemId === "work-dirty")?.reasonCodes).toContain(
+      "suppressed_dirty_surface_copy",
+    );
+  });
+
   it("builds primary heartbeat surface with shared work item ids", async () => {
     const queueItem = item("top");
     const report = await buildPhase2HeartbeatProactivityReliabilityReport({
@@ -144,5 +172,21 @@ describe("phase2 heartbeat proactivity reliability", () => {
         expect.objectContaining({ reasonCode: "action_execution_disabled", status: "fail" }),
       ]),
     );
+  });
+
+  it("does not surface heartbeat cards when only dirty control-plane items remain", async () => {
+    const report = await buildPhase2HeartbeatProactivityReliabilityReport({
+      queueItems: [
+        item("dirty-only", {
+          planTitle: "Heartbeat review",
+          problem: "Read HEARTBEAT.md if it exists.",
+          proposedMessage: "Canonically verify the active session's planning state.",
+          sourceRefs: ["chat://main/assistant_turn/msg-dirty-only"],
+        }),
+      ],
+      inboxWorkItemIds: ["work-dirty-only"],
+    });
+
+    expect(report.surface.topItems).toHaveLength(0);
   });
 });

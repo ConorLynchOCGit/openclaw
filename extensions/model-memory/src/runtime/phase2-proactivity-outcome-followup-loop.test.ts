@@ -10,6 +10,7 @@ function followupEntry(
     workItemId: "work-item-followup-1",
     candidateId: "candidate-followup-1",
     queueItemId: "queue-item-followup-1",
+    sourceFamily: "assistant_output",
     projectId: "openclaw",
     sessionKey: "main",
     title: "Investigate stale proof items",

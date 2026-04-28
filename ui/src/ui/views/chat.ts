@@ -2,7 +2,13 @@ import { html, nothing, type TemplateResult } from "lit";
 import { ref } from "lit/directives/ref.js";
 import { repeat } from "lit/directives/repeat.js";
 import { unsafeHTML } from "lit/directives/unsafe-html.js";
-import { parseAssistantTextSignature } from "../../../../src/shared/chat-message-content.js";
+import {
+  buildProactivityUserFacingFocusKey,
+  cleanProactivityUserFacingText,
+  isInternalProactivityWorkflowText,
+  isMeaningfulProactivityUserFacingText,
+  parseAssistantTextSignature,
+} from "../../../../src/shared/chat-message-content.js";
 import type { CompactionStatus, FallbackStatus } from "../app-tool-stream.ts";
 import {
   CHAT_ATTACHMENT_ACCEPT,
@@ -1298,24 +1304,46 @@ function getProactivityCtaExplanation(
 function getProactivityMessagePreview(
   item: ProductProactivityQueueItem | ProactivityInboxItem,
 ): string {
-  return item.messagePreview ?? item.boundedDisplayText;
+  return (
+    cleanProactivityUserFacingText(item.messagePreview, { maxLength: 220 }) ??
+    cleanProactivityUserFacingText(item.boundedDisplayText, { maxLength: 220 }) ??
+    item.messagePreview ??
+    item.boundedDisplayText
+  );
+}
+
+function getStoredProactivityProposedMessage(
+  item: ProductProactivityQueueItem | ProactivityInboxItem,
+): string {
+  return (
+    cleanProactivityUserFacingText(item.proposedMessage, { maxLength: 220 }) ??
+    getProactivityMessagePreview(item)
+  );
 }
 
 function getProactivityExpectedUserValue(
   item: ProductProactivityQueueItem | ProactivityInboxItem,
 ): string {
   return (
-    item.expectedUserValue ??
+    cleanProactivityUserFacingText(item.expectedUserValue, { maxLength: 180 }) ??
     "Surfaces bounded Model Memory evidence without exposing raw prompts, transcripts, tool logs, secrets, or private phrases."
   );
 }
 
 function getProactivityPlanTitle(item: ProductProactivityQueueItem | ProactivityInboxItem): string {
-  return item.planTitle ?? getProactivityCandidateSummary(item);
+  return (
+    cleanProactivityUserFacingText(item.planTitle, { maxLength: 120 }) ??
+    cleanProactivityUserFacingText(getProactivityCandidateSummary(item), { maxLength: 120 }) ??
+    "Proactive next step"
+  );
 }
 
 function getProactivityProblem(item: ProductProactivityQueueItem | ProactivityInboxItem): string {
-  return item.problem ?? getProactivityCandidateSummary(item);
+  return (
+    cleanProactivityUserFacingText(item.problem, { maxLength: 180 }) ??
+    cleanProactivityUserFacingText(getProactivityCandidateSummary(item), { maxLength: 180 }) ??
+    "A recent assistant answer identified a bounded next step."
+  );
 }
 
 function getProactivityProposedMessage(
@@ -1323,11 +1351,7 @@ function getProactivityProposedMessage(
   item: ProductProactivityQueueItem | ProactivityInboxItem,
 ): string {
   const id = "itemId" in item ? (item.queueItemId ?? item.itemId) : item.queueItemId;
-  return (
-    props.productProactivityEditedMessages?.[id] ??
-    item.proposedMessage ??
-    getProactivityMessagePreview(item)
-  );
+  return props.productProactivityEditedMessages?.[id] ?? getStoredProactivityProposedMessage(item);
 }
 
 function getProactivityUserBenefit(
@@ -1340,9 +1364,10 @@ function getProactivityEvidenceSummary(
   item: ProductProactivityQueueItem | ProactivityInboxItem,
 ): string {
   return (
-    item.evidenceSummary ??
+    cleanProactivityUserFacingText(item.evidenceSummary, { maxLength: 180 }) ??
     ("whyThisAppearedSummary" in item
-      ? item.whyThisAppearedSummary
+      ? (cleanProactivityUserFacingText(item.whyThisAppearedSummary, { maxLength: 180 }) ??
+        item.whyThisAppearedSummary)
       : `Evidence: ${item.sourceRefs.slice(0, 2).join(", ") || "missing"}.`)
   );
 }
@@ -1356,15 +1381,127 @@ function isGenericPlaceholder(text: string | undefined): boolean {
   );
 }
 
+function hasCleanPrimaryProactivitySurfaceText(
+  item: ProductProactivityQueueItem | ProactivityInboxItem,
+): boolean {
+  const title = getProactivityPlanTitle(item);
+  const problem = getProactivityProblem(item);
+  const proposed = getStoredProactivityProposedMessage(item);
+  return (
+    isMeaningfulProactivityUserFacingText(title) &&
+    isMeaningfulProactivityUserFacingText(problem) &&
+    isMeaningfulProactivityUserFacingText(proposed) &&
+    !isInternalProactivityWorkflowText(title) &&
+    !isInternalProactivityWorkflowText(problem) &&
+    !isInternalProactivityWorkflowText(proposed)
+  );
+}
+
+function sameSessionAssistantSourceRefKey(
+  item: ProductProactivityQueueItem | ProactivityInboxItem,
+): string | null {
+  const sessionKey =
+    "eligibleScope" in item && item.eligibleScope?.sessionKey
+      ? item.eligibleScope.sessionKey
+      : item.sourceRefs
+          .map((sourceRef) => sourceRef.match(/^chat:\/\/([^/]+)\//u)?.[1])
+          .find((value): value is string => Boolean(value));
+  const canonicalAssistantSourceRef = item.sourceRefs
+    .filter(
+      (sourceRef) =>
+        sessionKey &&
+        (sourceRef.startsWith(`chat://${sessionKey}/assistant_turn/`) ||
+          sourceRef.startsWith(`chat://${sessionKey}/planning_output/`)),
+    )
+    .toSorted()[0];
+  if (!canonicalAssistantSourceRef) {
+    return null;
+  }
+  if (!sessionKey) {
+    return null;
+  }
+  return [sessionKey, item.workItemKind ?? "planning_request", canonicalAssistantSourceRef].join(
+    "::",
+  );
+}
+
+function sameSessionAssistantFocusKey(
+  item: ProductProactivityQueueItem | ProactivityInboxItem,
+): string | null {
+  const sessionKey =
+    "eligibleScope" in item && item.eligibleScope?.sessionKey
+      ? item.eligibleScope.sessionKey
+      : item.sourceRefs
+          .map((sourceRef) => sourceRef.match(/^chat:\/\/([^/]+)\//u)?.[1])
+          .find((value): value is string => Boolean(value));
+  const titleFocus = buildProactivityUserFacingFocusKey(getProactivityPlanTitle(item));
+  const nextStepFocus = buildProactivityUserFacingFocusKey(
+    getStoredProactivityProposedMessage(item),
+  );
+  if (!titleFocus && !nextStepFocus) {
+    return null;
+  }
+  if (!sessionKey) {
+    return null;
+  }
+  return [sessionKey, item.workItemKind ?? "planning_request", nextStepFocus || titleFocus].join(
+    "::",
+  );
+}
+
+function collapseSameSessionSurfaceItems<
+  T extends ProductProactivityQueueItem | ProactivityInboxItem,
+>(items: T[]): T[] {
+  const confidenceRank = (confidence: string | undefined) =>
+    confidence === "high" ? 3 : confidence === "medium" ? 2 : confidence === "low" ? 1 : 0;
+  const updatedAtValue = (item: ProductProactivityQueueItem | ProactivityInboxItem) =>
+    "updatedAt" in item && typeof item.updatedAt === "string" ? item.updatedAt : "";
+  const chooseBest = (bestByKey: Map<string, T>, key: string | null, item: T) => {
+    if (key) {
+      const existing = bestByKey.get(key);
+      if (
+        !existing ||
+        updatedAtValue(item).localeCompare(updatedAtValue(existing)) > 0 ||
+        confidenceRank(item.confidence) > confidenceRank(existing.confidence)
+      ) {
+        bestByKey.set(key, item);
+      }
+    }
+  };
+  const bestBySourceRefKey = new Map<string, T>();
+  for (const item of items) {
+    chooseBest(bestBySourceRefKey, sameSessionAssistantSourceRefKey(item), item);
+  }
+  const sourceCollapsed = items.filter((item) => {
+    const key = sameSessionAssistantSourceRefKey(item);
+    if (!key) {
+      return true;
+    }
+    return bestBySourceRefKey.get(key) === item;
+  });
+  const bestByFocusKey = new Map<string, T>();
+  for (const item of sourceCollapsed) {
+    chooseBest(bestByFocusKey, sameSessionAssistantFocusKey(item), item);
+  }
+  return sourceCollapsed.filter((item) => {
+    const key = sameSessionAssistantFocusKey(item);
+    if (!key) {
+      return true;
+    }
+    return bestByFocusKey.get(key) === item;
+  });
+}
+
 function isActionableProactivityItem(item: ProactivityInboxItem): boolean {
   return (
     item.layer === "actionable" &&
     item.status === "pending_review" &&
     item.noDarkDataStatus === "pass" &&
-    Boolean(item.proposedMessage?.trim()) &&
-    Boolean(item.planTitle?.trim()) &&
+    Boolean(getStoredProactivityProposedMessage(item).trim()) &&
+    Boolean(getProactivityPlanTitle(item).trim()) &&
     !isGenericPlaceholder(item.proposedMessage) &&
     !isGenericPlaceholder(item.planTitle) &&
+    hasCleanPrimaryProactivitySurfaceText(item) &&
     (item.blockedIfMissing?.length ?? 0) === 0
   );
 }
@@ -1372,7 +1509,7 @@ function isActionableProactivityItem(item: ProactivityInboxItem): boolean {
 function getActionableInboxItems(
   digest: ProactivityInboxDigest | null | undefined,
 ): ProactivityInboxItem[] {
-  return (digest?.items ?? []).filter(isActionableProactivityItem);
+  return collapseSameSessionSurfaceItems((digest?.items ?? []).filter(isActionableProactivityItem));
 }
 
 function getHistoryInboxItems(
@@ -1403,16 +1540,19 @@ function getContextMismatchDiagnostics(props: ChatProps): string[] {
 }
 
 function getActionableQueueItems(props: ChatProps): ProductProactivityQueueItem[] {
-  return (props.productProactivityQueue ?? []).filter(
-    (item) =>
-      item.status === "pending_review" &&
-      item.layer !== "diagnostic" &&
-      item.noDarkDataStatus === "pass" &&
-      Boolean(item.proposedMessage?.trim()) &&
-      Boolean(item.planTitle?.trim()) &&
-      !isGenericPlaceholder(item.proposedMessage) &&
-      !isGenericPlaceholder(item.planTitle) &&
-      (item.blockedIfMissing?.length ?? 0) === 0,
+  return collapseSameSessionSurfaceItems(
+    (props.productProactivityQueue ?? []).filter(
+      (item) =>
+        item.status === "pending_review" &&
+        item.layer !== "diagnostic" &&
+        item.noDarkDataStatus === "pass" &&
+        Boolean(getStoredProactivityProposedMessage(item).trim()) &&
+        Boolean(getProactivityPlanTitle(item).trim()) &&
+        !isGenericPlaceholder(item.proposedMessage) &&
+        !isGenericPlaceholder(item.planTitle) &&
+        hasCleanPrimaryProactivitySurfaceText(item) &&
+        (item.blockedIfMissing?.length ?? 0) === 0,
+    ),
   );
 }
 
@@ -1431,10 +1571,64 @@ function getVisibleInboxItems(
 
 function getProactivityPrimaryStepLabel(
   item:
-    | Pick<ProductProactivityQueueItem, "workItemKind">
-    | Pick<ProactivityInboxItem, "workItemKind">,
+    | Pick<ProductProactivityQueueItem, "workItemKind" | "opportunityClass">
+    | Pick<ProactivityInboxItem, "workItemKind" | "opportunityClass">,
 ): string {
+  if (item.opportunityClass === "reverse_prompt") {
+    return "Question worth asking";
+  }
+  if (item.opportunityClass === "followup" || item.opportunityClass === "recovery") {
+    return "Follow-up worth revisiting";
+  }
+  if (item.opportunityClass === "delight") {
+    return "Useful surprise";
+  }
+  if (item.opportunityClass === "self_healing") {
+    return "Repair path";
+  }
   return item.workItemKind === "message_candidate" ? "Message to send" : "What happens next";
+}
+
+function getProactivityOpportunityClassLabel(
+  item:
+    | Pick<ProductProactivityQueueItem, "opportunityClass" | "workItemKind">
+    | Pick<ProactivityInboxItem, "opportunityClass" | "workItemKind">,
+): string {
+  switch (item.opportunityClass) {
+    case "reverse_prompt":
+      return "reverse prompt";
+    case "followup":
+      return "follow-up";
+    case "delight":
+      return "useful surprise";
+    case "self_healing":
+      return "self-healing";
+    case "recovery":
+      return "recovery";
+    default:
+      return item.workItemKind?.replace(/_/g, " ") ?? "planning request";
+  }
+}
+
+function getProactivityOpportunityClassChipClass(
+  item:
+    | Pick<ProductProactivityQueueItem, "opportunityClass">
+    | Pick<ProactivityInboxItem, "opportunityClass">,
+): string {
+  switch (item.opportunityClass) {
+    case "reverse_prompt":
+      return "proactivity-surface-chip--reverse";
+    case "followup":
+      return "proactivity-surface-chip--followup";
+    case "delight":
+      return "proactivity-surface-chip--delight";
+    case "self_healing":
+      return "proactivity-surface-chip--repair";
+    case "recovery":
+      return "proactivity-surface-chip--recovery";
+    default:
+      return "";
+  }
 }
 
 function renderProactivityDraftSection(
@@ -1604,12 +1798,58 @@ function getContextualProactivityItems(props: ChatProps): ProductProactivityQueu
     .slice(0, 3);
 }
 
+function getLatestInlineCandidateSelection(props: ChatProps): {
+  items: ProductProactivityQueueItem[];
+  messageIds: Set<string>;
+} {
+  const actionableItems = getActionableQueueItems(props);
+  if (actionableItems.length === 0) {
+    return { items: [], messageIds: new Set() };
+  }
+  for (const message of [...props.messages].toReversed()) {
+    const normalized = normalizeMessage(message);
+    if (
+      normalizeRoleForGrouping(normalized.role ?? "") !== "assistant" ||
+      isOperationalAssistantMessage(message)
+    ) {
+      continue;
+    }
+    const latestAssistantMessageIds = new Set(readAssistantMessageIds(message));
+    if (latestAssistantMessageIds.size === 0) {
+      continue;
+    }
+    const sourceRefs = new Set(
+      [...latestAssistantMessageIds].map(
+        (messageId) => `chat://${props.sessionKey}/assistant_turn/${messageId}`,
+      ),
+    );
+    const matches = actionableItems
+      .filter((item) => item.sourceRefs.some((sourceRef) => sourceRefs.has(sourceRef)))
+      .slice(0, 2);
+    if (matches.length > 0) {
+      return { items: matches, messageIds: latestAssistantMessageIds };
+    }
+  }
+  return { items: [], messageIds: new Set() };
+}
+
 function getHeartbeatProactivityItems(
   props: ChatProps,
 ): Array<ProductProactivityQueueItem | ProactivityInboxItem> {
+  const latestInlineItems = getLatestInlineCandidateSelection(props).items;
   const contextualItems = getContextualProactivityItems(props);
-  if (contextualItems.length) {
-    return contextualItems.slice(0, 3);
+  if (latestInlineItems.length || contextualItems.length) {
+    const seen = new Set<string>();
+    const combined = [...latestInlineItems, ...contextualItems].filter((item) => {
+      const key =
+        item.workItemId ?? item.queueItemId ?? ("itemId" in item ? item.itemId : undefined);
+      if (!key || seen.has(key)) {
+        return false;
+      }
+      seen.add(key);
+      return true;
+    });
+    return combined.slice(0, 3);
   }
   return getActionableInboxItems(props.proactivityInboxDigest).slice(0, 3);
 }
@@ -1641,9 +1881,21 @@ function getInlineProactivityItems(
   const sourceRefs = new Set(
     messageIds.map((messageId) => `chat://${props.sessionKey}/assistant_turn/${messageId}`),
   );
-  return getActionableQueueItems(props)
+  const matches = getActionableQueueItems(props)
     .filter((item) => item.sourceRefs.some((sourceRef) => sourceRefs.has(sourceRef)))
     .slice(0, 2);
+  if (matches.length === 0) {
+    return [];
+  }
+  const latestSelection = getLatestInlineCandidateSelection(props);
+  if (latestSelection.items.length === 0) {
+    return matches;
+  }
+  if (!messageIds.some((messageId) => latestSelection.messageIds.has(messageId))) {
+    return [];
+  }
+  const latestWorkItemIds = new Set(latestSelection.items.map((item) => item.workItemId));
+  return latestSelection.items.filter((item) => latestWorkItemIds.has(item.workItemId));
 }
 
 function renderInlineProactivityCard(
@@ -1681,8 +1933,10 @@ function renderInlineProactivityCard(
             data-work-item-id=${item.workItemId ?? item.queueItemId}
           >
             <div class="inline-proactivity-card__meta">
-              <span class="proactivity-surface-chip">
-                ${item.workItemKind?.replace(/_/g, " ") ?? "planning request"}
+              <span
+                class=${`proactivity-surface-chip ${getProactivityOpportunityClassChipClass(item)}`.trim()}
+              >
+                ${getProactivityOpportunityClassLabel(item)}
               </span>
               <span class="proactivity-surface-chip proactivity-surface-chip--accent"
                 >ready now</span
@@ -1773,7 +2027,7 @@ function renderContextualProactivityCard(props: ChatProps): TemplateResult | typ
         <div class="contextual-proactivity-card__eyebrow">Relevant proactivity</div>
         <h3 class="contextual-proactivity-card__title">${getProactivityPlanTitle(item)}</h3>
         <div class="contextual-proactivity-card__section">
-          <span>Problem</span>
+          <span>Why now</span>
           <strong>${getProactivityProblem(item)}</strong>
         </div>
         <div class="contextual-proactivity-card__section">
@@ -1911,8 +2165,10 @@ function renderHeartbeatProactivityReview(props: ChatProps): TemplateResult | ty
             data-queue-item-id=${item.queueItemId}
           >
             <div class="heartbeat-proactivity-review__meta">
-              <span class="proactivity-surface-chip">
-                ${item.workItemKind?.replace(/_/g, " ") ?? "planning request"}
+              <span
+                class=${`proactivity-surface-chip ${getProactivityOpportunityClassChipClass(item)}`.trim()}
+              >
+                ${getProactivityOpportunityClassLabel(item)}
               </span>
               <span class="proactivity-surface-chip proactivity-surface-chip--accent"
                 >ready now</span
@@ -2330,7 +2586,7 @@ function renderProactivityInbox(props: ChatProps): TemplateResult | typeof nothi
                   <div class="product-proactivity-item__main">
                     <div class="product-proactivity-item__meta">
                       <span>${formatInboxMessageClass(item.messageClass)}</span>
-                      <span>${item.workItemKind?.replace(/_/g, " ") ?? "work item"}</span>
+                      <span>${getProactivityOpportunityClassLabel(item)}</span>
                       ${item.draftReady ? html`<span>draft ready</span>` : nothing}
                       <span>${item.status.replace(/_/g, " ")}</span>
                       <span>${item.layer ?? "actionable"}</span>
@@ -2339,7 +2595,7 @@ function renderProactivityInbox(props: ChatProps): TemplateResult | typeof nothi
                       ${getProactivityPlanTitle(item)}
                     </h4>
                     <div class="product-proactivity-item__section">
-                      <span>Problem</span>
+                      <span>Why now</span>
                       <strong>${getProactivityProblem(item)}</strong>
                     </div>
                     <div class="product-proactivity-item__section">

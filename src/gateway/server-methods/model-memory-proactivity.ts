@@ -254,6 +254,14 @@ export const modelMemoryProactivityHandlers: GatewayRequestHandlers = {
           decision: state.extractionReport.decision,
           candidateCount: state.extractionReport.telemetry.candidateCount,
         },
+        growthLoopReport: {
+          reportId: state.growthLoopReport.reportId,
+          loopCount: state.growthLoopReport.telemetry.loopCount,
+          reversePromptCount: state.growthLoopReport.telemetry.reversePromptCount,
+          opportunityCount: state.growthLoopReport.telemetry.opportunityCount,
+          maintenanceJobCount: state.growthLoopReport.telemetry.maintenanceJobCount,
+          recoveredCount: state.growthLoopReport.telemetry.recoveredCount,
+        },
         ledgerReport: {
           reportId: state.ledgerReport.reportId,
           decision: state.ledgerReport.decision,

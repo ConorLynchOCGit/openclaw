@@ -18,6 +18,14 @@ import {
   buildPhase2ProactivityAutonomousInternalDraftingReport,
   type Phase2AutonomousDraftReport,
 } from "../../extensions/model-memory/src/runtime/phase2-proactivity-autonomous-internal-drafting.js";
+import {
+  buildPhase2ProactivityGrowthLoopReport,
+  type Phase2AutonomousMaintenanceJob,
+  type Phase2GrowthLoopReport,
+  type Phase2GrowthLoopState,
+  type Phase2ProactivityCompactionRecoveryState,
+  type Phase2ProactivityWorkingBuffer,
+} from "../../extensions/model-memory/src/runtime/phase2-proactivity-growth-loops.js";
 import { buildPhase2ProactivityInboxReport } from "../../extensions/model-memory/src/runtime/phase2-proactivity-inbox.js";
 import {
   buildPhase2ProactivityOpportunityExtractionReport,
@@ -37,6 +45,7 @@ import type {
   SourceAuthorityTier,
   SourceProfileId,
 } from "../../extensions/model-memory/src/source-authority.js";
+import { stripInboundMetadata } from "../auto-reply/reply/strip-inbound-meta.js";
 import { loadConfig } from "../config/config.js";
 import { loadSessionStore } from "../config/sessions/store-load.js";
 import {
@@ -45,10 +54,13 @@ import {
   readSessionMessages,
 } from "../gateway/session-utils.js";
 import {
+  cleanProactivityUserFacingText,
   extractAssistantTextForPhase,
   extractAssistantTextSignatureId,
   extractFirstTextBlock,
   extractAssistantVisibleText,
+  isInternalProactivityWorkflowText,
+  isOperationalProactivityUserFacingText,
   parseAssistantTextSignature,
   resolveAssistantMessagePhase,
 } from "../shared/chat-message-content.js";
@@ -102,6 +114,10 @@ export type Phase2ProactivityActivityStore = {
     }
   >;
   authoritativeSyncBySessionKey: Record<string, string>;
+  growthLoopState?: Phase2GrowthLoopState | null;
+  workingBuffer?: Phase2ProactivityWorkingBuffer | null;
+  maintenanceJobs?: Phase2AutonomousMaintenanceJob[];
+  recoveryState?: Phase2ProactivityCompactionRecoveryState | null;
 };
 
 export type Phase2ProactivityActivityStoreDecision =
@@ -155,6 +171,7 @@ type GatewayProactivityBuildState = {
   liveDetectionReport: Awaited<ReturnType<typeof buildPhase2LiveProactivityDetectionReport>>;
   extractionReport: Awaited<ReturnType<typeof buildPhase2ProactivityOpportunityExtractionReport>>;
   recurringPatternReport: Awaited<ReturnType<typeof buildPhase2ProactivityRecurringPatternReport>>;
+  growthLoopReport: Phase2GrowthLoopReport;
   ledgerReport: Phase2OpportunityLedgerReport;
   followupReport: Awaited<ReturnType<typeof buildPhase2ProactivityOutcomeFollowupReport>>;
   draftReport: Phase2AutonomousDraftReport;
@@ -166,6 +183,7 @@ const ACTIVITY_STORE_SCHEMA_VERSION = "phase2_proactivity_activity_store.v1" as 
 const MAX_ACTIVITY_RECORDS = 400;
 const MAX_LIVE_EVENTS = 120;
 const MAX_LIFECYCLE_OVERRIDES = 200;
+const MAX_RECENT_ASSISTANT_EXTRACTION_RECORDS = 8;
 const PROACTIVITY_STORE_FILE = "model-memory-proactivity-state.json";
 
 function sha256(value: unknown): string {
@@ -223,6 +241,10 @@ async function loadActivityStore(storePath: string): Promise<Phase2ProactivityAc
         liveEvents: Array.isArray(parsed.liveEvents) ? parsed.liveEvents : [],
         lifecycleOverrides: parsed.lifecycleOverrides,
         authoritativeSyncBySessionKey: parsed.authoritativeSyncBySessionKey ?? {},
+        growthLoopState: parsed.growthLoopState ?? null,
+        workingBuffer: parsed.workingBuffer ?? null,
+        maintenanceJobs: Array.isArray(parsed.maintenanceJobs) ? parsed.maintenanceJobs : [],
+        recoveryState: parsed.recoveryState ?? null,
       };
     }
   } catch {
@@ -234,6 +256,10 @@ async function loadActivityStore(storePath: string): Promise<Phase2ProactivityAc
     liveEvents: [],
     lifecycleOverrides: [],
     authoritativeSyncBySessionKey: {},
+    growthLoopState: null,
+    workingBuffer: null,
+    maintenanceJobs: [],
+    recoveryState: null,
   };
 }
 
@@ -244,6 +270,22 @@ async function saveActivityStore(
   const filePath = resolveProactivityStorePath(storePath);
   await fs.mkdir(path.dirname(filePath), { recursive: true });
   await fs.writeFile(filePath, `${JSON.stringify(store, null, 2)}\n`, "utf8");
+}
+
+async function updatePersistedOperatingState(params: {
+  storePath: string;
+  growthLoopState: Phase2GrowthLoopState;
+  workingBuffer: Phase2ProactivityWorkingBuffer;
+  maintenanceJobs: Phase2AutonomousMaintenanceJob[];
+  recoveryState: Phase2ProactivityCompactionRecoveryState;
+}): Promise<Phase2ProactivityActivityStore> {
+  const store = await loadActivityStore(params.storePath);
+  store.growthLoopState = params.growthLoopState;
+  store.workingBuffer = params.workingBuffer;
+  store.maintenanceJobs = params.maintenanceJobs.slice(0, 6);
+  store.recoveryState = params.recoveryState;
+  await saveActivityStore(params.storePath, store);
+  return store;
 }
 
 function dedupeRecords(
@@ -277,8 +319,10 @@ function dedupeOverrides(
     .slice(-MAX_LIFECYCLE_OVERRIDES);
 }
 
-function summarizePrompt(text: string): string {
-  return boundedMultilineSummary(text).slice(0, 240);
+function summarizePrompt(text: string): string | undefined {
+  return cleanProactivityUserFacingText(stripInboundMetadata(boundedMultilineSummary(text)), {
+    maxLength: 240,
+  });
 }
 
 function readTextSignatureId(message: unknown): string | undefined {
@@ -340,6 +384,8 @@ function transcriptMessagesToAuthoritativeRecords(input: {
 }): Phase2PersistedProactivityActivityRecord[] {
   const records: Phase2PersistedProactivityActivityRecord[] = [];
   let lastUserPromptSummary: string | undefined;
+  let lastUserPromptOperational = false;
+  let lastUserPromptSuppressed = false;
   for (const message of input.messages) {
     if (!message || typeof message !== "object") {
       continue;
@@ -355,17 +401,27 @@ function transcriptMessagesToAuthoritativeRecords(input: {
       if (!text) {
         continue;
       }
+      const visibleText = stripInboundMetadata(text) || text;
       const sourceMessageId =
         readString((message as { __openclaw?: { id?: unknown } }).__openclaw?.id) ??
         `user:${sha256({ sessionKey: input.sessionKey, text, timestamp: messageTimestamp }).slice(0, 16)}`;
-      lastUserPromptSummary = summarizePrompt(text);
+      lastUserPromptSummary = summarizePrompt(visibleText);
+      lastUserPromptOperational =
+        !lastUserPromptSummary && isOperationalProactivityUserFacingText(visibleText);
+      lastUserPromptSuppressed =
+        lastUserPromptOperational ||
+        isInternalProactivityWorkflowText(visibleText) ||
+        isInternalProactivityWorkflowText(lastUserPromptSummary);
+      if (lastUserPromptSuppressed) {
+        continue;
+      }
       records.push({
         sourceId: `chat-activity-${sha256({ sourceMessageId, role, projectId: input.projectId }).slice(0, 16)}`,
         sourceKind: "user_turn",
         sourceMessageId,
         projectId: input.projectId,
         sessionKey: input.sessionKey,
-        boundedText: text,
+        boundedText: visibleText,
         userPromptSummary: lastUserPromptSummary,
         sourceRefs: [`chat://${input.sessionKey}/user_turn/${sourceMessageId}`],
         sourceProfileId: "explicit_user_turn",
@@ -392,7 +448,15 @@ function transcriptMessagesToAuthoritativeRecords(input: {
       continue;
     }
     const text = boundedMultilineSummary(assistantVisibleText);
-    if (!text || !isSafeBoundedSummary(text) || isOperationalAssistantMessage(message, text)) {
+    if (
+      !text ||
+      !isSafeBoundedSummary(text) ||
+      isOperationalAssistantMessage(message, text) ||
+      lastUserPromptOperational ||
+      lastUserPromptSuppressed ||
+      isInternalProactivityWorkflowText(text) ||
+      isInternalProactivityWorkflowText(lastUserPromptSummary)
+    ) {
       continue;
     }
     const sourceMessageId =
@@ -467,6 +531,51 @@ export async function recordPersistedProactivityChatActivity(params: {
   const target = resolveGatewaySessionStoreTarget({ cfg, key: params.sessionKey });
   const store = await loadActivityStore(target.storePath);
   const now = new Date().toISOString();
+  const cleanedPromptSummary = readString(params.userPromptSummary);
+  const boundedText = boundedMultilineSummary(params.boundedText);
+  const shouldSuppressRecord =
+    isInternalProactivityWorkflowText(boundedText) ||
+    isInternalProactivityWorkflowText(cleanedPromptSummary) ||
+    ((params.sourceKind === "assistant_turn" || params.sourceKind === "planning_output") &&
+      isOperationalProactivityUserFacingText(cleanedPromptSummary));
+  if (shouldSuppressRecord) {
+    return {
+      sourceId: `chat-activity-${sha256({
+        sessionKey: params.sessionKey,
+        projectId: params.projectId,
+        sourceKind: params.sourceKind,
+        sourceMessageId: params.sourceMessageId,
+        suppressed: true,
+      }).slice(0, 16)}`,
+      sourceKind: params.sourceKind,
+      sourceMessageId: params.sourceMessageId,
+      sourceRunId: params.sourceRunId,
+      projectId: params.projectId,
+      sessionKey: params.sessionKey,
+      boundedText,
+      userPromptSummary: cleanedPromptSummary,
+      sourceRefs: [`chat://${params.sessionKey}/${params.sourceKind}/${params.sourceMessageId}`],
+      sourceProfileId: params.sourceKind === "user_turn" ? "explicit_user_turn" : "manual_note",
+      authorityTier: params.sourceKind === "user_turn" ? "user_authoritative" : "tool_grounded",
+      contentHash: sha256({
+        sourceKind: params.sourceKind,
+        sourceMessageId: params.sourceMessageId,
+        boundedText,
+        suppressed: true,
+      }),
+      proofHash: sha256({
+        sessionKey: params.sessionKey,
+        sourceKind: params.sourceKind,
+        sourceMessageId: params.sourceMessageId,
+        sourceRunId: params.sourceRunId ?? null,
+        suppressed: true,
+      }),
+      noDarkDataStatus: "pass",
+      recordedAt: now,
+      updatedAt: now,
+      sourceLabel: "ui_callback",
+    };
+  }
   const record: Phase2PersistedProactivityActivityRecord = {
     sourceId: `chat-activity-${sha256({
       sessionKey: params.sessionKey,
@@ -479,15 +588,15 @@ export async function recordPersistedProactivityChatActivity(params: {
     sourceRunId: params.sourceRunId,
     projectId: params.projectId,
     sessionKey: params.sessionKey,
-    boundedText: boundedMultilineSummary(params.boundedText),
-    userPromptSummary: readString(params.userPromptSummary),
+    boundedText,
+    userPromptSummary: cleanedPromptSummary,
     sourceRefs: [`chat://${params.sessionKey}/${params.sourceKind}/${params.sourceMessageId}`],
     sourceProfileId: params.sourceKind === "user_turn" ? "explicit_user_turn" : "manual_note",
     authorityTier: params.sourceKind === "user_turn" ? "user_authoritative" : "tool_grounded",
     contentHash: sha256({
       sourceKind: params.sourceKind,
       sourceMessageId: params.sourceMessageId,
-      boundedText: boundedMultilineSummary(params.boundedText),
+      boundedText,
     }),
     proofHash: sha256({
       sessionKey: params.sessionKey,
@@ -701,6 +810,29 @@ function eventsForScope(input: {
   return [...persistedSources, ...systemEventSources, ...heartbeatSources].slice(-10);
 }
 
+function recentAssistantExtractionSources(
+  records: Phase2PersistedProactivityActivityRecord[],
+): Phase2PersistedProactivityActivityRecord[] {
+  const assistantRecords = records.filter(
+    (record) => record.sourceKind === "assistant_turn" || record.sourceKind === "planning_output",
+  );
+  if (assistantRecords.length <= MAX_RECENT_ASSISTANT_EXTRACTION_RECORDS) {
+    return assistantRecords;
+  }
+  const keepAssistantKeys = new Set(
+    assistantRecords
+      .toSorted((left, right) => left.updatedAt.localeCompare(right.updatedAt))
+      .slice(-MAX_RECENT_ASSISTANT_EXTRACTION_RECORDS)
+      .map(
+        (record) => `${record.sourceKind}\t${record.sourceMessageId}\t${record.contentHash ?? ""}`,
+      ),
+  );
+  return assistantRecords.filter((record) => {
+    const key = `${record.sourceKind}\t${record.sourceMessageId}\t${record.contentHash ?? ""}`;
+    return keepAssistantKeys.has(key);
+  });
+}
+
 export async function buildModelMemoryProactivityRuntimeState(
   params: GatewayProactivityBuildInput,
 ): Promise<GatewayProactivityBuildState> {
@@ -724,8 +856,10 @@ export async function buildModelMemoryProactivityRuntimeState(
     sources: eligibleSources,
     env: process.env,
   });
-  const extractionSources = activityStoreReport.store.records.filter(
-    (source) => source.projectId === params.projectId && source.sessionKey === params.sessionKey,
+  const extractionSources = recentAssistantExtractionSources(
+    activityStoreReport.store.records.filter(
+      (source) => source.projectId === params.projectId && source.sessionKey === params.sessionKey,
+    ),
   );
   const projectActivitySources = activityStoreReport.store.records.filter(
     (source) => source.projectId === params.projectId,
@@ -738,7 +872,7 @@ export async function buildModelMemoryProactivityRuntimeState(
     sources: projectActivitySources,
     env: process.env,
   });
-  const ledgerSources: Phase2OpportunityLedgerSource[] = [
+  const baseLedgerSources: Phase2OpportunityLedgerSource[] = [
     ...liveDetectionReport.opportunities.map((opportunity) => ({
       ...opportunity,
       sourceFamily: "live_signal" as const,
@@ -757,6 +891,54 @@ export async function buildModelMemoryProactivityRuntimeState(
       sessionKey: params.sessionKey,
       generatedAt: new Date().toISOString(),
     })),
+  ];
+  const baseLedgerReport = await buildPhase2ProactivityOpportunityLedgerReport({
+    repoRoot: process.cwd(),
+    opportunities: baseLedgerSources,
+    activitySources: projectActivitySources,
+    lifecycleOverrides: activityStoreReport.store.lifecycleOverrides.filter(
+      (override) => override.projectId === params.projectId,
+    ),
+    env: process.env,
+  });
+  const baseFollowupReport = await buildPhase2ProactivityOutcomeFollowupReport({
+    entries: baseLedgerReport.ledger.entries,
+    env: process.env,
+  });
+  const baseEffectiveLedgerReport =
+    baseFollowupReport.decisions.length === 0
+      ? baseLedgerReport
+      : {
+          ...baseLedgerReport,
+          ledger: {
+            ...baseLedgerReport.ledger,
+            entries: baseLedgerReport.ledger.entries.map((entry) => {
+              const decision = baseFollowupReport.decisions.find(
+                (candidate) => candidate.opportunityId === entry.opportunityId,
+              );
+              return decision
+                ? {
+                    ...entry,
+                    status: decision.nextStatus,
+                    updatedAt: new Date().toISOString(),
+                  }
+                : entry;
+            }),
+          },
+        };
+  const growthLoopReport = await buildPhase2ProactivityGrowthLoopReport({
+    now: new Date(),
+    projectId: params.projectId,
+    sessionKey: params.sessionKey,
+    activitySources: projectActivitySources,
+    recurringPatternReport,
+    ledgerEntries: baseEffectiveLedgerReport.ledger.entries,
+    previousState: activityStoreReport.store.growthLoopState ?? null,
+    previousWorkingBuffer: activityStoreReport.store.workingBuffer ?? null,
+  });
+  const ledgerSources: Phase2OpportunityLedgerSource[] = [
+    ...baseLedgerSources,
+    ...growthLoopReport.opportunities,
   ];
   const ledgerReport = await buildPhase2ProactivityOpportunityLedgerReport({
     repoRoot: process.cwd(),
@@ -843,11 +1025,19 @@ export async function buildModelMemoryProactivityRuntimeState(
       .map((item) => item.workItemId),
     env: process.env,
   });
+  await updatePersistedOperatingState({
+    storePath: activityStoreReport.storePath,
+    growthLoopState: growthLoopReport.state,
+    workingBuffer: growthLoopReport.workingBuffer,
+    maintenanceJobs: growthLoopReport.maintenanceJobs,
+    recoveryState: growthLoopReport.recoveryState,
+  });
   return {
     activityStoreReport,
     liveDetectionReport,
     extractionReport,
     recurringPatternReport,
+    growthLoopReport,
     ledgerReport: effectiveLedgerReport,
     followupReport,
     draftReport,
@@ -863,7 +1053,34 @@ export async function buildHeartbeatProactivityReviewText(params: {
   operatorId?: string;
   userId?: string;
   recipientId?: string;
-}): Promise<{ text: string; state: GatewayProactivityBuildState } | null> {
+}): Promise<{
+  prompt: string;
+  items: Array<{
+    workItemId: string;
+    queueItemId: string;
+    opportunityClass?:
+      | "reverse_prompt"
+      | "followup"
+      | "delight"
+      | "self_healing"
+      | "recovery"
+      | "standard";
+    title: string;
+    whyNow: string;
+    proposedNextStep: string;
+    expectedUserValue: string;
+    confidence: "high" | "medium" | "low";
+    draftReady: boolean;
+    evidenceSummary: string;
+    sourceRefs: string[];
+  }>;
+  reversePromptItems: string[];
+  followupItems: string[];
+  delightItems: string[];
+  selfHealingItems: string[];
+  draftReadyItems: string[];
+  state: GatewayProactivityBuildState;
+} | null> {
   const state = await buildModelMemoryProactivityRuntimeState({
     cfg: params.cfg,
     sessionKey: params.sessionKey,
@@ -880,16 +1097,57 @@ export async function buildHeartbeatProactivityReviewText(params: {
   if (topItems.length === 0) {
     return null;
   }
-  const lines = [
-    "What would help this user today?",
-    ...topItems.flatMap((item, index) => [
-      `${index + 1}. ${item.title}`,
-      `Why now: ${item.whyNow}`,
-      `Next step: ${item.proposedNextStep}`,
-      `Expected value: ${item.expectedUserValue}`,
-      `Confidence: ${item.confidence}${state.productSurfacingReport.queue.items.find((queueItem) => queueItem.workItemId === item.workItemId)?.draftReady ? " · Draft ready" : ""}`,
-    ]),
-    "Use this as a bounded proactive review only. Do not edit files, execute actions, or send outbound messages without approval.",
-  ];
-  return { text: boundedMultilineSummary(lines.join("\n")), state };
+  const items: NonNullable<
+    Awaited<ReturnType<typeof buildHeartbeatProactivityReviewText>>
+  >["items"] = topItems.map((item) => {
+    const queueItem = state.productSurfacingReport.queue.items.find(
+      (candidate) => candidate.workItemId === item.workItemId,
+    );
+    return {
+      workItemId: item.workItemId,
+      queueItemId: item.queueItemId,
+      opportunityClass: queueItem?.opportunityClass ?? "standard",
+      title: item.title,
+      whyNow: item.whyNow,
+      proposedNextStep: item.proposedNextStep,
+      expectedUserValue: item.expectedUserValue,
+      confidence: item.confidence,
+      draftReady: queueItem?.draftReady === true,
+      evidenceSummary: queueItem?.evidenceSummary ?? "",
+      sourceRefs: item.sourceRefs,
+    };
+  });
+  return {
+    prompt: boundedMultilineSummary(
+      [
+        "What would help this user today?",
+        "Reply with up to 3 concise items.",
+        "For each item include a short title, why now, and next step.",
+        "A useful follow-up question is allowed when it would help more than another ordinary task.",
+        "Keep it user-facing. Do not include timestamps, source refs, or system text.",
+        "If nothing needs attention, reply HEARTBEAT_OK.",
+      ].join("\n"),
+    ),
+    items,
+    reversePromptItems: state.growthLoopReport.reversePrompts
+      .filter((prompt) =>
+        ["missing_context_question", "adjacent_investigation_prompt"].includes(prompt.kind),
+      )
+      .map((prompt) => prompt.question)
+      .slice(0, 3),
+    followupItems: state.growthLoopReport.reversePrompts
+      .filter((prompt) => ["stale_outcome_prompt", "recovery_prompt"].includes(prompt.kind))
+      .map((prompt) => prompt.question)
+      .slice(0, 3),
+    delightItems: state.growthLoopReport.reversePrompts
+      .filter((prompt) => prompt.kind === "delight_prompt")
+      .map((prompt) => prompt.question)
+      .slice(0, 2),
+    selfHealingItems: state.growthLoopReport.reversePrompts
+      .filter((prompt) => prompt.kind === "self_healing_prompt")
+      .map((prompt) => prompt.question)
+      .slice(0, 2),
+    draftReadyItems: items.filter((item) => item.draftReady).map((item) => item.title),
+    state,
+  };
 }

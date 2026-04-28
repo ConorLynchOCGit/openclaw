@@ -1,6 +1,11 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import {
+  cleanProactivityUserFacingText,
+  isInternalProactivityWorkflowText,
+  isMeaningfulProactivityUserFacingText,
+} from "../../../../src/shared/chat-message-content.js";
+import {
   buildDerivedArtifactId,
   uniqueSortedStrings,
   writeBoundedDerivedJsonArtifact,
@@ -22,6 +27,7 @@ export type Phase2HeartbeatProactivityRanking = {
   expectedUserValue: number;
   activeContextMatch: boolean;
   feedbackNoisePenalty: number;
+  cleanlinessPenalty: number;
   confidence: "high" | "medium" | "low";
   score: number;
   reasonCodes: string[];
@@ -31,6 +37,7 @@ export type Phase2HeartbeatProactivityItem = {
   workItemId: string;
   queueItemId: string;
   candidateId: string;
+  opportunityClass?: "reverse_prompt" | "followup" | "delight" | "self_healing" | "recovery";
   title: string;
   whyNow: string;
   proposedNextStep: string;
@@ -169,6 +176,17 @@ function recencyScore(updatedAt: string, now: Date): number {
   return 0;
 }
 
+function hasCleanHeartbeatSurfaceText(item: Phase2ProductProactivityQueueItem): boolean {
+  return (
+    isMeaningfulProactivityUserFacingText(item.planTitle) &&
+    isMeaningfulProactivityUserFacingText(item.problem) &&
+    isMeaningfulProactivityUserFacingText(item.proposedMessage) &&
+    !isInternalProactivityWorkflowText(item.planTitle) &&
+    !isInternalProactivityWorkflowText(item.problem) &&
+    !isInternalProactivityWorkflowText(item.proposedMessage)
+  );
+}
+
 export function rankHeartbeatProactivityItems(input: {
   queueItems: Phase2ProductProactivityQueueItem[];
   activeContextWorkItemIds?: string[];
@@ -189,11 +207,22 @@ export function rankHeartbeatProactivityItems(input: {
         item.sourceRefs.some((sourceRef) =>
           /\/(?:assistant_turn|planning_output)\//u.test(sourceRef),
         );
+      const opportunityClassBonus =
+        item.opportunityClass === "self_healing"
+          ? 4
+          : item.opportunityClass === "delight"
+            ? 3
+            : item.opportunityClass === "reverse_prompt"
+              ? 2
+              : item.opportunityClass === "followup" || item.opportunityClass === "recovery"
+                ? 2
+                : 0;
       const feedbackNoisePenalty = item.blockedReasonCodes.some((code) =>
         ["feedback_suppressed_signal", "cooldown_same_content"].includes(code),
       )
         ? 4
         : 0;
+      const dirtySurfacePenalty = hasCleanHeartbeatSurfaceText(item) ? 0 : 20;
       const score =
         urgency +
         freshness +
@@ -202,8 +231,10 @@ export function rankHeartbeatProactivityItems(input: {
         confidenceScore(item.confidence) +
         recencyScore(item.updatedAt, now) +
         (recentAssistantOpportunity ? 5 : 0) +
+        opportunityClassBonus +
         (activeContextMatch ? 2 : 0) -
-        feedbackNoisePenalty;
+        feedbackNoisePenalty -
+        dirtySurfacePenalty;
       return {
         rankingId: buildDerivedArtifactId({
           family: "context_artifact",
@@ -218,6 +249,7 @@ export function rankHeartbeatProactivityItems(input: {
         expectedUserValue,
         activeContextMatch,
         feedbackNoisePenalty,
+        cleanlinessPenalty: dirtySurfacePenalty,
         confidence: item.confidence,
         score,
         reasonCodes: [
@@ -228,7 +260,11 @@ export function rankHeartbeatProactivityItems(input: {
           ...(recentAssistantOpportunity
             ? ["recent_assistant_output"]
             : ["older_or_non_assistant_source"]),
+          ...(opportunityClassBonus > 0
+            ? [`opportunity_class:${item.opportunityClass ?? "standard"}`]
+            : []),
           ...(activeContextMatch ? ["active_context_match"] : ["background_context"]),
+          ...(dirtySurfacePenalty > 0 ? ["suppressed_dirty_surface_copy"] : ["clean_surface_copy"]),
         ],
       };
     })
@@ -242,10 +278,27 @@ function itemForHeartbeat(item: Phase2ProductProactivityQueueItem): Phase2Heartb
     workItemId: item.workItemId,
     queueItemId: item.queueItemId,
     candidateId: item.candidateId,
-    title: item.planTitle,
-    whyNow: item.problem,
-    proposedNextStep: item.proposedMessage,
-    expectedUserValue: item.expectedUserValue,
+    opportunityClass: item.opportunityClass,
+    title:
+      cleanProactivityUserFacingText(item.planTitle, { maxLength: 120 }) ??
+      item.planTitle ??
+      item.candidateSummary ??
+      "Proactive work item",
+    whyNow:
+      cleanProactivityUserFacingText(item.problem, { maxLength: 180 }) ??
+      item.problem ??
+      item.candidateSummary ??
+      "A recent assistant answer identified useful work.",
+    proposedNextStep:
+      cleanProactivityUserFacingText(item.proposedMessage, { maxLength: 220 }) ??
+      item.proposedMessage ??
+      item.messagePreview ??
+      item.boundedDisplayText,
+    expectedUserValue:
+      cleanProactivityUserFacingText(item.expectedUserValue, { maxLength: 180 }) ??
+      item.expectedUserValue ??
+      item.userBenefit ??
+      "Keeps recent proactive work reviewable without exposing raw memory data.",
     confidence: item.confidence,
     primaryActionLabel: item.primaryAction?.label ?? "Open in current chat",
     sourceRefs: item.sourceRefs,
@@ -270,9 +323,11 @@ export async function buildPhase2HeartbeatProactivityReliabilityReport(
   });
   const rankedIds = new Set(rankings.map((ranking) => ranking.workItemId));
   const topItems = rankings
+    .filter((ranking) => ranking.score > 0)
     .slice(0, 3)
     .map((ranking) => queueItems.find((item) => item.workItemId === ranking.workItemId))
     .filter((item): item is Phase2ProductProactivityQueueItem => Boolean(item))
+    .filter((item) => hasCleanHeartbeatSurfaceText(item))
     .map(itemForHeartbeat);
   const inboxIds = new Set(input.inboxWorkItemIds ?? topItems.map((item) => item.workItemId));
   const checks: Phase2HeartbeatProactivityCheck[] = [];

@@ -118,6 +118,13 @@ export type ProductProactivityQueueItem = {
   queueItemId: string;
   candidateId: string;
   opportunityId?: string;
+  opportunityClass?:
+    | "standard"
+    | "reverse_prompt"
+    | "followup"
+    | "delight"
+    | "self_healing"
+    | "recovery";
   opportunityStatus?:
     | "open"
     | "surfaced"
@@ -262,6 +269,7 @@ export type ProactivityInboxItem = {
   sourceArtifactReportId: string;
   candidateId: string;
   opportunityId?: string;
+  opportunityClass?: ProductProactivityQueueItem["opportunityClass"];
   opportunityStatus?: ProductProactivityQueueItem["opportunityStatus"];
   queueItemId?: string;
   workItemId?: string;

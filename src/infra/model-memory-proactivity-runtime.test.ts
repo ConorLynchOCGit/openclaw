@@ -130,6 +130,7 @@ describe("model-memory proactivity runtime", () => {
       ),
     ).toBeUndefined();
     expect(state.extractionReport.telemetry.candidateCount).toBeGreaterThan(0);
+    expect(state.growthLoopReport.reversePrompts.length).toBeGreaterThan(0);
     expect(state.productSurfacingReport.queue.items).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -158,9 +159,11 @@ describe("model-memory proactivity runtime", () => {
     });
 
     expect(review).not.toBeNull();
-    expect(review?.text).toContain("What would help this user today?");
-    expect(review?.text).toContain("HEARTBEAT_OK");
-    expect(review?.text).toContain("Confidence:");
+    expect(review?.prompt).toContain("What would help this user today?");
+    expect(review?.prompt).toContain("Reply with up to 3 concise items.");
+    expect(review?.prompt).not.toContain("Read HEARTBEAT.md");
+    expect(review?.items[0]?.title?.toLowerCase()).toContain("runtime seam reset");
+    expect(review?.items.some((item) => item.opportunityClass === "delight")).toBe(true);
   });
 
   it("excludes operational assistant messages and placeholder fallbacks from authoritative records", async () => {
@@ -279,5 +282,113 @@ describe("model-memory proactivity runtime", () => {
           "Investigate the authoritative final capture filter and remove operational noise.",
       }),
     ]);
+  });
+
+  it("suppresses internal proactivity handoff and proof prompts from transcript-derived opportunities", async () => {
+    const sandbox = await createRuntimeSandbox();
+    tmpDirs.push(sandbox.tmpDir);
+    await fs.writeFile(
+      sandbox.storePath,
+      `${JSON.stringify({
+        main: {
+          sessionId: sandbox.sessionId,
+          updatedAt: Date.now(),
+          createdAt: Date.now(),
+          messageCount: 4,
+          lastMessageAt: Date.now(),
+        },
+      })}\n`,
+      "utf8",
+    );
+    const transcriptLines = [
+      {
+        id: "entry-user-proof",
+        message: {
+          role: "user",
+          content: [
+            {
+              type: "text",
+              text: "Operator Phase 2 staged action approval proof. Proof marker: TEST-PROOF. Approve the staged proposal for audit only. Do not execute.",
+            },
+          ],
+          timestamp: Date.parse("2026-04-27T16:20:00.000Z"),
+        },
+      },
+      {
+        id: "entry-assistant-proof",
+        message: {
+          role: "assistant",
+          content: [
+            {
+              type: "text",
+              text: "Acknowledged. Proof marker: TEST-PROOF. Status: staged proposal approved for audit only.",
+              textSignature: JSON.stringify({
+                v: 1,
+                id: "msg_final_proof_noise",
+                phase: "final_answer",
+              }),
+            },
+          ],
+          timestamp: Date.parse("2026-04-27T16:20:10.000Z"),
+        },
+      },
+      {
+        id: "entry-user-real",
+        message: {
+          role: "user",
+          content: [
+            {
+              type: "text",
+              text: "Review the roadmap and active work to generate potential proactivity plans.",
+            },
+          ],
+          timestamp: Date.parse("2026-04-27T16:21:00.000Z"),
+        },
+      },
+      {
+        id: "entry-assistant-real",
+        message: {
+          role: "assistant",
+          content: [
+            {
+              type: "text",
+              text: "Plan the runtime seam reset for authoritative proactivity capture.",
+              textSignature: JSON.stringify({
+                v: 1,
+                id: "msg_final_real_followup",
+                phase: "final_answer",
+              }),
+            },
+          ],
+          timestamp: Date.parse("2026-04-27T16:21:10.000Z"),
+        },
+      },
+    ];
+    await fs.writeFile(
+      sandbox.transcriptPath,
+      `${transcriptLines.map((line) => JSON.stringify(line)).join("\n")}\n`,
+      "utf8",
+    );
+
+    const state = await buildModelMemoryProactivityRuntimeState({
+      cfg: sandbox.cfg,
+      sessionKey: "main",
+      projectId: "openclaw",
+      operatorId: "operator-conor",
+      userId: "conor",
+      recipientId: "conor",
+    });
+
+    expect(
+      state.activityStoreReport.store.records.find(
+        (record) => record.sourceMessageId === "msg_final_proof_noise",
+      ),
+    ).toBeUndefined();
+    expect(state.productSurfacingReport.queue.items.map((item) => item.planTitle)).not.toEqual(
+      expect.arrayContaining(["Staged proposal"]),
+    );
+    expect(state.productSurfacingReport.queue.items.map((item) => item.planTitle)).toEqual(
+      expect.arrayContaining(["Runtime seam reset for authoritative proactivity capture"]),
+    );
   });
 });

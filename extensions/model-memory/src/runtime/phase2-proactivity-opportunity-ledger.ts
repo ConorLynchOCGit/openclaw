@@ -1,5 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import { buildProactivityUserFacingFocusKey } from "../../../../src/shared/chat-message-content.js";
 import { buildDerivedArtifactId, uniqueSortedStrings, type JsonLike } from "../derived-artifact.ts";
 import { sha256JsonValue } from "../hashing.ts";
 import type { SourceAuthorityTier, SourceProfileId } from "../source-authority.ts";
@@ -52,6 +53,7 @@ export type Phase2OpportunityLedgerSource =
   | (Phase2OpportunityExtractionCandidate & { sourceFamily: "assistant_output" })
   | {
       sourceFamily: "pattern_or_followup";
+      opportunityClass?: "reverse_prompt" | "followup" | "delight" | "self_healing" | "recovery";
       opportunityId: string;
       projectId: string;
       sessionKey: string;
@@ -77,6 +79,8 @@ export type Phase2OpportunityLedgerEntry = {
   workItemId: string;
   candidateId: string;
   queueItemId: string;
+  sourceFamily: Phase2OpportunityLedgerSource["sourceFamily"];
+  opportunityClass?: "reverse_prompt" | "followup" | "delight" | "self_healing" | "recovery";
   projectId: string;
   sessionKey: string;
   title: string;
@@ -281,6 +285,8 @@ function entryFromOpportunity(
       targetId: opportunity.opportunityId,
       seed: { contentHashes, proofHashes },
     }),
+    sourceFamily: opportunity.sourceFamily,
+    opportunityClass: "opportunityClass" in opportunity ? opportunity.opportunityClass : undefined,
     projectId: opportunity.projectId,
     sessionKey: opportunity.sessionKey,
     title,
@@ -322,6 +328,135 @@ function clearAttentionForInactiveStatus(entry: Phase2OpportunityLedgerEntry): v
   }
 }
 
+function duplicateCollapseSourceRefKey(entry: Phase2OpportunityLedgerEntry): string | null {
+  if (entry.sourceFamily !== "assistant_output") {
+    return null;
+  }
+  const assistantSourceRef = entry.sourceRefs
+    .filter((sourceRef) => sourceRef.startsWith(`chat://${entry.sessionKey}/assistant_turn/`))
+    .toSorted()[0];
+  if (!assistantSourceRef) {
+    return null;
+  }
+  return [entry.projectId, entry.sessionKey, entry.workItemKind, assistantSourceRef].join("::");
+}
+
+function duplicateCollapseTitleFocusKey(entry: Phase2OpportunityLedgerEntry): string | null {
+  if (entry.sourceFamily !== "assistant_output") {
+    return null;
+  }
+  const titleFocus = buildProactivityUserFacingFocusKey(entry.title);
+  if (!titleFocus) {
+    return null;
+  }
+  return [entry.projectId, entry.sessionKey, entry.workItemKind, titleFocus].join("::");
+}
+
+function duplicateCollapseNextStepFocusKey(entry: Phase2OpportunityLedgerEntry): string | null {
+  if (entry.sourceFamily !== "assistant_output") {
+    return null;
+  }
+  const nextStepFocus = buildProactivityUserFacingFocusKey(entry.proposedNextStep);
+  if (!nextStepFocus) {
+    return null;
+  }
+  return [entry.projectId, entry.sessionKey, entry.workItemKind, nextStepFocus].join("::");
+}
+
+function mergeDuplicateProvenance(
+  canonical: Phase2OpportunityLedgerEntry,
+  duplicate: Phase2OpportunityLedgerEntry,
+): void {
+  canonical.sourceRefs = uniqueSortedStrings([...canonical.sourceRefs, ...duplicate.sourceRefs]);
+  canonical.sourceProfileIds = uniqueSortedStrings([
+    ...canonical.sourceProfileIds,
+    ...duplicate.sourceProfileIds,
+  ]) as SourceProfileId[];
+  canonical.authorityTiers = uniqueSortedStrings([
+    ...canonical.authorityTiers,
+    ...duplicate.authorityTiers,
+  ]) as SourceAuthorityTier[];
+  canonical.contentHashes = uniqueSortedStrings([
+    ...canonical.contentHashes,
+    ...duplicate.contentHashes,
+  ]);
+  canonical.proofHashes = uniqueSortedStrings([...canonical.proofHashes, ...duplicate.proofHashes]);
+  canonical.blockedReasonCodes = uniqueSortedStrings([
+    ...canonical.blockedReasonCodes,
+    ...duplicate.blockedReasonCodes,
+  ]);
+}
+
+function collapseDuplicateEntryGroups(params: {
+  entries: Phase2OpportunityLedgerEntry[];
+  generatedAt: string;
+  supersessionSignals: Phase2OpportunitySupersessionSignal[];
+  keyResolver: (entry: Phase2OpportunityLedgerEntry) => string | null;
+}): void {
+  const duplicateGroups = new Map<string, Phase2OpportunityLedgerEntry[]>();
+  for (const entry of params.entries) {
+    const key = params.keyResolver(entry);
+    if (!key) {
+      continue;
+    }
+    const group = duplicateGroups.get(key);
+    if (group) {
+      group.push(entry);
+    } else {
+      duplicateGroups.set(key, [entry]);
+    }
+  }
+
+  for (const group of duplicateGroups.values()) {
+    if (group.length < 2) {
+      continue;
+    }
+    const sorted = [...group].toSorted((left, right) => {
+      const leftPriority =
+        Number(
+          left.status === "open" || left.status === "surfaced" || left.status === "draft_ready",
+        ) + left.proposedNextStep.length;
+      const rightPriority =
+        Number(
+          right.status === "open" || right.status === "surfaced" || right.status === "draft_ready",
+        ) + right.proposedNextStep.length;
+      return (
+        rightPriority - leftPriority ||
+        right.updatedAt.localeCompare(left.updatedAt) ||
+        right.generatedAt.localeCompare(left.generatedAt) ||
+        right.opportunityId.localeCompare(left.opportunityId)
+      );
+    });
+    const canonical = sorted[0];
+    for (const duplicate of sorted.slice(1)) {
+      if (
+        duplicate.opportunityId === canonical.opportunityId ||
+        duplicate.status === "superseded" ||
+        duplicate.supersededByOpportunityId === canonical.opportunityId
+      ) {
+        continue;
+      }
+      duplicate.status = "superseded";
+      duplicate.supersededByOpportunityId = canonical.opportunityId;
+      duplicate.updatedAt = params.generatedAt;
+      clearAttentionForInactiveStatus(duplicate);
+      mergeDuplicateProvenance(canonical, duplicate);
+      params.supersessionSignals.push({
+        signalId: buildDerivedArtifactId({
+          family: "context_artifact",
+          artifactType: "phase2_proactivity_supersession_signal",
+          targetId: duplicate.opportunityId,
+          seed: canonical.opportunityId,
+        }),
+        opportunityId: duplicate.opportunityId,
+        supersededByOpportunityId: canonical.opportunityId,
+        reasonCode: "duplicate_replaced",
+      });
+    }
+    canonical.updatedAt = params.generatedAt;
+  }
+}
+
 export async function buildPhase2ProactivityOpportunityLedgerReport(
   input: Phase2OpportunityLedgerInput = {},
 ): Promise<Phase2OpportunityLedgerReport> {
@@ -336,34 +471,8 @@ export async function buildPhase2ProactivityOpportunityLedgerReport(
   const overrides = new Map(
     (input.lifecycleOverrides ?? []).map((override) => [override.opportunityId, override]),
   );
-  const duplicateSignals: Phase2OpportunitySupersessionSignal[] = [];
-
-  const byExactKey = new Map<string, Phase2OpportunityLedgerEntry>();
-  for (const entry of entries) {
-    const key = `${normalizeText(entry.title)}::${normalizeText(entry.proposedNextStep)}::${entry.projectId}::${entry.sessionKey}`;
-    const existing = byExactKey.get(key);
-    if (existing) {
-      existing.status = "superseded";
-      existing.supersededByOpportunityId = entry.opportunityId;
-      existing.updatedAt = generatedAt;
-      clearAttentionForInactiveStatus(existing);
-      duplicateSignals.push({
-        signalId: buildDerivedArtifactId({
-          family: "context_artifact",
-          artifactType: "phase2_proactivity_supersession_signal",
-          targetId: existing.opportunityId,
-          seed: entry.opportunityId,
-        }),
-        opportunityId: existing.opportunityId,
-        supersededByOpportunityId: entry.opportunityId,
-        reasonCode: "duplicate_replaced",
-      });
-    }
-    byExactKey.set(key, entry);
-  }
-
   const resolutionSignals: Phase2OpportunityResolutionSignal[] = [];
-  const supersessionSignals: Phase2OpportunitySupersessionSignal[] = [...duplicateSignals];
+  const supersessionSignals: Phase2OpportunitySupersessionSignal[] = [];
 
   for (const entry of entries) {
     const override = overrides.get(entry.opportunityId);
@@ -453,6 +562,25 @@ export async function buildPhase2ProactivityOpportunityLedgerReport(
       }
     }
   }
+
+  collapseDuplicateEntryGroups({
+    entries,
+    generatedAt,
+    supersessionSignals,
+    keyResolver: duplicateCollapseSourceRefKey,
+  });
+  collapseDuplicateEntryGroups({
+    entries,
+    generatedAt,
+    supersessionSignals,
+    keyResolver: duplicateCollapseTitleFocusKey,
+  });
+  collapseDuplicateEntryGroups({
+    entries,
+    generatedAt,
+    supersessionSignals,
+    keyResolver: duplicateCollapseNextStepFocusKey,
+  });
 
   const checks: Phase2OpportunityLedgerCheck[] = [];
   addCheck(checks, "opportunity_source_required", opportunities.length > 0);

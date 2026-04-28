@@ -10,6 +10,7 @@ function ledgerEntry(
     workItemId: "work-item-draft-1",
     candidateId: "candidate-draft-1",
     queueItemId: "queue-item-draft-1",
+    sourceFamily: "assistant_output",
     projectId: "openclaw",
     sessionKey: "main",
     title: "Plan the generator reset",

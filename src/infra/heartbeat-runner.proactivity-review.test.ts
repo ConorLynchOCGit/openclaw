@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { stripInboundMetadata } from "../auto-reply/reply/strip-inbound-meta.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { resetHeartbeatEventsForTest } from "./heartbeat-events.js";
 import { runHeartbeatOnce } from "./heartbeat-runner.js";
@@ -103,11 +104,12 @@ describe("heartbeat proactivity review", () => {
 
       expect(result.status).toBe("ran");
       const body = String(getReplySpy.mock.calls[0]?.[0]?.Body ?? "");
-      expect(body).toContain("What would help this user today?");
+      const visibleBody = stripInboundMetadata(body);
+      expect(visibleBody).toContain("What would help this user today?");
+      expect(visibleBody).not.toContain("Plan the runtime seam reset");
+      expect(body).toContain("Heartbeat runtime context");
       expect(body).toContain("Plan the runtime seam reset");
-      expect(String(sendTelegram.mock.calls[0]?.[1] ?? "")).toContain(
-        "What would help this user today?",
-      );
+      expect(getReplySpy).toHaveBeenCalledTimes(1);
       expect(sessionKey).toContain("main");
     });
   });
