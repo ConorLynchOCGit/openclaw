@@ -386,6 +386,44 @@ describe("session-memory hook", () => {
     }
   });
 
+  it("writes bounded hook telemetry without conversation text", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-04-18T17:00:00Z"));
+    try {
+      const tempDir = await createCaseWorkspace("workspace");
+      const sessionsDir = path.join(tempDir, "sessions");
+      await fs.mkdir(sessionsDir, { recursive: true });
+      const sessionFile = await writeWorkspaceFile({
+        dir: sessionsDir,
+        name: "telemetry.jsonl",
+        content: createMockSessionContent([
+          { role: "user", content: "private raw continuity text" },
+          { role: "assistant", content: "private assistant answer" },
+        ]),
+      });
+
+      await runNewWithPreviousSessionEntry({
+        tempDir,
+        previousSessionEntry: {
+          sessionId: "telemetry-session",
+          sessionFile,
+        },
+      });
+
+      const reportPath = path.join(tempDir, "archives", "session_memory_hook", "2026-04-18.md");
+      const report = await fs.readFile(reportPath, "utf-8");
+      expect(report).toContain("# Session Memory Hook Report — 2026-04-18");
+      expect(report).toContain("- action: `new`");
+      expect(report).toContain("- result: `ok`");
+      expect(report).toContain("- canonical_daily_note: `memory/2026-04-18.md`");
+      expect(report).toContain("- session_leaf_note: `memory/");
+      expect(report).not.toContain("private raw continuity text");
+      expect(report).not.toContain("private assistant answer");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("filters out non-message entries (tool calls, system)", async () => {
     const sessionContent = createMockSessionContent([
       { role: "user", content: "Hello" },

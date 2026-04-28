@@ -87,6 +87,48 @@ async function appendCanonicalDailyMemory(params: {
   return { relativePath: path.join("memory", filename), updated: true };
 }
 
+async function appendSessionMemoryHookReport(params: {
+  workspaceDir: string;
+  dateStr: string;
+  timeStr: string;
+  action: string;
+  displaySessionKey: string;
+  sessionId: string;
+  sessionLeafRelativePath?: string;
+  canonicalDailyRelativePath?: string;
+  canonicalDailyUpdated?: boolean;
+  result: "ok" | "error";
+  failureReason?: string;
+}): Promise<void> {
+  const reportDir = path.join(params.workspaceDir, "archives", "session_memory_hook");
+  await fs.mkdir(reportDir, { recursive: true });
+  const filename = `${params.dateStr}.md`;
+  const existing = await readUtf8IfExists(path.join(reportDir, filename));
+  const boundedFailure = params.failureReason?.replace(/\s+/g, " ").slice(0, 240);
+  const entry = [
+    `## ${params.timeStr} UTC`,
+    "",
+    `- action: \`${params.action}\``,
+    `- session_key: \`${params.displaySessionKey}\``,
+    `- session_id: \`${params.sessionId}\``,
+    `- result: \`${params.result}\``,
+    `- canonical_daily_note: \`${params.canonicalDailyRelativePath ?? "unknown"}\``,
+    `- canonical_daily_note_updated: \`${params.canonicalDailyUpdated ?? false}\``,
+    `- session_leaf_note: \`${params.sessionLeafRelativePath ?? "unknown"}\``,
+    ...(boundedFailure ? [`- failure_reason: \`${boundedFailure}\``] : []),
+    "",
+  ].join("\n");
+  const nextContent = existing?.trim().length
+    ? `${existing.trimEnd()}\n\n${entry.trim()}\n`
+    : `# Session Memory Hook Report — ${params.dateStr}\n\n${entry.trim()}\n`;
+  await writeFileWithinRoot({
+    rootDir: reportDir,
+    relativePath: filename,
+    data: nextContent,
+    encoding: "utf-8",
+  });
+}
+
 function resolveDisplaySessionKey(params: {
   cfg?: OpenClawConfig;
   workspaceDir?: string;
@@ -115,6 +157,14 @@ const saveSessionToMemory: HookHandler = async (event) => {
   if (event.type !== "command" || !isResetCommand) {
     return;
   }
+
+  let telemetryContext: {
+    workspaceDir: string;
+    dateStr: string;
+    timeStr: string;
+    displaySessionKey: string;
+    sessionId: string;
+  } | null = null;
 
   try {
     log.debug("Hook triggered for reset/new command", { action: event.action });
@@ -238,6 +288,13 @@ const saveSessionToMemory: HookHandler = async (event) => {
     // Extract context details
     const sessionId = (sessionEntry.sessionId as string) || "unknown";
     const source = (context.commandSource as string) || "unknown";
+    telemetryContext = {
+      workspaceDir,
+      dateStr,
+      timeStr,
+      displaySessionKey,
+      sessionId,
+    };
 
     // Build Markdown entry
     const entryParts = [
@@ -279,6 +336,14 @@ const saveSessionToMemory: HookHandler = async (event) => {
       sessionId,
     });
     log.debug("Canonical daily memory updated", canonicalDailyWrite);
+    await appendSessionMemoryHookReport({
+      ...telemetryContext,
+      action: event.action,
+      sessionLeafRelativePath: path.join("memory", filename),
+      canonicalDailyRelativePath: canonicalDailyWrite.relativePath,
+      canonicalDailyUpdated: canonicalDailyWrite.updated,
+      result: "ok",
+    });
 
     // Log completion (but don't send user-visible confirmation - it's internal housekeeping)
     const relPath = memoryFilePath.replace(os.homedir(), "~");
@@ -292,6 +357,20 @@ const saveSessionToMemory: HookHandler = async (event) => {
       });
     } else {
       log.error("Failed to save session memory", { error: String(err) });
+    }
+    if (telemetryContext) {
+      try {
+        await appendSessionMemoryHookReport({
+          ...telemetryContext,
+          action: event.action,
+          result: "error",
+          failureReason: err instanceof Error ? err.message : String(err),
+        });
+      } catch (telemetryError) {
+        log.error("Failed to write session memory telemetry", {
+          error: telemetryError instanceof Error ? telemetryError.message : String(telemetryError),
+        });
+      }
     }
   }
 };

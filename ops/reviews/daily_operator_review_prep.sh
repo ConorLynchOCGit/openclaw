@@ -26,7 +26,7 @@ mkdir -p "$GENERATED_DIR" "$ARCHIVE_DIR"
 "$OPS_DIR/daily_memory_evidence_rollup.sh" "$TODAY" >/dev/null
 
 HOST_CRONTAB="$(crontab -l 2>/dev/null || true)"
-HOST_OPERATOR_JOBS="$(printf '%s\n' "$HOST_CRONTAB" | grep -v '^[[:space:]]*#' | grep -E 'n8n_sync_check|db_probe|github_digest_telegram|cron_health_rollup|daily_operator_review_prep|daily_operator_review_sync_artifact|weekly_operator_review_prep|weekly_operator_review_sync_artifact|weekly_operator_review_telegram_bridge|cron_session_hygiene_report|n8n_inactive_workflow_review|supabase_db_backup|disk_maintenance|build_runtime_hygiene_report|docker_hygiene_cleanup|cache_hygiene' || true)"
+HOST_OPERATOR_JOBS="$(printf '%s\n' "$HOST_CRONTAB" | grep -v '^[[:space:]]*#' | grep -E 'n8n_sync_check|db_probe|github_digest_telegram|cron_health_rollup|daily_operator_review_prep|daily_operator_review_sync_artifact|daily_memory_continuity_finalizer|weekly_operator_review_prep|weekly_operator_review_sync_artifact|weekly_operator_review_telegram_bridge|cron_session_hygiene_report|n8n_inactive_workflow_review|supabase_db_backup|disk_maintenance|build_runtime_hygiene_report|docker_hygiene_cleanup|cache_hygiene' || true)"
 HOST_CRON_TZ_STATUS="missing"
 if printf '%s\n' "$HOST_CRONTAB" | grep -Eq '^CRON_TZ=America/Nassau$'; then
   HOST_CRON_TZ_STATUS="present"

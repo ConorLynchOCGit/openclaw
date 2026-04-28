@@ -126,6 +126,15 @@ HOST_JOBS = [
         "latest_artifact_glob": "archives/daily_operator_reviews/*.md",
     },
     {
+        "name": "daily_memory_continuity_finalizer.sh",
+        "pattern": "/root/services/openclaw-roles/live/ops/reviews/daily_memory_continuity_finalizer.sh",
+        "schedule": "Daily 23:55 America/Nassau",
+        "log": "/root/backups/cron-logs/daily_memory_continuity_finalizer.log",
+        "delivery": "not-applicable",
+        "artifact": "memory/{date_id}.md",
+        "latest_artifact_glob": "memory/*.md",
+    },
+    {
         "name": "n8n_inactive_workflow_review.sh",
         "pattern": "/root/services/openclaw-roles/live/ops/host/n8n_inactive_workflow_review.sh",
         "schedule": "Monday 09:16 America/Nassau",
@@ -192,6 +201,7 @@ def host_log_info(path_str: str):
         "roll-up written:",
         "review written:",
         "evidence written:",
+        "daily continuity finalizer status:",
     ]
     if not text:
         status = "no-output-yet"
