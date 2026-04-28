@@ -9,6 +9,14 @@ const DEFAULT_TAILNET_ORIGIN = "https://srv1425839.tailbcf154.ts.net";
 const DEFAULT_SESSION_KEY = "agent:main:main";
 const STORE_PATH = "/root/.openclaw/agents/main/sessions/model-memory-proactivity-state.json";
 const PLACEHOLDER_TEXT = "A bounded OpenClaw chat activity is ready for review.";
+const DISALLOWED_SURFACE_SNIPPETS = [
+  "Read HEARTBEAT.md",
+  "HEARTBEAT_OK",
+  "Sender (untrusted metadata)",
+  "Post-compaction context refresh",
+  "Source: chat://",
+  "Source: gateway://",
+];
 
 const PROMPT_1 = `Review the current OpenClaw roadmap and active proactivity runtime work.
 
@@ -66,6 +74,24 @@ function normalizeText(value) {
 
 function shortHash(value) {
   return sha256(value).slice(0, 16);
+}
+
+function surfaceFocusKey(value) {
+  return normalizeText(value)
+    .replace(
+      /\b(plan|investigate|review|draft|fix|check|validate|resolve|follow up|compare|audit|stabilize|document|ship|close|reduce|verify|implement|build|move|wire)\b/gu,
+      "",
+    )
+    .replace(/[^a-z0-9]+/gu, " ")
+    .split(" ")
+    .filter((token) => token.length >= 3)
+    .slice(0, 6)
+    .join(" ");
+}
+
+function containsDisallowedSurfaceText(value) {
+  const normalized = typeof value === "string" ? value : "";
+  return DISALLOWED_SURFACE_SNIPPETS.some((snippet) => normalized.includes(snippet));
 }
 
 function assertNoProhibitedContent(value) {
@@ -370,6 +396,8 @@ async function main() {
     inlineFollowupAppeared: false,
     heartbeatSurfacedReview: false,
     sameCanonicalIdAcrossSurfaces: false,
+    duplicateCollapseWorked: false,
+    cleanedUserFacingCopy: false,
     staleProofOriginSuppressed: false,
     noChatInjectForPlan: false,
     noAutonomousSend: true,
@@ -473,6 +501,13 @@ async function main() {
     uiEvidence.inlineFollowupAppeared = true;
     summary.inlineVisible = true;
     summary.inlineTextSha256 = sha256(uiState.inlineHeader);
+    const inlineFocusKeys = uiState.inlineCards
+      .map((item) => surfaceFocusKey(item.text))
+      .filter(Boolean);
+    uiEvidence.duplicateCollapseWorked = new Set(inlineFocusKeys).size === inlineFocusKeys.length;
+    uiEvidence.cleanedUserFacingCopy =
+      !containsDisallowedSurfaceText(uiState.inlineHeader) &&
+      uiState.inlineCards.every((item) => !containsDisallowedSurfaceText(item.text));
 
     const baseline2 = latestAssistantRecordTimestamp(state, turn1.sessionKey);
     const turn2 = await harness.sendPrompt(PROMPT_2, {
@@ -533,6 +568,16 @@ async function main() {
     uiEvidence.sameCanonicalIdAcrossSurfaces = inboxWorkItemIds.has(
       sharedHeartbeatMatch.workItemId,
     );
+    const heartbeatFocusKeys = uiState.heartbeatCards
+      .map((item) => surfaceFocusKey(item.text))
+      .filter(Boolean);
+    uiEvidence.duplicateCollapseWorked =
+      uiEvidence.duplicateCollapseWorked &&
+      new Set(heartbeatFocusKeys).size === heartbeatFocusKeys.length;
+    uiEvidence.cleanedUserFacingCopy =
+      uiEvidence.cleanedUserFacingCopy &&
+      !containsDisallowedSurfaceText(uiState.heartbeatText) &&
+      uiState.heartbeatCards.every((item) => !containsDisallowedSurfaceText(item.text));
     summary.heartbeatVisible = true;
     summary.heartbeatTextSha256 = sha256(uiState.heartbeatText);
 
