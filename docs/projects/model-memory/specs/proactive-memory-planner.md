@@ -42,8 +42,11 @@ Remaining implementation details:
   stale
 - manual operator review is not the normal path for low-risk derived
   maintenance; review is reserved for durable semantic truth changes,
-  privileged actions, skill/tool promotion, policy changes, and high-risk
-  privacy/security cases
+  privileged actions, medium-risk/high-risk skill or tool promotion, policy
+  changes, and high-risk privacy/security cases
+- future skill candidates should enter the shared skills candidate ledger and
+  reuse the same proactivity ids and surfaces rather than creating a parallel
+  review queue
 - maintenance mechanics are owned by
   [Memory Maintenance Loop](/projects/model-memory/specs/memory-maintenance-loop)
 
@@ -111,7 +114,8 @@ The planner may propose but must not auto-promote:
 
 - new hard runtime rules
 - new durable user or project policies
-- skill promotion
+- medium-risk or high-risk skill promotion
+- broad skill auto-promotion beyond the approved low-risk lifecycle policy
 - tool promotion
 - workflow promotion into a standing automation
 - third-party skill install

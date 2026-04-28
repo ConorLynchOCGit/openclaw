@@ -13,6 +13,11 @@ containing a `SKILL.md` file with YAML frontmatter and markdown instructions.
 
 For how skills are loaded and prioritized, see [Skills](/tools/skills).
 
+This page covers **manual local skill creation**. The broader Skills Platform
+also includes candidate detection, Skillifier packaging, evals, vetting,
+canary, rollback, and cross-runtime OpenClaw/Codex packaging. See
+[Skills System](/projects/skills-system).
+
 ## Create your first skill
 
 <Steps>
@@ -99,6 +104,23 @@ The YAML frontmatter supports these fields:
 - **Safety first** — if your skill uses `exec`, ensure prompts don't allow arbitrary command injection from untrusted input
 - **Test locally** — use `openclaw agent --message "..."` to test before sharing
 - **Use ClawHub** — browse and contribute skills at [ClawHub](https://clawhub.ai)
+
+## Properly skilled versus merely present
+
+A skill directory existing on disk is not the same thing as a lifecycle-ready
+skill.
+
+The future "properly skilled" bar includes:
+
+- clear contract and anti-patterns
+- deterministic scripts where appropriate
+- tests and evals
+- routing and compliance coverage
+- vetting appropriate to the skill's risk tier
+- rollback and provenance
+
+The canonical contract for that bar lives in
+[Skillifier Contract](/projects/skills-system/specs/skillifier-contract).
 
 ## Where skills live
 

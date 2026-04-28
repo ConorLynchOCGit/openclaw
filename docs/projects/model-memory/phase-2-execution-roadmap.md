@@ -67,6 +67,12 @@ Phase 2 currently assumes:
   live `agent:main:main` gate verifies same-session item creation, inline
   surfacing, inbox, heartbeat, and handoff share one canonical id without
   duplicate pile-up or prompt/plumbing text in the visible heartbeat body
+- the Skills bucket begins with a docs/spec milestone that makes the skills
+  platform proactivity-integrated, cross-runtime, partially autonomous, and
+  rollback-safe before runtime implementation starts
+- low-risk limited-scope skill automation may later be allowed after
+  tests/vetting/canary, but medium-risk and high-risk skill changes remain
+  approval-gated
 
 Before the larger graph/capsule waves proceed, the project treated the
 Memory Retrieval Runtime, MMV2 capture coverage, closed-loop operational

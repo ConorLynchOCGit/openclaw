@@ -1,12 +1,12 @@
 ---
-summary: "Canonical project workspace for the OpenClaw skill system, marketplace posture, and safety boundaries."
+summary: "Canonical project workspace for the OpenClaw skills platform, lifecycle policy, marketplace posture, and automation safety boundaries."
 title: "Skills System"
 ---
 
 # Skills System
 
 `skills-system` is the canonical project workspace for how OpenClaw discovers,
-loads, vets, installs, and governs skills over time.
+loads, vets, installs, evolves, and governs skills over time.
 
 This project owns:
 
@@ -14,6 +14,11 @@ This project owns:
 - skill-system safety posture and review rules
 - formal Skill Vetting workflow and quarantine review policy
 - the connection between ClawHub, operator review, and install decisions
+- skill candidate detection and ledger contracts
+- Skillifier lifecycle and "properly skilled" quality bar
+- cross-runtime OpenClaw and Codex packaging rules
+- autonomy, canary, rollback, and low-risk auto-promotion policy
+- proactivity-integrated surfacing for skill opportunities and maintenance
 
 It does not own:
 
@@ -30,18 +35,23 @@ project owners.
 3. [Current Slice](/projects/skills-system/CURRENT_SLICE)
 4. [Decisions](/projects/skills-system/DECISIONS)
 5. [Roadmap](/projects/skills-system/roadmap)
-6. [Spec Index](/projects/skills-system/specs)
-7. [Skill Vetting](/projects/skills-system/skill-vetting)
+6. [Phase 2 Skills Platform Roadmap](/projects/skills-system/phase-2-skills-platform-roadmap)
+7. [Spec Index](/projects/skills-system/specs)
+8. [Skill Vetting](/projects/skills-system/skill-vetting)
 
 ## Current focus
 
-The current slice formalizes two previously fuzzy areas:
+The current slice widens the project from simple loading/vetting into a full
+skills lifecycle platform:
 
-- the skill system now has a first-class canonical project home
-- Skill Vetting is now treated as a durable system lane instead of an ad hoc
-  operator habit
-- Skill Vetting now also has an operator-facing artifact contract and a runtime
-  proof matrix rather than only a thin checklist
+- skills are lifecycle-managed capabilities, not just folders under `skills/`
+- skill candidates are proactivity-integrated opportunities, not a parallel
+  inbox
+- low-risk skill work should eventually auto-draft, auto-test, canary, and in
+  some cases auto-promote within bounded scopes
+- medium-risk and high-risk behavior stays approval-gated
+- Codex and OpenClaw should share one source-of-truth skill package with
+  runtime-specific adapters
 
 ## Relationship to other projects
 
@@ -49,5 +59,7 @@ The current slice formalizes two previously fuzzy areas:
   rules this project follows.
 - [Agent Foundation](/projects/agent-foundation) owns broader agent-pack and
   skill-allowlist behavior.
+- [Model Memory](/projects/model-memory) owns the proactivity substrate that
+  surfaces skill candidates and stores bounded evidence.
 - [Deployment Topology](/projects/deployment-topology) owns runtime availability
   and host/container capability drift for bundled skills.

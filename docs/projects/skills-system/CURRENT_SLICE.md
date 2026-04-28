@@ -7,36 +7,41 @@ title: "Skills System Current Slice"
 
 ## Slice
 
-`skill-vetting-canonization-and-clawhub-normalization`
+`phase2-skills-platform-specs-and-autonomy-policy`
 
 ## Goal
 
-Turn external-skill review from an ad hoc behavior into a canonical system lane
-with:
+Define the durable contract for the OpenClaw Skills Platform before runtime
+implementation begins.
 
-- one project home
-- one durable vetting workflow
-- one repo-owned skill surface
-- one explicit quarantine contract
+This slice establishes:
+
+- one canonical lifecycle model for skill candidates, drafts, canaries, and
+  promotions
+- one autonomy ladder for low-risk versus high-risk skill automation
+- one risk-tier policy for vetting, evals, install scope, and approval gates
+- one proactivity-integrated surfacing contract for skill candidates
+- one cross-runtime packaging contract for OpenClaw and Codex
+- one rollback/version-control policy for automatic skill changes
 
 ## Current outcome
 
-- created the canonical `skills-system` project workspace
-- created the `skill-vetting` workstream under that project
-- created a bundled `skills/skill-vetting/SKILL.md`
-- normalized ClawHub usage around:
-  - search and workspace installs when the runtime supports them
-  - quarantine-only acquisition for third-party review
-- added explicit operator-facing reporting and runtime-surface proof so the
-  vetting lane can produce durable artifacts instead of only chat prose
-- updated project discovery and registry surfaces so the new project is
-  topology-visible
+- broadens the project from loading/vetting into a lifecycle-managed skills
+  platform
+- upgrades the docs pack so later milestones can land without inventing new
+  policy ad hoc
+- encodes the product decision that low-risk skill work must not make the user
+  a chokepoint for every candidate
+- ties future skill candidates to the existing proactivity surfaces instead of
+  creating a second review queue
+- defines the milestone sequence for candidate ledger, Skillifier, evals,
+  canarying, low-risk auto-promotion, and cross-runtime install
 
 ## Current judgment
 
-This slice is about making skill review durable and explicit before a broader
-agent/skill expansion pass.
+The correct next move after this slice is to implement the skill candidate
+ledger inside the existing proactivity system.
 
-The correct next move after this slice is not “install more marketplace
-skills.” It is to prove the new review lane and keep the search/acquisition
-path honest on the live runtime surfaces.
+That is the leverage point that turns real Codex/OpenClaw work into bounded
+skill opportunities, rather than expanding skill docs or marketplace installs
+in isolation.

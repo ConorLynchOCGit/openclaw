@@ -11,7 +11,8 @@ This is an approved Phase 2 direction document.
 
 The synthesis direction is approved with these boundaries:
 
-- promotions remain review-gated
+- low-risk limited-scope skill promotion may later use the approved autonomy
+  ladder after tests, vetting, and canary
 - third-party skills must go through `skill-vetter`
 - the recommendation flow is `install`, `inspire`, or `reject`
 - approved install means real install, not a fake placeholder action
@@ -34,9 +35,12 @@ The synthesis direction is approved with these boundaries:
   explicit operator ask plus one successful manual run
 - approved internal candidates promote to repo-local/workspace-local skills or
   specs first
-- global Codex skill promotion requires a second explicit approval
-- Phase 2 self-improvement drafts artifacts and proposals only; active behavior
-  changes require review
+- low-risk limited-scope skill promotion may later proceed without a human stop
+  only after the Skills Platform autonomy, eval, vetting, canary, provenance,
+  and rollback gates are implemented
+- broad Codex or OpenClaw skill rollout remains a second explicit approval
+- Phase 2 self-improvement drafts artifacts and proposals first; active
+  behavior changes require the appropriate autonomy level or approval gate
 
 2026-04-22 Phase 2 decision lock:
 
@@ -47,7 +51,7 @@ The synthesis direction is approved with these boundaries:
   current work
 - candidate creation can be automatic when evidence thresholds are met, but
   promotion, installation, privileged tool enablement, and standing workflow
-  automation remain approval-gated
+  automation must still follow the autonomy ladder and risk policy
 
 ## Objective
 
@@ -116,7 +120,7 @@ Pipeline:
 5. compile a candidate draft
 6. run replay and contract checks
 7. surface for operator review
-8. promote only after approval
+8. promote through the approved autonomy or approval path
 
 The output should be a real candidate artifact with:
 
@@ -207,7 +211,7 @@ third-party install action.
 
 ## Promotion gates
 
-Promotion must be review-gated.
+Promotion must be evidence-gated.
 
 Required checks before promotion:
 
@@ -216,7 +220,7 @@ Required checks before promotion:
 - scope and permission review
 - privacy and egress review
 - source authority review
-- explicit operator approval
+- either explicit operator approval or a valid low-risk autonomy path
 - if third-party:
   - `skill-vetter`
   - local bounded evaluation
@@ -229,11 +233,12 @@ Required checks before promotion:
 First promotion target:
 
 - repo-owned draft artifact
-- repo-local or workspace-local skill after approval
+- repo-local or workspace-local skill before any broader rollout
 
 This keeps the first promotion auditable and reviewable.
 
-Global Codex skills require a second approval after repo-local proof.
+Broad Codex or OpenClaw skill rollout requires a second approval after
+repo-local or workspace-local proof.
 
 ### Third-party candidate
 
@@ -258,6 +263,10 @@ Once a repeated workflow, tool gap, or reusable operator pattern crosses the
 evidence threshold, the system should produce a stable candidate artifact and
 surface it through heartbeat until it is installed, used as inspiration,
 rejected, or expired.
+
+For skills specifically, this review surface should reuse the same proactivity
+ids and lanes as inline cards, heartbeat, inbox, and handoff rather than
+creating a second skills-only queue.
 
 ## Relationship to memory objects
 

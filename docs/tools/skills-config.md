@@ -131,3 +131,18 @@ Use one of:
 - bake the env into your custom sandbox image
 
 Global `env` and `skills.entries.<skill>.env/apiKey` apply to **host** runs only.
+
+## What this config does not do
+
+`skills.*` currently controls discovery, visibility, loading, and install-time
+preferences.
+
+It is not the future source of truth for:
+
+- skill candidate detection
+- lifecycle state
+- canary outcome tracking
+- rollback history
+- low-risk auto-promotion policy
+
+Those contracts live under [Skills System](/projects/skills-system).

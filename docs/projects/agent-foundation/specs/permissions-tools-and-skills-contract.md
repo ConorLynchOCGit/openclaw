@@ -35,6 +35,10 @@ Skills:
 - which skills are required?
 - which are optional?
 - which are forbidden?
+- which skills or skill classes may auto-draft, auto-test, auto-canary, or
+  auto-promote under the current autonomy policy?
+- which skill risk tiers still require explicit approval before install or
+  broader enablement?
 
 ## Success criteria
 

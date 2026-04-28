@@ -12,7 +12,11 @@ judged before promotion.
 
 Candidate discovery may be proactive. The planner may create and surface
 candidate artifacts when repeated evidence crosses threshold, especially through
-heartbeat and locally relevant turns. Promotion remains approval-gated.
+heartbeat and locally relevant turns.
+
+Low-risk limited-scope skill automation may later auto-draft, auto-test,
+auto-canary, and in some cases auto-promote after passing the required checks.
+Medium-risk and high-risk changes remain approval-gated.
 
 ## Required checks
 
@@ -22,7 +26,7 @@ heartbeat and locally relevant turns. Promotion remains approval-gated.
 - contract validation
 - safety and permission review
 - source authority review
-- operator approval
+- tier-appropriate approval or autonomy decision
 
 ### Workflow candidates
 
@@ -56,7 +60,8 @@ Allowed outcomes:
 
 ### `install`
 
-The candidate is fit for direct installation after approval.
+The candidate is fit for direct installation after the required checks and any
+needed approval for its risk tier and scope.
 
 ### `inspire`
 
@@ -72,12 +77,15 @@ The candidate should not proceed through that path.
 
 ## Promotion note
 
-Under the current skills posture, approved install should be treated as live
-availability rather than staged quarantine.
+Internal candidates should promote through the autonomy ladder and risk policy
+defined by the Skills System project.
 
-Internal candidates promote repo-local or workspace-local first. Global Codex
-skill promotion requires a second explicit approval.
+That means:
 
-Workflow automation approval should be treated the same way: if approved and
-enabled, it is real behavior. Therefore the review artifact must clearly state
-the trigger, scope, disable path, and evidence before approval.
+- repo-local or workspace-local bounded scopes come before broad enablement
+- low-risk limited-scope promotion may later proceed without human approval if
+  tests, vetting, and canary are green
+- broad or global enablement, including broad Codex rollout, stays explicitly
+  approval-gated
+- workflow automation should still declare trigger, scope, disable path, and
+  evidence before any live enablement

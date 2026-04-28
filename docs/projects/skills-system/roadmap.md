@@ -29,3 +29,21 @@ title: "Skills System Roadmap"
 - connect vetted skills to agent skill allowlists
 - connect “inspire” outcomes to follow-on project/spec generation
 - connect approved install posture to future agent-pack population work
+
+## Phase 5 - Skills Platform lifecycle
+
+This is now the active Phase 2 lane for the skills project.
+
+It widens the system from loading/vetting into a full lifecycle platform for:
+
+- candidate detection from real OpenClaw and Codex work
+- proactivity-integrated surfacing
+- Skillifier scaffold/check/report flows
+- evals, routing coverage, and compliance tests
+- risk-tiered autonomy, canarying, and rollback
+- low-risk auto-promotion in bounded scopes
+- cross-runtime packaging for OpenClaw and Codex
+- autonomous maintenance and health
+
+The detailed milestone sequence lives in
+[Phase 2 Skills Platform Roadmap](/projects/skills-system/phase-2-skills-platform-roadmap).

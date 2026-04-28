@@ -10,6 +10,17 @@ title: "Skills"
 
 OpenClaw uses **[AgentSkills](https://agentskills.io)-compatible** skill folders to teach the agent how to use tools. Each skill is a directory containing a `SKILL.md` with YAML frontmatter and instructions. OpenClaw loads **bundled skills** plus optional local overrides, and filters them at load time based on environment, config, and binary presence.
 
+The current runtime primitives described here are the loader and install
+surface. The broader lifecycle contract now lives under
+[Skills System](/projects/skills-system):
+
+- skill candidates are future proactivity-linked records, not a separate inbox
+- generated skills are lifecycle-managed capabilities, not automatically trusted
+  just because they exist on disk
+- low-risk skill automation may later auto-draft, auto-test, auto-canary, and
+  in bounded cases auto-promote
+- medium-risk and high-risk skill changes remain approval-gated
+
 ## Locations and precedence
 
 OpenClaw loads skills from these sources:
@@ -117,6 +128,9 @@ OpenClaw picks that up as `<workspace>/skills` on the next session.
 - Treat third-party skills as **untrusted code**. Read them before enabling.
 - Use [Skill Vetting](/projects/skills-system/skill-vetting) before installing
   third-party ClawHub skills into a live workspace.
+- Skill installation is only one part of the platform. Future generated or
+  promoted skills must still satisfy the lifecycle, risk, and rollback policy
+  in [Skills System Specs](/projects/skills-system/specs).
 - Skill Vetting now records durable operator-facing review artifacts under
   `docs/projects/skills-system/skill-vetting/reports/`.
 - Prefer sandboxed runs for untrusted inputs and risky tools. See [Sandboxing](/gateway/sandboxing).

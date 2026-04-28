@@ -7,61 +7,52 @@ title: "Skills System Status"
 
 ## Overall
 
-State: `canonization_and_formal_skill_vetting_active`
+State: `phase2_skills_platform_specs_active`
 
-The repo now has a first-class canonical project for the skill system.
+The repo already has a canonical home for skill loading, ClawHub posture, and
+Skill Vetting.
+
+This slice upgrades that project into the contract owner for a broader Skills
+Platform.
 
 The current outcomes are:
 
-- a canonical project home now exists under `docs/projects/skills-system/`
-- Skill Vetting now has a durable workstream under this project
-- a bundled repo-owned `skill-vetting` skill now exists
-- the bundled `clawhub` skill is being normalized around two distinct lanes:
-  - native OpenClaw search/install/update when available
-  - quarantine-only acquisition for third-party review
-- the host now has `clawhub` available on `PATH`
-- the current runtime proof is now explicit:
-  - host `clawhub` available
-  - runtime-container `openclaw` available
-  - host `openclaw` absent
-  - runtime-container `clawhub` absent
-- bounded proof now exists for:
-  - `clawhub search "task-progress-stream"`
-  - quarantine acquisition of `task-progress-stream` into
-    `/tmp/openclaw-skill-vetting/...`
-  - native `openclaw skills search "task-progress-stream"` inside the runtime
-    container
-- skill-vetting report initialization now writes to the writable operator
-  workspace reports tree by default:
-  `/root/.openclaw/workspace/docs/projects/skills-system/skill-vetting/reports/`
-- canonical skill installation through `host_operator_repo install_skill` has a
-  documented shape, validate-only mode, clearer validation errors, and safe
-  redacted failure logging
-- `openclaw agents skills-status --agent <id> --json` reports discovered
-  installed skills, and now reports persisted warm-session skill snapshots as
-  loaded/current or loaded/stale when the session store contains a snapshot
-  version
-- if no persisted session snapshot exists, skill status still returns
-  `not_available` with the concrete missing-session or missing-snapshot reason
-  instead of pretending to inspect in-memory runner state
-- ClawHub search output is treated as remote marketplace discovery; local
-  `skills info` works after install, and CLI help now says that directly
+- the skills project now explicitly owns lifecycle-managed capabilities rather
+  than only installed skill folders
+- the canonical policy is now being defined for:
+  - skill candidate detection
+  - Skillifier packaging
+  - evals and routing coverage
+  - vetting and risk classification
+  - canary and rollback
+  - low-risk auto-promotion
+  - Codex/OpenClaw cross-runtime packaging
+  - proactivity-integrated surfacing
+- Skill Vetting remains the external-skill review workstream under this larger
+  platform
+- existing runtime/loading primitives remain the implementation substrate:
+  - `SKILL.md` loading and precedence
+  - agent allowlists
+  - metadata gating
+  - installer scan posture
+  - ClawHub search/install/update
+  - plugin-provided skills
 
 ## Current judgment
 
-The biggest missing skill-system capability was not “more skills.”
+The biggest missing skill-system capability is still not “more skills.”
 
-It was the lack of one explicit system lane for deciding whether an external
-skill should be:
+It is the lack of one explicit system for turning repeated work into safe,
+reviewable, and sometimes automatable skill improvements.
 
-- installed
-- treated as inspiration only
-- or rejected
-
-That gap is now being closed as a project, a workstream, and a repo-owned
-skill surface.
+The project now has the right project home to solve that with one coherent
+contract instead of fragmented docs across vetting, proactivity, and local
+skill creation.
 
 ## Remaining work after this slice
 
-- richer operator-facing review artifacts
-- stronger integration with future agent-pack and allowlist policy work
+- implement the proactivity-backed skill candidate ledger
+- build the Skillifier scaffold/check/report lane
+- add decisioning/compliance evals
+- integrate risk tiers, canarying, rollback, and low-risk auto-promotion
+- add cross-runtime install and maintenance surfaces

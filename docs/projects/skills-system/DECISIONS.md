@@ -7,6 +7,61 @@ title: "Skills System Decisions"
 
 ## Accepted decisions
 
+### 2026-04-28 - Skills become a proactivity-integrated lifecycle platform
+
+Reason:
+
+- loading, installation, and vetting are necessary primitives, but they do not
+  solve how repeated work becomes a reusable skill
+- the existing proactivity system already owns bounded surfacing, canonical
+  ids, heartbeat, inline cards, inbox, and handoff
+- adding a separate skills inbox or candidate queue would duplicate product
+  surfaces and fragment review state
+
+Decision:
+
+- the Skills System now owns a full lifecycle platform, not just installed
+  skill folders and marketplace posture
+- skill candidates are future typed platform records linked into the existing
+  proactivity ledger and surfaces
+- skills are lifecycle-managed capabilities spanning:
+  - candidate detection
+  - candidate ledger
+  - Skillifier packaging
+  - evals and routing coverage
+  - vetting and risk classification
+  - cross-runtime packaging
+  - canary and rollback
+  - health and maintenance
+- the canonical implementation sequence is tracked in
+  [Phase 2 Skills Platform Roadmap](/projects/skills-system/phase-2-skills-platform-roadmap)
+
+### 2026-04-28 - Low-risk skill automation is allowed, but broad or risky behavior remains gated
+
+Reason:
+
+- requiring operator approval for every low-risk skill draft or promotion would
+  make the user the throughput bottleneck
+- skills are a safer first test bed for bounded automation because they are
+  versionable, scope-limited, and easy to disable or roll back
+- approval boundaries still matter for anything executable, networked,
+  credentialed, or broadly enabled
+
+Decision:
+
+- the Skills Platform uses an autonomy ladder rather than one global
+  review-everything rule
+- low-risk instruction-only skill work may eventually auto-draft, auto-test,
+  auto-canary, and in some cases auto-promote into limited scopes after
+  passing defined checks
+- medium-risk and high-risk skill work remains approval-gated for install or
+  broad enablement
+- blocked classes such as credential grabs, raw transcript persistence,
+  exfiltration, obfuscated code, unsafe eval/exec, and hidden outbound sends
+  remain non-promotable
+- all automatic skill changes must be versioned, provenance-bearing, and
+  rollback-safe
+
 ### 2026-04-18 - Skills System gets its own canonical project
 
 Reason:

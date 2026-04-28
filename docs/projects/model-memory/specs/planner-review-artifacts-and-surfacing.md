@@ -32,6 +32,10 @@ Each candidate should include:
 - `pinned`
 - `recurrenceCount`
 
+For future skill candidates, the surfacing contract also requires a linked
+`skillCandidateId` that remains stable across inline surfacing, heartbeat,
+inbox, handoff, package drafting, canary, and promotion history.
+
 ## Surfacing lanes
 
 - `must_surface`
@@ -103,6 +107,9 @@ operator cognition is not wasted on duplicated but renamed items.
 For work-item based proactivity, the same deterministic `workItemId` should also
 appear across the inbox, heartbeat, daily review, contextual card, chat handoff,
 and outcome telemetry.
+
+Skill candidates must reuse this model rather than creating a second skills-only
+inbox identity layer.
 
 ## Dedupe and expiry
 

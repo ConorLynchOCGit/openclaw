@@ -5,6 +5,31 @@ title: "Model Memory Decisions"
 
 # Model Memory Decisions
 
+## 2026-04-28 - Skills move forward as a proactivity-integrated lifecycle system
+
+Decision:
+
+- the Skills bucket now proceeds as a proactivity-integrated lifecycle system,
+  not as a separate inbox or isolated install workflow
+- skill candidates are bounded proactivity opportunities with shared canonical
+  ids across inline surfacing, heartbeat, inbox, and handoff
+- Codex sessions may be used as bounded distillation inputs for candidate
+  creation, eval fixtures, and skill improvement proposals
+- raw transcripts, full prompts, raw tool logs, secrets, and private phrases
+  remain forbidden skill artifacts
+- low-risk limited-scope skill automation may later auto-draft, auto-test,
+  auto-canary, and in some cases auto-promote after passing the defined checks;
+  medium-risk and high-risk changes remain approval-gated
+- future skills implementation milestones must not claim success on docs-only
+  or proof-only paths when live usefulness or runtime safety is still missing
+
+Reasoning:
+
+- the proactivity substrate now exists to surface bounded skill opportunities,
+  so a second review queue would be redundant
+- skills are the safest first domain for testing greater automation because
+  they are versionable, scope-limited, and easy to disable or roll back
+
 ## 2026-04-28 - Daily continuity requires an end-of-day finalizer and live proactivity gate
 
 Decision:

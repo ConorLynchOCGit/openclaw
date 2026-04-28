@@ -308,6 +308,25 @@ The next operator-facing proactivity pass is explicitly usefulness-first:
 This is the guardrail for Skills and later buckets too: operator UX should not
 grow broader control surfaces until useful generation from real work is proven.
 
+### Skills Studio
+
+The future Skills Studio should be an extension of the existing proactivity and
+operator workflow, not a parallel review universe.
+
+Must show:
+
+- the same canonical skill candidate ids already visible in chat, heartbeat,
+  inbox, and handoff
+- candidate, package, canary, promotion, disable, and rollback state
+- risk tier, autonomy ceiling, eval status, and provenance
+- clear distinction between low-risk limited-scope promotion and
+  approval-gated risky actions
+
+Must not show:
+
+- raw transcript or raw tool-log artifacts as the primary review surface
+- duplicate state that diverges from the core proactivity ledger
+
 The next ambient proactivity correction is specifically about normal workflow:
 
 - same-session assistant answers should produce visible follow-up surfaces

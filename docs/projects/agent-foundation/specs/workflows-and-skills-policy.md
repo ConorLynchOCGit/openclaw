@@ -11,7 +11,12 @@ Avoid creating two overlapping canonical systems for repeatable behavior.
 
 ## Default rule
 
-Repeatable executable workflows should canonize into skills by default.
+Repeatable executable workflows should canonize into lifecycle-managed skills by
+default.
+
+Before they are fully promoted, they may exist as bounded skill candidates
+surfaced through proactivity. The canonical goal is still one skills system,
+not a second permanent workflow-doc or candidate-doc framework.
 
 ## Implication
 
@@ -30,4 +35,6 @@ Use a human-authored workflow doc only when:
 ## Success criteria
 
 - skills remain the canonical repeatable workflow system
+- repeatable work flows through the same lifecycle-managed skill system even
+  before promotion
 - durable docs do not become a parallel workflow framework accidentally
