@@ -78,6 +78,12 @@ Phase 2 currently assumes:
   canonical `skill_candidate`, writes only to allowed workspace-local draft
   targets, and surfaces draft-ready state through the same proactivity ids and
   surfaces
+- the pre-Milestone-4 skills repair adds a `UserFacingProactivityBrief`
+  presentation boundary so chat cards, inbox rows, heartbeat context, and
+  handoff copy no longer render raw ledger packets as primary user-facing text
+- why-now, evidence, provenance, source refs, ids, timestamps, limitations, and
+  diagnostics move behind disclosure; malformed reverse prompts and noisy skill
+  transformation titles are rewritten or demoted before eval work begins
 - low-risk limited-scope skill automation may later be allowed after
   tests/vetting/canary, but medium-risk and high-risk skill changes remain
   approval-gated

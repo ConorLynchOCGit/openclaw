@@ -65,6 +65,25 @@ Milestone 3 required outputs are narrower:
 Milestone 3 does not require executable scripts, eval fixtures, routing
 fixtures, or production install metadata unless a later milestone adds them.
 
+## Presentation contract before evals
+
+Skillifier draft state must not be projected directly into primary card copy.
+The originating candidate, draft package, and report may keep rich metadata, but
+human-facing chat cards, inbox rows, heartbeat context, and handoff copy render
+through `UserFacingProactivityBrief`.
+
+Primary copy should show only:
+
+- concise title
+- skill/action kind
+- one-line purpose
+- recommended next step or primary action
+
+Draft package paths, why-now text, provenance, source refs, ids, timestamps,
+quality diagnostics, limitations, and lifecycle details belong in disclosure or
+handoff context. A draft-ready item must not repeat the same action as both
+`Skill worth creating` and `Draft ready` prose.
+
 ## Milestone 3 `SKILL.md` scaffold rules
 
 Generated `SKILL.md` must stay bounded and reviewable.

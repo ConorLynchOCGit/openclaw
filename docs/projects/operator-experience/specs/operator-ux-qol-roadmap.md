@@ -230,6 +230,11 @@ Must show:
 - same-session duplicates must collapse before they crowd actionable surfaces
 - primary proactivity copy must read like user-facing work, not like system
   telemetry or control-plane scaffolding
+- proactive cards and inbox rows must render a short decision brief instead of
+  raw ledger packet fields; why-now, evidence, ids, source refs, provenance,
+  limitations, and diagnostics belong behind disclosure
+- skill candidates must label whether the next decision is a new skill, an
+  existing-skill enhancement, or a merge/extend candidate
 - inline follow-up and heartbeat cards must follow the same bounded width and
   hierarchy rhythm as the assistant transcript cards
 - no duplicate `Suggested action` / `Proposed next step` copy in the primary

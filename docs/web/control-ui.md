@@ -375,9 +375,11 @@ The Control UI surfaces Model Memory proactivity through normal chat chrome:
 - Primary actionable proactivity is live-signal only. Static bundled/default or
   doc-seeded fallback candidates appear in Diagnostics and do not inflate the
   Proactivity count, heartbeat count, or contextual chat card.
-- Live proactivity cards must name the real work event, why it matters now, the
-  proposed next step, expected value, evidence summary, and
-  confidence/limitations before any CTA is available.
+- Live proactivity cards must render a concise user-facing decision brief:
+  title, kind label, one-line purpose, and recommended next step or primary
+  action. Why-now text, evidence, source refs, provenance, ids, timestamps,
+  limitations, lifecycle details, and presentation diagnostics belong behind
+  disclosure.
 - Assistant planning/output turns may now create new proactivity opportunities
   automatically when they contain bounded concrete next-step ideas; the Control
   UI should surface those opportunities without manual proof seeding.

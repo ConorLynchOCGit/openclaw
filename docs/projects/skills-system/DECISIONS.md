@@ -7,6 +7,37 @@ title: "Skills System Decisions"
 
 ## Accepted decisions
 
+### 2026-04-28 - Proactivity cards render decision briefs, not ledger packets
+
+Reason:
+
+- Skillifier and proactivity cards were exposing internal planning packet shape
+  directly: why-now blocks, lifecycle labels, source-derived fragments, draft
+  state, and handoff templates competed in the primary body
+- heartbeat output was clearer because it already turns hidden structured
+  context into a user-facing operator briefing
+- Milestone 4 skill evals would be measuring noisy surfaces if the presentation
+  boundary stayed implicit
+
+Decision:
+
+- proactive ledgers continue to store rich internal state, provenance, evidence,
+  lifecycle, source refs, ids, and diagnostics
+- user-facing surfaces render a typed `UserFacingProactivityBrief` with a short
+  title, kind label, one-line purpose, recommended next step, and primary
+  action label
+- `why now`, evidence summaries, source refs, provenance, ids, timestamps,
+  limitations, and presentation diagnostics belong in collapsed details or
+  hidden context
+- skill candidates must distinguish new skills from existing-skill
+  enhancements and merge/extend candidates using explicit skill metadata,
+  candidate linkage, or existing candidate records
+- reverse prompts must pass a hard question-quality gate before primary
+  surfacing; malformed questions are demoted to diagnostics or self-healing
+  repair signals
+- presentation briefs are not semantic truth and must not become routing or
+  duplicate authority
+
 ### 2026-04-28 - Skillifier MVP drafts must stay bounded, linked, and non-installing
 
 Reason:

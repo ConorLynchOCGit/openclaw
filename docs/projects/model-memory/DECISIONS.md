@@ -38,6 +38,33 @@ Reasoning:
 - skills are the safest first domain for testing greater automation because
   they are versionable, scope-limited, and easy to disable or roll back
 
+## 2026-04-28 - Proactivity surfaces must render user-facing briefs, not internal packets
+
+Decision:
+
+- proactivity ledgers may retain rich internal state, including why-now,
+  evidence, provenance, source refs, lifecycle, ids, limitations, and
+  diagnostics
+- chat cards, inbox rows, heartbeat structured context, and handoff copy must
+  render from a shared typed `UserFacingProactivityBrief`
+- primary card copy shows a short title, kind label, one-line purpose, and
+  recommended next step or primary action
+- `why now`, evidence, provenance, source refs, ids, timestamps, lifecycle
+  details, and presentation diagnostics move behind collapsed details or hidden
+  context
+- skill cards must distinguish new-skill candidates from existing-skill
+  enhancements and merge/extend candidates using explicit skill metadata,
+  existing candidate linkage, or prior candidate state
+- reverse prompts that do not ask a complete useful question are demoted to
+  diagnostics or self-healing repair signals
+
+Reasoning:
+
+- raw planning packet projection made skill and reverse-prompt cards noisy even
+  when the underlying heartbeat briefing was clear
+- Milestone 4 skill evals need to evaluate usable decision surfaces, not
+  source-fragment titles and fallback templates
+
 ## 2026-04-28 - Daily continuity requires an end-of-day finalizer and live proactivity gate
 
 Decision:

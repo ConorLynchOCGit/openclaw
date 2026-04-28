@@ -7,45 +7,41 @@ title: "Skills System Current Slice"
 
 ## Slice
 
-`phase2-skillifier-mvp-scaffold-check-report`
+`phase2-proactivity-user-facing-briefs`
 
 ## Goal
 
-Implement the first Skillifier runtime slice by turning canonical
-`skill_candidate` records into bounded draft skill packages, reports, and
-rollback-safe review artifacts.
+Repair the presentation boundary between internal proactivity ledger state and
+human-facing decision surfaces before Milestone 4 skill eval work begins.
 
 This slice establishes:
 
-- one first-class Skillifier draft flow that consumes canonical
-  `skill_candidate` ids
-- one bounded draft package contract with `SKILL.md`, metadata, provenance,
-  rollback, and check reports
-- one canonical `skillPackageId` linking candidate, package, and report state
-- one destination-aware draft writer that uses allowed workspace-local skill
-  paths only
-- one shared surfacing contract so draft-ready state appears through the
-  existing proactivity queue, inbox, heartbeat, and handoff surfaces
+- one typed `UserFacingProactivityBrief` between rich ledger state and visible
+  cards
+- one shared primary-copy contract for chat cards, inbox rows, heartbeat
+  context, and handoff
+- one quality gate that rewrites or demotes noisy transformation titles and
+  malformed reverse prompts
+- one skill-candidate presentation model that distinguishes new skills,
+  existing-skill enhancements, and merge/extend candidates from diagnostics
+- one collapsed-detail rule for why-now, evidence, provenance, source refs,
+  ids, timestamps, limitations, and presentation diagnostics
 
 ## Current outcome
 
-- turns a live `skill_candidate` into a bounded draft package and review report
-- keeps draft generation tied to canonical proactivity ids instead of a
-  parallel skill queue
-- keeps scaffold inputs distilled and bounded rather than persisting raw
-  prompts, transcripts, or tool logs
-- keeps destination authority strict: the draft lands only in allowed
-  workspace-local draft targets, never by silent repo-main or global skill
-  mutation
-- keeps the generated draft non-promoted and review-only
+- proactive ledgers remain rich internal state
+- primary user-facing cards become concise decision briefs
+- `why now` and provenance move behind details instead of competing with the
+  next useful action
+- skill cards explain the capability intent rather than echoing prompt
+  fragments
+- malformed reverse prompts become diagnostics or repair signals instead of
+  user-facing clutter
 
 ## Current judgment
 
-The acceptance gate for this slice is live usefulness and draft reviewability,
-not package scaffolding alone.
+The acceptance gate for this slice is decision clarity, not card completeness.
 
-The correct output is one canonical `skill_candidate` that can be skillified
-into one bounded draft package with one stable `skillPackageId`, one
-deterministic check/report result, and one clean draft-ready state that appears
-through the existing proactivity workflow without auto-installing or promoting
-the skill.
+The correct output is one canonical proactive item that preserves all provenance
+and diagnostics internally while rendering one short, high-signal decision
+surface in chat, inbox, heartbeat, and handoff.

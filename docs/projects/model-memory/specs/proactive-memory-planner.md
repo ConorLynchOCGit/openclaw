@@ -55,6 +55,10 @@ Remaining implementation details:
   canonical `skill_candidate` ids, writes bounded review-only draft packages to
   allowed workspace-local draft targets, and surfaces draft-ready state through
   the same proactivity ids and surfaces
+- user-facing proactivity surfaces render from a shared
+  `UserFacingProactivityBrief` rather than direct ledger fields; why-now,
+  provenance, source refs, timestamps, ids, limitations, and diagnostics are
+  secondary details
 - maintenance mechanics are owned by
   [Memory Maintenance Loop](/projects/model-memory/specs/memory-maintenance-loop)
 

@@ -78,6 +78,24 @@ Milestone 3 acceptance details:
 
 ## Milestone 4 - Skill decisioning/compliance eval harness
 
+Precondition:
+
+- proactive and skill-candidate surfaces must render through a typed
+  `UserFacingProactivityBrief`
+- primary chat, inbox, heartbeat, and handoff copy must be concise decision
+  surfaces, not raw ledger packet projections
+- malformed reverse prompts and noisy skill transformation titles must be
+  rewritten or demoted before Milestone 4 evals measure skill behavior
+
+Pre-Milestone-4 repair:
+
+- add the shared presentation adapter
+- move why-now, evidence, source refs, provenance, ids, timestamps,
+  limitations, and diagnostics behind disclosure
+- distinguish new skill, existing-skill enhancement, merge/extend, and
+  non-skill-worthy candidates with explicit metadata
+- add regression fixtures for noisy card and reverse-prompt examples
+
 - Objective: prove skills are chosen correctly and followed correctly.
 - Scope: decisioning, avoid, ambiguous/cofire, compliance, workflow-contract,
   prompt-injection, and sandbox evals.

@@ -76,6 +76,21 @@ Milestone 3 draft-linkage contract:
   follow-up surfacing
 - draft linkage must not require a separate draft-only queue
 
+Pre-Milestone-4 presentation contract:
+
+- candidate ledger records remain internal state, not direct card copy
+- chat cards, inbox rows, heartbeat context, and handoff copy render through
+  `UserFacingProactivityBrief`
+- the primary brief must say whether the item is a new skill, an existing-skill
+  enhancement, a merge/extend candidate, or not skill-worthy
+- visible `Improve skill` and `Merge skill` claims require explicit skill
+  metadata, candidate linkage, or prior candidate state; uncertain matches stay
+  in diagnostics
+- why-now, source refs, provenance, ids, timestamps, evidence, limitations, and
+  quality diagnostics belong in collapsed details or hidden context
+- malformed source-fragment titles are rewritten or demoted before primary
+  surfacing
+
 ## `SkillCandidateSource`
 
 Allowed source families:

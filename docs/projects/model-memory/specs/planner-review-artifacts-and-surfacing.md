@@ -188,6 +188,16 @@ primary chat workspace remains preserved:
   into disclosure
 - primary card copy must strip control-plane/system phrasing, metadata JSON,
   timestamps, and raw source-ref prose; provenance belongs in details only
+- primary card copy must come from a typed user-facing decision brief rather
+  than directly from ledger title, why-now, evidence, or lifecycle fields
+- visible cards should show only a title, kind label, one-line purpose, and
+  recommended next step or primary action; `why now`, source refs, provenance,
+  ids, limitations, and diagnostics belong in collapsed details
+- skill cards must explain capability intent and whether the item is a new
+  skill, an existing-skill enhancement, or a merge/extend candidate
+- malformed reverse prompts that do not ask a complete useful question must be
+  demoted to diagnostics or self-healing repair signals instead of surfacing as
+  primary work
 
 ## Live generation gate
 

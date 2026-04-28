@@ -70,6 +70,13 @@ Milestone 3 runtime rule:
 - skill candidates must not create a parallel queue
 - repeated candidates should update one canonical record where possible
 - evidence and provenance may be shown in secondary details
+- primary user-facing copy must render from a typed
+  `UserFacingProactivityBrief`, not from raw ledger fields
+- primary cards should show only title, kind label, one-line purpose, and the
+  recommended next step or primary action
+- `why now`, source refs, provenance, ids, timestamps, lifecycle details,
+  limitations, and diagnostics belong in collapsed details or hidden heartbeat
+  context
 - primary user-facing copy must remain bounded and actionable
 - static seeded placeholders do not count as live skill opportunities
 - destination capability policy may inform install-target metadata, but
@@ -77,3 +84,24 @@ Milestone 3 runtime rule:
 - Milestone 3 may write bounded draft packages only into explicitly allowed
   workspace-local draft targets; it still must not broadly install or promote
   skills
+
+## Presentation rules
+
+Skill candidates need a user-facing kind before they are shown:
+
+- `new_skill_candidate`
+- `existing_skill_enhancement`
+- `merge_or_extend_candidate`
+- `not_skill_worthy`
+
+The visible label may say `New skill`, `Improve skill`, or `Merge skill` only
+when the claim comes from explicit skill metadata, candidate linkage, or prior
+candidate state. Uncertain fits stay in diagnostics as possible existing fits.
+
+Reverse prompts may surface only when the primary title is a complete useful
+question that names the decision or uncertainty. Malformed titles such as
+`Question worth asking before ...`, source-fragment grammar, repeated fallback
+templates, and title/body duplication must be demoted from primary surfaces.
+
+Failed presentation quality should create bounded diagnostics that can feed
+self-healing repair work instead of adding clutter to the chat feed or inbox.
