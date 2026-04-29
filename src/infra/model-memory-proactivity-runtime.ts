@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { constants as fsConstants } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import {
@@ -23,6 +24,7 @@ import {
   evaluateCandidateReviewTrigger,
   loadCodexSessionActivityForCandidateReview,
   reviewEpisodeForCandidates,
+  writeProactivityReviewEpisodePacketArtifact,
   type CandidateReviewCodexAdapterReport,
   type CandidateReviewModelOptions,
   type CandidateReviewProposal,
@@ -253,12 +255,26 @@ const CANDIDATE_REVIEW_MODEL_ENV = "MODEL_MEMORY_PHASE2_CANDIDATE_REVIEW_MODEL";
 const CANDIDATE_REVIEW_REASONING_ENV = "MODEL_MEMORY_PHASE2_CANDIDATE_REVIEW_REASONING_EFFORT";
 const CANDIDATE_REVIEW_TIMEOUT_ENV = "MODEL_MEMORY_PHASE2_CANDIDATE_REVIEW_TIMEOUT_MS";
 const CANDIDATE_REVIEW_MAX_PER_SESSION_ENV = "MODEL_MEMORY_PHASE2_CANDIDATE_REVIEW_MAX_PER_SESSION";
+const CANDIDATE_REVIEW_MAX_PER_DAY_ENV = "MODEL_MEMORY_PHASE2_CANDIDATE_REVIEW_MAX_PER_DAY";
 const CANDIDATE_REVIEW_COOLDOWN_ENV = "MODEL_MEMORY_PHASE2_CANDIDATE_REVIEW_COOLDOWN_MS";
+const CANDIDATE_REVIEW_ASSISTANT_FINAL_INTERVAL_ENV =
+  "MODEL_MEMORY_PHASE2_CANDIDATE_REVIEW_ASSISTANT_FINAL_INTERVAL";
+const CANDIDATE_REVIEW_ARTIFACT_ROOT_ENV = "MODEL_MEMORY_PHASE2_CANDIDATE_REVIEW_ARTIFACT_ROOT";
 const CODEX_SESSION_REVIEW_ENABLED_ENV = "MODEL_MEMORY_PHASE2_CODEX_SESSION_REVIEW_ENABLED";
 const DEFAULT_CANDIDATE_TRIGGER_TIMEOUT_MS = 30_000;
-const DEFAULT_CANDIDATE_REVIEW_TIMEOUT_MS = 60_000;
-const DEFAULT_CANDIDATE_REVIEW_MAX_PER_SESSION = 48;
-const DEFAULT_CANDIDATE_REVIEW_COOLDOWN_MS = 5 * 60 * 1_000;
+const DEFAULT_CANDIDATE_REVIEW_TIMEOUT_MS = 120_000;
+const DEFAULT_CANDIDATE_REVIEW_MAX_PER_SESSION = 12;
+const DEFAULT_CANDIDATE_REVIEW_MAX_PER_DAY = 24;
+const DEFAULT_CANDIDATE_REVIEW_COOLDOWN_MS = 15 * 60 * 1_000;
+const DEFAULT_CANDIDATE_REVIEW_ASSISTANT_FINAL_INTERVAL = 3;
+const MAX_HIGH_CONTEXT_USER_TURN_CHARS = 4_000;
+const MAX_HIGH_CONTEXT_ASSISTANT_TURN_CHARS = 10_000;
+const MAX_HIGH_CONTEXT_SESSION_ACTIVITIES = 18;
+const CANDIDATE_REVIEW_ARTIFACT_RELATIVE_DIR = path.join(
+  ".artifacts",
+  "model-memory",
+  "phase2-high-context-candidate-review",
+);
 
 function sha256(value: unknown): string {
   return createHash("sha256").update(JSON.stringify(value)).digest("hex");
@@ -421,10 +437,10 @@ function buildCandidateReviewOptions(params: {
     reasoningEffort: readAllowedValue(
       params.env[CANDIDATE_REVIEW_REASONING_ENV],
       ["low", "medium", "high"] as const,
-      "medium",
+      "high",
     ),
     verbosity: "low",
-    maxOutputTokens: 1_600,
+    maxOutputTokens: 3_200,
   };
 }
 
@@ -442,6 +458,18 @@ function boundedMultilineSummary(value: unknown): string {
     .filter(Boolean)
     .join("\n")
     .slice(0, 480)
+    .trim();
+}
+
+function boundedHighContextTurnText(value: unknown, maxChars: number): string {
+  const raw = readString(value) ?? "";
+  return raw
+    .replace(/\r\n/gu, "\n")
+    .split("\n")
+    .map((line) => line.replace(/[ \t]+/gu, " ").trim())
+    .filter(Boolean)
+    .join("\n")
+    .slice(0, maxChars)
     .trim();
 }
 
@@ -1168,6 +1196,118 @@ function candidateReviewActivityFromRecord(
   };
 }
 
+function transcriptMessagesToHighContextCandidateReviewActivities(input: {
+  messages: unknown[];
+  sessionKey: string;
+}): CandidateReviewRecentActivity[] {
+  const activities: CandidateReviewRecentActivity[] = [];
+  let lastUserPromptSummary: string | undefined;
+  let lastUserPromptOperational = false;
+  let lastUserPromptSuppressed = false;
+  for (const message of input.messages) {
+    if (!message || typeof message !== "object") {
+      continue;
+    }
+    const role = readString((message as { role?: unknown }).role);
+    const timestampValue = (message as { timestamp?: unknown }).timestamp;
+    const timestampText = readString(timestampValue);
+    const parsedTimestampTextMs = timestampText ? Date.parse(timestampText) : NaN;
+    const recordedAt =
+      typeof timestampValue === "number" && Number.isFinite(timestampValue)
+        ? new Date(timestampValue).toISOString()
+        : Number.isFinite(parsedTimestampTextMs)
+          ? new Date(parsedTimestampTextMs).toISOString()
+          : new Date().toISOString();
+    if (role === "user") {
+      const rawText = extractFirstTextBlock(message) ?? "";
+      const visibleText = stripInboundMetadata(rawText) || rawText;
+      const text = boundedHighContextTurnText(visibleText, MAX_HIGH_CONTEXT_USER_TURN_CHARS);
+      if (!text || !isSafeBoundedSummary(text)) {
+        continue;
+      }
+      const sourceMessageId =
+        readString((message as { __openclaw?: { id?: unknown } }).__openclaw?.id) ??
+        `user:${sha256({ sessionKey: input.sessionKey, text, timestamp: recordedAt }).slice(0, 16)}`;
+      lastUserPromptSummary = summarizePrompt(text);
+      lastUserPromptOperational =
+        !lastUserPromptSummary && isOperationalProactivityUserFacingText(text);
+      lastUserPromptSuppressed =
+        lastUserPromptOperational ||
+        isInternalProactivityWorkflowText(text) ||
+        isInternalProactivityWorkflowText(lastUserPromptSummary);
+      if (lastUserPromptSuppressed) {
+        continue;
+      }
+      activities.push({
+        ref: `chat://${input.sessionKey}/user_turn/${sourceMessageId}`,
+        role: "user",
+        kind: "ask",
+        boundedText: text,
+        sourceRuntime: "openclaw",
+        recordedAt,
+      });
+      continue;
+    }
+    if (role !== "assistant") {
+      continue;
+    }
+    const messagePhase = resolveAssistantMessagePhase(message);
+    if (messagePhase === "commentary") {
+      continue;
+    }
+    const finalAnswerText = extractAssistantTextForPhase(message, { phase: "final_answer" });
+    const assistantVisibleText = finalAnswerText ?? extractAssistantVisibleText(message);
+    const text = boundedHighContextTurnText(
+      assistantVisibleText,
+      MAX_HIGH_CONTEXT_ASSISTANT_TURN_CHARS,
+    );
+    if (
+      !text ||
+      !isSafeBoundedSummary(text) ||
+      isOperationalAssistantMessage(message, text) ||
+      lastUserPromptOperational ||
+      lastUserPromptSuppressed ||
+      isInternalProactivityWorkflowText(text) ||
+      isInternalProactivityWorkflowText(lastUserPromptSummary)
+    ) {
+      continue;
+    }
+    const sourceMessageId =
+      extractAssistantTextSignatureId(message, { phase: "final_answer" }) ??
+      readTextSignatureId(message) ??
+      readString((message as { __openclaw?: { id?: unknown } }).__openclaw?.id) ??
+      `assistant:${sha256({ sessionKey: input.sessionKey, text, timestamp: recordedAt }).slice(0, 16)}`;
+    activities.push({
+      ref: `chat://${input.sessionKey}/assistant_turn/${sourceMessageId}`,
+      role: "assistant",
+      kind: "final",
+      boundedText: text,
+      sourceRuntime: "openclaw",
+      recordedAt,
+    });
+  }
+  return activities
+    .toSorted((left, right) => (left.recordedAt ?? "").localeCompare(right.recordedAt ?? ""))
+    .slice(-MAX_HIGH_CONTEXT_SESSION_ACTIVITIES);
+}
+
+function loadOpenClawHighContextCandidateReviewActivities(params: {
+  cfg: ReturnType<typeof loadConfig>;
+  sessionKey: string;
+}): CandidateReviewRecentActivity[] {
+  const target = resolveGatewaySessionStoreTarget({ cfg: params.cfg, key: params.sessionKey });
+  const sessionStore = loadSessionStore(target.storePath);
+  const entry = resolveFreshestSessionEntryFromStoreKeys(sessionStore, target.storeKeys);
+  if (!entry?.sessionId) {
+    return [];
+  }
+  const messages = readSessionMessages(entry.sessionId, target.storePath, entry.sessionFile);
+  return transcriptMessagesToHighContextCandidateReviewActivities({
+    messages,
+    sessionKey: params.sessionKey,
+  });
+}
+
 function candidateReviewEventTypeForLatestActivity(
   latest: CandidateReviewRecentActivity | undefined,
 ): Parameters<typeof buildCandidateReviewPrefilterEvent>[0]["eventType"] {
@@ -1178,6 +1318,132 @@ function candidateReviewEventTypeForLatestActivity(
     return "card_quality_failed";
   }
   return "assistant_final_completed";
+}
+
+function latestCandidateReviewMs(
+  entries: Phase2ProactivityActivityStore["candidateReviewEpisodeKeys"],
+): number {
+  return Math.max(
+    0,
+    ...(entries ?? [])
+      .map((entry) => Date.parse(entry.reviewedAt))
+      .filter((value) => Number.isFinite(value)),
+  );
+}
+
+function assistantFinalsSinceReview(params: {
+  records: Phase2PersistedProactivityActivityRecord[];
+  sessionKey: string;
+  sinceMs: number;
+}): number {
+  return params.records.filter((record) => {
+    if (record.sessionKey !== params.sessionKey) {
+      return false;
+    }
+    if (record.sourceKind !== "assistant_turn" && record.sourceKind !== "planning_output") {
+      return false;
+    }
+    const recordedAtMs = Date.parse(record.recordedAt || record.updatedAt);
+    return Number.isFinite(recordedAtMs) && recordedAtMs > params.sinceMs;
+  }).length;
+}
+
+function buildStructuralCandidateReviewTrigger(params: {
+  event: ReturnType<typeof buildCandidateReviewPrefilterEvent>;
+  recentActivities: CandidateReviewRecentActivity[];
+}): {
+  decision: CandidateReviewTriggerDecision;
+  report: CandidateReviewTriggerReport;
+} {
+  const refs = params.recentActivities.map((activity) => activity.ref).slice(-12);
+  const reasonCodes =
+    params.event.eventType === "heartbeat_started"
+      ? ["heartbeat_review" as const]
+      : params.event.eventType === "session_boundary"
+        ? ["session_boundary" as const]
+        : params.event.eventType === "validation_or_proof_failed"
+          ? ["validation_or_proof_friction" as const]
+          : params.event.eventType === "card_quality_failed" ||
+              params.event.eventType === "card_dismissed_or_not_useful"
+            ? ["card_quality_failure" as const]
+            : ["related_turn_cluster" as const];
+  const decision: CandidateReviewTriggerDecision = {
+    schemaVersion: "candidate_review_trigger_decision.v1",
+    shouldRun: refs.length > 0,
+    reasonCodes,
+    confidence: "high",
+    episodeWindow: {
+      startRef: refs[0] ?? params.event.refs[0] ?? params.event.eventId,
+      endRef: refs.at(-1) ?? params.event.refs.at(-1) ?? params.event.eventId,
+      includedRefs: refs,
+    },
+    reviewGoal: "both",
+    why: "Structural high-context cadence accepted this bounded episode for candidate review.",
+  };
+  return {
+    decision,
+    report: {
+      schemaVersion: "candidate_review_trigger_report.v1",
+      enabled: false,
+      source: "skipped",
+      elapsedMs: 0,
+      inputHash: sha256({ event: params.event, refs }),
+      validationStatus: "pass",
+      reasonCodes: ["structural_high_context_cadence"],
+      promptPersisted: false,
+      rawResponsePersisted: false,
+      promptChars: 0,
+    },
+  };
+}
+
+function isPermissionDenied(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    ((error as { code?: unknown }).code === "EACCES" ||
+      (error as { code?: unknown }).code === "EPERM")
+  );
+}
+
+function candidateReviewArtifactRoots(): string[] {
+  const configuredRoot = readString(process.env[CANDIDATE_REVIEW_ARTIFACT_ROOT_ENV]);
+  const hostRepoRoot = readString(process.env.OPENCLAW_HOST_OPERATOR_REPO_ROOT);
+  const workspaceRoot =
+    readString(process.env.OPENCLAW_HOST_OPERATOR_WORKSPACE_ROOT) ??
+    readString(process.env.OPENCLAW_WORKSPACE_ROOT) ??
+    path.join(process.env.HOME ?? "/home/node", ".openclaw", "workspace");
+  return [
+    configuredRoot,
+    hostRepoRoot ? path.join(hostRepoRoot, CANDIDATE_REVIEW_ARTIFACT_RELATIVE_DIR) : undefined,
+    path.join(workspaceRoot, CANDIDATE_REVIEW_ARTIFACT_RELATIVE_DIR),
+    path.join(process.cwd(), CANDIDATE_REVIEW_ARTIFACT_RELATIVE_DIR),
+  ].filter(
+    (entry, index, entries): entry is string => Boolean(entry) && entries.indexOf(entry) === index,
+  );
+}
+
+async function writeCandidateReviewEpisodePacketArtifact(
+  episodePacket: Parameters<typeof writeProactivityReviewEpisodePacketArtifact>[0],
+): ReturnType<typeof writeProactivityReviewEpisodePacketArtifact> {
+  const roots = candidateReviewArtifactRoots();
+  let lastError: unknown = null;
+  for (const artifactRoot of roots) {
+    try {
+      await fs.mkdir(artifactRoot, { recursive: true });
+      await fs.access(artifactRoot, fsConstants.W_OK);
+      return await writeProactivityReviewEpisodePacketArtifact(episodePacket, { artifactRoot });
+    } catch (error) {
+      lastError = error;
+      if (!isPermissionDenied(error)) {
+        throw error;
+      }
+    }
+  }
+  throw lastError instanceof Error
+    ? lastError
+    : new Error("candidate review artifact root is not writable");
 }
 
 async function buildModelReviewedCandidateSources(input: {
@@ -1209,7 +1475,16 @@ async function buildModelReviewedCandidateSources(input: {
     process.env[CANDIDATE_REVIEW_MAX_PER_SESSION_ENV],
     DEFAULT_CANDIDATE_REVIEW_MAX_PER_SESSION,
   );
+  const maxReviewsPerDay = readPositiveInteger(
+    process.env[CANDIDATE_REVIEW_MAX_PER_DAY_ENV],
+    DEFAULT_CANDIDATE_REVIEW_MAX_PER_DAY,
+  );
+  const assistantFinalInterval = readPositiveInteger(
+    process.env[CANDIDATE_REVIEW_ASSISTANT_FINAL_INTERVAL_ENV],
+    DEFAULT_CANDIDATE_REVIEW_ASSISTANT_FINAL_INTERVAL,
+  );
   const nowMs = Date.now();
+  const latestReviewMs = latestCandidateReviewMs(input.previousEpisodeKeys);
   const recentReviewEntries = (input.previousEpisodeKeys ?? []).filter((entry) => {
     const reviewedAtMs = Date.parse(entry.reviewedAt);
     return Number.isFinite(reviewedAtMs) && nowMs - reviewedAtMs < reviewCooldownMs;
@@ -1218,7 +1493,11 @@ async function buildModelReviewedCandidateSources(input: {
     const reviewedAtMs = Date.parse(entry.reviewedAt);
     return Number.isFinite(reviewedAtMs) && nowMs - reviewedAtMs < 60 * 60 * 1_000;
   }).length;
-  if (!triggerOptions.enabled && !reviewOptions.enabled) {
+  const reviewsInLastDay = (input.previousEpisodeKeys ?? []).filter((entry) => {
+    const reviewedAtMs = Date.parse(entry.reviewedAt);
+    return Number.isFinite(reviewedAtMs) && nowMs - reviewedAtMs < 24 * 60 * 60 * 1_000;
+  }).length;
+  if (!reviewOptions.enabled) {
     return {
       episodeKey: null,
       triggerDecision: null,
@@ -1230,7 +1509,7 @@ async function buildModelReviewedCandidateSources(input: {
       opportunities: [],
     };
   }
-  if (reviewsInLastHour >= maxReviewsPerSession) {
+  if (reviewsInLastHour >= maxReviewsPerSession || reviewsInLastDay >= maxReviewsPerDay) {
     return {
       episodeKey: null,
       triggerDecision: null,
@@ -1244,13 +1523,58 @@ async function buildModelReviewedCandidateSources(input: {
   }
   const recentOpenClawActivities = input.projectActivitySources
     .toSorted((left, right) => left.updatedAt.localeCompare(right.updatedAt))
-    .slice(-10)
+    .slice(-18)
     .map(candidateReviewActivityFromRecord);
+  const highContextOpenClawActivities = loadOpenClawHighContextCandidateReviewActivities({
+    cfg: input.cfg,
+    sessionKey: input.sessionKey,
+  });
+  const highContextHasAssistantFinal = highContextOpenClawActivities.some(
+    (activity) => activity.role === "assistant",
+  );
+  const effectiveOpenClawActivities =
+    highContextOpenClawActivities.length > 0 && highContextHasAssistantFinal
+      ? highContextOpenClawActivities
+      : recentOpenClawActivities;
   const codexAdapter = readBooleanEnv(process.env[CODEX_SESSION_REVIEW_ENABLED_ENV])
     ? await loadCodexSessionActivityForCandidateReview()
-    : null;
+    : {
+        activities: [],
+        report: {
+          status: "skipped" as const,
+          reasonCode: "codex_session_review_disabled",
+          entryCount: 0,
+        },
+      };
   const codexActivities = codexAdapter?.activities ?? [];
-  const recentActivities = [...recentOpenClawActivities, ...codexActivities].slice(-14);
+  const heartbeat = getLastHeartbeatEvent();
+  const heartbeatIsReviewTrigger =
+    Boolean(heartbeat) &&
+    typeof heartbeat?.ts === "number" &&
+    heartbeat.ts > latestReviewMs &&
+    nowMs - heartbeat.ts < 20 * 60 * 1_000;
+  const heartbeatActivities: CandidateReviewRecentActivity[] =
+    heartbeat && heartbeatIsReviewTrigger
+      ? [
+          {
+            ref: `gateway://heartbeat/last/${heartbeat.ts}`,
+            role: "system_event",
+            kind: heartbeat.status === "failed" ? "failure_summary" : "result_summary",
+            boundedText: boundedSummary(
+              heartbeat.preview ??
+                heartbeat.reason ??
+                `Heartbeat ${heartbeat.status} event available for candidate review.`,
+            ),
+            sourceRuntime: "openclaw",
+            recordedAt: new Date(heartbeat.ts).toISOString(),
+          },
+        ]
+      : [];
+  const recentActivities = [
+    ...effectiveOpenClawActivities,
+    ...codexActivities,
+    ...heartbeatActivities,
+  ].slice(-24);
   if (recentActivities.length === 0) {
     return {
       episodeKey: null,
@@ -1264,7 +1588,29 @@ async function buildModelReviewedCandidateSources(input: {
     };
   }
   const latest = recentActivities.at(-1);
-  if (latest?.role === "user") {
+  const assistantFinalsSinceLastReview = Math.max(
+    assistantFinalsSinceReview({
+      records: input.projectActivitySources,
+      sessionKey: input.sessionKey,
+      sinceMs: latestReviewMs,
+    }),
+    effectiveOpenClawActivities.filter((activity) => {
+      if (activity.role !== "assistant") {
+        return false;
+      }
+      const recordedAtMs = activity.recordedAt ? Date.parse(activity.recordedAt) : NaN;
+      return Number.isFinite(recordedAtMs) && recordedAtMs > latestReviewMs;
+    }).length,
+  );
+  const latestEventType = heartbeatIsReviewTrigger
+    ? "heartbeat_started"
+    : candidateReviewEventTypeForLatestActivity(latest);
+  const assistantCadenceReady =
+    latestEventType === "assistant_final_completed" &&
+    assistantFinalsSinceLastReview >= assistantFinalInterval;
+  const structuralTriggerReady =
+    latestEventType !== "assistant_final_completed" || assistantCadenceReady;
+  if ((latest?.role === "user" && !heartbeatIsReviewTrigger) || !structuralTriggerReady) {
     return {
       episodeKey: null,
       triggerDecision: null,
@@ -1277,12 +1623,12 @@ async function buildModelReviewedCandidateSources(input: {
     };
   }
   const event = buildCandidateReviewPrefilterEvent({
-    eventType: candidateReviewEventTypeForLatestActivity(latest),
+    eventType: latestEventType,
     runtime: latest?.sourceRuntime === "codex" ? "codex" : "openclaw",
     sessionKey: input.sessionKey,
-    refs: recentActivities.map((activity) => activity.ref).slice(-8),
+    refs: recentActivities.map((activity) => activity.ref).slice(-12),
     boundedSummary: recentActivities
-      .slice(-3)
+      .slice(-6)
       .map((activity) => activity.boundedText)
       .join("\n"),
   });
@@ -1325,9 +1671,13 @@ async function buildModelReviewedCandidateSources(input: {
     recentActivitySignals: [
       `stage1_event:${event.eventType}`,
       `stage1:${prefilter.reasonCodes.join(",")}`,
+      `assistant_finals_since_last_review:${assistantFinalsSinceLastReview}`,
+      `assistant_final_interval:${assistantFinalInterval}`,
     ],
   });
-  const trigger = await evaluateCandidateReviewTrigger(triggerPacket, triggerOptions);
+  const trigger = triggerOptions.enabled
+    ? await evaluateCandidateReviewTrigger(triggerPacket, triggerOptions)
+    : buildStructuralCandidateReviewTrigger({ event, recentActivities });
   if (!trigger.decision.shouldRun || trigger.decision.reviewGoal === "none") {
     return {
       episodeKey: prefilter.episodeKey,
@@ -1344,6 +1694,7 @@ async function buildModelReviewedCandidateSources(input: {
     triggerPacket,
     triggerDecision: trigger.decision,
     recentActivities,
+    codexAdapterReport: codexAdapter?.report ?? null,
     loadedSkills: input.existingSkills,
     recentProactivityItems,
     recentCandidateIds: input.skillCandidateReport.records.map((record) => record.skillCandidateId),
@@ -1356,21 +1707,32 @@ async function buildModelReviewedCandidateSources(input: {
         (record) => record.lifecycleStatus === "rejected" || record.lifecycleStatus === "disabled",
       )
       .map((record) => `${record.lifecycleStatus}: ${record.suggestedSkillName}`),
-    activeMilestone: "pre-Milestone-4 model-reviewed candidate discovery",
-    activeDocsOrBranches: ["phase2-model-reviewed-candidate-discovery"],
+    activeMilestone: "pre-Milestone-4 high-context candidate review",
+    activeDocsOrBranches: ["phase2-high-context-candidate-review"],
   });
+  const episodeArtifact = await writeCandidateReviewEpisodePacketArtifact(episodePacket);
   const review = await reviewEpisodeForCandidates(episodePacket, reviewOptions);
+  const reviewReport: CandidateReviewReport = {
+    ...review.report,
+    episodePacketHash: episodeArtifact.packetHash,
+    episodePacketPath: episodeArtifact.jsonPath,
+    episodeTurnCount: episodePacket.episodeTurns.length,
+    codexAdapterStatus: episodePacket.codexActivitySummary.status,
+    sourceRuntimes: [...new Set(episodePacket.episodeTurns.map((turn) => turn.sourceRuntime))],
+  };
   const converted = convertCandidateReviewProposalsToLedgerSources({
     proposals: review.proposals,
     projectId: input.projectId,
     sessionKey: input.sessionKey,
     previousSkillCandidates: input.skillCandidateReport.records,
+    episodePacketHash: episodeArtifact.packetHash,
+    episodePacketPath: episodeArtifact.jsonPath,
   });
   return {
     episodeKey: prefilter.episodeKey,
     triggerDecision: trigger.decision,
     triggerReport: trigger.report,
-    reviewReport: review.report,
+    reviewReport,
     codexAdapterReport: codexAdapter?.report ?? null,
     proposals: review.proposals,
     skillCandidates: converted.skillCandidates,
@@ -1447,20 +1809,23 @@ export async function buildModelMemoryProactivityRuntimeState(
     (opportunity): opportunity is Phase2SkillCandidateOpportunity =>
       opportunity.sourceFamily === "skill_candidate" && "skillCandidate" in opportunity,
   );
+  const highContextCandidateReviewEnabled = readBooleanEnv(
+    process.env[CANDIDATE_REVIEW_ENABLED_ENV],
+  );
+  const baselineSkillOpportunities = highContextCandidateReviewEnabled
+    ? []
+    : skillCandidateReport.opportunities;
   const effectiveSkillCandidateReport: Phase2SkillCandidateLedgerReport = {
     ...skillCandidateReport,
     decision:
-      skillCandidateReport.opportunities.length > 0 || modelReviewedSkillOpportunities.length > 0
+      baselineSkillOpportunities.length > 0 || modelReviewedSkillOpportunities.length > 0
         ? "skill_candidates_ready"
         : "no_skill_candidates",
     records: dedupeSkillCandidates([
       ...skillCandidateReport.records,
       ...modelReviewedCandidates.skillCandidates,
     ]),
-    opportunities: [
-      ...skillCandidateReport.opportunities,
-      ...modelReviewedSkillOpportunities,
-    ].filter(
+    opportunities: [...baselineSkillOpportunities, ...modelReviewedSkillOpportunities].filter(
       (opportunity, index, array) =>
         array.findIndex(
           (candidate) =>

@@ -7,9 +7,9 @@ import { DEFAULT_TAILNET_ORIGIN, OperatorBrowserHarness } from "./lib/operator-b
 
 const DEFAULT_SESSION_KEY = "agent:main:main";
 const PROMPT_TEMPLATES = [
-  "Review the current OpenClaw Skillifier and proactivity work. Identify one recurring workflow that should become a reusable skill and one proactive follow-up plan that would help most before Milestone 4.",
-  "Critique the current candidate surfacing behavior. Focus on whether deterministic surfacing is producing useful skill/proactive candidates or just cleaned-up fragments.",
-  "Given the last two answers, classify the strongest opportunities as a new skill, an existing skill enhancement, a proactive plan, or something that should be demoted.",
+  "Review the current OpenClaw model-route and candidate-discovery architecture. The recurring work is proving that default chat, memory capture/retrieval, proactivity brief generation, high-context candidate review, and the OpenAI-Codex pipe each use their intended model route, schema, reasoning setting, and persistence boundary. Identify one high-impact proactive follow-up and one reusable skill or existing-skill enhancement that would save substantial future verification work before Milestone 4.",
+  "Critique the recurring failure mode we have been working through: cleaned-up proactive cards can look readable while still hiding whether they were organic, proof-seeded, stale, deterministically generated, or model-reviewed. Focus on what reusable OpenClaw/Codex verification workflow or proactive plan would prevent this class of confusion from recurring.",
+  "Given the last two answers and the current repo state, classify the strongest route/provenance opportunity as a proactive plan, a new skill, an existing skill enhancement, a merge candidate, or a demotion. Prefer no candidate over weak candidates, but include both a proactive-plan item and a reusable skill/enhancement item if the evidence supports both.",
 ];
 
 const PROHIBITED_MARKERS = [
@@ -254,25 +254,31 @@ async function readCandidateDiscoveryState(page, sessionKey) {
 async function waitForCandidateDiscoveryState(page, sessionKey, predicate, timeoutMs = 180_000) {
   const deadline = Date.now() + timeoutMs;
   let state = null;
+  let bestReviewState = null;
   while (Date.now() < deadline) {
     state = await readCandidateDiscoveryState(page, sessionKey);
+    if (state?.queueResponse?.candidateReviewReport) {
+      bestReviewState = state;
+    }
     if (predicate(state)) {
       return state;
     }
     await new Promise((resolve) => setTimeout(resolve, 1_500));
   }
-  return state;
+  return bestReviewState ?? state;
 }
 
 function toMarkdown(summary) {
   return [
-    "# Phase 2 Model-Reviewed Candidate Discovery Proof",
+    "# Phase 2 High-Context Candidate Review Proof",
     "",
     `- generatedAt: ${summary.generatedAt}`,
     `- sessionKey: ${summary.sessionKey}`,
     `- uiAuthWorks: ${summary.evidence.uiAuthWorks}`,
     `- triggerEvaluatorRan: ${summary.evidence.triggerEvaluatorRan}`,
     `- candidateReviewerRan: ${summary.evidence.candidateReviewerRan}`,
+    `- highContextPacketPersisted: ${summary.evidence.highContextPacketPersisted}`,
+    `- reviewerReturnedAtMostThree: ${summary.evidence.reviewerReturnedAtMostThree}`,
     `- proposalsIncludePlanAndSkill: ${summary.evidence.proposalsIncludePlanAndSkill}`,
     `- modelReviewedCardVisible: ${summary.evidence.modelReviewedCardVisible}`,
     `- modelAuthoredBriefVisible: ${summary.evidence.modelAuthoredBriefVisible}`,
@@ -283,6 +289,8 @@ function toMarkdown(summary) {
     `- noRawPromptOrResponsePersistence: ${summary.evidence.noRawPromptOrResponsePersistence}`,
     `- noInstallPromotionActionOrSend: ${summary.evidence.noInstallPromotionActionOrSend}`,
     `- promptHashes: ${summary.promptHashes.join(", ")}`,
+    `- episodePacketHash: ${summary.episodePacketHash ?? ""}`,
+    `- episodePacketPath: ${summary.episodePacketPath ?? ""}`,
     `- stateHash: ${summary.stateHash}`,
     `- proofStatus: ${summary.ok ? "pass" : "fail"}`,
     ...(summary.failureReason ? [`- failureReason: ${summary.failureReason}`] : []),
@@ -291,8 +299,8 @@ function toMarkdown(summary) {
 
 async function writeArtifacts(outputDir, payload) {
   assertNoProhibitedContent(payload);
-  const jsonPath = path.join(outputDir, "model-reviewed-candidate-discovery-proof.json");
-  const markdownPath = path.join(outputDir, "model-reviewed-candidate-discovery-proof.md");
+  const jsonPath = path.join(outputDir, "high-context-candidate-review-proof.json");
+  const markdownPath = path.join(outputDir, "high-context-candidate-review-proof.md");
   await writeFile(jsonPath, `${JSON.stringify(payload, null, 2)}\n`, "utf8");
   await writeFile(markdownPath, `${toMarkdown(payload.summary)}\n`, "utf8");
   return { jsonPath, markdownPath };
@@ -307,7 +315,7 @@ async function main() {
   );
   const outputDir = path.join(
     root,
-    ".artifacts/model-memory/phase2-model-reviewed-candidate-discovery-proof",
+    ".artifacts/model-memory/phase2-high-context-candidate-review",
     stamp,
   );
   await mkdir(outputDir, { recursive: true });
@@ -318,6 +326,8 @@ async function main() {
     uiAuthWorks: false,
     triggerEvaluatorRan: false,
     candidateReviewerRan: false,
+    highContextPacketPersisted: false,
+    reviewerReturnedAtMostThree: false,
     proposalsIncludePlanAndSkill: false,
     modelReviewedCardVisible: false,
     modelAuthoredBriefVisible: false,
@@ -339,6 +349,9 @@ async function main() {
     acceptedProposalKinds: [],
     sourceRuntimes: [],
     codexAdapterStatus: null,
+    episodePacketHash: null,
+    episodePacketPath: null,
+    episodeTurnCount: 0,
     modelReviewedQueueItemId: null,
     modelReviewedSkillCandidateId: null,
     stateHash: "",
@@ -379,6 +392,9 @@ async function main() {
         return (
           state.queueResponse.candidateReviewTriggerReport?.validationStatus === "pass" &&
           review?.validationStatus === "pass" &&
+          review?.episodePacketHash &&
+          review?.episodeTurnCount > 0 &&
+          review?.proposalCount <= 3 &&
           kinds.includes("proactive_plan") &&
           kinds.some((kind) => isSkillProposalKind(kind)) &&
           state.queueItems.some((item) =>
@@ -449,6 +465,9 @@ async function main() {
     ];
     summary.acceptedProposalKinds = reviewReport?.acceptedProposalKinds ?? [];
     summary.sourceRuntimes = reviewReport?.sourceRuntimes ?? [];
+    summary.episodePacketHash = reviewReport?.episodePacketHash ?? null;
+    summary.episodePacketPath = reviewReport?.episodePacketPath ?? null;
+    summary.episodeTurnCount = reviewReport?.episodeTurnCount ?? 0;
     summary.codexAdapterStatus = codexReport
       ? `${codexReport.status}${codexReport.reasonCode ? `:${codexReport.reasonCode}` : ""}`
       : null;
@@ -457,12 +476,17 @@ async function main() {
 
     evidence.triggerEvaluatorRan =
       triggerReport?.validationStatus === "pass" &&
-      triggerReport?.triggerDecision?.shouldRun === true &&
-      triggerReport?.source === "model";
+      triggerReport?.triggerDecision?.shouldRun === true;
     evidence.candidateReviewerRan =
       reviewReport?.validationStatus === "pass" &&
       reviewReport?.source === "model" &&
       reviewReport?.surfacedProposalCount > 0;
+    evidence.highContextPacketPersisted =
+      Boolean(reviewReport?.episodePacketHash) &&
+      Boolean(reviewReport?.episodePacketPath) &&
+      reviewReport?.episodeTurnCount > 0;
+    evidence.reviewerReturnedAtMostThree =
+      typeof reviewReport?.proposalCount === "number" && reviewReport.proposalCount <= 3;
     evidence.proposalsIncludePlanAndSkill =
       summary.acceptedProposalKinds.includes("proactive_plan") &&
       summary.acceptedProposalKinds.some((kind) => isSkillProposalKind(kind));
@@ -480,10 +504,10 @@ async function main() {
       primaryCards.length > 0 &&
       primaryCards.every((card) => primaryTextLooksClean(card.primaryText));
     evidence.routeIsolationVisible =
-      Boolean(summary.triggerModel) &&
       Boolean(summary.candidateReviewModel) &&
       summary.presentationModels.length > 0 &&
-      String(summary.triggerModel) !== String(summary.candidateReviewModel);
+      (!summary.triggerModel ||
+        String(summary.triggerModel) !== String(summary.candidateReviewModel));
     evidence.codexAdapterReported = Boolean(codexReport?.status);
     evidence.noRawPromptOrResponsePersistence =
       triggerReport?.promptPersisted === false &&

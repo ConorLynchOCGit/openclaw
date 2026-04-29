@@ -12,6 +12,7 @@ import {
   evaluateCandidateReviewTrigger,
   loadCodexSessionActivityForCandidateReview,
   reviewEpisodeForCandidates,
+  writeProactivityReviewEpisodePacketArtifact,
   type CandidateReviewRecentActivity,
 } from "./phase2-model-reviewed-candidate-discovery.ts";
 
@@ -93,34 +94,23 @@ function triggerOutput(overrides: Record<string, unknown> = {}) {
 
 function proposalOutput(overrides: Record<string, unknown> = {}) {
   return JSON.stringify({
-    schemaVersion: "candidate_review_proposal.v1",
+    schemaVersion: "candidate_review_proposal.v2",
     proposals: [
       {
         proposalKind: "proactive_plan",
-        titleWords: ["Verify", "model", "route", "isolation"],
-        purposeWords: [
-          "Prove",
-          "chat",
-          "memory",
-          "candidate",
-          "review",
-          "and",
-          "brief",
-          "routes",
-          "stay",
-          "separate",
-        ],
-        recommendedNextStepWords: [
-          "Add",
-          "a",
-          "route",
-          "matrix",
-          "proof",
-          "before",
-          "Milestone",
-          "4",
-        ],
-        suggestedSkillNameWords: null,
+        title: "Verify model route isolation",
+        purpose:
+          "Prove chat, memory, candidate review, and brief routes stay separate before the next eval milestone.",
+        recommendedNextStep:
+          "Add a route matrix proof covering model id, reasoning effort, schema, and persistence boundary.",
+        expectedUserValue:
+          "Prevents candidate review changes from breaking memory capture, retrieval, or default chat behavior.",
+        leverageClass: "stability_risk",
+        whyHighImpact:
+          "Model-route confusion can break multiple runtime pathways and would be expensive to debug after Milestone 4.",
+        whyNotSmallCleanup:
+          "This is a cross-route stability proof, not a local wording or formatting cleanup.",
+        suggestedSkillName: null,
         suggestedExistingSkillName: null,
         mergeTargetCandidateId: null,
         sourceRuntime: "openclaw",
@@ -129,17 +119,6 @@ function proposalOutput(overrides: Record<string, unknown> = {}) {
           "model route isolation came up during presentation and candidate-review design",
         ],
         frictionSignals: ["user worried one model schema change could break another route"],
-        expectedUserValueWords: [
-          "Prevents",
-          "candidate",
-          "review",
-          "from",
-          "breaking",
-          "memory",
-          "or",
-          "chat",
-          "routes",
-        ],
         confidence: "high",
         riskTier: "low",
         shouldSurface: true,
@@ -147,44 +126,25 @@ function proposalOutput(overrides: Record<string, unknown> = {}) {
       },
       {
         proposalKind: "new_skill_candidate",
-        titleWords: ["OpenClaw", "model", "route", "verifier"],
-        purposeWords: [
-          "Check",
-          "each",
-          "OpenClaw",
-          "model",
-          "pathway",
-          "uses",
-          "the",
-          "intended",
-          "schema",
-        ],
-        recommendedNextStepWords: [
-          "Draft",
-          "the",
-          "verification",
-          "workflow",
-          "and",
-          "success",
-          "checks",
-        ],
-        suggestedSkillNameWords: ["openclaw", "model", "route", "verifier"],
+        title: "OpenClaw model route verifier",
+        purpose:
+          "Check each OpenClaw model pathway uses the intended model, schema, reasoning level, and persistence boundary.",
+        recommendedNextStep:
+          "Draft the verification workflow and success checks for chat, memory, candidate review, and presentation routes.",
+        expectedUserValue:
+          "Makes model pathway checks repeatable before gateway or proactivity changes.",
+        leverageClass: "workflow_acceleration",
+        whyHighImpact:
+          "The same route-isolation concern recurs across proactivity, memory, and Codex compatibility work.",
+        whyNotSmallCleanup:
+          "This would become a reusable verification workflow rather than a one-off wording fix.",
+        suggestedSkillName: "openclaw-model-route-verifier",
         suggestedExistingSkillName: null,
         mergeTargetCandidateId: null,
         sourceRuntime: "mixed",
         evidenceRefs: ["chat://main/user_turn/concern", "chat://main/user_turn/codex"],
         recurrenceSignals: ["route verification recurred across proactivity and skills work"],
         frictionSignals: ["model route confusion is high risk"],
-        expectedUserValueWords: [
-          "Makes",
-          "model",
-          "pathway",
-          "checks",
-          "repeatable",
-          "before",
-          "gateway",
-          "changes",
-        ],
         confidence: "high",
         riskTier: "low",
         shouldSurface: true,
@@ -361,10 +321,107 @@ describe("phase2 model-reviewed candidate discovery", () => {
       rejectedOrDemotedSummary: ["demoted malformed reverse prompt"],
     });
 
-    expect(episode.boundedTurnExcerpts).toHaveLength(3);
+    expect(episode.schemaVersion).toBe("proactivity_review_episode.v2");
+    expect(episode.reviewGoal).toBe("find_few_high_value_candidates");
+    expect(episode.episodeTurns).toHaveLength(3);
     expect(episode.userIntentArc.recentConcerns[0]).toContain("Deterministic surfacing");
     expect(episode.existingContext.loadedSkills[0]?.name).toBe("skill-vetter");
+    expect(episode.reviewPolicy.maxSurfaceCandidates).toBe(3);
     expect(JSON.stringify(episode)).not.toMatch(/raw-transcript-marker|raw-tool-log-marker/u);
+  });
+
+  it("keeps high-context turns substantial instead of collapsing them into atomic snippets", () => {
+    const longAssistantFinal = [
+      "The high-context review should preserve the architecture diagnosis.",
+      "It needs to include the user critique, the assistant explanation, the Codex requirement, and the final implementation consequence.",
+      "This repeated concern spans multiple paragraphs and would be lost if reduced to a single atomic memory sentence.",
+    ].join("\n\n");
+    const activities: CandidateReviewRecentActivity[] = [
+      ...recentDiscussionActivities(),
+      {
+        ref: "chat://main/assistant_turn/high-context",
+        role: "assistant",
+        kind: "final",
+        boundedText: longAssistantFinal.repeat(12),
+        sourceRuntime: "openclaw",
+      },
+    ];
+    const event = buildCandidateReviewPrefilterEvent({
+      eventType: "assistant_final_completed",
+      runtime: "openclaw",
+      sessionKey: "main",
+      refs: activities.map((activity) => activity.ref),
+      boundedSummary: "Review a larger recent work episode.",
+    });
+    const triggerPacket = buildCandidateReviewTriggerPacket({
+      event,
+      recentActivities: activities,
+    });
+    const episode = buildProactivityReviewEpisodePacket({
+      triggerPacket,
+      triggerDecision: {
+        schemaVersion: "candidate_review_trigger_decision.v1",
+        shouldRun: true,
+        reasonCodes: ["related_turn_cluster"],
+        confidence: "high",
+        episodeWindow: {
+          startRef: activities[0]?.ref ?? event.eventId,
+          endRef: activities.at(-1)?.ref ?? event.eventId,
+          includedRefs: activities.map((activity) => activity.ref),
+        },
+        reviewGoal: "both",
+        why: "The episode has enough context for high-value review.",
+      },
+      recentActivities: activities,
+    });
+
+    const highContextTurn = episode.episodeTurns.find((turn) => turn.ref.endsWith("high-context"));
+
+    expect(highContextTurn?.boundedText.length).toBeGreaterThan(760);
+    expect(highContextTurn?.boundedText).toContain("architecture diagnosis");
+    expect(highContextTurn?.excerptPolicy.rawTranscriptPersisted).toBe(false);
+  });
+
+  it("writes a sanitized high-context packet artifact for auditability", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "candidate-packet-"));
+    const event = buildCandidateReviewPrefilterEvent({
+      eventType: "assistant_final_completed",
+      runtime: "openclaw",
+      sessionKey: "main",
+      refs: ["chat://main/user_turn/concern"],
+      boundedSummary: "Review recurring skills and proactive plans.",
+    });
+    const triggerPacket = buildCandidateReviewTriggerPacket({
+      event,
+      recentActivities: recentDiscussionActivities(),
+    });
+    const episode = buildProactivityReviewEpisodePacket({
+      triggerPacket,
+      triggerDecision: {
+        schemaVersion: "candidate_review_trigger_decision.v1",
+        shouldRun: true,
+        reasonCodes: ["explicit_user_ask"],
+        confidence: "high",
+        episodeWindow: {
+          startRef: "chat://main/user_turn/concern",
+          endRef: "chat://main/user_turn/codex",
+          includedRefs: triggerPacket.recentRefs.map((entry) => entry.ref),
+        },
+        reviewGoal: "both",
+        why: "Review requested.",
+      },
+      recentActivities: recentDiscussionActivities(),
+    });
+
+    const artifact = await writeProactivityReviewEpisodePacketArtifact(episode, {
+      artifactRoot: root,
+      timestamp: "2026-04-29T00:00:00.000Z",
+    });
+
+    expect(artifact.packetHash).toMatch(/^[a-f0-9]{64}$/u);
+    expect(artifact.promptPersisted).toBe(false);
+    expect(artifact.rawResponsePersisted).toBe(false);
+    expect(artifact.rawFullTranscriptPersisted).toBe(false);
   });
 
   it("reviews an episode into proactive and skill proposals", async () => {
@@ -409,7 +466,66 @@ describe("phase2 model-reviewed candidate discovery", () => {
       expect.arrayContaining(["Verify model route isolation", "OpenClaw model route verifier"]),
     );
     expect(result.report.source).toBe("model");
-    expect(executor.requests[0]?.responseOptions?.reasoningEffort).toBe("medium");
+    expect(result.report.episodeTurnCount).toBe(3);
+    expect(executor.requests[0]?.responseOptions?.reasoningEffort).toBe("high");
+  });
+
+  it("allows the reviewer to return zero candidates for weak input", async () => {
+    const event = buildCandidateReviewPrefilterEvent({
+      eventType: "assistant_final_completed",
+      runtime: "openclaw",
+      sessionKey: "main",
+      refs: ["chat://main/assistant_turn/trivial"],
+      boundedSummary: "The assistant fixed a tiny local wording issue.",
+    });
+    const triggerPacket = buildCandidateReviewTriggerPacket({
+      event,
+      recentActivities: [
+        {
+          ref: "chat://main/assistant_turn/trivial",
+          role: "assistant",
+          kind: "final",
+          boundedText: "Fixed one typo in a local paragraph.",
+          sourceRuntime: "openclaw",
+        },
+      ],
+    });
+    const episode = buildProactivityReviewEpisodePacket({
+      triggerPacket,
+      triggerDecision: {
+        schemaVersion: "candidate_review_trigger_decision.v1",
+        shouldRun: true,
+        reasonCodes: ["related_turn_cluster"],
+        confidence: "medium",
+        episodeWindow: {
+          startRef: "chat://main/assistant_turn/trivial",
+          endRef: "chat://main/assistant_turn/trivial",
+          includedRefs: ["chat://main/assistant_turn/trivial"],
+        },
+        reviewGoal: "both",
+        why: "Cadence review.",
+      },
+      recentActivities: triggerPacket.recentRefs.map((entry) => ({
+        ref: entry.ref,
+        role: "assistant" as const,
+        kind: "final" as const,
+        boundedText: entry.boundedText,
+        sourceRuntime: "openclaw" as const,
+      })),
+    });
+
+    const result = await reviewEpisodeForCandidates(episode, {
+      enabled: true,
+      executor: new FakeExecutor(
+        JSON.stringify({
+          schemaVersion: "candidate_review_proposal.v2",
+          proposals: [],
+        }),
+      ),
+    });
+
+    expect(result.proposals).toHaveLength(0);
+    expect(result.report.validationStatus).toBe("pass");
   });
 
   it("converts valid proposals into existing proactivity ledger sources", async () => {

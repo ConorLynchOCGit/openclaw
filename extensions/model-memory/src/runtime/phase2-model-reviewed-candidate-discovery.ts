@@ -29,8 +29,8 @@ export const CANDIDATE_REVIEW_TRIGGER_DECISION_SCHEMA_VERSION =
 export const CANDIDATE_REVIEW_TRIGGER_REPORT_SCHEMA_VERSION =
   "candidate_review_trigger_report.v1" as const;
 export const PROACTIVITY_REVIEW_EPISODE_PACKET_SCHEMA_VERSION =
-  "proactivity_review_episode.v1" as const;
-export const CANDIDATE_REVIEW_PROPOSAL_SCHEMA_VERSION = "candidate_review_proposal.v1" as const;
+  "proactivity_review_episode.v2" as const;
+export const CANDIDATE_REVIEW_PROPOSAL_SCHEMA_VERSION = "candidate_review_proposal.v2" as const;
 export const MODEL_REVIEWED_CANDIDATE_REPORT_SCHEMA_VERSION =
   "model_reviewed_candidate_report.v1" as const;
 export const DEFAULT_CANDIDATE_TRIGGER_MODEL_ID = "openai-codex/gpt-5.4-mini";
@@ -143,26 +143,54 @@ export type CandidateReviewTriggerReport = {
 
 export type ProactivityReviewEpisodePacket = {
   schemaVersion: typeof PROACTIVITY_REVIEW_EPISODE_PACKET_SCHEMA_VERSION;
-  reviewGoal: "find_proactive_plans_and_skill_candidates";
+  reviewGoal: "find_few_high_value_candidates";
   sessionWindow: {
     runtime: CandidateReviewRuntime;
     sessionKey: string;
+    startRef: string;
+    endRef: string;
     turnCount: number;
     timeWindowLabel: string;
   };
+  episodeTurns: Array<{
+    role: "user" | "assistant";
+    sourceRuntime: Exclude<CandidateReviewRuntime, "mixed">;
+    ref: string;
+    boundedText: string;
+    hash: string;
+    excerptPolicy: {
+      maxChars: number;
+      redacted: boolean;
+      rawTranscriptPersisted: false;
+    };
+  }>;
   userIntentArc: {
     currentObjective: string;
     recentConcerns: string[];
     explicitAsks: string[];
     decisionPressure: string[];
   };
-  boundedTurnExcerpts: Array<{
-    role: "user" | "assistant";
-    excerptType: "ask" | "correction" | "example" | "decision" | "result_summary";
-    boundedText: string;
-    hash: string;
-    ref: string;
-  }>;
+  codexActivitySummary: {
+    status: CandidateReviewCodexAdapterReport["status"];
+    reasonCode?: string;
+    sessionRefs: string[];
+    commandSummaries: Array<{
+      ref: string;
+      commandFamily: string;
+      status: "passed" | "failed" | "unknown";
+      failureClass?: string;
+      boundedSummary: string;
+      hash: string;
+    }>;
+    validationFailures: Array<{
+      ref: string;
+      lane: string;
+      boundedSummary: string;
+      hash: string;
+    }>;
+    touchedAreas: string[];
+    outcomeSummaries: string[];
+  };
   observedWorkPatterns: Array<{
     summary: string;
     recurrenceEvidence: string[];
@@ -186,12 +214,20 @@ export type ProactivityReviewEpisodePacket = {
     possibleDuplicateTitles: string[];
     rejectedOrDemotedSummary: string[];
   };
+  reviewPolicy: {
+    maxSurfaceCandidates: 3;
+    preferNoCandidateOverWeakCandidate: true;
+    requireRepeatabilityOrLargeAvoidedCost: true;
+    rejectTinyCleanupCandidates: true;
+    proposalOnly: true;
+  };
   safetyEnvelope: {
     proposalOnly: true;
     noActionExecution: true;
     noSkillInstallOrPromotion: true;
     noCanonicalMemoryTruth: true;
     noRawToolLogs: true;
+    rawFullTranscriptPersisted: false;
   };
 };
 
@@ -201,6 +237,12 @@ export type CandidateReviewProposalKind =
   | "existing_skill_enhancement"
   | "merge_or_extend_candidate"
   | "demote_existing_candidate";
+
+export type CandidateReviewLeverageClass =
+  | "large_repeated_cost"
+  | "stability_risk"
+  | "workflow_acceleration"
+  | "strategic_unblock";
 
 export type CandidateReviewProposal = {
   schemaVersion: typeof CANDIDATE_REVIEW_PROPOSAL_SCHEMA_VERSION;
@@ -219,6 +261,9 @@ export type CandidateReviewProposal = {
   recurrenceSignals: string[];
   frictionSignals: string[];
   expectedUserValue: string;
+  leverageClass: CandidateReviewLeverageClass;
+  whyHighImpact: string;
+  whyNotSmallCleanup: string;
   confidence: CandidateReviewConfidence;
   riskTier: Phase2SkillCandidateRiskTier;
   shouldSurface: boolean;
@@ -239,6 +284,11 @@ export type CandidateReviewReport = {
   reasonCodes: string[];
   proposalCount: number;
   surfacedProposalCount: number;
+  episodePacketHash?: string;
+  episodePacketPath?: string;
+  episodeTurnCount?: number;
+  codexAdapterStatus?: CandidateReviewCodexAdapterReport["status"];
+  sourceRuntimes?: CandidateReviewRuntime[];
   promptPersisted: false;
   rawResponsePersisted: false;
   promptChars: number;
@@ -252,6 +302,16 @@ export type CandidateReviewModelOptions = {
   reasoningEffort?: "none" | "minimal" | "low" | "medium" | "high";
   verbosity?: "low" | "medium";
   maxOutputTokens?: number;
+};
+
+export type ProactivityReviewEpisodePacketArtifact = {
+  artifactRoot: string;
+  jsonPath: string;
+  markdownPath: string;
+  packetHash: string;
+  promptPersisted: false;
+  rawResponsePersisted: false;
+  rawFullTranscriptPersisted: false;
 };
 
 export type CandidateReviewRecentActivity = {
@@ -278,18 +338,26 @@ export type CandidateReviewRecentProactivityItem = {
 };
 
 export type CandidateReviewCodexAdapterReport = {
-  status: "loaded" | "skipped";
+  status: "loaded" | "skipped" | "degraded";
   reasonCode?: string;
   sourceRoot?: string;
   entryCount: number;
+  sessionRefs?: string[];
+  commandSummaryCount?: number;
+  validationFailureCount?: number;
 };
 
 const MAX_REF_TEXT_LENGTH = 520;
-const MAX_EPISODE_EXCERPT_LENGTH = 760;
+const MAX_USER_EPISODE_TURN_LENGTH = 4_000;
+const MAX_ASSISTANT_EPISODE_TURN_LENGTH = 8_000;
+const MAX_SYSTEM_EPISODE_TURN_LENGTH = 1_200;
+const MAX_EPISODE_TURNS = 12;
 const MAX_TITLE_LENGTH = 96;
 const MAX_PURPOSE_LENGTH = 220;
 const MAX_NEXT_STEP_LENGTH = 240;
 const MAX_EXPECTED_VALUE_LENGTH = 220;
+const MAX_HIGH_IMPACT_REASON_LENGTH = 260;
+const MAX_SMALL_CLEANUP_REASON_LENGTH = 220;
 const PROHIBITED_PATTERNS = [
   /raw-prompt-marker/iu,
   /raw-transcript-marker/iu,
@@ -321,8 +389,36 @@ function boundedText(value: string | undefined, maxLength: number): string {
   return `${normalized.slice(0, Math.max(0, maxLength - 1)).trimEnd()}.`;
 }
 
+function normalizeMultiline(value: string | undefined): string {
+  return (value ?? "")
+    .replace(/\r\n/gu, "\n")
+    .split("\n")
+    .map((line) => line.replace(/[ \t]+/gu, " ").trimEnd())
+    .join("\n")
+    .replace(/\n{4,}/gu, "\n\n\n")
+    .trim();
+}
+
+function boundedMultilineText(value: string | undefined, maxLength: number): string {
+  const normalized = normalizeMultiline(value);
+  if (normalized.length <= maxLength) {
+    return normalized;
+  }
+  return `${normalized.slice(0, Math.max(0, maxLength - 1)).trimEnd()}.`;
+}
+
 function redactAndBound(value: string | undefined, maxLength: number): string {
   return boundedText(value, maxLength)
+    .replace(/\bsk-[A-Za-z0-9_-]{12,}\b/gu, "[redacted-secret]")
+    .replace(/raw-prompt-marker/giu, "[redacted-marker]")
+    .replace(/raw-transcript-marker/giu, "[redacted-marker]")
+    .replace(/raw-tool-log-marker/giu, "[redacted-marker]")
+    .replace(/secret-marker/giu, "[redacted-marker]")
+    .replace(/private-phrase-marker/giu, "[redacted-marker]");
+}
+
+function redactAndBoundEpisodeText(value: string | undefined, maxLength: number): string {
+  return boundedMultilineText(value, maxLength)
     .replace(/\bsk-[A-Za-z0-9_-]{12,}\b/gu, "[redacted-secret]")
     .replace(/raw-prompt-marker/giu, "[redacted-marker]")
     .replace(/raw-transcript-marker/giu, "[redacted-marker]")
@@ -779,6 +875,7 @@ export function buildProactivityReviewEpisodePacket(input: {
   triggerPacket: CandidateReviewTriggerPacket;
   triggerDecision: CandidateReviewTriggerDecision;
   recentActivities: CandidateReviewRecentActivity[];
+  codexAdapterReport?: CandidateReviewCodexAdapterReport | null;
   loadedSkills?: CandidateReviewExistingSkill[];
   recentProactivityItems?: CandidateReviewRecentProactivityItem[];
   recentCandidateIds?: string[];
@@ -793,36 +890,38 @@ export function buildProactivityReviewEpisodePacket(input: {
     .filter((index) => index >= 0);
   const adjacentIndexes = new Set<number>();
   for (const index of includedIndexes) {
+    adjacentIndexes.add(index - 2);
     adjacentIndexes.add(index - 1);
     adjacentIndexes.add(index);
     adjacentIndexes.add(index + 1);
     adjacentIndexes.add(index + 2);
+    adjacentIndexes.add(index + 3);
   }
   const selectedActivities = input.recentActivities
     .filter(
       (activity, index) =>
         includedRefs.size === 0 || includedRefs.has(activity.ref) || adjacentIndexes.has(index),
     )
-    .slice(-10);
-  const boundedTurnExcerpts = selectedActivities
+    .slice(-MAX_EPISODE_TURNS);
+  const episodeTurns: ProactivityReviewEpisodePacket["episodeTurns"] = selectedActivities
     .filter((activity) => activity.role === "user" || activity.role === "assistant")
     .map((activity) => {
-      const bounded = redactAndBound(activity.boundedText, MAX_EPISODE_EXCERPT_LENGTH);
-      const activityKind = classifyActivityKind(activity);
-      const excerptType: "ask" | "correction" | "decision" | "example" | "result_summary" =
-        activityKind === "correction"
-          ? "correction"
-          : activityKind === "ask"
-            ? "ask"
-            : activity.role === "assistant"
-              ? "result_summary"
-              : "example";
+      const maxChars =
+        activity.role === "assistant"
+          ? MAX_ASSISTANT_EPISODE_TURN_LENGTH
+          : MAX_USER_EPISODE_TURN_LENGTH;
+      const bounded = redactAndBoundEpisodeText(activity.boundedText, maxChars);
       return {
         role: activity.role as "user" | "assistant",
-        excerptType,
+        sourceRuntime: activity.sourceRuntime === "codex" ? "codex" : "openclaw",
+        ref: activity.ref,
         boundedText: bounded,
         hash: hash({ ref: activity.ref, bounded }),
-        ref: activity.ref,
+        excerptPolicy: {
+          maxChars,
+          redacted: bounded !== boundedMultilineText(activity.boundedText, maxChars),
+          rawTranscriptPersisted: false,
+        },
       };
     });
   const explicitAsks = selectedActivities
@@ -831,8 +930,62 @@ export function buildProactivityReviewEpisodePacket(input: {
     .slice(-4);
   const recentConcerns = selectedActivities
     .filter((activity) => classifyActivityKind(activity) === "correction")
-    .map((activity) => redactAndBound(activity.boundedText, 180))
+    .map((activity) => redactAndBound(activity.boundedText, 240))
     .slice(-4);
+  const codexActivities = selectedActivities.filter(
+    (activity) => activity.sourceRuntime === "codex",
+  );
+  const codexCommandActivities = codexActivities.filter(
+    (activity) => activity.role === "tool_summary",
+  );
+  const codexValidationFailures = codexCommandActivities.filter(
+    (activity) => classifyActivityKind(activity) === "failure_summary",
+  );
+  const codexSessionRefs = unique(
+    codexActivities.map((activity) => activity.ref.split("#")[0]).filter(Boolean),
+  );
+  const commandSummaries = codexCommandActivities.slice(-8).map((activity) => {
+    const bounded = redactAndBound(activity.boundedText, MAX_SYSTEM_EPISODE_TURN_LENGTH);
+    const commandFamily = bounded.match(/^Command\s+([^\s]+)/iu)?.[1] ?? "unknown";
+    const status: "passed" | "failed" | "unknown" =
+      classifyActivityKind(activity) === "failure_summary"
+        ? "failed"
+        : /\bpassed\b|\bsucceeded\b|\bok\b/iu.test(bounded)
+          ? "passed"
+          : "unknown";
+    return {
+      ref: activity.ref,
+      commandFamily: boundedText(commandFamily, 80),
+      status,
+      failureClass: status === "failed" ? "validation_or_command_failure" : undefined,
+      boundedSummary: bounded,
+      hash: hash({ ref: activity.ref, bounded }),
+    };
+  });
+  const validationFailures = codexValidationFailures.slice(-8).map((activity) => {
+    const bounded = redactAndBound(activity.boundedText, MAX_SYSTEM_EPISODE_TURN_LENGTH);
+    return {
+      ref: activity.ref,
+      lane: bounded.match(/^Command\s+([^\s]+)/iu)?.[1] ?? "codex",
+      boundedSummary: bounded,
+      hash: hash({ ref: activity.ref, bounded }),
+    };
+  });
+  const touchedAreas = unique(
+    codexActivities.flatMap((activity) =>
+      [
+        ...activity.boundedText.matchAll(
+          /\b(?:src|docs|ui|extensions|scripts|ops)\/[^\s'"`),:]+/giu,
+        ),
+      ]
+        .map((match) => boundedText(match[0], 120))
+        .slice(0, 4),
+    ),
+  ).slice(0, 12);
+  const outcomeSummaries = codexActivities
+    .filter((activity) => activity.role === "assistant")
+    .map((activity) => redactAndBound(activity.boundedText, 220))
+    .slice(-6);
   const runtimeSet = new Set(
     selectedActivities.map((activity) => activity.sourceRuntime).filter(Boolean),
   );
@@ -844,13 +997,24 @@ export function buildProactivityReviewEpisodePacket(input: {
         : input.triggerPacket.event.runtime;
   const packet: ProactivityReviewEpisodePacket = {
     schemaVersion: PROACTIVITY_REVIEW_EPISODE_PACKET_SCHEMA_VERSION,
-    reviewGoal: "find_proactive_plans_and_skill_candidates",
+    reviewGoal: "find_few_high_value_candidates",
     sessionWindow: {
       runtime,
       sessionKey: input.triggerPacket.event.sessionKey,
-      turnCount: boundedTurnExcerpts.length,
+      startRef:
+        episodeTurns[0]?.ref ??
+        input.triggerDecision.episodeWindow.startRef ??
+        input.triggerPacket.event.refs[0] ??
+        input.triggerPacket.event.eventId,
+      endRef:
+        episodeTurns.at(-1)?.ref ??
+        input.triggerDecision.episodeWindow.endRef ??
+        input.triggerPacket.event.refs.at(-1) ??
+        input.triggerPacket.event.eventId,
+      turnCount: episodeTurns.length,
       timeWindowLabel: `${input.triggerDecision.episodeWindow.startRef}..${input.triggerDecision.episodeWindow.endRef}`,
     },
+    episodeTurns,
     userIntentArc: {
       currentObjective:
         explicitAsks[0] ??
@@ -865,7 +1029,19 @@ export function buildProactivityReviewEpisodePacket(input: {
           : undefined,
       ]).slice(0, 4),
     },
-    boundedTurnExcerpts,
+    codexActivitySummary: {
+      status:
+        input.codexAdapterReport?.status ?? (codexActivities.length > 0 ? "loaded" : "skipped"),
+      reasonCode: input.codexAdapterReport?.reasonCode,
+      sessionRefs: unique([
+        ...(input.codexAdapterReport?.sessionRefs ?? []),
+        ...codexSessionRefs,
+      ]).slice(-12),
+      commandSummaries,
+      validationFailures,
+      touchedAreas,
+      outcomeSummaries,
+    },
     observedWorkPatterns: [
       {
         summary: redactAndBound(input.triggerPacket.event.boundedSummary, 220),
@@ -913,12 +1089,20 @@ export function buildProactivityReviewEpisodePacket(input: {
         .map((summary) => redactAndBound(summary, 160))
         .slice(-10),
     },
+    reviewPolicy: {
+      maxSurfaceCandidates: 3,
+      preferNoCandidateOverWeakCandidate: true,
+      requireRepeatabilityOrLargeAvoidedCost: true,
+      rejectTinyCleanupCandidates: true,
+      proposalOnly: true,
+    },
     safetyEnvelope: {
       proposalOnly: true,
       noActionExecution: true,
       noSkillInstallOrPromotion: true,
       noCanonicalMemoryTruth: true,
       noRawToolLogs: true,
+      rawFullTranscriptPersisted: false,
     },
   };
   assertNoProhibitedContent(packet, "proactivity review episode packet");
@@ -939,21 +1123,25 @@ const CandidateProposalOutputSchema = z
               "merge_or_extend_candidate",
               "demote_existing_candidate",
             ]),
-            titleWords: z.array(z.string().trim().min(1).max(32)).min(2).max(12),
-            purposeWords: z.array(z.string().trim().min(1).max(32)).min(5).max(34),
-            recommendedNextStepWords: z.array(z.string().trim().min(1).max(32)).min(4).max(34),
-            suggestedSkillNameWords: z
-              .array(z.string().trim().min(1).max(32))
-              .min(1)
-              .max(8)
-              .nullable(),
+            title: z.string().trim().min(4).max(MAX_TITLE_LENGTH),
+            purpose: z.string().trim().min(16).max(MAX_PURPOSE_LENGTH),
+            recommendedNextStep: z.string().trim().min(12).max(MAX_NEXT_STEP_LENGTH),
+            expectedUserValue: z.string().trim().min(12).max(MAX_EXPECTED_VALUE_LENGTH),
+            leverageClass: z.enum([
+              "large_repeated_cost",
+              "stability_risk",
+              "workflow_acceleration",
+              "strategic_unblock",
+            ]),
+            whyHighImpact: z.string().trim().min(16).max(MAX_HIGH_IMPACT_REASON_LENGTH),
+            whyNotSmallCleanup: z.string().trim().min(16).max(MAX_SMALL_CLEANUP_REASON_LENGTH),
+            suggestedSkillName: z.string().trim().min(1).max(80).nullable(),
             suggestedExistingSkillName: z.string().trim().min(1).max(80).nullable(),
             mergeTargetCandidateId: z.string().trim().min(1).max(160).nullable(),
             sourceRuntime: z.enum(["openclaw", "codex", "mixed"]),
             evidenceRefs: z.array(z.string().trim().min(1).max(180)).min(1).max(8),
-            recurrenceSignals: z.array(z.string().trim().min(1).max(140)).max(6),
-            frictionSignals: z.array(z.string().trim().min(1).max(140)).max(6),
-            expectedUserValueWords: z.array(z.string().trim().min(1).max(32)).min(4).max(32),
+            recurrenceSignals: z.array(z.string().trim().min(1).max(180)).max(6),
+            frictionSignals: z.array(z.string().trim().min(1).max(180)).max(6),
             confidence: z.enum(["low", "medium", "high"]),
             riskTier: z.enum(["low", "medium", "high", "blocked"]),
             shouldSurface: z.boolean(),
@@ -961,7 +1149,7 @@ const CandidateProposalOutputSchema = z
           })
           .strict(),
       )
-      .max(8),
+      .max(3),
   })
   .strict();
 
@@ -973,7 +1161,7 @@ const CANDIDATE_PROPOSAL_JSON_SCHEMA = {
     schemaVersion: { enum: [CANDIDATE_REVIEW_PROPOSAL_SCHEMA_VERSION] },
     proposals: {
       type: "array",
-      maxItems: 8,
+      maxItems: 3,
       items: {
         type: "object",
         properties: {
@@ -986,30 +1174,37 @@ const CANDIDATE_PROPOSAL_JSON_SCHEMA = {
               "demote_existing_candidate",
             ],
           },
-          titleWords: {
-            type: "array",
-            items: { type: "string", minLength: 1, maxLength: 32 },
-            minItems: 2,
-            maxItems: 12,
+          title: { type: "string", minLength: 4, maxLength: MAX_TITLE_LENGTH },
+          purpose: { type: "string", minLength: 16, maxLength: MAX_PURPOSE_LENGTH },
+          recommendedNextStep: {
+            type: "string",
+            minLength: 12,
+            maxLength: MAX_NEXT_STEP_LENGTH,
           },
-          purposeWords: {
-            type: "array",
-            items: { type: "string", minLength: 1, maxLength: 32 },
-            minItems: 5,
-            maxItems: 34,
+          expectedUserValue: {
+            type: "string",
+            minLength: 12,
+            maxLength: MAX_EXPECTED_VALUE_LENGTH,
           },
-          recommendedNextStepWords: {
-            type: "array",
-            items: { type: "string", minLength: 1, maxLength: 32 },
-            minItems: 4,
-            maxItems: 34,
+          leverageClass: {
+            enum: [
+              "large_repeated_cost",
+              "stability_risk",
+              "workflow_acceleration",
+              "strategic_unblock",
+            ],
           },
-          suggestedSkillNameWords: {
-            type: ["array", "null"],
-            items: { type: "string", minLength: 1, maxLength: 32 },
-            minItems: 1,
-            maxItems: 8,
+          whyHighImpact: {
+            type: "string",
+            minLength: 16,
+            maxLength: MAX_HIGH_IMPACT_REASON_LENGTH,
           },
+          whyNotSmallCleanup: {
+            type: "string",
+            minLength: 16,
+            maxLength: MAX_SMALL_CLEANUP_REASON_LENGTH,
+          },
+          suggestedSkillName: { type: ["string", "null"], maxLength: 80 },
           suggestedExistingSkillName: { type: ["string", "null"], maxLength: 80 },
           mergeTargetCandidateId: { type: ["string", "null"], maxLength: 160 },
           sourceRuntime: { enum: ["openclaw", "codex", "mixed"] },
@@ -1021,19 +1216,13 @@ const CANDIDATE_PROPOSAL_JSON_SCHEMA = {
           },
           recurrenceSignals: {
             type: "array",
-            items: { type: "string", minLength: 1, maxLength: 140 },
+            items: { type: "string", minLength: 1, maxLength: 180 },
             maxItems: 6,
           },
           frictionSignals: {
             type: "array",
-            items: { type: "string", minLength: 1, maxLength: 140 },
+            items: { type: "string", minLength: 1, maxLength: 180 },
             maxItems: 6,
-          },
-          expectedUserValueWords: {
-            type: "array",
-            items: { type: "string", minLength: 1, maxLength: 32 },
-            minItems: 4,
-            maxItems: 32,
           },
           confidence: { enum: ["low", "medium", "high"] },
           riskTier: { enum: ["low", "medium", "high", "blocked"] },
@@ -1042,17 +1231,20 @@ const CANDIDATE_PROPOSAL_JSON_SCHEMA = {
         },
         required: [
           "proposalKind",
-          "titleWords",
-          "purposeWords",
-          "recommendedNextStepWords",
-          "suggestedSkillNameWords",
+          "title",
+          "purpose",
+          "recommendedNextStep",
+          "expectedUserValue",
+          "leverageClass",
+          "whyHighImpact",
+          "whyNotSmallCleanup",
+          "suggestedSkillName",
           "suggestedExistingSkillName",
           "mergeTargetCandidateId",
           "sourceRuntime",
           "evidenceRefs",
           "recurrenceSignals",
           "frictionSignals",
-          "expectedUserValueWords",
           "confidence",
           "riskTier",
           "shouldSurface",
@@ -1067,9 +1259,12 @@ const CANDIDATE_PROPOSAL_JSON_SCHEMA = {
 } as const;
 
 const CANDIDATE_REVIEW_SYSTEM_PROMPT = [
-  "You review a bounded OpenClaw/Codex recent-work episode for useful candidate proposals.",
+  "You review a bounded high-context OpenClaw/Codex recent-work episode for useful candidate proposals.",
   "Return strict JSON only.",
-  "Identify concrete proactive plans, new skill candidates, existing skill enhancements, merge candidates, or demotions.",
+  "Return 0-3 proposals maximum; prefer no proposal over a weak proposal.",
+  "Identify only high-impact proactive plans, new skill candidates, existing skill enhancements, merge candidates, or demotions.",
+  "Require repeatability, large avoided cost, stability risk, workflow acceleration, or strategic unblock value.",
+  "Reject tiny cleanup candidates, one-off local optimizations, vague checklists, clipped source fragments, and unclear expected value.",
   "Prefer enhancing an existing skill only when explicit loaded skill metadata supports it.",
   "Do not infer fuzzy merge as fact.",
   "Do not produce generic candidates.",
@@ -1082,14 +1277,15 @@ const CANDIDATE_REVIEW_SYSTEM_PROMPT = [
 
 function evidenceRefSet(packet: ProactivityReviewEpisodePacket): Set<string> {
   return new Set([
-    ...packet.boundedTurnExcerpts.map((entry) => entry.ref),
+    ...packet.episodeTurns.map((entry) => entry.ref),
+    ...packet.codexActivitySummary.commandSummaries.map((entry) => entry.ref),
+    ...packet.codexActivitySummary.validationFailures.map((entry) => entry.ref),
     ...packet.existingContext.recentProactivityItems.map((item) => `proactivity://${item.id}`),
   ]);
 }
 
-function slugFromWords(words: string[] | null | undefined): string | undefined {
-  const slug = (words ?? [])
-    .join("-")
+function slugFromString(value: string | null | undefined): string | undefined {
+  const slug = (value ?? "")
     .toLowerCase()
     .replace(/[^a-z0-9-]+/gu, "-")
     .replace(/-+/gu, "-")
@@ -1125,6 +1321,15 @@ function validateProposal(proposal: CandidateReviewProposal, allowedRefs: Set<st
   if (proposal.riskTier === "blocked" && proposal.shouldSurface) {
     reasons.push("blocked_risk_surface_rejected");
   }
+  if (proposal.whyHighImpact.length < 16 || GENERIC_COPY_PATTERN.test(proposal.whyHighImpact)) {
+    reasons.push("missing_high_impact_rationale");
+  }
+  if (
+    proposal.whyNotSmallCleanup.length < 16 ||
+    /\b(cleanup|small|tiny|minor|local)\b/iu.test(proposal.title)
+  ) {
+    reasons.push("small_cleanup_not_rejected");
+  }
   if (
     proposal.proposalKind === "existing_skill_enhancement" &&
     !proposal.suggestedExistingSkillName
@@ -1138,18 +1343,32 @@ function proposalFromModelOutput(
   output: CandidateProposalModelOutput["proposals"][number],
   packet: ProactivityReviewEpisodePacket,
 ): CandidateReviewProposal {
-  const title = textFromWords(output.titleWords, MAX_TITLE_LENGTH);
-  const purpose = textFromWords(output.purposeWords, MAX_PURPOSE_LENGTH);
-  const recommendedNextStep = textFromWords(output.recommendedNextStepWords, MAX_NEXT_STEP_LENGTH);
-  const expectedUserValue = textFromWords(output.expectedUserValueWords, MAX_EXPECTED_VALUE_LENGTH);
+  const title = redactAndBound(output.title, MAX_TITLE_LENGTH);
+  const purpose = redactAndBound(output.purpose, MAX_PURPOSE_LENGTH);
+  const recommendedNextStep = redactAndBound(output.recommendedNextStep, MAX_NEXT_STEP_LENGTH);
+  const expectedUserValue = redactAndBound(output.expectedUserValue, MAX_EXPECTED_VALUE_LENGTH);
+  const whyHighImpact = redactAndBound(output.whyHighImpact, MAX_HIGH_IMPACT_REASON_LENGTH);
+  const whyNotSmallCleanup = redactAndBound(
+    output.whyNotSmallCleanup,
+    MAX_SMALL_CLEANUP_REASON_LENGTH,
+  );
   const allowedRefs = evidenceRefSet(packet);
   const modelEvidenceRefs = unique(output.evidenceRefs).filter((ref) => allowedRefs.has(ref));
-  const episodeSurfaceRefs = packet.boundedTurnExcerpts.map((excerpt) => excerpt.ref).slice(-2);
+  const episodeSurfaceRefs = packet.episodeTurns.map((excerpt) => excerpt.ref).slice(-3);
   const evidenceRefs = unique([...modelEvidenceRefs, ...episodeSurfaceRefs]).filter((ref) =>
     allowedRefs.has(ref),
   );
   const evidenceHashes = evidenceRefs
-    .map((ref) => packet.boundedTurnExcerpts.find((excerpt) => excerpt.ref === ref)?.hash)
+    .map((ref) => {
+      const turnHash = packet.episodeTurns.find((excerpt) => excerpt.ref === ref)?.hash;
+      const commandHash = packet.codexActivitySummary.commandSummaries.find(
+        (entry) => entry.ref === ref,
+      )?.hash;
+      const failureHash = packet.codexActivitySummary.validationFailures.find(
+        (entry) => entry.ref === ref,
+      )?.hash;
+      return turnHash ?? commandHash ?? failureHash;
+    })
     .filter(Boolean) as string[];
   return {
     schemaVersion: CANDIDATE_REVIEW_PROPOSAL_SCHEMA_VERSION,
@@ -1176,16 +1395,19 @@ function proposalFromModelOutput(
           : output.proposalKind === "merge_or_extend_candidate"
             ? "merge_or_extend_candidate"
             : "model_reviewed_repeated_work",
-    suggestedSkillName: slugFromWords(output.suggestedSkillNameWords),
+    suggestedSkillName: slugFromString(output.suggestedSkillName),
     suggestedExistingSkillName: output.suggestedExistingSkillName ?? undefined,
     mergeTargetCandidateId: output.mergeTargetCandidateId ?? undefined,
     sourceRuntime: output.sourceRuntime,
     evidenceRefs,
     evidenceHashes:
       evidenceHashes.length > 0 ? unique(evidenceHashes) : unique(evidenceRefs.map(hash)),
-    recurrenceSignals: output.recurrenceSignals.map((signal) => redactAndBound(signal, 140)),
-    frictionSignals: output.frictionSignals.map((signal) => redactAndBound(signal, 140)),
+    recurrenceSignals: output.recurrenceSignals.map((signal) => redactAndBound(signal, 180)),
+    frictionSignals: output.frictionSignals.map((signal) => redactAndBound(signal, 180)),
     expectedUserValue,
+    leverageClass: output.leverageClass,
+    whyHighImpact,
+    whyNotSmallCleanup,
     confidence: output.confidence,
     riskTier: output.riskTier,
     shouldSurface: output.shouldSurface,
@@ -1211,13 +1433,18 @@ export async function reviewEpisodeForCandidates(
         schemaVersion: MODEL_REVIEWED_CANDIDATE_REPORT_SCHEMA_VERSION,
         source: "skipped",
         enabled,
-        reasoningEffort: options.reasoningEffort ?? "medium",
+        reasoningEffort: options.reasoningEffort ?? "high",
         elapsedMs: Date.now() - startedAt,
         inputHash,
         validationStatus: "reject",
         reasonCodes: ["candidate_review_model_disabled"],
         proposalCount: 0,
         surfacedProposalCount: 0,
+        episodeTurnCount: packet.episodeTurns.length,
+        codexAdapterStatus: packet.codexActivitySummary.status,
+        sourceRuntimes: unique(
+          packet.episodeTurns.map((turn) => turn.sourceRuntime),
+        ) as CandidateReviewRuntime[],
         promptPersisted: false,
         rawResponsePersisted: false,
         promptChars: 0,
@@ -1227,22 +1454,22 @@ export async function reviewEpisodeForCandidates(
   const modelId = options.modelId?.trim() || DEFAULT_CANDIDATE_REVIEW_MODEL_ID;
   const userPrompt = [
     "Return one JSON object matching the schema.",
-    "Review this bounded recent-work episode for skills and proactive-plan proposals:",
+    "Review this high-context bounded recent-work episode for 0-3 high-impact skills and proactive-plan proposals:",
     JSON.stringify(packet, null, 2),
   ].join("\n");
   try {
     const response = await options.executor.execute({
       contract: {
         contractName: "candidate_review_proposal",
-        contractVersion: "phase2-model-reviewed-candidates-v1",
+        contractVersion: "phase2-high-context-candidate-review-v2",
         modelId,
       },
       systemPrompt: CANDIDATE_REVIEW_SYSTEM_PROMPT,
       userPrompt,
       responseFormat: "json",
       responseOptions: {
-        maxOutputTokens: options.maxOutputTokens ?? 1_600,
-        reasoningEffort: options.reasoningEffort ?? "medium",
+        maxOutputTokens: options.maxOutputTokens ?? 3_200,
+        reasoningEffort: options.reasoningEffort ?? "high",
         verbosity: options.verbosity ?? "low",
         transport: {
           type: "json_schema",
@@ -1256,7 +1483,7 @@ export async function reviewEpisodeForCandidates(
       response,
       {
         contractName: "candidate_review_proposal",
-        contractVersion: "phase2-model-reviewed-candidates-v1",
+        contractVersion: "phase2-high-context-candidate-review-v2",
         modelId,
       },
       CandidateProposalOutputSchema,
@@ -1286,7 +1513,7 @@ export async function reviewEpisodeForCandidates(
         enabled: true,
         modelId,
         resolvedModelId: response.resolvedModelId,
-        reasoningEffort: options.reasoningEffort ?? "medium",
+        reasoningEffort: options.reasoningEffort ?? "high",
         elapsedMs: Date.now() - startedAt,
         inputHash,
         outputHash: hash(output),
@@ -1296,6 +1523,11 @@ export async function reviewEpisodeForCandidates(
         ),
         proposalCount: proposals.length,
         surfacedProposalCount: proposals.filter((proposal) => proposal.shouldSurface).length,
+        episodeTurnCount: packet.episodeTurns.length,
+        codexAdapterStatus: packet.codexActivitySummary.status,
+        sourceRuntimes: unique(
+          packet.episodeTurns.map((turn) => turn.sourceRuntime),
+        ) as CandidateReviewRuntime[],
         promptPersisted: false,
         rawResponsePersisted: false,
         promptChars: userPrompt.length,
@@ -1310,19 +1542,82 @@ export async function reviewEpisodeForCandidates(
         source: "rejected",
         enabled: true,
         modelId,
-        reasoningEffort: options.reasoningEffort ?? "medium",
+        reasoningEffort: options.reasoningEffort ?? "high",
         elapsedMs: Date.now() - startedAt,
         inputHash,
         validationStatus: "reject",
         reasonCodes: ["candidate_review_model_failed", ...readModelErrorReasonCodes(error)],
         proposalCount: 0,
         surfacedProposalCount: 0,
+        episodeTurnCount: packet.episodeTurns.length,
+        codexAdapterStatus: packet.codexActivitySummary.status,
+        sourceRuntimes: unique(
+          packet.episodeTurns.map((turn) => turn.sourceRuntime),
+        ) as CandidateReviewRuntime[],
         promptPersisted: false,
         rawResponsePersisted: false,
         promptChars: userPrompt.length,
       },
     };
   }
+}
+
+export async function writeProactivityReviewEpisodePacketArtifact(
+  packet: ProactivityReviewEpisodePacket,
+  options: {
+    artifactRoot?: string;
+    timestamp?: string;
+  } = {},
+): Promise<ProactivityReviewEpisodePacketArtifact> {
+  assertNoProhibitedContent(packet, "proactivity review episode packet artifact");
+  const packetHash = hash(packet);
+  const safeTimestamp = (options.timestamp ?? new Date().toISOString()).replace(/[:.]/gu, "-");
+  const artifactRoot = path.resolve(
+    options.artifactRoot ??
+      path.join(".artifacts", "model-memory", "phase2-high-context-candidate-review"),
+    safeTimestamp,
+  );
+  await fs.mkdir(artifactRoot, { recursive: true });
+  const jsonPath = path.join(artifactRoot, "episode-packet.json");
+  const markdownPath = path.join(artifactRoot, "episode-packet.md");
+  const markdown = [
+    "# High-Context Candidate Review Episode Packet",
+    "",
+    `- packetHash: ${packetHash}`,
+    `- schemaVersion: ${packet.schemaVersion}`,
+    `- runtime: ${packet.sessionWindow.runtime}`,
+    `- sessionKey: ${packet.sessionWindow.sessionKey}`,
+    `- turnCount: ${packet.sessionWindow.turnCount}`,
+    `- codexAdapterStatus: ${packet.codexActivitySummary.status}`,
+    `- promptPersisted: false`,
+    `- rawResponsePersisted: false`,
+    `- rawFullTranscriptPersisted: false`,
+    "",
+    "## Episode Turns",
+    "",
+    ...packet.episodeTurns.map(
+      (turn, index) =>
+        `${index + 1}. ${turn.sourceRuntime}/${turn.role} ${turn.ref} (${turn.hash.slice(0, 12)})`,
+    ),
+    "",
+    "## Review Policy",
+    "",
+    `- maxSurfaceCandidates: ${packet.reviewPolicy.maxSurfaceCandidates}`,
+    `- preferNoCandidateOverWeakCandidate: ${packet.reviewPolicy.preferNoCandidateOverWeakCandidate}`,
+    `- rejectTinyCleanupCandidates: ${packet.reviewPolicy.rejectTinyCleanupCandidates}`,
+    "",
+  ].join("\n");
+  await fs.writeFile(jsonPath, `${JSON.stringify(packet, null, 2)}\n`, "utf8");
+  await fs.writeFile(markdownPath, markdown, "utf8");
+  return {
+    artifactRoot,
+    jsonPath,
+    markdownPath,
+    packetHash,
+    promptPersisted: false,
+    rawResponsePersisted: false,
+    rawFullTranscriptPersisted: false,
+  };
 }
 
 function skillSourceRuntime(runtime: CandidateReviewRuntime): Phase2SkillCandidateSourceRuntime {
@@ -1380,11 +1675,16 @@ export function convertCandidateReviewProposalsToLedgerSources(input: {
   sessionKey: string;
   generatedAt?: string;
   previousSkillCandidates?: Phase2SkillCandidateRecord[];
+  episodePacketHash?: string;
+  episodePacketPath?: string;
 }): {
   skillCandidates: Phase2SkillCandidateRecord[];
   opportunities: Phase2OpportunityLedgerSource[];
 } {
   const generatedAt = input.generatedAt ?? new Date().toISOString();
+  const packetRef = input.episodePacketHash
+    ? `candidate-review-packet://${input.episodePacketHash}`
+    : undefined;
   const previousByIntent = new Map(
     (input.previousSkillCandidates ?? []).map((record) => [record.normalizedIntentKey, record]),
   );
@@ -1473,7 +1773,7 @@ export function convertCandidateReviewProposalsToLedgerSources(input: {
         canaryStatus: (previous?.canaryStatus ?? "not_started") as Phase2SkillCandidateCanaryStatus,
         createdAt: previous?.createdAt ?? generatedAt,
         updatedAt: generatedAt,
-        provenanceRefs: unique(proposal.evidenceRefs),
+        provenanceRefs: unique([...proposal.evidenceRefs, packetRef]),
         rollbackPlan: previous?.rollbackPlan ?? {
           rollbackId: buildDerivedArtifactId({
             family: "context_artifact",
@@ -1513,7 +1813,7 @@ export function convertCandidateReviewProposalsToLedgerSources(input: {
         authorityTiers: record.authorityTiers,
         contentHashes,
         proofHashes,
-        blockedReasonCodes: ["model_reviewed_candidate"],
+        blockedReasonCodes: unique(["model_reviewed_candidate", "high_context_review", packetRef]),
         noDarkDataStatus: "pass",
         generatedAt,
         skillCandidate: record,
@@ -1545,13 +1845,13 @@ export function convertCandidateReviewProposalsToLedgerSources(input: {
           180,
         ),
         confidence: confidenceForLedger(proposal.confidence),
-        sourceRefs: unique(proposal.evidenceRefs),
+        sourceRefs: unique([...proposal.evidenceRefs, packetRef]),
         sourceProfileIds: sourceProfilesForRuntime(proposal.sourceRuntime),
         authorityTiers: sourceAuthorityForRuntime(proposal.sourceRuntime),
         contentHashes,
         proofHashes,
         noDarkDataStatus: "pass",
-        blockedReasonCodes: ["model_reviewed_candidate"],
+        blockedReasonCodes: unique(["model_reviewed_candidate", "high_context_review", packetRef]),
         workItemKind: "planning_request" as Phase2ProactivityWorkItemKind,
         generatedAt,
       });
@@ -1622,10 +1922,38 @@ function textFromLine(value: unknown): string {
   if (typeof record.command === "string") {
     return `Command ${record.command.split(/\s+/u)[0] ?? "unknown"} ${typeof record.status === "string" ? record.status : ""}`.trim();
   }
-  if (typeof record.output === "string") {
-    return record.output;
-  }
   return "";
+}
+
+function toolSummaryTextFromLine(value: unknown): string {
+  if (!value || typeof value !== "object") {
+    return "";
+  }
+  const record = value as {
+    command?: unknown;
+    tool?: unknown;
+    name?: unknown;
+    status?: unknown;
+    outcome?: unknown;
+    error?: unknown;
+  };
+  const commandFamily =
+    typeof record.command === "string"
+      ? record.command.split(/\s+/u)[0]
+      : typeof record.tool === "string"
+        ? record.tool
+        : typeof record.name === "string"
+          ? record.name
+          : "unknown";
+  const status =
+    typeof record.status === "string"
+      ? record.status
+      : typeof record.outcome === "string"
+        ? record.outcome
+        : typeof record.error === "string"
+          ? "failed"
+          : "unknown";
+  return `Command ${commandFamily ?? "unknown"} ${status}`.trim();
 }
 
 function activityKindFromCodexLine(
@@ -1737,7 +2065,10 @@ export async function loadCodexSessionActivityForCandidateReview(
       const candidates = Array.isArray(parsed) ? parsed : [parsed];
       for (const candidate of candidates) {
         const role = roleFromLine(candidate);
-        const text = redactAndBound(textFromLine(candidate), role === "tool_summary" ? 160 : 520);
+        const text = redactAndBound(
+          role === "tool_summary" ? toolSummaryTextFromLine(candidate) : textFromLine(candidate),
+          role === "tool_summary" ? 160 : 520,
+        );
         if (!role || !text) {
           continue;
         }
@@ -1758,6 +2089,10 @@ export async function loadCodexSessionActivityForCandidateReview(
       reasonCode: activities.length > 0 ? undefined : "codex_session_entries_unavailable",
       sourceRoot: sessionRoot,
       entryCount: activities.length,
+      sessionRefs: unique(files.map((filePath) => `codex://${path.basename(filePath)}`)).slice(-12),
+      commandSummaryCount: activities.filter((activity) => activity.role === "tool_summary").length,
+      validationFailureCount: activities.filter((activity) => activity.kind === "failure_summary")
+        .length,
     },
   };
 }

@@ -294,6 +294,10 @@ export const modelMemoryProactivityHandlers: GatewayRequestHandlers = {
               reasonCodes: state.candidateReviewReport.reasonCodes,
               proposalCount: state.candidateReviewReport.proposalCount,
               surfacedProposalCount: state.candidateReviewReport.surfacedProposalCount,
+              episodePacketHash: state.candidateReviewReport.episodePacketHash,
+              episodePacketPath: state.candidateReviewReport.episodePacketPath,
+              episodeTurnCount: state.candidateReviewReport.episodeTurnCount,
+              codexAdapterStatus: state.candidateReviewReport.codexAdapterStatus,
               promptPersisted: state.candidateReviewReport.promptPersisted,
               rawResponsePersisted: state.candidateReviewReport.rawResponsePersisted,
               acceptedProposalKinds: [
@@ -305,7 +309,10 @@ export const modelMemoryProactivityHandlers: GatewayRequestHandlers = {
               ],
               sourceRuntimes: [
                 ...new Set(
-                  (state.candidateReviewProposals ?? []).map((proposal) => proposal.sourceRuntime),
+                  state.candidateReviewReport.sourceRuntimes ??
+                    (state.candidateReviewProposals ?? []).map(
+                      (proposal) => proposal.sourceRuntime,
+                    ),
                 ),
               ],
             }
@@ -316,6 +323,10 @@ export const modelMemoryProactivityHandlers: GatewayRequestHandlers = {
               reasonCode: state.candidateReviewCodexAdapterReport.reasonCode,
               entryCount: state.candidateReviewCodexAdapterReport.entryCount,
               sourceRoot: state.candidateReviewCodexAdapterReport.sourceRoot,
+              sessionRefs: state.candidateReviewCodexAdapterReport.sessionRefs,
+              commandSummaryCount: state.candidateReviewCodexAdapterReport.commandSummaryCount,
+              validationFailureCount:
+                state.candidateReviewCodexAdapterReport.validationFailureCount,
             }
           : null,
         ledgerReport: {
