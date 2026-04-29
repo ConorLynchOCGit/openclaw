@@ -7,6 +7,92 @@ title: "Skills System Decisions"
 
 ## Accepted decisions
 
+### 2026-04-28 - Candidate discovery is model-reviewed from bounded recent-work episodes
+
+Reason:
+
+- deterministic scripts are the wrong primary mechanism for subjective product
+  questions such as which repeatable process should become a skill, which
+  proactive next step matters now, and whether a candidate is new, an existing
+  skill enhancement, a merge, or not worth surfacing
+- recent raw conversation review produced better skill and proactive-plan
+  candidates than deterministic ledger fragments, because it preserved the real
+  work episode: user corrections, assistant finals, examples, decision
+  pressure, and follow-up context
+- no-dark-data must not be interpreted as "the model cannot inspect recent
+  transcript/activity"; it means raw full transcript/activity must not become
+  hidden durable state or skill artifacts
+
+Decision:
+
+- candidate discovery now uses a two-stage trigger:
+  - Stage 1 is a deterministic cheap prefilter for assistant finals,
+    heartbeat/session boundaries, validation failures, card-quality failures,
+    turn-count thresholds, and explicit skill/proactivity keywords
+  - Stage 2 is a bounded model trigger evaluator that decides whether there is
+    enough signal, which recent refs belong in the window, and whether the
+    review goal is skills, proactivity, both, or none
+- accepted trigger decisions build a larger bounded episode packet and call a
+  model candidate reviewer to propose proactive plans, new skills,
+  existing-skill enhancements, merge/extend candidates, and demotions
+- live model input may include capped recent user turns, assistant finals,
+  card diagnostics, validation summaries, activity summaries, loaded skill
+  metadata, candidate summaries, and Codex session excerpts/summaries
+- durable artifacts may store only bounded episode packets, capped excerpts,
+  refs, hashes, model route summaries, validation results, classifications,
+  and proposals; raw full transcripts, raw prompts, raw tool logs, secrets,
+  private phrases, hidden reasoning, and unbounded OpenClaw/Codex session logs
+  remain forbidden
+- model trigger decisions and candidate proposals are not semantic truth; they
+  cannot write canonical memory, install or promote skills, execute actions,
+  send messages, mutate files, or become fuzzy duplicate authority
+- deterministic validators remain mandatory for allowed refs, caps, no-dark
+  data, confidence thresholds, cooldowns, max calls, dedupe, provenance, and
+  write eligibility
+- model route configuration for trigger evaluation, candidate review, and
+  presentation briefs must remain isolated from default chat and model-memory
+  capture/retrieval routes
+
+### 2026-04-28 - Proactivity decision briefs may be model-authored, but remain presentation-only
+
+Reason:
+
+- the deterministic `UserFacingProactivityBrief` boundary fixed raw packet
+  projection, but clipped source fragments and generic fallback copy still
+  passed structural checks
+- examples such as `Already recurring`, `Build the bounded request with`, and
+  `Turns a recent idea into a bounded next step` are not useful operator
+  decision surfaces even when they contain no ids, source refs, or timestamps
+- Milestone 4 evals should measure clear human decision cards, not the failure
+  mode of deterministic string cleanup
+
+Decision:
+
+- a bounded model-authored rewrite/evaluation step may produce
+  `UserFacingProactivityBrief` primary copy from typed, bounded, no-dark-data
+  proactivity state
+- the first runtime target is the separate `openai-codex/gpt-5.4`
+  proactivity-presentation route with strict JSON output, medium reasoning by
+  default, low verbosity, and small output/token/time bounds; this does not
+  alter strict MMV2 capture/retrieval defaults
+- model-authored briefs are presentation-only and are not canonical ledger
+  truth, semantic memory, dedupe authority, supersession authority, lifecycle
+  state, skill package state, install authority, send authority, or action
+  authority
+- raw prompts, transcripts, tool logs, secrets, private phrases, and unbounded
+  session text must not be included in model prompt input or persisted output
+- deterministic validators remain mandatory after model output; invalid,
+  generic, repetitive, unsafe, schema-invalid, or unclear briefs are demoted
+  instead of surfaced
+- if the model cannot name a capability, decision, or outcome; explain what it
+  does or unlocks; and provide one actionable next step, it must choose
+  `demote`
+- model prompt and raw response text must not be persisted; proof and telemetry
+  may store bounded summaries, hashes, model id, elapsed time, validation
+  status, and reason codes only
+- this is not semantic forest code because no model-authored presentation text
+  can write canonical semantic state or infer duplicate truth
+
 ### 2026-04-28 - Proactivity cards render decision briefs, not ledger packets
 
 Reason:

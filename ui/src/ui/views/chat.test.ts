@@ -5321,14 +5321,13 @@ describe("chat view", () => {
       handoffError: null,
       handoffMessageAnchor: null,
       messageClass: "operator_approved_suggestion_available",
-      boundedDisplayText: "Turn First bounded draft package should include only what is.",
-      candidateSummary: "Turn First bounded draft package should include only what is.",
-      planTitle:
-        "Turn First bounded draft package should include only what is into a reusable skill",
+      boundedDisplayText: "Build the bounded request with:.",
+      candidateSummary:
+        "Already recurring: multiple draft artifacts cluster around the same idea:.",
+      planTitle: "It sets the default packaging strategy for every future",
       problem:
         "The user explicitly asked for skill-oriented reuse and recent OpenClaw work already produced a concrete bounded example.",
-      proposedMessage:
-        "Turn Turn First bounded draft package should include only what is into a short bounded plan.",
+      proposedMessage: "It sets the default packaging strategy for every future draft.",
       suggestedAction: "Draft a bounded skill package.",
       expectedUserValue: "Reduce repeated Skillifier draft-scoping work.",
       userBenefit: "Reduce repeated Skillifier draft-scoping work.",
@@ -5448,12 +5447,18 @@ describe("chat view", () => {
     expect(inlineCard?.textContent).not.toContain("Why now");
     expect(inlineCard?.textContent).not.toContain("Skill worth creating");
     expect(inlineCard?.textContent).not.toContain("Turn Turn");
+    expect(inlineCard?.textContent).not.toContain("Already recurring");
+    expect(inlineCard?.textContent).not.toContain("Build the bounded request with");
+    expect(inlineCard?.textContent).not.toContain("It sets the default packaging strategy");
 
     const inboxItemElement = container.querySelector(".proactivity-inbox__item");
     expect(inboxItemElement?.textContent).toContain("New skill: draft-skill-package-checklist");
     expect(inboxItemElement?.textContent).toContain("Purpose");
     expect(inboxItemElement?.textContent).not.toContain("Skill worth creating");
     expect(inboxItemElement?.textContent).not.toContain("Turn Turn");
+    expect(inboxItemElement?.textContent).not.toContain("Already recurring");
+    expect(inboxItemElement?.textContent).not.toContain("Build the bounded request with");
+    expect(inboxItemElement?.textContent).not.toContain("It sets the default packaging strategy");
   });
 
   it("lets a tool call collapse when the matching tool output comes from toolMessages", async () => {

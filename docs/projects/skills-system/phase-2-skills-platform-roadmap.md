@@ -86,6 +86,9 @@ Precondition:
   surfaces, not raw ledger packet projections
 - malformed reverse prompts and noisy skill transformation titles must be
   rewritten or demoted before Milestone 4 evals measure skill behavior
+- deterministic presentation cleanup must be supplemented by bounded
+  model-authored brief rewrite/evaluation, because structurally clean source
+  fragments can still be unclear to an operator
 
 Pre-Milestone-4 repair:
 
@@ -95,6 +98,18 @@ Pre-Milestone-4 repair:
 - distinguish new skill, existing-skill enhancement, merge/extend, and
   non-skill-worthy candidates with explicit metadata
 - add regression fixtures for noisy card and reverse-prompt examples
+- add a GPT-5.4 model-authored `UserFacingProactivityBrief` pass with strict
+  JSON output, medium reasoning by default, and deterministic validators after
+  model output
+- demote generic, repetitive, clipped, schema-invalid, or unsafe cards instead
+  of surfacing vague fallback copy
+- add a two-stage candidate-review trigger before Milestone 4 so subjective
+  questions such as "what should become a reusable skill?" and "what proactive
+  next step would help?" are model-reviewed from bounded recent-work episodes
+  instead of decided by deterministic source-fragment rules alone
+- keep model route isolation explicit: trigger evaluation, candidate review,
+  presentation briefs, model-memory capture/retrieval, and default chat remain
+  separate configurable routes with separate schemas
 
 - Objective: prove skills are chosen correctly and followed correctly.
 - Scope: decisioning, avoid, ambiguous/cofire, compliance, workflow-contract,

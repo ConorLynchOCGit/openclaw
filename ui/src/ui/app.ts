@@ -261,6 +261,7 @@ export class OpenClawApp extends LitElement {
   @state() productProactivityLoading = false;
   @state() productProactivityError: string | null = null;
   @state() productProactivityQueue: ProductProactivityQueueItem[] = [];
+  @state() productProactivityQueueResult: ProductProactivityQueueResult | null = null;
   @state() proactivityInboxDigest: ProactivityInboxDigest | null = null;
   @state() proactivityInboxLoading = false;
   @state() proactivityInboxError: string | null = null;
@@ -907,9 +908,11 @@ export class OpenClawApp extends LitElement {
         Array.isArray(res.queue?.items) ? res.queue.items : [],
         this.productProactivityQueue,
       );
+      this.productProactivityQueueResult = res;
     } catch (err) {
       this.productProactivityError = String(err);
       this.productProactivityQueue = [];
+      this.productProactivityQueueResult = null;
     } finally {
       this.productProactivityLoading = false;
     }
@@ -1062,6 +1065,7 @@ export class OpenClawApp extends LitElement {
       brief?.oneLinePurpose ?? item.userBenefit ?? item.problem ?? item.boundedDisplayText;
     const whySurfaced =
       brief?.hiddenDiagnostics.whyNow ??
+      (brief ? "Presentation diagnostics are available in the proactivity details." : null) ??
       item.problem ??
       item.evidenceSummary ??
       item.boundedDisplayText;
@@ -1083,6 +1087,7 @@ export class OpenClawApp extends LitElement {
         : (item.userBenefit ?? item.candidateSummary ?? item.boundedDisplayText);
     const evidence =
       brief?.hiddenDiagnostics.evidenceSummary ??
+      (brief ? "Bounded evidence summary is available in the proactivity details." : null) ??
       item.evidenceSummary ??
       item.sourceRefs.slice(0, 3).join(", ");
     const draftContext =
@@ -1093,11 +1098,17 @@ export class OpenClawApp extends LitElement {
             `Next review step: ${item.skillifierDraft.nextReviewStep}`,
           ].join(" ")
         : item.draftReady && item.autonomousDraft
-          ? [
-              `Prepared approach: ${item.autonomousDraft.recommendedApproach}`,
-              `Next safe step: ${item.autonomousDraft.nextSafeStep}`,
-              `Uncertainty: ${item.autonomousDraft.uncertainty}`,
-            ].join(" ")
+          ? brief
+            ? [
+                `Prepared approach: ${brief.title}`,
+                `Next safe step: ${brief.recommendedNextStep}`,
+                "Uncertainty: review the proactivity details before approving any follow-up work.",
+              ].join(" ")
+            : [
+                `Prepared approach: ${item.autonomousDraft.recommendedApproach}`,
+                `Next safe step: ${item.autonomousDraft.nextSafeStep}`,
+                `Uncertainty: ${item.autonomousDraft.uncertainty}`,
+              ].join(" ")
           : null;
     const expectedOutput =
       action === "investigate"

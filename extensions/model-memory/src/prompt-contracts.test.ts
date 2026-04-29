@@ -13,6 +13,8 @@ describe("prompt-contracts", () => {
       "retrieval_request_interpretation",
       "retrieval_reranking",
       "session_summary_generation",
+      "candidate_review_trigger",
+      "candidate_review_proposal",
     ]);
   });
 

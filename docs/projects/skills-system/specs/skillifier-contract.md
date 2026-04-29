@@ -84,6 +84,20 @@ quality diagnostics, limitations, and lifecycle details belong in disclosure or
 handoff context. A draft-ready item must not repeat the same action as both
 `Skill worth creating` and `Draft ready` prose.
 
+Draft-ready primary copy may be model-authored from typed bounded candidate and
+draft state when enabled, but the model output is presentation-only. It cannot
+install or promote skills, mutate draft files, mutate candidate state, update
+semantic memory, send messages, or execute actions. Deterministic validators
+must run after model output and demote generic, repetitive, clipped,
+schema-invalid, or unsafe draft-ready cards.
+
+Skillifier entry may consume candidates that originated from a model-reviewed
+recent-work episode, but only after deterministic validation, dedupe, and
+destination checks accept the candidate. The episode model may classify a
+proposal as a new skill, existing-skill enhancement, merge/extend candidate, or
+demotion; it cannot create a draft package, install a skill, promote a skill, or
+mutate the candidate ledger by itself.
+
 ## Milestone 3 `SKILL.md` scaffold rules
 
 Generated `SKILL.md` must stay bounded and reviewable.

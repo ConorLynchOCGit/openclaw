@@ -233,6 +233,16 @@ Must show:
 - proactive cards and inbox rows must render a short decision brief instead of
   raw ledger packet fields; why-now, evidence, ids, source refs, provenance,
   limitations, and diagnostics belong behind disclosure
+- a bounded model-authored decision-brief pass may rewrite/evaluate that
+  primary copy from typed proactivity state; deterministic validators still run
+  afterward and demote generic, repetitive, clipped, unsafe, or unclear cards
+- the model-authored pass is presentation-only and cannot mutate canonical
+  state, execute actions, send messages, install skills, or promote skills
+- candidate discovery may use a separate bounded model-reviewed episode pass
+  to propose skills and proactive plans from recent user/assistant activity,
+  but card details must show whether the item was model-reviewed, what runtime
+  supplied the evidence, and why raw transcript/tool-log content was not
+  persisted
 - skill candidates must label whether the next decision is a new skill, an
   existing-skill enhancement, or a merge/extend candidate
 - inline follow-up and heartbeat cards must follow the same bounded width and

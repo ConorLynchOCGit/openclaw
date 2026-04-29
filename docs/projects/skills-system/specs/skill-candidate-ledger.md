@@ -90,6 +90,31 @@ Pre-Milestone-4 presentation contract:
   quality diagnostics belong in collapsed details or hidden context
 - malformed source-fragment titles are rewritten or demoted before primary
   surfacing
+- model-authored brief generation may rewrite/evaluate the primary copy from
+  typed bounded candidate state, but it is presentation-only and cannot update
+  candidate truth, dedupe, lifecycle, install targets, package ids, or memory
+- deterministic validators remain mandatory after model output and must demote
+  generic, repetitive, clipped, unsafe, schema-invalid, or unclear cards
+
+Pre-Milestone-4 model-reviewed discovery contract:
+
+- deterministic candidate creation alone is not sufficient for subjective
+  usefulness
+- skill candidates may originate from a model-reviewed bounded episode packet
+  when the Stage 1 prefilter and Stage 2 trigger evaluator both accept review
+- the model reviewer may classify a proposed item as:
+  - `new_skill_candidate`
+  - `existing_skill_enhancement`
+  - `merge_or_extend_candidate`
+  - `demote_existing_candidate`
+- model-reviewed proposals must carry bounded evidence refs and hashes back to
+  the episode packet
+- proposal text is candidate rationale, not semantic truth
+- deterministic id generation, dedupe, lifecycle updates, no-dark-data checks,
+  provenance checks, and surface eligibility remain runtime authority
+- if an explicit existing skill match is present in loaded skill metadata or
+  prior candidate linkage, the reviewer should prefer an enhancement proposal
+  over a new skill; uncertain fuzzy matches remain diagnostic only
 
 ## `SkillCandidateSource`
 

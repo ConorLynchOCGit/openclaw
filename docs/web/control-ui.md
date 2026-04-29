@@ -380,6 +380,23 @@ The Control UI surfaces Model Memory proactivity through normal chat chrome:
   action. Why-now text, evidence, source refs, provenance, ids, timestamps,
   limitations, lifecycle details, and presentation diagnostics belong behind
   disclosure.
+- When enabled, primary proactive-card copy may be model-authored from typed
+  bounded proactivity state using the separate GPT-5.4 proactivity brief pass.
+  The output remains
+  presentation-only and must pass deterministic validators before the Control
+  UI renders it.
+- The generic runtime path is opt-in for this model pass, while the live gateway
+  compose environment enables it by default so rebuilt live UI cards use the
+  configured GPT-5.4 brief model.
+- Candidate discovery may also originate from a model-reviewed recent-work
+  episode. The UI still renders the resulting item through the same brief, but
+  collapsed details should preserve bounded provenance showing the source
+  runtime, model-reviewed status, trigger reason, and refs/hashes rather than
+  raw transcript or tool-log content.
+- Generic fallback copy, clipped fragments, repeated title/next-step text, raw
+  source refs, ids, timestamps, provenance, system text, install/promotion
+  claims, action-execution claims, or outbound-send claims must not appear in
+  primary card fields.
 - Assistant planning/output turns may now create new proactivity opportunities
   automatically when they contain bounded concrete next-step ideas; the Control
   UI should surface those opportunities without manual proof seeding.

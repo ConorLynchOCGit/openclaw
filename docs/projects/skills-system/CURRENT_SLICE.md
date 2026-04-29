@@ -7,41 +7,52 @@ title: "Skills System Current Slice"
 
 ## Slice
 
-`phase2-proactivity-user-facing-briefs`
+`phase2-model-reviewed-candidate-discovery`
 
 ## Goal
 
-Repair the presentation boundary between internal proactivity ledger state and
-human-facing decision surfaces before Milestone 4 skill eval work begins.
+Repair the remaining candidate-discovery gap before Milestone 4 skill eval work
+begins. Presentation cards are now model-authored decision briefs, but the
+candidate selection path is still too deterministic for subjective questions
+such as what should become a skill, what should become a proactive plan, and
+whether a candidate is new, an enhancement, a merge, or weak enough to demote.
 
 This slice establishes:
 
-- one typed `UserFacingProactivityBrief` between rich ledger state and visible
-  cards
-- one shared primary-copy contract for chat cards, inbox rows, heartbeat
-  context, and handoff
-- one quality gate that rewrites or demotes noisy transformation titles and
-  malformed reverse prompts
-- one skill-candidate presentation model that distinguishes new skills,
-  existing-skill enhancements, and merge/extend candidates from diagnostics
-- one collapsed-detail rule for why-now, evidence, provenance, source refs,
-  ids, timestamps, limitations, and presentation diagnostics
+- a deterministic Stage 1 prefilter that decides when it is worth asking a
+  model whether live candidate review should run
+- a bounded Stage 2 model trigger evaluator that chooses whether there is
+  enough signal, which recent refs belong in the review window, and whether the
+  review goal is skills, proactivity, both, or none
+- a bounded episode packet that may include capped recent user and assistant
+  transcript/activity excerpts for live model review
+- a model-reviewed candidate proposal pass for proactive plans, new skills,
+  existing-skill enhancements, merge/extend candidates, and demotions
+- deterministic validation, cooldown, dedupe, provenance, no-dark-data, and
+  write-eligibility gates after every model output
+- Codex session activity as read-only bounded training fodder where available
 
 ## Current outcome
 
-- proactive ledgers remain rich internal state
-- primary user-facing cards become concise decision briefs
-- `why now` and provenance move behind details instead of competing with the
-  next useful action
-- skill cards explain the capability intent rather than echoing prompt
-  fragments
-- malformed reverse prompts become diagnostics or repair signals instead of
-  user-facing clutter
+- live candidate review may inspect bounded recent transcript/activity windows,
+  because assistant work and user correction often contain the strongest skill
+  and proactive-plan signals
+- durable state must persist only bounded episode packets, capped excerpts,
+  refs, hashes, classifications, validation results, and proposal summaries
+- raw full transcripts, raw prompts, raw tool logs, secrets, private phrases,
+  and unbounded Codex/OpenClaw session text remain forbidden durable artifacts
+- model trigger decisions and candidate proposals are not semantic truth and
+  cannot install skills, execute actions, send messages, mutate files, or write
+  canonical memory truth
+- model-authored `UserFacingProactivityBrief` remains the presentation path for
+  surfaced candidates
 
 ## Current judgment
 
-The acceptance gate for this slice is decision clarity, not card completeness.
+The acceptance gate for this slice is candidate usefulness, not just card
+clarity.
 
-The correct output is one canonical proactive item that preserves all provenance
-and diagnostics internally while rendering one short, high-signal decision
-surface in chat, inbox, heartbeat, and handoff.
+The correct output is not a deterministic source-fragment candidate that a model
+prettifies later. The correct output is a bounded recent-work episode reviewed
+by a model for subjective usefulness, then deterministically validated and
+deduped before the existing proactivity surfaces render a decision brief.

@@ -269,6 +269,55 @@ export const modelMemoryProactivityHandlers: GatewayRequestHandlers = {
           recordCount: state.skillCandidateReport.telemetry.recordCount,
           opportunityCount: state.skillCandidateReport.telemetry.opportunityCount,
         },
+        candidateReviewTriggerReport: state.candidateReviewTriggerReport
+          ? {
+              source: state.candidateReviewTriggerReport.source,
+              enabled: state.candidateReviewTriggerReport.enabled,
+              modelId: state.candidateReviewTriggerReport.modelId,
+              resolvedModelId: state.candidateReviewTriggerReport.resolvedModelId,
+              reasoningEffort: state.candidateReviewTriggerReport.reasoningEffort,
+              validationStatus: state.candidateReviewTriggerReport.validationStatus,
+              reasonCodes: state.candidateReviewTriggerReport.reasonCodes,
+              promptPersisted: state.candidateReviewTriggerReport.promptPersisted,
+              rawResponsePersisted: state.candidateReviewTriggerReport.rawResponsePersisted,
+              triggerDecision: state.candidateReviewTriggerDecision,
+            }
+          : null,
+        candidateReviewReport: state.candidateReviewReport
+          ? {
+              source: state.candidateReviewReport.source,
+              enabled: state.candidateReviewReport.enabled,
+              modelId: state.candidateReviewReport.modelId,
+              resolvedModelId: state.candidateReviewReport.resolvedModelId,
+              reasoningEffort: state.candidateReviewReport.reasoningEffort,
+              validationStatus: state.candidateReviewReport.validationStatus,
+              reasonCodes: state.candidateReviewReport.reasonCodes,
+              proposalCount: state.candidateReviewReport.proposalCount,
+              surfacedProposalCount: state.candidateReviewReport.surfacedProposalCount,
+              promptPersisted: state.candidateReviewReport.promptPersisted,
+              rawResponsePersisted: state.candidateReviewReport.rawResponsePersisted,
+              acceptedProposalKinds: [
+                ...new Set(
+                  (state.candidateReviewProposals ?? [])
+                    .filter((proposal) => proposal.shouldSurface)
+                    .map((proposal) => proposal.proposalKind),
+                ),
+              ],
+              sourceRuntimes: [
+                ...new Set(
+                  (state.candidateReviewProposals ?? []).map((proposal) => proposal.sourceRuntime),
+                ),
+              ],
+            }
+          : null,
+        candidateReviewCodexAdapterReport: state.candidateReviewCodexAdapterReport
+          ? {
+              status: state.candidateReviewCodexAdapterReport.status,
+              reasonCode: state.candidateReviewCodexAdapterReport.reasonCode,
+              entryCount: state.candidateReviewCodexAdapterReport.entryCount,
+              sourceRoot: state.candidateReviewCodexAdapterReport.sourceRoot,
+            }
+          : null,
         ledgerReport: {
           reportId: state.ledgerReport.reportId,
           decision: state.ledgerReport.decision,

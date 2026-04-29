@@ -15,6 +15,23 @@ import {
   type Phase2LiveSignalCoverageSource,
 } from "../../extensions/model-memory/src/runtime/phase2-live-signal-coverage-expansion.js";
 import {
+  buildCandidateReviewPrefilterDecision,
+  buildCandidateReviewPrefilterEvent,
+  buildCandidateReviewTriggerPacket,
+  buildProactivityReviewEpisodePacket,
+  convertCandidateReviewProposalsToLedgerSources,
+  evaluateCandidateReviewTrigger,
+  loadCodexSessionActivityForCandidateReview,
+  reviewEpisodeForCandidates,
+  type CandidateReviewCodexAdapterReport,
+  type CandidateReviewModelOptions,
+  type CandidateReviewProposal,
+  type CandidateReviewRecentActivity,
+  type CandidateReviewReport,
+  type CandidateReviewTriggerDecision,
+  type CandidateReviewTriggerReport,
+} from "../../extensions/model-memory/src/runtime/phase2-model-reviewed-candidate-discovery.js";
+import {
   buildPhase2ProactivityAutonomousInternalDraftingReport,
   type Phase2AutonomousDraftReport,
 } from "../../extensions/model-memory/src/runtime/phase2-proactivity-autonomous-internal-drafting.js";
@@ -40,11 +57,15 @@ import {
 import { buildPhase2ProactivityOutcomeFollowupReport } from "../../extensions/model-memory/src/runtime/phase2-proactivity-outcome-followup-loop.js";
 import { buildPhase2ProactivityRecurringPatternReport } from "../../extensions/model-memory/src/runtime/phase2-proactivity-recurring-pattern-loop.js";
 import { buildPhase2ProactivityNoiseBudgetReport } from "../../extensions/model-memory/src/runtime/phase2-proactivity-signal-noise-budget.js";
-import { buildPhase2ProductProactivitySurfacingReport } from "../../extensions/model-memory/src/runtime/phase2-product-proactivity-surfacing.js";
+import {
+  buildPhase2ProductProactivitySurfacingReport,
+  type Phase2ProductProactivitySurfacingInput,
+} from "../../extensions/model-memory/src/runtime/phase2-product-proactivity-surfacing.js";
 import {
   buildPhase2SkillCandidateLedgerReport,
   type Phase2SkillCandidateActivitySource,
   type Phase2SkillCandidateLedgerReport,
+  type Phase2SkillCandidateOpportunity,
   type Phase2SkillCandidateRecord,
 } from "../../extensions/model-memory/src/runtime/phase2-skill-candidate-ledger.js";
 import {
@@ -59,6 +80,7 @@ import type {
   SourceProfileId,
 } from "../../extensions/model-memory/src/source-authority.js";
 import { resolveAgentWorkspaceDir, resolveSessionAgentId } from "../agents/agent-scope.js";
+import { OpenAICompatibleLiveJsonExecutor } from "../agents/model-memory.live-json-executor.js";
 import { loadWorkspaceSkillEntries } from "../agents/skills.js";
 import { stripInboundMetadata } from "../auto-reply/reply/strip-inbound-meta.js";
 import { loadConfig } from "../config/config.js";
@@ -135,6 +157,11 @@ export type Phase2ProactivityActivityStore = {
   recoveryState?: Phase2ProactivityCompactionRecoveryState | null;
   skillCandidates?: Phase2SkillCandidateRecord[];
   skillPackageDrafts?: Phase2SkillPackageDraft[];
+  candidateReviewEpisodeKeys?: Array<{
+    episodeKey: string;
+    reviewedAt: string;
+    reportHash?: string;
+  }>;
 };
 
 export type Phase2ProactivityActivityStoreDecision =
@@ -196,6 +223,11 @@ type GatewayProactivityBuildState = {
   draftReport: Phase2AutonomousDraftReport;
   productSurfacingReport: Awaited<ReturnType<typeof buildPhase2ProductProactivitySurfacingReport>>;
   heartbeatReport: Phase2HeartbeatProactivityReport;
+  candidateReviewReport?: CandidateReviewReport | null;
+  candidateReviewTriggerDecision?: CandidateReviewTriggerDecision | null;
+  candidateReviewTriggerReport?: CandidateReviewTriggerReport | null;
+  candidateReviewProposals?: CandidateReviewProposal[];
+  candidateReviewCodexAdapterReport?: CandidateReviewCodexAdapterReport | null;
 };
 
 const ACTIVITY_STORE_SCHEMA_VERSION = "phase2_proactivity_activity_store.v1" as const;
@@ -204,6 +236,29 @@ const MAX_LIVE_EVENTS = 120;
 const MAX_LIFECYCLE_OVERRIDES = 200;
 const MAX_RECENT_ASSISTANT_EXTRACTION_RECORDS = 8;
 const PROACTIVITY_STORE_FILE = "model-memory-proactivity-state.json";
+const MODEL_AUTHORED_BRIEFS_ENABLED_ENV = "MODEL_MEMORY_PHASE2_MODEL_AUTHORED_BRIEFS_ENABLED";
+const MODEL_AUTHORED_BRIEFS_DISABLED_ENV = "MODEL_MEMORY_PHASE2_MODEL_AUTHORED_BRIEFS_DISABLED";
+const MODEL_AUTHORED_BRIEFS_MODEL_ENV = "MODEL_MEMORY_PHASE2_MODEL_AUTHORED_BRIEFS_MODEL";
+const MODEL_AUTHORED_BRIEFS_REASONING_ENV =
+  "MODEL_MEMORY_PHASE2_MODEL_AUTHORED_BRIEFS_REASONING_EFFORT";
+const MODEL_AUTHORED_BRIEFS_VERBOSITY_ENV = "MODEL_MEMORY_PHASE2_MODEL_AUTHORED_BRIEFS_VERBOSITY";
+const MODEL_AUTHORED_BRIEFS_TIMEOUT_ENV = "MODEL_MEMORY_PHASE2_MODEL_AUTHORED_BRIEFS_TIMEOUT_MS";
+const DEFAULT_MODEL_AUTHORED_BRIEFS_TIMEOUT_MS = 45_000;
+const CANDIDATE_TRIGGER_ENABLED_ENV = "MODEL_MEMORY_PHASE2_CANDIDATE_TRIGGER_ENABLED";
+const CANDIDATE_TRIGGER_MODEL_ENV = "MODEL_MEMORY_PHASE2_CANDIDATE_TRIGGER_MODEL";
+const CANDIDATE_TRIGGER_REASONING_ENV = "MODEL_MEMORY_PHASE2_CANDIDATE_TRIGGER_REASONING_EFFORT";
+const CANDIDATE_TRIGGER_TIMEOUT_ENV = "MODEL_MEMORY_PHASE2_CANDIDATE_TRIGGER_TIMEOUT_MS";
+const CANDIDATE_REVIEW_ENABLED_ENV = "MODEL_MEMORY_PHASE2_CANDIDATE_REVIEW_ENABLED";
+const CANDIDATE_REVIEW_MODEL_ENV = "MODEL_MEMORY_PHASE2_CANDIDATE_REVIEW_MODEL";
+const CANDIDATE_REVIEW_REASONING_ENV = "MODEL_MEMORY_PHASE2_CANDIDATE_REVIEW_REASONING_EFFORT";
+const CANDIDATE_REVIEW_TIMEOUT_ENV = "MODEL_MEMORY_PHASE2_CANDIDATE_REVIEW_TIMEOUT_MS";
+const CANDIDATE_REVIEW_MAX_PER_SESSION_ENV = "MODEL_MEMORY_PHASE2_CANDIDATE_REVIEW_MAX_PER_SESSION";
+const CANDIDATE_REVIEW_COOLDOWN_ENV = "MODEL_MEMORY_PHASE2_CANDIDATE_REVIEW_COOLDOWN_MS";
+const CODEX_SESSION_REVIEW_ENABLED_ENV = "MODEL_MEMORY_PHASE2_CODEX_SESSION_REVIEW_ENABLED";
+const DEFAULT_CANDIDATE_TRIGGER_TIMEOUT_MS = 30_000;
+const DEFAULT_CANDIDATE_REVIEW_TIMEOUT_MS = 60_000;
+const DEFAULT_CANDIDATE_REVIEW_MAX_PER_SESSION = 48;
+const DEFAULT_CANDIDATE_REVIEW_COOLDOWN_MS = 5 * 60 * 1_000;
 
 function sha256(value: unknown): string {
   return createHash("sha256").update(JSON.stringify(value)).digest("hex");
@@ -211,6 +266,167 @@ function sha256(value: unknown): string {
 
 function readString(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function readPositiveInteger(value: string | undefined, fallback: number): number {
+  const parsed = value ? Number.parseInt(value, 10) : NaN;
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function readNonNegativeInteger(value: string | undefined, fallback: number): number {
+  const parsed = value ? Number.parseInt(value, 10) : NaN;
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
+}
+
+function readAllowedValue<const TValue extends string>(
+  value: string | undefined,
+  allowed: readonly TValue[],
+  fallback: TValue,
+): TValue {
+  const normalized = value?.trim();
+  return allowed.find((entry) => entry === normalized) ?? fallback;
+}
+
+function shouldEnableModelAuthoredBriefs(env: NodeJS.ProcessEnv): boolean {
+  const enabled = readString(env[MODEL_AUTHORED_BRIEFS_ENABLED_ENV]);
+  if (enabled) {
+    return /^(?:1|true|yes|on)$/i.test(enabled);
+  }
+  const disabled = readString(env[MODEL_AUTHORED_BRIEFS_DISABLED_ENV]);
+  if (disabled && /^(?:1|true|yes|on)$/i.test(disabled)) {
+    return false;
+  }
+  if (
+    env.VITEST ||
+    env.VITEST_WORKER_ID ||
+    env.VITEST_POOL_ID ||
+    env.NODE_ENV === "test" ||
+    env.npm_lifecycle_event === "test:file" ||
+    process.argv.some((arg) => /\b(?:vitest|test-projects)\b/u.test(arg))
+  ) {
+    return false;
+  }
+  return false;
+}
+
+function readBooleanEnv(value: string | undefined): boolean {
+  return /^(?:1|true|yes|on)$/i.test(value?.trim() ?? "");
+}
+
+function buildModelAuthoredBriefOptions(params: {
+  cfg: ReturnType<typeof loadConfig>;
+  env: NodeJS.ProcessEnv;
+}): NonNullable<Phase2ProductProactivitySurfacingInput["modelBriefOptions"]> {
+  const enabled = shouldEnableModelAuthoredBriefs(params.env);
+  const timeoutMs = readPositiveInteger(
+    params.env[MODEL_AUTHORED_BRIEFS_TIMEOUT_ENV],
+    DEFAULT_MODEL_AUTHORED_BRIEFS_TIMEOUT_MS,
+  );
+  return {
+    enabled,
+    executor: enabled
+      ? new OpenAICompatibleLiveJsonExecutor({
+          config: params.cfg,
+          requestTimeoutMs: timeoutMs,
+        })
+      : null,
+    modelId: readString(params.env[MODEL_AUTHORED_BRIEFS_MODEL_ENV]) ?? "openai-codex/gpt-5.4",
+    reasoningEffort: readAllowedValue(
+      params.env[MODEL_AUTHORED_BRIEFS_REASONING_ENV],
+      ["none", "minimal", "low", "medium"] as const,
+      "medium",
+    ),
+    verbosity: readAllowedValue(
+      params.env[MODEL_AUTHORED_BRIEFS_VERBOSITY_ENV],
+      ["low", "medium"] as const,
+      "low",
+    ),
+    maxOutputTokens: 900,
+    maxItemsPerReport: 3,
+  };
+}
+
+function shouldEnableCandidateModelRoute(params: {
+  env: NodeJS.ProcessEnv;
+  enabledEnv: string;
+}): boolean {
+  if (readBooleanEnv(params.env[params.enabledEnv])) {
+    return true;
+  }
+  if (
+    params.env.VITEST ||
+    params.env.VITEST_WORKER_ID ||
+    params.env.VITEST_POOL_ID ||
+    params.env.NODE_ENV === "test" ||
+    params.env.npm_lifecycle_event === "test:file" ||
+    process.argv.some((arg) => /\b(?:vitest|test-projects)\b/u.test(arg))
+  ) {
+    return false;
+  }
+  return false;
+}
+
+function buildCandidateTriggerOptions(params: {
+  cfg: ReturnType<typeof loadConfig>;
+  env: NodeJS.ProcessEnv;
+}): CandidateReviewModelOptions {
+  const enabled = shouldEnableCandidateModelRoute({
+    env: params.env,
+    enabledEnv: CANDIDATE_TRIGGER_ENABLED_ENV,
+  });
+  const timeoutMs = readPositiveInteger(
+    params.env[CANDIDATE_TRIGGER_TIMEOUT_ENV],
+    DEFAULT_CANDIDATE_TRIGGER_TIMEOUT_MS,
+  );
+  return {
+    enabled,
+    executor: enabled
+      ? new OpenAICompatibleLiveJsonExecutor({
+          config: params.cfg,
+          requestTimeoutMs: timeoutMs,
+        })
+      : null,
+    modelId: readString(params.env[CANDIDATE_TRIGGER_MODEL_ENV]) ?? "openai-codex/gpt-5.4-mini",
+    reasoningEffort: readAllowedValue(
+      params.env[CANDIDATE_TRIGGER_REASONING_ENV],
+      ["none", "minimal", "low", "medium"] as const,
+      "low",
+    ),
+    verbosity: "low",
+    maxOutputTokens: 700,
+    allowDeterministicExplicitFallback: true,
+  };
+}
+
+function buildCandidateReviewOptions(params: {
+  cfg: ReturnType<typeof loadConfig>;
+  env: NodeJS.ProcessEnv;
+}): CandidateReviewModelOptions {
+  const enabled = shouldEnableCandidateModelRoute({
+    env: params.env,
+    enabledEnv: CANDIDATE_REVIEW_ENABLED_ENV,
+  });
+  const timeoutMs = readPositiveInteger(
+    params.env[CANDIDATE_REVIEW_TIMEOUT_ENV],
+    DEFAULT_CANDIDATE_REVIEW_TIMEOUT_MS,
+  );
+  return {
+    enabled,
+    executor: enabled
+      ? new OpenAICompatibleLiveJsonExecutor({
+          config: params.cfg,
+          requestTimeoutMs: timeoutMs,
+        })
+      : null,
+    modelId: readString(params.env[CANDIDATE_REVIEW_MODEL_ENV]) ?? "openai-codex/gpt-5.4",
+    reasoningEffort: readAllowedValue(
+      params.env[CANDIDATE_REVIEW_REASONING_ENV],
+      ["low", "medium", "high"] as const,
+      "medium",
+    ),
+    verbosity: "low",
+    maxOutputTokens: 1_600,
+  };
 }
 
 function boundedSummary(value: unknown): string {
@@ -268,6 +484,9 @@ async function loadActivityStore(storePath: string): Promise<Phase2ProactivityAc
         skillPackageDrafts: Array.isArray(parsed.skillPackageDrafts)
           ? parsed.skillPackageDrafts
           : [],
+        candidateReviewEpisodeKeys: Array.isArray(parsed.candidateReviewEpisodeKeys)
+          ? parsed.candidateReviewEpisodeKeys
+          : [],
       };
     }
   } catch {
@@ -285,6 +504,7 @@ async function loadActivityStore(storePath: string): Promise<Phase2ProactivityAc
     recoveryState: null,
     skillCandidates: [],
     skillPackageDrafts: [],
+    candidateReviewEpisodeKeys: [],
   };
 }
 
@@ -304,6 +524,8 @@ async function updatePersistedOperatingState(params: {
   maintenanceJobs: Phase2AutonomousMaintenanceJob[];
   recoveryState: Phase2ProactivityCompactionRecoveryState;
   skillCandidates: Phase2SkillCandidateRecord[];
+  candidateReviewEpisodeKey?: string | null;
+  candidateReviewReportHash?: string | null;
 }): Promise<Phase2ProactivityActivityStore> {
   const store = await loadActivityStore(params.storePath);
   store.growthLoopState = params.growthLoopState;
@@ -311,6 +533,18 @@ async function updatePersistedOperatingState(params: {
   store.maintenanceJobs = params.maintenanceJobs.slice(0, 6);
   store.recoveryState = params.recoveryState;
   store.skillCandidates = params.skillCandidates;
+  if (params.candidateReviewEpisodeKey) {
+    store.candidateReviewEpisodeKeys = [
+      ...(store.candidateReviewEpisodeKeys ?? []).filter(
+        (entry) => entry.episodeKey !== params.candidateReviewEpisodeKey,
+      ),
+      {
+        episodeKey: params.candidateReviewEpisodeKey,
+        reviewedAt: new Date().toISOString(),
+        reportHash: params.candidateReviewReportHash ?? undefined,
+      },
+    ].slice(-80);
+  }
   await saveActivityStore(params.storePath, store);
   return store;
 }
@@ -910,6 +1144,250 @@ function recentAssistantExtractionSources(
   });
 }
 
+function candidateReviewActivityFromRecord(
+  record: Phase2PersistedProactivityActivityRecord,
+): CandidateReviewRecentActivity {
+  return {
+    ref: record.sourceRefs[0] ?? `${record.sourceKind}:${record.sourceMessageId}`,
+    role:
+      record.sourceKind === "user_turn"
+        ? "user"
+        : record.sourceKind === "assistant_turn" || record.sourceKind === "planning_output"
+          ? "assistant"
+          : "system_event",
+    kind:
+      record.sourceKind === "user_turn"
+        ? "ask"
+        : record.sourceKind === "assistant_turn" || record.sourceKind === "planning_output"
+          ? "final"
+          : "result_summary",
+    boundedText: record.boundedText,
+    sourceRuntime: record.sourceRefs.some((sourceRef) => sourceRef.startsWith("codex://"))
+      ? "codex"
+      : "openclaw",
+    recordedAt: record.recordedAt,
+  };
+}
+
+function latestCandidateReviewEventType(
+  activities: CandidateReviewRecentActivity[],
+): Parameters<typeof buildCandidateReviewPrefilterEvent>[0]["eventType"] {
+  const text = activities
+    .slice(-4)
+    .map((activity) => activity.boundedText)
+    .join(" ");
+  if (
+    /\b(skill|skillifier|proactive|proactivity|repeatable|reusable|candidate|workflow|recurring)\b/iu.test(
+      text,
+    )
+  ) {
+    return "explicit_keyword_signal";
+  }
+  if (/\b(fail|failed|failure|validation|proof|test|lint|rebuild)\b/iu.test(text)) {
+    return "validation_or_proof_failed";
+  }
+  return "assistant_final_completed";
+}
+
+async function buildModelReviewedCandidateSources(input: {
+  cfg: ReturnType<typeof loadConfig>;
+  sessionKey: string;
+  projectId: string;
+  projectActivitySources: Phase2PersistedProactivityActivityRecord[];
+  skillCandidateReport: Phase2SkillCandidateLedgerReport;
+  recurringPatternReport: Awaited<ReturnType<typeof buildPhase2ProactivityRecurringPatternReport>>;
+  existingSkills: Phase2UserFacingProactivityExistingSkill[];
+  previousEpisodeKeys: Phase2ProactivityActivityStore["candidateReviewEpisodeKeys"];
+}): Promise<{
+  episodeKey: string | null;
+  triggerDecision: CandidateReviewTriggerDecision | null;
+  triggerReport: CandidateReviewTriggerReport | null;
+  reviewReport: CandidateReviewReport | null;
+  codexAdapterReport: CandidateReviewCodexAdapterReport | null;
+  proposals: CandidateReviewProposal[];
+  skillCandidates: Phase2SkillCandidateRecord[];
+  opportunities: Phase2OpportunityLedgerSource[];
+}> {
+  const triggerOptions = buildCandidateTriggerOptions({ cfg: input.cfg, env: process.env });
+  const reviewOptions = buildCandidateReviewOptions({ cfg: input.cfg, env: process.env });
+  const reviewCooldownMs = readNonNegativeInteger(
+    process.env[CANDIDATE_REVIEW_COOLDOWN_ENV],
+    DEFAULT_CANDIDATE_REVIEW_COOLDOWN_MS,
+  );
+  const maxReviewsPerSession = readPositiveInteger(
+    process.env[CANDIDATE_REVIEW_MAX_PER_SESSION_ENV],
+    DEFAULT_CANDIDATE_REVIEW_MAX_PER_SESSION,
+  );
+  const nowMs = Date.now();
+  const recentReviewEntries = (input.previousEpisodeKeys ?? []).filter((entry) => {
+    const reviewedAtMs = Date.parse(entry.reviewedAt);
+    return Number.isFinite(reviewedAtMs) && nowMs - reviewedAtMs < reviewCooldownMs;
+  });
+  const reviewsInLastHour = (input.previousEpisodeKeys ?? []).filter((entry) => {
+    const reviewedAtMs = Date.parse(entry.reviewedAt);
+    return Number.isFinite(reviewedAtMs) && nowMs - reviewedAtMs < 60 * 60 * 1_000;
+  }).length;
+  if (!triggerOptions.enabled && !reviewOptions.enabled) {
+    return {
+      episodeKey: null,
+      triggerDecision: null,
+      triggerReport: null,
+      reviewReport: null,
+      codexAdapterReport: null,
+      proposals: [],
+      skillCandidates: [],
+      opportunities: [],
+    };
+  }
+  if (reviewsInLastHour >= maxReviewsPerSession) {
+    return {
+      episodeKey: null,
+      triggerDecision: null,
+      triggerReport: null,
+      reviewReport: null,
+      codexAdapterReport: null,
+      proposals: [],
+      skillCandidates: [],
+      opportunities: [],
+    };
+  }
+  const recentOpenClawActivities = input.projectActivitySources
+    .toSorted((left, right) => left.updatedAt.localeCompare(right.updatedAt))
+    .slice(-10)
+    .map(candidateReviewActivityFromRecord);
+  const codexAdapter = readBooleanEnv(process.env[CODEX_SESSION_REVIEW_ENABLED_ENV])
+    ? await loadCodexSessionActivityForCandidateReview()
+    : null;
+  const codexActivities = codexAdapter?.activities ?? [];
+  const recentActivities = [...recentOpenClawActivities, ...codexActivities].slice(-14);
+  if (recentActivities.length === 0) {
+    return {
+      episodeKey: null,
+      triggerDecision: null,
+      triggerReport: null,
+      reviewReport: null,
+      codexAdapterReport: codexAdapter?.report ?? null,
+      proposals: [],
+      skillCandidates: [],
+      opportunities: [],
+    };
+  }
+  const latest = recentActivities.at(-1);
+  if (latest?.role === "user") {
+    return {
+      episodeKey: null,
+      triggerDecision: null,
+      triggerReport: null,
+      reviewReport: null,
+      codexAdapterReport: codexAdapter?.report ?? null,
+      proposals: [],
+      skillCandidates: [],
+      opportunities: [],
+    };
+  }
+  const event = buildCandidateReviewPrefilterEvent({
+    eventType: latestCandidateReviewEventType(recentActivities),
+    runtime: latest?.sourceRuntime === "codex" ? "codex" : "openclaw",
+    sessionKey: input.sessionKey,
+    refs: recentActivities.map((activity) => activity.ref).slice(-8),
+    boundedSummary: recentActivities
+      .slice(-3)
+      .map((activity) => activity.boundedText)
+      .join("\n"),
+  });
+  const prefilter = buildCandidateReviewPrefilterDecision({
+    event,
+    recentTurnCountSinceLastReview: recentActivities.length,
+    recentEpisodeKeys: recentReviewEntries.map((entry) => entry.episodeKey),
+  });
+  if (!prefilter.shouldAskModel) {
+    return {
+      episodeKey: prefilter.episodeKey,
+      triggerDecision: null,
+      triggerReport: null,
+      reviewReport: null,
+      codexAdapterReport: codexAdapter?.report ?? null,
+      proposals: [],
+      skillCandidates: [],
+      opportunities: [],
+    };
+  }
+  const recentProactivityItems = [
+    ...input.skillCandidateReport.opportunities.map((opportunity) => ({
+      id: opportunity.opportunityId,
+      kind: "skill_candidate",
+      title: opportunity.title,
+      status: "detected",
+      quality: opportunity.confidence,
+    })),
+    ...input.recurringPatternReport.opportunities.map((opportunity) => ({
+      id: opportunity.opportunityId,
+      kind: "proactive_plan",
+      title: opportunity.title,
+      status: "detected",
+      quality: opportunity.confidence,
+    })),
+  ].slice(-10);
+  const triggerPacket = buildCandidateReviewTriggerPacket({
+    event,
+    recentActivities,
+    recentCardSummaries: recentProactivityItems,
+    recentActivitySignals: [
+      `stage1:${prefilter.reasonCodes.join(",")}`,
+      `goal_hint:${prefilter.minGoalHint}`,
+    ],
+  });
+  const trigger = await evaluateCandidateReviewTrigger(triggerPacket, triggerOptions);
+  if (!trigger.decision.shouldRun || trigger.decision.reviewGoal === "none") {
+    return {
+      episodeKey: prefilter.episodeKey,
+      triggerDecision: trigger.decision,
+      triggerReport: trigger.report,
+      reviewReport: null,
+      codexAdapterReport: codexAdapter?.report ?? null,
+      proposals: [],
+      skillCandidates: [],
+      opportunities: [],
+    };
+  }
+  const episodePacket = buildProactivityReviewEpisodePacket({
+    triggerPacket,
+    triggerDecision: trigger.decision,
+    recentActivities,
+    loadedSkills: input.existingSkills,
+    recentProactivityItems,
+    recentCandidateIds: input.skillCandidateReport.records.map((record) => record.skillCandidateId),
+    possibleDuplicateTitles: [
+      ...input.skillCandidateReport.opportunities.map((opportunity) => opportunity.title),
+      ...input.recurringPatternReport.opportunities.map((opportunity) => opportunity.title),
+    ],
+    rejectedOrDemotedSummary: input.skillCandidateReport.records
+      .filter(
+        (record) => record.lifecycleStatus === "rejected" || record.lifecycleStatus === "disabled",
+      )
+      .map((record) => `${record.lifecycleStatus}: ${record.suggestedSkillName}`),
+    activeMilestone: "pre-Milestone-4 model-reviewed candidate discovery",
+    activeDocsOrBranches: ["phase2-model-reviewed-candidate-discovery"],
+  });
+  const review = await reviewEpisodeForCandidates(episodePacket, reviewOptions);
+  const converted = convertCandidateReviewProposalsToLedgerSources({
+    proposals: review.proposals,
+    projectId: input.projectId,
+    sessionKey: input.sessionKey,
+    previousSkillCandidates: input.skillCandidateReport.records,
+  });
+  return {
+    episodeKey: prefilter.episodeKey,
+    triggerDecision: trigger.decision,
+    triggerReport: trigger.report,
+    reviewReport: review.report,
+    codexAdapterReport: codexAdapter?.report ?? null,
+    proposals: review.proposals,
+    skillCandidates: converted.skillCandidates,
+    opportunities: converted.opportunities,
+  };
+}
+
 export async function buildModelMemoryProactivityRuntimeState(
   params: GatewayProactivityBuildInput,
 ): Promise<GatewayProactivityBuildState> {
@@ -941,6 +1419,7 @@ export async function buildModelMemoryProactivityRuntimeState(
   const projectActivitySources = activityStoreReport.store.records.filter(
     (source) => source.projectId === params.projectId,
   );
+  const existingSkills = loadExistingSkillBriefs({ cfg, sessionKey: params.sessionKey });
   const extractionReport = await buildPhase2ProactivityOpportunityExtractionReport({
     sources: extractionSources,
     env: process.env,
@@ -964,6 +1443,42 @@ export async function buildModelMemoryProactivityRuntimeState(
     assistantCandidates: projectAssistantCandidates,
     previousRecords: activityStoreReport.store.skillCandidates ?? [],
   });
+  const modelReviewedCandidates = await buildModelReviewedCandidateSources({
+    cfg,
+    sessionKey: params.sessionKey,
+    projectId: params.projectId,
+    projectActivitySources,
+    skillCandidateReport,
+    recurringPatternReport,
+    existingSkills,
+    previousEpisodeKeys: activityStoreReport.store.candidateReviewEpisodeKeys ?? [],
+  });
+  const modelReviewedSkillOpportunities = modelReviewedCandidates.opportunities.filter(
+    (opportunity): opportunity is Phase2SkillCandidateOpportunity =>
+      opportunity.sourceFamily === "skill_candidate" && "skillCandidate" in opportunity,
+  );
+  const effectiveSkillCandidateReport: Phase2SkillCandidateLedgerReport = {
+    ...skillCandidateReport,
+    decision:
+      skillCandidateReport.opportunities.length > 0 || modelReviewedSkillOpportunities.length > 0
+        ? "skill_candidates_ready"
+        : "no_skill_candidates",
+    records: dedupeSkillCandidates([
+      ...skillCandidateReport.records,
+      ...modelReviewedCandidates.skillCandidates,
+    ]),
+    opportunities: [
+      ...skillCandidateReport.opportunities,
+      ...modelReviewedSkillOpportunities,
+    ].filter(
+      (opportunity, index, array) =>
+        array.findIndex(
+          (candidate) =>
+            candidate.skillCandidate.skillCandidateId ===
+            opportunity.skillCandidate.skillCandidateId,
+        ) === index,
+    ),
+  };
   const baseLedgerSources: Phase2OpportunityLedgerSource[] = [
     ...liveDetectionReport.opportunities.map((opportunity) => ({
       ...opportunity,
@@ -976,7 +1491,10 @@ export async function buildModelMemoryProactivityRuntimeState(
       ...candidate,
       sourceFamily: "assistant_output" as const,
     })),
-    ...skillCandidateReport.opportunities,
+    ...effectiveSkillCandidateReport.opportunities,
+    ...modelReviewedCandidates.opportunities.filter(
+      (opportunity) => opportunity.sourceFamily !== "skill_candidate",
+    ),
     ...recurringPatternReport.opportunities.map((opportunity) => ({
       ...opportunity,
       sourceFamily: "pattern_or_followup" as const,
@@ -1096,7 +1614,8 @@ export async function buildModelMemoryProactivityRuntimeState(
     ledgerReport: effectiveLedgerReport,
     draftReport,
     skillPackageDrafts: activityStoreReport.store.skillPackageDrafts ?? [],
-    existingSkills: loadExistingSkillBriefs({ cfg, sessionKey: params.sessionKey }),
+    existingSkills,
+    modelBriefOptions: buildModelAuthoredBriefOptions({ cfg, env: process.env }),
     env: process.env,
   });
   const inboxReport = await buildPhase2ProactivityInboxReport({
@@ -1126,14 +1645,20 @@ export async function buildModelMemoryProactivityRuntimeState(
     workingBuffer: growthLoopReport.workingBuffer,
     maintenanceJobs: growthLoopReport.maintenanceJobs,
     recoveryState: growthLoopReport.recoveryState,
-    skillCandidates: dedupeSkillCandidates(skillCandidateReport.records),
+    skillCandidates: dedupeSkillCandidates(effectiveSkillCandidateReport.records),
+    candidateReviewEpisodeKey: modelReviewedCandidates.reviewReport
+      ? modelReviewedCandidates.episodeKey
+      : null,
+    candidateReviewReportHash: modelReviewedCandidates.reviewReport
+      ? sha256(modelReviewedCandidates.reviewReport)
+      : null,
   });
   return {
     activityStoreReport,
     liveDetectionReport,
     extractionReport,
     recurringPatternReport,
-    skillCandidateReport,
+    skillCandidateReport: effectiveSkillCandidateReport,
     skillifierDrafts: activityStoreReport.store.skillPackageDrafts ?? [],
     growthLoopReport,
     ledgerReport: effectiveLedgerReport,
@@ -1141,6 +1666,11 @@ export async function buildModelMemoryProactivityRuntimeState(
     draftReport,
     productSurfacingReport,
     heartbeatReport,
+    candidateReviewReport: modelReviewedCandidates.reviewReport,
+    candidateReviewTriggerDecision: modelReviewedCandidates.triggerDecision,
+    candidateReviewTriggerReport: modelReviewedCandidates.triggerReport,
+    candidateReviewProposals: modelReviewedCandidates.proposals,
+    candidateReviewCodexAdapterReport: modelReviewedCandidates.codexAdapterReport,
   };
 }
 

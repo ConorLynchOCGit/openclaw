@@ -1210,6 +1210,10 @@ function getProactivityBrief(item: ProactivitySurfaceItem) {
   return item.userFacingBrief ?? null;
 }
 
+function getProactivityUpdatedAt(item: ProactivitySurfaceItem): string {
+  return "updatedAt" in item && typeof item.updatedAt === "string" ? item.updatedAt : "";
+}
+
 function uniqueUiStrings(values: Array<string | undefined>): string[] {
   return [
     ...new Set(
@@ -1514,11 +1518,10 @@ function collapseSameSessionSurfaceItems<T extends ProactivitySurfaceItem>(items
     confidence === "high" ? 3 : confidence === "medium" ? 2 : confidence === "low" ? 1 : 0;
   const surfacePriority = (item: ProactivitySurfaceItem) =>
     (item.skillifierDraft ? 1_000 : 0) +
+    (item.blockedReasonCodes.includes("model_reviewed_candidate") ? 600 : 0) +
     (item.opportunityClass === "skill_candidate" ? 200 : 0) +
     (item.draftReady ? 100 : 0) +
     confidenceRank(item.confidence);
-  const updatedAtValue = (item: ProactivitySurfaceItem) =>
-    "updatedAt" in item && typeof item.updatedAt === "string" ? item.updatedAt : "";
   const chooseBest = (bestByKey: Map<string, T>, key: string | null, item: T) => {
     if (key) {
       const existing = bestByKey.get(key);
@@ -1528,9 +1531,9 @@ function collapseSameSessionSurfaceItems<T extends ProactivitySurfaceItem>(items
         !existing ||
         itemPriority > existingPriority ||
         (itemPriority === existingPriority &&
-          updatedAtValue(item).localeCompare(updatedAtValue(existing)) > 0) ||
+          getProactivityUpdatedAt(item).localeCompare(getProactivityUpdatedAt(existing)) > 0) ||
         (itemPriority === existingPriority &&
-          updatedAtValue(item) === updatedAtValue(existing) &&
+          getProactivityUpdatedAt(item) === getProactivityUpdatedAt(existing) &&
           confidenceRank(item.confidence) > confidenceRank(existing.confidence))
       ) {
         bestByKey.set(key, item);
@@ -1578,7 +1581,65 @@ function isActionableProactivityItem(item: ProactivityInboxItem): boolean {
 function getActionableInboxItems(
   digest: ProactivityInboxDigest | null | undefined,
 ): ProactivityInboxItem[] {
-  return collapseSameSessionSurfaceItems((digest?.items ?? []).filter(isActionableProactivityItem));
+  return collapseSameSessionSurfaceItems(
+    (digest?.items ?? []).filter(isActionableProactivityItem),
+  ).toSorted((left, right) => {
+    const leftModelReviewed = left.blockedReasonCodes.includes("model_reviewed_candidate");
+    const rightModelReviewed = right.blockedReasonCodes.includes("model_reviewed_candidate");
+    if (leftModelReviewed !== rightModelReviewed) {
+      return rightModelReviewed ? 1 : -1;
+    }
+    return (
+      getProactivityUpdatedAt(right).localeCompare(getProactivityUpdatedAt(left)) ||
+      left.itemId.localeCompare(right.itemId)
+    );
+  });
+}
+
+function getProactivitySurfaceStableId(item: ProactivitySurfaceItem): string {
+  return (
+    item.queueItemId ??
+    item.workItemId ??
+    ("itemId" in item ? item.itemId : undefined) ??
+    item.candidateId
+  );
+}
+
+function getProactivityFeedbackSummary(item: ProactivitySurfaceItem) {
+  return "feedbackSummary" in item
+    ? item.feedbackSummary
+    : {
+        usefulCount: 0,
+        notUsefulCount: 0,
+        tooRepetitiveCount: 0,
+        wrongContextCount: 0,
+        unsafePrivateCount: 0,
+      };
+}
+
+function getProactivitySourceArtifactReportId(item: ProactivitySurfaceItem): string {
+  return "sourceArtifactReportId" in item ? item.sourceArtifactReportId : "queue-backed";
+}
+
+function getQueueBackedActionableInboxItems(props: ChatProps): ProactivitySurfaceItem[] {
+  const inboxItems = getActionableInboxItems(props.proactivityInboxDigest);
+  const seenQueueItemIds = new Set(inboxItems.map((item) => item.queueItemId).filter(Boolean));
+  const queueBackedItems = getActionableQueueItems(props).filter(
+    (item) =>
+      item.blockedReasonCodes.includes("model_reviewed_candidate") &&
+      !seenQueueItemIds.has(item.queueItemId),
+  );
+  return [...queueBackedItems, ...inboxItems].toSorted((left, right) => {
+    const leftModelReviewed = left.blockedReasonCodes.includes("model_reviewed_candidate");
+    const rightModelReviewed = right.blockedReasonCodes.includes("model_reviewed_candidate");
+    if (leftModelReviewed !== rightModelReviewed) {
+      return rightModelReviewed ? 1 : -1;
+    }
+    return (
+      getProactivityUpdatedAt(right).localeCompare(getProactivityUpdatedAt(left)) ||
+      getProactivitySurfaceStableId(left).localeCompare(getProactivitySurfaceStableId(right))
+    );
+  });
 }
 
 function getHistoryInboxItems(
@@ -1631,12 +1692,13 @@ function getActionableQueueItems(props: ChatProps): ProductProactivityQueueItem[
 }
 
 function getVisibleInboxItems(
-  digest: ProactivityInboxDigest | null | undefined,
+  props: ChatProps,
   view: ProactivityInboxView,
-): ProactivityInboxItem[] {
+): ProactivitySurfaceItem[] {
   if (view === "actionable") {
-    return getActionableInboxItems(digest);
+    return getQueueBackedActionableInboxItems(props);
   }
+  const digest = props.proactivityInboxDigest;
   if (view === "diagnostics") {
     return getDiagnosticInboxItems(digest);
   }
@@ -1860,7 +1922,7 @@ function getVisibleAssistantSourceRefs(props: ChatProps): Set<string> {
 function currentSessionAssistantPriority(
   item: ProductProactivityQueueItem,
   visibleAssistantSourceRefs: Set<string>,
-): [number, number, number, number, number, number] {
+): [number, number, number, number, number, number, number] {
   const matchingVisibleSource = item.sourceRefs.some((sourceRef) =>
     visibleAssistantSourceRefs.has(sourceRef),
   );
@@ -1869,10 +1931,12 @@ function currentSessionAssistantPriority(
       sourceRef.startsWith(`chat://${item.eligibleScope.sessionKey}/assistant_turn/`) ||
       sourceRef.startsWith(`chat://${item.eligibleScope.sessionKey}/planning_output/`),
   );
-  const updatedAtMs = Date.parse(item.updatedAt);
+  const modelReviewedCandidate = item.blockedReasonCodes.includes("model_reviewed_candidate");
+  const updatedAtMs = Date.parse(getProactivityUpdatedAt(item));
   return [
     matchingVisibleSource ? 1 : 0,
     sessionAssistantSource ? 1 : 0,
+    modelReviewedCandidate ? 1 : 0,
     item.skillifierDraft ? 1 : 0,
     item.opportunityClass === "skill_candidate" ? 1 : 0,
     item.draftReady ? 1 : 0,
@@ -1906,7 +1970,7 @@ function getContextualProactivityItems(props: ChatProps): ProductProactivityQueu
     .toSorted(
       (left, right) =>
         compareCurrentSessionAssistantPriority(left, right, visibleAssistantSourceRefs) ||
-        right.updatedAt.localeCompare(left.updatedAt) ||
+        getProactivityUpdatedAt(right).localeCompare(getProactivityUpdatedAt(left)) ||
         left.queueItemId.localeCompare(right.queueItemId),
     )
     .slice(0, 3);
@@ -1943,7 +2007,7 @@ function getLatestInlineCandidateSelection(props: ChatProps): {
       .toSorted(
         (left, right) =>
           compareCurrentSessionAssistantPriority(left, right, visibleAssistantSourceRefs) ||
-          right.updatedAt.localeCompare(left.updatedAt) ||
+          getProactivityUpdatedAt(right).localeCompare(getProactivityUpdatedAt(left)) ||
           left.queueItemId.localeCompare(right.queueItemId),
       )
       .slice(0, 2);
@@ -2008,7 +2072,7 @@ function getInlineProactivityItems(
     .toSorted(
       (left, right) =>
         compareCurrentSessionAssistantPriority(left, right, visibleAssistantSourceRefs) ||
-        right.updatedAt.localeCompare(left.updatedAt) ||
+        getProactivityUpdatedAt(right).localeCompare(getProactivityUpdatedAt(left)) ||
         left.queueItemId.localeCompare(right.queueItemId),
     )
     .slice(0, 2);
@@ -2442,7 +2506,7 @@ function renderProactivityEntryPoint(props: ChatProps): TemplateResult | typeof 
   const queueItems = props.productProactivityQueue ?? [];
   const actionableCount =
     digest !== null && digest !== undefined
-      ? getActionableInboxItems(digest).length
+      ? getQueueBackedActionableInboxItems(props).length
       : getActionableQueueItems(props).length;
   const diagnosticCount =
     digest !== null && digest !== undefined
@@ -2613,8 +2677,8 @@ function renderProductProactivityNotifications(props: ChatProps): TemplateResult
 function renderProactivityInbox(props: ChatProps): TemplateResult | typeof nothing {
   const digest = props.proactivityInboxDigest;
   const view = props.proactivityInboxView ?? "actionable";
-  const visibleItems = getVisibleInboxItems(digest, view);
-  const actionableCount = getActionableInboxItems(digest).length;
+  const visibleItems = getVisibleInboxItems(props, view);
+  const actionableCount = getQueueBackedActionableInboxItems(props).length;
   const historyCount =
     getHistoryInboxItems(digest, "planned").length +
     getHistoryInboxItems(digest, "sent").length +
@@ -2696,10 +2760,11 @@ function renderProactivityInbox(props: ChatProps): TemplateResult | typeof nothi
               ${visibleItems.map((item) => {
                 const primaryAction = getProactivityPrimaryActionType(item);
                 const proposedLabel = getProactivityPrimaryStepLabel(item);
+                const feedbackSummary = getProactivityFeedbackSummary(item);
                 return html`<article
                   class="product-proactivity-item proactivity-inbox__item proactivity-inbox__item--${item.status}"
                   data-layer=${item.layer ?? "actionable"}
-                  data-work-item-id=${item.workItemId ?? item.queueItemId ?? item.itemId}
+                  data-work-item-id=${getProactivitySurfaceStableId(item)}
                   data-queue-item-id=${item.queueItemId ?? ""}
                   data-skill-candidate-id=${item.skillCandidate?.skillCandidateId ?? ""}
                 >
@@ -2744,7 +2809,10 @@ function renderProactivityInbox(props: ChatProps): TemplateResult | typeof nothi
                     ${renderProactivityDraftSection(item)}
                     <details class="product-proactivity-item__details">
                       <summary>Review plan</summary>
-                      <p>${item.userFacingBrief?.detailSummary ?? item.whyThisAppearedSummary}</p>
+                      <p>
+                        ${item.userFacingBrief?.detailSummary ??
+                        ("whyThisAppearedSummary" in item ? item.whyThisAppearedSummary : "")}
+                      </p>
                       <div class="operator-row">
                         <span>Why surfaced</span>
                         <span>${getProactivityDiagnosticWhyNow(item)}</span>
@@ -2789,11 +2857,11 @@ function renderProactivityInbox(props: ChatProps): TemplateResult | typeof nothi
                       <div class="operator-row">
                         <span>Feedback</span>
                         <span
-                          >useful ${item.feedbackSummary.usefulCount}, not useful
-                          ${item.feedbackSummary.notUsefulCount}, repetitive
-                          ${item.feedbackSummary.tooRepetitiveCount}, wrong context
-                          ${item.feedbackSummary.wrongContextCount}, unsafe/private
-                          ${item.feedbackSummary.unsafePrivateCount}</span
+                          >useful ${feedbackSummary.usefulCount}, not useful
+                          ${feedbackSummary.notUsefulCount}, repetitive
+                          ${feedbackSummary.tooRepetitiveCount}, wrong context
+                          ${feedbackSummary.wrongContextCount}, unsafe/private
+                          ${feedbackSummary.unsafePrivateCount}</span
                         >
                       </div>
                       ${item.blockedReasonCodes.length
@@ -2810,7 +2878,7 @@ function renderProactivityInbox(props: ChatProps): TemplateResult | typeof nothi
                         : nothing}
                       <div class="operator-row">
                         <span>Artifact</span>
-                        <span>${item.sourceArtifactReportId}</span>
+                        <span>${getProactivitySourceArtifactReportId(item)}</span>
                       </div>
                     </details>
                     ${item.sendStatus === "sent" || item.status === "sent"

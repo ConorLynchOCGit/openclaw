@@ -9,6 +9,10 @@ import {
 import { sha256JsonValue } from "../hashing.ts";
 import type { SourceAuthorityTier, SourceProfileId } from "../source-authority.ts";
 import type { Phase2LiveProactivityDetectionReport } from "./phase2-live-proactivity-signals.ts";
+import {
+  buildModelAuthoredUserFacingProactivityBrief,
+  type ModelAuthoredProactivityBriefOptions,
+} from "./phase2-model-authored-proactivity-briefs.ts";
 import type { Phase2AutonomousDraftReport } from "./phase2-proactivity-autonomous-internal-drafting.ts";
 import type {
   Phase2OpportunityLedgerEntry,
@@ -272,6 +276,7 @@ export type Phase2ProductProactivitySurfacingInput = {
   draftReport?: Phase2AutonomousDraftReport | null;
   skillPackageDrafts?: Phase2SkillPackageDraft[] | null;
   existingSkills?: Phase2UserFacingProactivityExistingSkill[] | null;
+  modelBriefOptions?: ModelAuthoredProactivityBriefOptions | null;
   eligibilityScope?: Partial<Phase2ProductProactivityEligibilityScope>;
   messageClass?: Phase2UserFacingProactivityDefaultMessageClass | "external_instruction_message";
   env?: Record<string, string | undefined>;
@@ -880,160 +885,226 @@ function workItemStatusForOpportunityStatus(
   }
 }
 
-function queueItemsFromLedger(input: {
+function prioritizedModelBriefOpportunityIds(
+  entries: Phase2OpportunityLedgerEntry[],
+  maxItems: number,
+): Set<string> {
+  if (maxItems <= 0) {
+    return new Set();
+  }
+  return new Set(
+    entries
+      .map((entry, index) => {
+        const layer = layerForOpportunityStatus(entry.status);
+        const score =
+          (layer === "actionable" ? 1_000 : layer === "diagnostic" ? 250 : 0) +
+          (entry.opportunityClass === "skill_candidate" ? 500 : 0) +
+          (entry.opportunityClass === "reverse_prompt" ? 350 : 0) +
+          (entry.status === "draft_ready" ? 300 : 0) +
+          (entry.attentionRequired ? 150 : 0);
+        return { entry, index, score };
+      })
+      .toSorted(
+        (left, right) =>
+          right.score - left.score ||
+          right.entry.updatedAt.localeCompare(left.entry.updatedAt) ||
+          left.index - right.index,
+      )
+      .slice(0, maxItems)
+      .map(({ entry }) => entry.opportunityId),
+  );
+}
+
+function modelBriefOptionsForEntry(
+  options: ModelAuthoredProactivityBriefOptions | null | undefined,
+  entry: Phase2OpportunityLedgerEntry,
+  modelBriefOpportunityIds: Set<string>,
+): ModelAuthoredProactivityBriefOptions | null | undefined {
+  if (!options?.enabled || modelBriefOpportunityIds.has(entry.opportunityId)) {
+    return options;
+  }
+  return {
+    ...options,
+    enabled: false,
+    executor: null,
+  };
+}
+
+async function queueItemsFromLedger(input: {
   entries: Phase2OpportunityLedgerEntry[];
   scope: Phase2ProductProactivityEligibilityScope;
   generatedAt: string;
   draftReport?: Phase2AutonomousDraftReport | null;
   skillPackageDrafts?: Phase2SkillPackageDraft[] | null;
   existingSkills?: Phase2UserFacingProactivityExistingSkill[] | null;
-}): Phase2ProductProactivityQueueItem[] {
+  modelBriefOptions?: ModelAuthoredProactivityBriefOptions | null;
+}): Promise<Phase2ProductProactivityQueueItem[]> {
   const draftsByOpportunityId = new Map(
     (input.draftReport?.drafts ?? []).map((draft) => [draft.opportunityId, draft]),
   );
   const skillifierDraftsByOpportunityId = new Map(
     (input.skillPackageDrafts ?? []).map((draft) => [draft.proactivityOpportunityId, draft]),
   );
-  return input.entries.map((entry) => {
-    const draft = draftsByOpportunityId.get(entry.opportunityId);
-    const skillifierDraft = skillifierDraftsByOpportunityId.get(entry.opportunityId);
-    const workItemStatus =
-      draft || skillifierDraft ? "drafted" : workItemStatusForOpportunityStatus(entry);
-    const status = queueStatusForOpportunityStatus(entry.status);
-    const layer = layerForOpportunityStatus(entry.status);
-    const primaryAction =
-      entry.status === "done" || entry.status === "dismissed" || entry.status === "snoozed"
-        ? null
-        : skillifierDraft
-          ? actionForWorkItemKind(entry.workItemKind)
-          : entry.opportunityClass === "skill_candidate"
-            ? {
-                actionType: "draft_skill_package" as const,
-                label: "Draft skill package",
-                description:
-                  "Creates a bounded review-only skill draft in an allowed workspace-local path. It does not install or promote the skill.",
-                requiresChatInject: false,
-                executesAction: false as const,
-              }
-            : actionForWorkItemKind(entry.workItemKind);
-    const skillifierDraftSummary = skillifierDraft
-      ? {
-          skillPackageId: skillifierDraft.skillPackageId,
-          skillifierReportId: skillifierDraft.skillifierReportId,
-          decision: skillifierDraft.decision,
-          packageTitle: skillifierDraft.packageTitle,
-          draftPath: skillifierDraft.skillDirectoryPath,
-          reviewSummary: skillifierDraft.reportSummary,
-          nextReviewStep: skillifierDraft.nextReviewStep,
-        }
-      : null;
-    const userFacingBrief = buildUserFacingProactivityBrief({
-      opportunityClass: entry.opportunityClass,
-      opportunityStatus: entry.status,
-      workItemKind: entry.workItemKind,
-      title: entry.title,
-      whyNow: entry.whyNow,
-      proposedNextStep: entry.proposedNextStep,
-      expectedUserValue: entry.expectedUserValue,
-      evidenceSummary: entry.evidenceSummary,
-      confidence: entry.confidence,
-      primaryAction,
-      skillCandidate: entry.skillCandidate,
-      skillifierDraft,
-      existingSkills: input.existingSkills ?? [],
-      sourceRefs: entry.sourceRefs,
-      sourceProfileIds: entry.sourceProfileIds,
-    });
-    const presentationDemoted = userFacingBrief.quality.status === "demote";
-    const effectiveLayer = presentationDemoted ? "diagnostic" : layer;
-    const effectiveStatus: Phase2ProductProactivityQueueItemStatus = presentationDemoted
-      ? "blocked"
-      : status;
-    return {
-      queueItemId: entry.queueItemId,
-      candidateId: entry.candidateId,
-      skillCandidate: entry.skillCandidate,
-      workItemId: entry.workItemId,
-      opportunityId: entry.opportunityId,
-      opportunityClass: entry.opportunityClass,
-      opportunityStatus: entry.status,
-      workItemKind: entry.workItemKind,
-      workItemStatus,
-      primaryAction: presentationDemoted ? null : primaryAction,
-      secondaryActions: presentationDemoted || !primaryAction ? [] : secondaryWorkItemActions(),
-      ctaExplanation: skillifierDraft
-        ? "A bounded review-only skill draft is ready. Review the package and report, then use a chat handoff only if the workflow still needs refinement."
-        : draft
-          ? "A bounded internal draft is ready. Review it, then start the next chat handoff only if useful."
-          : entry.opportunityClass === "skill_candidate"
-            ? "Creates a bounded review-only skill draft for the reusable workflow. It does not install or promote any skill package."
-            : "Starts bounded work from the canonical proactivity ledger; no file edit, action execution, or outbound send occurs without approval.",
-      handoffStatus: "idle",
-      handoffError: null,
-      handoffMessageAnchor: null,
-      messageClass:
-        entry.workItemKind === "draft_next_steps"
-          ? "operator_approved_follow_up_available"
-          : "operator_approved_suggestion_available",
-      boundedDisplayText: entry.title,
-      messagePreview: entry.proposedNextStep,
-      suggestedAction: skillifierDraft
-        ? "Review the generated skill draft and deterministic report, then decide whether a bounded chat handoff should refine it further."
-        : draft
-          ? "Review the bounded internal draft and decide whether to start the next chat handoff."
-          : entry.opportunityClass === "skill_candidate"
-            ? `Create a bounded draft package for ${entry.skillCandidate?.suggestedSkillName ?? "this repeated workflow"} in an allowed workspace-local path.`
-            : `Start bounded work for ${entry.title}.`,
-      candidateSummary: entry.title,
-      expectedUserValue: entry.expectedUserValue,
-      planTitle: entry.title,
-      problem: entry.whyNow,
-      proposedMessage: entry.proposedNextStep,
-      userBenefit: entry.expectedUserValue,
-      evidenceSummary: entry.evidenceSummary,
-      confidence: entry.confidence,
-      blockedIfMissing: [],
-      userFacingBrief,
-      draftReady: Boolean(draft || skillifierDraft),
-      skillifierDraft: skillifierDraftSummary,
-      autonomousDraft: draft
+  const maxModelBriefItems = input.modelBriefOptions?.enabled
+    ? (input.modelBriefOptions.maxItemsPerReport ?? 3)
+    : 0;
+  const modelBriefOpportunityIds = prioritizedModelBriefOpportunityIds(
+    input.entries,
+    maxModelBriefItems,
+  );
+  return await Promise.all(
+    input.entries.map(async (entry) => {
+      const draft = draftsByOpportunityId.get(entry.opportunityId);
+      const skillifierDraft = skillifierDraftsByOpportunityId.get(entry.opportunityId);
+      const workItemStatus =
+        draft || skillifierDraft ? "drafted" : workItemStatusForOpportunityStatus(entry);
+      const status = queueStatusForOpportunityStatus(entry.status);
+      const layer = layerForOpportunityStatus(entry.status);
+      const primaryAction =
+        entry.status === "done" || entry.status === "dismissed" || entry.status === "snoozed"
+          ? null
+          : skillifierDraft
+            ? actionForWorkItemKind(entry.workItemKind)
+            : entry.opportunityClass === "skill_candidate"
+              ? {
+                  actionType: "draft_skill_package" as const,
+                  label: "Draft skill package",
+                  description:
+                    "Creates a bounded review-only skill draft in an allowed workspace-local path. It does not install or promote the skill.",
+                  requiresChatInject: false,
+                  executesAction: false as const,
+                }
+              : actionForWorkItemKind(entry.workItemKind);
+      const skillifierDraftSummary = skillifierDraft
         ? {
-            draftId: draft.draftId,
-            draftKind: draft.draftKind,
-            recommendedApproach: draft.recommendedApproach,
-            nextSafeStep: draft.nextSafeStep,
-            uncertainty: draft.uncertainty,
-            safetyBoundary: draft.safetyBoundary,
+            skillPackageId: skillifierDraft.skillPackageId,
+            skillifierReportId: skillifierDraft.skillifierReportId,
+            decision: skillifierDraft.decision,
+            packageTitle: skillifierDraft.packageTitle,
+            draftPath: skillifierDraft.skillDirectoryPath,
+            reviewSummary: skillifierDraft.reportSummary,
+            nextReviewStep: skillifierDraft.nextReviewStep,
           }
-        : null,
-      resolvedByChatMessageId: entry.resolvedByChatMessageId,
-      supersededByOpportunityId: entry.supersededByOpportunityId,
-      layer: effectiveLayer,
-      attentionRequired: effectiveLayer === "actionable" ? entry.attentionRequired : false,
-      sendStatus: "idle",
-      sendError: null,
-      sentMessageAnchor: entry.resolvedByChatMessageId
-        ? `chat-message:${entry.resolvedByChatMessageId}`
-        : null,
-      status: effectiveStatus,
-      eligibleScope: input.scope,
-      sourceRefs: entry.sourceRefs,
-      sourceProfileIds: entry.sourceProfileIds,
-      authorityTiers: entry.authorityTiers,
-      contentHashes: entry.contentHashes,
-      proofHashes: entry.proofHashes,
-      noDarkDataStatus: entry.noDarkDataStatus,
-      staleLabels: entry.staleLabels,
-      conflictLabels: entry.conflictLabels,
-      blockedReasonCodes: uniqueSortedStrings([
-        ...entry.blockedReasonCodes,
-        ...(presentationDemoted ? ["presentation_quality_demoted"] : []),
-        ...userFacingBrief.quality.reasons.map((reason) => `presentation:${reason}`),
-      ]),
-      generatedAt: entry.generatedAt,
-      updatedAt: entry.updatedAt,
-    };
-  });
+        : null;
+      const briefInput = {
+        opportunityClass: entry.opportunityClass,
+        opportunityStatus: entry.status,
+        workItemKind: entry.workItemKind,
+        title: entry.title,
+        whyNow: entry.whyNow,
+        proposedNextStep: entry.proposedNextStep,
+        expectedUserValue: entry.expectedUserValue,
+        evidenceSummary: entry.evidenceSummary,
+        confidence: entry.confidence,
+        primaryAction,
+        skillCandidate: entry.skillCandidate,
+        skillifierDraft,
+        existingSkills: input.existingSkills ?? [],
+        sourceRefs: entry.sourceRefs,
+        sourceProfileIds: entry.sourceProfileIds,
+      };
+      const deterministicBrief = buildUserFacingProactivityBrief(briefInput);
+      const modelBriefResult = await buildModelAuthoredUserFacingProactivityBrief(
+        {
+          briefInput,
+          deterministicBrief,
+          opportunityId: entry.opportunityId,
+          queueItemId: entry.queueItemId,
+        },
+        modelBriefOptionsForEntry(input.modelBriefOptions, entry, modelBriefOpportunityIds) ?? {},
+      );
+      const userFacingBrief = modelBriefResult.brief;
+      const presentationDemoted = userFacingBrief.quality.status === "demote";
+      const effectiveLayer = presentationDemoted ? "diagnostic" : layer;
+      const effectiveStatus: Phase2ProductProactivityQueueItemStatus = presentationDemoted
+        ? "blocked"
+        : status;
+      return {
+        queueItemId: entry.queueItemId,
+        candidateId: entry.candidateId,
+        skillCandidate: entry.skillCandidate,
+        workItemId: entry.workItemId,
+        opportunityId: entry.opportunityId,
+        opportunityClass: entry.opportunityClass,
+        opportunityStatus: entry.status,
+        workItemKind: entry.workItemKind,
+        workItemStatus,
+        primaryAction: presentationDemoted ? null : primaryAction,
+        secondaryActions: presentationDemoted || !primaryAction ? [] : secondaryWorkItemActions(),
+        ctaExplanation: skillifierDraft
+          ? "A bounded review-only skill draft is ready. Review the package and report, then use a chat handoff only if the workflow still needs refinement."
+          : draft
+            ? "A bounded internal draft is ready. Review it, then start the next chat handoff only if useful."
+            : entry.opportunityClass === "skill_candidate"
+              ? "Creates a bounded review-only skill draft for the reusable workflow. It does not install or promote any skill package."
+              : "Starts bounded work from the canonical proactivity ledger; no file edit, action execution, or outbound send occurs without approval.",
+        handoffStatus: "idle",
+        handoffError: null,
+        handoffMessageAnchor: null,
+        messageClass:
+          entry.workItemKind === "draft_next_steps"
+            ? "operator_approved_follow_up_available"
+            : "operator_approved_suggestion_available",
+        boundedDisplayText: entry.title,
+        messagePreview: entry.proposedNextStep,
+        suggestedAction: skillifierDraft
+          ? "Review the generated skill draft and deterministic report, then decide whether a bounded chat handoff should refine it further."
+          : draft
+            ? "Review the bounded internal draft and decide whether to start the next chat handoff."
+            : entry.opportunityClass === "skill_candidate"
+              ? `Create a bounded draft package for ${entry.skillCandidate?.suggestedSkillName ?? "this repeated workflow"} in an allowed workspace-local path.`
+              : `Start bounded work for ${entry.title}.`,
+        candidateSummary: entry.title,
+        expectedUserValue: entry.expectedUserValue,
+        planTitle: entry.title,
+        problem: entry.whyNow,
+        proposedMessage: entry.proposedNextStep,
+        userBenefit: entry.expectedUserValue,
+        evidenceSummary: entry.evidenceSummary,
+        confidence: entry.confidence,
+        blockedIfMissing: [],
+        userFacingBrief,
+        draftReady: Boolean(draft || skillifierDraft),
+        skillifierDraft: skillifierDraftSummary,
+        autonomousDraft: draft
+          ? {
+              draftId: draft.draftId,
+              draftKind: draft.draftKind,
+              recommendedApproach: draft.recommendedApproach,
+              nextSafeStep: draft.nextSafeStep,
+              uncertainty: draft.uncertainty,
+              safetyBoundary: draft.safetyBoundary,
+            }
+          : null,
+        resolvedByChatMessageId: entry.resolvedByChatMessageId,
+        supersededByOpportunityId: entry.supersededByOpportunityId,
+        layer: effectiveLayer,
+        attentionRequired: effectiveLayer === "actionable" ? entry.attentionRequired : false,
+        sendStatus: "idle",
+        sendError: null,
+        sentMessageAnchor: entry.resolvedByChatMessageId
+          ? `chat-message:${entry.resolvedByChatMessageId}`
+          : null,
+        status: effectiveStatus,
+        eligibleScope: input.scope,
+        sourceRefs: entry.sourceRefs,
+        sourceProfileIds: entry.sourceProfileIds,
+        authorityTiers: entry.authorityTiers,
+        contentHashes: entry.contentHashes,
+        proofHashes: entry.proofHashes,
+        noDarkDataStatus: entry.noDarkDataStatus,
+        staleLabels: entry.staleLabels,
+        conflictLabels: entry.conflictLabels,
+        blockedReasonCodes: uniqueSortedStrings([
+          ...entry.blockedReasonCodes,
+          ...(presentationDemoted ? ["presentation_quality_demoted"] : []),
+          ...userFacingBrief.quality.reasons.map((reason) => `presentation:${reason}`),
+        ]),
+        generatedAt: entry.generatedAt,
+        updatedAt: entry.updatedAt,
+      };
+    }),
+  );
 }
 
 export async function buildPhase2ProductProactivitySurfacingReport(
@@ -1109,15 +1180,16 @@ export async function buildPhase2ProductProactivitySurfacingReport(
   const reasonCodes = failedChecks.map((check) => check.reasonCode);
   const queueItems: Phase2ProductProactivityQueueItem[] =
     decision === "product_queue_enabled" && ledgerEntries.length > 0
-      ? queueItemsFromLedger({
+      ? await queueItemsFromLedger({
           entries: ledgerEntries,
           scope,
           generatedAt,
           draftReport: input.draftReport,
           skillPackageDrafts: input.skillPackageDrafts,
           existingSkills: input.existingSkills,
+          modelBriefOptions: input.modelBriefOptions,
         })
-      : (() => {
+      : await (async () => {
           const queueItemId = buildDerivedArtifactId({
             family: "context_artifact",
             artifactType: "phase2_product_proactivity_queue_item",
@@ -1181,7 +1253,7 @@ export async function buildPhase2ProductProactivitySurfacingReport(
             ...defaultPromotionReport.telemetry.sourceProfileIds,
             ...(realCandidate?.sourceProfileIds ?? []),
           ]) as SourceProfileId[];
-          const userFacingBrief = buildUserFacingProactivityBrief({
+          const briefInput = {
             opportunityClass: "standard",
             workItemKind,
             title: contentFields.planTitle,
@@ -1194,7 +1266,28 @@ export async function buildPhase2ProductProactivitySurfacingReport(
             existingSkills: input.existingSkills ?? [],
             sourceRefs: fallbackSourceRefs,
             sourceProfileIds: fallbackSourceProfileIds,
-          });
+          } as const;
+          const deterministicBrief = buildUserFacingProactivityBrief(briefInput);
+          const modelBriefResult = await buildModelAuthoredUserFacingProactivityBrief(
+            {
+              briefInput,
+              deterministicBrief,
+              opportunityId: candidateId,
+              queueItemId,
+            },
+            input.modelBriefOptions ?? {},
+          );
+          const userFacingBrief = modelBriefResult.brief;
+          const presentationDemoted = userFacingBrief.quality.status === "demote";
+          const effectivePrimaryAction = presentationDemoted ? null : primaryAction;
+          const effectiveLayer =
+            decision === "product_queue_enabled" &&
+            !staticDemoted &&
+            !presentationDemoted &&
+            Boolean(contentFields.proposedMessage) &&
+            contentFields.blockedIfMissing.length === 0
+              ? "actionable"
+              : "diagnostic";
           return [
             {
               queueItemId,
@@ -1202,8 +1295,11 @@ export async function buildPhase2ProductProactivitySurfacingReport(
               workItemId,
               workItemKind,
               workItemStatus: workItemKind === "diagnostic" ? "blocked" : "not_started",
-              primaryAction,
-              secondaryActions: workItemKind === "diagnostic" ? [] : secondaryWorkItemActions(),
+              primaryAction: effectivePrimaryAction,
+              secondaryActions:
+                workItemKind === "diagnostic" || presentationDemoted
+                  ? []
+                  : secondaryWorkItemActions(),
               ctaExplanation:
                 workItemKind === "diagnostic"
                   ? "Diagnostic evidence is review-only and cannot start work directly."
@@ -1248,20 +1344,11 @@ export async function buildPhase2ProductProactivitySurfacingReport(
                     : ["no_live_opportunities_detected"]
                   : []),
                 ...(realCandidate?.blockedReasonCodes ?? []),
+                ...(presentationDemoted ? ["presentation_quality_demoted"] : []),
                 ...userFacingBrief.quality.reasons.map((reason) => `presentation:${reason}`),
               ]),
-              layer:
-                decision === "product_queue_enabled" &&
-                !staticDemoted &&
-                Boolean(contentFields.proposedMessage) &&
-                contentFields.blockedIfMissing.length === 0
-                  ? "actionable"
-                  : "diagnostic",
-              attentionRequired:
-                decision === "product_queue_enabled" &&
-                !staticDemoted &&
-                Boolean(contentFields.proposedMessage) &&
-                contentFields.blockedIfMissing.length === 0,
+              layer: effectiveLayer,
+              attentionRequired: effectiveLayer === "actionable",
               sendStatus: "idle",
               sendError: null,
               sentMessageAnchor: null,

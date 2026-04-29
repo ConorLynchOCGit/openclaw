@@ -78,12 +78,25 @@ Phase 2 currently assumes:
   canonical `skill_candidate`, writes only to allowed workspace-local draft
   targets, and surfaces draft-ready state through the same proactivity ids and
   surfaces
-- the pre-Milestone-4 skills repair adds a `UserFacingProactivityBrief`
+- the first pre-Milestone-4 skills repair adds a `UserFacingProactivityBrief`
   presentation boundary so chat cards, inbox rows, heartbeat context, and
   handoff copy no longer render raw ledger packets as primary user-facing text
 - why-now, evidence, provenance, source refs, ids, timestamps, limitations, and
   diagnostics move behind disclosure; malformed reverse prompts and noisy skill
   transformation titles are rewritten or demoted before eval work begins
+- the second pre-Milestone-4 skills repair adds a bounded model-authored
+  `UserFacingProactivityBrief` rewrite/evaluation step using the separate
+  `openai-codex/gpt-5.4` proactivity-presentation route with medium reasoning
+  by default; deterministic validators still run after model output and
+  unclear, generic, repetitive, or unsafe cards are demoted rather than surfaced
+- the next pre-Milestone-4 repair moves subjective candidate discovery into a
+  two-stage model-reviewed episode workflow: deterministic prefilter, model
+  trigger evaluator, bounded episode packet, model candidate reviewer,
+  deterministic validation/dedupe, and existing proactivity surfacing
+- live candidate review may inspect bounded recent transcript/activity
+  excerpts, including assistant finals and Codex session summaries, while
+  durable artifacts persist only capped excerpts, refs, hashes,
+  classifications, validation results, and proposal summaries
 - low-risk limited-scope skill automation may later be allowed after
   tests/vetting/canary, but medium-risk and high-risk skill changes remain
   approval-gated

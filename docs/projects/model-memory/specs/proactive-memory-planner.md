@@ -59,6 +59,22 @@ Remaining implementation details:
   `UserFacingProactivityBrief` rather than direct ledger fields; why-now,
   provenance, source refs, timestamps, ids, limitations, and diagnostics are
   secondary details
+- `UserFacingProactivityBrief` primary copy may be model-authored from typed
+  bounded planner state when enabled; the model step is presentation-only and
+  cannot mutate canonical memory, candidate identity, dedupe, lifecycle,
+  action, send, install, or skill-package state
+- deterministic schema, boundedness, no-dark-data, generic-copy, repetition,
+  and unsafe-claim validators must run after model output; weak cards are
+  demoted instead of surfaced as vague fallback copy
+- candidate discovery for skills and proactive plans uses a two-stage
+  model-reviewed episode workflow before Milestone 4 evals:
+  - deterministic Stage 1 prefilter identifies events worth considering
+  - bounded Stage 2 model trigger evaluation decides whether there is enough
+    signal and what recent refs belong in the review window
+  - a model candidate reviewer proposes plans, new skills, existing-skill
+    enhancements, merge candidates, or demotions from a bounded episode packet
+  - deterministic validation, cooldown, dedupe, provenance, and no-dark-data
+    gates decide what can enter canonical proactivity state
 - maintenance mechanics are owned by
   [Memory Maintenance Loop](/projects/model-memory/specs/memory-maintenance-loop)
 

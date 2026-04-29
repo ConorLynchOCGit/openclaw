@@ -105,3 +105,69 @@ templates, and title/body duplication must be demoted from primary surfaces.
 
 Failed presentation quality should create bounded diagnostics that can feed
 self-healing repair work instead of adding clutter to the chat feed or inbox.
+
+## Model-authored brief pass
+
+After the typed brief boundary exists, skill-related proactivity may use a
+bounded model-authored rewrite/evaluation step to produce the primary
+`UserFacingProactivityBrief` fields.
+
+Rules:
+
+- the model receives only typed bounded state from the canonical candidate,
+  draft, and proactivity records
+- raw prompts, transcripts, tool logs, secrets, private phrases, and unbounded
+  session text are forbidden model input and persisted output
+- model-authored copy is presentation-only and cannot mutate candidate ids,
+  normalized intent keys, lifecycle, dedupe, package ids, install state,
+  promotion state, memory, sends, or actions
+- deterministic validators run after model output and demote unclear, generic,
+  repetitive, unsafe, or schema-invalid briefs
+- the first runtime target is the separate `openai-codex/gpt-5.4`
+  proactivity-presentation route with strict JSON output and medium reasoning by
+  default
+- generic Node/test processes keep this pass disabled unless explicitly
+  enabled; the live gateway compose runtime enables it by default with
+  `openai-codex/gpt-5.4`
+- if the model cannot make the skill card say whether it is a new skill, an
+  explicit existing-skill improvement, or a demoted weak candidate, it must
+  choose demotion
+
+## Model-reviewed candidate discovery
+
+Presentation repair alone is not enough. The platform also needs model judgment
+before a candidate enters the operator-visible path.
+
+Runtime rule:
+
+- Stage 1 deterministic prefilter decides only whether it is worth asking a
+  model about candidate review
+- Stage 2 model trigger evaluation decides whether a bounded recent-work
+  episode has enough signal for candidate review and whether the goal is
+  skills, proactivity, both, or none
+- candidate review then proposes proactive plans, new skill candidates,
+  existing-skill enhancements, merge/extend candidates, and demotions from a
+  bounded episode packet
+- deterministic validation, cooldowns, dedupe, provenance checks, no-dark-data
+  checks, and write-eligibility checks still decide whether a proposal becomes
+  or updates a canonical proactivity record
+
+Allowed live model input includes bounded recent user turns, assistant finals,
+card diagnostics, activity summaries, validation summaries, loaded skill
+metadata, candidate summaries, and Codex session excerpts or summaries.
+
+Durable state must store only bounded packets, capped excerpts, refs, hashes,
+classification/proposal records, validation reports, and route summaries. Raw
+full transcripts, raw prompts, raw tool logs, hidden reasoning, secrets, private
+phrases, and unbounded OpenClaw/Codex session logs are forbidden durable
+artifacts.
+
+Candidate-review output is proposal-only. It must not execute actions, install
+or promote skills, send messages, mutate files, write canonical memory truth, or
+become fuzzy duplicate authority.
+
+Candidate-review route config is separate from chat, memory capture/retrieval,
+and presentation-brief routes. The trigger evaluator, candidate reviewer, and
+presentation brief generator each report their model id/config family. Candidate
+review also has explicit max-per-session and time-bounded cooldown controls so
+repeat proof or heartbeat runs do not create a permanent suppression state.

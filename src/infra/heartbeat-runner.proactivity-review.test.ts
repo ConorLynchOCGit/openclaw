@@ -108,7 +108,7 @@ describe("heartbeat proactivity review", () => {
       expect(visibleBody).toContain("What would help this user today?");
       expect(visibleBody).not.toContain("Plan the runtime seam reset");
       expect(body).toContain("Heartbeat runtime context");
-      expect(body).toContain("Plan the runtime seam reset");
+      expect(body.toLowerCase()).toContain("runtime seam reset for authoritative proactivity");
       expect(getReplySpy).toHaveBeenCalledTimes(1);
       expect(sessionKey).toContain("main");
     });

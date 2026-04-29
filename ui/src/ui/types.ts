@@ -190,6 +190,13 @@ export type UserFacingProactivityBrief = {
     status: "pass" | "demote" | "repair";
     reasons: string[];
   };
+  authorship?: {
+    source: "deterministic" | "model";
+    modelId?: string;
+    inputHash?: string;
+    outputHash?: string;
+    validationStatus?: "pass" | "demote" | "repair";
+  };
 };
 
 export type ProductProactivityQueueItem = {
@@ -294,6 +301,39 @@ export type ProductProactivityQueueResult = {
   ok: boolean;
   reportId: string;
   decision: string;
+  candidateReviewTriggerReport?: {
+    source: string;
+    enabled: boolean;
+    modelId: string;
+    resolvedModelId?: string;
+    reasoningEffort?: string;
+    validationStatus: string;
+    reasonCodes: string[];
+    promptPersisted: boolean;
+    rawResponsePersisted: boolean;
+    triggerDecision?: unknown;
+  } | null;
+  candidateReviewReport?: {
+    source: string;
+    enabled: boolean;
+    modelId: string;
+    resolvedModelId?: string;
+    reasoningEffort?: string;
+    validationStatus: string;
+    reasonCodes: string[];
+    proposalCount: number;
+    surfacedProposalCount: number;
+    promptPersisted: boolean;
+    rawResponsePersisted: boolean;
+    acceptedProposalKinds: string[];
+    sourceRuntimes: string[];
+  } | null;
+  candidateReviewCodexAdapterReport?: {
+    status: string;
+    reasonCode: string;
+    entryCount: number;
+    sourceRoot?: string;
+  } | null;
   queue: {
     queueId: string;
     surface: string;

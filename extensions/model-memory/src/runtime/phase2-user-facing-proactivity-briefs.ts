@@ -52,6 +52,13 @@ export type Phase2UserFacingProactivityBrief = {
     status: Phase2UserFacingProactivityBriefQualityStatus;
     reasons: string[];
   };
+  authorship?: {
+    source: "deterministic" | "model";
+    modelId?: string;
+    inputHash?: string;
+    outputHash?: string;
+    validationStatus?: "pass" | "demote" | "repair";
+  };
 };
 
 export type Phase2UserFacingProactivityExistingSkill = {
@@ -78,9 +85,13 @@ export type Phase2UserFacingProactivityBriefInput = {
   sourceProfileIds?: SourceProfileId[];
 };
 
-const MAX_TITLE_LENGTH = 72;
-const MAX_PURPOSE_LENGTH = 170;
-const MAX_NEXT_STEP_LENGTH = 190;
+export const MAX_PROACTIVITY_BRIEF_TITLE_LENGTH = 72;
+export const MAX_PROACTIVITY_BRIEF_PURPOSE_LENGTH = 170;
+export const MAX_PROACTIVITY_BRIEF_NEXT_STEP_LENGTH = 190;
+
+const MAX_TITLE_LENGTH = MAX_PROACTIVITY_BRIEF_TITLE_LENGTH;
+const MAX_PURPOSE_LENGTH = MAX_PROACTIVITY_BRIEF_PURPOSE_LENGTH;
+const MAX_NEXT_STEP_LENGTH = MAX_PROACTIVITY_BRIEF_NEXT_STEP_LENGTH;
 
 const PROHIBITED_PRIMARY_MARKERS = [
   "raw-prompt-marker",
@@ -93,6 +104,12 @@ const PROHIBITED_PRIMARY_MARKERS = [
 const REVERSE_PROMPT_BAD_PREFIX = /^question worth asking before\b/i;
 const TURN_PREFIX = /^turn\b/i;
 const DUPLICATED_TURN = /\bturn\s+turn\b/i;
+const CLIPPED_FRAGMENT_PREFIX =
+  /^(?:already recurring|build the bounded request with|it sets the default|current skillifier outputs|first bounded draft package should include only what is)\b/i;
+const GENERIC_PURPOSE_PATTERN =
+  /\bturns a recent idea into a bounded next step\b|\bwithout digging through the inbox\b|\badvance the current work with one bounded next step\b/i;
+const UNSAFE_ACTION_CLAIM_PATTERN =
+  /\b(?:auto-?promote|execute[ds]?|ran|mutated?|wrote files?|edited files?|send\s+now|sent\s+message|install(?:ed)?\s+the|promote(?:d)?\s+the)\b/i;
 const SOURCE_REF_PATTERN = /\b(?:source:\s*)?(?:chat|gateway|memory|file|docs?):\/\//i;
 const UUID_PATTERN = /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/i;
 const TIMESTAMP_PATTERN = /\b20\d{2}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/;
@@ -132,6 +149,10 @@ function normalizeWords(value: string | undefined): string {
     .replace(/[^a-z0-9]+/g, " ")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+export function normalizeProactivityBriefWordsForTest(value: string | undefined): string {
+  return normalizeWords(value);
 }
 
 function slugFromWords(value: string): string {
@@ -264,6 +285,30 @@ function isCompleteQuestion(value: string): boolean {
   }
   return /^(?:should|what|which|where|when|why|how|do|does|can|could|would|is|are)\b/i.test(
     trimmed,
+  );
+}
+
+function stripNextStepPrefix(value: string): string {
+  return value.replace(/^next step:\s*/i, "").trim();
+}
+
+function repeatsTitle(input: { title: string; recommendedNextStep: string }): boolean {
+  const title = normalizeWords(
+    input.title.replace(
+      /^(?:new skill|improve skill|merge skill|question|draft ready|repair|follow-up):\s*/i,
+      "",
+    ),
+  );
+  const nextStep = normalizeWords(stripNextStepPrefix(input.recommendedNextStep));
+  if (!title || !nextStep) {
+    return false;
+  }
+  return title === nextStep || nextStep.startsWith(`${title} `) || title.startsWith(`${nextStep} `);
+}
+
+function hasActionableNextStep(value: string): boolean {
+  return /\b(?:draft|review|decide|choose|answer|open|start|inspect|investigate|summarize|compare|approve|demote|repair|clarify|define|check|test|verify|plan|write|select|outline)\b/i.test(
+    value,
   );
 }
 
@@ -444,6 +489,9 @@ function qualityReasons(input: {
   if (title.length > MAX_TITLE_LENGTH) {
     reasons.push("title_too_long");
   }
+  if (CLIPPED_FRAGMENT_PREFIX.test(title)) {
+    reasons.push("title_is_clipped_source_fragment");
+  }
   if (TURN_PREFIX.test(title) || TURN_PREFIX.test(input.sourceTitle ?? "")) {
     reasons.push("title_derived_from_transformation_instruction");
   }
@@ -458,6 +506,15 @@ function qualityReasons(input: {
   }
   if (/\bwhy now\b/i.test(primaryText)) {
     reasons.push("primary_copy_contains_why_now");
+  }
+  if (GENERIC_PURPOSE_PATTERN.test(input.oneLinePurpose)) {
+    reasons.push("purpose_is_generic_fallback");
+  }
+  if (repeatsTitle({ title, recommendedNextStep: input.recommendedNextStep })) {
+    reasons.push("next_step_repeats_title");
+  }
+  if (!hasActionableNextStep(input.recommendedNextStep)) {
+    reasons.push("next_step_not_actionable");
   }
   if (SOURCE_REF_PATTERN.test(primaryText)) {
     reasons.push("primary_copy_contains_source_ref");
@@ -474,10 +531,33 @@ function qualityReasons(input: {
       break;
     }
   }
+  if (UNSAFE_ACTION_CLAIM_PATTERN.test(primaryText)) {
+    reasons.push("primary_copy_claims_unsafe_action");
+  }
   if (input.reversePrompt && !isCompleteQuestion(title.replace(/^question:\s*/i, ""))) {
     reasons.push("reverse_prompt_title_not_complete_question");
   }
   return [...new Set(reasons)].toSorted();
+}
+
+export function validateUserFacingProactivityBrief(
+  brief: Phase2UserFacingProactivityBrief,
+): Phase2UserFacingProactivityBrief["quality"] {
+  const reasons = qualityReasons({
+    title: brief.title,
+    oneLinePurpose: brief.oneLinePurpose,
+    recommendedNextStep: brief.recommendedNextStep,
+    reversePrompt: brief.kindLabel === "Question",
+  });
+  return {
+    status:
+      brief.quality.status === "demote" || reasons.length > 0
+        ? "demote"
+        : brief.quality.status === "repair"
+          ? "repair"
+          : "pass",
+    reasons: [...new Set([...brief.quality.reasons, ...reasons])].toSorted(),
+  };
 }
 
 export function buildUserFacingProactivityBrief(

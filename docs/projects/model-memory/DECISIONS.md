@@ -5,6 +5,75 @@ title: "Model Memory Decisions"
 
 # Model Memory Decisions
 
+## 2026-04-28 - Candidate discovery uses bounded model-reviewed episodes
+
+Decision:
+
+- candidate discovery for skills and proactive plans may use a two-stage
+  model-reviewed episode workflow
+- Stage 1 is deterministic and only decides whether it is worth asking a model
+  to evaluate a recent-work window
+- Stage 2 is a bounded model trigger evaluator that chooses whether candidate
+  review should run, which refs are included, and whether the goal is skills,
+  proactivity, both, or none
+- accepted trigger decisions build a bounded episode packet that may include
+  capped recent user turns, assistant finals, card diagnostics, activity
+  summaries, validation summaries, loaded skill metadata, candidate summaries,
+  and Codex session excerpts/summaries
+- a candidate-review model may propose proactive plans, new skill candidates,
+  existing-skill enhancements, merge/extend candidates, and demotions
+- deterministic code remains authority for allowed refs, caps, no-dark-data,
+  cooldowns, max calls, schema, provenance, dedupe, and persistence eligibility
+- model outputs are proposals, not semantic truth, and cannot mutate canonical
+  memory, execute actions, install/promote skills, send messages, mutate files,
+  or become fuzzy duplicate authority
+- default chat, model-memory capture/retrieval, proactivity presentation, trigger
+  evaluation, and candidate review must remain separate model routes
+
+Reasoning:
+
+- deterministic surfacing can detect some repeated structure, but it cannot
+  reliably answer subjective usefulness questions such as what recurring work
+  should become a skill or what next step would help now
+- recent transcript context improved candidate quality because it preserved the
+  actual work episode, including user critique and assistant outcomes
+- no-dark-data is preserved by forbidding raw full transcript/tool-log
+  persistence while allowing bounded live model inspection of recent work
+
+## 2026-04-28 - Model-authored proactivity briefs are allowed as presentation-only output
+
+Decision:
+
+- `UserFacingProactivityBrief` primary copy may be authored by a bounded model
+  rewrite/evaluation step when model-authored briefing is enabled
+- the model receives typed bounded proactivity context only; raw prompts, full
+  transcripts, raw tool logs, secrets, private phrases, and unbounded session
+  text remain forbidden prompt input and persisted output
+- the first model-backed runtime target is the separate proactivity
+  presentation route `openai-codex/gpt-5.4` with strict JSON output, medium
+  reasoning, low verbosity, bounded timeout, and small output limits; this does
+  not change the strict MMV2 capture/retrieval defaults
+- deterministic schema, no-dark-data, boundedness, repetition, generic-copy,
+  and unsafe-claim validators remain mandatory after model output
+- model-authored briefs are presentation-only and cannot mutate canonical
+  ledger truth, dedupe state, supersession state, lifecycle state, memory,
+  skill packages, install state, action execution, or outbound sending
+- if the model cannot produce a clear title naming a capability, decision, or
+  outcome; a purpose explaining what the item does or unlocks; and an
+  actionable next step that does not repeat the title, the item is demoted
+  rather than surfaced
+- telemetry and proof may store prompt/response hashes, model id, elapsed time,
+  validation status, and bounded reason codes, but not raw model prompts or raw
+  responses
+
+Reasoning:
+
+- deterministic presentation rules are necessary safety guardrails, but they
+  cannot reliably decide whether a card is intelligible to an operator
+- this remains outside semantic forest behavior because the model output is not
+  canonical truth and has no authority over retrieval, memory writes, dedupe,
+  correction, or lifecycle state
+
 ## 2026-04-28 - Skills move forward as a proactivity-integrated lifecycle system
 
 Decision:
