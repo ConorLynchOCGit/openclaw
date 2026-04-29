@@ -13,6 +13,12 @@ Decision:
   model-reviewed episode workflow
 - Stage 1 is deterministic and only decides whether it is worth asking a model
   to evaluate a recent-work window
+- Stage 1 is structural only: assistant finals, heartbeat/session boundaries,
+  validation/proof failures, and card-quality or dismissal events may start the
+  review path, subject to budget and cooldown controls
+- Stage 1 must not use skill/proactivity/candidate/workflow keywords,
+  correction phrases, recurring-work phrases, topic labels, or turn-count
+  thresholds as gates or hints
 - Stage 2 is a bounded model trigger evaluator that chooses whether candidate
   review should run, which refs are included, and whether the goal is skills,
   proactivity, both, or none

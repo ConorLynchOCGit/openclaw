@@ -93,6 +93,10 @@ Phase 2 currently assumes:
   two-stage model-reviewed episode workflow: deterministic prefilter, model
   trigger evaluator, bounded episode packet, model candidate reviewer,
   deterministic validation/dedupe, and existing proactivity surfacing
+- the deterministic prefilter is structural only and may not use
+  skill/proactivity/candidate/workflow keywords, correction phrases,
+  recurring-work phrases, topic labels, or turn-count thresholds as gates or
+  hints; those judgments belong to the model trigger evaluator
 - live candidate review may inspect bounded recent transcript/activity
   excerpts, including assistant finals and Codex session summaries, while
   durable artifacts persist only capped excerpts, refs, hashes,

@@ -458,7 +458,7 @@ async function main() {
     evidence.triggerEvaluatorRan =
       triggerReport?.validationStatus === "pass" &&
       triggerReport?.triggerDecision?.shouldRun === true &&
-      (triggerReport?.source === "model" || triggerReport?.source === "deterministic_fallback");
+      triggerReport?.source === "model";
     evidence.candidateReviewerRan =
       reviewReport?.validationStatus === "pass" &&
       reviewReport?.source === "model" &&

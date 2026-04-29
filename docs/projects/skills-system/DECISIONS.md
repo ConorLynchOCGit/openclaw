@@ -26,9 +26,12 @@ Reason:
 Decision:
 
 - candidate discovery now uses a two-stage trigger:
-  - Stage 1 is a deterministic cheap prefilter for assistant finals,
-    heartbeat/session boundaries, validation failures, card-quality failures,
-    turn-count thresholds, and explicit skill/proactivity keywords
+  - Stage 1 is a deterministic cheap prefilter for structural runtime events:
+    assistant finals, heartbeat/session boundaries, validation/proof failures,
+    and card-quality or dismissal events
+  - Stage 1 does not inspect content for skill/proactivity/candidate/workflow
+    words, correction phrases, recurring-work phrases, or turn-count semantics;
+    those judgments belong only to the model trigger evaluator
   - Stage 2 is a bounded model trigger evaluator that decides whether there is
     enough signal, which recent refs belong in the window, and whether the
     review goal is skills, proactivity, both, or none

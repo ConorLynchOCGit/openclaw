@@ -149,9 +149,12 @@ Pre-Milestone-4 model-reviewed discovery gate:
 
 - candidate discovery should begin from bounded recent-work episodes, not only
   deterministic source-fragment grouping
-- a deterministic prefilter may fire for assistant finals, heartbeat/session
-  boundaries, validation failures, card-quality failures, turn thresholds, and
-  explicit skill/proactivity keywords
+- a deterministic prefilter may fire for structural runtime events such as
+  assistant finals, heartbeat/session boundaries, validation/proof failures,
+  and card-quality or dismissal events
+- the prefilter must not use skill/proactivity/candidate/workflow keywords,
+  correction phrases, recurring-work phrases, topic labels, or turn-count
+  thresholds as gates or hints
 - a model trigger evaluator decides whether the recent window is a related work
   episode, whether it contains a correction/critique or recurring workflow, and
   whether candidate review should focus on skills, proactivity, both, or none

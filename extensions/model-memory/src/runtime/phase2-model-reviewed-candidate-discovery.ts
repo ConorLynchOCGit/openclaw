@@ -45,10 +45,8 @@ export type CandidateReviewPrefilterEventType =
   | "heartbeat_started"
   | "session_boundary"
   | "validation_or_proof_failed"
-  | "turn_count_threshold"
   | "card_dismissed_or_not_useful"
-  | "card_quality_failed"
-  | "explicit_keyword_signal";
+  | "card_quality_failed";
 
 export type CandidateReviewPrefilterEvent = {
   schemaVersion: typeof CANDIDATE_REVIEW_PREFILTER_EVENT_SCHEMA_VERSION;
@@ -65,7 +63,6 @@ export type CandidateReviewPrefilterDecision = {
   shouldAskModel: boolean;
   reasonCodes: string[];
   episodeKey: string;
-  minGoalHint: CandidateReviewGoal;
 };
 
 export type CandidateReviewTriggerRef = {
@@ -129,7 +126,7 @@ export type CandidateReviewTriggerDecision = {
 export type CandidateReviewTriggerReport = {
   schemaVersion: typeof CANDIDATE_REVIEW_TRIGGER_REPORT_SCHEMA_VERSION;
   enabled: boolean;
-  source: "model" | "deterministic_fallback" | "skipped" | "rejected";
+  source: "model" | "skipped" | "rejected";
   modelId?: string;
   resolvedModelId?: string;
   reasoningEffort?: "none" | "minimal" | "low" | "medium" | "high";
@@ -230,7 +227,7 @@ export type CandidateReviewProposal = {
 
 export type CandidateReviewReport = {
   schemaVersion: typeof MODEL_REVIEWED_CANDIDATE_REPORT_SCHEMA_VERSION;
-  source: "model" | "deterministic_fallback" | "skipped" | "rejected";
+  source: "model" | "skipped" | "rejected";
   enabled: boolean;
   modelId?: string;
   resolvedModelId?: string;
@@ -255,7 +252,6 @@ export type CandidateReviewModelOptions = {
   reasoningEffort?: "none" | "minimal" | "low" | "medium" | "high";
   verbosity?: "low" | "medium";
   maxOutputTokens?: number;
-  allowDeterministicExplicitFallback?: boolean;
 };
 
 export type CandidateReviewRecentActivity = {
@@ -294,11 +290,6 @@ const MAX_TITLE_LENGTH = 96;
 const MAX_PURPOSE_LENGTH = 220;
 const MAX_NEXT_STEP_LENGTH = 240;
 const MAX_EXPECTED_VALUE_LENGTH = 220;
-const EXPLICIT_REVIEW_PATTERN =
-  /\b(skill|skills|skillifier|proactive|proactivity|repeatable|reusable|next milestone|fix this|why did this surface|candidate|workflow|recurring|follow[- ]?up)\b/iu;
-const CORRECTION_PATTERN =
-  /\b(concern|wrong|incorrect|critique|problem|doesn't|does not|should|shouldn't|should not|unclear|confusing|bad|broken|fix)\b/iu;
-const VALIDATION_PATTERN = /\b(fail|failed|failure|validation|proof|test|lint|rebuild)\b/iu;
 const PROHIBITED_PATTERNS = [
   /raw-prompt-marker/iu,
   /raw-transcript-marker/iu,
@@ -363,7 +354,7 @@ function classifyActivityKind(
     return activity.kind;
   }
   if (activity.role === "tool_summary") {
-    return VALIDATION_PATTERN.test(activity.boundedText) ? "failure_summary" : "result_summary";
+    return "result_summary";
   }
   if (activity.role === "card") {
     return "card_summary";
@@ -371,40 +362,10 @@ function classifyActivityKind(
   if (activity.role === "assistant") {
     return "final";
   }
-  if (CORRECTION_PATTERN.test(activity.boundedText)) {
-    return "correction";
+  if (activity.role === "user") {
+    return "ask";
   }
-  return EXPLICIT_REVIEW_PATTERN.test(activity.boundedText) ? "ask" : "example";
-}
-
-function goalHintFromText(text: string): CandidateReviewGoal {
-  const lower = text.toLowerCase();
-  const skills = /\b(skill|skillifier|reusable|repeatable)\b/u.test(lower);
-  const proactivity =
-    /\b(proactive|proactivity|follow[- ]?up|next step|why did this surface)\b/u.test(lower);
-  if (skills && proactivity) {
-    return "both";
-  }
-  if (skills) {
-    return "skills";
-  }
-  if (proactivity) {
-    return "proactivity";
-  }
-  return "none";
-}
-
-function mergeGoals(left: CandidateReviewGoal, right: CandidateReviewGoal): CandidateReviewGoal {
-  if (left === "both" || right === "both") {
-    return "both";
-  }
-  if (left === "none") {
-    return right;
-  }
-  if (right === "none" || left === right) {
-    return left;
-  }
-  return "both";
+  return "result_summary";
 }
 
 function deterministicEpisodeKey(params: {
@@ -451,51 +412,26 @@ export function buildCandidateReviewPrefilterEvent(input: {
 
 export function buildCandidateReviewPrefilterDecision(input: {
   event: CandidateReviewPrefilterEvent;
-  recentTurnCountSinceLastReview?: number;
-  minTurnThreshold?: number;
   recentEpisodeKeys?: string[];
 }): CandidateReviewPrefilterDecision {
   assertNoProhibitedContent(input.event, "candidate review prefilter event");
-  const minTurnThreshold = input.minTurnThreshold ?? 3;
-  const text = input.event.boundedSummary;
   const reasonCodes: string[] = [];
-  let goal: CandidateReviewGoal = goalHintFromText(text);
   switch (input.event.eventType) {
     case "heartbeat_started":
       reasonCodes.push("heartbeat_review");
-      goal = mergeGoals(goal, "proactivity");
       break;
     case "session_boundary":
       reasonCodes.push("session_boundary");
-      goal = mergeGoals(goal, "both");
       break;
     case "validation_or_proof_failed":
       reasonCodes.push("validation_or_proof_friction");
-      goal = mergeGoals(goal, "proactivity");
       break;
     case "card_quality_failed":
     case "card_dismissed_or_not_useful":
       reasonCodes.push("card_quality_failure");
-      goal = mergeGoals(goal, "both");
-      break;
-    case "explicit_keyword_signal":
-      reasonCodes.push("explicit_user_ask");
-      goal = mergeGoals(goal, goalHintFromText(text) === "none" ? "both" : goalHintFromText(text));
-      break;
-    case "turn_count_threshold":
-      reasonCodes.push("related_turn_threshold");
-      goal = mergeGoals(goal, "both");
       break;
     case "assistant_final_completed":
-      if (EXPLICIT_REVIEW_PATTERN.test(text)) {
-        reasonCodes.push("explicit_keyword_signal");
-      }
-      if (CORRECTION_PATTERN.test(text)) {
-        reasonCodes.push("possible_correction_or_critique");
-      }
-      if ((input.recentTurnCountSinceLastReview ?? 0) >= minTurnThreshold) {
-        reasonCodes.push("turn_count_threshold");
-      }
+      reasonCodes.push("assistant_final_completed");
       break;
   }
   const episodeKey = deterministicEpisodeKey({
@@ -512,7 +448,6 @@ export function buildCandidateReviewPrefilterDecision(input: {
       ? unique([...reasonCodes, "cooldown_episode_key"])
       : unique(reasonCodes),
     episodeKey,
-    minGoalHint: shouldAskModel ? goal : "none",
   };
 }
 
@@ -742,52 +677,17 @@ export async function evaluateCandidateReviewTrigger(
     why: "No accepted trigger decision was produced.",
   };
   if (!enabled || !options.executor) {
-    const explicit =
-      options.allowDeterministicExplicitFallback === true &&
-      (packet.event.eventType === "explicit_keyword_signal" ||
-        packet.event.eventType === "heartbeat_started" ||
-        packet.event.eventType === "session_boundary" ||
-        packet.event.eventType === "validation_or_proof_failed" ||
-        packet.event.eventType === "card_quality_failed");
-    const decision: CandidateReviewTriggerDecision = explicit
-      ? {
-          schemaVersion: CANDIDATE_REVIEW_TRIGGER_DECISION_SCHEMA_VERSION,
-          shouldRun: true,
-          reasonCodes:
-            packet.event.eventType === "heartbeat_started"
-              ? ["heartbeat_review"]
-              : packet.event.eventType === "session_boundary"
-                ? ["session_boundary"]
-                : packet.event.eventType === "validation_or_proof_failed"
-                  ? ["validation_or_proof_friction"]
-                  : packet.event.eventType === "card_quality_failed"
-                    ? ["card_quality_failure"]
-                    : ["explicit_user_ask"],
-          confidence: "medium",
-          episodeWindow: {
-            startRef: packet.recentRefs[0]?.ref ?? packet.event.refs[0] ?? packet.event.eventId,
-            endRef:
-              packet.recentRefs.at(-1)?.ref ?? packet.event.refs.at(-1) ?? packet.event.eventId,
-            includedRefs: packet.recentRefs.map((entry) => entry.ref).slice(-6),
-          },
-          reviewGoal:
-            goalHintFromText(packet.event.boundedSummary) === "none"
-              ? "both"
-              : goalHintFromText(packet.event.boundedSummary),
-          why: "Deterministic explicit trigger fallback accepted review.",
-        }
-      : defaultDecision;
     return {
-      decision,
+      decision: defaultDecision,
       report: {
         schemaVersion: CANDIDATE_REVIEW_TRIGGER_REPORT_SCHEMA_VERSION,
         enabled,
-        source: explicit ? "deterministic_fallback" : "skipped",
+        source: "skipped",
         reasoningEffort: options.reasoningEffort ?? "low",
         elapsedMs: Date.now() - startedAt,
         inputHash,
-        validationStatus: explicit ? "pass" : "reject",
-        reasonCodes: explicit ? ["deterministic_explicit_fallback"] : ["trigger_model_disabled"],
+        validationStatus: "reject",
+        reasonCodes: ["trigger_model_disabled"],
         promptPersisted: false,
         rawResponsePersisted: false,
         promptChars: 0,
@@ -925,7 +825,6 @@ export function buildProactivityReviewEpisodePacket(input: {
         ref: activity.ref,
       };
     });
-  const activityText = selectedActivities.map((activity) => activity.boundedText).join(" ");
   const explicitAsks = selectedActivities
     .filter((activity) => classifyActivityKind(activity) === "ask")
     .map((activity) => redactAndBound(activity.boundedText, 180))
@@ -961,9 +860,6 @@ export function buildProactivityReviewEpisodePacket(input: {
       explicitAsks,
       decisionPressure: unique([
         input.triggerDecision.why,
-        VALIDATION_PATTERN.test(activityText)
-          ? "Recent validation or proof friction suggests reusable repair workflow value."
-          : undefined,
         input.recentProactivityItems?.some((item) => item.quality?.includes("demote"))
           ? "Recent card-quality demotion suggests presentation or candidate-discovery repair value."
           : undefined,
@@ -975,7 +871,10 @@ export function buildProactivityReviewEpisodePacket(input: {
         summary: redactAndBound(input.triggerPacket.event.boundedSummary, 220),
         recurrenceEvidence: input.triggerPacket.recentActivitySignals.slice(0, 4),
         frictionSignals: selectedActivities
-          .filter((activity) => CORRECTION_PATTERN.test(activity.boundedText))
+          .filter((activity) => {
+            const kind = classifyActivityKind(activity);
+            return kind === "correction" || kind === "failure_summary" || kind === "card_summary";
+          })
           .map((activity) => redactAndBound(activity.boundedText, 140))
           .slice(0, 4),
         successSignals: selectedActivities
@@ -1466,9 +1365,6 @@ function candidateTypeForProposal(
   | "explicit_skill_request"
   | "recurring_validation_fix"
   | "manual_workflow" {
-  if (proposal.recurrenceSignals.some((signal) => VALIDATION_PATTERN.test(signal))) {
-    return "recurring_validation_fix";
-  }
   if (
     proposal.proposalKind === "new_skill_candidate" ||
     proposal.proposalKind === "existing_skill_enhancement"
@@ -1732,6 +1628,26 @@ function textFromLine(value: unknown): string {
   return "";
 }
 
+function activityKindFromCodexLine(
+  value: unknown,
+  role: CandidateReviewRecentActivity["role"],
+): CandidateReviewRecentActivity["kind"] {
+  if (role === "assistant") {
+    return "final";
+  }
+  if (role === "user") {
+    return "ask";
+  }
+  if (role !== "tool_summary" || !value || typeof value !== "object") {
+    return undefined;
+  }
+  const record = value as { status?: unknown; outcome?: unknown };
+  const status = record.status ?? record.outcome;
+  return status === "failed" || status === "error" || status === "timeout"
+    ? "failure_summary"
+    : "result_summary";
+}
+
 async function listSessionFiles(root: string, maxFiles: number): Promise<string[]> {
   const files: string[] = [];
   async function walk(dir: string, depth: number): Promise<void> {
@@ -1828,7 +1744,7 @@ export async function loadCodexSessionActivityForCandidateReview(
         activities.push({
           ref: `codex://${path.basename(filePath)}#${index}`,
           role,
-          kind: role === "tool_summary" ? "result_summary" : undefined,
+          kind: activityKindFromCodexLine(candidate, role),
           boundedText: text,
           sourceRuntime: "codex",
         });

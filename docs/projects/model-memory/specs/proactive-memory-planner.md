@@ -68,7 +68,11 @@ Remaining implementation details:
   demoted instead of surfaced as vague fallback copy
 - candidate discovery for skills and proactive plans uses a two-stage
   model-reviewed episode workflow before Milestone 4 evals:
-  - deterministic Stage 1 prefilter identifies events worth considering
+  - deterministic Stage 1 prefilter identifies structural runtime events worth
+    considering, subject to budget and cooldown controls
+  - Stage 1 must not use skill/proactivity/candidate/workflow keywords,
+    correction phrases, recurring-work phrases, topic labels, or turn-count
+    thresholds as gates or hints
   - bounded Stage 2 model trigger evaluation decides whether there is enough
     signal and what recent refs belong in the review window
   - a model candidate reviewer proposes plans, new skills, existing-skill

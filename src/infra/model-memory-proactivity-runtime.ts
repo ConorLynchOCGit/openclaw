@@ -394,7 +394,6 @@ function buildCandidateTriggerOptions(params: {
     ),
     verbosity: "low",
     maxOutputTokens: 700,
-    allowDeterministicExplicitFallback: true,
   };
 }
 
@@ -1169,22 +1168,14 @@ function candidateReviewActivityFromRecord(
   };
 }
 
-function latestCandidateReviewEventType(
-  activities: CandidateReviewRecentActivity[],
+function candidateReviewEventTypeForLatestActivity(
+  latest: CandidateReviewRecentActivity | undefined,
 ): Parameters<typeof buildCandidateReviewPrefilterEvent>[0]["eventType"] {
-  const text = activities
-    .slice(-4)
-    .map((activity) => activity.boundedText)
-    .join(" ");
-  if (
-    /\b(skill|skillifier|proactive|proactivity|repeatable|reusable|candidate|workflow|recurring)\b/iu.test(
-      text,
-    )
-  ) {
-    return "explicit_keyword_signal";
-  }
-  if (/\b(fail|failed|failure|validation|proof|test|lint|rebuild)\b/iu.test(text)) {
+  if (latest?.role === "tool_summary" && latest.kind === "failure_summary") {
     return "validation_or_proof_failed";
+  }
+  if (latest?.role === "card" && latest.kind === "card_summary") {
+    return "card_quality_failed";
   }
   return "assistant_final_completed";
 }
@@ -1286,7 +1277,7 @@ async function buildModelReviewedCandidateSources(input: {
     };
   }
   const event = buildCandidateReviewPrefilterEvent({
-    eventType: latestCandidateReviewEventType(recentActivities),
+    eventType: candidateReviewEventTypeForLatestActivity(latest),
     runtime: latest?.sourceRuntime === "codex" ? "codex" : "openclaw",
     sessionKey: input.sessionKey,
     refs: recentActivities.map((activity) => activity.ref).slice(-8),
@@ -1297,7 +1288,6 @@ async function buildModelReviewedCandidateSources(input: {
   });
   const prefilter = buildCandidateReviewPrefilterDecision({
     event,
-    recentTurnCountSinceLastReview: recentActivities.length,
     recentEpisodeKeys: recentReviewEntries.map((entry) => entry.episodeKey),
   });
   if (!prefilter.shouldAskModel) {
@@ -1333,8 +1323,8 @@ async function buildModelReviewedCandidateSources(input: {
     recentActivities,
     recentCardSummaries: recentProactivityItems,
     recentActivitySignals: [
+      `stage1_event:${event.eventType}`,
       `stage1:${prefilter.reasonCodes.join(",")}`,
-      `goal_hint:${prefilter.minGoalHint}`,
     ],
   });
   const trigger = await evaluateCandidateReviewTrigger(triggerPacket, triggerOptions);

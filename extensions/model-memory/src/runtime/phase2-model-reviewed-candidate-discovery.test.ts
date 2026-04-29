@@ -202,21 +202,49 @@ describe("phase2 model-reviewed candidate discovery", () => {
       runtime: "openclaw",
       sessionKey: "agent:main:main",
       refs: ["chat://main/user_turn/concern"],
-      boundedSummary:
-        "We need a repeatable skill and proactive candidate workflow, not deterministic fragments.",
+      boundedSummary: "The latest assistant final completed and has bounded recent context.",
       createdAt: "2026-04-28T20:00:00.000Z",
     });
 
     const decision = buildCandidateReviewPrefilterDecision({ event });
 
     expect(decision.shouldAskModel).toBe(true);
-    expect(decision.minGoalHint).toBe("both");
     expect(decision.episodeKey).toMatch(/^[a-f0-9]{24}$/u);
+  });
+
+  it("does not use content keywords as prefilter gates or hints", () => {
+    const keywordHeavyEvent = buildCandidateReviewPrefilterEvent({
+      eventType: "assistant_final_completed",
+      runtime: "openclaw",
+      sessionKey: "agent:main:main",
+      refs: ["chat://main/assistant_turn/one"],
+      boundedSummary:
+        "skill proactive candidate workflow recurring repeatable fix this next milestone",
+      createdAt: "2026-04-28T20:01:00.000Z",
+    });
+    const keywordFreeEvent = buildCandidateReviewPrefilterEvent({
+      eventType: "assistant_final_completed",
+      runtime: "openclaw",
+      sessionKey: "agent:main:main",
+      refs: ["chat://main/assistant_turn/two"],
+      boundedSummary: "Here is the completed review with concrete next details.",
+      createdAt: "2026-04-28T20:02:00.000Z",
+    });
+
+    const keywordHeavyDecision = buildCandidateReviewPrefilterDecision({
+      event: keywordHeavyEvent,
+    });
+    const keywordFreeDecision = buildCandidateReviewPrefilterDecision({
+      event: keywordFreeEvent,
+    });
+
+    expect(keywordHeavyDecision.reasonCodes).toEqual(["assistant_final_completed"]);
+    expect(keywordFreeDecision.reasonCodes).toEqual(["assistant_final_completed"]);
   });
 
   it("builds a bounded trigger packet from recent user and assistant activity", () => {
     const event = buildCandidateReviewPrefilterEvent({
-      eventType: "explicit_keyword_signal",
+      eventType: "assistant_final_completed",
       runtime: "openclaw",
       sessionKey: "main",
       refs: ["chat://main/user_turn/concern"],
@@ -245,7 +273,7 @@ describe("phase2 model-reviewed candidate discovery", () => {
 
   it("accepts a model trigger decision only when refs and confidence are valid", async () => {
     const event = buildCandidateReviewPrefilterEvent({
-      eventType: "explicit_keyword_signal",
+      eventType: "assistant_final_completed",
       runtime: "openclaw",
       sessionKey: "main",
       refs: ["chat://main/user_turn/concern"],
@@ -272,7 +300,7 @@ describe("phase2 model-reviewed candidate discovery", () => {
 
   it("rejects trigger output with invalid refs", async () => {
     const event = buildCandidateReviewPrefilterEvent({
-      eventType: "explicit_keyword_signal",
+      eventType: "assistant_final_completed",
       runtime: "openclaw",
       sessionKey: "main",
       refs: ["chat://main/user_turn/concern"],
@@ -301,7 +329,7 @@ describe("phase2 model-reviewed candidate discovery", () => {
 
   it("builds an episode packet that preserves narrative context without raw transcript storage", () => {
     const event = buildCandidateReviewPrefilterEvent({
-      eventType: "explicit_keyword_signal",
+      eventType: "assistant_final_completed",
       runtime: "openclaw",
       sessionKey: "main",
       refs: ["chat://main/user_turn/concern"],
@@ -341,7 +369,7 @@ describe("phase2 model-reviewed candidate discovery", () => {
 
   it("reviews an episode into proactive and skill proposals", async () => {
     const event = buildCandidateReviewPrefilterEvent({
-      eventType: "explicit_keyword_signal",
+      eventType: "assistant_final_completed",
       runtime: "openclaw",
       sessionKey: "main",
       refs: ["chat://main/user_turn/concern"],
@@ -386,7 +414,7 @@ describe("phase2 model-reviewed candidate discovery", () => {
 
   it("converts valid proposals into existing proactivity ledger sources", async () => {
     const event = buildCandidateReviewPrefilterEvent({
-      eventType: "explicit_keyword_signal",
+      eventType: "assistant_final_completed",
       runtime: "openclaw",
       sessionKey: "main",
       refs: ["chat://main/user_turn/concern"],

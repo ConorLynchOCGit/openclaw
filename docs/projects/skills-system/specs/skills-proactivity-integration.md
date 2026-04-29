@@ -142,6 +142,10 @@ Runtime rule:
 
 - Stage 1 deterministic prefilter decides only whether it is worth asking a
   model about candidate review
+- Stage 1 is based on structural runtime events and budget/cooldown controls
+  only. It must not use skill/proactivity/candidate/workflow keywords,
+  correction phrases, recurring-work phrases, topic labels, or turn-count
+  thresholds as gates or hints.
 - Stage 2 model trigger evaluation decides whether a bounded recent-work
   episode has enough signal for candidate review and whether the goal is
   skills, proactivity, both, or none

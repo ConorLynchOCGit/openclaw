@@ -21,6 +21,10 @@ This slice establishes:
 
 - a deterministic Stage 1 prefilter that decides when it is worth asking a
   model whether live candidate review should run
+- Stage 1 is structural only: assistant finals, heartbeat/session boundaries,
+  validation/proof failures, and card-quality or dismissal events. It must not
+  use skill/proactivity/candidate/workflow keywords, correction phrases,
+  recurring-work phrases, or turn counts as hints or gates.
 - a bounded Stage 2 model trigger evaluator that chooses whether there is
   enough signal, which recent refs belong in the review window, and whether the
   review goal is skills, proactivity, both, or none
