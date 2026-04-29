@@ -7,7 +7,7 @@ title: "Skills System Status"
 
 ## Overall
 
-State: `phase2_model_reviewed_candidate_discovery_in_progress`
+State: `phase2_high_context_candidate_review_in_progress`
 
 The repo already has a canonical home for skill loading, ClawHub posture, and
 Skill Vetting.
@@ -15,9 +15,9 @@ Skill Vetting.
 Milestone 1 defined the platform contract. Milestone 2 made `skill_candidate`
 live in the proactivity ledger. Milestone 3 added bounded Skillifier draft
 packages. The active work now is a pre-Milestone-4 candidate-discovery repair:
-skill and proactive-plan candidates should be model-reviewed from bounded
-recent-work episodes, then deterministically validated, deduped, and rendered
-through the existing model-authored decision-brief path.
+skill and proactive-plan candidates should be reviewed less often with more
+context, then deterministically validated, deduped, and rendered through the
+existing model-authored decision-brief path.
 
 The current outcomes are:
 
@@ -29,17 +29,20 @@ The current outcomes are:
 - user-facing surfaces now need a shared `UserFacingProactivityBrief` contract
   so primary copy is concise, decision-oriented, and distinct from internal
   ledger diagnostics
-- deterministic candidate discovery is not sufficient by itself; questions such
-  as "what repeatable process should become a skill?" and "what proactive next
-  step matters now?" require model judgment over recent work episodes
-- live model review may inspect bounded recent transcript/activity excerpts,
-  including assistant finals and user corrections, while durable state keeps
-  only capped excerpts, refs, hashes, classifications, and proposal summaries
-- separate route configs are required for the trigger evaluator, candidate
-  reviewer, and presentation brief generator so memory capture/retrieval and
-  default chat model behavior remain isolated
-- Codex session activity may feed candidate discovery as bounded read-only
-  training fodder when available
+- skill/proactivity candidate review is not memory capture; it needs coherent
+  work episodes and judgment, not many small atomic facts
+- live model review may inspect bounded but substantial recent
+  transcript/activity windows, including assistant finals and user corrections,
+  while durable state keeps only capped episode turns, refs, hashes,
+  classifications, validation reports, and proposal summaries
+- candidate review now optimizes for 0-3 high-impact proposals per review and
+  prefers no candidate over marginal cleanup
+- separate route configs are required for the optional trigger evaluator,
+  candidate reviewer, and presentation brief generator so memory
+  capture/retrieval and default chat model behavior remain isolated
+- Codex session activity is first-class candidate-review input when available;
+  live proof must either exercise it or record an explicit unavailable/degraded
+  reason
 - reverse prompts must pass a question-quality gate before primary surfacing
 - existing-skill enhancement candidates must be distinguished from new-skill
   candidates using explicit skill metadata or candidate linkage
@@ -47,10 +50,10 @@ The current outcomes are:
 ## Current judgment
 
 The biggest missing skill-system capability is now not another artifact type;
-it is model-reviewed candidate discovery. Milestone 4 evals should not optimize
-deterministic source-fragment candidates when the actual product question is
-whether a recent work episode contains a useful skill, proactive plan,
-enhancement, merge, or demotion.
+it is high-context candidate judgment. Milestone 4 evals should not optimize
+atomic source-fragment candidates when the actual product question is whether a
+work episode contains a useful reusable skill, proactive plan, enhancement,
+merge, or demotion.
 
 ## Remaining work after this slice
 

@@ -145,23 +145,18 @@ Pre-Milestone-4 model-authored presentation gate:
   item does or unlocks; and provide one actionable next step, the item is
   demoted instead of appearing as a vague card
 
-Pre-Milestone-4 model-reviewed discovery gate:
+Pre-Milestone-4 high-context model-reviewed discovery gate:
 
-- candidate discovery should begin from bounded recent-work episodes, not only
-  deterministic source-fragment grouping
-- a deterministic prefilter may fire for structural runtime events such as
-  assistant finals, heartbeat/session boundaries, validation/proof failures,
-  and card-quality or dismissal events
-- the prefilter must not use skill/proactivity/candidate/workflow keywords,
-  correction phrases, recurring-work phrases, topic labels, or turn-count
-  thresholds as gates or hints
-- a model trigger evaluator decides whether the recent window is a related work
-  episode, whether it contains a correction/critique or recurring workflow, and
-  whether candidate review should focus on skills, proactivity, both, or none
-- candidate-review input may include bounded recent transcript/activity
-  excerpts, including assistant finals and Codex session summaries; durable
-  artifacts must keep only capped excerpts, refs, hashes, classifications, and
-  proposal summaries
+- candidate discovery should begin from coherent high-context recent-work
+  episodes, not memory-shaped source-fragment grouping
+- review cadence is heartbeat/operator briefing, every 3 assistant finals by
+  default, session/compaction boundary, and a future manual review hook
+- candidate-review input may include larger capped `episodeTurns`, including
+  assistant finals and Codex session summaries; durable artifacts must keep
+  only sanitized packet content, refs, hashes, classifications, validation
+  reports, route summaries, and proposal summaries
+- each review returns 0-3 high-impact proposals and may return zero when the
+  episode does not justify surfacing
 - model-reviewed candidate proposals remain proposal-only and must pass
   deterministic schema, no-dark-data, provenance, cooldown, dedupe, and safety
   checks before entering existing proactivity surfaces

@@ -89,18 +89,16 @@ Phase 2 currently assumes:
   `openai-codex/gpt-5.4` proactivity-presentation route with medium reasoning
   by default; deterministic validators still run after model output and
   unclear, generic, repetitive, or unsafe cards are demoted rather than surfaced
-- the next pre-Milestone-4 repair moves subjective candidate discovery into a
-  two-stage model-reviewed episode workflow: deterministic prefilter, model
-  trigger evaluator, bounded episode packet, model candidate reviewer,
-  deterministic validation/dedupe, and existing proactivity surfacing
-- the deterministic prefilter is structural only and may not use
-  skill/proactivity/candidate/workflow keywords, correction phrases,
-  recurring-work phrases, topic labels, or turn-count thresholds as gates or
-  hints; those judgments belong to the model trigger evaluator
-- live candidate review may inspect bounded recent transcript/activity
-  excerpts, including assistant finals and Codex session summaries, while
-  durable artifacts persist only capped excerpts, refs, hashes,
-  classifications, validation results, and proposal summaries
+- the next pre-Milestone-4 repair shifts subjective candidate discovery from
+  frequent atomic extraction to infrequent high-context model review
+- review cadence is heartbeat/operator briefing, every 3 assistant finals by
+  default, session/compaction boundary, and a future manual review hook
+- live candidate review may inspect larger capped `episodeTurns`, including
+  assistant finals and Codex session summaries, while durable artifacts persist
+  only sanitized packet content, refs, hashes, classifications, validation
+  results, route summaries, and proposal summaries
+- candidate review returns 0-3 high-impact proposals and prefers no candidate
+  over marginal cleanup
 - low-risk limited-scope skill automation may later be allowed after
   tests/vetting/canary, but medium-risk and high-risk skill changes remain
   approval-gated

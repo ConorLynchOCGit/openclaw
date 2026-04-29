@@ -103,10 +103,13 @@ Pre-Milestone-4 repair:
   model output
 - demote generic, repetitive, clipped, schema-invalid, or unsafe cards instead
   of surfacing vague fallback copy
-- add a two-stage candidate-review trigger before Milestone 4 so subjective
-  questions such as "what should become a reusable skill?" and "what proactive
-  next step would help?" are model-reviewed from bounded recent-work episodes
-  instead of decided by deterministic source-fragment rules alone
+- shift candidate review before Milestone 4 from frequent atomic extraction to
+  infrequent high-context episode review: heartbeat/operator briefing, every 3
+  assistant finals by default, session/compaction boundary, and a future manual
+  review hook
+- use larger capped `episodeTurns`, first-class Codex activity, a higher-quality
+  reviewer route, and a 0-3 high-impact proposal limit so weak cleanup
+  candidates are demoted rather than surfaced
 - keep model route isolation explicit: trigger evaluation, candidate review,
   presentation briefs, model-memory capture/retrieval, and default chat remain
   separate configurable routes with separate schemas

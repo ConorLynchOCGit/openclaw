@@ -238,11 +238,11 @@ Must show:
   afterward and demote generic, repetitive, clipped, unsafe, or unclear cards
 - the model-authored pass is presentation-only and cannot mutate canonical
   state, execute actions, send messages, install skills, or promote skills
-- candidate discovery may use a separate bounded model-reviewed episode pass
-  to propose skills and proactive plans from recent user/assistant activity,
-  but card details must show whether the item was model-reviewed, what runtime
-  supplied the evidence, and why raw transcript/tool-log content was not
-  persisted
+- candidate discovery may use a separate high-context model-reviewed episode
+  pass to propose 0-3 high-impact skills and proactive plans from recent
+  OpenClaw/Codex activity, but card details must show whether the item was
+  model-reviewed, what runtime supplied the evidence, packet hash/path, and why
+  raw transcript/tool-log content was not persisted
 - skill candidates must label whether the next decision is a new skill, an
   existing-skill enhancement, or a merge/extend candidate
 - inline follow-up and heartbeat cards must follow the same bounded width and

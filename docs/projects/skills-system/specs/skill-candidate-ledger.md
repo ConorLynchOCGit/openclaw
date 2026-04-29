@@ -96,19 +96,28 @@ Pre-Milestone-4 presentation contract:
 - deterministic validators remain mandatory after model output and must demote
   generic, repetitive, clipped, unsafe, schema-invalid, or unclear cards
 
-Pre-Milestone-4 model-reviewed discovery contract:
+Pre-Milestone-4 high-context model-reviewed discovery contract:
 
 - deterministic candidate creation alone is not sufficient for subjective
   usefulness
-- skill candidates may originate from a model-reviewed bounded episode packet
-  when the Stage 1 prefilter and Stage 2 trigger evaluator both accept review
+- skill candidates may originate from a high-context model-reviewed episode
+  packet when structural cadence and budget/cooldown controls allow review
+- candidate review is not memory capture; it uses larger capped `episodeTurns`
+  and coherent recent OpenClaw/Codex work windows rather than many short atomic
+  snippets
+- review cadence is heartbeat/operator briefing, every 3 assistant finals by
+  default, session/compaction boundary, and a future manual review command
+- each review returns at most 0-3 high-impact proposals and may return zero
+  when the episode is weak, local-only, or marginal
 - the model reviewer may classify a proposed item as:
   - `new_skill_candidate`
   - `existing_skill_enhancement`
   - `merge_or_extend_candidate`
   - `demote_existing_candidate`
 - model-reviewed proposals must carry bounded evidence refs and hashes back to
-  the episode packet
+  the episode packet, including Codex refs when Codex evidence contributed
+- proposals must carry expected user value, high-impact rationale, and why the
+  item is not merely small cleanup
 - proposal text is candidate rationale, not semantic truth
 - deterministic id generation, dedupe, lifecycle updates, no-dark-data checks,
   provenance checks, and surface eligibility remain runtime authority

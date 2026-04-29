@@ -5,6 +5,29 @@ title: "Model Memory Decisions"
 
 # Model Memory Decisions
 
+## 2026-04-29 - Skill and proactivity candidate review uses high-context episodes
+
+Decision:
+
+- skill/proactivity candidate review is not memory capture and must not be
+  optimized as frequent atomic extraction
+- live review runs less often by structural cadence: heartbeat/operator
+  briefing, every 3 assistant finals by default, session/compaction boundary,
+  and a future manual review hook
+- the review packet uses larger capped `episodeTurns` so the reviewer can reason
+  over coherent OpenClaw and Codex work episodes
+- Codex session activity is first-class bounded input when available, because
+  implementation and validation work often happens in Codex
+- candidate review returns 0-3 high-impact proposals and prefers no candidate
+  over marginal cleanup
+- sanitized episode packet artifacts may be persisted for auditability, but raw
+  full transcripts, raw prompts, raw model responses, raw tool logs, secrets,
+  private phrases, hidden reasoning, and unbounded session logs remain
+  forbidden
+- model-reviewed candidates are proposals only; they cannot write canonical
+  memory truth, install/promote skills, execute actions, send messages, or
+  mutate files
+
 ## 2026-04-28 - Candidate discovery uses bounded model-reviewed episodes
 
 Decision:

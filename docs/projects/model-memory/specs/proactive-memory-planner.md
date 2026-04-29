@@ -66,19 +66,16 @@ Remaining implementation details:
 - deterministic schema, boundedness, no-dark-data, generic-copy, repetition,
   and unsafe-claim validators must run after model output; weak cards are
   demoted instead of surfaced as vague fallback copy
-- candidate discovery for skills and proactive plans uses a two-stage
+- candidate discovery for skills and proactive plans uses high-context
   model-reviewed episode workflow before Milestone 4 evals:
-  - deterministic Stage 1 prefilter identifies structural runtime events worth
-    considering, subject to budget and cooldown controls
-  - Stage 1 must not use skill/proactivity/candidate/workflow keywords,
-    correction phrases, recurring-work phrases, topic labels, or turn-count
-    thresholds as gates or hints
-  - bounded Stage 2 model trigger evaluation decides whether there is enough
-    signal and what recent refs belong in the review window
-  - a model candidate reviewer proposes plans, new skills, existing-skill
-    enhancements, merge candidates, or demotions from a bounded episode packet
-  - deterministic validation, cooldown, dedupe, provenance, and no-dark-data
-    gates decide what can enter canonical proactivity state
+  - structural cadence is heartbeat/operator briefing, every 3 assistant finals
+    by default, session/compaction boundary, and a future manual review hook
+  - the model candidate reviewer sees capped `episodeTurns` from coherent
+    OpenClaw and Codex work windows rather than only short atomic snippets
+  - the reviewer proposes at most 0-3 high-impact plans, new skills,
+    existing-skill enhancements, merge candidates, or demotions
+  - deterministic validation, cooldown, dedupe, provenance, route isolation,
+    and no-dark-data gates decide what can enter canonical proactivity state
 - maintenance mechanics are owned by
   [Memory Maintenance Loop](/projects/model-memory/specs/memory-maintenance-loop)
 

@@ -133,45 +133,53 @@ Rules:
   explicit existing-skill improvement, or a demoted weak candidate, it must
   choose demotion
 
-## Model-reviewed candidate discovery
+## High-context model-reviewed candidate discovery
 
 Presentation repair alone is not enough. The platform also needs model judgment
-before a candidate enters the operator-visible path.
+before a candidate enters the operator-visible path. This review is not memory
+capture: memory wants many atomic facts, while skill/proactivity discovery wants
+coherent work episodes and judgment.
 
 Runtime rule:
 
-- Stage 1 deterministic prefilter decides only whether it is worth asking a
-  model about candidate review
-- Stage 1 is based on structural runtime events and budget/cooldown controls
-  only. It must not use skill/proactivity/candidate/workflow keywords,
-  correction phrases, recurring-work phrases, topic labels, or turn-count
-  thresholds as gates or hints.
-- Stage 2 model trigger evaluation decides whether a bounded recent-work
-  episode has enough signal for candidate review and whether the goal is
-  skills, proactivity, both, or none
-- candidate review then proposes proactive plans, new skill candidates,
-  existing-skill enhancements, merge/extend candidates, and demotions from a
-  bounded episode packet
+- review runs infrequently by structural cadence: heartbeat/operator briefing,
+  every 3 assistant finals by default, session/compaction boundary, and a
+  future manual review hook
+- keyword/topic/phrase checks must not act as trigger hints or gates
+- candidate-review packets use larger capped `episodeTurns`, not only short
+  memory-shaped snippets
+- candidate review proposes at most 0-3 high-impact proactive plans, new skill
+  candidates, existing-skill enhancements, merge/extend candidates, or
+  demotions from the high-context episode packet
+- the reviewer must prefer no candidate over marginal candidates, require
+  repeatability or large avoided cost, and reject tiny cleanup candidates
 - deterministic validation, cooldowns, dedupe, provenance checks, no-dark-data
   checks, and write-eligibility checks still decide whether a proposal becomes
   or updates a canonical proactivity record
 
 Allowed live model input includes bounded recent user turns, assistant finals,
 card diagnostics, activity summaries, validation summaries, loaded skill
-metadata, candidate summaries, and Codex session excerpts or summaries.
+metadata, candidate summaries, and Codex session excerpts or summaries. Codex
+activity is first-class input where available because implementation/debugging
+work often happens there.
 
-Durable state must store only bounded packets, capped excerpts, refs, hashes,
-classification/proposal records, validation reports, and route summaries. Raw
-full transcripts, raw prompts, raw tool logs, hidden reasoning, secrets, private
-phrases, and unbounded OpenClaw/Codex session logs are forbidden durable
-artifacts.
+Durable state must store only sanitized packets, capped episode turns, refs,
+hashes, classification/proposal records, validation reports, packet hashes, and
+route summaries. Raw full transcripts, raw prompts, raw model responses, raw
+tool logs, hidden reasoning, secrets, private phrases, and unbounded
+OpenClaw/Codex session logs are forbidden durable artifacts.
+
+Sanitized episode packet artifacts may be persisted for auditability. They must
+show source runtime, Codex adapter status, packet path/hash, proposal counts,
+and validation/demotion reasons without persisting raw prompt/model response
+text.
 
 Candidate-review output is proposal-only. It must not execute actions, install
 or promote skills, send messages, mutate files, write canonical memory truth, or
 become fuzzy duplicate authority.
 
 Candidate-review route config is separate from chat, memory capture/retrieval,
-and presentation-brief routes. The trigger evaluator, candidate reviewer, and
-presentation brief generator each report their model id/config family. Candidate
-review also has explicit max-per-session and time-bounded cooldown controls so
-repeat proof or heartbeat runs do not create a permanent suppression state.
+and presentation-brief routes. The candidate reviewer should use a
+GPT-5.4-class route with medium/high reasoning by default. Candidate review also
+has explicit max-per-session/day and time-bounded cooldown controls so repeat
+proof or heartbeat runs do not create a permanent suppression state.

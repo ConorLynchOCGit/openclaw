@@ -7,6 +7,52 @@ title: "Skills System Decisions"
 
 ## Accepted decisions
 
+### 2026-04-29 - Candidate review uses infrequent high-context episode review
+
+Reason:
+
+- skill and proactive-plan discovery is not the same task as model-memory
+  capture; memory capture benefits from many atomic facts, while candidate
+  discovery needs coherent work episodes and product judgment
+- short bounded excerpts preserved safety but lost the narrative continuity that
+  lets the reviewer identify higher-leverage skills and plans
+- the product goal is a handful of strong candidates per day, not many
+  low-value cards or tiny cleanup suggestions
+- Codex session activity must be first-class input because implementation,
+  debugging, validation, and repeated workflow friction often happen in Codex
+
+Decision:
+
+- candidate review now runs infrequently by structural cadence:
+  heartbeat/operator briefing, every `N` assistant finals with default `N=3`,
+  session/compaction boundary, and a future explicit manual review hook
+- keyword, topic, or phrase prefilters are not part of the candidate-review
+  trigger path
+- the candidate review packet uses `episodeTurns` with larger caps instead of
+  memory-shaped `boundedTurnExcerpts`; default caps should preserve substantial
+  recent user turns and assistant finals while still redacting and bounding
+  durable artifacts
+- the candidate reviewer route is separate from chat, memory capture/retrieval,
+  and presentation-brief routes and should default to a higher-quality
+  GPT-5.4-class route with medium/high reasoning
+- each review may return at most 0-3 proposals and must prefer no candidate over
+  marginal candidates
+- proposals require repeatability or large avoided cost, clear expected user
+  value, and an explicit classification as proactive plan, new skill, existing
+  skill enhancement, merge/extend candidate, or demotion
+- tiny cleanup candidates, one-off local optimizations, vague checklists, and
+  clipped source-fragment candidates are rejected or demoted
+- Codex session activity is included through a read-only bounded adapter where
+  available; proof skips are degraded unless the local/dev Codex session path
+  is genuinely unavailable
+- sanitized episode packet artifacts may be persisted for auditability, but raw
+  full transcripts, raw prompts, raw model responses, raw tool logs, secrets,
+  private phrases, hidden reasoning, and unbounded OpenClaw/Codex session logs
+  remain forbidden
+- model-reviewed candidates remain proposals only and cannot write canonical
+  memory truth, install/promote skills, execute actions, send messages, or
+  mutate files
+
 ### 2026-04-28 - Candidate discovery is model-reviewed from bounded recent-work episodes
 
 Reason:

@@ -31,33 +31,38 @@ session logs into skill artifacts.
 - raw source copied into skill examples unless explicitly approved
 - semantic truth updates from telemetry alone
 
-## Live candidate review input
+## Live high-context candidate review input
 
-The candidate-review model may inspect bounded Codex session activity as live
-input when the Codex adapter is enabled. This is intentionally broader than the
-durable artifact policy because assistant work activity is often where the
-strongest reusable-work signals appear.
+The candidate-review model may inspect bounded but substantial Codex session
+activity as live input when the Codex adapter is enabled. This is intentionally
+broader than the durable artifact policy because assistant work activity is
+often where the strongest reusable-work signals appear.
 
 Allowed live inputs:
 
-- capped recent user asks
-- capped assistant final excerpts or summaries
+- capped recent Codex user asks
+- capped assistant finals and outcome summaries
 - bounded user corrections
 - command summaries with command family, pass/fail state, and failure class
 - validation/proof failure summaries
 - recurring file or workflow area summaries
 - successful workflow skeleton summaries
+- sanitized episode packet artifacts with refs and hashes
 
 Forbidden durable persistence remains unchanged:
 
 - no full raw Codex transcript
 - no raw command logs
+- no raw model prompts or raw model responses
 - no secrets or private phrases
 - no hidden reasoning
 - no external/Codex text treated as executable instruction
 
 The adapter must produce refs and hashes so proposals can be audited without
-persisting the raw session log.
+persisting the raw session log. Live proof should exercise the Codex adapter
+where the environment has Codex session activity. If no stable Codex session
+path exists in local/dev, the skip must be explicit; in live/operator proof,
+the skip is degraded unless the unavailable path is evidenced.
 
 ## Allowed outputs
 
