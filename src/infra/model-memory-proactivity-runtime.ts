@@ -210,6 +210,12 @@ type GatewayProactivityBuildInput = {
   userId: string;
   recipientId: string;
   cfg?: ReturnType<typeof loadConfig>;
+  candidateReviewOverride?: {
+    cooldownMs?: number;
+    forceRun?: boolean;
+    codexSessionRoot?: string;
+    codexHistoryPath?: string;
+  };
 };
 
 type GatewayProactivityBuildState = {
@@ -1450,6 +1456,7 @@ async function buildModelReviewedCandidateSources(input: {
   cfg: ReturnType<typeof loadConfig>;
   sessionKey: string;
   projectId: string;
+  candidateReviewOverride?: GatewayProactivityBuildInput["candidateReviewOverride"];
   projectActivitySources: Phase2PersistedProactivityActivityRecord[];
   skillCandidateReport: Phase2SkillCandidateLedgerReport;
   recurringPatternReport: Awaited<ReturnType<typeof buildPhase2ProactivityRecurringPatternReport>>;
@@ -1471,6 +1478,11 @@ async function buildModelReviewedCandidateSources(input: {
     process.env[CANDIDATE_REVIEW_COOLDOWN_ENV],
     DEFAULT_CANDIDATE_REVIEW_COOLDOWN_MS,
   );
+  const effectiveReviewCooldownMs =
+    typeof input.candidateReviewOverride?.cooldownMs === "number"
+      ? Math.max(0, input.candidateReviewOverride.cooldownMs)
+      : reviewCooldownMs;
+  const forceReviewRun = input.candidateReviewOverride?.forceRun === true;
   const maxReviewsPerSession = readPositiveInteger(
     process.env[CANDIDATE_REVIEW_MAX_PER_SESSION_ENV],
     DEFAULT_CANDIDATE_REVIEW_MAX_PER_SESSION,
@@ -1485,10 +1497,12 @@ async function buildModelReviewedCandidateSources(input: {
   );
   const nowMs = Date.now();
   const latestReviewMs = latestCandidateReviewMs(input.previousEpisodeKeys);
-  const recentReviewEntries = (input.previousEpisodeKeys ?? []).filter((entry) => {
-    const reviewedAtMs = Date.parse(entry.reviewedAt);
-    return Number.isFinite(reviewedAtMs) && nowMs - reviewedAtMs < reviewCooldownMs;
-  });
+  const recentReviewEntries = forceReviewRun
+    ? []
+    : (input.previousEpisodeKeys ?? []).filter((entry) => {
+        const reviewedAtMs = Date.parse(entry.reviewedAt);
+        return Number.isFinite(reviewedAtMs) && nowMs - reviewedAtMs < effectiveReviewCooldownMs;
+      });
   const reviewsInLastHour = (input.previousEpisodeKeys ?? []).filter((entry) => {
     const reviewedAtMs = Date.parse(entry.reviewedAt);
     return Number.isFinite(reviewedAtMs) && nowMs - reviewedAtMs < 60 * 60 * 1_000;
@@ -1509,7 +1523,10 @@ async function buildModelReviewedCandidateSources(input: {
       opportunities: [],
     };
   }
-  if (reviewsInLastHour >= maxReviewsPerSession || reviewsInLastDay >= maxReviewsPerDay) {
+  if (
+    !forceReviewRun &&
+    (reviewsInLastHour >= maxReviewsPerSession || reviewsInLastDay >= maxReviewsPerDay)
+  ) {
     return {
       episodeKey: null,
       triggerDecision: null,
@@ -1537,7 +1554,10 @@ async function buildModelReviewedCandidateSources(input: {
       ? highContextOpenClawActivities
       : recentOpenClawActivities;
   const codexAdapter = readBooleanEnv(process.env[CODEX_SESSION_REVIEW_ENABLED_ENV])
-    ? await loadCodexSessionActivityForCandidateReview()
+    ? await loadCodexSessionActivityForCandidateReview({
+        sessionRoot: input.candidateReviewOverride?.codexSessionRoot,
+        historyPath: input.candidateReviewOverride?.codexHistoryPath,
+      })
     : {
         activities: [],
         report: {
@@ -1571,10 +1591,13 @@ async function buildModelReviewedCandidateSources(input: {
         ]
       : [];
   const recentActivities = [
-    ...effectiveOpenClawActivities,
-    ...codexActivities,
+    ...effectiveOpenClawActivities.slice(-12),
+    ...codexActivities
+      .filter((activity) => activity.role === "user" || activity.role === "assistant")
+      .slice(-10),
+    ...codexActivities.filter((activity) => activity.role === "tool_summary").slice(-8),
     ...heartbeatActivities,
-  ].slice(-24);
+  ].slice(-30);
   if (recentActivities.length === 0) {
     return {
       episodeKey: null,
@@ -1610,7 +1633,10 @@ async function buildModelReviewedCandidateSources(input: {
     assistantFinalsSinceLastReview >= assistantFinalInterval;
   const structuralTriggerReady =
     latestEventType !== "assistant_final_completed" || assistantCadenceReady;
-  if ((latest?.role === "user" && !heartbeatIsReviewTrigger) || !structuralTriggerReady) {
+  if (
+    !forceReviewRun &&
+    ((latest?.role === "user" && !heartbeatIsReviewTrigger) || !structuralTriggerReady)
+  ) {
     return {
       episodeKey: null,
       triggerDecision: null,
@@ -1673,11 +1699,14 @@ async function buildModelReviewedCandidateSources(input: {
       `stage1:${prefilter.reasonCodes.join(",")}`,
       `assistant_finals_since_last_review:${assistantFinalsSinceLastReview}`,
       `assistant_final_interval:${assistantFinalInterval}`,
+      ...(forceReviewRun ? ["candidate_review_force_run:true"] : []),
     ],
   });
-  const trigger = triggerOptions.enabled
-    ? await evaluateCandidateReviewTrigger(triggerPacket, triggerOptions)
-    : buildStructuralCandidateReviewTrigger({ event, recentActivities });
+  const trigger = forceReviewRun
+    ? buildStructuralCandidateReviewTrigger({ event, recentActivities })
+    : triggerOptions.enabled
+      ? await evaluateCandidateReviewTrigger(triggerPacket, triggerOptions)
+      : buildStructuralCandidateReviewTrigger({ event, recentActivities });
   if (!trigger.decision.shouldRun || trigger.decision.reviewGoal === "none") {
     return {
       episodeKey: prefilter.episodeKey,
@@ -1799,6 +1828,7 @@ export async function buildModelMemoryProactivityRuntimeState(
     cfg,
     sessionKey: params.sessionKey,
     projectId: params.projectId,
+    candidateReviewOverride: params.candidateReviewOverride,
     projectActivitySources,
     skillCandidateReport,
     recurringPatternReport,

@@ -16,6 +16,32 @@ function readString(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
 
+function readNonNegativeNumber(value: unknown): number | undefined {
+  const parsed =
+    typeof value === "number"
+      ? value
+      : typeof value === "string" && value.trim()
+        ? Number.parseInt(value, 10)
+        : NaN;
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : undefined;
+}
+
+function readBooleanParam(value: unknown): boolean | undefined {
+  if (typeof value === "boolean") {
+    return value;
+  }
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    if (normalized === "true" || normalized === "1") {
+      return true;
+    }
+    if (normalized === "false" || normalized === "0") {
+      return false;
+    }
+  }
+  return undefined;
+}
+
 function resolveOperatorId(params: Record<string, unknown>, clientId: string | undefined): string {
   return readString(params.operatorId) ?? clientId ?? process.env.USER ?? "local-openclaw-operator";
 }
@@ -238,6 +264,12 @@ export const modelMemoryProactivityHandlers: GatewayRequestHandlers = {
         operatorId,
         userId,
         recipientId,
+        candidateReviewOverride: {
+          cooldownMs: readNonNegativeNumber(params.candidateReviewCooldownMs),
+          forceRun: readBooleanParam(params.candidateReviewForceRun),
+          codexSessionRoot: readString(params.candidateReviewCodexSessionRoot),
+          codexHistoryPath: readString(params.candidateReviewCodexHistoryPath),
+        },
       });
       const report = state.productSurfacingReport;
       respond(true, {

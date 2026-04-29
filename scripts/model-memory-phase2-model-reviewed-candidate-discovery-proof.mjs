@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { createHash } from "node:crypto";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { DEFAULT_TAILNET_ORIGIN, OperatorBrowserHarness } from "./lib/operator-browser-harness.mjs";
@@ -52,6 +52,14 @@ function sha256(value) {
 
 function normalizeText(value) {
   return typeof value === "string" ? value.replace(/\s+/gu, " ").trim() : "";
+}
+
+function boundedProofText(value, maxChars = 4000) {
+  return normalizeText(value)
+    .replace(/sk-[a-z0-9_-]+/giu, "[redacted-secret]")
+    .replace(/raw-prompt-marker|raw-transcript-marker|raw-tool-log-marker/giu, "[redacted-marker]")
+    .slice(0, maxChars)
+    .trim();
 }
 
 function assertNoProhibitedContent(value) {
@@ -121,142 +129,219 @@ async function resetFreshSessionThroughUi(harness, sessionKey) {
   return reset;
 }
 
-async function readCandidateDiscoveryState(page, sessionKey) {
-  return await page.evaluate(async (targetSessionKey) => {
-    const app = document.querySelector("openclaw-app");
-    if (!app?.client) {
-      throw new Error("openclaw app client is unavailable");
-    }
-    const waitForIdle = async () => {
-      const deadline = Date.now() + 180_000;
-      while (
-        (app.productProactivityLoading || app.proactivityInboxLoading) &&
-        Date.now() < deadline
-      ) {
-        await new Promise((resolve) => setTimeout(resolve, 100));
+async function writeCodexHistoryProjection(outputDir) {
+  const sourcePath = process.env.OPENCLAW_CODEX_HISTORY_FILE || "/root/.codex/history.jsonl";
+  const hostWorkspaceRoot = process.env.OPENCLAW_WORKSPACE_DIR || "/root/.openclaw/workspace";
+  const hostProjectionDir = path.join(
+    hostWorkspaceRoot,
+    ".artifacts/model-memory/phase2-high-context-candidate-review",
+    path.basename(outputDir),
+  );
+  const hostProjectionPath = path.join(hostProjectionDir, "codex-history-projection.jsonl");
+  const containerProjectionPath = `/home/node/.openclaw/workspace/.artifacts/model-memory/phase2-high-context-candidate-review/${path.basename(
+    outputDir,
+  )}/codex-history-projection.jsonl`;
+  try {
+    const raw = await readFile(sourcePath, "utf8");
+    const lines = raw
+      .split(/\r?\n/u)
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .slice(-24);
+    const projected = [];
+    for (const [index, line] of lines.entries()) {
+      let parsed = null;
+      try {
+        parsed = JSON.parse(line);
+      } catch {
+        continue;
       }
-      if (app.productProactivityLoading || app.proactivityInboxLoading) {
-        throw new Error("proactivity loaders did not become idle");
+      const text = boundedProofText(parsed?.text ?? parsed?.prompt ?? "");
+      if (!text) {
+        continue;
       }
-    };
-    await waitForIdle();
-    const key = app.sessionKey || targetSessionKey;
-    const existingQueueResponse = app.productProactivityQueueResult ?? null;
-    const existingHasCandidateReview =
-      existingQueueResponse?.candidateReviewTriggerReport?.validationStatus === "pass" &&
-      existingQueueResponse?.candidateReviewReport?.validationStatus === "pass";
-    if (!existingHasCandidateReview) {
-      await app.loadProductProactivityQueue();
-      await waitForIdle();
+      projected.push(
+        JSON.stringify({
+          session_id: boundedProofText(parsed?.session_id ?? "codex-history", 120),
+          ts:
+            typeof parsed?.ts === "number"
+              ? parsed.ts
+              : Math.floor(Date.now() / 1000) - (lines.length - index),
+          text,
+          source_hash: sha256(line),
+          projection: "bounded_codex_history_for_candidate_review_proof.v1",
+        }),
+      );
     }
-    await app.loadProactivityInbox();
-    app.sidebarOpen = true;
-    app.sidebarContent = { kind: "proactivityInbox" };
-    await waitForIdle();
-    await app.updateComplete;
-    const queueResponse = existingHasCandidateReview
-      ? existingQueueResponse
-      : (app.productProactivityQueueResult ?? null);
-
-    const withoutDetailsText = (entry) => {
-      const clone = entry.cloneNode(true);
-      clone.querySelectorAll("details").forEach((details) => details.remove());
-      return clone.textContent?.replace(/\s+/g, " ").trim() ?? "";
-    };
-    const cards = (selector) =>
-      Array.from(document.querySelectorAll(selector)).map((entry) => ({
-        queueItemId: entry.getAttribute("data-queue-item-id") || null,
-        workItemId: entry.getAttribute("data-work-item-id") || null,
-        skillCandidateId: entry.getAttribute("data-skill-candidate-id") || null,
-        primaryText: withoutDetailsText(entry),
-        fullTextHash: hashForBrowser(entry.textContent ?? ""),
-      }));
-    const queueItems = (app.productProactivityQueue ?? queueResponse?.queue?.items ?? []).map(
-      (item) => ({
-        queueItemId: item.queueItemId,
-        workItemId: item.workItemId,
-        opportunityId: item.opportunityId,
-        opportunityClass: item.opportunityClass,
-        status: item.status,
-        layer: item.layer,
-        primaryActionType: item.primaryAction?.actionType ?? null,
-        skillCandidateId: item.skillCandidate?.skillCandidateId ?? null,
-        sourceRefs: item.sourceRefs ?? [],
-        blockedReasonCodes: item.blockedReasonCodes ?? [],
-        briefTitle: item.userFacingBrief?.title ?? null,
-        briefKindLabel: item.userFacingBrief?.kindLabel ?? null,
-        briefPurpose: item.userFacingBrief?.oneLinePurpose ?? null,
-        briefNextStep: item.userFacingBrief?.recommendedNextStep ?? null,
-        briefQuality: item.userFacingBrief?.quality ?? null,
-        briefAuthorship: item.userFacingBrief?.authorship ?? null,
-      }),
-    );
-    const firstActionable =
-      queueItems.find((item) => item.blockedReasonCodes.includes("model_reviewed_candidate")) ??
-      queueItems.find((item) => item.status === "pending_review") ??
-      null;
-    const handoffMessage =
-      firstActionable && typeof app.buildProactivityHandoffMessage === "function"
-        ? app.buildProactivityHandoffMessage(
-            firstActionable.queueItemId,
-            firstActionable.primaryActionType || "plan_this",
-          )
-        : null;
+    if (projected.length === 0) {
+      return { status: "skipped", reason: "codex_history_projection_empty", containerPath: null };
+    }
+    await mkdir(hostProjectionDir, { recursive: true });
+    await writeFile(hostProjectionPath, `${projected.join("\n")}\n`, "utf8");
     return {
-      sessionKey: key,
-      queueResponse: {
-        ok: queueResponse?.ok === true || Array.isArray(app.productProactivityQueue),
-        candidateReviewTriggerReport: queueResponse?.candidateReviewTriggerReport ?? null,
-        candidateReviewReport: queueResponse?.candidateReviewReport ?? null,
-        candidateReviewCodexAdapterReport: queueResponse?.candidateReviewCodexAdapterReport ?? null,
-      },
-      queueItems,
-      inboxItems: (app.proactivityInboxDigest?.items ?? []).map((item) => ({
-        itemId: item.itemId,
-        queueItemId: item.queueItemId,
-        workItemId: item.workItemId,
-        opportunityClass: item.opportunityClass,
-        status: item.status,
-        layer: item.layer,
-        skillCandidateId: item.skillCandidate?.skillCandidateId ?? null,
-        briefTitle: item.userFacingBrief?.title ?? null,
-        briefKindLabel: item.userFacingBrief?.kindLabel ?? null,
-        briefQuality: item.userFacingBrief?.quality ?? null,
-        briefAuthorship: item.userFacingBrief?.authorship ?? null,
-        blockedReasonCodes: item.blockedReasonCodes ?? [],
-      })),
-      inlineCards: cards(".inline-proactivity-card__item"),
-      heartbeatCards: cards(".heartbeat-proactivity-review__card"),
-      inboxCards: cards(".proactivity-inbox__item"),
-      handoff: handoffMessage
-        ? {
-            queueItemId: firstActionable?.queueItemId ?? null,
-            primaryText: handoffMessage
-              .split(/\r?\n/u)
-              .filter((line) => /^(?:Title|Purpose|Recommended next step):/u.test(line))
-              .join(" "),
-            hash: hashForBrowser(handoffMessage),
-          }
-        : null,
+      status: "written",
+      hostPath: hostProjectionPath,
+      containerPath: containerProjectionPath,
+      itemCount: projected.length,
     };
-
-    function hashForBrowser(value) {
-      let hash = 0;
-      const text = String(value);
-      for (let index = 0; index < text.length; index += 1) {
-        hash = (Math.imul(31, hash) + text.charCodeAt(index)) | 0;
-      }
-      return String(hash >>> 0);
-    }
-  }, sessionKey);
+  } catch (error) {
+    return {
+      status: "skipped",
+      reason: error instanceof Error ? error.message : String(error),
+      containerPath: null,
+    };
+  }
 }
 
-async function waitForCandidateDiscoveryState(page, sessionKey, predicate, timeoutMs = 180_000) {
+async function readCandidateDiscoveryState(page, sessionKey, proofOptions) {
+  return await page.evaluate(
+    async ({ targetSessionKey, codexHistoryPath }) => {
+      const app = document.querySelector("openclaw-app");
+      if (!app?.client) {
+        throw new Error("openclaw app client is unavailable");
+      }
+      const waitForIdle = async () => {
+        const deadline = Date.now() + 180_000;
+        while (
+          (app.productProactivityLoading || app.proactivityInboxLoading) &&
+          Date.now() < deadline
+        ) {
+          await new Promise((resolve) => setTimeout(resolve, 100));
+        }
+        if (app.productProactivityLoading || app.proactivityInboxLoading) {
+          throw new Error("proactivity loaders did not become idle");
+        }
+      };
+      await waitForIdle();
+      const key = app.sessionKey || targetSessionKey;
+      const loadProofQueue = async () => {
+        const result = await app.client.request("modelMemory.proactivity.queue", {
+          sessionKey: key,
+          projectId: "openclaw",
+          candidateReviewCooldownMs: 0,
+          candidateReviewForceRun: true,
+          candidateReviewCodexHistoryPath: codexHistoryPath,
+        });
+        app.productProactivityQueueResult = result ?? null;
+        app.productProactivityQueue = Array.isArray(result?.queue?.items) ? result.queue.items : [];
+      };
+      await loadProofQueue();
+      await waitForIdle();
+      await app.loadProactivityInbox();
+      app.sidebarOpen = true;
+      app.sidebarContent = { kind: "proactivityInbox" };
+      await waitForIdle();
+      await app.updateComplete;
+      const queueResponse = app.productProactivityQueueResult ?? null;
+
+      const withoutDetailsText = (entry) => {
+        const clone = entry.cloneNode(true);
+        clone.querySelectorAll("details").forEach((details) => details.remove());
+        return clone.textContent?.replace(/\s+/g, " ").trim() ?? "";
+      };
+      const cards = (selector) =>
+        Array.from(document.querySelectorAll(selector)).map((entry) => ({
+          queueItemId: entry.getAttribute("data-queue-item-id") || null,
+          workItemId: entry.getAttribute("data-work-item-id") || null,
+          skillCandidateId: entry.getAttribute("data-skill-candidate-id") || null,
+          primaryText: withoutDetailsText(entry),
+          fullTextHash: hashForBrowser(entry.textContent ?? ""),
+        }));
+      const queueItems = (app.productProactivityQueue ?? queueResponse?.queue?.items ?? []).map(
+        (item) => ({
+          queueItemId: item.queueItemId,
+          workItemId: item.workItemId,
+          opportunityId: item.opportunityId,
+          opportunityClass: item.opportunityClass,
+          status: item.status,
+          layer: item.layer,
+          primaryActionType: item.primaryAction?.actionType ?? null,
+          skillCandidateId: item.skillCandidate?.skillCandidateId ?? null,
+          sourceRefs: item.sourceRefs ?? [],
+          blockedReasonCodes: item.blockedReasonCodes ?? [],
+          briefTitle: item.userFacingBrief?.title ?? null,
+          briefKindLabel: item.userFacingBrief?.kindLabel ?? null,
+          briefPurpose: item.userFacingBrief?.oneLinePurpose ?? null,
+          briefNextStep: item.userFacingBrief?.recommendedNextStep ?? null,
+          briefQuality: item.userFacingBrief?.quality ?? null,
+          briefAuthorship: item.userFacingBrief?.authorship ?? null,
+        }),
+      );
+      const firstActionable =
+        queueItems.find((item) => item.blockedReasonCodes.includes("model_reviewed_candidate")) ??
+        queueItems.find((item) => item.status === "pending_review") ??
+        null;
+      const handoffMessage =
+        firstActionable && typeof app.buildProactivityHandoffMessage === "function"
+          ? app.buildProactivityHandoffMessage(
+              firstActionable.queueItemId,
+              firstActionable.primaryActionType || "plan_this",
+            )
+          : null;
+      return {
+        sessionKey: key,
+        queueResponse: {
+          ok: queueResponse?.ok === true || Array.isArray(app.productProactivityQueue),
+          candidateReviewTriggerReport: queueResponse?.candidateReviewTriggerReport ?? null,
+          candidateReviewReport: queueResponse?.candidateReviewReport ?? null,
+          candidateReviewCodexAdapterReport:
+            queueResponse?.candidateReviewCodexAdapterReport ?? null,
+        },
+        queueItems,
+        inboxItems: (app.proactivityInboxDigest?.items ?? []).map((item) => ({
+          itemId: item.itemId,
+          queueItemId: item.queueItemId,
+          workItemId: item.workItemId,
+          opportunityClass: item.opportunityClass,
+          status: item.status,
+          layer: item.layer,
+          skillCandidateId: item.skillCandidate?.skillCandidateId ?? null,
+          briefTitle: item.userFacingBrief?.title ?? null,
+          briefKindLabel: item.userFacingBrief?.kindLabel ?? null,
+          briefQuality: item.userFacingBrief?.quality ?? null,
+          briefAuthorship: item.userFacingBrief?.authorship ?? null,
+          blockedReasonCodes: item.blockedReasonCodes ?? [],
+        })),
+        inlineCards: cards(".inline-proactivity-card__item"),
+        heartbeatCards: cards(".heartbeat-proactivity-review__card"),
+        inboxCards: cards(".proactivity-inbox__item"),
+        handoff: handoffMessage
+          ? {
+              queueItemId: firstActionable?.queueItemId ?? null,
+              primaryText: handoffMessage
+                .split(/\r?\n/u)
+                .filter((line) => /^(?:Title|Purpose|Recommended next step):/u.test(line))
+                .join(" "),
+              hash: hashForBrowser(handoffMessage),
+            }
+          : null,
+      };
+
+      function hashForBrowser(value) {
+        let hash = 0;
+        const text = String(value);
+        for (let index = 0; index < text.length; index += 1) {
+          hash = (Math.imul(31, hash) + text.charCodeAt(index)) | 0;
+        }
+        return String(hash >>> 0);
+      }
+    },
+    { targetSessionKey: sessionKey, codexHistoryPath: proofOptions?.codexHistoryPath ?? null },
+  );
+}
+
+async function waitForCandidateDiscoveryState(
+  page,
+  sessionKey,
+  predicate,
+  proofOptions,
+  timeoutMs = 180_000,
+) {
   const deadline = Date.now() + timeoutMs;
   let state = null;
   let bestReviewState = null;
   while (Date.now() < deadline) {
-    state = await readCandidateDiscoveryState(page, sessionKey);
+    state = await readCandidateDiscoveryState(page, sessionKey, proofOptions);
     if (state?.queueResponse?.candidateReviewReport) {
       bestReviewState = state;
     }
@@ -319,6 +404,7 @@ async function main() {
     stamp,
   );
   await mkdir(outputDir, { recursive: true });
+  const codexHistoryProjection = await writeCodexHistoryProjection(outputDir);
   const origin = process.env.OPENCLAW_TAILNET_ORIGIN || DEFAULT_TAILNET_ORIGIN;
   const sessionKey =
     process.env.MODEL_MEMORY_PHASE2_MODEL_REVIEWED_CANDIDATES_SESSION ?? DEFAULT_SESSION_KEY;
@@ -402,6 +488,7 @@ async function main() {
           )
         );
       },
+      { codexHistoryPath: codexHistoryProjection.containerPath },
     );
     if (!finalState) {
       throw new Error("model-reviewed candidate discovery state was not readable");
@@ -562,19 +649,23 @@ async function main() {
           inlineCards: finalState.inlineCards.map((card) => ({
             queueItemId: card.queueItemId,
             skillCandidateId: card.skillCandidateId,
+            primaryText: card.primaryText,
             primaryTextHash: card.fullTextHash,
           })),
           heartbeatCards: finalState.heartbeatCards.map((card) => ({
             queueItemId: card.queueItemId,
             skillCandidateId: card.skillCandidateId,
+            primaryText: card.primaryText,
             primaryTextHash: card.fullTextHash,
           })),
           inboxCards: finalState.inboxCards.map((card) => ({
             queueItemId: card.queueItemId,
             skillCandidateId: card.skillCandidateId,
+            primaryText: card.primaryText,
             primaryTextHash: card.fullTextHash,
           })),
           handoffHash: finalState.handoff?.hash ?? null,
+          codexHistoryProjection,
         }
       : null,
   };

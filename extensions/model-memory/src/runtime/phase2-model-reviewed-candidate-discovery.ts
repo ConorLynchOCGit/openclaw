@@ -35,6 +35,8 @@ export const MODEL_REVIEWED_CANDIDATE_REPORT_SCHEMA_VERSION =
   "model_reviewed_candidate_report.v1" as const;
 export const DEFAULT_CANDIDATE_TRIGGER_MODEL_ID = "openai-codex/gpt-5.4-mini";
 export const DEFAULT_CANDIDATE_REVIEW_MODEL_ID = "openai-codex/gpt-5.4";
+export const CODEX_SESSION_ROOT_ENV = "MODEL_MEMORY_PHASE2_CODEX_SESSION_ROOT";
+export const CODEX_HISTORY_PATH_ENV = "MODEL_MEMORY_PHASE2_CODEX_HISTORY_PATH";
 
 export type CandidateReviewRuntime = "openclaw" | "codex" | "mixed";
 export type CandidateReviewGoal = "skills" | "proactivity" | "both" | "none";
@@ -358,6 +360,10 @@ const MAX_NEXT_STEP_LENGTH = 240;
 const MAX_EXPECTED_VALUE_LENGTH = 220;
 const MAX_HIGH_IMPACT_REASON_LENGTH = 260;
 const MAX_SMALL_CLEANUP_REASON_LENGTH = 220;
+const DEFAULT_CODEX_SESSION_TAIL_BYTES = 20_000_000;
+const DEFAULT_CODEX_SESSION_TAIL_LINES = 2_500;
+const DEFAULT_CODEX_HISTORY_TAIL_BYTES = 1_500_000;
+const DEFAULT_CODEX_HISTORY_TAIL_LINES = 80;
 const PROHIBITED_PATTERNS = [
   /raw-prompt-marker/iu,
   /raw-transcript-marker/iu,
@@ -897,12 +903,33 @@ export function buildProactivityReviewEpisodePacket(input: {
     adjacentIndexes.add(index + 2);
     adjacentIndexes.add(index + 3);
   }
-  const selectedActivities = input.recentActivities
-    .filter(
-      (activity, index) =>
-        includedRefs.size === 0 || includedRefs.has(activity.ref) || adjacentIndexes.has(index),
+  const baseSelectedIndexes = input.recentActivities
+    .map((activity, index) =>
+      includedRefs.size === 0 || includedRefs.has(activity.ref) || adjacentIndexes.has(index)
+        ? index
+        : -1,
     )
-    .slice(-MAX_EPISODE_TURNS);
+    .filter((index) => index >= 0);
+  const recentUserIndexes = input.recentActivities
+    .map((activity, index) => (activity.role === "user" ? index : -1))
+    .filter((index) => index >= 0)
+    .slice(-3);
+  const protectedIndexes = new Set(recentUserIndexes);
+  const selectedIndexSet = new Set([...baseSelectedIndexes, ...recentUserIndexes]);
+  const selectedIndexes = [...selectedIndexSet].toSorted((left, right) => left - right);
+  const overflow = Math.max(0, selectedIndexes.length - MAX_EPISODE_TURNS);
+  const trimmedIndexes =
+    overflow === 0
+      ? selectedIndexes
+      : [
+          ...recentUserIndexes,
+          ...selectedIndexes
+            .filter((index) => !protectedIndexes.has(index))
+            .slice(-Math.max(0, MAX_EPISODE_TURNS - recentUserIndexes.length)),
+        ].toSorted((left, right) => left - right);
+  const selectedActivities = trimmedIndexes
+    .map((index) => input.recentActivities[index])
+    .filter((activity): activity is CandidateReviewRecentActivity => Boolean(activity));
   const episodeTurns: ProactivityReviewEpisodePacket["episodeTurns"] = selectedActivities
     .filter((activity) => activity.role === "user" || activity.role === "assistant")
     .map((activity) => {
@@ -1865,94 +1892,154 @@ function isJsonLikeSessionFile(filePath: string): boolean {
   return /\.(?:jsonl?|ndjson)$/iu.test(filePath);
 }
 
-function roleFromLine(value: unknown): CandidateReviewRecentActivity["role"] | null {
+function objectRecord(value: unknown): Record<string, unknown> | null {
   if (!value || typeof value !== "object") {
     return null;
   }
-  const role =
-    (value as { role?: unknown; type?: unknown }).role ?? (value as { type?: unknown }).type;
+  return value as Record<string, unknown>;
+}
+
+function payloadRecordFromLine(value: unknown): Record<string, unknown> | null {
+  const record = objectRecord(value);
+  return objectRecord(record?.payload);
+}
+
+function preferredCodexRecord(value: unknown): Record<string, unknown> | null {
+  const payload = payloadRecordFromLine(value);
+  return payload ?? objectRecord(value);
+}
+
+function stringField(record: Record<string, unknown> | null, key: string): string | null {
+  const value = record?.[key];
+  return typeof value === "string" ? value : null;
+}
+
+function numberField(record: Record<string, unknown> | null, key: string): number | null {
+  const value = record?.[key];
+  return typeof value === "number" ? value : null;
+}
+
+function isToolLikeCodexRecord(record: Record<string, unknown> | null): boolean {
+  const type = stringField(record, "type");
+  return (
+    type === "function_call" ||
+    type === "function_call_output" ||
+    type === "tool_call" ||
+    type === "tool_result" ||
+    type === "exec_command_begin" ||
+    type === "exec_command_end" ||
+    type === "command"
+  );
+}
+
+function roleFromLine(value: unknown): CandidateReviewRecentActivity["role"] | null {
+  const record = objectRecord(value);
+  const preferred = preferredCodexRecord(value);
+  const role = stringField(preferred, "role") ?? stringField(record, "role");
   if (role === "user" || role === "assistant") {
     return role;
   }
-  if (role === "tool" || role === "command" || role === "tool_result") {
+  const type = stringField(preferred, "type") ?? stringField(record, "type");
+  if (
+    role === "tool" ||
+    role === "command" ||
+    role === "tool_result" ||
+    isToolLikeCodexRecord(preferred) ||
+    isToolLikeCodexRecord(record) ||
+    (type === "event_msg" && isToolLikeCodexRecord(payloadRecordFromLine(value)))
+  ) {
     return "tool_summary";
   }
   return null;
 }
 
-function textFromLine(value: unknown): string {
-  if (!value || typeof value !== "object") {
+function textFromContentArray(content: unknown): string {
+  if (!Array.isArray(content)) {
     return "";
   }
-  const record = value as {
-    text?: unknown;
-    content?: unknown;
-    message?: unknown;
-    output?: unknown;
-    command?: unknown;
-    status?: unknown;
-  };
-  if (typeof record.text === "string") {
-    return record.text;
+  return content
+    .map((entry) => {
+      if (typeof entry === "string") {
+        return entry;
+      }
+      const record = objectRecord(entry);
+      return stringField(record, "text") ?? stringField(record, "content") ?? "";
+    })
+    .filter(Boolean)
+    .join("\n");
+}
+
+function textFromLine(value: unknown): string {
+  const record = preferredCodexRecord(value);
+  if (!record) {
+    return "";
   }
-  if (typeof record.message === "string") {
-    return record.message;
+  const directText =
+    stringField(record, "text") ?? stringField(record, "message") ?? stringField(record, "content");
+  if (directText) {
+    return directText;
   }
-  if (typeof record.content === "string") {
-    return record.content;
+  const contentText = textFromContentArray(record.content);
+  if (contentText) {
+    return contentText;
   }
-  if (Array.isArray(record.content)) {
-    return record.content
-      .map((entry) => {
-        if (typeof entry === "string") {
-          return entry;
-        }
-        if (
-          entry &&
-          typeof entry === "object" &&
-          typeof (entry as { text?: unknown }).text === "string"
-        ) {
-          return (entry as { text: string }).text;
-        }
-        return "";
-      })
-      .filter(Boolean)
-      .join("\n");
-  }
-  if (typeof record.command === "string") {
-    return `Command ${record.command.split(/\s+/u)[0] ?? "unknown"} ${typeof record.status === "string" ? record.status : ""}`.trim();
+  const command = stringField(record, "command");
+  if (command) {
+    return `Command ${command.split(/\s+/u)[0] ?? "unknown"} ${
+      stringField(record, "status") ?? ""
+    }`.trim();
   }
   return "";
 }
 
+function timestampFromLine(value: unknown): string | undefined {
+  const record = objectRecord(value);
+  const payload = payloadRecordFromLine(value);
+  const timestamp =
+    stringField(record, "timestamp") ??
+    stringField(payload, "timestamp") ??
+    stringField(record, "created_at") ??
+    stringField(payload, "created_at");
+  if (timestamp) {
+    return timestamp;
+  }
+  const ts = numberField(record, "ts") ?? numberField(payload, "ts");
+  return typeof ts === "number" && Number.isFinite(ts)
+    ? new Date(ts * 1_000).toISOString()
+    : undefined;
+}
+
+function commandFamilyFromValue(value: unknown): string | null {
+  if (typeof value === "string") {
+    return value.trim().split(/\s+/u)[0] ?? null;
+  }
+  if (Array.isArray(value)) {
+    const first = value[0];
+    return typeof first === "string" ? first : null;
+  }
+  return null;
+}
+
 function toolSummaryTextFromLine(value: unknown): string {
-  if (!value || typeof value !== "object") {
+  const record = preferredCodexRecord(value);
+  if (!record) {
     return "";
   }
-  const record = value as {
-    command?: unknown;
-    tool?: unknown;
-    name?: unknown;
-    status?: unknown;
-    outcome?: unknown;
-    error?: unknown;
-  };
   const commandFamily =
-    typeof record.command === "string"
-      ? record.command.split(/\s+/u)[0]
-      : typeof record.tool === "string"
-        ? record.tool
-        : typeof record.name === "string"
-          ? record.name
-          : "unknown";
+    commandFamilyFromValue(record.command) ??
+    stringField(record, "tool") ??
+    stringField(record, "name") ??
+    stringField(record, "type") ??
+    "unknown";
+  const exitCode = numberField(record, "exit_code") ?? numberField(record, "exitCode");
   const status =
-    typeof record.status === "string"
-      ? record.status
-      : typeof record.outcome === "string"
-        ? record.outcome
-        : typeof record.error === "string"
-          ? "failed"
-          : "unknown";
+    exitCode === 0
+      ? "passed"
+      : typeof exitCode === "number"
+        ? "failed"
+        : (stringField(record, "status") ??
+          stringField(record, "outcome") ??
+          (typeof record.error === "string" ? "failed" : "unknown"));
   return `Command ${commandFamily ?? "unknown"} ${status}`.trim();
 }
 
@@ -1969,11 +2056,13 @@ function activityKindFromCodexLine(
   if (role !== "tool_summary" || !value || typeof value !== "object") {
     return undefined;
   }
-  const record = value as { status?: unknown; outcome?: unknown };
-  const status = record.status ?? record.outcome;
-  return status === "failed" || status === "error" || status === "timeout"
-    ? "failure_summary"
-    : "result_summary";
+  const record = preferredCodexRecord(value);
+  const exitCode = numberField(record, "exit_code") ?? numberField(record, "exitCode");
+  const status = stringField(record, "status") ?? stringField(record, "outcome");
+  return exitCode === 0 ||
+    (status !== "failed" && status !== "error" && status !== "timeout" && exitCode === null)
+    ? "result_summary"
+    : "failure_summary";
 }
 
 async function listSessionFiles(root: string, maxFiles: number): Promise<string[]> {
@@ -1998,30 +2087,186 @@ async function listSessionFiles(root: string, maxFiles: number): Promise<string[
     }
   }
   await walk(root, 0);
-  return files.slice(-maxFiles);
+  return files.toSorted().slice(-maxFiles);
+}
+
+async function directoryStatus(
+  root: string,
+): Promise<"available" | "missing" | "not_directory" | "unreadable"> {
+  try {
+    const stat = await fs.stat(root);
+    if (!stat.isDirectory()) {
+      return "not_directory";
+    }
+    await fs.access(root);
+    return "available";
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    return code === "ENOENT" ? "missing" : "unreadable";
+  }
+}
+
+async function readSessionFileTail(
+  filePath: string,
+  maxBytes: number,
+): Promise<{ text: string; truncated: boolean }> {
+  const handle = await fs.open(filePath, "r");
+  try {
+    const stat = await handle.stat();
+    const bytesToRead = Math.min(stat.size, Math.max(1, maxBytes));
+    const start = Math.max(0, stat.size - bytesToRead);
+    const buffer = Buffer.alloc(bytesToRead);
+    const read = await handle.read(buffer, 0, bytesToRead, start);
+    return {
+      text: buffer.subarray(0, read.bytesRead).toString("utf8"),
+      truncated: start > 0,
+    };
+  } finally {
+    await handle.close();
+  }
+}
+
+function selectCodexActivitiesForReview(
+  activities: CandidateReviewRecentActivity[],
+  maxEntries: number,
+): CandidateReviewRecentActivity[] {
+  const narrativeBudget = Math.max(2, Math.ceil(maxEntries * 0.7));
+  const userBudget = Math.max(1, Math.ceil(narrativeBudget / 2));
+  const assistantBudget = Math.max(1, narrativeBudget - userBudget);
+  const userRefs = activities
+    .filter((activity) => activity.role === "user")
+    .slice(-userBudget)
+    .map((activity) => activity.ref);
+  const assistantRefs = activities
+    .filter((activity) => activity.role === "assistant")
+    .slice(-assistantBudget)
+    .map((activity) => activity.ref);
+  const narrativeRefs = new Set([...userRefs, ...assistantRefs]);
+  if (narrativeRefs.size < narrativeBudget) {
+    for (const activity of activities.filter(
+      (candidate) => candidate.role === "user" || candidate.role === "assistant",
+    )) {
+      if (narrativeRefs.size >= narrativeBudget) {
+        break;
+      }
+      narrativeRefs.add(activity.ref);
+    }
+  }
+  const remainingBudget = Math.max(0, maxEntries - narrativeRefs.size);
+  const toolRefs = new Set(
+    activities
+      .filter((activity) => activity.role === "tool_summary")
+      .slice(-remainingBudget)
+      .map((activity) => activity.ref),
+  );
+  const selectedRefs = new Set([...narrativeRefs, ...toolRefs]);
+  return activities.filter((activity) => selectedRefs.has(activity.ref)).slice(-maxEntries);
+}
+
+async function loadCodexHistoryActivities(input: {
+  historyPath?: string;
+  maxBytes?: number;
+  maxLines?: number;
+}): Promise<CandidateReviewRecentActivity[]> {
+  if (!input.historyPath) {
+    return [];
+  }
+  let raw: { text: string; truncated: boolean };
+  try {
+    raw = await readSessionFileTail(
+      input.historyPath,
+      input.maxBytes ?? DEFAULT_CODEX_HISTORY_TAIL_BYTES,
+    );
+  } catch {
+    return [];
+  }
+  const rawLines = raw.text.split(/\r?\n/u);
+  if (raw.truncated) {
+    rawLines.shift();
+  }
+  const lines = rawLines
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .slice(-(input.maxLines ?? DEFAULT_CODEX_HISTORY_TAIL_LINES));
+  const activities: CandidateReviewRecentActivity[] = [];
+  for (const [index, line] of lines.entries()) {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    const record = objectRecord(parsed);
+    const text = redactAndBoundEpisodeText(
+      stringField(record, "text") ?? "",
+      MAX_USER_EPISODE_TURN_LENGTH,
+    );
+    if (!text) {
+      continue;
+    }
+    const sessionId = boundedText(stringField(record, "session_id") ?? "unknown", 80);
+    const ts = numberField(record, "ts");
+    activities.push({
+      ref: `codex-history://${sessionId}/${typeof ts === "number" ? ts : index}`,
+      role: "user",
+      kind: "ask",
+      boundedText: text,
+      sourceRuntime: "codex",
+      recordedAt: typeof ts === "number" ? new Date(ts * 1_000).toISOString() : undefined,
+    });
+  }
+  return activities;
 }
 
 export async function loadCodexSessionActivityForCandidateReview(
   input: {
     codexHome?: string;
+    sessionRoot?: string;
+    historyPath?: string;
     maxFiles?: number;
     maxEntries?: number;
+    maxFileTailBytes?: number;
+    maxTailLines?: number;
+    maxHistoryTailBytes?: number;
+    maxHistoryLines?: number;
   } = {},
 ): Promise<{
   activities: CandidateReviewRecentActivity[];
   report: CandidateReviewCodexAdapterReport;
 }> {
+  const explicitSessionRoot = input.sessionRoot ?? process.env[CODEX_SESSION_ROOT_ENV];
   const codexHome =
     input.codexHome ??
     process.env.CODEX_HOME ??
     (process.env.HOME ? path.join(process.env.HOME, ".codex") : undefined);
-  if (!codexHome) {
+  const historyPath =
+    input.historyPath ??
+    process.env[CODEX_HISTORY_PATH_ENV] ??
+    (codexHome ? path.join(codexHome, "history.jsonl") : undefined);
+  if (!explicitSessionRoot && !codexHome) {
     return {
       activities: [],
       report: { status: "skipped", reasonCode: "codex_home_unavailable", entryCount: 0 },
     };
   }
-  const sessionRoot = path.join(codexHome, "sessions");
+  const sessionRoot = explicitSessionRoot ?? path.join(codexHome as string, "sessions");
+  const rootStatus = await directoryStatus(sessionRoot);
+  if (rootStatus !== "available") {
+    return {
+      activities: [],
+      report: {
+        status: "skipped",
+        reasonCode:
+          rootStatus === "missing"
+            ? "codex_session_root_unavailable"
+            : rootStatus === "not_directory"
+              ? "codex_session_root_not_directory"
+              : "codex_session_root_unreadable",
+        sourceRoot: sessionRoot,
+        entryCount: 0,
+      },
+    };
+  }
   const files = await listSessionFiles(sessionRoot, input.maxFiles ?? 12);
   if (files.length === 0) {
     return {
@@ -2035,18 +2280,30 @@ export async function loadCodexSessionActivityForCandidateReview(
     };
   }
   const activities: CandidateReviewRecentActivity[] = [];
+  const historyActivities = await loadCodexHistoryActivities({
+    historyPath,
+    maxBytes: input.maxHistoryTailBytes,
+    maxLines: input.maxHistoryLines,
+  });
+  activities.push(...historyActivities);
   for (const filePath of files) {
-    let raw = "";
+    let raw: { text: string; truncated: boolean };
     try {
-      raw = await fs.readFile(filePath, "utf8");
+      raw = await readSessionFileTail(
+        filePath,
+        input.maxFileTailBytes ?? DEFAULT_CODEX_SESSION_TAIL_BYTES,
+      );
     } catch {
       continue;
     }
-    const lines = raw
-      .split(/\r?\n/u)
+    const rawLines = raw.text.split(/\r?\n/u);
+    if (raw.truncated) {
+      rawLines.shift();
+    }
+    const lines = rawLines
       .map((line) => line.trim())
       .filter(Boolean)
-      .slice(-80);
+      .slice(-(input.maxTailLines ?? DEFAULT_CODEX_SESSION_TAIL_LINES));
     for (const [index, line] of lines.entries()) {
       let parsed: unknown;
       try {
@@ -2054,7 +2311,7 @@ export async function loadCodexSessionActivityForCandidateReview(
       } catch {
         if (lines.length === 1) {
           try {
-            parsed = JSON.parse(raw);
+            parsed = JSON.parse(raw.text);
           } catch {
             continue;
           }
@@ -2065,9 +2322,15 @@ export async function loadCodexSessionActivityForCandidateReview(
       const candidates = Array.isArray(parsed) ? parsed : [parsed];
       for (const candidate of candidates) {
         const role = roleFromLine(candidate);
+        const textLimit =
+          role === "user"
+            ? MAX_USER_EPISODE_TURN_LENGTH
+            : role === "assistant"
+              ? MAX_ASSISTANT_EPISODE_TURN_LENGTH
+              : 160;
         const text = redactAndBound(
           role === "tool_summary" ? toolSummaryTextFromLine(candidate) : textFromLine(candidate),
-          role === "tool_summary" ? 160 : 520,
+          textLimit,
         );
         if (!role || !text) {
           continue;
@@ -2078,12 +2341,27 @@ export async function loadCodexSessionActivityForCandidateReview(
           kind: activityKindFromCodexLine(candidate, role),
           boundedText: text,
           sourceRuntime: "codex",
+          recordedAt: timestampFromLine(candidate),
         });
       }
     }
   }
+  activities.sort((left, right) => {
+    const leftMs = left.recordedAt ? Date.parse(left.recordedAt) : NaN;
+    const rightMs = right.recordedAt ? Date.parse(right.recordedAt) : NaN;
+    if (Number.isFinite(leftMs) && Number.isFinite(rightMs)) {
+      return leftMs - rightMs;
+    }
+    if (Number.isFinite(leftMs)) {
+      return -1;
+    }
+    if (Number.isFinite(rightMs)) {
+      return 1;
+    }
+    return 0;
+  });
   return {
-    activities: activities.slice(-(input.maxEntries ?? 24)),
+    activities: selectCodexActivitiesForReview(activities, input.maxEntries ?? 24),
     report: {
       status: activities.length > 0 ? "loaded" : "skipped",
       reasonCode: activities.length > 0 ? undefined : "codex_session_entries_unavailable",

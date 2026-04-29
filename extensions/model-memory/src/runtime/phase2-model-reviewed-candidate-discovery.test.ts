@@ -615,4 +615,215 @@ describe("phase2 model-reviewed candidate discovery", () => {
     expect(result.activities.some((activity) => activity.ref.startsWith("codex://"))).toBe(true);
     expect(JSON.stringify(result.activities)).not.toMatch(/raw-tool-log-marker/u);
   });
+
+  it("reads explicit Codex session roots and nested Codex JSONL records", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "codex-session-root-"));
+    const sessions = path.join(root, "2026", "04", "29");
+    await mkdir(sessions, { recursive: true });
+    await writeFile(
+      path.join(sessions, "rollout.jsonl"),
+      [
+        JSON.stringify({
+          type: "message",
+          role: "user",
+          content: [
+            {
+              type: "input_text",
+              text: "Fix the Codex session adapter and prove the UI output quality.",
+            },
+          ],
+        }),
+        JSON.stringify({
+          type: "response_item",
+          payload: {
+            type: "message",
+            role: "assistant",
+            content: [
+              {
+                type: "output_text",
+                text: "The adapter should mount the real session source and parse nested Codex records.",
+              },
+            ],
+          },
+        }),
+        JSON.stringify({
+          type: "response_item",
+          payload: {
+            type: "function_call",
+            name: "exec_command",
+            arguments: '{"cmd":"pnpm test:file raw-tool-log-marker"}',
+          },
+        }),
+        JSON.stringify({
+          type: "event_msg",
+          payload: {
+            type: "exec_command_end",
+            command: ["pnpm", "test:file"],
+            exit_code: 1,
+            aggregated_output: "raw-tool-log-marker should not persist",
+          },
+        }),
+      ].join("\n"),
+      "utf8",
+    );
+
+    const result = await loadCodexSessionActivityForCandidateReview({
+      sessionRoot: root,
+      maxFiles: 4,
+      maxEntries: 12,
+    });
+
+    expect(result.report.status).toBe("loaded");
+    expect(result.report.sourceRoot).toBe(root);
+    expect(result.activities.some((activity) => activity.role === "user")).toBe(true);
+    expect(result.activities.some((activity) => activity.role === "assistant")).toBe(true);
+    expect(result.activities.some((activity) => activity.role === "tool_summary")).toBe(true);
+    expect(result.activities.some((activity) => activity.kind === "failure_summary")).toBe(true);
+    expect(JSON.stringify(result.activities)).not.toMatch(/raw-tool-log-marker/u);
+  });
+
+  it("tails large Codex session files instead of requiring full-file reads", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "codex-session-tail-"));
+    const sessions = path.join(root, "2026", "04", "29");
+    await mkdir(sessions, { recursive: true });
+    await writeFile(
+      path.join(sessions, "large-rollout.jsonl"),
+      [
+        "x".repeat(8_000),
+        JSON.stringify({
+          role: "assistant",
+          text: "Tail-visible assistant final with enough context for candidate review.",
+        }),
+      ].join("\n"),
+      "utf8",
+    );
+
+    const result = await loadCodexSessionActivityForCandidateReview({
+      sessionRoot: root,
+      maxFiles: 4,
+      maxEntries: 8,
+      maxFileTailBytes: 1_000,
+    });
+
+    expect(result.report.status).toBe("loaded");
+    expect(
+      result.activities.some((activity) =>
+        activity.boundedText.includes("Tail-visible assistant final"),
+      ),
+    ).toBe(true);
+  });
+
+  it("prioritizes Codex user and assistant narrative over noisy tool summaries", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "codex-session-narrative-"));
+    const sessions = path.join(root, "2026", "04", "29");
+    await mkdir(sessions, { recursive: true });
+    const records = [
+      JSON.stringify({
+        role: "user",
+        text: "Review the OpenClaw and Codex work and identify reusable skill candidates.",
+      }),
+      JSON.stringify({
+        role: "assistant",
+        text: "A reusable verifier skill could check route isolation, candidate provenance, and UI card quality.",
+      }),
+      ...Array.from({ length: 40 }, (_, index) =>
+        JSON.stringify({
+          role: "tool",
+          command: `pnpm test:file noisy-${index}.ts`,
+          status: index % 2 === 0 ? "passed" : "failed",
+          output: "raw-tool-log-marker should not persist",
+        }),
+      ),
+    ];
+    await writeFile(path.join(sessions, "noisy-rollout.jsonl"), records.join("\n"), "utf8");
+
+    const result = await loadCodexSessionActivityForCandidateReview({
+      sessionRoot: root,
+      maxFiles: 4,
+      maxEntries: 8,
+      maxTailLines: 80,
+    });
+
+    expect(result.report.status).toBe("loaded");
+    expect(result.activities.some((activity) => activity.role === "user")).toBe(true);
+    expect(result.activities.some((activity) => activity.role === "assistant")).toBe(true);
+    expect(
+      result.activities.filter((activity) => activity.role === "tool_summary").length,
+    ).toBeLessThan(result.activities.length);
+    expect(JSON.stringify(result.activities)).not.toMatch(/raw-tool-log-marker/u);
+  });
+
+  it("uses Codex history as bounded recent user context alongside session tails", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "codex-session-history-"));
+    const sessions = path.join(root, "sessions", "2026", "04", "29");
+    await mkdir(sessions, { recursive: true });
+    const historyPath = path.join(root, "history.jsonl");
+    await writeFile(
+      historyPath,
+      [
+        JSON.stringify({
+          session_id: "session-a",
+          ts: 1_777_465_607,
+          text: "A 15 minute wait during test time is not viable, the cooldown should be toggleable so we can test without 15 minute delays.",
+        }),
+        JSON.stringify({
+          session_id: "session-a",
+          ts: 1_777_465_700,
+          text: "Review the Codex session context and identify reusable skill and proactive plan candidates from the full recent work episode.",
+        }),
+      ].join("\n"),
+      "utf8",
+    );
+    await writeFile(
+      path.join(sessions, "rollout.jsonl"),
+      [
+        JSON.stringify({
+          timestamp: "2026-04-29T13:16:00.000Z",
+          type: "response_item",
+          payload: {
+            type: "message",
+            role: "assistant",
+            content: [
+              {
+                type: "output_text",
+                text: "The proof can bypass cooldown and cadence while production keeps heartbeat and every-three-final review.",
+              },
+            ],
+          },
+        }),
+        ...Array.from({ length: 30 }, (_, index) =>
+          JSON.stringify({
+            type: "event_msg",
+            payload: {
+              type: "exec_command_end",
+              command: ["pnpm", "test:file", `fixture-${index}.ts`],
+              exit_code: index % 2,
+              aggregated_output: "raw-tool-log-marker should not persist",
+            },
+          }),
+        ),
+      ].join("\n"),
+      "utf8",
+    );
+
+    const result = await loadCodexSessionActivityForCandidateReview({
+      codexHome: root,
+      historyPath,
+      maxFiles: 4,
+      maxEntries: 8,
+      maxTailLines: 80,
+    });
+
+    expect(result.report.status).toBe("loaded");
+    expect(result.activities.some((activity) => activity.ref.startsWith("codex-history://"))).toBe(
+      true,
+    );
+    expect(
+      result.activities.some((activity) =>
+        activity.boundedText.includes("cooldown should be toggleable"),
+      ),
+    ).toBe(true);
+    expect(result.activities.some((activity) => activity.role === "assistant")).toBe(true);
+    expect(JSON.stringify(result.activities)).not.toMatch(/raw-tool-log-marker/u);
+  });
 });
