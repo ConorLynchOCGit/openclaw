@@ -7,6 +7,7 @@ import {
   buildHeartbeatProactivityReviewText,
   buildModelMemoryProactivityRuntimeState,
   createSkillifierDraftForCandidate,
+  transcriptMessagesToHighContextCandidateReviewActivities,
 } from "./model-memory-proactivity-runtime.js";
 
 async function createRuntimeSandbox() {
@@ -224,17 +225,20 @@ describe("model-memory proactivity runtime", () => {
     expect(state.productSurfacingReport.queue.items).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          status: "pending_review",
-          layer: "actionable",
+          status: "blocked",
+          layer: "diagnostic",
           sourceRefs: expect.arrayContaining([
             "chat://main/assistant_turn/msg_final_runtime_reset",
+          ]),
+          blockedReasonCodes: expect.arrayContaining([
+            "presentation:model_authored_visible_copy_required",
           ]),
         }),
       ]),
     );
   });
 
-  it("builds a bounded heartbeat review from recent authoritative opportunities", async () => {
+  it("does not build a visible heartbeat review from deterministic-only card text", async () => {
     const sandbox = await createRuntimeSandbox();
     tmpDirs.push(sandbox.tmpDir);
     await seedMainSessionTranscript(sandbox);
@@ -248,12 +252,7 @@ describe("model-memory proactivity runtime", () => {
       recipientId: "conor",
     });
 
-    expect(review).not.toBeNull();
-    expect(review?.prompt).toContain("What would help this user today?");
-    expect(review?.prompt).toContain("Reply with up to 3 concise items.");
-    expect(review?.prompt).not.toContain("Read HEARTBEAT.md");
-    expect(review?.items[0]?.title?.toLowerCase()).toContain("runtime seam reset");
-    expect(review?.items.some((item) => item.opportunityClass === "delight")).toBe(true);
+    expect(review).toBeNull();
   });
 
   it("creates one canonical skill candidate across ledger, queue, and heartbeat state", async () => {
@@ -278,10 +277,16 @@ describe("model-memory proactivity runtime", () => {
       (item) => item.opportunityClass === "skill_candidate",
     );
     expect(queueItem?.skillCandidate?.skillCandidateId).toBe(skillCandidateId);
-    const heartbeatItem = state.heartbeatReport.surface.topItems.find(
-      (item) => item.skillCandidate?.skillCandidateId === skillCandidateId,
+    expect(queueItem?.layer).toBe("diagnostic");
+    expect(queueItem?.status).toBe("blocked");
+    expect(queueItem?.blockedReasonCodes).toContain(
+      "presentation:model_authored_visible_copy_required",
     );
-    expect(heartbeatItem?.skillCandidate?.skillCandidateId).toBe(skillCandidateId);
+    expect(
+      state.heartbeatReport.surface.topItems.some(
+        (item) => item.skillCandidate?.skillCandidateId === skillCandidateId,
+      ),
+    ).toBe(false);
   });
 
   it("persists one bounded skillifier draft and surfaces it through the same candidate id", async () => {
@@ -450,6 +455,46 @@ describe("model-memory proactivity runtime", () => {
           "Investigate the authoritative final capture filter and remove operational noise.",
       }),
     ]);
+  });
+
+  it("keeps commentary-phase assistant text in the high-context candidate-review window", () => {
+    const activities = transcriptMessagesToHighContextCandidateReviewActivities({
+      sessionKey: "main",
+      messages: [
+        {
+          role: "user",
+          content: [
+            {
+              type: "text",
+              text: "Review the current test failure and decide whether it reveals a reusable workflow.",
+            },
+          ],
+          timestamp: Date.parse("2026-04-29T17:00:00.000Z"),
+          __openclaw: { id: "user-high-context" },
+        },
+        {
+          role: "assistant",
+          content: [
+            {
+              type: "text",
+              text: "The important diagnosis is in commentary because this UI path stores useful assistant answers there.",
+              textSignature: JSON.stringify({
+                v: 1,
+                id: "msg_commentary_high_context",
+                phase: "commentary",
+              }),
+            },
+          ],
+          timestamp: Date.parse("2026-04-29T17:00:10.000Z"),
+        },
+      ],
+    });
+
+    expect(activities.map((activity) => activity.ref)).toEqual([
+      "chat://main/user_turn/user-high-context",
+      "chat://main/assistant_turn/msg_commentary_high_context",
+    ]);
+    expect(activities[1]?.boundedText).toContain("important diagnosis is in commentary");
   });
 
   it("suppresses internal proactivity handoff and proof prompts from transcript-derived opportunities", async () => {

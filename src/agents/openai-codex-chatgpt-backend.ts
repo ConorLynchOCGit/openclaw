@@ -32,6 +32,10 @@ function readTrimmedString(value: unknown): string | undefined {
   return typeof value === "string" && value.trim().length > 0 ? value.trim() : undefined;
 }
 
+function readNonEmptyString(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim().length > 0 ? value : undefined;
+}
+
 export function isOpenAICodexChatGptBaseUrl(baseUrl?: string | null): boolean {
   if (typeof baseUrl !== "string" || !baseUrl.trim()) {
     return false;
@@ -112,7 +116,7 @@ export function parseOpenAICodexChatGptSseResponse(
     const type =
       readTrimmedString(eventType) ?? readTrimmedString((payload as { type?: unknown }).type);
     if (type === "response.output_text.delta" || type === "response.refusal.delta") {
-      outputText += readTrimmedString((payload as { delta?: unknown }).delta) ?? "";
+      outputText += readNonEmptyString((payload as { delta?: unknown }).delta) ?? "";
       continue;
     }
 

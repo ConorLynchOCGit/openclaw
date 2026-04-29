@@ -2,14 +2,67 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import type { JsonModelExecutionRequest, JsonModelExecutor } from "../model-execution.ts";
 import { buildPhase2LiveProactivityDetectionReport } from "./phase2-live-proactivity-signals.ts";
 import {
   buildPhase2ProductProactivitySurfacingReport,
   writePhase2ProductProactivitySurfacingArtifact,
 } from "./phase2-product-proactivity-surfacing.ts";
 
+function modelBriefJsonOutput(overrides: Record<string, unknown> = {}) {
+  return JSON.stringify({
+    schemaVersion: "model_authored_proactivity_brief_output.v1",
+    decision: "surface",
+    kindCode: "follow_up",
+    titleWords: ["Skills", "platform", "planning", "follow-up"],
+    oneLinePurposeWords: [
+      "Clarifies",
+      "the",
+      "next",
+      "bounded",
+      "Skills",
+      "Platform",
+      "implementation",
+      "step",
+    ],
+    recommendedNextStepWords: [
+      "Review",
+      "the",
+      "Skills",
+      "Platform",
+      "follow-up",
+      "before",
+      "starting",
+      "new",
+      "work",
+    ],
+    primaryActionLabelWords: ["Plan", "this"],
+    statusLabelWords: null,
+    detailSummaryWords: ["Bounded", "proactivity", "evidence", "is", "available"],
+    hiddenDiagnostics: { whyDemotedOrRepairedWords: null, limitations: [] },
+    qualityReasons: [],
+    ...overrides,
+  });
+}
+
+class FakeModelBriefExecutor implements JsonModelExecutor {
+  requests: JsonModelExecutionRequest[] = [];
+
+  constructor(private readonly outputText = modelBriefJsonOutput()) {}
+
+  async execute(request: JsonModelExecutionRequest) {
+    this.requests.push(request);
+    return {
+      outputText: this.outputText,
+      resolvedModelId: request.contract.modelId,
+      usage: { promptTokens: 120, outputTokens: 80 },
+    };
+  }
+}
+
 describe("phase2 product proactivity surfacing", () => {
   it("builds a product-visible queue item from live proactivity evidence", async () => {
+    const modelExecutor = new FakeModelBriefExecutor();
     const liveDetectionReport = await buildPhase2LiveProactivityDetectionReport({
       sources: [
         {
@@ -40,6 +93,11 @@ describe("phase2 product proactivity surfacing", () => {
         sessionKey: "main",
         operatorId: "operator-conor",
       },
+      modelBriefOptions: {
+        enabled: true,
+        executor: modelExecutor,
+        modelId: "openai-codex/gpt-5.4",
+      },
     });
 
     expect(report.decision).toBe("product_queue_enabled");
@@ -49,7 +107,11 @@ describe("phase2 product proactivity surfacing", () => {
       boundedDisplayText: "Advance current openclaw work",
       planTitle: "Advance current openclaw work",
       userFacingBrief: {
+        title: "Skills platform planning follow-up",
+        oneLinePurpose: "Clarifies the next bounded Skills Platform implementation step.",
+        recommendedNextStep: "Review the Skills Platform follow-up before starting new work.",
         kindLabel: "Follow-up",
+        authorship: { source: "model" },
         quality: { status: "pass" },
       },
       proposedMessage: expect.stringContaining("Skills path after proactivity remediation"),
@@ -67,6 +129,10 @@ describe("phase2 product proactivity surfacing", () => {
     expect(report.queue.items[0].sourceRefs.length).toBeGreaterThan(0);
     expect(report.queue.items[0].sourceProfileIds.length).toBeGreaterThan(0);
     expect(report.queue.items[0].authorityTiers.length).toBeGreaterThan(0);
+    expect(report.queue.items[0].blockedReasonCodes).not.toContain(
+      "presentation:model_authored_visible_copy_required",
+    );
+    expect(modelExecutor.requests).toHaveLength(1);
     expect(report.approvalDecisions[0]).toMatchObject({
       decision: "approved_for_send",
       explicitOperatorAction: true,
@@ -77,6 +143,55 @@ describe("phase2 product proactivity surfacing", () => {
       actionExecution: false,
       autonomousSending: false,
     });
+  });
+
+  it("demotes live queue items when model-authored visible copy is unavailable", async () => {
+    const liveDetectionReport = await buildPhase2LiveProactivityDetectionReport({
+      sources: [
+        {
+          sourceId: "ordinary-turn-live-event-no-model",
+          sourceType: "ordinary_turn_capture",
+          signalKind: "active_work_state",
+          projectId: "openclaw",
+          sessionKey: "main",
+          boundedSummary:
+            "The active OpenClaw session is ready to plan the Skills path after proactivity remediation.",
+          sourceRefs: ["gateway://event/ordinary-turn-live-event-no-model"],
+          sourceProfileId: "explicit_user_turn",
+          authorityTier: "user_authoritative",
+          freshness: "recent",
+          conflictState: "clear",
+          inspectionOnly: false,
+          noDarkDataStatus: "pass",
+        },
+      ],
+    });
+    const report = await buildPhase2ProductProactivitySurfacingReport({
+      now: new Date("2026-04-26T16:00:00.000Z"),
+      liveDetectionReport,
+      eligibilityScope: {
+        userId: "conor",
+        recipientId: "conor",
+        projectId: "openclaw",
+        sessionKey: "main",
+        operatorId: "operator-conor",
+      },
+    });
+
+    expect(report.decision).toBe("product_queue_enabled");
+    expect(report.queue.items[0]).toMatchObject({
+      status: "blocked",
+      layer: "diagnostic",
+      primaryAction: null,
+      userFacingBrief: {
+        authorship: { source: "deterministic" },
+        quality: { status: "demote" },
+      },
+    });
+    expect(report.queue.items[0].blockedReasonCodes).toContain("presentation_quality_demoted");
+    expect(report.queue.items[0].blockedReasonCodes).toContain(
+      "presentation:model_authored_visible_copy_required",
+    );
   });
 
   it("demotes static/default fallback when no live signal exists", async () => {

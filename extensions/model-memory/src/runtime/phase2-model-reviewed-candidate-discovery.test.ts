@@ -324,10 +324,59 @@ describe("phase2 model-reviewed candidate discovery", () => {
     expect(episode.schemaVersion).toBe("proactivity_review_episode.v2");
     expect(episode.reviewGoal).toBe("find_few_high_value_candidates");
     expect(episode.episodeTurns).toHaveLength(3);
-    expect(episode.userIntentArc.recentConcerns[0]).toContain("Deterministic surfacing");
+    expect(episode.userIntentArc.explicitAsks).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining("Deterministic surfacing"),
+        expect.stringContaining("OpenClaw should pull Codex"),
+      ]),
+    );
+    expect(episode.userIntentArc.recentConcerns).toEqual([]);
     expect(episode.existingContext.loadedSkills[0]?.name).toBe("skill-vetter");
     expect(episode.reviewPolicy.maxSurfaceCandidates).toBe(3);
+    expect(episode.packetQuality.contiguousWindowPresent).toBe(true);
     expect(JSON.stringify(episode)).not.toMatch(/raw-transcript-marker|raw-tool-log-marker/u);
+  });
+
+  it("preserves a contiguous episode window instead of only model-selected refs", () => {
+    const activities: CandidateReviewRecentActivity[] = Array.from({ length: 6 }, (_, index) => ({
+      ref: `chat://main/${index % 2 === 0 ? "user" : "assistant"}_turn/${index}`,
+      role: index % 2 === 0 ? "user" : "assistant",
+      kind: index % 2 === 0 ? "ask" : "final",
+      boundedText: `Turn ${index} contains ordinary narrative context with no special keywords.`,
+      sourceRuntime: "openclaw",
+    }));
+    const event = buildCandidateReviewPrefilterEvent({
+      eventType: "assistant_final_completed",
+      runtime: "openclaw",
+      sessionKey: "main",
+      refs: activities.map((activity) => activity.ref),
+      boundedSummary: "Review the recent contiguous episode.",
+    });
+    const triggerPacket = buildCandidateReviewTriggerPacket({
+      event,
+      recentActivities: activities,
+    });
+    const episode = buildProactivityReviewEpisodePacket({
+      triggerPacket,
+      triggerDecision: {
+        schemaVersion: "candidate_review_trigger_decision.v1",
+        shouldRun: true,
+        reasonCodes: ["related_turn_cluster"],
+        confidence: "high",
+        episodeWindow: {
+          startRef: activities[2]?.ref ?? event.eventId,
+          endRef: activities[3]?.ref ?? event.eventId,
+          includedRefs: [activities[2]?.ref, activities[3]?.ref].filter(Boolean) as string[],
+        },
+        reviewGoal: "both",
+        why: "The selector should not narrow the packet to selected refs.",
+      },
+      recentActivities: activities,
+    });
+
+    expect(episode.episodeTurns.map((turn) => turn.ref)).toEqual(
+      activities.map((activity) => activity.ref),
+    );
   });
 
   it("keeps high-context turns substantial instead of collapsing them into atomic snippets", () => {
@@ -467,7 +516,288 @@ describe("phase2 model-reviewed candidate discovery", () => {
     );
     expect(result.report.source).toBe("model");
     expect(result.report.episodeTurnCount).toBe(3);
+    expect(result.report.packetQuality?.status).toBe("pass");
     expect(executor.requests[0]?.responseOptions?.reasoningEffort).toBe("high");
+  });
+
+  it("keeps slug-like proposal titles as candidate input for the model-authored card rewrite", async () => {
+    const event = buildCandidateReviewPrefilterEvent({
+      eventType: "assistant_final_completed",
+      runtime: "openclaw",
+      sessionKey: "main",
+      refs: ["chat://main/user_turn/concern"],
+      boundedSummary: "Review recurring skills and proactive plans.",
+    });
+    const triggerPacket = buildCandidateReviewTriggerPacket({
+      event,
+      recentActivities: recentDiscussionActivities(),
+    });
+    const episode = buildProactivityReviewEpisodePacket({
+      triggerPacket,
+      triggerDecision: {
+        schemaVersion: "candidate_review_trigger_decision.v1",
+        shouldRun: true,
+        reasonCodes: ["explicit_user_ask"],
+        confidence: "high",
+        episodeWindow: {
+          startRef: "chat://main/user_turn/concern",
+          endRef: "chat://main/user_turn/codex",
+          includedRefs: triggerPacket.recentRefs.map((entry) => entry.ref),
+        },
+        reviewGoal: "both",
+        why: "Review requested.",
+      },
+      recentActivities: recentDiscussionActivities(),
+    });
+
+    const result = await reviewEpisodeForCandidates(episode, {
+      enabled: true,
+      executor: new FakeExecutor(
+        proposalOutput({
+          proposals: [
+            {
+              proposalKind: "proactive_plan",
+              title: "Route-proofharnessformodel-routeandpersistence-boundaryverification",
+              purpose: "Prove model route isolation before Milestone 4.",
+              recommendedNextStep: "Draft the route matrix proof.",
+              expectedUserValue: "Prevents route regressions.",
+              leverageClass: "stability_risk",
+              whyHighImpact: "Route regressions affect chat, memory, and proactivity.",
+              whyNotSmallCleanup: "This is a cross-route stability proof.",
+              suggestedSkillName: null,
+              suggestedExistingSkillName: null,
+              mergeTargetCandidateId: null,
+              sourceRuntime: "openclaw",
+              evidenceRefs: ["chat://main/user_turn/concern"],
+              recurrenceSignals: ["route proof recurred"],
+              frictionSignals: ["route confusion is expensive"],
+              confidence: "high",
+              riskTier: "low",
+              shouldSurface: true,
+              demotionReason: null,
+            },
+          ],
+        }),
+      ),
+    });
+
+    expect(result.proposals[0]?.shouldSurface).toBe(true);
+    expect(result.proposals[0]?.demotionReason).toBeUndefined();
+    expect(result.report.rejectedProposalDiagnostics).toEqual([]);
+  });
+
+  it("rejects model proposals that concatenate normal English copy without spaces", async () => {
+    const event = buildCandidateReviewPrefilterEvent({
+      eventType: "assistant_final_completed",
+      runtime: "openclaw",
+      sessionKey: "main",
+      refs: ["chat://main/user_turn/concern"],
+      boundedSummary: "Review recurring skills and proactive plans.",
+    });
+    const triggerPacket = buildCandidateReviewTriggerPacket({
+      event,
+      recentActivities: recentDiscussionActivities(),
+    });
+    const episode = buildProactivityReviewEpisodePacket({
+      triggerPacket,
+      triggerDecision: {
+        schemaVersion: "candidate_review_trigger_decision.v1",
+        shouldRun: true,
+        reasonCodes: ["explicit_user_ask"],
+        confidence: "high",
+        episodeWindow: {
+          startRef: "chat://main/user_turn/concern",
+          endRef: "chat://main/user_turn/codex",
+          includedRefs: triggerPacket.recentRefs.map((entry) => entry.ref),
+        },
+        reviewGoal: "both",
+        why: "Review requested.",
+      },
+      recentActivities: recentDiscussionActivities(),
+    });
+
+    const result = await reviewEpisodeForCandidates(episode, {
+      enabled: true,
+      executor: new FakeExecutor(
+        proposalOutput({
+          proposals: [
+            {
+              proposalKind: "proactive_plan",
+              title: "Addprovenancegatingbeforeproactivecardsreachtheprimarysurface",
+              purpose:
+                "Defineadecisiongatethatrequiresprovenancereceiptsforproactivecardssoambiguousitemsaredemoted.",
+              recommendedNextStep:
+                "Specifyacompactprovenancereceiptschemaandreviewrulesetcoveringoriginandfreshness.",
+              expectedUserValue:
+                "Improvestrustinsurfacedproactivecardsbypreventingambiguousorstaleitems.",
+              leverageClass: "stability_risk",
+              whyHighImpact: "Cardscanlookreadablewhilehidingwhethertheyareorganicstaleorseeded.",
+              whyNotSmallCleanup:
+                "Thischangesdecisionqualityatauservisibleproductboundarynotjustwording.",
+              suggestedSkillName: null,
+              suggestedExistingSkillName: null,
+              mergeTargetCandidateId: null,
+              sourceRuntime: "openclaw",
+              evidenceRefs: ["chat://main/user_turn/concern"],
+              recurrenceSignals: ["provenance ambiguity recurred"],
+              frictionSignals: ["readable cards can hide weak provenance"],
+              confidence: "high",
+              riskTier: "low",
+              shouldSurface: true,
+              demotionReason: null,
+            },
+          ],
+        }),
+      ),
+    });
+
+    expect(result.proposals[0]?.shouldSurface).toBe(false);
+    expect(result.proposals[0]?.demotionReason).toContain("candidate_copy_lacks_word_spacing");
+    expect(result.report.rejectedProposalDiagnostics?.[0]?.reasonCodes).toContain(
+      "candidate_copy_lacks_word_spacing",
+    );
+  });
+
+  it("rejects model proposals with clipped primary copy", async () => {
+    const event = buildCandidateReviewPrefilterEvent({
+      eventType: "assistant_final_completed",
+      runtime: "openclaw",
+      sessionKey: "main",
+      refs: ["chat://main/user_turn/concern"],
+      boundedSummary: "Review recurring skills and proactive plans.",
+    });
+    const triggerPacket = buildCandidateReviewTriggerPacket({
+      event,
+      recentActivities: recentDiscussionActivities(),
+    });
+    const episode = buildProactivityReviewEpisodePacket({
+      triggerPacket,
+      triggerDecision: {
+        schemaVersion: "candidate_review_trigger_decision.v1",
+        shouldRun: true,
+        reasonCodes: ["explicit_user_ask"],
+        confidence: "high",
+        episodeWindow: {
+          startRef: "chat://main/user_turn/concern",
+          endRef: "chat://main/user_turn/codex",
+          includedRefs: triggerPacket.recentRefs.map((entry) => entry.ref),
+        },
+        reviewGoal: "both",
+        why: "Review requested.",
+      },
+      recentActivities: recentDiscussionActivities(),
+    });
+
+    const result = await reviewEpisodeForCandidates(episode, {
+      enabled: true,
+      executor: new FakeExecutor(
+        proposalOutput({
+          proposals: [
+            {
+              proposalKind: "proactive_plan",
+              title: "Validate candidate review packet quality",
+              purpose:
+                "Compare candidate review outcomes from contiguous mixed-runtime windows versus deterministic selected snippets,",
+              recommendedNextStep:
+                "Run a small benchmark set and record where missed candidates originate.",
+              expectedUserValue:
+                "Prevents thin packet artifacts from hiding legitimate candidates.",
+              leverageClass: "stability_risk",
+              whyHighImpact: "Packet quality controls candidate review recall.",
+              whyNotSmallCleanup: "This validates a full candidate discovery funnel.",
+              suggestedSkillName: null,
+              suggestedExistingSkillName: null,
+              mergeTargetCandidateId: null,
+              sourceRuntime: "openclaw",
+              evidenceRefs: ["chat://main/user_turn/concern"],
+              recurrenceSignals: ["packet quality failures recurred"],
+              frictionSignals: ["thin packets can suppress good candidates"],
+              confidence: "high",
+              riskTier: "low",
+              shouldSurface: true,
+              demotionReason: null,
+            },
+          ],
+        }),
+      ),
+    });
+
+    expect(result.proposals[0]?.shouldSurface).toBe(false);
+    expect(result.proposals[0]?.demotionReason).toContain("clipped_candidate_copy");
+    expect(result.report.rejectedProposalDiagnostics?.[0]?.reasonCodes).toContain(
+      "clipped_candidate_copy",
+    );
+  });
+
+  it("requires existing skill enhancements to name an explicit loaded skill", async () => {
+    const event = buildCandidateReviewPrefilterEvent({
+      eventType: "assistant_final_completed",
+      runtime: "openclaw",
+      sessionKey: "main",
+      refs: ["chat://main/user_turn/concern"],
+      boundedSummary: "Review recurring skills and proactive plans.",
+    });
+    const triggerPacket = buildCandidateReviewTriggerPacket({
+      event,
+      recentActivities: recentDiscussionActivities(),
+    });
+    const episode = buildProactivityReviewEpisodePacket({
+      triggerPacket,
+      triggerDecision: {
+        schemaVersion: "candidate_review_trigger_decision.v1",
+        shouldRun: true,
+        reasonCodes: ["explicit_user_ask"],
+        confidence: "high",
+        episodeWindow: {
+          startRef: "chat://main/user_turn/concern",
+          endRef: "chat://main/user_turn/codex",
+          includedRefs: triggerPacket.recentRefs.map((entry) => entry.ref),
+        },
+        reviewGoal: "both",
+        why: "Review requested.",
+      },
+      recentActivities: recentDiscussionActivities(),
+      loadedSkills: [{ name: "skill-vetter", description: "Vet skills", source: "user" }],
+    });
+
+    const result = await reviewEpisodeForCandidates(episode, {
+      enabled: true,
+      executor: new FakeExecutor(
+        proposalOutput({
+          proposals: [
+            {
+              proposalKind: "existing_skill_enhancement",
+              title: "Model route verification checklist",
+              purpose: "Add repeatable model route checks to an existing skill.",
+              recommendedNextStep: "Draft the route isolation checks for the existing workflow.",
+              expectedUserValue: "Prevents accidental model route regressions.",
+              leverageClass: "stability_risk",
+              whyHighImpact: "Route regressions can break multiple model-backed pathways.",
+              whyNotSmallCleanup: "This is a reusable verification workflow, not a local cleanup.",
+              suggestedSkillName: null,
+              suggestedExistingSkillName: "missing-skill",
+              mergeTargetCandidateId: null,
+              sourceRuntime: "openclaw",
+              evidenceRefs: ["chat://main/user_turn/concern"],
+              recurrenceSignals: ["route verification recurred"],
+              frictionSignals: ["route confusion is expensive"],
+              confidence: "high",
+              riskTier: "low",
+              shouldSurface: true,
+              demotionReason: null,
+            },
+          ],
+        }),
+      ),
+    });
+
+    expect(result.proposals[0]?.shouldSurface).toBe(false);
+    expect(result.proposals[0]?.demotionReason).toContain(
+      "existing_skill_enhancement_requires_loaded_skill_match",
+    );
+    expect(result.report.rejectedProposalDiagnostics?.[0]?.reasonCodes).toContain(
+      "existing_skill_enhancement_requires_loaded_skill_match",
+    );
   });
 
   it("allows the reviewer to return zero candidates for weak input", async () => {
@@ -577,6 +907,67 @@ describe("phase2 model-reviewed candidate discovery", () => {
     expect(
       converted.opportunities.some((source) => source.sourceFamily === "pattern_or_followup"),
     ).toBe(true);
+    expect(
+      converted.opportunities.some(
+        (source) =>
+          source.sourceFamily === "pattern_or_followup" &&
+          source.opportunityClass === "proactive_plan",
+      ),
+    ).toBe(true);
+  });
+
+  it("marks thin Codex command-only evidence as degraded packet quality", () => {
+    const activities: CandidateReviewRecentActivity[] = [
+      {
+        ref: "codex://rollout.jsonl#1",
+        role: "assistant",
+        kind: "final",
+        boundedText: "The gateway is healthy and the proof is running.",
+        sourceRuntime: "codex",
+      },
+      {
+        ref: "codex://rollout.jsonl#2",
+        role: "tool_summary",
+        kind: "result_summary",
+        boundedText: "Command function_call_output unknown",
+        sourceRuntime: "codex",
+      },
+    ];
+    const event = buildCandidateReviewPrefilterEvent({
+      eventType: "assistant_final_completed",
+      runtime: "codex",
+      sessionKey: "main",
+      refs: activities.map((activity) => activity.ref),
+      boundedSummary: "Review thin Codex activity.",
+    });
+    const triggerPacket = buildCandidateReviewTriggerPacket({
+      event,
+      recentActivities: activities,
+    });
+    const episode = buildProactivityReviewEpisodePacket({
+      triggerPacket,
+      triggerDecision: {
+        schemaVersion: "candidate_review_trigger_decision.v1",
+        shouldRun: true,
+        reasonCodes: ["related_turn_cluster"],
+        confidence: "high",
+        episodeWindow: {
+          startRef: activities[0]?.ref ?? event.eventId,
+          endRef: activities.at(-1)?.ref ?? event.eventId,
+          includedRefs: activities.map((activity) => activity.ref),
+        },
+        reviewGoal: "both",
+        why: "Cadence review.",
+      },
+      recentActivities: activities,
+      codexAdapterReport: {
+        status: "loaded",
+        entryCount: activities.length,
+      },
+    });
+
+    expect(episode.packetQuality.status).toBe("degraded");
+    expect(episode.packetQuality.reasonCodes).toContain("codex_command_summaries_generic");
   });
 
   it("reads Codex session activity as bounded summaries from fixture files", async () => {
@@ -713,7 +1104,7 @@ describe("phase2 model-reviewed candidate discovery", () => {
     ).toBe(true);
   });
 
-  it("prioritizes Codex user and assistant narrative over noisy tool summaries", async () => {
+  it("keeps the contiguous Codex tail instead of role-balancing narrative into the packet", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "codex-session-narrative-"));
     const sessions = path.join(root, "2026", "04", "29");
     await mkdir(sessions, { recursive: true });
@@ -745,11 +1136,12 @@ describe("phase2 model-reviewed candidate discovery", () => {
     });
 
     expect(result.report.status).toBe("loaded");
-    expect(result.activities.some((activity) => activity.role === "user")).toBe(true);
-    expect(result.activities.some((activity) => activity.role === "assistant")).toBe(true);
-    expect(
-      result.activities.filter((activity) => activity.role === "tool_summary").length,
-    ).toBeLessThan(result.activities.length);
+    expect(result.activities.every((activity) => activity.role === "tool_summary")).toBe(true);
+    expect(result.activities.map((activity) => activity.ref)).toEqual(
+      Array.from({ length: 8 }, (_, index) =>
+        expect.stringContaining(`#${records.length - 8 + index}`),
+      ),
+    );
     expect(JSON.stringify(result.activities)).not.toMatch(/raw-tool-log-marker/u);
   });
 
@@ -810,7 +1202,7 @@ describe("phase2 model-reviewed candidate discovery", () => {
       codexHome: root,
       historyPath,
       maxFiles: 4,
-      maxEntries: 8,
+      maxEntries: 40,
       maxTailLines: 80,
     });
 

@@ -58,7 +58,13 @@ export type Phase2OpportunityLedgerSource =
   | Phase2SkillCandidateOpportunity
   | {
       sourceFamily: "pattern_or_followup";
-      opportunityClass?: "reverse_prompt" | "followup" | "delight" | "self_healing" | "recovery";
+      opportunityClass?:
+        | "proactive_plan"
+        | "reverse_prompt"
+        | "followup"
+        | "delight"
+        | "self_healing"
+        | "recovery";
       opportunityId: string;
       projectId: string;
       sessionKey: string;
@@ -87,6 +93,7 @@ export type Phase2OpportunityLedgerEntry = {
   sourceFamily: Phase2OpportunityLedgerSource["sourceFamily"];
   opportunityClass?:
     | "skill_candidate"
+    | "proactive_plan"
     | "reverse_prompt"
     | "followup"
     | "delight"

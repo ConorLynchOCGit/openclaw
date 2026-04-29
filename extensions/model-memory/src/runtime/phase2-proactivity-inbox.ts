@@ -56,6 +56,7 @@ export type Phase2ProactivityInboxItem = {
   opportunityId?: string;
   opportunityClass?:
     | "skill_candidate"
+    | "proactive_plan"
     | "reverse_prompt"
     | "followup"
     | "delight"

@@ -99,6 +99,13 @@ Phase 2 currently assumes:
   results, route summaries, and proposal summaries
 - candidate review returns 0-3 high-impact proposals and prefers no candidate
   over marginal cleanup
+- deterministic code remains required for memory guardrails, but deterministic
+  semantic judgment across the memory stack must be audited when it decides
+  meaning, usefulness, classification, ranking, or surfacing without a model
+- candidate-review quality now has a local golden-corpus validation gate that
+  runs before live gateway rebuilds; it attributes misses to packet assembly,
+  model review, post-model validation/dedupe, unexpected candidate surfacing,
+  or no-candidate expectations
 - low-risk limited-scope skill automation may later be allowed after
   tests/vetting/canary, but medium-risk and high-risk skill changes remain
   approval-gated

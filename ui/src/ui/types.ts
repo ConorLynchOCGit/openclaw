@@ -207,6 +207,7 @@ export type ProductProactivityQueueItem = {
   opportunityClass?:
     | "standard"
     | "skill_candidate"
+    | "proactive_plan"
     | "reverse_prompt"
     | "followup"
     | "delight"

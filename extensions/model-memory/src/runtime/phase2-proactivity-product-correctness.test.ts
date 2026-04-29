@@ -2,6 +2,7 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import type { JsonModelExecutionRequest, JsonModelExecutor } from "../model-execution.ts";
 import { buildPhase2LiveProactivityDetectionReport } from "./phase2-live-proactivity-signals.ts";
 import {
   decidePhase2ProactivityContextMatch,
@@ -17,6 +18,52 @@ import {
   writePhase2ProactivityProductCorrectnessArtifact,
 } from "./phase2-proactivity-product-correctness.ts";
 import { buildPhase2ProductProactivitySurfacingReport } from "./phase2-product-proactivity-surfacing.ts";
+
+function modelBriefJsonOutput() {
+  return JSON.stringify({
+    schemaVersion: "model_authored_proactivity_brief_output.v1",
+    decision: "surface",
+    kindCode: "follow_up",
+    titleWords: ["Product", "correctness", "validation", "follow-up"],
+    oneLinePurposeWords: [
+      "Confirms",
+      "the",
+      "proactivity",
+      "surface",
+      "shows",
+      "a",
+      "concrete",
+      "reviewable",
+      "plan",
+    ],
+    recommendedNextStepWords: [
+      "Review",
+      "the",
+      "product",
+      "correctness",
+      "card",
+      "and",
+      "confirm",
+      "the",
+      "counts",
+    ],
+    primaryActionLabelWords: ["Plan", "this"],
+    statusLabelWords: null,
+    detailSummaryWords: ["Bounded", "product", "correctness", "evidence", "is", "available"],
+    hiddenDiagnostics: { whyDemotedOrRepairedWords: null, limitations: [] },
+    qualityReasons: [],
+  });
+}
+
+class FakeModelBriefExecutor implements JsonModelExecutor {
+  async execute(request: JsonModelExecutionRequest) {
+    return {
+      outputText: modelBriefJsonOutput(),
+      resolvedModelId: request.contract.modelId,
+      usage: { promptTokens: 120, outputTokens: 80 },
+    };
+  }
+}
 
 async function buildLiveInboxReport(now: Date) {
   const liveDetectionReport = await buildPhase2LiveProactivityDetectionReport({
@@ -44,6 +91,11 @@ async function buildLiveInboxReport(now: Date) {
   const productSurfacingReport = await buildPhase2ProductProactivitySurfacingReport({
     now,
     liveDetectionReport,
+    modelBriefOptions: {
+      enabled: true,
+      executor: new FakeModelBriefExecutor(),
+      modelId: "openai-codex/gpt-5.4",
+    },
   });
   return buildPhase2ProactivityInboxReport({ now, productSurfacingReport });
 }

@@ -144,11 +144,18 @@ Pre-Milestone-4 model-authored presentation gate:
 - if the model cannot name a capability, decision, or outcome; explain what the
   item does or unlocks; and provide one actionable next step, the item is
   demoted instead of appearing as a vague card
+- visible primary copy must use model-authored output. Deterministic brief text
+  may remain as hidden fallback input, validation context, or diagnostics, but
+  it must not be surfaced as title, purpose, or next step.
 
 Pre-Milestone-4 high-context model-reviewed discovery gate:
 
 - candidate discovery should begin from coherent high-context recent-work
   episodes, not memory-shaped source-fragment grouping
+- review packets should preserve contiguous OpenClaw and Codex windows.
+  Deterministic code may enforce recency, caps, source boundaries, redaction,
+  refs, hashes, and provenance, but it must not choose semantically interesting
+  snippets as a proxy for model judgment.
 - review cadence is heartbeat/operator briefing, every 3 assistant finals by
   default, session/compaction boundary, and a future manual review hook
 - candidate-review input may include larger capped `episodeTurns`, including
@@ -160,6 +167,31 @@ Pre-Milestone-4 high-context model-reviewed discovery gate:
 - model-reviewed candidate proposals remain proposal-only and must pass
   deterministic schema, no-dark-data, provenance, cooldown, dedupe, and safety
   checks before entering existing proactivity surfaces
+
+Pre-Milestone-4 validation gate:
+
+- the candidate-review funnel must be tested locally before live gateway rebuild
+  or UI proof
+- the local validation path uses a golden corpus of real OpenClaw and Codex
+  episodes with expected surfaced candidates, expected demotions, and expected
+  no-candidate outcomes
+- each case persists or reconstructs the sanitized packet so reviewers can ask
+  whether packet assembly preserved enough narrative context
+- post-model audit gates check malformed text, unsupported existing-skill
+  enhancement claims, unsafe action/install/send/promotion claims, missing
+  evidence refs, and visible deterministic fallback copy
+- misses are classified by seam:
+  `packet_too_thin`, `model_missed_expected_candidate`,
+  `post_model_validation_suppressed`, `unexpected_candidate`, or
+  `no_candidate_expected`
+- this validation does not claim semantic truth; it is a harness for recall,
+  precision, classification, usefulness, and failure attribution before the
+  live UI wiring proof
+- a separate deterministic-judgment audit inventories memory-stack locations
+  where deterministic code appears to decide meaning, usefulness,
+  classification, ranking, or surfacing; guardrails for identity, schema,
+  redaction, caps, refs, provenance, cooldowns, dedupe, persistence, and
+  unsafe-output demotion remain allowed
 
 ## Dedupe and expiry
 

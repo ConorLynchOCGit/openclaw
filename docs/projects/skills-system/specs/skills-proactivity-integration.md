@@ -68,6 +68,8 @@ Milestone 3 runtime rule:
 ## Surfacing rules
 
 - skill candidates must not create a parallel queue
+- model-reviewed proactive plans are also first-class proactivity opportunities;
+  they must not be downgraded into generic follow-up rows before presentation
 - repeated candidates should update one canonical record where possible
 - evidence and provenance may be shown in secondary details
 - primary user-facing copy must render from a typed
@@ -132,6 +134,11 @@ Rules:
 - if the model cannot make the skill card say whether it is a new skill, an
   explicit existing-skill improvement, or a demoted weak candidate, it must
   choose demotion
+- visible primary card text must come from the model-authored brief path. The
+  deterministic brief builder may provide hidden fallback input, diagnostics,
+  and validator scaffolding only. If model-authored briefing is disabled,
+  unavailable, schema-invalid, unsafe, generic, or unclear, the item is demoted
+  or hidden rather than shown with deterministic copy.
 
 ## High-context model-reviewed candidate discovery
 
@@ -146,8 +153,17 @@ Runtime rule:
   every 3 assistant finals by default, session/compaction boundary, and a
   future manual review hook
 - keyword/topic/phrase checks must not act as trigger hints or gates
-- candidate-review packets use larger capped `episodeTurns`, not only short
-  memory-shaped snippets
+- candidate-review packets use larger capped contiguous `episodeTurns`, not
+  short memory-shaped snippets, adjacency-selected refs, or role-balanced
+  "interesting" fragments
+- deterministic packet assembly may enforce recency, source, caps, redaction,
+  refs, hashes, cooldown, and provenance only; it must not decide candidate
+  usefulness by choosing semantically interesting snippets
+- OpenClaw packet input should preserve the last configurable number of full
+  user/assistant turns in order
+- Codex packet input should preserve a contiguous session window with user asks,
+  assistant finals, command intent/status, validation failures, touched areas,
+  and outcomes where available
 - candidate review proposes at most 0-3 high-impact proactive plans, new skill
   candidates, existing-skill enhancements, merge/extend candidates, or
   demotions from the high-context episode packet
@@ -156,6 +172,16 @@ Runtime rule:
 - deterministic validation, cooldowns, dedupe, provenance checks, no-dark-data
   checks, and write-eligibility checks still decide whether a proposal becomes
   or updates a canonical proactivity record
+- deterministic guardrails remain allowed, but deterministic code that decides
+  semantic usefulness, candidate classification, ranking, or surfacing must be
+  audited rather than silently becoming candidate authority
+- before any live UI proof or gateway rebuild, the candidate-review path should
+  pass local golden-corpus validation covering expected skill candidates,
+  existing-skill enhancements, proactive plans, demotions, and no-candidate
+  episodes
+- golden-corpus misses must be attributed to packet assembly, model review,
+  post-model validation/dedupe, unexpected candidate surfacing, or an expected
+  no-candidate outcome
 
 Allowed live model input includes bounded recent user turns, assistant finals,
 card diagnostics, activity summaries, validation summaries, loaded skill
@@ -171,8 +197,11 @@ OpenClaw/Codex session logs are forbidden durable artifacts.
 
 Sanitized episode packet artifacts may be persisted for auditability. They must
 show source runtime, Codex adapter status, packet path/hash, proposal counts,
-and validation/demotion reasons without persisting raw prompt/model response
-text.
+packet-quality diagnostics, and validation/demotion reasons without persisting
+raw prompt/model response text. Packet-quality diagnostics should distinguish
+healthy contiguous windows from loaded-but-low-signal inputs such as generic
+command summaries, duplicated turns, missing touched areas, and missing
+validation-failure detail.
 
 Candidate-review output is proposal-only. It must not execute actions, install
 or promote skills, send messages, mutate files, write canonical memory truth, or

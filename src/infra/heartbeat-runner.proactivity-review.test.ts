@@ -25,7 +25,7 @@ afterEach(() => {
 });
 
 describe("heartbeat proactivity review", () => {
-  it("uses the bounded live proactivity review when same-session opportunities exist", async () => {
+  it("omits the bounded live proactivity review when only deterministic card text is available", async () => {
     await withTempHeartbeatSandbox(async ({ tmpDir, storePath }) => {
       const cfg: OpenClawConfig = {
         agents: {
@@ -105,10 +105,10 @@ describe("heartbeat proactivity review", () => {
       expect(result.status).toBe("ran");
       const body = String(getReplySpy.mock.calls[0]?.[0]?.Body ?? "");
       const visibleBody = stripInboundMetadata(body);
-      expect(visibleBody).toContain("What would help this user today?");
+      expect(visibleBody).not.toContain("What would help this user today?");
       expect(visibleBody).not.toContain("Plan the runtime seam reset");
-      expect(body).toContain("Heartbeat runtime context");
-      expect(body.toLowerCase()).toContain("runtime seam reset for authoritative proactivity");
+      expect(body).not.toContain("Heartbeat runtime context");
+      expect(body.toLowerCase()).not.toContain("runtime seam reset for authoritative proactivity");
       expect(getReplySpy).toHaveBeenCalledTimes(1);
       expect(sessionKey).toContain("main");
     });

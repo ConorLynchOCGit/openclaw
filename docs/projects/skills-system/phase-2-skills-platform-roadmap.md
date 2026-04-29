@@ -113,6 +113,9 @@ Pre-Milestone-4 repair:
 - keep model route isolation explicit: trigger evaluation, candidate review,
   presentation briefs, model-memory capture/retrieval, and default chat remain
   separate configurable routes with separate schemas
+- add local deterministic-semantic-judgment audit and golden-corpus candidate
+  review validation before live gateway rebuilds; Milestone 4 should start from
+  packet/reviewer/validator/card paths that already pass function-level checks
 
 - Objective: prove skills are chosen correctly and followed correctly.
 - Scope: decisioning, avoid, ambiguous/cofire, compliance, workflow-contract,

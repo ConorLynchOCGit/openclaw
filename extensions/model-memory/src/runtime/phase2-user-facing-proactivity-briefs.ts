@@ -19,6 +19,7 @@ export type Phase2UserFacingProactivityBriefKindLabel =
   | "Improve skill"
   | "Merge skill"
   | "Follow-up"
+  | "Proactive plan"
   | "Question"
   | "Draft ready"
   | "Repair";
@@ -113,6 +114,13 @@ const UNSAFE_ACTION_CLAIM_PATTERN =
 const SOURCE_REF_PATTERN = /\b(?:source:\s*)?(?:chat|gateway|memory|file|docs?):\/\//i;
 const UUID_PATTERN = /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/i;
 const TIMESTAMP_PATTERN = /\b20\d{2}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/;
+
+function isSlugLikeDisplayTitle(value: string): boolean {
+  const trimmed = value.trim();
+  return (
+    trimmed.length > 24 && !/\s/u.test(trimmed) && /[-_]/u.test(trimmed) && /[a-z]/u.test(trimmed)
+  );
+}
 
 function sourceTitleDiagnostics(sourceTitle: string | undefined): string[] {
   const reasons: string[] = [];
@@ -275,6 +283,9 @@ function primaryActionLabelFor(input: Phase2UserFacingProactivityBriefInput): st
   if (input.opportunityClass === "reverse_prompt") {
     return "Answer question";
   }
+  if (input.opportunityClass === "proactive_plan") {
+    return "Plan this";
+  }
   return "Open in chat";
 }
 
@@ -433,11 +444,13 @@ function buildStandardBrief(
   const kindLabel: Phase2UserFacingProactivityBriefKindLabel =
     input.opportunityClass === "self_healing"
       ? "Repair"
-      : input.opportunityClass === "followup" || input.opportunityClass === "recovery"
-        ? "Follow-up"
-        : input.skillifierDraft
-          ? "Draft ready"
-          : "Follow-up";
+      : input.opportunityClass === "proactive_plan"
+        ? "Proactive plan"
+        : input.opportunityClass === "followup" || input.opportunityClass === "recovery"
+          ? "Follow-up"
+          : input.skillifierDraft
+            ? "Draft ready"
+            : "Follow-up";
   const title =
     compact(input.title, MAX_TITLE_LENGTH) ||
     (kindLabel === "Repair" ? "Repair proactive surface quality" : "Review proactive next step");
@@ -488,6 +501,9 @@ function qualityReasons(input: {
   const title = input.title.trim();
   if (title.length > MAX_TITLE_LENGTH) {
     reasons.push("title_too_long");
+  }
+  if (isSlugLikeDisplayTitle(title)) {
+    reasons.push("title_is_slug_like");
   }
   if (CLIPPED_FRAGMENT_PREFIX.test(title)) {
     reasons.push("title_is_clipped_source_fragment");

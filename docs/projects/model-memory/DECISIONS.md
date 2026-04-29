@@ -5,12 +5,81 @@ title: "Model Memory Decisions"
 
 # Model Memory Decisions
 
+## 2026-04-29 - Deterministic semantic judgment requires audit and golden-corpus validation
+
+Decision:
+
+- deterministic code has not been stripped out of the whole memory stack, and
+  it should not be
+- deterministic guardrails remain correct for ids, hashes, schemas, caps,
+  redaction, source authority, provenance, cooldowns, dedupe, persistence
+  boundaries, projection materialization, and unsafe-output demotion
+- deterministic code must be audited when it decides meaning, usefulness,
+  candidate classification, ranking, or surfacing without model review
+- the audit posture is aggressive, not neutral: runtime deterministic value
+  judgment is presumed unsafe at scale unless proven to be an explicit guardrail
+  or structural retrieval constraint
+- audit classifications are:
+  - `runtime_elimination_debt`
+  - `test_enshrinement_debt`
+  - `valid_guardrail`
+  - `acceptable_structural_retrieval_logic`
+  - `fixture_reference_noise`
+- `runtime_elimination_debt` and `test_enshrinement_debt` are failing debt, not
+  informational findings
+- tests and proof scripts that assert deterministic semantic behavior are debt
+  because they preserve the old architecture even when production code is moved
+- audit reporting separates runtime elimination debt from test/fixture prose so
+  the priority list targets production Phase 1/2 memory code, not scaffolding
+- a strict audit mode may fail when deterministic value-judgment debt remains,
+  so the team can make removal/model-routing work a real gate before further
+  Phase 1/2 memory promotion
+- skill/proactivity candidate validation must use a golden corpus of real
+  OpenClaw and Codex episodes with expected candidates, expected demotions, and
+  expected no-candidate outcomes
+- each golden-corpus case must preserve the sanitized packet and ask whether
+  packet assembly kept enough narrative context to recover the expected
+  candidates
+- validation must attribute misses to the failing seam: packet too thin, model
+  missed the expected candidate, post-model validation suppressed the candidate,
+  unexpected candidate, or no-candidate expected
+- local function tests and golden-corpus validation run before any live gateway
+  rebuild; the gateway is rebuilt only after the underlying packet, reviewer,
+  validator, and presentation paths pass and the remaining question is UI
+  wiring
+- shadow-mode live review should later record sanitized packets, model
+  proposals, demotions, surfaced items, and operator grading so false negatives
+  can be traced to packet assembly, model review, validation/dedupe, or card
+  presentation
+
+Reasoning:
+
+- model-reviewed candidate discovery cannot be declared correct from one live
+  proof because failures can still occur before, inside, or after the model
+  call
+- auditing deterministic semantic judgment is different from removing
+  deterministic safety controls
+- prior repair passes repeatedly moved subjective judgment into new
+  deterministic layers; the safe posture is to remove those value judgments,
+  move them behind bounded model review, or replace them with explicit
+  structural filters
+- a golden corpus gives the team a repeatable way to test recall, precision,
+  classification, and usefulness without repeatedly rebuilding the live
+  gateway
+
 ## 2026-04-29 - Skill and proactivity candidate review uses high-context episodes
 
 Decision:
 
 - skill/proactivity candidate review is not memory capture and must not be
   optimized as frequent atomic extraction
+- candidate-review packets must be contiguous work episodes; deterministic code
+  must not select semantically "interesting" snippets as a substitute for model
+  judgment
+- OpenClaw review input preserves the last configurable number of full
+  user/assistant turns, and Codex review input preserves a contiguous session
+  window with user asks, assistant finals, command/validation summaries, touched
+  areas, and outcomes where available
 - live review runs less often by structural cadence: heartbeat/operator
   briefing, every 3 assistant finals by default, session/compaction boundary,
   and a future manual review hook
@@ -27,6 +96,10 @@ Decision:
 - model-reviewed candidates are proposals only; they cannot write canonical
   memory truth, install/promote skills, execute actions, send messages, or
   mutate files
+- visible proactivity cards must use model-authored presentation copy. If the
+  model-authored presentation route is disabled, unavailable, invalid, or
+  unclear, deterministic fallback text must demote/hide the item rather than
+  become visible primary copy.
 
 ## 2026-04-28 - Candidate discovery uses bounded model-reviewed episodes
 
@@ -4267,22 +4340,25 @@ Decision:
   not execute the proposed work.
 - Slice 63 makes Heartbeat / Daily Operator Review a primary proactivity
   surface. It shows top live opportunities under “What would help this user
-  today?”, ranks by urgency, freshness, recurrence, expected value, active
-  context match, feedback/noise state, and confidence, and preserves the same
-  work item ids as inbox/contextual/chat handoff.
+  today?”, but selection is structural: pending/actionable state, model-authored
+  clean copy, recency, active-context membership, feedback/noise suppression,
+  and shared work item ids. It does not deterministically rank expected user
+  value.
 - The Slice 63 heartbeat surface is considered failed if it is diagnostics-only,
   lacks a direct handoff CTA, loses the shared work item id, or cannot show a
   bounded title/why-now/next-step/value card. Suppressed/background items remain
   diagnostics.
-- Slice 64 adds an acceptance gate. Proactivity may move to Skills only if live
-  generation frequency, useful/actioned rate, low noise, heartbeat reliability,
-  handoff quality, zero leakage, zero unsafe action execution, zero autonomous
-  send expansion, and zero primary static fallback criteria pass.
+- Slice 64 adds an acceptance gate. Live generation frequency,
+  operator-positive/actioned feedback, low noise, heartbeat reliability, handoff
+  quality, zero leakage, zero unsafe action execution, zero autonomous send
+  expansion, and zero primary static fallback criteria are evidence for
+  operator review, not authorization to move to Skills.
 - The Slice 64 decision outcomes are
-  `proactivity_accepted_move_to_skills`, `continue_tuning`,
-  `pause_automation`, and `rollback_to_manual_only`. A green decision is an
-  evidence gate, not a new automation permission; broad autonomous sending and
-  action execution from surfacing remain blocked after acceptance.
+  `operator_review_required_before_skills`, `continue_tuning`,
+  `pause_automation`, and `rollback_to_manual_only`. Green metrics are an
+  evidence gate, not a semantic truth source or automation permission; broad
+  autonomous sending and action execution from surfacing remain blocked after
+  acceptance.
 - Rollback switches:
   `MODEL_MEMORY_PHASE2_LIVE_SIGNAL_COVERAGE_DISABLED`,
   `MODEL_MEMORY_PHASE2_PROACTIVITY_NOISE_BUDGET_DISABLED`,

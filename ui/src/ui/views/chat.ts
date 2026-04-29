@@ -1520,6 +1520,7 @@ function collapseSameSessionSurfaceItems<T extends ProactivitySurfaceItem>(items
     (item.skillifierDraft ? 1_000 : 0) +
     (item.blockedReasonCodes.includes("model_reviewed_candidate") ? 600 : 0) +
     (item.opportunityClass === "skill_candidate" ? 200 : 0) +
+    (item.opportunityClass === "proactive_plan" ? 200 : 0) +
     (item.draftReady ? 100 : 0) +
     confidenceRank(item.confidence);
   const chooseBest = (bestByKey: Map<string, T>, key: string | null, item: T) => {
@@ -1727,6 +1728,8 @@ function getProactivityOpportunityClassLabel(item: ProactivitySurfaceItem): stri
   switch (item.opportunityClass) {
     case "skill_candidate":
       return "skill candidate";
+    case "proactive_plan":
+      return "proactive plan";
     case "reverse_prompt":
       return "reverse prompt";
     case "followup":
@@ -1746,6 +1749,8 @@ function getProactivityOpportunityClassChipClass(item: ProactivitySurfaceItem): 
   switch (item.opportunityClass) {
     case "skill_candidate":
       return "proactivity-surface-chip--reverse";
+    case "proactive_plan":
+      return "proactivity-surface-chip--followup";
     case "reverse_prompt":
       return "proactivity-surface-chip--reverse";
     case "followup":

@@ -70,12 +70,33 @@ Remaining implementation details:
   model-reviewed episode workflow before Milestone 4 evals:
   - structural cadence is heartbeat/operator briefing, every 3 assistant finals
     by default, session/compaction boundary, and a future manual review hook
-  - the model candidate reviewer sees capped `episodeTurns` from coherent
-    OpenClaw and Codex work windows rather than only short atomic snippets
+  - the model candidate reviewer sees capped contiguous `episodeTurns` from
+    coherent OpenClaw and Codex work windows rather than short atomic snippets,
+    adjacency-selected refs, or role-balanced fragments
+  - deterministic packet assembly enforces caps, redaction, refs, hashes,
+    provenance, cooldown, and source boundaries only; it must not decide
+    semantic relevance or candidate usefulness
   - the reviewer proposes at most 0-3 high-impact plans, new skills,
     existing-skill enhancements, merge candidates, or demotions
   - deterministic validation, cooldown, dedupe, provenance, route isolation,
     and no-dark-data gates decide what can enter canonical proactivity state
+- visible proactive cards require model-authored primary copy; deterministic
+  fallback copy is diagnostic-only and demotes when model-authored copy is not
+  available or valid
+- the broader memory stack still uses deterministic guardrails for identity,
+  schemas, caps, redaction, source authority, provenance, cooldowns, dedupe,
+  persistence, and derived materialization; those are required safety controls,
+  not the target of the candidate-review cleanup
+- deterministic code that decides semantic meaning, usefulness, classification,
+  ranking, or surfacing without a model must be inventoried by an explicit
+  deterministic-judgment audit before being trusted as candidate authority
+- candidate-review quality must be validated against a golden corpus of
+  OpenClaw and Codex episodes before a live gateway rebuild; the live UI proof
+  should confirm wiring only after packet assembly, model proposal validation,
+  and card presentation pass local function tests
+- false negatives must be attributed to the failing seam: packet too thin,
+  model missed the expected candidate, post-model validation suppressed it,
+  unexpected candidate, or no-candidate expected
 - maintenance mechanics are owned by
   [Memory Maintenance Loop](/projects/model-memory/specs/memory-maintenance-loop)
 
@@ -198,7 +219,9 @@ Primary user-facing fields must be cleaned before surfacing:
 - no inline `Source: chat://...` prose
 
 If a candidate cannot produce clean user-facing copy after bounded
-normalization, it must be suppressed from primary actionable surfaces.
+normalization and model-authored brief generation, it must be suppressed from
+primary actionable surfaces. Deterministic normalized copy must not be shown as
+the primary card title, purpose, or next step.
 
 Heartbeat may use hidden structured context to produce the visible review. The
 structured context may contain top opportunities, reverse prompts, stale

@@ -8,7 +8,7 @@ export const PHASE2_PROACTIVITY_ACCEPTANCE_GATE_REPORT_SCHEMA_VERSION =
   "phase2_proactivity_acceptance_gate_report.v1" as const;
 
 export type Phase2ProactivityAcceptanceDecision =
-  | "proactivity_accepted_move_to_skills"
+  | "operator_review_required_before_skills"
   | "continue_tuning"
   | "pause_automation"
   | "rollback_to_manual_only";
@@ -26,7 +26,7 @@ export type Phase2ProactivityAcceptanceCriteria = {
   minimumLiveSignals: number;
   minimumActionableWorkItems: number;
   minimumHandoffsStarted: number;
-  minimumUsefulOrActionedRate: number;
+  minimumPositiveFeedbackRate: number;
   maximumNoiseRate: number;
   maximumRepeatStaleRate: number;
   requiredLeakageFailures: 0;
@@ -36,7 +36,7 @@ export type Phase2ProactivityAcceptanceCriteria = {
   heartbeatInboxSharedSourceRequired: true;
 };
 
-export type Phase2ProactivityUsefulnessReport = {
+export type Phase2ProactivityOperatorFeedbackReport = {
   liveSignalsObserved: number;
   opportunitiesGenerated: number;
   actionableWorkItemsGenerated: number;
@@ -46,8 +46,8 @@ export type Phase2ProactivityUsefulnessReport = {
   handoffsStarted: number;
   plansInvestigationsDraftsProduced: number;
   dismissedSnoozedIgnored: number;
-  markedUsefulOrActioned: number;
-  markedNotUsefulWrongContext: number;
+  markedOperatorPositiveOrActioned: number;
+  markedWrongContext: number;
   suppressedNoiseBudgeted: number;
   leakagePrivateFailures: number;
   unsafeActionAttempts: number;
@@ -64,7 +64,7 @@ export type Phase2ProactivityAcceptanceCheck = {
     | "normal_runtime_generation_required"
     | "generation_frequency_required"
     | "actionable_work_items_required"
-    | "useful_actioned_rate_required"
+    | "positive_feedback_rate_required"
     | "low_noise_required"
     | "repeat_stale_rate_required"
     | "no_leakage_required"
@@ -78,8 +78,8 @@ export type Phase2ProactivityAcceptanceCheck = {
 export type Phase2ProactivityAcceptanceTelemetry = {
   schemaVersion: typeof PHASE2_PROACTIVITY_ACCEPTANCE_GATE_SCHEMA_VERSION;
   reportId: string;
-  metrics: Phase2ProactivityUsefulnessReport;
-  usefulActionedRate: number;
+  metrics: Phase2ProactivityOperatorFeedbackReport;
+  positiveFeedbackRate: number;
   noiseRate: number;
   repeatStaleRate: number;
   noDarkDataStatus: "pass" | "fail";
@@ -101,7 +101,7 @@ export type Phase2ProactivityAcceptanceReport = {
   decision: Phase2ProactivityAcceptanceDecision;
   criteria: Phase2ProactivityAcceptanceCriteria;
   metricResults: Phase2ProactivityAcceptanceMetric[];
-  usefulnessReport: Phase2ProactivityUsefulnessReport;
+  operatorFeedbackReport: Phase2ProactivityOperatorFeedbackReport;
   checks: Phase2ProactivityAcceptanceCheck[];
   telemetry: Phase2ProactivityAcceptanceTelemetry;
   recommendation: string;
@@ -111,7 +111,7 @@ export type Phase2ProactivityAcceptanceReport = {
 
 export type Phase2ProactivityAcceptanceInput = {
   now?: Date;
-  metrics?: Partial<Phase2ProactivityUsefulnessReport>;
+  metrics?: Partial<Phase2ProactivityOperatorFeedbackReport>;
   env?: Record<string, string | undefined>;
   forceRollback?: boolean;
 };
@@ -157,8 +157,8 @@ function metric(
 }
 
 function completeMetrics(
-  metrics: Partial<Phase2ProactivityUsefulnessReport> | undefined,
-): Phase2ProactivityUsefulnessReport {
+  metrics: Partial<Phase2ProactivityOperatorFeedbackReport> | undefined,
+): Phase2ProactivityOperatorFeedbackReport {
   return {
     liveSignalsObserved: metrics?.liveSignalsObserved ?? 0,
     opportunitiesGenerated: metrics?.opportunitiesGenerated ?? 0,
@@ -169,8 +169,8 @@ function completeMetrics(
     handoffsStarted: metrics?.handoffsStarted ?? 0,
     plansInvestigationsDraftsProduced: metrics?.plansInvestigationsDraftsProduced ?? 0,
     dismissedSnoozedIgnored: metrics?.dismissedSnoozedIgnored ?? 0,
-    markedUsefulOrActioned: metrics?.markedUsefulOrActioned ?? 0,
-    markedNotUsefulWrongContext: metrics?.markedNotUsefulWrongContext ?? 0,
+    markedOperatorPositiveOrActioned: metrics?.markedOperatorPositiveOrActioned ?? 0,
+    markedWrongContext: metrics?.markedWrongContext ?? 0,
     suppressedNoiseBudgeted: metrics?.suppressedNoiseBudgeted ?? 0,
     leakagePrivateFailures: metrics?.leakagePrivateFailures ?? 0,
     unsafeActionAttempts: metrics?.unsafeActionAttempts ?? 0,
@@ -186,13 +186,13 @@ export async function buildPhase2ProactivityAcceptanceGateReport(
 ): Promise<Phase2ProactivityAcceptanceReport> {
   const generatedAt = (input.now ?? new Date()).toISOString();
   const rollback = readRollback(input);
-  const usefulnessReport = completeMetrics(input.metrics);
+  const operatorFeedbackReport = completeMetrics(input.metrics);
   const criteria: Phase2ProactivityAcceptanceCriteria = {
     normalRuntimeLiveGenerationRequired: true,
     minimumLiveSignals: 3,
     minimumActionableWorkItems: 2,
     minimumHandoffsStarted: 1,
-    minimumUsefulOrActionedRate: 0.4,
+    minimumPositiveFeedbackRate: 0.4,
     maximumNoiseRate: 0.5,
     maximumRepeatStaleRate: 0.4,
     requiredLeakageFailures: 0,
@@ -201,68 +201,69 @@ export async function buildPhase2ProactivityAcceptanceGateReport(
     requiredStaticFallbackPrimaryCount: 0,
     heartbeatInboxSharedSourceRequired: true,
   };
-  const usefulActionedRate = rate(
-    usefulnessReport.markedUsefulOrActioned + usefulnessReport.plansInvestigationsDraftsProduced,
-    Math.max(1, usefulnessReport.actionableWorkItemsGenerated),
+  const positiveFeedbackRate = rate(
+    operatorFeedbackReport.markedOperatorPositiveOrActioned +
+      operatorFeedbackReport.plansInvestigationsDraftsProduced,
+    Math.max(1, operatorFeedbackReport.actionableWorkItemsGenerated),
   );
   const noiseRate = rate(
-    usefulnessReport.dismissedSnoozedIgnored +
-      usefulnessReport.markedNotUsefulWrongContext +
-      usefulnessReport.suppressedNoiseBudgeted,
-    Math.max(1, usefulnessReport.opportunitiesGenerated),
+    operatorFeedbackReport.dismissedSnoozedIgnored +
+      operatorFeedbackReport.markedWrongContext +
+      operatorFeedbackReport.suppressedNoiseBudgeted,
+    Math.max(1, operatorFeedbackReport.opportunitiesGenerated),
   );
   const repeatStaleRate = rate(
-    usefulnessReport.suppressedNoiseBudgeted,
-    Math.max(1, usefulnessReport.liveSignalsObserved),
+    operatorFeedbackReport.suppressedNoiseBudgeted,
+    Math.max(1, operatorFeedbackReport.liveSignalsObserved),
   );
   const metricResults = [
     metric(
       "live_signals_observed",
-      usefulnessReport.liveSignalsObserved,
+      operatorFeedbackReport.liveSignalsObserved,
       criteria.minimumLiveSignals,
       "at_least",
     ),
     metric(
       "actionable_work_items",
-      usefulnessReport.actionableWorkItemsGenerated,
+      operatorFeedbackReport.actionableWorkItemsGenerated,
       criteria.minimumActionableWorkItems,
       "at_least",
     ),
     metric(
       "handoffs_started",
-      usefulnessReport.handoffsStarted,
+      operatorFeedbackReport.handoffsStarted,
       criteria.minimumHandoffsStarted,
       "at_least",
     ),
     metric(
-      "useful_actioned_rate",
-      usefulActionedRate,
-      criteria.minimumUsefulOrActionedRate,
+      "positive_feedback_rate",
+      positiveFeedbackRate,
+      criteria.minimumPositiveFeedbackRate,
       "at_least",
     ),
     metric("noise_rate", noiseRate, criteria.maximumNoiseRate, "at_most"),
     metric("repeat_stale_rate", repeatStaleRate, criteria.maximumRepeatStaleRate, "at_most"),
     metric(
       "leakage_private_failures",
-      usefulnessReport.leakagePrivateFailures,
+      operatorFeedbackReport.leakagePrivateFailures,
       criteria.requiredLeakageFailures,
       "equals",
     ),
     metric(
       "unsafe_action_attempts",
-      usefulnessReport.unsafeActionAttempts,
+      operatorFeedbackReport.unsafeActionAttempts,
       criteria.requiredUnsafeActionExecutions,
       "equals",
     ),
     metric(
       "autonomous_send_expansions",
-      usefulnessReport.autonomousSendExpansions,
+      operatorFeedbackReport.autonomousSendExpansions,
       criteria.requiredAutonomousSendExpansions,
       "equals",
     ),
     metric(
       "static_fallback_primary_count",
-      usefulnessReport.staticFallbackPrimaryCount,
+      operatorFeedbackReport.staticFallbackPrimaryCount,
       criteria.requiredStaticFallbackPrimaryCount,
       "equals",
     ),
@@ -271,26 +272,26 @@ export async function buildPhase2ProactivityAcceptanceGateReport(
   addCheck(
     checks,
     "normal_runtime:generation",
-    usefulnessReport.liveSignalsObserved > 0,
+    operatorFeedbackReport.liveSignalsObserved > 0,
     "normal_runtime_generation_required",
   );
   addCheck(
     checks,
     "generation:frequency",
-    usefulnessReport.liveSignalsObserved >= criteria.minimumLiveSignals,
+    operatorFeedbackReport.liveSignalsObserved >= criteria.minimumLiveSignals,
     "generation_frequency_required",
   );
   addCheck(
     checks,
     "work_items:actionable",
-    usefulnessReport.actionableWorkItemsGenerated >= criteria.minimumActionableWorkItems,
+    operatorFeedbackReport.actionableWorkItemsGenerated >= criteria.minimumActionableWorkItems,
     "actionable_work_items_required",
   );
   addCheck(
     checks,
-    "rate:useful_actioned",
-    usefulActionedRate >= criteria.minimumUsefulOrActionedRate,
-    "useful_actioned_rate_required",
+    "rate:positive_feedback",
+    positiveFeedbackRate >= criteria.minimumPositiveFeedbackRate,
+    "positive_feedback_rate_required",
   );
   addCheck(checks, "rate:noise", noiseRate <= criteria.maximumNoiseRate, "low_noise_required");
   addCheck(
@@ -302,47 +303,48 @@ export async function buildPhase2ProactivityAcceptanceGateReport(
   addCheck(
     checks,
     "safety:leakage",
-    usefulnessReport.leakagePrivateFailures === 0,
+    operatorFeedbackReport.leakagePrivateFailures === 0,
     "no_leakage_required",
   );
   addCheck(
     checks,
     "safety:action_execution",
-    usefulnessReport.unsafeActionAttempts === 0,
+    operatorFeedbackReport.unsafeActionAttempts === 0,
     "no_unsafe_action_execution",
   );
   addCheck(
     checks,
     "safety:autonomous",
-    usefulnessReport.autonomousSendExpansions === 0,
+    operatorFeedbackReport.autonomousSendExpansions === 0,
     "no_autonomous_send_expansion",
   );
   addCheck(
     checks,
     "static_fallback:not_primary",
-    usefulnessReport.staticFallbackPrimaryCount === 0,
+    operatorFeedbackReport.staticFallbackPrimaryCount === 0,
     "static_fallback_not_primary",
   );
   addCheck(
     checks,
     "source_of_truth:heartbeat_inbox",
-    usefulnessReport.heartbeatInboxSharedSource,
+    operatorFeedbackReport.heartbeatInboxSharedSource,
     "heartbeat_inbox_source_of_truth",
   );
   addCheck(checks, "rollback:not_active", !rollback, "rollback_kill_switch_inactive");
   const failedChecks = checks.filter((check) => check.status === "fail");
   const decision: Phase2ProactivityAcceptanceDecision = rollback
     ? "rollback_to_manual_only"
-    : usefulnessReport.leakagePrivateFailures > 0 || usefulnessReport.unsafeActionAttempts > 0
+    : operatorFeedbackReport.leakagePrivateFailures > 0 ||
+        operatorFeedbackReport.unsafeActionAttempts > 0
       ? "pause_automation"
       : failedChecks.length === 0
-        ? "proactivity_accepted_move_to_skills"
+        ? "operator_review_required_before_skills"
         : "continue_tuning";
   const reportId = buildDerivedArtifactId({
     family: "context_artifact",
     artifactType: "phase2_proactivity_acceptance_gate_report",
     targetId: "proactivity-acceptance",
-    seed: { generatedAt, decision, metrics: usefulnessReport },
+    seed: { generatedAt, decision, metrics: operatorFeedbackReport },
   });
   const rollbackPlan: Phase2ProactivityAcceptanceRollbackPlan = {
     rollbackId: buildDerivedArtifactId({
@@ -358,22 +360,22 @@ export async function buildPhase2ProactivityAcceptanceGateReport(
   const telemetry: Phase2ProactivityAcceptanceTelemetry = {
     schemaVersion: PHASE2_PROACTIVITY_ACCEPTANCE_GATE_SCHEMA_VERSION,
     reportId,
-    metrics: usefulnessReport,
-    usefulActionedRate,
+    metrics: operatorFeedbackReport,
+    positiveFeedbackRate,
     noiseRate,
     repeatStaleRate,
-    noDarkDataStatus: usefulnessReport.leakagePrivateFailures === 0 ? "pass" : "fail",
+    noDarkDataStatus: operatorFeedbackReport.leakagePrivateFailures === 0 ? "pass" : "fail",
     broadAutonomousSendingEnabled: false,
     actionExecutionObserved: false,
   };
   const recommendation =
-    decision === "proactivity_accepted_move_to_skills"
-      ? "Move to Skills; keep proactivity monitored through usefulness reports."
+    decision === "operator_review_required_before_skills"
+      ? "Metrics are green enough for operator review, but they do not authorize moving to Skills without human approval."
       : decision === "pause_automation"
         ? "Pause automation and fix safety failures before more proactivity work."
         : decision === "rollback_to_manual_only"
           ? "Rollback to manual-only proactivity tuning."
-          : "Continue proactivity tuning; live usefulness criteria are not yet green.";
+          : "Continue proactivity tuning; live operator-feedback criteria are not yet green.";
   const report: Phase2ProactivityAcceptanceReport = {
     schemaVersion: PHASE2_PROACTIVITY_ACCEPTANCE_GATE_REPORT_SCHEMA_VERSION,
     reportId,
@@ -381,7 +383,7 @@ export async function buildPhase2ProactivityAcceptanceGateReport(
     decision,
     criteria,
     metricResults,
-    usefulnessReport,
+    operatorFeedbackReport,
     checks,
     telemetry,
     recommendation,
@@ -418,7 +420,7 @@ export async function writePhase2ProactivityAcceptanceGateArtifact(input: {
     "",
     `- reportId: ${input.report.reportId}`,
     `- decision: ${input.report.decision}`,
-    `- usefulActionedRate: ${input.report.telemetry.usefulActionedRate}`,
+    `- positiveFeedbackRate: ${input.report.telemetry.positiveFeedbackRate}`,
     `- noiseRate: ${input.report.telemetry.noiseRate}`,
     `- recommendation: ${input.report.recommendation}`,
     `- broadAutonomousSendingEnabled: ${input.report.telemetry.broadAutonomousSendingEnabled}`,

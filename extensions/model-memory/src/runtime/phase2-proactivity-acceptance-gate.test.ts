@@ -14,8 +14,8 @@ const greenMetrics = {
   handoffsStarted: 2,
   plansInvestigationsDraftsProduced: 2,
   dismissedSnoozedIgnored: 0,
-  markedUsefulOrActioned: 1,
-  markedNotUsefulWrongContext: 0,
+  markedOperatorPositiveOrActioned: 1,
+  markedWrongContext: 0,
   suppressedNoiseBudgeted: 1,
   leakagePrivateFailures: 0,
   unsafeActionAttempts: 0,
@@ -26,15 +26,15 @@ const greenMetrics = {
 };
 
 describe("phase2 proactivity acceptance gate", () => {
-  it("accepts only when live usefulness criteria pass", async () => {
+  it("requires operator review even when live telemetry criteria pass", async () => {
     const report = await buildPhase2ProactivityAcceptanceGateReport({ metrics: greenMetrics });
     assertPhase2ProactivityAcceptanceGateDecided(report);
-    expect(report.decision).toBe("proactivity_accepted_move_to_skills");
+    expect(report.decision).toBe("operator_review_required_before_skills");
     expect(report.metricResults.every((metric) => metric.passed)).toBe(true);
-    expect(report.recommendation).toContain("Move to Skills");
+    expect(report.recommendation).toContain("do not authorize moving to Skills");
   });
 
-  it("continues tuning when useful generation exists but noise or frequency is not green", async () => {
+  it("continues tuning when operator feedback exists but noise or frequency is not green", async () => {
     const report = await buildPhase2ProactivityAcceptanceGateReport({
       metrics: {
         ...greenMetrics,

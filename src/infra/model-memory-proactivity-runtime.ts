@@ -101,7 +101,6 @@ import {
   isInternalProactivityWorkflowText,
   isOperationalProactivityUserFacingText,
   parseAssistantTextSignature,
-  resolveAssistantMessagePhase,
 } from "../shared/chat-message-content.js";
 import { getLastHeartbeatEvent } from "./heartbeat-events.js";
 import { peekSystemEventEntries } from "./system-events.js";
@@ -259,7 +258,16 @@ const CANDIDATE_TRIGGER_TIMEOUT_ENV = "MODEL_MEMORY_PHASE2_CANDIDATE_TRIGGER_TIM
 const CANDIDATE_REVIEW_ENABLED_ENV = "MODEL_MEMORY_PHASE2_CANDIDATE_REVIEW_ENABLED";
 const CANDIDATE_REVIEW_MODEL_ENV = "MODEL_MEMORY_PHASE2_CANDIDATE_REVIEW_MODEL";
 const CANDIDATE_REVIEW_REASONING_ENV = "MODEL_MEMORY_PHASE2_CANDIDATE_REVIEW_REASONING_EFFORT";
+const CANDIDATE_REVIEW_VERBOSITY_ENV = "MODEL_MEMORY_PHASE2_CANDIDATE_REVIEW_VERBOSITY";
 const CANDIDATE_REVIEW_TIMEOUT_ENV = "MODEL_MEMORY_PHASE2_CANDIDATE_REVIEW_TIMEOUT_MS";
+const CANDIDATE_REVIEW_MAX_OUTPUT_TOKENS_ENV =
+  "MODEL_MEMORY_PHASE2_CANDIDATE_REVIEW_MAX_OUTPUT_TOKENS";
+const CANDIDATE_REVIEW_PACKET_MAX_CHARS_ENV =
+  "MODEL_MEMORY_PHASE2_CANDIDATE_REVIEW_PACKET_MAX_CHARS";
+const CANDIDATE_REVIEW_OPENCLAW_TURN_WINDOW_ENV =
+  "MODEL_MEMORY_PHASE2_CANDIDATE_REVIEW_OPENCLAW_TURN_WINDOW";
+const CANDIDATE_REVIEW_CODEX_TURN_WINDOW_ENV =
+  "MODEL_MEMORY_PHASE2_CANDIDATE_REVIEW_CODEX_TURN_WINDOW";
 const CANDIDATE_REVIEW_MAX_PER_SESSION_ENV = "MODEL_MEMORY_PHASE2_CANDIDATE_REVIEW_MAX_PER_SESSION";
 const CANDIDATE_REVIEW_MAX_PER_DAY_ENV = "MODEL_MEMORY_PHASE2_CANDIDATE_REVIEW_MAX_PER_DAY";
 const CANDIDATE_REVIEW_COOLDOWN_ENV = "MODEL_MEMORY_PHASE2_CANDIDATE_REVIEW_COOLDOWN_MS";
@@ -269,17 +277,21 @@ const CANDIDATE_REVIEW_ARTIFACT_ROOT_ENV = "MODEL_MEMORY_PHASE2_CANDIDATE_REVIEW
 const CODEX_SESSION_REVIEW_ENABLED_ENV = "MODEL_MEMORY_PHASE2_CODEX_SESSION_REVIEW_ENABLED";
 const DEFAULT_CANDIDATE_TRIGGER_TIMEOUT_MS = 30_000;
 const DEFAULT_CANDIDATE_REVIEW_TIMEOUT_MS = 120_000;
+const DEFAULT_CANDIDATE_REVIEW_MAX_OUTPUT_TOKENS = 6_000;
+const DEFAULT_CANDIDATE_REVIEW_PACKET_MAX_CHARS = 160_000;
+const DEFAULT_CANDIDATE_REVIEW_OPENCLAW_TURN_WINDOW = 12;
+const DEFAULT_CANDIDATE_REVIEW_CODEX_TURN_WINDOW = 24;
 const DEFAULT_CANDIDATE_REVIEW_MAX_PER_SESSION = 12;
 const DEFAULT_CANDIDATE_REVIEW_MAX_PER_DAY = 24;
 const DEFAULT_CANDIDATE_REVIEW_COOLDOWN_MS = 15 * 60 * 1_000;
 const DEFAULT_CANDIDATE_REVIEW_ASSISTANT_FINAL_INTERVAL = 3;
-const MAX_HIGH_CONTEXT_USER_TURN_CHARS = 4_000;
-const MAX_HIGH_CONTEXT_ASSISTANT_TURN_CHARS = 10_000;
-const MAX_HIGH_CONTEXT_SESSION_ACTIVITIES = 18;
+const MAX_HIGH_CONTEXT_USER_TURN_CHARS = 8_000;
+const MAX_HIGH_CONTEXT_ASSISTANT_TURN_CHARS = 12_000;
+const MAX_HIGH_CONTEXT_SESSION_ACTIVITIES = 36;
 const CANDIDATE_REVIEW_ARTIFACT_RELATIVE_DIR = path.join(
   ".artifacts",
   "model-memory",
-  "phase2-high-context-candidate-review",
+  "phase2-contiguous-candidate-packets-and-model-cards",
 );
 
 function sha256(value: unknown): string {
@@ -445,8 +457,15 @@ function buildCandidateReviewOptions(params: {
       ["low", "medium", "high"] as const,
       "high",
     ),
-    verbosity: "low",
-    maxOutputTokens: 3_200,
+    verbosity: readAllowedValue(
+      params.env[CANDIDATE_REVIEW_VERBOSITY_ENV],
+      ["low", "medium"] as const,
+      "medium",
+    ),
+    maxOutputTokens: readPositiveInteger(
+      params.env[CANDIDATE_REVIEW_MAX_OUTPUT_TOKENS_ENV],
+      DEFAULT_CANDIDATE_REVIEW_MAX_OUTPUT_TOKENS,
+    ),
   };
 }
 
@@ -477,6 +496,23 @@ function boundedHighContextTurnText(value: unknown, maxChars: number): string {
     .join("\n")
     .slice(0, maxChars)
     .trim();
+}
+
+function capCandidateReviewActivitiesByChars(
+  activities: CandidateReviewRecentActivity[],
+  maxChars: number,
+): CandidateReviewRecentActivity[] {
+  const selected: CandidateReviewRecentActivity[] = [];
+  let totalChars = 0;
+  for (const activity of activities.toReversed()) {
+    const nextTotal = totalChars + activity.boundedText.length;
+    if (selected.length > 0 && nextTotal > maxChars) {
+      continue;
+    }
+    selected.push(activity);
+    totalChars = nextTotal;
+  }
+  return selected.toReversed();
 }
 
 function isSafeBoundedSummary(value: string): boolean {
@@ -780,10 +816,6 @@ function transcriptMessagesToAuthoritativeRecords(input: {
       continue;
     }
     if (role !== "assistant") {
-      continue;
-    }
-    const messagePhase = resolveAssistantMessagePhase(message);
-    if (messagePhase === "commentary") {
       continue;
     }
     const finalAnswerText = extractAssistantTextForPhase(message, { phase: "final_answer" });
@@ -1202,14 +1234,11 @@ function candidateReviewActivityFromRecord(
   };
 }
 
-function transcriptMessagesToHighContextCandidateReviewActivities(input: {
+export function transcriptMessagesToHighContextCandidateReviewActivities(input: {
   messages: unknown[];
   sessionKey: string;
 }): CandidateReviewRecentActivity[] {
   const activities: CandidateReviewRecentActivity[] = [];
-  let lastUserPromptSummary: string | undefined;
-  let lastUserPromptOperational = false;
-  let lastUserPromptSuppressed = false;
   for (const message of input.messages) {
     if (!message || typeof message !== "object") {
       continue;
@@ -1234,16 +1263,6 @@ function transcriptMessagesToHighContextCandidateReviewActivities(input: {
       const sourceMessageId =
         readString((message as { __openclaw?: { id?: unknown } }).__openclaw?.id) ??
         `user:${sha256({ sessionKey: input.sessionKey, text, timestamp: recordedAt }).slice(0, 16)}`;
-      lastUserPromptSummary = summarizePrompt(text);
-      lastUserPromptOperational =
-        !lastUserPromptSummary && isOperationalProactivityUserFacingText(text);
-      lastUserPromptSuppressed =
-        lastUserPromptOperational ||
-        isInternalProactivityWorkflowText(text) ||
-        isInternalProactivityWorkflowText(lastUserPromptSummary);
-      if (lastUserPromptSuppressed) {
-        continue;
-      }
       activities.push({
         ref: `chat://${input.sessionKey}/user_turn/${sourceMessageId}`,
         role: "user",
@@ -1257,25 +1276,17 @@ function transcriptMessagesToHighContextCandidateReviewActivities(input: {
     if (role !== "assistant") {
       continue;
     }
-    const messagePhase = resolveAssistantMessagePhase(message);
-    if (messagePhase === "commentary") {
-      continue;
-    }
     const finalAnswerText = extractAssistantTextForPhase(message, { phase: "final_answer" });
-    const assistantVisibleText = finalAnswerText ?? extractAssistantVisibleText(message);
+    const assistantVisibleText =
+      finalAnswerText ??
+      extractAssistantVisibleText(message) ??
+      extractAssistantTextForPhase(message, { phase: "commentary" }) ??
+      extractFirstTextBlock(message);
     const text = boundedHighContextTurnText(
       assistantVisibleText,
       MAX_HIGH_CONTEXT_ASSISTANT_TURN_CHARS,
     );
-    if (
-      !text ||
-      !isSafeBoundedSummary(text) ||
-      isOperationalAssistantMessage(message, text) ||
-      lastUserPromptOperational ||
-      lastUserPromptSuppressed ||
-      isInternalProactivityWorkflowText(text) ||
-      isInternalProactivityWorkflowText(lastUserPromptSummary)
-    ) {
+    if (!text || !isSafeBoundedSummary(text)) {
       continue;
     }
     const sourceMessageId =
@@ -1495,6 +1506,18 @@ async function buildModelReviewedCandidateSources(input: {
     process.env[CANDIDATE_REVIEW_ASSISTANT_FINAL_INTERVAL_ENV],
     DEFAULT_CANDIDATE_REVIEW_ASSISTANT_FINAL_INTERVAL,
   );
+  const openClawTurnWindow = readPositiveInteger(
+    process.env[CANDIDATE_REVIEW_OPENCLAW_TURN_WINDOW_ENV],
+    DEFAULT_CANDIDATE_REVIEW_OPENCLAW_TURN_WINDOW,
+  );
+  const codexTurnWindow = readPositiveInteger(
+    process.env[CANDIDATE_REVIEW_CODEX_TURN_WINDOW_ENV],
+    DEFAULT_CANDIDATE_REVIEW_CODEX_TURN_WINDOW,
+  );
+  const packetMaxChars = readPositiveInteger(
+    process.env[CANDIDATE_REVIEW_PACKET_MAX_CHARS_ENV],
+    DEFAULT_CANDIDATE_REVIEW_PACKET_MAX_CHARS,
+  );
   const nowMs = Date.now();
   const latestReviewMs = latestCandidateReviewMs(input.previousEpisodeKeys);
   const recentReviewEntries = forceReviewRun
@@ -1590,14 +1613,14 @@ async function buildModelReviewedCandidateSources(input: {
           },
         ]
       : [];
-  const recentActivities = [
-    ...effectiveOpenClawActivities.slice(-12),
-    ...codexActivities
-      .filter((activity) => activity.role === "user" || activity.role === "assistant")
-      .slice(-10),
-    ...codexActivities.filter((activity) => activity.role === "tool_summary").slice(-8),
-    ...heartbeatActivities,
-  ].slice(-30);
+  const openClawWindow = effectiveOpenClawActivities
+    .filter((activity) => activity.role === "user" || activity.role === "assistant")
+    .slice(-openClawTurnWindow);
+  const codexWindow = codexActivities.slice(-codexTurnWindow);
+  const recentActivities = capCandidateReviewActivitiesByChars(
+    [...openClawWindow, ...codexWindow, ...heartbeatActivities],
+    packetMaxChars,
+  );
   if (recentActivities.length === 0) {
     return {
       episodeKey: null,
@@ -2145,6 +2168,7 @@ export async function buildHeartbeatProactivityReviewText(params: {
     queueItemId: string;
     opportunityClass?:
       | "skill_candidate"
+      | "proactive_plan"
       | "reverse_prompt"
       | "followup"
       | "delight"

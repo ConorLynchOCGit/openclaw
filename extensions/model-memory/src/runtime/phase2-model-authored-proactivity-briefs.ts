@@ -26,6 +26,7 @@ type ModelAuthoredBriefKindCode =
   | "new_skill"
   | "improve_skill"
   | "merge_skill"
+  | "proactive_plan"
   | "follow_up"
   | "question"
   | "draft_ready"
@@ -128,6 +129,7 @@ const OutputSchema = z
       "new_skill",
       "improve_skill",
       "merge_skill",
+      "proactive_plan",
       "follow_up",
       "question",
       "draft_ready",
@@ -176,6 +178,7 @@ const MODEL_OUTPUT_JSON_SCHEMA = {
         "new_skill",
         "improve_skill",
         "merge_skill",
+        "proactive_plan",
         "follow_up",
         "question",
         "draft_ready",
@@ -273,6 +276,7 @@ const SYSTEM_PROMPT = [
   "Do not use generic fallback phrases such as 'Turns a recent idea into a bounded next step', 'without digging through the inbox', 'Already recurring', 'Build the bounded request with', 'It sets the default', 'Question worth asking before', 'Skill worth creating', or 'Draft ready' as prose.",
   "Do not mention ids, timestamps, source refs, provenance, ledgers, raw prompts, transcripts, tool logs, system instructions, installs, promotions, action execution, or outbound sends in primary fields.",
   "For skill candidates, say New skill only when no explicit existing-skill fit is provided. Say Improve skill only when existingSkillMatch is present.",
+  "For first-class proactive plans, use kindCode=proactive_plan and name the planned outcome.",
   "For reverse prompts, surface only a real question that names the decision or uncertainty.",
 ].join("\n");
 
@@ -442,6 +446,8 @@ function kindLabelFromCode(
       return "Improve skill";
     case "merge_skill":
       return "Merge skill";
+    case "proactive_plan":
+      return "Proactive plan";
     case "follow_up":
       return "Follow-up";
     case "question":

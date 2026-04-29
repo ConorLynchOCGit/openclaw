@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   assertPhase2HeartbeatProactivityReliable,
   buildPhase2HeartbeatProactivityReliabilityReport,
-  rankHeartbeatProactivityItems,
+  selectHeartbeatProactivityItems,
 } from "./phase2-heartbeat-proactivity-reliability.ts";
 import type { Phase2ProductProactivityQueueItem } from "./phase2-product-proactivity-surfacing.ts";
 
@@ -38,6 +38,27 @@ function item(id: string, overrides: Partial<Phase2ProductProactivityQueueItem> 
     evidenceSummary: "Bounded source evidence.",
     confidence: "high",
     blockedIfMissing: [],
+    userFacingBrief: {
+      title: `Opportunity ${id}`,
+      kindLabel: "Proactive plan",
+      oneLinePurpose: `Explains the next product decision for ${id}.`,
+      recommendedNextStep: `Choose whether this belongs in operator review for ${id}.`,
+      primaryActionLabel: "Plan this",
+      detailSummary: `Model-authored details for ${id}.`,
+      hiddenDiagnostics: {
+        provenanceRefs: [],
+        limitations: [],
+      },
+      quality: {
+        status: "pass",
+        reasons: ["model_authored_visible_copy"],
+      },
+      authorship: {
+        source: "model",
+        modelId: "test-model",
+        validationStatus: "pass",
+      },
+    },
     layer: "actionable",
     attentionRequired: true,
     sendStatus: "idle",
@@ -74,23 +95,24 @@ function item(id: string, overrides: Partial<Phase2ProductProactivityQueueItem> 
 }
 
 describe("phase2 heartbeat proactivity reliability", () => {
-  it("ranks top live opportunities deterministically", () => {
-    const rankings = rankHeartbeatProactivityItems({
+  it("orders clean model-authored opportunities by structural context only", () => {
+    const selections = selectHeartbeatProactivityItems({
       queueItems: [
         item("background", { confidence: "medium" }),
         item("active", { workItemId: "work-active" }),
       ],
       activeContextWorkItemIds: ["work-active"],
     });
-    expect(rankings[0]).toMatchObject({
+    expect(selections[0]).toMatchObject({
       workItemId: "work-active",
       activeContextMatch: true,
     });
-    expect(rankings[0]?.reasonCodes).toContain("ranked_by_expected_value");
+    expect(selections[0]?.reasonCodes).toContain("active_context_match");
+    expect(selections[0]?.reasonCodes).not.toContain("ranked_by_expected_value");
   });
 
   it("prefers recent assistant-output opportunities over older heartbeat-only items", () => {
-    const rankings = rankHeartbeatProactivityItems({
+    const selections = selectHeartbeatProactivityItems({
       now: new Date("2026-04-27T00:20:00.000Z"),
       queueItems: [
         item("heartbeat", {
@@ -106,38 +128,62 @@ describe("phase2 heartbeat proactivity reliability", () => {
       ],
     });
 
-    expect(rankings[0]).toMatchObject({
+    expect(selections[0]).toMatchObject({
       workItemId: "work-assistant",
     });
-    expect(rankings[0]?.reasonCodes).toContain("recent_assistant_output");
+    expect(selections[0]?.reasonCodes).toContain("recent_assistant_output");
   });
 
-  it("downranks dirty system-sounding copy behind clean user-facing opportunities", () => {
-    const rankings = rankHeartbeatProactivityItems({
+  it("suppresses dirty system-sounding copy behind clean user-facing opportunities", () => {
+    const selections = selectHeartbeatProactivityItems({
       queueItems: [
         item("dirty", {
           workItemId: "work-dirty",
-          planTitle: "Heartbeat proactivity review",
-          problem:
-            "Read HEARTBEAT.md if it exists (workspace context). Follow it strictly. HEARTBEAT_OK.",
-          proposedMessage: "Canonically verify the active session's planning state.",
+          userFacingBrief: {
+            title: "Heartbeat proactivity review",
+            kindLabel: "Proactive plan",
+            oneLinePurpose:
+              "Read HEARTBEAT.md if it exists (workspace context). Follow it strictly. HEARTBEAT_OK.",
+            recommendedNextStep: "Canonically verify the active session's planning state.",
+            primaryActionLabel: "Plan this",
+            hiddenDiagnostics: {
+              provenanceRefs: [],
+              limitations: [],
+            },
+            quality: {
+              status: "pass",
+              reasons: ["fixture_dirty_copy"],
+            },
+          },
           sourceRefs: ["chat://main/assistant_turn/msg-dirty"],
         }),
         item("clean", {
           workItemId: "work-clean",
-          planTitle: "Prune duplicate same-session opportunities",
-          problem: "Older assistant-derived items are still crowding the actionable surfaces.",
-          proposedMessage:
-            "Plan the deterministic same-session collapse so only the newest canonical item stays actionable.",
+          userFacingBrief: {
+            title: "Prune duplicate same-session opportunities",
+            kindLabel: "Proactive plan",
+            oneLinePurpose: "Older assistant-derived items are crowding the actionable surfaces.",
+            recommendedNextStep:
+              "Review the same-session collapse plan so the newest canonical item stays actionable.",
+            primaryActionLabel: "Plan this",
+            hiddenDiagnostics: {
+              provenanceRefs: [],
+              limitations: [],
+            },
+            quality: {
+              status: "pass",
+              reasons: ["fixture_clean_copy"],
+            },
+          },
           sourceRefs: ["chat://main/assistant_turn/msg-clean"],
         }),
       ],
     });
 
-    expect(rankings[0]?.workItemId).toBe("work-clean");
-    expect(rankings.find((ranking) => ranking.workItemId === "work-dirty")?.reasonCodes).toContain(
-      "suppressed_dirty_surface_copy",
-    );
+    expect(selections[0]?.workItemId).toBe("work-clean");
+    expect(
+      selections.find((selection) => selection.workItemId === "work-dirty")?.reasonCodes,
+    ).toContain("suppressed_dirty_surface_copy");
   });
 
   it("builds primary heartbeat surface with shared work item ids", async () => {
@@ -178,9 +224,7 @@ describe("phase2 heartbeat proactivity reliability", () => {
     const report = await buildPhase2HeartbeatProactivityReliabilityReport({
       queueItems: [
         item("dirty-only", {
-          planTitle: "Heartbeat review",
-          problem: "Read HEARTBEAT.md if it exists.",
-          proposedMessage: "Canonically verify the active session's planning state.",
+          userFacingBrief: undefined,
           sourceRefs: ["chat://main/assistant_turn/msg-dirty-only"],
         }),
       ],

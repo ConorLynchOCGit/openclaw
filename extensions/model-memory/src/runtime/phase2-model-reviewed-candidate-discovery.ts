@@ -193,6 +193,19 @@ export type ProactivityReviewEpisodePacket = {
     touchedAreas: string[];
     outcomeSummaries: string[];
   };
+  packetQuality: {
+    status: "pass" | "degraded";
+    reasonCodes: string[];
+    contiguousWindowPresent: boolean;
+    openClawTurnCount: number;
+    codexTurnCount: number;
+    duplicatedTurnCount: number;
+    genericCommandSummaryCount: number;
+    validationFailureSummaryCount: number;
+    touchedAreaCount: number;
+    assistantFinalCount: number;
+    rawFullTranscriptPersisted: false;
+  };
   observedWorkPatterns: Array<{
     summary: string;
     recurrenceEvidence: string[];
@@ -272,6 +285,14 @@ export type CandidateReviewProposal = {
   demotionReason?: string;
 };
 
+export type CandidateReviewRejectedProposalDiagnostic = {
+  proposalKind: CandidateReviewProposalKind;
+  title: string;
+  reasonCodes: string[];
+  sourceRuntime: CandidateReviewRuntime;
+  evidenceRefs: string[];
+};
+
 export type CandidateReviewReport = {
   schemaVersion: typeof MODEL_REVIEWED_CANDIDATE_REPORT_SCHEMA_VERSION;
   source: "model" | "skipped" | "rejected";
@@ -291,6 +312,8 @@ export type CandidateReviewReport = {
   episodeTurnCount?: number;
   codexAdapterStatus?: CandidateReviewCodexAdapterReport["status"];
   sourceRuntimes?: CandidateReviewRuntime[];
+  rejectedProposalDiagnostics?: CandidateReviewRejectedProposalDiagnostic[];
+  packetQuality?: ProactivityReviewEpisodePacket["packetQuality"];
   promptPersisted: false;
   rawResponsePersisted: false;
   promptChars: number;
@@ -347,13 +370,14 @@ export type CandidateReviewCodexAdapterReport = {
   sessionRefs?: string[];
   commandSummaryCount?: number;
   validationFailureCount?: number;
+  genericCommandSummaryCount?: number;
 };
 
 const MAX_REF_TEXT_LENGTH = 520;
-const MAX_USER_EPISODE_TURN_LENGTH = 4_000;
-const MAX_ASSISTANT_EPISODE_TURN_LENGTH = 8_000;
+const MAX_USER_EPISODE_TURN_LENGTH = 8_000;
+const MAX_ASSISTANT_EPISODE_TURN_LENGTH = 12_000;
 const MAX_SYSTEM_EPISODE_TURN_LENGTH = 1_200;
-const MAX_EPISODE_TURNS = 12;
+const MAX_EPISODE_TURNS = 48;
 const MAX_TITLE_LENGTH = 96;
 const MAX_PURPOSE_LENGTH = 220;
 const MAX_NEXT_STEP_LENGTH = 240;
@@ -361,7 +385,7 @@ const MAX_EXPECTED_VALUE_LENGTH = 220;
 const MAX_HIGH_IMPACT_REASON_LENGTH = 260;
 const MAX_SMALL_CLEANUP_REASON_LENGTH = 220;
 const DEFAULT_CODEX_SESSION_TAIL_BYTES = 20_000_000;
-const DEFAULT_CODEX_SESSION_TAIL_LINES = 2_500;
+const DEFAULT_CODEX_SESSION_TAIL_LINES = 3_500;
 const DEFAULT_CODEX_HISTORY_TAIL_BYTES = 1_500_000;
 const DEFAULT_CODEX_HISTORY_TAIL_LINES = 80;
 const PROHIBITED_PATTERNS = [
@@ -374,6 +398,7 @@ const PROHIBITED_PATTERNS = [
 ];
 const GENERIC_COPY_PATTERN =
   /\b(turns a recent idea|without digging through the inbox|already recurring|build the bounded request with|it sets the default|question worth asking before|skill worth creating)\b/iu;
+const CLIPPED_COPY_PATTERN = /(?:[,;:]|\b(?:and|or|with|from|to|for|because|whether|between))$/iu;
 
 function hash(value: JsonLike | string): string {
   return typeof value === "string" ? sha256Text(value) : sha256JsonValue(value);
@@ -431,6 +456,78 @@ function redactAndBoundEpisodeText(value: string | undefined, maxLength: number)
     .replace(/raw-tool-log-marker/giu, "[redacted-marker]")
     .replace(/secret-marker/giu, "[redacted-marker]")
     .replace(/private-phrase-marker/giu, "[redacted-marker]");
+}
+
+function duplicateTurnCount(turns: ProactivityReviewEpisodePacket["episodeTurns"]): number {
+  const seen = new Set<string>();
+  let duplicates = 0;
+  for (const turn of turns) {
+    const key = `${turn.sourceRuntime}:${turn.role}:${hash(turn.boundedText)}`;
+    if (seen.has(key)) {
+      duplicates += 1;
+      continue;
+    }
+    seen.add(key);
+  }
+  return duplicates;
+}
+
+function isGenericCommandSummary(value: string): boolean {
+  return (
+    /^Command\s+(?:function_call_output|write_stdin|exec_command|unknown)\s+unknown$/iu.test(
+      value.trim(),
+    ) || /^Command\s+unknown\b/iu.test(value.trim())
+  );
+}
+
+function buildPacketQuality(input: {
+  episodeTurns: ProactivityReviewEpisodePacket["episodeTurns"];
+  codexStatus: CandidateReviewCodexAdapterReport["status"];
+  commandSummaries: ProactivityReviewEpisodePacket["codexActivitySummary"]["commandSummaries"];
+  validationFailures: ProactivityReviewEpisodePacket["codexActivitySummary"]["validationFailures"];
+  touchedAreas: string[];
+}): ProactivityReviewEpisodePacket["packetQuality"] {
+  const openClawTurnCount = input.episodeTurns.filter(
+    (turn) => turn.sourceRuntime === "openclaw",
+  ).length;
+  const codexTurnCount = input.episodeTurns.filter((turn) => turn.sourceRuntime === "codex").length;
+  const assistantFinalCount = input.episodeTurns.filter((turn) => turn.role === "assistant").length;
+  const duplicatedTurnCount = duplicateTurnCount(input.episodeTurns);
+  const genericCommandSummaryCount = input.commandSummaries.filter((summary) =>
+    isGenericCommandSummary(summary.boundedSummary),
+  ).length;
+  const reasonCodes = unique([
+    input.episodeTurns.length === 0 ? "episode_turns_missing" : undefined,
+    assistantFinalCount === 0 ? "assistant_finals_missing" : undefined,
+    duplicatedTurnCount > 0 ? "duplicate_episode_turns_present" : undefined,
+    input.codexStatus === "loaded" && codexTurnCount === 0
+      ? "codex_loaded_without_turns"
+      : undefined,
+    input.codexStatus === "loaded" &&
+    input.commandSummaries.length > 0 &&
+    genericCommandSummaryCount === input.commandSummaries.length
+      ? "codex_command_summaries_generic"
+      : undefined,
+    input.codexStatus === "loaded" &&
+    codexTurnCount > 0 &&
+    input.touchedAreas.length === 0 &&
+    input.validationFailures.length === 0
+      ? "codex_activity_low_signal"
+      : undefined,
+  ]);
+  return {
+    status: reasonCodes.length > 0 ? "degraded" : "pass",
+    reasonCodes,
+    contiguousWindowPresent: input.episodeTurns.length > 0,
+    openClawTurnCount,
+    codexTurnCount,
+    duplicatedTurnCount,
+    genericCommandSummaryCount,
+    validationFailureSummaryCount: input.validationFailures.length,
+    touchedAreaCount: input.touchedAreas.length,
+    assistantFinalCount,
+    rawFullTranscriptPersisted: false,
+  };
 }
 
 function assertNoProhibitedContent(value: unknown, label: string): void {
@@ -890,46 +987,22 @@ export function buildProactivityReviewEpisodePacket(input: {
   activeMilestone?: string;
   activeDocsOrBranches?: string[];
 }): ProactivityReviewEpisodePacket {
-  const includedRefs = new Set(input.triggerDecision.episodeWindow.includedRefs);
-  const includedIndexes = input.recentActivities
-    .map((activity, index) => (includedRefs.has(activity.ref) ? index : -1))
-    .filter((index) => index >= 0);
-  const adjacentIndexes = new Set<number>();
-  for (const index of includedIndexes) {
-    adjacentIndexes.add(index - 2);
-    adjacentIndexes.add(index - 1);
-    adjacentIndexes.add(index);
-    adjacentIndexes.add(index + 1);
-    adjacentIndexes.add(index + 2);
-    adjacentIndexes.add(index + 3);
-  }
-  const baseSelectedIndexes = input.recentActivities
-    .map((activity, index) =>
-      includedRefs.size === 0 || includedRefs.has(activity.ref) || adjacentIndexes.has(index)
-        ? index
-        : -1,
-    )
-    .filter((index) => index >= 0);
-  const recentUserIndexes = input.recentActivities
-    .map((activity, index) => (activity.role === "user" ? index : -1))
-    .filter((index) => index >= 0)
-    .slice(-3);
-  const protectedIndexes = new Set(recentUserIndexes);
-  const selectedIndexSet = new Set([...baseSelectedIndexes, ...recentUserIndexes]);
-  const selectedIndexes = [...selectedIndexSet].toSorted((left, right) => left - right);
-  const overflow = Math.max(0, selectedIndexes.length - MAX_EPISODE_TURNS);
-  const trimmedIndexes =
-    overflow === 0
-      ? selectedIndexes
-      : [
-          ...recentUserIndexes,
-          ...selectedIndexes
-            .filter((index) => !protectedIndexes.has(index))
-            .slice(-Math.max(0, MAX_EPISODE_TURNS - recentUserIndexes.length)),
-        ].toSorted((left, right) => left - right);
-  const selectedActivities = trimmedIndexes
-    .map((index) => input.recentActivities[index])
-    .filter((activity): activity is CandidateReviewRecentActivity => Boolean(activity));
+  const narrativeActivities = input.recentActivities.filter(
+    (activity) => activity.role === "user" || activity.role === "assistant",
+  );
+  const selectedNarrativeActivities = narrativeActivities.slice(-MAX_EPISODE_TURNS);
+  const selectedNarrativeRefs = new Set(
+    selectedNarrativeActivities.map((activity) => activity.ref),
+  );
+  const selectedToolRefs = new Set(
+    input.recentActivities
+      .filter((activity) => activity.role === "tool_summary")
+      .slice(-12)
+      .map((activity) => activity.ref),
+  );
+  const selectedActivities = input.recentActivities.filter(
+    (activity) => selectedNarrativeRefs.has(activity.ref) || selectedToolRefs.has(activity.ref),
+  );
   const episodeTurns: ProactivityReviewEpisodePacket["episodeTurns"] = selectedActivities
     .filter((activity) => activity.role === "user" || activity.role === "assistant")
     .map((activity) => {
@@ -951,13 +1024,9 @@ export function buildProactivityReviewEpisodePacket(input: {
         },
       };
     });
-  const explicitAsks = selectedActivities
-    .filter((activity) => classifyActivityKind(activity) === "ask")
+  const recentUserTurns = selectedActivities
+    .filter((activity) => activity.role === "user")
     .map((activity) => redactAndBound(activity.boundedText, 180))
-    .slice(-4);
-  const recentConcerns = selectedActivities
-    .filter((activity) => classifyActivityKind(activity) === "correction")
-    .map((activity) => redactAndBound(activity.boundedText, 240))
     .slice(-4);
   const codexActivities = selectedActivities.filter(
     (activity) => activity.sourceRuntime === "codex",
@@ -965,8 +1034,8 @@ export function buildProactivityReviewEpisodePacket(input: {
   const codexCommandActivities = codexActivities.filter(
     (activity) => activity.role === "tool_summary",
   );
-  const codexValidationFailures = codexCommandActivities.filter(
-    (activity) => classifyActivityKind(activity) === "failure_summary",
+  const codexValidationFailures = codexCommandActivities.filter((activity) =>
+    /failed|failure|error|exit\s+code|non[-\s]?zero/iu.test(activity.boundedText),
   );
   const codexSessionRefs = unique(
     codexActivities.map((activity) => activity.ref.split("#")[0]).filter(Boolean),
@@ -975,7 +1044,7 @@ export function buildProactivityReviewEpisodePacket(input: {
     const bounded = redactAndBound(activity.boundedText, MAX_SYSTEM_EPISODE_TURN_LENGTH);
     const commandFamily = bounded.match(/^Command\s+([^\s]+)/iu)?.[1] ?? "unknown";
     const status: "passed" | "failed" | "unknown" =
-      classifyActivityKind(activity) === "failure_summary"
+      /\bfailed\b|\bfailure\b|\berror\b|\bexit\s+code\b|\bnon[-\s]?zero\b/iu.test(bounded)
         ? "failed"
         : /\bpassed\b|\bsucceeded\b|\bok\b/iu.test(bounded)
           ? "passed"
@@ -1013,6 +1082,14 @@ export function buildProactivityReviewEpisodePacket(input: {
     .filter((activity) => activity.role === "assistant")
     .map((activity) => redactAndBound(activity.boundedText, 220))
     .slice(-6);
+  const packetQuality = buildPacketQuality({
+    episodeTurns,
+    codexStatus:
+      input.codexAdapterReport?.status ?? (codexActivities.length > 0 ? "loaded" : "skipped"),
+    commandSummaries,
+    validationFailures,
+    touchedAreas,
+  });
   const runtimeSet = new Set(
     selectedActivities.map((activity) => activity.sourceRuntime).filter(Boolean),
   );
@@ -1044,11 +1121,11 @@ export function buildProactivityReviewEpisodePacket(input: {
     episodeTurns,
     userIntentArc: {
       currentObjective:
-        explicitAsks[0] ??
+        recentUserTurns.at(-1) ??
         redactAndBound(input.triggerPacket.event.boundedSummary, 180) ??
         "Review recent work for useful skill and proactive-plan candidates.",
-      recentConcerns,
-      explicitAsks,
+      recentConcerns: [],
+      explicitAsks: recentUserTurns,
       decisionPressure: unique([
         input.triggerDecision.why,
         input.recentProactivityItems?.some((item) => item.quality?.includes("demote"))
@@ -1069,16 +1146,14 @@ export function buildProactivityReviewEpisodePacket(input: {
       touchedAreas,
       outcomeSummaries,
     },
+    packetQuality,
     observedWorkPatterns: [
       {
         summary: redactAndBound(input.triggerPacket.event.boundedSummary, 220),
         recurrenceEvidence: input.triggerPacket.recentActivitySignals.slice(0, 4),
-        frictionSignals: selectedActivities
-          .filter((activity) => {
-            const kind = classifyActivityKind(activity);
-            return kind === "correction" || kind === "failure_summary" || kind === "card_summary";
-          })
-          .map((activity) => redactAndBound(activity.boundedText, 140))
+        frictionSignals: commandSummaries
+          .filter((summary) => summary.status === "failed")
+          .map((summary) => summary.boundedSummary)
           .slice(0, 4),
         successSignals: selectedActivities
           .filter((activity) => activity.role === "assistant")
@@ -1292,10 +1367,16 @@ const CANDIDATE_REVIEW_SYSTEM_PROMPT = [
   "Identify only high-impact proactive plans, new skill candidates, existing skill enhancements, merge candidates, or demotions.",
   "Require repeatability, large avoided cost, stability risk, workflow acceleration, or strategic unblock value.",
   "Reject tiny cleanup candidates, one-off local optimizations, vague checklists, clipped source fragments, and unclear expected value.",
-  "Prefer enhancing an existing skill only when explicit loaded skill metadata supports it.",
+  "Use proposalKind existing_skill_enhancement only when suggestedExistingSkillName is an exact loaded skill name from existingContext.loadedSkills.",
+  "If no exact loaded skill match exists, use new_skill_candidate, proactive_plan, merge_or_extend_candidate, or demote_existing_candidate instead.",
   "Do not infer fuzzy merge as fact.",
   "Do not produce generic candidates.",
-  "Titles must name a capability, decision, or outcome.",
+  "Titles must name a capability, decision, or outcome in readable human text.",
+  "Titles must not be slugs, ids, normalized keys, hyphen-joined fragments, or concatenated source phrases.",
+  "Use normal English word spacing in title, purpose, next step, expected value, and rationale fields; never concatenate words together.",
+  "If a field is too long, shorten the wording; do not remove spaces between words to satisfy length limits.",
+  "Primary fields must be complete readable phrases or sentences. Do not end title, purpose, or next step with a comma, colon, semicolon, or dangling connector.",
+  "Use suggestedSkillName for slugs; never put slugs in title.",
   "Purposes must explain what the item does or unlocks.",
   "Next steps must be actionable.",
   "Output proposals only. Do not execute actions, install skills, promote skills, send messages, mutate files, or write canonical memory.",
@@ -1321,9 +1402,21 @@ function slugFromString(value: string | null | undefined): string | undefined {
   return slug || undefined;
 }
 
-function validateProposal(proposal: CandidateReviewProposal, allowedRefs: Set<string>): string[] {
+function validateProposal(
+  proposal: CandidateReviewProposal,
+  allowedRefs: Set<string>,
+  loadedSkillNames: Set<string>,
+): string[] {
   const reasons: string[] = [];
   const primary = `${proposal.title}\n${proposal.purpose}\n${proposal.recommendedNextStep}`;
+  const readabilityFields = [
+    proposal.title,
+    proposal.purpose,
+    proposal.recommendedNextStep,
+    proposal.expectedUserValue,
+    proposal.whyHighImpact,
+    proposal.whyNotSmallCleanup,
+  ];
   if (proposal.title.length > MAX_TITLE_LENGTH) {
     reasons.push("title_too_long");
   }
@@ -1335,6 +1428,16 @@ function validateProposal(proposal: CandidateReviewProposal, allowedRefs: Set<st
   }
   if (GENERIC_COPY_PATTERN.test(primary)) {
     reasons.push("generic_or_source_fragment_copy");
+  }
+  if (readabilityFields.some((field) => /[a-z]{32,}/u.test(field))) {
+    reasons.push("candidate_copy_lacks_word_spacing");
+  }
+  if (
+    [proposal.title, proposal.purpose, proposal.recommendedNextStep].some((field) =>
+      CLIPPED_COPY_PATTERN.test(field.trim()),
+    )
+  ) {
+    reasons.push("clipped_candidate_copy");
   }
   if (proposal.recommendedNextStep.toLowerCase().includes(proposal.title.toLowerCase())) {
     reasons.push("next_step_repeats_title");
@@ -1363,7 +1466,28 @@ function validateProposal(proposal: CandidateReviewProposal, allowedRefs: Set<st
   ) {
     reasons.push("existing_skill_enhancement_requires_explicit_skill");
   }
+  if (
+    proposal.proposalKind === "existing_skill_enhancement" &&
+    proposal.suggestedExistingSkillName &&
+    !loadedSkillNames.has(proposal.suggestedExistingSkillName.toLowerCase())
+  ) {
+    reasons.push("existing_skill_enhancement_requires_loaded_skill_match");
+  }
   return unique(reasons);
+}
+
+function rejectedProposalDiagnostics(
+  proposals: CandidateReviewProposal[],
+): CandidateReviewRejectedProposalDiagnostic[] {
+  return proposals
+    .filter((proposal) => proposal.demotionReason)
+    .map((proposal) => ({
+      proposalKind: proposal.proposalKind,
+      title: redactAndBound(proposal.title, MAX_TITLE_LENGTH),
+      reasonCodes: unique(proposal.demotionReason?.split(", ") ?? []).slice(0, 8),
+      sourceRuntime: proposal.sourceRuntime,
+      evidenceRefs: proposal.evidenceRefs.slice(0, 8),
+    }));
 }
 
 function proposalFromModelOutput(
@@ -1469,6 +1593,7 @@ export async function reviewEpisodeForCandidates(
         surfacedProposalCount: 0,
         episodeTurnCount: packet.episodeTurns.length,
         codexAdapterStatus: packet.codexActivitySummary.status,
+        packetQuality: packet.packetQuality,
         sourceRuntimes: unique(
           packet.episodeTurns.map((turn) => turn.sourceRuntime),
         ) as CandidateReviewRuntime[],
@@ -1516,10 +1641,13 @@ export async function reviewEpisodeForCandidates(
       CandidateProposalOutputSchema,
     );
     const allowedRefs = evidenceRefSet(packet);
+    const allowedSkillNames = new Set(
+      packet.existingContext.loadedSkills.map((skill) => skill.name.toLowerCase()),
+    );
     const proposals = output.proposals
       .map((entry) => proposalFromModelOutput(entry, packet))
       .map((proposal) => {
-        const reasons = validateProposal(proposal, allowedRefs);
+        const reasons = validateProposal(proposal, allowedRefs, allowedSkillNames);
         return reasons.length === 0
           ? proposal
           : {
@@ -1552,9 +1680,11 @@ export async function reviewEpisodeForCandidates(
         surfacedProposalCount: proposals.filter((proposal) => proposal.shouldSurface).length,
         episodeTurnCount: packet.episodeTurns.length,
         codexAdapterStatus: packet.codexActivitySummary.status,
+        packetQuality: packet.packetQuality,
         sourceRuntimes: unique(
           packet.episodeTurns.map((turn) => turn.sourceRuntime),
         ) as CandidateReviewRuntime[],
+        rejectedProposalDiagnostics: rejectedProposalDiagnostics(proposals),
         promptPersisted: false,
         rawResponsePersisted: false,
         promptChars: userPrompt.length,
@@ -1578,6 +1708,7 @@ export async function reviewEpisodeForCandidates(
         surfacedProposalCount: 0,
         episodeTurnCount: packet.episodeTurns.length,
         codexAdapterStatus: packet.codexActivitySummary.status,
+        packetQuality: packet.packetQuality,
         sourceRuntimes: unique(
           packet.episodeTurns.map((turn) => turn.sourceRuntime),
         ) as CandidateReviewRuntime[],
@@ -1601,7 +1732,11 @@ export async function writeProactivityReviewEpisodePacketArtifact(
   const safeTimestamp = (options.timestamp ?? new Date().toISOString()).replace(/[:.]/gu, "-");
   const artifactRoot = path.resolve(
     options.artifactRoot ??
-      path.join(".artifacts", "model-memory", "phase2-high-context-candidate-review"),
+      path.join(
+        ".artifacts",
+        "model-memory",
+        "phase2-contiguous-candidate-packets-and-model-cards",
+      ),
     safeTimestamp,
   );
   await fs.mkdir(artifactRoot, { recursive: true });
@@ -1616,6 +1751,13 @@ export async function writeProactivityReviewEpisodePacketArtifact(
     `- sessionKey: ${packet.sessionWindow.sessionKey}`,
     `- turnCount: ${packet.sessionWindow.turnCount}`,
     `- codexAdapterStatus: ${packet.codexActivitySummary.status}`,
+    `- packetQuality: ${packet.packetQuality.status}`,
+    `- packetQualityReasons: ${packet.packetQuality.reasonCodes.join(", ") || "none"}`,
+    `- openClawTurnCount: ${packet.packetQuality.openClawTurnCount}`,
+    `- codexTurnCount: ${packet.packetQuality.codexTurnCount}`,
+    `- genericCommandSummaryCount: ${packet.packetQuality.genericCommandSummaryCount}`,
+    `- validationFailureSummaryCount: ${packet.packetQuality.validationFailureSummaryCount}`,
+    `- touchedAreaCount: ${packet.packetQuality.touchedAreaCount}`,
     `- promptPersisted: false`,
     `- rawResponsePersisted: false`,
     `- rawFullTranscriptPersisted: false`,
@@ -1860,6 +2002,7 @@ export function convertCandidateReviewProposalsToLedgerSources(input: {
       });
       opportunities.push({
         sourceFamily: "pattern_or_followup",
+        opportunityClass: "proactive_plan",
         opportunityId,
         projectId: input.projectId,
         sessionKey: input.sessionKey,
@@ -2130,37 +2273,7 @@ function selectCodexActivitiesForReview(
   activities: CandidateReviewRecentActivity[],
   maxEntries: number,
 ): CandidateReviewRecentActivity[] {
-  const narrativeBudget = Math.max(2, Math.ceil(maxEntries * 0.7));
-  const userBudget = Math.max(1, Math.ceil(narrativeBudget / 2));
-  const assistantBudget = Math.max(1, narrativeBudget - userBudget);
-  const userRefs = activities
-    .filter((activity) => activity.role === "user")
-    .slice(-userBudget)
-    .map((activity) => activity.ref);
-  const assistantRefs = activities
-    .filter((activity) => activity.role === "assistant")
-    .slice(-assistantBudget)
-    .map((activity) => activity.ref);
-  const narrativeRefs = new Set([...userRefs, ...assistantRefs]);
-  if (narrativeRefs.size < narrativeBudget) {
-    for (const activity of activities.filter(
-      (candidate) => candidate.role === "user" || candidate.role === "assistant",
-    )) {
-      if (narrativeRefs.size >= narrativeBudget) {
-        break;
-      }
-      narrativeRefs.add(activity.ref);
-    }
-  }
-  const remainingBudget = Math.max(0, maxEntries - narrativeRefs.size);
-  const toolRefs = new Set(
-    activities
-      .filter((activity) => activity.role === "tool_summary")
-      .slice(-remainingBudget)
-      .map((activity) => activity.ref),
-  );
-  const selectedRefs = new Set([...narrativeRefs, ...toolRefs]);
-  return activities.filter((activity) => selectedRefs.has(activity.ref)).slice(-maxEntries);
+  return activities.slice(-maxEntries);
 }
 
 async function loadCodexHistoryActivities(input: {
@@ -2361,7 +2474,7 @@ export async function loadCodexSessionActivityForCandidateReview(
     return 0;
   });
   return {
-    activities: selectCodexActivitiesForReview(activities, input.maxEntries ?? 24),
+    activities: selectCodexActivitiesForReview(activities, input.maxEntries ?? 80),
     report: {
       status: activities.length > 0 ? "loaded" : "skipped",
       reasonCode: activities.length > 0 ? undefined : "codex_session_entries_unavailable",
@@ -2371,6 +2484,10 @@ export async function loadCodexSessionActivityForCandidateReview(
       commandSummaryCount: activities.filter((activity) => activity.role === "tool_summary").length,
       validationFailureCount: activities.filter((activity) => activity.kind === "failure_summary")
         .length,
+      genericCommandSummaryCount: activities.filter(
+        (activity) =>
+          activity.role === "tool_summary" && isGenericCommandSummary(activity.boundedText),
+      ).length,
     },
   };
 }

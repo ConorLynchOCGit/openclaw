@@ -95,6 +95,7 @@ export type Phase2ProductProactivityQueueItem = {
   opportunityId?: string;
   opportunityClass?:
     | "skill_candidate"
+    | "proactive_plan"
     | "reverse_prompt"
     | "followup"
     | "delight"
@@ -885,51 +886,6 @@ function workItemStatusForOpportunityStatus(
   }
 }
 
-function prioritizedModelBriefOpportunityIds(
-  entries: Phase2OpportunityLedgerEntry[],
-  maxItems: number,
-): Set<string> {
-  if (maxItems <= 0) {
-    return new Set();
-  }
-  return new Set(
-    entries
-      .map((entry, index) => {
-        const layer = layerForOpportunityStatus(entry.status);
-        const score =
-          (layer === "actionable" ? 1_000 : layer === "diagnostic" ? 250 : 0) +
-          (entry.opportunityClass === "skill_candidate" ? 500 : 0) +
-          (entry.opportunityClass === "reverse_prompt" ? 350 : 0) +
-          (entry.status === "draft_ready" ? 300 : 0) +
-          (entry.attentionRequired ? 150 : 0);
-        return { entry, index, score };
-      })
-      .toSorted(
-        (left, right) =>
-          right.score - left.score ||
-          right.entry.updatedAt.localeCompare(left.entry.updatedAt) ||
-          left.index - right.index,
-      )
-      .slice(0, maxItems)
-      .map(({ entry }) => entry.opportunityId),
-  );
-}
-
-function modelBriefOptionsForEntry(
-  options: ModelAuthoredProactivityBriefOptions | null | undefined,
-  entry: Phase2OpportunityLedgerEntry,
-  modelBriefOpportunityIds: Set<string>,
-): ModelAuthoredProactivityBriefOptions | null | undefined {
-  if (!options?.enabled || modelBriefOpportunityIds.has(entry.opportunityId)) {
-    return options;
-  }
-  return {
-    ...options,
-    enabled: false,
-    executor: null,
-  };
-}
-
 async function queueItemsFromLedger(input: {
   entries: Phase2OpportunityLedgerEntry[];
   scope: Phase2ProductProactivityEligibilityScope;
@@ -944,13 +900,6 @@ async function queueItemsFromLedger(input: {
   );
   const skillifierDraftsByOpportunityId = new Map(
     (input.skillPackageDrafts ?? []).map((draft) => [draft.proactivityOpportunityId, draft]),
-  );
-  const maxModelBriefItems = input.modelBriefOptions?.enabled
-    ? (input.modelBriefOptions.maxItemsPerReport ?? 3)
-    : 0;
-  const modelBriefOpportunityIds = prioritizedModelBriefOpportunityIds(
-    input.entries,
-    maxModelBriefItems,
   );
   return await Promise.all(
     input.entries.map(async (entry) => {
@@ -1011,9 +960,31 @@ async function queueItemsFromLedger(input: {
           opportunityId: entry.opportunityId,
           queueItemId: entry.queueItemId,
         },
-        modelBriefOptionsForEntry(input.modelBriefOptions, entry, modelBriefOpportunityIds) ?? {},
+        input.modelBriefOptions ?? {},
       );
-      const userFacingBrief = modelBriefResult.brief;
+      const modelAuthoredVisible =
+        modelBriefResult.source === "model" &&
+        modelBriefResult.brief.authorship?.source === "model" &&
+        modelBriefResult.brief.quality.status !== "demote";
+      const userFacingBrief = modelAuthoredVisible
+        ? modelBriefResult.brief
+        : {
+            ...modelBriefResult.brief,
+            quality: {
+              status: "demote" as const,
+              reasons: uniqueSortedStrings([
+                ...modelBriefResult.brief.quality.reasons,
+                "model_authored_visible_copy_required",
+              ]),
+            },
+            hiddenDiagnostics: {
+              ...modelBriefResult.brief.hiddenDiagnostics,
+              limitations: uniqueSortedStrings([
+                ...modelBriefResult.brief.hiddenDiagnostics.limitations,
+                "model_authored_visible_copy_required",
+              ]),
+            },
+          };
       const presentationDemoted = userFacingBrief.quality.status === "demote";
       const effectiveLayer = presentationDemoted ? "diagnostic" : layer;
       const effectiveStatus: Phase2ProductProactivityQueueItemStatus = presentationDemoted
@@ -1277,8 +1248,32 @@ export async function buildPhase2ProductProactivitySurfacingReport(
             },
             input.modelBriefOptions ?? {},
           );
-          const userFacingBrief = modelBriefResult.brief;
+          const modelAuthoredVisible =
+            modelBriefResult.source === "model" &&
+            modelBriefResult.brief.authorship?.source === "model" &&
+            modelBriefResult.brief.quality.status !== "demote";
+          const userFacingBrief = modelAuthoredVisible
+            ? modelBriefResult.brief
+            : {
+                ...modelBriefResult.brief,
+                quality: {
+                  status: "demote" as const,
+                  reasons: uniqueSortedStrings([
+                    ...modelBriefResult.brief.quality.reasons,
+                    "model_authored_visible_copy_required",
+                  ]),
+                },
+                hiddenDiagnostics: {
+                  ...modelBriefResult.brief.hiddenDiagnostics,
+                  limitations: uniqueSortedStrings([
+                    ...modelBriefResult.brief.hiddenDiagnostics.limitations,
+                    "model_authored_visible_copy_required",
+                  ]),
+                },
+              };
           const presentationDemoted = userFacingBrief.quality.status === "demote";
+          const effectiveStatus: Phase2ProductProactivityQueueItemStatus =
+            presentationDemoted && itemStatus !== "rollback_disabled" ? "blocked" : itemStatus;
           const effectivePrimaryAction = presentationDemoted ? null : primaryAction;
           const effectiveLayer =
             decision === "product_queue_enabled" &&
@@ -1311,7 +1306,6 @@ export async function buildPhase2ProductProactivitySurfacingReport(
               boundedDisplayText,
               ...contentFields,
               userFacingBrief,
-              status: itemStatus,
               eligibleScope: scope,
               sourceRefs: fallbackSourceRefs,
               sourceProfileIds: fallbackSourceProfileIds,
@@ -1349,6 +1343,7 @@ export async function buildPhase2ProductProactivitySurfacingReport(
               ]),
               layer: effectiveLayer,
               attentionRequired: effectiveLayer === "actionable",
+              status: effectiveStatus,
               sendStatus: "idle",
               sendError: null,
               sentMessageAnchor: null,

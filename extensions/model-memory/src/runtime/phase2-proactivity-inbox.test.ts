@@ -2,6 +2,7 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import type { JsonModelExecutionRequest, JsonModelExecutor } from "../model-execution.ts";
 import { buildPhase2FollowUpAutoSendPreflightReport } from "./phase2-follow-up-autosend-preflight.ts";
 import { buildPhase2LiveProactivityDetectionReport } from "./phase2-live-proactivity-signals.ts";
 import {
@@ -10,6 +11,52 @@ import {
   writePhase2ProactivityInboxArtifact,
 } from "./phase2-proactivity-inbox.ts";
 import { buildPhase2ProductProactivitySurfacingReport } from "./phase2-product-proactivity-surfacing.ts";
+
+function modelBriefJsonOutput() {
+  return JSON.stringify({
+    schemaVersion: "model_authored_proactivity_brief_output.v1",
+    decision: "surface",
+    kindCode: "follow_up",
+    titleWords: ["Inbox", "validation", "follow-up"],
+    oneLinePurposeWords: [
+      "Verifies",
+      "the",
+      "live",
+      "proactivity",
+      "inbox",
+      "still",
+      "has",
+      "a",
+      "reviewable",
+      "item",
+    ],
+    recommendedNextStepWords: [
+      "Review",
+      "the",
+      "inbox",
+      "item",
+      "and",
+      "confirm",
+      "its",
+      "diagnostics",
+    ],
+    primaryActionLabelWords: ["Plan", "this"],
+    statusLabelWords: null,
+    detailSummaryWords: ["Bounded", "inbox", "evidence", "is", "available"],
+    hiddenDiagnostics: { whyDemotedOrRepairedWords: null, limitations: [] },
+    qualityReasons: [],
+  });
+}
+
+class FakeModelBriefExecutor implements JsonModelExecutor {
+  async execute(request: JsonModelExecutionRequest) {
+    return {
+      outputText: modelBriefJsonOutput(),
+      resolvedModelId: request.contract.modelId,
+      usage: { promptTokens: 120, outputTokens: 80 },
+    };
+  }
+}
 
 async function buildLiveProductSurfacingReport(now: Date) {
   const liveDetectionReport = await buildPhase2LiveProactivityDetectionReport({
@@ -32,7 +79,15 @@ async function buildLiveProductSurfacingReport(now: Date) {
       },
     ],
   });
-  return buildPhase2ProductProactivitySurfacingReport({ now, liveDetectionReport });
+  return buildPhase2ProductProactivitySurfacingReport({
+    now,
+    liveDetectionReport,
+    modelBriefOptions: {
+      enabled: true,
+      executor: new FakeModelBriefExecutor(),
+      modelId: "openai-codex/gpt-5.4",
+    },
+  });
 }
 
 describe("phase2 proactivity inbox", () => {

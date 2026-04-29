@@ -134,11 +134,11 @@ async function writeCodexHistoryProjection(outputDir) {
   const hostWorkspaceRoot = process.env.OPENCLAW_WORKSPACE_DIR || "/root/.openclaw/workspace";
   const hostProjectionDir = path.join(
     hostWorkspaceRoot,
-    ".artifacts/model-memory/phase2-high-context-candidate-review",
+    ".artifacts/model-memory/phase2-contiguous-candidate-packets-and-model-cards",
     path.basename(outputDir),
   );
   const hostProjectionPath = path.join(hostProjectionDir, "codex-history-projection.jsonl");
-  const containerProjectionPath = `/home/node/.openclaw/workspace/.artifacts/model-memory/phase2-high-context-candidate-review/${path.basename(
+  const containerProjectionPath = `/home/node/.openclaw/workspace/.artifacts/model-memory/phase2-contiguous-candidate-packets-and-model-cards/${path.basename(
     outputDir,
   )}/codex-history-projection.jsonl`;
   try {
@@ -286,6 +286,13 @@ async function readCandidateDiscoveryState(page, sessionKey, proofOptions) {
           candidateReviewReport: queueResponse?.candidateReviewReport ?? null,
           candidateReviewCodexAdapterReport:
             queueResponse?.candidateReviewCodexAdapterReport ?? null,
+          qualitativeAssessment: {
+            reviewer: "operator_or_model_required",
+            note: "Proof records rendered model-authored cards and sanitized packet quality. Final qualitative usefulness remains a human/model review step, not a deterministic assertion.",
+            surfacedTitles: (app.productProactivityQueue ?? queueResponse?.queue?.items ?? [])
+              .map((item) => item.userFacingBrief?.title)
+              .filter(Boolean),
+          },
         },
         queueItems,
         inboxItems: (app.proactivityInboxDigest?.items ?? []).map((item) => ({
@@ -330,43 +337,24 @@ async function readCandidateDiscoveryState(page, sessionKey, proofOptions) {
   );
 }
 
-async function waitForCandidateDiscoveryState(
-  page,
-  sessionKey,
-  predicate,
-  proofOptions,
-  timeoutMs = 180_000,
-) {
-  const deadline = Date.now() + timeoutMs;
-  let state = null;
-  let bestReviewState = null;
-  while (Date.now() < deadline) {
-    state = await readCandidateDiscoveryState(page, sessionKey, proofOptions);
-    if (state?.queueResponse?.candidateReviewReport) {
-      bestReviewState = state;
-    }
-    if (predicate(state)) {
-      return state;
-    }
-    await new Promise((resolve) => setTimeout(resolve, 1_500));
-  }
-  return bestReviewState ?? state;
-}
-
 function toMarkdown(summary) {
   return [
-    "# Phase 2 High-Context Candidate Review Proof",
+    "# Phase 2 Contiguous Candidate Packet And Model Card Proof",
     "",
     `- generatedAt: ${summary.generatedAt}`,
     `- sessionKey: ${summary.sessionKey}`,
     `- uiAuthWorks: ${summary.evidence.uiAuthWorks}`,
     `- triggerEvaluatorRan: ${summary.evidence.triggerEvaluatorRan}`,
     `- candidateReviewerRan: ${summary.evidence.candidateReviewerRan}`,
+    `- acceptedProposalExists: ${summary.evidence.acceptedProposalExists}`,
     `- highContextPacketPersisted: ${summary.evidence.highContextPacketPersisted}`,
+    `- contiguousPacketQuality: ${summary.evidence.contiguousPacketQuality}`,
     `- reviewerReturnedAtMostThree: ${summary.evidence.reviewerReturnedAtMostThree}`,
     `- proposalsIncludePlanAndSkill: ${summary.evidence.proposalsIncludePlanAndSkill}`,
     `- modelReviewedCardVisible: ${summary.evidence.modelReviewedCardVisible}`,
     `- modelAuthoredBriefVisible: ${summary.evidence.modelAuthoredBriefVisible}`,
+    `- modelAuthoredOnlyVisibleCards: ${summary.evidence.modelAuthoredOnlyVisibleCards}`,
+    `- proactivePlanFirstClass: ${summary.evidence.proactivePlanFirstClass}`,
     `- canonicalIdsShared: ${summary.evidence.canonicalIdsShared}`,
     `- primaryCardsClean: ${summary.evidence.primaryCardsClean}`,
     `- routeIsolationVisible: ${summary.evidence.routeIsolationVisible}`,
@@ -376,6 +364,7 @@ function toMarkdown(summary) {
     `- promptHashes: ${summary.promptHashes.join(", ")}`,
     `- episodePacketHash: ${summary.episodePacketHash ?? ""}`,
     `- episodePacketPath: ${summary.episodePacketPath ?? ""}`,
+    `- rejectedProposalDiagnostics: ${JSON.stringify(summary.rejectedProposalDiagnostics ?? [])}`,
     `- stateHash: ${summary.stateHash}`,
     `- proofStatus: ${summary.ok ? "pass" : "fail"}`,
     ...(summary.failureReason ? [`- failureReason: ${summary.failureReason}`] : []),
@@ -400,7 +389,7 @@ async function main() {
   );
   const outputDir = path.join(
     root,
-    ".artifacts/model-memory/phase2-high-context-candidate-review",
+    ".artifacts/model-memory/phase2-contiguous-candidate-packets-and-model-cards",
     stamp,
   );
   await mkdir(outputDir, { recursive: true });
@@ -412,11 +401,15 @@ async function main() {
     uiAuthWorks: false,
     triggerEvaluatorRan: false,
     candidateReviewerRan: false,
+    acceptedProposalExists: false,
     highContextPacketPersisted: false,
+    contiguousPacketQuality: false,
     reviewerReturnedAtMostThree: false,
     proposalsIncludePlanAndSkill: false,
     modelReviewedCardVisible: false,
     modelAuthoredBriefVisible: false,
+    modelAuthoredOnlyVisibleCards: false,
+    proactivePlanFirstClass: false,
     canonicalIdsShared: false,
     primaryCardsClean: false,
     routeIsolationVisible: false,
@@ -433,11 +426,13 @@ async function main() {
     candidateReviewModel: null,
     presentationModels: [],
     acceptedProposalKinds: [],
+    rejectedProposalDiagnostics: [],
     sourceRuntimes: [],
     codexAdapterStatus: null,
     episodePacketHash: null,
     episodePacketPath: null,
     episodeTurnCount: 0,
+    packetQuality: null,
     modelReviewedQueueItemId: null,
     modelReviewedSkillCandidateId: null,
     stateHash: "",
@@ -469,27 +464,9 @@ async function main() {
       });
     }
 
-    finalState = await waitForCandidateDiscoveryState(
-      harness.page,
-      effectiveSessionKey,
-      (state) => {
-        const review = state.queueResponse.candidateReviewReport;
-        const kinds = review?.acceptedProposalKinds ?? [];
-        return (
-          state.queueResponse.candidateReviewTriggerReport?.validationStatus === "pass" &&
-          review?.validationStatus === "pass" &&
-          review?.episodePacketHash &&
-          review?.episodeTurnCount > 0 &&
-          review?.proposalCount <= 3 &&
-          kinds.includes("proactive_plan") &&
-          kinds.some((kind) => isSkillProposalKind(kind)) &&
-          state.queueItems.some((item) =>
-            item.blockedReasonCodes.includes("model_reviewed_candidate"),
-          )
-        );
-      },
-      { codexHistoryPath: codexHistoryProjection.containerPath },
-    );
+    finalState = await readCandidateDiscoveryState(harness.page, effectiveSessionKey, {
+      codexHistoryPath: codexHistoryProjection.containerPath,
+    });
     if (!finalState) {
       throw new Error("model-reviewed candidate discovery state was not readable");
     }
@@ -551,10 +528,12 @@ async function main() {
       ...new Set(modelAuthoredItems.map((item) => item.briefAuthorship?.modelId).filter(Boolean)),
     ];
     summary.acceptedProposalKinds = reviewReport?.acceptedProposalKinds ?? [];
+    summary.rejectedProposalDiagnostics = reviewReport?.rejectedProposalDiagnostics ?? [];
     summary.sourceRuntimes = reviewReport?.sourceRuntimes ?? [];
     summary.episodePacketHash = reviewReport?.episodePacketHash ?? null;
     summary.episodePacketPath = reviewReport?.episodePacketPath ?? null;
     summary.episodeTurnCount = reviewReport?.episodeTurnCount ?? 0;
+    summary.packetQuality = reviewReport?.packetQuality ?? null;
     summary.codexAdapterStatus = codexReport
       ? `${codexReport.status}${codexReport.reasonCode ? `:${codexReport.reasonCode}` : ""}`
       : null;
@@ -567,11 +546,19 @@ async function main() {
     evidence.candidateReviewerRan =
       reviewReport?.validationStatus === "pass" &&
       reviewReport?.source === "model" &&
+      typeof reviewReport?.proposalCount === "number";
+    evidence.acceptedProposalExists =
+      reviewReport?.validationStatus === "pass" &&
+      reviewReport?.source === "model" &&
       reviewReport?.surfacedProposalCount > 0;
     evidence.highContextPacketPersisted =
       Boolean(reviewReport?.episodePacketHash) &&
       Boolean(reviewReport?.episodePacketPath) &&
       reviewReport?.episodeTurnCount > 0;
+    evidence.contiguousPacketQuality =
+      Boolean(reviewReport?.packetQuality?.contiguousWindowPresent) &&
+      reviewReport?.packetQuality?.rawFullTranscriptPersisted === false &&
+      (reviewReport?.packetQuality?.openClawTurnCount ?? 0) > 0;
     evidence.reviewerReturnedAtMostThree =
       typeof reviewReport?.proposalCount === "number" && reviewReport.proposalCount <= 3;
     evidence.proposalsIncludePlanAndSkill =
@@ -580,6 +567,18 @@ async function main() {
     evidence.modelReviewedCardVisible = Boolean(modelReviewedItem);
     evidence.modelAuthoredBriefVisible = modelAuthoredItems.some(
       (item) => item.briefQuality?.status !== "demote",
+    );
+    evidence.modelAuthoredOnlyVisibleCards =
+      modelReviewedItems.length > 0 &&
+      modelReviewedItems.every(
+        (item) =>
+          item.status === "blocked" ||
+          (item.briefAuthorship?.source === "model" && item.briefQuality?.status !== "demote"),
+      );
+    evidence.proactivePlanFirstClass = finalState.queueItems.some(
+      (item) =>
+        item.opportunityClass === "proactive_plan" &&
+        item.blockedReasonCodes.includes("model_reviewed_candidate"),
     );
     evidence.canonicalIdsShared =
       Boolean(modelReviewedItem?.queueItemId || modelReviewedItem?.skillCandidateId) &&

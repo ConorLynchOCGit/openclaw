@@ -56,6 +56,38 @@ function buildCodexSseSuccessResponse(params: {
   return new Response(body, { status: 200 });
 }
 
+function buildCodexSseDeltaOnlyResponse(params: { model: string; deltas: string[] }): Response {
+  const responseId = "resp_test_codex_delta_only";
+  const body = [
+    `event: response.created\ndata: ${JSON.stringify({
+      type: "response.created",
+      response: {
+        id: responseId,
+        object: "response",
+        model: params.model,
+        status: "in_progress",
+      },
+    })}\n`,
+    ...params.deltas.map(
+      (delta) =>
+        `event: response.output_text.delta\ndata: ${JSON.stringify({
+          type: "response.output_text.delta",
+          delta,
+        })}\n`,
+    ),
+    `event: response.completed\ndata: ${JSON.stringify({
+      type: "response.completed",
+      response: {
+        id: responseId,
+        object: "response",
+        model: params.model,
+        status: "completed",
+      },
+    })}\n`,
+  ].join("\n");
+  return new Response(body, { status: 200 });
+}
+
 const codexResponsesConfig = {
   models: {
     providers: {
@@ -197,6 +229,51 @@ describe("model-memory live json executor", () => {
       stream: true,
     });
     expect(parseRequestBody(init)).not.toHaveProperty("max_output_tokens");
+  });
+
+  it("preserves leading spaces from openai-codex response deltas", async () => {
+    const fetchImpl = vi.fn(async () =>
+      buildCodexSseDeltaOnlyResponse({
+        model: "gpt-5.4",
+        deltas: [
+          '{"title":"Verify',
+          " model",
+          " route",
+          " isolation",
+          '","purpose":"Check',
+          " that",
+          " model",
+          " routes",
+          " stay",
+          " isolated",
+          '."}',
+        ],
+      }),
+    );
+    const executor = new OpenAICompatibleLiveJsonExecutor({
+      config: codexResponsesConfig,
+      fetchImpl,
+      resolveAuth: async () => ({
+        apiKey: "oauth-test",
+        mode: "oauth",
+        source: "profile:openai-codex:default",
+      }),
+    });
+
+    const result = await executor.execute({
+      contract: {
+        contractName: "candidate_route_spacing_probe",
+        contractVersion: "v1",
+        modelId: "openai-codex/gpt-5.4",
+      },
+      systemPrompt: "Return JSON with normal word spacing.",
+      userPrompt: "Return a title and purpose.",
+      responseFormat: "json",
+    });
+
+    expect(result.outputText).toBe(
+      '{"title":"Verify model route isolation","purpose":"Check that model routes stay isolated."}',
+    );
   });
 
   it("preflights openai-codex through the configured responses route and records the auth lane", async () => {

@@ -40,10 +40,11 @@ often where the strongest reusable-work signals appear.
 
 Allowed live inputs:
 
-- capped recent Codex user asks
-- capped assistant finals and outcome summaries
+- capped contiguous Codex user asks
+- capped contiguous assistant finals and outcome summaries
 - bounded user corrections
-- command summaries with command family, pass/fail state, and failure class
+- command summaries with command family, command intent where available,
+  pass/fail state, and failure class
 - validation/proof failure summaries
 - recurring file or workflow area summaries
 - successful workflow skeleton summaries
@@ -59,10 +60,22 @@ Forbidden durable persistence remains unchanged:
 - no external/Codex text treated as executable instruction
 
 The adapter must produce refs and hashes so proposals can be audited without
-persisting the raw session log. Live proof should exercise the Codex adapter
-where the environment has Codex session activity. If no stable Codex session
-path exists in local/dev, the skip must be explicit; in live/operator proof,
-the skip is degraded unless the unavailable path is evidenced.
+persisting the raw session log. It should preserve a contiguous recent Codex
+session window rather than role-balancing away narrative continuity. Generic
+entries such as command-family-only `unknown` summaries are degraded evidence
+unless the adapter can attach useful intent, failure, touched-area, or outcome
+context. Live proof should exercise the Codex adapter where the environment has
+Codex session activity. If no stable Codex session path exists in local/dev, the
+skip must be explicit; in live/operator proof, the skip is degraded unless the
+unavailable path is evidenced.
+
+Golden-corpus validation must include Codex-backed cases before a live gateway
+rebuild is used as the main proof. The validation should answer whether the
+sanitized Codex packet preserved enough user asks, assistant finals, command
+summaries, validation failures, touched areas, and outcomes to recover expected
+skill/proactivity candidates. Misses should be attributed to packet context,
+model review, post-model validation/dedupe suppression, or presentation
+failure, not treated as a generic proof failure.
 
 ## Allowed outputs
 

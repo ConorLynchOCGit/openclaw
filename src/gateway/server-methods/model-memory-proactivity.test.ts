@@ -31,7 +31,7 @@ describe("model-memory proactivity gateway handlers", () => {
       queue: { surface: "chat" },
     });
     expect(payload.queue.items[0]).toMatchObject({
-      status: "pending_review",
+      status: "blocked",
       layer: "diagnostic",
       attentionRequired: false,
       noDarkDataStatus: "pass",
@@ -94,12 +94,16 @@ describe("model-memory proactivity gateway handlers", () => {
       decision: "live_opportunities_detected",
     });
     expect(payload.queue.items[0]).toMatchObject({
-      layer: "actionable",
-      attentionRequired: true,
+      status: "blocked",
+      layer: "diagnostic",
+      attentionRequired: false,
       workItemKind: "planning_request",
-      primaryAction: { actionType: "plan_this", requiresChatInject: false },
+      primaryAction: null,
       planTitle: "Advance current openclaw work",
     });
+    expect(payload.queue.items[0].blockedReasonCodes).toContain(
+      "presentation:model_authored_visible_copy_required",
+    );
     expect(payload.queue.items[0].proposedMessage).toContain("concrete planning handoff");
   });
 
@@ -138,10 +142,14 @@ describe("model-memory proactivity gateway handlers", () => {
       decision: "live_opportunities_detected",
     });
     expect(payload.queue.items[0]).toMatchObject({
-      layer: "actionable",
+      status: "blocked",
+      layer: "diagnostic",
       workItemKind: "planning_request",
-      primaryAction: { actionType: "plan_this", requiresChatInject: false },
+      primaryAction: null,
     });
+    expect(payload.queue.items[0].blockedReasonCodes).toContain(
+      "presentation:model_authored_visible_copy_required",
+    );
     expect(payload.queue.items[0].sourceRefs[0]).toContain("gateway://system-events/");
     expect(payload.queue.items[0].sourceRefs[0]).toContain("/ordinary_chat_turn/");
     expect(payload.queue.items[0].proposedMessage).toContain("verification plan");
@@ -181,10 +189,14 @@ describe("model-memory proactivity gateway handlers", () => {
     const [ok, payload] = respond.mock.calls[0];
     expect(ok).toBe(true);
     expect(payload.queue.items[0]).toMatchObject({
-      layer: "actionable",
+      status: "blocked",
+      layer: "diagnostic",
       workItemKind: "investigation_request",
-      primaryAction: { actionType: "investigate", requiresChatInject: false },
+      primaryAction: null,
     });
+    expect(payload.queue.items[0].blockedReasonCodes).toContain(
+      "presentation:model_authored_visible_copy_required",
+    );
     expect(payload.queue.items[0].sourceRefs[0]).toContain("/failed_command/");
     expect(payload.queue.items[0].blockedReasonCodes).not.toContain(
       "static_default_candidate_demoted",
@@ -226,10 +238,14 @@ describe("model-memory proactivity gateway handlers", () => {
       decision: "live_opportunities_detected",
     });
     expect(payload.queue.items[0]).toMatchObject({
-      layer: "actionable",
+      status: "blocked",
+      layer: "diagnostic",
       workItemKind: "investigation_request",
-      primaryAction: { actionType: "investigate", requiresChatInject: false },
+      primaryAction: null,
     });
+    expect(payload.queue.items[0].blockedReasonCodes).toContain(
+      "presentation:model_authored_visible_copy_required",
+    );
     expect(payload.queue.items[0].sourceRefs[0]).toContain("gateway://heartbeat/last/");
   });
 
@@ -302,7 +318,12 @@ describe("model-memory proactivity gateway handlers", () => {
     expect(
       payload.queue.items.some(
         (item: { layer: string; draftReady?: boolean; opportunityId?: string }) =>
-          item.layer === "actionable" && item.draftReady === true && Boolean(item.opportunityId),
+          item.layer === "diagnostic" && item.draftReady === true && Boolean(item.opportunityId),
+      ),
+    ).toBe(true);
+    expect(
+      payload.queue.items.some((item: { blockedReasonCodes?: string[] }) =>
+        item.blockedReasonCodes?.includes("presentation:model_authored_visible_copy_required"),
       ),
     ).toBe(true);
   });
@@ -665,19 +686,24 @@ describe("model-memory proactivity gateway handlers", () => {
     const actionableItems = payload.digest.items.filter(
       (item: { layer?: string }) => item.layer === "actionable",
     );
+    const diagnosticItems = payload.digest.items.filter(
+      (item: { layer?: string; status?: string }) =>
+        item.layer === "diagnostic" && item.status === "blocked",
+    );
     const plannedItems = payload.digest.items.filter(
       (item: { status?: string }) => item.status === "planned",
     );
     const sentItems = payload.digest.items.filter(
       (item: { status?: string }) => item.status === "sent",
     );
-    expect(actionableItems.length).toBeGreaterThanOrEqual(1);
+    expect(actionableItems).toHaveLength(0);
+    expect(diagnosticItems.length).toBeGreaterThanOrEqual(1);
     expect(plannedItems).toHaveLength(0);
     expect(sentItems).toHaveLength(0);
     expect(payload.digest.counts.planned).toBe(0);
-    expect(
-      actionableItems.every((item: { status?: string }) => item.status === "pending_review"),
-    ).toBe(true);
+    expect(diagnosticItems.every((item: { status?: string }) => item.status === "blocked")).toBe(
+      true,
+    );
   });
 
   it("returns compact proactivity UX remediation state", async () => {

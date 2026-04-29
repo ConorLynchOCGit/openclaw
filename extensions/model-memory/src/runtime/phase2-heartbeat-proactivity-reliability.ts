@@ -19,18 +19,15 @@ export const PHASE2_HEARTBEAT_PROACTIVITY_RELIABILITY_SCHEMA_VERSION =
 export const PHASE2_HEARTBEAT_PROACTIVITY_RELIABILITY_REPORT_SCHEMA_VERSION =
   "phase2_heartbeat_proactivity_reliability_report.v1" as const;
 
-export type Phase2HeartbeatProactivityRanking = {
-  rankingId: string;
+export type Phase2HeartbeatProactivitySelection = {
+  selectionId: string;
   workItemId: string;
-  urgency: number;
-  freshness: number;
-  recurrence: number;
-  expectedUserValue: number;
+  structuralPriority: number;
+  recencyWeight: number;
   activeContextMatch: boolean;
   feedbackNoisePenalty: number;
   cleanlinessPenalty: number;
-  confidence: "high" | "medium" | "low";
-  score: number;
+  selectionOrder: number;
   reasonCodes: string[];
 };
 
@@ -41,6 +38,7 @@ export type Phase2HeartbeatProactivityItem = {
   skillCandidate?: Phase2SkillCandidateRecord;
   opportunityClass?:
     | "skill_candidate"
+    | "proactive_plan"
     | "reverse_prompt"
     | "followup"
     | "delight"
@@ -107,7 +105,7 @@ export type Phase2HeartbeatProactivityReport = {
   reportId: string;
   generatedAt: string;
   decision: "heartbeat_reliable" | "blocked" | "rollback_disabled";
-  rankings: Phase2HeartbeatProactivityRanking[];
+  selections: Phase2HeartbeatProactivitySelection[];
   surface: Phase2HeartbeatProactivitySurface;
   checks: Phase2HeartbeatProactivityCheck[];
   telemetry: Phase2HeartbeatProactivityTelemetry;
@@ -165,10 +163,6 @@ function addCheck(
   checks.push({ checkId, status: condition ? "pass" : "fail", reasonCode });
 }
 
-function confidenceScore(confidence: "high" | "medium" | "low"): number {
-  return confidence === "high" ? 3 : confidence === "medium" ? 2 : 1;
-}
-
 function recencyScore(updatedAt: string, now: Date): number {
   const updatedAtMs = Date.parse(updatedAt);
   if (!Number.isFinite(updatedAtMs)) {
@@ -185,117 +179,88 @@ function recencyScore(updatedAt: string, now: Date): number {
 }
 
 function hasCleanHeartbeatSurfaceText(item: Phase2ProductProactivityQueueItem): boolean {
-  if (item.userFacingBrief) {
-    return (
-      item.userFacingBrief.quality.status === "pass" &&
-      isMeaningfulProactivityUserFacingText(item.userFacingBrief.title) &&
-      isMeaningfulProactivityUserFacingText(item.userFacingBrief.oneLinePurpose) &&
-      isMeaningfulProactivityUserFacingText(item.userFacingBrief.recommendedNextStep) &&
-      !isInternalProactivityWorkflowText(item.userFacingBrief.title) &&
-      !isInternalProactivityWorkflowText(item.userFacingBrief.oneLinePurpose) &&
-      !isInternalProactivityWorkflowText(item.userFacingBrief.recommendedNextStep)
-    );
+  if (!item.userFacingBrief) {
+    return false;
   }
   return (
-    isMeaningfulProactivityUserFacingText(item.planTitle) &&
-    isMeaningfulProactivityUserFacingText(item.problem) &&
-    isMeaningfulProactivityUserFacingText(item.proposedMessage) &&
-    !isInternalProactivityWorkflowText(item.planTitle) &&
-    !isInternalProactivityWorkflowText(item.problem) &&
-    !isInternalProactivityWorkflowText(item.proposedMessage)
+    item.userFacingBrief.quality.status === "pass" &&
+    isMeaningfulProactivityUserFacingText(item.userFacingBrief.title) &&
+    isMeaningfulProactivityUserFacingText(item.userFacingBrief.oneLinePurpose) &&
+    isMeaningfulProactivityUserFacingText(item.userFacingBrief.recommendedNextStep) &&
+    !isInternalProactivityWorkflowText(item.userFacingBrief.title) &&
+    !isInternalProactivityWorkflowText(item.userFacingBrief.oneLinePurpose) &&
+    !isInternalProactivityWorkflowText(item.userFacingBrief.recommendedNextStep)
   );
 }
 
-export function rankHeartbeatProactivityItems(input: {
+export function selectHeartbeatProactivityItems(input: {
   queueItems: Phase2ProductProactivityQueueItem[];
   activeContextWorkItemIds?: string[];
   now?: Date;
-}): Phase2HeartbeatProactivityRanking[] {
+}): Phase2HeartbeatProactivitySelection[] {
   const active = new Set(input.activeContextWorkItemIds ?? []);
   const now = input.now ?? new Date();
   return input.queueItems
     .filter((item) => item.layer === "actionable" && item.status === "pending_review")
     .map((item) => {
-      const urgency = item.attentionRequired ? 3 : 1;
-      const freshness = item.staleLabels.length ? 1 : 3;
-      const recurrence = item.blockedReasonCodes.includes("recurrence_limit_exceeded") ? 0 : 2;
-      const expectedUserValue = item.expectedUserValue.length > 24 ? 3 : 1;
+      const structuralPriority = item.attentionRequired ? 3 : 1;
       const activeContextMatch = active.size === 0 || active.has(item.workItemId);
+      const recencyWeight = recencyScore(item.updatedAt, now);
       const recentAssistantOpportunity =
-        recencyScore(item.updatedAt, now) > 0 &&
+        recencyWeight > 0 &&
         item.sourceRefs.some((sourceRef) =>
           /\/(?:assistant_turn|planning_output)\//u.test(sourceRef),
         );
-      const opportunityClassBonus =
-        item.opportunityClass === "skill_candidate"
-          ? 2
-          : item.opportunityClass === "self_healing"
-            ? 4
-            : item.opportunityClass === "delight"
-              ? 3
-              : item.opportunityClass === "reverse_prompt"
-                ? 2
-                : item.opportunityClass === "followup" || item.opportunityClass === "recovery"
-                  ? 2
-                  : 0;
       const feedbackNoisePenalty = item.blockedReasonCodes.some((code) =>
         ["feedback_suppressed_signal", "cooldown_same_content"].includes(code),
       )
         ? 4
         : 0;
       const dirtySurfacePenalty = hasCleanHeartbeatSurfaceText(item) ? 0 : 20;
-      const score =
-        urgency +
-        freshness +
-        recurrence +
-        expectedUserValue +
-        confidenceScore(item.confidence) +
-        recencyScore(item.updatedAt, now) +
+      const selectionOrder =
+        structuralPriority +
+        recencyWeight +
         (recentAssistantOpportunity ? 5 : 0) +
-        opportunityClassBonus +
         (activeContextMatch ? 2 : 0) -
         feedbackNoisePenalty -
         dirtySurfacePenalty;
       return {
-        rankingId: buildDerivedArtifactId({
+        selectionId: buildDerivedArtifactId({
           family: "context_artifact",
-          artifactType: "phase2_heartbeat_proactivity_ranking",
+          artifactType: "phase2_heartbeat_proactivity_selection",
           targetId: item.workItemId,
-          seed: { score, contentHashes: item.contentHashes },
+          seed: { selectionOrder, contentHashes: item.contentHashes },
         }),
         workItemId: item.workItemId,
-        urgency,
-        freshness,
-        recurrence,
-        expectedUserValue,
+        structuralPriority,
+        recencyWeight,
         activeContextMatch,
         feedbackNoisePenalty,
         cleanlinessPenalty: dirtySurfacePenalty,
-        confidence: item.confidence,
-        score,
+        selectionOrder,
         reasonCodes: [
-          "ranked_by_urgency",
-          "ranked_by_freshness",
-          "ranked_by_recurrence",
-          "ranked_by_expected_value",
+          "structural_attention_flag",
+          "structural_recency_order",
           ...(recentAssistantOpportunity
             ? ["recent_assistant_output"]
             : ["older_or_non_assistant_source"]),
-          ...(opportunityClassBonus > 0
-            ? [`opportunity_class:${item.opportunityClass ?? "standard"}`]
-            : []),
           ...(activeContextMatch ? ["active_context_match"] : ["background_context"]),
           ...(dirtySurfacePenalty > 0 ? ["suppressed_dirty_surface_copy"] : ["clean_surface_copy"]),
         ],
       };
     })
     .toSorted(
-      (left, right) => right.score - left.score || left.workItemId.localeCompare(right.workItemId),
+      (left, right) =>
+        right.selectionOrder - left.selectionOrder ||
+        left.workItemId.localeCompare(right.workItemId),
     );
 }
 
 function itemForHeartbeat(item: Phase2ProductProactivityQueueItem): Phase2HeartbeatProactivityItem {
   const brief = item.userFacingBrief;
+  if (!brief || brief.quality.status !== "pass") {
+    throw new Error("heartbeat item requires model-authored user-facing brief");
+  }
   return {
     workItemId: item.workItemId,
     queueItemId: item.queueItemId,
@@ -303,27 +268,19 @@ function itemForHeartbeat(item: Phase2ProductProactivityQueueItem): Phase2Heartb
     skillCandidate: item.skillCandidate,
     opportunityClass: item.opportunityClass,
     title:
-      cleanProactivityUserFacingText(brief?.title ?? item.planTitle, { maxLength: 120 }) ??
-      item.planTitle ??
-      item.candidateSummary ??
-      "Proactive work item",
+      cleanProactivityUserFacingText(brief.title, { maxLength: 120 }) ??
+      "Model-authored proactivity item",
     whyNow:
-      cleanProactivityUserFacingText(brief?.oneLinePurpose ?? item.problem, { maxLength: 180 }) ??
-      item.problem ??
-      item.candidateSummary ??
-      "A recent assistant answer identified useful work.",
+      cleanProactivityUserFacingText(brief.oneLinePurpose, { maxLength: 180 }) ??
+      "Model-authored proactivity brief is available.",
     proposedNextStep:
-      cleanProactivityUserFacingText(brief?.recommendedNextStep ?? item.proposedMessage, {
+      cleanProactivityUserFacingText(brief.recommendedNextStep, {
         maxLength: 220,
-      }) ??
-      item.proposedMessage ??
-      item.messagePreview ??
-      item.boundedDisplayText,
+      }) ?? "Open the item for review.",
     expectedUserValue:
-      cleanProactivityUserFacingText(item.expectedUserValue, { maxLength: 180 }) ??
-      item.expectedUserValue ??
-      item.userBenefit ??
-      "Keeps recent proactive work reviewable without exposing raw memory data.",
+      cleanProactivityUserFacingText(brief.detailSummary ?? brief.oneLinePurpose, {
+        maxLength: 180,
+      }) ?? "Review the model-authored proactivity brief.",
     confidence: item.confidence,
     primaryActionLabel: item.primaryAction?.label ?? "Open in current chat",
     sourceRefs: item.sourceRefs,
@@ -341,16 +298,16 @@ export async function buildPhase2HeartbeatProactivityReliabilityReport(
   const generatedAt = (input.now ?? new Date()).toISOString();
   const rollback = readRollback(input.env);
   const queueItems = input.queueItems ?? [];
-  const rankings = rankHeartbeatProactivityItems({
+  const selections = selectHeartbeatProactivityItems({
     queueItems,
     activeContextWorkItemIds: input.activeContextWorkItemIds,
     now: input.now,
   });
-  const rankedIds = new Set(rankings.map((ranking) => ranking.workItemId));
-  const topItems = rankings
-    .filter((ranking) => ranking.score > 0)
+  const selectedIds = new Set(selections.map((selection) => selection.workItemId));
+  const topItems = selections
+    .filter((selection) => selection.selectionOrder > 0)
     .slice(0, 3)
-    .map((ranking) => queueItems.find((item) => item.workItemId === ranking.workItemId))
+    .map((selection) => queueItems.find((item) => item.workItemId === selection.workItemId))
     .filter((item): item is Phase2ProductProactivityQueueItem => Boolean(item))
     .filter((item) => hasCleanHeartbeatSurfaceText(item))
     .map(itemForHeartbeat);
@@ -367,7 +324,7 @@ export async function buildPhase2HeartbeatProactivityReliabilityReport(
   addCheck(
     checks,
     "ids:shared",
-    topItems.every((item) => inboxIds.has(item.workItemId) && rankedIds.has(item.workItemId)),
+    topItems.every((item) => inboxIds.has(item.workItemId) && selectedIds.has(item.workItemId)),
     "shared_work_item_ids_required",
   );
   addCheck(
@@ -443,7 +400,7 @@ export async function buildPhase2HeartbeatProactivityReliabilityReport(
     reportId,
     generatedAt,
     decision,
-    rankings,
+    selections,
     surface,
     checks,
     telemetry,

@@ -7,6 +7,91 @@ title: "Skills System Decisions"
 
 ## Accepted decisions
 
+### 2026-04-29 - Candidate discovery needs auditable validation before UI proof
+
+Reason:
+
+- removing keyword gates and deterministic snippet selection from
+  skill/proactivity discovery does not prove the whole funnel is correct
+- candidate quality can still fail at packet assembly, model proposal,
+  deterministic validation/dedupe, or card presentation
+- the broader memory stack still contains deterministic logic; some of it is
+  required guardrail behavior, while deterministic semantic judgment needs
+  review before it becomes hidden candidate authority
+- prior passes repeatedly let deterministic value judgment reappear in new
+  layers. The audit must therefore be elimination-oriented, not advisory-only.
+
+Decision:
+
+- deterministic guardrails remain allowed for ids, hashes, schemas, caps,
+  redaction, refs, provenance, cooldowns, dedupe, persistence boundaries,
+  projection materialization, and unsafe-output demotion
+- deterministic code must be audited when it decides candidate meaning,
+  usefulness, ranking, classification, or surfacing without model review
+- runtime deterministic value judgment is presumed unsafe at scale unless it is
+  proven to be a valid guardrail or acceptable structural retrieval constraint
+- findings classified as `runtime_elimination_debt` or
+  `test_enshrinement_debt` are failing debt; runtime debt should be removed,
+  replaced with explicit structural filters, or moved behind bounded model
+  review, while test debt should be removed or rewritten to assert model-owned
+  boundaries before further Phase 1/2 memory promotion
+- skill/proactivity candidate review gains a golden corpus of real OpenClaw and
+  Codex episodes with expected surfaced candidates, expected demotions, and
+  expected no-candidate outcomes
+- validation records whether a miss came from a thin packet, model miss,
+  post-model validation suppression, unexpected candidate, or no-candidate
+  expectation
+- local function-level tests and golden-corpus validation run before any live
+  gateway rebuild; live UI proof is reserved for wiring confirmation after the
+  underlying packet/reviewer/validator/presentation stack passes
+- later shadow mode should let the operator mark missed candidates and then
+  trace whether the failure was packet context, model review, validation/dedupe,
+  or visible-card presentation
+
+### 2026-04-29 - Visible cards require model-authored copy and contiguous review packets
+
+Reason:
+
+- the latest live proof showed the candidate reviewer accepted a legitimate
+  proactive plan, but the card path converted it into a generic follow-up,
+  skipped model-authored presentation because of prioritization caps, and then
+  surfaced/demoted deterministic fallback text with a mangled title
+- deterministic packet assembly also starved the candidate reviewer: it passed
+  one OpenClaw proof prompt, duplicated Codex cooldown text, two short Codex
+  progress updates, generic command summaries, no touched areas, and no
+  validation-failure substance
+- this repeated the same failure pattern in a deeper layer: deterministic code
+  was no longer keyword-gating candidates, but it was still deciding which
+  context the model could judge
+
+Decision:
+
+- candidate-review packets are contiguous high-context work episodes, not
+  adjacency-selected or role-balanced "interesting" snippets
+- deterministic packet assembly may enforce recency, source boundaries, size
+  caps, redaction, refs, hashes, provenance, cooldowns, and schemas; it must not
+  decide semantic relevance or candidate usefulness by content selection
+- OpenClaw candidate packets include a configurable last-N contiguous
+  user/assistant turn window
+- Codex candidate packets include a configurable contiguous session window with
+  user asks and assistant finals preserved, plus meaningful command/validation
+  summaries, touched areas, and outcomes where available
+- loaded-but-low-signal Codex evidence is degraded evidence, not proof of good
+  Codex coverage
+- all visible proactivity, skill, reverse-prompt, draft-ready, repair, and
+  follow-up cards require model-authored `UserFacingProactivityBrief` primary
+  copy
+- deterministic brief text is hidden fallback input and diagnostics only; when
+  model-authored copy is disabled, unavailable, invalid, or unclear, the item is
+  demoted or hidden instead of surfacing deterministic prose
+- model-reviewed proactive plans are first-class `proactive_plan`
+  opportunities, not generic follow-up rows
+- display titles remain separate from slugs, focus keys, normalized intent
+  keys, and ids; normalized keys must never become visible card titles
+- proof must support test-mode cooldown/force-run controls and must include
+  packet-quality diagnostics so tests do not wait on production cooldowns or
+  claim success from thin packets
+
 ### 2026-04-29 - Candidate review uses infrequent high-context episode review
 
 Reason:

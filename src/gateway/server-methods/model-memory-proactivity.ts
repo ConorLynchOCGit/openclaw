@@ -330,6 +330,9 @@ export const modelMemoryProactivityHandlers: GatewayRequestHandlers = {
               episodePacketPath: state.candidateReviewReport.episodePacketPath,
               episodeTurnCount: state.candidateReviewReport.episodeTurnCount,
               codexAdapterStatus: state.candidateReviewReport.codexAdapterStatus,
+              packetQuality: state.candidateReviewReport.packetQuality,
+              rejectedProposalDiagnostics:
+                state.candidateReviewReport.rejectedProposalDiagnostics ?? [],
               promptPersisted: state.candidateReviewReport.promptPersisted,
               rawResponsePersisted: state.candidateReviewReport.rawResponsePersisted,
               acceptedProposalKinds: [
