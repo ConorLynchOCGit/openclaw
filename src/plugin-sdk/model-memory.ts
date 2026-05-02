@@ -66,6 +66,9 @@ export const DEFAULT_WORKSPACE_PROJECTION_TARGETS: FacadeModule["DEFAULT_WORKSPA
 export const ExecutorBackedRetrievalRequestInterpreter: FacadeModule["ExecutorBackedRetrievalRequestInterpreter"] =
   createLazyFacadeClassValue(loadFacadeModule, "ExecutorBackedRetrievalRequestInterpreter");
 
+export const ExecutorBackedRetrievalFinalInclusionReviewer: FacadeModule["ExecutorBackedRetrievalFinalInclusionReviewer"] =
+  createLazyFacadeClassValue(loadFacadeModule, "ExecutorBackedRetrievalFinalInclusionReviewer");
+
 export const ExecutorBackedSemanticInterpreter: FacadeModule["ExecutorBackedSemanticInterpreter"] =
   createLazyFacadeClassValue(loadFacadeModule, "ExecutorBackedSemanticInterpreter");
 

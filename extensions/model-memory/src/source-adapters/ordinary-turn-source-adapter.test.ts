@@ -39,6 +39,24 @@ describe("ordinary-turn-source-adapter", () => {
     ).toBe(true);
   });
 
+  it("splits a single long OpenClaw prompt into bounded structural windows", () => {
+    const result = adaptOrdinaryTurnSource({
+      currentTurnText:
+        "Memory point alpha one two three four five six. Memory point beta seven eight nine ten eleven twelve.",
+      maxWordsPerWindow: 5,
+      sessionId: "session-long-prompt",
+      projectId: "project-001",
+    });
+
+    expect(result.windows.length).toBeGreaterThan(1);
+    expect(result.windows.every((window) => window.tokenEstimate <= 5)).toBe(true);
+    expect(result.windows.map((window) => window.windowIndex)).toEqual(
+      result.windows.map((_, index) => index),
+    );
+    expect(result.normalizedText).toContain("Memory point alpha");
+    expect(result.normalizedText).toContain("Memory point beta");
+  });
+
   it("allows assistant turns to be captured as the current turn for live runtime ingestion", () => {
     const result = adaptOrdinaryTurnSource({
       recentContext: [{ speaker: "user", text: "What should I remember?" }],

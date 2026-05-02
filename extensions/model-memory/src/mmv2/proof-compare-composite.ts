@@ -2,8 +2,8 @@ import type { CompositeExtractionBatch, SegmentedIngestEvent } from "./contracts
 import {
   compareExpectedCollection,
   normalizeComparisonText,
+  normalizedTextIncludes,
   resolveSegmentText,
-  semanticallyMatchesText,
   type MmV2PhaseComparisonResult,
 } from "./proof-compare-shared.ts";
 import type { MmV2CompositeExpectation, MmV2PhaseExpectation } from "./proof-corpus.ts";
@@ -18,8 +18,8 @@ function matchesComponentEvidence(
   expectedQuote: string,
 ): boolean {
   return (
-    semanticallyMatchesText(component.evidence_quote, expectedQuote) ||
-    semanticallyMatchesText(component.content, expectedQuote)
+    normalizedTextIncludes(component.evidence_quote, expectedQuote) ||
+    normalizedTextIncludes(component.content, expectedQuote)
   );
 }
 

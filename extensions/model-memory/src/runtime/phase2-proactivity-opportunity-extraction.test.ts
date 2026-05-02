@@ -1,66 +1,126 @@
 import { describe, expect, it } from "vitest";
-import { buildPhase2ProactivityOpportunityExtractionReport } from "./phase2-proactivity-opportunity-extraction.ts";
+import {
+  buildPhase2ProactivityOpportunityExtractionReport,
+  type Phase2OpportunityExtractionCandidate,
+  type Phase2OpportunityExtractionSource,
+} from "./phase2-proactivity-opportunity-extraction.ts";
+
+function source(
+  overrides: Partial<Phase2OpportunityExtractionSource> = {},
+): Phase2OpportunityExtractionSource {
+  return {
+    sourceId: "assistant-plan-1",
+    sourceKind: "assistant_turn",
+    sourceMessageId: "msg-assistant-1",
+    sourceRunId: "run-assistant-1",
+    projectId: "openclaw",
+    sessionKey: "main",
+    boundedText: [
+      "Potential next steps:",
+      "1. Plan the generator reset so roadmap review results become inbox opportunities automatically.",
+      "2. Investigate stale proactivity items that still appear after the work is already done.",
+    ].join("\n"),
+    userPromptSummary:
+      "Review the roadmap and active work to generate potential proactivity plans.",
+    sourceRefs: ["chat://main/assistant_turn/msg-assistant-1"],
+    sourceProfileId: "manual_note",
+    authorityTier: "tool_grounded",
+    noDarkDataStatus: "pass",
+    ...overrides,
+  };
+}
+
+function modelReviewedCandidate(
+  overrides: Partial<Phase2OpportunityExtractionCandidate> = {},
+): Phase2OpportunityExtractionCandidate {
+  return {
+    opportunityId: "opportunity-model-reviewed-1",
+    sourceKind: "assistant_turn",
+    sourceMessageId: "msg-assistant-1",
+    sourceRunId: "run-assistant-1",
+    projectId: "openclaw",
+    sessionKey: "main",
+    workItemKind: "planning_request",
+    title: "Model-reviewed roadmap follow-up",
+    whyNow: "A model-reviewed proposal identified this as a bounded follow-up.",
+    proposedNextStep: "Review the roadmap follow-up before starting the next implementation pass.",
+    expectedUserValue: "Keeps proactivity work tied to model-reviewed candidate judgment.",
+    evidenceSummary: "Evidence comes from the bounded assistant turn source.",
+    confidence: "high",
+    limitations: [],
+    sourceRefs: ["chat://main/assistant_turn/msg-assistant-1"],
+    sourceProfileIds: ["manual_note"],
+    authorityTiers: ["tool_grounded"],
+    contentHashes: ["hash-content-1"],
+    proofHashes: ["hash-proof-1"],
+    completionSignals: ["source_message:msg-assistant-1"],
+    supersessionSignals: ["proposed_next_step_hash:hash-next-step-1"],
+    blockedReasonCodes: [],
+    noDarkDataStatus: "pass",
+    generatedAt: "2026-04-27T15:00:00.000Z",
+    ...overrides,
+  };
+}
 
 describe("phase2 proactivity opportunity extraction", () => {
-  it("extracts concrete opportunities from assistant planning output", async () => {
+  it("does not create opportunities from assistant text without model-reviewed candidates", async () => {
     const report = await buildPhase2ProactivityOpportunityExtractionReport({
       now: new Date("2026-04-27T15:00:00.000Z"),
-      sources: [
-        {
-          sourceId: "assistant-plan-1",
-          sourceKind: "assistant_turn",
-          sourceMessageId: "msg-assistant-1",
-          sourceRunId: "run-assistant-1",
-          projectId: "openclaw",
-          sessionKey: "main",
-          boundedText: [
-            "Potential next steps:",
-            "1. Plan the generator reset so roadmap review results become inbox opportunities automatically.",
-            "2. Investigate stale proactivity items that still surface after the work is already done.",
-          ].join("\n"),
-          userPromptSummary:
-            "Review the roadmap and active work to generate potential proactivity plans.",
-          sourceRefs: ["chat://main/assistant_turn/msg-assistant-1"],
-          sourceProfileId: "manual_note",
-          authorityTier: "tool_grounded",
-          noDarkDataStatus: "pass",
-        },
-      ],
+      sources: [source()],
+    });
+
+    expect(report.decision).toBe("no_concrete_opportunities");
+    expect(report.candidates).toHaveLength(0);
+    expect(report.telemetry.candidateCount).toBe(0);
+    expect(
+      report.checks.find((check) => check.reasonCode === "concrete_next_step_required")?.status,
+    ).toBe("fail");
+  });
+
+  it("accepts explicit model-reviewed candidates tied to provided sources", async () => {
+    const report = await buildPhase2ProactivityOpportunityExtractionReport({
+      now: new Date("2026-04-27T15:00:00.000Z"),
+      sources: [source()],
+      modelReviewedCandidates: [modelReviewedCandidate()],
     });
 
     expect(report.decision).toBe("opportunities_extracted");
-    expect(report.candidates).toHaveLength(2);
+    expect(report.candidates).toHaveLength(1);
     expect(report.candidates[0]).toMatchObject({
       sourceKind: "assistant_turn",
       sourceMessageId: "msg-assistant-1",
       projectId: "openclaw",
       sessionKey: "main",
+      title: "Model-reviewed roadmap follow-up",
       noDarkDataStatus: "pass",
     });
-    expect(report.candidates.map((candidate) => candidate.proposedNextStep)).toEqual(
-      expect.arrayContaining([
-        expect.stringContaining("roadmap review results become inbox opportunities automatically"),
-        expect.stringContaining("stale proactivity items"),
-      ]),
-    );
   });
 
-  it("blocks generic placeholder output from becoming opportunities", async () => {
+  it("does not admit model-reviewed candidates that are not tied to the provided source set", async () => {
+    const report = await buildPhase2ProactivityOpportunityExtractionReport({
+      sources: [source()],
+      modelReviewedCandidates: [
+        modelReviewedCandidate({
+          sourceMessageId: "msg-other",
+          sourceRefs: ["chat://main/assistant_turn/msg-other"],
+        }),
+      ],
+    });
+
+    expect(report.decision).toBe("no_concrete_opportunities");
+    expect(report.candidates).toHaveLength(0);
+  });
+
+  it("keeps placeholder assistant text as structural evidence only", async () => {
     const report = await buildPhase2ProactivityOpportunityExtractionReport({
       sources: [
-        {
+        source({
           sourceId: "assistant-placeholder-1",
-          sourceKind: "assistant_turn",
           sourceMessageId: "msg-assistant-placeholder-1",
-          projectId: "openclaw",
-          sessionKey: "main",
           boundedText:
             "A suggestion is available. Review the memory-derived suggestion when convenient.",
           sourceRefs: ["chat://main/assistant_turn/msg-assistant-placeholder-1"],
-          sourceProfileId: "manual_note",
-          authorityTier: "tool_grounded",
-          noDarkDataStatus: "pass",
-        },
+        }),
       ],
     });
 
@@ -71,120 +131,27 @@ describe("phase2 proactivity opportunity extraction", () => {
     ).toBe("pass");
   });
 
-  it("treats bounded implementation next steps as concrete opportunities", async () => {
+  it("keeps heartbeat proof and plan-handoff text as structural evidence only", async () => {
     const report = await buildPhase2ProactivityOpportunityExtractionReport({
       sources: [
-        {
-          sourceId: "assistant-implement-1",
-          sourceKind: "assistant_turn",
-          sourceMessageId: "msg-assistant-implement-1",
-          projectId: "openclaw",
-          sessionKey: "main",
-          boundedText: [
-            "1. **Title:** Runtime-authoritative assistant-output proactivity capture",
-            "- **Why now:** The live workflow still drops normal assistant answers before they become same-session opportunities.",
-            "- **Proposed next step:** Implement a bounded runtime packet that captures assistant final answers at session-persistence time and writes canonical proactivity opportunity records without relying on UI-originated chat-activity callbacks.",
-          ].join("\n"),
-          sourceRefs: ["chat://main/assistant_turn/msg-assistant-implement-1"],
-          sourceProfileId: "manual_note",
-          authorityTier: "tool_grounded",
-          noDarkDataStatus: "pass",
-        },
-      ],
-    });
-
-    expect(report.decision).toBe("opportunities_extracted");
-    expect(report.candidates).toHaveLength(1);
-    expect(report.candidates[0]?.title).toBe(
-      "Runtime packet that captures assistant final answers at session-persistence",
-    );
-    expect(report.candidates[0]?.proposedNextStep).toContain(
-      "captures assistant final answers at session-persistence time",
-    );
-  });
-
-  it("does not use prompt scaffolding as the user-facing why-now text", async () => {
-    const report = await buildPhase2ProactivityOpportunityExtractionReport({
-      sources: [
-        {
-          sourceId: "assistant-prompt-shaped-why-1",
-          sourceKind: "assistant_turn",
-          sourceMessageId: "msg-prompt-shaped-why-1",
-          projectId: "openclaw",
-          sessionKey: "main",
-          boundedText:
-            "Move assistant-output proactivity capture into the runtime path: Implement a bounded runtime packet that records assistant final answers into the canonical proactivity ledger at session-persistence time.",
-          userPromptSummary:
-            "Review the current OpenClaw proactivity reset work and identify the top 5 concrete next opportunities.",
-          sourceRefs: ["chat://main/assistant_turn/msg-prompt-shaped-why-1"],
-          sourceProfileId: "manual_note",
-          authorityTier: "tool_grounded",
-          noDarkDataStatus: "pass",
-        },
-      ],
-    });
-
-    expect(report.decision).toBe("opportunities_extracted");
-    expect(report.candidates).toHaveLength(1);
-    expect(report.candidates[0]?.whyNow).toBe(
-      "Recent work in openclaw surfaced this as a concrete next step worth reviewing now.",
-    );
-  });
-
-  it("cleans system metadata out of primary surfaced fields", async () => {
-    const report = await buildPhase2ProactivityOpportunityExtractionReport({
-      sources: [
-        {
-          sourceId: "assistant-cleanup-1",
-          sourceKind: "assistant_turn",
-          sourceMessageId: "msg-cleanup-1",
-          projectId: "openclaw",
-          sessionKey: "main",
-          boundedText: [
-            "1. **Title:** Planner candidate-plan generation",
-            "- **Why now:** System: [2026-04-27 20:15 UTC] [Post-compaction context refresh] The current candidate-plan path still leaks junk into user-facing copy. Source: chat://main/assistant_turn/msg-cleanup-1.",
-            "- **Proposed next step:** Planner candidate-plan generation: strip sender metadata, Source: chat:// refs, and HEARTBEAT boilerplate from surfaced copy.",
-            "- **Expected user value:** Keeps surfaced proactivity readable.",
-            '- **Evidence summary:** Sender (untrusted metadata): {"label":"openclaw-control-ui","id":"openclaw-control-ui"}',
-          ].join("\n"),
-          sourceRefs: ["chat://main/assistant_turn/msg-cleanup-1"],
-          sourceProfileId: "manual_note",
-          authorityTier: "tool_grounded",
-          noDarkDataStatus: "pass",
-        },
-      ],
-    });
-
-    expect(report.decision).toBe("opportunities_extracted");
-    expect(report.candidates[0]).toMatchObject({
-      title: "Planner candidate-plan generation",
-      whyNow: "The current candidate-plan path still leaks junk into user-facing copy.",
-      expectedUserValue: "Keeps surfaced proactivity readable.",
-    });
-    expect(report.candidates[0]?.proposedNextStep).not.toContain("Source:");
-    expect(report.candidates[0]?.evidenceSummary).toBe(
-      "Extracted from bounded assistant turn output.",
-    );
-  });
-
-  it("suppresses system-only heartbeat/control-plane candidates", async () => {
-    const report = await buildPhase2ProactivityOpportunityExtractionReport({
-      sources: [
-        {
+        source({
           sourceId: "assistant-heartbeat-control-1",
-          sourceKind: "assistant_turn",
           sourceMessageId: "msg-heartbeat-control-1",
-          projectId: "openclaw",
-          sessionKey: "main",
           boundedText:
-            "Read HEARTBEAT.md if it exists. HEARTBEAT_OK. Canonically verify the active session's planning state.",
+            "Read HEARTBEAT.md if it exists. HEARTBEAT_OK. Verify the active session state.",
           userPromptSummary:
             "Read HEARTBEAT.md if it exists (workspace context). Follow it strictly.",
           sourceRefs: ["chat://main/assistant_turn/msg-heartbeat-control-1"],
-          sourceProfileId: "manual_note",
-          authorityTier: "tool_grounded",
-          noDarkDataStatus: "pass",
-        },
+        }),
+        source({
+          sourceId: "assistant-handoff-1",
+          sourceMessageId: "msg-handoff-1",
+          boundedText:
+            "## Bounded plan: Heartbeat proactivity review\n### Scope\nDecide the next bounded repo move.",
+          userPromptSummary:
+            "Start a bounded plan for this proactive work item. Context to use: heartbeat.",
+          sourceRefs: ["chat://main/assistant_turn/msg-handoff-1"],
+        }),
       ],
     });
 
@@ -192,43 +159,25 @@ describe("phase2 proactivity opportunity extraction", () => {
     expect(report.candidates).toHaveLength(0);
   });
 
-  it("suppresses internal proof and plan-handoff candidates from assistant output", async () => {
-    const report = await buildPhase2ProactivityOpportunityExtractionReport({
-      sources: [
-        {
-          sourceId: "assistant-proof-1",
-          sourceKind: "assistant_turn",
-          sourceMessageId: "msg-proof-1",
-          projectId: "openclaw",
-          sessionKey: "main",
-          boundedText:
-            "Acknowledged. Proof marker: TEST-PROOF. Status: staged proposal approved for audit only.",
-          userPromptSummary:
-            "Operator Phase 2 staged action approval proof. Proof marker: TEST-PROOF. Approve the staged proposal for audit only. Do not execute.",
-          sourceRefs: ["chat://main/assistant_turn/msg-proof-1"],
-          sourceProfileId: "manual_note",
-          authorityTier: "tool_grounded",
-          noDarkDataStatus: "pass",
-        },
-        {
-          sourceId: "assistant-handoff-1",
-          sourceKind: "assistant_turn",
-          sourceMessageId: "msg-handoff-1",
-          projectId: "openclaw",
-          sessionKey: "main",
-          boundedText:
-            "## Bounded plan: Heartbeat proactivity review\n### Scope\nDecide the next bounded repo move for making heartbeat less legacy and more runtime-authoritative.",
-          userPromptSummary:
-            "Start a bounded plan this for this proactive work item. Heartbeat proactivity review. Context to use: heartbeat.",
-          sourceRefs: ["chat://main/assistant_turn/msg-handoff-1"],
-          sourceProfileId: "manual_note",
-          authorityTier: "tool_grounded",
-          noDarkDataStatus: "pass",
-        },
-      ],
+  it("keeps no-dark-data and rollback guardrails", async () => {
+    await expect(
+      buildPhase2ProactivityOpportunityExtractionReport({
+        sources: [
+          source({
+            rawPrompt: "raw-prompt-marker",
+          } as unknown as Partial<Phase2OpportunityExtractionSource>),
+        ],
+      }),
+    ).rejects.toThrow(/prohibited/i);
+
+    const rollback = await buildPhase2ProactivityOpportunityExtractionReport({
+      sources: [source()],
+      modelReviewedCandidates: [modelReviewedCandidate()],
+      env: { MODEL_MEMORY_PHASE2_OPPORTUNITY_EXTRACTION_DISABLED: "1" },
     });
 
-    expect(report.decision).toBe("no_concrete_opportunities");
-    expect(report.candidates).toHaveLength(0);
+    expect(rollback.decision).toBe("rollback_disabled");
+    expect(rollback.candidates).toHaveLength(0);
+    expect(rollback.rollbackPlan.targetMode).toBe("model_reviewed_candidate_only");
   });
 });

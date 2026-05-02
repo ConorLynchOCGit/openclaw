@@ -316,4 +316,13 @@ describe("proactivity user-facing cleanup", () => {
     ).toBe("heartbeat proactivity review");
     expect(cleanProactivityUserFacingText("## Next concrete fix")).toBe("Next concrete fix");
   });
+
+  it("bounds long visible copy at word boundaries instead of clipping mid-word", () => {
+    expect(
+      cleanProactivityUserFacingText(
+        "Add Multi Pack Runtime Proof For Idempotent Consumption And Budget Enforcement",
+        { maxLength: 64 },
+      ),
+    ).toBe("Add Multi Pack Runtime Proof For Idempotent Consumption And.");
+  });
 });

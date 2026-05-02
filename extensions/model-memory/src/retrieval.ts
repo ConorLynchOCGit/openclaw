@@ -1,3 +1,10 @@
+import { z } from "zod";
+import {
+  parseJsonModelOutput,
+  type JsonModelExecutionResponse,
+  type JsonModelExecutor,
+} from "./model-execution.ts";
+import { createModelContractMetadata } from "./prompt-contracts.ts";
 import {
   type InterpretedRetrievalRequest,
   interpretRetrievalRequest,
@@ -53,11 +60,220 @@ export type RetrievalExecutionResult = {
   interpretedRequest: InterpretedRetrievalRequest;
   retrievalResultSet: RetrievalResultSetRecord;
   retrievalResultItems: RetrievalResultItemRecord[];
+  finalInclusionReport: RetrievalFinalInclusionReport;
   retrievalPlan: RetrievalPlan;
   retrievalCandidates: RetrievalCandidate[];
   retrievalExclusions: RetrievalExclusion[];
   selectedProjectionDigests: ProjectionDigest[];
 };
+
+export type RetrievalFinalInclusionCandidate = {
+  memoryObjectId: string;
+  rankIndex: number;
+  structuralScore: number;
+  structuralReasonCodes: string[];
+  canonicalClass: string;
+  kind: string;
+  sourceAuthorityTier?: string;
+  sourceProfileId?: string;
+  scopeKey?: string;
+  boundedText: string;
+};
+
+export type RetrievalFinalInclusionReviewerInput = {
+  schemaVersion: "retrieval_final_inclusion_input.v1";
+  request: {
+    retrievalRequestId: string;
+    requestPurpose: string;
+    queryHash: string;
+    queryText: string;
+    goal: string;
+    desiredResultCount: number;
+  };
+  candidates: RetrievalFinalInclusionCandidate[];
+  policy: {
+    modelOwnsFinalSemanticInclusion: true;
+    deterministicRecallOnly: true;
+    maxSelected: number;
+    noRawTranscriptOrToolLogPersistence: true;
+  };
+};
+
+export type RetrievalFinalInclusionDecision = {
+  schemaVersion: "retrieval_final_inclusion_decision.v1";
+  decision: "select" | "block" | "pending";
+  selectedMemoryObjectIds: string[];
+  reasonsByMemoryObjectId?: Record<string, string[]>;
+  why: string;
+};
+
+export interface RetrievalFinalInclusionReviewer {
+  review(input: RetrievalFinalInclusionReviewerInput): Promise<RetrievalFinalInclusionDecision>;
+}
+
+export type RetrievalFinalInclusionReport = {
+  schemaVersion: "retrieval_final_inclusion_report.v1";
+  status:
+    | "model_selected"
+    | "pending_model_final_inclusion"
+    | "model_blocked"
+    | "invalid_model_final_inclusion";
+  selectedMemoryObjectIds: string[];
+  rejectedMemoryObjectIds: string[];
+  reasonCodes: string[];
+  modelId?: string;
+  rawPromptPersisted: false;
+  rawModelResponsePersisted: false;
+};
+
+const RetrievalFinalInclusionDecisionSchema = z
+  .object({
+    schemaVersion: z.literal("retrieval_final_inclusion_decision.v1"),
+    decision: z.enum(["select", "block", "pending"]),
+    selectedMemoryObjectIds: z.array(z.string().trim().min(1)).max(20),
+    reasonsByMemoryObjectId: z.record(z.string(), z.array(z.string().trim().min(1))).optional(),
+    why: z.string().trim().min(1).max(2000),
+  })
+  .strict();
+
+const RETRIEVAL_FINAL_INCLUSION_DECISION_TRANSPORT_SCHEMA = {
+  type: "object",
+  properties: {
+    schemaVersion: {
+      type: "string",
+      const: "retrieval_final_inclusion_decision.v1",
+    },
+    decision: {
+      type: "string",
+      enum: ["select", "block", "pending"],
+    },
+    selectedMemoryObjectIds: {
+      type: "array",
+      items: {
+        type: "string",
+        minLength: 1,
+      },
+      maxItems: 20,
+    },
+    reasonsByMemoryObjectId: {
+      type: "object",
+      additionalProperties: {
+        type: "array",
+        items: {
+          type: "string",
+          minLength: 1,
+        },
+      },
+    },
+    why: {
+      type: "string",
+      minLength: 1,
+      maxLength: 2000,
+    },
+  },
+  required: ["schemaVersion", "decision", "selectedMemoryObjectIds", "why"],
+  additionalProperties: false,
+} as const;
+
+function normalizeRetrievalFinalInclusionDecision(raw: unknown): unknown {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    return raw;
+  }
+  const source = raw as Record<string, unknown>;
+  const selectedMemoryObjectIds = Array.isArray(source.selectedMemoryObjectIds)
+    ? source.selectedMemoryObjectIds
+    : Array.isArray(source.selected_memory_object_ids)
+      ? source.selected_memory_object_ids
+      : Array.isArray(source.selectedIds)
+        ? source.selectedIds
+        : Array.isArray(source.selected_ids)
+          ? source.selected_ids
+          : Array.isArray(source.selectedMemoryIds)
+            ? source.selectedMemoryIds
+            : Array.isArray(source.memoryObjectIds)
+              ? source.memoryObjectIds
+              : Array.isArray(source.includedMemoryObjectIds)
+                ? source.includedMemoryObjectIds
+                : [];
+  const decision =
+    source.decision === "select" || source.decision === "block" || source.decision === "pending"
+      ? source.decision
+      : selectedMemoryObjectIds.length > 0
+        ? "select"
+        : "pending";
+  return {
+    schemaVersion:
+      source.schemaVersion ?? source.schema_version ?? "retrieval_final_inclusion_decision.v1",
+    decision,
+    selectedMemoryObjectIds,
+    reasonsByMemoryObjectId:
+      source.reasonsByMemoryObjectId ?? source.reasons_by_memory_object_id ?? undefined,
+    why:
+      typeof source.why === "string"
+        ? source.why
+        : typeof source.rationale === "string"
+          ? source.rationale
+          : typeof source.reason === "string"
+            ? source.reason
+            : typeof source.explanation === "string"
+              ? source.explanation
+              : "Model returned a retrieval final inclusion decision.",
+  };
+}
+
+export class ExecutorBackedRetrievalFinalInclusionReviewer implements RetrievalFinalInclusionReviewer {
+  constructor(
+    private readonly executor: JsonModelExecutor,
+    private readonly options: {
+      modelId: string;
+      contractVersion?: string;
+      maxOutputTokens?: number;
+      reasoningEffort?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh";
+    },
+  ) {}
+
+  async review(
+    input: RetrievalFinalInclusionReviewerInput,
+  ): Promise<RetrievalFinalInclusionDecision> {
+    const contract = createModelContractMetadata({
+      contractName: "retrieval_final_inclusion",
+      contractVersion: this.options.contractVersion ?? "v1",
+      modelId: this.options.modelId,
+    });
+    const response: JsonModelExecutionResponse = await this.executor.execute({
+      contract,
+      systemPrompt: [
+        "You decide final model-memory context inclusion after deterministic recall.",
+        "Deterministic recall has only gathered candidates by lexical/vector/graph/recency/structural signals.",
+        "Select only candidates that should be included in this context pack for the stated request.",
+        "Use both request.queryText and request.goal; queryText may contain exact literal markers or identifiers that the interpreted goal omits.",
+        "If request.queryText asks for an exact marker, source id, run id, or literal identifier and a candidate boundedText contains that exact literal, include that candidate when it answers the request.",
+        "If a candidate directly answers the request goal and is supported by its boundedText, choose decision select and include that memoryObjectId.",
+        "Prefer pending/block over unsupported inclusion.",
+        "Return strict JSON only.",
+      ].join("\n"),
+      userPrompt: JSON.stringify(input, null, 2),
+      responseFormat: "json",
+      responseOptions: {
+        transport: {
+          type: "json_schema",
+          name: "retrieval_final_inclusion_decision",
+          strict: true,
+          schema: RETRIEVAL_FINAL_INCLUSION_DECISION_TRANSPORT_SCHEMA,
+        },
+        provider: {
+          requireParameters: true,
+        },
+        maxOutputTokens: this.options.maxOutputTokens ?? 1200,
+        reasoningEffort: this.options.reasoningEffort ?? "low",
+      },
+    });
+    const parsed = parseJsonModelOutput(response, contract, z.unknown());
+    return RetrievalFinalInclusionDecisionSchema.parse(
+      normalizeRetrievalFinalInclusionDecision(parsed),
+    );
+  }
+}
 
 function buildRetrievalRequestRecord(input: {
   envelope: RetrievalEnvelope;
@@ -68,7 +284,10 @@ function buildRetrievalRequestRecord(input: {
   queryTextHash: string;
 }): RetrievalRequestRecord {
   const redactedQueryText = redactRetrievalQueryForStorage(input.envelope.queryText);
-  const rawScope = input.interpretedRequest.scopeConstraints ?? input.envelope.scope;
+  const rawScope = {
+    ...input.envelope.scope,
+    ...input.interpretedRequest.scopeConstraints,
+  };
   return {
     id: buildRuntimeId(
       "retrieval_request",
@@ -120,6 +339,146 @@ function rankBandForIndex(index: number): RetrievalResultItemRecord["rankBand"] 
   return "overflow";
 }
 
+function boundedMemoryText(object: RuntimeMemoryRecord): string {
+  const pieces = [
+    object.normalizedSubject,
+    object.normalizedTitle,
+    object.normalizedSearchText,
+    object.sourceEvidenceSearchText,
+    JSON.stringify(object.payload ?? {}),
+  ].filter((piece): piece is string => typeof piece === "string" && piece.trim().length > 0);
+  return pieces.join("\n").slice(0, 2000);
+}
+
+function buildFinalInclusionInput(input: {
+  requestRecord: RetrievalRequestRecord;
+  interpretedRequest: InterpretedRetrievalRequest;
+  queryTextHash: string;
+  queryText: string;
+  ranked: RankedCandidate[];
+}): RetrievalFinalInclusionReviewerInput {
+  return {
+    schemaVersion: "retrieval_final_inclusion_input.v1",
+    request: {
+      retrievalRequestId: input.requestRecord.id,
+      requestPurpose: input.requestRecord.requestPurpose,
+      queryHash: input.queryTextHash,
+      queryText: input.queryText.slice(0, 1200),
+      goal: input.interpretedRequest.goal,
+      desiredResultCount: input.interpretedRequest.desiredResultCount,
+    },
+    candidates: input.ranked.map((entry, index) => ({
+      memoryObjectId: entry.object.id,
+      rankIndex: index,
+      structuralScore: entry.score,
+      structuralReasonCodes: entry.reasonCodes,
+      canonicalClass: entry.object.canonicalClass,
+      kind: entry.object.kind,
+      sourceAuthorityTier: entry.object.sourceAuthorityTier,
+      sourceProfileId: entry.object.sourceProfileId,
+      scopeKey: entry.object.scopeKey,
+      boundedText: boundedMemoryText(entry.object),
+    })),
+    policy: {
+      modelOwnsFinalSemanticInclusion: true,
+      deterministicRecallOnly: true,
+      maxSelected: input.interpretedRequest.desiredResultCount,
+      noRawTranscriptOrToolLogPersistence: true,
+    },
+  };
+}
+
+async function resolveFinalInclusion(input: {
+  reviewer?: RetrievalFinalInclusionReviewer;
+  reviewerModelId?: string;
+  requestRecord: RetrievalRequestRecord;
+  interpretedRequest: InterpretedRetrievalRequest;
+  queryTextHash: string;
+  queryText: string;
+  ranked: RankedCandidate[];
+}): Promise<RetrievalFinalInclusionReport> {
+  const allowedIds = new Set(input.ranked.map((entry) => entry.object.id));
+  if (!input.reviewer) {
+    return {
+      schemaVersion: "retrieval_final_inclusion_report.v1",
+      status: "pending_model_final_inclusion",
+      selectedMemoryObjectIds: [],
+      rejectedMemoryObjectIds: input.ranked.map((entry) => entry.object.id),
+      reasonCodes: ["model_final_inclusion_required"],
+      modelId: input.reviewerModelId,
+      rawPromptPersisted: false,
+      rawModelResponsePersisted: false,
+    };
+  }
+
+  try {
+    const decision = await input.reviewer.review(
+      buildFinalInclusionInput({
+        requestRecord: input.requestRecord,
+        interpretedRequest: input.interpretedRequest,
+        queryTextHash: input.queryTextHash,
+        queryText: input.queryText,
+        ranked: input.ranked,
+      }),
+    );
+    const selectedIds = [
+      ...new Set(
+        decision.selectedMemoryObjectIds
+          .filter((id) => allowedIds.has(id))
+          .slice(0, input.interpretedRequest.desiredResultCount),
+      ),
+    ];
+    const invalidIds = decision.selectedMemoryObjectIds.filter((id) => !allowedIds.has(id));
+    if (invalidIds.length > 0) {
+      return {
+        schemaVersion: "retrieval_final_inclusion_report.v1",
+        status: "invalid_model_final_inclusion",
+        selectedMemoryObjectIds: [],
+        rejectedMemoryObjectIds: input.ranked.map((entry) => entry.object.id),
+        reasonCodes: ["model_selected_unknown_memory_id"],
+        modelId: input.reviewerModelId,
+        rawPromptPersisted: false,
+        rawModelResponsePersisted: false,
+      };
+    }
+    if (decision.decision !== "select") {
+      return {
+        schemaVersion: "retrieval_final_inclusion_report.v1",
+        status: decision.decision === "pending" ? "pending_model_final_inclusion" : "model_blocked",
+        selectedMemoryObjectIds: [],
+        rejectedMemoryObjectIds: input.ranked.map((entry) => entry.object.id),
+        reasonCodes: [`model_final_inclusion_${decision.decision}`],
+        modelId: input.reviewerModelId,
+        rawPromptPersisted: false,
+        rawModelResponsePersisted: false,
+      };
+    }
+    return {
+      schemaVersion: "retrieval_final_inclusion_report.v1",
+      status: "model_selected",
+      selectedMemoryObjectIds: selectedIds,
+      rejectedMemoryObjectIds: input.ranked
+        .map((entry) => entry.object.id)
+        .filter((id) => !selectedIds.includes(id)),
+      reasonCodes: ["model_final_inclusion_selected"],
+      modelId: input.reviewerModelId,
+      rawPromptPersisted: false,
+      rawModelResponsePersisted: false,
+    };
+  } catch {
+    return {
+      schemaVersion: "retrieval_final_inclusion_report.v1",
+      status: "invalid_model_final_inclusion",
+      selectedMemoryObjectIds: [],
+      rejectedMemoryObjectIds: input.ranked.map((entry) => entry.object.id),
+      reasonCodes: ["model_final_inclusion_invalid_output"],
+      modelId: input.reviewerModelId,
+      rawPromptPersisted: false,
+      rawModelResponsePersisted: false,
+    };
+  }
+}
+
 export function scoreRetrievalCandidate(
   object: RuntimeMemoryRecord,
   request: InterpretedRetrievalRequest,
@@ -156,6 +515,8 @@ export async function executeRetrieval(input: {
   interpreter: RetrievalRequestInterpreter;
   memoryObjects: RuntimeCompatibleMemoryRecord[];
   modelId: string;
+  finalInclusionReviewer?: RetrievalFinalInclusionReviewer;
+  finalInclusionModelId?: string;
   contractVersion?: string;
   store?: RetrievalStore | InMemoryRetrievalStore;
   createdAt?: Date;
@@ -197,28 +558,41 @@ export async function executeRetrieval(input: {
     projectionVersions: input.projectionVersions,
   });
   const ranked = recalled.selectedMemoryCandidates
-    .slice(0, interpreted.request.desiredResultCount)
+    .slice(
+      0,
+      Math.max(interpreted.request.desiredResultCount * 3, interpreted.request.desiredResultCount),
+    )
     .map((candidate) => ({
       object: candidate.memory!,
       score: candidate.score,
       reasonCodes: candidate.reasonCodes,
       candidate,
     }));
+  const finalInclusionReport = await resolveFinalInclusion({
+    reviewer: input.finalInclusionReviewer,
+    reviewerModelId: input.finalInclusionModelId,
+    requestRecord,
+    interpretedRequest: interpreted.request,
+    queryTextHash,
+    queryText: input.envelope.queryText,
+    ranked,
+  });
+  const selectedIds = new Set(finalInclusionReport.selectedMemoryObjectIds);
 
   const resultSet = input.store
     ? await input.store.createResultSet({
         retrievalRequestId: requestRecord.id,
-        memoryObjectIds: ranked.map((entry) => entry.object.id),
+        memoryObjectIds: finalInclusionReport.selectedMemoryObjectIds,
         createdAt,
       })
     : {
         id: buildRuntimeId(
           "retrieval_set",
-          `${requestRecord.id}:${ranked.map((entry) => entry.object.id).join("|")}`,
+          `${requestRecord.id}:${finalInclusionReport.selectedMemoryObjectIds.join("|")}`,
         ),
         retrievalRequestId: requestRecord.id,
-        contentHash: ranked.map((entry) => entry.object.id).join("|"),
-        resultCount: ranked.length,
+        contentHash: finalInclusionReport.selectedMemoryObjectIds.join("|"),
+        resultCount: finalInclusionReport.selectedMemoryObjectIds.length,
         createdAt,
       };
 
@@ -228,11 +602,10 @@ export async function executeRetrieval(input: {
     memoryObjectId: entry.object.id,
     rankIndex: index,
     rankBand: rankBandForIndex(index),
-    retrievalReasonCodes:
-      index < interpreted.request.desiredResultCount
-        ? [...entry.reasonCodes, "rerank_selected"]
-        : entry.reasonCodes,
-    selectedForContext: index < interpreted.request.desiredResultCount,
+    retrievalReasonCodes: selectedIds.has(entry.object.id)
+      ? [...entry.reasonCodes, "model_final_inclusion_selected"]
+      : [...entry.reasonCodes, ...finalInclusionReport.reasonCodes],
+    selectedForContext: selectedIds.has(entry.object.id),
     createdAt,
   })) satisfies RetrievalResultItemRecord[];
 
@@ -245,6 +618,7 @@ export async function executeRetrieval(input: {
     interpretedRequest: interpreted.request,
     retrievalResultSet: resultSet,
     retrievalResultItems: resultItems,
+    finalInclusionReport,
     retrievalPlan,
     retrievalCandidates: recalled.retrievalCandidates,
     retrievalExclusions: recalled.exclusions,

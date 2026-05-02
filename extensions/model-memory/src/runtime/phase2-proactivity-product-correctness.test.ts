@@ -17,7 +17,7 @@ import {
   buildPhase2ProactivityProductCorrectnessReport,
   writePhase2ProactivityProductCorrectnessArtifact,
 } from "./phase2-proactivity-product-correctness.ts";
-import { buildPhase2ProductProactivitySurfacingReport } from "./phase2-product-proactivity-surfacing.ts";
+import { buildPhase2ProductProactivitySurfacingReport } from "./phase2-product-proactivity-presentation.ts";
 
 function modelBriefJsonOutput() {
   return JSON.stringify({
@@ -85,6 +85,20 @@ async function buildLiveInboxReport(now: Date) {
         freshness: "recent",
         conflictState: "clear",
         noDarkDataStatus: "pass",
+      },
+    ],
+    modelReviewedOpportunities: [
+      {
+        sourceId: "product-correctness-live-source-1",
+        workItemKind: "planning_request",
+        title: "Product correctness validation follow-up",
+        whyNow:
+          "A model-reviewed candidate identified a concrete product correctness validation item.",
+        proposedNextStep: "Review the product correctness card and confirm the counts.",
+        expectedUserValue: "Keeps product correctness validation tied to reviewed evidence.",
+        evidenceSummary:
+          "OpenClaw product correctness validation has a concrete live proactivity item.",
+        confidence: "high",
       },
     ],
   });

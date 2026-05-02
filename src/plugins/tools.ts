@@ -74,6 +74,7 @@ export function resolvePluginTools(params: {
   toolAllowlist?: string[];
   suppressNameConflicts?: boolean;
   allowGatewaySubagentBinding?: boolean;
+  onlyPluginIds?: string[];
   env?: NodeJS.ProcessEnv;
 }): AnyAgentTool[] {
   // Fast path: when plugins are effectively disabled, avoid discovery/jiti entirely.
@@ -93,7 +94,10 @@ export function resolvePluginTools(params: {
   const runtimeOptions = params.allowGatewaySubagentBinding
     ? { allowGatewaySubagentBinding: true as const }
     : undefined;
-  const loadOptions = buildPluginRuntimeLoadOptions(context, { runtimeOptions });
+  const loadOptions = buildPluginRuntimeLoadOptions(context, {
+    runtimeOptions,
+    onlyPluginIds: params.onlyPluginIds,
+  });
   const registry = resolvePluginToolRegistry({
     loadOptions,
     allowGatewaySubagentBinding: params.allowGatewaySubagentBinding,

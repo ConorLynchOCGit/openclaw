@@ -10,7 +10,7 @@ import {
   buildPhase2ProactivityInboxReport,
   writePhase2ProactivityInboxArtifact,
 } from "./phase2-proactivity-inbox.ts";
-import { buildPhase2ProductProactivitySurfacingReport } from "./phase2-product-proactivity-surfacing.ts";
+import { buildPhase2ProductProactivitySurfacingReport } from "./phase2-product-proactivity-presentation.ts";
 
 function modelBriefJsonOutput() {
   return JSON.stringify({
@@ -76,6 +76,19 @@ async function buildLiveProductSurfacingReport(now: Date) {
         freshness: "recent",
         conflictState: "clear",
         noDarkDataStatus: "pass",
+      },
+    ],
+    modelReviewedOpportunities: [
+      {
+        sourceId: "inbox-live-source-1",
+        workItemKind: "planning_request",
+        title: "Inbox validation follow-up",
+        whyNow: "A model-reviewed candidate identified a concrete inbox validation item.",
+        proposedNextStep: "Review the inbox item and confirm its diagnostics.",
+        expectedUserValue: "Keeps inbox validation tied to reviewed proactivity evidence.",
+        evidenceSummary:
+          "OpenClaw proactivity inbox validation has a concrete live work item to review.",
+        confidence: "high",
       },
     ],
   });

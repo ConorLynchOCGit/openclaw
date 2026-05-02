@@ -4,25 +4,24 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import {
   buildPhase2HeartbeatProactivityReliabilityReport,
-  type Phase2HeartbeatProactivityReport,
-} from "../../extensions/model-memory/src/runtime/phase2-heartbeat-proactivity-reliability.js";
-import {
   buildPhase2LiveProactivityDetectionReport,
-  type Phase2LiveProactivitySignalSource,
-} from "../../extensions/model-memory/src/runtime/phase2-live-proactivity-signals.js";
-import {
+  buildPhase2ProactivityAutonomousInternalDraftingReport,
+  buildPhase2ProactivityGrowthLoopReport,
+  buildPhase2ProactivityInboxReport,
+  buildPhase2ProactivityNoiseBudgetReport,
+  buildPhase2ProactivityOpportunityExtractionReport,
+  buildPhase2ProactivityOpportunityLedgerReport,
+  buildPhase2ProactivityOutcomeFollowupReport,
+  buildPhase2ProactivityRecurringPatternReport,
+  buildPhase2ProductProactivitySurfacingReport,
+  buildPhase2SkillCandidateLedgerReport,
+  buildProactivityReviewEpisodePacketFromOutcomePack,
   classifySystemEventForProactivity,
   convertCoverageSourceToLiveSignalSource,
-  type Phase2LiveSignalCoverageSource,
-} from "../../extensions/model-memory/src/runtime/phase2-live-signal-coverage-expansion.js";
-import {
-  buildCandidateReviewPrefilterDecision,
-  buildCandidateReviewPrefilterEvent,
-  buildCandidateReviewTriggerPacket,
-  buildProactivityReviewEpisodePacket,
   convertCandidateReviewProposalsToLedgerSources,
-  evaluateCandidateReviewTrigger,
-  loadCodexSessionActivityForCandidateReview,
+  createPhase2SkillifierDraft,
+  adjudicateNewProactivityOpportunityMerge,
+  discoverWorkEpisodeOutcomePackArtifacts,
   reviewEpisodeForCandidates,
   writeProactivityReviewEpisodePacketArtifact,
   type CandidateReviewCodexAdapterReport,
@@ -30,57 +29,45 @@ import {
   type CandidateReviewProposal,
   type CandidateReviewRecentActivity,
   type CandidateReviewReport,
+  type CandidateReviewRuntime,
   type CandidateReviewTriggerDecision,
   type CandidateReviewTriggerReport,
-} from "../../extensions/model-memory/src/runtime/phase2-model-reviewed-candidate-discovery.js";
-import {
-  buildPhase2ProactivityAutonomousInternalDraftingReport,
   type Phase2AutonomousDraftReport,
-} from "../../extensions/model-memory/src/runtime/phase2-proactivity-autonomous-internal-drafting.js";
-import {
-  buildPhase2ProactivityGrowthLoopReport,
+  type Phase2HeartbeatProactivityReport,
+  type Phase2LiveProactivitySignalSource,
+  type Phase2LiveSignalCoverageSource,
   type Phase2AutonomousMaintenanceJob,
   type Phase2GrowthLoopReport,
   type Phase2GrowthLoopState,
   type Phase2ProactivityCompactionRecoveryState,
   type Phase2ProactivityWorkingBuffer,
-} from "../../extensions/model-memory/src/runtime/phase2-proactivity-growth-loops.js";
-import { buildPhase2ProactivityInboxReport } from "../../extensions/model-memory/src/runtime/phase2-proactivity-inbox.js";
-import {
-  buildPhase2ProactivityOpportunityExtractionReport,
+  type Phase2ProactivityInboxReport,
+  Phase2ProactivityMergeAdjudicationCache,
+  Phase2ProactivityMergeAdjudicationReport,
+  Phase2ProactivityNewOpportunityMergeReport,
   type Phase2OpportunityExtractionSourceKind,
-} from "../../extensions/model-memory/src/runtime/phase2-proactivity-opportunity-extraction.js";
-import {
-  buildPhase2ProactivityOpportunityLedgerReport,
   type Phase2OpportunityLedgerLifecycleOverride,
   type Phase2OpportunityLedgerReport,
   type Phase2OpportunityLedgerSource,
-} from "../../extensions/model-memory/src/runtime/phase2-proactivity-opportunity-ledger.js";
-import { buildPhase2ProactivityOutcomeFollowupReport } from "../../extensions/model-memory/src/runtime/phase2-proactivity-outcome-followup-loop.js";
-import { buildPhase2ProactivityRecurringPatternReport } from "../../extensions/model-memory/src/runtime/phase2-proactivity-recurring-pattern-loop.js";
-import { buildPhase2ProactivityNoiseBudgetReport } from "../../extensions/model-memory/src/runtime/phase2-proactivity-signal-noise-budget.js";
-import {
-  buildPhase2ProductProactivitySurfacingReport,
   type Phase2ProductProactivitySurfacingInput,
-} from "../../extensions/model-memory/src/runtime/phase2-product-proactivity-surfacing.js";
-import {
-  buildPhase2SkillCandidateLedgerReport,
+  type Phase2ProductProactivitySurfacingReport,
   type Phase2SkillCandidateActivitySource,
   type Phase2SkillCandidateLedgerReport,
   type Phase2SkillCandidateOpportunity,
   type Phase2SkillCandidateRecord,
-} from "../../extensions/model-memory/src/runtime/phase2-skill-candidate-ledger.js";
-import {
-  createPhase2SkillifierDraft,
   type Phase2SkillPackageDraft,
   type Phase2SkillifierDraftTargetKind,
   type Phase2SkillifierReport,
-} from "../../extensions/model-memory/src/runtime/phase2-skillifier-draft.js";
-import type { Phase2UserFacingProactivityExistingSkill } from "../../extensions/model-memory/src/runtime/phase2-user-facing-proactivity-briefs.js";
-import type {
-  SourceAuthorityTier,
-  SourceProfileId,
-} from "../../extensions/model-memory/src/source-authority.js";
+  type Phase2UserFacingProactivityExistingSkill,
+  type SourceAuthorityTier,
+  type SourceProfileId,
+  type WorkEpisodeOutcomePack,
+  type WorkEpisodeOutcomePackDiscoveryRecord,
+  type WorkEpisodeOutcomePackEligibilityStatus,
+  type WorkEpisodeOutcomePackOutcomeStatus,
+  type WorkEpisodeOutcomePackRuntime,
+  type WorkEpisodeOutcomePackWorkType,
+} from "../../extensions/model-memory/runtime-api.js";
 import { resolveAgentWorkspaceDir, resolveSessionAgentId } from "../agents/agent-scope.js";
 import { OpenAICompatibleLiveJsonExecutor } from "../agents/model-memory.live-json-executor.js";
 import { loadWorkspaceSkillEntries } from "../agents/skills.js";
@@ -157,12 +144,65 @@ export type Phase2ProactivityActivityStore = {
   maintenanceJobs?: Phase2AutonomousMaintenanceJob[];
   recoveryState?: Phase2ProactivityCompactionRecoveryState | null;
   skillCandidates?: Phase2SkillCandidateRecord[];
+  modelReviewedOpportunities?: Phase2OpportunityLedgerSource[];
   skillPackageDrafts?: Phase2SkillPackageDraft[];
   candidateReviewEpisodeKeys?: Array<{
     episodeKey: string;
     reviewedAt: string;
     reportHash?: string;
   }>;
+  workEpisodeOutcomePacks?: Phase2WorkEpisodeOutcomePackIndexEntry[];
+  proactivityMergeAdjudicationCache?: Phase2ProactivityMergeAdjudicationCache | null;
+  readProjection?: Phase2ProactivityReadProjection | null;
+};
+
+export type Phase2ProactivityReadProjection = {
+  schemaVersion: "phase2_proactivity_read_projection.v1";
+  generatedAt: string;
+  projectId: string;
+  sessionKey: string;
+  productSurfacingReport: Phase2ProductProactivitySurfacingReport;
+  inboxReport: Phase2ProactivityInboxReport;
+  heartbeatReport: Phase2HeartbeatProactivityReport;
+};
+
+export type Phase2ProactivityReadProjectionReport = {
+  schemaVersion: "phase2_proactivity_read_projection_read.v1";
+  reportId: string;
+  generatedAt: string;
+  decision: "projection_ready" | "projection_missing" | "scope_mismatch";
+  storePath: string;
+  projectId: string;
+  sessionKey: string;
+  projection: Phase2ProactivityReadProjection | null;
+  workEpisodeOutcomePackIndex: Phase2WorkEpisodeOutcomePackIndexEntry[];
+};
+
+export type Phase2WorkEpisodeOutcomePackReviewStatus =
+  | "unreviewed"
+  | "reviewed"
+  | "skipped"
+  | "quarantined"
+  | "failed";
+
+export type Phase2WorkEpisodeOutcomePackIndexEntry = {
+  episodeId: string;
+  contentHash: string;
+  packPath: string;
+  projectId: string;
+  sessionKey?: string;
+  branch?: string;
+  runtime: WorkEpisodeOutcomePackRuntime;
+  outcomeStatus: WorkEpisodeOutcomePackOutcomeStatus;
+  workType?: WorkEpisodeOutcomePackWorkType;
+  completedAt: string;
+  indexedAt: string;
+  reviewStatus: Phase2WorkEpisodeOutcomePackReviewStatus;
+  eligibilityStatus: WorkEpisodeOutcomePackEligibilityStatus;
+  eligibilityReasonCodes: string[];
+  reviewArtifactPath?: string;
+  reviewedAt?: string;
+  errorSummary?: string;
 };
 
 export type Phase2ProactivityActivityStoreDecision =
@@ -235,6 +275,7 @@ type GatewayProactivityBuildState = {
   candidateReviewTriggerReport?: CandidateReviewTriggerReport | null;
   candidateReviewProposals?: CandidateReviewProposal[];
   candidateReviewCodexAdapterReport?: CandidateReviewCodexAdapterReport | null;
+  mergeAdjudicationReport?: Phase2ProactivityMergeAdjudicationReport | null;
 };
 
 const ACTIVITY_STORE_SCHEMA_VERSION = "phase2_proactivity_activity_store.v1" as const;
@@ -251,10 +292,6 @@ const MODEL_AUTHORED_BRIEFS_REASONING_ENV =
 const MODEL_AUTHORED_BRIEFS_VERBOSITY_ENV = "MODEL_MEMORY_PHASE2_MODEL_AUTHORED_BRIEFS_VERBOSITY";
 const MODEL_AUTHORED_BRIEFS_TIMEOUT_ENV = "MODEL_MEMORY_PHASE2_MODEL_AUTHORED_BRIEFS_TIMEOUT_MS";
 const DEFAULT_MODEL_AUTHORED_BRIEFS_TIMEOUT_MS = 45_000;
-const CANDIDATE_TRIGGER_ENABLED_ENV = "MODEL_MEMORY_PHASE2_CANDIDATE_TRIGGER_ENABLED";
-const CANDIDATE_TRIGGER_MODEL_ENV = "MODEL_MEMORY_PHASE2_CANDIDATE_TRIGGER_MODEL";
-const CANDIDATE_TRIGGER_REASONING_ENV = "MODEL_MEMORY_PHASE2_CANDIDATE_TRIGGER_REASONING_EFFORT";
-const CANDIDATE_TRIGGER_TIMEOUT_ENV = "MODEL_MEMORY_PHASE2_CANDIDATE_TRIGGER_TIMEOUT_MS";
 const CANDIDATE_REVIEW_ENABLED_ENV = "MODEL_MEMORY_PHASE2_CANDIDATE_REVIEW_ENABLED";
 const CANDIDATE_REVIEW_MODEL_ENV = "MODEL_MEMORY_PHASE2_CANDIDATE_REVIEW_MODEL";
 const CANDIDATE_REVIEW_REASONING_ENV = "MODEL_MEMORY_PHASE2_CANDIDATE_REVIEW_REASONING_EFFORT";
@@ -262,29 +299,17 @@ const CANDIDATE_REVIEW_VERBOSITY_ENV = "MODEL_MEMORY_PHASE2_CANDIDATE_REVIEW_VER
 const CANDIDATE_REVIEW_TIMEOUT_ENV = "MODEL_MEMORY_PHASE2_CANDIDATE_REVIEW_TIMEOUT_MS";
 const CANDIDATE_REVIEW_MAX_OUTPUT_TOKENS_ENV =
   "MODEL_MEMORY_PHASE2_CANDIDATE_REVIEW_MAX_OUTPUT_TOKENS";
-const CANDIDATE_REVIEW_PACKET_MAX_CHARS_ENV =
-  "MODEL_MEMORY_PHASE2_CANDIDATE_REVIEW_PACKET_MAX_CHARS";
-const CANDIDATE_REVIEW_OPENCLAW_TURN_WINDOW_ENV =
-  "MODEL_MEMORY_PHASE2_CANDIDATE_REVIEW_OPENCLAW_TURN_WINDOW";
-const CANDIDATE_REVIEW_CODEX_TURN_WINDOW_ENV =
-  "MODEL_MEMORY_PHASE2_CANDIDATE_REVIEW_CODEX_TURN_WINDOW";
 const CANDIDATE_REVIEW_MAX_PER_SESSION_ENV = "MODEL_MEMORY_PHASE2_CANDIDATE_REVIEW_MAX_PER_SESSION";
 const CANDIDATE_REVIEW_MAX_PER_DAY_ENV = "MODEL_MEMORY_PHASE2_CANDIDATE_REVIEW_MAX_PER_DAY";
-const CANDIDATE_REVIEW_COOLDOWN_ENV = "MODEL_MEMORY_PHASE2_CANDIDATE_REVIEW_COOLDOWN_MS";
-const CANDIDATE_REVIEW_ASSISTANT_FINAL_INTERVAL_ENV =
-  "MODEL_MEMORY_PHASE2_CANDIDATE_REVIEW_ASSISTANT_FINAL_INTERVAL";
 const CANDIDATE_REVIEW_ARTIFACT_ROOT_ENV = "MODEL_MEMORY_PHASE2_CANDIDATE_REVIEW_ARTIFACT_ROOT";
-const CODEX_SESSION_REVIEW_ENABLED_ENV = "MODEL_MEMORY_PHASE2_CODEX_SESSION_REVIEW_ENABLED";
-const DEFAULT_CANDIDATE_TRIGGER_TIMEOUT_MS = 30_000;
+const WORK_EPISODE_OUTCOME_PACK_ROOT_ENV = "MODEL_MEMORY_PHASE2_WORK_EPISODE_OUTCOME_PACK_ROOT";
+const PACK_REVIEW_MAX_PER_RUN_ENV = "MODEL_MEMORY_PHASE2_PACK_REVIEW_MAX_PER_RUN";
 const DEFAULT_CANDIDATE_REVIEW_TIMEOUT_MS = 120_000;
 const DEFAULT_CANDIDATE_REVIEW_MAX_OUTPUT_TOKENS = 6_000;
-const DEFAULT_CANDIDATE_REVIEW_PACKET_MAX_CHARS = 160_000;
-const DEFAULT_CANDIDATE_REVIEW_OPENCLAW_TURN_WINDOW = 12;
-const DEFAULT_CANDIDATE_REVIEW_CODEX_TURN_WINDOW = 24;
 const DEFAULT_CANDIDATE_REVIEW_MAX_PER_SESSION = 12;
 const DEFAULT_CANDIDATE_REVIEW_MAX_PER_DAY = 24;
-const DEFAULT_CANDIDATE_REVIEW_COOLDOWN_MS = 15 * 60 * 1_000;
-const DEFAULT_CANDIDATE_REVIEW_ASSISTANT_FINAL_INTERVAL = 3;
+const DEFAULT_PACK_REVIEW_MAX_PER_RUN = 3;
+const CANDIDATE_REVIEW_CROSS_RUNTIME_EPISODE_PAD_MS = 45 * 60 * 1_000;
 const MAX_HIGH_CONTEXT_USER_TURN_CHARS = 8_000;
 const MAX_HIGH_CONTEXT_ASSISTANT_TURN_CHARS = 12_000;
 const MAX_HIGH_CONTEXT_SESSION_ACTIVITIES = 36;
@@ -305,11 +330,6 @@ function readString(value: unknown): string | undefined {
 function readPositiveInteger(value: string | undefined, fallback: number): number {
   const parsed = value ? Number.parseInt(value, 10) : NaN;
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
-}
-
-function readNonNegativeInteger(value: string | undefined, fallback: number): number {
-  const parsed = value ? Number.parseInt(value, 10) : NaN;
-  return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
 }
 
 function readAllowedValue<const TValue extends string>(
@@ -400,37 +420,6 @@ function shouldEnableCandidateModelRoute(params: {
   return false;
 }
 
-function buildCandidateTriggerOptions(params: {
-  cfg: ReturnType<typeof loadConfig>;
-  env: NodeJS.ProcessEnv;
-}): CandidateReviewModelOptions {
-  const enabled = shouldEnableCandidateModelRoute({
-    env: params.env,
-    enabledEnv: CANDIDATE_TRIGGER_ENABLED_ENV,
-  });
-  const timeoutMs = readPositiveInteger(
-    params.env[CANDIDATE_TRIGGER_TIMEOUT_ENV],
-    DEFAULT_CANDIDATE_TRIGGER_TIMEOUT_MS,
-  );
-  return {
-    enabled,
-    executor: enabled
-      ? new OpenAICompatibleLiveJsonExecutor({
-          config: params.cfg,
-          requestTimeoutMs: timeoutMs,
-        })
-      : null,
-    modelId: readString(params.env[CANDIDATE_TRIGGER_MODEL_ENV]) ?? "openai-codex/gpt-5.4-mini",
-    reasoningEffort: readAllowedValue(
-      params.env[CANDIDATE_TRIGGER_REASONING_ENV],
-      ["none", "minimal", "low", "medium"] as const,
-      "low",
-    ),
-    verbosity: "low",
-    maxOutputTokens: 700,
-  };
-}
-
 function buildCandidateReviewOptions(params: {
   cfg: ReturnType<typeof loadConfig>;
   env: NodeJS.ProcessEnv;
@@ -515,6 +504,212 @@ function capCandidateReviewActivitiesByChars(
   return selected.toReversed();
 }
 
+function candidateReviewActivityMs(activity: CandidateReviewRecentActivity): number | null {
+  const parsed = activity.recordedAt ? Date.parse(activity.recordedAt) : NaN;
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function compareCandidateReviewActivities(
+  left: CandidateReviewRecentActivity,
+  right: CandidateReviewRecentActivity,
+): number {
+  const leftMs = candidateReviewActivityMs(left);
+  const rightMs = candidateReviewActivityMs(right);
+  if (leftMs !== null && rightMs !== null) {
+    return leftMs - rightMs;
+  }
+  if (leftMs !== null) {
+    return -1;
+  }
+  if (rightMs !== null) {
+    return 1;
+  }
+  return left.ref.localeCompare(right.ref);
+}
+
+function uniqueCandidateReviewActivities(
+  activities: CandidateReviewRecentActivity[],
+): CandidateReviewRecentActivity[] {
+  const seen = new Set<string>();
+  return activities.filter((activity) => {
+    if (seen.has(activity.ref)) {
+      return false;
+    }
+    seen.add(activity.ref);
+    return true;
+  });
+}
+
+function exactPresentationKey(value: string): string {
+  return value.replace(/\s+/gu, " ").trim().toLowerCase();
+}
+
+function uniqueByExactPresentationKey<TValue>(
+  values: TValue[],
+  keyForValue: (value: TValue) => string | undefined,
+): TValue[] {
+  const selected = new Map<string, TValue>();
+  for (const value of values) {
+    const key = exactPresentationKey(keyForValue(value) ?? "");
+    if (!key) {
+      continue;
+    }
+    selected.set(key, value);
+  }
+  return [...selected.values()];
+}
+
+function activityWithinEpisodeTimeWindow(
+  activity: CandidateReviewRecentActivity,
+  window: { startMs: number | null; endMs: number | null },
+): boolean {
+  const activityMs = candidateReviewActivityMs(activity);
+  if (activityMs === null || window.startMs === null || window.endMs === null) {
+    return false;
+  }
+  return (
+    activityMs >= window.startMs - CANDIDATE_REVIEW_CROSS_RUNTIME_EPISODE_PAD_MS &&
+    activityMs <= window.endMs + CANDIDATE_REVIEW_CROSS_RUNTIME_EPISODE_PAD_MS
+  );
+}
+
+function episodeTimeWindow(activities: CandidateReviewRecentActivity[]): {
+  startMs: number | null;
+  endMs: number | null;
+} {
+  const times = activities
+    .map(candidateReviewActivityMs)
+    .filter((value): value is number => typeof value === "number");
+  if (times.length === 0) {
+    return { startMs: null, endMs: null };
+  }
+  return { startMs: Math.min(...times), endMs: Math.max(...times) };
+}
+
+export type CandidateReviewRecentEpisodeAssemblyReport = {
+  primaryRuntime: Exclude<CandidateReviewRuntime, "mixed">;
+  reasonCodes: string[];
+  inputCounts: {
+    openclaw: number;
+    codex: number;
+    heartbeat: number;
+  };
+  selectedCounts: {
+    openclaw: number;
+    codex: number;
+    heartbeat: number;
+    total: number;
+  };
+  droppedCounts: {
+    codexOutsideEpisode: number;
+    openclawOutsideEpisode: number;
+  };
+  refs: string[];
+};
+
+export function buildCandidateReviewRecentEpisodeActivities(input: {
+  openClawActivities: CandidateReviewRecentActivity[];
+  codexActivities: CandidateReviewRecentActivity[];
+  heartbeatActivities?: CandidateReviewRecentActivity[];
+  openClawTurnWindow: number;
+  codexTurnWindow: number;
+  packetMaxChars: number;
+  heartbeatIsReviewTrigger?: boolean;
+}): {
+  activities: CandidateReviewRecentActivity[];
+  report: CandidateReviewRecentEpisodeAssemblyReport;
+} {
+  const openClawNarrative = input.openClawActivities
+    .filter((activity) => activity.role === "user" || activity.role === "assistant")
+    .toSorted(compareCandidateReviewActivities);
+  const codexActivities = input.codexActivities.toSorted(compareCandidateReviewActivities);
+  const heartbeatActivities = (input.heartbeatActivities ?? []).toSorted(
+    compareCandidateReviewActivities,
+  );
+  const latestOpenClaw = openClawNarrative.at(-1);
+  const latestCodex = codexActivities.at(-1);
+  const latestOpenClawMs = latestOpenClaw ? candidateReviewActivityMs(latestOpenClaw) : null;
+  const latestCodexMs = latestCodex ? candidateReviewActivityMs(latestCodex) : null;
+  const primaryRuntime: Exclude<CandidateReviewRuntime, "mixed"> =
+    (input.heartbeatIsReviewTrigger && latestOpenClawMs !== null) || latestCodexMs === null
+      ? "openclaw"
+      : latestOpenClawMs === null || latestCodexMs > latestOpenClawMs
+        ? "codex"
+        : "openclaw";
+  const primaryActivities =
+    primaryRuntime === "openclaw"
+      ? openClawNarrative.slice(-input.openClawTurnWindow)
+      : codexActivities.slice(-input.codexTurnWindow);
+  const primaryWindow = episodeTimeWindow(primaryActivities);
+  const secondaryOpenClaw =
+    primaryRuntime === "codex"
+      ? openClawNarrative
+          .filter((activity) => activityWithinEpisodeTimeWindow(activity, primaryWindow))
+          .slice(-input.openClawTurnWindow)
+      : [];
+  const secondaryCodex =
+    primaryRuntime === "openclaw"
+      ? codexActivities
+          .filter((activity) => activityWithinEpisodeTimeWindow(activity, primaryWindow))
+          .slice(-input.codexTurnWindow)
+      : [];
+  const droppedCounts = {
+    codexOutsideEpisode:
+      primaryRuntime === "openclaw" ? codexActivities.length - secondaryCodex.length : 0,
+    openclawOutsideEpisode:
+      primaryRuntime === "codex" ? openClawNarrative.length - secondaryOpenClaw.length : 0,
+  };
+  const selectedBeforeCap = uniqueCandidateReviewActivities([
+    ...primaryActivities,
+    ...secondaryOpenClaw,
+    ...secondaryCodex,
+    ...heartbeatActivities,
+  ]).toSorted(compareCandidateReviewActivities);
+  const activities = capCandidateReviewActivitiesByChars(selectedBeforeCap, input.packetMaxChars);
+  const selectedCounts = {
+    openclaw: activities.filter(
+      (activity) => activity.sourceRuntime !== "codex" && activity.role !== "system_event",
+    ).length,
+    codex: activities.filter((activity) => activity.sourceRuntime === "codex").length,
+    heartbeat: activities.filter((activity) => activity.role === "system_event").length,
+    total: activities.length,
+  };
+  return {
+    activities,
+    report: {
+      primaryRuntime,
+      reasonCodes: [
+        "bounded_primary_episode",
+        primaryRuntime === "openclaw" ? "openclaw_primary" : "codex_primary",
+        input.heartbeatIsReviewTrigger ? "heartbeat_anchor" : "latest_activity_anchor",
+        selectedCounts.codex > 0 ? "codex_within_episode_window" : "codex_not_in_episode_window",
+      ],
+      inputCounts: {
+        openclaw: openClawNarrative.length,
+        codex: codexActivities.length,
+        heartbeat: heartbeatActivities.length,
+      },
+      selectedCounts,
+      droppedCounts,
+      refs: activities.map((activity) => activity.ref),
+    },
+  };
+}
+
+export function selectCandidateReviewEventActivities(input: {
+  recentActivities: CandidateReviewRecentActivity[];
+  heartbeatIsReviewTrigger?: boolean;
+}): CandidateReviewRecentActivity[] {
+  if (!input.heartbeatIsReviewTrigger) {
+    return input.recentActivities;
+  }
+  const contentActivities = input.recentActivities.filter(
+    (activity) =>
+      activity.role !== "system_event" && !activity.ref.startsWith("gateway://heartbeat/"),
+  );
+  return contentActivities.length > 0 ? contentActivities : input.recentActivities;
+}
+
 function isSafeBoundedSummary(value: string): boolean {
   const lower = value.toLowerCase();
   return !(
@@ -550,12 +745,20 @@ async function loadActivityStore(storePath: string): Promise<Phase2ProactivityAc
         maintenanceJobs: Array.isArray(parsed.maintenanceJobs) ? parsed.maintenanceJobs : [],
         recoveryState: parsed.recoveryState ?? null,
         skillCandidates: Array.isArray(parsed.skillCandidates) ? parsed.skillCandidates : [],
+        modelReviewedOpportunities: Array.isArray(parsed.modelReviewedOpportunities)
+          ? parsed.modelReviewedOpportunities
+          : [],
         skillPackageDrafts: Array.isArray(parsed.skillPackageDrafts)
           ? parsed.skillPackageDrafts
           : [],
         candidateReviewEpisodeKeys: Array.isArray(parsed.candidateReviewEpisodeKeys)
           ? parsed.candidateReviewEpisodeKeys
           : [],
+        workEpisodeOutcomePacks: Array.isArray(parsed.workEpisodeOutcomePacks)
+          ? parsed.workEpisodeOutcomePacks
+          : [],
+        proactivityMergeAdjudicationCache: parsed.proactivityMergeAdjudicationCache ?? null,
+        readProjection: parsed.readProjection ?? null,
       };
     }
   } catch {
@@ -572,8 +775,12 @@ async function loadActivityStore(storePath: string): Promise<Phase2ProactivityAc
     maintenanceJobs: [],
     recoveryState: null,
     skillCandidates: [],
+    modelReviewedOpportunities: [],
     skillPackageDrafts: [],
     candidateReviewEpisodeKeys: [],
+    workEpisodeOutcomePacks: [],
+    proactivityMergeAdjudicationCache: null,
+    readProjection: null,
   };
 }
 
@@ -593,6 +800,12 @@ async function updatePersistedOperatingState(params: {
   maintenanceJobs: Phase2AutonomousMaintenanceJob[];
   recoveryState: Phase2ProactivityCompactionRecoveryState;
   skillCandidates: Phase2SkillCandidateRecord[];
+  skillPackageDrafts?: Phase2SkillPackageDraft[];
+  modelReviewedOpportunities: Phase2OpportunityLedgerSource[];
+  modelMergeLifecycleOverrides?: Phase2ProactivityActivityStore["lifecycleOverrides"];
+  workEpisodeOutcomePacks?: Phase2WorkEpisodeOutcomePackIndexEntry[];
+  proactivityMergeAdjudicationCache?: Phase2ProactivityMergeAdjudicationCache | null;
+  readProjection?: Phase2ProactivityReadProjection;
   candidateReviewEpisodeKey?: string | null;
   candidateReviewReportHash?: string | null;
 }): Promise<Phase2ProactivityActivityStore> {
@@ -602,6 +815,28 @@ async function updatePersistedOperatingState(params: {
   store.maintenanceJobs = params.maintenanceJobs.slice(0, 6);
   store.recoveryState = params.recoveryState;
   store.skillCandidates = params.skillCandidates;
+  if (params.skillPackageDrafts) {
+    store.skillPackageDrafts = dedupeSkillPackageDrafts(params.skillPackageDrafts);
+  }
+  store.modelReviewedOpportunities = dedupeModelReviewedOpportunities([
+    ...(store.modelReviewedOpportunities ?? []),
+    ...params.modelReviewedOpportunities,
+  ]);
+  store.lifecycleOverrides = dedupeOverrides([
+    ...store.lifecycleOverrides,
+    ...(params.modelMergeLifecycleOverrides ?? []),
+  ]);
+  if (params.workEpisodeOutcomePacks) {
+    store.workEpisodeOutcomePacks = dedupeWorkEpisodeOutcomePackIndexEntries(
+      params.workEpisodeOutcomePacks,
+    );
+  }
+  if (params.proactivityMergeAdjudicationCache !== undefined) {
+    store.proactivityMergeAdjudicationCache = params.proactivityMergeAdjudicationCache;
+  }
+  if (params.readProjection) {
+    store.readProjection = params.readProjection;
+  }
   if (params.candidateReviewEpisodeKey) {
     store.candidateReviewEpisodeKeys = [
       ...(store.candidateReviewEpisodeKeys ?? []).filter(
@@ -616,6 +851,39 @@ async function updatePersistedOperatingState(params: {
   }
   await saveActivityStore(params.storePath, store);
   return store;
+}
+
+export async function readPersistedModelMemoryProactivityProjection(params: {
+  cfg?: ReturnType<typeof loadConfig>;
+  sessionKey: string;
+  projectId: string;
+}): Promise<Phase2ProactivityReadProjectionReport> {
+  const cfg = params.cfg ?? loadConfig();
+  const target = resolveGatewaySessionStoreTarget({ cfg, key: params.sessionKey });
+  const store = await loadActivityStore(target.storePath);
+  const projection = store.readProjection ?? null;
+  const decision = !projection
+    ? "projection_missing"
+    : projection.projectId === params.projectId && projection.sessionKey === params.sessionKey
+      ? "projection_ready"
+      : "scope_mismatch";
+  return {
+    schemaVersion: "phase2_proactivity_read_projection_read.v1",
+    reportId: `phase2-proactivity-read-projection:${sha256({
+      storePath: target.storePath,
+      projectId: params.projectId,
+      sessionKey: params.sessionKey,
+      decision,
+      projectionGeneratedAt: projection?.generatedAt ?? null,
+    }).slice(0, 16)}`,
+    generatedAt: new Date().toISOString(),
+    decision,
+    storePath: resolveProactivityStorePath(target.storePath),
+    projectId: params.projectId,
+    sessionKey: params.sessionKey,
+    projection: decision === "projection_ready" ? projection : null,
+    workEpisodeOutcomePackIndex: store.workEpisodeOutcomePacks ?? [],
+  };
 }
 
 function dedupeRecords(
@@ -662,6 +930,294 @@ function dedupeSkillCandidates(
   return [...byId.values()]
     .toSorted((left, right) => left.updatedAt.localeCompare(right.updatedAt))
     .slice(-MAX_LIFECYCLE_OVERRIDES);
+}
+
+function readOpportunityUpdatedAt(source: Phase2OpportunityLedgerSource): string {
+  if ("generatedAt" in source && typeof source.generatedAt === "string") {
+    return source.generatedAt;
+  }
+  if (
+    source.sourceFamily === "skill_candidate" &&
+    typeof source.skillCandidate.updatedAt === "string"
+  ) {
+    return source.skillCandidate.updatedAt;
+  }
+  return "";
+}
+
+function dedupeModelReviewedOpportunities(
+  records: Phase2OpportunityLedgerSource[],
+): Phase2OpportunityLedgerSource[] {
+  const byId = new Map<string, Phase2OpportunityLedgerSource>();
+  for (const record of records) {
+    if (!record.blockedReasonCodes.includes("model_reviewed_candidate")) {
+      continue;
+    }
+    const existing = byId.get(record.opportunityId);
+    if (!existing || readOpportunityUpdatedAt(existing) < readOpportunityUpdatedAt(record)) {
+      byId.set(record.opportunityId, record);
+    }
+  }
+  return [...byId.values()]
+    .toSorted((left, right) =>
+      readOpportunityUpdatedAt(left).localeCompare(readOpportunityUpdatedAt(right)),
+    )
+    .slice(-MAX_LIFECYCLE_OVERRIDES);
+}
+
+function packIndexKey(
+  entry: Pick<Phase2WorkEpisodeOutcomePackIndexEntry, "episodeId" | "contentHash">,
+): string {
+  return `${entry.episodeId}\t${entry.contentHash}`;
+}
+
+function dedupeWorkEpisodeOutcomePackIndexEntries(
+  records: Phase2WorkEpisodeOutcomePackIndexEntry[],
+): Phase2WorkEpisodeOutcomePackIndexEntry[] {
+  const byKey = new Map<string, Phase2WorkEpisodeOutcomePackIndexEntry>();
+  for (const record of records) {
+    const key = packIndexKey(record);
+    const existing = byKey.get(key);
+    if (
+      !existing ||
+      (existing.reviewedAt ?? existing.indexedAt) < (record.reviewedAt ?? record.indexedAt)
+    ) {
+      byKey.set(key, record);
+    }
+  }
+  return [...byKey.values()].toSorted((left, right) => {
+    const leftMs = Date.parse(left.completedAt);
+    const rightMs = Date.parse(right.completedAt);
+    if (Number.isFinite(leftMs) && Number.isFinite(rightMs)) {
+      return leftMs - rightMs;
+    }
+    return left.packPath.localeCompare(right.packPath);
+  });
+}
+
+function filterModelMergeLifecycleOverrides(params: {
+  existingOverrides: Phase2ProactivityActivityStore["lifecycleOverrides"];
+  mergeOverrides: Phase2ProactivityActivityStore["lifecycleOverrides"];
+}): Phase2ProactivityActivityStore["lifecycleOverrides"] {
+  const userControlledStatuses = new Set<Phase2OpportunityLedgerLifecycleOverride["status"]>([
+    "planning_started",
+    "planned",
+    "in_progress",
+    "done",
+    "dismissed",
+    "snoozed",
+  ]);
+  const protectedOpportunityIds = new Set(
+    params.existingOverrides
+      .filter((override) => userControlledStatuses.has(override.status))
+      .map((override) => override.opportunityId),
+  );
+  return params.mergeOverrides.filter(
+    (override) =>
+      override.status === "superseded" && !protectedOpportunityIds.has(override.opportunityId),
+  );
+}
+
+function buildAutoPlanDraftArtifact(params: {
+  opportunity: Phase2OpportunityLedgerSource;
+  projectId: string;
+  sessionKey: string;
+}): Phase2ProactivityActivityStore["lifecycleOverrides"][number] | null {
+  const { opportunity } = params;
+  if (opportunity.sourceFamily === "skill_candidate") {
+    return null;
+  }
+  if (!("opportunityClass" in opportunity) || opportunity.opportunityClass !== "proactive_plan") {
+    return null;
+  }
+  const generatedAt = new Date().toISOString();
+  const compiledPlan = [
+    `# ${opportunity.title}`,
+    "",
+    "## Objective",
+    opportunity.whyNow,
+    "",
+    "## Proposed Approach",
+    opportunity.proposedNextStep,
+    "",
+    "## Expected User Value",
+    opportunity.expectedUserValue,
+    "",
+    "## Evidence",
+    opportunity.evidenceSummary,
+    "",
+    "## Validation",
+    "Review this draft in Work Queue, request revisions if needed, then finalize to produce a Codex-ready prompt. Do not execute automatically.",
+    "",
+    "## Codex-Ready Prompt Draft",
+    [
+      `Implement this bounded plan: ${opportunity.title}.`,
+      `Context: ${opportunity.whyNow}`,
+      `Approach: ${opportunity.proposedNextStep}`,
+      `Expected value: ${opportunity.expectedUserValue}`,
+      "Do not perform outbound sending, autonomous execution, skill installation, or skill promotion.",
+    ].join("\n"),
+  ].join("\n");
+  return {
+    opportunityId: opportunity.opportunityId,
+    projectId: params.projectId,
+    sessionKey: params.sessionKey,
+    status: "draft_ready",
+    updatedAt: generatedAt,
+    reviewStatus: "pending_review",
+    plannedArtifact: {
+      status: "compiled",
+      reviewStatus: "pending_review",
+      title: opportunity.title,
+      requestSummary: opportunity.proposedNextStep,
+      compiledPlan,
+      generatedAt,
+      updatedAt: generatedAt,
+      contentHash: sha256({
+        opportunityId: opportunity.opportunityId,
+        compiledPlan,
+        sourceRefs: opportunity.sourceRefs,
+      }),
+    },
+  };
+}
+
+function buildAutoPlanDraftOverrides(params: {
+  opportunities: Phase2OpportunityLedgerSource[];
+  existingOverrides: Phase2ProactivityActivityStore["lifecycleOverrides"];
+  projectId: string;
+  sessionKey: string;
+}): Phase2ProactivityActivityStore["lifecycleOverrides"] {
+  const existingDrafted = new Set(
+    params.existingOverrides
+      .filter((override) => override.status === "draft_ready" || override.plannedArtifact)
+      .map((override) => override.opportunityId),
+  );
+  return params.opportunities
+    .filter((opportunity) => !existingDrafted.has(opportunity.opportunityId))
+    .map((opportunity) =>
+      buildAutoPlanDraftArtifact({
+        opportunity,
+        projectId: params.projectId,
+        sessionKey: params.sessionKey,
+      }),
+    )
+    .filter((override): override is Phase2ProactivityActivityStore["lifecycleOverrides"][number] =>
+      Boolean(override),
+    );
+}
+
+function aggregateNewOpportunityMergeReports(params: {
+  reports: Phase2ProactivityNewOpportunityMergeReport[];
+  generatedAt: string;
+  enabled: boolean;
+  modelId: string | null;
+}): Phase2ProactivityMergeAdjudicationReport {
+  const inputHash = sha256({
+    reportKind: "write_time_new_opportunity_merge_adjudication",
+    reports: params.reports.map((report) => ({
+      candidateOpportunityId: report.candidateOpportunityId,
+      inputHash: report.inputHash,
+      decision: report.newCandidateDecision,
+      targetOpportunityId: report.targetOpportunityId,
+    })),
+  });
+  const decisions = params.reports.flatMap((report) => report.decisions);
+  const lifecycleOverrides = params.reports.flatMap((report) => report.lifecycleOverrides);
+  const reasonCodes = [
+    ...new Set(
+      params.reports
+        .flatMap((report) => report.reasonCodes)
+        .concat(
+          params.reports.length > 0
+            ? ["write_time_candidate_merge_adjudication"]
+            : ["no_new_model_reviewed_opportunities"],
+        ),
+    ),
+  ].toSorted();
+  const decision = params.reports.some((report) => report.decision === "model_adjudicated")
+    ? "model_adjudicated"
+    : params.reports.some((report) => report.decision === "model_unavailable")
+      ? "model_unavailable"
+      : params.reports.some((report) => report.decision === "skipped")
+        ? "skipped"
+        : "not_needed";
+  return {
+    schemaVersion: "phase2_proactivity_merge_adjudication.v1",
+    reportId: sha256({ generatedAt: params.generatedAt, inputHash }),
+    inputHash,
+    generatedAt: params.generatedAt,
+    enabled: params.enabled,
+    modelId: params.modelId,
+    decision,
+    recallRows: params.reports.flatMap((report) => report.recallRows),
+    decisions,
+    lifecycleOverrides,
+    reasonCodes,
+    promptPersisted: false,
+    rawResponsePersisted: false,
+  };
+}
+
+async function adjudicateNewModelReviewedOpportunities(params: {
+  newOpportunities: Phase2OpportunityLedgerSource[];
+  persistedOpportunities: Phase2OpportunityLedgerSource[];
+  existingOverrides: Phase2ProactivityActivityStore["lifecycleOverrides"];
+  projectId: string;
+  sessionKey: string;
+  mergeOptions: ReturnType<typeof buildCandidateReviewOptions>;
+}): Promise<{
+  acceptedOpportunities: Phase2OpportunityLedgerSource[];
+  mergeLifecycleOverrides: Phase2ProactivityActivityStore["lifecycleOverrides"];
+  report: Phase2ProactivityMergeAdjudicationReport;
+}> {
+  const generatedAt = new Date().toISOString();
+  const persistedIds = new Set(params.persistedOpportunities.map((source) => source.opportunityId));
+  const acceptedOpportunities: Phase2OpportunityLedgerSource[] = [];
+  const mergeReports: Phase2ProactivityNewOpportunityMergeReport[] = [];
+  const recallPool = [...params.persistedOpportunities];
+  for (const opportunity of dedupeModelReviewedOpportunities(params.newOpportunities)) {
+    if (persistedIds.has(opportunity.opportunityId)) {
+      continue;
+    }
+    const report = await adjudicateNewProactivityOpportunityMerge(opportunity, recallPool, {
+      enabled: params.mergeOptions.enabled,
+      executor: params.mergeOptions.executor,
+      modelId: params.mergeOptions.modelId,
+      reasoningEffort: params.mergeOptions.reasoningEffort,
+      maxOutputTokens: Math.min(params.mergeOptions.maxOutputTokens ?? 900, 900),
+    });
+    mergeReports.push(report);
+    if (report.acceptedForSurfacing) {
+      acceptedOpportunities.push(opportunity);
+      if (
+        report.newCandidateDecision === "distinct" ||
+        report.newCandidateDecision === "not_applicable"
+      ) {
+        recallPool.push(opportunity);
+      }
+    }
+  }
+  const report = aggregateNewOpportunityMergeReports({
+    reports: mergeReports,
+    generatedAt,
+    enabled: params.mergeOptions.enabled === true,
+    modelId: params.mergeOptions.enabled === true ? (params.mergeOptions.modelId ?? null) : null,
+  });
+  const scopedMergeLifecycleOverrides = report.lifecycleOverrides.map((override) => ({
+    ...override,
+    projectId: params.projectId,
+    sessionKey: params.sessionKey,
+    updatedAt: override.updatedAt ?? generatedAt,
+  }));
+  return {
+    acceptedOpportunities,
+    mergeLifecycleOverrides: filterModelMergeLifecycleOverrides({
+      existingOverrides: params.existingOverrides,
+      mergeOverrides: scopedMergeLifecycleOverrides,
+    }),
+    report,
+  };
 }
 
 function dedupeSkillPackageDrafts(records: Phase2SkillPackageDraft[]): Phase2SkillPackageDraft[] {
@@ -754,6 +1310,22 @@ function isOperationalAssistantMessage(message: unknown, text: string): boolean 
     model === "turn-activity" ||
     model === "memory-activity" ||
     isOperationalAssistantText(text)
+  );
+}
+
+function isInternalHighContextUserPrompt(text: string): boolean {
+  const normalized = text.replace(/\s+/gu, " ").trim().toLowerCase();
+  return (
+    isInternalProactivityWorkflowText(text) ||
+    (normalized.includes("what would help this user today") &&
+      normalized.includes("reply with up to 3 concise items")) ||
+    normalized.includes("untrusted heartbeat context includes proactivityitems") ||
+    normalized.includes("safety constraint for this chat response") ||
+    normalized.includes("reply with one short acknowledgement only") ||
+    normalized.includes("live gateway proof label:") ||
+    normalized.includes("for candidate review evidence only") ||
+    normalized.includes("use model_memory_search to answer from mmv2 memory only") ||
+    normalized.includes("start a bounded open in current chat for this proactive work item")
   );
 }
 
@@ -1209,36 +1781,12 @@ function recentAssistantExtractionSources(
   });
 }
 
-function candidateReviewActivityFromRecord(
-  record: Phase2PersistedProactivityActivityRecord,
-): CandidateReviewRecentActivity {
-  return {
-    ref: record.sourceRefs[0] ?? `${record.sourceKind}:${record.sourceMessageId}`,
-    role:
-      record.sourceKind === "user_turn"
-        ? "user"
-        : record.sourceKind === "assistant_turn" || record.sourceKind === "planning_output"
-          ? "assistant"
-          : "system_event",
-    kind:
-      record.sourceKind === "user_turn"
-        ? "ask"
-        : record.sourceKind === "assistant_turn" || record.sourceKind === "planning_output"
-          ? "final"
-          : "result_summary",
-    boundedText: record.boundedText,
-    sourceRuntime: record.sourceRefs.some((sourceRef) => sourceRef.startsWith("codex://"))
-      ? "codex"
-      : "openclaw",
-    recordedAt: record.recordedAt,
-  };
-}
-
 export function transcriptMessagesToHighContextCandidateReviewActivities(input: {
   messages: unknown[];
   sessionKey: string;
 }): CandidateReviewRecentActivity[] {
   const activities: CandidateReviewRecentActivity[] = [];
+  let lastUserPromptSuppressed = false;
   for (const message of input.messages) {
     if (!message || typeof message !== "object") {
       continue;
@@ -1257,7 +1805,12 @@ export function transcriptMessagesToHighContextCandidateReviewActivities(input: 
       const rawText = extractFirstTextBlock(message) ?? "";
       const visibleText = stripInboundMetadata(rawText) || rawText;
       const text = boundedHighContextTurnText(visibleText, MAX_HIGH_CONTEXT_USER_TURN_CHARS);
-      if (!text || !isSafeBoundedSummary(text)) {
+      lastUserPromptSuppressed =
+        !text ||
+        !isSafeBoundedSummary(text) ||
+        isOperationalProactivityUserFacingText(text) ||
+        isInternalHighContextUserPrompt(text);
+      if (lastUserPromptSuppressed) {
         continue;
       }
       const sourceMessageId =
@@ -1276,6 +1829,9 @@ export function transcriptMessagesToHighContextCandidateReviewActivities(input: 
     if (role !== "assistant") {
       continue;
     }
+    if (lastUserPromptSuppressed) {
+      continue;
+    }
     const finalAnswerText = extractAssistantTextForPhase(message, { phase: "final_answer" });
     const assistantVisibleText =
       finalAnswerText ??
@@ -1286,7 +1842,12 @@ export function transcriptMessagesToHighContextCandidateReviewActivities(input: 
       assistantVisibleText,
       MAX_HIGH_CONTEXT_ASSISTANT_TURN_CHARS,
     );
-    if (!text || !isSafeBoundedSummary(text)) {
+    if (
+      !text ||
+      !isSafeBoundedSummary(text) ||
+      isOperationalAssistantMessage(message, text) ||
+      isInternalProactivityWorkflowText(text)
+    ) {
       continue;
     }
     const sourceMessageId =
@@ -1306,112 +1867,6 @@ export function transcriptMessagesToHighContextCandidateReviewActivities(input: 
   return activities
     .toSorted((left, right) => (left.recordedAt ?? "").localeCompare(right.recordedAt ?? ""))
     .slice(-MAX_HIGH_CONTEXT_SESSION_ACTIVITIES);
-}
-
-function loadOpenClawHighContextCandidateReviewActivities(params: {
-  cfg: ReturnType<typeof loadConfig>;
-  sessionKey: string;
-}): CandidateReviewRecentActivity[] {
-  const target = resolveGatewaySessionStoreTarget({ cfg: params.cfg, key: params.sessionKey });
-  const sessionStore = loadSessionStore(target.storePath);
-  const entry = resolveFreshestSessionEntryFromStoreKeys(sessionStore, target.storeKeys);
-  if (!entry?.sessionId) {
-    return [];
-  }
-  const messages = readSessionMessages(entry.sessionId, target.storePath, entry.sessionFile);
-  return transcriptMessagesToHighContextCandidateReviewActivities({
-    messages,
-    sessionKey: params.sessionKey,
-  });
-}
-
-function candidateReviewEventTypeForLatestActivity(
-  latest: CandidateReviewRecentActivity | undefined,
-): Parameters<typeof buildCandidateReviewPrefilterEvent>[0]["eventType"] {
-  if (latest?.role === "tool_summary" && latest.kind === "failure_summary") {
-    return "validation_or_proof_failed";
-  }
-  if (latest?.role === "card" && latest.kind === "card_summary") {
-    return "card_quality_failed";
-  }
-  return "assistant_final_completed";
-}
-
-function latestCandidateReviewMs(
-  entries: Phase2ProactivityActivityStore["candidateReviewEpisodeKeys"],
-): number {
-  return Math.max(
-    0,
-    ...(entries ?? [])
-      .map((entry) => Date.parse(entry.reviewedAt))
-      .filter((value) => Number.isFinite(value)),
-  );
-}
-
-function assistantFinalsSinceReview(params: {
-  records: Phase2PersistedProactivityActivityRecord[];
-  sessionKey: string;
-  sinceMs: number;
-}): number {
-  return params.records.filter((record) => {
-    if (record.sessionKey !== params.sessionKey) {
-      return false;
-    }
-    if (record.sourceKind !== "assistant_turn" && record.sourceKind !== "planning_output") {
-      return false;
-    }
-    const recordedAtMs = Date.parse(record.recordedAt || record.updatedAt);
-    return Number.isFinite(recordedAtMs) && recordedAtMs > params.sinceMs;
-  }).length;
-}
-
-function buildStructuralCandidateReviewTrigger(params: {
-  event: ReturnType<typeof buildCandidateReviewPrefilterEvent>;
-  recentActivities: CandidateReviewRecentActivity[];
-}): {
-  decision: CandidateReviewTriggerDecision;
-  report: CandidateReviewTriggerReport;
-} {
-  const refs = params.recentActivities.map((activity) => activity.ref).slice(-12);
-  const reasonCodes =
-    params.event.eventType === "heartbeat_started"
-      ? ["heartbeat_review" as const]
-      : params.event.eventType === "session_boundary"
-        ? ["session_boundary" as const]
-        : params.event.eventType === "validation_or_proof_failed"
-          ? ["validation_or_proof_friction" as const]
-          : params.event.eventType === "card_quality_failed" ||
-              params.event.eventType === "card_dismissed_or_not_useful"
-            ? ["card_quality_failure" as const]
-            : ["related_turn_cluster" as const];
-  const decision: CandidateReviewTriggerDecision = {
-    schemaVersion: "candidate_review_trigger_decision.v1",
-    shouldRun: refs.length > 0,
-    reasonCodes,
-    confidence: "high",
-    episodeWindow: {
-      startRef: refs[0] ?? params.event.refs[0] ?? params.event.eventId,
-      endRef: refs.at(-1) ?? params.event.refs.at(-1) ?? params.event.eventId,
-      includedRefs: refs,
-    },
-    reviewGoal: "both",
-    why: "Structural high-context cadence accepted this bounded episode for candidate review.",
-  };
-  return {
-    decision,
-    report: {
-      schemaVersion: "candidate_review_trigger_report.v1",
-      enabled: false,
-      source: "skipped",
-      elapsedMs: 0,
-      inputHash: sha256({ event: params.event, refs }),
-      validationStatus: "pass",
-      reasonCodes: ["structural_high_context_cadence"],
-      promptPersisted: false,
-      rawResponsePersisted: false,
-      promptChars: 0,
-    },
-  };
 }
 
 function isPermissionDenied(error: unknown): boolean {
@@ -1439,6 +1894,76 @@ function candidateReviewArtifactRoots(): string[] {
   ].filter(
     (entry, index, entries): entry is string => Boolean(entry) && entries.indexOf(entry) === index,
   );
+}
+
+function workEpisodeOutcomePackRoots(): string[] {
+  const configuredRoot = readString(process.env[WORK_EPISODE_OUTCOME_PACK_ROOT_ENV]);
+  if (configuredRoot) {
+    return [configuredRoot];
+  }
+  const hostRepoRoot = readString(process.env.OPENCLAW_HOST_OPERATOR_REPO_ROOT);
+  const workspaceRoot =
+    readString(process.env.OPENCLAW_HOST_OPERATOR_WORKSPACE_ROOT) ??
+    readString(process.env.OPENCLAW_WORKSPACE_ROOT) ??
+    path.join(process.env.HOME ?? "/home/node", ".openclaw", "workspace");
+  return [
+    hostRepoRoot
+      ? path.join(hostRepoRoot, ".artifacts", "model-memory", "work-episode-outcome-pack")
+      : undefined,
+    path.join(workspaceRoot, ".artifacts", "model-memory", "work-episode-outcome-pack"),
+    path.join(process.cwd(), ".artifacts", "model-memory", "work-episode-outcome-pack"),
+  ].filter(
+    (entry, index, entries): entry is string => Boolean(entry) && entries.indexOf(entry) === index,
+  );
+}
+
+export async function loadLatestWorkEpisodeOutcomePack(): Promise<WorkEpisodeOutcomePack | null> {
+  const candidates = await discoverWorkEpisodeOutcomePackArtifacts(workEpisodeOutcomePackRoots());
+  return candidates.at(-1)?.pack ?? null;
+}
+
+async function discoverIndexedOutcomePacks(params: {
+  existingEntries: Phase2WorkEpisodeOutcomePackIndexEntry[];
+}): Promise<{
+  discoveries: WorkEpisodeOutcomePackDiscoveryRecord[];
+  entries: Phase2WorkEpisodeOutcomePackIndexEntry[];
+}> {
+  const discoveries = await discoverWorkEpisodeOutcomePackArtifacts(workEpisodeOutcomePackRoots());
+  const existingByKey = new Map(
+    params.existingEntries.map((entry) => [packIndexKey(entry), entry]),
+  );
+  const indexedAt = new Date().toISOString();
+  const discoveredEntries = discoveries.map((record): Phase2WorkEpisodeOutcomePackIndexEntry => {
+    const contentHash = record.pack.contentHashes[0] ?? record.contentHash;
+    const key = `${record.pack.episodeId}\t${contentHash}`;
+    const existing = existingByKey.get(key);
+    return {
+      episodeId: record.pack.episodeId,
+      contentHash,
+      packPath: record.packPath,
+      projectId: record.pack.projectId,
+      sessionKey: record.pack.sessionKey,
+      branch: record.pack.branch,
+      runtime: record.pack.runtime,
+      outcomeStatus: record.pack.outcomeStatus,
+      workType: record.pack.workType,
+      completedAt: record.pack.completedAt,
+      indexedAt: existing?.indexedAt ?? indexedAt,
+      reviewStatus: existing?.reviewStatus ?? "unreviewed",
+      eligibilityStatus: record.eligibility.status,
+      eligibilityReasonCodes: record.eligibility.reasonCodes,
+      reviewArtifactPath: existing?.reviewArtifactPath,
+      reviewedAt: existing?.reviewedAt,
+      errorSummary: existing?.errorSummary,
+    };
+  });
+  return {
+    discoveries,
+    entries: dedupeWorkEpisodeOutcomePackIndexEntries([
+      ...params.existingEntries,
+      ...discoveredEntries,
+    ]),
+  };
 }
 
 async function writeCandidateReviewEpisodePacketArtifact(
@@ -1472,9 +1997,13 @@ async function buildModelReviewedCandidateSources(input: {
   skillCandidateReport: Phase2SkillCandidateLedgerReport;
   recurringPatternReport: Awaited<ReturnType<typeof buildPhase2ProactivityRecurringPatternReport>>;
   existingSkills: Phase2UserFacingProactivityExistingSkill[];
+  previousModelReviewedOpportunities: Phase2OpportunityLedgerSource[];
   previousEpisodeKeys: Phase2ProactivityActivityStore["candidateReviewEpisodeKeys"];
+  outcomePackDiscoveries: WorkEpisodeOutcomePackDiscoveryRecord[];
+  workEpisodeOutcomePackIndex: Phase2WorkEpisodeOutcomePackIndexEntry[];
 }): Promise<{
   episodeKey: string | null;
+  episodeKeys: string[];
   triggerDecision: CandidateReviewTriggerDecision | null;
   triggerReport: CandidateReviewTriggerReport | null;
   reviewReport: CandidateReviewReport | null;
@@ -1482,18 +2011,24 @@ async function buildModelReviewedCandidateSources(input: {
   proposals: CandidateReviewProposal[];
   skillCandidates: Phase2SkillCandidateRecord[];
   opportunities: Phase2OpportunityLedgerSource[];
+  workEpisodeOutcomePackIndex: Phase2WorkEpisodeOutcomePackIndexEntry[];
 }> {
-  const triggerOptions = buildCandidateTriggerOptions({ cfg: input.cfg, env: process.env });
   const reviewOptions = buildCandidateReviewOptions({ cfg: input.cfg, env: process.env });
-  const reviewCooldownMs = readNonNegativeInteger(
-    process.env[CANDIDATE_REVIEW_COOLDOWN_ENV],
-    DEFAULT_CANDIDATE_REVIEW_COOLDOWN_MS,
-  );
-  const effectiveReviewCooldownMs =
-    typeof input.candidateReviewOverride?.cooldownMs === "number"
-      ? Math.max(0, input.candidateReviewOverride.cooldownMs)
-      : reviewCooldownMs;
   const forceReviewRun = input.candidateReviewOverride?.forceRun === true;
+  const emptyResult = (
+    packIndex = input.workEpisodeOutcomePackIndex,
+  ): Awaited<ReturnType<typeof buildModelReviewedCandidateSources>> => ({
+    episodeKey: null,
+    episodeKeys: [],
+    triggerDecision: null,
+    triggerReport: null,
+    reviewReport: null,
+    codexAdapterReport: null,
+    proposals: [],
+    skillCandidates: [],
+    opportunities: [],
+    workEpisodeOutcomePackIndex: packIndex,
+  });
   const maxReviewsPerSession = readPositiveInteger(
     process.env[CANDIDATE_REVIEW_MAX_PER_SESSION_ENV],
     DEFAULT_CANDIDATE_REVIEW_MAX_PER_SESSION,
@@ -1502,30 +2037,11 @@ async function buildModelReviewedCandidateSources(input: {
     process.env[CANDIDATE_REVIEW_MAX_PER_DAY_ENV],
     DEFAULT_CANDIDATE_REVIEW_MAX_PER_DAY,
   );
-  const assistantFinalInterval = readPositiveInteger(
-    process.env[CANDIDATE_REVIEW_ASSISTANT_FINAL_INTERVAL_ENV],
-    DEFAULT_CANDIDATE_REVIEW_ASSISTANT_FINAL_INTERVAL,
-  );
-  const openClawTurnWindow = readPositiveInteger(
-    process.env[CANDIDATE_REVIEW_OPENCLAW_TURN_WINDOW_ENV],
-    DEFAULT_CANDIDATE_REVIEW_OPENCLAW_TURN_WINDOW,
-  );
-  const codexTurnWindow = readPositiveInteger(
-    process.env[CANDIDATE_REVIEW_CODEX_TURN_WINDOW_ENV],
-    DEFAULT_CANDIDATE_REVIEW_CODEX_TURN_WINDOW,
-  );
-  const packetMaxChars = readPositiveInteger(
-    process.env[CANDIDATE_REVIEW_PACKET_MAX_CHARS_ENV],
-    DEFAULT_CANDIDATE_REVIEW_PACKET_MAX_CHARS,
+  const maxPacksPerRun = readPositiveInteger(
+    process.env[PACK_REVIEW_MAX_PER_RUN_ENV],
+    DEFAULT_PACK_REVIEW_MAX_PER_RUN,
   );
   const nowMs = Date.now();
-  const latestReviewMs = latestCandidateReviewMs(input.previousEpisodeKeys);
-  const recentReviewEntries = forceReviewRun
-    ? []
-    : (input.previousEpisodeKeys ?? []).filter((entry) => {
-        const reviewedAtMs = Date.parse(entry.reviewedAt);
-        return Number.isFinite(reviewedAtMs) && nowMs - reviewedAtMs < effectiveReviewCooldownMs;
-      });
   const reviewsInLastHour = (input.previousEpisodeKeys ?? []).filter((entry) => {
     const reviewedAtMs = Date.parse(entry.reviewedAt);
     return Number.isFinite(reviewedAtMs) && nowMs - reviewedAtMs < 60 * 60 * 1_000;
@@ -1535,260 +2051,171 @@ async function buildModelReviewedCandidateSources(input: {
     return Number.isFinite(reviewedAtMs) && nowMs - reviewedAtMs < 24 * 60 * 60 * 1_000;
   }).length;
   if (!reviewOptions.enabled) {
-    return {
-      episodeKey: null,
-      triggerDecision: null,
-      triggerReport: null,
-      reviewReport: null,
-      codexAdapterReport: null,
-      proposals: [],
-      skillCandidates: [],
-      opportunities: [],
-    };
+    return emptyResult();
   }
   if (
     !forceReviewRun &&
     (reviewsInLastHour >= maxReviewsPerSession || reviewsInLastDay >= maxReviewsPerDay)
   ) {
-    return {
-      episodeKey: null,
-      triggerDecision: null,
-      triggerReport: null,
-      reviewReport: null,
-      codexAdapterReport: null,
-      proposals: [],
-      skillCandidates: [],
-      opportunities: [],
-    };
+    return emptyResult();
   }
-  const recentOpenClawActivities = input.projectActivitySources
-    .toSorted((left, right) => left.updatedAt.localeCompare(right.updatedAt))
-    .slice(-18)
-    .map(candidateReviewActivityFromRecord);
-  const highContextOpenClawActivities = loadOpenClawHighContextCandidateReviewActivities({
-    cfg: input.cfg,
-    sessionKey: input.sessionKey,
-  });
-  const highContextHasAssistantFinal = highContextOpenClawActivities.some(
-    (activity) => activity.role === "assistant",
-  );
-  const effectiveOpenClawActivities =
-    highContextOpenClawActivities.length > 0 && highContextHasAssistantFinal
-      ? highContextOpenClawActivities
-      : recentOpenClawActivities;
-  const codexAdapter = readBooleanEnv(process.env[CODEX_SESSION_REVIEW_ENABLED_ENV])
-    ? await loadCodexSessionActivityForCandidateReview({
-        sessionRoot: input.candidateReviewOverride?.codexSessionRoot,
-        historyPath: input.candidateReviewOverride?.codexHistoryPath,
-      })
-    : {
-        activities: [],
-        report: {
-          status: "skipped" as const,
-          reasonCode: "codex_session_review_disabled",
-          entryCount: 0,
-        },
-      };
-  const codexActivities = codexAdapter?.activities ?? [];
-  const heartbeat = getLastHeartbeatEvent();
-  const heartbeatIsReviewTrigger =
-    Boolean(heartbeat) &&
-    typeof heartbeat?.ts === "number" &&
-    heartbeat.ts > latestReviewMs &&
-    nowMs - heartbeat.ts < 20 * 60 * 1_000;
-  const heartbeatActivities: CandidateReviewRecentActivity[] =
-    heartbeat && heartbeatIsReviewTrigger
-      ? [
-          {
-            ref: `gateway://heartbeat/last/${heartbeat.ts}`,
-            role: "system_event",
-            kind: heartbeat.status === "failed" ? "failure_summary" : "result_summary",
-            boundedText: boundedSummary(
-              heartbeat.preview ??
-                heartbeat.reason ??
-                `Heartbeat ${heartbeat.status} event available for candidate review.`,
-            ),
-            sourceRuntime: "openclaw",
-            recordedAt: new Date(heartbeat.ts).toISOString(),
-          },
-        ]
-      : [];
-  const openClawWindow = effectiveOpenClawActivities
-    .filter((activity) => activity.role === "user" || activity.role === "assistant")
-    .slice(-openClawTurnWindow);
-  const codexWindow = codexActivities.slice(-codexTurnWindow);
-  const recentActivities = capCandidateReviewActivitiesByChars(
-    [...openClawWindow, ...codexWindow, ...heartbeatActivities],
-    packetMaxChars,
-  );
-  if (recentActivities.length === 0) {
-    return {
-      episodeKey: null,
-      triggerDecision: null,
-      triggerReport: null,
-      reviewReport: null,
-      codexAdapterReport: codexAdapter?.report ?? null,
-      proposals: [],
-      skillCandidates: [],
-      opportunities: [],
-    };
-  }
-  const latest = recentActivities.at(-1);
-  const assistantFinalsSinceLastReview = Math.max(
-    assistantFinalsSinceReview({
-      records: input.projectActivitySources,
-      sessionKey: input.sessionKey,
-      sinceMs: latestReviewMs,
+  const discoveryByKey = new Map<string, WorkEpisodeOutcomePackDiscoveryRecord>(
+    input.outcomePackDiscoveries.map((record) => {
+      const contentHash = record.pack.contentHashes[0] ?? record.contentHash;
+      return [`${record.pack.episodeId}\t${contentHash}`, record] as const;
     }),
-    effectiveOpenClawActivities.filter((activity) => {
-      if (activity.role !== "assistant") {
+  );
+  const packIndex = input.workEpisodeOutcomePackIndex.map((entry) => ({ ...entry }));
+  const selectedPackEntries = packIndex
+    .filter((entry) => {
+      if (entry.projectId !== input.projectId) {
         return false;
       }
-      const recordedAtMs = activity.recordedAt ? Date.parse(activity.recordedAt) : NaN;
-      return Number.isFinite(recordedAtMs) && recordedAtMs > latestReviewMs;
-    }).length,
-  );
-  const latestEventType = heartbeatIsReviewTrigger
-    ? "heartbeat_started"
-    : candidateReviewEventTypeForLatestActivity(latest);
-  const assistantCadenceReady =
-    latestEventType === "assistant_final_completed" &&
-    assistantFinalsSinceLastReview >= assistantFinalInterval;
-  const structuralTriggerReady =
-    latestEventType !== "assistant_final_completed" || assistantCadenceReady;
-  if (
-    !forceReviewRun &&
-    ((latest?.role === "user" && !heartbeatIsReviewTrigger) || !structuralTriggerReady)
-  ) {
-    return {
-      episodeKey: null,
-      triggerDecision: null,
-      triggerReport: null,
-      reviewReport: null,
-      codexAdapterReport: codexAdapter?.report ?? null,
-      proposals: [],
-      skillCandidates: [],
-      opportunities: [],
-    };
+      if (entry.eligibilityStatus !== "eligible") {
+        return false;
+      }
+      if (entry.reviewStatus !== "unreviewed" && !forceReviewRun) {
+        return false;
+      }
+      return discoveryByKey.has(packIndexKey(entry));
+    })
+    .toSorted((left, right) => left.completedAt.localeCompare(right.completedAt))
+    .slice(0, maxPacksPerRun);
+  if (selectedPackEntries.length === 0) {
+    return emptyResult(packIndex);
   }
-  const event = buildCandidateReviewPrefilterEvent({
-    eventType: latestEventType,
-    runtime: latest?.sourceRuntime === "codex" ? "codex" : "openclaw",
-    sessionKey: input.sessionKey,
-    refs: recentActivities.map((activity) => activity.ref).slice(-12),
-    boundedSummary: recentActivities
-      .slice(-6)
-      .map((activity) => activity.boundedText)
-      .join("\n"),
-  });
-  const prefilter = buildCandidateReviewPrefilterDecision({
-    event,
-    recentEpisodeKeys: recentReviewEntries.map((entry) => entry.episodeKey),
-  });
-  if (!prefilter.shouldAskModel) {
-    return {
-      episodeKey: prefilter.episodeKey,
-      triggerDecision: null,
-      triggerReport: null,
-      reviewReport: null,
-      codexAdapterReport: codexAdapter?.report ?? null,
-      proposals: [],
-      skillCandidates: [],
-      opportunities: [],
-    };
+  const allProposals: CandidateReviewProposal[] = [];
+  const allSkillCandidates: Phase2SkillCandidateRecord[] = [];
+  const allOpportunities: Phase2OpportunityLedgerSource[] = [];
+  const episodeKeys: string[] = [];
+  let lastReviewReport: CandidateReviewReport | null = null;
+  for (const packEntry of selectedPackEntries) {
+    const packRecord = discoveryByKey.get(packIndexKey(packEntry));
+    if (!packRecord) {
+      continue;
+    }
+    const latestOutcomePack = packRecord.pack;
+    const outcomePackEpisodeKey = `work_episode_outcome_pack:${latestOutcomePack.episodeId}:${
+      latestOutcomePack.contentHashes[0] ?? packRecord.contentHash
+    }`;
+    const recentProactivityItemsForPack = uniqueByExactPresentationKey(
+      [
+        ...input.previousModelReviewedOpportunities.map((opportunity) => ({
+          id: opportunity.opportunityId,
+          kind:
+            opportunity.sourceFamily === "skill_candidate"
+              ? "skill_candidate"
+              : "opportunityClass" in opportunity &&
+                  opportunity.opportunityClass === "proactive_plan"
+                ? "proactive_plan"
+                : "model_reviewed_opportunity",
+          title: opportunity.title,
+          status: "model_reviewed",
+          quality: opportunity.confidence,
+        })),
+        ...input.skillCandidateReport.opportunities.map((opportunity) => ({
+          id: opportunity.opportunityId,
+          kind: "skill_candidate",
+          title: opportunity.title,
+          status: "detected",
+          quality: opportunity.confidence,
+        })),
+        ...input.recurringPatternReport.opportunities.map((opportunity) => ({
+          id: opportunity.opportunityId,
+          kind: "proactive_plan",
+          title: opportunity.title,
+          status: "detected",
+          quality: opportunity.confidence,
+        })),
+      ],
+      (item) => `${item.kind}:${item.title}`,
+    ).slice(-10);
+    const episodePacket = buildProactivityReviewEpisodePacketFromOutcomePack({
+      outcomePack: latestOutcomePack,
+      loadedSkills: input.existingSkills,
+      recentProactivityItems: recentProactivityItemsForPack,
+      recentCandidateIds: input.skillCandidateReport.records.map(
+        (record) => record.skillCandidateId,
+      ),
+      possibleDuplicateTitles: uniqueByExactPresentationKey(
+        [
+          ...input.previousModelReviewedOpportunities.map((opportunity) => opportunity.title),
+          ...input.skillCandidateReport.opportunities.map((opportunity) => opportunity.title),
+          ...input.recurringPatternReport.opportunities.map((opportunity) => opportunity.title),
+        ],
+        (title) => title,
+      ),
+      rejectedOrDemotedSummary: input.skillCandidateReport.records
+        .filter(
+          (record) =>
+            record.lifecycleStatus === "rejected" || record.lifecycleStatus === "disabled",
+        )
+        .map((record) => `${record.lifecycleStatus}: ${record.suggestedSkillName}`),
+      activeMilestone: "pre-Milestone-4 work episode outcome pack review",
+      activeDocsOrBranches: ["phase2-work-episode-outcome-pack"],
+    });
+    try {
+      const episodeArtifact = await writeCandidateReviewEpisodePacketArtifact(episodePacket);
+      const review = await reviewEpisodeForCandidates(episodePacket, reviewOptions);
+      const reviewReport: CandidateReviewReport = {
+        ...review.report,
+        episodePacketHash: episodeArtifact.packetHash,
+        episodePacketPath: episodeArtifact.jsonPath,
+        episodeTurnCount: episodePacket.episodeTurns.length,
+        codexAdapterStatus: episodePacket.codexActivitySummary.status,
+        sourceRuntimes: [...new Set(episodePacket.episodeTurns.map((turn) => turn.sourceRuntime))],
+      };
+      const converted = convertCandidateReviewProposalsToLedgerSources({
+        proposals: review.proposals,
+        projectId: input.projectId,
+        sessionKey: input.sessionKey,
+        previousSkillCandidates: [...input.skillCandidateReport.records, ...allSkillCandidates],
+        episodePacketHash: episodeArtifact.packetHash,
+        episodePacketPath: episodeArtifact.jsonPath,
+      });
+      allProposals.push(...review.proposals);
+      allSkillCandidates.push(...converted.skillCandidates);
+      allOpportunities.push(...converted.opportunities);
+      episodeKeys.push(outcomePackEpisodeKey);
+      lastReviewReport = reviewReport;
+      const targetIndex = packIndex.findIndex(
+        (entry) => packIndexKey(entry) === packIndexKey(packEntry),
+      );
+      if (targetIndex >= 0) {
+        packIndex[targetIndex] = {
+          ...packIndex[targetIndex],
+          reviewStatus: "reviewed",
+          reviewedAt: new Date().toISOString(),
+          reviewArtifactPath: episodeArtifact.jsonPath,
+          errorSummary: undefined,
+        };
+      }
+    } catch (error) {
+      const targetIndex = packIndex.findIndex(
+        (entry) => packIndexKey(entry) === packIndexKey(packEntry),
+      );
+      if (targetIndex >= 0) {
+        packIndex[targetIndex] = {
+          ...packIndex[targetIndex],
+          reviewStatus: "failed",
+          reviewedAt: new Date().toISOString(),
+          errorSummary:
+            error instanceof Error ? error.message.slice(0, 500) : "unknown pack review failure",
+        };
+      }
+    }
   }
-  const recentProactivityItems = [
-    ...input.skillCandidateReport.opportunities.map((opportunity) => ({
-      id: opportunity.opportunityId,
-      kind: "skill_candidate",
-      title: opportunity.title,
-      status: "detected",
-      quality: opportunity.confidence,
-    })),
-    ...input.recurringPatternReport.opportunities.map((opportunity) => ({
-      id: opportunity.opportunityId,
-      kind: "proactive_plan",
-      title: opportunity.title,
-      status: "detected",
-      quality: opportunity.confidence,
-    })),
-  ].slice(-10);
-  const triggerPacket = buildCandidateReviewTriggerPacket({
-    event,
-    recentActivities,
-    recentCardSummaries: recentProactivityItems,
-    recentActivitySignals: [
-      `stage1_event:${event.eventType}`,
-      `stage1:${prefilter.reasonCodes.join(",")}`,
-      `assistant_finals_since_last_review:${assistantFinalsSinceLastReview}`,
-      `assistant_final_interval:${assistantFinalInterval}`,
-      ...(forceReviewRun ? ["candidate_review_force_run:true"] : []),
-    ],
-  });
-  const trigger = forceReviewRun
-    ? buildStructuralCandidateReviewTrigger({ event, recentActivities })
-    : triggerOptions.enabled
-      ? await evaluateCandidateReviewTrigger(triggerPacket, triggerOptions)
-      : buildStructuralCandidateReviewTrigger({ event, recentActivities });
-  if (!trigger.decision.shouldRun || trigger.decision.reviewGoal === "none") {
-    return {
-      episodeKey: prefilter.episodeKey,
-      triggerDecision: trigger.decision,
-      triggerReport: trigger.report,
-      reviewReport: null,
-      codexAdapterReport: codexAdapter?.report ?? null,
-      proposals: [],
-      skillCandidates: [],
-      opportunities: [],
-    };
-  }
-  const episodePacket = buildProactivityReviewEpisodePacket({
-    triggerPacket,
-    triggerDecision: trigger.decision,
-    recentActivities,
-    codexAdapterReport: codexAdapter?.report ?? null,
-    loadedSkills: input.existingSkills,
-    recentProactivityItems,
-    recentCandidateIds: input.skillCandidateReport.records.map((record) => record.skillCandidateId),
-    possibleDuplicateTitles: [
-      ...input.skillCandidateReport.opportunities.map((opportunity) => opportunity.title),
-      ...input.recurringPatternReport.opportunities.map((opportunity) => opportunity.title),
-    ],
-    rejectedOrDemotedSummary: input.skillCandidateReport.records
-      .filter(
-        (record) => record.lifecycleStatus === "rejected" || record.lifecycleStatus === "disabled",
-      )
-      .map((record) => `${record.lifecycleStatus}: ${record.suggestedSkillName}`),
-    activeMilestone: "pre-Milestone-4 high-context candidate review",
-    activeDocsOrBranches: ["phase2-high-context-candidate-review"],
-  });
-  const episodeArtifact = await writeCandidateReviewEpisodePacketArtifact(episodePacket);
-  const review = await reviewEpisodeForCandidates(episodePacket, reviewOptions);
-  const reviewReport: CandidateReviewReport = {
-    ...review.report,
-    episodePacketHash: episodeArtifact.packetHash,
-    episodePacketPath: episodeArtifact.jsonPath,
-    episodeTurnCount: episodePacket.episodeTurns.length,
-    codexAdapterStatus: episodePacket.codexActivitySummary.status,
-    sourceRuntimes: [...new Set(episodePacket.episodeTurns.map((turn) => turn.sourceRuntime))],
-  };
-  const converted = convertCandidateReviewProposalsToLedgerSources({
-    proposals: review.proposals,
-    projectId: input.projectId,
-    sessionKey: input.sessionKey,
-    previousSkillCandidates: input.skillCandidateReport.records,
-    episodePacketHash: episodeArtifact.packetHash,
-    episodePacketPath: episodeArtifact.jsonPath,
-  });
   return {
-    episodeKey: prefilter.episodeKey,
-    triggerDecision: trigger.decision,
-    triggerReport: trigger.report,
-    reviewReport,
-    codexAdapterReport: codexAdapter?.report ?? null,
-    proposals: review.proposals,
-    skillCandidates: converted.skillCandidates,
-    opportunities: converted.opportunities,
+    episodeKey: episodeKeys[0] ?? null,
+    episodeKeys,
+    triggerDecision: null,
+    triggerReport: null,
+    reviewReport: lastReviewReport,
+    codexAdapterReport: null,
+    proposals: allProposals,
+    skillCandidates: allSkillCandidates,
+    opportunities: allOpportunities,
+    workEpisodeOutcomePackIndex: packIndex,
   };
 }
 
@@ -1800,6 +2227,9 @@ export async function buildModelMemoryProactivityRuntimeState(
     cfg,
     sessionKey: params.sessionKey,
     projectId: params.projectId,
+  });
+  const indexedOutcomePacks = await discoverIndexedOutcomePacks({
+    existingEntries: activityStoreReport.store.workEpisodeOutcomePacks ?? [],
   });
   const eligibleSources = (
     await buildPhase2ProactivityNoiseBudgetReport({
@@ -1856,15 +2286,43 @@ export async function buildModelMemoryProactivityRuntimeState(
     skillCandidateReport,
     recurringPatternReport,
     existingSkills,
+    previousModelReviewedOpportunities: activityStoreReport.store.modelReviewedOpportunities ?? [],
     previousEpisodeKeys: activityStoreReport.store.candidateReviewEpisodeKeys ?? [],
+    outcomePackDiscoveries: indexedOutcomePacks.discoveries,
+    workEpisodeOutcomePackIndex: indexedOutcomePacks.entries,
   });
-  const modelReviewedSkillOpportunities = modelReviewedCandidates.opportunities.filter(
+  const mergeReviewOptions = buildCandidateReviewOptions({ cfg, env: process.env });
+  const persistedModelReviewedOpportunities =
+    activityStoreReport.store.modelReviewedOpportunities ?? [];
+  const writeTimeMerge = await adjudicateNewModelReviewedOpportunities({
+    newOpportunities: modelReviewedCandidates.opportunities,
+    persistedOpportunities: persistedModelReviewedOpportunities,
+    existingOverrides: activityStoreReport.store.lifecycleOverrides,
+    projectId: params.projectId,
+    sessionKey: params.sessionKey,
+    mergeOptions: mergeReviewOptions,
+  });
+  const acceptedModelReviewedOpportunities = writeTimeMerge.acceptedOpportunities;
+  const autoPlanDraftOverrides = buildAutoPlanDraftOverrides({
+    opportunities: acceptedModelReviewedOpportunities,
+    existingOverrides: activityStoreReport.store.lifecycleOverrides,
+    projectId: params.projectId,
+    sessionKey: params.sessionKey,
+  });
+  const modelReviewedSkillOpportunities = acceptedModelReviewedOpportunities.filter(
     (opportunity): opportunity is Phase2SkillCandidateOpportunity =>
       opportunity.sourceFamily === "skill_candidate" && "skillCandidate" in opportunity,
   );
+  const persistedModelReviewedSkillCandidates = persistedModelReviewedOpportunities
+    .filter(
+      (opportunity): opportunity is Phase2SkillCandidateOpportunity =>
+        opportunity.sourceFamily === "skill_candidate" && "skillCandidate" in opportunity,
+    )
+    .map((opportunity) => opportunity.skillCandidate);
   const highContextCandidateReviewEnabled = readBooleanEnv(
     process.env[CANDIDATE_REVIEW_ENABLED_ENV],
   );
+  const rawTranscriptOpportunitySurfacingEnabled = !highContextCandidateReviewEnabled;
   const baselineSkillOpportunities = highContextCandidateReviewEnabled
     ? []
     : skillCandidateReport.opportunities;
@@ -1876,6 +2334,7 @@ export async function buildModelMemoryProactivityRuntimeState(
         : "no_skill_candidates",
     records: dedupeSkillCandidates([
       ...skillCandidateReport.records,
+      ...persistedModelReviewedSkillCandidates,
       ...modelReviewedCandidates.skillCandidates,
     ]),
     opportunities: [...baselineSkillOpportunities, ...modelReviewedSkillOpportunities].filter(
@@ -1887,7 +2346,13 @@ export async function buildModelMemoryProactivityRuntimeState(
         ) === index,
     ),
   };
+  const effectiveLifecycleOverrides = dedupeOverrides([
+    ...activityStoreReport.store.lifecycleOverrides,
+    ...writeTimeMerge.mergeLifecycleOverrides,
+    ...autoPlanDraftOverrides,
+  ]);
   const baseLedgerSources: Phase2OpportunityLedgerSource[] = [
+    ...persistedModelReviewedOpportunities,
     ...liveDetectionReport.opportunities.map((opportunity) => ({
       ...opportunity,
       sourceFamily: "live_signal" as const,
@@ -1895,27 +2360,32 @@ export async function buildModelMemoryProactivityRuntimeState(
       sessionKey: params.sessionKey,
       generatedAt: new Date().toISOString(),
     })),
-    ...extractionReport.candidates.map((candidate) => ({
-      ...candidate,
-      sourceFamily: "assistant_output" as const,
-    })),
+    ...(rawTranscriptOpportunitySurfacingEnabled
+      ? extractionReport.candidates.map((candidate) => ({
+          ...candidate,
+          sourceFamily: "assistant_output" as const,
+        }))
+      : []),
     ...effectiveSkillCandidateReport.opportunities,
-    ...modelReviewedCandidates.opportunities.filter(
+    ...acceptedModelReviewedOpportunities.filter(
       (opportunity) => opportunity.sourceFamily !== "skill_candidate",
     ),
-    ...recurringPatternReport.opportunities.map((opportunity) => ({
-      ...opportunity,
-      sourceFamily: "pattern_or_followup" as const,
-      projectId: params.projectId,
-      sessionKey: params.sessionKey,
-      generatedAt: new Date().toISOString(),
-    })),
+    ...(rawTranscriptOpportunitySurfacingEnabled
+      ? recurringPatternReport.opportunities.map((opportunity) => ({
+          ...opportunity,
+          sourceFamily: "pattern_or_followup" as const,
+          projectId: params.projectId,
+          sessionKey: params.sessionKey,
+          generatedAt: new Date().toISOString(),
+        }))
+      : []),
   ];
+  const mergeAdjudicationReport = writeTimeMerge.report;
   const baseLedgerReport = await buildPhase2ProactivityOpportunityLedgerReport({
     repoRoot: process.cwd(),
     opportunities: baseLedgerSources,
     activitySources: projectActivitySources,
-    lifecycleOverrides: activityStoreReport.store.lifecycleOverrides.filter(
+    lifecycleOverrides: effectiveLifecycleOverrides.filter(
       (override) => override.projectId === params.projectId,
     ),
     env: process.env,
@@ -1945,6 +2415,78 @@ export async function buildModelMemoryProactivityRuntimeState(
             }),
           },
         };
+  const existingSkillDraftOpportunityIds = new Set(
+    (activityStoreReport.store.skillPackageDrafts ?? []).map(
+      (draft) => draft.proactivityOpportunityId,
+    ),
+  );
+  const sessionAgentId = resolveSessionAgentId({
+    sessionKey: params.sessionKey,
+    config: cfg,
+  });
+  const workspaceDir = resolveAgentWorkspaceDir(cfg, sessionAgentId);
+  const autoSkillDraftEntries = baseEffectiveLedgerReport.ledger.entries.filter(
+    (entry) =>
+      entry.sourceFamily === "skill_candidate" &&
+      entry.skillCandidate &&
+      acceptedModelReviewedOpportunities.some(
+        (opportunity) => opportunity.opportunityId === entry.opportunityId,
+      ) &&
+      !existingSkillDraftOpportunityIds.has(entry.opportunityId),
+  );
+  const autoSkillDraftReports: Awaited<ReturnType<typeof createPhase2SkillifierDraft>>[] = [];
+  const autoSkillDraftFailureOverrides: Phase2ProactivityActivityStore["lifecycleOverrides"] = [];
+  for (const entry of autoSkillDraftEntries) {
+    try {
+      autoSkillDraftReports.push(
+        await createPhase2SkillifierDraft({
+          workspaceDir,
+          skillCandidate: entry.skillCandidate!,
+          ledgerEntry: entry,
+        }),
+      );
+    } catch {
+      const generatedAt = new Date().toISOString();
+      autoSkillDraftFailureOverrides.push({
+        opportunityId: entry.opportunityId,
+        projectId: params.projectId,
+        sessionKey: params.sessionKey,
+        status: "draft_ready",
+        updatedAt: generatedAt,
+        reviewStatus: "pending_review",
+        plannedArtifact: {
+          status: "failed",
+          reviewStatus: "pending_review",
+          title: entry.title,
+          requestSummary:
+            "Skill draft generation failed before a review-only package was created. Review from Work Queue detail and retry when the workspace/destination issue is resolved.",
+          generatedAt,
+          updatedAt: generatedAt,
+          contentHash: sha256({
+            opportunityId: entry.opportunityId,
+            failure: "skillifier_auto_draft_failed",
+          }),
+        },
+      });
+    }
+  }
+  const autoSkillDrafts = autoSkillDraftReports.map((report) => report.draft);
+  const autoSkillDraftOverrides: Phase2ProactivityActivityStore["lifecycleOverrides"] =
+    autoSkillDrafts
+      .filter((draft) => draft.decision === "draft_ready")
+      .map((draft) => ({
+        opportunityId: draft.proactivityOpportunityId,
+        projectId: params.projectId,
+        sessionKey: params.sessionKey,
+        status: "draft_ready" as const,
+        updatedAt: draft.updatedAt,
+        reviewStatus: "pending_review" as const,
+      }));
+  const finalLifecycleOverrides = dedupeOverrides([
+    ...effectiveLifecycleOverrides,
+    ...autoSkillDraftOverrides,
+    ...autoSkillDraftFailureOverrides,
+  ]);
   const growthLoopReport = await buildPhase2ProactivityGrowthLoopReport({
     now: new Date(),
     projectId: params.projectId,
@@ -1957,13 +2499,13 @@ export async function buildModelMemoryProactivityRuntimeState(
   });
   const ledgerSources: Phase2OpportunityLedgerSource[] = [
     ...baseLedgerSources,
-    ...growthLoopReport.opportunities,
+    ...(rawTranscriptOpportunitySurfacingEnabled ? growthLoopReport.opportunities : []),
   ];
   const ledgerReport = await buildPhase2ProactivityOpportunityLedgerReport({
     repoRoot: process.cwd(),
     opportunities: ledgerSources,
     activitySources: projectActivitySources,
-    lifecycleOverrides: activityStoreReport.store.lifecycleOverrides.filter(
+    lifecycleOverrides: finalLifecycleOverrides.filter(
       (override) => override.projectId === params.projectId,
     ),
     env: process.env,
@@ -2021,7 +2563,10 @@ export async function buildModelMemoryProactivityRuntimeState(
     liveDetectionReport,
     ledgerReport: effectiveLedgerReport,
     draftReport,
-    skillPackageDrafts: activityStoreReport.store.skillPackageDrafts ?? [],
+    skillPackageDrafts: dedupeSkillPackageDrafts([
+      ...(activityStoreReport.store.skillPackageDrafts ?? []),
+      ...autoSkillDrafts,
+    ]),
     existingSkills,
     modelBriefOptions: buildModelAuthoredBriefOptions({ cfg, env: process.env }),
     env: process.env,
@@ -2054,6 +2599,29 @@ export async function buildModelMemoryProactivityRuntimeState(
     maintenanceJobs: growthLoopReport.maintenanceJobs,
     recoveryState: growthLoopReport.recoveryState,
     skillCandidates: dedupeSkillCandidates(effectiveSkillCandidateReport.records),
+    skillPackageDrafts: dedupeSkillPackageDrafts([
+      ...(activityStoreReport.store.skillPackageDrafts ?? []),
+      ...autoSkillDrafts,
+    ]),
+    modelReviewedOpportunities: dedupeModelReviewedOpportunities(
+      acceptedModelReviewedOpportunities,
+    ),
+    modelMergeLifecycleOverrides: [
+      ...writeTimeMerge.mergeLifecycleOverrides,
+      ...autoPlanDraftOverrides,
+      ...autoSkillDraftOverrides,
+      ...autoSkillDraftFailureOverrides,
+    ],
+    workEpisodeOutcomePacks: modelReviewedCandidates.workEpisodeOutcomePackIndex,
+    readProjection: {
+      schemaVersion: "phase2_proactivity_read_projection.v1",
+      generatedAt: new Date().toISOString(),
+      projectId: params.projectId,
+      sessionKey: params.sessionKey,
+      productSurfacingReport,
+      inboxReport,
+      heartbeatReport,
+    },
     candidateReviewEpisodeKey: modelReviewedCandidates.reviewReport
       ? modelReviewedCandidates.episodeKey
       : null,
@@ -2067,7 +2635,10 @@ export async function buildModelMemoryProactivityRuntimeState(
     extractionReport,
     recurringPatternReport,
     skillCandidateReport: effectiveSkillCandidateReport,
-    skillifierDrafts: activityStoreReport.store.skillPackageDrafts ?? [],
+    skillifierDrafts: dedupeSkillPackageDrafts([
+      ...(activityStoreReport.store.skillPackageDrafts ?? []),
+      ...autoSkillDrafts,
+    ]),
     growthLoopReport,
     ledgerReport: effectiveLedgerReport,
     followupReport,
@@ -2079,6 +2650,7 @@ export async function buildModelMemoryProactivityRuntimeState(
     candidateReviewTriggerReport: modelReviewedCandidates.triggerReport,
     candidateReviewProposals: modelReviewedCandidates.proposals,
     candidateReviewCodexAdapterReport: modelReviewedCandidates.codexAdapterReport,
+    mergeAdjudicationReport,
   };
 }
 
@@ -2144,6 +2716,14 @@ export async function createSkillifierDraftForCandidate(params: {
         status: "draft_ready",
         updatedAt: new Date().toISOString(),
       },
+    });
+    await buildModelMemoryProactivityRuntimeState({
+      cfg,
+      sessionKey: params.sessionKey,
+      projectId: params.projectId,
+      operatorId: params.operatorId,
+      userId: params.userId,
+      recipientId: params.recipientId,
     });
   }
   const activityStoreReport = await syncAuthoritativeProactivityActivities({
@@ -2229,17 +2809,28 @@ export async function buildHeartbeatProactivityReviewText(params: {
       sourceRefs: item.sourceRefs,
     };
   });
+  const promptLines = [
+    "What would help this user today?",
+    "Reply with up to 3 concise items.",
+    "For each item include a short title, why now, and next step.",
+    "If proactivity items are provided, choose from those model-authored items and do not reply HEARTBEAT_OK.",
+    "A useful follow-up question is allowed when it would help more than another ordinary task.",
+    "Keep it user-facing. Do not include timestamps, source refs, or system text.",
+    "If nothing needs attention, reply HEARTBEAT_OK.",
+  ];
+  if (items.length > 0) {
+    promptLines.push(
+      "",
+      "Model-authored proactivity items available:",
+      ...items.flatMap((item, index) => [
+        `${index + 1}. ${item.title}`,
+        `Why now: ${item.whyNow}`,
+        `Next step: ${item.proposedNextStep}`,
+      ]),
+    );
+  }
   return {
-    prompt: boundedMultilineSummary(
-      [
-        "What would help this user today?",
-        "Reply with up to 3 concise items.",
-        "For each item include a short title, why now, and next step.",
-        "A useful follow-up question is allowed when it would help more than another ordinary task.",
-        "Keep it user-facing. Do not include timestamps, source refs, or system text.",
-        "If nothing needs attention, reply HEARTBEAT_OK.",
-      ].join("\n"),
-    ),
+    prompt: boundedMultilineSummary(promptLines.join("\n")),
     items,
     reversePromptItems: state.growthLoopReport.reversePrompts
       .filter((prompt) =>

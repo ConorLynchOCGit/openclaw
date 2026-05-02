@@ -1,9 +1,7 @@
 import { JsonModelOutputError } from "../model-execution.ts";
 import type { InterpreterSourceWindow, SemanticInterpreter } from "../semantic-interpreter.ts";
 import type { ModelMemorySourceKind } from "../storage-database-contract.ts";
-import { tryParseFencedJsonBlock } from "../structured-json.ts";
 import {
-  CompositeCandidateSchema,
   CompositeRoutedCandidateSchema,
   CompositeExtractionBatchSchema,
   type AtomicExtractionBatch,
@@ -12,6 +10,7 @@ import {
   type CompositeRoutedCandidate,
   type RawIngestEvent,
 } from "./contracts.ts";
+import { anchorEvidenceQuoteToSourceSpan } from "./evidence-span-anchoring.ts";
 import {
   buildCompositeExtractionPrompt,
   buildEvidenceRepairPrompt,
@@ -19,13 +18,6 @@ import {
   buildRepairPrompt,
   type MmV2PromptResponseMode,
 } from "./prompt-contracts.ts";
-import {
-  assessStructuredArtifactIntent,
-  isCodeLikeTitle,
-  isExplanatoryTitle,
-  parseShortLabelContext,
-} from "./structural-artifact-intent.ts";
-import { extractHeadingText, isHeadingLine, parseStructuredList } from "./structural-markdown.ts";
 
 type CompositeInput = {
   rawEvent: RawIngestEvent;
@@ -35,6 +27,7 @@ type CompositeInput = {
   modelId: string;
   interpreter: SemanticInterpreter;
   routedCandidates: CompositeRoutedCandidate[];
+  anchoringCandidates?: CompositeRoutedCandidate[];
   responseMode?: MmV2PromptResponseMode;
 };
 
@@ -73,347 +66,6 @@ function normalizeCompositePayload(raw: unknown, eventId: string): unknown {
     };
   }
   return raw;
-}
-
-const COMPOSITE_ARTIFACT_TYPES = new Set<CompositeCandidate["artifact_type"]>([
-  "procedure",
-  "checklist",
-  "profile",
-  "project_state",
-  "decision_record",
-  "source_bundle",
-  "lesson_pack",
-]);
-
-const COMPOSITE_COMPONENT_ROLES = new Set<CompositeCandidate["components"][number]["role"]>([
-  "step",
-  "substep",
-  "guardrail",
-  "precondition",
-  "postcondition",
-  "decision_point",
-  "reference",
-  "fact",
-  "rationale",
-  "example",
-  "owner",
-  "open_question",
-  "other",
-]);
-
-const EMBEDDED_ATOMIC_KINDS = new Set<
-  CompositeCandidate["components"][number]["embedded_atomic_kind"]
->(["claim", "directive", "source_ref", "episode", "none"]);
-
-const PROMOTION_VALUES = new Set<CompositeCandidate["components"][number]["promotion"]>([
-  "embedded_only",
-  "global",
-  "both",
-  "blocked",
-]);
-
-function defaultCompositeScope() {
-  return {
-    subject_type: "unknown" as const,
-    subject_id: null,
-    project_id: null,
-    workspace_id: null,
-    applies_to: "unknown" as const,
-  };
-}
-
-function coerceCompositeScope(raw: unknown): CompositeCandidate["scope"] {
-  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
-    return defaultCompositeScope();
-  }
-  const source = raw as Record<string, unknown>;
-  return {
-    subject_type:
-      source.subject_type === "user" ||
-      source.subject_type === "assistant" ||
-      source.subject_type === "project" ||
-      source.subject_type === "workspace" ||
-      source.subject_type === "organization" ||
-      source.subject_type === "external_entity" ||
-      source.subject_type === "system" ||
-      source.subject_type === "unknown"
-        ? source.subject_type
-        : "unknown",
-    subject_id: typeof source.subject_id === "string" ? source.subject_id : null,
-    project_id: typeof source.project_id === "string" ? source.project_id : null,
-    workspace_id: typeof source.workspace_id === "string" ? source.workspace_id : null,
-    applies_to:
-      source.applies_to === "global" ||
-      source.applies_to === "current_project" ||
-      source.applies_to === "current_workspace" ||
-      source.applies_to === "specific_entity" ||
-      source.applies_to === "current_session_only" ||
-      source.applies_to === "unknown"
-        ? source.applies_to
-        : "unknown",
-  };
-}
-
-function inferComponentEvidenceQuote(
-  segmentText: string,
-  component: Record<string, unknown>,
-): string {
-  const candidates = [
-    typeof component.evidence_quote === "string" ? component.evidence_quote : null,
-    typeof component.content === "string" ? component.content : null,
-    typeof component.component_id === "string" ? component.component_id : null,
-  ].filter((value): value is string => Boolean(value));
-  for (const candidate of candidates) {
-    if (segmentText.includes(candidate)) {
-      return candidate;
-    }
-  }
-  return segmentText;
-}
-
-function nonBlankLines(text: string): string[] {
-  return text
-    .split("\n")
-    .map((line) => line.trim())
-    .filter((line) => line.length > 0);
-}
-
-function extractStructuredListItems(routedCandidate: CompositeRoutedCandidate): {
-  artifactType: CompositeCandidate["artifact_type"];
-  title: string | null;
-  items: Array<{ content: string; evidenceQuote: string }>;
-} | null {
-  const parsedList = parseStructuredList(routedCandidate.text);
-  if (!parsedList) {
-    return null;
-  }
-
-  const lines = nonBlankLines(routedCandidate.text);
-  const titleLine = lines.find((line) => isHeadingLine(line)) ?? null;
-  const title = titleLine
-    ? extractHeadingText(titleLine)
-    : isHeadingLine(routedCandidate.local_context_before)
-      ? extractHeadingText(routedCandidate.local_context_before)
-      : null;
-
-  return {
-    artifactType: parsedList.kind === "numbered" ? "procedure" : "checklist",
-    title,
-    items: parsedList.items.map((item) => ({
-      content: item.content,
-      evidenceQuote: item.rawText,
-    })),
-  };
-}
-
-function inferStructuredComponentRole(
-  content: string,
-): CompositeCandidate["components"][number]["role"] {
-  if (/^(?:do not|never|without approval|without user approval)\b/iu.test(content)) {
-    return "guardrail";
-  }
-  if (/https?:\/\/|\/[A-Za-z0-9._/-]+|`[^`]+`/u.test(content)) {
-    return "reference";
-  }
-  return "step";
-}
-
-function inferStructuredEmbeddedAtomicKind(
-  role: CompositeCandidate["components"][number]["role"],
-): CompositeCandidate["components"][number]["embedded_atomic_kind"] {
-  if (role === "reference") {
-    return "source_ref";
-  }
-  if (role === "guardrail" || role === "step") {
-    return "directive";
-  }
-  return "none";
-}
-
-function deriveStructuredTitle(
-  routedCandidate: CompositeRoutedCandidate,
-  structured: NonNullable<ReturnType<typeof extractStructuredListItems>>,
-): string {
-  const explicitTitle = structured.title?.trim();
-  if (explicitTitle && !isCodeLikeTitle(explicitTitle) && !isExplanatoryTitle(explicitTitle)) {
-    return explicitTitle;
-  }
-
-  const labelFromContext = parseShortLabelContext(routedCandidate.local_context_before);
-  if (labelFromContext) {
-    return labelFromContext;
-  }
-
-  return structured.items[0]?.content.slice(0, 72) ?? `Structured ${structured.artifactType}`;
-}
-
-function hasStrongDeterministicArtifactIntent(
-  routedCandidate: CompositeRoutedCandidate,
-  structured: NonNullable<ReturnType<typeof extractStructuredListItems>>,
-): boolean {
-  const assessment = assessStructuredArtifactIntent(routedCandidate);
-  return assessment?.decision === "promote" && assessment.artifactType === structured.artifactType;
-}
-
-function tryDeterministicCompositeCandidate(
-  routedCandidate: CompositeRoutedCandidate,
-): CompositeCandidate | null {
-  const structured = extractStructuredListItems(routedCandidate);
-  if (structured && hasStrongDeterministicArtifactIntent(routedCandidate, structured)) {
-    const title = deriveStructuredTitle(routedCandidate, structured);
-    const summary =
-      structured.artifactType === "procedure"
-        ? `Ordered workflow with ${structured.items.length} steps.`
-        : `Checklist with ${structured.items.length} items.`;
-    return {
-      candidate_id: `det-structured:${routedCandidate.segment_id}`,
-      source_segment_id: routedCandidate.segment_id,
-      artifact_type: structured.artifactType,
-      title,
-      purpose:
-        structured.artifactType === "procedure"
-          ? `Follow the procedure described by ${title}.`
-          : `Track the checklist described by ${title}.`,
-      activation_triggers: [],
-      summary,
-      evidence_quote: routedCandidate.text,
-      components: structured.items.map((item, index) => {
-        const role = inferStructuredComponentRole(item.content);
-        return {
-          component_id: `component_${index}`,
-          order_index: index,
-          role,
-          content: item.content,
-          embedded_atomic_kind: inferStructuredEmbeddedAtomicKind(role),
-          promotion: "embedded_only",
-          evidence_quote: item.evidenceQuote,
-          required: true,
-          conditions: [],
-          outputs: [],
-        };
-      }),
-      scope: defaultCompositeScope(),
-      confidence: Math.max(routedCandidate.confidence, 0.88),
-      risk_flags: ["none"],
-    };
-  }
-
-  const parsed = tryParseFencedJsonBlock(routedCandidate.text);
-  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-    return null;
-  }
-  const source = parsed as Record<string, unknown>;
-  const artifactType =
-    typeof source.artifact_type === "string" &&
-    COMPOSITE_ARTIFACT_TYPES.has(source.artifact_type as CompositeCandidate["artifact_type"])
-      ? (source.artifact_type as CompositeCandidate["artifact_type"])
-      : null;
-  const rawComponents = Array.isArray(source.components) ? source.components : [];
-  if (
-    (source.unit_type !== "composite" && artifactType === null) ||
-    rawComponents.length === 0 ||
-    artifactType === null
-  ) {
-    return null;
-  }
-
-  const candidate = CompositeCandidateSchema.safeParse({
-    candidate_id:
-      typeof source.candidate_id === "string"
-        ? source.candidate_id
-        : `det-composite:${routedCandidate.segment_id}`,
-    source_segment_id: routedCandidate.segment_id,
-    artifact_type: artifactType,
-    title:
-      typeof source.title === "string" && source.title.trim().length > 0
-        ? source.title
-        : `Structured ${artifactType} example`,
-    purpose:
-      typeof source.purpose === "string"
-        ? source.purpose
-        : `Structured ${artifactType} example extracted deterministically from a fenced JSON block.`,
-    activation_triggers:
-      rawComponents.length > 0 && Array.isArray(source.activation_triggers)
-        ? source.activation_triggers.filter((entry): entry is string => typeof entry === "string")
-        : [],
-    summary:
-      typeof source.summary === "string" && source.summary.trim().length > 0
-        ? source.summary
-        : typeof source.purpose === "string" && source.purpose.trim().length > 0
-          ? source.purpose
-          : `Structured ${artifactType} example.`,
-    evidence_quote: routedCandidate.text,
-    components: rawComponents.map((rawComponent, index) => {
-      const component =
-        rawComponent && typeof rawComponent === "object" && !Array.isArray(rawComponent)
-          ? (rawComponent as Record<string, unknown>)
-          : {};
-      const role =
-        typeof component.role === "string" &&
-        COMPOSITE_COMPONENT_ROLES.has(
-          component.role as CompositeCandidate["components"][number]["role"],
-        )
-          ? (component.role as CompositeCandidate["components"][number]["role"])
-          : "other";
-      const promotion =
-        typeof component.promotion === "string" &&
-        PROMOTION_VALUES.has(
-          component.promotion as CompositeCandidate["components"][number]["promotion"],
-        )
-          ? (component.promotion as CompositeCandidate["components"][number]["promotion"])
-          : "embedded_only";
-      const embeddedAtomicKind =
-        typeof component.embedded_atomic_kind === "string" &&
-        EMBEDDED_ATOMIC_KINDS.has(
-          component.embedded_atomic_kind as CompositeCandidate["components"][number]["embedded_atomic_kind"],
-        )
-          ? (component.embedded_atomic_kind as CompositeCandidate["components"][number]["embedded_atomic_kind"])
-          : "none";
-      return {
-        component_id:
-          typeof component.component_id === "string"
-            ? component.component_id
-            : `component_${index}`,
-        order_index: index,
-        role,
-        content:
-          typeof component.content === "string"
-            ? component.content
-            : `Structured ${role} component`,
-        embedded_atomic_kind: embeddedAtomicKind,
-        promotion,
-        evidence_quote: inferComponentEvidenceQuote(routedCandidate.text, component),
-        required:
-          typeof component.required === "boolean"
-            ? component.required
-            : role === "step" || role === "guardrail" || role === "precondition",
-        conditions: Array.isArray(component.conditions)
-          ? component.conditions.filter((entry): entry is string => typeof entry === "string")
-          : [],
-        outputs: Array.isArray(component.outputs)
-          ? component.outputs.filter((entry): entry is string => typeof entry === "string")
-          : [],
-      };
-    }),
-    scope: coerceCompositeScope(source.scope),
-    confidence: Math.max(routedCandidate.confidence, 0.9),
-    risk_flags: Array.isArray(source.risk_flags)
-      ? source.risk_flags.filter(
-          (entry): entry is CompositeCandidate["risk_flags"][number] =>
-            entry === "contains_pii" ||
-            entry === "contains_secret" ||
-            entry === "health_data" ||
-            entry === "financial_data" ||
-            entry === "legal_data" ||
-            entry === "credential_like" ||
-            entry === "safety_sensitive" ||
-            entry === "low_confidence" ||
-            entry === "none",
-        )
-      : ["none"],
-  });
-
-  return candidate.success ? candidate.data : null;
 }
 
 function validateComposite(
@@ -456,7 +108,16 @@ function validateComposite(
       }
     });
     candidate.components.forEach((component, componentIndex) => {
-      if (!routedCandidate.text.includes(component.evidence_quote)) {
+      const componentSourceSegmentId = component.source_segment_id ?? candidate.source_segment_id;
+      const componentRoutedCandidate = byId.get(componentSourceSegmentId);
+      if (!componentRoutedCandidate) {
+        errors.push({
+          path: `composite_candidates.${index}.components.${componentIndex}.source_segment_id`,
+          message: "component source_segment_id does not exist",
+        });
+        return;
+      }
+      if (!componentRoutedCandidate.text.includes(component.evidence_quote)) {
         errors.push({
           path: `composite_candidates.${index}.components.${componentIndex}.evidence_quote`,
           message: "component evidence_quote must be an exact substring of the source segment",
@@ -490,6 +151,71 @@ function normalizeCompositeCandidate(candidate: CompositeCandidate): CompositeCa
         return { ...component, promotion: "embedded_only" as const };
       }
       return component;
+    }),
+  };
+}
+
+function anchorEvidenceToUniqueRoutedSegment(input: {
+  routedCandidates: CompositeRoutedCandidate[];
+  evidenceQuote: string;
+}):
+  | {
+      status: "anchored";
+      sourceSegmentId: string;
+      quote: string;
+    }
+  | { status: "unanchored" } {
+  const matches = input.routedCandidates.flatMap((candidate) => {
+    const anchored = anchorEvidenceQuoteToSourceSpan({
+      sourceText: candidate.text,
+      evidenceQuote: input.evidenceQuote,
+    });
+    return anchored.status === "anchored"
+      ? [{ sourceSegmentId: candidate.segment_id, quote: anchored.quote }]
+      : [];
+  });
+  return matches.length === 1 ? { status: "anchored", ...matches[0] } : { status: "unanchored" };
+}
+
+function anchorCompositeEvidenceBatch(
+  batch: CompositeExtractionBatch,
+  routedCandidates: CompositeRoutedCandidate[],
+  anchoringCandidates = routedCandidates,
+): CompositeExtractionBatch {
+  return {
+    ...batch,
+    composite_candidates: batch.composite_candidates.map((candidate) => {
+      const topLevelAnchor = anchorEvidenceToUniqueRoutedSegment({
+        routedCandidates: anchoringCandidates,
+        evidenceQuote: candidate.evidence_quote,
+      });
+      const sourceSegmentId =
+        topLevelAnchor.status === "anchored"
+          ? topLevelAnchor.sourceSegmentId
+          : candidate.source_segment_id;
+      return {
+        ...candidate,
+        source_segment_id: sourceSegmentId,
+        evidence_quote:
+          topLevelAnchor.status === "anchored" ? topLevelAnchor.quote : candidate.evidence_quote,
+        components: candidate.components.map((component) => {
+          const componentAnchor = anchorEvidenceToUniqueRoutedSegment({
+            routedCandidates: anchoringCandidates,
+            evidenceQuote: component.evidence_quote,
+          });
+          return {
+            ...component,
+            source_segment_id:
+              componentAnchor.status === "anchored"
+                ? componentAnchor.sourceSegmentId
+                : component.source_segment_id,
+            evidence_quote:
+              componentAnchor.status === "anchored"
+                ? componentAnchor.quote
+                : component.evidence_quote,
+          };
+        }),
+      };
     }),
   };
 }
@@ -573,7 +299,7 @@ export async function repairCompositeExtraction(
           'Top-level keys: "schema_version", "event_id", "composite_candidates".',
           '"schema_version" must be "composite_extraction.v1".',
           'Each composite candidate must include "candidate_id", "source_segment_id", "artifact_type", "title", "purpose", "activation_triggers", "summary", "evidence_quote", "components", "scope", "confidence", and "risk_flags".',
-          'Each component must include "component_id", "order_index", "role", "content", "embedded_atomic_kind", "promotion", "evidence_quote", "required", "conditions", and "outputs".',
+          'Each component must include "component_id", "order_index", "role", "content", "embedded_atomic_kind", "promotion", "evidence_quote", "required", "conditions", and "outputs"; it may include "source_segment_id" when evidence belongs to a different routed segment than the parent.',
         ].join("\n"),
         responseSchemaName: "composite_extraction_batch",
         responseSchema: CompositeExtractionBatchSchema,
@@ -595,11 +321,18 @@ export async function repairCompositeExtraction(
       JSON.stringify(extractBatch(result)),
     );
   }
-  const normalized = {
-    ...parsed.data,
-    composite_candidates: parsed.data.composite_candidates.map(normalizeCompositeCandidate),
-  };
-  const repairedErrors = validateComposite(normalized, input.routedCandidates);
+  const normalized = anchorCompositeEvidenceBatch(
+    {
+      ...parsed.data,
+      composite_candidates: parsed.data.composite_candidates.map(normalizeCompositeCandidate),
+    },
+    input.routedCandidates,
+    input.anchoringCandidates,
+  );
+  const repairedErrors = validateComposite(
+    normalized,
+    input.anchoringCandidates ?? input.routedCandidates,
+  );
   if (repairedErrors.length > 0) {
     throw new JsonModelOutputError(
       "invalid MMV2 composite extraction repair semantics",
@@ -628,29 +361,10 @@ export async function extractCompositeCandidates(
     }
   });
 
-  const deterministicCandidates: CompositeCandidate[] = [];
-  const modelRoutedCandidates: CompositeRoutedCandidate[] = [];
-  for (const routedCandidate of input.routedCandidates) {
-    const deterministic = tryDeterministicCompositeCandidate(routedCandidate);
-    if (deterministic) {
-      deterministicCandidates.push(normalizeCompositeCandidate(deterministic));
-      continue;
-    }
-    modelRoutedCandidates.push(routedCandidate);
-  }
-
-  if (modelRoutedCandidates.length === 0) {
-    return {
-      schema_version: "composite_extraction.v1",
-      event_id: input.rawEvent.event_id,
-      composite_candidates: deterministicCandidates,
-    };
-  }
-
   const prompt = buildCompositeExtractionPrompt({
     modelId: input.modelId,
     rawEvent: input.rawEvent,
-    routedCandidates: modelRoutedCandidates,
+    routedCandidates: input.routedCandidates,
     responseMode: input.responseMode,
   });
   const result = await input.interpreter.interpret({
@@ -665,38 +379,50 @@ export async function extractCompositeCandidates(
   if (!parsed.success) {
     const repaired = await repairCompositeExtraction({
       ...input,
-      routedCandidates: modelRoutedCandidates,
       previousPayload: extractBatch(result),
       validationErrors: parsed.error.issues.map((issue) => ({
         path: issue.path.join("."),
         message: issue.message,
       })),
+    }).catch((error) => {
+      if (
+        error instanceof JsonModelOutputError &&
+        /^invalid MMV2 composite extraction repair (?:output|semantics)$/u.test(error.message)
+      ) {
+        return emptyCompositeBatch(input.rawEvent.event_id);
+      }
+      throw error;
     });
-    return {
-      ...repaired,
-      composite_candidates: [...deterministicCandidates, ...repaired.composite_candidates],
-    };
+    return repaired;
   }
   const normalized = parsed.data.composite_candidates.map(normalizeCompositeCandidate);
-  const combined = {
-    ...parsed.data,
-    composite_candidates: [...deterministicCandidates, ...normalized],
-  };
-  const errors = validateComposite(combined, input.routedCandidates);
+  const combined = anchorCompositeEvidenceBatch(
+    {
+      ...parsed.data,
+      composite_candidates: normalized,
+    },
+    input.routedCandidates,
+    input.anchoringCandidates,
+  );
+  const errors = validateComposite(combined, input.anchoringCandidates ?? input.routedCandidates);
   if (errors.length > 0) {
     const repaired = await repairCompositeExtraction({
       ...input,
-      routedCandidates: modelRoutedCandidates,
       previousPayload: {
         ...parsed.data,
         composite_candidates: normalized,
       },
       validationErrors: errors,
+    }).catch((error) => {
+      if (
+        error instanceof JsonModelOutputError &&
+        /^invalid MMV2 composite extraction repair (?:output|semantics)$/u.test(error.message)
+      ) {
+        return emptyCompositeBatch(input.rawEvent.event_id);
+      }
+      throw error;
     });
-    return {
-      ...repaired,
-      composite_candidates: [...deterministicCandidates, ...repaired.composite_candidates],
-    };
+    return repaired;
   }
   return combined;
 }

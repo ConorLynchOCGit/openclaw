@@ -1,31 +1,52 @@
 # Document Ingestion Tool Smoke
 
 - Tool: `model_memory_document_ingest`
-- Run ID: `model-memory-tool-smoke`
-- Record path: `checkpoints/model-memory/model-memory-tool-smoke.json`
-- Pass 1 model: `openrouter/openai/gpt-5.4-nano`
-- Pass 2 model: `openrouter/openai/gpt-5.4-nano`
+- Run ID: `probe-doc-1024`
+- Record path: `.artifacts/tmp/probe-doc-1024.json`
+- Pass 1 model: `openai-codex/gpt-5.4-mini`
+- Pass 2 model: `openai-codex/gpt-5.4-mini`
 - Request seed: `7`
 - Request timeout ms: `180000`
 - Max words per window: `1500`
 - Chunk size: `2`
 - Max concurrency: `1`
-- Docs attempted: `2`
-- Docs completed: `2`
-- Docs failed: `0`
-- Captured claims: `20`
+- Docs attempted: `1`
+- Docs completed: `0`
+- Docs failed: `1`
+- Captured claims: `0`
 - Ignored windows: `0`
 - Rejected windows: `0`
-- Write decisions: `{"write":20}`
+- Write decisions: `{}`
+
+## Invocation
+
+```json
+{
+  "sources": [
+    ".artifacts/model-memory/phase2-live-gateway-ui-model-owned-validation/20260430T163211654Z/fixtures/live-gateway-structured-doc-20260430T163211654Z.md"
+  ],
+  "runId": "probe-doc-1024",
+  "recordPath": ".artifacts/tmp/probe-doc-1024.json",
+  "chunkSize": 2,
+  "maxConcurrency": 1,
+  "resume": false,
+  "modelId": "openai-codex/gpt-5.4-mini",
+  "candidateModelId": "openai-codex/gpt-5.4-mini",
+  "requestTimeoutMs": 180000,
+  "requestSeed": 7,
+  "maxWordsPerWindow": 1500
+}
+```
 
 ## Sources
 
-| Source                 | Status    | Windows | Captured | Decisions      |
-| ---------------------- | --------- | ------: | -------: | -------------- |
-| `AGENTS.md`            | completed |       3 |       14 | `{"write":14}` |
-| `docs/help/testing.md` | completed |       2 |        6 | `{"write":6}`  |
+| Source                                                                                                                                                  | Status | Windows | Captured | Decisions | Rejects |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ | ------: | -------: | --------- | ------- |
+| `.artifacts/model-memory/phase2-live-gateway-ui-model-owned-validation/20260430T163211654Z/fixtures/live-gateway-structured-doc-20260430T163211654Z.md` | failed |       0 |        0 | `{}`      |         |
 
-## Notes
+## Manual UI Steps
 
-- The tool was resolved through the OpenClaw plugin registry and delegated to the clean-room document-ingestion runner/service.
-- The stale `plugins.entries.memory-middleware` warning still surfaced during the smoke run. That remains explicit retirement debt and was not silently removed in this sprint.
+- Use the OpenClaw operator tool `model_memory_document_ingest`.
+- Pass sources [".artifacts/model-memory/phase2-live-gateway-ui-model-owned-validation/20260430T163211654Z/fixtures/live-gateway-structured-doc-20260430T163211654Z.md"].
+- Keep chunkSize=2, maxConcurrency=1, resume=true, modelId=openai-codex/gpt-5.4-mini, candidateModelId=openai-codex/gpt-5.4-mini.
+- After the run, inspect .artifacts/tmp/probe-doc-1024.json and the model-memory operator evidence surfaces for captured claims and write decisions.

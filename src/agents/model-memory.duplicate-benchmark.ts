@@ -13,10 +13,7 @@ export type DuplicateBenchmarkLabel =
   | "should_supersede"
   | "ambiguous_but_contained";
 
-export type DuplicateBenchmarkResolution =
-  | "bootstrap_case_id"
-  | "exact_fingerprint"
-  | "semantic_fallback";
+export type DuplicateBenchmarkResolution = "bootstrap_case_id" | "exact_fingerprint";
 
 type ReviewedCaseSeed = {
   label: DuplicateBenchmarkLabel;
@@ -27,7 +24,7 @@ type BenchmarkSeedBootstrapMode =
   | "review_aligned_semantic_seeds"
   | "prior_semantic_seeds"
   | "legacy_case_id_bootstrap"
-  | "current_audit_bootstrap";
+  | "no_reviewed_seeds";
 
 export type DuplicateBenchmarkSemanticSeed = {
   seedId: string;
@@ -108,14 +105,6 @@ export type ModelMemoryDuplicateBenchmarkReport = {
       sampleSize: number;
     };
   };
-  recommendedDeterministicAttachPatterns: Array<{
-    id:
-      | "fact_exact_value_subject_drift"
-      | "rule_same_actions_subject_drift"
-      | "procedure_same_steps_title_drift";
-    description: string;
-    supportingCaseIds: string[];
-  }>;
 };
 
 const REVIEWED_RERUN_CASES: Record<string, ReviewedCaseSeed> = {
@@ -304,33 +293,6 @@ function hashFingerprintText(value: string | undefined): string | undefined {
     return undefined;
   }
   return createHash("sha256").update(normalized).digest("hex").slice(0, 16);
-}
-
-function tokenize(value: string | undefined): Set<string> {
-  return new Set(
-    normalizeFingerprintText(value)
-      .split(/[^a-z0-9]+/i)
-      .filter((token) => token.length >= 4),
-  );
-}
-
-function tokenSimilarity(left: string | undefined, right: string | undefined): number {
-  const leftTokens = tokenize(left);
-  const rightTokens = tokenize(right);
-  const smallerSize = Math.min(leftTokens.size, rightTokens.size);
-  const largerSize = Math.max(leftTokens.size, rightTokens.size);
-  if (smallerSize === 0 || largerSize === 0) {
-    return 0;
-  }
-  let overlap = 0;
-  for (const token of leftTokens) {
-    if (rightTokens.has(token)) {
-      overlap += 1;
-    }
-  }
-  const smallerCoverage = overlap / smallerSize;
-  const largerCoverage = overlap / largerSize;
-  return Number((smallerCoverage * 0.7 + largerCoverage * 0.3).toFixed(4));
 }
 
 function getTopPriorCandidateSummary(
@@ -525,105 +487,6 @@ function buildBootstrapSemanticSeeds(input: { duplicateAudit: DuplicateAuditRepo
   };
 }
 
-function pickTopUnique<T>(values: T[], limit: number, keyFn: (value: T) => string): T[] {
-  const selected: T[] = [];
-  const seen = new Set<string>();
-  for (const value of values) {
-    const key = keyFn(value);
-    if (seen.has(key)) {
-      continue;
-    }
-    seen.add(key);
-    selected.push(value);
-    if (selected.length >= limit) {
-      break;
-    }
-  }
-  return selected;
-}
-
-function buildCurrentAuditBootstrapSemanticSeeds(input: {
-  duplicateAudit: DuplicateAuditReport;
-}): DuplicateBenchmarkSemanticSeed[] {
-  const legitDistinctSeeds = pickTopUnique(
-    [...input.duplicateAudit.rerunEscapeCases]
-      .filter((caseRecord) => caseRecord.missClass === "legit_distinct")
-      .toSorted((left, right) => right.retainedCandidateCount - left.retainedCandidateCount),
-    4,
-    (caseRecord) => `${caseRecord.source}|${caseRecord.kind}|${caseRecord.payloadSummary}`,
-  ).map((caseRecord) =>
-    buildSemanticSeed({
-      from: "rerun_escape",
-      source: caseRecord.source,
-      kind: caseRecord.kind,
-      payloadSummary: caseRecord.payloadSummary,
-      topPriorCandidateSummary: caseRecord.nearestPriorCandidates[0]?.payloadSummary,
-      label: "legit_distinct",
-      rationale: [
-        "Bootstrap seed derived from the current preserved-corpus audit.",
-        "The reviewed rerun case remained distinct because the nearest prior candidate did not safely clear the same-claim bar.",
-      ],
-    }),
-  );
-
-  const ambiguousSeeds = pickTopUnique(
-    [...input.duplicateAudit.rerunEscapeCases]
-      .filter(
-        (caseRecord) =>
-          caseRecord.missClass !== "legit_distinct" &&
-          caseRecord.replayPathClassification === "batched_adjudication" &&
-          caseRecord.retainedCandidateCount > 0,
-      )
-      .toSorted((left, right) => {
-        const leftOverlap = left.nearestPriorCandidates[0]?.overlap.smallerCoverage ?? 0;
-        const rightOverlap = right.nearestPriorCandidates[0]?.overlap.smallerCoverage ?? 0;
-        return rightOverlap - leftOverlap;
-      }),
-    4,
-    (caseRecord) => `${caseRecord.source}|${caseRecord.kind}|${caseRecord.payloadSummary}`,
-  ).map((caseRecord) =>
-    buildSemanticSeed({
-      from: "rerun_escape",
-      source: caseRecord.source,
-      kind: caseRecord.kind,
-      payloadSummary: caseRecord.payloadSummary,
-      topPriorCandidateSummary: caseRecord.nearestPriorCandidates[0]?.payloadSummary,
-      label: "ambiguous_but_contained",
-      rationale: [
-        "Bootstrap seed derived from the current preserved-corpus audit.",
-        "The rerun reached the batch lane with a plausible prior candidate, but the remaining delta still looked ambiguous enough to avoid a deterministic attach label.",
-      ],
-    }),
-  );
-
-  const clusterSeeds = pickTopUnique(
-    [...input.duplicateAudit.duplicateClusterCases].toSorted(
-      (left, right) => right.similarity - left.similarity,
-    ),
-    3,
-    (caseRecord) =>
-      `${caseRecord.newerObjectSource}|${caseRecord.kind}|${caseRecord.newerPayloadSummary}`,
-  ).map((caseRecord) =>
-    buildSemanticSeed({
-      from: "duplicate_cluster",
-      source: caseRecord.newerObjectSource,
-      kind: caseRecord.kind,
-      payloadSummary: caseRecord.newerPayloadSummary,
-      topPriorCandidateSummary: caseRecord.olderPayloadSummary,
-      label:
-        caseRecord.overlap.smallerCoverage >= 0.95 && caseRecord.overlap.largerCoverage >= 0.65
-          ? "should_attach_support"
-          : "ambiguous_but_contained",
-      rationale: [
-        "Bootstrap seed derived from a current duplicate-cluster corroboration case.",
-        "This seed is keyed by semantic fingerprint so the benchmark survives object-id churn across corpus rebuilds.",
-      ],
-    }),
-  );
-
-  return [...legitDistinctSeeds, ...ambiguousSeeds, ...clusterSeeds];
-}
-
 function mapReviewLabelToBenchmarkLabel(label: string): DuplicateBenchmarkLabel {
   switch (label) {
     case "clear_duplicate_should_attach":
@@ -692,55 +555,6 @@ function resolveSemanticSeed(
     };
   }
 
-  const compatibleCases = cases.filter((caseRecord) => {
-    const from =
-      caseRecord.caseType === "saturation_rerun_escape" ? "rerun_escape" : "duplicate_cluster";
-    if (from !== seed.from) {
-      return false;
-    }
-    if (seed.source) {
-      const caseSource =
-        caseRecord.caseType === "saturation_rerun_escape"
-          ? caseRecord.source
-          : caseRecord.newerObjectSource;
-      if (normalizeFingerprintText(caseSource) !== normalizeFingerprintText(seed.source)) {
-        return false;
-      }
-    }
-    if (
-      seed.kind &&
-      normalizeFingerprintText(caseRecord.kind) !== normalizeFingerprintText(seed.kind)
-    ) {
-      return false;
-    }
-    return true;
-  });
-
-  const scored = compatibleCases
-    .map((caseRecord) => {
-      const payloadSimilarity = tokenSimilarity(
-        caseRecord.caseType === "saturation_rerun_escape"
-          ? caseRecord.payloadSummary
-          : caseRecord.newerPayloadSummary,
-        seed.payloadSummaryPreview,
-      );
-      const topPriorSimilarity = tokenSimilarity(
-        getTopPriorCandidateSummary(caseRecord),
-        seed.topPriorCandidateSummaryPreview,
-      );
-      const score = Number((payloadSimilarity * 0.75 + topPriorSimilarity * 0.25).toFixed(4));
-      return { caseRecord, score };
-    })
-    .toSorted((left, right) => right.score - left.score);
-
-  const [best] = scored;
-  if (best && best.score >= 0.78) {
-    return {
-      caseRecord: best.caseRecord,
-      resolution: "semantic_fallback",
-    };
-  }
-
   return {};
 }
 
@@ -788,9 +602,6 @@ export async function runModelMemoryDuplicateBenchmark(input: {
   const bootstrapSeeds = buildBootstrapSemanticSeeds({
     duplicateAudit,
   });
-  const fallbackCurrentAuditSeeds = buildCurrentAuditBootstrapSemanticSeeds({
-    duplicateAudit,
-  });
   const reviewAlignedSeeds = duplicateReview
     ? buildSemanticSeedsFromReview({
         duplicateReview,
@@ -803,7 +614,7 @@ export async function runModelMemoryDuplicateBenchmark(input: {
         ? priorBenchmark.semanticSeeds
         : bootstrapSeeds.semanticSeeds.length > 0
           ? bootstrapSeeds.semanticSeeds
-          : fallbackCurrentAuditSeeds;
+          : [];
   const seedBootstrapMode: BenchmarkSeedBootstrapMode =
     reviewAlignedSeeds.length > 0
       ? "review_aligned_semantic_seeds"
@@ -811,7 +622,7 @@ export async function runModelMemoryDuplicateBenchmark(input: {
         ? "prior_semantic_seeds"
         : bootstrapSeeds.semanticSeeds.length > 0
           ? "legacy_case_id_bootstrap"
-          : "current_audit_bootstrap";
+          : "no_reviewed_seeds";
 
   const allCases: Array<DuplicateAuditRerunEscapeCase | DuplicateAuditClusterCase> = [
     ...duplicateAudit.rerunEscapeCases,
@@ -854,28 +665,6 @@ export async function runModelMemoryDuplicateBenchmark(input: {
   const rerunSupersedeMissCount = rerunHistoricalSupersedeCases.filter(
     (caseRecord) => caseRecord.adjudicatedLabel !== "should_supersede",
   ).length;
-
-  const factSupportingCases = rerunReviewedCases
-    .concat(clusterCorroborationCases)
-    .filter(
-      (caseRecord) =>
-        caseRecord.kind === "fact" && caseRecord.adjudicatedLabel === "should_attach_support",
-    )
-    .map((caseRecord) => caseRecord.caseId);
-  const ruleSupportingCases = rerunReviewedCases
-    .concat(clusterCorroborationCases)
-    .filter(
-      (caseRecord) =>
-        caseRecord.kind === "rule" && caseRecord.adjudicatedLabel === "should_attach_support",
-    )
-    .map((caseRecord) => caseRecord.caseId);
-  const procedureSupportingCases = rerunReviewedCases
-    .concat(clusterCorroborationCases)
-    .filter(
-      (caseRecord) =>
-        caseRecord.kind === "procedure" && caseRecord.adjudicatedLabel === "should_attach_support",
-    )
-    .map((caseRecord) => caseRecord.caseId);
 
   return {
     generatedAt: new Date().toISOString(),
@@ -935,26 +724,6 @@ export async function runModelMemoryDuplicateBenchmark(input: {
         rerunHistoricalWriteCases.length,
       ),
     },
-    recommendedDeterministicAttachPatterns: [
-      {
-        id: "fact_exact_value_subject_drift",
-        description:
-          "Fact reruns with the same value, matching class/kind/scope, and high normalized-search overlap should attach support even when the subject phrasing drifts.",
-        supportingCaseIds: factSupportingCases,
-      },
-      {
-        id: "rule_same_actions_subject_drift",
-        description:
-          "Rule reruns with the same recommended/avoid/capability fields and one clearly dominant candidate should attach support despite subject drift.",
-        supportingCaseIds: ruleSupportingCases,
-      },
-      {
-        id: "procedure_same_steps_title_drift",
-        description:
-          "Procedure reruns with the same ordered steps should attach support when only the title wording drifts.",
-        supportingCaseIds: procedureSupportingCases,
-      },
-    ],
   };
 }
 
@@ -1009,16 +778,6 @@ export function renderModelMemoryDuplicateBenchmarkMarkdown(
     for (const rationale of seed.rationale) {
       lines.push(`- Rationale: ${rationale}`);
     }
-    lines.push("");
-  }
-
-  lines.push("## Recommended Patterns", "");
-  for (const pattern of report.recommendedDeterministicAttachPatterns) {
-    lines.push(`### ${pattern.id}`);
-    lines.push(`- Description: ${pattern.description}`);
-    lines.push(
-      `- Supporting cases: ${pattern.supportingCaseIds.length === 0 ? "none" : pattern.supportingCaseIds.join(", ")}`,
-    );
     lines.push("");
   }
 

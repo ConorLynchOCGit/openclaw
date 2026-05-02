@@ -19,6 +19,7 @@ import type {
   Phase2SkillCandidateSourceRuntime,
   Phase2SkillCandidateVettingStatus,
 } from "./phase2-skill-candidate-ledger.ts";
+import type { WorkEpisodeOutcomePack } from "./phase2-work-episode-outcome-pack.ts";
 
 export const CANDIDATE_REVIEW_PREFILTER_EVENT_SCHEMA_VERSION =
   "candidate_review_prefilter_event.v1" as const;
@@ -244,6 +245,18 @@ export type ProactivityReviewEpisodePacket = {
     noRawToolLogs: true;
     rawFullTranscriptPersisted: false;
   };
+  sourceSelection?: {
+    primaryInputKind:
+      | "work_episode_outcome_pack"
+      | "codex_episode_window"
+      | "openclaw_episode_window"
+      | "bounded_mixed_fallback";
+    primaryRuntime: CandidateReviewRuntime;
+    selectedSourceRefs: string[];
+    droppedSourceCounts?: Record<string, number>;
+    fallbackReason?: string;
+    outcomePackId?: string;
+  };
 };
 
 export type CandidateReviewProposalKind =
@@ -314,6 +327,7 @@ export type CandidateReviewReport = {
   sourceRuntimes?: CandidateReviewRuntime[];
   rejectedProposalDiagnostics?: CandidateReviewRejectedProposalDiagnostic[];
   packetQuality?: ProactivityReviewEpisodePacket["packetQuality"];
+  sourceSelection?: ProactivityReviewEpisodePacket["sourceSelection"];
   promptPersisted: false;
   rawResponsePersisted: false;
   promptChars: number;
@@ -379,9 +393,9 @@ const MAX_ASSISTANT_EPISODE_TURN_LENGTH = 12_000;
 const MAX_SYSTEM_EPISODE_TURN_LENGTH = 1_200;
 const MAX_EPISODE_TURNS = 48;
 const MAX_TITLE_LENGTH = 96;
-const MAX_PURPOSE_LENGTH = 220;
-const MAX_NEXT_STEP_LENGTH = 240;
-const MAX_EXPECTED_VALUE_LENGTH = 220;
+const MAX_PURPOSE_LENGTH = 320;
+const MAX_NEXT_STEP_LENGTH = 360;
+const MAX_EXPECTED_VALUE_LENGTH = 320;
 const MAX_HIGH_IMPACT_REASON_LENGTH = 260;
 const MAX_SMALL_CLEANUP_REASON_LENGTH = 220;
 const DEFAULT_CODEX_SESSION_TAIL_BYTES = 20_000_000;
@@ -398,7 +412,11 @@ const PROHIBITED_PATTERNS = [
 ];
 const GENERIC_COPY_PATTERN =
   /\b(turns a recent idea|without digging through the inbox|already recurring|build the bounded request with|it sets the default|question worth asking before|skill worth creating)\b/iu;
-const CLIPPED_COPY_PATTERN = /(?:[,;:]|\b(?:and|or|with|from|to|for|because|whether|between))$/iu;
+const CLIPPED_COPY_PATTERN =
+  /(?:[,;:]|\b(?:and|or|with|from|to|for|because|whether|between|using|uses|use|into|against))\.?$/iu;
+const FUSED_TRAILING_FRAGMENT_PATTERN = /\b(?:and|or|with|uses)[a-z]{1,8}[,.]?$/iu;
+const DANGLING_TERMINAL_MODIFIER_PATTERN =
+  /\b(?:available|blocking|bounded|complete|concrete|current|exact|existing|final|latest|missing|required|selected|specific|unresolved)\.?$/iu;
 
 function hash(value: JsonLike | string): string {
   return typeof value === "string" ? sha256Text(value) : sha256JsonValue(value);
@@ -410,6 +428,16 @@ function unique(values: Array<string | undefined | null>): string[] {
 
 function normalizeWhitespace(value: string): string {
   return value.replace(/\s+/gu, " ").trim();
+}
+
+function looksLikeClippedVisibleCopy(value: string): boolean {
+  const normalized = normalizeWhitespace(value);
+  return (
+    CLIPPED_COPY_PATTERN.test(normalized) ||
+    FUSED_TRAILING_FRAGMENT_PATTERN.test(normalized) ||
+    DANGLING_TERMINAL_MODIFIER_PATTERN.test(normalized) ||
+    /[a-z]{18,}[,.]?$/u.test(normalized)
+  );
 }
 
 function boundedText(value: string | undefined, maxLength: number): string {
@@ -986,6 +1014,7 @@ export function buildProactivityReviewEpisodePacket(input: {
   rejectedOrDemotedSummary?: string[];
   activeMilestone?: string;
   activeDocsOrBranches?: string[];
+  sourceSelection?: ProactivityReviewEpisodePacket["sourceSelection"];
 }): ProactivityReviewEpisodePacket {
   const narrativeActivities = input.recentActivities.filter(
     (activity) => activity.role === "user" || activity.role === "assistant",
@@ -1206,9 +1235,195 @@ export function buildProactivityReviewEpisodePacket(input: {
       noRawToolLogs: true,
       rawFullTranscriptPersisted: false,
     },
+    sourceSelection: input.sourceSelection,
   };
   assertNoProhibitedContent(packet, "proactivity review episode packet");
   return packet;
+}
+
+function workEpisodeOutcomePackSummary(pack: WorkEpisodeOutcomePack): string {
+  const lines = [
+    `Work episode outcome pack: ${pack.episodeId}`,
+    `Runtime: ${pack.runtime}`,
+    `Outcome status: ${pack.outcomeStatus}`,
+    pack.workType ? `Work type: ${pack.workType}` : undefined,
+    pack.primarySystemArea ? `Primary system area: ${pack.primarySystemArea}` : undefined,
+    pack.completedObjective ? `Completed objective: ${pack.completedObjective}` : undefined,
+    pack.recoveryRecommendation
+      ? `Recovery recommendation: ${pack.recoveryRecommendation}`
+      : undefined,
+    `User goal: ${pack.userGoal}`,
+    `Work summary: ${pack.workSummary}`,
+    `Final outcome: ${pack.finalOutcome}`,
+    pack.filesTouched.length > 0
+      ? `Files touched: ${pack.filesTouched
+          .map((file) => `${file.path}${file.summary ? ` - ${file.summary}` : ""}`)
+          .join("; ")}`
+      : undefined,
+    pack.testsRun.length > 0
+      ? `Tests run: ${pack.testsRun
+          .map((test) => `${test.status}: ${test.command} - ${test.summary}`)
+          .join("; ")}`
+      : undefined,
+    pack.failuresAndFixes.length > 0
+      ? `Failures and fixes: ${pack.failuresAndFixes
+          .map(
+            (entry) => `${entry.status}: ${entry.failure}${entry.fix ? ` Fix: ${entry.fix}` : ""}`,
+          )
+          .join("; ")}`
+      : undefined,
+    pack.unresolvedQuestions.length > 0
+      ? `Unresolved questions: ${pack.unresolvedQuestions.join("; ")}`
+      : undefined,
+    pack.followUpCandidates.length > 0
+      ? `Follow-up candidates: ${pack.followUpCandidates
+          .map((candidate) => `${candidate.title} - ${candidate.rationale}`)
+          .join("; ")}`
+      : undefined,
+    pack.skillImprovementEvidence.length > 0
+      ? `Skill improvement evidence: ${pack.skillImprovementEvidence
+          .map(
+            (entry) =>
+              `${entry.workflowName ?? "workflow"} - ${entry.evidence}${
+                entry.suggestedDirection ? ` Direction: ${entry.suggestedDirection}` : ""
+              }`,
+          )
+          .join("; ")}`
+      : undefined,
+    "Safety: no raw logs, no raw transcripts, no provider prompts, no hidden reasoning, no secrets.",
+  ];
+  return redactAndBoundEpisodeText(lines.filter(Boolean).join("\n"), MAX_USER_EPISODE_TURN_LENGTH);
+}
+
+function workEpisodeOutcomePackToolSummaries(
+  pack: WorkEpisodeOutcomePack,
+): CandidateReviewRecentActivity[] {
+  return [
+    ...pack.testsRun.map((test, index) => ({
+      ref: `work-episode://${pack.episodeId}/test/${index}`,
+      role: "tool_summary" as const,
+      kind: test.status === "failed" ? ("failure_summary" as const) : ("result_summary" as const),
+      boundedText: redactAndBound(
+        `Command ${test.command} ${test.status}. ${test.summary}`,
+        MAX_SYSTEM_EPISODE_TURN_LENGTH,
+      ),
+      sourceRuntime: pack.runtime === "openclaw" ? ("openclaw" as const) : ("codex" as const),
+      recordedAt: pack.completedAt,
+    })),
+    ...pack.failuresAndFixes.map((entry, index) => ({
+      ref: `work-episode://${pack.episodeId}/failure/${index}`,
+      role: "tool_summary" as const,
+      kind: entry.status === "fixed" ? ("result_summary" as const) : ("failure_summary" as const),
+      boundedText: redactAndBound(
+        `Failure ${entry.status}: ${entry.failure}${entry.fix ? ` Fix: ${entry.fix}` : ""}`,
+        MAX_SYSTEM_EPISODE_TURN_LENGTH,
+      ),
+      sourceRuntime: pack.runtime === "openclaw" ? ("openclaw" as const) : ("codex" as const),
+      recordedAt: pack.completedAt,
+    })),
+  ];
+}
+
+export function buildProactivityReviewEpisodePacketFromOutcomePack(input: {
+  outcomePack: WorkEpisodeOutcomePack;
+  loadedSkills?: CandidateReviewExistingSkill[];
+  recentProactivityItems?: CandidateReviewRecentProactivityItem[];
+  recentCandidateIds?: string[];
+  possibleDuplicateTitles?: string[];
+  rejectedOrDemotedSummary?: string[];
+  activeMilestone?: string;
+  activeDocsOrBranches?: string[];
+}): ProactivityReviewEpisodePacket {
+  const pack = input.outcomePack;
+  const runtime: Exclude<CandidateReviewRuntime, "mixed"> =
+    pack.runtime === "openclaw" ? "openclaw" : "codex";
+  const summaryRef = `work-episode://${pack.episodeId}/summary`;
+  const recentActivities: CandidateReviewRecentActivity[] = [
+    {
+      ref: summaryRef,
+      role: "user",
+      kind: "ask",
+      boundedText: workEpisodeOutcomePackSummary(pack),
+      sourceRuntime: runtime,
+      recordedAt: pack.completedAt,
+    },
+    ...workEpisodeOutcomePackToolSummaries(pack),
+  ];
+  const event = buildCandidateReviewPrefilterEvent({
+    eventType: "session_boundary",
+    runtime,
+    sessionKey: pack.sessionKey ?? pack.projectId,
+    refs: [summaryRef, ...pack.sourceRefs].slice(-12),
+    boundedSummary: workEpisodeOutcomePackSummary(pack),
+    createdAt: pack.completedAt,
+  });
+  const triggerPacket = buildCandidateReviewTriggerPacket({
+    event,
+    recentActivities,
+    recentCardSummaries: input.recentProactivityItems,
+    recentActivitySignals: [
+      "primary_input:work_episode_outcome_pack",
+      `outcome_pack_runtime:${pack.runtime}`,
+      `files_touched:${pack.filesTouched.length}`,
+      `tests_run:${pack.testsRun.length}`,
+      `failures_and_fixes:${pack.failuresAndFixes.length}`,
+      `follow_up_candidates:${pack.followUpCandidates.length}`,
+      `skill_improvement_evidence:${pack.skillImprovementEvidence.length}`,
+    ],
+  });
+  const triggerDecision: CandidateReviewTriggerDecision = {
+    schemaVersion: CANDIDATE_REVIEW_TRIGGER_DECISION_SCHEMA_VERSION,
+    shouldRun: true,
+    reasonCodes: ["session_boundary"],
+    confidence: "high",
+    episodeWindow: {
+      startRef: summaryRef,
+      endRef: summaryRef,
+      includedRefs: [summaryRef, ...pack.sourceRefs].slice(-12),
+    },
+    reviewGoal: "both",
+    why: "Structured work episode outcome pack is available as primary candidate-review input.",
+  };
+  const packet = buildProactivityReviewEpisodePacket({
+    triggerPacket,
+    triggerDecision,
+    recentActivities,
+    codexAdapterReport: {
+      status: pack.runtime === "openclaw" ? "skipped" : "loaded",
+      reasonCode: pack.runtime === "openclaw" ? "outcome_pack_openclaw_runtime" : undefined,
+      entryCount: recentActivities.length,
+      sessionRefs: pack.sourceRefs.slice(0, 12),
+      commandSummaryCount: pack.testsRun.length,
+      validationFailureCount: pack.failuresAndFixes.filter((entry) => entry.status !== "fixed")
+        .length,
+      genericCommandSummaryCount: 0,
+    },
+    loadedSkills: input.loadedSkills,
+    recentProactivityItems: input.recentProactivityItems,
+    recentCandidateIds: input.recentCandidateIds,
+    possibleDuplicateTitles: input.possibleDuplicateTitles,
+    rejectedOrDemotedSummary: input.rejectedOrDemotedSummary,
+    activeMilestone: input.activeMilestone ?? "pre-Milestone-4 work episode outcome pack review",
+    activeDocsOrBranches: input.activeDocsOrBranches ?? [],
+    sourceSelection: {
+      primaryInputKind: "work_episode_outcome_pack",
+      primaryRuntime: pack.runtime,
+      selectedSourceRefs: [summaryRef, ...pack.sourceRefs].slice(0, 24),
+      droppedSourceCounts: {},
+      outcomePackId: pack.episodeId,
+    },
+  });
+  const reasonCodes = packet.packetQuality.reasonCodes.filter(
+    (reasonCode) => reasonCode !== "assistant_finals_missing",
+  );
+  return {
+    ...packet,
+    packetQuality: {
+      ...packet.packetQuality,
+      status: reasonCodes.length > 0 ? "degraded" : "pass",
+      reasonCodes,
+    },
+  };
 }
 
 const CandidateProposalOutputSchema = z
@@ -1364,18 +1579,39 @@ const CANDIDATE_REVIEW_SYSTEM_PROMPT = [
   "You review a bounded high-context OpenClaw/Codex recent-work episode for useful candidate proposals.",
   "Return strict JSON only.",
   "Return 0-3 proposals maximum; prefer no proposal over a weak proposal.",
+  "Default to at most one sharp proactive plan and at most one sharp skill or skill enhancement.",
+  "Use a third proposal only when it is an explicit merge/demotion or an independently exceptional opportunity.",
+  "Treat the recent episode as one coherent unit and prioritize what matters to the user's current objective.",
   "Identify only high-impact proactive plans, new skill candidates, existing skill enhancements, merge candidates, or demotions.",
   "Require repeatability, large avoided cost, stability risk, workflow acceleration, or strategic unblock value.",
   "Reject tiny cleanup candidates, one-off local optimizations, vague checklists, clipped source fragments, and unclear expected value.",
+  "Repeated wording, repeated titles, or repeated requests are not sufficient evidence by themselves; surface only if there is a concrete implementation target or reusable workflow.",
+  "Demote vague repeated-request cards that do not name a specific next implementation target, artifact, or quality gate.",
+  "When the primary input is a work episode outcome pack, do not propose restating the completedObjective or finalOutcome as future work.",
+  "Prefer downstream follow-ups, recovery work, unresolved questions, or reusable workflow improvements over repeating work that the pack says is already complete.",
+  "If the only candidate would be do the thing that was just completed, demote it instead of surfacing it.",
+  "For proactive_plan proposals, name the concrete next implementation target and the evidence that this plan is ready to queue.",
+  "For new skill candidates, prefer bounded reusable capabilities over broad activity labels.",
+  "A new skill candidate must have a clear trigger condition, repeatable inputs, a reusable procedure or checklist, a concrete output artifact, validation criteria, and evidence that it reduces repeated work across future sessions.",
+  "Do not label a broad review activity as a new skill unless it can become an executable SKILL.md-style workflow.",
+  "If the opportunity is mainly run this check before release or verify this system state, prefer proactive_plan or existing_skill_enhancement unless the reusable procedure is clearly skill-shaped.",
+  "Existing skill enhancement is also a legitimate surfaced card when the evidence points to improving an already-known workflow, prompt, proof, validation checklist, or candidate-review method.",
+  "For new_skill_candidate or existing_skill_enhancement proposals, explain why it is a skill or enhancement rather than a proactive plan, what it would do step by step, what inputs it expects, what outputs it produces, and what quality gate proves it worked.",
+  "Prefer precise operational titles over broad source-context titles; for example, use Candidate Discovery QA Gate, Model-Owned Memory Lane Validation Skill, or Proactivity Candidate Review Release Gate rather than High Context Episode Review Skill.",
   "Use proposalKind existing_skill_enhancement only when suggestedExistingSkillName is an exact loaded skill name from existingContext.loadedSkills.",
   "If no exact loaded skill match exists, use new_skill_candidate, proactive_plan, merge_or_extend_candidate, or demote_existing_candidate instead.",
-  "Do not infer fuzzy merge as fact.",
+  "Use merge_or_extend_candidate only when existingContext.recentProactivityItems contains a specific existing plan or skill candidate that your proposal should merge into or extend.",
+  "For merge_or_extend_candidate, set mergeTargetCandidateId to that exact existing item id and do not create a new surfaced card.",
+  "Do not infer fuzzy merge as fact; related items can remain distinct.",
   "Do not produce generic candidates.",
   "Titles must name a capability, decision, or outcome in readable human text.",
+  "Titles must use readable Title Case, not sentence-case fragments. Purpose, next step, expected value, and rationale fields should use normal sentence capitalization.",
+  "Avoid hyphen-separated title fragments unless the hyphen is part of a normal term.",
   "Titles must not be slugs, ids, normalized keys, hyphen-joined fragments, or concatenated source phrases.",
   "Use normal English word spacing in title, purpose, next step, expected value, and rationale fields; never concatenate words together.",
   "If a field is too long, shorten the wording; do not remove spaces between words to satisfy length limits.",
-  "Primary fields must be complete readable phrases or sentences. Do not end title, purpose, or next step with a comma, colon, semicolon, or dangling connector.",
+  "Purpose, next step, expected value, and rationale fields must be complete readable sentences. Shorten by removing detail, not by cutting off the final phrase.",
+  "Do not end title, purpose, or next step with a comma, colon, semicolon, dangling connector, or dangling modifier such as missing, selected, specific, latest, or current.",
   "Use suggestedSkillName for slugs; never put slugs in title.",
   "Purposes must explain what the item does or unlocks.",
   "Next steps must be actionable.",
@@ -1433,8 +1669,8 @@ function validateProposal(
     reasons.push("candidate_copy_lacks_word_spacing");
   }
   if (
-    [proposal.title, proposal.purpose, proposal.recommendedNextStep].some((field) =>
-      CLIPPED_COPY_PATTERN.test(field.trim()),
+    [proposal.purpose, proposal.recommendedNextStep, proposal.expectedUserValue].some(
+      looksLikeClippedVisibleCopy,
     )
   ) {
     reasons.push("clipped_candidate_copy");
@@ -1594,6 +1830,7 @@ export async function reviewEpisodeForCandidates(
         episodeTurnCount: packet.episodeTurns.length,
         codexAdapterStatus: packet.codexActivitySummary.status,
         packetQuality: packet.packetQuality,
+        sourceSelection: packet.sourceSelection,
         sourceRuntimes: unique(
           packet.episodeTurns.map((turn) => turn.sourceRuntime),
         ) as CandidateReviewRuntime[],
@@ -1681,6 +1918,7 @@ export async function reviewEpisodeForCandidates(
         episodeTurnCount: packet.episodeTurns.length,
         codexAdapterStatus: packet.codexActivitySummary.status,
         packetQuality: packet.packetQuality,
+        sourceSelection: packet.sourceSelection,
         sourceRuntimes: unique(
           packet.episodeTurns.map((turn) => turn.sourceRuntime),
         ) as CandidateReviewRuntime[],
@@ -1709,6 +1947,7 @@ export async function reviewEpisodeForCandidates(
         episodeTurnCount: packet.episodeTurns.length,
         codexAdapterStatus: packet.codexActivitySummary.status,
         packetQuality: packet.packetQuality,
+        sourceSelection: packet.sourceSelection,
         sourceRuntimes: unique(
           packet.episodeTurns.map((turn) => turn.sourceRuntime),
         ) as CandidateReviewRuntime[],
@@ -1885,10 +2124,12 @@ export function convertCandidateReviewProposalsToLedgerSources(input: {
         sourceRuntime: proposal.sourceRuntime,
       }),
     ]);
+    if (proposal.proposalKind === "merge_or_extend_candidate") {
+      continue;
+    }
     if (
       proposal.proposalKind === "new_skill_candidate" ||
-      proposal.proposalKind === "existing_skill_enhancement" ||
-      proposal.proposalKind === "merge_or_extend_candidate"
+      proposal.proposalKind === "existing_skill_enhancement"
     ) {
       const previous = previousByIntent.get(normalizedIntentKey);
       const skillCandidateId =

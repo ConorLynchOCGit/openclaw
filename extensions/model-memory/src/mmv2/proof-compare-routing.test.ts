@@ -26,6 +26,7 @@ describe("mmv2/proof-compare-routing", () => {
           reason_codes: ["temporary_context", "not_memory"],
           evidence_quote: "For this answer, use bullets.",
           confidence: 0.85,
+          allow_multiple_top_level_atomic: false,
         },
       ],
     };

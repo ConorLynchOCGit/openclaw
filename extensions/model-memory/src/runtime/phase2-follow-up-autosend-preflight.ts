@@ -22,10 +22,7 @@ export const PHASE2_FOLLOW_UP_AUTOSEND_PREFLIGHT_SCHEMA_VERSION =
 export const PHASE2_FOLLOW_UP_AUTOSEND_PREFLIGHT_REPORT_SCHEMA_VERSION =
   "phase2_follow_up_autosend_preflight_report.v1" as const;
 
-export type Phase2FollowUpAutoSendClassification =
-  | "manual_only"
-  | "future_auto_send_candidate"
-  | "blocked";
+export type Phase2FollowUpAutoSendPreflightState = "manual_only" | "blocked";
 
 export type Phase2FollowUpAutoSendPreflightDecision =
   | "follow_up_preflight_report_only"
@@ -36,8 +33,8 @@ export type Phase2FollowUpAutoSendPreflightPolicy = {
   schemaVersion: typeof PHASE2_FOLLOW_UP_AUTOSEND_PREFLIGHT_SCHEMA_VERSION;
   policyId: string;
   messageClass: "operator_approved_follow_up_available";
-  deliveryClassification: "manual_only";
-  futureCandidateClassificationAllowed: true;
+  deliveryMode: "manual_only";
+  futureCandidateReportAllowed: true;
   futureCandidateReportOnly: true;
   autoSendExecutionAllowed: false;
   requireFreshnessPass: true;
@@ -55,7 +52,7 @@ export type Phase2FollowUpAutoSendPreflightPolicy = {
 export type Phase2FollowUpAutoSendCandidate = {
   candidateId: string;
   messageClass: "operator_approved_follow_up_available";
-  classification: Phase2FollowUpAutoSendClassification;
+  preflightState: Phase2FollowUpAutoSendPreflightState;
   deliveryMode: "manual_only";
   reportOnly: true;
   wouldDeliverAutomatically: false;
@@ -78,7 +75,7 @@ export type Phase2FollowUpAutoSendPreflightCheck = {
     | "no_follow_up_auto_send"
     | "freshness_required"
     | "non_repeat_required"
-    | "positive_feedback_required"
+    | "future_candidate_model_review_required"
     | "wrong_context_blocks_candidate"
     | "provenance_required"
     | "source_profile_required"
@@ -86,18 +83,18 @@ export type Phase2FollowUpAutoSendPreflightCheck = {
     | "urgency_manipulation_blocked"
     | "external_instruction_blocked"
     | "rollback_blocks_candidate"
-    | "feedback_not_semantic_truth";
+    | "feedback_not_canonical_truth";
 };
 
 export type Phase2FollowUpAutoSendPreflightTelemetry = {
   schemaVersion: typeof PHASE2_FOLLOW_UP_AUTOSEND_PREFLIGHT_SCHEMA_VERSION;
   reportId: string;
   decision: Phase2FollowUpAutoSendPreflightDecision;
-  classification: Phase2FollowUpAutoSendClassification;
+  preflightState: Phase2FollowUpAutoSendPreflightState;
   followUpAutoSendOccurred: false;
   reportOnly: true;
   manualSendRequired: true;
-  usefulFeedbackCount: number;
+  positiveFeedbackCount: number;
   wrongContextCount: number;
   repeatedCount: number;
   staleCount: number;
@@ -108,7 +105,7 @@ export type Phase2FollowUpAutoSendPreflightTelemetry = {
   contentHashes: string[];
   proofHashes: string[];
   noDarkDataStatus: "pass" | "fail";
-  semanticTruthWriteObserved: false;
+  canonicalTruthWriteObserved: false;
   actionExecutionObserved: false;
 };
 
@@ -116,7 +113,7 @@ export type Phase2FollowUpAutoSendPreflightRollbackPlan = {
   rollbackId: string;
   killSwitchEnvVar: "MODEL_MEMORY_PHASE2_FOLLOW_UP_AUTOSEND_PREFLIGHT_DISABLED";
   targetMode: "manual_only";
-  disablesFutureCandidateClassification: true;
+  disablesFutureCandidateReport: true;
   preservesManualSendWorkflow: true;
 };
 
@@ -133,7 +130,7 @@ export type Phase2FollowUpAutoSendPreflightReport = {
   feedbackSummary?: {
     reportId: string;
     feedbackCount: number;
-    usefulCount: number;
+    positiveFeedbackCount: number;
     wrongContextCount: number;
   };
   candidate: Phase2FollowUpAutoSendCandidate;
@@ -166,7 +163,7 @@ export type Phase2FollowUpAutoSendPreflightInput = {
   forceUrgencyManipulation?: boolean;
   forceExternalInstruction?: boolean;
   forceFollowUpAutoSendAttempt?: boolean;
-  forceSemanticTruthWrite?: boolean;
+  forceCanonicalTruthWrite?: boolean;
 };
 
 export type Phase2FollowUpAutoSendPreflightArtifact = {
@@ -271,7 +268,7 @@ async function loadReports(input: Phase2FollowUpAutoSendPreflightInput): Promise
     input.feedbackReport === null
       ? undefined
       : (input.feedbackReport ??
-        (await buildPhase2ProactivityFeedbackReport({ now: input.now, controls: ["useful"] })));
+        (await buildPhase2ProactivityFeedbackReport({ now: input.now, controls: [] })));
   return { continuationReport, feedbackReport };
 }
 
@@ -281,7 +278,7 @@ export async function buildPhase2FollowUpAutoSendPreflightReport(
   const generatedAt = (input.now ?? new Date()).toISOString();
   const { continuationReport, feedbackReport } = await loadReports(input);
   const rollback = readRollback(input.env);
-  const usefulFeedbackCount = feedbackReport?.qualityReport.usefulCount ?? 0;
+  const positiveFeedbackCount = feedbackReport?.qualityReport.positiveFeedbackCount ?? 0;
   const wrongContextCount =
     (feedbackReport?.qualityReport.wrongContextCount ?? 0) +
     (input.forceWrongContextFeedback ? 1 : 0);
@@ -318,18 +315,14 @@ export async function buildPhase2FollowUpAutoSendPreflightReport(
     continuationReport?.telemetry.noDarkDataStatus === "pass" &&
     feedbackReport?.telemetry.noDarkDataStatus === "pass";
   const noAutoSend = !input.forceFollowUpAutoSendAttempt;
-  const semanticTruthSafe = !input.forceSemanticTruthWrite;
+  const canonicalTruthSafe = !input.forceCanonicalTruthWrite;
   const checks: Phase2FollowUpAutoSendPreflightCheck[] = [];
   addCheck(checks, "follow_up_defaults_manual_only", true);
   addCheck(checks, "future_candidate_report_only", true);
   addCheck(checks, "no_follow_up_auto_send", noAutoSend);
   addCheck(checks, "freshness_required", staleCount === 0);
   addCheck(checks, "non_repeat_required", repeatedCount === 0);
-  addCheck(
-    checks,
-    "positive_feedback_required",
-    !input.evaluateFutureCandidate || usefulFeedbackCount > 0,
-  );
+  addCheck(checks, "future_candidate_model_review_required", !input.evaluateFutureCandidate);
   addCheck(checks, "wrong_context_blocks_candidate", wrongContextCount === 0);
   addCheck(checks, "provenance_required", provenanceOk);
   addCheck(checks, "source_profile_required", sourceProfileOk);
@@ -337,16 +330,12 @@ export async function buildPhase2FollowUpAutoSendPreflightReport(
   addCheck(checks, "urgency_manipulation_blocked", !input.forceUrgencyManipulation);
   addCheck(checks, "external_instruction_blocked", !input.forceExternalInstruction);
   addCheck(checks, "rollback_blocks_candidate", !rollback);
-  addCheck(checks, "feedback_not_semantic_truth", semanticTruthSafe);
+  addCheck(checks, "feedback_not_canonical_truth", canonicalTruthSafe);
   const blockedReasonCodes = uniqueSortedStrings(
     checks.filter((check) => check.status === "fail").map((check) => check.reasonCode),
   );
   const blocked = blockedReasonCodes.length > 0;
-  const classification: Phase2FollowUpAutoSendClassification = blocked
-    ? "blocked"
-    : input.evaluateFutureCandidate
-      ? "future_auto_send_candidate"
-      : "manual_only";
+  const preflightState: Phase2FollowUpAutoSendPreflightState = blocked ? "blocked" : "manual_only";
   const decision: Phase2FollowUpAutoSendPreflightDecision = rollback
     ? "rollback_disabled"
     : blocked
@@ -356,7 +345,7 @@ export async function buildPhase2FollowUpAutoSendPreflightReport(
     family: "context_artifact",
     artifactType: "phase2_follow_up_autosend_preflight_candidate",
     targetId: "operator_approved_follow_up_available",
-    seed: { generatedAt, classification, blockedReasonCodes },
+    seed: { generatedAt, preflightState, blockedReasonCodes },
   });
   const reportId = buildDerivedArtifactId({
     family: "context_artifact",
@@ -373,8 +362,8 @@ export async function buildPhase2FollowUpAutoSendPreflightReport(
       seed: { generatedAt },
     }),
     messageClass: "operator_approved_follow_up_available",
-    deliveryClassification: "manual_only",
-    futureCandidateClassificationAllowed: true,
+    deliveryMode: "manual_only",
+    futureCandidateReportAllowed: true,
     futureCandidateReportOnly: true,
     autoSendExecutionAllowed: false,
     requireFreshnessPass: true,
@@ -391,7 +380,7 @@ export async function buildPhase2FollowUpAutoSendPreflightReport(
   const candidate: Phase2FollowUpAutoSendCandidate = {
     candidateId,
     messageClass: "operator_approved_follow_up_available",
-    classification,
+    preflightState,
     deliveryMode: "manual_only",
     reportOnly: true,
     wouldDeliverAutomatically: false,
@@ -413,7 +402,7 @@ export async function buildPhase2FollowUpAutoSendPreflightReport(
     }),
     killSwitchEnvVar: "MODEL_MEMORY_PHASE2_FOLLOW_UP_AUTOSEND_PREFLIGHT_DISABLED",
     targetMode: "manual_only",
-    disablesFutureCandidateClassification: true,
+    disablesFutureCandidateReport: true,
     preservesManualSendWorkflow: true,
   };
   const report: Phase2FollowUpAutoSendPreflightReport = {
@@ -429,7 +418,7 @@ export async function buildPhase2FollowUpAutoSendPreflightReport(
       ? {
           reportId: feedbackReport.reportId,
           feedbackCount: feedbackReport.qualityReport.feedbackCount,
-          usefulCount: feedbackReport.qualityReport.usefulCount,
+          positiveFeedbackCount: feedbackReport.qualityReport.positiveFeedbackCount,
           wrongContextCount: feedbackReport.qualityReport.wrongContextCount,
         }
       : undefined,
@@ -439,11 +428,11 @@ export async function buildPhase2FollowUpAutoSendPreflightReport(
       schemaVersion: PHASE2_FOLLOW_UP_AUTOSEND_PREFLIGHT_SCHEMA_VERSION,
       reportId,
       decision,
-      classification,
+      preflightState,
       followUpAutoSendOccurred: false,
       reportOnly: true,
       manualSendRequired: true,
-      usefulFeedbackCount,
+      positiveFeedbackCount,
       wrongContextCount,
       repeatedCount,
       staleCount,
@@ -454,7 +443,7 @@ export async function buildPhase2FollowUpAutoSendPreflightReport(
       contentHashes,
       proofHashes,
       noDarkDataStatus: noDarkDataOk ? "pass" : "fail",
-      semanticTruthWriteObserved: false,
+      canonicalTruthWriteObserved: false,
       actionExecutionObserved: false,
     },
     rollbackPlan,
@@ -475,7 +464,7 @@ export function assertPhase2FollowUpAutoSendPreflightReportOnly(
   if (!report.telemetry.reportOnly || !report.telemetry.manualSendRequired) {
     throw new Error("phase2 follow-up autosend preflight weakened manual-send boundary");
   }
-  if (report.telemetry.semanticTruthWriteObserved || report.telemetry.actionExecutionObserved) {
+  if (report.telemetry.canonicalTruthWriteObserved || report.telemetry.actionExecutionObserved) {
     throw new Error("phase2 follow-up autosend preflight wrote truth or executed an action");
   }
 }
@@ -497,7 +486,7 @@ export async function writePhase2FollowUpAutoSendPreflightArtifact(input: {
     "",
     `- reportId: ${input.report.reportId}`,
     `- decision: ${input.report.decision}`,
-    `- classification: ${input.report.telemetry.classification}`,
+    `- preflightState: ${input.report.telemetry.preflightState}`,
     `- followUpAutoSendOccurred: ${input.report.telemetry.followUpAutoSendOccurred}`,
     `- reportOnly: ${input.report.telemetry.reportOnly}`,
     `- manualSendRequired: ${input.report.telemetry.manualSendRequired}`,

@@ -54,6 +54,24 @@ function sanitizeRecordedPayload(
   return sanitizeCompositePayloadForRetention(candidate);
 }
 
+function applyAdmissionTtl(
+  validity: CanonicalCandidateBatch["canonical_candidates"][number]["validity"],
+  admission: AdmissionDecisionBatch["decisions"][number],
+): CanonicalCandidateBatch["canonical_candidates"][number]["validity"] {
+  if (
+    !Number.isInteger(admission.recommended_ttl_seconds) ||
+    admission.recommended_ttl_seconds === null ||
+    admission.recommended_ttl_seconds <= 0
+  ) {
+    return validity;
+  }
+  return {
+    ...validity,
+    ttl_seconds: admission.recommended_ttl_seconds,
+    temporal_status: validity.temporal_status,
+  };
+}
+
 export function recordShadowMemoryBatch(input: {
   eventId: string;
   canonicalBatch: CanonicalCandidateBatch;
@@ -121,7 +139,7 @@ export function recordShadowMemoryBatch(input: {
             authorityTier: input.sourceAuthority.authorityTier,
           }
         : sanitizeRecordedPayload(candidate),
-      validity: candidate.validity,
+      validity: applyAdmissionTtl(candidate.validity, admission),
       confidence: candidate.confidence,
       quality: candidate.quality,
       source_refs: [
@@ -182,6 +200,7 @@ export function recordShadowMemoryBatch(input: {
         reconciliation_conflict_type: reconciliation?.conflict_type ?? "none",
         reconciliation_rationale:
           reconciliation?.rationale ?? "No reconciliation decision was required.",
+        recommended_ttl_seconds: admission.recommended_ttl_seconds,
       },
     });
 

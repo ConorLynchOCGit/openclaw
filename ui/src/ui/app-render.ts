@@ -135,6 +135,7 @@ import { renderExecApprovalPrompt } from "./views/exec-approval.ts";
 import { renderGatewayUrlConfirmation } from "./views/gateway-url-confirmation.ts";
 import { renderLoginGate } from "./views/login-gate.ts";
 import { renderOverview } from "./views/overview.ts";
+import { renderWorkQueue } from "./views/work-queue.ts";
 
 // Lazy-loaded view modules – deferred so the initial bundle stays small.
 // Each loader resolves once; subsequent calls return the cached module.
@@ -1041,7 +1042,7 @@ export function renderApp(state: AppViewState) {
               </button>
             </div>`
           : nothing}
-        ${state.tab === "config"
+        ${state.tab === "config" || state.tab === "workQueue"
           ? nothing
           : html`<section class="content-header">
               <div>
@@ -1136,6 +1137,42 @@ export function renderApp(state: AppViewState) {
               onRefresh: () => state.loadOverview({ refresh: true }),
               onNavigate: (tab) => state.setTab(tab as import("./navigation.ts").Tab),
               onRefreshLogs: () => state.loadOverview({ refresh: true }),
+            })
+          : nothing}
+        ${state.tab === "workQueue"
+          ? renderWorkQueue({
+              items: state.getVisibleWorkQueueObjects(),
+              selectedObject: state.getSelectedWorkQueueObject(),
+              filter: state.workQueueFilter,
+              searchQuery: state.workQueueSearchQuery,
+              loading: state.productProactivityLoading || state.proactivityInboxLoading,
+              error: state.productProactivityError ?? state.proactivityInboxError,
+              notifications: state.workQueueNotifications,
+              revisionDrafts: state.workQueueRevisionDrafts,
+              artifactBodies: state.workQueueArtifactBodies,
+              onRefresh: () =>
+                Promise.all([state.loadProductProactivityQueue(), state.loadProactivityInbox()]),
+              onSelectObject: (objectId) => state.selectWorkQueueObject(objectId),
+              onSetFilter: (filter) => state.setWorkQueueFilter(filter),
+              onSetSearchQuery: (value) => state.setWorkQueueSearchQuery(value),
+              onDismissNotification: (notificationId) =>
+                state.dismissWorkQueueNotification(notificationId),
+              onUpdateRevisionDraft: (objectId, value) =>
+                state.updateWorkQueueRevisionDraft(objectId, value),
+              onDraft: async (object) => {
+                const action =
+                  object.lane === "skills"
+                    ? "draft_skill_package"
+                    : (object.queueItem.primaryAction?.actionType ?? "plan_this");
+                await state.handleProductProactivityWorkAction(object.queueItemId, action);
+                state.selectWorkQueueObject(object.id, { replace: true });
+              },
+              onFinalize: (objectId) => state.handleWorkQueueFinalize(objectId),
+              onRequestRevision: (objectId) => state.handleWorkQueueRequestRevision(objectId),
+              onRestore: (objectId) => state.handleWorkQueueRestore(objectId),
+              onMarkComplete: (objectId) => state.handleWorkQueueMarkComplete(objectId),
+              onCopyCodexPrompt: (objectId) => state.handleWorkQueueCopyCodexPrompt(objectId),
+              onDismiss: (queueItemId) => state.handleProductProactivityDismiss(queueItemId),
             })
           : nothing}
         ${state.tab === "channels"
@@ -1922,6 +1959,8 @@ export function renderApp(state: AppViewState) {
                 state.handleProductProactivityApproveSend(id),
               onProductProactivityWorkAction: (id, action) =>
                 state.handleProductProactivityWorkAction(id, action),
+              onProductProactivityPlanReview: (id, reviewStatus) =>
+                state.handleProactivityPlanReview(id, reviewStatus),
               onProductProactivityDismiss: (id) => state.handleProductProactivityDismiss(id),
               onProductProactivitySnooze: (id) => state.handleProductProactivitySnooze(id),
               onProductProactivityFeedback: (id, control) =>
@@ -1929,6 +1968,10 @@ export function renderApp(state: AppViewState) {
               onProductProactivityEditMessage: (id, value) =>
                 state.handleProductProactivityEditMessage(id, value),
               onProactivityInboxViewChange: (view) => state.setProactivityInboxView(view),
+              onOpenWorkQueue: (objectId) => {
+                state.setTab("workQueue" as import("./navigation.ts").Tab);
+                state.selectWorkQueueObject(objectId ?? null, { replace: false });
+              },
               onPersonalAutoSendDisable: () => state.handlePersonalAutoSendDisable(),
               onDismissSideResult: () => {
                 state.chatSideResult = null;

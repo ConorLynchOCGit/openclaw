@@ -20,6 +20,7 @@ import {
   buildPhase2ProactivityFeedbackReport,
   type Phase2ProactivityFeedbackReport,
 } from "./phase2-proactivity-feedback-loop.ts";
+import type { Phase2OpportunityPlannedArtifact } from "./phase2-proactivity-opportunity-ledger.ts";
 import type {
   Phase2ProactivityWorkItemAction,
   Phase2ProactivityWorkItemKind,
@@ -29,7 +30,7 @@ import {
   buildPhase2ProductProactivitySurfacingReport,
   type Phase2ProductProactivityQueueItem,
   type Phase2ProductProactivitySurfacingReport,
-} from "./phase2-product-proactivity-surfacing.ts";
+} from "./phase2-product-proactivity-presentation.ts";
 import type { Phase2SkillCandidateRecord } from "./phase2-skill-candidate-ledger.ts";
 import type { Phase2UserFacingProactivityBrief } from "./phase2-user-facing-proactivity-briefs.ts";
 
@@ -78,12 +79,14 @@ export type Phase2ProactivityInboxItem = {
   workItemId?: string;
   workItemKind?: Phase2ProactivityWorkItemKind;
   workItemStatus?: Phase2ProactivityWorkItemStatus;
+  reviewStatus?: "pending_review" | "recommendation_finalized" | "revision_requested";
   primaryAction?: Phase2ProactivityWorkItemAction | null;
   secondaryActions?: Phase2ProactivityWorkItemAction[];
   ctaExplanation?: string;
   handoffStatus?: "idle" | "starting" | "started" | "failed";
   handoffError?: string | null;
   handoffMessageAnchor?: string | null;
+  plannedArtifact?: Phase2OpportunityPlannedArtifact | null;
   messageClass:
     | "operator_approved_suggestion_available"
     | "operator_approved_follow_up_available"
@@ -121,6 +124,7 @@ export type Phase2ProactivityInboxItem = {
   } | null;
   resolvedByChatMessageId?: string | null;
   supersededByOpportunityId?: string | null;
+  dismissalCooldownUntil?: string | null;
   layer: "actionable" | "history" | "diagnostic";
   attentionRequired: boolean;
   sendStatus: "idle" | "sending" | "sent" | "failed";
@@ -142,8 +146,8 @@ export type Phase2ProactivityInboxItem = {
   proofHashes: string[];
   noDarkDataStatus: "pass" | "fail";
   feedbackSummary: {
-    usefulCount: number;
-    notUsefulCount: number;
+    positiveFeedbackCount: number;
+    negativeFeedbackCount: number;
     tooRepetitiveCount: number;
     wrongContextCount: number;
     unsafePrivateCount: number;
@@ -240,7 +244,7 @@ export type Phase2ProactivityInboxReport = {
   followUpPreflightSummary?: {
     reportId: string;
     decision: Phase2FollowUpAutoSendPreflightReport["decision"];
-    classification: string;
+    preflightState: string;
   };
   checks: Phase2ProactivityInboxCheck[];
   telemetry: Phase2ProactivityInboxTelemetry;
@@ -423,8 +427,8 @@ async function loadFollowUpPreflightReport(
 
 function feedbackSummaryFrom(report: Phase2ProactivityFeedbackReport | undefined) {
   return {
-    usefulCount: report?.qualityReport.usefulCount ?? 0,
-    notUsefulCount: report?.qualityReport.notUsefulCount ?? 0,
+    positiveFeedbackCount: report?.qualityReport.positiveFeedbackCount ?? 0,
+    negativeFeedbackCount: report?.qualityReport.negativeFeedbackCount ?? 0,
     tooRepetitiveCount: report?.qualityReport.tooRepetitiveCount ?? 0,
     wrongContextCount: report?.qualityReport.wrongContextCount ?? 0,
     unsafePrivateCount: report?.qualityReport.unsafePrivateCount ?? 0,
@@ -496,12 +500,14 @@ function cloneQueueItemForInbox(input: {
     workItemId: input.queueItem.workItemId,
     workItemKind: input.queueItem.workItemKind,
     workItemStatus: input.queueItem.workItemStatus,
+    reviewStatus: input.queueItem.reviewStatus,
     primaryAction: input.queueItem.layer === "actionable" ? input.queueItem.primaryAction : null,
     secondaryActions: input.queueItem.secondaryActions,
     ctaExplanation: input.queueItem.ctaExplanation,
     handoffStatus: input.queueItem.handoffStatus,
     handoffError: input.queueItem.handoffError,
     handoffMessageAnchor: input.queueItem.handoffMessageAnchor,
+    plannedArtifact: input.queueItem.plannedArtifact,
     messageClass: input.queueItem.messageClass,
     boundedDisplayText: input.queueItem.boundedDisplayText,
     messagePreview: input.queueItem.messagePreview,
@@ -521,6 +527,7 @@ function cloneQueueItemForInbox(input: {
     autonomousDraft: input.queueItem.autonomousDraft,
     resolvedByChatMessageId: input.queueItem.resolvedByChatMessageId,
     supersededByOpportunityId: input.queueItem.supersededByOpportunityId,
+    dismissalCooldownUntil: input.queueItem.dismissalCooldownUntil,
     layer: input.queueItem.layer,
     attentionRequired: input.queueItem.attentionRequired,
     sendStatus: input.queueItem.sendStatus,
@@ -591,7 +598,7 @@ function buildInboxItems(input: {
       suggestedAction: "Review simulation quality before changing any auto-send policy.",
       candidateSummary: "Report-only auto-send simulation observation.",
       expectedUserValue:
-        "Shows whether auto-send would be useful or noisy without sending automatically.",
+        "Shows whether auto-send simulation output was noisy without sending automatically.",
       planTitle: "Review auto-send simulation diagnostics",
       problem:
         "This is diagnostic-only evidence about what might have auto-sent; it is not an actionable message.",
@@ -687,11 +694,11 @@ function buildInboxItems(input: {
       candidateId: followUp.candidateId,
       messageClass: followUp.messageClass,
       boundedDisplayText:
-        followUp.classification === "blocked"
+        followUp.preflightState === "blocked"
           ? "Follow-up auto-send candidacy is blocked; manual send remains required."
           : "Follow-up auto-send candidacy is report-only; manual send remains required.",
       messagePreview:
-        followUp.classification === "blocked"
+        followUp.preflightState === "blocked"
           ? "Follow-up auto-send candidacy is blocked; manual send remains required."
           : "Follow-up auto-send candidacy is report-only; manual send remains required.",
       suggestedAction: "Keep follow-up delivery manual unless a later proof promotes it.",
@@ -960,7 +967,7 @@ export async function buildPhase2ProactivityInboxReport(
       ? {
           reportId: followUpPreflightReport.reportId,
           decision: followUpPreflightReport.decision,
-          classification: followUpPreflightReport.candidate.classification,
+          preflightState: followUpPreflightReport.candidate.preflightState,
         }
       : undefined,
     checks,

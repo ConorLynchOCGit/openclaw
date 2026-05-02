@@ -12,7 +12,7 @@ import {
   buildPhase2ProductProactivitySurfacingReport,
   type Phase2ProductProactivityQueueItem,
   type Phase2ProductProactivitySurfacingReport,
-} from "./phase2-product-proactivity-surfacing.ts";
+} from "./phase2-product-proactivity-presentation.ts";
 
 export const PHASE2_PROACTIVITY_FEEDBACK_SCHEMA_VERSION =
   "phase2_proactivity_feedback_loop.v1" as const;
@@ -39,7 +39,7 @@ export type Phase2ProactivityFeedbackRecord = {
   proofHashes: string[];
   timestamp: string;
   rawTextStored: false;
-  semanticTruthWrite: false;
+  canonicalTruthWrite: false;
   memoryCorrectionWrite: false;
   reasonCodes: string[];
 };
@@ -50,9 +50,9 @@ export type Phase2ProactivityFeedbackPolicy = {
   controls: ["useful", "not_useful", "too_repetitive", "wrong_context", "unsafe_private"];
   feedbackIsControlPlaneSignal: true;
   rawFreeformTextAllowed: false;
-  semanticTruthWritesAllowed: false;
+  canonicalTruthWritesAllowed: false;
   memoryCorrectionWritesAllowed: false;
-  feedbackMayAffectRanking: true;
+  feedbackMayAffectRanking: false;
   feedbackMayAffectSuppression: true;
   unsafePrivateBlocksFutureSurfacing: true;
   requireProvenance: true;
@@ -65,12 +65,12 @@ export type Phase2ProactivityFeedbackSuppressionDecision = {
   feedbackId: string;
   decision:
     | "quality_signal_only"
-    | "downrank_future_candidates"
+    | "negative_feedback_recorded"
     | "suppress_repeated_candidate"
     | "block_future_surfacing_pending_review"
     | "rollback_disabled";
   reasonCodes: string[];
-  semanticTruthWrite: false;
+  canonicalTruthWrite: false;
   memoryCorrectionWrite: false;
 };
 
@@ -78,16 +78,16 @@ export type Phase2ProactivityFeedbackQualityReport = {
   qualityReportId: string;
   candidateCount: number;
   feedbackCount: number;
-  usefulCount: number;
-  notUsefulCount: number;
+  positiveFeedbackCount: number;
+  negativeFeedbackCount: number;
   tooRepetitiveCount: number;
   wrongContextCount: number;
   unsafePrivateCount: number;
-  downrankedCandidateIds: string[];
+  negativeFeedbackCandidateIds: string[];
   suppressedCandidateIds: string[];
   blockedCandidateIds: string[];
   nextTuningRecommendations: string[];
-  semanticTruthWritesCreated: false;
+  canonicalTruthWritesCreated: false;
   memoryCorrectionsCreated: false;
 };
 
@@ -102,7 +102,7 @@ export type Phase2ProactivityFeedbackCheck = {
     | "no_dark_data_required"
     | "provenance_required"
     | "source_profile_required"
-    | "semantic_truth_write_disabled"
+    | "canonical_truth_write_disabled"
     | "memory_correction_write_disabled"
     | "feedback_affects_quality_only"
     | "unsafe_private_blocks_future_surfacing"
@@ -124,7 +124,7 @@ export type Phase2ProactivityFeedbackTelemetry = {
   noDarkDataStatus: "pass" | "fail";
   rollbackObserved: boolean;
   rawTextStored: false;
-  semanticTruthWriteObserved: false;
+  canonicalTruthWriteObserved: false;
   memoryCorrectionWriteObserved: false;
   actionExecutionObserved: false;
 };
@@ -176,7 +176,7 @@ export type Phase2ProactivityFeedbackInput = {
   forceMissingProvenance?: boolean;
   forceMissingSourceProfile?: boolean;
   forceNoDarkDataFail?: boolean;
-  forceSemanticTruthWrite?: boolean;
+  forceCanonicalTruthWrite?: boolean;
   forceMemoryCorrectionWrite?: boolean;
 };
 
@@ -283,13 +283,13 @@ function reasonCodesForControl(control: Phase2ProactivityFeedbackControl): strin
     return ["quality_signal_only"];
   }
   if (control === "not_useful") {
-    return ["feedback_downrank_not_useful"];
+    return ["feedback_record_not_useful"];
   }
   if (control === "too_repetitive") {
     return ["feedback_suppress_too_repetitive"];
   }
   if (control === "wrong_context") {
-    return ["feedback_downrank_wrong_context"];
+    return ["feedback_record_wrong_context"];
   }
   return ["feedback_unsafe_private_block_future_surfacing"];
 }
@@ -298,7 +298,7 @@ function suppressionDecisionForControl(
   control: Phase2ProactivityFeedbackControl,
 ): Phase2ProactivityFeedbackSuppressionDecision["decision"] {
   if (control === "not_useful" || control === "wrong_context") {
-    return "downrank_future_candidates";
+    return "negative_feedback_recorded";
   }
   if (control === "too_repetitive") {
     return "suppress_repeated_candidate";
@@ -348,7 +348,7 @@ export async function buildPhase2ProactivityFeedbackReport(
     !input.rawFeedbackText?.toLowerCase().includes("private-phrase-marker") &&
     !input.rawFeedbackText?.toLowerCase().includes("secret-marker");
   const rawTextRejected = input.rawFeedbackText === undefined;
-  const semanticWriteDisabled = !input.forceSemanticTruthWrite;
+  const canonicalWriteDisabled = !input.forceCanonicalTruthWrite;
   const memoryCorrectionDisabled = !input.forceMemoryCorrectionWrite;
   const checks: Phase2ProactivityFeedbackCheck[] = [];
   addCheck(
@@ -366,7 +366,7 @@ export async function buildPhase2ProactivityFeedbackReport(
   addCheck(checks, "no_dark_data_required", noDarkDataOk);
   addCheck(checks, "provenance_required", provenanceOk);
   addCheck(checks, "source_profile_required", sourceProfileOk);
-  addCheck(checks, "semantic_truth_write_disabled", semanticWriteDisabled);
+  addCheck(checks, "canonical_truth_write_disabled", canonicalWriteDisabled);
   addCheck(checks, "memory_correction_write_disabled", memoryCorrectionDisabled);
   addCheck(checks, "feedback_affects_quality_only", true);
   addCheck(checks, "unsafe_private_blocks_future_surfacing", controls.includes("unsafe_private"));
@@ -405,7 +405,7 @@ export async function buildPhase2ProactivityFeedbackReport(
     proofHashes,
     timestamp: generatedAt,
     rawTextStored: false,
-    semanticTruthWrite: false,
+    canonicalTruthWrite: false,
     memoryCorrectionWrite: false,
     reasonCodes: reasonCodesForControl(control),
   }));
@@ -417,13 +417,13 @@ export async function buildPhase2ProactivityFeedbackReport(
         ? "rollback_disabled"
         : suppressionDecisionForControl(record.selectedFeedbackReason),
       reasonCodes: record.reasonCodes,
-      semanticTruthWrite: false,
+      canonicalTruthWrite: false,
       memoryCorrectionWrite: false,
     }),
   );
-  const downrankedCandidateIds = uniqueSortedStrings(
+  const negativeFeedbackCandidateIds = uniqueSortedStrings(
     suppressionDecisions
-      .filter((entry) => entry.decision === "downrank_future_candidates")
+      .filter((entry) => entry.decision === "negative_feedback_recorded")
       .map((entry) => entry.candidateId),
   );
   const suppressedCandidateIds = uniqueSortedStrings(
@@ -453,9 +453,9 @@ export async function buildPhase2ProactivityFeedbackReport(
     controls: [...FEEDBACK_CONTROLS],
     feedbackIsControlPlaneSignal: true,
     rawFreeformTextAllowed: false,
-    semanticTruthWritesAllowed: false,
+    canonicalTruthWritesAllowed: false,
     memoryCorrectionWritesAllowed: false,
-    feedbackMayAffectRanking: true,
+    feedbackMayAffectRanking: false,
     feedbackMayAffectSuppression: true,
     unsafePrivateBlocksFutureSurfacing: true,
     requireProvenance: true,
@@ -471,9 +471,11 @@ export async function buildPhase2ProactivityFeedbackReport(
     }),
     candidateCount: queueItem ? 1 : 0,
     feedbackCount: records.length,
-    usefulCount: records.filter((record) => record.selectedFeedbackReason === "useful").length,
-    notUsefulCount: records.filter((record) => record.selectedFeedbackReason === "not_useful")
+    positiveFeedbackCount: records.filter((record) => record.selectedFeedbackReason === "useful")
       .length,
+    negativeFeedbackCount: records.filter(
+      (record) => record.selectedFeedbackReason === "not_useful",
+    ).length,
     tooRepetitiveCount: records.filter(
       (record) => record.selectedFeedbackReason === "too_repetitive",
     ).length,
@@ -482,15 +484,15 @@ export async function buildPhase2ProactivityFeedbackReport(
     unsafePrivateCount: records.filter(
       (record) => record.selectedFeedbackReason === "unsafe_private",
     ).length,
-    downrankedCandidateIds,
+    negativeFeedbackCandidateIds,
     suppressedCandidateIds,
     blockedCandidateIds,
     nextTuningRecommendations: [
-      "use explicit feedback counts to tune ranking reports",
-      "suppress deterministic repeats when too_repetitive feedback is present",
+      "route negative feedback through model-reviewed presentation and candidate-quality audits",
+      "suppress exact repeated candidates only when too_repetitive feedback is explicit",
       "block unsafe_private candidates pending operator review",
     ],
-    semanticTruthWritesCreated: false,
+    canonicalTruthWritesCreated: false,
     memoryCorrectionsCreated: false,
   };
   const telemetry: Phase2ProactivityFeedbackTelemetry = {
@@ -508,7 +510,7 @@ export async function buildPhase2ProactivityFeedbackReport(
     noDarkDataStatus: noDarkDataOk ? "pass" : "fail",
     rollbackObserved: rollback,
     rawTextStored: false,
-    semanticTruthWriteObserved: false,
+    canonicalTruthWriteObserved: false,
     memoryCorrectionWriteObserved: false,
     actionExecutionObserved: false,
   };
@@ -560,7 +562,7 @@ export function assertPhase2ProactivityFeedbackLoopEnabled(
   }
   if (
     report.telemetry.rawTextStored ||
-    report.telemetry.semanticTruthWriteObserved ||
+    report.telemetry.canonicalTruthWriteObserved ||
     report.telemetry.memoryCorrectionWriteObserved
   ) {
     throw new Error("phase2 proactivity feedback loop persisted unsafe feedback behavior");
@@ -588,12 +590,12 @@ export async function writePhase2ProactivityFeedbackArtifact(input: {
     `- reportId: ${input.report.reportId}`,
     `- decision: ${input.report.decision}`,
     `- feedbackCount: ${input.report.qualityReport.feedbackCount}`,
-    `- usefulCount: ${input.report.qualityReport.usefulCount}`,
-    `- notUsefulCount: ${input.report.qualityReport.notUsefulCount}`,
+    `- positiveFeedbackCount: ${input.report.qualityReport.positiveFeedbackCount}`,
+    `- negativeFeedbackCount: ${input.report.qualityReport.negativeFeedbackCount}`,
     `- tooRepetitiveCount: ${input.report.qualityReport.tooRepetitiveCount}`,
     `- wrongContextCount: ${input.report.qualityReport.wrongContextCount}`,
     `- unsafePrivateCount: ${input.report.qualityReport.unsafePrivateCount}`,
-    `- semanticTruthWritesCreated: ${input.report.qualityReport.semanticTruthWritesCreated}`,
+    `- canonicalTruthWritesCreated: ${input.report.qualityReport.canonicalTruthWritesCreated}`,
     `- memoryCorrectionsCreated: ${input.report.qualityReport.memoryCorrectionsCreated}`,
     `- actionExecutionObserved: ${input.report.telemetry.actionExecutionObserved}`,
     "",

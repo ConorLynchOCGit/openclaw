@@ -17,7 +17,11 @@ import {
 import { ingestDocumentLive } from "../live-document-ingestion-service.ts";
 import { rebuildDerivedRuntimeState } from "../runtime-rebuild-orchestrator.ts";
 import type { SemanticCollisionAdjudicator } from "../semantic-collision-adjudication.ts";
-import type { SemanticInterpreter } from "../semantic-interpreter.ts";
+import type {
+  SemanticInterpreter,
+  SemanticInterpreterInput,
+  SemanticInterpreterResult,
+} from "../semantic-interpreter.ts";
 import type { DocumentSourceInput } from "../source-adapters/document-source-adapter.ts";
 
 export type DocumentIngestionRunnerSource = {
@@ -83,9 +87,27 @@ export type DocumentIngestionRunnerSourceRecord = {
     retrySections: string[];
     stricterEvidenceRetrySections: string[];
   };
+  activeStage?: string;
+  activeModelStep?: DocumentIngestionRunnerModelStepEvent;
+  modelStepEvents?: DocumentIngestionRunnerModelStepEvent[];
   errorMessage?: string;
   startedAt?: string;
   completedAt?: string;
+};
+
+export type DocumentIngestionRunnerModelStepEvent = {
+  stepId: string;
+  status: "running" | "completed" | "failed";
+  contractName: string;
+  contractVersion: string;
+  sourceKind: string;
+  sourceId: string;
+  sourceWindowId: string;
+  sourceWindowIndex: number;
+  startedAt: string;
+  completedAt?: string;
+  durationMs?: number;
+  errorMessage?: string;
 };
 
 export type DocumentIngestionRunnerChunkRecord = {
@@ -176,6 +198,10 @@ export type DocumentIngestionRunnerProcessedSource = {
   ingestStrategy?: "direct_rigid_capture" | typeof SECTION_MAP_CANDIDATE_HINTS_STRATEGY;
   strategyTelemetry?: DocumentIngestionRunnerSourceRecord["strategyTelemetry"];
 };
+
+type DocumentIngestionRunnerModelStepCallback = (
+  event: DocumentIngestionRunnerModelStepEvent,
+) => void | Promise<void>;
 
 export interface DocumentIngestionRunRecordStore {
   load(runId: string): Promise<DocumentIngestionRunnerRunRecord | undefined>;
@@ -423,6 +449,68 @@ function buildDocumentIngestStrategyPreview(
       document: sectionMap,
       validations: [],
     }),
+  };
+}
+
+function createInstrumentedInterpreter(input: {
+  interpreter: SemanticInterpreter;
+  onModelStep?: DocumentIngestionRunnerModelStepCallback;
+}): SemanticInterpreter {
+  const onModelStep = input.onModelStep;
+  if (!onModelStep) {
+    return input.interpreter;
+  }
+
+  return {
+    async interpret(
+      interpreterInput: SemanticInterpreterInput,
+    ): Promise<SemanticInterpreterResult> {
+      const startedMs = Date.now();
+      const startedAt = new Date(startedMs).toISOString();
+      const stepId = [
+        interpreterInput.prompt.contract.contractName,
+        interpreterInput.prompt.contract.contractVersion,
+        interpreterInput.sourceWindow.id,
+        startedMs,
+      ].join(":");
+      const baseEvent = {
+        stepId,
+        contractName: interpreterInput.prompt.contract.contractName,
+        contractVersion: interpreterInput.prompt.contract.contractVersion,
+        sourceKind: interpreterInput.sourceKind,
+        sourceId: interpreterInput.sourceId,
+        sourceWindowId: interpreterInput.sourceWindow.id,
+        sourceWindowIndex: interpreterInput.sourceWindow.windowIndex,
+        startedAt,
+      };
+
+      await onModelStep({
+        ...baseEvent,
+        status: "running",
+      });
+
+      try {
+        const result = await input.interpreter.interpret(interpreterInput);
+        const completedMs = Date.now();
+        await onModelStep({
+          ...baseEvent,
+          status: "completed",
+          completedAt: new Date(completedMs).toISOString(),
+          durationMs: completedMs - startedMs,
+        });
+        return result;
+      } catch (error) {
+        const completedMs = Date.now();
+        await onModelStep({
+          ...baseEvent,
+          status: "failed",
+          completedAt: new Date(completedMs).toISOString(),
+          durationMs: completedMs - startedMs,
+          errorMessage: error instanceof Error ? error.message : String(error),
+        });
+        throw error;
+      }
+    },
   };
 }
 
@@ -741,6 +829,8 @@ export class ModelMemoryDocumentIngestionRunnerService {
           const sourceRecord = record.sources.find((entry) => entry.sourceId === source.sourceId);
           if (sourceRecord) {
             sourceRecord.status = "running";
+            sourceRecord.activeStage = "source_started";
+            sourceRecord.activeModelStep = undefined;
             sourceRecord.startedAt ??= new Date().toISOString();
           }
           record = recalculateRunRecord(record);
@@ -760,10 +850,34 @@ export class ModelMemoryDocumentIngestionRunnerService {
 
           let nextRecord: DocumentIngestionRunnerSourceRecord;
           try {
+            const onModelStep: DocumentIngestionRunnerModelStepCallback = async (event) => {
+              const currentSourceRecord = record.sources.find(
+                (entry) => entry.sourceId === source.sourceId,
+              );
+              if (!currentSourceRecord) {
+                return;
+              }
+              const modelStepEvents = [...(currentSourceRecord.modelStepEvents ?? []), event].slice(
+                -100,
+              );
+              currentSourceRecord.modelStepEvents = modelStepEvents;
+              currentSourceRecord.activeModelStep = event.status === "running" ? event : undefined;
+              currentSourceRecord.activeStage =
+                event.status === "running"
+                  ? `model:${event.contractName}/${event.contractVersion}`
+                  : event.status === "failed"
+                    ? `model_failed:${event.contractName}/${event.contractVersion}`
+                    : `model_completed:${event.contractName}/${event.contractVersion}`;
+              record = recalculateRunRecord(record);
+              await input.recordStore?.save(record);
+            };
             const processed = await this.processSource({
               runId: input.runId,
               source,
-              interpreter: input.interpreter,
+              interpreter: createInstrumentedInterpreter({
+                interpreter: input.interpreter,
+                onModelStep,
+              }),
               modelId: input.modelId,
               candidateModelId: input.candidateModelId,
               maxWordsPerWindow: input.maxWordsPerWindow,
@@ -783,6 +897,8 @@ export class ModelMemoryDocumentIngestionRunnerService {
               rejectReasons: processed.rejectReasons,
               ingestStrategy: processed.ingestStrategy,
               strategyTelemetry: processed.strategyTelemetry,
+              activeStage: "completed",
+              modelStepEvents: sourceRecord?.modelStepEvents,
               startedAt: sourceRecord?.startedAt ?? new Date().toISOString(),
               completedAt: new Date().toISOString(),
             };
@@ -799,6 +915,8 @@ export class ModelMemoryDocumentIngestionRunnerService {
               ignoredWindowCount: 0,
               rejectedWindowCount: 0,
               rejectReasons: [],
+              activeStage: "failed",
+              modelStepEvents: sourceRecord?.modelStepEvents,
               errorMessage: error instanceof Error ? error.message : String(error),
               startedAt: sourceRecord?.startedAt ?? new Date().toISOString(),
               completedAt: new Date().toISOString(),
@@ -953,11 +1071,17 @@ export class ModelMemoryDocumentIngestionRunnerService {
         interpreter: input.interpreter,
       },
     });
+    const capturedClaimCount =
+      result.capturedObjects.length > 0
+        ? result.capturedObjects.length
+        : result.writeResults.filter(
+            (entry) => entry.decision === "write" || entry.decision === "supersede",
+          ).length;
 
     return {
       lineCount: countLines(input.source.document.text),
       windowCount: result.windows.length,
-      capturedClaimCount: result.capturedObjects.length,
+      capturedClaimCount,
       writeDecisionCounts: countBy(result.writeResults.map((entry) => entry.decision)),
       ignoredWindowCount: result.windowResults.filter((entry) => entry.action === "ignore").length,
       rejectedWindowCount: result.windowResults.filter((entry) => entry.action === "reject").length,

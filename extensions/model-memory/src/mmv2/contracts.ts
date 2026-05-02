@@ -115,6 +115,7 @@ export const CaptureRoutingDecisionSchema = z
     ),
     evidence_quote: z.string(),
     confidence: z.number().min(0).max(1),
+    allow_multiple_top_level_atomic: z.boolean().default(false),
   })
   .strict();
 
@@ -341,6 +342,7 @@ export type AtomicExtractionBatch = z.infer<typeof AtomicExtractionBatchSchema>;
 export const CompositeComponentSchema = z
   .object({
     component_id: z.string(),
+    source_segment_id: z.string().optional(),
     order_index: z.number().int().min(0),
     role: z.enum([
       "step",

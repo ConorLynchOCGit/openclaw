@@ -2,10 +2,12 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { applyModelMemoryMigrations } from "../../extensions/model-memory/src/db/migrations.js";
-import { MmV2NativeRepository } from "../../extensions/model-memory/src/db/mmv2-native-repository.js";
-import { createPgMemTestDatabase } from "../../extensions/model-memory/src/db/pg-test.js";
-import type { DurableMemoryRecord } from "../../extensions/model-memory/src/mmv2/contracts.js";
+import {
+  applyModelMemoryMigrations,
+  createPgMemTestDatabase,
+  MmV2NativeRepository,
+  type DurableMemoryRecord,
+} from "../../extensions/model-memory/runtime-api.ts";
 import { buildMemoryCaptureJob, createMemoryCaptureJobStore } from "./model-memory.capture-jobs.js";
 import { createModelMemoryProviderScorecardStore } from "./model-memory.provider-scorecard.js";
 import {

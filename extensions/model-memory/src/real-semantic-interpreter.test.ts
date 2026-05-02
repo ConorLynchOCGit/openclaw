@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import { buildCaptureRoutingPrompt } from "./mmv2/prompt-contracts.ts";
+import { createMmV2TestSource } from "./mmv2/test-helpers.ts";
 import { JsonModelOutputError } from "./model-execution.ts";
 import { ExecutorBackedSemanticInterpreter } from "./real-semantic-interpreter.ts";
 import {
@@ -277,6 +279,52 @@ describe("real-semantic-interpreter", () => {
         }),
       }),
     ).rejects.toBeInstanceOf(JsonModelOutputError);
+  });
+
+  it("accepts raw MMV2 schema output without requiring the legacy capture wrapper", async () => {
+    const source = createMmV2TestSource("Please remember that MMV2 live output is raw schema.");
+    const interpreter = new ExecutorBackedSemanticInterpreter({
+      async execute() {
+        return {
+          outputText: JSON.stringify({
+            schema_version: "capture_routing.v1",
+            event_id: source.rawEvent.event_id,
+            routing_decisions: source.segmented.segments.map((segment) => ({
+              segment_id: segment.segment_id,
+              route: "atomic_candidate",
+              candidate_summary: "MMV2 live output contract.",
+              memory_likelihood: 0.9,
+              durability_likelihood: 0.88,
+              composite_likelihood: 0.05,
+              reason_codes: ["durable_project_fact"],
+              evidence_quote: segment.text,
+              confidence: 0.92,
+            })),
+          }),
+        };
+      },
+    });
+
+    const result = await interpreter.interpret({
+      sourceKind: "document",
+      sourceId: source.sourceId,
+      sourceWindow: source.sourceWindow,
+      prompt: buildCaptureRoutingPrompt({
+        modelId: "openai-codex/gpt-5.4-mini",
+        rawEvent: source.rawEvent,
+        segmented: source.segmented,
+      }),
+    });
+
+    expect(result).toMatchObject({
+      action: "capture",
+      objects: [
+        {
+          schema_version: "capture_routing.v1",
+          event_id: source.rawEvent.event_id,
+        },
+      ],
+    });
   });
 
   it("accepts fenced JSON without treating the fence as semantic content", async () => {

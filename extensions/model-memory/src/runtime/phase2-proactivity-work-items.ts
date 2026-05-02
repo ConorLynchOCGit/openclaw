@@ -344,16 +344,9 @@ function actionForKind(
 function secondaryActions(kind: Phase2ProactivityWorkItemKind): Phase2ProactivityWorkItemAction[] {
   const actions: Phase2ProactivityWorkItemAction[] = [
     {
-      actionType: "snooze",
-      label: "Snooze",
-      description: "Hide this item until a later review boundary.",
-      requiresChatInject: false,
-      executesAction: false,
-    },
-    {
       actionType: "dismiss",
       label: "Dismiss",
-      description: "Remove this item from the actionable backlog.",
+      description: "Hide this item from the actionable backlog for a cooldown period.",
       requiresChatInject: false,
       executesAction: false,
     },
@@ -445,39 +438,12 @@ function buildHandoff(input: {
   };
 }
 
-function bundledCandidate(): NonNullable<Phase2ProactivityWorkItemInput["candidates"]>[number] {
-  return {
-    candidateId: "phase2-proactivity-work-items-bundled-candidate",
-    queueItemId: "phase2-proactivity-work-items-bundled-queue-item",
-    kind: "planning_request",
-    title: "Plan the next useful Model Memory work",
-    whyNow:
-      "The proactivity UX has moved from notification plumbing toward work opportunities, and the next step should create useful operator momentum.",
-    proposedNextStep:
-      "Produce a short plan for the next Model Memory slice using the current roadmap and decisions.",
-    expectedUserValue:
-      "Turns the proactive item into actionable planning instead of a duplicate chat message.",
-    evidenceSummary:
-      "Evidence comes from Phase 2 proactivity UX correction docs, roadmap entries, and bounded work-item policy.",
-    confidence: "high",
-    sourceRefs: ["docs/projects/model-memory/phase-2-execution-roadmap.md"],
-    sourceProfileIds: ["manual_note"],
-    authorityTiers: ["curated_authoritative"],
-    contentHashes: ["phase2-work-items-bundled-content-hash"],
-    proofHashes: ["phase2-work-items-bundled-proof-hash"],
-    noDarkDataStatus: "pass",
-    freshnessLabels: [],
-    conflictLabels: [],
-    blockedReasonCodes: [],
-  };
-}
-
 export async function buildPhase2ProactivityWorkItemReport(
   input: Phase2ProactivityWorkItemInput = {},
 ): Promise<Phase2ProactivityWorkItemReport> {
   const generatedAt = (input.now ?? new Date()).toISOString();
   const rollback = readRollback(input.env);
-  const candidates = input.candidates?.length ? input.candidates : [bundledCandidate()];
+  const candidates = input.candidates ?? [];
   const checks: Phase2ProactivityWorkItemCheck[] = [];
   const workItems = candidates.map((candidate) => {
     const kind = input.forceMissingKind ? undefined : (candidate.kind ?? "planning_request");

@@ -2,17 +2,16 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { DocumentIngestionRunnerRunRecord } from "../extensions/model-memory/runtime-api.ts";
-import {
-  loadSanitizedModelMemoryRunnerConfig,
-  writeSanitizedModelMemoryRunnerConfig,
-} from "../src/agents/model-memory.run-config.ts";
 import type { OpenClawConfig } from "../src/config/config.ts";
 
 const DEFAULT_MODEL_REF =
   process.env.MODEL_MEMORY_DOCUMENT_INGEST_MODEL_ID?.trim() ||
   process.env.MODEL_MEMORY_STRICT_CAPTURE_MODEL_ID?.trim() ||
   "openai-codex/gpt-5.4-mini";
-const DEFAULT_REQUEST_TIMEOUT_MS = 180_000;
+const DEFAULT_REQUEST_TIMEOUT_MS = readPositiveIntegerEnv(
+  "MODEL_MEMORY_TOOL_SMOKE_REQUEST_TIMEOUT_MS",
+  180_000,
+);
 const DEFAULT_REQUEST_SEED = 7;
 const DEFAULT_MAX_WORDS_PER_WINDOW = 1500;
 const DEFAULT_RUN_ID = "model-memory-tool-smoke";
@@ -20,8 +19,25 @@ const DEFAULT_RECORD_PATH = "checkpoints/model-memory/model-memory-tool-smoke.js
 const DEFAULT_ARTIFACT_BASENAME = "document-ingestion-tool-smoke";
 const DEFAULT_ARTIFACT_TITLE = "Document Ingestion Tool Smoke";
 
+type StartupDiagnosticEvent = {
+  stage: string;
+  status: "started" | "completed" | "failed";
+  occurredAt: string;
+  durationMs?: number;
+  errorMessage?: string;
+};
+
 function unique(values: string[]): string[] {
   return [...new Set(values.filter((value) => value.trim().length > 0))];
+}
+
+function readPositiveIntegerEnv(name: string, fallback: number): number {
+  const raw = process.env[name]?.trim();
+  if (!raw) {
+    return fallback;
+  }
+  const parsed = Number.parseInt(raw, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
 function mergeToolConfig(config: OpenClawConfig, repoRoot: string): OpenClawConfig {
@@ -53,6 +69,96 @@ function mergeToolConfig(config: OpenClawConfig, repoRoot: string): OpenClawConf
   };
 }
 
+async function writeStartupDiagnostics(input: {
+  repoRoot: string;
+  sources: string[];
+  events: StartupDiagnosticEvent[];
+  completed?: boolean;
+}) {
+  const recordRelativePath =
+    process.env.MODEL_MEMORY_TOOL_SMOKE_RECORD_PATH?.trim() || DEFAULT_RECORD_PATH;
+  const recordAbsolutePath = path.resolve(input.repoRoot, recordRelativePath);
+  const diagnosticPath = path.join(
+    path.dirname(recordAbsolutePath),
+    "document-ingestion-tool-smoke-startup-diagnostics.json",
+  );
+  await mkdir(path.dirname(diagnosticPath), { recursive: true });
+  await writeFile(
+    diagnosticPath,
+    `${JSON.stringify(
+      {
+        generatedAt: new Date().toISOString(),
+        script: "scripts/model-memory-document-ingestion-tool-smoke.ts",
+        completed: input.completed === true,
+        modelRef: DEFAULT_MODEL_REF,
+        requestTimeoutMs: DEFAULT_REQUEST_TIMEOUT_MS,
+        sources: input.sources,
+        events: input.events,
+      },
+      null,
+      2,
+    )}\n`,
+    "utf8",
+  );
+}
+
+async function recordStartupStage<T>(
+  input: {
+    repoRoot: string;
+    sources: string[];
+    events: StartupDiagnosticEvent[];
+    stage: string;
+  },
+  run: () => Promise<T> | T,
+): Promise<T> {
+  const startedAt = Date.now();
+  const startedEvent = {
+    stage: input.stage,
+    status: "started" as const,
+    occurredAt: new Date(startedAt).toISOString(),
+  };
+  input.events.push(startedEvent);
+  console.error(`[document-tool-smoke:startup] ${input.stage} started`);
+  await writeStartupDiagnostics({
+    repoRoot: input.repoRoot,
+    sources: input.sources,
+    events: input.events,
+  });
+  try {
+    const result = await run();
+    const completedAt = Date.now();
+    input.events.push({
+      stage: input.stage,
+      status: "completed",
+      occurredAt: new Date(completedAt).toISOString(),
+      durationMs: completedAt - startedAt,
+    });
+    console.error(`[document-tool-smoke:startup] ${input.stage} completed`);
+    await writeStartupDiagnostics({
+      repoRoot: input.repoRoot,
+      sources: input.sources,
+      events: input.events,
+    });
+    return result;
+  } catch (error) {
+    const failedAt = Date.now();
+    input.events.push({
+      stage: input.stage,
+      status: "failed",
+      occurredAt: new Date(failedAt).toISOString(),
+      durationMs: failedAt - startedAt,
+      errorMessage: error instanceof Error ? error.message : String(error),
+    });
+    console.error(`[document-tool-smoke:startup] ${input.stage} failed`);
+    await writeStartupDiagnostics({
+      repoRoot: input.repoRoot,
+      sources: input.sources,
+      events: input.events,
+    });
+    throw error;
+  }
+}
+
 async function main() {
   const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
   const sources = process.argv
@@ -65,49 +171,134 @@ async function main() {
     );
   }
 
+  const startupEvents: StartupDiagnosticEvent[] = [];
+  await writeStartupDiagnostics({ repoRoot, sources, events: startupEvents });
+  const { loadSanitizedModelMemoryRunnerConfig, writeSanitizedModelMemoryRunnerConfig } =
+    await recordStartupStage(
+      {
+        repoRoot,
+        sources,
+        events: startupEvents,
+        stage: "import_runner_config",
+      },
+      () => import("../src/agents/model-memory.run-config.ts"),
+    );
+
   const config = mergeToolConfig(
-    await loadSanitizedModelMemoryRunnerConfig({
-      purpose: "model-memory document ingestion tool smoke",
-    }),
+    await recordStartupStage(
+      {
+        repoRoot,
+        sources,
+        events: startupEvents,
+        stage: "load_sanitized_runner_config",
+      },
+      () =>
+        loadSanitizedModelMemoryRunnerConfig({
+          purpose: "model-memory document ingestion tool smoke",
+        }),
+    ),
     repoRoot,
   );
-  process.env.OPENCLAW_CONFIG_PATH = await writeSanitizedModelMemoryRunnerConfig({
-    config,
-    tempPrefix: "openclaw-model-memory-tool-smoke-",
-  });
+  process.env.OPENCLAW_CONFIG_PATH = await recordStartupStage(
+    {
+      repoRoot,
+      sources,
+      events: startupEvents,
+      stage: "write_sanitized_runner_config",
+    },
+    () =>
+      writeSanitizedModelMemoryRunnerConfig({
+        config,
+        tempPrefix: "openclaw-model-memory-tool-smoke-",
+      }),
+  );
 
-  const { resolvePluginTools } = await import("../src/plugins/tools.ts");
-  const tools = resolvePluginTools({
-    context: {
-      config,
-      workspaceDir: repoRoot,
-      sandboxed: false,
-    } as never,
-    toolAllowlist: ["model-memory"],
-  });
+  const { resolvePluginTools } = await recordStartupStage(
+    {
+      repoRoot,
+      sources,
+      events: startupEvents,
+      stage: "import_plugin_tools",
+    },
+    () => import("../src/plugins/tools.ts"),
+  );
+  const tools = await recordStartupStage(
+    {
+      repoRoot,
+      sources,
+      events: startupEvents,
+      stage: "resolve_plugin_tools",
+    },
+    () =>
+      resolvePluginTools({
+        context: {
+          config,
+          workspaceDir: repoRoot,
+          sandboxed: false,
+        } as never,
+        onlyPluginIds: ["model-memory"],
+        toolAllowlist: ["model-memory"],
+      }),
+  );
 
-  const tool = tools.find((entry) => entry.name === "model_memory_document_ingest");
+  const tool = await recordStartupStage(
+    {
+      repoRoot,
+      sources,
+      events: startupEvents,
+      stage: "select_document_ingest_tool",
+    },
+    () => tools.find((entry) => entry.name === "model_memory_document_ingest"),
+  );
   if (!tool) {
     throw new Error(
       "model_memory_document_ingest was not resolved from the OpenClaw plugin registry",
     );
   }
 
-  const result = await tool.execute("tool-call-model-memory-smoke", {
-    sources,
-    runId: process.env.MODEL_MEMORY_TOOL_SMOKE_RUN_ID?.trim() || DEFAULT_RUN_ID,
-    recordPath: process.env.MODEL_MEMORY_TOOL_SMOKE_RECORD_PATH?.trim() || DEFAULT_RECORD_PATH,
-    chunkSize:
-      Number.parseInt(process.env.MODEL_MEMORY_TOOL_SMOKE_CHUNK_SIZE?.trim() ?? "", 10) || 2,
-    maxConcurrency:
-      Number.parseInt(process.env.MODEL_MEMORY_TOOL_SMOKE_MAX_CONCURRENCY?.trim() ?? "", 10) || 1,
-    resume: process.env.MODEL_MEMORY_TOOL_SMOKE_RESUME?.trim() !== "0",
-    modelId: DEFAULT_MODEL_REF,
-    candidateModelId: DEFAULT_MODEL_REF,
-    requestTimeoutMs: DEFAULT_REQUEST_TIMEOUT_MS,
-    requestSeed: DEFAULT_REQUEST_SEED,
-    maxWordsPerWindow: DEFAULT_MAX_WORDS_PER_WINDOW,
-  });
+  const result = await recordStartupStage(
+    {
+      repoRoot,
+      sources,
+      events: startupEvents,
+      stage: "execute_document_ingest_tool",
+    },
+    () =>
+      tool.execute(
+        "tool-call-model-memory-smoke",
+        {
+          sources,
+          runId: process.env.MODEL_MEMORY_TOOL_SMOKE_RUN_ID?.trim() || DEFAULT_RUN_ID,
+          recordPath:
+            process.env.MODEL_MEMORY_TOOL_SMOKE_RECORD_PATH?.trim() || DEFAULT_RECORD_PATH,
+          chunkSize:
+            Number.parseInt(process.env.MODEL_MEMORY_TOOL_SMOKE_CHUNK_SIZE?.trim() ?? "", 10) || 2,
+          maxConcurrency:
+            Number.parseInt(
+              process.env.MODEL_MEMORY_TOOL_SMOKE_MAX_CONCURRENCY?.trim() ?? "",
+              10,
+            ) || 1,
+          resume: process.env.MODEL_MEMORY_TOOL_SMOKE_RESUME?.trim() !== "0",
+          modelId: DEFAULT_MODEL_REF,
+          candidateModelId: DEFAULT_MODEL_REF,
+          requestTimeoutMs: DEFAULT_REQUEST_TIMEOUT_MS,
+          requestSeed: DEFAULT_REQUEST_SEED,
+          maxWordsPerWindow: DEFAULT_MAX_WORDS_PER_WINDOW,
+          rebuildRuntime: false,
+        },
+        undefined,
+        (update) => {
+          const text = update.content
+            .map((entry) => (entry.type === "text" ? entry.text : ""))
+            .filter(Boolean)
+            .join("\n");
+          if (text) {
+            console.error(`[document-tool-smoke] ${text}`);
+          }
+        },
+      ),
+  );
+  await writeStartupDiagnostics({ repoRoot, sources, events: startupEvents, completed: true });
 
   const details = (result as { details?: Record<string, unknown> }).details ?? {};
   const recordRelativePath =
@@ -153,6 +344,7 @@ async function main() {
       requestTimeoutMs: DEFAULT_REQUEST_TIMEOUT_MS,
       requestSeed: DEFAULT_REQUEST_SEED,
       maxWordsPerWindow: record.maxWordsPerWindow ?? DEFAULT_MAX_WORDS_PER_WINDOW,
+      rebuildRuntime: false,
     },
     sources: record.sources.map((source) => ({
       displayPath: source.displayPath,
@@ -187,6 +379,7 @@ async function main() {
   markdownLines.push(
     `- Max words per window: \`${record.maxWordsPerWindow ?? DEFAULT_MAX_WORDS_PER_WINDOW}\``,
   );
+  markdownLines.push("- Inline runtime rebuild: `false`");
   markdownLines.push(`- Chunk size: \`${record.chunkSize}\``);
   markdownLines.push(`- Max concurrency: \`${record.maxConcurrency}\``);
   markdownLines.push(`- Docs attempted: \`${record.totals.docsAttempted}\``);

@@ -154,6 +154,11 @@ async function main() {
     path.join(root, "src/infra/model-memory-proactivity-runtime.ts"),
     import.meta.url,
   );
+  const { buildCandidateReviewRecentEpisodeActivities, selectCandidateReviewEventActivities } =
+    await tsImport(
+      path.join(root, "src/infra/model-memory-proactivity-runtime.ts"),
+      import.meta.url,
+    );
   const {
     buildCandidateReviewPrefilterEvent,
     buildCandidateReviewTriggerPacket,
@@ -177,7 +182,7 @@ async function main() {
   const openClawActivities = transcriptMessagesToHighContextCandidateReviewActivities({
     messages,
     sessionKey,
-  }).slice(-openClawTurnWindow);
+  });
   const codex = await loadCodexSessionActivityForCandidateReview({
     codexHome,
     historyPath: codexHistoryPath,
@@ -185,16 +190,43 @@ async function main() {
     maxFiles: 12,
     maxTailLines: 3500,
   });
-  const recentActivities = [...openClawActivities, ...codex.activities];
+  const heartbeatMode = hasFlag("--heartbeat");
+  const heartbeatActivities = heartbeatMode
+    ? [
+        {
+          ref: `gateway://heartbeat/local/${Date.now()}`,
+          role: "system_event",
+          kind: "result_summary",
+          boundedText:
+            "Local heartbeat-equivalent candidate review quality probe. Review the bounded current episode only.",
+          sourceRuntime: "openclaw",
+          recordedAt: new Date().toISOString(),
+        },
+      ]
+    : [];
+  const episodeAssembly = buildCandidateReviewRecentEpisodeActivities({
+    openClawActivities,
+    codexActivities: codex.activities,
+    heartbeatActivities,
+    openClawTurnWindow,
+    codexTurnWindow,
+    packetMaxChars: 160_000,
+    heartbeatIsReviewTrigger: heartbeatMode,
+  });
+  const recentActivities = episodeAssembly.activities;
   if (recentActivities.length === 0) {
     throw new Error("no candidate-review activities were available");
   }
+  const eventActivities = selectCandidateReviewEventActivities({
+    recentActivities,
+    heartbeatIsReviewTrigger: heartbeatMode,
+  });
   const event = buildCandidateReviewPrefilterEvent({
-    eventType: "session_boundary",
-    runtime: "openclaw",
+    eventType: heartbeatMode ? "heartbeat_started" : "session_boundary",
+    runtime: episodeAssembly.report.primaryRuntime,
     sessionKey,
-    refs: recentActivities.map((activity) => activity.ref).slice(-12),
-    boundedSummary: recentActivities
+    refs: eventActivities.map((activity) => activity.ref).slice(-12),
+    boundedSummary: eventActivities
       .slice(-6)
       .map((activity) => activity.boundedText)
       .join("\n"),
@@ -206,7 +238,7 @@ async function main() {
   });
   const episodePacket = buildProactivityReviewEpisodePacket({
     triggerPacket,
-    triggerDecision: structuralTriggerDecision(event, recentActivities),
+    triggerDecision: structuralTriggerDecision(event, eventActivities),
     recentActivities,
     codexAdapterReport: codex.report,
     activeMilestone: "pre-Milestone-4 contiguous candidate packet repair",
@@ -237,8 +269,9 @@ async function main() {
     codexHistoryPath,
     packetArtifact,
     packetQuality: episodePacket.packetQuality,
-    openClawActivityCount: openClawActivities.length,
-    codexActivityCount: codex.activities.length,
+    episodeAssemblyReport: episodeAssembly.report,
+    openClawActivityCount: episodeAssembly.report.selectedCounts.openclaw,
+    codexActivityCount: episodeAssembly.report.selectedCounts.codex,
     codexAdapterReport: codex.report,
     reviewReport: review.report,
     proposals: review.proposals,
@@ -259,13 +292,26 @@ async function main() {
       {
         ok,
         jsonPath,
-        packetPath: packetArtifact.packetPath,
-        openClawActivityCount: openClawActivities.length,
-        codexActivityCount: codex.activities.length,
+        packetJsonPath: packetArtifact.jsonPath,
+        packetMarkdownPath: packetArtifact.markdownPath,
+        episodeAssembly: episodeAssembly.report,
+        openClawActivityCount: episodeAssembly.report.selectedCounts.openclaw,
+        codexActivityCount: episodeAssembly.report.selectedCounts.codex,
         proposalCount: review.proposals.length,
         surfacedProposalCount: review.proposals.filter((proposal) => proposal.shouldSurface).length,
         packetQuality: episodePacket.packetQuality,
         modelId: review.report.modelId ?? modelId,
+        proposals: review.proposals.map((proposal) => ({
+          kind: proposal.proposalKind,
+          title: proposal.title,
+          purpose: proposal.purpose,
+          nextStep: proposal.recommendedNextStep,
+          expectedUserValue: proposal.expectedUserValue,
+          confidence: proposal.confidence,
+          shouldSurface: proposal.shouldSurface,
+          demotionReason: proposal.demotionReason ?? null,
+          evidenceRefs: proposal.evidenceRefs,
+        })),
       },
       null,
       2,

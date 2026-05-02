@@ -75,7 +75,7 @@ async function main() {
   const productSurfacingReport = await readJson(
     root,
     "MODEL_MEMORY_PHASE2_PRODUCT_PROACTIVITY_SURFACING_ARTIFACT",
-    ".artifacts/model-memory/phase2-product-proactivity-surfacing-proof/20260426T164302781Z/ed58153e-d68e-519d-b2b2-3d7f681dde1a.phase2-product-proactivity-surfacing.json",
+    ".artifacts/model-memory/phase2-product-proactivity-presentation-proof/20260426T164302781Z/ed58153e-d68e-519d-b2b2-3d7f681dde1a.phase2-product-proactivity-presentation.json",
   );
 
   const harness = await new OperatorBrowserHarness({ headless: true, origin }).start();
@@ -111,7 +111,7 @@ async function main() {
       sessionKey,
       simulationReportVisible: Boolean(simulationTurn),
       comparisonVisible: Boolean(simulationTurn),
-      usefulnessSignalsVisible: Boolean(simulationTurn),
+      controlSignalsVisible: Boolean(simulationTurn),
       terminalEvidence: Boolean(simulationTurn && abuseTurn),
     },
   });
@@ -181,7 +181,7 @@ async function main() {
         reportId: report.reportId,
         marker,
         health: report.healthReport.status,
-        usefulnessSignals: report.telemetry.usefulnessSignals,
+        controlSignals: report.telemetry.controlSignals,
         comparison: report.comparisons[0],
         automaticSendExecution: report.telemetry.automaticSendExecution,
         autonomousMessageEmitted: report.telemetry.autonomousMessageEmitted,

@@ -147,6 +147,16 @@ Pre-Milestone-4 model-authored presentation gate:
 - visible primary copy must use model-authored output. Deterministic brief text
   may remain as hidden fallback input, validation context, or diagnostics, but
   it must not be surfaced as title, purpose, or next step.
+- remaining deterministic card/candidate judgment paths must be removed rather
+  than wrapped for compatibility. If model-authored presentation or
+  model-reviewed candidate judgment is unavailable, the item is blocked,
+  demoted, or operator-reviewed instead of falling back to deterministic
+  usefulness, relevance, or copy generation.
+- hybrid retrieval remains allowed to use deterministic lexical search,
+  recency, graph/projection cues, and source-authority signals to assemble
+  candidate memories for retrieval/package review. Those signals are not
+  authority for proactive surfacing, visible card copy, or final context-pack
+  value judgment.
 
 Pre-Milestone-4 high-context model-reviewed discovery gate:
 
@@ -192,6 +202,25 @@ Pre-Milestone-4 validation gate:
   classification, ranking, or surfacing; guardrails for identity, schema,
   redaction, caps, refs, provenance, cooldowns, dedupe, persistence, and
   unsafe-output demotion remain allowed
+
+Skill lifecycle surfacing also inherits the Phase 2 parity gates. Candidate
+cards, draft-ready cards, eval-failed repair cards, canary-failed repair cards,
+promotion-review cards, and cross-runtime install cards should all reuse the
+same canonical proactivity identity. The visible card may report structural
+state such as `eval_failed`, `canary_failed`, `install_blocked`,
+`approval_required`, or `rollback_ready`, but semantic recommendations such as
+merge, improve, retire, promote, or no action must be model-owned or
+operator-owned.
+
+Milestone 4 planner surfaces must be able to show:
+
+- generated eval status
+- resolver/trigger test status
+- check-resolvable-style reachability and overlap report status
+- package E2E status
+- missing rollback/canary/install gate status
+
+Those statuses are lifecycle evidence, not deterministic usefulness truth.
 
 ## Dedupe and expiry
 
@@ -360,3 +389,39 @@ surfacing.
 - Reverse prompts must render distinctly from ordinary work items so the user
   can tell the difference between “do this next” and “here is a useful
   question or angle you have not asked for yet”.
+
+## Judgment ownership after deterministic-debt pruning
+
+- Review/surfacing artifacts may use deterministic ids, refs, source scopes,
+  lifecycle states, cooldowns, and explicit user controls.
+- Deterministic code must not decide whether a proactive item is useful,
+  semantically relevant, high value, or worthy of primary surfacing.
+- Visible primary card text must be model-authored. If the model-authored brief
+  is unavailable, invalid, unsafe, or low quality, the item is demoted or kept
+  as diagnostics rather than shown with deterministic fallback copy.
+- Hybrid retrieval and context assembly may still deterministically recall
+  candidate evidence using lexical/graph/recency/source-lineage signals, but
+  final context-pack selection remains model-owned or operator-owned.
+
+## Lane Validation Artifacts
+
+- The pre-Milestone-4 lane proof writes a matrix artifact under
+  `.artifacts/model-memory/phase2-mm-v2-lane-validation/<timestamp>/`.
+- The companion quality recall audit writes under
+  `.artifacts/model-memory/phase2-mm-v2-quality-recall-audit/<timestamp>/`
+  and compares raw source fixture expectations, bounded packet visibility,
+  model output, admission/reconciliation/write results, and observed loss
+  point.
+- Each row records source refs/hashes, packet/window counts, route and
+  extraction counts, canonical/admission counts, TTL decisions, write or
+  pending/quarantine state, model routes, and safety flags.
+- The artifact may include bounded sanitized source packets, bounded model
+  outputs after caps/redaction, route/config summaries, validation reports, and
+  admitted/quarantined/pending candidate summaries.
+- The artifact must not include unbounded transcripts, raw provider prompts,
+  raw tool logs, hidden reasoning, secrets, or private phrases.
+- Proactivity/card compatibility rows prove that model-authored visible copy is
+  still required; they do not authorize deterministic fallback card prose.
+- Qualitative recall estimates are proof/human/model review artifacts only.
+  They must not become runtime deterministic candidate-quality, skill-shape, or
+  surfacing validators.

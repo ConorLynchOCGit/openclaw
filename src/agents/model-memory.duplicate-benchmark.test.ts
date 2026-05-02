@@ -112,7 +112,7 @@ describe("model-memory duplicate benchmark", () => {
     expect(report.rerunReviewedCases[0]?.adjudicatedLabel).toBe("should_attach_support");
   });
 
-  it("resolves semantic seeds against evolved cases without relying on object ids", async () => {
+  it("does not resolve reviewed seeds through token-similarity fallback", async () => {
     const auditCase = buildAuditCase();
     auditCase.caseId = "rerun-new-object-id";
     auditCase.payloadSummary =
@@ -183,7 +183,6 @@ describe("model-memory duplicate benchmark", () => {
         trueDistinctRateIntervalOnReruns: { lower: 0, upper: 0, sampleSize: 0 },
         attachSupportMissRateIntervalOnReruns: { lower: 0, upper: 0, sampleSize: 0 },
       },
-      recommendedDeterministicAttachPatterns: [],
     } satisfies Partial<ModelMemoryDuplicateBenchmarkReport>;
     const priorBenchmarkPath = await writeTempJson("benchmark.json", priorBenchmark);
 
@@ -192,12 +191,11 @@ describe("model-memory duplicate benchmark", () => {
       priorBenchmarkPath,
     });
 
-    expect(report.rerunReviewedCases).toHaveLength(1);
-    expect(report.rerunReviewedCases[0]?.resolution).toBe("semantic_fallback");
-    expect(report.rerunReviewedCases[0]?.caseId).toBe("rerun-new-object-id");
+    expect(report.rerunReviewedCases).toHaveLength(0);
+    expect(report.unresolvedSemanticSeedIds).toEqual(["seed-rule-stash"]);
   });
 
-  it("rebuilds semantic seeds from the current audit when legacy ids are unavailable", async () => {
+  it("does not create benchmark labels from the current audit without review seeds", async () => {
     const auditCase = buildAuditCase();
     auditCase.caseId = "rerun-current-audit-case";
     auditCase.missClass = "legit_distinct";
@@ -259,9 +257,9 @@ describe("model-memory duplicate benchmark", () => {
       duplicateAuditPath: auditPath,
     });
 
-    expect(report.seedBootstrapMode).toBe("current_audit_bootstrap");
-    expect(report.semanticSeeds.length).toBeGreaterThan(0);
-    expect(report.rerunReviewedCases).toHaveLength(1);
-    expect(report.clusterCorroborationCases).toHaveLength(1);
+    expect(report.seedBootstrapMode).toBe("no_reviewed_seeds");
+    expect(report.semanticSeeds).toHaveLength(0);
+    expect(report.rerunReviewedCases).toHaveLength(0);
+    expect(report.clusterCorroborationCases).toHaveLength(0);
   });
 });

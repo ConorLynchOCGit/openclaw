@@ -33,7 +33,7 @@ describe("phase2 proactivity feedback loop", () => {
     ]);
     expect(report.feedbackRecords).toHaveLength(5);
     expect(report.feedbackRecords.every((record) => !record.rawTextStored)).toBe(true);
-    expect(report.feedbackRecords.every((record) => !record.semanticTruthWrite)).toBe(true);
+    expect(report.feedbackRecords.every((record) => !record.canonicalTruthWrite)).toBe(true);
     expect(report.feedbackRecords.every((record) => !record.memoryCorrectionWrite)).toBe(true);
     expect(report.telemetry.actionExecutionObserved).toBe(false);
     assertPhase2ProactivityFeedbackLoopEnabled(report);
@@ -42,24 +42,25 @@ describe("phase2 proactivity feedback loop", () => {
   it("useful feedback affects the quality report only", async () => {
     const report = await buildPhase2ProactivityFeedbackReport({ controls: ["useful"] });
 
-    expect(report.qualityReport.usefulCount).toBe(1);
-    expect(report.qualityReport.downrankedCandidateIds).toEqual([]);
+    expect(report.qualityReport.positiveFeedbackCount).toBe(1);
+    expect(report.qualityReport.negativeFeedbackCandidateIds).toEqual([]);
     expect(report.qualityReport.suppressedCandidateIds).toEqual([]);
     expect(report.qualityReport.blockedCandidateIds).toEqual([]);
-    expect(report.qualityReport.semanticTruthWritesCreated).toBe(false);
+    expect(report.qualityReport.canonicalTruthWritesCreated).toBe(false);
   });
 
-  it("not useful and wrong context feedback downranks without writing truth", async () => {
+  it("not useful and wrong context feedback are metadata only without ranking writes", async () => {
     const report = await buildPhase2ProactivityFeedbackReport({
       controls: ["not_useful", "wrong_context"],
     });
 
-    expect(report.qualityReport.downrankedCandidateIds).toHaveLength(1);
+    expect(report.policy.feedbackMayAffectRanking).toBe(false);
+    expect(report.qualityReport.negativeFeedbackCandidateIds).toHaveLength(1);
     expect(
       report.suppressionDecisions.every(
         (decision) =>
-          decision.decision === "downrank_future_candidates" &&
-          !decision.semanticTruthWrite &&
+          decision.decision === "negative_feedback_recorded" &&
+          !decision.canonicalTruthWrite &&
           !decision.memoryCorrectionWrite,
       ),
     ).toBe(true);
@@ -91,7 +92,7 @@ describe("phase2 proactivity feedback loop", () => {
     ["missing provenance", { forceMissingProvenance: true }, "provenance_required"],
     ["missing source profile", { forceMissingSourceProfile: true }, "source_profile_required"],
     ["no-dark-data failure", { forceNoDarkDataFail: true }, "no_dark_data_required"],
-    ["semantic truth write", { forceSemanticTruthWrite: true }, "semantic_truth_write_disabled"],
+    ["canonical truth write", { forceCanonicalTruthWrite: true }, "canonical_truth_write_disabled"],
     [
       "memory correction write",
       { forceMemoryCorrectionWrite: true },
@@ -104,7 +105,7 @@ describe("phase2 proactivity feedback loop", () => {
 
       expect(report.decision).toBe("blocked");
       expect(report.telemetry.rawTextStored).toBe(false);
-      expect(report.telemetry.semanticTruthWriteObserved).toBe(false);
+      expect(report.telemetry.canonicalTruthWriteObserved).toBe(false);
       expect(report.telemetry.memoryCorrectionWriteObserved).toBe(false);
       expect(report.checks.map((check) => check.reasonCode)).toContain(reasonCode);
       expect(JSON.stringify(report)).not.toContain("free-form feedback");

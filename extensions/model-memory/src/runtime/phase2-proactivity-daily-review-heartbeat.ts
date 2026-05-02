@@ -24,8 +24,8 @@ export type Phase2ProactivityReviewItem = {
   title: string;
   messagePreview: string;
   suggestedAction: string;
-  rank: number;
-  rankReason: "urgency_age_recurrence";
+  displayOrder: number;
+  orderReason: "contextual_report_order";
   directPath: "proactivity_inbox_detail_send";
   sourceRefs: string[];
   sourceProfileIds: string[];
@@ -51,12 +51,10 @@ export type Phase2ProactivityDailyReviewGroup = {
   candidateIds: string[];
 };
 
-export type Phase2ProactivityReviewRanking = {
+export type Phase2ProactivityReviewOrdering = {
   candidateId: string;
-  rank: number;
-  urgencyScore: number;
-  ageScore: number;
-  recurrenceScore: number;
+  displayOrder: number;
+  orderReason: "contextual_report_order";
 };
 
 export type Phase2ProactivityReviewCheck = {
@@ -65,7 +63,7 @@ export type Phase2ProactivityReviewCheck = {
   reasonCode:
     | "must_surface_items_included"
     | "background_context_grouped"
-    | "deterministic_ranking"
+    | "contextual_order_preserved"
     | "same_candidate_id_preserved"
     | "direct_path_to_detail_send"
     | "heartbeat_bounded"
@@ -99,7 +97,7 @@ export type Phase2ProactivityReviewReport = {
   reviewItems: Phase2ProactivityReviewItem[];
   heartbeatSummary: Phase2ProactivityHeartbeatSummary;
   groups: Phase2ProactivityDailyReviewGroup[];
-  rankings: Phase2ProactivityReviewRanking[];
+  orderings: Phase2ProactivityReviewOrdering[];
   checks: Phase2ProactivityReviewCheck[];
   telemetry: Phase2ProactivityReviewTelemetry;
   rollbackPlan: Phase2ProactivityReviewRollbackPlan;
@@ -215,8 +213,8 @@ export async function buildPhase2ProactivityDailyReviewHeartbeatReport(
     title: card.candidateSummary,
     messagePreview: card.messagePreview,
     suggestedAction: card.suggestedAction,
-    rank: index + 1,
-    rankReason: "urgency_age_recurrence" as const,
+    displayOrder: index + 1,
+    orderReason: "contextual_report_order" as const,
     directPath: "proactivity_inbox_detail_send" as const,
     sourceRefs: input.forceMissingProvenance ? [] : card.sourceRefs,
     sourceProfileIds: card.sourceProfileIds,
@@ -260,12 +258,10 @@ export async function buildPhase2ProactivityDailyReviewHeartbeatReport(
         .map((decision) => decision.candidateId),
     },
   ];
-  const rankings = reviewItems.map((item) => ({
+  const orderings = reviewItems.map((item) => ({
     candidateId: item.candidateId,
-    rank: item.rank,
-    urgencyScore: 1,
-    ageScore: 1,
-    recurrenceScore: 0,
+    displayOrder: item.displayOrder,
+    orderReason: item.orderReason,
   }));
   const checks: Phase2ProactivityReviewCheck[] = [];
   addCheck(checks, "must_surface_items_included", reviewItems.length > 0);
@@ -276,8 +272,8 @@ export async function buildPhase2ProactivityDailyReviewHeartbeatReport(
   );
   addCheck(
     checks,
-    "deterministic_ranking",
-    rankings.every((ranking, index) => ranking.rank === index + 1),
+    "contextual_order_preserved",
+    orderings.every((ordering, index) => ordering.displayOrder === index + 1),
   );
   addCheck(
     checks,
@@ -340,7 +336,7 @@ export async function buildPhase2ProactivityDailyReviewHeartbeatReport(
       bounded: true,
     },
     groups,
-    rankings,
+    orderings,
     checks,
     telemetry: {
       schemaVersion: PHASE2_PROACTIVITY_DAILY_REVIEW_SCHEMA_VERSION,

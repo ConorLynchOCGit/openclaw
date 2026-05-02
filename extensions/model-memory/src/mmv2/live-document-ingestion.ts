@@ -26,6 +26,7 @@ import {
   ingestSourceEnvelopeV2Core,
   type MmV2CoreIngestionResult,
   type MmV2SourceEnvelopeWindow,
+  type ReconciliationNeighborProvider,
 } from "./document-shadow-ingestion.ts";
 import { recordLiveMemoryBatch, type LiveMemoryBatch } from "./recording.ts";
 
@@ -496,6 +497,11 @@ function buildLegacySharedIngestionResultFromRun<
   modelId: string,
 ): SharedIngestionResult<TSource, TWindow> {
   const sourceWindowId = run.windows[0].id;
+  const sourceWindowIdBySegmentId = new Map(
+    (run.windowRuns ?? []).flatMap((windowRun) =>
+      windowRun.segmentIds.map((segmentId) => [segmentId, windowRun.sourceWindowId] as const),
+    ),
+  );
   const admissionById = new Map(
     run.admission.decisions.map((decision) => [decision.candidate_id, decision]),
   );
@@ -508,28 +514,33 @@ function buildLegacySharedIngestionResultFromRun<
     .filter((candidate) => shouldPersistThroughLegacyWritePath(candidate, reconciliationById))
     .map((candidate) =>
       buildCapturedObject({
-        sourceWindowId,
+        sourceWindowId:
+          sourceWindowIdBySegmentId.get(candidate.source.segment_id) ?? sourceWindowId,
         sourceKind: run.source.sourceKind,
         object: adaptCanonicalCandidate(candidate),
         modelId,
       }),
     );
 
-  const windowResults: DocumentWindowIngestionResult[] =
-    capturedObjects.length > 0
-      ? [
-          {
-            sourceWindowId,
-            action: "capture",
-            objects: capturedObjects,
-          },
-        ]
-      : [
-          {
-            sourceWindowId,
-            action: "ignore",
-          },
-        ];
+  const objectsByWindowId = new Map<string, CapturedMemoryObject[]>();
+  for (const object of capturedObjects) {
+    const windowObjects = objectsByWindowId.get(object.sourceWindowId) ?? [];
+    windowObjects.push(object);
+    objectsByWindowId.set(object.sourceWindowId, windowObjects);
+  }
+  const windowResults: DocumentWindowIngestionResult[] = run.windows.map((window) => {
+    const objects = objectsByWindowId.get(window.id) ?? [];
+    return objects.length > 0
+      ? {
+          sourceWindowId: window.id,
+          action: "capture",
+          objects,
+        }
+      : {
+          sourceWindowId: window.id,
+          action: "ignore",
+        };
+  });
 
   return {
     source: run.source,
@@ -556,6 +567,7 @@ export async function ingestDocumentV2ForLiveStorage(
     reconciliationNeighborsByCandidateId?: Parameters<
       typeof ingestDocumentV2Core
     >[0]["reconciliationNeighborsByCandidateId"];
+    reconciliationNeighborProvider?: ReconciliationNeighborProvider;
   },
 ): Promise<MmV2LiveStorageIngestionResult> {
   const run = await ingestDocumentV2Core({
@@ -564,6 +576,7 @@ export async function ingestDocumentV2ForLiveStorage(
     interpreter: input.interpreter,
     reconciliationNeighbors: input.reconciliationNeighbors,
     reconciliationNeighborsByCandidateId: input.reconciliationNeighborsByCandidateId,
+    reconciliationNeighborProvider: input.reconciliationNeighborProvider,
   });
   const legacy = buildLegacySharedIngestionResultFromRun(run, input.modelId);
   const mmv2LiveRecording = recordLiveMemoryBatch({
@@ -592,10 +605,10 @@ export async function captureOrdinaryTurnV2ForLiveStorage(input: {
   reconciliationNeighborsByCandidateId?: Parameters<
     typeof ingestSourceEnvelopeV2Core
   >[0]["reconciliationNeighborsByCandidateId"];
+  reconciliationNeighborProvider?: ReconciliationNeighborProvider;
 }): Promise<MmV2LiveOrdinaryTurnStorageResult> {
   const envelope = adaptOrdinaryTurnSource({
     ...input.capture,
-    maxWordsPerWindow: Number.MAX_SAFE_INTEGER,
   });
   const run = await ingestSourceEnvelopeV2Core({
     envelope,
@@ -610,6 +623,7 @@ export async function captureOrdinaryTurnV2ForLiveStorage(input: {
     interpreter: input.interpreter,
     reconciliationNeighbors: input.reconciliationNeighbors,
     reconciliationNeighborsByCandidateId: input.reconciliationNeighborsByCandidateId,
+    reconciliationNeighborProvider: input.reconciliationNeighborProvider,
   });
   const legacy = buildLegacySharedIngestionResultFromRun(run, input.modelId);
   const mmv2LiveRecording = recordLiveMemoryBatch({
@@ -645,11 +659,11 @@ export async function recoverDailyContinuityV2ForLiveStorage(input: {
   reconciliationNeighborsByCandidateId?: Parameters<
     typeof ingestSourceEnvelopeV2Core
   >[0]["reconciliationNeighborsByCandidateId"];
+  reconciliationNeighborProvider?: ReconciliationNeighborProvider;
 }): Promise<MmV2LiveDailyContinuityStorageResult> {
   const envelope = adaptDocumentSource({
     ...input.dailyRecord,
     sourceKind: "daily_continuity",
-    maxWordsPerWindow: Number.MAX_SAFE_INTEGER,
   });
   const run = await ingestSourceEnvelopeV2Core({
     envelope,
@@ -663,6 +677,7 @@ export async function recoverDailyContinuityV2ForLiveStorage(input: {
     interpreter: input.interpreter,
     reconciliationNeighbors: input.reconciliationNeighbors,
     reconciliationNeighborsByCandidateId: input.reconciliationNeighborsByCandidateId,
+    reconciliationNeighborProvider: input.reconciliationNeighborProvider,
   });
   const legacy = buildLegacySharedIngestionResultFromRun(run, input.modelId);
   const mmv2LiveRecording = recordLiveMemoryBatch({

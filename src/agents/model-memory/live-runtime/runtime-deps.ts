@@ -1,9 +1,11 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import type { OpenClawConfig } from "../../../config/config.js";
 import { createSubsystemLogger } from "../../../logging/subsystem.js";
 import { ExecutorBackedSemanticCollisionAdjudicator } from "../../../plugin-sdk/model-memory-legacy.js";
 import {
   DEFAULT_WORKSPACE_PROJECTION_TARGETS,
+  ExecutorBackedRetrievalFinalInclusionReviewer,
   ExecutorBackedRetrievalRequestInterpreter,
   ExecutorBackedSemanticInterpreter,
   compileProjection,
@@ -13,9 +15,15 @@ import {
   type RuntimeMemoryRecord,
   type WorkspaceProjectionTargetRecord,
 } from "../../../plugin-sdk/model-memory.js";
-import type { OpenClawConfig } from "../../../config/config.js";
-import { createModelMemoryDatabaseRuntime, resolveModelMemoryDatabaseResolution } from "../../model-memory.database.js";
-import { resolveModelMemoryLiveRuntimeStatus, resolveProjectionArtifactMaterializationEnabled, type ModelMemoryLiveRuntimeStatus } from "./config.js";
+import {
+  createModelMemoryDatabaseRuntime,
+  resolveModelMemoryDatabaseResolution,
+} from "../../model-memory.database.js";
+import {
+  resolveModelMemoryLiveRuntimeStatus,
+  resolveProjectionArtifactMaterializationEnabled,
+  type ModelMemoryLiveRuntimeStatus,
+} from "./config.js";
 import { CompositeModelMemoryJsonExecutor, ExecutorBackedMmV2SemanticInterpreter } from "./json.js";
 
 const log = createSubsystemLogger("model-memory/live-runtime");
@@ -48,6 +56,9 @@ export type LiveRuntimeDeps = Awaited<ReturnType<typeof createModelMemoryDatabas
   semanticInterpreter: InstanceType<typeof ExecutorBackedSemanticInterpreter>;
   mmv2SemanticInterpreter: ExecutorBackedMmV2SemanticInterpreter;
   retrievalInterpreter: InstanceType<typeof ExecutorBackedRetrievalRequestInterpreter>;
+  retrievalFinalInclusionReviewer: InstanceType<
+    typeof ExecutorBackedRetrievalFinalInclusionReviewer
+  >;
   collisionAdjudicator: InstanceType<typeof ExecutorBackedSemanticCollisionAdjudicator>;
 };
 
@@ -110,6 +121,16 @@ export async function getLiveRuntime(config?: OpenClawConfig): Promise<LiveRunti
           semanticInterpreter: new ExecutorBackedSemanticInterpreter(executor),
           mmv2SemanticInterpreter: new ExecutorBackedMmV2SemanticInterpreter(executor),
           retrievalInterpreter: new ExecutorBackedRetrievalRequestInterpreter(executor),
+          retrievalFinalInclusionReviewer: new ExecutorBackedRetrievalFinalInclusionReviewer(
+            executor,
+            {
+              modelId:
+                process.env.MODEL_MEMORY_RETRIEVAL_FINAL_INCLUSION_MODEL_ID ??
+                process.env.MODEL_MEMORY_RETRIEVAL_MODEL_ID ??
+                "openai-codex/gpt-5.4-mini",
+              reasoningEffort: "low",
+            },
+          ),
           collisionAdjudicator: new ExecutorBackedSemanticCollisionAdjudicator(executor),
         };
       })(),

@@ -1,18 +1,18 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import {
-  cleanProactivityUserFacingText,
-  isInternalProactivityWorkflowText,
-  isMeaningfulProactivityUserFacingText,
-} from "../../../../src/shared/chat-message-content.js";
-import {
   buildDerivedArtifactId,
   uniqueSortedStrings,
   writeBoundedDerivedJsonArtifact,
 } from "../derived-artifact.ts";
 import type { SourceAuthorityTier, SourceProfileId } from "../source-authority.ts";
-import type { Phase2ProductProactivityQueueItem } from "./phase2-product-proactivity-surfacing.ts";
+import type { Phase2ProductProactivityQueueItem } from "./phase2-product-proactivity-presentation.ts";
 import type { Phase2SkillCandidateRecord } from "./phase2-skill-candidate-ledger.ts";
+import {
+  cleanProactivityUserFacingText,
+  isInternalProactivityWorkflowText,
+  isMeaningfulProactivityUserFacingText,
+} from "./proactivity-text.ts";
 
 export const PHASE2_HEARTBEAT_PROACTIVITY_RELIABILITY_SCHEMA_VERSION =
   "phase2_heartbeat_proactivity_reliability.v1" as const;

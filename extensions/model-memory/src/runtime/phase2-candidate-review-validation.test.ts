@@ -129,6 +129,39 @@ describe("phase2 candidate review validation", () => {
     expect(report.results[0]?.reasonCodes).toContain("unsupported_existing_skill_enhancement");
   });
 
+  it("keeps a known skill-shaped Codex episode in the candidate review proof matrix", () => {
+    const cases = buildPhase2CandidateReviewGoldenCorpus();
+    const skillDropoffCase = cases.find(
+      (testCase) => testCase.caseId === "skill_dropoff_known_skill_shape_codex_episode",
+    );
+    const proposals = buildPassingGoldenCorpusProposalFixtures();
+
+    expect(skillDropoffCase).toBeDefined();
+    expect(skillDropoffCase?.packet.packetQuality.codexTurnCount).toBeGreaterThan(0);
+    expect(skillDropoffCase?.packet.codexActivitySummary.status).toBe("loaded");
+    expect(skillDropoffCase?.packet.codexActivitySummary.validationFailures).toHaveLength(1);
+    expect(
+      skillDropoffCase?.packet.episodeTurns.some((turn) => turn.ref.startsWith("codex://")),
+    ).toBe(true);
+
+    const report = validateCandidateReviewGoldenCorpus({
+      generatedAt: "2026-04-29T00:00:00.000Z",
+      cases: [skillDropoffCase!],
+      proposalsByCaseId: {
+        skill_dropoff_known_skill_shape_codex_episode:
+          proposals.skill_dropoff_known_skill_shape_codex_episode,
+      },
+    });
+
+    expect(report.failCount).toBe(0);
+    expect(report.results[0]?.surfacedProposalCount).toBe(1);
+    expect(
+      proposals.skill_dropoff_known_skill_shape_codex_episode[0]?.evidenceRefs.some((ref) =>
+        ref.startsWith("codex://"),
+      ),
+    ).toBe(true);
+  });
+
   it("renders a local validation markdown report", () => {
     const report = validateCandidateReviewGoldenCorpus({
       generatedAt: "2026-04-29T00:00:00.000Z",

@@ -47,6 +47,21 @@ describe("phase2 real memory proactivity candidates", () => {
           noDarkDataStatus: "pass",
         },
       ],
+      modelReviewedOpportunities: [
+        {
+          sourceId: "live-session-event-1",
+          workItemKind: "investigation_request",
+          title: "Investigate gateway rebuild confusion",
+          whyNow:
+            "A model-reviewed candidate identified repeated gateway rebuild confusion as worth investigation.",
+          proposedNextStep:
+            "Review the gateway rebuild confusion evidence before changing the runtime.",
+          expectedUserValue: "Clarifies the next safe investigation target.",
+          evidenceSummary:
+            "The live session observed repeated gateway rebuild confusion that needs investigation.",
+          confidence: "high",
+        },
+      ],
     });
     const report = await buildPhase2RealMemoryProactivityCandidateReport({
       liveDetectionReport,
@@ -59,8 +74,8 @@ describe("phase2 real memory proactivity candidates", () => {
       sourceMode: "live_signal",
       liveSignalKind: "recent_failure",
       workItemKind: "investigation_request",
-      title: "Investigate recent openclaw failure",
-      proposedNextStep: expect.stringContaining("gateway rebuild confusion"),
+      title: "Investigate gateway rebuild confusion",
+      proposedNextStep: expect.stringContaining("gateway rebuild confusion evidence"),
     });
   });
 

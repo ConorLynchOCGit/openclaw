@@ -1,48 +1,58 @@
 {
-  "generatedAt": "2026-04-15T00:33:17.071Z",
+  "generatedAt": "2026-04-30T17:06:51.294Z",
+  "title": "Document Ingestion Tool Smoke",
   "toolName": "model_memory_document_ingest",
-  "runId": "model-memory-tool-smoke",
-  "recordPath": "checkpoints/model-memory/model-memory-tool-smoke.json",
-  "modelId": "openrouter/openai/gpt-5.4-nano",
-  "candidateModelId": "openrouter/openai/gpt-5.4-nano",
+  "runId": "probe-doc-1024",
+  "recordPath": ".artifacts/tmp/probe-doc-1024.json",
+  "modelId": "openai-codex/gpt-5.4-mini",
+  "candidateModelId": "openai-codex/gpt-5.4-mini",
   "requestTimeoutMs": 180000,
   "requestSeed": 7,
   "maxWordsPerWindow": 1500,
   "chunkSize": 2,
   "maxConcurrency": 1,
+  "invocation": {
+    "sources": [
+      ".artifacts/model-memory/phase2-live-gateway-ui-model-owned-validation/20260430T163211654Z/fixtures/live-gateway-structured-doc-20260430T163211654Z.md"
+    ],
+    "runId": "probe-doc-1024",
+    "recordPath": ".artifacts/tmp/probe-doc-1024.json",
+    "chunkSize": 2,
+    "maxConcurrency": 1,
+    "resume": false,
+    "modelId": "openai-codex/gpt-5.4-mini",
+    "candidateModelId": "openai-codex/gpt-5.4-mini",
+    "requestTimeoutMs": 180000,
+    "requestSeed": 7,
+    "maxWordsPerWindow": 1500
+  },
   "sources": [
     {
-      "displayPath": "AGENTS.md",
-      "status": "completed",
-      "windowCount": 3,
-      "capturedClaimCount": 14,
-      "writeDecisionCounts": {
-        "write": 14
-      }
-    },
-    {
-      "displayPath": "docs/help/testing.md",
-      "status": "completed",
-      "windowCount": 2,
-      "capturedClaimCount": 6,
-      "writeDecisionCounts": {
-        "write": 6
-      }
+      "displayPath": ".artifacts/model-memory/phase2-live-gateway-ui-model-owned-validation/20260430T163211654Z/fixtures/live-gateway-structured-doc-20260430T163211654Z.md",
+      "status": "failed",
+      "windowCount": 0,
+      "capturedClaimCount": 0,
+      "writeDecisionCounts": {},
+      "ignoredWindowCount": 0,
+      "rejectedWindowCount": 0,
+      "rejectReasons": [],
+      "errorMessage": "model-memory live execution failed for openai-codex/gpt-5.4-mini: provider_response Your input exceeds the context window of this model. Please adjust your input and try again."
     }
   ],
   "totals": {
-    "docsAttempted": 2,
-    "docsCompleted": 2,
-    "docsFailed": 0,
-    "capturedClaimCount": 20,
+    "docsAttempted": 1,
+    "docsCompleted": 0,
+    "docsFailed": 1,
+    "capturedClaimCount": 0,
     "ignoredWindowCount": 0,
     "rejectedWindowCount": 0,
-    "writeDecisionCounts": {
-      "write": 20
-    },
+    "writeDecisionCounts": {},
     "rejectReasons": []
   },
-  "warnings": [
-    "plugins.entries.memory-middleware: plugin not found: memory-middleware (stale config entry ignored; remove it from plugins config)"
+  "manualUiSteps": [
+    "Use the OpenClaw operator tool `model_memory_document_ingest`.",
+    "Pass sources [\".artifacts/model-memory/phase2-live-gateway-ui-model-owned-validation/20260430T163211654Z/fixtures/live-gateway-structured-doc-20260430T163211654Z.md\"].",
+    "Keep chunkSize=2, maxConcurrency=1, resume=true, modelId=openai-codex/gpt-5.4-mini, candidateModelId=openai-codex/gpt-5.4-mini.",
+    "After the run, inspect .artifacts/tmp/probe-doc-1024.json and the model-memory operator evidence surfaces for captured claims and write decisions."
   ]
 }

@@ -93,18 +93,6 @@ function validateCanonical(
         message: "atomic and component candidates must not declare artifact_type",
       });
     }
-    if (candidate.kind === "claim" && /\b(always|never|must)\b/i.test(candidate.canonical_text)) {
-      errors.push({
-        path: `canonical_candidates.${index}.canonical_text`,
-        message: "claim canonical text drifted into directive modality",
-      });
-    }
-    if (candidate.kind === "directive" && /\bthe user prefers\b/i.test(candidate.canonical_text)) {
-      errors.push({
-        path: `canonical_candidates.${index}.canonical_text`,
-        message: "directive canonical text drifted into descriptive preference wording",
-      });
-    }
   });
   return errors;
 }

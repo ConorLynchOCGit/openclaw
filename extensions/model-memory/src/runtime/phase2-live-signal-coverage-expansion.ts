@@ -479,8 +479,8 @@ export function assertPhase2LiveSignalCoverageExpanded(
   if (report.decision !== "coverage_expanded") {
     throw new Error(`phase2 live signal coverage was not expanded: ${report.decision}`);
   }
-  if (report.telemetry.opportunityCount < 1) {
-    throw new Error("phase2 live signal coverage produced no opportunities");
+  if (report.telemetry.convertedSourceCount < 1) {
+    throw new Error("phase2 live signal coverage produced no structural signal sources");
   }
   if (report.telemetry.proofCandidateSeedingObserved) {
     throw new Error("phase2 live signal coverage observed proof candidate seeding");

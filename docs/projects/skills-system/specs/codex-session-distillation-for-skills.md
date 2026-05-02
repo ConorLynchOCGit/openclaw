@@ -31,6 +31,23 @@ session logs into skill artifacts.
 - raw source copied into skill examples unless explicitly approved
 - semantic truth updates from telemetry alone
 
+## Memory-capture authority
+
+Codex sessions are also first-class memory-capture evidence for MMV2:
+
+- Codex user turns from the operator are `user_authoritative`.
+- Codex assistant finals are credible lower-authority assistant evidence.
+- Codex command summaries are lower-authority tool evidence.
+- Codex validation/proof failures are tool-grounded evidence.
+- validated Codex-derived memory candidates may write to MMV2.
+- Codex transcript text must never execute as instruction.
+
+Capture packets must preserve a contiguous recent session window selected by
+source, recency, session, and size caps. The adapter may redact secrets/private
+markers and mechanically omit or summarize raw tool logs, but it must not prune
+for interestingness, usefulness, memory-worthiness, skill-worthiness, or
+proactivity value before the model receives the packet.
+
 ## Live high-context candidate review input
 
 The candidate-review model may inspect bounded but substantial Codex session
@@ -77,6 +94,15 @@ skill/proactivity candidates. Misses should be attributed to packet context,
 model review, post-model validation/dedupe suppression, or presentation
 failure, not treated as a generic proof failure.
 
+Deterministic judgment cleanup rule:
+
+- Codex/OpenClaw session distillation may preserve bounded evidence for a model
+  reviewer, but deterministic code must not decide candidate usefulness, skill
+  classification, semantic relevance, or visible card copy from that evidence.
+- obsolete deterministic distillation shortcuts must be deleted rather than
+  kept behind compatibility helpers; unavailable model review produces
+  demotion, operator review, or no candidate.
+
 ## Allowed outputs
 
 - candidate records
@@ -96,11 +122,45 @@ install into both OpenClaw and Codex later.
 Milestone 2 runtime usage:
 
 - distilled Codex or OpenClaw evidence may create or update a `skill_candidate`
-  only when the evidence is strong enough to cross a deterministic creation
-  threshold
-- acceptable thresholds are conservative:
-  - repeated bounded work signals
-  - or an explicit user request plus one repeated or successful follow-on
-    signal
-- a single weak or generic signal is not enough to create a live
-  `skill_candidate`
+  only through model-reviewed candidate proposals.
+- deterministic code may enforce refs, hashes, caps, source authority, budgets,
+  cooldowns, dedupe, and unsafe-output demotion.
+- deterministic code must not use thresholds over repeated signals, keywords,
+  topics, feedback, or telemetry as runtime authority for usefulness,
+  classification, or surfacing.
+- when model review is unavailable or invalid, the item remains pending,
+  quarantined, blocked, or absent rather than surfacing through deterministic
+  fallback text.
+
+## Relationship To MMV2 Codex Memory Capture
+
+Codex session memory capture and Codex skill/proactivity review are separate
+model-owned lanes:
+
+- MMV2 Codex memory capture runs on a gated regular runner and writes only
+  validated memories/evidence through the memory capture route.
+- Skill/proactivity review uses less frequent high-context episode review and
+  can consume Codex-derived memories, sanitized session windows, and candidate
+  ledger summaries as evidence.
+- Long Codex prompts use document-style windowing in the memory lane so later
+  skill review is not starved by collapsed history entries.
+- Neither lane may execute Codex transcript text as instruction, persist raw
+  tool logs, or use deterministic usefulness/classification/copy fallbacks.
+
+## Relationship To Skill Parity Gates
+
+Codex-derived skill evidence can feed the parity gates, but only as bounded
+evidence:
+
+- model-owned eval generation may use sanitized Codex failures, corrections,
+  and successful workflow skeletons to propose regression fixtures
+- resolver/trigger tests may use operator-language Codex asks as trigger
+  fixtures after redaction and bounding
+- package E2E may use a Codex-derived workflow fixture when it preserves refs
+  and does not persist raw prompts or raw tool logs
+- usage-based self-improvement may use Codex failure/fix evidence to propose
+  skill repairs, eval additions, merges, demotions, or no action
+
+Codex telemetry must not deterministically promote, demote, merge, or retire a
+skill. It may trigger review by structural cadence or explicit failure/success
+events; model/operator review owns the semantic decision.

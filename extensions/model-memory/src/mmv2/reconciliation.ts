@@ -21,12 +21,7 @@ import {
 import {
   createCanonicalSemanticKey,
   createExistingMemorySemanticKey,
-  describeCanonicalClaimIdentity,
-  describeExistingClaimIdentity,
   effectiveScopesEqual,
-  getEffectiveScope,
-  isNarrowerEffectiveScope,
-  normalizeSemanticIdentityValue,
   sourceRefsShareFamily,
 } from "./semantic-identity.ts";
 
@@ -63,132 +58,6 @@ function normalizedPayloadEquals(
   return JSON.stringify(stableNormalize(left)) === JSON.stringify(stableNormalize(right));
 }
 
-function claimTypeOf(candidateOrMemory: CanonicalCandidate | ExistingMemorySummary): string {
-  if (candidateOrMemory.kind !== "claim") {
-    return "";
-  }
-  const payloadType =
-    typeof candidateOrMemory.payload.claim_type === "string"
-      ? candidateOrMemory.payload.claim_type
-      : "";
-  if (payloadType.length > 0) {
-    return payloadType;
-  }
-  return "candidate_id" in candidateOrMemory
-    ? describeCanonicalClaimIdentity(candidateOrMemory).claimType
-    : describeExistingClaimIdentity(candidateOrMemory).claimType;
-}
-
-function claimIdentityOf(candidateOrMemory: CanonicalCandidate | ExistingMemorySummary) {
-  return "candidate_id" in candidateOrMemory
-    ? describeCanonicalClaimIdentity(candidateOrMemory)
-    : describeExistingClaimIdentity(candidateOrMemory);
-}
-
-function sameClaimFamily(candidate: CanonicalCandidate, neighbor: ExistingMemorySummary): boolean {
-  const left = claimIdentityOf(candidate);
-  const right = claimIdentityOf(neighbor);
-  return (
-    left.subject.length > 0 &&
-    left.predicate.length > 0 &&
-    left.subject === right.subject &&
-    left.predicate === right.predicate
-  );
-}
-
-function claimObjectsDiffer(
-  candidate: CanonicalCandidate,
-  neighbor: ExistingMemorySummary,
-): boolean {
-  const left = claimIdentityOf(candidate);
-  const right = claimIdentityOf(neighbor);
-  return left.object.length > 0 && right.object.length > 0 && left.object !== right.object;
-}
-
-function preferenceSubjectOf(
-  candidateOrMemory: CanonicalCandidate | ExistingMemorySummary,
-): string {
-  const identity = claimIdentityOf(candidateOrMemory);
-  if (identity.subject.length > 0) {
-    return identity.subject;
-  }
-  const scope = getEffectiveScope(candidateOrMemory.scope);
-  return normalizeSemanticIdentityValue(scope.subject_id ?? scope.subject_type);
-}
-
-function preferenceObjectOf(candidateOrMemory: CanonicalCandidate | ExistingMemorySummary): string {
-  const identity = claimIdentityOf(candidateOrMemory);
-  if (identity.object.length > 0) {
-    return identity.object;
-  }
-  const canonicalText = normalizeSemanticIdentityValue(candidateOrMemory.canonical_text);
-  const match = canonicalText.match(/^the (.+?) prefers (.+)$/u);
-  return match?.[2]?.trim() ?? "";
-}
-
-function samePreferenceFamily(
-  candidate: CanonicalCandidate,
-  neighbor: ExistingMemorySummary,
-): boolean {
-  if (!isPreferenceClaim(candidate) || !isPreferenceClaim(neighbor)) {
-    return false;
-  }
-  const leftSubject = preferenceSubjectOf(candidate);
-  const rightSubject = preferenceSubjectOf(neighbor);
-  return leftSubject.length > 0 && leftSubject === rightSubject;
-}
-
-function preferenceObjectsDiffer(
-  candidate: CanonicalCandidate,
-  neighbor: ExistingMemorySummary,
-): boolean {
-  const leftObject = preferenceObjectOf(candidate);
-  const rightObject = preferenceObjectOf(neighbor);
-  return leftObject.length > 0 && rightObject.length > 0 && leftObject !== rightObject;
-}
-
-function equivalentPreferenceScopes(
-  candidateScope: Record<string, unknown>,
-  neighborScope: Record<string, unknown>,
-): boolean {
-  if (effectiveScopesEqual(candidateScope, neighborScope)) {
-    return true;
-  }
-  const left = getEffectiveScope(candidateScope);
-  const right = getEffectiveScope(neighborScope);
-  return (
-    left.applies_to === right.applies_to &&
-    left.subject_type === right.subject_type &&
-    left.project_id === right.project_id &&
-    left.workspace_id === right.workspace_id &&
-    (left.subject_id === right.subject_id || !left.subject_id || !right.subject_id)
-  );
-}
-
-function hasExplicitPreferenceEvidence(candidate: CanonicalCandidate): boolean {
-  const evidence = normalizeSemanticIdentityValue(candidate.source.evidence_quote);
-  return (
-    /^i (prefer|like|usually want|want) /u.test(evidence) ||
-    /\bi prefer\b/u.test(evidence) ||
-    /\bi like\b/u.test(evidence) ||
-    hasExplicitPreferenceReplacementEvidence(candidate) ||
-    /\bdurable correction replace\b[\s\S]*?\bpreference\s+\S/u.test(evidence) ||
-    /\bstanding(?:\s+\w+){0,8}\s+preference\s+\S/u.test(evidence)
-  );
-}
-
-function hasExplicitPreferenceReplacementEvidence(candidate: CanonicalCandidate): boolean {
-  if (candidate.candidate_id.startsWith("det-correction-preference:")) {
-    return true;
-  }
-  const evidence = normalizeSemanticIdentityValue(candidate.source.evidence_quote);
-  return (
-    /\bdurable correction\b[\s\S]*?\breplace\b[\s\S]*?\bpreference\b/u.test(evidence) ||
-    /\breplace\b[\s\S]*?\bwith\b[\s\S]*?\bpreference\b/u.test(evidence) ||
-    /\bsupersede\b[\s\S]*?\bpreference\b/u.test(evidence)
-  );
-}
-
 function explicitCorrectionTargetRefs(
   candidate: CanonicalCandidate,
 ): StructuralCorrectionTargetRef[] {
@@ -201,6 +70,10 @@ function isExplicitCorrectionCommand(candidate: CanonicalCandidate): boolean {
     parseExplicitMemoryCommand(candidate.source.evidence_quote)?.commandType ===
     "correction_preference"
   );
+}
+
+function isModelTypedPreferenceClaim(candidate: CanonicalCandidate): boolean {
+  return candidate.kind === "claim" && candidate.payload.claim_type === "preference_state";
 }
 
 function resolveStructuralCorrectionTargets(input: {
@@ -253,28 +126,6 @@ function buildUnresolvedCorrectionDecision(
   });
 }
 
-function hasExplicitScopedPreferenceContext(candidate: CanonicalCandidate): boolean {
-  const qualifiers = Array.isArray(candidate.payload.qualifiers)
-    ? candidate.payload.qualifiers.filter((value): value is string => typeof value === "string")
-    : [];
-  if (qualifiers.some((value) => normalizeSemanticIdentityValue(value).length > 0)) {
-    return true;
-  }
-  return /^for\s+[^,]+,\s*i (?:prefer|like|usually want|want)\b/u.test(
-    normalizeSemanticIdentityValue(candidate.source.evidence_quote),
-  );
-}
-
-function isPreferenceClaim(candidateOrMemory: CanonicalCandidate | ExistingMemorySummary): boolean {
-  return claimTypeOf(candidateOrMemory) === "preference_state";
-}
-
-function isProjectFactClaim(
-  candidateOrMemory: CanonicalCandidate | ExistingMemorySummary,
-): boolean {
-  return claimTypeOf(candidateOrMemory) === "project_fact";
-}
-
 function findExactDuplicateNeighbor(
   candidate: CanonicalCandidate,
   neighbors: ExistingMemorySummary[],
@@ -295,11 +146,7 @@ export function applyDeterministicReconciliationShortcuts(
   candidate: CanonicalCandidate,
   neighbors: ExistingMemorySummary[],
 ): ReconciliationDecision | null {
-  if (
-    candidate.kind === "claim" &&
-    isPreferenceClaim(candidate) &&
-    isExplicitCorrectionCommand(candidate)
-  ) {
+  if (isModelTypedPreferenceClaim(candidate) && isExplicitCorrectionCommand(candidate)) {
     const targetRefs = explicitCorrectionTargetRefs(candidate);
     if (targetRefs.length === 0) {
       return buildUnresolvedCorrectionDecision(
@@ -397,118 +244,6 @@ export function applyDeterministicReconciliationShortcuts(
     }
   }
 
-  if (candidate.kind === "claim" && isPreferenceClaim(candidate)) {
-    const equivalentPreferenceNeighbors = neighbors.filter(
-      (neighbor) =>
-        neighbor.kind === "claim" &&
-        isPreferenceClaim(neighbor) &&
-        samePreferenceFamily(candidate, neighbor) &&
-        equivalentPreferenceScopes(neighbor.scope, candidate.scope) &&
-        preferenceObjectsDiffer(candidate, neighbor),
-    );
-    if (
-      equivalentPreferenceNeighbors.length > 0 &&
-      hasExplicitPreferenceReplacementEvidence(candidate)
-    ) {
-      const supersededIds = equivalentPreferenceNeighbors.map((neighbor) => neighbor.memory_id);
-      return ReconciliationDecisionSchema.parse({
-        schema_version: "reconciliation_decision.v1",
-        event_id: candidate.source.event_id,
-        candidate_id: candidate.candidate_id,
-        decision: "supersede_existing",
-        target_memory_ids: supersededIds,
-        merged_canonical_text: null,
-        conflict_type: "preference_changed",
-        supersedes_memory_ids: supersededIds,
-        rationale: "Explicit correction requested replacement of prior preference state.",
-        confidence: 0.95,
-      });
-    }
-
-    const scopedCoexistenceNeighbor = neighbors.find(
-      (neighbor) =>
-        neighbor.kind === "claim" &&
-        isPreferenceClaim(neighbor) &&
-        samePreferenceFamily(candidate, neighbor) &&
-        (isNarrowerEffectiveScope(candidate.scope, neighbor.scope) ||
-          hasExplicitScopedPreferenceContext(candidate)) &&
-        preferenceObjectsDiffer(candidate, neighbor),
-    );
-    if (
-      scopedCoexistenceNeighbor &&
-      hasExplicitPreferenceEvidence(candidate) &&
-      !hasExplicitPreferenceReplacementEvidence(candidate)
-    ) {
-      return ReconciliationDecisionSchema.parse({
-        schema_version: "reconciliation_decision.v1",
-        event_id: candidate.source.event_id,
-        candidate_id: candidate.candidate_id,
-        decision: "insert_new",
-        target_memory_ids: [scopedCoexistenceNeighbor.memory_id],
-        merged_canonical_text: null,
-        conflict_type: "scope_narrowing",
-        supersedes_memory_ids: [],
-        rationale:
-          "Candidate is a narrower contextual preference that can co-exist with the broader baseline preference.",
-        confidence: 0.9,
-      });
-    }
-
-    const olderPreference = neighbors.find(
-      (neighbor) =>
-        neighbor.kind === "claim" &&
-        isPreferenceClaim(neighbor) &&
-        samePreferenceFamily(candidate, neighbor) &&
-        equivalentPreferenceScopes(neighbor.scope, candidate.scope) &&
-        preferenceObjectsDiffer(candidate, neighbor),
-    );
-    if (
-      olderPreference &&
-      hasExplicitPreferenceEvidence(candidate) &&
-      !hasExplicitPreferenceReplacementEvidence(candidate) &&
-      !hasExplicitScopedPreferenceContext(candidate)
-    ) {
-      return ReconciliationDecisionSchema.parse({
-        schema_version: "reconciliation_decision.v1",
-        event_id: candidate.source.event_id,
-        candidate_id: candidate.candidate_id,
-        decision: "supersede_existing",
-        target_memory_ids: [olderPreference.memory_id],
-        merged_canonical_text: null,
-        conflict_type: "preference_changed",
-        supersedes_memory_ids: [olderPreference.memory_id],
-        rationale: "Explicit newer preference changed the prior preference state.",
-        confidence: 0.9,
-      });
-    }
-  }
-
-  if (candidate.kind === "claim" && isProjectFactClaim(candidate)) {
-    const narrowedProjectFactNeighbor = neighbors.find(
-      (neighbor) =>
-        neighbor.kind === "claim" &&
-        isProjectFactClaim(neighbor) &&
-        sameClaimFamily(candidate, neighbor) &&
-        !claimObjectsDiffer(candidate, neighbor) &&
-        isNarrowerEffectiveScope(candidate.scope, neighbor.scope),
-    );
-    if (narrowedProjectFactNeighbor) {
-      return ReconciliationDecisionSchema.parse({
-        schema_version: "reconciliation_decision.v1",
-        event_id: candidate.source.event_id,
-        candidate_id: candidate.candidate_id,
-        decision: "record_as_conflict",
-        target_memory_ids: [narrowedProjectFactNeighbor.memory_id],
-        merged_canonical_text: null,
-        conflict_type: "scope_narrowing",
-        supersedes_memory_ids: [],
-        rationale:
-          "Project-scoped fact narrows a broader existing fact and requires explicit review before replacing or coexisting.",
-        confidence: 0.9,
-      });
-    }
-  }
-
   return null;
 }
 
@@ -526,51 +261,6 @@ function normalizeReconciliationPayload(
     };
   }
   return raw;
-}
-
-function applyScopedPreferenceCoexistenceNormalization(
-  candidate: CanonicalCandidate,
-  neighbors: ExistingMemorySummary[],
-  decision: ReconciliationDecision,
-): ReconciliationDecision {
-  if (candidate.kind !== "claim" || !isPreferenceClaim(candidate)) {
-    return decision;
-  }
-  if (decision.decision === "insert_new" && decision.conflict_type === "scope_narrowing") {
-    return decision;
-  }
-  const broaderPreference = neighbors.find(
-    (neighbor) =>
-      neighbor.kind === "claim" &&
-      isPreferenceClaim(neighbor) &&
-      samePreferenceFamily(candidate, neighbor) &&
-      (isNarrowerEffectiveScope(candidate.scope, neighbor.scope) ||
-        hasExplicitScopedPreferenceContext(candidate)) &&
-      preferenceObjectsDiffer(candidate, neighbor),
-  );
-  if (!broaderPreference || !hasExplicitPreferenceEvidence(candidate)) {
-    return decision;
-  }
-  if (
-    decision.decision === "supersede_existing" ||
-    decision.decision === "record_as_conflict" ||
-    decision.decision === "quarantine"
-  ) {
-    return ReconciliationDecisionSchema.parse({
-      schema_version: "reconciliation_decision.v1",
-      event_id: candidate.source.event_id,
-      candidate_id: candidate.candidate_id,
-      decision: "insert_new",
-      target_memory_ids: [broaderPreference.memory_id],
-      merged_canonical_text: null,
-      conflict_type: "scope_narrowing",
-      supersedes_memory_ids: [],
-      rationale:
-        "Explicit narrower contextual preference should co-exist with the broader baseline preference rather than supersede it.",
-      confidence: Math.max(decision.confidence, 0.88),
-    });
-  }
-  return decision;
 }
 
 function applyExactDuplicateNormalization(
@@ -601,18 +291,6 @@ function applyExactDuplicateNormalization(
     rationale: "Exact duplicate candidate.",
     confidence: Math.max(decision.confidence, 0.98),
   });
-}
-
-function applyReconciliationNormalizations(
-  candidate: CanonicalCandidate,
-  neighbors: ExistingMemorySummary[],
-  decision: ReconciliationDecision,
-): ReconciliationDecision {
-  return applyScopedPreferenceCoexistenceNormalization(
-    candidate,
-    neighbors,
-    applyExactDuplicateNormalization(candidate, neighbors, decision),
-  );
 }
 
 export async function reconcileCandidate(input: ReconcileInput): Promise<ReconciliationDecision> {
@@ -703,7 +381,7 @@ export async function reconcileCandidate(input: ReconcileInput): Promise<Reconci
         JSON.stringify(repairedRaw),
       );
     }
-    return applyReconciliationNormalizations(input.candidate, input.neighbors, repairedParsed.data);
+    return applyExactDuplicateNormalization(input.candidate, input.neighbors, repairedParsed.data);
   }
-  return applyReconciliationNormalizations(input.candidate, input.neighbors, parsed.data);
+  return applyExactDuplicateNormalization(input.candidate, input.neighbors, parsed.data);
 }

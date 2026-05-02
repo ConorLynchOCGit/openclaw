@@ -8,6 +8,7 @@ import {
   buildCandidateReviewPrefilterEvent,
   buildCandidateReviewTriggerPacket,
   buildProactivityReviewEpisodePacket,
+  buildProactivityReviewEpisodePacketFromOutcomePack,
   convertCandidateReviewProposalsToLedgerSources,
   evaluateCandidateReviewTrigger,
   loadCodexSessionActivityForCandidateReview,
@@ -15,6 +16,8 @@ import {
   writeProactivityReviewEpisodePacketArtifact,
   type CandidateReviewRecentActivity,
 } from "./phase2-model-reviewed-candidate-discovery.ts";
+import { createPhase2SkillifierDraft } from "./phase2-skillifier-draft.ts";
+import { buildWorkEpisodeOutcomePack } from "./phase2-work-episode-outcome-pack.ts";
 
 class FakeExecutor implements JsonModelExecutor {
   requests: JsonModelExecutionRequest[] = [];
@@ -156,6 +159,77 @@ function proposalOutput(overrides: Record<string, unknown> = {}) {
 }
 
 describe("phase2 model-reviewed candidate discovery", () => {
+  it("builds candidate-review packets from a structured work episode outcome pack", () => {
+    const outcomePack = buildWorkEpisodeOutcomePack({
+      runtime: "codex",
+      projectId: "openclaw",
+      sessionKey: "agent:main:main",
+      completedAt: "2026-05-01T20:00:00.000Z",
+      userGoal:
+        "Replace broad skill and proactivity review input with a structured work episode pack.",
+      workSummary:
+        "Added a bounded outcome pack path that summarizes files, tests, failures, follow-ups, and skill evidence.",
+      finalOutcome:
+        "Candidate review can use the structured pack as primary evidence instead of broad raw session tails.",
+      filesTouched: [
+        {
+          path: "extensions/model-memory/src/runtime/phase2-work-episode-outcome-pack.ts",
+          changeKind: "created",
+          summary: "Defines the bounded outcome pack contract.",
+        },
+      ],
+      testsRun: [
+        {
+          command:
+            "pnpm test:file extensions/model-memory/src/runtime/phase2-work-episode-outcome-pack.test.ts",
+          status: "passed",
+          summary: "Pack schema and safety checks pass.",
+        },
+      ],
+      failuresAndFixes: [
+        {
+          failure: "OpenClaw heartbeat history included proof and scaffold traffic.",
+          fix: "Use outcome pack primary evidence.",
+          status: "fixed",
+        },
+      ],
+      unresolvedQuestions: [],
+      followUpCandidates: [
+        {
+          title: "Wire outcome packs into heartbeat candidate review",
+          rationale: "Heartbeat review should prefer structured closeout evidence.",
+          sourceRefs: ["work-episode://test/summary"],
+        },
+      ],
+      skillImprovementEvidence: [
+        {
+          workflowName: "Work Queue UX Review",
+          evidence: "Repeated UX review needs a pre-check for selected evidence substrate.",
+          suggestedDirection: "Add outcome-pack quality review to the workflow.",
+          sourceRefs: ["work-episode://test/summary"],
+        },
+      ],
+      sourceRefs: ["work-episode://test/summary"],
+    });
+
+    const packet = buildProactivityReviewEpisodePacketFromOutcomePack({ outcomePack });
+
+    expect(packet.sourceSelection).toMatchObject({
+      primaryInputKind: "work_episode_outcome_pack",
+      primaryRuntime: "codex",
+      outcomePackId: outcomePack.episodeId,
+    });
+    expect(packet.packetQuality.status).toBe("pass");
+    expect(packet.packetQuality.reasonCodes).not.toContain("assistant_finals_missing");
+    expect(packet.episodeTurns[0]?.boundedText).toContain("Work episode outcome pack");
+    expect(packet.episodeTurns[0]?.boundedText).toContain("Files touched");
+    expect(packet.episodeTurns[0]?.boundedText).toContain("Skill improvement evidence");
+    expect(packet.codexActivitySummary.commandSummaries[0]).toMatchObject({
+      status: "passed",
+    });
+    expect(JSON.stringify(packet).toLowerCase()).not.toContain("raw tool log");
+  });
+
   it("uses deterministic prefilter as a cheap over-inclusive gate", () => {
     const event = buildCandidateReviewPrefilterEvent({
       eventType: "assistant_final_completed",
@@ -520,6 +594,172 @@ describe("phase2 model-reviewed candidate discovery", () => {
     expect(executor.requests[0]?.responseOptions?.reasoningEffort).toBe("high");
   });
 
+  it("instructs the reviewer to distinguish bounded skills from proactive plans", async () => {
+    const event = buildCandidateReviewPrefilterEvent({
+      eventType: "assistant_final_completed",
+      runtime: "openclaw",
+      sessionKey: "main",
+      refs: ["chat://main/user_turn/concern"],
+      boundedSummary: "Review recurring skills and proactive plans.",
+    });
+    const triggerPacket = buildCandidateReviewTriggerPacket({
+      event,
+      recentActivities: recentDiscussionActivities(),
+    });
+    const episode = buildProactivityReviewEpisodePacket({
+      triggerPacket,
+      triggerDecision: {
+        schemaVersion: "candidate_review_trigger_decision.v1",
+        shouldRun: true,
+        reasonCodes: ["explicit_user_ask"],
+        confidence: "high",
+        episodeWindow: {
+          startRef: "chat://main/user_turn/concern",
+          endRef: "chat://main/user_turn/codex",
+          includedRefs: triggerPacket.recentRefs.map((entry) => entry.ref),
+        },
+        reviewGoal: "both",
+        why: "Review requested.",
+      },
+      recentActivities: recentDiscussionActivities(),
+    });
+    const executor = new FakeExecutor(
+      proposalOutput({
+        proposals: [
+          {
+            proposalKind: "proactive_plan",
+            title: "Candidate review release gate",
+            purpose:
+              "Run a pre-release check that verifies candidate review packet quality and card formatting before gateway wiring.",
+            recommendedNextStep:
+              "Create the release gate checklist and run it against the current local proof matrix.",
+            expectedUserValue:
+              "Reduces the risk of surfacing malformed or weak candidates before live UI validation.",
+            leverageClass: "stability_risk",
+            whyHighImpact:
+              "The work is a release verification step for a model-owned candidate pipeline.",
+            whyNotSmallCleanup:
+              "This is a cross-lane quality gate rather than a small local cleanup.",
+            suggestedSkillName: null,
+            suggestedExistingSkillName: null,
+            mergeTargetCandidateId: null,
+            sourceRuntime: "openclaw",
+            evidenceRefs: ["chat://main/user_turn/concern"],
+            recurrenceSignals: ["candidate-review quality gates recurred"],
+            frictionSignals: ["broad review labels created weaker skill candidates"],
+            confidence: "high",
+            riskTier: "low",
+            shouldSurface: true,
+            demotionReason: null,
+          },
+        ],
+      }),
+    );
+
+    const result = await reviewEpisodeForCandidates(episode, {
+      enabled: true,
+      executor,
+      modelId: "openai-codex/gpt-5.4",
+    });
+
+    expect(executor.requests[0]?.systemPrompt).toContain(
+      "prefer bounded reusable capabilities over broad activity labels",
+    );
+    expect(executor.requests[0]?.systemPrompt).toContain(
+      "Existing skill enhancement is also a legitimate surfaced card",
+    );
+    expect(executor.requests[0]?.systemPrompt).toContain(
+      "what inputs it expects, what outputs it produces, and what quality gate proves it worked",
+    );
+    expect(result.proposals[0]).toMatchObject({
+      proposalKind: "proactive_plan",
+      shouldSurface: true,
+    });
+    expect(result.proposals[0]?.demotionReason).toBeUndefined();
+  });
+
+  it("allows an exact loaded-skill enhancement to surface as a legitimate card candidate", async () => {
+    const event = buildCandidateReviewPrefilterEvent({
+      eventType: "assistant_final_completed",
+      runtime: "openclaw",
+      sessionKey: "main",
+      refs: ["chat://main/user_turn/concern"],
+      boundedSummary: "Review recurring skills and proactive plans.",
+    });
+    const triggerPacket = buildCandidateReviewTriggerPacket({
+      event,
+      recentActivities: recentDiscussionActivities(),
+    });
+    const episode = buildProactivityReviewEpisodePacket({
+      triggerPacket,
+      triggerDecision: {
+        schemaVersion: "candidate_review_trigger_decision.v1",
+        shouldRun: true,
+        reasonCodes: ["explicit_user_ask"],
+        confidence: "high",
+        episodeWindow: {
+          startRef: "chat://main/user_turn/concern",
+          endRef: "chat://main/user_turn/codex",
+          includedRefs: triggerPacket.recentRefs.map((entry) => entry.ref),
+        },
+        reviewGoal: "both",
+        why: "Review requested.",
+      },
+      recentActivities: recentDiscussionActivities(),
+      loadedSkills: [
+        {
+          name: "model-memory-deep-ingest",
+          description: "Operate MMV2 deep document ingestion safely.",
+          source: "codex-skill",
+        },
+      ],
+    });
+
+    const result = await reviewEpisodeForCandidates(episode, {
+      enabled: true,
+      executor: new FakeExecutor(
+        proposalOutput({
+          proposals: [
+            {
+              proposalKind: "existing_skill_enhancement",
+              title: "Model memory lane validation checklist",
+              purpose:
+                "Extend the existing model-memory deep ingest workflow with repeatable lane validation before large memory changes.",
+              recommendedNextStep:
+                "Add inputs, outputs, and pass criteria for Codex capture, daily summaries, retrieval inclusion, and local candidate review.",
+              expectedUserValue:
+                "Improves an existing model-memory workflow without creating an overlapping new skill.",
+              leverageClass: "workflow_acceleration",
+              whyHighImpact:
+                "The same validation steps recur before model-memory capture and retrieval changes.",
+              whyNotSmallCleanup:
+                "This improves a reusable workflow rather than a one-off proof wording issue.",
+              suggestedSkillName: null,
+              suggestedExistingSkillName: "model-memory-deep-ingest",
+              mergeTargetCandidateId: null,
+              sourceRuntime: "mixed",
+              evidenceRefs: ["chat://main/user_turn/concern", "chat://main/user_turn/codex"],
+              recurrenceSignals: ["model-memory lane validation recurred"],
+              frictionSignals: ["missing validation checklist caused proof friction"],
+              confidence: "high",
+              riskTier: "low",
+              shouldSurface: true,
+              demotionReason: null,
+            },
+          ],
+        }),
+      ),
+    });
+
+    expect(result.proposals).toHaveLength(1);
+    expect(result.proposals[0]).toMatchObject({
+      proposalKind: "existing_skill_enhancement",
+      suggestedExistingSkillName: "model-memory-deep-ingest",
+      shouldSurface: true,
+    });
+    expect(result.proposals[0]?.demotionReason).toBeUndefined();
+  });
+
   it("keeps slug-like proposal titles as candidate input for the model-authored card rewrite", async () => {
     const event = buildCandidateReviewPrefilterEvent({
       eventType: "assistant_final_completed",
@@ -658,7 +898,7 @@ describe("phase2 model-reviewed candidate discovery", () => {
     );
   });
 
-  it("rejects model proposals with clipped primary copy", async () => {
+  it("rejects clipped or dangling visible proposal copy", async () => {
     const event = buildCandidateReviewPrefilterEvent({
       eventType: "assistant_final_completed",
       runtime: "openclaw",
@@ -727,6 +967,140 @@ describe("phase2 model-reviewed candidate discovery", () => {
     expect(result.report.rejectedProposalDiagnostics?.[0]?.reasonCodes).toContain(
       "clipped_candidate_copy",
     );
+  });
+
+  it("rejects fused trailing fragments in visible proposal copy", async () => {
+    const event = buildCandidateReviewPrefilterEvent({
+      eventType: "assistant_final_completed",
+      runtime: "openclaw",
+      sessionKey: "main",
+      refs: ["chat://main/user_turn/concern"],
+      boundedSummary: "Review recurring skills and proactive plans.",
+    });
+    const triggerPacket = buildCandidateReviewTriggerPacket({
+      event,
+      recentActivities: recentDiscussionActivities(),
+    });
+    const episode = buildProactivityReviewEpisodePacket({
+      triggerPacket,
+      triggerDecision: {
+        schemaVersion: "candidate_review_trigger_decision.v1",
+        shouldRun: true,
+        reasonCodes: ["explicit_user_ask"],
+        confidence: "high",
+        episodeWindow: {
+          startRef: "chat://main/user_turn/concern",
+          endRef: "chat://main/user_turn/codex",
+          includedRefs: triggerPacket.recentRefs.map((entry) => entry.ref),
+        },
+        reviewGoal: "both",
+        why: "Review requested.",
+      },
+      recentActivities: recentDiscussionActivities(),
+    });
+
+    const result = await reviewEpisodeForCandidates(episode, {
+      enabled: true,
+      executor: new FakeExecutor(
+        proposalOutput({
+          proposals: [
+            {
+              proposalKind: "proactive_plan",
+              title: "Validate candidate review packet quality",
+              purpose: "Check packet quality before reviewing generated candidate cards.",
+              recommendedNextStep:
+                "Update the proof to verify selected evidence substrate, packet quality, model proposals, andpro",
+              expectedUserValue:
+                "Prevents malformed card copy from reaching the active Work Queue.",
+              leverageClass: "stability_risk",
+              whyHighImpact: "Packet quality controls candidate review output quality.",
+              whyNotSmallCleanup: "This validates a user-visible candidate discovery path.",
+              suggestedSkillName: null,
+              suggestedExistingSkillName: null,
+              mergeTargetCandidateId: null,
+              sourceRuntime: "openclaw",
+              evidenceRefs: ["chat://main/user_turn/concern"],
+              recurrenceSignals: ["packet quality failures recurred"],
+              frictionSignals: ["thin packets can suppress good candidates"],
+              confidence: "high",
+              riskTier: "low",
+              shouldSurface: true,
+              demotionReason: null,
+            },
+          ],
+        }),
+      ),
+    });
+
+    expect(result.proposals[0]?.shouldSurface).toBe(false);
+    expect(result.proposals[0]?.demotionReason).toContain("clipped_candidate_copy");
+  });
+
+  it("rejects dangling terminal modifier proposal copy", async () => {
+    const event = buildCandidateReviewPrefilterEvent({
+      eventType: "assistant_final_completed",
+      runtime: "openclaw",
+      sessionKey: "main",
+      refs: ["chat://main/user_turn/concern"],
+      boundedSummary: "Review recurring skills and proactive plans.",
+    });
+    const triggerPacket = buildCandidateReviewTriggerPacket({
+      event,
+      recentActivities: recentDiscussionActivities(),
+    });
+    const episode = buildProactivityReviewEpisodePacket({
+      triggerPacket,
+      triggerDecision: {
+        schemaVersion: "candidate_review_trigger_decision.v1",
+        shouldRun: true,
+        reasonCodes: ["explicit_user_ask"],
+        confidence: "high",
+        episodeWindow: {
+          startRef: "chat://main/user_turn/concern",
+          endRef: "chat://main/user_turn/codex",
+          includedRefs: triggerPacket.recentRefs.map((entry) => entry.ref),
+        },
+        reviewGoal: "both",
+        why: "Review requested.",
+      },
+      recentActivities: recentDiscussionActivities(),
+    });
+
+    const result = await reviewEpisodeForCandidates(episode, {
+      enabled: true,
+      executor: new FakeExecutor(
+        proposalOutput({
+          proposals: [
+            {
+              proposalKind: "new_skill_candidate",
+              title: "Outcome Pack Evidence Gate",
+              purpose: "Verify the selected evidence substrate before reviewing card quality.",
+              recommendedNextStep:
+                "Draft a workflow that checks outcome-pack refs, touched files, tests, and the exact missing",
+              expectedUserValue:
+                "Prevents malformed card copy from reaching the active Work Queue.",
+              leverageClass: "workflow_acceleration",
+              whyHighImpact: "Reusable evidence checks prevent repeated review churn.",
+              whyNotSmallCleanup: "This validates a user-visible candidate discovery path.",
+              suggestedSkillName: "outcome-pack-evidence-gate",
+              suggestedExistingSkillName: null,
+              mergeTargetCandidateId: null,
+              sourceRuntime: "openclaw",
+              evidenceRefs: ["chat://main/user_turn/concern"],
+              recurrenceSignals: ["candidate review quality checks recurred"],
+              frictionSignals: ["bad evidence substrate caused weak cards"],
+              confidence: "high",
+              riskTier: "low",
+              shouldSurface: true,
+              demotionReason: null,
+            },
+          ],
+        }),
+      ),
+    });
+
+    expect(result.proposals[0]?.shouldSurface).toBe(false);
+    expect(result.proposals[0]?.demotionReason).toContain("clipped_candidate_copy");
   });
 
   it("requires existing skill enhancements to name an explicit loaded skill", async () => {
@@ -914,6 +1288,129 @@ describe("phase2 model-reviewed candidate discovery", () => {
           source.opportunityClass === "proactive_plan",
       ),
     ).toBe(true);
+  });
+
+  it("preserves existing skill enhancement classification through conversion and review-only draft creation", async () => {
+    const proposal = {
+      schemaVersion: "candidate_review_proposal.v2" as const,
+      proposalId: "proposal-existing-skill-enhancement",
+      proposalKind: "existing_skill_enhancement" as const,
+      title: "Improve Work Queue UX Review Outcome Pack Gate",
+      purpose:
+        "Enhance the existing Work Queue UX Review workflow so it verifies outcome-pack evidence selection before UI or card-quality fixes.",
+      recommendedNextStep:
+        "Add a checklist section that inspects pack source refs, packet quality, draft artifacts, and no-raw-transcript fallback before live gateway validation.",
+      expectedUserValue:
+        "Keeps future Work Queue UX reviews focused on the real task evidence rather than noisy raw session tails.",
+      leverageClass: "workflow_acceleration" as const,
+      whyHighImpact:
+        "The same evidence-substrate mistake has repeatedly produced low-signal proactivity cards.",
+      whyNotSmallCleanup: "This improves a reusable review workflow, not one card or one title.",
+      suggestedSkillName: "work-queue-ux-review",
+      suggestedExistingSkillName: "work-queue-ux-review",
+      sourceRuntime: "codex" as const,
+      evidenceRefs: ["work-episode://pack/enhancement"],
+      evidenceHashes: ["enhancement-evidence-hash"],
+      recurrenceSignals: ["Work Queue UX review needed the same input-substrate check repeatedly"],
+      frictionSignals: ["card quality degraded when raw transcript evidence was used"],
+      confidence: "high" as const,
+      riskTier: "low" as const,
+      shouldSurface: true,
+    };
+    const converted = convertCandidateReviewProposalsToLedgerSources({
+      proposals: [proposal],
+      projectId: "openclaw",
+      sessionKey: "main",
+      generatedAt: "2026-05-02T02:00:00.000Z",
+      episodePacketHash: "enhancement-packet-hash",
+    });
+    const enhancement = converted.skillCandidates[0];
+    const opportunity = converted.opportunities.find(
+      (source) => source.sourceFamily === "skill_candidate",
+    );
+
+    expect(proposal.proposalKind).toBe("existing_skill_enhancement");
+    expect(proposal.suggestedExistingSkillName).toBe("work-queue-ux-review");
+    expect(enhancement).toMatchObject({
+      suggestedSkillName: "work-queue-ux-review",
+      suggestedExistingSkillName: "work-queue-ux-review",
+      installTargets: ["workspace_skills_dir"],
+      lifecycleStatus: "detected",
+    });
+    expect(opportunity).toEqual(
+      expect.objectContaining({
+        sourceFamily: "skill_candidate",
+        opportunityClass: "skill_candidate",
+        skillCandidate: expect.objectContaining({
+          suggestedExistingSkillName: "work-queue-ux-review",
+        }),
+      }),
+    );
+
+    const workspaceDir = await mkdtemp(path.join(os.tmpdir(), "openclaw-enhancement-draft-"));
+    const draft = await createPhase2SkillifierDraft({
+      workspaceDir,
+      skillCandidate: enhancement!,
+      ledgerEntry: {
+        opportunityId: opportunity!.opportunityId,
+        title: opportunity!.title,
+        whyNow: opportunity!.whyNow,
+        proposedNextStep: opportunity!.proposedNextStep,
+        expectedUserValue: opportunity!.expectedUserValue,
+        evidenceSummary: opportunity!.evidenceSummary,
+        confidence: opportunity!.confidence,
+        sourceRefs: opportunity!.sourceRefs,
+        sourceProfileIds: opportunity!.sourceProfileIds,
+        authorityTiers: opportunity!.authorityTiers,
+        contentHashes: opportunity!.contentHashes,
+        proofHashes: opportunity!.proofHashes,
+      },
+      now: new Date("2026-05-02T02:00:00.000Z"),
+    });
+
+    expect(draft.decision).toBe("draft_ready");
+    expect(draft.draft.draftTarget.reviewOnly).toBe(true);
+    expect(draft.draft.draftTarget.installationEnabled).toBe(false);
+    expect(draft.draft.draftTarget.promotionEnabled).toBe(false);
+    expect(draft.draft.lifecycleStatus).toBe("draft_ready");
+    expect(draft.draft.suggestedSkillName).toBe("work-queue-ux-review");
+  });
+
+  it("does not surface merge-or-extend proposals as new skill or plan cards", () => {
+    const converted = convertCandidateReviewProposalsToLedgerSources({
+      proposals: [
+        {
+          schemaVersion: "candidate_review_proposal.v2",
+          proposalId: "proposal-merge-existing-card",
+          proposalKind: "merge_or_extend_candidate",
+          title: "Merge heartbeat fallback gate duplicate",
+          purpose:
+            "Merge new evidence into an existing heartbeat fallback release gate card instead of surfacing another card.",
+          recommendedNextStep:
+            "Attach the evidence to the existing card and avoid a duplicate active inbox item.",
+          candidateType: "merge_or_extend_candidate",
+          mergeTargetCandidateId: "existing-opportunity-1",
+          sourceRuntime: "openclaw",
+          evidenceRefs: ["chat://main/user_turn/concern"],
+          evidenceHashes: ["evidence-hash-1"],
+          recurrenceSignals: ["duplicate candidate observed"],
+          frictionSignals: ["operator saw repeated inbox cards"],
+          expectedUserValue: "Keeps the active inbox focused on one reviewable card per issue.",
+          leverageClass: "stability_risk",
+          whyHighImpact: "Duplicate cards reduce trust in the proactivity inbox.",
+          whyNotSmallCleanup: "This controls release-facing candidate quality.",
+          confidence: "high",
+          riskTier: "low",
+          shouldSurface: true,
+        },
+      ],
+      projectId: "openclaw",
+      sessionKey: "main",
+      generatedAt: "2026-04-28T20:00:00.000Z",
+    });
+
+    expect(converted.skillCandidates).toEqual([]);
+    expect(converted.opportunities).toEqual([]);
   });
 
   it("marks thin Codex command-only evidence as degraded packet quality", () => {

@@ -2,7 +2,6 @@ import { readFile } from "node:fs/promises";
 import {
   buildCollisionCandidates,
   calculateSearchTextOverlap,
-  selectDeterministicAttachCollisionCandidate,
   type SearchTextOverlap,
   assessStructuralSameClaimDelta,
   deriveMemoryIdentity,
@@ -40,13 +39,11 @@ type ProofPhaseReportInput = {
 
 export type DuplicateAuditPathClassification =
   | "exact_identity"
-  | "deterministic_attach"
   | "batched_adjudication"
   | "distinct_write";
 
 export type DuplicateAuditMissClass =
   | "recall_miss"
-  | "deterministic_attach_miss"
   | "batch_attach_miss"
   | "historical_supersede_miss"
   | "legit_distinct";
@@ -339,19 +336,6 @@ function buildReplayPathClassification(input: {
       retainedPriorCandidates: [],
     };
   }
-  if (
-    selectDeterministicAttachCollisionCandidate({
-      identity,
-      object: syntheticObject,
-      candidates: replayCandidates,
-    })
-  ) {
-    return {
-      replayPathClassification: "deterministic_attach",
-      rawScopeMatchedPriorCount,
-      retainedPriorCandidates: replayCandidates,
-    };
-  }
   return {
     replayPathClassification: "batched_adjudication",
     rawScopeMatchedPriorCount,
@@ -469,16 +453,6 @@ function classifyDuplicateAuditCase(input: {
   ) {
     return {
       missClass: "recall_miss",
-      deltaClass: structuralDelta.deltaClass,
-      sameClaimLeaning: structuralDelta.sameClaimLeaning,
-      sameClaimConfidence,
-      packagingDriftType,
-    };
-  }
-
-  if (input.replayPathClassification === "deterministic_attach" && sameClaimConfidence !== "low") {
-    return {
-      missClass: "deterministic_attach_miss",
       deltaClass: structuralDelta.deltaClass,
       sameClaimLeaning: structuralDelta.sameClaimLeaning,
       sameClaimConfidence,

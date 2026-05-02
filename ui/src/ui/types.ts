@@ -38,8 +38,8 @@ export type ProductProactivityQueueItemStatus =
   | "rollback_disabled";
 
 export type ProductProactivityFeedbackControl =
-  | "useful"
-  | "not_useful"
+  | "positive_action"
+  | "negative_action"
   | "too_repetitive"
   | "wrong_context"
   | "unsafe_private";
@@ -94,6 +94,19 @@ export type ProductProactivityWorkItemAction = {
 };
 
 export type ProductProactivityHandoffStatus = "idle" | "starting" | "started" | "failed";
+
+export type ProductProactivityPlannedArtifact = {
+  status: "requested" | "compiled" | "failed";
+  reviewStatus?: "pending_review" | "recommendation_finalized" | "revision_requested";
+  title: string;
+  requestSummary: string;
+  compiledPlan?: string;
+  sourceRunId?: string;
+  sourceMessageId?: string;
+  generatedAt: string;
+  updatedAt: string;
+  contentHash?: string;
+};
 
 export type ProductProactivityPlanFields = {
   planTitle?: string;
@@ -228,12 +241,14 @@ export type ProductProactivityQueueItem = {
   workItemId?: string;
   workItemKind?: ProductProactivityWorkItemKind;
   workItemStatus?: ProductProactivityWorkItemStatus;
+  reviewStatus?: "pending_review" | "recommendation_finalized" | "revision_requested";
   primaryAction?: ProductProactivityWorkItemAction | null;
   secondaryActions?: ProductProactivityWorkItemAction[];
   ctaExplanation?: string;
   handoffStatus?: ProductProactivityHandoffStatus;
   handoffError?: string | null;
   handoffMessageAnchor?: string | null;
+  plannedArtifact?: ProductProactivityPlannedArtifact | null;
   messageClass: "operator_approved_suggestion_available" | "operator_approved_follow_up_available";
   boundedDisplayText: string;
   messagePreview?: string;
@@ -268,6 +283,7 @@ export type ProductProactivityQueueItem = {
   } | null;
   resolvedByChatMessageId?: string | null;
   supersededByOpportunityId?: string | null;
+  dismissalCooldownUntil?: string | null;
   layer?: ProductProactivityLayer;
   attentionRequired?: boolean;
   sendStatus?: ProductProactivitySendStatus;
@@ -407,12 +423,14 @@ export type ProactivityInboxItem = {
   workItemId?: string;
   workItemKind?: ProductProactivityWorkItemKind;
   workItemStatus?: ProductProactivityWorkItemStatus;
+  reviewStatus?: ProductProactivityQueueItem["reviewStatus"];
   primaryAction?: ProductProactivityWorkItemAction | null;
   secondaryActions?: ProductProactivityWorkItemAction[];
   ctaExplanation?: string;
   handoffStatus?: ProductProactivityHandoffStatus;
   handoffError?: string | null;
   handoffMessageAnchor?: string | null;
+  plannedArtifact?: ProductProactivityPlannedArtifact | null;
   messageClass:
     | "operator_approved_suggestion_available"
     | "operator_approved_follow_up_available"
@@ -435,6 +453,7 @@ export type ProactivityInboxItem = {
   autonomousDraft?: ProductProactivityQueueItem["autonomousDraft"];
   resolvedByChatMessageId?: string | null;
   supersededByOpportunityId?: string | null;
+  dismissalCooldownUntil?: string | null;
   layer?: ProductProactivityLayer;
   attentionRequired?: boolean;
   sendStatus?: ProductProactivitySendStatus;
@@ -456,8 +475,8 @@ export type ProactivityInboxItem = {
   proofHashes: string[];
   noDarkDataStatus: "pass" | "fail";
   feedbackSummary: {
-    usefulCount: number;
-    notUsefulCount: number;
+    positiveFeedbackCount: number;
+    negativeFeedbackCount: number;
     tooRepetitiveCount: number;
     wrongContextCount: number;
     unsafePrivateCount: number;
@@ -486,6 +505,51 @@ export type ProactivityInboxResult = {
     sourceReportIds: string[];
     sourceReportHashes: string[];
   };
+};
+
+export type WorkQueueFilter =
+  | "active"
+  | "build_plans"
+  | "skills"
+  | "tooling"
+  | "user_review"
+  | "ready_to_execute"
+  | "dismissed"
+  | "diagnostics";
+
+export type WorkQueueLane =
+  | "build_plans"
+  | "skills"
+  | "tooling"
+  | "user_review"
+  | "diagnostics"
+  | "dismissed";
+
+export type WorkQueueVisibleStatus =
+  | "new"
+  | "drafting"
+  | "drafted"
+  | "needs_revision"
+  | "finalized"
+  | "dismissed"
+  | "superseded"
+  | "failed";
+
+export type WorkQueueObjectClass =
+  | "proactive_plan"
+  | "new_skill_candidate"
+  | "existing_skill_enhancement"
+  | "tool_candidate"
+  | "user_review_task"
+  | "diagnostic";
+
+export type WorkQueueArtifactKind = "plan" | "skill" | "none";
+
+export type WorkQueueNotification = {
+  id: string;
+  kind: "success" | "error";
+  objectId?: string | null;
+  text: string;
 };
 
 export const CRON_CHANNEL_LAST = "last";

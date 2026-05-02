@@ -37,7 +37,8 @@ Remaining implementation details:
   including projection refresh, capsule refresh, cache warmup, dirty marking,
   and telemetry rollups
 - the planner must proactively surface skill, tool, and workflow opportunities
-  to the operator when evidence thresholds are met
+  to the operator when structural cadence and model/operator review produce
+  accepted candidates
 - planner recommendations are deduped by stable candidate id and expire when
   stale
 - manual operator review is not the normal path for low-risk derived
@@ -87,9 +88,23 @@ Remaining implementation details:
   schemas, caps, redaction, source authority, provenance, cooldowns, dedupe,
   persistence, and derived materialization; those are required safety controls,
   not the target of the candidate-review cleanup
+- the model-owned judgment boundary now applies to all remaining planner work:
+  deterministic code may trigger review by structural cadence and enforce
+  lifecycle/safety/provenance gates, but it must not decide semantic
+  usefulness, skill-worthiness, plan value, promotion, retirement, or visible
+  copy from keywords, scores, title similarity, or telemetry
+- hybrid retrieval and context-pack assembly may use deterministic lexical
+  search, recency, graph/projection cues, and source-authority signals to
+  assemble candidate memories from the database; those signals are recall
+  mechanics, not final semantic value judgment
 - deterministic code that decides semantic meaning, usefulness, classification,
-  ranking, or surfacing without a model must be inventoried by an explicit
-  deterministic-judgment audit before being trusted as candidate authority
+  final ranking, or surfacing without a model must be inventoried by an
+  explicit deterministic-judgment audit before being trusted as candidate
+  authority
+- remaining deterministic judgment findings are removal debt, not compatibility
+  debt. They must be deleted, narrowed to structural/guardrail behavior, or
+  moved to bounded model-owned review; keeping them live behind renamed helpers
+  or fallback paths is forbidden.
 - candidate-review quality must be validated against a golden corpus of
   OpenClaw and Codex episodes before a live gateway rebuild; the live UI proof
   should confirm wiring only after packet assembly, model proposal validation,
@@ -171,6 +186,11 @@ The planner may propose but must not auto-promote:
 - third-party skill install
 - prompt mutation
 - new privileged automation lanes
+
+Semantic promotion or self-improvement proposals are also review-gated unless a
+later low-risk autonomy policy explicitly allows the exact scope after evals,
+resolver checks, package E2E, canary, rollback, and destination-authority gates
+pass.
 
 ## Surfacing contract
 
@@ -608,6 +628,36 @@ The next proactivity standard is generator-first usefulness, not queue polish.
 - Explicit `final_answer` phased text is preferred whenever available.
 - Heartbeat and inline chat follow-ups must derive from the same canonical
   persisted bounded opportunity state as inbox and handoff surfaces.
+
+## Deterministic vs model-owned judgment boundary
+
+- Deterministic planner code may enforce event cadence, cooldowns, budgets,
+  ids, refs, provenance, safety policy, redaction, exact structural dedupe, and
+  persistence boundaries.
+- Deterministic planner code must not decide opportunity usefulness, semantic
+  relevance, candidate class, repeatability, visible title/purpose/next-step
+  copy, or whether a work item is worth surfacing.
+- Hybrid retrieval recall is allowed to use lexical, recency,
+  graph/projection, source-lineage, vector, and structural filters to assemble
+  candidate evidence. That recall stage is not the final value judgment.
+- Final plan/candidate selection from assembled context must be model-owned or
+  operator-owned. If a model-owned judgment is unavailable or invalid, the item
+  is demoted/blocked rather than surfaced with deterministic prose.
+
+## MMV2 Capture Inputs For Planner Evidence
+
+- Planner and proactivity review may consume MMV2 outputs from OpenClaw,
+  document, daily summary, and Codex capture lanes, but those outputs remain
+  evidence until a model-owned proactivity/skill review proposes an item.
+- Codex regular capture is gated and disabled by default. When enabled, it
+  uses contiguous/source-structural session windows, document-style windowing
+  for long prompts, and MMV2 source authority rather than proactivity-specific
+  snippet selection.
+- Daily summary files are document-like sources if they are wired into MMV2
+  capture; otherwise they remain startup context only and must not silently
+  write durable memories.
+- Retrieval recall may assemble candidates deterministically, but final
+  context-pack inclusion for planner context is model-owned after recall.
 
 ## Related specs
 

@@ -5,13 +5,41 @@ import { describe, expect, it } from "vitest";
 import {
   assertPhase2ProactivityWorkItemsEnabled,
   buildPhase2ProactivityWorkItemReport,
+  type Phase2ProactivityWorkItemInput,
   writePhase2ProactivityWorkItemArtifact,
 } from "./phase2-proactivity-work-items.ts";
+
+function modelReviewedPlanningCandidate(
+  overrides: Partial<NonNullable<Phase2ProactivityWorkItemInput["candidates"]>[number]> = {},
+): NonNullable<Phase2ProactivityWorkItemInput["candidates"]>[number] {
+  return {
+    candidateId: "model-reviewed-planning-candidate",
+    queueItemId: "model-reviewed-planning-queue-item",
+    kind: "planning_request",
+    title: "Model-reviewed planning handoff",
+    whyNow: "A model-reviewed candidate identified a bounded planning handoff.",
+    proposedNextStep: "Review the bounded plan request before any file edits or execution.",
+    expectedUserValue: "Keeps planning work explicit while preserving approval boundaries.",
+    evidenceSummary: "Evidence comes from model-reviewed candidate packet refs.",
+    confidence: "high",
+    sourceRefs: ["docs/projects/model-memory/phase-2-execution-roadmap.md"],
+    sourceProfileIds: ["manual_note"],
+    authorityTiers: ["curated_authoritative"],
+    contentHashes: ["model-reviewed-planning-content-hash"],
+    proofHashes: ["model-reviewed-planning-proof-hash"],
+    noDarkDataStatus: "pass",
+    freshnessLabels: [],
+    conflictLabels: [],
+    blockedReasonCodes: [],
+    ...overrides,
+  };
+}
 
 describe("phase2 proactivity work items", () => {
   it("creates planning work items with bounded chat handoff and no autonomous behavior", async () => {
     const report = await buildPhase2ProactivityWorkItemReport({
       now: new Date("2026-04-27T12:00:00.000Z"),
+      candidates: [modelReviewedPlanningCandidate()],
     });
 
     assertPhase2ProactivityWorkItemsEnabled(report);
@@ -35,6 +63,7 @@ describe("phase2 proactivity work items", () => {
 
   it("rejects message send action for non-message candidates", async () => {
     const report = await buildPhase2ProactivityWorkItemReport({
+      candidates: [modelReviewedPlanningCandidate()],
       forceSendMessageOnNonMessage: true,
     });
 
@@ -79,9 +108,11 @@ describe("phase2 proactivity work items", () => {
 
   it("blocks missing provenance and no-dark-data failures", async () => {
     const missingProvenance = await buildPhase2ProactivityWorkItemReport({
+      candidates: [modelReviewedPlanningCandidate()],
       forceMissingProvenance: true,
     });
     const noDarkData = await buildPhase2ProactivityWorkItemReport({
+      candidates: [modelReviewedPlanningCandidate()],
       forceNoDarkDataFail: true,
     });
 
@@ -94,7 +125,9 @@ describe("phase2 proactivity work items", () => {
   it("writers emit bounded JSON and Markdown only", async () => {
     const dir = await mkdtemp(join(tmpdir(), "phase2-proactivity-work-items-"));
     try {
-      const report = await buildPhase2ProactivityWorkItemReport();
+      const report = await buildPhase2ProactivityWorkItemReport({
+        candidates: [modelReviewedPlanningCandidate()],
+      });
       const artifact = await writePhase2ProactivityWorkItemArtifact({ report, artifactDir: dir });
       const json = await readFile(artifact.jsonPath, "utf8");
       const markdown = await readFile(artifact.markdownPath, "utf8");
@@ -107,5 +140,18 @@ describe("phase2 proactivity work items", () => {
     } finally {
       await rm(dir, { force: true, recursive: true });
     }
+  });
+
+  it("does not create bundled deterministic candidates when no model-reviewed candidate exists", async () => {
+    const report = await buildPhase2ProactivityWorkItemReport({
+      now: new Date("2026-04-27T12:00:00.000Z"),
+    });
+
+    expect(report.decision).toBe("blocked");
+    expect(report.workItems).toEqual([]);
+    expect(report.telemetry.workItemCount).toBe(0);
+    expect(report.checks.find((check) => check.reasonCode === "provenance_required")?.status).toBe(
+      "fail",
+    );
   });
 });

@@ -42,12 +42,37 @@ than merely floated:
 - manual review is reserved for high-risk, conflicting, privileged, or
   behavior-changing outcomes, not for every graph edge
 
+2026-04-30 semantic enrichment clarification:
+
+- structural graph derivation and model-owned semantic graph enrichment are
+  separate Phase 2 slices
+- deterministic graph derivation may create structural nodes and edges from
+  explicit ids, refs, scopes, source lineage, memory events, memory edges,
+  source documents, lifecycle state, projects, artifacts, and hashes
+- deterministic graph derivation must not infer topical sameness, same-entity
+  truth, pattern membership, workflow relationship, or semantic subject
+  identity from keywords, embeddings, string overlap, or graph proximity as
+  final authority
+- semantic graph enrichment is model-owned: a bounded model path proposes and
+  adjudicates topic, entity, subject, workflow, procedure, skill/tool, project,
+  and recurring-pattern nodes plus semantic relationship edges
+- deterministic validation of semantic graph proposals is limited to schema,
+  allowed node/edge types, exact refs, evidence anchoring, source authority,
+  caps, safety, lifecycle eligibility, and pending/quarantine/block behavior
+- validated semantic graph nodes and edges may become retrieval recall signals,
+  but final context-pack, capsule, or context-injection inclusion remains
+  model-owned
+
 Remaining implementation decisions:
 
 - exact edge-type mapping from MMV2 edge/event/source structures into graph
   authority tiers
 - graph retention/invalidation policy when source memories are superseded,
   deleted, conflicted, or recompiled into projections
+- schema and route contract for model-owned semantic graph proposal,
+  adjudication, promotion, split, merge, and decay
+- promotion criteria for model-proposed semantic graph edges when repeated
+  retrieval success exists but no human review has occurred
 
 ## Objective
 
@@ -64,6 +89,12 @@ The graph exists to support:
 - operator inspection
 - contradiction and dependency analysis
 - skill and workflow synthesis
+
+The structural graph alone is not expected to know that two unrelated memories
+share a topic such as "agent delegation" unless that relationship is explicit
+in source refs, scopes, payload fields, or previously admitted graph data. That
+kind of semantic topic/entity/pattern relationship belongs to the model-owned
+semantic enrichment slice.
 
 ## Core rule
 
@@ -258,6 +289,12 @@ inventory links.
 signals only after provenance binding. They are read-time-only, low weight,
 time-limited, and telemetry-backed. They must never drive admission,
 reconciliation, correction, supersession, or durable truth mutation.
+
+Lexical or embedding similarity may help recall candidate node/edge proposals
+for a model to adjudicate, but it must not itself promote semantic graph truth.
+For example, deterministic recall may gather memories that mention "agent" and
+"delegation"; only model/human adjudication can create or promote an
+`agent delegation` topic/pattern node and attach both memories to it.
 
 `promoted_inferred` edges are former probationary edges that have repeated
 successful retrieval usefulness, no active conflicts, and continuing source

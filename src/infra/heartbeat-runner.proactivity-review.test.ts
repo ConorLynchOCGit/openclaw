@@ -113,4 +113,80 @@ describe("heartbeat proactivity review", () => {
       expect(sessionKey).toContain("main");
     });
   });
+
+  it("surfaces model-authored heartbeat items when the model returns no sendable text", async () => {
+    await withTempHeartbeatSandbox(async ({ tmpDir, storePath }) => {
+      const cfg: OpenClawConfig = {
+        agents: {
+          defaults: {
+            workspace: tmpDir,
+            heartbeat: {
+              every: "5m",
+              target: "telegram",
+            },
+          },
+        },
+        channels: { telegram: { allowFrom: ["*"] } },
+        session: { store: storePath },
+      };
+      const sessionId = "33333333-3333-4333-8333-333333333333";
+      const sessionKey = await seedMainSessionStore(storePath, cfg, {
+        sessionId,
+        lastChannel: "telegram",
+        lastProvider: "telegram",
+        lastTo: "-100155462274",
+      });
+      const sendTelegram = vi.fn().mockResolvedValue({
+        messageId: "m1",
+        chatId: "155462274",
+      });
+      const getReplySpy = vi.fn().mockResolvedValue({ text: "" });
+      const buildProactivityReview = vi.fn().mockResolvedValue({
+        prompt: "What would help this user today?",
+        items: [
+          {
+            workItemId: "work-item-heartbeat-quality-gate",
+            queueItemId: "queue-item-heartbeat-quality-gate",
+            opportunityClass: "proactive_plan",
+            title: "Heartbeat response quality gate",
+            whyNow:
+              "A model-reviewed plan is available and should be visible during heartbeat review.",
+            proposedNextStep:
+              "Review the heartbeat response quality gate before the next live UI proof.",
+            expectedUserValue:
+              "Prevents silent heartbeat replies from hiding model-authored plans.",
+            confidence: "high",
+            draftReady: false,
+            evidenceSummary: "Model-authored proactivity item from a bounded review packet.",
+          },
+        ],
+        reversePromptItems: [],
+        followupItems: [],
+        delightItems: [],
+        selfHealingItems: [],
+        draftReadyItems: [],
+        state: {},
+      });
+
+      const result = await runHeartbeatOnce({
+        cfg,
+        agentId: "main",
+        reason: "interval",
+        deps: {
+          buildHeartbeatProactivityReviewText: buildProactivityReview,
+          getReplyFromConfig: getReplySpy,
+          telegram: sendTelegram,
+        } as never,
+      });
+
+      expect(result.status).toBe("ran");
+      expect(buildProactivityReview).toHaveBeenCalledWith(
+        expect.objectContaining({ sessionKey, projectId: "openclaw" }),
+      );
+      expect(sendTelegram).toHaveBeenCalledTimes(1);
+      expect(sendTelegram.mock.calls[0]?.[1]).toContain("Heartbeat response quality gate");
+      expect(sendTelegram.mock.calls[0]?.[1]).toContain("Next step:");
+      expect(sendTelegram.mock.calls[0]?.[1]).not.toContain("HEARTBEAT_OK");
+    });
+  });
 });

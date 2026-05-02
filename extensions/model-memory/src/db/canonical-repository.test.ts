@@ -11,7 +11,6 @@ import { DatabaseMemoryObjectStore } from "./database-memory-object-store.ts";
 import {
   buildCollisionCandidates,
   buildZeroCandidateRecoverySelection,
-  selectDeterministicAttachCollisionCandidate,
 } from "./database-memory-object-store.ts";
 import { applyModelMemoryMigrations } from "./migrations.ts";
 import { createPgMemTestDatabase } from "./pg-test.ts";
@@ -282,171 +281,6 @@ describe("canonical-repository", () => {
     );
 
     expect(collisions.retainedRecords.map((record) => record.id)).toContain("memory-same-source");
-  });
-
-  it("selects a dominant same-claim rule candidate when other retained candidates fail decisive-field agreement", () => {
-    const object = capturedRule({
-      sourceWindowId: "window-new",
-      subject: "Multi-agent safety for git stash",
-      avoidAction: "Do not create/apply/drop git stash entries unless explicitly requested.",
-      recommendedAction: "Assume other agents may be working and keep unrelated WIP untouched.",
-    }).object;
-    const identity = deriveMemoryIdentity(object);
-
-    const selected = selectDeterministicAttachCollisionCandidate({
-      identity,
-      object,
-      candidates: [
-        {
-          id: "memory-strong",
-          sourceWindowId: "window-strong",
-          canonicalClass: "project",
-          kind: "rule",
-          payload: {
-            subject: "Stash/WIP safety",
-            avoidAction: "Do not create/apply/drop git stash entries unless explicitly requested.",
-            recommendedAction:
-              "Assume other agents may be working and keep unrelated WIP untouched.",
-          },
-          normalizedSubject: "stash/wip safety",
-          normalizedTitle: undefined,
-          normalizedSearchText:
-            "stash wip safety do not create apply drop git stash entries unless explicitly requested assume other agents may be working and keep unrelated wip untouched",
-          scope: {},
-          scopeKey: identity.scopeKey,
-          provenance: [{ sourceId: "window-strong", segmentIndex: 0, headingPath: [] }],
-          confidence: "strong",
-          durability: "durable",
-          suggestedReviewMode: "auto_accept",
-          executedReviewMode: "auto_accept",
-          rationaleCodes: [],
-          identityKey: "memory-strong-identity",
-          slotKey: undefined,
-          contractName: "semantic_extraction",
-          contractVersion: "v1",
-          modelId: "model-001",
-          createdAt: new Date(0),
-          lifecycleState: "active",
-        },
-        {
-          id: "memory-weak",
-          sourceWindowId: "window-weak",
-          canonicalClass: "project",
-          kind: "rule",
-          payload: {
-            subject: "GitHub newline handling",
-            avoidAction: "Do not embed literal \\n in comment bodies.",
-          },
-          normalizedSubject: "github newline handling",
-          normalizedTitle: undefined,
-          normalizedSearchText: "github newline handling do not embed literal n in comment bodies",
-          scope: {},
-          scopeKey: identity.scopeKey,
-          provenance: [{ sourceId: "window-weak", segmentIndex: 0, headingPath: [] }],
-          confidence: "strong",
-          durability: "durable",
-          suggestedReviewMode: "auto_accept",
-          executedReviewMode: "auto_accept",
-          rationaleCodes: [],
-          identityKey: "memory-weak-identity",
-          slotKey: undefined,
-          contractName: "semantic_extraction",
-          contractVersion: "v1",
-          modelId: "model-001",
-          createdAt: new Date(0),
-          lifecycleState: "active",
-        },
-      ],
-    });
-
-    expect(selected?.id).toBe("memory-strong");
-  });
-
-  it("does not deterministically attach when multiple retained candidates share the same core claim", () => {
-    const object = {
-      canonicalClass: "project" as const,
-      kind: "fact" as const,
-      payload: {
-        subject: "OpenClaw config file",
-        value:
-          "OpenClaw reads an optional JSON5 config from ~/.openclaw/openclaw.json and uses safe defaults if the file is missing.",
-      },
-      scope: {},
-      provenance: [{ sourceId: "window-001", segmentIndex: 0, headingPath: [] }],
-      confidence: "strong" as const,
-      durability: "durable" as const,
-      reviewMode: "auto_accept" as const,
-    };
-    const identity = deriveMemoryIdentity(object);
-
-    const selected = selectDeterministicAttachCollisionCandidate({
-      identity,
-      object,
-      candidates: [
-        {
-          id: "memory-active",
-          sourceWindowId: "window-000",
-          canonicalClass: "project",
-          kind: "fact",
-          payload: {
-            subject: "OpenClaw configuration file",
-            value:
-              "OpenClaw reads an optional JSON5 config from ~/.openclaw/openclaw.json and uses safe defaults if the file is missing.",
-          },
-          normalizedSubject: "openclaw configuration file",
-          normalizedTitle: undefined,
-          normalizedSearchText:
-            "openclaw configuration file openclaw reads an optional json5 config from ~/.openclaw/openclaw.json and uses safe defaults if the file is missing",
-          scope: {},
-          scopeKey: identity.scopeKey,
-          provenance: [{ sourceId: "window-000", segmentIndex: 0, headingPath: [] }],
-          confidence: "strong",
-          durability: "durable",
-          suggestedReviewMode: "auto_accept",
-          executedReviewMode: "auto_accept",
-          rationaleCodes: [],
-          identityKey: "fact-active",
-          slotKey: undefined,
-          contractName: "semantic_extraction",
-          contractVersion: "v1",
-          modelId: "model-001",
-          createdAt: new Date(0),
-          lifecycleState: "active",
-        },
-        {
-          id: "memory-contained",
-          sourceWindowId: "window-999",
-          canonicalClass: "project",
-          kind: "fact",
-          payload: {
-            subject: "Config file path and defaults",
-            value:
-              "OpenClaw reads an optional JSON5 config from ~/.openclaw/openclaw.json and uses safe defaults if the file is missing.",
-          },
-          normalizedSubject: "config file path and defaults",
-          normalizedTitle: undefined,
-          normalizedSearchText:
-            "config file path and defaults openclaw reads an optional json5 config from ~/.openclaw/openclaw.json and uses safe defaults if the file is missing",
-          scope: {},
-          scopeKey: identity.scopeKey,
-          provenance: [{ sourceId: "window-999", segmentIndex: 0, headingPath: [] }],
-          confidence: "strong",
-          durability: "durable",
-          suggestedReviewMode: "auto_accept",
-          executedReviewMode: "auto_accept",
-          rationaleCodes: [],
-          identityKey: "fact-contained",
-          slotKey: undefined,
-          contractName: "semantic_extraction",
-          contractVersion: "v1",
-          modelId: "model-001",
-          createdAt: new Date(0),
-          lifecycleState: "conflict_hold",
-        },
-      ],
-    });
-
-    expect(selected).toBeUndefined();
   });
 
   it("round-trips sources and source windows through the live schema", async () => {
@@ -821,7 +655,7 @@ describe("canonical-repository", () => {
     }
   });
 
-  it("fast-attaches a single retained near-restatement without calling the collision model", async () => {
+  it("uses bounded model adjudication for a single retained near-restatement", async () => {
     const database = await createPgMemTestDatabase();
     try {
       await applyModelMemoryMigrations(database.sql);
@@ -832,8 +666,20 @@ describe("canonical-repository", () => {
           throw new Error("single collision adjudication should not be called");
         },
         async adjudicateBatch(): Promise<CollisionAdjudicationBatchDecision[]> {
-          batchCalls += 1;
           throw new Error("batch collision adjudication should not be called");
+        },
+        async adjudicateBoundedCandidateBatch(input: {
+          requests: BoundedCandidateAdjudicationRequest[];
+          modelId: string;
+          contractVersion?: string;
+        }) {
+          batchCalls += 1;
+          return input.requests.map((request) => ({
+            candidateId: request.candidateId,
+            sameCoreMemory: "yes" as const,
+            matchedCandidateId: request.candidates[0].adjudicationCandidateId,
+            deltaType: "non_additive" as const,
+          }));
         },
       };
       const store = new DatabaseMemoryObjectStore(repository, adjudicator);
@@ -884,7 +730,7 @@ describe("canonical-repository", () => {
 
       expect(first.decision).toBe("write");
       expect(second.decision).toBe("attach_support");
-      expect(batchCalls).toBe(0);
+      expect(batchCalls).toBe(1);
       expect(snapshot.memoryObjects).toHaveLength(1);
       expect(snapshot.supportItems).toHaveLength(2);
     } finally {
@@ -892,7 +738,7 @@ describe("canonical-repository", () => {
     }
   });
 
-  it("fast-attaches a dominant retained candidate when only one candidate has strong payload agreement", async () => {
+  it("uses bounded model adjudication for a dominant retained candidate", async () => {
     const database = await createPgMemTestDatabase();
     try {
       await applyModelMemoryMigrations(database.sql);
@@ -903,11 +749,43 @@ describe("canonical-repository", () => {
           throw new Error("single collision adjudication should not be called");
         },
         async adjudicateBatch(): Promise<CollisionAdjudicationBatchDecision[]> {
-          batchCalls += 1;
           throw new Error("batch collision adjudication should not be called");
         },
+        async adjudicateBoundedCandidateBatch(input: {
+          requests: BoundedCandidateAdjudicationRequest[];
+          modelId: string;
+          contractVersion?: string;
+        }) {
+          batchCalls += 1;
+          return input.requests.map((request) => ({
+            candidateId: request.candidateId,
+            sameCoreMemory: "yes" as const,
+            matchedCandidateId: request.candidates[0].adjudicationCandidateId,
+            deltaType: "non_additive" as const,
+          }));
+        },
       };
-      const seedStore = new DatabaseMemoryObjectStore(repository);
+      const seedAdjudicator: SemanticCollisionAdjudicator = {
+        async adjudicate(): Promise<CollisionAdjudicationDecision> {
+          throw new Error("single collision adjudication should not be called");
+        },
+        async adjudicateBatch(): Promise<CollisionAdjudicationBatchDecision[]> {
+          throw new Error("batch collision adjudication should not be called");
+        },
+        async adjudicateBoundedCandidateBatch(input: {
+          requests: BoundedCandidateAdjudicationRequest[];
+          modelId: string;
+          contractVersion?: string;
+        }) {
+          return input.requests.map((request) => ({
+            candidateId: request.candidateId,
+            sameCoreMemory: "no" as const,
+            matchedCandidateId: "none" as const,
+            deltaType: "unclear" as const,
+          }));
+        },
+      };
+      const seedStore = new DatabaseMemoryObjectStore(repository, seedAdjudicator);
       const store = new DatabaseMemoryObjectStore(repository, adjudicator);
       const windowIds = [
         "99999999-9999-5999-8999-999999999991",
@@ -963,7 +841,7 @@ describe("canonical-repository", () => {
       expect(broad.decision).toBe("write");
       expect(narrow.decision).toBe("write");
       expect(rerun.decision).toBe("attach_support");
-      expect(batchCalls).toBe(0);
+      expect(batchCalls).toBe(1);
       expect(snapshot.memoryObjects).toHaveLength(2);
       expect(snapshot.supportItems).toHaveLength(3);
     } finally {

@@ -2,13 +2,14 @@ import type { AgentToolResult } from "@mariozechner/pi-agent-core";
 import { Type } from "@sinclair/typebox";
 import type { AnyAgentTool, OpenClawPluginApi } from "openclaw/plugin-sdk/core";
 import type { DurableMemoryRecord, MemoryEdge, MemoryEvent } from "./mmv2/contracts.ts";
+import type { JsonModelExecutor } from "./model-execution.ts";
 import { summarizeModelMemoryPayload } from "./payload-summary.ts";
 import {
   buildLexicalBaselineRetrievalRequest,
   type InterpretedRetrievalRequest,
   type RetrievalRequestInterpreter,
 } from "./retrieval-request-interpreter.ts";
-import { executeRetrieval } from "./retrieval.ts";
+import { ExecutorBackedRetrievalFinalInclusionReviewer, executeRetrieval } from "./retrieval.ts";
 import {
   listRuntimeMemoryRecords,
   type RuntimeMemoryRecord,
@@ -22,6 +23,9 @@ type ModelMemoryRuntime = Awaited<ReturnType<ModelMemoryRuntimeApi["createDataba
 
 type InternalRuntimeDeps = {
   createDatabaseRuntime: ModelMemoryRuntimeApi["createDatabaseRuntime"];
+  createLiveJsonExecutor?: (
+    options?: Parameters<ModelMemoryRuntimeApi["createLiveJsonExecutor"]>[0],
+  ) => Promise<JsonModelExecutor>;
 };
 
 type ToolInternalDependencies = {
@@ -232,13 +236,14 @@ async function loadInternalRuntimeDeps(api: OpenClawPluginApi): Promise<Internal
   }
   return {
     createDatabaseRuntime: runtime.createDatabaseRuntime,
+    createLiveJsonExecutor: runtime.createLiveJsonExecutor,
   };
 }
 
 async function withRuntime<T>(
   api: OpenClawPluginApi,
   deps: ToolInternalDependencies,
-  work: (runtime: ModelMemoryRuntime) => Promise<T>,
+  work: (runtime: ModelMemoryRuntime, internal: InternalRuntimeDeps) => Promise<T>,
 ): Promise<T> {
   const internal = await (deps.loadInternalRuntimeDeps
     ? deps.loadInternalRuntimeDeps()
@@ -248,7 +253,7 @@ async function withRuntime<T>(
     applyMigrations: false,
   });
   try {
-    return await work(runtime);
+    return await work(runtime, internal);
   } finally {
     await runtime.pool.end();
   }
@@ -292,7 +297,7 @@ export function createModelMemorySearchTool(
         throw new Error("query is required");
       }
       try {
-        return await withRuntime(api, deps, async (runtime) => {
+        return await withRuntime(api, deps, async (runtime, internal) => {
           const [memoryObjects, projectionVersions] = await Promise.all([
             listRuntimeMemoryRecords(runtime.canonicalRepository),
             (
@@ -306,11 +311,26 @@ export function createModelMemorySearchTool(
             scope: buildScope(params),
             maxResults: readPositiveInteger(params.maxResults, 5),
           };
+          const finalInclusionModelId =
+            process.env.MODEL_MEMORY_RETRIEVAL_FINAL_INCLUSION_MODEL_ID?.trim() ||
+            process.env.MODEL_MEMORY_RETRIEVAL_MODEL_ID?.trim() ||
+            "openai-codex/gpt-5.4-mini";
+          const finalInclusionReviewer = internal.createLiveJsonExecutor
+            ? new ExecutorBackedRetrievalFinalInclusionReviewer(
+                await internal.createLiveJsonExecutor({ config: api.config }),
+                {
+                  modelId: finalInclusionModelId,
+                  reasoningEffort: "low",
+                },
+              )
+            : undefined;
           const execution = await executeRetrieval({
             envelope,
             interpreter: staticInterpreter(request),
             memoryObjects,
             modelId: "mmv2-runtime-read",
+            finalInclusionReviewer,
+            finalInclusionModelId,
             projectionVersions,
           });
           if (!execution) {

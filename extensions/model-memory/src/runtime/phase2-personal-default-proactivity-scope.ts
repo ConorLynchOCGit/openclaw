@@ -11,7 +11,7 @@ import type { SourceAuthorityTier, SourceProfileId } from "../source-authority.t
 import {
   buildPhase2ProductProactivitySurfacingReport,
   type Phase2ProductProactivitySurfacingReport,
-} from "./phase2-product-proactivity-surfacing.ts";
+} from "./phase2-product-proactivity-presentation.ts";
 import {
   buildPhase2RealMemoryProactivityCandidateReport,
   type Phase2RealMemoryCandidateReport,

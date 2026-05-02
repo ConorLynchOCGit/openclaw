@@ -17,6 +17,7 @@ export function createExtensionBlueBubblesVitestConfig(
     {
       dir: "extensions",
       env,
+      fileParallelism: false,
       name: "extension-bluebubbles",
       pool: "forks",
       passWithNoTests: true,

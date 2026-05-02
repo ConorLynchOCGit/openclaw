@@ -72,6 +72,7 @@ type DocumentIngestionToolParams = {
   requestSeed?: unknown;
   maxWordsPerWindow?: unknown;
   projectId?: unknown;
+  rebuildRuntime?: unknown;
 };
 
 function readTrimmedString(value: unknown): string | undefined {
@@ -92,8 +93,42 @@ function readInteger(value: unknown, fallback: number): number {
   return fallback;
 }
 
+function readBooleanEnv(name: string, fallback: boolean): boolean {
+  const raw = process.env[name]?.trim().toLowerCase();
+  if (!raw) {
+    return fallback;
+  }
+  if (raw === "1" || raw === "true" || raw === "yes") {
+    return true;
+  }
+  if (raw === "0" || raw === "false" || raw === "no") {
+    return false;
+  }
+  return fallback;
+}
+
 function resolveWorkspaceRoot(ctx: ModelMemoryToolContext): string {
   return ctx.workspaceDir ? path.resolve(ctx.workspaceDir) : process.cwd();
+}
+
+async function emitDocumentIngestionToolProgress(
+  onUpdate: AgentToolUpdateCallback<unknown> | undefined,
+  text: string,
+) {
+  if (!onUpdate) {
+    return;
+  }
+  await Promise.resolve(
+    onUpdate({
+      content: [
+        {
+          type: "text",
+          text,
+        },
+      ],
+      details: undefined,
+    } satisfies AgentToolResult<unknown>),
+  );
 }
 
 function assertWorkspaceRelativePath(workspaceRoot: string, relativePath: string): string {
@@ -238,6 +273,12 @@ export function createModelMemoryDocumentIngestionTool(
       requestSeed: Type.Optional(Type.Number()),
       maxWordsPerWindow: Type.Optional(Type.Number({ minimum: 1 })),
       projectId: Type.Optional(Type.String({ minLength: 1 })),
+      rebuildRuntime: Type.Optional(
+        Type.Boolean({
+          description:
+            "Optional inline runtime rebuild after ingestion. Defaults off for bounded operator latency; scheduled/runtime rebuilds remain separate.",
+        }),
+      ),
     }),
 
     async execute(
@@ -261,12 +302,20 @@ export function createModelMemoryDocumentIngestionTool(
         params.maxWordsPerWindow,
         DEFAULT_MAX_WORDS_PER_WINDOW,
       );
+      const rebuildRuntime =
+        typeof params.rebuildRuntime === "boolean"
+          ? params.rebuildRuntime
+          : readBooleanEnv("MODEL_MEMORY_DOCUMENT_INGEST_REBUILD_RUNTIME", false);
       const projectId = readTrimmedString(params.projectId);
       const runId = readTrimmedString(params.runId) ?? `model-memory-document-ingest-${Date.now()}`;
       const recordRelativePath =
         readTrimmedString(params.recordPath) ?? `checkpoints/model-memory/${runId}.json`;
       const recordAbsolutePath = assertWorkspaceRelativePath(workspaceRoot, recordRelativePath);
       const resume = typeof params.resume === "boolean" ? params.resume : true;
+      await emitDocumentIngestionToolProgress(
+        onUpdate,
+        `Document ingest tool accepted invocation: ${sources.length} sources`,
+      );
       for (const sourcePath of sources) {
         const canonical = resolveRepoCanonicalReadPath({
           inputPath: sourcePath,
@@ -277,11 +326,20 @@ export function createModelMemoryDocumentIngestionTool(
         }
       }
 
+      await emitDocumentIngestionToolProgress(onUpdate, "Document ingest loading runtime deps");
       const internal = await (
         deps.loadInternalRuntimeDeps ?? (() => loadInternalRuntimeDeps(api))
       )();
+      await emitDocumentIngestionToolProgress(
+        onUpdate,
+        "Document ingest creating database runtime",
+      );
       const runtime = await internal.createDatabaseRuntime({ config: api.config });
       try {
+        await emitDocumentIngestionToolProgress(
+          onUpdate,
+          "Document ingest building runner sources",
+        );
         const runnerSources = await buildRunnerSources({
           workspaceRoot,
           sources,
@@ -290,11 +348,17 @@ export function createModelMemoryDocumentIngestionTool(
           maxWordsPerWindow,
           readTextFile,
         });
+        await emitDocumentIngestionToolProgress(
+          onUpdate,
+          `Document ingest built runner sources: ${runnerSources.length}`,
+        );
+        await emitDocumentIngestionToolProgress(onUpdate, "Document ingest creating live executor");
         const executor = await internal.createLiveJsonExecutor({
           config: api.config,
           requestTimeoutMs,
           requestSeed,
         });
+        await emitDocumentIngestionToolProgress(onUpdate, "Document ingest created live executor");
         const interpreter = new ExecutorBackedSemanticInterpreter(executor);
         const collisionAdjudicator = isLegacyCapturedObjectWriteFallbackEnabled({
           env: process.env,
@@ -314,6 +378,7 @@ export function createModelMemoryDocumentIngestionTool(
           deps.createRecordStore?.(recordAbsolutePath) ??
           new JsonFileDocumentIngestionRunRecordStore(recordAbsolutePath);
 
+        await emitDocumentIngestionToolProgress(onUpdate, "Document ingest executing runner");
         const record: DocumentIngestionRunnerRunRecord = await service.executeRun({
           runId,
           sources: runnerSources,
@@ -325,6 +390,7 @@ export function createModelMemoryDocumentIngestionTool(
           maxWordsPerWindow,
           recordStore,
           resume,
+          rebuildRuntime,
           onProgress: async (event) => {
             api.logger.info(`[model-memory-tool] ${event.message}`);
             if (!onUpdate) {
@@ -354,6 +420,7 @@ export function createModelMemoryDocumentIngestionTool(
             );
           },
         });
+        await emitDocumentIngestionToolProgress(onUpdate, "Document ingest runner completed");
 
         return {
           content: [
@@ -381,6 +448,7 @@ export function createModelMemoryDocumentIngestionTool(
             chunkSize,
             maxConcurrency,
             resume,
+            rebuildRuntime,
             totals: record.totals,
           },
         };

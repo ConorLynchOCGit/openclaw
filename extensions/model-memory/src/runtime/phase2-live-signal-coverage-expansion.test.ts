@@ -104,7 +104,13 @@ describe("phase2 live signal coverage expansion", () => {
     assertPhase2LiveSignalCoverageExpanded(report);
     expect(report.telemetry.seams).toContain("ordinary_chat_turn");
     expect(report.telemetry.reasonCodes).toContain("failed_command_observed");
-    expect(report.detectionReport.opportunities.length).toBeGreaterThan(0);
+    expect(report.telemetry.convertedSourceCount).toBeGreaterThan(0);
+    expect(report.detectionReport.opportunities).toHaveLength(0);
+    expect(
+      report.detectionReport.checks.find(
+        (check) => check.reasonCode === "model_reviewed_opportunity_required",
+      )?.status,
+    ).toBe("fail");
     expect(JSON.stringify(report).toLowerCase()).not.toContain("raw-prompt-marker");
   });
 

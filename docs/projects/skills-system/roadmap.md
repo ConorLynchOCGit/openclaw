@@ -40,10 +40,18 @@ It widens the system from loading/vetting into a full lifecycle platform for:
 - proactivity-integrated surfacing
 - Skillifier scaffold/check/report flows
 - evals, routing coverage, and compliance tests
+- resolver/trigger tests and check-resolvable-style reachability/overlap
+  reports
+- package E2E tests
 - risk-tiered autonomy, canarying, and rollback
 - low-risk auto-promotion in bounded scopes
 - cross-runtime packaging for OpenClaw and Codex
-- autonomous maintenance and health
+- usage-based self-improvement, autonomous maintenance, and health
+
+The detailed Phase 2 lane must follow the model-owned judgment boundary:
+deterministic code may enforce structure and gates, while models or operators
+own skill-worthiness, skill-vs-plan classification, semantic usefulness,
+promotion recommendations, and self-improvement decisions.
 
 The detailed milestone sequence lives in
 [Phase 2 Skills Platform Roadmap](/projects/skills-system/phase-2-skills-platform-roadmap).

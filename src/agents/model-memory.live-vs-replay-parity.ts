@@ -344,7 +344,7 @@ export async function runModelMemoryLiveVsReplayParity(input: {
         : selectedTraceMatch?.batch
           ? "batched_adjudication"
           : selectedTraceMatch?.write?.decision === "attach_support"
-            ? "deterministic_attach_or_exact_identity"
+            ? "attach_support_or_exact_identity"
             : "distinct_write";
     const liveRetainedCandidates = liveFound
       ? (selectedTraceMatch?.batch?.candidates ?? []).map((candidate) => ({

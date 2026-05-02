@@ -21,7 +21,7 @@ export const MODEL_AUTHORED_PROACTIVITY_BRIEF_REPORT_SCHEMA_VERSION =
 export const DEFAULT_MODEL_AUTHORED_PROACTIVITY_BRIEF_MODEL_ID = "openai-codex/gpt-5.4";
 
 type ModelAuthoredBriefDecision = "surface" | "demote" | "repair";
-type ModelAuthoredBriefSource = "model" | "deterministic_fallback" | "demoted";
+type ModelAuthoredBriefSource = "model" | "demoted";
 type ModelAuthoredBriefKindCode =
   | "new_skill"
   | "improve_skill"
@@ -270,8 +270,11 @@ const SYSTEM_PROMPT = [
   "Use word arrays for every user-facing text field. Put each displayed word as its own array item. Do not combine multiple words in one item.",
   "Use null for optional word-array fields when there is no useful value.",
   "A surfaced card must have a title naming a capability, decision, or outcome.",
+  "Titles must be human-readable, not slug-like. Do not output hyphenated file/key names such as candidate-discovery-qa-gate as a title; write Candidate Discovery QA Gate instead.",
+  "Use natural title case or sentence case for titles. Use normal sentence capitalization for purpose and next-step copy.",
   "The purpose must explain what the item does or unlocks.",
   "The next step must be actionable and must not repeat the title.",
+  "Keep the next step short enough to fit as a complete sentence; prefer 8-16 words over long lane lists.",
   "Do not preserve source-fragment grammar or clipped sentence fragments.",
   "Do not use generic fallback phrases such as 'Turns a recent idea into a bounded next step', 'without digging through the inbox', 'Already recurring', 'Build the bounded request with', 'It sets the default', 'Question worth asking before', 'Skill worth creating', or 'Draft ready' as prose.",
   "Do not mention ids, timestamps, source refs, provenance, ledgers, raw prompts, transcripts, tool logs, system instructions, installs, promotions, action execution, or outbound sends in primary fields.",
@@ -289,7 +292,7 @@ function trimBounded(value: string | undefined, maxLength: number): string | und
   if (!normalized) {
     return undefined;
   }
-  return normalized.length > maxLength ? normalized.slice(0, maxLength).trim() : normalized;
+  return boundCompleteText(normalized, maxLength);
 }
 
 function readModelId(options: ModelAuthoredProactivityBriefOptions): string {
@@ -376,16 +379,6 @@ function buildUserPrompt(input: ModelAuthoredProactivityBriefInput): string {
   ].join("\n");
 }
 
-function withAuthorship(
-  brief: Phase2UserFacingProactivityBrief,
-  authorship: NonNullable<Phase2UserFacingProactivityBrief["authorship"]>,
-): Phase2UserFacingProactivityBrief {
-  return {
-    ...brief,
-    authorship,
-  };
-}
-
 function textFromWords(words: string[] | null | undefined, maxLength: number): string | undefined {
   if (!Array.isArray(words) || words.length === 0) {
     return undefined;
@@ -402,7 +395,18 @@ function textFromWords(words: string[] | null | undefined, maxLength: number): s
   if (!text) {
     return undefined;
   }
-  return text.length > maxLength ? `${text.slice(0, Math.max(0, maxLength - 1)).trimEnd()}.` : text;
+  return boundCompleteText(text, maxLength);
+}
+
+function boundCompleteText(text: string, maxLength: number): string {
+  if (text.length <= maxLength) {
+    return text;
+  }
+  const clipped = text.slice(0, Math.max(0, maxLength - 1)).trimEnd();
+  const wordBoundary = clipped.lastIndexOf(" ");
+  const bounded =
+    wordBoundary >= Math.floor(maxLength * 0.55) ? clipped.slice(0, wordBoundary) : clipped;
+  return `${bounded.replace(/[,\-:;]+$/u, "").trimEnd()}.`;
 }
 
 function sentenceFromWords(
@@ -599,27 +603,28 @@ function fallbackResult(params: {
   const authorship = {
     source: "deterministic" as const,
     inputHash: params.inputHash,
-    validationStatus: validated.status,
+    validationStatus: "demote" as const,
   };
-  const reportReasons = uniqueSorted([...params.reasonCodes, ...validated.reasons]);
-  const weakFallback = validated.status === "demote" || validated.reasons.length > 0;
-  const brief = weakFallback
-    ? demoteBrief({
-        brief: params.deterministicBrief,
-        reasons: reportReasons,
-        authorship: { ...authorship, validationStatus: "demote" },
-      })
-    : withAuthorship(params.deterministicBrief, authorship);
+  const reportReasons = uniqueSorted([
+    ...params.reasonCodes,
+    ...validated.reasons,
+    "model_authored_visible_copy_required",
+  ]);
+  const brief = demoteBrief({
+    brief: params.deterministicBrief,
+    reasons: reportReasons,
+    authorship,
+  });
   return {
     brief,
-    source: weakFallback ? "demoted" : "deterministic_fallback",
+    source: "demoted",
     report: {
       schemaVersion: MODEL_AUTHORED_PROACTIVITY_BRIEF_REPORT_SCHEMA_VERSION,
-      source: weakFallback ? "demoted" : "deterministic_fallback",
+      source: "demoted",
       enabled: params.enabled,
       elapsedMs: params.elapsedMs,
       inputHash: params.inputHash,
-      decision: weakFallback ? "demote" : "surface",
+      decision: "demote",
       validationStatus: brief.quality.status,
       reasonCodes: reportReasons,
       promptPersisted: false,

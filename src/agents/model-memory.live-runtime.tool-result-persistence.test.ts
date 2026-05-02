@@ -2,10 +2,12 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { applyModelMemoryMigrations } from "../../extensions/model-memory/src/db/migrations.ts";
-import { MmV2NativeRepository } from "../../extensions/model-memory/src/db/mmv2-native-repository.ts";
-import { createPgMemTestDatabase } from "../../extensions/model-memory/src/db/pg-test.ts";
-import type { MemoryEvent } from "../../extensions/model-memory/src/mmv2/contracts.ts";
+import {
+  applyModelMemoryMigrations,
+  createPgMemTestDatabase,
+  MmV2NativeRepository,
+  type MemoryEvent,
+} from "../../extensions/model-memory/runtime-api.ts";
 import type { OpenClawConfig } from "../config/config.js";
 import { createModelMemoryRuntimeDirtyStore } from "./model-memory.runtime-dirty.js";
 

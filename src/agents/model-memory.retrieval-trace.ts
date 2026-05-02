@@ -3,6 +3,7 @@ import {
   buildRetrievalPackArtifact,
   buildRetrievalRequestPrompt,
   executeRetrieval,
+  ExecutorBackedRetrievalFinalInclusionReviewer,
   ExecutorBackedRetrievalRequestInterpreter,
   JsonModelOutputError,
   rebuildDerivedRuntimeState,
@@ -136,6 +137,10 @@ export async function runModelMemoryRetrievalTrace(input: {
     },
   });
   const retrievalInterpreter = new ExecutorBackedRetrievalRequestInterpreter(executor);
+  const finalInclusionReviewer = new ExecutorBackedRetrievalFinalInclusionReviewer(executor, {
+    modelId: input.modelRef,
+    reasoningEffort: "low",
+  });
   const rebuild = await rebuildDerivedRuntimeState({
     canonicalRepository: input.runtime.canonicalRepository,
     runtimeRepository: input.runtime.runtimeRepository,
@@ -153,6 +158,8 @@ export async function runModelMemoryRetrievalTrace(input: {
       interpreter: retrievalInterpreter,
       memoryObjects: rebuild.memoryObjects,
       modelId: input.modelRef,
+      finalInclusionReviewer,
+      finalInclusionModelId: input.modelRef,
       store: input.runtime.retrievalStore,
       createdAt: new Date(),
       projectionVersions: rebuild.projectionVersions,

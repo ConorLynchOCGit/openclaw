@@ -51,6 +51,18 @@ const BROAD_RETRIEVAL_PURPOSES = new Set([
   "architecture_lookup",
 ]);
 
+const RETRIEVAL_SCOPE_CONSTRAINT_KEYS = new Set([
+  "tenantId",
+  "userId",
+  "userScope",
+  "projectId",
+  "projectScope",
+  "workspaceId",
+  "workflowScope",
+  "canonicalClass",
+  "kind",
+]);
+
 const RETRIEVAL_STOPWORDS = new Set([
   "about",
   "after",
@@ -90,6 +102,9 @@ function normalizeScopeConstraints(
 ): Record<string, string> {
   return Object.fromEntries(
     Object.entries(scope ?? {}).flatMap(([key, value]) => {
+      if (!RETRIEVAL_SCOPE_CONSTRAINT_KEYS.has(key)) {
+        return [];
+      }
       if (typeof value !== "string") {
         return [];
       }
@@ -158,6 +173,10 @@ function isBroadRetrievalEnvelope(envelope: RetrievalEnvelope): boolean {
   );
 }
 
+function shouldUseBroadTypeRecall(envelope: RetrievalEnvelope): boolean {
+  return envelope.requestPurpose === "live_context_injection" || isBroadRetrievalEnvelope(envelope);
+}
+
 export function buildLexicalBaselineRetrievalRequest(
   envelope: RetrievalEnvelope,
 ): InterpretedRetrievalRequest {
@@ -187,10 +206,11 @@ export function harmonizeInterpretedRetrievalRequest(input: {
   const filteredSubjectHints = filterHintsToQuerySurface(input.request.subjectHints, queryTokens);
   const filteredContentHints = filterHintsToQuerySurface(input.request.contentHints, queryTokens);
   const broadEnvelope = isBroadRetrievalEnvelope(input.envelope);
+  const broadTypeRecall = shouldUseBroadTypeRecall(input.envelope);
   const harmonizedRequest: InterpretedRetrievalRequest = {
     goal: input.request.goal,
-    canonicalClasses: broadEnvelope ? [] : input.request.canonicalClasses,
-    kinds: broadEnvelope ? undefined : input.request.kinds,
+    canonicalClasses: broadTypeRecall ? [] : input.request.canonicalClasses,
+    kinds: broadTypeRecall ? undefined : input.request.kinds,
     scopeConstraints:
       Object.keys(input.request.scopeConstraints ?? {}).length > 0
         ? normalizeScopeConstraints(input.request.scopeConstraints)
@@ -206,10 +226,10 @@ export function harmonizeInterpretedRetrievalRequest(input: {
   };
 
   const rationale: string[] = [];
-  if (broadEnvelope && input.request.canonicalClasses.length > 0) {
+  if (broadTypeRecall && input.request.canonicalClasses.length > 0) {
     rationale.push("broad_query_cleared_canonical_classes");
   }
-  if (broadEnvelope && input.request.kinds?.length) {
+  if (broadTypeRecall && input.request.kinds?.length) {
     rationale.push("broad_query_cleared_kinds");
   }
   if (harmonizedRequest.desiredResultCount !== input.request.desiredResultCount) {

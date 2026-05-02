@@ -1,7 +1,6 @@
 import {
   createPhaseMismatch,
   finalizePhaseResult,
-  semanticallyMatchesText,
   type MmV2PhaseMismatch,
 } from "./proof-compare-shared.ts";
 import type {
@@ -19,25 +18,6 @@ function findCandidate(
   simulation: MmV2WriteSimulationResult,
   expectation: MmV2WriteSimulationCandidateExpectation,
 ) {
-  const hasSemanticSelector =
-    expectation.semanticKey !== undefined || expectation.canonicalTextIncludes !== undefined;
-  const semanticMatches = simulation.candidates.filter((candidate) => {
-    if (expectation.semanticKey && candidate.semanticKey !== expectation.semanticKey) {
-      return false;
-    }
-    if (
-      expectation.canonicalTextIncludes &&
-      !semanticallyMatchesText(candidate.canonicalText, expectation.canonicalTextIncludes)
-    ) {
-      return false;
-    }
-    return true;
-  });
-
-  if (semanticMatches.length > 0) {
-    return semanticMatches[0];
-  }
-
   if (expectation.candidateId) {
     const exactIdMatch = simulation.candidates.find(
       (candidate) => candidate.candidateId === expectation.candidateId,
@@ -47,7 +27,7 @@ function findCandidate(
     }
   }
 
-  if (!hasSemanticSelector && simulation.candidates.length === 1) {
+  if (simulation.candidates.length === 1) {
     return simulation.candidates[0];
   }
 

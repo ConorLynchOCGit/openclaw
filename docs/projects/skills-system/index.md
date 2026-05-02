@@ -16,6 +16,9 @@ This project owns:
 - the connection between ClawHub, operator review, and install decisions
 - skill candidate detection and ledger contracts
 - Skillifier lifecycle and "properly skilled" quality bar
+- Gbrain/Hermes-class skill parity gates: evals, resolver tests,
+  check-resolvable-style reachability, E2E, canary, rollback, usage-based
+  self-improvement, approval-gated promotion, and cross-runtime install
 - cross-runtime OpenClaw and Codex packaging rules
 - destination-specific write and promotion authority
 - autonomy, canary, rollback, and low-risk auto-promotion policy
@@ -48,6 +51,9 @@ skills lifecycle platform:
 - skills are lifecycle-managed capabilities, not just folders under `skills/`
 - skill candidates are proactivity-integrated opportunities, not a parallel
   inbox
+- model-owned judgment remains the boundary for skill-worthiness,
+  skill-vs-plan classification, promotion recommendations, usage-based
+  improvement, and visible card copy
 - low-risk skill work should eventually auto-draft, auto-test, canary, and in
   some cases auto-promote within bounded scopes
 - medium-risk and high-risk behavior stays approval-gated

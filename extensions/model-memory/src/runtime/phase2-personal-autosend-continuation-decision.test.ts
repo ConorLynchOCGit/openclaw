@@ -59,11 +59,11 @@ async function greenInput(overrides: Phase2PersonalAutoSendContinuationInput = {
 }
 
 describe("phase2 personal autosend continuation decision", () => {
-  it("continues when product UX and quality review are green", async () => {
+  it("pauses when product UX and report-only quality review pass safety checks", async () => {
     const report = await buildPhase2PersonalAutoSendContinuationReport(await greenInput());
 
-    expect(report.decision).toBe("continue_personal_autosend_trial");
-    expect(report.telemetry.personalTrialContinues).toBe(true);
+    expect(report.decision).toBe("pause_personal_autosend_trial");
+    expect(report.telemetry.personalTrialPaused).toBe(true);
     expect(report.telemetry.allowedAutoSendClass).toBe("operator_approved_suggestion_available");
     expect(report.telemetry.followUpClassManualOnly).toBe(true);
     assertPhase2PersonalAutoSendContinuationDecided(report);
@@ -100,7 +100,7 @@ describe("phase2 personal autosend continuation decision", () => {
     },
   );
 
-  it("narrows the trial when quality is degraded", async () => {
+  it("does not narrow or continue the trial from deterministic quality observations", async () => {
     const input = await greenInput();
     const simulationReport = await buildPhase2AutoSendSimulationObservabilityReport({
       now: input.now,
@@ -110,7 +110,7 @@ describe("phase2 personal autosend continuation decision", () => {
       now: input.now,
       controls: ["useful"],
     });
-    const degraded = await buildPhase2AutoSendTrialQualityReviewReport({
+    const recorded = await buildPhase2AutoSendTrialQualityReviewReport({
       now: input.now,
       simulationReport,
       feedbackReport,
@@ -118,12 +118,12 @@ describe("phase2 personal autosend continuation decision", () => {
     });
     const report = await buildPhase2PersonalAutoSendContinuationReport({
       ...input,
-      qualityReviewReport: degraded,
+      qualityReviewReport: recorded,
     });
 
-    expect(degraded.decision).toBe("trial_quality_degraded");
-    expect(report.decision).toBe("narrow_personal_autosend_trial");
-    expect(report.telemetry.personalTrialNarrowed).toBe(true);
+    expect(recorded.decision).toBe("trial_quality_review_recorded");
+    expect(report.decision).toBe("pause_personal_autosend_trial");
+    expect(report.telemetry.personalTrialPaused).toBe(true);
   });
 
   it("rolls back when quality is blocked", async () => {

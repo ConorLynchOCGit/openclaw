@@ -51,6 +51,23 @@ describe("document-source-adapter", () => {
     expect(result.windows.map((window) => window.windowIndex)).toEqual([0, 1]);
   });
 
+  it("splits oversized single paragraphs without semantic filtering", () => {
+    const result = adaptDocumentSource({
+      externalSourceId: "doc-long-paragraph",
+      text: "Codex prompt alpha preserves the first bounded chunk. Codex prompt beta preserves the second bounded chunk. Codex prompt gamma preserves the third bounded chunk.",
+      maxWordsPerWindow: 6,
+    });
+
+    expect(result.windows.length).toBeGreaterThan(1);
+    expect(result.windows.every((window) => window.tokenEstimate <= 6)).toBe(true);
+    expect(result.windows.map((window) => window.windowIndex)).toEqual(
+      result.windows.map((_, index) => index),
+    );
+    expect(result.windows.map((window) => window.normalizedText).join(" ")).toContain(
+      "Codex prompt alpha",
+    );
+  });
+
   it("uses current timestamps by default instead of epoch placeholders", () => {
     const before = Date.now();
     const result = adaptDocumentSource({

@@ -169,12 +169,24 @@ Runtime rule:
   demotions from the high-context episode packet
 - the reviewer must prefer no candidate over marginal candidates, require
   repeatability or large avoided cost, and reject tiny cleanup candidates
+- new skill candidates should be bounded reusable capabilities with a trigger,
+  inputs, procedure or checklist, output artifact, validation criteria, and
+  evidence of repeated-work reduction
+- existing-skill enhancement is a legitimate surfaced card when the model ties
+  the opportunity to an exact loaded skill or known reusable workflow
+- broad review or release-check opportunities should usually be proactive plans
+  or existing-skill enhancements unless the model can describe an executable
+  skill-shaped procedure
 - deterministic validation, cooldowns, dedupe, provenance checks, no-dark-data
   checks, and write-eligibility checks still decide whether a proposal becomes
   or updates a canonical proactivity record
 - deterministic guardrails remain allowed, but deterministic code that decides
   semantic usefulness, candidate classification, ranking, or surfacing must be
   audited rather than silently becoming candidate authority
+- audit findings that preserve deterministic value judgment are removal debt.
+  They must be deleted, reduced to structural/guardrail behavior, or moved
+  behind bounded model-owned review; compatibility wrappers and renamed
+  equivalents are not acceptable runtime paths.
 - before any live UI proof or gateway rebuild, the candidate-review path should
   pass local golden-corpus validation covering expected skill candidates,
   existing-skill enhancements, proactive plans, demotions, and no-candidate
@@ -212,3 +224,54 @@ and presentation-brief routes. The candidate reviewer should use a
 GPT-5.4-class route with medium/high reasoning by default. Candidate review also
 has explicit max-per-session/day and time-bounded cooldown controls so repeat
 proof or heartbeat runs do not create a permanent suppression state.
+
+Deterministic debt pruning adds one more boundary: proof/model plumbing can
+build prompt contracts, validate schema, and compare scripted model outputs,
+but it must not become a live fallback that classifies skill usefulness,
+surfacing value, or human-facing copy. Tests that preserve such deterministic
+behavior are removal/rewrite debt.
+
+MMV2 capture compatibility adds a source boundary: regular Codex memory capture
+may write validated memories/evidence through the gated memory route, but skill
+and proactive-plan candidates still require the separate high-context reviewer.
+Long Codex/OpenClaw prompts are captured with document-style windows so later
+candidate review has durable evidence, not collapsed snippets. Memory capture
+uses the configured mini model route by default; skill/proactivity candidate
+review remains on the full GPT-5.4-class route.
+
+The quality gate before UI wiring should include local fixtures for one clear
+proactive plan, one clear new skill candidate, one exact existing-skill
+enhancement, one weak cleanup item that should demote or disappear, and a
+merge/extend candidate when ledger context supports it. Skill-vs-plan
+classification in that gate is model-owned; deterministic code may only verify
+schema, evidence refs, no-dark-data, safety, caps, and model-authored card
+formatting.
+
+## Skill parity continuation
+
+Candidate surfacing is only the start of the skill lifecycle. A surfaced skill
+card does not count as a mature skill-system outcome until the linked candidate
+can move through the parity gates:
+
+- eval generation and execution
+- resolver/trigger tests
+- check-resolvable-style reachability, overlap, gap, orphan, and missing-gate
+  reporting
+- package E2E for draft, canary, or installed package scope
+- risk/vetting/provenance report
+- canary and rollback metadata
+- usage-based self-improvement review
+- approval-gated cross-runtime install when applicable
+
+These gates remain proactivity-integrated: the same canonical ids should appear
+in candidate cards, draft-ready cards, eval-failed repair cards,
+canary-failed repair cards, promotion review cards, and cross-runtime install
+review cards. They must not create a separate hidden skills queue that the
+operator has to remember.
+
+Deterministic code may surface structural status such as `eval_failed`,
+`canary_failed`, `install_blocked`, `rollback_ready`, or `approval_required`.
+It may not infer semantic value or hide/show a skill opportunity because of
+keyword/title similarity, feedback counts, or score thresholds. Model review or
+operator review owns semantic merge, demotion, improvement, retirement, and
+promotion recommendations.

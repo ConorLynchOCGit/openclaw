@@ -2,6 +2,7 @@ import type { OpenClawPluginApi } from "openclaw/plugin-sdk/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createCapturedPluginRegistration } from "../../../src/test-utils/plugin-registration.ts";
 import type { DurableMemoryRecord, MemoryEdge, MemoryEvent } from "./mmv2/contracts.ts";
+import type { JsonModelExecutionRequest, JsonModelExecutor } from "./model-execution.ts";
 import { createModelMemoryGetTool, createModelMemorySearchTool } from "./read-tools.ts";
 
 function fakeApi(overrides: Partial<OpenClawPluginApi> = {}): OpenClawPluginApi {
@@ -82,6 +83,24 @@ function buildDurableMemory(overrides: Partial<DurableMemoryRecord> = {}): Durab
   };
 }
 
+class FakeRetrievalFinalInclusionExecutor implements JsonModelExecutor {
+  requests: JsonModelExecutionRequest[] = [];
+
+  async execute(request: JsonModelExecutionRequest) {
+    this.requests.push(request);
+    return {
+      outputText: JSON.stringify({
+        schemaVersion: "retrieval_final_inclusion_decision.v1",
+        decision: "select",
+        selectedMemoryObjectIds: ["memory-deployment"],
+        why: "Scripted model final inclusion for the read tool search fixture.",
+      }),
+      resolvedModelId: request.contract.modelId,
+      usage: { promptTokens: 100, outputTokens: 40 },
+    };
+  }
+}
+
 describe("model-memory read tools", () => {
   afterEach(() => {
     vi.restoreAllMocks();
@@ -89,8 +108,10 @@ describe("model-memory read tools", () => {
 
   it("searches MMV2 runtime records and reports selected projection digests", async () => {
     const poolEnd = vi.fn(async () => undefined);
+    const finalInclusionExecutor = new FakeRetrievalFinalInclusionExecutor();
     const tool = createModelMemorySearchTool(fakeApi(), {
       loadInternalRuntimeDeps: async () => ({
+        createLiveJsonExecutor: vi.fn(async () => finalInclusionExecutor),
         createDatabaseRuntime: vi.fn(async () => ({
           canonicalRepository: {
             listDurableMemories: vi.fn(async () => [buildDurableMemory()]),
@@ -164,6 +185,9 @@ describe("model-memory read tools", () => {
     expect(payload.metrics.emptyRetrievalReason).toBe("none");
     expect(JSON.stringify(payload)).not.toContain("missDiagnostics");
     expect(JSON.stringify(payload)).not.toContain("selectedSourceMemoryIds");
+    expect(finalInclusionExecutor.requests[0]?.contract.contractName).toBe(
+      "retrieval_final_inclusion",
+    );
     expect(poolEnd).toHaveBeenCalledOnce();
   });
 

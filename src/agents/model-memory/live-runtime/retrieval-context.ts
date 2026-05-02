@@ -1,3 +1,4 @@
+import type { OpenClawConfig } from "../../../config/config.js";
 import { createSubsystemLogger } from "../../../logging/subsystem.js";
 import {
   buildRetrievalPackArtifact,
@@ -5,13 +6,8 @@ import {
   readMemoryTraceIdFromScope,
   type ContextArtifactRecord,
 } from "../../../plugin-sdk/model-memory.js";
-import type { OpenClawConfig } from "../../../config/config.js";
+import { buildOrdinaryTurnMemoryTraceId } from "../../../plugin-sdk/model-memory.js";
 import { emitModelMemoryActivityFeedEvent } from "../../model-memory.activity-feed.js";
-import {
-  BOOTSTRAP_PROJECTION_TARGET_IDS,
-  MODEL_MEMORY_CONTEXT_PATH_PREFIX,
-  MODEL_MEMORY_RETRIEVAL_CONTEXT_PATH,
-} from "./constants.js";
 import {
   resolveLiveRetrievalMaxResults,
   resolveModelMemoryLiveRuntimeStatus,
@@ -19,8 +15,10 @@ import {
   type ModelMemoryLiveRuntimeStatus,
 } from "./config.js";
 import {
-  buildOrdinaryTurnMemoryTraceId,
-} from "../../../plugin-sdk/model-memory.js";
+  BOOTSTRAP_PROJECTION_TARGET_IDS,
+  MODEL_MEMORY_CONTEXT_PATH_PREFIX,
+  MODEL_MEMORY_RETRIEVAL_CONTEXT_PATH,
+} from "./constants.js";
 import {
   getLiveRuntime,
   loadRuntimeReadModels,
@@ -179,6 +177,8 @@ async function buildLiveRetrievalContextArtifact(params: {
     interpreter: params.runtime.retrievalInterpreter,
     memoryObjects: params.readModels.memoryObjects,
     modelId: resolveRetrievalModelRef(params.config),
+    finalInclusionReviewer: params.runtime.retrievalFinalInclusionReviewer,
+    finalInclusionModelId: resolveRetrievalModelRef(params.config),
     store: params.runtime.retrievalStore,
     createdAt: new Date(),
     projectionVersions: params.readModels.projectionVersions,

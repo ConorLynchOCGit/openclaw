@@ -29,15 +29,24 @@ The synthesis direction is approved with these boundaries:
   URLs, command status, docs/runbooks found, and non-sensitive error classes;
   raw logs and transcripts are forbidden inputs
 
-2026-04-25 Phase 2 decision lock:
+2026-05-01 Phase 2 model-owned judgment and parity update:
 
-- create a candidate after three similar successful traces, or after one
-  explicit operator ask plus one successful manual run
+- structural recurrence, explicit operator asks, validation failures, or
+  session/heartbeat boundaries may trigger candidate review
+- "three similar successful traces" is not a deterministic semantic rule. The
+  runtime may count structurally related events or exact refs, but the reviewer
+  model decides whether they represent the same reusable workflow, a new skill,
+  an existing-skill enhancement, a tool candidate, a proactive plan, a merge,
+  a demotion, or no candidate
 - approved internal candidates promote to repo-local/workspace-local skills or
   specs first
 - low-risk limited-scope skill promotion may later proceed without a human stop
   only after the Skills Platform autonomy, eval, vetting, canary, provenance,
   and rollback gates are implemented
+- the skill parity gates now include eval generation/execution,
+  resolver/trigger tests, check-resolvable-style reachability and overlap
+  checks, package E2E, install/canary/rollback, usage-based self-improvement,
+  approval-gated promotion, and cross-runtime install
 - broad Codex or OpenClaw skill rollout remains a second explicit approval
 - Phase 2 self-improvement drafts artifacts and proposals first; active
   behavior changes require the appropriate autonomy level or approval gate
@@ -49,9 +58,11 @@ The synthesis direction is approved with these boundaries:
 - heartbeat is the default persistent surfacing channel for pending candidates
 - turn-level surfacing is allowed when a candidate is directly relevant to the
   current work
-- candidate creation can be automatic when evidence thresholds are met, but
-  promotion, installation, privileged tool enablement, and standing workflow
-  automation must still follow the autonomy ladder and risk policy
+- candidate review can be triggered automatically by structural cadence or
+  explicit events, but candidate creation/classification is model-owned or
+  operator-owned; promotion, installation, privileged tool enablement, and
+  standing workflow automation must still follow the autonomy ladder and risk
+  policy
 
 ## Objective
 
@@ -113,14 +124,19 @@ The first synthesis target should be internal skills.
 
 Pipeline:
 
-1. detect repeated successful trajectory
-2. cluster similar trajectories
-3. extract the reusable skeleton
-4. compare against existing skills and tools
-5. compile a candidate draft
-6. run replay and contract checks
-7. surface for operator review
-8. promote through the approved autonomy or approval path
+1. structurally trigger bounded review from recurrence, explicit asks,
+   validation failures, heartbeat/session boundaries, or usage events
+2. preserve contiguous bounded evidence packets with refs and hashes
+3. ask the reviewer model whether a reusable skill/tool/workflow candidate
+   exists, or whether the outcome is an existing-skill enhancement, merge,
+   demotion, proactive plan, or no candidate
+4. compile a candidate draft only from accepted model/operator proposals
+5. generate evals, resolver/trigger fixtures, provenance, and rollback plan
+6. run replay, contract checks, resolver tests, package E2E, vetting, and
+   check-resolvable-style health report
+7. surface for operator review or approved low-risk autonomy
+8. canary, promote, install, or no-op only through the approved autonomy or
+   approval path
 
 The output should be a real candidate artifact with:
 
@@ -217,9 +233,15 @@ Required checks before promotion:
 
 - replay on representative traces
 - contract verification
+- generated and hand-authored eval execution
+- resolver/trigger tests
+- check-resolvable-style reachability, overlap, gap, orphan, and missing-gate
+  report
+- package E2E in the declared runtime or canary target
 - scope and permission review
 - privacy and egress review
 - source authority review
+- canary result and rollback proof where applicable
 - either explicit operator approval or a valid low-risk autonomy path
 - if third-party:
   - `skill-vetter`

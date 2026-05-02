@@ -34,13 +34,13 @@ async function greenInput(overrides: Phase2AutoSendTrialQualityReviewInput = {})
 }
 
 describe("phase2 autosend trial quality review", () => {
-  it("aggregates Slice 45 simulation and Slice 49 feedback into green quality", async () => {
+  it("records Slice 45 simulation and Slice 49 feedback without quality promotion", async () => {
     const report = await buildPhase2AutoSendTrialQualityReviewReport(await greenInput());
 
-    expect(report.decision).toBe("trial_quality_green");
+    expect(report.decision).toBe("trial_quality_review_recorded");
     expect(report.telemetry.wouldHaveSentCount).toBe(1);
     expect(report.telemetry.manualApprovedCount).toBe(1);
-    expect(report.telemetry.usefulCount).toBe(1);
+    expect(report.telemetry.positiveFeedbackCount).toBe(1);
     expect(report.telemetry.falsePositiveCount).toBe(0);
     expect(report.telemetry.actionExecutionObserved).toBe(false);
     expect(report.telemetry.broadAutonomousSendingObserved).toBe(false);
@@ -74,12 +74,12 @@ describe("phase2 autosend trial quality review", () => {
     ["repeat", { forceRepeatedCount: 1 }, "repeat_under_threshold"],
     ["stale", { forceStaleCount: 1 }, "stale_under_threshold"],
   ] satisfies Array<[string, Phase2AutoSendTrialQualityReviewInput, string]>)(
-    "degrades on %s threshold misses",
+    "records %s observations without deterministic quality judgment",
     async (_name, overrides, reasonCode) => {
       const report = await buildPhase2AutoSendTrialQualityReviewReport(await greenInput(overrides));
 
-      expect(report.decision).toBe("trial_quality_degraded");
-      expect(report.telemetry.blockedReasonCodes).toContain(reasonCode);
+      expect(report.decision).toBe("trial_quality_review_recorded");
+      expect(report.telemetry.blockedReasonCodes).not.toContain(reasonCode);
     },
   );
 
@@ -97,7 +97,7 @@ describe("phase2 autosend trial quality review", () => {
     expect(report.telemetry.blockedReasonCodes).toContain("unsafe_private_zero");
   });
 
-  it("degrades on high wrong-context or not-useful feedback ratio", async () => {
+  it("records wrong-context and negative feedback ratio without quality judgment", async () => {
     const feedbackReport = await buildPhase2ProactivityFeedbackReport({
       now: new Date("2026-04-27T00:30:00.000Z"),
       controls: ["not_useful", "wrong_context"],
@@ -106,8 +106,8 @@ describe("phase2 autosend trial quality review", () => {
       await greenInput({ feedbackReport }),
     );
 
-    expect(report.decision).toBe("trial_quality_degraded");
-    expect(report.telemetry.wrongContextOrNotUsefulRatio).toBe(1);
+    expect(report.decision).toBe("trial_quality_review_recorded");
+    expect(report.telemetry.wrongContextOrNegativeFeedbackRatio).toBe(1);
   });
 
   it("writer emits bounded artifacts without prohibited content", async () => {

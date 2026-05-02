@@ -113,50 +113,12 @@ function canonicalPayloadField(payload: Record<string, unknown>, key: string): s
   return normalizeSemanticIdentityValue(payload[key]);
 }
 
-function inferClaimIdentityFromCanonicalText(canonicalText: string): ClaimSemanticIdentity {
-  const normalized = normalizeSemanticIdentityValue(canonicalText).replace(/\.$/u, "");
-
-  const preferenceMatch = normalized.match(/^the (.+?) prefers (.+)$/u);
-  if (preferenceMatch) {
-    return {
-      claimType: "preference_state",
-      subject: preferenceMatch[1]?.trim() ?? "",
-      predicate: "prefers",
-      object: preferenceMatch[2]?.trim() ?? "",
-    };
-  }
-
-  const copulaMatch = normalized.match(/^the (.+?) is (.+)$/u);
-  if (copulaMatch) {
-    const rawSubject = copulaMatch[1]?.trim() ?? "";
-    const rawObject = copulaMatch[2]?.trim() ?? "";
-    const subject = rawSubject.replace(/\s+for\s+.+$/u, "").trim();
-    return {
-      claimType: "",
-      subject,
-      predicate: "is",
-      object: rawObject,
-    };
-  }
-
+function buildClaimIdentity(input: { payload: Record<string, unknown> }): ClaimSemanticIdentity {
   return {
-    claimType: "",
-    subject: "",
-    predicate: "",
-    object: normalized,
-  };
-}
-
-function buildClaimIdentity(input: {
-  canonicalText: string;
-  payload: Record<string, unknown>;
-}): ClaimSemanticIdentity {
-  const inferred = inferClaimIdentityFromCanonicalText(input.canonicalText);
-  return {
-    claimType: canonicalPayloadField(input.payload, "claim_type") || inferred.claimType,
-    subject: canonicalPayloadField(input.payload, "subject") || inferred.subject,
-    predicate: canonicalPayloadField(input.payload, "predicate") || inferred.predicate,
-    object: canonicalPayloadField(input.payload, "object") || inferred.object,
+    claimType: canonicalPayloadField(input.payload, "claim_type"),
+    subject: canonicalPayloadField(input.payload, "subject"),
+    predicate: canonicalPayloadField(input.payload, "predicate"),
+    object: canonicalPayloadField(input.payload, "object"),
   };
 }
 
@@ -164,7 +126,6 @@ export function describeCanonicalClaimIdentity(
   candidate: CanonicalCandidate,
 ): ClaimSemanticIdentity {
   return buildClaimIdentity({
-    canonicalText: candidate.canonical_text,
     payload: candidate.payload,
   });
 }
@@ -173,7 +134,6 @@ export function describeExistingClaimIdentity(
   memory: ExistingMemorySummary,
 ): ClaimSemanticIdentity {
   return buildClaimIdentity({
-    canonicalText: memory.canonical_text,
     payload: memory.payload,
   });
 }

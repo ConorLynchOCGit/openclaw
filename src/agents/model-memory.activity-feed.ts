@@ -296,6 +296,14 @@ function formatMetrics(metrics: ModelMemoryActivityEvent["metrics"]): string[] {
     });
 }
 
+function isRoutineToolResultSkip(event: ModelMemoryActivityEvent): boolean {
+  if (event.kind !== "tool_result_capture" || event.status !== "skipped") {
+    return false;
+  }
+  const reason = event.safeLabels?.reason;
+  return reason === "disabled" || reason === "no_bounded_fact";
+}
+
 export function resolveModelMemoryActivityFeedSettings(input: {
   config?: OpenClawConfig;
   env?: NodeJS.ProcessEnv;
@@ -382,6 +390,9 @@ export async function emitModelMemoryActivityFeedEvent(
   }
   if (!event.sessionKey?.trim()) {
     return { emitted: false, reason: "missing_session_key" };
+  }
+  if (isRoutineToolResultSkip(event)) {
+    return { emitted: false, reason: "routine_tool_result_skip" };
   }
   const idempotencyKey = `model-memory-activity:${sha256(
     JSON.stringify({

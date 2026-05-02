@@ -21,6 +21,14 @@ clarity.
 
 Phase 2 currently assumes:
 
+- the deterministic-judgment pruning boundary is a standing architecture rule
+  for every remaining Phase 2 wave. The canonical policy lives in
+  [Phase 2 Model-Owned Judgment Policy](/projects/model-memory/specs/phase-2-model-owned-judgment-policy):
+  deterministic code owns structure, safety, provenance, caps, packet/window
+  assembly, hybrid recall, lifecycle, and post-model validation; models or
+  operators own meaning, semantic admission, graph semantic identity, capsule
+  inclusion, context inclusion, skill/proactivity classification, surfacing
+  value, visible copy, and usage-based self-improvement decisions
 - `kind` becomes the primary semantic axis
 - `canonicalClass` becomes secondary or derived
 - the first capsule flavor is `project_state`
@@ -60,6 +68,11 @@ Phase 2 currently assumes:
 - the next proactivity phase is an operating-loop leap: reverse prompting,
   persistent growth loops, compaction continuity, bounded background
   maintenance, and self-healing become primary product behaviors
+- Phase 2 graph work includes an explicit model-owned semantic enrichment
+  slice: topic/entity/subject/workflow/pattern nodes and semantic relationship
+  edges are proposed and adjudicated by a bounded model path, while
+  deterministic graph code remains limited to structural edges, provenance,
+  schema validation, lifecycle, caps, and source authority
 - canonical daily memory remains `memory/YYYY-MM-DD.md`; same-day daily memory
   evidence artifacts are fallback evidence only, and an end-of-day finalizer
   must restore the canonical note only from exact same-day durable evidence
@@ -102,6 +115,39 @@ Phase 2 currently assumes:
 - deterministic code remains required for memory guardrails, but deterministic
   semantic judgment across the memory stack must be audited when it decides
   meaning, usefulness, classification, ranking, or surfacing without a model
+- the next pre-Milestone-4 debt pass removes remaining deterministic
+  semantic/value-judgment paths rather than preserving them behind renamed
+  compatibility helpers; strict audit passing is required, but review must also
+  confirm the old behavior is not still live elsewhere
+- the follow-on pre-Milestone-4 repair validates that removed deterministic
+  behavior has model-owned replacements across capture routing, extraction,
+  admission, reconciliation, collision adjudication, source ingestion, and
+  retrieval final inclusion
+- memory-candidate source inventory is mandatory: ordinary turns, assistant
+  finals, document ingestion, MMV2 shadow ingestion, proof/tool-result capture,
+  deep ingestion, recovery/maintenance loops, live shadow adapters, Codex
+  session activity, and heartbeat/system events must each declare authority
+  tier, route, write eligibility, artifact behavior, and unavailable-model
+  behavior; the current inventory lives in
+  [Memory Candidate Source Inventory](/projects/model-memory/specs/memory-candidate-source-inventory)
+- OpenClaw and Codex capture packets use contiguous, source/recency/ref-bounded
+  windows with minimal safety redaction; deterministic code must not prune
+  packets for interestingness, relevance, or memory-worthiness before the model
+  reviews them
+- routed schema/code-like text reaches the model-owned capture step; any
+  schema/code-heavy rejection happens as post-model schema/ref/evidence/safety
+  validation rather than pre-model memory-worthiness filtering
+- memory capture and retrieval model-owned lanes default to
+  `openai-codex/gpt-5.4-mini`; skills/proactivity candidate review defaults to
+  `openai-codex/gpt-5.4`; default chat and model-authored presentation routes
+  remain isolated
+- deterministic hybrid retrieval recall and pack assembly remain valid
+  candidate-gathering mechanics, but final context-pack/capsule/context
+  injection inclusion is model-owned
+- when required model output is missing or invalid after bounded repair, the
+  result is pending review, quarantine, or blocked; deterministic fallback
+  memory creation, supersession, collision resolution, or card copy must not
+  return
 - candidate-review quality now has a local golden-corpus validation gate that
   runs before live gateway rebuilds; it attributes misses to packet assembly,
   model review, post-model validation/dedupe, unexpected candidate surfacing,
@@ -109,6 +155,40 @@ Phase 2 currently assumes:
 - low-risk limited-scope skill automation may later be allowed after
   tests/vetting/canary, but medium-risk and high-risk skill changes remain
   approval-gated
+- the remaining skills bucket must meet
+  [Skill Quality Parity Gates](/projects/skills-system/specs/skill-quality-parity-gates)
+  before claiming parity with Gbrain/Hermes-class skill systems: skill eval
+  generation/execution, resolver/trigger tests, check-resolvable-style
+  reachability and overlap checks, package E2E, install/canary/rollback,
+  usage-based self-improvement, approval-gated promotion, and cross-runtime
+  install
+- proactivity, skills, tool improvements, user-review tasks, and future
+  agent-assigned work converge on a canonical `Work Queue` UX rather than
+  chat-only cards. The product brief lives in
+  [Proactivity And Skills UX Product Brief](/projects/model-memory/specs/proactivity-and-skills-ux-product-brief):
+  chat and heartbeat are lightweight surfacing surfaces; object detail owns
+  durable plans, skill drafts, revisions, evidence, finalized artifacts, and
+  Codex-ready prompts; prioritization is model-owned through intrinsic priority
+  and local placement passes over bounded structurally recalled neighbors
+- the Work Queue information architecture lives in
+  [Work Queue Information Architecture](/projects/model-memory/specs/work-queue-information-architecture):
+  `Work Queue` is top-level navigation, default view is active prioritized work
+  grouped by lane, desktop uses split-pane list/detail, chat/heartbeat route
+  into stable object detail, artifacts and Codex prompts live in detail, and
+  diagnostics/dismissed items are hidden from normal workflow by default
+- the Work Queue interaction model lives in
+  [Work Queue Interaction And Lifecycle State Model](/projects/model-memory/specs/work-queue-interaction-lifecycle-state-model):
+  shared visible states stay small (`new`, `drafting`, `drafted`,
+  `needs_revision`, `finalized`, `dismissed`, `superseded`, `failed`);
+  finalized means ready for manual execution, not done; user-initiated failures
+  remain attached to visible objects; artifact revisions are versioned; and
+  manual completion retires finalized objects after external Codex execution
+- the first buildable UX slice is defined in
+  [Work Queue UX Implementation Plan](/projects/model-memory/specs/work-queue-ux-implementation-plan):
+  add the top-level route, current-state adapter, active prioritized list,
+  split-pane object detail, versioned artifacts, finalized Codex prompt copy,
+  manual completion, hidden diagnostics, and chat/heartbeat links before
+  broader autonomous execution or Skills Studio work
 
 Before the larger graph/capsule waves proceed, the project treated the
 Memory Retrieval Runtime, MMV2 capture coverage, closed-loop operational
@@ -265,6 +345,49 @@ Validation gate:
 - graph rebuild does not churn unrelated runtime artifacts
 - graph layer can be enabled without changing answer behavior by default
 
+### Wave 1B: model-owned semantic graph enrichment
+
+Goal:
+
+- make topic, entity, subject, workflow, pattern, and semantic relationship
+  nodes explicit without letting deterministic code infer meaning as truth
+
+Includes:
+
+- bounded model route for semantic graph proposal over admitted MMV2 memories,
+  source windows, and existing graph/projection context
+- model-owned node extraction for topics, subjects, entities, workflows,
+  procedures, skills, tools, projects, and recurring patterns
+- model-owned edge proposal/adjudication for relationships such as `mentions`,
+  `same_entity_as`, `supports`, `depends_on`, `used_in_workflow`, `uses_skill`,
+  `refines`, `summarizes`, and topic/pattern membership
+- evidence-bound graph proposal artifacts with refs, hashes, source authority,
+  lifecycle state, confidence/pending state, and provenance
+- deterministic validation for schema, allowed node/edge types, exact refs,
+  evidence quote anchoring, caps, safety, lifecycle eligibility, and source
+  authority only
+- pending/quarantine/blocked behavior for unavailable, ambiguous, conflicting,
+  or ungrounded model graph output
+- graph recall integration that uses validated semantic graph nodes/edges as
+  candidate signals while leaving final context inclusion model-owned
+
+Validation gate:
+
+- a fixed corpus produces stable graph proposal artifacts from the model-owned
+  route or explicitly pending outcomes when the model is unavailable
+- deterministic code cannot create topical sameness, same-entity truth, pattern
+  membership, or semantic relationship edges without model/human adjudication
+- every promoted semantic graph edge cites admitted memories or bounded source
+  windows
+- graph recall can find memories that share a model-adjudicated topic/entity
+  such as an "agent delegation" pattern without relying on keyword clustering
+  as semantic truth
+- retrieval traces distinguish structural graph recall, model-owned semantic
+  graph recall, and model-owned final context inclusion
+- capsules that consume semantic graph edges cite source memory ids and graph
+  proposal artifacts rather than treating graph output as canonical memory
+  truth
+
 ### Wave 2: first capsule system
 
 Goal:
@@ -402,7 +525,9 @@ Validation gate:
 
 Goal:
 
-- turn repeated successful interactions into bounded candidate automation
+- turn repeated successful interactions into bounded candidate automation and
+  then into properly skilled, reachable, evaled, E2E-tested, rollbackable
+  packages when the skill lifecycle gates pass
 
 Includes:
 
@@ -410,12 +535,29 @@ Includes:
 - skill/tool candidate evaluation
 - ClawHub install vs inspire vs reject routing
 - review artifact generation for self-improvement proposals
+- model-owned skill/proactivity/tool classification from bounded work episodes
+- skill eval generation and execution
+- resolver and trigger tests
+- check-resolvable-style reachability, overlap, gap, orphan, and integrity
+  reporting
+- package E2E for review-only drafts, canaries, and installed packages
+- usage-based self-improvement loop: observe bounded use/failure/correction,
+  model-review improvement or no-action, draft patch/eval/merge/demotion, run
+  gates, and promote only through approved autonomy or operator approval
 
 Validation gate:
 
 - candidate generation does not silently install or mutate behavior
 - review artifacts are actionable in ordinary OpenClaw workflow
 - third-party skill vetting remains in the loop
+- deterministic code does not decide skill-worthiness, skill-vs-plan
+  classification, semantic usefulness, promotion, retirement, or
+  self-improvement from keywords, scores, or telemetry
+- every generated skill package has tier-appropriate evals, trigger/resolver
+  fixtures, reachability/overlap health report, E2E evidence, provenance,
+  canary/rollback metadata, and destination authority checks before promotion
+- cross-runtime OpenClaw/Codex install remains approval-gated unless a later
+  low-risk autonomy gate explicitly authorizes the exact scope
 
 ### Wave 6: cache and projection policy follow-through
 
@@ -464,11 +606,16 @@ Hard dependencies:
 - Wave 0A before graph/capsule/planner/self-improvement behavior uses
   soft-source or maintenance output
 - Wave 1 before Wave 2
+- Wave 1 before Wave 1B
+- Wave 1B before graph-backed capsules or retrieval depend on semantic
+  topic/entity/pattern relationships
 - Wave 2 before Wave 3
 - Wave 3 before Wave 4
 - Wave 3 integration/proof harness before the comprehensive Phase 2 eval slice
 - comprehensive Phase 2 eval/no-dark-data proof before Wave 4 planner surfacing
 - Wave 4 before Wave 5
+- Wave 5 skill parity gates before any claim that skills meet or exceed
+  Gbrain/Hermes-class lifecycle capability
 - Wave 3 before Wave 6
 - Waves 1 through 6 before Wave 7 enforcement
 
@@ -714,13 +861,11 @@ For each implementation wave:
   grouped as counts, and the direct action path opens the Proactivity Inbox
   detail/send surface. Proof artifact target:
   `.artifacts/model-memory/phase2-proactivity-daily-review-heartbeat-proof/<timestamp>/`.
-- Slice 59 adds usefulness tuning from bounded UX events and explicit feedback.
-  The system records viewed/opened/approved/sent/dismissed/snoozed/ignored and
-  useful/not-useful signals as control-plane metadata, reports quality by
-  source/lane/message class, downranks or suppresses noisy candidates, and
-  exposes "why not shown" diagnostics without semantic truth writes. Proof
-  artifact target:
-  `.artifacts/model-memory/phase2-proactivity-usefulness-tuning-proof/<timestamp>/`.
+- Slice 59's deterministic usefulness-tuning runtime was removed during the
+  pre-Milestone-4 deterministic judgment debt pass. Explicit feedback remains
+  control-plane metadata and safety/suppression evidence, but deterministic
+  usefulness ranking is not a live compatibility path and must not be restored
+  without a new decision record.
 - The proactivity product-correctness remediation after Slice 59 fixes the
   broken user-facing experience before any more capability expansion. Approve &
   Send now resolves the same actionable item rendered in the inbox, sends the
@@ -861,6 +1006,59 @@ For each implementation wave:
   normal workflow, not only in the inbox.
 - Persisted bounded activity records and lifecycle overrides must survive
   refresh/restart and auto-retire handled/superseded items.
+
+## Deterministic judgment debt pruning before Milestone 4
+
+- Remaining deterministic semantic/value judgment is deletion or model-pivot
+  debt, not compatibility debt.
+- Hybrid retrieval remains an explicit exception for candidate recall and pack
+  assembly: lexical matches, graph/projection cues, source-lineage, recency,
+  explicit refs/scopes/classes, vector recall, and structural pack construction
+  are deterministic recall mechanics.
+- Final semantic selection for context injection, capsules, candidate
+  usefulness, admission/reconciliation beyond exact structural guardrails,
+  proactivity surfacing, skills classification, and visible card copy is
+  model-owned or operator-owned.
+- Proof/model plumbing can keep semantic contract names only when it builds
+  prompt schemas, validates model output, resolves scripted model fixtures, or
+  compares proof artifacts; it cannot be a live fallback authority.
+- Tests that assert old deterministic usefulness, ranking, classification,
+  semantic supersession, or deterministic visible copy must be removed or
+  rewritten. Strict audit must be paired with behavior review so debt is not
+  hidden by renaming, helper reshuffling, or compatibility wrappers.
+
+## Model-owned lane validation before Milestone 4
+
+- The next validation pass reuses the optimized MMV2 path across Codex,
+  OpenClaw ordinary turns, long prompts, documents, daily summary files,
+  correction/reconciliation, collision adjudication, retrieval final inclusion,
+  and proactivity/card compatibility.
+- Codex regular memory capture is controlled by
+  `MODEL_MEMORY_CODEX_CAPTURE_ENABLED` and related cadence/budget env vars. It
+  is enabled by default with explicit opt-out and must be idempotent by
+  persisted Codex refs/hashes.
+- Long Codex and OpenClaw prompts use document-style source windows. The
+  windowing is structural and minimally redacted; it must not select
+  semantically interesting chunks before model review.
+- The proof matrix must report packet/window counts, routing counts,
+  extraction counts, canonical/admission counts, TTL decisions,
+  reconciliation/collision outcomes, final writes or pending/quarantine state,
+  model routes, source authority, artifact paths, and safety flags.
+- Daily summary memory files should either be ingested as document-like MMV2
+  sources with file refs/hashes or explicitly documented as startup-context-only
+  with no unintended durable write path.
+- Non-UI model-path quality validation must include:
+  - Codex user-turn-rich sessions with long prompts, scoped decisions,
+    temporary/TTL decisions, and no-memory controls
+  - Codex mixed sessions with assistant finals, command failures, validation
+    failures, touched areas, and fixed reruns
+  - realistic large daily summary files with durable, scoped, temporary, stale,
+    private/no-capture, and no-execution sections
+  - daily-summary recall scoring that distinguishes top-level memory count from
+    composite component coverage
+  - assistant/tool positive and negative evidence controls
+  - a qualitative recall audit comparing raw source, bounded packet, model
+    output, admission/reconciliation/write result, and the observed loss point
 
 ## Explicitly deferred
 

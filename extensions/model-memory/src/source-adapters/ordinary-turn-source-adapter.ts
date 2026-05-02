@@ -54,7 +54,12 @@ function buildDeterministicId(prefix: string, input: string): string {
 }
 
 function normalizeTurnText(text: string): string {
-  return text.replace(/\r\n/g, "\n").replace(/\r/g, "\n").replace(/\s+/g, " ").trim();
+  return text
+    .replace(/\r\n/g, "\n")
+    .replace(/\r/g, "\n")
+    .replace(/[ \t]+$/gm, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
 }
 
 function countWords(text: string): number {
@@ -69,25 +74,47 @@ function redactTurnBlockText(block: TurnBlockDescriptor): string {
   return `${block.speaker}: [redacted ordinary_turn_message sha256=${hashValue(block.text)} chars=${block.text.length}]`;
 }
 
+function splitTextByWordLimit(text: string, maxWords: number): string[] {
+  if (maxWords <= 0 || countWords(text) <= maxWords) {
+    return [text];
+  }
+  const words = text.split(/\s+/).filter((word) => word.length > 0);
+  const chunks: string[] = [];
+  for (let index = 0; index < words.length; index += maxWords) {
+    chunks.push(words.slice(index, index + maxWords).join(" "));
+  }
+  return chunks.length > 0 ? chunks : [text];
+}
+
 function buildMessageBlocks(input: OrdinaryTurnSourceInput): TurnBlockDescriptor[] {
   const messages: TurnContextMessage[] = [
     ...(input.recentContext ?? []),
     { speaker: input.currentTurnSpeaker ?? "user", text: input.currentTurnText },
   ];
+  const maxWordsPerBlock = input.maxWordsPerWindow ?? DEFAULT_MAX_WORDS_PER_WINDOW;
+  const blocks: TurnBlockDescriptor[] = [];
 
-  return messages.map((message, index) => {
+  for (const [messageIndex, message] of messages.entries()) {
     const normalizedMessage = normalizeTurnText(message.text);
-    const text = `${message.speaker}: ${normalizedMessage}`;
-    return {
-      id: buildDeterministicId("block", `${index}:${message.speaker}:${text}`),
-      kind: "message",
-      speaker: message.speaker,
-      headingPath: [],
-      lineStart: index + 1,
-      lineEnd: index + 1,
-      text,
-    };
-  });
+    const chunks = splitTextByWordLimit(normalizedMessage, Math.max(maxWordsPerBlock - 1, 1));
+    for (const [chunkIndex, chunk] of chunks.entries()) {
+      const text = `${message.speaker}: ${chunk}`;
+      blocks.push({
+        id: buildDeterministicId(
+          "block",
+          `${messageIndex}:${chunkIndex}:${message.speaker}:${text}`,
+        ),
+        kind: "message",
+        speaker: message.speaker,
+        headingPath: [],
+        lineStart: blocks.length + 1,
+        lineEnd: blocks.length + 1,
+        text,
+      });
+    }
+  }
+
+  return blocks;
 }
 
 function buildWindowRecord(

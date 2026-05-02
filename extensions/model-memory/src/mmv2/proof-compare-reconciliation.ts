@@ -2,7 +2,7 @@ import type { CanonicalCandidateBatch, ReconciliationDecision } from "./contract
 import {
   compareExpectedCollection,
   includesAll,
-  semanticallyMatchesText,
+  normalizedTextIncludes,
   type MmV2PhaseComparisonResult,
 } from "./proof-compare-shared.ts";
 import type { MmV2PhaseExpectation, MmV2ReconciliationExpectation } from "./proof-corpus.ts";
@@ -25,7 +25,7 @@ export function compareReconciliationPhase(
       const canonicalText = canonicalById.get(decision.candidate_id)?.canonical_text ?? "";
       return (
         (expected.candidateCanonicalTextIncludes === undefined ||
-          semanticallyMatchesText(canonicalText, expected.candidateCanonicalTextIncludes)) &&
+          normalizedTextIncludes(canonicalText, expected.candidateCanonicalTextIncludes)) &&
         (expected.decision === undefined || decision.decision === expected.decision) &&
         (expected.conflictType === undefined || decision.conflict_type === expected.conflictType) &&
         (expected.targetMemoryIdsInclude === undefined ||
@@ -33,7 +33,7 @@ export function compareReconciliationPhase(
         (expected.supersedesMemoryIdsInclude === undefined ||
           includesAll(decision.supersedes_memory_ids, expected.supersedesMemoryIdsInclude)) &&
         (expected.rationaleIncludes === undefined ||
-          semanticallyMatchesText(decision.rationale, expected.rationaleIncludes))
+          normalizedTextIncludes(decision.rationale, expected.rationaleIncludes))
       );
     },
     describeActual: (actualItem) => ({

@@ -18,7 +18,7 @@ describe("phase2 autosend simulation observability", () => {
         sessionKey: "main",
         simulationReportVisible: true,
         comparisonVisible: true,
-        usefulnessSignalsVisible: true,
+        controlSignalsVisible: true,
         terminalEvidence: true,
       },
     });
@@ -42,7 +42,7 @@ describe("phase2 autosend simulation observability", () => {
     ["dismissed", "dismissed", "dismissedCount"],
     ["snoozed", "snoozed", "snoozedCount"],
     ["blocked", "blocked", "blockedCount"],
-  ] as const)("tracks %s usefulness signal", async (status, decision, countKey) => {
+  ] as const)("tracks %s explicit control signal", async (status, decision, countKey) => {
     const report = await buildPhase2AutoSendSimulationObservabilityReport({
       queueItemStatus: status,
     });

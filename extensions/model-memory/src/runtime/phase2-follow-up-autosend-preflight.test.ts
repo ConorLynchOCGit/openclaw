@@ -49,18 +49,20 @@ describe("phase2 follow-up autosend preflight", () => {
     const report = await buildPhase2FollowUpAutoSendPreflightReport(await greenInput());
 
     expect(report.decision).toBe("follow_up_preflight_report_only");
-    expect(report.candidate.classification).toBe("manual_only");
+    expect(report.candidate.preflightState).toBe("manual_only");
     expect(report.candidate.deliveryMode).toBe("manual_only");
     expect(report.telemetry.followUpAutoSendOccurred).toBe(false);
     assertPhase2FollowUpAutoSendPreflightReportOnly(report);
   });
 
-  it("can classify a follow-up as a future candidate without delivery", async () => {
+  it("blocks future candidacy until a model-owned review exists", async () => {
     const report = await buildPhase2FollowUpAutoSendPreflightReport(
       await greenInput({ evaluateFutureCandidate: true }),
     );
 
-    expect(report.candidate.classification).toBe("future_auto_send_candidate");
+    expect(report.decision).toBe("blocked");
+    expect(report.candidate.preflightState).toBe("blocked");
+    expect(report.telemetry.blockedReasonCodes).toContain("future_candidate_model_review_required");
     expect(report.candidate.reportOnly).toBe(true);
     expect(report.candidate.wouldDeliverAutomatically).toBe(false);
     expect(report.telemetry.manualSendRequired).toBe(true);
@@ -84,7 +86,7 @@ describe("phase2 follow-up autosend preflight", () => {
       { env: { MODEL_MEMORY_PHASE2_FOLLOW_UP_AUTOSEND_PREFLIGHT_DISABLED: "1" } },
       "rollback_blocks_candidate",
     ],
-    ["semantic truth write", { forceSemanticTruthWrite: true }, "feedback_not_semantic_truth"],
+    ["canonical truth write", { forceCanonicalTruthWrite: true }, "feedback_not_canonical_truth"],
   ] satisfies Array<[string, Phase2FollowUpAutoSendPreflightInput, string]>)(
     "blocks %s",
     async (_name, overrides, reasonCode) => {
@@ -92,7 +94,7 @@ describe("phase2 follow-up autosend preflight", () => {
         await greenInput({ evaluateFutureCandidate: true, ...overrides }),
       );
 
-      expect(report.candidate.classification).toBe("blocked");
+      expect(report.candidate.preflightState).toBe("blocked");
       expect(report.telemetry.blockedReasonCodes).toContain(reasonCode);
       expect(report.telemetry.followUpAutoSendOccurred).toBe(false);
     },
@@ -108,17 +110,18 @@ describe("phase2 follow-up autosend preflight", () => {
     expect(report.telemetry.followUpAutoSendOccurred).toBe(false);
   });
 
-  it("requires positive feedback for future candidacy", async () => {
+  it("does not use positive feedback counts as future-candidacy judgment", async () => {
     const feedbackReport = await buildPhase2ProactivityFeedbackReport({
       now: new Date("2026-04-27T02:00:00.000Z"),
-      controls: ["not_useful"],
+      controls: ["useful"],
     });
     const report = await buildPhase2FollowUpAutoSendPreflightReport(
       await greenInput({ evaluateFutureCandidate: true, feedbackReport }),
     );
 
-    expect(report.candidate.classification).toBe("blocked");
-    expect(report.telemetry.blockedReasonCodes).toContain("positive_feedback_required");
+    expect(report.candidate.preflightState).toBe("blocked");
+    expect(report.telemetry.positiveFeedbackCount).toBe(1);
+    expect(report.telemetry.blockedReasonCodes).toContain("future_candidate_model_review_required");
   });
 
   it("writer emits bounded artifacts without prohibited content", async () => {

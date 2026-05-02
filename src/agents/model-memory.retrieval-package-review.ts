@@ -2,6 +2,7 @@ import type { OpenClawConfig } from "../config/config.ts";
 import {
   buildRetrievalPackArtifact,
   executeRetrieval,
+  ExecutorBackedRetrievalFinalInclusionReviewer,
   ExecutorBackedRetrievalRequestInterpreter,
   rebuildDerivedRuntimeState,
   type ModelMemoryObjectRecord,
@@ -218,11 +219,17 @@ export async function runModelMemoryRetrievalPackageReview(input: {
       },
     });
     const interpreter = new ExecutorBackedRetrievalRequestInterpreter(executor);
+    const finalInclusionReviewer = new ExecutorBackedRetrievalFinalInclusionReviewer(executor, {
+      modelId: input.modelRef,
+      reasoningEffort: "low",
+    });
     const retrieval = await executeRetrieval({
       envelope,
       interpreter,
       memoryObjects: rebuild.memoryObjects,
       modelId: input.modelRef,
+      finalInclusionReviewer,
+      finalInclusionModelId: input.modelRef,
       createdAt: new Date(),
       projectionVersions: rebuild.projectionVersions,
     });

@@ -54,8 +54,6 @@ export function buildMemoryInjectionObservedSignal(
       status: "active" | "superseded" | "conflicted" | "quarantined" | "deleted";
       kind?: string | null;
       artifact_type?: string | null;
-      rank?: number | null;
-      score?: number | null;
       conflict_marked?: boolean;
     }>;
     promptSectionId?: string;
@@ -88,8 +86,6 @@ export function buildMemoryRetrievalObservedSignal(
     queryHash: string;
     retrievedMemoryIds: string[];
     selectedMemoryIds?: string[];
-    scores?: Record<string, number>;
-    ranks?: Record<string, number>;
     reasonCodes?: Record<string, string[]>;
   },
 ): MemoryOpsSignal {
@@ -103,8 +99,6 @@ export function buildMemoryRetrievalObservedSignal(
       query_hash: input.queryHash,
       retrieved_memory_ids: input.retrievedMemoryIds,
       selected_memory_ids: input.selectedMemoryIds ?? [],
-      scores: input.scores ?? {},
-      ranks: input.ranks ?? {},
       reason_codes: input.reasonCodes ?? {},
     },
     retention: { policy: "aggregate_only", ttl_seconds: 30 * 24 * 60 * 60 },

@@ -97,10 +97,6 @@ export const runLiveDocumentShadow = bindFacadeFunction(
   loadLegacyFacadeModule,
   "runLiveDocumentShadow",
 );
-export const selectDeterministicAttachCollisionCandidate = bindFacadeFunction(
-  loadLegacyFacadeModule,
-  "selectDeterministicAttachCollisionCandidate",
-);
 export const toBoundedCandidateAdjudicationCandidatesFromRetained = bindFacadeFunction(
   loadLegacyFacadeModule,
   "toBoundedCandidateAdjudicationCandidatesFromRetained",

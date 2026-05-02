@@ -19,6 +19,8 @@ const allowedNonExtensionTests = new Set<string>([
   "src/commands/onboard-channels.e2e.test.ts",
   "src/gateway/hooks.test.ts",
   "src/infra/outbound/deliver.test.ts",
+  "src/infra/model-memory-codex-capture-runtime.test.ts",
+  "src/infra/model-memory-proactivity-runtime.test.ts",
   "src/plugins/interactive.test.ts",
   "src/plugins/contracts/discovery.contract.test.ts",
   "src/plugin-sdk/telegram-command-config.test.ts",

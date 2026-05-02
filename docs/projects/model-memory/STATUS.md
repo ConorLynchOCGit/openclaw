@@ -7,7 +7,31 @@ title: "Model Memory Status"
 
 ## Overall
 
-State: `phase2_authorized`
+State: `phase2_model_owned_judgment_policy_active`
+
+2026-05-01 model-owned judgment policy update:
+
+- the pre-Milestone-4 deterministic-judgment removal pass is now a standing
+  Phase 2 rule, tracked in
+  [Phase 2 Model-Owned Judgment Policy](/projects/model-memory/specs/phase-2-model-owned-judgment-policy)
+- remaining graph, capsule, retrieval, planner, skills, tool synthesis, and
+  self-improvement work must keep deterministic code limited to structure,
+  safety, provenance, exact refs, caps, route isolation, lifecycle state,
+  hybrid recall, and post-model validation
+- semantic admission, reconciliation/collision beyond exact refs, topic/entity
+  identity, semantic graph edges, capsule/context final inclusion,
+  skill/proactivity classification, surfacing value, visible copy, promotion,
+  and usage-based improvement remain model-owned or operator-owned
+- the skills bucket now has explicit
+  [Skill Quality Parity Gates](/projects/skills-system/specs/skill-quality-parity-gates)
+  for eval generation/execution, resolver/trigger tests,
+  check-resolvable-style reachability/overlap, package E2E,
+  install/canary/rollback, usage-based self-improvement, approval-gated
+  promotion, and cross-runtime install
+- Milestone 4 should begin from model-owned candidate/retrieval/capture paths
+  and add the first enforceable skill quality parity gate; it must not optimize
+  deterministic fallback skill classification, deterministic surfacing, or
+  deterministic visible card copy
 
 2026-04-25 Phase 2 spec decision update:
 

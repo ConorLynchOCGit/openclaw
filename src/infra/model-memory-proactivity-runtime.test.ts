@@ -2,11 +2,19 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import {
+  buildWorkEpisodeOutcomePack,
+  writeWorkEpisodeOutcomePackArtifact,
+} from "../../extensions/model-memory/runtime-api.ts";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import {
   buildHeartbeatProactivityReviewText,
+  buildCandidateReviewRecentEpisodeActivities,
   buildModelMemoryProactivityRuntimeState,
   createSkillifierDraftForCandidate,
+  loadLatestWorkEpisodeOutcomePack,
+  readPersistedModelMemoryProactivityProjection,
+  selectCandidateReviewEventActivities,
   transcriptMessagesToHighContextCandidateReviewActivities,
 } from "./model-memory-proactivity-runtime.js";
 
@@ -191,7 +199,75 @@ afterEach(async () => {
 });
 
 describe("model-memory proactivity runtime", () => {
-  it("builds same-session opportunities from authoritative assistant transcript history", async () => {
+  it("reads persisted proactivity projections without rebuilding runtime state", async () => {
+    const sandbox = await createRuntimeSandbox();
+    tmpDirs.push(sandbox.tmpDir);
+    const projection = {
+      schemaVersion: "phase2_proactivity_read_projection.v1",
+      generatedAt: "2026-05-02T02:00:00.000Z",
+      projectId: "openclaw",
+      sessionKey: "main",
+      productSurfacingReport: {
+        reportId: "projection-product-report",
+        decision: "product_queue_enabled",
+        queue: {
+          queueId: "projection-queue",
+          surface: "chat",
+          items: [{ queueItemId: "projection-item", workItemId: "work-item-1" }],
+          generatedAt: "2026-05-02T02:00:00.000Z",
+        },
+      },
+      inboxReport: {
+        reportId: "projection-inbox-report",
+        decision: "inbox_visible",
+        digest: { items: [{ itemId: "projection-inbox-item" }] },
+      },
+      heartbeatReport: {
+        reportId: "projection-heartbeat-report",
+        decision: "heartbeat_proactivity_ready",
+        surface: { topItems: [] },
+      },
+    };
+    await fs.writeFile(
+      path.join(sandbox.tmpDir, "model-memory-proactivity-state.json"),
+      `${JSON.stringify({
+        schemaVersion: "phase2_proactivity_activity_store.v1",
+        records: [],
+        liveEvents: [],
+        lifecycleOverrides: [],
+        authoritativeSyncBySessionKey: {},
+        workEpisodeOutcomePacks: [
+          {
+            episodeId: "episode-1",
+            contentHash: "hash-1",
+            packPath: "/tmp/work-episode-outcome-pack.json",
+            projectId: "openclaw",
+            runtime: "codex",
+            outcomeStatus: "completed",
+            completedAt: "2026-05-02T01:00:00.000Z",
+            indexedAt: "2026-05-02T01:01:00.000Z",
+            reviewStatus: "reviewed",
+            eligibilityStatus: "eligible",
+            eligibilityReasonCodes: [],
+          },
+        ],
+        readProjection: projection,
+      })}\n`,
+      "utf8",
+    );
+
+    const report = await readPersistedModelMemoryProactivityProjection({
+      cfg: sandbox.cfg,
+      sessionKey: "main",
+      projectId: "openclaw",
+    });
+
+    expect(report.decision).toBe("projection_ready");
+    expect(report.projection?.productSurfacingReport.queue.queueId).toBe("projection-queue");
+    expect(report.workEpisodeOutcomePackIndex).toHaveLength(1);
+  });
+
+  it("keeps authoritative assistant transcript history as structural candidate-review input", async () => {
     const sandbox = await createRuntimeSandbox();
     tmpDirs.push(sandbox.tmpDir);
     await seedMainSessionTranscript(sandbox);
@@ -220,22 +296,21 @@ describe("model-memory proactivity runtime", () => {
         (record) => record.sourceMessageId === "msg_commentary_runtime_reset",
       ),
     ).toBeUndefined();
-    expect(state.extractionReport.telemetry.candidateCount).toBeGreaterThan(0);
-    expect(state.growthLoopReport.reversePrompts.length).toBeGreaterThan(0);
-    expect(state.productSurfacingReport.queue.items).toEqual(
+    expect(state.extractionReport.telemetry.candidateCount).toBe(0);
+    expect(state.growthLoopReport.reversePrompts).toHaveLength(0);
+    expect(state.productSurfacingReport.queue.items).not.toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          status: "blocked",
-          layer: "diagnostic",
           sourceRefs: expect.arrayContaining([
             "chat://main/assistant_turn/msg_final_runtime_reset",
-          ]),
-          blockedReasonCodes: expect.arrayContaining([
-            "presentation:model_authored_visible_copy_required",
           ]),
         }),
       ]),
     );
+    expect(state.productSurfacingReport.queue.items[0]).toMatchObject({
+      status: "blocked",
+      layer: "diagnostic",
+    });
   });
 
   it("does not build a visible heartbeat review from deterministic-only card text", async () => {
@@ -287,6 +362,76 @@ describe("model-memory proactivity runtime", () => {
         (item) => item.skillCandidate?.skillCandidateId === skillCandidateId,
       ),
     ).toBe(false);
+  });
+
+  it("keeps model-reviewed proactive plans available on normal queue reloads", async () => {
+    const sandbox = await createRuntimeSandbox();
+    tmpDirs.push(sandbox.tmpDir);
+    await seedMainSessionTranscript(sandbox);
+    await fs.writeFile(
+      path.join(path.dirname(sandbox.storePath), "model-memory-proactivity-state.json"),
+      `${JSON.stringify({
+        schemaVersion: "phase2_proactivity_activity_store.v1",
+        records: [],
+        liveEvents: [],
+        lifecycleOverrides: [],
+        authoritativeSyncBySessionKey: {},
+        modelReviewedOpportunities: [
+          {
+            sourceFamily: "pattern_or_followup",
+            opportunityClass: "proactive_plan",
+            opportunityId: "model-reviewed-plan-1",
+            projectId: "openclaw",
+            sessionKey: "main",
+            title: "Review persisted model-owned proactivity plan",
+            whyNow: "A previous model review found a bounded follow-up plan.",
+            proposedNextStep: "Inspect the persisted plan before running another review.",
+            expectedUserValue: "Avoids losing model-reviewed work between UI refreshes.",
+            evidenceSummary: "Model-reviewed bounded episode proposal from OpenClaw activity.",
+            confidence: "high",
+            sourceRefs: ["candidate-review-packet://persisted-plan"],
+            sourceProfileIds: ["cited_assistant_answer"],
+            authorityTiers: ["cited_soft"],
+            contentHashes: ["persisted-plan-content"],
+            proofHashes: ["persisted-plan-proof"],
+            noDarkDataStatus: "pass",
+            blockedReasonCodes: ["model_reviewed_candidate", "high_context_review"],
+            workItemKind: "planning_request",
+            generatedAt: "2026-04-28T09:05:00.000Z",
+          },
+        ],
+        skillCandidates: [],
+        skillPackageDrafts: [],
+        candidateReviewEpisodeKeys: [],
+      })}\n`,
+      "utf8",
+    );
+
+    const state = await buildModelMemoryProactivityRuntimeState({
+      cfg: sandbox.cfg,
+      sessionKey: "main",
+      projectId: "openclaw",
+      operatorId: "operator-conor",
+      userId: "conor",
+      recipientId: "conor",
+    });
+
+    expect(state.ledgerReport.ledger.entries).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          opportunityId: "model-reviewed-plan-1",
+          sourceFamily: "pattern_or_followup",
+          opportunityClass: "proactive_plan",
+        }),
+      ]),
+    );
+    expect(state.productSurfacingReport.queue.items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          opportunityId: "model-reviewed-plan-1",
+        }),
+      ]),
+    );
   });
 
   it("persists one bounded skillifier draft and surfaces it through the same candidate id", async () => {
@@ -497,6 +642,546 @@ describe("model-memory proactivity runtime", () => {
     expect(activities[1]?.boundedText).toContain("important diagnosis is in commentary");
   });
 
+  it("excludes operational runtime and heartbeat scaffold messages from high-context candidate review", () => {
+    const activities = transcriptMessagesToHighContextCandidateReviewActivities({
+      sessionKey: "main",
+      messages: [
+        {
+          role: "assistant",
+          content: [{ type: "text", text: "[Memory Activity] ordinary turn capture started" }],
+          model: "memory-activity",
+          __openclaw: { kind: "model_memory_activity" },
+          timestamp: Date.parse("2026-05-01T11:00:00.000Z"),
+        },
+        {
+          role: "user",
+          content: [
+            {
+              type: "text",
+              text: "What would help this user today?\nReply with up to 3 concise items.\nIf the untrusted heartbeat context includes proactivityItems, choose from those items.",
+            },
+          ],
+          timestamp: Date.parse("2026-05-01T11:00:05.000Z"),
+        },
+        {
+          role: "assistant",
+          content: [{ type: "text", text: "Turn activity: model started" }],
+          model: "turn-activity",
+          __openclaw: { kind: "turn_activity" },
+          timestamp: Date.parse("2026-05-01T11:00:06.000Z"),
+        },
+        {
+          role: "assistant",
+          content: [
+            {
+              type: "text",
+              text: "- **Add a packet quality gate before candidate review**\n- Why now: this is a heartbeat-generated card and should not become the next review input.",
+              textSignature: JSON.stringify({
+                v: 1,
+                id: "msg_heartbeat_card_response",
+                phase: "final_answer",
+              }),
+            },
+          ],
+          timestamp: Date.parse("2026-05-01T11:00:07.000Z"),
+        },
+        {
+          role: "user",
+          content: [
+            {
+              type: "text",
+              text: "The Work Queue candidate input should use the current bounded episode, not broad mixed tails.",
+            },
+          ],
+          timestamp: Date.parse("2026-05-01T11:01:00.000Z"),
+          __openclaw: { id: "user-real-input" },
+        },
+        {
+          role: "assistant",
+          content: [
+            {
+              type: "text",
+              text: "Understood.",
+              textSignature: JSON.stringify({
+                v: 1,
+                id: "msg_real_ack",
+                phase: "final_answer",
+              }),
+            },
+          ],
+          timestamp: Date.parse("2026-05-01T11:01:10.000Z"),
+        },
+        {
+          role: "user",
+          content: [
+            {
+              type: "text",
+              text: "For candidate review evidence only, consider this repeatable workflow. Safety constraint for this chat response: do not edit files; reply with one short acknowledgement only.",
+            },
+          ],
+          timestamp: Date.parse("2026-05-01T11:02:00.000Z"),
+        },
+        {
+          role: "assistant",
+          content: [
+            {
+              type: "text",
+              text: "Understood.",
+              textSignature: JSON.stringify({
+                v: 1,
+                id: "msg_proof_ack",
+                phase: "final_answer",
+              }),
+            },
+          ],
+          timestamp: Date.parse("2026-05-01T11:02:10.000Z"),
+        },
+        {
+          role: "user",
+          content: [
+            {
+              type: "text",
+              text: "Start a bounded open in current chat for this proactive work item.\nTitle: Memory Capture Skip Noise Suppression Decision\nPurpose: Clarifies whether this work should be rescoped.",
+            },
+          ],
+          timestamp: Date.parse("2026-05-01T11:03:00.000Z"),
+        },
+        {
+          role: "assistant",
+          content: [
+            {
+              type: "text",
+              text: "Understood.",
+              textSignature: JSON.stringify({
+                v: 1,
+                id: "msg_handoff_ack",
+                phase: "final_answer",
+              }),
+            },
+          ],
+          timestamp: Date.parse("2026-05-01T11:03:10.000Z"),
+        },
+      ],
+    });
+
+    expect(activities.map((activity) => activity.ref)).toEqual([
+      "chat://main/user_turn/user-real-input",
+      "chat://main/assistant_turn/msg_real_ack",
+    ]);
+  });
+
+  it("assembles heartbeat candidate review from one bounded episode instead of unrelated Codex tails", () => {
+    const result = buildCandidateReviewRecentEpisodeActivities({
+      openClawActivities: [
+        {
+          ref: "chat://main/user_turn/recent-goal",
+          role: "user",
+          kind: "ask",
+          boundedText: "Fix the Work Queue duplicate surfacing issue before more UX polish.",
+          sourceRuntime: "openclaw",
+          recordedAt: "2026-05-01T10:00:00.000Z",
+        },
+        {
+          ref: "chat://main/assistant_turn/recent-plan",
+          role: "assistant",
+          kind: "final",
+          boundedText: "Diagnose whether candidate review packet assembly is mixing episodes.",
+          sourceRuntime: "openclaw",
+          recordedAt: "2026-05-01T10:01:00.000Z",
+        },
+      ],
+      codexActivities: [
+        {
+          ref: "codex://old-session.jsonl#41",
+          role: "user",
+          kind: "ask",
+          boundedText: "An old unrelated Codex prompt about a different implementation.",
+          sourceRuntime: "codex",
+          recordedAt: "2026-05-01T08:00:00.000Z",
+        },
+      ],
+      heartbeatActivities: [
+        {
+          ref: "gateway://heartbeat/last/1770000000000",
+          role: "system_event",
+          kind: "result_summary",
+          boundedText: "Heartbeat started after the current Work Queue discussion.",
+          sourceRuntime: "openclaw",
+          recordedAt: "2026-05-01T10:02:00.000Z",
+        },
+      ],
+      openClawTurnWindow: 12,
+      codexTurnWindow: 24,
+      packetMaxChars: 160_000,
+      heartbeatIsReviewTrigger: true,
+    });
+
+    expect(result.report.primaryRuntime).toBe("openclaw");
+    expect(result.report.selectedCounts).toMatchObject({
+      openclaw: 2,
+      codex: 0,
+      heartbeat: 1,
+      total: 3,
+    });
+    expect(result.report.droppedCounts.codexOutsideEpisode).toBe(1);
+    expect(result.activities.map((activity) => activity.ref)).toEqual([
+      "chat://main/user_turn/recent-goal",
+      "chat://main/assistant_turn/recent-plan",
+      "gateway://heartbeat/last/1770000000000",
+    ]);
+  });
+
+  it("keeps temporally adjacent Codex activity as same-episode evidence", () => {
+    const result = buildCandidateReviewRecentEpisodeActivities({
+      openClawActivities: [
+        {
+          ref: "chat://main/user_turn/current-goal",
+          role: "user",
+          kind: "ask",
+          boundedText: "Use the current Codex evidence while diagnosing the Work Queue issue.",
+          sourceRuntime: "openclaw",
+          recordedAt: "2026-05-01T10:00:00.000Z",
+        },
+        {
+          ref: "chat://main/assistant_turn/current-summary",
+          role: "assistant",
+          kind: "final",
+          boundedText: "The current Codex run found duplicate surfacing in the active queue.",
+          sourceRuntime: "openclaw",
+          recordedAt: "2026-05-01T10:10:00.000Z",
+        },
+      ],
+      codexActivities: [
+        {
+          ref: "codex://current-session.jsonl#8",
+          role: "tool_summary",
+          kind: "result_summary",
+          boundedText: "Command pnpm test:file ui/src/ui/views/work-queue.test.ts passed.",
+          sourceRuntime: "codex",
+          recordedAt: "2026-05-01T10:05:00.000Z",
+        },
+      ],
+      openClawTurnWindow: 12,
+      codexTurnWindow: 24,
+      packetMaxChars: 160_000,
+      heartbeatIsReviewTrigger: true,
+    });
+
+    expect(result.report.selectedCounts.codex).toBe(1);
+    expect(result.report.reasonCodes).toContain("codex_within_episode_window");
+    expect(result.activities.map((activity) => activity.ref)).toEqual([
+      "chat://main/user_turn/current-goal",
+      "codex://current-session.jsonl#8",
+      "chat://main/assistant_turn/current-summary",
+    ]);
+  });
+
+  it("uses content refs rather than heartbeat ticks for heartbeat review episode identity", () => {
+    const eventActivities = selectCandidateReviewEventActivities({
+      heartbeatIsReviewTrigger: true,
+      recentActivities: [
+        {
+          ref: "chat://main/user_turn/current-goal",
+          role: "user",
+          kind: "ask",
+          boundedText: "Fix the Work Queue duplicate candidate input path.",
+          sourceRuntime: "openclaw",
+          recordedAt: "2026-05-01T10:00:00.000Z",
+        },
+        {
+          ref: "chat://main/assistant_turn/current-summary",
+          role: "assistant",
+          kind: "final",
+          boundedText: "The episode identity should not change just because heartbeat ran.",
+          sourceRuntime: "openclaw",
+          recordedAt: "2026-05-01T10:01:00.000Z",
+        },
+        {
+          ref: "gateway://heartbeat/last/1770000000000",
+          role: "system_event",
+          kind: "result_summary",
+          boundedText: "Heartbeat tick one.",
+          sourceRuntime: "openclaw",
+          recordedAt: "2026-05-01T10:02:00.000Z",
+        },
+      ],
+    });
+
+    expect(eventActivities.map((activity) => activity.ref)).toEqual([
+      "chat://main/user_turn/current-goal",
+      "chat://main/assistant_turn/current-summary",
+    ]);
+  });
+
+  it("loads the latest work episode outcome pack as a structural candidate-review source", async () => {
+    const sandbox = await createRuntimeSandbox();
+    tmpDirs.push(sandbox.tmpDir);
+    const previousRoot = process.env.MODEL_MEMORY_PHASE2_WORK_EPISODE_OUTCOME_PACK_ROOT;
+    process.env.MODEL_MEMORY_PHASE2_WORK_EPISODE_OUTCOME_PACK_ROOT = sandbox.tmpDir;
+    try {
+      await writeWorkEpisodeOutcomePackArtifact(
+        buildWorkEpisodeOutcomePack({
+          runtime: "codex",
+          projectId: "openclaw",
+          sessionKey: "main",
+          completedAt: "2026-05-01T12:00:00.000Z",
+          userGoal: "Use outcome packs for candidate review.",
+          workSummary: "Older pack.",
+          finalOutcome: "Older candidate-review pack written.",
+          filesTouched: [],
+          testsRun: [],
+          failuresAndFixes: [],
+          unresolvedQuestions: [],
+          followUpCandidates: [],
+          skillImprovementEvidence: [],
+          sourceRefs: ["work-episode://older"],
+        }),
+        { artifactRoot: sandbox.tmpDir, timestamp: "2026-05-01T12:00:00.000Z" },
+      );
+      const latest = buildWorkEpisodeOutcomePack({
+        runtime: "codex",
+        projectId: "openclaw",
+        sessionKey: "main",
+        completedAt: "2026-05-01T13:00:00.000Z",
+        userGoal: "Use the latest outcome pack for candidate review.",
+        workSummary: "Latest pack.",
+        finalOutcome: "Latest candidate-review pack written.",
+        filesTouched: [],
+        testsRun: [],
+        failuresAndFixes: [],
+        unresolvedQuestions: [],
+        followUpCandidates: [],
+        skillImprovementEvidence: [],
+        sourceRefs: ["work-episode://latest"],
+      });
+      await writeWorkEpisodeOutcomePackArtifact(latest, {
+        artifactRoot: sandbox.tmpDir,
+        timestamp: "2026-05-01T13:00:00.000Z",
+      });
+
+      const loaded = await loadLatestWorkEpisodeOutcomePack();
+
+      expect(loaded?.episodeId).toBe(latest.episodeId);
+      expect(loaded?.sourceRefs).toEqual(["work-episode://latest"]);
+    } finally {
+      if (previousRoot === undefined) {
+        delete process.env.MODEL_MEMORY_PHASE2_WORK_EPISODE_OUTCOME_PACK_ROOT;
+      } else {
+        process.env.MODEL_MEMORY_PHASE2_WORK_EPISODE_OUTCOME_PACK_ROOT = previousRoot;
+      }
+    }
+  });
+
+  it("discovers outcome packs from the mounted host-operator repo root when no explicit pack root is configured", async () => {
+    const sandbox = await createRuntimeSandbox();
+    tmpDirs.push(sandbox.tmpDir);
+    const previousPackRoot = process.env.MODEL_MEMORY_PHASE2_WORK_EPISODE_OUTCOME_PACK_ROOT;
+    const previousHostRepoRoot = process.env.OPENCLAW_HOST_OPERATOR_REPO_ROOT;
+    const hostPackRoot = path.join(
+      sandbox.tmpDir,
+      ".artifacts",
+      "model-memory",
+      "work-episode-outcome-pack",
+    );
+    delete process.env.MODEL_MEMORY_PHASE2_WORK_EPISODE_OUTCOME_PACK_ROOT;
+    process.env.OPENCLAW_HOST_OPERATOR_REPO_ROOT = sandbox.tmpDir;
+    try {
+      const pack = buildWorkEpisodeOutcomePack({
+        runtime: "codex",
+        projectId: "openclaw",
+        sessionKey: "main",
+        completedAt: "2030-05-01T13:30:00.000Z",
+        userGoal: "Expose host repo outcome packs to the gateway runtime.",
+        workSummary: "The host-mounted repo contains a work episode outcome pack.",
+        finalOutcome: "Runtime discovery should index the host-mounted pack root.",
+        filesTouched: [
+          {
+            path: "src/infra/model-memory-proactivity-runtime.ts",
+            changeKind: "modified",
+            summary: "Added host repo outcome-pack root discovery.",
+          },
+        ],
+        testsRun: [],
+        failuresAndFixes: [],
+        unresolvedQuestions: [],
+        followUpCandidates: [],
+        skillImprovementEvidence: [],
+        sourceRefs: ["repo://src/infra/model-memory-proactivity-runtime.ts"],
+      });
+      await writeWorkEpisodeOutcomePackArtifact(pack, {
+        artifactRoot: hostPackRoot,
+        timestamp: "2030-05-01T13:30:00.000Z",
+      });
+
+      const loaded = await loadLatestWorkEpisodeOutcomePack();
+
+      expect(loaded?.episodeId).toBe(pack.episodeId);
+      expect(loaded?.sourceRefs).toEqual(["repo://src/infra/model-memory-proactivity-runtime.ts"]);
+    } finally {
+      if (previousPackRoot === undefined) {
+        delete process.env.MODEL_MEMORY_PHASE2_WORK_EPISODE_OUTCOME_PACK_ROOT;
+      } else {
+        process.env.MODEL_MEMORY_PHASE2_WORK_EPISODE_OUTCOME_PACK_ROOT = previousPackRoot;
+      }
+      if (previousHostRepoRoot === undefined) {
+        delete process.env.OPENCLAW_HOST_OPERATOR_REPO_ROOT;
+      } else {
+        process.env.OPENCLAW_HOST_OPERATOR_REPO_ROOT = previousHostRepoRoot;
+      }
+    }
+  });
+
+  it("skips model-reviewed candidate generation when no outcome pack exists", async () => {
+    const sandbox = await createRuntimeSandbox();
+    tmpDirs.push(sandbox.tmpDir);
+    await seedMainSessionTranscript(sandbox);
+    const previousEnabled = process.env.MODEL_MEMORY_PHASE2_CANDIDATE_REVIEW_ENABLED;
+    const previousRoot = process.env.MODEL_MEMORY_PHASE2_WORK_EPISODE_OUTCOME_PACK_ROOT;
+    process.env.MODEL_MEMORY_PHASE2_CANDIDATE_REVIEW_ENABLED = "1";
+    process.env.MODEL_MEMORY_PHASE2_WORK_EPISODE_OUTCOME_PACK_ROOT = path.join(
+      sandbox.tmpDir,
+      "empty-outcome-packs",
+    );
+    try {
+      const state = await buildModelMemoryProactivityRuntimeState({
+        cfg: sandbox.cfg,
+        sessionKey: "main",
+        projectId: "openclaw",
+        operatorId: "operator-conor",
+        userId: "conor",
+        recipientId: "conor",
+        candidateReviewOverride: { forceRun: true },
+      });
+
+      expect(state.candidateReviewReport).toBeNull();
+      expect(state.candidateReviewProposals).toEqual([]);
+    } finally {
+      if (previousEnabled === undefined) {
+        delete process.env.MODEL_MEMORY_PHASE2_CANDIDATE_REVIEW_ENABLED;
+      } else {
+        process.env.MODEL_MEMORY_PHASE2_CANDIDATE_REVIEW_ENABLED = previousEnabled;
+      }
+      if (previousRoot === undefined) {
+        delete process.env.MODEL_MEMORY_PHASE2_WORK_EPISODE_OUTCOME_PACK_ROOT;
+      } else {
+        process.env.MODEL_MEMORY_PHASE2_WORK_EPISODE_OUTCOME_PACK_ROOT = previousRoot;
+      }
+    }
+  });
+
+  it("indexes multiple outcome packs and marks no-op packs ineligible without raw-session fallback", async () => {
+    const sandbox = await createRuntimeSandbox();
+    tmpDirs.push(sandbox.tmpDir);
+    const packRoot = path.join(sandbox.tmpDir, "outcome-packs");
+    const previousEnabled = process.env.MODEL_MEMORY_PHASE2_CANDIDATE_REVIEW_ENABLED;
+    const previousRoot = process.env.MODEL_MEMORY_PHASE2_WORK_EPISODE_OUTCOME_PACK_ROOT;
+    delete process.env.MODEL_MEMORY_PHASE2_CANDIDATE_REVIEW_ENABLED;
+    process.env.MODEL_MEMORY_PHASE2_WORK_EPISODE_OUTCOME_PACK_ROOT = packRoot;
+    try {
+      const eligible = buildWorkEpisodeOutcomePack({
+        runtime: "codex",
+        projectId: "openclaw",
+        sessionKey: "main",
+        completedAt: "2026-05-01T14:00:00.000Z",
+        outcomeStatus: "completed",
+        workType: "implementation",
+        userGoal: "Emit structured pack evidence for proactivity review.",
+        workSummary:
+          "A meaningful task touched runtime files and produced bounded follow-up evidence.",
+        finalOutcome: "The pack is eligible for model-owned candidate review.",
+        filesTouched: [
+          {
+            path: "src/infra/model-memory-proactivity-runtime.ts",
+            changeKind: "modified",
+            summary: "Indexes work episode outcome packs.",
+          },
+        ],
+        testsRun: [],
+        failuresAndFixes: [],
+        unresolvedQuestions: [],
+        followUpCandidates: [
+          {
+            title: "Add Pack Runtime Proof",
+            rationale: "Prove pack consumption before live gateway validation.",
+            sourceRefs: ["repo://src/infra/model-memory-proactivity-runtime.ts"],
+          },
+        ],
+        skillImprovementEvidence: [],
+        sourceRefs: ["repo://src/infra/model-memory-proactivity-runtime.ts"],
+      });
+      const noOp = buildWorkEpisodeOutcomePack({
+        runtime: "openclaw",
+        projectId: "openclaw",
+        sessionKey: "main",
+        completedAt: "2026-05-01T14:05:00.000Z",
+        outcomeStatus: "completed",
+        workType: "other",
+        userGoal: "Acknowledge a message.",
+        workSummary: "Acknowledged without durable work.",
+        finalOutcome: "No durable evidence was created.",
+        filesTouched: [],
+        testsRun: [],
+        failuresAndFixes: [],
+        unresolvedQuestions: [],
+        followUpCandidates: [],
+        skillImprovementEvidence: [],
+        sourceRefs: ["work-episode://noop"],
+      });
+      await writeWorkEpisodeOutcomePackArtifact(eligible, {
+        artifactRoot: packRoot,
+        timestamp: "2026-05-01T14:00:00.000Z",
+      });
+      await writeWorkEpisodeOutcomePackArtifact(noOp, {
+        artifactRoot: packRoot,
+        timestamp: "2026-05-01T14:05:00.000Z",
+      });
+
+      const state = await buildModelMemoryProactivityRuntimeState({
+        cfg: sandbox.cfg,
+        sessionKey: "main",
+        projectId: "openclaw",
+        operatorId: "operator-conor",
+        userId: "conor",
+        recipientId: "conor",
+      });
+
+      expect(state.candidateReviewReport).toBeNull();
+      expect(state.candidateReviewCodexAdapterReport).toBeNull();
+      const persistedStore = JSON.parse(
+        await fs.readFile(
+          path.join(path.dirname(sandbox.storePath), "model-memory-proactivity-state.json"),
+          "utf8",
+        ),
+      ) as { workEpisodeOutcomePacks?: unknown[] };
+      expect(persistedStore.workEpisodeOutcomePacks).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            episodeId: eligible.episodeId,
+            reviewStatus: "unreviewed",
+            eligibilityStatus: "eligible",
+          }),
+          expect.objectContaining({
+            episodeId: noOp.episodeId,
+            reviewStatus: "unreviewed",
+            eligibilityStatus: "ineligible",
+            eligibilityReasonCodes: expect.arrayContaining(["evidence_bearing_fields_missing"]),
+          }),
+        ]),
+      );
+    } finally {
+      if (previousEnabled === undefined) {
+        delete process.env.MODEL_MEMORY_PHASE2_CANDIDATE_REVIEW_ENABLED;
+      } else {
+        process.env.MODEL_MEMORY_PHASE2_CANDIDATE_REVIEW_ENABLED = previousEnabled;
+      }
+      if (previousRoot === undefined) {
+        delete process.env.MODEL_MEMORY_PHASE2_WORK_EPISODE_OUTCOME_PACK_ROOT;
+      } else {
+        process.env.MODEL_MEMORY_PHASE2_WORK_EPISODE_OUTCOME_PACK_ROOT = previousRoot;
+      }
+    }
+  });
+
   it("suppresses internal proactivity handoff and proof prompts from transcript-derived opportunities", async () => {
     const sandbox = await createRuntimeSandbox();
     tmpDirs.push(sandbox.tmpDir);
@@ -600,8 +1285,9 @@ describe("model-memory proactivity runtime", () => {
     expect(state.productSurfacingReport.queue.items.map((item) => item.planTitle)).not.toEqual(
       expect.arrayContaining(["Staged proposal"]),
     );
-    expect(state.productSurfacingReport.queue.items.map((item) => item.planTitle)).toEqual(
+    expect(state.productSurfacingReport.queue.items.map((item) => item.planTitle)).not.toEqual(
       expect.arrayContaining(["Runtime seam reset for authoritative proactivity capture"]),
     );
+    expect(state.extractionReport.telemetry.candidateCount).toBe(0);
   });
 });

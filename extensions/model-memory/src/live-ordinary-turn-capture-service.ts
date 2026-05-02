@@ -5,6 +5,7 @@ import {
   type CapturedObjectWriteStore,
 } from "./db/captured-object-write-compatibility.ts";
 import type { LiveMemoryPersistenceResult } from "./db/mmv2-native-repository.ts";
+import type { ListExistingMemorySummariesForCaptureInput } from "./db/mmv2-native-repository/types.ts";
 import { RuntimeContextRepository } from "./db/runtime-context-repository.ts";
 import {
   emitMemoryIngestionCloseoutIfConfigured,
@@ -16,6 +17,7 @@ import {
 } from "./ingestion/shared-pipeline.ts";
 import type { ExistingMemorySummary } from "./mmv2/contracts.ts";
 import { captureOrdinaryTurnV2ForLiveStorage } from "./mmv2/live-document-ingestion.ts";
+import { createReconciliationNeighborRecallProvider } from "./mmv2/reconciliation-neighbor-recall.ts";
 import type { LiveMemoryBatch, LiveMemoryWriteResult } from "./mmv2/recording.ts";
 import { summarizePersistedLiveMemoryWriteResults } from "./mmv2/recording.ts";
 import {
@@ -29,11 +31,9 @@ import { redactOrdinaryTurnSourceEnvelopeForPersistence } from "./source-adapter
 
 type MmV2AwareCanonicalRepository = ModelMemoryCanonicalRepository & {
   listExistingMemorySummaries?: () => Promise<ExistingMemorySummary[]>;
-  listExistingMemorySummariesForCapture?: (input: {
-    projectId?: string | null;
-    sessionId?: string | null;
-    limit?: number;
-  }) => Promise<ExistingMemorySummary[]>;
+  listExistingMemorySummariesForCapture?: (
+    input: ListExistingMemorySummariesForCaptureInput,
+  ) => Promise<ExistingMemorySummary[]>;
   persistLiveMemoryBatch?: (batch: LiveMemoryBatch) => Promise<LiveMemoryPersistenceResult>;
 };
 
@@ -67,14 +67,11 @@ export async function captureOrdinaryTurnLive(input: {
         capture: input.capture.turn,
         modelId: input.capture.modelId,
         interpreter: input.capture.interpreter,
-        reconciliationNeighbors:
-          typeof canonicalRepository.listExistingMemorySummariesForCapture === "function"
-            ? await canonicalRepository.listExistingMemorySummariesForCapture({
-                projectId: input.capture.turn.projectId ?? null,
-                sessionId: input.capture.turn.sessionId ?? null,
-                limit: 240,
-              })
-            : await canonicalRepository.listExistingMemorySummaries!(),
+        reconciliationNeighborProvider: createReconciliationNeighborRecallProvider({
+          canonicalRepository,
+          projectId: input.capture.turn.projectId ?? null,
+          sessionId: input.capture.turn.sessionId ?? null,
+        }),
       })
     : await captureOrdinaryTurn(input.capture);
   const persistenceEnvelope =

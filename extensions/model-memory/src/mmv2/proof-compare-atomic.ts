@@ -4,7 +4,7 @@ import {
   matchesSubset,
   normalizeComparisonText,
   resolveSegmentText,
-  semanticallyMatchesText,
+  normalizedTextIncludes,
   type MmV2PhaseComparisonResult,
 } from "./proof-compare-shared.ts";
 import type { MmV2AtomicExpectation, MmV2PhaseExpectation } from "./proof-corpus.ts";
@@ -31,11 +31,11 @@ function matchesAtomicPayload(
     const actionMatches =
       typeof expectedAction !== "string" ||
       (typeof payload.action === "string" &&
-        semanticallyMatchesText(payload.action, expectedAction));
+        normalizedTextIncludes(payload.action, expectedAction));
     const triggerMatches =
       typeof expectedTrigger !== "string" ||
       (typeof payload.trigger === "string" &&
-        semanticallyMatchesText(payload.trigger, expectedTrigger));
+        normalizedTextIncludes(payload.trigger, expectedTrigger));
     const remainingSubset = Object.fromEntries(
       Object.entries(expected.payloadSubset).filter(
         ([key]) => key !== "action" && key !== "trigger",
@@ -86,7 +86,7 @@ export function compareAtomicPhase(
           normalizeComparisonText(expected.evidenceQuote)) &&
       (expected.kind === undefined || candidate.kind === expected.kind) &&
       (expected.normalizedStatement === undefined ||
-        semanticallyMatchesText(candidate.normalized_statement, expected.normalizedStatement)) &&
+        normalizedTextIncludes(candidate.normalized_statement, expected.normalizedStatement)) &&
       (expected.minConfidence === undefined || candidate.confidence >= expected.minConfidence) &&
       matchesAtomicPayload(candidate, expected),
     describeActual: (actualItem) => ({

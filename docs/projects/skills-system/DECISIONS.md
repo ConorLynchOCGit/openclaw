@@ -7,6 +7,101 @@ title: "Skills System Decisions"
 
 ## Accepted decisions
 
+### 2026-05-01 - Phase 2 Skills must meet model-owned parity gates
+
+Reason:
+
+- OpenClaw now has model-owned candidate discovery, model-authored cards, and
+  review-only Skillifier draft generation, but that is not yet parity with
+  mature skill systems
+- Gbrain's skillify/check-resolvable posture raises the bar beyond draft
+  generation: a proper skill needs a contract, tests, integration tests, LLM
+  evals, resolver triggers, resolver evals, reachability/overlap checks, E2E,
+  and filing/ownership coverage
+- Hermes-style learning loops add another bar: observe repeated work, distill a
+  reusable skill, reuse it automatically when relevant, refine it from
+  feedback, and keep install/edit behavior controllable
+- without explicit gates, Phase 2 could ship attractive candidate cards while
+  still lacking resolver quality, eval coverage, package E2E, canary/rollback,
+  usage-based improvement, and cross-runtime install safety
+
+Decision:
+
+- the Phase 2 skills buildout must satisfy
+  [Skill Quality Parity Gates](/projects/skills-system/specs/skill-quality-parity-gates)
+  before claiming parity with Gbrain/Hermes-class skill systems
+- Milestone 4 is expanded from generic decisioning/compliance evals into the
+  first enforceable skill quality parity gate:
+  - skill eval generation and execution
+  - resolver and trigger tests
+  - check-resolvable-style reachability and overlap reporting
+  - package E2E proof for review-only draft packages
+- later milestones complete the lifecycle:
+  - risk, vetting, provenance, and policy integration
+  - auto-draft and auto-test
+  - canary and shadow mode
+  - low-risk limited-scope promotion
+  - approval-gated cross-runtime install
+  - usage-based self-improvement and maintenance
+- skill lifecycle judgment remains model-owned or operator-owned. Deterministic
+  code may execute declared evals, compare declared expected routes, verify
+  package files, check exact refs/hashes, enforce destination permissions, and
+  apply canary/rollback state, but it must not decide skill-worthiness,
+  skill-vs-plan classification, semantic usefulness, promotion recommendation,
+  or usage-based improvement from keywords, topic overlap, scores, or telemetry
+- every surfaced skill candidate, existing-skill enhancement, merge, proactive
+  plan, demotion, promotion recommendation, and usage-based repair must be
+  traceable to bounded model review, explicit operator approval, or an
+  approved low-risk autonomy policy
+
+Implications:
+
+- Milestone 4 is not allowed to optimize old deterministic skill candidate
+  behavior or fallback card copy
+- existing-skill enhancement cards remain legitimate surfaced cards, but the
+  classification is model-owned and must be backed by explicit skill metadata,
+  prior candidate linkage, or model-reviewed evidence
+- auto-install, auto-promotion, cross-runtime install, and self-improvement are
+  later gates with canary/rollback and approval boundaries, not Milestone 4
+  shortcuts
+- Skills Studio remains a visibility/control layer over the lifecycle; it does
+  not replace evals, resolver tests, E2E, canary, rollback, or promotion gates
+
+### 2026-04-29 - Deterministic judgment compatibility paths are removal debt
+
+Reason:
+
+- recent repairs proved that deterministic value judgment kept reappearing in
+  new seams: packet selection, card fallback text, candidate classification,
+  and test fixtures
+- keeping old behavior behind compatibility helpers would preserve the same
+  product failure under cleaner names
+
+Decision:
+
+- remaining deterministic judgment in Skills/Proactivity and related
+  Model Memory Phase 1/2 paths must be deleted or moved behind bounded
+  model-owned review
+- renaming, moving, or wrapping deterministic usefulness, relevance,
+  classification, or visible-copy logic does not count as elimination
+- deterministic code may still enforce ids, refs, hashes, schemas, caps,
+  redaction, provenance, cooldowns, budgets, explicit-key dedupe, source
+  authority, and unsafe-output demotion
+- hybrid retrieval is a narrow exception: deterministic string search, recency,
+  graph/projection cues, and source-authority signals remain valid for
+  assembling candidate memories from the database, but not for final semantic
+  value judgment about skills, proactive plans, visible cards, or final context
+  pack contents
+- visible skill/proactivity cards must use model-authored primary copy or be
+  demoted/hidden
+- candidate discovery and classification must use high-context model-reviewed
+  work episodes; deterministic code may validate and dedupe proposals but must
+  not decide candidate usefulness
+- tests that assert old deterministic behavior are debt and must be deleted or
+  rewritten to assert model-owned judgment boundaries and guardrail behavior
+- strict audit passing is required but not enough unless review confirms the
+  old runtime behavior is gone
+
 ### 2026-04-29 - Candidate discovery needs auditable validation before UI proof
 
 Reason:
@@ -337,9 +432,9 @@ Decision:
   remain forbidden inputs and artifacts
 - candidate ids must remain canonical across inline surfacing, heartbeat,
   inbox, and handoff
-- recurring work updates the existing canonical candidate when the
-  deterministic intent key matches instead of creating duplicate actionable
-  rows
+- recurring work updates the existing canonical candidate when explicit
+  structural keys or model-reviewed canonical intent keys match instead of
+  creating duplicate actionable rows
 - destination capability authority remains a policy reference in this
   milestone; broad runtime writing of skill packages is still out of scope
 
@@ -479,3 +574,73 @@ Decision:
 
 - allow search-only mode when native search exists
 - fail closed on acquisition when quarantine-safe download tooling is absent
+
+### 2026-04-29 - Skill/proactivity judgment is model-owned, retrieval recall is structural
+
+Reason:
+
+- Previous skill/proactivity cards and candidate ledgers showed that
+  deterministic title generation, token-overlap grouping, and usefulness
+  templates create noisy, misleading human decision surfaces.
+- Hybrid retrieval/search still needs deterministic recall mechanics; removing
+  lexical/graph/recency candidate gathering would make context assembly worse
+  without improving judgment quality.
+
+Decision:
+
+- Skill candidate classification, new-vs-enhance-vs-merge decisions, candidate
+  usefulness, and visible card copy are model-owned presentation/judgment steps
+  with deterministic safety validation afterward.
+- Deterministic code may still assemble retrieval candidates using lexical
+  search, graph/projection cues, source-lineage, recency, refs, scopes, and
+  caps.
+- Deterministic retrieval/assembly output is evidence, not final semantic
+  truth. Final context-pack inclusion, skill candidate surfacing, and user
+  decision copy must come from a model-owned or operator-owned step.
+- Tests that preserve deterministic skill/proactivity judgment are debt and
+  must be rewritten around model-owned boundaries.
+
+### 2026-04-30 - Codex memory capture is evidence for later skill review
+
+Reason:
+
+- Codex sessions contain much of the implementation/debugging work that later
+  becomes reusable skill or proactive-plan material.
+- The memory system now has a model-owned MMV2 capture path for long Codex
+  prompts and assistant/tool evidence; skill review should reuse that evidence
+  rather than reintroducing deterministic session-snippet judgment.
+
+Decision:
+
+- Regular Codex memory capture is first-class and enabled by default with an
+  explicit opt-out gate.
+- Captured Codex memories are evidence for later high-context skill/proactivity
+  review; they do not install skills, promote skills, execute actions, or
+  surface visible cards without model-reviewed proposals and model-authored
+  presentation.
+- Skill/proactivity review continues to use the full candidate-review route,
+  while frequent memory capture/retrieval uses the configured mini memory
+  route.
+
+### 2026-04-30 - Skill candidates must be bounded reusable capabilities
+
+Reason:
+
+- Recent local model review produced a legitimate but broad "review episode"
+  skill candidate. It was worth surfacing, but future candidates should be more
+  operational when the evidence supports it.
+- Existing skill enhancement cards are also useful surfaced outcomes when the
+  best action is improving a known workflow rather than creating a new skill.
+
+Decision:
+
+- The candidate reviewer prompt now asks the model to distinguish new skills,
+  existing skill enhancements, proactive plans, merge candidates, and demotions
+  by capability shape.
+- New skill candidates should have a trigger condition, repeatable inputs,
+  reusable procedure/checklist, concrete output artifact, validation criteria,
+  and repeated-work evidence.
+- Existing skill enhancement is a legitimate surfaced card when it improves an
+  exact loaded skill or known workflow.
+- This remains model-owned judgment. Runtime code must not add deterministic
+  skill-shape validators.

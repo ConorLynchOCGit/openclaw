@@ -56,6 +56,11 @@ authority is MMV2-native durable truth unless a spec explicitly says otherwise.
 41. [Memory Ops Closed Loop](/projects/model-memory/specs/memory-ops-closed-loop)
 42. [Semantic Forest Quarantine](/projects/model-memory/specs/semantic-forest-quarantine)
 43. [Capture And Ingest Mechanical Hardening](/projects/model-memory/specs/capture-ingest-mechanical-hardening)
+44. [Phase 2 Model-Owned Judgment Policy](/projects/model-memory/specs/phase-2-model-owned-judgment-policy)
+45. [Proactivity And Skills UX Product Brief](/projects/model-memory/specs/proactivity-and-skills-ux-product-brief)
+46. [Work Queue Information Architecture](/projects/model-memory/specs/work-queue-information-architecture)
+47. [Work Queue Interaction And Lifecycle State Model](/projects/model-memory/specs/work-queue-interaction-lifecycle-state-model)
+48. [Work Queue UX Implementation Plan](/projects/model-memory/specs/work-queue-ux-implementation-plan)
 
 ## Companion project docs
 

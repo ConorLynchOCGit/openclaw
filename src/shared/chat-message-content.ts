@@ -227,7 +227,11 @@ export function cleanProactivityUserFacingText(
   if (joined.length <= maxLength) {
     return joined;
   }
-  return `${joined.slice(0, Math.max(0, maxLength - 1)).trimEnd()}.`;
+  const clipped = joined.slice(0, Math.max(0, maxLength - 1)).trimEnd();
+  const wordBoundary = clipped.lastIndexOf(" ");
+  const bounded =
+    wordBoundary >= Math.floor(maxLength * 0.55) ? clipped.slice(0, wordBoundary) : clipped;
+  return `${bounded.replace(/[,\-:;]+$/u, "").trimEnd()}.`;
 }
 
 export function isMeaningfulProactivityUserFacingText(value: string | undefined): boolean {

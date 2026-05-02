@@ -116,7 +116,7 @@ describe("mmv2/proof-corpus", () => {
       )?.expected.admission?.items[0],
     ).toMatchObject({
       decision: "reject",
-      reasonCodesInclude: ["temporary"],
+      reasonCodesInclude: ["explicit_no_store", "privacy_opt_out", "sensitive"],
     });
     expect(
       MMV2_ORDINARY_TURN_PROOF_CASES.find(

@@ -133,11 +133,16 @@ export type ChatProps = {
   onQueueRemove: (id: string) => void;
   onProductProactivityApproveSend?: (id: string) => void;
   onProductProactivityWorkAction?: (id: string, action: ProductProactivityActionType) => void;
+  onProductProactivityPlanReview?: (
+    id: string,
+    reviewStatus: "recommendation_finalized" | "revision_requested",
+  ) => void;
   onProductProactivityDismiss?: (id: string) => void;
   onProductProactivitySnooze?: (id: string) => void;
   onProductProactivityFeedback?: (id: string, control: ProductProactivityFeedbackControl) => void;
   onProductProactivityEditMessage?: (id: string, value: string) => void;
   onProactivityInboxViewChange?: (view: ProactivityInboxView) => void;
+  onOpenWorkQueue?: (objectId?: string) => void;
   onPersonalAutoSendDisable?: () => void;
   onDismissSideResult?: () => void;
   onNewSession: () => void;
@@ -1320,6 +1325,78 @@ function getProactivityMessagePreview(item: ProactivitySurfaceItem): string {
   );
 }
 
+const PROACTIVITY_TITLE_SMALL_WORDS = new Set([
+  "a",
+  "an",
+  "and",
+  "as",
+  "at",
+  "but",
+  "by",
+  "for",
+  "from",
+  "in",
+  "into",
+  "nor",
+  "of",
+  "on",
+  "or",
+  "per",
+  "the",
+  "to",
+  "vs",
+  "via",
+  "when",
+  "with",
+  "without",
+]);
+
+function titleCaseToken(token: string, index: number, count: number): string {
+  if (!/[a-z]/iu.test(token)) {
+    return token;
+  }
+  if (/[A-Z]/u.test(token.slice(1)) || /^[A-Z0-9]{2,}$/u.test(token)) {
+    return token;
+  }
+  const lower = token.toLowerCase();
+  if (index > 0 && index < count - 1 && PROACTIVITY_TITLE_SMALL_WORDS.has(lower)) {
+    return lower;
+  }
+  return `${lower[0]?.toUpperCase() ?? ""}${lower.slice(1)}`;
+}
+
+function formatProactivityDisplayTitle(title: string): string {
+  const normalizedTitle = title.replace(/\b[A-Za-z0-9]+(?:-[A-Za-z0-9]+){2,}\b/gu, (token) =>
+    token.replace(/-/gu, " "),
+  );
+  const words = normalizedTitle.match(/[A-Za-z0-9]+(?:[-'][A-Za-z0-9]+)?|[^A-Za-z0-9]+/gu) ?? [];
+  const wordIndexes = words
+    .map((part, index) => (/^[A-Za-z0-9]/u.test(part) ? index : -1))
+    .filter((index) => index >= 0);
+  if (wordIndexes.length === 0) {
+    return title;
+  }
+  const wordPositionByIndex = new Map(wordIndexes.map((wordIndex, index) => [wordIndex, index]));
+  return words
+    .map((part, index) => {
+      const wordPosition = wordPositionByIndex.get(index);
+      if (wordPosition === undefined) {
+        return part;
+      }
+      return part
+        .split("-")
+        .map((token) => titleCaseToken(token, wordPosition, wordIndexes.length))
+        .join("-");
+    })
+    .join("");
+}
+
+function formatCompiledPlanMarkdownForDisplay(markdown: string): string {
+  return markdown.replace(/^(#{1,6})\s+(.+)$/gmu, (_match, prefix: string, heading: string) => {
+    return `${prefix} ${formatProactivityDisplayTitle(heading)}`;
+  });
+}
+
 function getStoredProactivityProposedMessage(item: ProactivitySurfaceItem): string {
   return (
     cleanProactivityUserFacingText(item.proposedMessage, { maxLength: 220 }) ??
@@ -1327,21 +1404,13 @@ function getStoredProactivityProposedMessage(item: ProactivitySurfaceItem): stri
   );
 }
 
-function getProactivityExpectedUserValue(item: ProactivitySurfaceItem): string {
-  return (
-    cleanProactivityUserFacingText(getProactivityBrief(item)?.oneLinePurpose, { maxLength: 180 }) ??
-    cleanProactivityUserFacingText(item.expectedUserValue, { maxLength: 180 }) ??
-    "Surfaces bounded Model Memory evidence without exposing raw prompts, transcripts, tool logs, secrets, or private phrases."
-  );
-}
-
 function getProactivityPlanTitle(item: ProactivitySurfaceItem): string {
-  return (
+  const title =
     cleanProactivityUserFacingText(getProactivityBrief(item)?.title, { maxLength: 120 }) ??
     cleanProactivityUserFacingText(item.planTitle, { maxLength: 120 }) ??
     cleanProactivityUserFacingText(getProactivityCandidateSummary(item), { maxLength: 120 }) ??
-    "Proactive next step"
-  );
+    "Proactive next step";
+  return formatProactivityDisplayTitle(title);
 }
 
 function getProactivityProblem(item: ProactivitySurfaceItem): string {
@@ -1363,10 +1432,6 @@ function getProactivityProposedMessage(props: ChatProps, item: ProactivitySurfac
           maxLength: 220,
         }) ?? getStoredProactivityProposedMessage(item)))
   );
-}
-
-function getProactivityUserBenefit(item: ProactivitySurfaceItem): string {
-  return item.userBenefit ?? getProactivityExpectedUserValue(item);
 }
 
 function getProactivityEvidenceSummary(item: ProactivitySurfaceItem): string {
@@ -1610,8 +1675,8 @@ function getProactivityFeedbackSummary(item: ProactivitySurfaceItem) {
   return "feedbackSummary" in item
     ? item.feedbackSummary
     : {
-        usefulCount: 0,
-        notUsefulCount: 0,
+        positiveFeedbackCount: 0,
+        negativeFeedbackCount: 0,
         tooRepetitiveCount: 0,
         wrongContextCount: 0,
         unsafePrivateCount: 0,
@@ -1661,13 +1726,6 @@ function getDiagnosticInboxItems(
       item.status === "blocked" ||
       item.messageClass === "autosend_simulation",
   );
-}
-
-function getContextMismatchDiagnostics(props: ChatProps): string[] {
-  const context = getActiveProactivityContext(props);
-  return (props.productProactivityQueue ?? [])
-    .map((item) => contextMismatchReason(item, context))
-    .filter((reason): reason is string => Boolean(reason));
 }
 
 function isActionableQueueItem(item: ProductProactivityQueueItem): boolean {
@@ -1824,6 +1882,112 @@ function renderProactivityDraftSection(
         <span>${item.autonomousDraft.safetyBoundary}</span>
       </div>
     </details>
+  `;
+}
+
+function renderProactivityPlannedArtifactSection(
+  item:
+    | Pick<ProductProactivityQueueItem, "plannedArtifact" | "handoffMessageAnchor" | "queueItemId">
+    | Pick<ProactivityInboxItem, "plannedArtifact" | "handoffMessageAnchor" | "queueItemId">,
+  props: Pick<ChatProps, "onProductProactivityPlanReview">,
+): TemplateResult | typeof nothing {
+  const artifact = item.plannedArtifact;
+  if (!artifact) {
+    return nothing;
+  }
+  const statusLabel =
+    artifact.status === "compiled"
+      ? "Compiled plan"
+      : artifact.status === "failed"
+        ? "Plan failed"
+        : "Plan requested";
+  return html`
+    <section class="product-proactivity-item__planned-artifact" aria-label=${statusLabel}>
+      <div class="product-proactivity-item__section">
+        <span>${statusLabel}</span>
+        <strong>${formatProactivityDisplayTitle(artifact.title)}</strong>
+      </div>
+      ${artifact.compiledPlan
+        ? html`<div class="product-proactivity-item__compiled-plan">
+            ${unsafeHTML(
+              toSanitizedMarkdownHtml(formatCompiledPlanMarkdownForDisplay(artifact.compiledPlan)),
+            )}
+          </div>`
+        : html`<div class="product-proactivity-item__text">
+            The plan request has been sent. The compiled plan will appear here when the assistant
+            response is captured.
+          </div>`}
+      ${artifact.status === "compiled" && item.queueItemId
+        ? html`
+            <div class="product-proactivity-item__actions product-proactivity-item__actions--plan">
+              <button
+                class="btn btn--sm"
+                type="button"
+                ?disabled=${artifact.reviewStatus === "recommendation_finalized"}
+                @click=${() =>
+                  props.onProductProactivityPlanReview?.(
+                    item.queueItemId!,
+                    "recommendation_finalized",
+                  )}
+              >
+                Finalize Recommendation
+              </button>
+              <button
+                class="btn btn--sm btn--ghost"
+                type="button"
+                ?disabled=${artifact.reviewStatus === "revision_requested"}
+                @click=${() =>
+                  props.onProductProactivityPlanReview?.(item.queueItemId!, "revision_requested")}
+              >
+                Request Revision
+              </button>
+              <button class="btn btn--sm btn--ghost" type="button" disabled>
+                Execution Approval Unavailable
+              </button>
+            </div>
+            <div class="product-proactivity-item__cta-explanation">
+              Execution approval is intentionally blocked before Milestone 4 action execution.
+            </div>
+          `
+        : nothing}
+      <details class="product-proactivity-item__details">
+        <summary>Plan request and provenance</summary>
+        <div class="operator-row">
+          <span>Status</span>
+          <span>${artifact.reviewStatus ?? artifact.status}</span>
+        </div>
+        <div class="operator-row">
+          <span>Requested</span>
+          <span>${artifact.generatedAt}</span>
+        </div>
+        <div class="operator-row">
+          <span>Updated</span>
+          <span>${artifact.updatedAt}</span>
+        </div>
+        ${artifact.sourceRunId
+          ? html`<div class="operator-row">
+              <span>Run</span>
+              <span>${artifact.sourceRunId}</span>
+            </div>`
+          : nothing}
+        ${artifact.sourceMessageId
+          ? html`<div class="operator-row">
+              <span>Message</span>
+              <span>${artifact.sourceMessageId}</span>
+            </div>`
+          : nothing}
+        <div class="operator-row">
+          <span>Request</span>
+          <span>${artifact.requestSummary}</span>
+        </div>
+        ${item.handoffMessageAnchor
+          ? html`<div class="operator-row">
+              <span>Chat anchor</span>
+              <span>${item.handoffMessageAnchor}</span>
+            </div>`
+          : nothing}
+      </details>
+    </section>
   `;
 }
 
@@ -2174,13 +2338,6 @@ function renderInlineProactivityCard(
               <button
                 class="btn btn--sm btn--ghost"
                 type="button"
-                @click=${() => props.onProductProactivitySnooze?.(item.queueItemId)}
-              >
-                Snooze
-              </button>
-              <button
-                class="btn btn--sm btn--ghost"
-                type="button"
                 @click=${() => props.onProductProactivityDismiss?.(item.queueItemId)}
               >
                 Dismiss
@@ -2193,345 +2350,116 @@ function renderInlineProactivityCard(
   `;
 }
 
-function renderContextualProactivityCard(props: ChatProps): TemplateResult | typeof nothing {
-  const item = getContextualProactivityItems(props)[0];
-  if (!item) {
-    return nothing;
+function getWorkQueueSummaryItems(props: ChatProps): ProactivitySurfaceItem[] {
+  const prioritized = [
+    ...getContextualProactivityItems(props),
+    ...getHeartbeatProactivityItems(props),
+    ...(props.productProactivityQueue ?? []).filter(
+      (item) =>
+        item.layer !== "diagnostic" &&
+        item.status !== "dismissed" &&
+        item.opportunityStatus !== "superseded" &&
+        Boolean(item.userFacingBrief?.title?.trim() || item.planTitle?.trim()),
+    ),
+  ];
+  const deduped: ProactivitySurfaceItem[] = [];
+  const seen = new Set<string>();
+  for (const item of prioritized) {
+    const key = item.queueItemId || item.candidateId;
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    deduped.push(item);
+    if (deduped.length >= 3) {
+      break;
+    }
   }
-  const context = getActiveProactivityContext(props);
-  const whyShown = `Shown because this session matches project ${context.projectId} / session ${context.sessionKey}.`;
-  const proposedMessage = getProactivityProposedMessage(props, item);
-  const primaryAction = getProactivityPrimaryActionType(item);
-  const primaryActionLabel = getProactivityPrimaryActionLabel(item);
-  const proposedLabel = getProactivityPrimaryStepLabel(item);
-  return html`
-    <section
-      class="contextual-proactivity-card"
-      aria-label="Relevant Model Memory suggestion"
-      data-queue-item-id=${item.queueItemId}
-    >
-      <div class="contextual-proactivity-card__body">
-        <div class="contextual-proactivity-card__eyebrow">Relevant proactivity</div>
-        <h3 class="contextual-proactivity-card__title">${getProactivityPlanTitle(item)}</h3>
-        <div class="contextual-proactivity-card__section">
-          <span>Purpose</span>
-          <strong>${getProactivityProblem(item)}</strong>
-        </div>
-        <div class="contextual-proactivity-card__section">
-          <span>${proposedLabel}</span>
-          <div>${proposedMessage}</div>
-        </div>
-        <details class="contextual-proactivity-card__details">
-          <summary>Review plan</summary>
-          <div class="operator-row">
-            <span>Suggested action</span>
-            <span>${getProactivitySuggestedAction(item)}</span>
-          </div>
-          <div class="operator-row">
-            <span>Why surfaced</span>
-            <span>${getProactivityDiagnosticWhyNow(item)}</span>
-          </div>
-          <div class="operator-row">
-            <span>User benefit</span>
-            <span>${getProactivityUserBenefit(item)}</span>
-          </div>
-          <div class="operator-row">
-            <span>Evidence</span>
-            <span>${getProactivityEvidenceSummary(item)}</span>
-          </div>
-          <div class="operator-row">
-            <span>Confidence</span>
-            <span>${item.confidence ?? "medium"}</span>
-          </div>
-        </details>
-        ${item.workItemKind === "message_candidate"
-          ? html`<label class="proactivity-message-editor">
-              <span>Edit message before send</span>
-              <textarea
-                rows="3"
-                .value=${proposedMessage}
-                @input=${(event: Event) =>
-                  props.onProductProactivityEditMessage?.(
-                    item.queueItemId,
-                    (event.currentTarget as HTMLTextAreaElement).value,
-                  )}
-              ></textarea>
-            </label>`
-          : nothing}
-        ${renderProactivityDraftSection(item)}
-        <div class="contextual-proactivity-card__why">${whyShown}</div>
-        <details class="contextual-proactivity-card__details">
-          <summary>Provenance</summary>
-          <div class="operator-row">
-            <span>Sources</span>
-            <span>${item.sourceRefs.slice(0, 4).join(", ") || "missing"}</span>
-          </div>
-          <div class="operator-row">
-            <span>Profiles</span>
-            <span>${item.sourceProfileIds.slice(0, 4).join(", ") || "missing"}</span>
-          </div>
-          <div class="operator-row">
-            <span>Authority</span>
-            <span>${item.authorityTiers.slice(0, 4).join(", ") || "missing"}</span>
-          </div>
-          <div class="operator-row">
-            <span>Safety</span>
-            <span>${item.noDarkDataStatus}; bounded preview only</span>
-          </div>
-        </details>
-      </div>
-      <div class="contextual-proactivity-card__actions">
-        ${primaryAction
-          ? html`<button
-              class="btn btn--sm"
-              type="button"
-              @click=${() =>
-                primaryAction === "send_message"
-                  ? props.onProductProactivityApproveSend?.(item.queueItemId)
-                  : props.onProductProactivityWorkAction?.(item.queueItemId, primaryAction)}
-            >
-              ${primaryActionLabel}
-            </button>`
-          : nothing}
-        <button
-          class="btn btn--sm btn--ghost"
-          type="button"
-          @click=${() => props.onProductProactivityDismiss?.(item.queueItemId)}
-        >
-          Dismiss
-        </button>
-        <button
-          class="btn btn--sm btn--ghost"
-          type="button"
-          @click=${() => props.onProductProactivitySnooze?.(item.queueItemId)}
-        >
-          Snooze
-        </button>
-      </div>
-      <div class="contextual-proactivity-card__why">${getProactivityCtaExplanation(item)}</div>
-      ${renderProactivityFeedbackControls(props, item.queueItemId)}
-    </section>
-  `;
+  return deduped;
 }
 
-function renderHeartbeatProactivityReview(props: ChatProps): TemplateResult | typeof nothing {
-  const items = getHeartbeatProactivityItems(props);
-  const diagnosticCount = getContextMismatchDiagnostics(props).length;
-  if (!items.length) {
+function renderCompactWorkQueueSummary(props: ChatProps): TemplateResult | typeof nothing {
+  const items = getWorkQueueSummaryItems(props);
+  if (items.length === 0) {
     return nothing;
   }
   return html`
-    <section class="heartbeat-proactivity-review" aria-label="Daily Operator Review proactivity">
+    <section class="heartbeat-proactivity-review" aria-label="Work Queue summary">
       <div class="heartbeat-proactivity-review__header">
         <div>
-          <div class="heartbeat-proactivity-review__eyebrow">Daily Operator Review</div>
+          <div class="heartbeat-proactivity-review__eyebrow">Work Queue</div>
           <h3>What would help this user today?</h3>
         </div>
-        <div class="heartbeat-proactivity-review__header-actions">
-          <div class="heartbeat-proactivity-review__count">
-            ${items.length} top ${items.length === 1 ? "item" : "items"}
-          </div>
+        <div class="heartbeat-proactivity-review__actions">
           <button
-            class="btn btn--sm btn--ghost heartbeat-proactivity-review__inbox"
             type="button"
-            @click=${() => props.onOpenSidebar?.({ kind: "proactivityInbox" })}
+            class="btn btn--secondary btn--sm"
+            @click=${() => props.onOpenWorkQueue?.()}
           >
-            Open inbox
+            Open Work Queue
           </button>
         </div>
       </div>
-      ${items.map((item) => {
-        const primaryAction = getProactivityPrimaryActionType(item);
-        const proposedLabel = getProactivityPrimaryStepLabel(item);
-        const queueItemId = item.queueItemId ?? "";
-        return html`
-          <article
-            class="heartbeat-proactivity-review__card"
-            data-work-item-id=${item.workItemId ?? item.queueItemId}
-            data-candidate-id=${item.candidateId}
-            data-queue-item-id=${item.queueItemId}
-            data-skill-candidate-id=${item.skillCandidate?.skillCandidateId ?? ""}
-          >
+      ${items.map(
+        (item) => html`
+          <div class="heartbeat-proactivity-review__card">
+            <div
+              data-work-item-id=${item.workItemId ?? item.queueItemId}
+              data-skill-candidate-id=${item.skillCandidate?.skillCandidateId ?? nothing}
+            ></div>
             <div class="heartbeat-proactivity-review__meta">
-              <span
-                class=${`proactivity-surface-chip ${getProactivityOpportunityClassChipClass(item)}`.trim()}
-              >
-                ${getProactivityOpportunityClassLabel(item)}
-              </span>
-              <span class="proactivity-surface-chip proactivity-surface-chip--accent"
-                >ready now</span
-              >
-              ${item.draftReady
-                ? html`<span class="proactivity-surface-chip proactivity-surface-chip--draft"
-                    >draft ready</span
-                  >`
-                : nothing}
-              <span class="proactivity-surface-chip"
-                >${item.confidence ?? "medium"} confidence</span
-              >
+              <span>${item.userFacingBrief?.kindLabel ?? "Work item"}</span>
             </div>
             <h4>${getProactivityPlanTitle(item)}</h4>
+            <div>${item.userFacingBrief?.oneLinePurpose ?? item.userBenefit ?? item.problem}</div>
+            ${item.draftReady
+              ? html`
+                  <div class="heartbeat-proactivity-review__section">
+                    <span>draft ready</span>
+                  </div>
+                `
+              : nothing}
             <div class="heartbeat-proactivity-review__section">
-              <span>Purpose</span>
-              <div>${getProactivityProblem(item)}</div>
+              <span>
+                ${item.userFacingBrief?.recommendedNextStep ??
+                item.suggestedAction ??
+                "Open the Work Queue for full detail."}
+              </span>
             </div>
-            <div class="heartbeat-proactivity-review__section">
-              <span>${proposedLabel}</span>
-              <div>${getProactivityProposedMessage(props, item)}</div>
-            </div>
-            ${renderProactivityDraftSection(item)}
-            <details class="heartbeat-proactivity-review__details">
-              <summary>Evidence and provenance</summary>
-              <div class="operator-row">
-                <span>Why surfaced</span>
-                <span>${getProactivityDiagnosticWhyNow(item)}</span>
-              </div>
-              <div class="operator-row">
-                <span>Evidence</span>
-                <span>${getProactivityEvidenceSummary(item)}</span>
-              </div>
-              <div class="operator-row">
-                <span>Sources</span>
-                <span>${item.sourceRefs.slice(0, 4).join(", ") || "missing"}</span>
-              </div>
-              <div class="operator-row">
-                <span>Profiles</span>
-                <span>${item.sourceProfileIds.slice(0, 4).join(", ") || "missing"}</span>
-              </div>
-              <div class="operator-row">
-                <span>Authority</span>
-                <span>${item.authorityTiers.slice(0, 4).join(", ") || "missing"}</span>
-              </div>
-            </details>
             <div class="heartbeat-proactivity-review__actions">
-              ${primaryAction
-                ? html`<button
-                    class="btn btn--sm"
-                    type="button"
-                    ?disabled=${!queueItemId}
-                    @click=${() =>
-                      primaryAction === "send_message"
-                        ? queueItemId
-                          ? props.onProductProactivityApproveSend?.(queueItemId)
-                          : undefined
-                        : queueItemId
-                          ? props.onProductProactivityWorkAction?.(queueItemId, primaryAction)
-                          : undefined}
-                  >
-                    ${getProactivityPrimaryActionLabel(item)}
-                  </button>`
-                : nothing}
               <button
-                class="btn btn--sm btn--ghost"
                 type="button"
-                ?disabled=${!queueItemId}
-                @click=${() =>
-                  queueItemId ? props.onProductProactivitySnooze?.(queueItemId) : undefined}
+                class="btn btn--primary btn--sm"
+                @click=${() => props.onOpenWorkQueue?.(item.opportunityId ?? item.queueItemId)}
               >
-                Snooze
-              </button>
-              <button
-                class="btn btn--sm btn--ghost"
-                type="button"
-                ?disabled=${!queueItemId}
-                @click=${() =>
-                  queueItemId ? props.onProductProactivityDismiss?.(queueItemId) : undefined}
-              >
-                Dismiss
+                Review in Work Queue
               </button>
             </div>
-            <div class="heartbeat-proactivity-review__explain">
-              ${getProactivityCtaExplanation(item)}
-            </div>
-            ${item.handoffStatus === "started"
-              ? html`<div class="callout success proactivity-handoff-status">
-                  Planning started in chat.
-                  <button
-                    class="btn btn--xs btn--ghost"
-                    type="button"
-                    @click=${props.onScrollToBottom}
-                  >
-                    Open in chat
-                  </button>
-                </div>`
-              : nothing}
-            ${item.handoffStatus === "failed" || item.handoffError
-              ? html`<div class="callout danger proactivity-handoff-status">
-                  ${item.handoffError ?? "Proactivity handoff failed."}
-                </div>`
-              : nothing}
-          </article>
-        `;
-      })}
-      ${diagnosticCount
-        ? html`<button
-            class="btn btn--xs btn--ghost heartbeat-proactivity-review__diagnostics"
-            type="button"
-            @click=${() => {
-              props.onProactivityInboxViewChange?.("diagnostics");
-              props.onOpenSidebar?.({ kind: "proactivityInbox" });
-            }}
-          >
-            ${diagnosticCount} why-not-shown diagnostics
-          </button>`
-        : nothing}
-    </section>
-  `;
-}
-
-function renderProactivityFeedbackControls(props: ChatProps, queueItemId: string): TemplateResult {
-  const controls: Array<{ label: string; control: ProductProactivityFeedbackControl }> = [
-    { label: "Useful", control: "useful" },
-    { label: "Not useful", control: "not_useful" },
-    { label: "Too repetitive", control: "too_repetitive" },
-    { label: "Wrong context", control: "wrong_context" },
-    { label: "Unsafe/private", control: "unsafe_private" },
-  ];
-  return html`
-    <div class="proactivity-feedback-controls" aria-label="Proactivity usefulness feedback">
-      <span class="proactivity-feedback-controls__label">Was this useful?</span>
-      ${controls.map(
-        ({ label, control }) => html`
-          <button
-            class="btn btn--xs btn--ghost proactivity-feedback-control"
-            type="button"
-            data-feedback-control=${control}
-            @click=${() => props.onProductProactivityFeedback?.(queueItemId, control)}
-          >
-            ${label}
-          </button>
+          </div>
         `,
       )}
-    </div>
+    </section>
   `;
 }
 
 function renderProactivityEntryPoint(props: ChatProps): TemplateResult | typeof nothing {
   const digest = props.proactivityInboxDigest;
-  const queueItems = props.productProactivityQueue ?? [];
   const actionableCount =
     digest !== null && digest !== undefined
       ? getQueueBackedActionableInboxItems(props).length
       : getActionableQueueItems(props).length;
-  const diagnosticCount =
-    digest !== null && digest !== undefined
-      ? getDiagnosticInboxItems(digest).length
-      : queueItems.filter((item) => item.status === "blocked" || item.layer === "diagnostic")
-          .length;
   const heartbeatCount = getHeartbeatProactivityItems(props).length;
   const statusLabel = props.proactivityInboxError
     ? "blocked"
-    : diagnosticCount > 0
-      ? `${diagnosticCount} diagnostic`
-      : props.personalAutoSendUx?.mode === "controlled_autosend_trial"
-        ? "autosend trial"
-        : "manual";
+    : props.personalAutoSendUx?.mode === "controlled_autosend_trial"
+      ? "autosend trial"
+      : "manual";
 
   if (
     !digest &&
     !props.proactivityInboxLoading &&
     !props.proactivityInboxError &&
-    queueItems.length === 0
+    getActionableQueueItems(props).length === 0
   ) {
     return nothing;
   }
@@ -2541,10 +2469,10 @@ function renderProactivityEntryPoint(props: ChatProps): TemplateResult | typeof 
       <button
         class="proactivity-entrypoint__button"
         type="button"
-        @click=${() => props.onOpenSidebar?.({ kind: "proactivityInbox" })}
-        aria-label="Open Proactivity Inbox"
+        @click=${() => props.onOpenWorkQueue?.()}
+        aria-label="Open Work Queue"
       >
-        <span class="proactivity-entrypoint__label">Proactivity</span>
+        <span class="proactivity-entrypoint__label">Work Queue</span>
         <span class="proactivity-entrypoint__count">${actionableCount} actionable</span>
         ${heartbeatCount
           ? html`<span class="proactivity-entrypoint__status">${heartbeatCount} heartbeat</span>`
@@ -2612,99 +2540,29 @@ function renderPersonalAutoSendProductUx(props: ChatProps): TemplateResult | typ
   `;
 }
 
-function renderProductProactivityNotifications(props: ChatProps): TemplateResult | typeof nothing {
-  const items = (props.productProactivityQueue ?? []).filter(
-    (item) => item.status === "sent" || item.status === "approved_not_sent",
-  );
-  if (items.length === 0) {
-    return nothing;
-  }
-  return html`
-    <section class="proactivity-notification-stack" aria-label="Approved proactive messages">
-      ${items.map(
-        (item) => html`
-          <article class="proactivity-notification" data-queue-item-id=${item.queueItemId}>
-            <div class="proactivity-notification__body">
-              <div class="proactivity-notification__eyebrow">Approved Model Memory suggestion</div>
-              <div class="proactivity-notification__text">
-                ${getProactivityMessagePreview(item)}
-              </div>
-              <details class="proactivity-notification__details">
-                <summary>Why this appeared</summary>
-                <div class="operator-row">
-                  <span>Sources</span>
-                  <span>${item.sourceRefs.slice(0, 4).join(", ") || "missing"}</span>
-                </div>
-                <div class="operator-row">
-                  <span>Profiles</span>
-                  <span>${item.sourceProfileIds.slice(0, 4).join(", ") || "missing"}</span>
-                </div>
-                <div class="operator-row">
-                  <span>Authority</span>
-                  <span>${item.authorityTiers.slice(0, 4).join(", ") || "missing"}</span>
-                </div>
-                <div class="operator-row">
-                  <span>Hashes</span>
-                  <span
-                    >${item.contentHashes.slice(0, 2).join(", ") ||
-                    item.proofHashes.slice(0, 2).join(", ")}</span
-                  >
-                </div>
-                <div class="operator-row">
-                  <span>Safety</span>
-                  <span>${item.noDarkDataStatus}; raw/private content excluded</span>
-                </div>
-              </details>
-            </div>
-            <div class="proactivity-notification__actions">
-              <button
-                class="btn btn--sm btn--ghost"
-                type="button"
-                @click=${() => props.onProductProactivityDismiss?.(item.queueItemId)}
-              >
-                Dismiss
-              </button>
-              <button
-                class="btn btn--sm btn--ghost"
-                type="button"
-                @click=${() => props.onProductProactivitySnooze?.(item.queueItemId)}
-              >
-                Snooze
-              </button>
-            </div>
-          </article>
-        `,
-      )}
-    </section>
-  `;
-}
-
 function renderProactivityInbox(props: ChatProps): TemplateResult | typeof nothing {
   const digest = props.proactivityInboxDigest;
-  const view = props.proactivityInboxView ?? "actionable";
+  const requestedView = props.proactivityInboxView ?? "actionable";
+  const view =
+    requestedView === "sent" || requestedView === "diagnostics" || requestedView === "snoozed"
+      ? "actionable"
+      : requestedView;
   const visibleItems = getVisibleInboxItems(props, view);
   const actionableCount = getQueueBackedActionableInboxItems(props).length;
   const historyCount =
     getHistoryInboxItems(digest, "planned").length +
-    getHistoryInboxItems(digest, "sent").length +
-    getHistoryInboxItems(digest, "snoozed").length +
     getHistoryInboxItems(digest, "dismissed").length;
-  const diagnosticCount = getDiagnosticInboxItems(digest).length;
-  const contextDiagnostics = getContextMismatchDiagnostics(props);
   if (!digest && !props.proactivityInboxLoading && !props.proactivityInboxError) {
     return nothing;
   }
   const tabs: Array<{ view: ProactivityInboxView; label: string; count: number }> = [
     { view: "actionable", label: "Actionable", count: actionableCount },
     { view: "planned", label: "Planned", count: getHistoryInboxItems(digest, "planned").length },
-    { view: "sent", label: "Sent", count: getHistoryInboxItems(digest, "sent").length },
-    { view: "snoozed", label: "Snoozed", count: getHistoryInboxItems(digest, "snoozed").length },
     {
       view: "dismissed",
       label: "Dismissed",
       count: getHistoryInboxItems(digest, "dismissed").length,
     },
-    { view: "diagnostics", label: "Diagnostics", count: diagnosticCount },
   ];
   return html`
     <section class="proactivity-inbox product-proactivity-panel" aria-label="Proactivity Inbox">
@@ -2714,8 +2572,7 @@ function renderProactivityInbox(props: ChatProps): TemplateResult | typeof nothi
           <h3>Proactivity Inbox</h3>
         </div>
         <span class="product-proactivity-panel__count"
-          >${actionableCount} actionable · ${historyCount} history · ${diagnosticCount}
-          diagnostic</span
+          >${actionableCount} actionable · ${historyCount} history</span
         >
       </div>
       ${props.proactivityInboxLoading
@@ -2748,19 +2605,6 @@ function renderProactivityInbox(props: ChatProps): TemplateResult | typeof nothi
                 ? html`<div class="product-proactivity-panel__empty">
                     No ${view.replace(/_/g, " ")} proactivity items.
                   </div>`
-                : nothing}
-              ${view === "diagnostics" && contextDiagnostics.length
-                ? html`<article class="product-proactivity-item proactivity-inbox__item">
-                    <div class="product-proactivity-item__main">
-                      <h4 class="product-proactivity-item__title">Why not shown inline</h4>
-                      ${contextDiagnostics.map(
-                        (reason) => html`<div class="operator-row">
-                          <span>Context</span>
-                          <span>${reason}</span>
-                        </div>`,
-                      )}
-                    </div>
-                  </article>`
                 : nothing}
               ${visibleItems.map((item) => {
                 const primaryAction = getProactivityPrimaryActionType(item);
@@ -2812,8 +2656,9 @@ function renderProactivityInbox(props: ChatProps): TemplateResult | typeof nothi
                         </label>`
                       : nothing}
                     ${renderProactivityDraftSection(item)}
+                    ${renderProactivityPlannedArtifactSection(item, props)}
                     <details class="product-proactivity-item__details">
-                      <summary>Review plan</summary>
+                      <summary>Evidence and review details</summary>
                       <p>
                         ${item.userFacingBrief?.detailSummary ??
                         ("whyThisAppearedSummary" in item ? item.whyThisAppearedSummary : "")}
@@ -2862,8 +2707,8 @@ function renderProactivityInbox(props: ChatProps): TemplateResult | typeof nothi
                       <div class="operator-row">
                         <span>Feedback</span>
                         <span
-                          >useful ${feedbackSummary.usefulCount}, not useful
-                          ${feedbackSummary.notUsefulCount}, repetitive
+                          >useful ${feedbackSummary.positiveFeedbackCount}, not useful
+                          ${feedbackSummary.negativeFeedbackCount}, repetitive
                           ${feedbackSummary.tooRepetitiveCount}, wrong context
                           ${feedbackSummary.wrongContextCount}, unsafe/private
                           ${feedbackSummary.unsafePrivateCount}</span
@@ -2929,9 +2774,6 @@ function renderProactivityInbox(props: ChatProps): TemplateResult | typeof nothi
                           ${item.handoffError ?? "Proactivity handoff failed."}
                         </div>`
                       : nothing}
-                    ${item.queueItemId
-                      ? renderProactivityFeedbackControls(props, item.queueItemId)
-                      : nothing}
                   </div>
                   ${item.queueItemId && item.layer === "actionable"
                     ? html`
@@ -2959,14 +2801,6 @@ function renderProactivityInbox(props: ChatProps): TemplateResult | typeof nothi
                             @click=${() => props.onProductProactivityDismiss?.(item.queueItemId!)}
                           >
                             Dismiss
-                          </button>
-                          <button
-                            class="btn btn--sm btn--ghost"
-                            type="button"
-                            ?disabled=${item.status === "sent"}
-                            @click=${() => props.onProductProactivitySnooze?.(item.queueItemId!)}
-                          >
-                            Snooze
                           </button>
                         </div>
                         <div class="product-proactivity-item__cta-explanation">
@@ -3733,8 +3567,7 @@ export function renderChat(props: ChatProps) {
           diagnosticBundle,
           requestUpdate,
         })}
-        ${renderHeartbeatProactivityReview(props)} ${renderContextualProactivityCard(props)}
-        ${renderProductProactivityNotifications(props)} ${renderPersonalAutoSendProductUx(props)}
+        ${renderCompactWorkQueueSummary(props)} ${renderPersonalAutoSendProductUx(props)}
         ${props.loading
           ? html`
               <div class="chat-loading-skeleton" aria-label="Loading chat">

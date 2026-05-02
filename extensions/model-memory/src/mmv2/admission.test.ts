@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { applyAdmissionThresholds, scoreAdmission } from "./admission.ts";
+import { applyAdmissionGuardrails, scoreAdmission } from "./admission.ts";
 import {
   buildAdmissionDecision,
   buildCanonicalCandidate,
@@ -9,7 +9,7 @@ import {
 } from "./test-helpers.ts";
 
 describe("mmv2/admission", () => {
-  it("rejects low-safety candidates through deterministic thresholds", () => {
+  it("rejects low-safety model decisions through deterministic safety guardrails", () => {
     const source = createMmV2TestSource("Temporary instruction.");
     const canonicalBatch = {
       schema_version: "canonical_candidates.v1" as const,
@@ -26,7 +26,7 @@ describe("mmv2/admission", () => {
       ],
     };
 
-    const result = applyAdmissionThresholds(canonicalBatch, {
+    const result = applyAdmissionGuardrails(canonicalBatch, {
       schema_version: "admission_decision.v1",
       event_id: source.rawEvent.event_id,
       decisions: [
@@ -92,7 +92,7 @@ describe("mmv2/admission", () => {
     expect(result.decisions[0].decision).toBe("embed_only");
   });
 
-  it("auto-admits explicit durable project-fact commands only", () => {
+  it("does not auto-admit explicit durable project-fact commands without a model admission", () => {
     const source = createMmV2TestSource(
       "Durable workspace project fact: the retrieval soak validates structural correction targets.",
     );
@@ -121,7 +121,7 @@ describe("mmv2/admission", () => {
       },
     );
 
-    const result = applyAdmissionThresholds(
+    const result = applyAdmissionGuardrails(
       {
         schema_version: "canonical_candidates.v1",
         event_id: source.rawEvent.event_id,
@@ -147,10 +147,10 @@ describe("mmv2/admission", () => {
       },
     );
 
-    expect(result.decisions[0].decision).toBe("admit");
+    expect(result.decisions[0].decision).toBe("quarantine");
   });
 
-  it("does not auto-admit ordinary project chatter through the broad project-scoped gate", () => {
+  it("does not auto-admit ordinary project chatter through deterministic scope gates", () => {
     const source = createMmV2TestSource(
       "The retrieval soak validates structural correction targets.",
     );
@@ -179,7 +179,7 @@ describe("mmv2/admission", () => {
       },
     );
 
-    const result = applyAdmissionThresholds(
+    const result = applyAdmissionGuardrails(
       {
         schema_version: "canonical_candidates.v1",
         event_id: source.rawEvent.event_id,

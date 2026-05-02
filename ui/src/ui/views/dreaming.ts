@@ -630,7 +630,7 @@ function renderDiarySubtabExplainer() {
       return html`
         <p class="dreams-diary__explainer">
           These are imported insights clustered from external history; use them to review what
-          imports surfaced before any of it graduates into durable memory.
+          imports produced before any of it graduates into durable memory.
         </p>
       `;
     case "palace":
@@ -1017,7 +1017,7 @@ function renderDiaryImportsSection(props: DreamingProps) {
               ${item.candidateSignals.length > 0
                 ? html`
                     <div class="dreams-diary__insight-list">
-                      <strong>Potentially useful signals</strong>
+                      <strong>Candidate signals</strong>
                       ${item.candidateSignals.map(
                         (signal) => html`<p class="dreams-diary__insight-line">• ${signal}</p>`,
                       )}
@@ -1128,8 +1128,8 @@ function renderMemoryPalaceSection(props: DreamingProps) {
       <div class="dreams-diary__empty">
         <div class="dreams-diary__empty-text">Memory palace is not populated yet</div>
         <div class="dreams-diary__empty-hint">
-          Right now the wiki mostly has raw source imports and operational reports. This tab becomes
-          useful once syntheses, entities, or concepts start getting written.
+          Right now the wiki mostly has raw source imports and operational reports. This tab
+          populates once syntheses, entities, or concepts start getting written.
         </div>
       </div>
     `;

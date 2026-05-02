@@ -42,7 +42,7 @@ async function main() {
   const stamp = timestampId();
   const outputDir = path.join(
     root,
-    ".artifacts/model-memory/phase2-product-proactivity-surfacing-proof",
+    ".artifacts/model-memory/phase2-product-proactivity-presentation-proof",
     stamp,
   );
   await mkdir(outputDir, { recursive: true });
@@ -55,7 +55,10 @@ async function main() {
     buildPhase2ProductProactivitySurfacingReport,
     writePhase2ProductProactivitySurfacingArtifact,
   } = await tsImport(
-    path.join(root, "extensions/model-memory/src/runtime/phase2-product-proactivity-surfacing.ts"),
+    path.join(
+      root,
+      "extensions/model-memory/src/runtime/phase2-product-proactivity-presentation.ts",
+    ),
     import.meta.url,
   );
 

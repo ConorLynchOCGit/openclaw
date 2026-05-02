@@ -11,6 +11,7 @@ import {
   buildCalibrationReport,
   buildRetrievalPackArtifact,
   executeRetrieval,
+  ExecutorBackedRetrievalFinalInclusionReviewer,
   ExecutorBackedRetrievalRequestInterpreter,
   ExecutorBackedSemanticInterpreter,
   ModelMemoryCanonicalRepository,
@@ -1794,6 +1795,9 @@ async function runRetrievalContextProbe(input: {
   probe: RetrievalProbeSpec;
   runtime: ModelMemoryDatabaseRuntime;
   retrievalInterpreter: InstanceType<typeof ExecutorBackedRetrievalRequestInterpreter>;
+  retrievalFinalInclusionReviewer: InstanceType<
+    typeof ExecutorBackedRetrievalFinalInclusionReviewer
+  >;
   memoryObjects: ModelMemoryObjectRecord[];
   modelRef: string;
   projectionVersions: WorkspaceProjectionVersionRecord[];
@@ -1812,6 +1816,8 @@ async function runRetrievalContextProbe(input: {
       interpreter: input.retrievalInterpreter,
       memoryObjects: input.memoryObjects,
       modelId: input.modelRef,
+      finalInclusionReviewer: input.retrievalFinalInclusionReviewer,
+      finalInclusionModelId: input.modelRef,
       store: input.runtime.retrievalStore,
       createdAt: new Date(),
       projectionVersions: input.projectionVersions,
@@ -2035,6 +2041,13 @@ export async function executeModelMemoryProofPhase(input: {
   const semanticInterpreter = new ExecutorBackedSemanticInterpreter(executor);
   const collisionAdjudicator = new ExecutorBackedSemanticCollisionAdjudicator(executor);
   const retrievalInterpreter = new ExecutorBackedRetrievalRequestInterpreter(executor);
+  const retrievalFinalInclusionReviewer = new ExecutorBackedRetrievalFinalInclusionReviewer(
+    executor,
+    {
+      modelId: input.modelRef,
+      reasoningEffort: "low",
+    },
+  );
   const memoryStore = new DatabaseMemoryObjectStore(
     input.runtime.canonicalRepository,
     collisionAdjudicator,
@@ -2302,6 +2315,7 @@ export async function executeModelMemoryProofPhase(input: {
         probe,
         runtime: input.runtime,
         retrievalInterpreter,
+        retrievalFinalInclusionReviewer,
         memoryObjects: postSaturationSnapshot.memoryObjects,
         modelRef: input.modelRef,
         projectionVersions: finalRebuild.projectionVersions,
@@ -2379,6 +2393,7 @@ export async function executeModelMemoryProofPhase(input: {
     probe: RETRIEVAL_PROBES[0],
     runtime: input.runtime,
     retrievalInterpreter,
+    retrievalFinalInclusionReviewer,
     memoryObjects: postSaturationSnapshot.memoryObjects,
     modelRef: input.modelRef,
     projectionVersions: rebuildRerun.projectionVersions,
@@ -2389,6 +2404,7 @@ export async function executeModelMemoryProofPhase(input: {
     probe: RETRIEVAL_PROBES[0],
     runtime: input.runtime,
     retrievalInterpreter,
+    retrievalFinalInclusionReviewer,
     memoryObjects: postSaturationSnapshot.memoryObjects,
     modelRef: input.modelRef,
     projectionVersions: rebuildRerun.projectionVersions,
@@ -2516,6 +2532,7 @@ export async function executeModelMemoryProofPhase(input: {
     probe: RETRIEVAL_PROBES[0],
     runtime: input.runtime,
     retrievalInterpreter,
+    retrievalFinalInclusionReviewer,
     memoryObjects: postSupportSnapshot.memoryObjects,
     modelRef: input.modelRef,
     projectionVersions: postSupportRebuild.projectionVersions,

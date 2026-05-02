@@ -149,7 +149,6 @@ describe("tool-result proof capture", () => {
         status: "failure",
         toolName: "host_operator_repo",
         actionName: "install_skill",
-        remediationHint: "retry with install_skill shape containing skillName and SKILL.md content",
       }),
     );
     const built = buildToolResultProofLiveCapture({
@@ -194,11 +193,11 @@ describe("tool-result proof capture", () => {
         status: "failure",
         errorClass: "EACCES",
         pathCategory: "runtime_dirty_state",
-        remediationHint: "inspect writable target or ACL before retrying",
       }),
     );
     const serialized = JSON.stringify(built);
     expect(serialized).toContain("runtime_dirty_state");
+    expect(serialized).not.toContain("Remediation:");
     expect(serialized).not.toContain("raw tool log");
   });
 });

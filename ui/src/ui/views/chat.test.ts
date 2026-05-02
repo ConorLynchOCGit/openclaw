@@ -618,7 +618,7 @@ describe("chat view", () => {
 
   it("renders pending product proactivity as compact chrome instead of a transcript panel", () => {
     const container = document.createElement("div");
-    const onOpenSidebar = vi.fn();
+    const onOpenWorkQueue = vi.fn();
     render(
       renderChat(
         createProps({
@@ -664,7 +664,7 @@ describe("chat view", () => {
               updatedAt: "2026-04-26T16:00:00.000Z",
             },
           ],
-          onOpenSidebar,
+          onOpenWorkQueue,
         }),
       ),
       container,
@@ -674,14 +674,14 @@ describe("chat view", () => {
       ".proactivity-entrypoint__button",
     );
     expect(entryPoint).not.toBeNull();
-    expect(entryPoint?.textContent).toContain("Proactivity");
+    expect(entryPoint?.textContent).toContain("Work Queue");
     expect(entryPoint?.textContent).toContain("1 actionable");
     expect(container.querySelector(".chat-thread .product-proactivity-panel")).toBeNull();
     entryPoint?.click();
-    expect(onOpenSidebar).toHaveBeenCalledWith({ kind: "proactivityInbox" });
+    expect(onOpenWorkQueue).toHaveBeenCalledWith();
   });
 
-  it("renders approved proactive messages as notification UX only after send approval", () => {
+  it("does not surface sent-only proactivity as a chat lifecycle panel", () => {
     const baseItem = {
       queueItemId: "queue-item-1",
       candidateId: "candidate-1",
@@ -723,28 +723,20 @@ describe("chat view", () => {
 
     const afterApproval = document.createElement("div");
     const onDismiss = vi.fn();
-    const onSnooze = vi.fn();
     render(
       renderChat(
         createProps({
           productProactivityQueue: [{ ...baseItem, status: "sent" as const }],
           onProductProactivityDismiss: onDismiss,
-          onProductProactivitySnooze: onSnooze,
         }),
       ),
       afterApproval,
     );
 
-    expect(afterApproval.querySelector(".proactivity-notification")).not.toBeNull();
-    expect(afterApproval.textContent).toContain("Approved Model Memory suggestion");
-    expect(afterApproval.textContent).toContain("Why this appeared");
-    expect(afterApproval.textContent).toContain("raw/private content excluded");
+    expect(afterApproval.querySelector(".proactivity-notification")).toBeNull();
+    expect(afterApproval.querySelector(".heartbeat-proactivity-review")).toBeNull();
     expect(afterApproval.textContent).not.toContain("raw-prompt-marker");
-    const buttons = Array.from(afterApproval.querySelectorAll("button"));
-    buttons.find((button) => button.textContent?.includes("Dismiss"))?.click();
-    buttons.find((button) => button.textContent?.includes("Snooze"))?.click();
-    expect(onDismiss).toHaveBeenCalledWith("queue-item-1");
-    expect(onSnooze).toHaveBeenCalledWith("queue-item-1");
+    expect(onDismiss).not.toHaveBeenCalled();
   });
 
   it("renders personal auto-send product UX with disable control and manual-only follow-up", () => {
@@ -825,9 +817,7 @@ describe("chat view", () => {
 
   it("shows contextual proactivity only for exact active session matches", () => {
     const container = document.createElement("div");
-    const onWorkAction = vi.fn();
-    const onDismiss = vi.fn();
-    const onSnooze = vi.fn();
+    const onOpenWorkQueue = vi.fn();
     const matchingItem = {
       queueItemId: "queue-context-1",
       candidateId: "candidate-context-1",
@@ -893,24 +883,18 @@ describe("chat view", () => {
               messagePreview: "This non-matching session item should stay in the inbox.",
             },
           ],
-          onProductProactivityWorkAction: onWorkAction,
-          onProductProactivityDismiss: onDismiss,
-          onProductProactivitySnooze: onSnooze,
+          onOpenWorkQueue,
         }),
       ),
       container,
     );
 
-    const card = container.querySelector(".contextual-proactivity-card");
-    expect(card).not.toBeNull();
-    expect(card?.textContent).toContain("Gateway rebuild follow-up");
-    expect(card?.textContent).toContain("Suggested action");
-    expect(card?.textContent).toContain("What happens next");
-    expect(card?.textContent).toContain("Shown because this session matches project");
-    expect(card?.textContent).toContain("Plan this");
-    expect(card?.textContent).not.toContain("This non-matching session item");
-    card?.querySelector<HTMLButtonElement>(".btn")?.click();
-    expect(onWorkAction).toHaveBeenCalledWith("queue-context-1", "plan_this");
+    const summary = container.querySelector(".heartbeat-proactivity-review");
+    expect(summary).not.toBeNull();
+    expect(summary?.textContent).toContain("Gateway Rebuild Follow-Up");
+    expect(summary?.textContent).not.toContain("This non-matching session item");
+    summary?.querySelector<HTMLButtonElement>(".btn--primary")?.click();
+    expect(onOpenWorkQueue).toHaveBeenCalledWith("queue-context-1");
 
     render(
       renderChat(
@@ -1023,7 +1007,7 @@ describe("chat view", () => {
     const card = container.querySelector(".inline-proactivity-card");
     expect(card).not.toBeNull();
     expect(card?.textContent).toContain("Follow-ups from this answer");
-    expect(card?.textContent).toContain("Plan runtime seam reset");
+    expect(card?.textContent).toContain("Plan Runtime Seam Reset");
     expect(card?.textContent).toContain("Plan this");
     Array.from(card?.querySelectorAll<HTMLButtonElement>("button") ?? [])
       .find((button) => button.textContent?.includes("Plan this"))
@@ -1260,8 +1244,8 @@ describe("chat view", () => {
                 proofHashes: ["proof-hash-skill-1"],
                 noDarkDataStatus: "pass",
                 feedbackSummary: {
-                  usefulCount: 0,
-                  notUsefulCount: 0,
+                  positiveFeedbackCount: 0,
+                  negativeFeedbackCount: 0,
                   tooRepetitiveCount: 0,
                   wrongContextCount: 0,
                   unsafePrivateCount: 0,
@@ -1284,14 +1268,12 @@ describe("chat view", () => {
     ).not.toBeNull();
     expect(
       container.querySelector(
-        '[data-skill-candidate-id="skill-candidate-1"].heartbeat-proactivity-review__card',
+        '.heartbeat-proactivity-review [data-skill-candidate-id="skill-candidate-1"]',
       ),
     ).not.toBeNull();
-    expect(
-      container.querySelector(
-        '[data-skill-candidate-id="skill-candidate-1"].product-proactivity-item',
-      ),
-    ).not.toBeNull();
+    expect(container.querySelector(".proactivity-entrypoint__button")?.textContent).toContain(
+      "Work Queue",
+    );
   });
 
   it("prefers a draft-ready skill candidate over sibling reverse prompts on the same assistant source", () => {
@@ -1596,7 +1578,7 @@ describe("chat view", () => {
     ).not.toBeNull();
     expect(
       container.querySelector(
-        '[data-skill-candidate-id="skill-candidate-priority"].heartbeat-proactivity-review__card',
+        '.heartbeat-proactivity-review [data-skill-candidate-id="skill-candidate-priority"]',
       ),
     ).not.toBeNull();
     expect(container.textContent).toContain("Recurring Workflow Skill Draft");
@@ -1741,7 +1723,7 @@ describe("chat view", () => {
 
     const card = container.querySelector(".inline-proactivity-card");
     expect(card?.querySelectorAll(".inline-proactivity-card__item")).toHaveLength(1);
-    expect(card?.textContent).toContain("Heartbeat proactivity review cleanup");
+    expect(card?.textContent).toContain("Heartbeat Proactivity Review Cleanup");
     expect(card?.textContent).not.toContain("Read HEARTBEAT.md");
     expect(card?.textContent).not.toContain("Post-compaction context refresh");
     expect(card?.textContent).not.toContain("Sender (untrusted metadata)");
@@ -1873,8 +1855,9 @@ describe("chat view", () => {
       container,
     );
 
-    const contextualCard = container.querySelector(".contextual-proactivity-card");
-    expect(contextualCard?.textContent).toContain("Implement assistant-final capture filter");
+    const contextualCard = container.querySelector(".inline-proactivity-card");
+    expect(contextualCard).not.toBeNull();
+    expect(contextualCard?.textContent).toContain("Implement Assistant-Final Capture Filter");
     expect(contextualCard?.textContent).not.toContain("Planner candidate-plan generation");
 
     const heartbeatCards = Array.from(
@@ -1985,18 +1968,16 @@ describe("chat view", () => {
     );
 
     const card = container.querySelector(".inline-proactivity-card");
-    expect(card?.textContent).toContain("Implement assistant-final capture filter");
+    expect(card?.textContent).toContain("Implement Assistant-Final Capture Filter");
     expect(card?.textContent).not.toContain("HEARTBEAT_OK");
   });
 
   it("adds proactivity to the visible heartbeat review surface with an inbox path", () => {
     const container = document.createElement("div");
-    const onOpenSidebar = vi.fn();
-    const onWorkAction = vi.fn();
+    const onOpenWorkQueue = vi.fn();
     const props = createProps({
       sessionKey: "daily-review-proactivity-test",
-      onOpenSidebar,
-      onProductProactivityWorkAction: onWorkAction,
+      onOpenWorkQueue,
       productProactivityQueue: [
         {
           queueItemId: "queue-review-1",
@@ -2057,24 +2038,25 @@ describe("chat view", () => {
     const review = container.querySelector(".heartbeat-proactivity-review");
     expect(review).not.toBeNull();
     expect(review?.textContent).toContain("What would help this user today?");
-    expect(review?.textContent).toContain("Daily review proactivity follow-up");
-    expect(review?.textContent).toContain("Plan this");
+    expect(review?.textContent).toContain("Daily Review Proactivity Follow-Up");
     Array.from(review?.querySelectorAll<HTMLButtonElement>("button") ?? [])
-      .find((button) => button.textContent?.includes("Plan this"))
+      .find((button) => button.textContent?.includes("Review in Work Queue"))
       ?.click();
-    expect(onWorkAction).toHaveBeenCalledWith("queue-review-1", "plan_this");
-    review?.querySelector<HTMLButtonElement>(".heartbeat-proactivity-review__inbox")?.click();
-    expect(onOpenSidebar).toHaveBeenCalledWith({ kind: "proactivityInbox" });
+    expect(onOpenWorkQueue).toHaveBeenCalledWith("queue-review-1");
+    Array.from(review?.querySelectorAll<HTMLButtonElement>("button") ?? [])
+      .find((button) => button.textContent?.includes("Open Work Queue"))
+      ?.click();
+    expect(onOpenWorkQueue).toHaveBeenCalledWith();
   });
 
   it("renders heartbeat actions from the same actionable inbox source of truth", () => {
     const container = document.createElement("div");
-    const onWorkAction = vi.fn();
+    const onOpenWorkQueue = vi.fn();
     render(
       renderChat(
         createProps({
           productProactivityQueue: [],
-          onProductProactivityWorkAction: onWorkAction,
+          onOpenWorkQueue,
           proactivityInboxDigest: {
             digestId: "digest-heartbeat-source",
             generatedAt: "2026-04-27T06:00:00.000Z",
@@ -2131,8 +2113,8 @@ describe("chat view", () => {
                 proofHashes: ["proof-hash-heartbeat"],
                 noDarkDataStatus: "pass",
                 feedbackSummary: {
-                  usefulCount: 0,
-                  notUsefulCount: 0,
+                  positiveFeedbackCount: 0,
+                  negativeFeedbackCount: 0,
                   tooRepetitiveCount: 0,
                   wrongContextCount: 0,
                   unsafePrivateCount: 0,
@@ -2152,11 +2134,11 @@ describe("chat view", () => {
     expect(entryPoint?.textContent).toContain("1 heartbeat");
     const review = container.querySelector(".heartbeat-proactivity-review");
     expect(review?.textContent).toContain("What would help this user today?");
-    expect(review?.textContent).toContain("Live proactivity generation follow-up");
-    review
-      ?.querySelector<HTMLButtonElement>(".heartbeat-proactivity-review__actions button")
+    expect(review?.textContent).toContain("Live Proactivity Generation Follow-Up");
+    Array.from(review?.querySelectorAll<HTMLButtonElement>("button") ?? [])
+      .find((button) => button.textContent?.includes("Review in Work Queue"))
       ?.click();
-    expect(onWorkAction).toHaveBeenCalledWith("queue-heartbeat-source", "plan_this");
+    expect(onOpenWorkQueue).toHaveBeenCalledWith("queue-heartbeat-source");
   });
 
   it("renders draft-ready heartbeat and inbox items from the canonical work item", () => {
@@ -2256,8 +2238,8 @@ describe("chat view", () => {
                 proofHashes: ["proof-hash-draft-ready"],
                 noDarkDataStatus: "pass",
                 feedbackSummary: {
-                  usefulCount: 0,
-                  notUsefulCount: 0,
+                  positiveFeedbackCount: 0,
+                  negativeFeedbackCount: 0,
                   tooRepetitiveCount: 0,
                   wrongContextCount: 0,
                   unsafePrivateCount: 0,
@@ -2275,11 +2257,11 @@ describe("chat view", () => {
     );
 
     expect(container.textContent).toContain("draft ready");
+    expect(container.textContent).toContain("Plan the Generator Reset");
     expect(container.textContent).toContain(
-      "Turn the assistant output into a concise bounded plan.",
+      "Turn the generated opportunity into a bounded planning turn.",
     );
-    expect(container.textContent).toContain("Draft details");
-    expect(container.textContent).toContain("Next safe step");
+    expect(container.textContent).toContain("Review in Work Queue");
   });
 
   it("renders skillifier draft-ready items from the canonical work item", () => {
@@ -2385,8 +2367,8 @@ describe("chat view", () => {
                 proofHashes: ["proof-hash-skillifier"],
                 noDarkDataStatus: "pass",
                 feedbackSummary: {
-                  usefulCount: 0,
-                  notUsefulCount: 0,
+                  positiveFeedbackCount: 0,
+                  negativeFeedbackCount: 0,
                   tooRepetitiveCount: 0,
                   wrongContextCount: 0,
                   unsafePrivateCount: 0,
@@ -2404,13 +2386,10 @@ describe("chat view", () => {
     );
 
     expect(container.textContent).toContain("draft ready");
+    expect(container.textContent).toContain("Draft the Recurring Workflow Skill");
+    expect(container.textContent).toContain("Review in Work Queue");
     expect(container.textContent).toContain(
-      "The draft package is ready for bounded review and eval design.",
-    );
-    expect(container.textContent).toContain("Recurring Workflow Skill Draft");
-    expect(container.textContent).toContain("/home/node/.openclaw/workspace/skills/");
-    expect(container.textContent).toContain(
-      "Inspect the SKILL.md contract and define the first decisioning eval cases.",
+      "Review the generated skill package and decide what Milestone 4 should validate next.",
     );
   });
 
@@ -2493,24 +2472,18 @@ describe("chat view", () => {
     );
 
     const entryPoint = container.querySelector(".proactivity-entrypoint__button");
-    expect(entryPoint?.textContent).toContain("0 actionable");
-    expect(entryPoint?.textContent).toContain("1 diagnostic");
-    expect(entryPoint?.textContent).not.toContain("heartbeat");
+    expect(entryPoint).toBeNull();
     expect(container.querySelector(".heartbeat-proactivity-review")).toBeNull();
     expect(container.querySelector(".contextual-proactivity-card")).toBeNull();
   });
 
-  it("renders proactivity as a compact entry point and opens inbox in the side panel", () => {
+  it("renders proactivity as a compact entry point and routes into Work Queue", () => {
     const container = document.createElement("div");
-    const onOpenSidebar = vi.fn();
-    const onWorkAction = vi.fn();
-    const onFeedback = vi.fn();
+    const onOpenWorkQueue = vi.fn();
     render(
       renderChat(
         createProps({
-          onOpenSidebar,
-          onProductProactivityWorkAction: onWorkAction,
-          onProductProactivityFeedback: onFeedback,
+          onOpenWorkQueue,
           proactivityInboxDigest: {
             digestId: "digest-1",
             generatedAt: "2026-04-26T22:00:00.000Z",
@@ -2567,8 +2540,8 @@ describe("chat view", () => {
                 proofHashes: ["proof-hash-1"],
                 noDarkDataStatus: "pass",
                 feedbackSummary: {
-                  usefulCount: 1,
-                  notUsefulCount: 0,
+                  positiveFeedbackCount: 1,
+                  negativeFeedbackCount: 0,
                   tooRepetitiveCount: 0,
                   wrongContextCount: 0,
                   unsafePrivateCount: 0,
@@ -2594,8 +2567,8 @@ describe("chat view", () => {
                 proofHashes: ["proof-hash-2"],
                 noDarkDataStatus: "pass",
                 feedbackSummary: {
-                  usefulCount: 1,
-                  notUsefulCount: 1,
+                  positiveFeedbackCount: 1,
+                  negativeFeedbackCount: 1,
                   tooRepetitiveCount: 1,
                   wrongContextCount: 1,
                   unsafePrivateCount: 0,
@@ -2616,25 +2589,28 @@ describe("chat view", () => {
     );
     const thread = container.querySelector(".chat-thread");
     expect(entryPoint).not.toBeNull();
-    expect(entryPoint?.textContent).toContain("Proactivity");
+    expect(entryPoint?.textContent).toContain("Work Queue");
     expect(entryPoint?.textContent).toContain("1 actionable");
     expect(container.querySelector(".chat-proactivity-rail")).toBeNull();
     expect(container.querySelector(".proactivity-inbox")).toBeNull();
     expect(thread?.querySelector(".proactivity-inbox")).toBeNull();
+    expect(container.textContent).not.toContain("Auto-send simulation");
     entryPoint?.click();
-    expect(onOpenSidebar).toHaveBeenCalledWith({ kind: "proactivityInbox" });
+    expect(onOpenWorkQueue).toHaveBeenCalledWith();
+  });
 
+  it("renders compiled planning output on planned inbox cards", () => {
+    const container = document.createElement("div");
     render(
       renderChat(
         createProps({
           sidebarOpen: true,
           sidebarContent: { kind: "proactivityInbox" },
+          proactivityInboxView: "planned",
           onCloseSidebar: () => undefined,
-          onProductProactivityWorkAction: onWorkAction,
-          onProductProactivityFeedback: onFeedback,
           proactivityInboxDigest: {
-            digestId: "digest-1",
-            generatedAt: "2026-04-26T22:00:00.000Z",
+            digestId: "digest-planned",
+            generatedAt: "2026-04-26T22:30:00.000Z",
             filters: [
               "actionable",
               "pending",
@@ -2647,83 +2623,62 @@ describe("chat view", () => {
               "diagnostics",
             ],
             counts: {
-              actionable: 2,
-              pending: 2,
-              planned: 0,
-              sent: 1,
-              snoozed: 1,
-              dismissed: 1,
-              blocked: 1,
-              autosend_trial: 1,
-              diagnostics: 1,
+              actionable: 0,
+              pending: 0,
+              planned: 1,
+              sent: 0,
+              snoozed: 0,
+              dismissed: 0,
+              blocked: 0,
+              autosend_trial: 0,
+              diagnostics: 0,
             },
-            layerCounts: { actionable: 2, history: 3, diagnostic: 1 },
+            layerCounts: { actionable: 0, history: 1, diagnostic: 0 },
             items: [
               {
-                itemId: "inbox-item-1",
-                sourceArtifactReportId: "report-1",
-                candidateId: "candidate-1",
-                queueItemId: "queue-item-1",
+                itemId: "planned-item-1",
+                sourceArtifactReportId: "report-planned",
+                candidateId: "candidate-planned",
+                queueItemId: "queue-planned",
                 messageClass: "operator_approved_suggestion_available",
-                boundedDisplayText: "An approved operator suggestion is available.",
-                candidateSummary: "Follow up on the unresolved gateway rebuild issue.",
-                planTitle: "Gateway rebuild follow-up",
-                problem: "The live gateway may not include the latest proactivity UX changes.",
-                suggestedAction: "Review the gateway rebuild follow-up and send it if still true.",
-                messagePreview: "Should we rerun the live gateway rebuild now that UX changed?",
-                proposedMessage: "Should we rerun the live gateway rebuild now that UX changed?",
-                expectedUserValue: "Keeps the live UI aligned with the latest proactivity changes.",
-                userBenefit: "Keeps the live UI aligned with the latest proactivity changes.",
-                evidenceSummary:
-                  "The active remediation changed proactivity UX and gateway behavior.",
-                confidence: "medium" as const,
+                boundedDisplayText: "A compiled planning output is ready.",
+                planTitle: "Memory Capture Release Gate",
+                problem: "The release gate needs a durable plan visible outside transient chat.",
+                proposedMessage: "Review the compiled release gate plan.",
+                expectedUserValue: "Keeps the plan reviewable after a new chat starts.",
+                evidenceSummary: "Planning output was captured from the assistant response.",
+                confidence: "high" as const,
                 blockedIfMissing: [],
-                status: "pending_review",
-                filterTags: ["actionable", "pending"],
-                layer: "actionable",
-                sourceRefs: ["docs/projects/model-memory/phase-2-execution-roadmap.md"],
-                sourceProfileIds: ["curated_repo_doc"],
-                authorityTiers: ["curated_authoritative"],
-                contentHashes: ["content-hash-1"],
-                proofHashes: ["proof-hash-1"],
+                status: "planned",
+                filterTags: ["planned"],
+                layer: "history",
+                sourceRefs: ["chat://main/assistant/plan-output"],
+                sourceProfileIds: ["cited_assistant_answer"],
+                authorityTiers: ["cited_soft"],
+                contentHashes: ["planned-content-hash"],
+                proofHashes: ["planned-proof-hash"],
                 noDarkDataStatus: "pass",
                 feedbackSummary: {
-                  usefulCount: 1,
-                  notUsefulCount: 0,
+                  positiveFeedbackCount: 1,
+                  negativeFeedbackCount: 0,
                   tooRepetitiveCount: 0,
                   wrongContextCount: 0,
                   unsafePrivateCount: 0,
                 },
-                whyThisAppearedSummary:
-                  "Generated from approved Model Memory proactivity queue evidence.",
+                whyThisAppearedSummary: "The operator requested a plan from a model-authored card.",
                 blockedReasonCodes: [],
-              },
-              {
-                itemId: "inbox-item-2",
-                sourceArtifactReportId: "report-2",
-                candidateId: "candidate-2",
-                messageClass: "autosend_simulation",
-                boundedDisplayText:
-                  "Auto-send simulation compared would-have-sent behavior to manual decisions.",
-                status: "autosend_trial",
-                filterTags: ["diagnostics", "autosend_trial"],
-                layer: "diagnostic",
-                sourceRefs: ["phase2-autosend-simulation"],
-                sourceProfileIds: ["manual_note"],
-                authorityTiers: ["operator_evaluation"],
-                contentHashes: ["content-hash-2"],
-                proofHashes: ["proof-hash-2"],
-                noDarkDataStatus: "pass",
-                feedbackSummary: {
-                  usefulCount: 1,
-                  notUsefulCount: 1,
-                  tooRepetitiveCount: 1,
-                  wrongContextCount: 1,
-                  unsafePrivateCount: 0,
+                handoffMessageAnchor: "chat-message:queue-planned",
+                plannedArtifact: {
+                  status: "compiled",
+                  title: "memory capture release gate",
+                  requestSummary: "Create a plan for the memory capture release gate.",
+                  compiledPlan:
+                    "## memory capture release gate\n\n- Verify direct proof.\n- Verify live gateway wiring.",
+                  sourceRunId: "run-planned",
+                  sourceMessageId: "assistant-planned",
+                  generatedAt: "2026-04-26T22:25:00.000Z",
+                  updatedAt: "2026-04-26T22:29:00.000Z",
                 },
-                whyThisAppearedSummary:
-                  "Generated from report-only auto-send simulation telemetry.",
-                blockedReasonCodes: ["manual_override_required"],
               },
             ],
           },
@@ -2732,37 +2687,14 @@ describe("chat view", () => {
       container,
     );
 
-    const inbox = container.querySelector(".chat-sidebar .proactivity-inbox");
-    expect(inbox).not.toBeNull();
-    expect(container.querySelector(".chat-thread .proactivity-inbox")).toBeNull();
-    expect(container.textContent).toContain("Proactivity Inbox");
-    expect(container.textContent).toContain("1 actionable");
-    expect(container.textContent).toContain("0 history");
-    expect(container.textContent).toContain("1 diagnostic");
-    expect(container.textContent).toContain("Actionable 1");
-    expect(container.textContent).toContain("Diagnostics 1");
-    expect(container.textContent).not.toContain("Auto-send simulation");
-    expect(container.textContent).toContain("Suggested action");
-    expect(container.textContent).toContain("What happens next");
-    expect(container.textContent).toContain("Should we rerun the live gateway rebuild");
-    expect(container.textContent).toContain("Plan this");
-    expect(container.textContent).toContain("Dismiss");
-    expect(container.textContent).toContain("Snooze");
-    expect(container.textContent).toContain("Useful");
-    expect(container.textContent).toContain("Not useful");
-    expect(container.textContent).toContain("Too repetitive");
-    expect(container.textContent).toContain("Wrong context");
-    expect(container.textContent).toContain("Unsafe/private");
-    expect(container.textContent).toContain("Review plan");
-    expect(container.textContent).toContain("curated_repo_doc");
-    expect(container.textContent).toContain("Feedback");
-    expect(container.textContent).not.toContain("raw-prompt-marker");
-    Array.from(container.querySelectorAll<HTMLButtonElement>(".proactivity-inbox button"))
-      .find((button) => button.textContent?.includes("Plan this"))
-      ?.click();
-    expect(onWorkAction).toHaveBeenCalledWith("queue-item-1", "plan_this");
-    container.querySelector<HTMLButtonElement>('[data-feedback-control="wrong_context"]')?.click();
-    expect(onFeedback).toHaveBeenCalledWith("queue-item-1", "wrong_context");
+    expect(container.textContent).toContain("Compiled plan");
+    expect(container.textContent).toContain("Memory Capture Release Gate");
+    expect(container.textContent).toContain("Verify direct proof.");
+    expect(container.textContent).toContain("Finalize Recommendation");
+    expect(container.textContent).toContain("Request Revision");
+    expect(container.textContent).toContain("Execution Approval Unavailable");
+    expect(container.textContent).toContain("Plan request and provenance");
+    expect(container.textContent).toContain("run-planned");
   });
 
   it("dismisses BTW side results from the dismiss button", () => {
@@ -5371,8 +5303,8 @@ describe("chat view", () => {
       status: "pending_review",
       filterTags: ["actionable", "pending"],
       feedbackSummary: {
-        usefulCount: 0,
-        notUsefulCount: 0,
+        positiveFeedbackCount: 0,
+        negativeFeedbackCount: 0,
         tooRepetitiveCount: 0,
         wrongContextCount: 0,
         unsafePrivateCount: 0,
@@ -5439,7 +5371,7 @@ describe("chat view", () => {
     );
 
     const inlineCard = container.querySelector(".inline-proactivity-card__item");
-    expect(inlineCard?.textContent).toContain("New skill: draft-skill-package-checklist");
+    expect(inlineCard?.textContent).toContain("New Skill: Draft Skill Package Checklist");
     expect(inlineCard?.textContent).toContain("Define what belongs");
     expect(inlineCard?.textContent).toContain("Next step");
     expect(inlineCard?.textContent).toContain("Draft the skill contract");
@@ -5452,7 +5384,7 @@ describe("chat view", () => {
     expect(inlineCard?.textContent).not.toContain("It sets the default packaging strategy");
 
     const inboxItemElement = container.querySelector(".proactivity-inbox__item");
-    expect(inboxItemElement?.textContent).toContain("New skill: draft-skill-package-checklist");
+    expect(inboxItemElement?.textContent).toContain("New Skill: Draft Skill Package Checklist");
     expect(inboxItemElement?.textContent).toContain("Purpose");
     expect(inboxItemElement?.textContent).not.toContain("Skill worth creating");
     expect(inboxItemElement?.textContent).not.toContain("Turn Turn");

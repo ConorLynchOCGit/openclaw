@@ -123,6 +123,7 @@ describe("model-memory document ingestion tool", () => {
       resume: true,
       modelId: "openai-codex/gpt-5.4-mini",
       candidateModelId: "openai-codex/gpt-5.4-mini",
+      rebuildRuntime: false,
     });
     expect(executeRun.mock.calls[0]?.[0]?.sources).toHaveLength(2);
     expect((result as { details?: Record<string, unknown> }).details?.recordPath).toBe(

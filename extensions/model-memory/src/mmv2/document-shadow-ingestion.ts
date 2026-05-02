@@ -21,6 +21,7 @@ import type {
   AtomicRoutedCandidate,
   AtomicExtractionBatch,
   CaptureRoutingBatch,
+  CanonicalCandidate,
   CanonicalCandidateBatch,
   CompositeExtractionBatch,
   CompositeRoutedCandidate,
@@ -38,12 +39,17 @@ import { reconcileCandidate } from "./reconciliation.ts";
 import { recordShadowMemoryBatch, type ShadowMemoryBatch } from "./recording.ts";
 import { segmentRawIngestEvent } from "./segmentation.ts";
 
+export type ReconciliationNeighborProvider = (
+  candidate: CanonicalCandidate,
+) => ExistingMemorySummary[] | Promise<ExistingMemorySummary[]>;
+
 export type DocumentV2ShadowIngestionInput = {
   document: DocumentSourceInput;
   modelId: string;
   interpreter: SemanticInterpreter;
   reconciliationNeighbors?: ExistingMemorySummary[];
   reconciliationNeighborsByCandidateId?: Record<string, ExistingMemorySummary[]>;
+  reconciliationNeighborProvider?: ReconciliationNeighborProvider;
   responseMode?: MmV2PromptResponseMode;
 };
 
@@ -73,6 +79,7 @@ export type MmV2SourceEnvelopeCoreIngestionInput<
   interpreter: SemanticInterpreter;
   reconciliationNeighbors?: ExistingMemorySummary[];
   reconciliationNeighborsByCandidateId?: Record<string, ExistingMemorySummary[]>;
+  reconciliationNeighborProvider?: ReconciliationNeighborProvider;
   responseMode?: MmV2PromptResponseMode;
 };
 
@@ -93,6 +100,11 @@ export type MmV2CoreIngestionResult<
   compositePolicy: MmV2CompositePolicySummary;
   admission: AdmissionDecisionBatch;
   reconciliation: ReconciliationDecision[];
+  windowRuns: Array<{
+    sourceWindowId: string;
+    rawEventId: string;
+    segmentIds: string[];
+  }>;
 };
 
 export type DocumentV2CoreIngestionResult = MmV2CoreIngestionResult<
@@ -117,32 +129,39 @@ function chunkArray<T>(values: T[], size: number): T[][] {
   return chunks;
 }
 
-function buildCandidateNeighborMap(input: {
+async function buildCandidateNeighborMap(input: {
   canonicalBatch: CanonicalCandidateBatch;
   reconciliationNeighbors?: ExistingMemorySummary[];
   reconciliationNeighborsByCandidateId?: Record<string, ExistingMemorySummary[]>;
-}): Record<string, ExistingMemorySummary[]> {
+  reconciliationNeighborProvider?: ReconciliationNeighborProvider;
+}): Promise<Record<string, ExistingMemorySummary[]>> {
   const candidateScopedNeighborSets = Object.values(
     input.reconciliationNeighborsByCandidateId ?? {},
   );
   return Object.fromEntries(
-    input.canonicalBatch.canonical_candidates.map((candidate) => {
-      const exactCandidateNeighbors =
-        input.reconciliationNeighborsByCandidateId?.[candidate.candidate_id];
-      const singleCandidateFallbackNeighbors =
-        exactCandidateNeighbors === undefined &&
-        input.reconciliationNeighbors === undefined &&
-        input.canonicalBatch.canonical_candidates.length === 1 &&
-        candidateScopedNeighborSets.length === 1
-          ? candidateScopedNeighborSets[0]
-          : undefined;
-      const neighbors =
-        exactCandidateNeighbors ??
-        singleCandidateFallbackNeighbors ??
-        input.reconciliationNeighbors ??
-        [];
-      return [candidate.candidate_id, neighbors];
-    }),
+    await Promise.all(
+      input.canonicalBatch.canonical_candidates.map(async (candidate) => {
+        const exactCandidateNeighbors =
+          input.reconciliationNeighborsByCandidateId?.[candidate.candidate_id];
+        const singleCandidateFallbackNeighbors =
+          exactCandidateNeighbors === undefined &&
+          input.reconciliationNeighbors === undefined &&
+          input.reconciliationNeighborProvider === undefined &&
+          input.canonicalBatch.canonical_candidates.length === 1 &&
+          candidateScopedNeighborSets.length === 1
+            ? candidateScopedNeighborSets[0]
+            : undefined;
+        const neighbors =
+          exactCandidateNeighbors ??
+          singleCandidateFallbackNeighbors ??
+          (input.reconciliationNeighborProvider
+            ? await input.reconciliationNeighborProvider(candidate)
+            : undefined) ??
+          input.reconciliationNeighbors ??
+          [];
+        return [candidate.candidate_id, neighbors];
+      }),
+    ),
   );
 }
 
@@ -196,6 +215,53 @@ function prefixCompositeExtractionBatch(
   };
 }
 
+function prefixCanonicalCandidateBatch(
+  batch: CanonicalCandidateBatch,
+  prefix: string,
+): CanonicalCandidateBatch {
+  const remappedIds = new Map<string, string>();
+  batch.canonical_candidates.forEach((candidate) => {
+    remappedIds.set(candidate.candidate_id, `${prefix}${candidate.candidate_id}`);
+  });
+
+  return {
+    ...batch,
+    canonical_candidates: batch.canonical_candidates.map((candidate) => ({
+      ...candidate,
+      candidate_id: remappedIds.get(candidate.candidate_id) ?? `${prefix}${candidate.candidate_id}`,
+      parent_candidate_id: candidate.parent_candidate_id
+        ? (remappedIds.get(candidate.parent_candidate_id) ?? candidate.parent_candidate_id)
+        : null,
+      component_candidate_id: candidate.component_candidate_id
+        ? (remappedIds.get(candidate.component_candidate_id) ?? candidate.component_candidate_id)
+        : null,
+    })),
+  };
+}
+
+function prefixAdmissionBatch(
+  batch: AdmissionDecisionBatch,
+  prefix: string,
+): AdmissionDecisionBatch {
+  return {
+    ...batch,
+    decisions: batch.decisions.map((decision) => ({
+      ...decision,
+      candidate_id: `${prefix}${decision.candidate_id}`,
+    })),
+  };
+}
+
+function prefixReconciliationDecisions(
+  decisions: ReconciliationDecision[],
+  prefix: string,
+): ReconciliationDecision[] {
+  return decisions.map((decision) => ({
+    ...decision,
+    candidate_id: `${prefix}${decision.candidate_id}`,
+  }));
+}
+
 function mergeAtomicExtractionBatches(
   eventId: string,
   batches: AtomicExtractionBatch[],
@@ -226,6 +292,17 @@ function mergeAdmissionBatches(
     schema_version: "admission_decision.v1",
     event_id: eventId,
     decisions: batches.flatMap((batch) => batch.decisions),
+  };
+}
+
+function mergeCanonicalCandidateBatches(
+  eventId: string,
+  batches: CanonicalCandidateBatch[],
+): CanonicalCandidateBatch {
+  return {
+    schema_version: "canonical_candidates.v1",
+    event_id: eventId,
+    canonical_candidates: batches.flatMap((batch) => batch.canonical_candidates),
   };
 }
 
@@ -383,6 +460,7 @@ async function extractCompositeCandidatesBatched(input: {
       modelId: input.modelId,
       interpreter: input.interpreter,
       routedCandidates: routedBatch,
+      anchoringCandidates: input.routedCandidates,
       responseMode: input.responseMode,
     });
     batches.push(
@@ -395,17 +473,19 @@ async function extractCompositeCandidatesBatched(input: {
   return mergeCompositeExtractionBatches(input.rawEvent.event_id, batches);
 }
 
-export async function ingestSourceEnvelopeV2Core<
+async function ingestSourceWindowV2Core<
   TSource extends ModelMemorySourceRecord,
   TWindow extends MmV2SourceEnvelopeWindow,
 >(
-  input: MmV2SourceEnvelopeCoreIngestionInput<TSource, TWindow>,
+  input: MmV2SourceEnvelopeCoreIngestionInput<TSource, TWindow> & {
+    sourceWindow: TWindow;
+  },
 ): Promise<MmV2CoreIngestionResult<TSource, TWindow>> {
   const { envelope } = input;
-  const sourceWindow = envelope.windows[0];
+  const sourceWindow = input.sourceWindow;
   const rawEvent = createRawIngestEvent({
     sourceId: envelope.source.id,
-    rawText: envelope.normalizedText,
+    rawText: sourceWindow.normalizedText,
     createdAt: envelope.source.createdAt,
     sessionId: envelope.source.sessionId,
     sourceType: input.rawEventSourceType,
@@ -488,10 +568,11 @@ export async function ingestSourceEnvelopeV2Core<
     compositeBatch: compositeExtraction,
     responseMode: input.responseMode,
   });
-  const candidateNeighborsById = buildCandidateNeighborMap({
+  const candidateNeighborsById = await buildCandidateNeighborMap({
     canonicalBatch: canonicalization,
     reconciliationNeighbors: input.reconciliationNeighbors,
     reconciliationNeighborsByCandidateId: input.reconciliationNeighborsByCandidateId,
+    reconciliationNeighborProvider: input.reconciliationNeighborProvider,
   });
   const admission = await scoreAdmissionBatched({
     rawEvent,
@@ -528,7 +609,7 @@ export async function ingestSourceEnvelopeV2Core<
 
   return {
     source: envelope.source,
-    windows: envelope.windows,
+    windows: [sourceWindow],
     rawEvent,
     segmented,
     routing,
@@ -540,7 +621,117 @@ export async function ingestSourceEnvelopeV2Core<
     compositePolicy,
     admission,
     reconciliation,
+    windowRuns: [
+      {
+        sourceWindowId: sourceWindow.id,
+        rawEventId: rawEvent.event_id,
+        segmentIds: segmented.segments.map((segment) => segment.segment_id),
+      },
+    ],
   };
+}
+
+function prefixCoreRunCandidates<
+  TSource extends ModelMemorySourceRecord,
+  TWindow extends MmV2SourceEnvelopeWindow,
+>(
+  run: MmV2CoreIngestionResult<TSource, TWindow>,
+  prefix: string,
+): MmV2CoreIngestionResult<TSource, TWindow> {
+  return {
+    ...run,
+    atomicExtractionRaw: prefixAtomicExtractionBatch(run.atomicExtractionRaw, prefix),
+    atomicExtraction: prefixAtomicExtractionBatch(run.atomicExtraction, prefix),
+    compositeExtraction: prefixCompositeExtractionBatch(run.compositeExtraction, prefix),
+    canonicalization: prefixCanonicalCandidateBatch(run.canonicalization, prefix),
+    admission: prefixAdmissionBatch(run.admission, prefix),
+    reconciliation: prefixReconciliationDecisions(run.reconciliation, prefix),
+  };
+}
+
+function mergeCoreRuns<
+  TSource extends ModelMemorySourceRecord,
+  TWindow extends MmV2SourceEnvelopeWindow,
+>(
+  envelope: MmV2SourceEnvelope<TSource, TWindow>,
+  runs: Array<MmV2CoreIngestionResult<TSource, TWindow>>,
+): MmV2CoreIngestionResult<TSource, TWindow> {
+  const first = runs[0];
+  const eventId = first.rawEvent.event_id;
+  return {
+    source: envelope.source,
+    windows: envelope.windows,
+    rawEvent: {
+      ...first.rawEvent,
+      raw_text: envelope.normalizedText,
+    },
+    segmented: {
+      schema_version: "segmented_ingest.v1",
+      event_id: eventId,
+      raw_text_sha256: first.segmented.raw_text_sha256,
+      segments: runs.flatMap((run) => run.segmented.segments),
+    },
+    routing: {
+      schema_version: "capture_routing.v1",
+      event_id: eventId,
+      routing_decisions: runs.flatMap((run) => run.routing.routing_decisions),
+    },
+    routedCandidates: {
+      schema_version: "capture_routing.v1",
+      event_id: eventId,
+      routed_candidates: runs.flatMap((run) => run.routedCandidates.routed_candidates),
+    },
+    atomicExtractionRaw: mergeAtomicExtractionBatches(
+      eventId,
+      runs.map((run) => run.atomicExtractionRaw),
+    ),
+    atomicExtraction: mergeAtomicExtractionBatches(
+      eventId,
+      runs.map((run) => run.atomicExtraction),
+    ),
+    compositeExtraction: mergeCompositeExtractionBatches(
+      eventId,
+      runs.map((run) => run.compositeExtraction),
+    ),
+    canonicalization: mergeCanonicalCandidateBatches(
+      eventId,
+      runs.map((run) => run.canonicalization),
+    ),
+    compositePolicy: buildCompositePolicySummary(
+      runs.flatMap((run) => run.canonicalization.canonical_candidates),
+    ),
+    admission: mergeAdmissionBatches(
+      eventId,
+      runs.map((run) => run.admission),
+    ),
+    reconciliation: runs.flatMap((run) => run.reconciliation),
+    windowRuns: runs.flatMap((run) => run.windowRuns),
+  };
+}
+
+export async function ingestSourceEnvelopeV2Core<
+  TSource extends ModelMemorySourceRecord,
+  TWindow extends MmV2SourceEnvelopeWindow,
+>(
+  input: MmV2SourceEnvelopeCoreIngestionInput<TSource, TWindow>,
+): Promise<MmV2CoreIngestionResult<TSource, TWindow>> {
+  const runs: Array<MmV2CoreIngestionResult<TSource, TWindow>> = [];
+  for (const [windowIndex, sourceWindow] of input.envelope.windows.entries()) {
+    const run = await ingestSourceWindowV2Core({
+      ...input,
+      sourceWindow,
+    });
+    runs.push(
+      input.envelope.windows.length > 1
+        ? prefixCoreRunCandidates(run, `window-${windowIndex}:`)
+        : run,
+    );
+  }
+
+  if (runs.length === 0) {
+    throw new Error("MMV2 source envelope must include at least one window");
+  }
+  return runs.length === 1 ? runs[0] : mergeCoreRuns(input.envelope, runs);
 }
 
 export async function ingestDocumentV2Core(
@@ -548,7 +739,6 @@ export async function ingestDocumentV2Core(
 ): Promise<DocumentV2CoreIngestionResult> {
   const envelope = adaptDocumentSource({
     ...input.document,
-    maxWordsPerWindow: Number.MAX_SAFE_INTEGER,
     sourceKind: "document",
   });
   return ingestSourceEnvelopeV2Core({
@@ -559,6 +749,7 @@ export async function ingestDocumentV2Core(
     interpreter: input.interpreter,
     reconciliationNeighbors: input.reconciliationNeighbors,
     reconciliationNeighborsByCandidateId: input.reconciliationNeighborsByCandidateId,
+    reconciliationNeighborProvider: input.reconciliationNeighborProvider,
     responseMode: input.responseMode,
   });
 }

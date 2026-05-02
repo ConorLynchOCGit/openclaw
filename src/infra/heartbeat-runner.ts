@@ -90,6 +90,7 @@ import {
   setHeartbeatsEnabled,
   setHeartbeatWakeHandler,
 } from "./heartbeat-wake.js";
+import { runCodexMemoryCaptureRuntimeHook } from "./model-memory-codex-capture-runtime.js";
 import { buildHeartbeatProactivityReviewText } from "./model-memory-proactivity-runtime.js";
 import type { OutboundSendDeps } from "./outbound/deliver.js";
 import { deliverOutboundPayloads } from "./outbound/deliver.js";
@@ -107,6 +108,7 @@ import {
 export type HeartbeatDeps = OutboundSendDeps &
   ChannelHeartbeatDeps & {
     getReplyFromConfig?: typeof import("./heartbeat-runner.runtime.js").getReplyFromConfig;
+    buildHeartbeatProactivityReviewText?: typeof buildHeartbeatProactivityReviewText;
     runtime?: RuntimeEnv;
     getQueueSize?: (lane?: string) => number;
     nowMs?: () => number;
@@ -719,10 +721,28 @@ function buildHeartbeatVisibleReviewPrompt(): string {
     "",
     "Reply with up to 3 concise items.",
     "For each item include a short title, why now, and next step.",
+    "If the untrusted heartbeat context includes proactivityItems, choose from those model-authored items and do not reply HEARTBEAT_OK.",
     "You may include a useful follow-up question when that would help more than another ordinary task.",
     "Keep it user-facing. Do not include timestamps, source refs, or system text.",
     "If nothing needs attention, reply HEARTBEAT_OK.",
   ].join("\n");
+}
+
+function formatHeartbeatProactivityFallbackText(
+  items: Array<{
+    title: string;
+    whyNow: string;
+    proposedNextStep: string;
+  }>,
+): string {
+  const lines = items
+    .slice(0, 3)
+    .flatMap((item, index) => [
+      `${index + 1}. ${item.title}`,
+      `Why now: ${item.whyNow}`,
+      `Next step: ${item.proposedNextStep}`,
+    ]);
+  return ["What would help this user today?", "", ...lines].join("\n");
 }
 
 function resolveHeartbeatRunPrompt(params: {
@@ -913,7 +933,21 @@ export async function runHeartbeatOnce(opts: {
     delivery.channel !== "none" && delivery.to && visibility.showAlerts,
   );
   const workspaceDir = resolveAgentWorkspaceDir(cfg, agentId);
-  const proactivityReview = await buildHeartbeatProactivityReviewText({
+  await runCodexMemoryCaptureRuntimeHook({
+    cfg,
+    cadence: "heartbeat",
+    projectId:
+      process.env.MODEL_MEMORY_CODEX_CAPTURE_PROJECT_ID ??
+      process.env.OPENCLAW_PROJECT_ID ??
+      "openclaw",
+  }).catch((error) => {
+    log.warn("heartbeat: codex memory capture hook failed open", {
+      error: error instanceof Error ? error.message : String(error),
+    });
+  });
+  const buildProactivityReview =
+    opts.deps?.buildHeartbeatProactivityReviewText ?? buildHeartbeatProactivityReviewText;
+  const proactivityReview = await buildProactivityReview({
     cfg,
     sessionKey,
     projectId: process.env.OPENCLAW_PROJECT_ID ?? "openclaw",
@@ -1113,8 +1147,11 @@ export async function runHeartbeatOnce(opts: {
   const canAttemptHeartbeatOk = Boolean(
     visibility.showOk && delivery.channel !== "none" && delivery.to,
   );
-  const maybeSendHeartbeatOk = async () => {
-    if (!canAttemptHeartbeatOk || delivery.channel === "none" || !delivery.to) {
+  const maybeSendHeartbeatText = async (text: string, requireAlerts: boolean) => {
+    if (delivery.channel === "none" || !delivery.to) {
+      return false;
+    }
+    if (requireAlerts ? !visibility.showAlerts : !canAttemptHeartbeatOk) {
       return false;
     }
     const heartbeatPlugin = getChannelPlugin(delivery.channel);
@@ -1134,12 +1171,13 @@ export async function runHeartbeatOnce(opts: {
       to: delivery.to,
       accountId: delivery.accountId,
       threadId: delivery.threadId,
-      payloads: [{ text: heartbeatOkText }],
+      payloads: [{ text }],
       session: outboundSession,
       deps: opts.deps,
     });
     return true;
   };
+  const maybeSendHeartbeatOk = async () => maybeSendHeartbeatText(heartbeatOkText, false);
 
   try {
     const heartbeatModelOverride = normalizeOptionalString(heartbeat?.model);
@@ -1166,20 +1204,29 @@ export async function runHeartbeatOnce(opts: {
       : [];
 
     if (!replyPayload || !hasOutboundReplyContent(replyPayload)) {
-      if (proactivityReview?.items?.length) {
-        const fallbackPreview = proactivityReview.items
-          .map((item) => item.title)
-          .join(" | ")
-          .slice(0, 200);
+      const proactivityFallbackText = proactivityReview?.items?.length
+        ? formatHeartbeatProactivityFallbackText(proactivityReview.items)
+        : null;
+      if (proactivityFallbackText) {
+        await restoreHeartbeatUpdatedAt({
+          storePath,
+          sessionKey,
+          updatedAt: previousUpdatedAt,
+        });
+        const fallbackSent = await maybeSendHeartbeatText(proactivityFallbackText, true);
         emitHeartbeatEvent({
-          status: "sent",
+          status: fallbackSent ? "sent" : "skipped",
           reason: "proactivity-review-fallback",
-          preview: fallbackPreview,
+          preview: proactivityFallbackText.slice(0, 200),
           durationMs: Date.now() - startedAt,
           channel: delivery.channel !== "none" ? delivery.channel : undefined,
           accountId: delivery.accountId,
+          silent: !fallbackSent,
           indicatorType: visibility.useIndicator ? resolveIndicatorType("sent") : undefined,
         });
+        await updateTaskTimestamps();
+        consumeInspectedSystemEvents();
+        return { status: "ran", durationMs: Date.now() - startedAt };
       }
       await restoreHeartbeatUpdatedAt({
         storePath,
@@ -1210,7 +1257,7 @@ export async function runHeartbeatOnce(opts: {
       !normalized.hasMedia &&
       !hasExecCompletion
     ) {
-      normalized.text = buildHeartbeatVisibleReviewPrompt();
+      normalized.text = formatHeartbeatProactivityFallbackText(proactivityReview.items);
       normalized.shouldSkip = false;
     }
     // For exec completion events, don't skip even if the response looks like HEARTBEAT_OK.

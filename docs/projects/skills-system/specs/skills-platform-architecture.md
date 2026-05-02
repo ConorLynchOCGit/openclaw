@@ -32,9 +32,12 @@ be created or promoted next.
 
 ### 2. Candidate detection layer
 
-Detects repeated useful work, repeated corrections, recurring failures,
-repeated command sequences, and recurring operator patterns from bounded
-evidence.
+Structurally triggers model review over bounded evidence from repeated work,
+corrections, failures, command sequences, and operator patterns.
+
+This layer must not deterministically decide that work is useful,
+skill-worthy, a proactive plan, an existing-skill enhancement, or a merge.
+Those classifications are model-owned or operator-owned.
 
 Inputs may include:
 
@@ -77,6 +80,9 @@ Proves:
 - the agent reads `SKILL.md`
 - workflow and permission contracts hold
 - prompt-injection and sandbox boundaries are respected
+- the package is reachable and not orphaned
+- trigger/resolver overlap and gaps are reported
+- package E2E passes for declared runtimes or canary targets
 
 ### 7. Cross-runtime packaging adapters
 
@@ -123,6 +129,10 @@ path with provenance and a disable/revert plan.
 
 The platform should later maintain itself by pruning stale candidates, flagging
 broken skills, adding eval coverage from failures, and creating repair items.
+
+Usage-based maintenance follows the observe -> model-review -> draft/test ->
+canary -> promote-or-no-op loop. Telemetry can trigger review, but it cannot
+deterministically infer semantic improvement, retirement, merge, or promotion.
 
 ## Non-goals
 

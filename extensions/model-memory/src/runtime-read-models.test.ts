@@ -175,4 +175,28 @@ describe("runtime-read-models", () => {
       sourceProfileId: "researcher_report_artifact",
     });
   });
+
+  it("preserves durable canonical and search text for structural retrieval recall", async () => {
+    const records = await listRuntimeMemoryRecords({
+      listDurableMemories: async () => [
+        buildDurableMemoryRecord({
+          memory_id: "memory-marker",
+          canonical_text:
+            "Validation marker PHASE2-RUNTIME-SEARCH identifies retrieval final inclusion.",
+          search_text:
+            "validation marker PHASE2-RUNTIME-SEARCH retrieval final inclusion model owned",
+          payload: {
+            claim_type: "project_fact",
+            subject: "retrieval final inclusion",
+            predicate: "is",
+            object: "model owned",
+          },
+        }),
+      ],
+    });
+
+    expect(records[0]?.normalizedSearchText).toContain("phase2-runtime-search");
+    expect(records[0]?.normalizedSearchText).toContain("retrieval final inclusion");
+    expect(records[0]?.identityKey).toBeTruthy();
+  });
 });

@@ -78,6 +78,7 @@ export type Phase2LiveProactivitySignal = {
 export type Phase2LiveProactivityOpportunity = {
   opportunityId: string;
   signalId: string;
+  sourceId: string;
   signalKind: Phase2LiveProactivitySignalKind;
   sourceType: Phase2LiveProactivitySignalSourceType;
   workItemKind: Phase2ProactivityWorkItemKind;
@@ -99,11 +100,30 @@ export type Phase2LiveProactivityOpportunity = {
   blockedReasonCodes: string[];
 };
 
+export type Phase2ModelReviewedLiveProactivityOpportunity = {
+  sourceId: string;
+  workItemKind: Phase2ProactivityWorkItemKind;
+  title: string;
+  whyNow: string;
+  proposedNextStep: string;
+  expectedUserValue: string;
+  evidenceSummary: string;
+  confidence?: "high" | "medium" | "low";
+  limitations?: string[];
+  sourceRefs?: string[];
+  sourceProfileIds?: SourceProfileId[];
+  authorityTiers?: SourceAuthorityTier[];
+  contentHashes?: string[];
+  proofHashes?: string[];
+  noDarkDataStatus?: "pass" | "fail";
+  blockedReasonCodes?: string[];
+};
+
 export type Phase2LiveProactivityDetectionPolicy = {
   schemaVersion: typeof PHASE2_LIVE_PROACTIVITY_SIGNAL_SCHEMA_VERSION;
   policyId: string;
   requireLiveSource: true;
-  requireConcreteOpportunity: true;
+  requireModelReviewedOpportunity: true;
   requireProvenance: true;
   requireSourceProfile: true;
   requireNoDarkDataPass: true;
@@ -126,7 +146,9 @@ export type Phase2LiveProactivityCheck = {
     | "authority_tier_required"
     | "no_dark_data_required"
     | "inspection_only_excluded"
-    | "concrete_opportunity_required"
+    | "bounded_signal_summary_required"
+    | "model_reviewed_opportunity_required"
+    | "model_reviewed_signal_ref_required"
     | "static_fallback_not_primary"
     | "external_text_evidence_not_instruction";
 };
@@ -177,6 +199,7 @@ export type Phase2LiveProactivityDetectionReport = {
 export type Phase2LiveProactivitySignalInput = {
   now?: Date;
   sources?: Phase2LiveProactivitySignalSource[];
+  modelReviewedOpportunities?: Phase2ModelReviewedLiveProactivityOpportunity[];
   env?: Record<string, string | undefined>;
   forceNoDarkDataFail?: boolean;
   forceMissingProvenance?: boolean;
@@ -269,93 +292,62 @@ function compact(value: string, maxLength = 220): string {
   return `${normalized.slice(0, maxLength - 1).trimEnd()}.`;
 }
 
-function workItemKindForSignal(
-  signalKind: Phase2LiveProactivitySignalKind,
-): Phase2ProactivityWorkItemKind {
-  if (signalKind === "recent_failure" || signalKind === "unresolved_question") {
-    return "investigation_request";
-  }
-  if (signalKind === "incomplete_follow_up" || signalKind === "stale_decision") {
-    return "draft_next_steps";
-  }
-  if (signalKind === "maintenance_candidate" || signalKind === "project_state_capsule") {
-    return "planning_request";
-  }
-  return "planning_request";
-}
-
-function titleForSignal(signal: Phase2LiveProactivitySignal): string {
-  switch (signal.signalKind) {
-    case "recent_failure":
-      return `Investigate recent ${signal.projectId} failure`;
-    case "unresolved_question":
-      return `Resolve open ${signal.projectId} question`;
-    case "repeated_friction":
-      return `Reduce repeated ${signal.projectId} friction`;
-    case "incomplete_follow_up":
-      return `Draft follow-up for ${signal.projectId}`;
-    case "stale_decision":
-      return `Review stale ${signal.projectId} decision`;
-    case "maintenance_candidate":
-      return `Plan ${signal.projectId} maintenance follow-up`;
-    case "project_state_capsule":
-      return `Use current ${signal.projectId} state`;
-    case "recent_memory_update":
-      return `Review recent ${signal.projectId} memory update`;
-    case "session_event":
-      return `Plan from current ${signal.projectId} session event`;
-    case "active_work_state":
-      return `Advance current ${signal.projectId} work`;
-    default:
-      return `Review current ${signal.projectId} work`;
-  }
-}
-
-function opportunityFromSignal(
-  signal: Phase2LiveProactivitySignal,
-): Phase2LiveProactivityOpportunity {
-  const workItemKind = workItemKindForSignal(signal.signalKind);
-  const summary = compact(signal.boundedSummary);
-  const title = titleForSignal(signal);
+function opportunityFromModelReview(input: {
+  signal: Phase2LiveProactivitySignal;
+  opportunity: Phase2ModelReviewedLiveProactivityOpportunity;
+}): Phase2LiveProactivityOpportunity {
+  const { signal, opportunity } = input;
   const staleLabels = signal.freshness === "stale" ? ["stale_evidence_labeled"] : [];
   const conflictLabels =
     signal.conflictState === "conflicted" ? ["conflicted_evidence_labeled"] : [];
+  const sourceRefs = uniqueSortedStrings(opportunity.sourceRefs ?? signal.sourceRefs);
+  const sourceProfileIds = uniqueSortedStrings(
+    opportunity.sourceProfileIds ?? [signal.sourceProfileId],
+  ) as SourceProfileId[];
+  const authorityTiers = uniqueSortedStrings(
+    opportunity.authorityTiers ?? [signal.authorityTier],
+  ) as SourceAuthorityTier[];
+  const contentHashes = uniqueSortedStrings(opportunity.contentHashes ?? [signal.contentHash]);
+  const proofHashes = uniqueSortedStrings(opportunity.proofHashes ?? [signal.proofHash]);
   return {
     opportunityId: buildDerivedArtifactId({
       family: "context_artifact",
       artifactType: "phase2_live_proactivity_opportunity",
       targetId: signal.signalId,
       seed: {
-        workItemKind,
-        contentHash: signal.contentHash,
-        proofHash: signal.proofHash,
+        workItemKind: opportunity.workItemKind,
+        title: opportunity.title,
+        contentHashes,
+        proofHashes,
       },
     }),
     signalId: signal.signalId,
+    sourceId: opportunity.sourceId,
     signalKind: signal.signalKind,
     sourceType: signal.sourceType,
-    workItemKind,
-    title,
-    whyNow: `${summary} Source: ${signal.sourceRefs[0] ?? signal.sourceType}.`,
-    proposedNextStep:
-      workItemKind === "investigation_request"
-        ? `Investigate ${summary}. Summarize what happened, what evidence supports it, and the smallest safe next step.`
-        : workItemKind === "draft_next_steps"
-          ? `Draft concrete next steps for ${summary}. Use bounded memory evidence and do not edit files unless approved.`
-          : `Plan a bounded next step for ${summary}. Use current OpenClaw evidence and do not edit files unless approved.`,
-    expectedUserValue: `Turns a real ${signal.sourceType.replace(/_/gu, " ")} into a concrete ${signal.projectId} next step.`,
-    evidenceSummary: `${summary} Evidence source: ${signal.sourceRefs[0] ?? signal.sourceType}.`,
-    confidence: staleLabels.length || conflictLabels.length ? "medium" : "high",
-    limitations: signal.limitations,
-    sourceRefs: signal.sourceRefs,
-    sourceProfileIds: [signal.sourceProfileId],
-    authorityTiers: [signal.authorityTier],
-    contentHashes: [signal.contentHash],
-    proofHashes: [signal.proofHash],
+    workItemKind: opportunity.workItemKind,
+    title: compact(opportunity.title, 120),
+    whyNow: compact(opportunity.whyNow, 280),
+    proposedNextStep: compact(opportunity.proposedNextStep, 280),
+    expectedUserValue: compact(opportunity.expectedUserValue, 240),
+    evidenceSummary: compact(opportunity.evidenceSummary, 320),
+    confidence: opportunity.confidence ?? "medium",
+    limitations: uniqueSortedStrings([
+      ...(signal.limitations ?? []),
+      ...(opportunity.limitations ?? []),
+    ]),
+    sourceRefs,
+    sourceProfileIds,
+    authorityTiers,
+    contentHashes,
+    proofHashes,
     staleLabels,
     conflictLabels,
-    noDarkDataStatus: signal.noDarkDataStatus,
-    blockedReasonCodes: [],
+    noDarkDataStatus:
+      signal.noDarkDataStatus === "fail" || opportunity.noDarkDataStatus === "fail"
+        ? "fail"
+        : "pass",
+    blockedReasonCodes: opportunity.blockedReasonCodes ?? [],
   };
 }
 
@@ -411,10 +403,14 @@ function signalFromSource(input: {
 export async function buildPhase2LiveProactivityDetectionReport(
   input: Phase2LiveProactivitySignalInput = {},
 ): Promise<Phase2LiveProactivityDetectionReport> {
-  assertNoDarkData(input.sources ?? []);
+  assertNoDarkData({
+    sources: input.sources ?? [],
+    modelReviewedOpportunities: input.modelReviewedOpportunities ?? [],
+  });
   const generatedAt = (input.now ?? new Date()).toISOString();
   const rollback = readRollback(input.env);
   const sources = input.sources ?? [];
+  const reviewedOpportunities = input.modelReviewedOpportunities ?? [];
   const signals = sources.map((source) =>
     signalFromSource({
       source,
@@ -424,6 +420,12 @@ export async function buildPhase2LiveProactivityDetectionReport(
   );
   const checks: Phase2LiveProactivityCheck[] = [];
   addCheck(checks, "sources:live_source", sources.length > 0, "live_source_required");
+  addCheck(
+    checks,
+    "model_reviewed_opportunities:present",
+    reviewedOpportunities.length > 0,
+    "model_reviewed_opportunity_required",
+  );
   addCheck(checks, "static_fallback:not_primary", true, "static_fallback_not_primary");
   addCheck(
     checks,
@@ -464,23 +466,53 @@ export async function buildPhase2LiveProactivityDetectionReport(
     );
     addCheck(
       checks,
-      `signal:${signal.signalId}:concrete`,
+      `signal:${signal.signalId}:bounded_summary`,
       signal.boundedSummary.length >= 24,
-      "concrete_opportunity_required",
+      "bounded_signal_summary_required",
     );
   }
+  const signalBySourceId = new Map<string, Phase2LiveProactivitySignal>();
+  sources.forEach((source, index) => {
+    const signal = signals[index];
+    if (signal) {
+      signalBySourceId.set(source.sourceId, signal);
+    }
+  });
+  const opportunities: Phase2LiveProactivityOpportunity[] = [];
+  for (const reviewedOpportunity of reviewedOpportunities) {
+    const signal = signalBySourceId.get(reviewedOpportunity.sourceId);
+    addCheck(
+      checks,
+      `model_reviewed_opportunity:${reviewedOpportunity.sourceId}:signal_ref`,
+      Boolean(signal),
+      "model_reviewed_signal_ref_required",
+    );
+    if (!signal) {
+      continue;
+    }
+    opportunities.push(opportunityFromModelReview({ signal, opportunity: reviewedOpportunity }));
+  }
   const failedChecks = checks.filter(
-    (check) => check.status === "fail" && check.reasonCode !== "live_source_required",
+    (check) =>
+      check.status === "fail" &&
+      check.reasonCode !== "live_source_required" &&
+      check.reasonCode !== "model_reviewed_opportunity_required",
   );
-  const eligibleSignals = failedChecks.length
+  const validOpportunities = failedChecks.length
     ? []
-    : signals.filter((signal) => !signal.inspectionOnly && signal.noDarkDataStatus === "pass");
-  const opportunities = eligibleSignals.map(opportunityFromSignal);
+    : opportunities.filter(
+        (opportunity) =>
+          opportunity.noDarkDataStatus === "pass" &&
+          opportunity.sourceRefs.length > 0 &&
+          opportunity.sourceProfileIds.length > 0 &&
+          opportunity.authorityTiers.length > 0 &&
+          opportunity.blockedReasonCodes.length === 0,
+      );
   const decision = rollback
     ? "rollback_disabled"
     : failedChecks.length
       ? "blocked"
-      : opportunities.length
+      : validOpportunities.length
         ? "live_opportunities_detected"
         : "no_live_opportunities";
   const reportId = buildDerivedArtifactId({
@@ -490,7 +522,7 @@ export async function buildPhase2LiveProactivityDetectionReport(
     seed: {
       generatedAt,
       decision,
-      opportunityIds: opportunities.map((opportunity) => opportunity.opportunityId),
+      opportunityIds: validOpportunities.map((opportunity) => opportunity.opportunityId),
       failedReasonCodes: failedChecks.map((check) => check.reasonCode),
     },
   });
@@ -503,7 +535,7 @@ export async function buildPhase2LiveProactivityDetectionReport(
       seed: generatedAt.slice(0, 10),
     }),
     requireLiveSource: true,
-    requireConcreteOpportunity: true,
+    requireModelReviewedOpportunity: true,
     requireProvenance: true,
     requireSourceProfile: true,
     requireNoDarkDataPass: true,
@@ -515,21 +547,26 @@ export async function buildPhase2LiveProactivityDetectionReport(
     markerSpecificRuntimeLogicAllowed: false,
     externalTextHandling: "evidence_not_instruction",
   };
-  const sourceRefs = uniqueSortedStrings(
-    opportunities.flatMap((opportunity) => opportunity.sourceRefs),
-  );
-  const sourceProfileIds = uniqueSortedStrings(
-    opportunities.flatMap((opportunity) => opportunity.sourceProfileIds),
-  ) as SourceProfileId[];
-  const authorityTiers = uniqueSortedStrings(
-    opportunities.flatMap((opportunity) => opportunity.authorityTiers),
-  ) as SourceAuthorityTier[];
-  const contentHashes = uniqueSortedStrings(
-    opportunities.flatMap((opportunity) => opportunity.contentHashes),
-  );
-  const proofHashes = uniqueSortedStrings(
-    opportunities.flatMap((opportunity) => opportunity.proofHashes),
-  );
+  const sourceRefs = uniqueSortedStrings([
+    ...signals.flatMap((signal) => signal.sourceRefs),
+    ...validOpportunities.flatMap((opportunity) => opportunity.sourceRefs),
+  ]);
+  const sourceProfileIds = uniqueSortedStrings([
+    ...signals.map((signal) => signal.sourceProfileId),
+    ...validOpportunities.flatMap((opportunity) => opportunity.sourceProfileIds),
+  ]) as SourceProfileId[];
+  const authorityTiers = uniqueSortedStrings([
+    ...signals.map((signal) => signal.authorityTier),
+    ...validOpportunities.flatMap((opportunity) => opportunity.authorityTiers),
+  ]) as SourceAuthorityTier[];
+  const contentHashes = uniqueSortedStrings([
+    ...signals.map((signal) => signal.contentHash),
+    ...validOpportunities.flatMap((opportunity) => opportunity.contentHashes),
+  ]);
+  const proofHashes = uniqueSortedStrings([
+    ...signals.map((signal) => signal.proofHash),
+    ...validOpportunities.flatMap((opportunity) => opportunity.proofHashes),
+  ]);
   const rollbackPlan: Phase2LiveProactivityRollbackPlan = {
     rollbackId: buildDerivedArtifactId({
       family: "context_artifact",
@@ -545,7 +582,7 @@ export async function buildPhase2LiveProactivityDetectionReport(
     schemaVersion: PHASE2_LIVE_PROACTIVITY_SIGNAL_SCHEMA_VERSION,
     reportId,
     signalCount: signals.length,
-    opportunityCount: opportunities.length,
+    opportunityCount: validOpportunities.length,
     blockedCount: failedChecks.length,
     signalKinds: uniqueSortedStrings(
       signals.map((signal) => signal.signalKind),
@@ -571,7 +608,7 @@ export async function buildPhase2LiveProactivityDetectionReport(
     decision,
     policy,
     signals: rollback ? [] : signals,
-    opportunities: decision === "live_opportunities_detected" ? opportunities : [],
+    opportunities: decision === "live_opportunities_detected" ? validOpportunities : [],
     checks,
     telemetry,
     rollbackPlan,

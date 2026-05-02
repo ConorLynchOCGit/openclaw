@@ -4,7 +4,7 @@ import {
   buildPhase2HeartbeatProactivityReliabilityReport,
   selectHeartbeatProactivityItems,
 } from "./phase2-heartbeat-proactivity-reliability.ts";
-import type { Phase2ProductProactivityQueueItem } from "./phase2-product-proactivity-surfacing.ts";
+import type { Phase2ProductProactivityQueueItem } from "./phase2-product-proactivity-presentation.ts";
 
 function item(id: string, overrides: Partial<Phase2ProductProactivityQueueItem> = {}) {
   return {

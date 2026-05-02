@@ -89,4 +89,42 @@ describe("retrieval request interpreter", () => {
     expect(harmonized.rationale).toContain("broad_query_cleared_canonical_classes");
     expect(harmonized.rationale).toContain("raised_desired_result_count_to_envelope_max");
   });
+
+  it("uses broad type recall for live context injection while preserving structural project scope", () => {
+    const harmonized = harmonizeInterpretedRetrievalRequest({
+      envelope: {
+        queryText:
+          "Find validation marker PHASE2-RUNTIME-SEARCH for model-owned retrieval final inclusion.",
+        requestPurpose: "live_context_injection",
+        scope: {
+          projectId: "model-memory",
+          memoryTraceId: "memory_trace_turn_001",
+          sessionKey: "agent:main:main",
+        },
+        maxResults: 8,
+      },
+      request: {
+        goal: "Find a preference marker.",
+        canonicalClasses: ["user"],
+        kinds: ["preference"],
+        scopeConstraints: {
+          projectId: "model-memory",
+          memoryTraceId: "memory_trace_turn_001",
+        },
+        subjectHints: ["validation marker PHASE2-RUNTIME-SEARCH"],
+        contentHints: ["model-owned retrieval final inclusion"],
+        desiredResultCount: 1,
+        requestConfidence: "strong",
+      },
+    });
+
+    expect(harmonized.request.canonicalClasses).toEqual([]);
+    expect(harmonized.request.kinds).toBeUndefined();
+    expect(harmonized.request.scopeConstraints).toEqual({ projectId: "model-memory" });
+    expect(harmonized.request.subjectHints).toEqual(
+      expect.arrayContaining(["validation", "marker", "phase2", "runtime", "search"]),
+    );
+    expect(harmonized.rationale).toContain("broad_query_cleared_canonical_classes");
+    expect(harmonized.rationale).toContain("broad_query_cleared_kinds");
+  });
 });

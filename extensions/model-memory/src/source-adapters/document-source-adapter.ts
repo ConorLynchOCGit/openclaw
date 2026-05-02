@@ -15,6 +15,7 @@ export type DocumentBlockDescriptor = {
   lineStart: number;
   lineEnd: number;
   text: string;
+  splitFromBlockId?: string;
 };
 
 export type DocumentSourceInput = {
@@ -70,6 +71,36 @@ function countWords(text: string): number {
     return 0;
   }
   return trimmed.split(/\s+/).length;
+}
+
+function splitTextByWordLimit(text: string, maxWords: number): string[] {
+  if (maxWords <= 0 || countWords(text) <= maxWords) {
+    return [text];
+  }
+  const words = text.split(/\s+/).filter((word) => word.length > 0);
+  const chunks: string[] = [];
+  for (let index = 0; index < words.length; index += maxWords) {
+    chunks.push(words.slice(index, index + maxWords).join(" "));
+  }
+  return chunks.length > 0 ? chunks : [text];
+}
+
+function splitOversizedBlocks(
+  blocks: DocumentBlockDescriptor[],
+  maxWordsPerWindow: number,
+): DocumentBlockDescriptor[] {
+  return blocks.flatMap((block) => {
+    const chunks = splitTextByWordLimit(block.text, maxWordsPerWindow);
+    if (chunks.length === 1) {
+      return [block];
+    }
+    return chunks.map((chunk, index) => ({
+      ...block,
+      id: buildDeterministicId("block", `${block.id}:chunk:${index}:${chunk}`),
+      text: chunk,
+      splitFromBlockId: block.id,
+    }));
+  });
 }
 
 function createHeadingPath(currentHeadingPath: string[], level: number, text: string): string[] {
@@ -157,8 +188,9 @@ function buildWindowRecord(
 ): DocumentSourceWindow {
   const lineStart = blockDescriptors[0]?.lineStart;
   const lineEnd = blockDescriptors[blockDescriptors.length - 1]?.lineEnd;
+  const containsSplitBlock = blockDescriptors.some((block) => block.splitFromBlockId);
   const normalizedText =
-    lineStart !== undefined && lineEnd !== undefined
+    !containsSplitBlock && lineStart !== undefined && lineEnd !== undefined
       ? normalizedLines
           .slice(lineStart - 1, lineEnd)
           .join("\n")
@@ -195,7 +227,8 @@ export function adaptDocumentSource(input: DocumentSourceInput): DocumentSourceE
   const createdAt = input.createdAt ?? new Date();
   const normalizedText = normalizeDocumentText(input.text);
   const normalizedLines = normalizedText.split("\n");
-  const blocks = buildBlockDescriptors(normalizedText);
+  const maxWordsPerWindow = input.maxWordsPerWindow ?? DEFAULT_MAX_WORDS_PER_WINDOW;
+  const blocks = splitOversizedBlocks(buildBlockDescriptors(normalizedText), maxWordsPerWindow);
   const sourceKind = input.sourceKind ?? "document";
   const sourceFingerprint = hashValue(
     JSON.stringify({
@@ -243,7 +276,6 @@ export function adaptDocumentSource(input: DocumentSourceInput): DocumentSourceE
   }
 
   const windows: DocumentSourceWindow[] = [];
-  const maxWordsPerWindow = input.maxWordsPerWindow ?? DEFAULT_MAX_WORDS_PER_WINDOW;
   let currentBlocks: DocumentBlockDescriptor[] = [];
   let currentWordCount = 0;
 

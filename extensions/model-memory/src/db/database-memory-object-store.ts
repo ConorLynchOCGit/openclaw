@@ -11,9 +11,7 @@ import type {
 } from "../semantic-collision-adjudication.ts";
 import {
   assessStructuralSameClaimDelta,
-  describeClaimFieldComparison,
   describeFamilyRecallMatch,
-  describeFactValueMatchProfile,
   describeRuleActionBundleMatchProfile,
   deriveMemoryIdentity,
   hasStrongRuleActionBundleRecallMatch,
@@ -631,131 +629,6 @@ function hasSameSlotSupersessionReason(input: {
   );
 }
 
-function hasPackagingOnlyCoreClaimAgreement(input: {
-  object: ModelMemoryObject;
-  candidate: ModelMemoryObjectRecord;
-}): boolean {
-  const comparison = describeClaimFieldComparison(input.object, input.candidate);
-  const structuralDelta = assessStructuralSameClaimDelta(input.object, input.candidate);
-  return comparison.coreClaimMatch && structuralDelta.deltaClass === "packaging_only_drift";
-}
-
-export function shouldFastAttachCollisionCandidate(input: {
-  identity: MemoryIdentityDescriptor;
-  object: ModelMemoryObject;
-  candidate: ModelMemoryObjectRecord;
-}): boolean {
-  if (
-    input.candidate.canonicalClass !== input.object.canonicalClass ||
-    input.candidate.kind !== input.object.kind ||
-    input.candidate.scopeKey !== input.identity.scopeKey
-  ) {
-    return false;
-  }
-
-  if (
-    hasSameSlotSupersessionReason({
-      identity: input.identity,
-      object: input.object,
-      candidate: input.candidate,
-    })
-  ) {
-    return false;
-  }
-
-  return hasPackagingOnlyCoreClaimAgreement({
-    object: input.object,
-    candidate: input.candidate,
-  });
-}
-
-function hasStrongPayloadFieldAgreement(
-  object: ModelMemoryObject,
-  candidate: ModelMemoryObjectRecord,
-): boolean {
-  return describeClaimFieldComparison(object, candidate).coreClaimMatch;
-}
-
-function selectPreferredFactAttachCandidate(input: {
-  object: ModelMemoryObject;
-  candidates: ModelMemoryObjectRecord[];
-}): ModelMemoryObjectRecord | undefined {
-  if (input.object.kind !== "fact") {
-    return undefined;
-  }
-
-  const profiles = input.candidates.map((candidate) => ({
-    candidate,
-    valueMatch: describeFactValueMatchProfile(input.object, candidate),
-  }));
-  const broaderCandidates = profiles.filter(
-    ({ valueMatch }) => valueMatch.strong && valueMatch.candidateContainsObjectValue,
-  );
-  if (broaderCandidates.length === 0) {
-    return undefined;
-  }
-
-  const narrowMatches = profiles.filter(
-    ({ valueMatch }) =>
-      valueMatch.strong &&
-      !valueMatch.candidateContainsObjectValue &&
-      (valueMatch.exact || valueMatch.objectContainsCandidateValue || !valueMatch.wrapper),
-  );
-
-  return narrowMatches.length === 1 ? narrowMatches[0]?.candidate : undefined;
-}
-
-export function selectDeterministicAttachCollisionCandidate(input: {
-  identity: MemoryIdentityDescriptor;
-  object: ModelMemoryObject;
-  candidates: ModelMemoryObjectRecord[];
-}): ModelMemoryObjectRecord | undefined {
-  if (input.candidates.length === 0) {
-    return undefined;
-  }
-
-  if (input.candidates.length === 1) {
-    const [candidate] = input.candidates;
-    return candidate &&
-      shouldFastAttachCollisionCandidate({
-        identity: input.identity,
-        object: input.object,
-        candidate,
-      })
-      ? candidate
-      : undefined;
-  }
-
-  const strongMatches = input.candidates.filter(
-    (candidate) =>
-      candidate.canonicalClass === input.object.canonicalClass &&
-      candidate.kind === input.object.kind &&
-      candidate.scopeKey === input.identity.scopeKey &&
-      hasStrongPayloadFieldAgreement(input.object, candidate) &&
-      assessStructuralSameClaimDelta(input.object, candidate).deltaClass ===
-        "packaging_only_drift" &&
-      !hasSameSlotSupersessionReason({
-        identity: input.identity,
-        object: input.object,
-        candidate,
-      }),
-  );
-
-  const preferredFactCandidate = selectPreferredFactAttachCandidate({
-    object: input.object,
-    candidates: strongMatches,
-  });
-  if (preferredFactCandidate) {
-    return preferredFactCandidate;
-  }
-
-  if (strongMatches.length === 1) {
-    return strongMatches[0];
-  }
-
-  return undefined;
-}
-
 export type CollisionCandidateBuildResult = {
   rawCandidateCount: number;
   retainedRecords: ModelMemoryObjectRecord[];
@@ -1120,40 +993,6 @@ export class DatabaseMemoryObjectStore {
           continue;
         }
 
-        const fastAttachTarget = selectDeterministicAttachCollisionCandidate({
-          identity,
-          object: input.object,
-          candidates: collisionBuild.retainedRecords,
-        });
-        if (fastAttachTarget) {
-          const result = await this.persistWriteDecision({
-            repository,
-            input,
-            identity,
-            createdAt,
-            policy: decideWritePolicy({
-              object: input.object,
-              identity,
-              sourceKind: input.sourceKind ?? "document",
-              collisionMatch: {
-                relation: "attach_support",
-                target: extractStoredObjectShape(fastAttachTarget),
-              },
-              targetAlreadyHasSourceSupport: supportItems.some(
-                (item) =>
-                  item.memoryObjectId === fastAttachTarget.id &&
-                  item.supportFingerprint === buildSupportFingerprint(input),
-              ),
-            }),
-            writeEventIndex: writeEventCount,
-          });
-          results.push(result);
-          writeEventCount += 1;
-          memoryObjects = await repository.listMemoryObjects();
-          supportItems = await repository.listSupportItems();
-          continue;
-        }
-
         if (!boundedCandidateAdjudicator) {
           const result = await this.persistWriteDecision({
             repository,
@@ -1164,7 +1003,7 @@ export class DatabaseMemoryObjectStore {
               object: input.object,
               identity,
               sourceKind: input.sourceKind ?? "document",
-              collisionMatch: { relation: "distinct" },
+              collisionMatch: { relation: "conflict_hold" },
             }),
             writeEventIndex: writeEventCount,
           });

@@ -30,5 +30,29 @@
     "specifier": "../../extensions/model-memory/runtime-api.js",
     "resolvedPath": "extensions/model-memory/runtime-api.js",
     "reason": "imports bundled plugin file from src boundary"
+  },
+  {
+    "file": "src/gateway/server-methods/model-memory-proactivity.ts",
+    "line": 9,
+    "kind": "import",
+    "specifier": "../../../extensions/model-memory/runtime-api.js",
+    "resolvedPath": "extensions/model-memory/runtime-api.js",
+    "reason": "imports bundled plugin file from src boundary"
+  },
+  {
+    "file": "src/infra/model-memory-codex-capture-runtime.ts",
+    "line": 12,
+    "kind": "import",
+    "specifier": "../../extensions/model-memory/runtime-api.js",
+    "resolvedPath": "extensions/model-memory/runtime-api.js",
+    "reason": "imports bundled plugin file from src boundary"
+  },
+  {
+    "file": "src/infra/model-memory-proactivity-runtime.ts",
+    "line": 70,
+    "kind": "import",
+    "specifier": "../../extensions/model-memory/runtime-api.js",
+    "resolvedPath": "extensions/model-memory/runtime-api.js",
+    "reason": "imports bundled plugin file from src boundary"
   }
 ]

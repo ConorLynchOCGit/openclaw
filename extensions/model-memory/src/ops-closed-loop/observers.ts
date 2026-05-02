@@ -66,7 +66,6 @@ export function buildRetrievalObservationSignals(input: {
         queryHash: sha256(request.queryText),
         retrievedMemoryIds,
         selectedMemoryIds,
-        ranks: Object.fromEntries(items.map((item) => [item.memoryObjectId, item.rankIndex])),
         reasonCodes: Object.fromEntries(
           items.map((item) => [item.memoryObjectId, item.retrievalReasonCodes]),
         ),
@@ -112,7 +111,6 @@ export function buildInjectionObservationSignals(input: {
             status: status?.status ?? "active",
             kind: status?.kind,
             artifact_type: status?.artifact_type,
-            rank: item.rankIndex,
             conflict_marked: item.retrievalReasonCodes.includes("conflict_marked"),
           };
         }),

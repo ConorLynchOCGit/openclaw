@@ -124,21 +124,62 @@ The scaffold must not include raw transcript snippets or raw tool logs.
 ## Properly skilled checklist
 
 A skill is "properly skilled" only when all required items for its risk tier
-exist:
+exist. OpenClaw's checklist intentionally matches or exceeds the Gbrain-style
+skillify/check-resolvable bar while preserving OpenClaw's model-owned judgment
+boundary:
 
-- skill contract exists
-- trigger and use cases are defined
-- anti-patterns are defined
-- safety boundaries are defined
-- deterministic logic is script-backed where appropriate
-- tests exist for deterministic logic
-- evals exist for model judgment
-- routing and decisioning cases exist
-- compliance test verifies the agent reads `SKILL.md`
+- `SKILL.md` contract exists with purpose, trigger conditions, when-not-to-use,
+  safety boundaries, inputs, outputs, workflow, and success checks
+- deterministic code or helper scripts exist where the workflow requires
+  deterministic behavior
+- unit tests cover deterministic helper/script behavior
+- integration tests exercise real package/runtime seams where applicable
+- LLM evals cover model judgment and model-output quality where applicable
+- resolver trigger metadata exists using user-language trigger patterns
+- resolver trigger evals prove intended prompts route to the skill and
+  unrelated prompts do not
+- check-resolvable-style report proves reachability, overlap/MECE posture, gap
+  detection, orphan detection, package filing, and missing-gate reporting
+- package E2E proves user intent to runtime behavior in each declared runtime
+  or canary/shadow target
+- compliance test verifies the agent reads and follows `SKILL.md`
 - vetting passes for the risk tier
-- cross-runtime packaging is valid
-- proactivity linkage exists
-- rollback plan exists
+- cross-runtime packaging is valid when declared
+- proactivity linkage exists back to the originating candidate/opportunity
+- provenance, install target, canary, rollback, and disable records exist
+
+Milestone 4 makes the eval, resolver, check-resolvable-style, and draft-package
+E2E portions enforceable for review-only packages. Later milestones add
+install/canary/rollback, cross-runtime install, and usage-based
+self-improvement gates.
+
+## Model-owned Skillifier boundary
+
+The Skillifier may consume model-reviewed candidates and model-authored draft
+content, but it must not reintroduce deterministic semantic judgment.
+
+Allowed deterministic checks:
+
+- required files and sections are present
+- package metadata schema is valid
+- refs, hashes, ids, source authority, and provenance are present
+- declared trigger fixtures execute against expected ids/routes
+- declared eval fixtures pass or fail
+- package E2E command exits as expected
+- destination paths and permissions match the capability matrix
+- canary, install, rollback, and disable state are structurally valid
+
+Forbidden deterministic checks:
+
+- deciding whether the candidate is actually skill-worthy
+- deciding whether the skill is semantically useful enough to promote
+- deciding skill-vs-plan-vs-existing-enhancement classification
+- inferring improvement, retirement, or merge from usage counts or feedback
+- using keyword/title similarity as semantic duplicate or overlap authority
+
+Those judgments require bounded model review, explicit operator approval, or an
+approved low-risk autonomy policy that itself depends on model-reviewed
+evidence plus passing structural gates.
 
 ## Design rules
 

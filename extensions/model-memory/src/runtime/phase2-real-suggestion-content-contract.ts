@@ -9,7 +9,7 @@ import {
   buildPhase2ProductProactivitySurfacingReport,
   type Phase2ProductProactivityQueueItem,
   type Phase2ProductProactivitySurfacingReport,
-} from "./phase2-product-proactivity-surfacing.ts";
+} from "./phase2-product-proactivity-presentation.ts";
 
 export const PHASE2_REAL_SUGGESTION_CONTENT_SCHEMA_VERSION =
   "phase2_real_suggestion_content_contract.v1" as const;

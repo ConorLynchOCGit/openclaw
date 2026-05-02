@@ -23,8 +23,6 @@ export const PHASE2_PERSONAL_AUTOSEND_CONTINUATION_REPORT_SCHEMA_VERSION =
   "phase2_personal_autosend_continuation_decision_report.v1" as const;
 
 export type Phase2PersonalAutoSendContinuationCapabilityDecision =
-  | "continue_personal_autosend_trial"
-  | "narrow_personal_autosend_trial"
   | "pause_personal_autosend_trial"
   | "rollback_to_manual_only";
 
@@ -53,7 +51,7 @@ export type Phase2PersonalAutoSendContinuationCheck = {
   reasonCode:
     | "slice50_product_ux_required"
     | "slice51_quality_review_required"
-    | "quality_green_or_degraded_required"
+    | "quality_review_report_only_required"
     | "blocked_quality_rolls_back"
     | "user_visible_disable_required"
     | "rollback_returns_manual_only"
@@ -77,8 +75,6 @@ export type Phase2PersonalAutoSendContinuationTelemetry = {
   productUxMode: Phase2PersonalAutoSendProductUxReport["settings"]["mode"] | "missing";
   allowedAutoSendClass: "operator_approved_suggestion_available";
   followUpClassManualOnly: true;
-  personalTrialContinues: boolean;
-  personalTrialNarrowed: boolean;
   personalTrialPaused: boolean;
   rollbackToManualOnly: boolean;
   userDisableReturnsManual: boolean;
@@ -124,7 +120,7 @@ export type Phase2PersonalAutoSendContinuationReport = {
     repeatedCount: number;
     staleCount: number;
     unsafePrivateCount: number;
-    wrongContextOrNotUsefulRatio: number;
+    wrongContextOrNegativeFeedbackRatio: number;
   };
   checks: Phase2PersonalAutoSendContinuationCheck[];
   telemetry: Phase2PersonalAutoSendContinuationTelemetry;
@@ -326,9 +322,8 @@ export async function buildPhase2PersonalAutoSendContinuationReport(
   addCheck(checks, "slice51_quality_review_required", Boolean(qualityReviewReport));
   addCheck(
     checks,
-    "quality_green_or_degraded_required",
-    qualityReviewReport?.decision === "trial_quality_green" ||
-      qualityReviewReport?.decision === "trial_quality_degraded",
+    "quality_review_report_only_required",
+    qualityReviewReport?.decision === "trial_quality_review_recorded",
   );
   addCheck(
     checks,
@@ -367,11 +362,7 @@ export async function buildPhase2PersonalAutoSendContinuationReport(
   ].some(Boolean);
   const decision: Phase2PersonalAutoSendContinuationDecision = criticalBlock
     ? "rollback_to_manual_only"
-    : qualityReviewReport?.decision === "trial_quality_degraded"
-      ? "narrow_personal_autosend_trial"
-      : productUxReport?.settings.mode === "manual_only"
-        ? "pause_personal_autosend_trial"
-        : "continue_personal_autosend_trial";
+    : "pause_personal_autosend_trial";
   const reportId = buildDerivedArtifactId({
     family: "context_artifact",
     artifactType: "phase2_personal_autosend_continuation_report",
@@ -434,7 +425,8 @@ export async function buildPhase2PersonalAutoSendContinuationReport(
           repeatedCount: qualityReviewReport.telemetry.repeatedCount,
           staleCount: qualityReviewReport.telemetry.staleCount,
           unsafePrivateCount: qualityReviewReport.telemetry.unsafePrivateCount,
-          wrongContextOrNotUsefulRatio: qualityReviewReport.telemetry.wrongContextOrNotUsefulRatio,
+          wrongContextOrNegativeFeedbackRatio:
+            qualityReviewReport.telemetry.wrongContextOrNegativeFeedbackRatio,
         }
       : undefined,
     checks,
@@ -447,8 +439,6 @@ export async function buildPhase2PersonalAutoSendContinuationReport(
       productUxMode: productUxReport?.settings.mode ?? "missing",
       allowedAutoSendClass: "operator_approved_suggestion_available",
       followUpClassManualOnly: true,
-      personalTrialContinues: decision === "continue_personal_autosend_trial",
-      personalTrialNarrowed: decision === "narrow_personal_autosend_trial",
       personalTrialPaused: decision === "pause_personal_autosend_trial",
       rollbackToManualOnly: decision === "rollback_to_manual_only",
       userDisableReturnsManual,
@@ -485,10 +475,12 @@ export function assertPhase2PersonalAutoSendContinuationDecided(
     throw new Error("phase2 personal autosend continuation enabled follow-up auto-send");
   }
   if (
-    report.decision === "continue_personal_autosend_trial" &&
+    report.decision !== "rollback_to_manual_only" &&
     report.telemetry.blockedReasonCodes.length > 0
   ) {
-    throw new Error("phase2 personal autosend continuation continued with failed checks");
+    throw new Error(
+      "phase2 personal autosend continuation used a non-rollback decision with failed checks",
+    );
   }
 }
 

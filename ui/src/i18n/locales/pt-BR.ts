@@ -149,6 +149,7 @@ export const pt_BR: TranslationMap = {
   tabs: {
     agents: "Agentes",
     overview: "Visão Geral",
+    workQueue: "Fila de Trabalho",
     channels: "Canais",
     instances: "Instâncias",
     sessions: "Sessões",
@@ -170,6 +171,7 @@ export const pt_BR: TranslationMap = {
   subtitles: {
     agents: "Espaços, ferramentas, identidades.",
     overview: "Status, entrada, saúde.",
+    workQueue: "Planos, habilidades e repasses de execução manual duráveis.",
     channels: "Canais e configurações.",
     instances: "Clientes e nós conectados.",
     sessions: "Sessões ativas e padrões.",

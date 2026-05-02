@@ -1,0 +1,77 @@
+{
+  "generatedAt": "2026-05-01T00:32:48.447Z",
+  "title": "Live Gateway Document Ingestion Validation",
+  "toolName": "model_memory_document_ingest",
+  "runId": "live-gateway-ui-doc-20260501T002348975Z",
+  "recordPath": ".artifacts/model-memory/phase2-live-gateway-ui-model-owned-validation/20260501T002348975Z/document-ingestion-record.json",
+  "modelId": "openai-codex/gpt-5.4-mini",
+  "candidateModelId": "openai-codex/gpt-5.4-mini",
+  "requestTimeoutMs": 180000,
+  "requestSeed": 7,
+  "maxWordsPerWindow": 1500,
+  "chunkSize": 2,
+  "maxConcurrency": 1,
+  "invocation": {
+    "sources": [
+      ".artifacts/model-memory/phase2-live-gateway-ui-model-owned-validation/20260501T002348975Z/fixtures/live-gateway-structured-doc-20260501T002348975Z.md",
+      "memory/2026-05-01.md"
+    ],
+    "runId": "live-gateway-ui-doc-20260501T002348975Z",
+    "recordPath": ".artifacts/model-memory/phase2-live-gateway-ui-model-owned-validation/20260501T002348975Z/document-ingestion-record.json",
+    "chunkSize": 2,
+    "maxConcurrency": 1,
+    "resume": false,
+    "modelId": "openai-codex/gpt-5.4-mini",
+    "candidateModelId": "openai-codex/gpt-5.4-mini",
+    "requestTimeoutMs": 180000,
+    "requestSeed": 7,
+    "maxWordsPerWindow": 1500,
+    "rebuildRuntime": false
+  },
+  "sources": [
+    {
+      "displayPath": ".artifacts/model-memory/phase2-live-gateway-ui-model-owned-validation/20260501T002348975Z/fixtures/live-gateway-structured-doc-20260501T002348975Z.md",
+      "status": "completed",
+      "windowCount": 1,
+      "capturedClaimCount": 4,
+      "writeDecisionCounts": {
+        "write": 4
+      },
+      "ignoredWindowCount": 1,
+      "rejectedWindowCount": 0,
+      "rejectReasons": []
+    },
+    {
+      "displayPath": "memory/2026-05-01.md",
+      "status": "completed",
+      "windowCount": 1,
+      "capturedClaimCount": 1,
+      "writeDecisionCounts": {
+        "write": 2,
+        "supersede": 1
+      },
+      "ignoredWindowCount": 0,
+      "rejectedWindowCount": 0,
+      "rejectReasons": []
+    }
+  ],
+  "totals": {
+    "docsAttempted": 2,
+    "docsCompleted": 2,
+    "docsFailed": 0,
+    "capturedClaimCount": 5,
+    "ignoredWindowCount": 1,
+    "rejectedWindowCount": 0,
+    "writeDecisionCounts": {
+      "write": 6,
+      "supersede": 1
+    },
+    "rejectReasons": []
+  },
+  "manualUiSteps": [
+    "Use the OpenClaw operator tool `model_memory_document_ingest`.",
+    "Pass sources [\".artifacts/model-memory/phase2-live-gateway-ui-model-owned-validation/20260501T002348975Z/fixtures/live-gateway-structured-doc-20260501T002348975Z.md\", \"memory/2026-05-01.md\"].",
+    "Keep chunkSize=2, maxConcurrency=1, resume=true, modelId=openai-codex/gpt-5.4-mini, candidateModelId=openai-codex/gpt-5.4-mini.",
+    "After the run, inspect .artifacts/model-memory/phase2-live-gateway-ui-model-owned-validation/20260501T002348975Z/document-ingestion-record.json and the model-memory operator evidence surfaces for captured claims and write decisions."
+  ]
+}

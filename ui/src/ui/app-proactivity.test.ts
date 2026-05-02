@@ -67,8 +67,8 @@ function actionableInboxItem(overrides: Partial<ProactivityInboxItem> = {}): Pro
     proofHashes: ["proof-hash-1"],
     noDarkDataStatus: "pass",
     feedbackSummary: {
-      usefulCount: 0,
-      notUsefulCount: 0,
+      positiveFeedbackCount: 0,
+      negativeFeedbackCount: 0,
       tooRepetitiveCount: 0,
       wrongContextCount: 0,
       unsafePrivateCount: 0,
@@ -122,7 +122,9 @@ describe("OpenClawApp proactivity product correctness", () => {
     app.sessionKey = "main";
     app.proactivityInboxDigest = inboxDigest(actionableInboxItem());
     app.productProactivityQueue = [];
-    const sendChat = vi.spyOn(app, "handleSendChat").mockResolvedValue(undefined);
+    const sendChat = vi.spyOn(app, "handleSendChat").mockResolvedValue("run-plan-1");
+    const loadQueue = vi.spyOn(app, "loadProductProactivityQueue").mockResolvedValue(undefined);
+    const loadInbox = vi.spyOn(app, "loadProactivityInbox").mockResolvedValue(undefined);
 
     await app.handleProductProactivityWorkAction("queue-item-1", "plan_this");
 
@@ -140,7 +142,16 @@ describe("OpenClawApp proactivity product correctness", () => {
       workItemStatus: "planning_started",
       handoffStatus: "started",
       handoffMessageAnchor: "chat-message:queue-item-1",
+      plannedArtifact: expect.objectContaining({
+        status: "requested",
+        title: "Fix Proactivity Inbox correctness",
+        sourceRunId: "run-plan-1",
+      }),
     });
+    expect(item?.plannedArtifact?.requestSummary).toContain("Start a bounded plan this");
+    expect(item?.feedbackSummary.positiveFeedbackCount).toBe(1);
+    expect(loadQueue).not.toHaveBeenCalled();
+    expect(loadInbox).not.toHaveBeenCalled();
     expect(app.proactivityInboxView).toBe("planned");
   });
 
@@ -165,7 +176,19 @@ describe("OpenClawApp proactivity product correctness", () => {
   it("draft skill package calls the bounded skillifier gateway method instead of chat handoff", async () => {
     const request = vi.fn(async (method: string) => {
       if (method === "modelMemory.proactivity.skillifyCandidateDraft") {
-        return { ok: true, decision: "draft_ready" };
+        return {
+          ok: true,
+          skillCandidateId: "skill-candidate-1",
+          reportId: "skillifier-report-1",
+          decision: "draft_ready",
+          skillPackageId: "skill-package-1",
+          packageTitle: "Skill Candidate Ledger Integration",
+          draftPath: "/tmp/skills/skill-candidate-ledger-integration",
+          reportPath:
+            "/tmp/skills/skill-candidate-ledger-integration/.openclaw-skillifier/report.json",
+          reviewSummary: "Review-only skill draft created.",
+          nextReviewStep: "Review the generated SKILL.md.",
+        };
       }
       return { ok: true, queue: { items: [] }, digest: { items: [] } };
     });
@@ -217,7 +240,7 @@ describe("OpenClawApp proactivity product correctness", () => {
     app.productProactivityQueue = [];
     const loadQueue = vi.spyOn(app, "loadProductProactivityQueue").mockResolvedValue(undefined);
     const loadInbox = vi.spyOn(app, "loadProactivityInbox").mockResolvedValue(undefined);
-    const sendChat = vi.spyOn(app, "handleSendChat").mockResolvedValue(undefined);
+    const sendChat = vi.spyOn(app, "handleSendChat").mockResolvedValue(null);
 
     await app.handleProductProactivityWorkAction("queue-item-1", "draft_skill_package");
 
@@ -230,9 +253,86 @@ describe("OpenClawApp proactivity product correctness", () => {
       recipientId: undefined,
       skillCandidateId: "skill-candidate-1",
     });
-    expect(loadQueue).toHaveBeenCalledTimes(1);
-    expect(loadInbox).toHaveBeenCalledTimes(1);
+    expect(loadQueue).not.toHaveBeenCalled();
+    expect(loadInbox).not.toHaveBeenCalled();
     expect(app.productProactivityError).toBeNull();
+    expect(app.proactivityInboxDigest?.items[0]).toMatchObject({
+      draftReady: true,
+      skillifierDraft: {
+        skillPackageId: "skill-package-1",
+        draftPath: "/tmp/skills/skill-candidate-ledger-integration",
+      },
+      workItemStatus: "drafted",
+    });
+  });
+
+  it("dismisses one inbox item locally without reloading or dropping the rest of the inbox", async () => {
+    const request = vi.fn(async () => ({ ok: true }));
+    const first = actionableInboxItem({
+      itemId: "inbox-item-1",
+      queueItemId: "queue-item-1",
+      opportunityId: "opportunity-1",
+    });
+    const second = actionableInboxItem({
+      itemId: "inbox-item-2",
+      queueItemId: "queue-item-2",
+      opportunityId: "opportunity-2",
+      candidateId: "candidate-2",
+      workItemId: "work-item-2",
+      planTitle: "Second proactivity item",
+    });
+    const app = new OpenClawApp();
+    app.client = { request } as never;
+    app.connected = true;
+    app.sessionKey = "main";
+    app.productProactivityQueue = [];
+    app.proactivityInboxDigest = {
+      ...inboxDigest(first),
+      counts: {
+        actionable: 2,
+        pending: 2,
+        planned: 0,
+        sent: 0,
+        snoozed: 0,
+        dismissed: 0,
+        blocked: 0,
+        autosend_trial: 0,
+        diagnostics: 0,
+      },
+      layerCounts: { actionable: 2, history: 0, diagnostic: 0 },
+      items: [first, second],
+    };
+    const loadQueue = vi.spyOn(app, "loadProductProactivityQueue").mockResolvedValue(undefined);
+    const loadInbox = vi.spyOn(app, "loadProactivityInbox").mockResolvedValue(undefined);
+
+    await app.handleProductProactivityDismiss("queue-item-1");
+
+    expect(loadQueue).not.toHaveBeenCalled();
+    expect(loadInbox).not.toHaveBeenCalled();
+    expect(request).toHaveBeenCalledWith("modelMemory.proactivity.updateOpportunityState", {
+      opportunityId: "opportunity-1",
+      status: "dismissed",
+      sessionKey: "main",
+      projectId: "openclaw",
+      resolvedByChatMessageId: null,
+      dismissalCooldownUntil: expect.any(String),
+      plannedArtifact: null,
+      reviewStatus: null,
+    });
+    expect(app.proactivityInboxDigest?.items).toHaveLength(2);
+    expect(app.proactivityInboxDigest?.items[0]).toMatchObject({
+      status: "dismissed",
+      layer: "history",
+      filterTags: ["dismissed"],
+    });
+    expect(app.proactivityInboxDigest?.items[0]?.feedbackSummary.negativeFeedbackCount).toBe(1);
+    expect(app.proactivityInboxDigest?.items[1]).toMatchObject({
+      queueItemId: "queue-item-2",
+      status: "pending_review",
+      layer: "actionable",
+    });
+    expect(app.proactivityInboxDigest?.counts.actionable).toBe(1);
+    expect(app.proactivityInboxDigest?.counts.dismissed).toBe(1);
   });
 
   it("preserves started handoff state across queue and inbox reloads", async () => {
@@ -318,6 +418,46 @@ describe("OpenClawApp proactivity product correctness", () => {
     });
   });
 
+  it("does not run model-reviewed refresh from normal proactivity reads", async () => {
+    const diagnosticItem = {
+      ...actionableInboxItem({
+        status: "blocked",
+        layer: "diagnostic",
+        blockedIfMissing: ["live_candidate", "model_authored_visible_copy"],
+      }),
+      queueItemId: "diagnostic-queue-item",
+      staleLabels: [],
+      conflictLabels: [],
+      eligibleScope: {
+        environment: "live",
+        userId: "conor",
+        recipientId: "conor",
+        projectId: "openclaw",
+        sessionKey: "main",
+        operatorId: "operator-conor",
+        allowedMessageClasses: [],
+        proofPrerequisiteIds: [],
+        proofPrerequisiteHashes: [],
+      },
+      generatedAt: "2026-04-27T04:00:00.000Z",
+      updatedAt: "2026-04-27T04:00:00.000Z",
+    } as unknown as ProductProactivityQueueItem;
+    const request = vi.fn().mockResolvedValueOnce({ ok: true, queue: { items: [diagnosticItem] } });
+    const app = new OpenClawApp();
+    app.client = { request } as never;
+    app.connected = true;
+    app.sessionKey = "main";
+
+    await app.loadProductProactivityQueue();
+
+    expect(request).toHaveBeenCalledTimes(1);
+    expect(request.mock.calls[0]).toEqual([
+      "modelMemory.proactivity.queue",
+      { sessionKey: "main", projectId: "openclaw" },
+    ]);
+    expect(app.productProactivityQueue).toEqual([diagnosticItem]);
+  });
+
   it("approve/send uses the inbox item source of truth and sends the edited message", async () => {
     const request = vi.fn(async () => ({ ok: true }));
     const app = new OpenClawApp();
@@ -357,7 +497,7 @@ describe("OpenClawApp proactivity product correctness", () => {
     });
     expect(app.proactivityInboxDigest?.counts.actionable).toBe(0);
     expect(app.proactivityInboxDigest?.counts.sent).toBe(1);
-    expect(app.proactivityInboxView).toBe("sent");
+    expect(app.proactivityInboxView).toBe("actionable");
   });
 
   it("keeps the inbox item pending and shows failure feedback when chat.inject fails", async () => {

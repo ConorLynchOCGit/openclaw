@@ -142,6 +142,53 @@ describe("phase2 model-authored proactivity briefs", () => {
     expect(executor.requests[0]?.responseOptions?.verbosity).toBe("low");
   });
 
+  it("bounds long model-authored next steps at word boundaries", async () => {
+    const input = deterministicBriefInput();
+    const deterministicBrief = buildUserFacingProactivityBrief(input);
+    const executor = new FakeExecutor(
+      jsonOutput({
+        kindCode: "proactive_plan",
+        titleWords: ["Memory", "validation", "matrix"],
+        recommendedNextStepWords: [
+          "Create",
+          "a",
+          "pre-wiring",
+          "validation",
+          "pass",
+          "covering",
+          "ordinary",
+          "turns",
+          "long",
+          "prompts",
+          "document",
+          "ingestion",
+          "daily",
+          "summaries",
+          "corrections",
+          "reconciliation",
+          "collision",
+          "adjudication",
+          "retrieval",
+          "inclusion",
+          "and",
+          "proactivity",
+          "compatibility",
+        ],
+      }),
+    );
+
+    const result = await buildModelAuthoredUserFacingProactivityBrief(
+      { briefInput: input, deterministicBrief, opportunityId: "opportunity-test" },
+      { enabled: true, executor, modelId: "openai-codex/gpt-5.4" },
+    );
+
+    expect(result.brief.recommendedNextStep).not.toMatch(
+      /\b(?:proacti|compatibilit|reconciliatio|adjudicatio)\.$/u,
+    );
+    expect(result.brief.recommendedNextStep).not.toContain("proacti.");
+    expect(result.brief.recommendedNextStep.endsWith(".")).toBe(true);
+  });
+
   it("demotes model output with generic filler purpose", async () => {
     const input = deterministicBriefInput();
     const deterministicBrief = buildUserFacingProactivityBrief(input);
@@ -211,6 +258,36 @@ describe("phase2 model-authored proactivity briefs", () => {
     );
   });
 
+  it("demotes slug-like model-authored titles with hyphenated card copy", async () => {
+    const input = deterministicBriefInput();
+    const deterministicBrief = buildUserFacingProactivityBrief(input);
+    const executor = new FakeExecutor(
+      jsonOutput({
+        kindCode: "new_skill",
+        titleWords: ["candidate-discovery-qa-gate"],
+        oneLinePurposeWords: [
+          "Define",
+          "a",
+          "release",
+          "check",
+          "for",
+          "candidate",
+          "review",
+          "quality",
+        ],
+        recommendedNextStepWords: ["Draft", "the", "review", "gate", "checklist"],
+      }),
+    );
+
+    const result = await buildModelAuthoredUserFacingProactivityBrief(
+      { briefInput: input, deterministicBrief, opportunityId: "opportunity-test" },
+      { enabled: true, executor },
+    );
+
+    expect(result.brief.quality.status).toBe("demote");
+    expect(result.brief.quality.reasons).toContain("title_is_slug_like");
+  });
+
   it("demotes weak deterministic fallback when the model is unavailable", async () => {
     const input = {
       ...deterministicBriefInput(),
@@ -232,7 +309,7 @@ describe("phase2 model-authored proactivity briefs", () => {
     expect(result.report.promptPersisted).toBe(false);
   });
 
-  it("keeps strong deterministic fallback surfaceable when model briefing is disabled", async () => {
+  it("demotes deterministic fallback even when deterministic copy passes validators", async () => {
     const input = {
       opportunityClass: "skill_candidate" as const,
       title: "Review web research routing as a reusable skill",
@@ -254,9 +331,10 @@ describe("phase2 model-authored proactivity briefs", () => {
       { enabled: false, executor: null },
     );
 
-    expect(result.source).toBe("deterministic_fallback");
-    expect(result.brief.quality.status).toBe("pass");
-    expect(result.brief.title).toBe("New skill: web-research-routing");
+    expect(result.source).toBe("demoted");
+    expect(result.brief.quality.status).toBe("demote");
+    expect(result.brief.quality.reasons).toContain("model_authored_visible_copy_required");
+    expect(result.report.decision).toBe("demote");
   });
 
   it("builds bounded model input without raw prompt, transcript, or tool-log fields", () => {

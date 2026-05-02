@@ -5,6 +5,231 @@ title: "Model Memory Decisions"
 
 # Model Memory Decisions
 
+## 2026-05-01 - Model-owned judgment is a standing Phase 2 rule
+
+Decision:
+
+- the deterministic-judgment cleanup is now a standing Phase 2 architecture
+  boundary, not a temporary pre-Milestone-4 cleanup activity
+- all remaining Phase 2 buckets must follow
+  [Phase 2 Model-Owned Judgment Policy](/projects/model-memory/specs/phase-2-model-owned-judgment-policy)
+- deterministic code may own ids, refs, hashes, schemas, caps, redaction,
+  source authority, lifecycle state, cooldowns, exact structural dedupe,
+  structural packet/window assembly, deterministic retrieval recall,
+  structural graph/capsule/projection assembly from already-adjudicated inputs,
+  route isolation, operational failure taxonomy, and post-model validation
+- model or operator review owns memory-worthiness, semantic admission,
+  correction/supersession/collision beyond exact refs, topic/entity/workflow
+  identity, semantic graph edges, skill/proactivity classification, surfacing
+  value, visible copy, usage-based skill improvement, and final context-pack or
+  capsule inclusion
+- every remaining Phase 2 build slice must prove that unavailable, invalid,
+  ungrounded, or unsafe model output becomes pending, quarantined, blocked,
+  demoted, or absent rather than falling back to deterministic semantic logic
+- packet construction must remain contiguous and structural. It may cap,
+  redact, segment, and preserve refs, but it must not prune for
+  interestingness, usefulness, relevance, memory-worthiness, skill-worthiness,
+  or proactivity value
+- skill parity work must also follow this boundary: resolver checks, package
+  shape, exact trigger fixtures, install paths, canary state, and rollback
+  metadata may be deterministic, but skill-worthiness, skill-vs-plan choice,
+  promotion recommendation, and self-improvement decisions are model-owned or
+  operator-owned
+
+Reasoning:
+
+- the pruning pass proved that deterministic judgment can reappear in packet
+  construction, proof fixtures, presentation copy, feedback loops, and helper
+  wrappers unless the boundary is applied across every future Phase 2 slice
+- graph, capsules, retrieval, planner surfacing, skills, and usage-based
+  self-improvement all require semantic judgment; pushing that judgment back
+  into deterministic keywords, scores, or telemetry would recreate the same
+  debt under new names
+- making the policy explicit lets Milestone 4 skill evals and later Phase 2
+  memory work optimize model-owned behavior without legitimizing deterministic
+  semantic shortcuts
+
+## 2026-04-30 - Phase 2 needs model-owned semantic graph enrichment
+
+Decision:
+
+- Phase 2 includes graph/capsule/retrieval work, but the semantic graph
+  enrichment layer must be an explicit build slice rather than an implied
+  property of the structural runtime graph
+- the existing graph substrate remains derived runtime state, not canonical
+  memory truth
+- a new Phase 2 semantic graph enrichment slice will add model-owned
+  extraction and adjudication of topic, entity, subject, workflow, pattern, and
+  relationship nodes from admitted MMV2 memories and bounded source packets
+- deterministic graph code may build structural nodes and edges from ids, refs,
+  source lineage, explicit memory edges, scopes, projects, documents,
+  artifacts, hashes, and lifecycle state
+- deterministic graph code must not decide topical sameness, semantic subject
+  identity, pattern membership, workflow relationship, or same-entity truth from
+  keywords, embeddings, or string overlap as final authority
+- model-owned graph enrichment may propose `mentions`, `same_entity_as`,
+  `supports`, `depends_on`, `used_in_workflow`, `uses_skill`, `refines`,
+  `summarizes`, and topic/pattern membership edges when each proposal carries
+  evidence refs into admitted memory/source windows
+- deterministic validation may enforce schema shape, known node ids, allowed
+  edge types, source refs, evidence quote anchoring, caps, provenance, source
+  authority, safety, lifecycle eligibility, and explicit conflict/pending
+  states
+- ambiguous or weak model graph proposals remain probationary, pending review,
+  or blocked; deterministic code must not promote them into durable semantic
+  graph truth
+- retrieval may use validated semantic graph nodes and edges as candidate
+  recall signals, but final context-pack/capsule/context-injection inclusion
+  remains model-owned
+- this slice is Phase 2 scope, but it is not a pre-Milestone-4 requirement
+  unless retrieval/capsule quality depends on semantic graph grouping before
+  Milestone 4 prep
+
+Reasoning:
+
+- the current runtime graph can represent relationships, source lineage, and
+  edge authority tiers, but it does not yet create a durable model-owned topic
+  or entity map such as "Memory A and Memory F are both about agent
+  delegation"
+- leaving this implicit risks either underpowered graph retrieval or a later
+  reintroduction of deterministic topic clustering
+- making the slice explicit preserves the Phase 2 goal of richer graph/capsule
+  retrieval while keeping semantic identity and pattern mapping model-owned
+
+## 2026-04-30 - Schema/code-like source text must reach model-owned capture
+
+Decision:
+
+- MMV2 atomic extraction must not skip routed `code_block` or schema-like text
+  before model review
+- schema/code-heavy text can contain durable instructions, project facts,
+  source references, or operational decisions, so memory-worthiness remains a
+  model-owned decision
+- deterministic code may still validate model output after the model responds:
+  schema shape, supported payload type, exact source segment refs, exact
+  evidence quote containment, caps, redaction, source authority, and unsafe
+  output demotion
+- if model output from schema/code-heavy text is malformed, ungrounded,
+  unsupported, unsafe, or unrepaired, the result is empty/pending/quarantined by
+  the existing validation path; deterministic code must not pre-judge the
+  source text as not memory-worthy
+- live proof for the model-owned memory replacement architecture follows local
+  scripted validation and must exercise provider behavior plus real Codex source
+  availability or report Codex as explicitly degraded
+
+Reasoning:
+
+- the deterministic-judgment pruning pass removed broad semantic fallback
+  behavior, but a residual structural filter still hid schema/code-like routed
+  candidates from the atomic model
+- that filter was a potential packet-construction judgment layer: it could
+  prevent valid model-owned capture before the model had a chance to decide
+- post-model validation is the correct boundary because it enforces grounding
+  and safety without deciding source usefulness
+
+## 2026-04-30 - Model-owned replacements must close post-pruning memory funnels
+
+Decision:
+
+- the deterministic semantic-judgment audit is green, but that is not the same
+  as functional readiness: every removed capture, admission, reconciliation,
+  collision, retrieval-inclusion, and surfacing decision must now have a
+  model-owned replacement or an explicit pending/quarantine/blocked outcome
+- memory-candidate sources are explicit inventory items: ordinary OpenClaw
+  turns, assistant finals, document ingestion, MMV2 document shadow ingestion,
+  proof/tool-result capture, deep document ingestion, recovery/maintenance
+  loops, live shadow adapters, Codex session activity, and heartbeat/system
+  events when routed as evidence
+- packet construction for OpenClaw and Codex activity is structural only:
+  source, recency, contiguous window, explicit refs, caps, redaction, raw
+  tool-log omission/summarization, refs, hashes, and source authority
+- packet construction must not filter for interestingness, usefulness,
+  relevance, memory-worthiness, skill-worthiness, or proactivity value
+- memory capture and retrieval model-owned lanes default to the separate
+  `openai-codex/gpt-5.4-mini` route because they run frequently; skills and
+  proactivity candidate review remain on the higher-reasoning
+  `openai-codex/gpt-5.4` route; default chat and presentation-brief routes are
+  unchanged
+- Codex is a first-class memory source: Codex user turns are
+  `user_authoritative`, Codex assistant finals are lower-authority evidence,
+  Codex command summaries are tool evidence, and Codex validation failures are
+  tool-grounded evidence
+- validated Codex-derived memory candidates may write to MMV2, but Codex
+  transcript text is never executable instruction and raw full transcripts,
+  raw tool logs, secrets, private phrases, hidden reasoning, and unbounded logs
+  must not persist
+- MMV2 capture routing, atomic extraction, composite extraction, admission,
+  reconciliation, and collision adjudication are model-owned semantic steps;
+  deterministic code validates schemas, refs, evidence bounds, source
+  authority, safety, persistence boundaries, and exact structural targets only
+- if a required model step is unavailable or invalid after bounded repair, the
+  result is pending review, quarantine, or blocked, never deterministic semantic
+  fallback
+- deterministic hybrid retrieval recall remains: lexical search, vector recall,
+  graph/projection cues, recency, source-lineage, explicit refs, scopes,
+  classes, windows, and structural pack assembly are candidate-gathering
+  mechanics
+- final context-pack, capsule, and context-injection inclusion is model-owned;
+  deterministic recall scores or lexical matches cannot become final semantic
+  inclusion authority
+- proof artifacts may persist sanitized bounded source packets, bounded model
+  outputs, route summaries, validation reports, refs, hashes, admitted
+  candidates, quarantines, pending items, and repair outcomes for auditability
+
+Reasoning:
+
+- the previous pruning pass correctly removed deterministic value judgment, but
+  old tests exposed holes where removed behavior had not yet been replaced by
+  model-owned lanes
+- accepting temporary pending/quarantine outcomes is safer than restoring
+  deterministic "helpful" behavior through compatibility fixtures
+- source inventory and route isolation are now prerequisites for proving memory
+  capture/retrieval readiness before Milestone 4
+
+## 2026-04-29 - Remaining deterministic judgment debt must be deleted, not preserved
+
+Decision:
+
+- remaining Phase 1/2 deterministic semantic/value judgment is removal debt,
+  not compatibility debt
+- obsolete deterministic judgment paths must be deleted or replaced by bounded
+  model-owned review; they must not be kept alive behind `legacy`, `fallback`,
+  `compat`, `test-only`, or helper wrappers
+- audit reduction by renaming fields/functions is invalid unless the runtime
+  behavior also changes from semantic/value judgment to guardrail,
+  structural-only filtering, operator review, or model-owned review
+- hybrid retrieval and package assembly may keep deterministic candidate recall
+  signals, including string/lexical search, recency, graph/projection cues,
+  source authority, ids, refs, scopes, lifecycle, windows, and budgets
+- those deterministic retrieval signals are recall inputs, not final value
+  judgment; model-owned review or explicit operator review decides what belongs
+  in any final context pack when semantic fit matters
+- proactivity feedback may record explicit operator controls and safety
+  suppression, but it must not infer usefulness or semantic truth from
+  telemetry
+- visible cards require model-authored title, purpose, and next-step copy; if
+  that path is unavailable or invalid, the item is demoted rather than shown
+  with deterministic fallback prose
+- tests and proof scripts that assert old deterministic judgment behavior must
+  be deleted or rewritten around model-owned judgment and deterministic
+  guardrails
+- strict audit passing is required but not sufficient; code review must confirm
+  bad behavior was removed rather than renamed, moved, or packed into
+  compatibility helpers
+- intentional deletions of deterministic judgment compatibility paths should
+  not be restored without a new decision record explaining why the restored
+  behavior is guardrail-only or model-owned
+
+Reasoning:
+
+- prior repair passes repeatedly moved subjective judgment into new
+  deterministic seams
+- this pass should make the memory/proactivity codebase lighter and more stable
+  by deleting obsolete paths, not adding scaffolding around them
+- deterministic guardrails remain necessary, but deterministic value judgment
+  is not scalable for memory capture, candidate discovery, retrieval relevance,
+  or human-facing card quality
+
 ## 2026-04-29 - Deterministic semantic judgment requires audit and golden-corpus validation
 
 Decision:
@@ -477,9 +702,11 @@ Decision:
   conflict sections
 - planner/proactivity surfaces maintenance and opportunity candidates through
   contextual one-liners, heartbeat, and artifacts
-- skills/tools require three similar successful traces or one explicit ask plus
-  one successful manual run; repo-local/workspace-local proposals come first,
-  and global Codex skill promotion requires a second approval
+- skills/tools may trigger review from structural recurrence or one explicit
+  ask plus one successful manual run, but semantic similarity, skill-worthiness,
+  and skill-vs-plan classification are model-owned or operator-owned;
+  repo-local/workspace-local proposals come first, and global Codex skill
+  promotion requires a second approval
 
 Reasoning:
 
@@ -4142,6 +4369,16 @@ Reasoning:
 
 ## 2026-04-26 - proactivity usefulness tuning is control-plane only
 
+Superseded on 2026-04-29:
+
+- the deterministic usefulness-tuning runtime and proof were removed as
+  deterministic value-judgment debt
+- explicit feedback remains bounded control-plane metadata, but it may only
+  drive explicit suppression/safety/operator-review behavior, not deterministic
+  usefulness ranking or semantic truth
+- the deleted runtime must not be restored behind compatibility helpers or
+  renamed tuning fields
+
 Decision:
 
 - Slice 59 instruments bounded UX events for proactive suggestions: viewed,
@@ -4472,3 +4709,84 @@ Decision:
   keeping live workflow state clean and useful.
 - Future buckets must not claim success on proof-only paths when live runtime
   paths still fail.
+
+## 2026-04-29 - remaining deterministic judgment debt is removal debt
+
+Decision:
+
+- Phase 1/2 memory and proactivity code must not preserve deterministic
+  semantic/value judgment through compatibility wrappers, fallback helpers, test
+  fixtures, or renamed fields.
+- Deterministic code remains authoritative for structure and safety: ids,
+  hashes, refs, provenance, schema validation, caps, redaction, explicit-key
+  dedupe, exact duplicate detection, explicit structural target refs, cooldowns,
+  budgets, source authority, and persistence boundaries.
+- Hybrid retrieval candidate recall and package assembly remain deterministic
+  and structural. Lexical search, graph/projection cues, vector candidate
+  recall, source-lineage, explicit refs, scopes, recency, and structural pack
+  assembly are allowed recall mechanics.
+- Final semantic selection and value judgment for memory admission,
+  reconciliation beyond exact structural shortcuts, candidate usefulness,
+  skill/proactivity classification, visible card copy, and final context-pack
+  inclusion are model-owned or operator-owned.
+- Proof/model plumbing may mention semantic fields when it builds model prompt
+  contracts, resolves scripted model outputs, or compares proof artifacts, but
+  it must not run as live semantic authority.
+- Tests that preserve old deterministic semantic behavior are debt and must be
+  removed or rewritten around model-owned boundaries.
+
+Reasoning:
+
+- Prior Phase 1/2 passes repeatedly hid value judgments in deterministic
+  helpers, fallback paths, scoring fields, and proof expectations. That made
+  the system brittle and caused user-facing proactivity/skill cards to degrade
+  into cleaned-up fragments rather than useful decisions.
+- Strict audit is required but not sufficient. Passing the audit by renaming or
+  relocating equivalent behavior is explicitly not acceptable; behavior review
+  must confirm the bad runtime authority was actually removed.
+
+## 2026-04-30 - regular Codex capture reuses the MMV2 model-owned path
+
+Decision:
+
+- Codex session memory capture is first-class and now enabled by default, with
+  explicit opt-out through `MODEL_MEMORY_CODEX_CAPTURE_ENABLED=false`. Regular
+  capture may run through manual, heartbeat, closeout, or session-boundary
+  runner configuration.
+- Codex user asks, assistant finals, command summaries, validation failures,
+  touched areas, and outcomes use the same MMV2 capture/admission/
+  reconciliation/collision path as OpenClaw and document sources.
+- Long Codex prompts and long OpenClaw prompts are document-like sources and
+  use structural windowing. Packet construction may select by source, recency,
+  session, explicit ref, and caps only; it may not prune for interestingness or
+  memory-worthiness.
+- Regular Codex capture is idempotent by persisted refs and hashes. Repeated
+  source activities are skipped structurally before the model route is invoked.
+- Model unavailable or invalid output leaves candidates pending, quarantined,
+  blocked, or degraded; deterministic fallback memory creation remains
+  forbidden.
+- Quality validation must cover user-turn-rich Codex sessions, mixed
+  assistant/tool/validation evidence, realistic daily summary notes, positive
+  and negative assistant/tool evidence, and a source-to-packet-to-model-to-
+  admission recall audit.
+- Daily summary files use the MMV2 daily-continuity document path when
+  ingested durably. They remain untrusted workspace notes: source text is not
+  executed, and durable writes still require model-owned extraction, admission,
+  reconciliation, and source authority checks.
+- Daily summary recall quality is evaluated by both top-level memories and
+  composite component coverage. Independent daily-note bullets may become
+  separate atomic candidates by model-owned routing; coherent project-state,
+  checklist, or procedure notes may remain one composite artifact with
+  component coverage.
+
+Reasoning:
+
+- The Codex live proof showed that long prompts need document-style windows and
+  evidence anchoring, not short ordinary-turn treatment.
+- Reusing the same MMV2 path avoids rebuilding lane-specific semantic
+  shortcuts and keeps source authority, TTL, evidence anchoring, admission, and
+  artifact behavior consistent across OpenClaw, Codex, and documents.
+- The richer validation set separates architecture failures from coverage
+  gaps. A lane is healthy only if raw source candidates remain visible in the
+  bounded packet, model output is invoked, and admission/reconciliation/write
+  behavior explains any loss without deterministic fallback.

@@ -67,3 +67,22 @@ Reasoning:
 
 - the still-relevant content is build-graph and landing-gate planning
 - that content belongs with the current Turbo and gate-ownership project
+
+## 2026-04-25 - only cut local landing gates over to Turbo-first after ownership is real
+
+Decision:
+
+- the eventual target is Turbo-first local `pnpm test` and `pnpm build`
+  orchestration
+- that cutover must not happen while most of the meaningful test/build graph is
+  still root-owned
+- until then, the custom local scheduler remains the canonical local speed path
+  for the root-heavy Vitest graph
+
+Reasoning:
+
+- Turbo wins when the graph reflects real ownership and cacheable boundaries
+- forcing Turbo to front a mostly root-owned graph would add indirection without
+  delivering the full selectivity or cache value we want
+- the correct sequence is ownership extraction first, Turbo-first cutover
+  second

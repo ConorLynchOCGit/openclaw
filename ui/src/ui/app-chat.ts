@@ -156,7 +156,7 @@ async function sendChatMessageNow(
     restoreAttachments?: boolean;
     refreshSessions?: boolean;
   },
-) {
+): Promise<string | null> {
   resetToolStream(host as unknown as Parameters<typeof resetToolStream>[0]);
   // Reset scroll state before sending to ensure auto-scroll works for the response
   resetChatScroll(host as unknown as Parameters<typeof resetChatScroll>[0]);
@@ -188,7 +188,7 @@ async function sendChatMessageNow(
   if (ok && opts?.refreshSessions && runId) {
     host.refreshSessionsAfterChat.add(runId);
   }
-  return ok;
+  return ok ? runId : null;
 }
 
 async function sendDetachedBtwMessage(
@@ -237,10 +237,12 @@ async function flushChatQueue(host: ChatHost) {
       await dispatchSlashCommand(host, next.localCommandName, next.localCommandArgs ?? "");
       ok = true;
     } else {
-      ok = await sendChatMessageNow(host, next.text, {
-        attachments: next.attachments,
-        refreshSessions: next.refreshSessions,
-      });
+      ok = Boolean(
+        await sendChatMessageNow(host, next.text, {
+          attachments: next.attachments,
+          refreshSessions: next.refreshSessions,
+        }),
+      );
     }
   } catch (err) {
     host.lastError = String(err);
@@ -268,9 +270,9 @@ export async function handleSendChat(
   host: ChatHost,
   messageOverride?: string,
   opts?: { restoreDraft?: boolean },
-) {
+): Promise<string | null> {
   if (!host.connected) {
-    return;
+    return null;
   }
   const previousDraft = host.chatMessage;
   const message = (messageOverride ?? host.chatMessage).trim();
@@ -279,12 +281,12 @@ export async function handleSendChat(
   const hasAttachments = attachmentsToSend.length > 0;
 
   if (!message && !hasAttachments) {
-    return;
+    return null;
   }
 
   if (isChatStopCommand(message)) {
     await handleAbortChat(host);
-    return;
+    return null;
   }
 
   if (isBtwCommand(message)) {
@@ -297,7 +299,7 @@ export async function handleSendChat(
       attachments: hasAttachments ? attachmentsToSend : undefined,
       previousAttachments: messageOverride == null ? attachments : undefined,
     });
-    return;
+    return null;
   }
 
   // Intercept local slash commands (/status, /model, /compact, etc.)
@@ -312,7 +314,7 @@ export async function handleSendChat(
         args: parsed.args,
         name: parsed.command.key,
       });
-      return;
+      return null;
     }
     const prevDraft = messageOverride == null ? previousDraft : undefined;
     if (messageOverride == null) {
@@ -323,7 +325,7 @@ export async function handleSendChat(
       previousDraft: prevDraft,
       restoreDraft: Boolean(messageOverride && opts?.restoreDraft),
     });
-    return;
+    return null;
   }
 
   const refreshSessions = isChatResetCommand(message);
@@ -334,10 +336,10 @@ export async function handleSendChat(
 
   if (isChatBusy(host)) {
     enqueueChatMessage(host, message, attachmentsToSend, refreshSessions);
-    return;
+    return null;
   }
 
-  await sendChatMessageNow(host, message, {
+  return await sendChatMessageNow(host, message, {
     previousDraft: messageOverride == null ? previousDraft : undefined,
     restoreDraft: Boolean(messageOverride && opts?.restoreDraft),
     attachments: hasAttachments ? attachmentsToSend : undefined,

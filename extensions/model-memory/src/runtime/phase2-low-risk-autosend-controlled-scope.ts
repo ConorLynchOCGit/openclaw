@@ -15,7 +15,7 @@ import {
 import type {
   Phase2ProductProactivityEligibilityScope,
   Phase2ProductProactivityQueueItem,
-} from "./phase2-product-proactivity-surfacing.ts";
+} from "./phase2-product-proactivity-presentation.ts";
 
 export const PHASE2_LOW_RISK_AUTOSEND_CONTROLLED_SCOPE_SCHEMA_VERSION =
   "phase2_low_risk_autosend_controlled_scope.v1" as const;

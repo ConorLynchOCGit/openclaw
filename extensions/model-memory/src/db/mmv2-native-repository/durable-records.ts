@@ -18,6 +18,43 @@ import type {
   MmV2IntegrityAuditReport,
 } from "./types.ts";
 
+const RECONCILIATION_RECALL_STOP_WORDS = new Set([
+  "about",
+  "after",
+  "again",
+  "also",
+  "before",
+  "being",
+  "from",
+  "have",
+  "into",
+  "should",
+  "that",
+  "the",
+  "their",
+  "then",
+  "there",
+  "these",
+  "this",
+  "through",
+  "with",
+  "would",
+]);
+
+function tokenizeReconciliationRecallQuery(queryText: string | null | undefined): string[] {
+  if (!queryText) {
+    return [];
+  }
+  return [
+    ...new Set(
+      queryText
+        .toLocaleLowerCase("en-US")
+        .match(/[a-z0-9][a-z0-9_-]{2,}/gu)
+        ?.filter((token) => !RECONCILIATION_RECALL_STOP_WORDS.has(token)) ?? [],
+    ),
+  ].slice(0, 24);
+}
+
 export async function getDurableMemoryRecord(
   sql: SqlClient,
   memoryId: string,
@@ -609,21 +646,42 @@ export async function listExistingMemorySummariesForCapture(
   input: ListExistingMemorySummariesForCaptureInput = {},
 ): Promise<ExistingMemorySummary[]> {
   const clauses = ["status <> 'deleted'", "status <> 'superseded'"];
+  const scopedClauses: string[] = [];
   const params: unknown[] = [];
   const pushParam = (value: unknown): string => {
     params.push(value);
     return `$${params.length}`;
   };
+  const buildInList = (column: string, values: string[]): string =>
+    `${column} IN (${values.map((value) => pushParam(value)).join(", ")})`;
 
   if (input.projectId !== undefined && input.projectId !== null) {
-    clauses.push(`(project_id IS NULL OR project_id = ${pushParam(input.projectId)})`);
+    scopedClauses.push(`(project_id IS NULL OR project_id = ${pushParam(input.projectId)})`);
   }
   if (input.workspaceId !== undefined && input.workspaceId !== null) {
-    clauses.push(`(workspace_id IS NULL OR workspace_id = ${pushParam(input.workspaceId)})`);
+    scopedClauses.push(`(workspace_id IS NULL OR workspace_id = ${pushParam(input.workspaceId)})`);
   }
   if (input.kinds && input.kinds.length > 0) {
-    clauses.push(`kind = ANY(${pushParam(input.kinds)}::text[])`);
+    scopedClauses.push(buildInList("kind", input.kinds));
   }
+  const exactMemoryIds = [
+    ...new Set((input.memoryIds ?? []).map((entry) => entry.trim()).filter(Boolean)),
+  ];
+  if (exactMemoryIds.length > 0 && scopedClauses.length > 0) {
+    clauses.push(
+      `(${buildInList("memory_id", exactMemoryIds)} OR (${scopedClauses.join(" AND ")}))`,
+    );
+  } else if (exactMemoryIds.length > 0) {
+    clauses.push(buildInList("memory_id", exactMemoryIds));
+  } else {
+    clauses.push(...scopedClauses);
+  }
+  const recallTokens = tokenizeReconciliationRecallQuery(input.queryText);
+  const lexicalScoreParts = recallTokens.map((token) => {
+    const patternParam = pushParam(`%${token}%`);
+    return `CASE WHEN lower(search_text || ' ' || canonical_text) LIKE ${patternParam} THEN 1 ELSE 0 END`;
+  });
+  const lexicalScoreExpression = lexicalScoreParts.length > 0 ? lexicalScoreParts.join(" + ") : "0";
 
   const limit =
     Number.isInteger(input.limit) && input.limit !== undefined
@@ -650,10 +708,12 @@ export async function listExistingMemorySummariesForCapture(
         validity,
         confidence,
         created_at,
-        updated_at
+        updated_at,
+        (${lexicalScoreExpression}) AS lexical_recall_score
       FROM model_memory.durable_memories
       WHERE ${clauses.join(" AND ")}
       ORDER BY
+        lexical_recall_score DESC,
         CASE WHEN project_id IS NOT NULL THEN 0 ELSE 1 END ASC,
         updated_at DESC,
         created_at DESC,

@@ -757,4 +757,70 @@ describe("MmV2NativeRepository", () => {
       await database.close();
     }
   });
+
+  it("uses lexical recall text to prioritize reconciliation neighbors before recency", async () => {
+    const database = await createPgMemTestDatabase();
+    try {
+      await applyModelMemoryMigrations(database.sql);
+      const repository = new MmV2NativeRepository(database.sql);
+
+      await repository.upsertDurableMemory({
+        ...buildMinimalDurableMemory("memory-relevant-older"),
+        canonical_text: "The project deploys model memory validation to us-east-1.",
+        search_text: "project deploys model memory validation us-east-1",
+        scope: {
+          ...buildMinimalDurableMemory("memory-relevant-older").scope,
+          project_id: "project-001",
+        },
+        updated_at: "2026-04-20T00:00:00.000Z",
+      });
+      await repository.upsertDurableMemory({
+        ...buildMinimalDurableMemory("memory-unrelated-newer"),
+        canonical_text: "The user prefers concise validation reports.",
+        search_text: "user prefers concise validation reports",
+        scope: {
+          ...buildMinimalDurableMemory("memory-unrelated-newer").scope,
+          project_id: "project-001",
+        },
+        updated_at: "2026-04-22T00:00:00.000Z",
+      });
+
+      const summaries = await repository.listExistingMemorySummariesForCapture({
+        projectId: "project-001",
+        queryText: "Confirm the model memory deployment remains in us-east-1.",
+        limit: 10,
+      });
+
+      expect(summaries.map((entry) => entry.memory_id)).toEqual([
+        "memory-relevant-older",
+        "memory-unrelated-newer",
+      ]);
+    } finally {
+      await database.close();
+    }
+  });
+
+  it("includes exact structural memory_id targets in reconciliation recall pools", async () => {
+    const database = await createPgMemTestDatabase();
+    try {
+      await applyModelMemoryMigrations(database.sql);
+      const repository = new MmV2NativeRepository(database.sql);
+
+      await repository.upsertDurableMemory({
+        ...buildMinimalDurableMemory("memory-explicit-target"),
+        canonical_text: "The user prefers detailed implementation notes.",
+        search_text: "user prefers detailed implementation notes",
+      });
+
+      const summaries = await repository.listExistingMemorySummariesForCapture({
+        memoryIds: ["memory-explicit-target"],
+        queryText: "unrelated correction text with no lexical overlap",
+        limit: 10,
+      });
+
+      expect(summaries.map((entry) => entry.memory_id)).toEqual(["memory-explicit-target"]);
+    } finally {
+      await database.close();
+    }
+  });
 });

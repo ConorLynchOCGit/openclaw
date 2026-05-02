@@ -105,8 +105,6 @@ export type MmV2RecordingExpectation = {
 
 export type MmV2WriteSimulationCandidateExpectation = {
   candidateId?: string;
-  semanticKey?: string;
-  canonicalTextIncludes?: string;
   disposition?:
     | "create_new_memory"
     | "logical_merge_existing"
@@ -135,7 +133,11 @@ export type MmV2AuditExpectation = {
   warningCodesInclude?: string[];
 };
 
-export type MmV2ScriptedRoutingDecision = Omit<CaptureRoutingDecision, "segment_id"> & {
+export type MmV2ScriptedRoutingDecision = Omit<
+  CaptureRoutingDecision,
+  "segment_id" | "allow_multiple_top_level_atomic"
+> & {
+  allow_multiple_top_level_atomic?: CaptureRoutingDecision["allow_multiple_top_level_atomic"];
   segmentTextIncludes: string;
 };
 
@@ -1144,6 +1146,19 @@ export const MMV2_DOCUMENT_PROOF_CASES: MmV2DocumentProofCase[] = [
           requires_reconciliation: true,
         },
       ],
+      reconciliation: [
+        {
+          candidateId: "candidate-preference-change-001",
+          decision: "supersede_existing",
+          target_memory_ids: ["existing-pref-002"],
+          merged_canonical_text: null,
+          conflict_type: "preference_changed",
+          supersedes_memory_ids: ["existing-pref-002"],
+          rationale:
+            "Model reconciliation determined the explicit newer preference supersedes the older preference.",
+          confidence: 0.9,
+        },
+      ],
     },
     seededNeighborsByCandidateId: {
       "candidate-preference-change-001": [
@@ -1629,7 +1644,6 @@ export const MMV2_DOCUMENT_PROOF_CASES: MmV2DocumentProofCase[] = [
         overstatementCount: 1,
         candidates: [
           {
-            canonicalTextIncludes: "deployment region is us-east-1",
             disposition: "create_conflict_record",
             createsNewDurableMemory: false,
             shadowDurableMemoryCreated: true,
@@ -2044,11 +2058,8 @@ export const MMV2_DOCUMENT_PROOF_CASES: MmV2DocumentProofCase[] = [
             artifactType: "procedure",
             componentCount: 3,
             componentRolesInclude: ["step", "guardrail"],
-            embeddedOnlyEvidenceQuotes: [
-              "Run the test suite.",
-              "Do not deploy without approval.",
-              "Ship the build.",
-            ],
+            embeddedOnlyEvidenceQuotes: ["Run the test suite.", "Ship the build."],
+            promotedEvidenceQuotes: ["Do not deploy without approval."],
           },
         ],
         1,
@@ -2433,7 +2444,7 @@ export const MMV2_DOCUMENT_PROOF_CASES: MmV2DocumentProofCase[] = [
         {
           segmentTextIncludes: "Do not store this exact sentence as a memory",
           route: "atomic_candidate",
-          reasonCodesInclude: ["ambiguous"],
+          reasonCodesInclude: ["explicit_no_store", "privacy_opt_out"],
         },
       ]),
       atomic: strictPhase([
@@ -2472,7 +2483,7 @@ export const MMV2_DOCUMENT_PROOF_CASES: MmV2DocumentProofCase[] = [
       admission: strictPhase([
         {
           decision: "reject",
-          reasonCodesInclude: ["temporary"],
+          reasonCodesInclude: ["explicit_no_store", "privacy_opt_out", "sensitive"],
         },
       ]),
       reconciliation: strictPhase([], 0),
@@ -2680,7 +2691,6 @@ export const MMV2_DOCUMENT_PROOF_CASES: MmV2DocumentProofCase[] = [
         overstatementCount: 0,
         candidates: [
           {
-            canonicalTextIncludes: "deployment region is us-east-1",
             disposition: "create_new_memory",
             createsNewDurableMemory: true,
             shadowDurableMemoryCreated: true,

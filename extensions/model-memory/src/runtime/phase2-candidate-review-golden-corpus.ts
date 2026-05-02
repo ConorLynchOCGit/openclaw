@@ -294,6 +294,67 @@ export function buildPhase2CandidateReviewGoldenCorpus(): GoldenCandidateReviewC
         },
       ],
     },
+    {
+      caseId: "skill_dropoff_known_skill_shape_codex_episode",
+      description:
+        "A known skill-shaped release-gate workflow should survive candidate-review dropoff diagnostics with Codex evidence present.",
+      packet: packet({
+        caseId: "skill_dropoff_known_skill_shape_codex_episode",
+        codexTouchedAreas: [
+          "scripts/model-memory-phase2-live-gateway-ui-validation-proof.mjs",
+          "src/infra/heartbeat-runner.ts",
+          "ui/src/ui/views/chat.ts",
+        ],
+        validationFailures: [
+          {
+            ref: "codex://golden/skill-dropoff/validation/failure",
+            lane: "live_gateway_ui_validation",
+            boundedSummary:
+              "Live gateway proof previously reported green while artifact review showed missing stage-level evidence for memory capture and card quality.",
+            hash: hash({ caseId: "skill_dropoff_known_skill_shape_codex_episode", failure: 1 }),
+          },
+        ],
+        turns: [
+          episodeTurn({
+            role: "user",
+            sourceRuntime: "openclaw",
+            ref: "chat://golden/user/artifact-audit-skill",
+            boundedText:
+              "We keep repeating proof artifact quality review before release. This should be a reusable QA gate with a trigger, inputs, checklist, output artifact, and quality criteria, not a vague review task.",
+          }),
+          episodeTurn({
+            role: "assistant",
+            sourceRuntime: "openclaw",
+            ref: "chat://golden/assistant/artifact-audit-skill-shape",
+            boundedText:
+              "A skill-shaped workflow would trigger before live gateway release, take proof artifacts and bounded packets as inputs, check source-to-packet-to-model-to-admission stage evidence, verify card formatting and safety flags, and output a pass/fail artifact review report.",
+          }),
+          episodeTurn({
+            role: "assistant",
+            sourceRuntime: "codex",
+            ref: "codex://golden/skill-dropoff/assistant/fix-summary",
+            boundedText:
+              "Codex repaired heartbeat fallback behavior, planned-card persistence, and candidate-review golden corpus coverage after repeated proof artifact quality issues.",
+          }),
+          episodeTurn({
+            role: "user",
+            sourceRuntime: "openclaw",
+            ref: "chat://golden/user/artifact-audit-quality-gate",
+            boundedText:
+              "The skill should produce an artifact quality audit with acceptance gates: stage counts present, lost-stage diagnostics present, no raw logs persisted, card text is model-authored, and no action or install happened.",
+          }),
+        ],
+      }),
+      expectations: [
+        {
+          expectationId: "live-proof-artifact-quality-audit-skill",
+          proposalKind: "new_skill_candidate",
+          requiredConcepts: ["artifact quality", "audit", "stage evidence", "quality gate"],
+          minMatchedConcepts: 3,
+          expectedDisposition: "surface",
+        },
+      ],
+    },
   ];
 }
 
@@ -382,6 +443,44 @@ export function buildPassingGoldenCorpusProposalFixtures(): Record<
         evidenceHashes: [],
         recurrenceSignals: ["ClawHub and third-party skill review keeps recurring"],
         frictionSignals: ["risk of creating duplicate skills instead of enhancing skill-vetter"],
+        confidence: "high",
+        riskTier: "low",
+        shouldSurface: true,
+        demotionReason: undefined,
+      }),
+    ],
+    skill_dropoff_known_skill_shape_codex_episode: [
+      proposal({
+        proposalKind: "new_skill_candidate",
+        title: "Live Proof Artifact Quality Audit",
+        purpose:
+          "Run a reusable QA gate over live proof artifacts before release so green checks cannot hide missing stage evidence or poor card quality.",
+        recommendedNextStep:
+          "Draft the SKILL.md checklist covering trigger, input artifacts, stage-count review, card-quality checks, safety flags, and pass/fail report output.",
+        expectedUserValue:
+          "Reduces repeated release debugging by making proof artifact quality review consistent across future live gateway and memory validation passes.",
+        leverageClass: "workflow_acceleration",
+        whyHighImpact:
+          "The same proof artifact quality gap has caused repeated false-green or under-instrumented release decisions.",
+        whyNotSmallCleanup:
+          "It has a clear trigger, repeatable inputs, checklist, output artifact, and validation gate.",
+        suggestedSkillName: "live-proof-artifact-quality-audit",
+        suggestedExistingSkillName: undefined,
+        mergeTargetCandidateId: undefined,
+        sourceRuntime: "mixed",
+        evidenceRefs: [
+          "chat://golden/user/artifact-audit-skill",
+          "chat://golden/assistant/artifact-audit-skill-shape",
+          "codex://golden/skill-dropoff/assistant/fix-summary",
+          "chat://golden/user/artifact-audit-quality-gate",
+        ],
+        evidenceHashes: [],
+        recurrenceSignals: [
+          "proof artifact quality review recurred across OpenClaw and Codex validation passes",
+        ],
+        frictionSignals: [
+          "missing stage-level evidence can make live proof runs look greener than they are",
+        ],
         confidence: "high",
         riskTier: "low",
         shouldSurface: true,

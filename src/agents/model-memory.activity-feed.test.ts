@@ -233,4 +233,29 @@ describe("model-memory activity feed", () => {
     });
     expect(appended[0]?.idempotencyKey).toMatch(/^model-memory-activity:/u);
   });
+
+  it("suppresses routine tool-result skip events from the visible transcript feed", async () => {
+    const appended: Array<{ message?: unknown; idempotencyKey?: string }> = [];
+    const result = await emitModelMemoryActivityFeedEvent(
+      {
+        kind: "tool_result_capture",
+        status: "skipped",
+        sessionKey: "agent:main:test",
+        sessionId: "session-1",
+        agentId: "agent-1",
+        stableId: "tool-call-1",
+        safeLabels: { hook: "after_tool_call", reason: "disabled", tool: "read" },
+        env: { MODEL_MEMORY_ACTIVITY_FEED_ENABLED: "1" } as NodeJS.ProcessEnv,
+      },
+      {
+        appendTranscript: async (params) => {
+          appended.push({ message: params.message, idempotencyKey: params.idempotencyKey });
+          return { ok: true, sessionFile: "/tmp/session.jsonl", messageId: "message-1" };
+        },
+      },
+    );
+
+    expect(result).toEqual({ emitted: false, reason: "routine_tool_result_skip" });
+    expect(appended).toHaveLength(0);
+  });
 });

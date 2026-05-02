@@ -3,7 +3,7 @@ import {
   compareExpectedCollection,
   matchesSubset,
   normalizeComparisonText,
-  semanticallyMatchesText,
+  normalizedTextIncludes,
   type MmV2PhaseComparisonResult,
 } from "./proof-compare-shared.ts";
 import type { MmV2CanonicalExpectation, MmV2PhaseExpectation } from "./proof-corpus.ts";
@@ -20,7 +20,7 @@ export function compareCanonicalizationPhase(
     exactCount: expectation?.exactCount,
     matches: (candidate, expected) =>
       (expected.canonicalTextIncludes === undefined ||
-        semanticallyMatchesText(candidate.canonical_text, expected.canonicalTextIncludes)) &&
+        normalizedTextIncludes(candidate.canonical_text, expected.canonicalTextIncludes)) &&
       (expected.canonicalTextTokensInclude === undefined ||
         expected.canonicalTextTokensInclude.every((token) =>
           normalizeComparisonText(candidate.canonical_text).includes(

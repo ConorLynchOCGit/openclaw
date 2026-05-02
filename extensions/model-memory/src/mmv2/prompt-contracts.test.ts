@@ -47,6 +47,23 @@ describe("mmv2/prompt-contracts", () => {
     expect(atomicPrompt.systemPrompt).toContain(
       "Do not emit more than one top-level atomic candidate for the same routed span",
     );
+    expect(atomicPrompt.systemPrompt).toContain(
+      "routing evidence_quote is provenance for why the span was routed",
+    );
+    expect(atomicPrompt.systemPrompt).toContain(
+      "cite the exact supporting substring from routed_candidate.text",
+    );
+    expect(atomicPrompt.systemPrompt).toContain(
+      'explicit "remember", "store", "capture", or "save" request',
+    );
+    expect(atomicPrompt.systemPrompt).toContain(
+      "proof marker, timestamp, run id, branch name, or source id",
+    );
+    expect(atomicPrompt.systemPrompt).toContain("no tools, no commits, or acknowledge-only");
+    expect(atomicPrompt.systemPrompt).toContain("Positive extraction examples:");
+    expect(atomicPrompt.systemPrompt).toContain(
+      "marker ABC means future validation should prove Y",
+    );
     expect(compositePrompt.systemPrompt).toContain(
       "You are Composite Durable Memory Extractor v1.",
     );
@@ -55,6 +72,16 @@ describe("mmv2/prompt-contracts", () => {
     );
     expect(routingPrompt.systemPrompt).toContain("Required output JSON schema:");
     expect(routingPrompt.systemPrompt).toContain('"$id": "CaptureRoutingBatch.schema.json"');
+    expect(routingPrompt.systemPrompt).toContain(
+      'explicit operational rules phrased with "must", "should", "may", "cannot"',
+    );
+    expect(routingPrompt.systemPrompt).toContain("Do not require the document to say");
+    expect(routingPrompt.systemPrompt).toContain(
+      "one durable memory statement with a proof marker/source id/run id",
+    );
+    expect(routingPrompt.systemPrompt).toContain(
+      "multiple independent durable preferences/facts/directives",
+    );
     expect(atomicPrompt.userPrompt).toContain("Atomic routed candidates:");
     expect(atomicPrompt.systemPrompt).toContain("Required output JSON schema:");
     expect(atomicPrompt.systemPrompt).toContain('"$id": "AtomicExtractionBatch.schema.json"');
@@ -110,6 +137,16 @@ describe("mmv2/prompt-contracts", () => {
     expect(admissionPrompt.systemPrompt).toContain("Scoring rules:");
     expect(admissionPrompt.systemPrompt).toContain(
       "10. Do not invent novelty; if unsure, set requires_reconciliation = true.",
+    );
+    expect(admissionPrompt.systemPrompt).toContain(
+      '20. If the user explicitly asks to "remember", "store", "capture", or "save" a safe durable preference, directive, project fact, user fact, or source reference, admit it when the candidate is grounded and concrete.',
+    );
+    expect(admissionPrompt.systemPrompt).toContain(
+      '21. Treat phrases like "for project X", project_id metadata, current workspace/project metadata, or source document scope as clear scope unless the candidate itself conflicts with that scope.',
+    );
+    expect(admissionPrompt.systemPrompt).toContain("24. Admission is not global-only.");
+    expect(admissionPrompt.systemPrompt).toContain(
+      "28. Use a bounded TTL for pass-specific, run-specific, branch-specific, validation-specific, proof-marker, current-dirty-state, or one-repair-pass facts",
     );
     expect(canonicalPrompt.systemPrompt).toContain('"$id": "CanonicalCandidateBatch.schema.json"');
     expect(admissionPrompt.systemPrompt).toContain('"$id": "AdmissionDecisionBatch.schema.json"');

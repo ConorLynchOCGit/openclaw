@@ -112,6 +112,68 @@ describe("document-ingestion-runner-service", () => {
     expect(persisted.totals.docsFailed).toBe(1);
   });
 
+  it("persists model-step diagnostics when a source fails inside interpretation", async () => {
+    const tempDir = await mkdtemp(path.join(os.tmpdir(), "model-memory-runner-model-step-"));
+    const recordPath = path.join(tempDir, "run.json");
+    const store = new JsonFileDocumentIngestionRunRecordStore(recordPath);
+    const database = await createPgMemTestDatabase();
+
+    try {
+      await applyModelMemoryMigrations(database.sql);
+      const canonicalRepository = new ModelMemoryCanonicalRepository(database.sql);
+      const runtimeRepository = new RuntimeContextRepository(database.sql);
+      const service = new ModelMemoryDocumentIngestionRunnerService({
+        canonicalRepository,
+        runtimeRepository,
+      });
+
+      const record = await service.executeRun({
+        runId: "run-model-step-diagnostics",
+        sources: [buildSources()[0]!],
+        interpreter: {
+          async interpret() {
+            throw new Error("forced model-step failure");
+          },
+        },
+        modelId: "openai-codex/gpt-5.4-mini",
+        candidateModelId: "openai-codex/gpt-5.4-mini",
+        chunkSize: 1,
+        recordStore: store,
+        resume: true,
+        rebuildRuntime: false,
+      });
+
+      expect(record.status).toBe("completed_with_failures");
+      const persisted = JSON.parse(await readFile(recordPath, "utf8")) as {
+        sources: Array<{
+          status: string;
+          activeStage?: string;
+          activeModelStep?: unknown;
+          modelStepEvents?: Array<{
+            status: string;
+            contractName: string;
+            contractVersion: string;
+            sourceWindowId: string;
+            sourceWindowIndex: number;
+            errorMessage?: string;
+          }>;
+        }>;
+      };
+      expect(persisted.sources[0]?.status).toBe("failed");
+      expect(persisted.sources[0]?.activeStage).toBe("failed");
+      expect(persisted.sources[0]?.activeModelStep).toBeUndefined();
+      expect(persisted.sources[0]?.modelStepEvents?.at(-1)).toMatchObject({
+        status: "failed",
+        sourceWindowIndex: 0,
+        errorMessage: "forced model-step failure",
+      });
+      expect(persisted.sources[0]?.modelStepEvents?.[0]?.contractName).toBeTruthy();
+      expect(JSON.stringify(persisted.sources[0]?.modelStepEvents)).not.toContain("Alpha");
+    } finally {
+      await database.close();
+    }
+  });
+
   it("records section-map candidate-hints strategy telemetry for auto large docs without live writes", async () => {
     const originalStrategy = process.env.MODEL_MEMORY_DOCUMENT_INGEST_STRATEGY;
     const originalThreshold = process.env.MODEL_MEMORY_DOCUMENT_INGEST_LARGE_DOC_WORD_THRESHOLD;

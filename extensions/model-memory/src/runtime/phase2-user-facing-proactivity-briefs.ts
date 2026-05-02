@@ -1,7 +1,3 @@
-import {
-  buildProactivityUserFacingFocusKey,
-  cleanProactivityUserFacingText,
-} from "../../../../src/shared/chat-message-content.js";
 import type { SourceProfileId } from "../source-authority.ts";
 import type {
   Phase2OpportunityLedgerEntry,
@@ -13,6 +9,10 @@ import type {
 } from "./phase2-proactivity-work-items.ts";
 import type { Phase2SkillCandidateRecord } from "./phase2-skill-candidate-ledger.ts";
 import type { Phase2SkillPackageDraft } from "./phase2-skillifier-draft.ts";
+import {
+  buildProactivityUserFacingFocusKey,
+  cleanProactivityUserFacingText,
+} from "./proactivity-text.ts";
 
 export type Phase2UserFacingProactivityBriefKindLabel =
   | "New skill"
@@ -116,7 +116,12 @@ const UUID_PATTERN = /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]
 const TIMESTAMP_PATTERN = /\b20\d{2}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/;
 
 function isSlugLikeDisplayTitle(value: string): boolean {
-  const trimmed = value.trim();
+  const trimmed = value
+    .trim()
+    .replace(
+      /^(?:new skill|improve skill|merge skill|proactive plan|follow-up|question|draft ready|repair):\s*/iu,
+      "",
+    );
   return (
     trimmed.length > 24 && !/\s/u.test(trimmed) && /[-_]/u.test(trimmed) && /[a-z]/u.test(trimmed)
   );
@@ -318,7 +323,7 @@ function repeatsTitle(input: { title: string; recommendedNextStep: string }): bo
 }
 
 function hasActionableNextStep(value: string): boolean {
-  return /\b(?:draft|review|decide|choose|answer|open|start|inspect|investigate|summarize|compare|approve|demote|repair|clarify|define|check|test|verify|plan|write|select|outline)\b/i.test(
+  return /\b(?:add|create|draft|extend|review|run|decide|choose|answer|open|start|inspect|investigate|summarize|compare|approve|demote|repair|clarify|define|check|test|verify|plan|write|select|outline)\b/i.test(
     value,
   );
 }
@@ -511,7 +516,7 @@ function qualityReasons(input: {
   if (TURN_PREFIX.test(title) || TURN_PREFIX.test(input.sourceTitle ?? "")) {
     reasons.push("title_derived_from_transformation_instruction");
   }
-  if (DUPLICATED_TURN.test(title) || DUPLICATED_TURN.test(input.sourceTitle ?? "")) {
+  if (DUPLICATED_TURN.test(primaryText) || DUPLICATED_TURN.test(input.sourceTitle ?? "")) {
     reasons.push("title_contains_duplicated_turn");
   }
   if (
@@ -522,6 +527,9 @@ function qualityReasons(input: {
   }
   if (/\bwhy now\b/i.test(primaryText)) {
     reasons.push("primary_copy_contains_why_now");
+  }
+  if (/\b(?:skill worth creating|draft ready)\b/i.test(primaryText)) {
+    reasons.push("primary_copy_contains_internal_heading");
   }
   if (GENERIC_PURPOSE_PATTERN.test(input.oneLinePurpose)) {
     reasons.push("purpose_is_generic_fallback");

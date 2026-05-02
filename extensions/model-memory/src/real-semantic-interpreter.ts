@@ -27,6 +27,17 @@ export class ExecutorBackedSemanticInterpreter implements SemanticInterpreter {
       responseFormat: input.prompt.responseFormat,
       responseOptions: input.prompt.responseOptions,
     });
+    if (input.prompt.contract.contractVersion.startsWith("mmv2-")) {
+      const parsed = parseJsonModelOutput(response, input.prompt.contract, z.unknown());
+      const legacy = SemanticInterpreterResultSchema.safeParse(parsed);
+      if (legacy.success) {
+        return legacy.data;
+      }
+      return {
+        action: "capture",
+        objects: Array.isArray(parsed) ? parsed : [parsed],
+      };
+    }
     return parseJsonModelOutput(response, input.prompt.contract, SemanticInterpreterResultSchema);
   }
 }

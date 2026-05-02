@@ -41,7 +41,7 @@ function followupEntry(
 }
 
 describe("phase2 outcome followup loop", () => {
-  it("resurfaces started-but-unfinished work and keeps superseded items closed", async () => {
+  it("does not deterministically resurface unfinished work and only closes superseded items", async () => {
     const report = await buildPhase2ProactivityOutcomeFollowupReport({
       now: new Date("2026-04-27T12:00:00.000Z"),
       entries: [
@@ -55,21 +55,18 @@ describe("phase2 outcome followup loop", () => {
       ],
     });
 
-    expect(report.decisions).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          opportunityId: "opp-followup-1",
-          nextStatus: "draft_ready",
-          reasonCode: "started_not_finished",
-          surfaced: true,
-        }),
-        expect.objectContaining({
-          opportunityId: "opp-followup-2",
-          nextStatus: "superseded",
-          reasonCode: "superseded_closed",
-          surfaced: false,
-        }),
-      ]),
+    expect(report.decisions).toEqual([
+      expect.objectContaining({
+        opportunityId: "opp-followup-2",
+        nextStatus: "superseded",
+        reasonCode: "superseded_closed",
+      }),
+    ]);
+    expect(report.checks).toContainEqual(
+      expect.objectContaining({
+        reasonCode: "model_review_required_for_followup",
+        status: "pass",
+      }),
     );
   });
 });

@@ -7,7 +7,7 @@ import { buildPhase2LiveProactivityDetectionReport } from "./phase2-live-proacti
 import {
   buildPhase2ProductProactivitySurfacingReport,
   writePhase2ProductProactivitySurfacingArtifact,
-} from "./phase2-product-proactivity-surfacing.ts";
+} from "./phase2-product-proactivity-presentation.ts";
 
 function modelBriefJsonOutput(overrides: Record<string, unknown> = {}) {
   return JSON.stringify({
@@ -60,7 +60,7 @@ class FakeModelBriefExecutor implements JsonModelExecutor {
   }
 }
 
-describe("phase2 product proactivity surfacing", () => {
+describe("phase2 product proactivity presentation", () => {
   it("builds a product-visible queue item from live proactivity evidence", async () => {
     const modelExecutor = new FakeModelBriefExecutor();
     const liveDetectionReport = await buildPhase2LiveProactivityDetectionReport({
@@ -80,6 +80,20 @@ describe("phase2 product proactivity surfacing", () => {
           conflictState: "clear",
           inspectionOnly: false,
           noDarkDataStatus: "pass",
+        },
+      ],
+      modelReviewedOpportunities: [
+        {
+          sourceId: "ordinary-turn-live-event-1",
+          workItemKind: "planning_request",
+          title: "Skills platform planning follow-up",
+          whyNow:
+            "The active OpenClaw session is ready to plan the Skills path after proactivity remediation.",
+          proposedNextStep: "Review the Skills Platform follow-up before starting new work.",
+          expectedUserValue: "Clarifies the next bounded Skills Platform implementation step.",
+          evidenceSummary:
+            "The active OpenClaw session is ready to plan the Skills path after proactivity remediation.",
+          confidence: "high",
         },
       ],
     });
@@ -104,8 +118,8 @@ describe("phase2 product proactivity surfacing", () => {
     expect(report.queue.items).toHaveLength(1);
     expect(report.queue.items[0]).toMatchObject({
       status: "pending_review",
-      boundedDisplayText: "Advance current openclaw work",
-      planTitle: "Advance current openclaw work",
+      boundedDisplayText: "Skills platform planning follow-up",
+      planTitle: "Skills platform planning follow-up",
       userFacingBrief: {
         title: "Skills platform planning follow-up",
         oneLinePurpose: "Clarifies the next bounded Skills Platform implementation step.",
@@ -114,7 +128,7 @@ describe("phase2 product proactivity surfacing", () => {
         authorship: { source: "model" },
         quality: { status: "pass" },
       },
-      proposedMessage: expect.stringContaining("Skills path after proactivity remediation"),
+      proposedMessage: expect.stringContaining("Review the Skills Platform follow-up"),
       workItemKind: "planning_request",
       primaryAction: {
         actionType: "plan_this",
@@ -163,6 +177,20 @@ describe("phase2 product proactivity surfacing", () => {
           conflictState: "clear",
           inspectionOnly: false,
           noDarkDataStatus: "pass",
+        },
+      ],
+      modelReviewedOpportunities: [
+        {
+          sourceId: "ordinary-turn-live-event-no-model",
+          workItemKind: "planning_request",
+          title: "Skills platform planning follow-up",
+          whyNow:
+            "The active OpenClaw session is ready to plan the Skills path after proactivity remediation.",
+          proposedNextStep: "Review the Skills Platform follow-up before starting new work.",
+          expectedUserValue: "Clarifies the next bounded Skills Platform implementation step.",
+          evidenceSummary:
+            "The active OpenClaw session is ready to plan the Skills path after proactivity remediation.",
+          confidence: "high",
         },
       ],
     });
@@ -217,7 +245,7 @@ describe("phase2 product proactivity surfacing", () => {
     expect(report.queue.items[0].planTitle).not.toBe("Plan the next openclaw step");
   });
 
-  it("rejects proof fixture scope and rollback disables surfacing", async () => {
+  it("rejects proof fixture scope and rollback disables presentation", async () => {
     const fixtureScope = await buildPhase2ProductProactivitySurfacingReport({
       forceProofFixtureScope: true,
     });
@@ -274,7 +302,7 @@ describe("phase2 product proactivity surfacing", () => {
       const markdown = await readFile(artifact.markdownPath, "utf8");
 
       expect(JSON.parse(json)).toMatchObject({ reportId: report.reportId });
-      expect(markdown).toContain("Product Proactivity Surfacing");
+      expect(markdown).toContain("Product Proactivity Presentation");
       expect(json.toLowerCase()).not.toContain("raw-prompt-marker");
       expect(json.toLowerCase()).not.toContain("private-phrase-marker");
       expect(artifact.byteLength).toBeLessThan(256 * 1024);

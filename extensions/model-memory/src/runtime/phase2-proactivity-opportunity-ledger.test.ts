@@ -141,4 +141,49 @@ describe("phase2 proactivity opportunity ledger", () => {
       ]),
     );
   });
+
+  it("applies exact repeated-copy ledger supersession for model-reviewed candidates", async () => {
+    const older = {
+      ...extractionCandidate(),
+      opportunityId: "opp-model-reviewed-older",
+      title: "Add a heartbeat fallback regression gate",
+      proposedNextStep:
+        "Add a regression gate for heartbeat fallback preservation before the next live gateway proof.",
+      contentHashes: ["content-hash-model-reviewed-older"],
+      proofHashes: ["proof-hash-model-reviewed-older"],
+      blockedReasonCodes: ["model_reviewed_candidate", "high_context_review"],
+      sourceFamily: "pattern_or_followup" as const,
+      generatedAt: "2026-04-27T15:00:00.000Z",
+    };
+    const newer = {
+      ...extractionCandidate(),
+      opportunityId: "opp-model-reviewed-newer",
+      title: "Add a heartbeat fallback regression gate",
+      proposedNextStep:
+        "Add a regression gate for heartbeat fallback preservation before the next live gateway proof.",
+      contentHashes: ["content-hash-model-reviewed-newer"],
+      proofHashes: ["proof-hash-model-reviewed-newer"],
+      blockedReasonCodes: ["model_reviewed_candidate", "high_context_review"],
+      sourceFamily: "pattern_or_followup" as const,
+      generatedAt: "2026-04-27T16:00:00.000Z",
+    };
+
+    const report = await buildPhase2ProactivityOpportunityLedgerReport({
+      now: new Date("2026-04-27T16:30:00.000Z"),
+      opportunities: [older, newer],
+    });
+
+    expect(
+      report.ledger.entries.find((entry) => entry.opportunityId === "opp-model-reviewed-older"),
+    ).toMatchObject({
+      status: "superseded",
+      supersededByOpportunityId: "opp-model-reviewed-newer",
+      attentionRequired: false,
+    });
+    expect(
+      report.ledger.entries.find((entry) => entry.opportunityId === "opp-model-reviewed-newer"),
+    ).toMatchObject({
+      status: "open",
+    });
+  });
 });

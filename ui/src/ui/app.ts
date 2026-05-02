@@ -106,18 +106,45 @@ import type {
   ToolsEffectiveResult,
   ProductProactivityFeedbackControl,
   ProductProactivityActionType,
+  ProductProactivityPlannedArtifact,
   ProactivityInboxFilter,
   ProactivityInboxView,
   ProductProactivityQueueItem,
   ProductProactivityQueueResult,
   ProactivityInboxDigest,
+  ProactivityInboxItem,
   ProactivityInboxResult,
   PersonalAutoSendUxResult,
   PersonalAutoSendUxSettings,
+  WorkQueueFilter,
+  WorkQueueNotification,
 } from "./types.ts";
 import { type ChatAttachment, type ChatQueueItem, type CronFormState } from "./ui-types.ts";
 import { generateUUID } from "./uuid.ts";
 import type { NostrProfileFormState } from "./views/channels.nostr-profile-form.ts";
+import {
+  buildWorkQueueObjects,
+  filterWorkQueueObjects,
+  type WorkQueueObject,
+} from "./work-queue.ts";
+
+type SkillifierDraftResponse = {
+  ok: boolean;
+  skillCandidateId: string;
+  reportId: string;
+  decision: string;
+  skillPackageId: string;
+  packageTitle?: string;
+  draftPath: string;
+  reportPath: string;
+  provenanceReportPath?: string;
+  rollbackPlanPath?: string;
+  reviewSummary?: string;
+  nextReviewStep?: string;
+  reviewOnly?: boolean;
+  installationEnabled?: boolean;
+  promotionEnabled?: boolean;
+};
 
 function mergeQueueHandoffState(
   incoming: ProductProactivityQueueItem[],
@@ -140,6 +167,7 @@ function mergeQueueHandoffState(
       handoffStatus: current.handoffStatus,
       handoffError: current.handoffError ?? entry.handoffError ?? null,
       handoffMessageAnchor: current.handoffMessageAnchor ?? entry.handoffMessageAnchor ?? null,
+      plannedArtifact: current.plannedArtifact ?? entry.plannedArtifact ?? null,
     };
   });
 }
@@ -172,6 +200,7 @@ function mergeInboxHandoffState(
         handoffStatus: current.handoffStatus,
         handoffError: current.handoffError ?? entry.handoffError ?? null,
         handoffMessageAnchor: current.handoffMessageAnchor ?? entry.handoffMessageAnchor ?? null,
+        plannedArtifact: current.plannedArtifact ?? entry.plannedArtifact ?? null,
       };
     }),
   };
@@ -202,6 +231,15 @@ function resolveOnboardingMode(): boolean {
 export class OpenClawApp extends LitElement {
   private i18nController = new I18nController(this);
   private lastProactivityUserPromptSummary: string | null = null;
+  private pendingProactivityPlanRuns = new Map<
+    string,
+    {
+      queueItemId: string;
+      requestedAt: string;
+      title: string;
+      requestSummary: string;
+    }
+  >();
   clientInstanceId = generateUUID();
   connectGeneration = 0;
   @state() settings: UiSettings = loadSettings();
@@ -267,6 +305,12 @@ export class OpenClawApp extends LitElement {
   @state() proactivityInboxError: string | null = null;
   @state() proactivityInboxView: ProactivityInboxView = "actionable";
   @state() productProactivityEditedMessages: Record<string, string> = {};
+  @state() workQueueFilter: WorkQueueFilter = "active";
+  @state() workQueueSearchQuery = "";
+  @state() workQueueSelectedObjectId: string | null = null;
+  @state() workQueueNotifications: WorkQueueNotification[] = [];
+  @state() workQueueRevisionDrafts: Record<string, string> = {};
+  @state() workQueueArtifactBodies: Record<string, string> = {};
   @state() personalAutoSendUx: PersonalAutoSendUxSettings | null = null;
   @state() personalAutoSendUxLoading = false;
   @state() personalAutoSendUxError: string | null = null;
@@ -594,8 +638,10 @@ export class OpenClawApp extends LitElement {
   refreshSessionsAfterChat = new Set<string>();
   chatSideResultTerminalRuns = new Set<string>();
   basePath = "";
-  private popStateHandler = () =>
+  private popStateHandler = () => {
     onPopStateInternal(this as unknown as Parameters<typeof onPopStateInternal>[0]);
+    this.syncWorkQueueSelectionFromUrl();
+  };
   private topbarObserver: ResizeObserver | null = null;
   private globalKeydownHandler = (e: KeyboardEvent) => {
     if ((e.metaKey || e.ctrlKey) && !e.shiftKey && e.key === "k") {
@@ -633,6 +679,7 @@ export class OpenClawApp extends LitElement {
     };
     document.addEventListener("keydown", this.globalKeydownHandler);
     handleConnected(this as unknown as Parameters<typeof handleConnected>[0]);
+    this.syncWorkQueueSelectionFromUrl();
   }
 
   protected firstUpdated() {
@@ -649,12 +696,21 @@ export class OpenClawApp extends LitElement {
     handleUpdated(this as unknown as Parameters<typeof handleUpdated>[0], changed);
     if (
       this.connected &&
-      (changed.has("connected") || changed.has("sessionKey")) &&
-      this.tab === "chat"
+      (changed.has("connected") || changed.has("sessionKey") || changed.has("tab")) &&
+      (this.tab === "chat" || this.tab === "workQueue")
     ) {
       void this.loadProductProactivityQueue();
       void this.loadPersonalAutoSendUx();
       void this.loadProactivityInbox();
+    }
+    if (
+      this.tab === "workQueue" &&
+      (changed.has("tab") ||
+        changed.has("productProactivityQueue") ||
+        changed.has("proactivityInboxDigest") ||
+        changed.has("workQueueSelectedObjectId"))
+    ) {
+      void this.maybeLoadWorkQueueArtifactBody(this.getSelectedWorkQueueObject());
     }
     if (!changed.has("sessionKey") || this.agentsPanel !== "tools") {
       return;
@@ -776,7 +832,7 @@ export class OpenClawApp extends LitElement {
     messageOverride?: string,
     opts?: Parameters<typeof handleSendChatInternal>[2],
   ) {
-    await handleSendChatInternal(
+    return await handleSendChatInternal(
       this as unknown as Parameters<typeof handleSendChatInternal>[0],
       messageOverride,
       opts,
@@ -798,6 +854,24 @@ export class OpenClawApp extends LitElement {
     messageId?: string;
   }) => {
     const summary = this.lastProactivityUserPromptSummary;
+    const runId = payload.runId;
+    const pendingPlan = runId ? this.pendingProactivityPlanRuns.get(runId) : undefined;
+    if (runId && pendingPlan) {
+      void this.recordProactivityChatActivity("planning_output", payload.text, {
+        sourceMessageId: payload.messageId ?? `planning:${runId}`,
+        sourceRunId: runId,
+        userPromptSummary: summary ?? undefined,
+        refreshAfter: false,
+      });
+      void this.completeProactivityPlannedArtifact({
+        ...pendingPlan,
+        sourceRunId: runId,
+        sourceMessageId: payload.messageId ?? `planning:${runId}`,
+        compiledPlan: payload.text,
+      });
+      this.pendingProactivityPlanRuns.delete(runId);
+      return;
+    }
     void this.recordProactivityChatActivity("assistant_turn", payload.text, {
       sourceMessageId: payload.messageId ?? `assistant:${payload.runId ?? generateUUID()}`,
       sourceRunId: payload.runId,
@@ -866,14 +940,141 @@ export class OpenClawApp extends LitElement {
     }
   }
 
+  private compactProactivityArtifactText(value: string, maxLength: number): string {
+    return value
+      .replace(/\r\n/gu, "\n")
+      .split("\n")
+      .map((line) => line.replace(/[ \t]+/gu, " ").trimEnd())
+      .join("\n")
+      .replace(/\n{4,}/gu, "\n\n\n")
+      .trim()
+      .slice(0, maxLength)
+      .trim();
+  }
+
+  private buildRequestedProactivityPlanArtifact(input: {
+    title: string;
+    requestSummary: string;
+    sourceRunId?: string;
+    generatedAt: string;
+  }): ProductProactivityPlannedArtifact {
+    return {
+      status: "requested",
+      reviewStatus: "pending_review",
+      title: this.compactProactivityArtifactText(input.title, 140),
+      requestSummary: this.compactProactivityArtifactText(input.requestSummary, 1800),
+      sourceRunId: input.sourceRunId,
+      generatedAt: input.generatedAt,
+      updatedAt: input.generatedAt,
+    };
+  }
+
+  private updateLocalProactivityPlannedArtifact(
+    queueItemId: string,
+    plannedArtifact: ProductProactivityPlannedArtifact,
+  ) {
+    this.productProactivityQueue = this.productProactivityQueue.map((entry) =>
+      entry.queueItemId === queueItemId
+        ? {
+            ...entry,
+            plannedArtifact,
+            reviewStatus: plannedArtifact.reviewStatus ?? entry.reviewStatus,
+          }
+        : entry,
+    );
+    this.updateProactivityInboxItem(queueItemId, (entry) => ({
+      ...entry,
+      plannedArtifact,
+      reviewStatus: plannedArtifact.reviewStatus ?? entry.reviewStatus,
+    }));
+  }
+
+  private async completeProactivityPlannedArtifact(input: {
+    queueItemId: string;
+    title: string;
+    requestSummary: string;
+    compiledPlan: string;
+    sourceRunId: string;
+    sourceMessageId: string;
+    requestedAt: string;
+  }) {
+    const now = new Date().toISOString();
+    const plannedArtifact: ProductProactivityPlannedArtifact = {
+      status: "compiled",
+      reviewStatus: "pending_review",
+      title: this.compactProactivityArtifactText(input.title, 140),
+      requestSummary: this.compactProactivityArtifactText(input.requestSummary, 1800),
+      compiledPlan: this.compactProactivityArtifactText(input.compiledPlan, 6000),
+      sourceRunId: input.sourceRunId,
+      sourceMessageId: input.sourceMessageId,
+      generatedAt: input.requestedAt,
+      updatedAt: now,
+    };
+    this.updateLocalProactivityPlannedArtifact(input.queueItemId, plannedArtifact);
+    await this.persistProactivityOpportunityState(input.queueItemId, "planned", {
+      resolvedByChatMessageId: input.sourceMessageId,
+      plannedArtifact,
+    });
+  }
+
+  async handleProactivityPlanReview(
+    queueItemId: string,
+    reviewStatus: "recommendation_finalized" | "revision_requested",
+  ) {
+    const { item } = this.resolveProactivityItem(queueItemId);
+    if (!item?.plannedArtifact) {
+      this.productProactivityError =
+        "Plan review failed: no compiled plan is attached to this card.";
+      return;
+    }
+    const now = new Date().toISOString();
+    const plannedArtifact: ProductProactivityPlannedArtifact = {
+      ...item.plannedArtifact,
+      reviewStatus,
+      updatedAt: now,
+    };
+    this.productProactivityQueue = this.productProactivityQueue.map((entry) =>
+      entry.queueItemId === queueItemId ? { ...entry, plannedArtifact, reviewStatus } : entry,
+    );
+    this.updateLocalProactivityPlannedArtifact(queueItemId, plannedArtifact);
+    this.updateProactivityInboxItem(queueItemId, (entry) => ({ ...entry, reviewStatus }));
+    await this.persistProactivityOpportunityState(queueItemId, "planned", {
+      plannedArtifact,
+      reviewStatus,
+    });
+    this.productProactivityError = null;
+    this.pushWorkQueueNotification({
+      kind: "success",
+      objectId: item.opportunityId ?? queueItemId,
+      text:
+        reviewStatus === "recommendation_finalized"
+          ? "Plan finalized and moved to Ready to Execute."
+          : "Plan revision requested and recorded on the durable artifact.",
+    });
+  }
+
   private async persistProactivityOpportunityState(
     queueItemId: string,
-    status: "planning_started" | "planned" | "dismissed" | "snoozed" | "done",
-    extras?: { resolvedByChatMessageId?: string | null },
+    status:
+      | "open"
+      | "surfaced"
+      | "draft_ready"
+      | "planning_started"
+      | "planned"
+      | "in_progress"
+      | "dismissed"
+      | "snoozed"
+      | "done"
+      | "superseded",
+    extras?: {
+      resolvedByChatMessageId?: string | null;
+      dismissalCooldownUntil?: string | null;
+      plannedArtifact?: ProductProactivityPlannedArtifact | null;
+      reviewStatus?: "pending_review" | "recommendation_finalized" | "revision_requested" | null;
+    },
   ) {
-    const opportunityId = this.productProactivityQueue.find(
-      (entry) => entry.queueItemId === queueItemId,
-    )?.opportunityId;
+    const { queueItem, inboxItem } = this.resolveProactivityItem(queueItemId);
+    const opportunityId = queueItem?.opportunityId ?? inboxItem?.opportunityId;
     if (!this.client || !this.connected || !opportunityId) {
       return;
     }
@@ -884,6 +1085,9 @@ export class OpenClawApp extends LitElement {
         sessionKey: this.sessionKey,
         projectId: "openclaw",
         resolvedByChatMessageId: extras?.resolvedByChatMessageId ?? null,
+        dismissalCooldownUntil: extras?.dismissalCooldownUntil ?? null,
+        plannedArtifact: extras?.plannedArtifact ?? null,
+        reviewStatus: extras?.reviewStatus ?? null,
       });
     } catch (err) {
       this.productProactivityError = `Proactivity state sync failed: ${String(err)}`;
@@ -897,12 +1101,13 @@ export class OpenClawApp extends LitElement {
     this.productProactivityLoading = true;
     this.productProactivityError = null;
     try {
+      const baseParams = {
+        sessionKey: this.sessionKey,
+        projectId: "openclaw",
+      };
       const res = await this.client.request<ProductProactivityQueueResult>(
         "modelMemory.proactivity.queue",
-        {
-          sessionKey: this.sessionKey,
-          projectId: "openclaw",
-        },
+        baseParams,
       );
       this.productProactivityQueue = mergeQueueHandoffState(
         Array.isArray(res.queue?.items) ? res.queue.items : [],
@@ -972,6 +1177,246 @@ export class OpenClawApp extends LitElement {
     this.proactivityInboxView = view;
   }
 
+  private readWorkQueueObjectIdFromUrl(): string | null {
+    if (typeof window === "undefined") {
+      return null;
+    }
+    const value = new URL(window.location.href).searchParams.get("item");
+    return value?.trim() ? value.trim() : null;
+  }
+
+  private updateWorkQueueUrl(objectId: string | null, replace = false) {
+    if (typeof window === "undefined") {
+      return;
+    }
+    const url = new URL(window.location.href);
+    if (objectId) {
+      url.searchParams.set("item", objectId);
+    } else {
+      url.searchParams.delete("item");
+    }
+    if (replace) {
+      window.history.replaceState({}, "", url.toString());
+      return;
+    }
+    window.history.pushState({}, "", url.toString());
+  }
+
+  private syncWorkQueueSelectionFromUrl() {
+    const next = this.readWorkQueueObjectIdFromUrl();
+    this.workQueueSelectedObjectId = next;
+  }
+
+  private pushWorkQueueNotification(notification: Omit<WorkQueueNotification, "id">) {
+    this.workQueueNotifications = [
+      {
+        id: `work-queue-notification-${generateUUID()}`,
+        ...notification,
+      },
+      ...this.workQueueNotifications,
+    ].slice(0, 4);
+  }
+
+  dismissWorkQueueNotification(notificationId: string) {
+    this.workQueueNotifications = this.workQueueNotifications.filter(
+      (notification) => notification.id !== notificationId,
+    );
+  }
+
+  updateWorkQueueRevisionDraft(objectId: string, value: string) {
+    this.workQueueRevisionDrafts = {
+      ...this.workQueueRevisionDrafts,
+      [objectId]: value,
+    };
+  }
+
+  setWorkQueueFilter(view: WorkQueueFilter) {
+    this.workQueueFilter = view;
+  }
+
+  setWorkQueueSearchQuery(value: string) {
+    this.workQueueSearchQuery = value;
+  }
+
+  selectWorkQueueObject(objectId: string | null, opts?: { replace?: boolean }) {
+    this.workQueueSelectedObjectId = objectId;
+    if (this.tab === "workQueue") {
+      this.updateWorkQueueUrl(objectId, opts?.replace ?? false);
+    }
+  }
+
+  private getWorkQueueObjects(): WorkQueueObject[] {
+    return buildWorkQueueObjects({
+      queue: this.productProactivityQueue,
+      digest: this.proactivityInboxDigest,
+    });
+  }
+
+  getVisibleWorkQueueObjects(): WorkQueueObject[] {
+    return filterWorkQueueObjects(
+      this.getWorkQueueObjects(),
+      this.workQueueFilter,
+      this.workQueueSearchQuery,
+    );
+  }
+
+  getSelectedWorkQueueObject(): WorkQueueObject | null {
+    const routeSelection = this.workQueueSelectedObjectId ?? this.readWorkQueueObjectIdFromUrl();
+    const objects = this.getVisibleWorkQueueObjects();
+    const allObjects = this.getWorkQueueObjects();
+    return (
+      allObjects.find((object) => object.id === routeSelection) ??
+      objects[0] ??
+      allObjects[0] ??
+      null
+    );
+  }
+
+  private async maybeLoadWorkQueueArtifactBody(object: WorkQueueObject | null) {
+    if (
+      !object ||
+      object.artifact.kind !== "skill" ||
+      !object.artifact.path ||
+      this.workQueueArtifactBodies[object.id]
+    ) {
+      return;
+    }
+    if (!this.client || !this.connected) {
+      return;
+    }
+    try {
+      const response = await this.client.request<{ ok: boolean; artifactText?: string }>(
+        "modelMemory.proactivity.readArtifact",
+        {
+          sessionKey: this.sessionKey,
+          projectId: "openclaw",
+          queueItemId: object.queueItemId,
+          artifactKind: "skill",
+        },
+      );
+      if (response.artifactText?.trim()) {
+        this.workQueueArtifactBodies = {
+          ...this.workQueueArtifactBodies,
+          [object.id]: response.artifactText,
+        };
+      }
+    } catch (err) {
+      this.pushWorkQueueNotification({
+        kind: "error",
+        objectId: object.id,
+        text: `Failed to load draft artifact: ${String(err)}`,
+      });
+    }
+  }
+
+  async handleWorkQueueFinalize(objectId: string) {
+    const object = this.getWorkQueueObjects().find((entry) => entry.id === objectId);
+    if (!object) {
+      return;
+    }
+    const reviewStatus = "recommendation_finalized" as const;
+    if (object.queueItem.plannedArtifact) {
+      await this.handleProactivityPlanReview(object.queueItemId, reviewStatus);
+    } else {
+      await this.persistProactivityOpportunityState(object.queueItemId, "draft_ready", {
+        reviewStatus,
+      });
+      this.productProactivityQueue = this.productProactivityQueue.map((entry) =>
+        entry.queueItemId === object.queueItemId ? { ...entry, reviewStatus } : entry,
+      );
+      this.updateProactivityInboxItem(object.queueItemId, (entry) => ({ ...entry, reviewStatus }));
+      this.pushWorkQueueNotification({
+        kind: "success",
+        objectId,
+        text: "Skill draft finalized and moved to Ready to Execute.",
+      });
+    }
+  }
+
+  async handleWorkQueueRequestRevision(objectId: string) {
+    const object = this.getWorkQueueObjects().find((entry) => entry.id === objectId);
+    if (!object) {
+      return;
+    }
+    const revisionText = this.workQueueRevisionDrafts[objectId]?.trim();
+    if (!revisionText) {
+      this.pushWorkQueueNotification({
+        kind: "error",
+        objectId,
+        text: "Add revision guidance before requesting a revision.",
+      });
+      return;
+    }
+    const reviewStatus = "revision_requested" as const;
+    if (object.queueItem.plannedArtifact) {
+      object.queueItem.proposedMessage = revisionText;
+      await this.handleProactivityPlanReview(object.queueItemId, reviewStatus);
+    } else {
+      await this.persistProactivityOpportunityState(object.queueItemId, "draft_ready", {
+        reviewStatus,
+      });
+      this.productProactivityQueue = this.productProactivityQueue.map((entry) =>
+        entry.queueItemId === object.queueItemId ? { ...entry, reviewStatus } : entry,
+      );
+      this.updateProactivityInboxItem(object.queueItemId, (entry) => ({ ...entry, reviewStatus }));
+      this.pushWorkQueueNotification({
+        kind: "success",
+        objectId,
+        text: "Revision request recorded on the skill draft.",
+      });
+    }
+  }
+
+  async handleWorkQueueRestore(objectId: string) {
+    const object = this.getWorkQueueObjects().find((entry) => entry.id === objectId);
+    if (!object) {
+      return;
+    }
+    const status =
+      object.queueItem.skillifierDraft || object.queueItem.plannedArtifact ? "draft_ready" : "open";
+    await this.persistProactivityOpportunityState(object.queueItemId, status, {
+      dismissalCooldownUntil: null,
+    });
+    await Promise.all([this.loadProductProactivityQueue(), this.loadProactivityInbox()]);
+    this.pushWorkQueueNotification({
+      kind: "success",
+      objectId,
+      text: "Work item restored to the active queue.",
+    });
+  }
+
+  async handleWorkQueueMarkComplete(objectId: string) {
+    const object = this.getWorkQueueObjects().find((entry) => entry.id === objectId);
+    if (!object) {
+      return;
+    }
+    await this.persistProactivityOpportunityState(object.queueItemId, "done");
+    await Promise.all([this.loadProductProactivityQueue(), this.loadProactivityInbox()]);
+    this.pushWorkQueueNotification({
+      kind: "success",
+      objectId,
+      text: "Work item retired from Ready to Execute.",
+    });
+  }
+
+  async handleWorkQueueCopyCodexPrompt(objectId: string) {
+    const object = this.getWorkQueueObjects().find((entry) => entry.id === objectId);
+    if (!object?.artifact.codexPrompt?.trim()) {
+      this.pushWorkQueueNotification({
+        kind: "error",
+        objectId,
+        text: "No finalized Codex prompt is available for this item.",
+      });
+      return;
+    }
+    await navigator.clipboard.writeText(object.artifact.codexPrompt);
+    this.pushWorkQueueNotification({
+      kind: "success",
+      objectId,
+      text: "Codex-ready prompt copied.",
+    });
+  }
+
   handleProductProactivityEditMessage(queueItemId: string, value: string) {
     this.productProactivityEditedMessages = {
       ...this.productProactivityEditedMessages,
@@ -1006,6 +1451,46 @@ export class OpenClawApp extends LitElement {
         diagnostic: digest.items.filter((item) => item.layer === "diagnostic").length,
       },
     };
+  }
+
+  private updateProactivityInboxItem(
+    queueItemId: string,
+    updater: (entry: ProactivityInboxItem) => ProactivityInboxItem,
+  ) {
+    this.proactivityInboxDigest = this.recomputeProactivityDigest(
+      this.proactivityInboxDigest
+        ? {
+            ...this.proactivityInboxDigest,
+            items: this.proactivityInboxDigest.items.map((entry) =>
+              entry.queueItemId === queueItemId || entry.itemId === queueItemId
+                ? updater(entry)
+                : entry,
+            ),
+          }
+        : null,
+    );
+  }
+
+  private applyProactivityFeedbackLocal(
+    queueItemId: string,
+    control: ProductProactivityFeedbackControl,
+  ) {
+    this.updateProactivityInboxItem(queueItemId, (entry) => ({
+      ...entry,
+      feedbackSummary: {
+        ...entry.feedbackSummary,
+        positiveFeedbackCount:
+          entry.feedbackSummary.positiveFeedbackCount + (control === "positive_action" ? 1 : 0),
+        negativeFeedbackCount:
+          entry.feedbackSummary.negativeFeedbackCount + (control === "negative_action" ? 1 : 0),
+        tooRepetitiveCount:
+          entry.feedbackSummary.tooRepetitiveCount + (control === "too_repetitive" ? 1 : 0),
+        wrongContextCount:
+          entry.feedbackSummary.wrongContextCount + (control === "wrong_context" ? 1 : 0),
+        unsafePrivateCount:
+          entry.feedbackSummary.unsafePrivateCount + (control === "unsafe_private" ? 1 : 0),
+      },
+    }));
   }
 
   private resolveProactivityItem(queueItemId: string) {
@@ -1172,9 +1657,22 @@ export class OpenClawApp extends LitElement {
     }
     const status = this.proactivityStatusForAction(action);
     const now = new Date().toISOString();
+    const title =
+      item.userFacingBrief?.title ?? item.planTitle ?? item.candidateSummary ?? queueItemId;
+    const requestedArtifact = this.buildRequestedProactivityPlanArtifact({
+      title,
+      requestSummary: handoffMessage,
+      generatedAt: now,
+    });
     this.productProactivityQueue = this.productProactivityQueue.map((entry) =>
       entry.queueItemId === queueItemId
-        ? { ...entry, handoffStatus: "starting", handoffError: null, updatedAt: now }
+        ? {
+            ...entry,
+            handoffStatus: "starting",
+            handoffError: null,
+            plannedArtifact: requestedArtifact,
+            updatedAt: now,
+          }
         : entry,
     );
     this.proactivityInboxDigest = this.recomputeProactivityDigest(
@@ -1183,14 +1681,30 @@ export class OpenClawApp extends LitElement {
             ...this.proactivityInboxDigest,
             items: this.proactivityInboxDigest.items.map((entry) =>
               entry.queueItemId === queueItemId || entry.itemId === queueItemId
-                ? { ...entry, handoffStatus: "starting", handoffError: null }
+                ? {
+                    ...entry,
+                    handoffStatus: "starting",
+                    handoffError: null,
+                    plannedArtifact: requestedArtifact,
+                  }
                 : entry,
             ),
           }
         : null,
     );
     try {
-      await this.handleSendChat(handoffMessage);
+      const runId = await this.handleSendChat(handoffMessage);
+      const plannedArtifact = runId
+        ? { ...requestedArtifact, sourceRunId: runId }
+        : requestedArtifact;
+      if (runId) {
+        this.pendingProactivityPlanRuns.set(runId, {
+          queueItemId,
+          requestedAt: now,
+          title,
+          requestSummary: handoffMessage,
+        });
+      }
       this.productProactivityQueue = this.productProactivityQueue.map((entry) =>
         entry.queueItemId === queueItemId
           ? {
@@ -1201,6 +1715,7 @@ export class OpenClawApp extends LitElement {
               handoffStatus: "started",
               handoffError: null,
               handoffMessageAnchor: `chat-message:${queueItemId}`,
+              plannedArtifact,
               attentionRequired: false,
               updatedAt: now,
             }
@@ -1221,15 +1736,17 @@ export class OpenClawApp extends LitElement {
                       handoffStatus: "started",
                       handoffError: null,
                       handoffMessageAnchor: `chat-message:${queueItemId}`,
+                      plannedArtifact,
                     }
                   : entry,
               ),
             }
           : null,
       );
-      await this.persistProactivityOpportunityState(queueItemId, "planned");
-      await this.loadProductProactivityQueue();
-      await this.loadProactivityInbox();
+      await this.persistProactivityOpportunityState(queueItemId, "planned", {
+        plannedArtifact,
+      });
+      this.applyProactivityFeedbackLocal(queueItemId, "positive_action");
       this.productProactivityError = null;
       this.proactivityInboxView = "planned";
       this.lastError = this.proactivityStartedLabel(action);
@@ -1268,21 +1785,101 @@ export class OpenClawApp extends LitElement {
       return;
     }
     const eligibilityScope = "eligibleScope" in item ? item.eligibleScope : null;
+    const nowStarting = new Date().toISOString();
+    this.productProactivityQueue = this.productProactivityQueue.map((entry) =>
+      entry.queueItemId === queueItemId
+        ? { ...entry, handoffStatus: "starting", handoffError: null, updatedAt: nowStarting }
+        : entry,
+    );
+    this.updateProactivityInboxItem(queueItemId, (entry) => ({
+      ...entry,
+      handoffStatus: "starting",
+      handoffError: null,
+    }));
     try {
-      await this.client.request("modelMemory.proactivity.skillifyCandidateDraft", {
-        sessionKey: this.sessionKey,
-        projectId: eligibilityScope?.projectId ?? "openclaw",
-        operatorId: eligibilityScope?.operatorId,
-        userId: eligibilityScope?.userId,
-        recipientId: eligibilityScope?.recipientId,
-        skillCandidateId: item.skillCandidate.skillCandidateId,
-      });
-      await this.loadProductProactivityQueue();
-      await this.loadProactivityInbox();
+      const result = await this.client.request<SkillifierDraftResponse>(
+        "modelMemory.proactivity.skillifyCandidateDraft",
+        {
+          sessionKey: this.sessionKey,
+          projectId: eligibilityScope?.projectId ?? "openclaw",
+          operatorId: eligibilityScope?.operatorId,
+          userId: eligibilityScope?.userId,
+          recipientId: eligibilityScope?.recipientId,
+          skillCandidateId: item.skillCandidate.skillCandidateId,
+        },
+      );
+      const skillifierDraft =
+        result.skillPackageId && result.draftPath
+          ? {
+              skillPackageId: result.skillPackageId,
+              skillifierReportId: result.reportId,
+              decision: result.decision,
+              packageTitle: result.packageTitle ?? "Review-only skill draft",
+              draftPath: result.draftPath,
+              reviewSummary:
+                result.reviewSummary ??
+                "Review-only skill draft created. It has not been installed or promoted.",
+              nextReviewStep:
+                result.nextReviewStep ??
+                "Review the generated SKILL.md package before deciding on eval or installation work.",
+            }
+          : null;
+      const now = new Date().toISOString();
+      this.productProactivityQueue = this.productProactivityQueue.map((entry) =>
+        entry.queueItemId === queueItemId
+          ? {
+              ...entry,
+              draftReady: Boolean(skillifierDraft),
+              skillifierDraft: skillifierDraft ?? entry.skillifierDraft,
+              reviewStatus: skillifierDraft ? "pending_review" : entry.reviewStatus,
+              workItemStatus: "drafted",
+              handoffStatus: skillifierDraft ? "started" : "failed",
+              handoffError: skillifierDraft ? null : "Skillifier did not return a draft path.",
+              updatedAt: now,
+            }
+          : entry,
+      );
+      this.updateProactivityInboxItem(queueItemId, (entry) => ({
+        ...entry,
+        draftReady: Boolean(skillifierDraft),
+        skillifierDraft: skillifierDraft ?? entry.skillifierDraft,
+        reviewStatus: skillifierDraft ? "pending_review" : entry.reviewStatus,
+        workItemStatus: "drafted",
+        handoffStatus: skillifierDraft ? "started" : "failed",
+        handoffError: skillifierDraft ? null : "Skillifier did not return a draft path.",
+        opportunityStatus: "draft_ready",
+      }));
+      if (skillifierDraft) {
+        await this.persistProactivityOpportunityState(queueItemId, "draft_ready", {
+          reviewStatus: "pending_review",
+        });
+      }
+      this.applyProactivityFeedbackLocal(queueItemId, "positive_action");
       this.productProactivityError = null;
-      this.lastError = "Skill draft created";
+      this.pushWorkQueueNotification({
+        kind: skillifierDraft ? "success" : "error",
+        objectId: item.opportunityId ?? queueItemId,
+        text: skillifierDraft
+          ? `Skill draft ready: ${skillifierDraft.draftPath}`
+          : "Skill draft request completed without a draft path.",
+      });
     } catch (err) {
       this.productProactivityError = `Skill draft failed: ${String(err)}`;
+      this.productProactivityQueue = this.productProactivityQueue.map((entry) =>
+        entry.queueItemId === queueItemId
+          ? {
+              ...entry,
+              handoffStatus: "failed",
+              handoffError: this.productProactivityError,
+              updatedAt: new Date().toISOString(),
+            }
+          : entry,
+      );
+      this.updateProactivityInboxItem(queueItemId, (entry) => ({
+        ...entry,
+        handoffStatus: "failed",
+        handoffError: this.productProactivityError,
+      }));
     }
   }
 
@@ -1358,10 +1955,9 @@ export class OpenClawApp extends LitElement {
           : null,
       );
       await this.persistProactivityOpportunityState(queueItemId, "done");
-      await this.loadProductProactivityQueue();
-      await this.loadProactivityInbox();
+      this.applyProactivityFeedbackLocal(queueItemId, "positive_action");
       this.productProactivityError = null;
-      this.proactivityInboxView = "sent";
+      this.proactivityInboxView = "actionable";
       await loadChatHistory(this as unknown as ChatState);
       this.scrollToBottom({ smooth: true });
     } catch (err) {
@@ -1383,26 +1979,29 @@ export class OpenClawApp extends LitElement {
   }
 
   async handleProductProactivityDismiss(queueItemId: string) {
+    const now = new Date();
+    const dismissalCooldownUntil = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString();
     this.productProactivityQueue = this.productProactivityQueue.map((entry) =>
       entry.queueItemId === queueItemId
-        ? { ...entry, status: "dismissed", updatedAt: new Date().toISOString() }
+        ? {
+            ...entry,
+            status: "dismissed",
+            dismissalCooldownUntil,
+            updatedAt: now.toISOString(),
+          }
         : entry,
     );
-    this.proactivityInboxDigest = this.recomputeProactivityDigest(
-      this.proactivityInboxDigest
-        ? {
-            ...this.proactivityInboxDigest,
-            items: this.proactivityInboxDigest.items.map((entry) =>
-              entry.queueItemId === queueItemId
-                ? { ...entry, status: "dismissed", layer: "history", filterTags: ["dismissed"] }
-                : entry,
-            ),
-          }
-        : null,
-    );
-    await this.persistProactivityOpportunityState(queueItemId, "dismissed");
-    await this.loadProductProactivityQueue();
-    await this.loadProactivityInbox();
+    this.updateProactivityInboxItem(queueItemId, (entry) => ({
+      ...entry,
+      status: "dismissed",
+      layer: "history",
+      filterTags: ["dismissed"],
+      dismissalCooldownUntil,
+    }));
+    this.applyProactivityFeedbackLocal(queueItemId, "negative_action");
+    await this.persistProactivityOpportunityState(queueItemId, "dismissed", {
+      dismissalCooldownUntil,
+    });
   }
 
   async handleProductProactivitySnooze(queueItemId: string) {
@@ -1411,56 +2010,30 @@ export class OpenClawApp extends LitElement {
         ? { ...entry, status: "snoozed", updatedAt: new Date().toISOString() }
         : entry,
     );
-    this.proactivityInboxDigest = this.recomputeProactivityDigest(
-      this.proactivityInboxDigest
-        ? {
-            ...this.proactivityInboxDigest,
-            items: this.proactivityInboxDigest.items.map((entry) =>
-              entry.queueItemId === queueItemId
-                ? { ...entry, status: "snoozed", layer: "history", filterTags: ["snoozed"] }
-                : entry,
-            ),
-          }
-        : null,
-    );
+    this.updateProactivityInboxItem(queueItemId, (entry) => ({
+      ...entry,
+      status: "snoozed",
+      layer: "history",
+      filterTags: ["snoozed"],
+    }));
+    this.applyProactivityFeedbackLocal(queueItemId, "negative_action");
     await this.persistProactivityOpportunityState(queueItemId, "snoozed");
-    await this.loadProductProactivityQueue();
-    await this.loadProactivityInbox();
   }
 
   handleProductProactivityFeedback(
     queueItemId: string,
     control: ProductProactivityFeedbackControl,
   ) {
-    this.proactivityInboxDigest = this.proactivityInboxDigest
-      ? {
-          ...this.proactivityInboxDigest,
-          items: this.proactivityInboxDigest.items.map((entry) => {
-            if (entry.queueItemId !== queueItemId) {
-              return entry;
-            }
-            return {
-              ...entry,
-              feedbackSummary: {
-                ...entry.feedbackSummary,
-                usefulCount: entry.feedbackSummary.usefulCount + (control === "useful" ? 1 : 0),
-                notUsefulCount:
-                  entry.feedbackSummary.notUsefulCount + (control === "not_useful" ? 1 : 0),
-                tooRepetitiveCount:
-                  entry.feedbackSummary.tooRepetitiveCount + (control === "too_repetitive" ? 1 : 0),
-                wrongContextCount:
-                  entry.feedbackSummary.wrongContextCount + (control === "wrong_context" ? 1 : 0),
-                unsafePrivateCount:
-                  entry.feedbackSummary.unsafePrivateCount + (control === "unsafe_private" ? 1 : 0),
-              },
-              blockedReasonCodes:
-                control === "unsafe_private"
-                  ? [...entry.blockedReasonCodes, "feedback_unsafe_private_block_future_surfacing"]
-                  : entry.blockedReasonCodes,
-            };
-          }),
-        }
-      : null;
+    this.applyProactivityFeedbackLocal(queueItemId, control);
+    if (control === "unsafe_private") {
+      this.updateProactivityInboxItem(queueItemId, (entry) => ({
+        ...entry,
+        blockedReasonCodes: [
+          ...entry.blockedReasonCodes,
+          "feedback_unsafe_private_block_future_surfacing",
+        ],
+      }));
+    }
   }
 
   async handleWhatsAppStart(force: boolean) {

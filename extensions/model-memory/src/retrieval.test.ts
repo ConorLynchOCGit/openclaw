@@ -1,9 +1,65 @@
 import { describe, expect, it } from "vitest";
 import { InMemoryRetrievalStore } from "./retrieval-store.ts";
-import { executeRetrieval } from "./retrieval.ts";
+import {
+  ExecutorBackedRetrievalFinalInclusionReviewer,
+  executeRetrieval,
+  type RetrievalFinalInclusionReviewer,
+} from "./retrieval.ts";
+
+function finalInclusionReviewer(memoryObjectIds: string[]): RetrievalFinalInclusionReviewer {
+  return {
+    async review() {
+      return {
+        schemaVersion: "retrieval_final_inclusion_decision.v1",
+        decision: "select",
+        selectedMemoryObjectIds: memoryObjectIds,
+        why: "Scripted model final-inclusion fixture for this retrieval test.",
+      };
+    },
+  };
+}
 
 describe("retrieval", () => {
-  it("selects and orders current canonical objects deterministically", async () => {
+  it("accepts minor model JSON shape drift for final inclusion without fallback selection", async () => {
+    const reviewer = new ExecutorBackedRetrievalFinalInclusionReviewer(
+      {
+        async execute() {
+          return {
+            outputText:
+              '{"schema_version":"retrieval_final_inclusion_decision.v1","selected_ids":["memory-001"],"rationale":"Selected by model."}',
+          };
+        },
+      },
+      { modelId: "openai-codex/gpt-5.4-mini" },
+    );
+
+    await expect(
+      reviewer.review({
+        schemaVersion: "retrieval_final_inclusion_input.v1",
+        request: {
+          retrievalRequestId: "retrieval-001",
+          requestPurpose: "context_injection",
+          queryHash: "hash-001",
+          queryText: "Find relevant memory.",
+          goal: "Find relevant memory.",
+          desiredResultCount: 1,
+        },
+        candidates: [],
+        policy: {
+          modelOwnsFinalSemanticInclusion: true,
+          deterministicRecallOnly: true,
+          maxSelected: 1,
+          noRawTranscriptOrToolLogPersistence: true,
+        },
+      }),
+    ).resolves.toMatchObject({
+      decision: "select",
+      selectedMemoryObjectIds: ["memory-001"],
+      why: "Selected by model.",
+    });
+  });
+
+  it("recalls current canonical objects and uses model-owned final context inclusion", async () => {
     const store = new InMemoryRetrievalStore();
     const result = await executeRetrieval({
       envelope: {
@@ -81,6 +137,8 @@ describe("retrieval", () => {
           createdAt: new Date(0),
         },
       ],
+      finalInclusionReviewer: finalInclusionReviewer(["memory-001"]),
+      finalInclusionModelId: "openai-codex/gpt-5.4-mini",
       store,
       createdAt: new Date(0),
     });
@@ -88,8 +146,18 @@ describe("retrieval", () => {
     expect(result).toBeDefined();
     expect(result?.retrievalResultItems).toHaveLength(1);
     expect(result?.retrievalResultItems[0]?.memoryObjectId).toBe("memory-001");
+    expect(result?.retrievalResultItems[0]?.selectedForContext).toBe(true);
     expect(result?.retrievalResultItems[0]?.retrievalReasonCodes).toContain("scope_exact_match");
     expect(result?.retrievalResultItems[0]?.retrievalReasonCodes).toContain("subject_match");
+    expect(result?.retrievalResultItems[0]?.retrievalReasonCodes).toContain(
+      "model_final_inclusion_selected",
+    );
+    expect(result?.finalInclusionReport).toMatchObject({
+      status: "model_selected",
+      selectedMemoryObjectIds: ["memory-001"],
+      rawPromptPersisted: false,
+      rawModelResponsePersisted: false,
+    });
     expect(store.snapshot().retrievalRequests).toHaveLength(1);
     expect(store.snapshot().retrievalRequests[0]?.queryText).toMatch(/^sha256:/);
     expect(store.snapshot().retrievalRequests[0]?.queryText).not.toContain(
@@ -145,6 +213,7 @@ describe("retrieval", () => {
     expect(scope?.currentTurnTextRawPersisted).toBe(false);
     expect(JSON.stringify(scope)).not.toContain("postland-raw-session-key");
     expect(JSON.stringify(scope)).not.toContain("raw prompt text should not persist");
+    expect(result?.finalInclusionReport.status).toBe("pending_model_final_inclusion");
   });
 
   it("keeps broad workflow queries from collapsing to a single over-constrained result", async () => {
@@ -232,6 +301,8 @@ describe("retrieval", () => {
           createdAt: new Date(0),
         },
       ],
+      finalInclusionReviewer: finalInclusionReviewer(["memory-010", "memory-011"]),
+      finalInclusionModelId: "openai-codex/gpt-5.4-mini",
       store,
       createdAt: new Date(0),
     });
@@ -241,9 +312,10 @@ describe("retrieval", () => {
     expect(result?.interpretedRequest.kinds).toBeUndefined();
     expect(result?.interpretedRequest.desiredResultCount).toBe(5);
     expect(result?.retrievalResultItems).toHaveLength(2);
+    expect(result?.retrievalResultItems.every((item) => item.selectedForContext)).toBe(true);
   });
 
-  it("emits baseline live-context retrieval and ranks source-lineage marker matches over unrelated broad memories when interpreter skips", async () => {
+  it("emits baseline live-context recall and lets the model select final marker matches when interpreter skips", async () => {
     const store = new InMemoryRetrievalStore();
     const result = await executeRetrieval({
       envelope: {
@@ -342,6 +414,8 @@ describe("retrieval", () => {
           createdAt: new Date(0),
         },
       ],
+      finalInclusionReviewer: finalInclusionReviewer(["memory-project-fact", "memory-pref"]),
+      finalInclusionModelId: "openai-codex/gpt-5.4-mini",
       store,
       createdAt: new Date(0),
     });
@@ -349,14 +423,176 @@ describe("retrieval", () => {
     expect(result).toBeDefined();
     expect(result?.interpretedRequest.canonicalClasses).toEqual([]);
     expect(result?.interpretedRequest.kinds).toBeUndefined();
-    const selectedIds = result?.retrievalResultItems.map((item) => item.memoryObjectId) ?? [];
+    const selectedIds =
+      result?.retrievalResultItems
+        .filter((item) => item.selectedForContext)
+        .map((item) => item.memoryObjectId) ?? [];
     expect(selectedIds.slice(0, 2)).toEqual(
       expect.arrayContaining(["memory-project-fact", "memory-pref"]),
     );
-    expect(selectedIds.indexOf("memory-old-directive")).toBeGreaterThan(1);
+    expect(selectedIds).not.toContain("memory-old-directive");
     expect(result?.retrievalResultItems[0]?.retrievalReasonCodes).toContain("source_lineage_match");
+    expect(result?.finalInclusionReport.status).toBe("model_selected");
     expect(store.snapshot().retrievalRequests).toHaveLength(1);
     expect(store.snapshot().retrievalRequests[0]?.queryText).toMatch(/^sha256:/);
     expect(store.snapshot().retrievalRequests[0]?.queryText).not.toContain("SOAKQUAR");
+  });
+
+  it("does not mark recalled candidates selected for context without model final inclusion", async () => {
+    const result = await executeRetrieval({
+      envelope: {
+        queryText: "Find deployment information for project-001",
+        requestPurpose: "context_injection",
+        scope: { projectId: "project-001" },
+        sessionId: "session-pending-inclusion",
+        maxResults: 1,
+      },
+      modelId: "retrieval-model-001",
+      interpreter: {
+        async interpret() {
+          return {
+            action: "retrieve",
+            request: {
+              goal: "project facts for active scope",
+              canonicalClasses: ["project"],
+              kinds: ["fact"],
+              scopeConstraints: { projectId: "project-001" },
+              subjectHints: ["deployment region"],
+              contentHints: ["region-001"],
+              desiredResultCount: 1,
+              requestConfidence: "strong",
+            },
+          };
+        },
+      },
+      memoryObjects: [
+        {
+          id: "memory-pending",
+          sourceWindowId: "window-pending",
+          canonicalClass: "project",
+          kind: "fact",
+          payload: { subject: "deployment region", value: "region-001" },
+          normalizedSubject: "deployment region",
+          normalizedTitle: undefined,
+          normalizedSearchText: "deployment region region-001",
+          scope: { projectId: "project-001" },
+          scopeKey: "scope-project-001",
+          provenance: [{ sourceId: "window-pending", segmentIndex: 0, headingPath: [] }],
+          confidence: "strong",
+          durability: "durable",
+          suggestedReviewMode: "auto_accept",
+          executedReviewMode: "auto_accept",
+          rationaleCodes: [],
+          identityKey: "fact-pending",
+          slotKey: "slot-pending",
+          contractName: "semantic_extraction",
+          contractVersion: "v1",
+          modelId: "model-pending",
+          createdAt: new Date(0),
+        },
+      ],
+      createdAt: new Date(0),
+    });
+
+    expect(result?.retrievalResultItems).toHaveLength(1);
+    expect(result?.retrievalResultItems[0]?.selectedForContext).toBe(false);
+    expect(result?.retrievalResultItems[0]?.retrievalReasonCodes).toContain(
+      "model_final_inclusion_required",
+    );
+    expect(result?.finalInclusionReport.status).toBe("pending_model_final_inclusion");
+  });
+
+  it("keeps persisted result rank indexes unique when the model selects a lower-ranked recall candidate", async () => {
+    const store = new InMemoryRetrievalStore();
+    const result = await executeRetrieval({
+      envelope: {
+        queryText: "Find validation details for project-001",
+        requestPurpose: "context_injection",
+        scope: { projectId: "project-001" },
+        sessionId: "session-unique-ranks",
+        maxResults: 2,
+      },
+      modelId: "retrieval-model-001",
+      interpreter: {
+        async interpret() {
+          return {
+            action: "retrieve",
+            request: {
+              goal: "project validation facts",
+              canonicalClasses: ["project"],
+              kinds: ["fact"],
+              scopeConstraints: { projectId: "project-001" },
+              subjectHints: ["validation"],
+              contentHints: ["preferred"],
+              desiredResultCount: 2,
+              requestConfidence: "strong",
+            },
+          };
+        },
+      },
+      memoryObjects: [
+        {
+          id: "memory-rank-0",
+          sourceWindowId: "window-rank-0",
+          canonicalClass: "project",
+          kind: "fact",
+          payload: { subject: "validation fallback", value: "older detail" },
+          normalizedSubject: "validation fallback",
+          normalizedTitle: undefined,
+          normalizedSearchText: "validation fallback older detail",
+          scope: { projectId: "project-001" },
+          scopeKey: "scope-project-001",
+          provenance: [{ sourceId: "window-rank-0", segmentIndex: 0, headingPath: [] }],
+          confidence: "strong",
+          durability: "durable",
+          suggestedReviewMode: "auto_accept",
+          executedReviewMode: "auto_accept",
+          rationaleCodes: [],
+          identityKey: "fact-rank-0",
+          slotKey: "slot-rank-0",
+          contractName: "semantic_extraction",
+          contractVersion: "v1",
+          modelId: "model-rank",
+          createdAt: new Date(0),
+        },
+        {
+          id: "memory-rank-1",
+          sourceWindowId: "window-rank-1",
+          canonicalClass: "project",
+          kind: "fact",
+          payload: { subject: "validation preferred", value: "model should select this" },
+          normalizedSubject: "validation preferred",
+          normalizedTitle: undefined,
+          normalizedSearchText: "validation preferred model should select this",
+          scope: { projectId: "project-001" },
+          scopeKey: "scope-project-001",
+          provenance: [{ sourceId: "window-rank-1", segmentIndex: 0, headingPath: [] }],
+          confidence: "strong",
+          durability: "durable",
+          suggestedReviewMode: "auto_accept",
+          executedReviewMode: "auto_accept",
+          rationaleCodes: [],
+          identityKey: "fact-rank-1",
+          slotKey: "slot-rank-1",
+          contractName: "semantic_extraction",
+          contractVersion: "v1",
+          modelId: "model-rank",
+          createdAt: new Date(1),
+        },
+      ],
+      finalInclusionReviewer: finalInclusionReviewer(["memory-rank-0"]),
+      finalInclusionModelId: "openai-codex/gpt-5.4-mini",
+      store,
+      createdAt: new Date(0),
+    });
+
+    const rankIndexes = result?.retrievalResultItems.map((item) => item.rankIndex) ?? [];
+    expect(new Set(rankIndexes).size).toBe(rankIndexes.length);
+    expect(
+      result?.retrievalResultItems.find((item) => item.memoryObjectId === "memory-rank-0"),
+    ).toMatchObject({
+      rankIndex: 1,
+      selectedForContext: true,
+    });
   });
 });

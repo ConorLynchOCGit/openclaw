@@ -23,8 +23,7 @@ export const PHASE2_AUTOSEND_TRIAL_QUALITY_REVIEW_REPORT_SCHEMA_VERSION =
   "phase2_autosend_trial_quality_review_report.v1" as const;
 
 export type Phase2AutoSendTrialQualityDecision =
-  | "trial_quality_green"
-  | "trial_quality_degraded"
+  | "trial_quality_review_recorded"
   | "trial_quality_blocked";
 
 export type Phase2AutoSendTrialQualityThresholds = {
@@ -33,7 +32,6 @@ export type Phase2AutoSendTrialQualityThresholds = {
   maxStaleCount: number;
   maxUnsafePrivateCount: 0;
   maxWrongContextOrNotUsefulRatio: number;
-  requireUsefulOrManualApprovalSignal: boolean;
   requireNoActionExecution: true;
   requireNoBroadAutonomousSending: true;
 };
@@ -54,7 +52,7 @@ export type Phase2AutoSendTrialQualityMetric = {
     | "wrong_context_or_not_useful_ratio";
   value: number;
   threshold?: number;
-  status: "pass" | "degraded" | "fail";
+  status: "observed" | "pass" | "fail";
 };
 
 export type Phase2AutoSendTrialQualityCheck = {
@@ -64,12 +62,7 @@ export type Phase2AutoSendTrialQualityCheck = {
     | "slice45_simulation_required"
     | "slice49_feedback_required"
     | "would_have_sent_compared"
-    | "false_positive_under_threshold"
-    | "repeat_under_threshold"
-    | "stale_under_threshold"
     | "unsafe_private_zero"
-    | "wrong_context_not_useful_under_threshold"
-    | "useful_signal_present"
     | "no_dark_data_required"
     | "provenance_required"
     | "source_profile_required"
@@ -89,15 +82,15 @@ export type Phase2AutoSendTrialQualityTelemetry = {
   snoozedCount: number;
   blockedCount: number;
   feedbackCount: number;
-  usefulCount: number;
-  notUsefulCount: number;
+  positiveFeedbackCount: number;
+  negativeFeedbackCount: number;
   wrongContextCount: number;
   tooRepetitiveCount: number;
   unsafePrivateCount: number;
   falsePositiveCount: number;
   repeatedCount: number;
   staleCount: number;
-  wrongContextOrNotUsefulRatio: number;
+  wrongContextOrNegativeFeedbackRatio: number;
   noDarkDataStatus: "pass" | "fail";
   sourceRefs: string[];
   sourceProfileIds: SourceProfileId[];
@@ -290,8 +283,6 @@ export async function buildPhase2AutoSendTrialQualityReviewReport(
     maxStaleCount: input.thresholds?.maxStaleCount ?? 0,
     maxUnsafePrivateCount: 0,
     maxWrongContextOrNotUsefulRatio: input.thresholds?.maxWrongContextOrNotUsefulRatio ?? 0.25,
-    requireUsefulOrManualApprovalSignal:
-      input.thresholds?.requireUsefulOrManualApprovalSignal ?? true,
     requireNoActionExecution: true,
     requireNoBroadAutonomousSending: true,
   };
@@ -313,16 +304,16 @@ export async function buildPhase2AutoSendTrialQualityReviewReport(
     feedbackReport?.qualityReport.tooRepetitiveCount ??
     0;
   const staleCount = input.forceStaleCount ?? simulationReport?.healthReport.staleCount ?? 0;
-  const usefulCount = feedbackReport?.qualityReport.usefulCount ?? 0;
-  const notUsefulCount = feedbackReport?.qualityReport.notUsefulCount ?? 0;
+  const positiveFeedbackCount = feedbackReport?.qualityReport.positiveFeedbackCount ?? 0;
+  const negativeFeedbackCount = feedbackReport?.qualityReport.negativeFeedbackCount ?? 0;
   const wrongContextCount = feedbackReport?.qualityReport.wrongContextCount ?? 0;
   const tooRepetitiveCount = feedbackReport?.qualityReport.tooRepetitiveCount ?? 0;
   const unsafePrivateCount =
     (feedbackReport?.qualityReport.unsafePrivateCount ?? 0) +
     (input.forceLeakageOrPrivateFlag ? 1 : 0);
   const feedbackCount = feedbackReport?.qualityReport.feedbackCount ?? 0;
-  const wrongContextOrNotUsefulRatio =
-    feedbackCount === 0 ? 0 : (wrongContextCount + notUsefulCount) / feedbackCount;
+  const wrongContextOrNegativeFeedbackRatio =
+    feedbackCount === 0 ? 0 : (wrongContextCount + negativeFeedbackCount) / feedbackCount;
   const sourceRefs = uniqueSortedStrings([
     ...(simulationReport?.telemetry.sourceRefs ?? []),
     ...(feedbackReport?.telemetry.sourceRefs ?? []),
@@ -354,29 +345,11 @@ export async function buildPhase2AutoSendTrialQualityReviewReport(
   const sourceProfileOk = !input.forceMissingSourceProfile && sourceProfileIds.length > 0;
   const actionExecutionObserved = input.forceActionExecution === true;
   const broadAutonomousSendingObserved = input.forceBroadAutonomousSending === true;
-  const usefulSignalPresent = manualApprovedCount > 0 || usefulCount > 0;
   const checks: Phase2AutoSendTrialQualityCheck[] = [];
   addCheck(checks, "slice45_simulation_required", Boolean(simulationReport));
   addCheck(checks, "slice49_feedback_required", Boolean(feedbackReport));
   addCheck(checks, "would_have_sent_compared", Boolean(comparison));
-  addCheck(
-    checks,
-    "false_positive_under_threshold",
-    falsePositiveCount <= thresholds.maxFalsePositiveCount,
-  );
-  addCheck(checks, "repeat_under_threshold", repeatedCount <= thresholds.maxRepeatedCount);
-  addCheck(checks, "stale_under_threshold", staleCount <= thresholds.maxStaleCount);
   addCheck(checks, "unsafe_private_zero", unsafePrivateCount === thresholds.maxUnsafePrivateCount);
-  addCheck(
-    checks,
-    "wrong_context_not_useful_under_threshold",
-    wrongContextOrNotUsefulRatio <= thresholds.maxWrongContextOrNotUsefulRatio,
-  );
-  addCheck(
-    checks,
-    "useful_signal_present",
-    !thresholds.requireUsefulOrManualApprovalSignal || usefulSignalPresent,
-  );
   addCheck(checks, "no_dark_data_required", noDarkDataOk);
   addCheck(checks, "provenance_required", provenanceOk);
   addCheck(checks, "source_profile_required", sourceProfileOk);
@@ -386,12 +359,6 @@ export async function buildPhase2AutoSendTrialQualityReviewReport(
   const blockedReasonCodes = uniqueSortedStrings(
     checks.filter((check) => check.status === "fail").map((check) => check.reasonCode),
   );
-  const degradedReasons = [
-    falsePositiveCount > 0 && "false_positive_under_threshold",
-    repeatedCount > 0 && "repeat_under_threshold",
-    staleCount > 0 && "stale_under_threshold",
-    wrongContextOrNotUsefulRatio > 0 && "wrong_context_not_useful_under_threshold",
-  ].filter(Boolean) as string[];
   const decision: Phase2AutoSendTrialQualityDecision = blockedReasonCodes.some((reason) =>
     [
       "slice45_simulation_required",
@@ -405,9 +372,7 @@ export async function buildPhase2AutoSendTrialQualityReviewReport(
     ].includes(reason),
   )
     ? "trial_quality_blocked"
-    : blockedReasonCodes.length > 0 || degradedReasons.length > 0
-      ? "trial_quality_degraded"
-      : "trial_quality_green";
+    : "trial_quality_review_recorded";
   const reportId = buildDerivedArtifactId({
     family: "context_artifact",
     artifactType: "phase2_autosend_trial_quality_review_report",
@@ -415,37 +380,37 @@ export async function buildPhase2AutoSendTrialQualityReviewReport(
     seed: { generatedAt, decision, blockedReasonCodes },
   });
   const metrics: Phase2AutoSendTrialQualityMetric[] = [
-    metric({ metric: "would_have_sent_count", value: wouldHaveSentCount, status: "pass" }),
+    metric({ metric: "would_have_sent_count", value: wouldHaveSentCount, status: "observed" }),
     metric({ metric: "actually_auto_sent_count", value: actuallyAutoSentCount, status: "pass" }),
     metric({
       metric: "manual_approved_count",
       value: manualApprovedCount,
-      status: usefulSignalPresent ? "pass" : "degraded",
+      status: "observed",
     }),
-    metric({ metric: "dismissed_count", value: dismissedCount, status: "pass" }),
-    metric({ metric: "snoozed_count", value: snoozedCount, status: "pass" }),
+    metric({ metric: "dismissed_count", value: dismissedCount, status: "observed" }),
+    metric({ metric: "snoozed_count", value: snoozedCount, status: "observed" }),
     metric({
       metric: "feedback_count",
       value: feedbackCount,
-      status: feedbackCount > 0 ? "pass" : "degraded",
+      status: "observed",
     }),
     metric({
       metric: "false_positive_count",
       value: falsePositiveCount,
       threshold: thresholds.maxFalsePositiveCount,
-      status: falsePositiveCount <= thresholds.maxFalsePositiveCount ? "pass" : "degraded",
+      status: "observed",
     }),
     metric({
       metric: "repeated_count",
       value: repeatedCount,
       threshold: thresholds.maxRepeatedCount,
-      status: repeatedCount <= thresholds.maxRepeatedCount ? "pass" : "degraded",
+      status: "observed",
     }),
     metric({
       metric: "stale_count",
       value: staleCount,
       threshold: thresholds.maxStaleCount,
-      status: staleCount <= thresholds.maxStaleCount ? "pass" : "degraded",
+      status: "observed",
     }),
     metric({
       metric: "unsafe_private_count",
@@ -455,12 +420,9 @@ export async function buildPhase2AutoSendTrialQualityReviewReport(
     }),
     metric({
       metric: "wrong_context_or_not_useful_ratio",
-      value: wrongContextOrNotUsefulRatio,
+      value: wrongContextOrNegativeFeedbackRatio,
       threshold: thresholds.maxWrongContextOrNotUsefulRatio,
-      status:
-        wrongContextOrNotUsefulRatio <= thresholds.maxWrongContextOrNotUsefulRatio
-          ? "pass"
-          : "degraded",
+      status: "observed",
     }),
   ];
   const rollbackPlan: Phase2AutoSendTrialQualityRollbackPlan = {
@@ -508,15 +470,15 @@ export async function buildPhase2AutoSendTrialQualityReviewReport(
       snoozedCount,
       blockedCount,
       feedbackCount,
-      usefulCount,
-      notUsefulCount,
+      positiveFeedbackCount,
+      negativeFeedbackCount,
       wrongContextCount,
       tooRepetitiveCount,
       unsafePrivateCount,
       falsePositiveCount,
       repeatedCount,
       staleCount,
-      wrongContextOrNotUsefulRatio,
+      wrongContextOrNegativeFeedbackRatio,
       noDarkDataStatus: noDarkDataOk ? "pass" : "fail",
       sourceRefs,
       sourceProfileIds,
@@ -569,7 +531,7 @@ export async function writePhase2AutoSendTrialQualityArtifact(input: {
     `- repeatedCount: ${input.report.telemetry.repeatedCount}`,
     `- staleCount: ${input.report.telemetry.staleCount}`,
     `- unsafePrivateCount: ${input.report.telemetry.unsafePrivateCount}`,
-    `- wrongContextOrNotUsefulRatio: ${input.report.telemetry.wrongContextOrNotUsefulRatio}`,
+    `- wrongContextOrNegativeFeedbackRatio: ${input.report.telemetry.wrongContextOrNegativeFeedbackRatio}`,
     `- broadAutonomousSendingObserved: ${input.report.telemetry.broadAutonomousSendingObserved}`,
     `- actionExecutionObserved: ${input.report.telemetry.actionExecutionObserved}`,
     "",

@@ -15,6 +15,7 @@ describe("model-memory proactivity gateway handlers", () => {
         recipientId: "conor",
         projectId: "openclaw",
         operatorId: "operator-conor",
+        candidateReviewForceRun: true,
       },
       client: null,
       isWebchatConnect: () => true,
@@ -44,7 +45,7 @@ describe("model-memory proactivity gateway handlers", () => {
     expect(JSON.stringify(payload).toLowerCase()).not.toContain("raw-prompt-marker");
   });
 
-  it("records a live event and returns it as an actionable queue item", async () => {
+  it("records a live event as structural evidence without creating an opportunity", async () => {
     const recordRespond = vi.fn();
     await modelMemoryProactivityHandlers["modelMemory.proactivity.recordLiveEvent"]({
       req: {
@@ -81,6 +82,7 @@ describe("model-memory proactivity gateway handlers", () => {
         recipientId: "conor",
         projectId: "openclaw",
         operatorId: "operator-conor",
+        candidateReviewForceRun: true,
       },
       client: null,
       isWebchatConnect: () => true,
@@ -91,23 +93,24 @@ describe("model-memory proactivity gateway handlers", () => {
     const [ok, payload] = respond.mock.calls[0];
     expect(ok).toBe(true);
     expect(payload.liveDetectionReport).toMatchObject({
-      decision: "live_opportunities_detected",
+      decision: "no_live_opportunities",
+      telemetry: {
+        signalCount: expect.any(Number),
+        opportunityCount: 0,
+      },
     });
+    expect(payload.liveDetectionReport.telemetry.signalCount).toBeGreaterThanOrEqual(1);
     expect(payload.queue.items[0]).toMatchObject({
       status: "blocked",
       layer: "diagnostic",
       attentionRequired: false,
-      workItemKind: "planning_request",
+      workItemKind: "diagnostic",
       primaryAction: null,
-      planTitle: "Advance current openclaw work",
     });
-    expect(payload.queue.items[0].blockedReasonCodes).toContain(
-      "presentation:model_authored_visible_copy_required",
-    );
-    expect(payload.queue.items[0].proposedMessage).toContain("concrete planning handoff");
+    expect(payload.queue.items[0].blockedReasonCodes).toContain("no_live_opportunities_detected");
   });
 
-  it("turns queued runtime system events into live proactive opportunities", async () => {
+  it("keeps queued runtime system events as structural evidence until model review", async () => {
     resetSystemEventsForTest();
     const sessionKey = "gateway-system-event-live-test";
     enqueueSystemEvent(
@@ -129,6 +132,7 @@ describe("model-memory proactivity gateway handlers", () => {
         recipientId: "conor",
         projectId: "openclaw",
         operatorId: "operator-conor",
+        candidateReviewForceRun: true,
       },
       client: null,
       isWebchatConnect: () => true,
@@ -139,24 +143,24 @@ describe("model-memory proactivity gateway handlers", () => {
     const [ok, payload] = respond.mock.calls[0];
     expect(ok).toBe(true);
     expect(payload.liveDetectionReport).toMatchObject({
-      decision: "live_opportunities_detected",
+      decision: "no_live_opportunities",
+      telemetry: {
+        signalCount: expect.any(Number),
+        opportunityCount: 0,
+      },
     });
+    expect(payload.liveDetectionReport.telemetry.signalCount).toBeGreaterThanOrEqual(1);
     expect(payload.queue.items[0]).toMatchObject({
       status: "blocked",
       layer: "diagnostic",
-      workItemKind: "planning_request",
+      workItemKind: "diagnostic",
       primaryAction: null,
     });
-    expect(payload.queue.items[0].blockedReasonCodes).toContain(
-      "presentation:model_authored_visible_copy_required",
-    );
-    expect(payload.queue.items[0].sourceRefs[0]).toContain("gateway://system-events/");
-    expect(payload.queue.items[0].sourceRefs[0]).toContain("/ordinary_chat_turn/");
-    expect(payload.queue.items[0].proposedMessage).toContain("verification plan");
+    expect(payload.queue.items[0].blockedReasonCodes).toContain("no_live_opportunities_detected");
     expect(JSON.stringify(payload).toLowerCase()).not.toContain("raw-prompt-marker");
   });
 
-  it("classifies failed command system events as investigation opportunities", async () => {
+  it("keeps failed command events as structural evidence until model review", async () => {
     resetSystemEventsForTest();
     const sessionKey = "gateway-failed-command-live-test";
     enqueueSystemEvent("Exec finished (node=local id=run-1, code 1)\nGateway rebuild failed.", {
@@ -179,6 +183,7 @@ describe("model-memory proactivity gateway handlers", () => {
         recipientId: "conor",
         projectId: "openclaw",
         operatorId: "operator-conor",
+        candidateReviewForceRun: true,
       },
       client: null,
       isWebchatConnect: () => true,
@@ -191,19 +196,18 @@ describe("model-memory proactivity gateway handlers", () => {
     expect(payload.queue.items[0]).toMatchObject({
       status: "blocked",
       layer: "diagnostic",
-      workItemKind: "investigation_request",
+      workItemKind: "diagnostic",
       primaryAction: null,
     });
-    expect(payload.queue.items[0].blockedReasonCodes).toContain(
-      "presentation:model_authored_visible_copy_required",
-    );
-    expect(payload.queue.items[0].sourceRefs[0]).toContain("/failed_command/");
+    expect(payload.liveDetectionReport.telemetry.signalCount).toBeGreaterThanOrEqual(1);
+    expect(payload.liveDetectionReport.telemetry.opportunityCount).toBe(0);
+    expect(payload.queue.items[0].blockedReasonCodes).toContain("no_live_opportunities_detected");
     expect(payload.queue.items[0].blockedReasonCodes).not.toContain(
       "static_default_candidate_demoted",
     );
   });
 
-  it("turns heartbeat events into live proactive opportunities", async () => {
+  it("keeps heartbeat events as structural evidence until model review", async () => {
     resetHeartbeatEventsForTest();
     emitHeartbeatEvent({
       status: "failed",
@@ -225,6 +229,7 @@ describe("model-memory proactivity gateway handlers", () => {
         recipientId: "conor",
         projectId: "openclaw",
         operatorId: "operator-conor",
+        candidateReviewForceRun: true,
       },
       client: null,
       isWebchatConnect: () => true,
@@ -235,21 +240,23 @@ describe("model-memory proactivity gateway handlers", () => {
     const [ok, payload] = respond.mock.calls[0];
     expect(ok).toBe(true);
     expect(payload.liveDetectionReport).toMatchObject({
-      decision: "live_opportunities_detected",
+      decision: "no_live_opportunities",
+      telemetry: {
+        signalCount: expect.any(Number),
+        opportunityCount: 0,
+      },
     });
+    expect(payload.liveDetectionReport.telemetry.signalCount).toBeGreaterThanOrEqual(1);
     expect(payload.queue.items[0]).toMatchObject({
       status: "blocked",
       layer: "diagnostic",
-      workItemKind: "investigation_request",
+      workItemKind: "diagnostic",
       primaryAction: null,
     });
-    expect(payload.queue.items[0].blockedReasonCodes).toContain(
-      "presentation:model_authored_visible_copy_required",
-    );
-    expect(payload.queue.items[0].sourceRefs[0]).toContain("gateway://heartbeat/last/");
+    expect(payload.queue.items[0].blockedReasonCodes).toContain("no_live_opportunities_detected");
   });
 
-  it("turns assistant planning output into ledger-backed inbox traffic without manual candidate seeding", async () => {
+  it("keeps assistant planning output structural without model-reviewed candidate seeding", async () => {
     const recordRespond = vi.fn();
     await modelMemoryProactivityHandlers["modelMemory.proactivity.recordChatActivity"]({
       req: {
@@ -296,6 +303,7 @@ describe("model-memory proactivity gateway handlers", () => {
         recipientId: "conor",
         projectId: "openclaw",
         operatorId: "operator-conor",
+        candidateReviewForceRun: true,
       },
       client: null,
       isWebchatConnect: () => true,
@@ -306,26 +314,18 @@ describe("model-memory proactivity gateway handlers", () => {
     const [ok, payload] = respond.mock.calls[0];
     expect(ok).toBe(true);
     expect(payload.extractionReport).toMatchObject({
-      decision: "opportunities_extracted",
+      decision: "no_concrete_opportunities",
+      candidateCount: 0,
     });
-    expect(payload.extractionReport.candidateCount).toBeGreaterThanOrEqual(1);
     expect(payload.ledgerReport).toMatchObject({
-      decision: "ledger_ready",
-    });
-    expect(payload.draftReport).toMatchObject({
-      decision: "drafts_ready",
+      decision: "no_opportunities",
     });
     expect(
       payload.queue.items.some(
         (item: { layer: string; draftReady?: boolean; opportunityId?: string }) =>
           item.layer === "diagnostic" && item.draftReady === true && Boolean(item.opportunityId),
       ),
-    ).toBe(true);
-    expect(
-      payload.queue.items.some((item: { blockedReasonCodes?: string[] }) =>
-        item.blockedReasonCodes?.includes("presentation:model_authored_visible_copy_required"),
-      ),
-    ).toBe(true);
+    ).toBe(false);
   });
 
   it("surfaces a repeated skills workflow as one canonical skill candidate", async () => {
@@ -391,6 +391,7 @@ describe("model-memory proactivity gateway handlers", () => {
         recipientId: "conor",
         projectId: "openclaw",
         operatorId: "operator-conor",
+        candidateReviewForceRun: true,
       },
       client: null,
       isWebchatConnect: () => true,
@@ -476,17 +477,25 @@ describe("model-memory proactivity gateway handlers", () => {
         method: "modelMemory.proactivity.queue",
         params: {},
       },
-      params: { sessionKey, projectId, userId, recipientId, operatorId },
+      params: {
+        sessionKey,
+        projectId,
+        userId,
+        recipientId,
+        operatorId,
+        candidateReviewForceRun: true,
+      },
       client: null,
       isWebchatConnect: () => true,
       respond: queueRespond,
       context: {} as never,
     });
     const [, queuePayload] = queueRespond.mock.calls[0];
-    const skillCandidateId = queuePayload.queue.items.find(
+    const skillCandidateItem = queuePayload.queue.items.find(
       (item: { opportunityClass?: string; skillCandidate?: { skillCandidateId?: string } }) =>
         item.opportunityClass === "skill_candidate",
-    )?.skillCandidate?.skillCandidateId;
+    );
+    const skillCandidateId = skillCandidateItem?.skillCandidate?.skillCandidateId;
     expect(skillCandidateId).toBeTruthy();
 
     const respond = vi.fn();
@@ -525,6 +534,31 @@ describe("model-memory proactivity gateway handlers", () => {
     expect(payload.draftPath).not.toContain("/root/services/openclaw-roles/live/skills/");
     const reportRaw = await fs.readFile(payload.reportPath, "utf8");
     expect(reportRaw).toContain("draft_ready");
+    const artifactRespond = vi.fn();
+    await modelMemoryProactivityHandlers["modelMemory.proactivity.readArtifact"]({
+      req: {
+        type: "req",
+        id: "req-skillifier-artifact-read",
+        method: "modelMemory.proactivity.readArtifact",
+        params: {},
+      },
+      params: {
+        sessionKey,
+        projectId,
+        userId,
+        recipientId,
+        operatorId,
+        queueItemId: skillCandidateItem.queueItemId,
+        artifactKind: "skill",
+      },
+      client: null,
+      isWebchatConnect: () => true,
+      respond: artifactRespond,
+      context: {} as never,
+    });
+    const [artifactOk, artifactPayload] = artifactRespond.mock.calls[0];
+    expect(artifactOk).toBe(true);
+    expect(artifactPayload.artifactText).toContain("#");
     await fs.rm(payload.draftPath, { recursive: true, force: true }).catch(() => undefined);
   });
 
@@ -569,7 +603,7 @@ describe("model-memory proactivity gateway handlers", () => {
         method: "modelMemory.proactivity.personalAutosendUx",
         params: {},
       },
-      params: {},
+      params: { candidateReviewForceRun: true },
       client: null,
       isWebchatConnect: () => true,
       respond,
@@ -600,7 +634,7 @@ describe("model-memory proactivity gateway handlers", () => {
         method: "modelMemory.proactivity.inbox",
         params: {},
       },
-      params: {},
+      params: { candidateReviewForceRun: true },
       client: null,
       isWebchatConnect: () => true,
       respond,
@@ -674,6 +708,7 @@ describe("model-memory proactivity gateway handlers", () => {
         recipientId: "conor",
         projectId: "openclaw",
         operatorId: "operator-conor",
+        candidateReviewForceRun: true,
       },
       client: null,
       isWebchatConnect: () => true,
@@ -727,7 +762,7 @@ describe("model-memory proactivity gateway handlers", () => {
     expect(ok).toBe(true);
     expect(payload).toMatchObject({
       ok: true,
-      decision: "ux_remediated",
+      decision: "blocked",
       entryPoint: {
         label: "Proactivity",
         visibleInChatChrome: true,

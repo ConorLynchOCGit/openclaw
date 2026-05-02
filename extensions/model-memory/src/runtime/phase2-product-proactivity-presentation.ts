@@ -16,6 +16,7 @@ import {
 import type { Phase2AutonomousDraftReport } from "./phase2-proactivity-autonomous-internal-drafting.ts";
 import type {
   Phase2OpportunityLedgerEntry,
+  Phase2OpportunityPlannedArtifact,
   Phase2OpportunityLedgerReport,
   Phase2OpportunityLifecycleStatus,
 } from "./phase2-proactivity-opportunity-ledger.ts";
@@ -104,12 +105,14 @@ export type Phase2ProductProactivityQueueItem = {
   opportunityStatus?: Phase2OpportunityLifecycleStatus;
   workItemKind: Phase2ProactivityWorkItemKind;
   workItemStatus: Phase2ProactivityWorkItemStatus;
+  reviewStatus?: "pending_review" | "recommendation_finalized" | "revision_requested";
   primaryAction: Phase2ProactivityWorkItemAction | null;
   secondaryActions: Phase2ProactivityWorkItemAction[];
   ctaExplanation: string;
   handoffStatus: "idle" | "starting" | "started" | "failed";
   handoffError: string | null;
   handoffMessageAnchor: string | null;
+  plannedArtifact?: Phase2OpportunityPlannedArtifact | null;
   messageClass: Phase2UserFacingProactivityDefaultMessageClass;
   boundedDisplayText: string;
   messagePreview: string;
@@ -144,6 +147,7 @@ export type Phase2ProductProactivityQueueItem = {
   } | null;
   resolvedByChatMessageId?: string | null;
   supersededByOpportunityId?: string | null;
+  dismissalCooldownUntil?: string | null;
   layer: "actionable" | "history" | "diagnostic";
   attentionRequired: boolean;
   sendStatus: "idle" | "sending" | "sent" | "failed";
@@ -336,9 +340,10 @@ function assertNoProhibitedKeys(value: unknown, pathParts: string[] = []): void 
   for (const [key, nested] of Object.entries(value)) {
     if (PROHIBITED_KEYS.has(key)) {
       throw new Error(
-        `phase2 product proactivity surfacing contains prohibited field: ${[...pathParts, key].join(
-          ".",
-        )}`,
+        `phase2 product proactivity presentation contains prohibited field: ${[
+          ...pathParts,
+          key,
+        ].join(".")}`,
       );
     }
     assertNoProhibitedKeys(nested, [...pathParts, key]);
@@ -350,7 +355,7 @@ function assertNoDarkData(value: unknown): void {
   const serialized = JSON.stringify(value).toLowerCase();
   for (const parts of PROHIBITED_MARKER_PARTS) {
     if (serialized.includes(parts.join(""))) {
-      throw new Error("phase2 product proactivity surfacing contains prohibited marker content");
+      throw new Error("phase2 product proactivity presentation contains prohibited marker content");
     }
   }
 }
@@ -381,10 +386,6 @@ function reportHash(report: JsonLike | undefined): string | undefined {
 
 function safeString(value: unknown, fallback: string): string {
   return typeof value === "string" && value.trim() ? value.trim() : fallback;
-}
-
-function trimTrailingSentencePunctuation(value: string): string {
-  return value.trim().replace(/[.!?]+$/u, "");
 }
 
 function buildEligibilityScope(input: {
@@ -505,16 +506,9 @@ function secondaryWorkItemActions(): Phase2ProactivityWorkItemAction[] {
       executesAction: false,
     },
     {
-      actionType: "snooze",
-      label: "Snooze",
-      description: "Hide this opportunity until a later review boundary.",
-      requiresChatInject: false,
-      executesAction: false,
-    },
-    {
       actionType: "dismiss",
       label: "Dismiss",
-      description: "Remove this opportunity from the actionable backlog.",
+      description: "Hide this opportunity from the actionable backlog for a cooldown period.",
       requiresChatInject: false,
       executesAction: false,
     },
@@ -522,10 +516,8 @@ function secondaryWorkItemActions(): Phase2ProactivityWorkItemAction[] {
 }
 
 function contentFieldsForMessageClass(input: {
-  messageClass: Phase2UserFacingProactivityDefaultMessageClass;
   boundedDisplayText: string;
   realCandidate?: Phase2RealMemoryCandidateReport["candidates"][number];
-  scope: Phase2ProductProactivityEligibilityScope;
 }): Pick<
   Phase2ProductProactivityQueueItem,
   | "messagePreview"
@@ -540,83 +532,41 @@ function contentFieldsForMessageClass(input: {
   | "confidence"
   | "blockedIfMissing"
 > {
-  const sourceLabel =
-    input.realCandidate?.sourceRefs[0] ?? `${input.scope.projectId}/${input.scope.sessionKey}`;
   const boundedSummary = input.realCandidate?.boundedDisplayText ?? input.boundedDisplayText;
-  const why = input.realCandidate?.whyThisAppeared ?? boundedSummary;
   if (input.realCandidate) {
-    const isFollowUp = input.messageClass === "operator_approved_follow_up_available";
-    const safeSummary = trimTrailingSentencePunctuation(boundedSummary);
-    const planTitle =
-      input.realCandidate.title ??
-      (isFollowUp
-        ? `Investigate unresolved follow-up for ${input.scope.projectId}`
-        : `Plan the next ${input.scope.projectId} step`);
-    const problem = input.realCandidate.whyNow ?? `${boundedSummary} Source: ${sourceLabel}.`;
-    const proposedMessage =
-      input.realCandidate.proposedNextStep ??
-      (isFollowUp
-        ? `Investigate this unresolved follow-up for ${input.scope.projectId}: ${safeSummary}. Summarize whether it still matters, what evidence supports it, and the smallest safe next step.`
-        : `Plan this ${input.scope.projectId} opportunity: ${safeSummary}. Produce concrete next steps from bounded Model Memory evidence and do not edit files unless approved.`);
+    const blockedIfMissing = [
+      !input.realCandidate.title ? "candidate_title" : undefined,
+      !input.realCandidate.whyNow ? "candidate_why_now" : undefined,
+      !input.realCandidate.proposedNextStep ? "candidate_next_step" : undefined,
+      !input.realCandidate.expectedUserValue ? "candidate_expected_user_value" : undefined,
+      !input.realCandidate.evidenceSummary ? "candidate_evidence_summary" : undefined,
+    ].filter((value): value is string => Boolean(value));
     return {
       candidateSummary: boundedSummary,
-      suggestedAction: isFollowUp
-        ? `Investigate the follow-up for ${input.scope.projectId} and decide whether to keep, close, or plan it.`
-        : `Start a bounded planning turn for this concrete ${input.scope.projectId} opportunity.`,
-      messagePreview: proposedMessage,
-      expectedUserValue:
-        input.realCandidate.expectedUserValue ??
-        `Helps advance ${input.scope.projectId} by turning bounded memory evidence into a reviewable next step.`,
-      planTitle,
-      problem,
-      proposedMessage,
-      userBenefit:
-        input.realCandidate.expectedUserValue ??
-        `Reduces forgotten follow-up work by surfacing a specific safe next step for ${input.scope.projectId}.`,
-      evidenceSummary:
-        input.realCandidate.evidenceSummary ?? `${why} Evidence source: ${sourceLabel}.`,
-      confidence:
-        input.realCandidate.confidence ??
-        (input.realCandidate.staleLabels.length || input.realCandidate.conflictLabels.length
-          ? "medium"
-          : "high"),
-      blockedIfMissing: [],
-    };
-  }
-  if (input.messageClass === "operator_approved_follow_up_available") {
-    return {
-      candidateSummary: `Follow-up candidate for ${input.scope.projectId}/${input.scope.sessionKey}.`,
-      suggestedAction: `Review the approved follow-up for ${input.scope.projectId} before sending.`,
-      messagePreview:
-        "Model Memory has an approved follow-up candidate for this workspace. Review provenance before sending.",
-      expectedUserValue:
-        "Helps close an approved follow-up without exposing raw prompts, transcripts, or tool logs.",
-      planTitle: `Review approved follow-up for ${input.scope.projectId}`,
-      problem:
-        "The candidate lacks a concrete memory-derived summary, so it is blocked from actionable UX until a specific preview is available.",
-      proposedMessage: "",
-      userBenefit:
-        "Prevents blind follow-up sends when the underlying suggestion is not specific enough.",
-      evidenceSummary: `Fallback evidence for ${sourceLabel}; specific preview missing.`,
-      confidence: "low",
-      blockedIfMissing: ["specific_memory_summary", "safe_proposed_message"],
+      suggestedAction: input.realCandidate.proposedNextStep ?? "",
+      messagePreview: input.realCandidate.proposedNextStep ?? "",
+      expectedUserValue: input.realCandidate.expectedUserValue ?? "",
+      planTitle: input.realCandidate.title ?? "",
+      problem: input.realCandidate.whyNow ?? "",
+      proposedMessage: input.realCandidate.proposedNextStep ?? "",
+      userBenefit: input.realCandidate.expectedUserValue ?? "",
+      evidenceSummary: input.realCandidate.evidenceSummary ?? "",
+      confidence: input.realCandidate.confidence ?? "low",
+      blockedIfMissing,
     };
   }
   return {
-    candidateSummary: `Suggestion candidate for ${input.scope.projectId}/${input.scope.sessionKey}.`,
-    suggestedAction: `Review the approved suggestion for ${input.scope.projectId} before sending.`,
-    messagePreview:
-      "Model Memory has an approved suggestion for this workspace. Review provenance before sending.",
-    expectedUserValue:
-      "Surfaces a low-risk memory-derived suggestion while keeping manual approval in control.",
-    planTitle: `Review approved suggestion for ${input.scope.projectId}`,
-    problem:
-      "The candidate lacks a concrete memory-derived summary, so it is blocked from actionable UX until a specific preview is available.",
+    candidateSummary: "",
+    suggestedAction: "",
+    messagePreview: "",
+    expectedUserValue: "",
+    planTitle: "",
+    problem: "",
     proposedMessage: "",
-    userBenefit: "Prevents blind suggestion sends when the underlying plan is not specific enough.",
-    evidenceSummary: `Fallback evidence for ${sourceLabel}; specific preview missing.`,
+    userBenefit: "",
+    evidenceSummary: "",
     confidence: "low",
-    blockedIfMissing: ["specific_memory_summary", "safe_proposed_message"],
+    blockedIfMissing: ["live_candidate", "model_authored_visible_copy"],
   };
 }
 
@@ -733,7 +683,7 @@ function buildBundledDefaultPromotionBaselineReport(input: {
         family: "context_artifact",
         artifactType: "phase2_user_facing_proactivity_default_rollback",
         targetId: reportId,
-        seed: "bundled-product-surfacing-baseline",
+        seed: "bundled-product-presentation-baseline",
       }),
       killSwitchEnvVar: "MODEL_MEMORY_PHASE2_USER_FACING_PROACTIVITY_DEFAULT_DISABLED",
       targetMode: "controlled_multi_user_scope",
@@ -1000,6 +950,7 @@ async function queueItemsFromLedger(input: {
         opportunityStatus: entry.status,
         workItemKind: entry.workItemKind,
         workItemStatus,
+        reviewStatus: entry.reviewStatus ?? entry.plannedArtifact?.reviewStatus,
         primaryAction: presentationDemoted ? null : primaryAction,
         secondaryActions: presentationDemoted || !primaryAction ? [] : secondaryWorkItemActions(),
         ctaExplanation: skillifierDraft
@@ -1012,6 +963,7 @@ async function queueItemsFromLedger(input: {
         handoffStatus: "idle",
         handoffError: null,
         handoffMessageAnchor: null,
+        plannedArtifact: entry.plannedArtifact,
         messageClass:
           entry.workItemKind === "draft_next_steps"
             ? "operator_approved_follow_up_available"
@@ -1049,6 +1001,7 @@ async function queueItemsFromLedger(input: {
           : null,
         resolvedByChatMessageId: entry.resolvedByChatMessageId,
         supersededByOpportunityId: entry.supersededByOpportunityId,
+        dismissalCooldownUntil: entry.dismissalCooldownUntil,
         layer: effectiveLayer,
         attentionRequired: effectiveLayer === "actionable" ? entry.attentionRequired : false,
         sendStatus: "idle",
@@ -1088,7 +1041,7 @@ export async function buildPhase2ProductProactivitySurfacingReport(
     defaultPromotionReport: input.defaultPromotionReport,
   });
   if (!defaultPromotionReport) {
-    throw new Error("default promotion report is required for product proactivity surfacing");
+    throw new Error("default promotion report is required for product proactivity presentation");
   }
   const realCandidateReport = await loadRealCandidateReport({
     now: input.now,
@@ -1180,10 +1133,8 @@ export async function buildPhase2ProductProactivitySurfacingReport(
           const boundedDisplayText =
             realCandidate?.boundedDisplayText ?? "No live proactivity opportunities detected.";
           const contentFields = contentFieldsForMessageClass({
-            messageClass: effectiveMessageClass,
             boundedDisplayText,
             realCandidate,
-            scope,
           });
           const candidateId = buildDerivedArtifactId({
             family: "context_artifact",
@@ -1302,6 +1253,7 @@ export async function buildPhase2ProductProactivitySurfacingReport(
               handoffStatus: "idle",
               handoffError: null,
               handoffMessageAnchor: null,
+              plannedArtifact: null,
               messageClass: effectiveMessageClass,
               boundedDisplayText,
               ...contentFields,
@@ -1344,6 +1296,7 @@ export async function buildPhase2ProductProactivitySurfacingReport(
               layer: effectiveLayer,
               attentionRequired: effectiveLayer === "actionable",
               status: effectiveStatus,
+              dismissalCooldownUntil: null,
               sendStatus: "idle",
               sendError: null,
               sentMessageAnchor: null,
@@ -1483,10 +1436,10 @@ export function assertPhase2ProductProactivitySurfacingEnabled(
 ): void {
   assertNoDarkData(report);
   if (report.decision !== "product_queue_enabled") {
-    throw new Error(`phase2 product proactivity surfacing not enabled: ${report.decision}`);
+    throw new Error(`phase2 product proactivity presentation not enabled: ${report.decision}`);
   }
   if (report.telemetry.autonomousSendingEnabled || report.telemetry.actionExecutionObserved) {
-    throw new Error("phase2 product proactivity surfacing enabled forbidden behavior");
+    throw new Error("phase2 product proactivity presentation enabled forbidden behavior");
   }
 }
 
@@ -1498,12 +1451,12 @@ export async function writePhase2ProductProactivitySurfacingArtifact(input: {
   const written = await writeBoundedDerivedJsonArtifact({
     artifactDir: input.artifactDir,
     artifactId: input.report.reportId,
-    suffix: "phase2-product-proactivity-surfacing",
+    suffix: "phase2-product-proactivity-presentation",
     value: input.report,
     maxBytes: 256 * 1024,
   });
   const markdown = [
-    "# Phase 2 Product Proactivity Surfacing",
+    "# Phase 2 Product Proactivity Presentation",
     "",
     `- reportId: ${input.report.reportId}`,
     `- decision: ${input.report.decision}`,

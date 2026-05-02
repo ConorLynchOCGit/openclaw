@@ -43,11 +43,20 @@ The platform should track at least:
 
 - canary or shadow mode must use a bounded scope
 - the same canonical ids must connect candidate, package, canary, and install
+- canary entry requires tier-appropriate evals, resolver/trigger tests,
+  check-resolvable-style health report, vetting, package E2E, provenance, and
+  rollback metadata
 - failed canaries must auto-disable or demote the skill
 - failed canaries should create a proactivity repair item
+- canary success can be promotion evidence, but it is not deterministic
+  semantic authority; promotion still follows model/operator review and the
+  autonomy policy for the risk tier
 
 ## Rollback rules
 
 - low-risk auto-promoted skills must be easy to disable
 - rollback must be operator-legible and immediate
 - revert path and disable path must both be recorded when relevant
+- rollback proof must be part of package E2E or canary validation before
+  promotion
+- cross-runtime installs must record rollback paths for each runtime target

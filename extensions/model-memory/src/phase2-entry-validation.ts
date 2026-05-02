@@ -13,7 +13,7 @@ import {
   type RetrievalRequestInterpreter,
 } from "./retrieval-request-interpreter.ts";
 import { InMemoryRetrievalStore } from "./retrieval-store.ts";
-import { executeRetrieval } from "./retrieval.ts";
+import { executeRetrieval, type RetrievalFinalInclusionReviewer } from "./retrieval.ts";
 import type {
   RetrievalRequestRecord,
   RetrievalResultItemRecord,
@@ -703,6 +703,16 @@ export async function runPhase2EntryNoDarkDataPack(): Promise<Phase2EntryNoDarkD
     },
   };
   const retrievalStore = new InMemoryRetrievalStore();
+  const finalInclusionReviewer: RetrievalFinalInclusionReviewer = {
+    async review() {
+      return {
+        schemaVersion: "retrieval_final_inclusion_decision.v1",
+        decision: "select",
+        selectedMemoryObjectIds: ["memory-retrieval-phase2"],
+        why: "Scripted model final-inclusion fixture for phase 2 entry validation.",
+      };
+    },
+  };
   const retrievalMemory = buildRuntimeMemory({
     id: "memory-retrieval-phase2",
     normalizedSearchText:
@@ -717,6 +727,8 @@ export async function runPhase2EntryNoDarkDataPack(): Promise<Phase2EntryNoDarkD
     interpreter: lexicalInterpreter,
     memoryObjects: [retrievalMemory],
     modelId: "deterministic/lexical",
+    finalInclusionReviewer,
+    finalInclusionModelId: "openai-codex/gpt-5.4-mini",
     store: retrievalStore,
     createdAt: new Date("2026-04-24T00:00:00.000Z"),
   });

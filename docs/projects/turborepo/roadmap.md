@@ -46,3 +46,13 @@ title: "Turborepo Roadmap"
 - measure actual time and cache wins
 - align PNPM hygiene with the new task graph
 - keep host-side cache usage and cleanup explicit
+
+## Phase 7 - Turbo-first local gate cutover
+
+- switch local `pnpm test` to Turbo-first orchestration only after package
+  ownership is broad enough to make the graph selective
+- keep root wrappers only for work that is still honestly root-global
+- remove double-running between package-owned lanes and root shard wrappers
+- benchmark repeated local developer loops against the current custom
+  `scripts/test-projects.mjs` path before declaring victory
+- require docs and implementation to stay in lockstep for local gate behavior

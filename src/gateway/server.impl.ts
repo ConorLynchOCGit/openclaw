@@ -19,6 +19,7 @@ import { resolveMainSessionKey } from "../config/sessions.js";
 import { clearAgentRunContext } from "../infra/agent-events.js";
 import { isDiagnosticsEnabled } from "../infra/diagnostic-events.js";
 import { logAcceptedEnvOption } from "../infra/env.js";
+import { runCodexMemoryCaptureRuntimeHook } from "../infra/model-memory-codex-capture-runtime.js";
 import { ensureOpenClawCliOnPath } from "../infra/path-env.js";
 import { setGatewaySigusr1RestartPolicy, setPreRestartDeferralCheck } from "../infra/restart.js";
 import { enqueueSystemEvent } from "../infra/system-events.js";
@@ -856,6 +857,14 @@ export async function startGatewayServer(
         ctx: { port },
         onError: (err) => log.warn(`gateway_stop hook failed: ${String(err)}`),
       });
+      await runCodexMemoryCaptureRuntimeHook({
+        cfg: cfgAtStart,
+        cadence: "closeout",
+        projectId:
+          process.env.MODEL_MEMORY_CODEX_CAPTURE_PROJECT_ID ??
+          process.env.OPENCLAW_PROJECT_ID ??
+          "openclaw",
+      }).catch((err) => log.warn(`codex memory closeout hook failed open: ${String(err)}`));
       await runClosePrelude();
       await close(opts);
     },

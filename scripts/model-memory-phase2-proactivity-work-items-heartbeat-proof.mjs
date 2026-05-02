@@ -57,6 +57,26 @@ async function main() {
     path.join(root, "extensions/model-memory/src/runtime/phase2-proactivity-work-items.ts"),
     import.meta.url,
   );
+  const modelReviewedPlanningCandidate = {
+    candidateId: "work-items-proof-model-reviewed-planning-candidate",
+    queueItemId: "work-items-proof-model-reviewed-planning-queue-item",
+    kind: "planning_request",
+    title: "Model-reviewed heartbeat planning handoff",
+    whyNow: "A model-reviewed proof fixture identified a bounded planning handoff.",
+    proposedNextStep: "Review the bounded plan request before any file edits or execution.",
+    expectedUserValue: "Keeps heartbeat planning explicit while preserving approval boundaries.",
+    evidenceSummary: "Evidence comes from bounded proof fixture refs.",
+    confidence: "high",
+    sourceRefs: ["docs/projects/model-memory/phase-2-execution-roadmap.md"],
+    sourceProfileIds: ["manual_note"],
+    authorityTiers: ["curated_authoritative"],
+    contentHashes: ["work-items-proof-model-reviewed-content-hash"],
+    proofHashes: ["work-items-proof-model-reviewed-proof-hash"],
+    noDarkDataStatus: "pass",
+    freshnessLabels: [],
+    conflictLabels: [],
+    blockedReasonCodes: [],
+  };
 
   const harness = await new OperatorBrowserHarness({ headless: true, origin }).start();
   let observedText = "";
@@ -143,15 +163,19 @@ async function main() {
   if (!Object.values(uiEvidence).every(Boolean)) {
     throw new Error(`work-items heartbeat UI proof failed: ${JSON.stringify(uiEvidence)}`);
   }
-  const report = await buildPhase2ProactivityWorkItemReport();
+  const report = await buildPhase2ProactivityWorkItemReport({
+    candidates: [modelReviewedPlanningCandidate],
+  });
   assertPhase2ProactivityWorkItemsEnabled(report);
   const blocked = await buildPhase2ProactivityWorkItemReport({
+    candidates: [modelReviewedPlanningCandidate],
     forceSendMessageOnNonMessage: true,
   });
   if (blocked.decision !== "blocked") {
     throw new Error("work item proof did not block send_message on non-message candidate");
   }
   const rollback = await buildPhase2ProactivityWorkItemReport({
+    candidates: [modelReviewedPlanningCandidate],
     env: { MODEL_MEMORY_PHASE2_PROACTIVITY_WORK_ITEMS_DISABLED: "1" },
   });
   if (rollback.decision !== "rollback_disabled") {

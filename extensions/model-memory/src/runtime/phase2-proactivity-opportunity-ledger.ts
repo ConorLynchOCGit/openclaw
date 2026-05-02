@@ -1,6 +1,5 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { buildProactivityUserFacingFocusKey } from "../../../../src/shared/chat-message-content.js";
 import { buildDerivedArtifactId, uniqueSortedStrings, type JsonLike } from "../derived-artifact.ts";
 import { sha256JsonValue } from "../hashing.ts";
 import type { SourceAuthorityTier, SourceProfileId } from "../source-authority.ts";
@@ -14,6 +13,7 @@ import type {
   Phase2SkillCandidateOpportunity,
   Phase2SkillCandidateRecord,
 } from "./phase2-skill-candidate-ledger.ts";
+import { buildProactivityUserFacingFocusKey } from "./proactivity-text.ts";
 
 export const PHASE2_PROACTIVITY_OPPORTUNITY_LEDGER_SCHEMA_VERSION =
   "phase2_proactivity_opportunity_ledger.v1" as const;
@@ -118,6 +118,9 @@ export type Phase2OpportunityLedgerEntry = {
   blockedReasonCodes: string[];
   resolvedByChatMessageId: string | null;
   supersededByOpportunityId: string | null;
+  dismissalCooldownUntil?: string | null;
+  plannedArtifact?: Phase2OpportunityPlannedArtifact | null;
+  reviewStatus?: "pending_review" | "recommendation_finalized" | "revision_requested";
   attentionRequired: boolean;
   staleLabels: string[];
   conflictLabels: string[];
@@ -137,6 +140,22 @@ export type Phase2OpportunityLedgerLifecycleOverride = {
   updatedAt?: string;
   resolvedByChatMessageId?: string | null;
   supersededByOpportunityId?: string | null;
+  dismissalCooldownUntil?: string | null;
+  plannedArtifact?: Phase2OpportunityPlannedArtifact | null;
+  reviewStatus?: "pending_review" | "recommendation_finalized" | "revision_requested";
+};
+
+export type Phase2OpportunityPlannedArtifact = {
+  status: "requested" | "compiled" | "failed";
+  reviewStatus?: "pending_review" | "recommendation_finalized" | "revision_requested";
+  title: string;
+  requestSummary: string;
+  compiledPlan?: string;
+  sourceRunId?: string;
+  sourceMessageId?: string;
+  generatedAt: string;
+  updatedAt: string;
+  contentHash?: string;
 };
 
 export type Phase2OpportunityLedgerCheck = {
@@ -217,6 +236,18 @@ const PROHIBITED_MARKERS = [
 function readRollback(env: Record<string, string | undefined> | undefined): boolean {
   const value = env?.MODEL_MEMORY_PHASE2_PROACTIVITY_LEDGER_DISABLED;
   return value === "1" || value?.toLowerCase() === "true" || value?.toLowerCase() === "on";
+}
+
+function lifecycleOverrideActive(
+  override: Phase2OpportunityLedgerLifecycleOverride,
+  generatedAt: string,
+): boolean {
+  if (override.status !== "dismissed" || !override.dismissalCooldownUntil) {
+    return true;
+  }
+  const expiresAt = Date.parse(override.dismissalCooldownUntil);
+  const now = Date.parse(generatedAt);
+  return Number.isFinite(expiresAt) && Number.isFinite(now) ? expiresAt > now : true;
 }
 
 function assertNoDarkData(value: unknown): void {
@@ -325,6 +356,9 @@ function entryFromOpportunity(
     blockedReasonCodes: [...opportunity.blockedReasonCodes],
     resolvedByChatMessageId: null,
     supersededByOpportunityId: null,
+    dismissalCooldownUntil: null,
+    plannedArtifact: null,
+    reviewStatus: undefined,
     attentionRequired:
       opportunity.sourceFamily !== "assistant_output" ||
       opportunity.workItemKind === "investigation_request",
@@ -348,8 +382,15 @@ function clearAttentionForInactiveStatus(entry: Phase2OpportunityLedgerEntry): v
   }
 }
 
+function duplicateCollapseEligible(entry: Phase2OpportunityLedgerEntry): boolean {
+  return (
+    entry.sourceFamily === "assistant_output" ||
+    entry.blockedReasonCodes.includes("model_reviewed_candidate")
+  );
+}
+
 function duplicateCollapseSourceRefKey(entry: Phase2OpportunityLedgerEntry): string | null {
-  if (entry.sourceFamily !== "assistant_output") {
+  if (!duplicateCollapseEligible(entry)) {
     return null;
   }
   const assistantSourceRef = entry.sourceRefs
@@ -362,7 +403,7 @@ function duplicateCollapseSourceRefKey(entry: Phase2OpportunityLedgerEntry): str
 }
 
 function duplicateCollapseTitleFocusKey(entry: Phase2OpportunityLedgerEntry): string | null {
-  if (entry.sourceFamily !== "assistant_output") {
+  if (!duplicateCollapseEligible(entry)) {
     return null;
   }
   const titleFocus = buildProactivityUserFacingFocusKey(entry.title);
@@ -373,7 +414,7 @@ function duplicateCollapseTitleFocusKey(entry: Phase2OpportunityLedgerEntry): st
 }
 
 function duplicateCollapseNextStepFocusKey(entry: Phase2OpportunityLedgerEntry): string | null {
-  if (entry.sourceFamily !== "assistant_output") {
+  if (!duplicateCollapseEligible(entry)) {
     return null;
   }
   const nextStepFocus = buildProactivityUserFacingFocusKey(entry.proposedNextStep);
@@ -489,7 +530,9 @@ export async function buildPhase2ProactivityOpportunityLedgerReport(
     entryFromOpportunity(opportunity, generatedAt),
   );
   const overrides = new Map(
-    (input.lifecycleOverrides ?? []).map((override) => [override.opportunityId, override]),
+    (input.lifecycleOverrides ?? [])
+      .filter((override) => lifecycleOverrideActive(override, generatedAt))
+      .map((override) => [override.opportunityId, override]),
   );
   const resolutionSignals: Phase2OpportunityResolutionSignal[] = [];
   const supersessionSignals: Phase2OpportunitySupersessionSignal[] = [];
@@ -501,6 +544,9 @@ export async function buildPhase2ProactivityOpportunityLedgerReport(
       entry.updatedAt = override.updatedAt ?? generatedAt;
       entry.resolvedByChatMessageId = override.resolvedByChatMessageId ?? null;
       entry.supersededByOpportunityId = override.supersededByOpportunityId ?? null;
+      entry.dismissalCooldownUntil = override.dismissalCooldownUntil ?? null;
+      entry.plannedArtifact = override.plannedArtifact ?? null;
+      entry.reviewStatus = override.reviewStatus ?? override.plannedArtifact?.reviewStatus;
       clearAttentionForInactiveStatus(entry);
     }
 

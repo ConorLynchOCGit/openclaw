@@ -1,10 +1,16 @@
 import { createHash } from "node:crypto";
-import { buildPhase2PersonalAutoSendProductUxReport } from "../../../extensions/model-memory/src/runtime/phase2-personal-autosend-product-ux.js";
-import { buildPhase2ProactivityInboxReport } from "../../../extensions/model-memory/src/runtime/phase2-proactivity-inbox.js";
-import { buildPhase2ProactivityUxRemediationReport } from "../../../extensions/model-memory/src/runtime/phase2-proactivity-ux-remediation.js";
+import fs from "node:fs/promises";
+import path from "node:path";
+import {
+  buildPhase2PersonalAutoSendProductUxReport,
+  buildPhase2ProactivityInboxReport,
+  buildPhase2ProactivityUxRemediationReport,
+  type Phase2OpportunityPlannedArtifact,
+} from "../../../extensions/model-memory/runtime-api.js";
 import {
   buildModelMemoryProactivityRuntimeState,
   createSkillifierDraftForCandidate,
+  readPersistedModelMemoryProactivityProjection,
   recordPersistedProactivityChatActivity,
   recordPersistedProactivityLiveEvent,
   updatePersistedProactivityLifecycleOverride,
@@ -75,6 +81,84 @@ function boundedMultilineSummaryOrUndefined(value: unknown): string | undefined 
   return boundedMultilineSummary(raw);
 }
 
+async function readSkillDraftArtifactText(draftPath: string): Promise<string> {
+  const stat = await fs.stat(draftPath);
+  const skillFilePath = stat.isDirectory() ? path.join(draftPath, "SKILL.md") : draftPath;
+  return await fs.readFile(skillFilePath, "utf8");
+}
+
+function readPlannedArtifact(value: unknown): Phase2OpportunityPlannedArtifact | undefined {
+  if (!value || typeof value !== "object") {
+    return undefined;
+  }
+  const record = value as Record<string, unknown>;
+  const status = readString(record.status);
+  if (status !== "requested" && status !== "compiled" && status !== "failed") {
+    return undefined;
+  }
+  const title = boundedSummary(record.title);
+  const requestSummary = boundedMultilineSummary(record.requestSummary);
+  const compiledPlan = boundedMultilineSummaryOrUndefined(record.compiledPlan);
+  const reviewStatus = readString(record.reviewStatus);
+  const sourceRunId = readString(record.sourceRunId);
+  const sourceMessageId = readString(record.sourceMessageId);
+  const contentHash = readString(record.contentHash);
+  return {
+    status,
+    ...(reviewStatus === "pending_review" ||
+    reviewStatus === "recommendation_finalized" ||
+    reviewStatus === "revision_requested"
+      ? { reviewStatus }
+      : {}),
+    title,
+    requestSummary,
+    ...(compiledPlan ? { compiledPlan } : {}),
+    ...(sourceRunId ? { sourceRunId } : {}),
+    ...(sourceMessageId ? { sourceMessageId } : {}),
+    generatedAt: readString(record.generatedAt) ?? new Date().toISOString(),
+    updatedAt: readString(record.updatedAt) ?? new Date().toISOString(),
+    ...(contentHash ? { contentHash } : {}),
+  };
+}
+
+function emptyProjectionQueue(sessionKey: string, projectId: string) {
+  return {
+    queueId: `phase2-proactivity-read-projection-empty:${sha256({ sessionKey, projectId }).slice(
+      0,
+      12,
+    )}`,
+    surface: "chat" as const,
+    items: [],
+    generatedAt: new Date().toISOString(),
+  };
+}
+
+function emptyProjectionInboxDigest(sessionKey: string, projectId: string) {
+  const generatedAt = new Date().toISOString();
+  return {
+    digestId: `phase2-proactivity-inbox-empty:${sha256({ sessionKey, projectId }).slice(0, 12)}`,
+    filters: ["actionable", "pending", "planned", "dismissed", "diagnostics"],
+    items: [],
+    counts: {
+      actionable: 0,
+      pending: 0,
+      planned: 0,
+      sent: 0,
+      snoozed: 0,
+      dismissed: 0,
+      blocked: 0,
+      autosend_trial: 0,
+      diagnostics: 0,
+    },
+    layerCounts: {
+      actionable: 0,
+      history: 0,
+      diagnostic: 0,
+    },
+    generatedAt,
+  };
+}
+
 function readSourceKind(value: unknown) {
   const kind = readString(value);
   if (
@@ -122,6 +206,18 @@ function readSourceType(value: unknown) {
     return type;
   }
   return "session_runtime_event";
+}
+
+function readReviewStatus(value: unknown) {
+  const status = readString(value);
+  if (
+    status === "pending_review" ||
+    status === "recommendation_finalized" ||
+    status === "revision_requested"
+  ) {
+    return status;
+  }
+  return undefined;
 }
 
 export const modelMemoryProactivityHandlers: GatewayRequestHandlers = {
@@ -196,6 +292,9 @@ export const modelMemoryProactivityHandlers: GatewayRequestHandlers = {
         updatedAt: new Date().toISOString(),
         resolvedByChatMessageId: readString(params.resolvedByChatMessageId) ?? null,
         supersededByOpportunityId: readString(params.supersededByOpportunityId) ?? null,
+        dismissalCooldownUntil: readString(params.dismissalCooldownUntil) ?? null,
+        plannedArtifact: readPlannedArtifact(params.plannedArtifact) ?? null,
+        reviewStatus: readReviewStatus(params.reviewStatus),
       },
     });
     respond(true, { ok: true, opportunityId, status });
@@ -258,6 +357,44 @@ export const modelMemoryProactivityHandlers: GatewayRequestHandlers = {
         process.env.OPENCLAW_RECIPIENT_ID ??
         process.env.OPENCLAW_USER_ID ??
         "local-openclaw-recipient";
+      const forceRuntimeUpdate = readBooleanParam(params.candidateReviewForceRun) === true;
+      if (!forceRuntimeUpdate) {
+        const projection = await readPersistedModelMemoryProactivityProjection({
+          sessionKey,
+          projectId,
+        });
+        const report = projection.projection?.productSurfacingReport ?? null;
+        respond(true, {
+          ok: true,
+          readMode: "projection",
+          projectionStatus: projection.decision,
+          projectionGeneratedAt: projection.projection?.generatedAt ?? null,
+          reportId: report?.reportId ?? projection.reportId,
+          decision: report?.decision ?? projection.decision,
+          config: report?.config ?? null,
+          liveDetectionReport: null,
+          extractionReport: null,
+          growthLoopReport: null,
+          skillCandidateReport: null,
+          candidateReviewTriggerReport: null,
+          candidateReviewReport: null,
+          candidateReviewCodexAdapterReport: null,
+          mergeAdjudicationReport: null,
+          ledgerReport: null,
+          draftReport: null,
+          queue: report?.queue ?? emptyProjectionQueue(sessionKey, projectId),
+          rollbackPlan: report?.rollbackPlan ?? null,
+          telemetry: report?.telemetry ?? null,
+          workEpisodeOutcomePackIndex: {
+            count: projection.workEpisodeOutcomePackIndex.length,
+            unreviewedEligibleCount: projection.workEpisodeOutcomePackIndex.filter(
+              (entry) =>
+                entry.reviewStatus === "unreviewed" && entry.eligibilityStatus === "eligible",
+            ).length,
+          },
+        });
+        return;
+      }
       const state = await buildModelMemoryProactivityRuntimeState({
         sessionKey,
         projectId,
@@ -266,7 +403,7 @@ export const modelMemoryProactivityHandlers: GatewayRequestHandlers = {
         recipientId,
         candidateReviewOverride: {
           cooldownMs: readNonNegativeNumber(params.candidateReviewCooldownMs),
-          forceRun: readBooleanParam(params.candidateReviewForceRun),
+          forceRun: true,
           codexSessionRoot: readString(params.candidateReviewCodexSessionRoot),
           codexHistoryPath: readString(params.candidateReviewCodexHistoryPath),
         },
@@ -364,6 +501,26 @@ export const modelMemoryProactivityHandlers: GatewayRequestHandlers = {
                 state.candidateReviewCodexAdapterReport.validationFailureCount,
             }
           : null,
+        mergeAdjudicationReport: state.mergeAdjudicationReport
+          ? {
+              reportId: state.mergeAdjudicationReport.reportId,
+              enabled: state.mergeAdjudicationReport.enabled,
+              modelId: state.mergeAdjudicationReport.modelId,
+              decision: state.mergeAdjudicationReport.decision,
+              recallRowCount: state.mergeAdjudicationReport.recallRows.length,
+              decisions: state.mergeAdjudicationReport.decisions.map((decision) => ({
+                candidateOpportunityId: decision.candidateOpportunityId,
+                decision: decision.decision,
+                targetOpportunityId: decision.targetOpportunityId,
+                rationale: decision.rationale,
+                confidence: decision.confidence,
+              })),
+              lifecycleOverrideCount: state.mergeAdjudicationReport.lifecycleOverrides.length,
+              reasonCodes: state.mergeAdjudicationReport.reasonCodes,
+              promptPersisted: state.mergeAdjudicationReport.promptPersisted,
+              rawResponsePersisted: state.mergeAdjudicationReport.rawResponsePersisted,
+            }
+          : null,
         ledgerReport: {
           reportId: state.ledgerReport.reportId,
           decision: state.ledgerReport.decision,
@@ -435,10 +592,13 @@ export const modelMemoryProactivityHandlers: GatewayRequestHandlers = {
         reportId: result.report.reportId,
         decision: result.report.decision,
         skillPackageId: result.report.skillPackageId,
+        packageTitle: result.report.packageTitle,
         draftPath: result.report.draft.skillDirectoryPath,
         reportPath: result.report.draft.reportFilePath,
         provenanceReportPath: result.report.draft.provenanceReportPath,
         rollbackPlanPath: result.report.draft.rollbackPlanPath,
+        reviewSummary: result.report.draft.reportSummary,
+        nextReviewStep: result.report.draft.nextReviewStep,
         reviewOnly: true,
         installationEnabled: false,
         promotionEnabled: false,
@@ -449,6 +609,60 @@ export const modelMemoryProactivityHandlers: GatewayRequestHandlers = {
         false,
         undefined,
         errorShape(ErrorCodes.UNAVAILABLE, `model-memory skillifier draft unavailable: ${message}`),
+      );
+    }
+  },
+  "modelMemory.proactivity.readArtifact": async ({ params, respond }) => {
+    const sessionKey = readString(params.sessionKey) ?? "main";
+    const projectId = readString(params.projectId) ?? process.env.OPENCLAW_PROJECT_ID ?? "openclaw";
+    const queueItemId = readString(params.queueItemId);
+    const artifactKind = readString(params.artifactKind);
+    if (!queueItemId || (artifactKind !== "plan" && artifactKind !== "skill")) {
+      respond(
+        false,
+        undefined,
+        errorShape(
+          ErrorCodes.INVALID_REQUEST,
+          "model-memory proactivity artifact read requires queueItemId and artifactKind",
+        ),
+      );
+      return;
+    }
+    try {
+      const projection = await readPersistedModelMemoryProactivityProjection({
+        sessionKey,
+        projectId,
+      });
+      const item = projection.projection?.productSurfacingReport.queue.items.find(
+        (entry) => entry.queueItemId === queueItemId,
+      );
+      if (!item) {
+        respond(false, undefined, errorShape(ErrorCodes.INVALID_REQUEST, "artifact not found"));
+        return;
+      }
+      if (artifactKind === "plan") {
+        respond(true, {
+          ok: true,
+          artifactText:
+            item.plannedArtifact?.compiledPlan ?? item.plannedArtifact?.requestSummary ?? "",
+        });
+        return;
+      }
+      if (!item.skillifierDraft?.draftPath) {
+        respond(false, undefined, errorShape(ErrorCodes.INVALID_REQUEST, "skill draft not found"));
+        return;
+      }
+      const artifactText = await readSkillDraftArtifactText(item.skillifierDraft.draftPath);
+      respond(true, { ok: true, artifactText });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      respond(
+        false,
+        undefined,
+        errorShape(
+          ErrorCodes.UNAVAILABLE,
+          `model-memory proactivity artifact read unavailable: ${message}`,
+        ),
       );
     }
   },
@@ -481,9 +695,39 @@ export const modelMemoryProactivityHandlers: GatewayRequestHandlers = {
   "modelMemory.proactivity.inbox": async ({ params, respond, client }) => {
     try {
       const sessionKey = readString(params.sessionKey) ?? "main";
-      const operatorId = resolveOperatorId(params, client?.connect?.device?.id);
       const projectId =
         readString(params.projectId) ?? process.env.OPENCLAW_PROJECT_ID ?? "openclaw";
+      const forceRuntimeUpdate = readBooleanParam(params.candidateReviewForceRun) === true;
+      if (!forceRuntimeUpdate) {
+        const projection = await readPersistedModelMemoryProactivityProjection({
+          sessionKey,
+          projectId,
+        });
+        const report = projection.projection?.inboxReport ?? null;
+        respond(true, {
+          ok: true,
+          readMode: "projection",
+          projectionStatus: projection.decision,
+          projectionGeneratedAt: projection.projection?.generatedAt ?? null,
+          reportId: report?.reportId ?? projection.reportId,
+          decision: report?.decision ?? projection.decision,
+          state: report?.state ?? {
+            stateId: `phase2-proactivity-inbox-empty-state:${sha256({
+              sessionKey,
+              projectId,
+            }).slice(0, 12)}`,
+            visibleInNormalUx: true,
+            rollbackDisabled: false,
+            sourceReportIds: [],
+            sourceReportHashes: [],
+          },
+          digest: report?.digest ?? emptyProjectionInboxDigest(sessionKey, projectId),
+          telemetry: report?.telemetry ?? null,
+          rollbackPlan: report?.rollbackPlan ?? null,
+        });
+        return;
+      }
+      const operatorId = resolveOperatorId(params, client?.connect?.device?.id);
       const userId =
         readString(params.userId) ?? process.env.OPENCLAW_USER_ID ?? "local-openclaw-user";
       const recipientId =
@@ -497,6 +741,12 @@ export const modelMemoryProactivityHandlers: GatewayRequestHandlers = {
         operatorId,
         userId,
         recipientId,
+        candidateReviewOverride: {
+          cooldownMs: readNonNegativeNumber(params.candidateReviewCooldownMs),
+          forceRun: true,
+          codexSessionRoot: readString(params.candidateReviewCodexSessionRoot),
+          codexHistoryPath: readString(params.candidateReviewCodexHistoryPath),
+        },
       });
       const report = await buildPhase2ProactivityInboxReport({
         env: process.env,

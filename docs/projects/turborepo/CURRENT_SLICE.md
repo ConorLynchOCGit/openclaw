@@ -45,3 +45,41 @@ Deliverables:
 - record current `build`, `test`, and `check` ownership beyond UI and diffs
 - classify additional package-task readiness
 - identify the next honest candidates for Turbo ownership
+
+## Future pass - Turbo-first full package ownership
+
+`slice_6_turbo_first_root_gate_cutover`
+
+This future pass is the point where local landing gates stop treating the
+custom root scheduler as the primary path and start treating Turbo as the first
+orchestrator for the full owned graph.
+
+Preconditions:
+
+- the workspace task inventory is complete
+- the next honest package owners are extracted beyond UI and diffs
+- package-local `build` / `test` / `check` surfaces exist for enough of the
+  current root-heavy graph to make Turbo selectivity real
+- duplicate execution between package-owned lanes and root wrappers is removed
+- local timing data exists for:
+  - `pnpm test`
+  - `pnpm build`
+  - repeated incremental loops after small scoped edits
+
+Cutover target:
+
+- local `pnpm test` becomes Turbo-first for package-owned work
+- local `pnpm build` stays Turbo-first and expands to the broader owned graph
+- root wrappers remain only for still-genuinely-root-owned stages
+- the custom local Vitest scheduler remains available only for the remaining
+  root-owned shard matrix until that ownership is also extracted or proven to be
+  better left outside Turbo
+
+Success criteria:
+
+- repeated local loops are faster than the current mixed gate
+- Turbo cache hits matter on real developer iteration, not just on paper
+- root wrappers get smaller because ownership moved, not because checks were
+  weakened
+- docs and implementation agree on what `pnpm test` and `pnpm build` actually
+  do locally

@@ -5,6 +5,7 @@ import {
   type CapturedObjectWriteStore,
 } from "./db/captured-object-write-compatibility.ts";
 import type { LiveMemoryPersistenceResult } from "./db/mmv2-native-repository.ts";
+import type { ListExistingMemorySummariesForCaptureInput } from "./db/mmv2-native-repository/types.ts";
 import { RuntimeContextRepository } from "./db/runtime-context-repository.ts";
 import {
   ingestDocumentForLivePath,
@@ -21,7 +22,11 @@ import {
   type MemoryIngestionTelemetryEvent,
 } from "./ingestion/shared-pipeline.ts";
 import type { ExistingMemorySummary } from "./mmv2/contracts.ts";
-import { ingestDocumentV2ForLiveStorage } from "./mmv2/live-document-ingestion.ts";
+import {
+  ingestDocumentV2ForLiveStorage,
+  recoverDailyContinuityV2ForLiveStorage,
+} from "./mmv2/live-document-ingestion.ts";
+import { createReconciliationNeighborRecallProvider } from "./mmv2/reconciliation-neighbor-recall.ts";
 import type { LiveMemoryBatch, LiveMemoryWriteResult } from "./mmv2/recording.ts";
 import { summarizePersistedLiveMemoryWriteResults } from "./mmv2/recording.ts";
 import { rebuildDerivedRuntimeState } from "./runtime-rebuild-orchestrator.ts";
@@ -29,6 +34,9 @@ import type { SemanticCollisionAdjudicator } from "./semantic-collision-adjudica
 
 type MmV2AwareCanonicalRepository = ModelMemoryCanonicalRepository & {
   listExistingMemorySummaries?: () => Promise<ExistingMemorySummary[]>;
+  listExistingMemorySummariesForCapture?: (
+    input: ListExistingMemorySummariesForCaptureInput,
+  ) => Promise<ExistingMemorySummary[]>;
   persistLiveMemoryBatch?: (batch: LiveMemoryBatch) => Promise<LiveMemoryPersistenceResult>;
 };
 
@@ -53,19 +61,31 @@ export async function ingestDocumentLive(input: {
   env?: NodeJS.ProcessEnv;
 }): Promise<LiveDocumentIngestionResult> {
   const canonicalRepository = input.canonicalRepository as MmV2AwareCanonicalRepository;
+  const sourceKind = input.ingestion.document.sourceKind ?? "document";
   const documentEngine = resolveLiveDocumentIngestEngine({
-    sourceKind: input.ingestion.document.sourceKind,
+    sourceKind,
   });
   const canUseMmV2LivePath =
-    documentEngine === "mmv2" &&
+    (documentEngine === "mmv2" || sourceKind === "daily_continuity") &&
     typeof canonicalRepository.listExistingMemorySummaries === "function" &&
     typeof canonicalRepository.persistLiveMemoryBatch === "function";
+  const reconciliationNeighborProvider = createReconciliationNeighborRecallProvider({
+    canonicalRepository,
+    projectId: input.ingestion.document.projectId ?? null,
+  });
 
   const result = canUseMmV2LivePath
-    ? await ingestDocumentV2ForLiveStorage({
-        ...input.ingestion,
-        reconciliationNeighbors: await canonicalRepository.listExistingMemorySummaries!(),
-      })
+    ? sourceKind === "daily_continuity"
+      ? await recoverDailyContinuityV2ForLiveStorage({
+          dailyRecord: input.ingestion.document,
+          modelId: input.ingestion.modelId,
+          interpreter: input.ingestion.interpreter,
+          reconciliationNeighborProvider,
+        })
+      : await ingestDocumentV2ForLiveStorage({
+          ...input.ingestion,
+          reconciliationNeighborProvider,
+        })
     : await ingestDocumentForLivePath(input.ingestion);
   const source = await canonicalRepository.persistSource(result.source);
   await canonicalRepository.persistSourceWindows(result.windows);

@@ -1,11 +1,11 @@
-import {
-  buildProactivityUserFacingFocusKey,
-  cleanProactivityUserFacingText,
-} from "../../../../src/shared/chat-message-content.js";
 import { buildDerivedArtifactId, uniqueSortedStrings, type JsonLike } from "../derived-artifact.ts";
 import { sha256JsonValue } from "../hashing.ts";
 import type { SourceAuthorityTier, SourceProfileId } from "../source-authority.ts";
 import type { Phase2OpportunityExtractionCandidate } from "./phase2-proactivity-opportunity-extraction.ts";
+import {
+  buildProactivityUserFacingFocusKey,
+  cleanProactivityUserFacingText,
+} from "./proactivity-text.ts";
 
 export const PHASE2_SKILL_CANDIDATE_LEDGER_SCHEMA_VERSION =
   "phase2_skill_candidate_ledger.v1" as const;
@@ -247,35 +247,19 @@ function suggestedSkillName(value: string): string {
   return tokens.join("-");
 }
 
-function hasTokenOverlap(intentKey: string, value: string | undefined): boolean {
-  const otherKey = buildProactivityUserFacingFocusKey(value);
-  if (!intentKey || !otherKey) {
-    return false;
-  }
-  const intentTokens = new Set(intentKey.split(/\s+/u).filter(Boolean));
-  return otherKey
-    .split(/\s+/u)
-    .filter(Boolean)
-    .some((token) => intentTokens.has(token));
-}
-
 function resolveFallbackGroupKey(
   groups: Map<string, SkillCandidateGroup>,
   input: { projectId: string; sessionKey: string; normalizedIntentKey: string },
 ): string {
   const exactKey = `${input.projectId}\t${input.sessionKey}\t${input.normalizedIntentKey}`;
-  if (groups.has(exactKey)) {
-    return exactKey;
-  }
-  for (const [groupKey, group] of groups.entries()) {
-    if (group.projectId !== input.projectId || group.sessionKey !== input.sessionKey) {
-      continue;
-    }
-    if (hasTokenOverlap(group.normalizedIntentKey, input.normalizedIntentKey)) {
-      return groupKey;
-    }
-  }
   return exactKey;
+}
+
+function activityFocusKey(activity: Phase2SkillCandidateActivitySource): string {
+  return (
+    buildProactivityUserFacingFocusKey(activity.userPromptSummary) ||
+    buildProactivityUserFacingFocusKey(activity.boundedText)
+  );
 }
 
 function sourceRuntimeForCandidate(
@@ -408,10 +392,7 @@ export async function buildPhase2SkillCandidateLedgerReport(
       (activity) =>
         activity.projectId === group.projectId &&
         activity.sessionKey === group.sessionKey &&
-        hasTokenOverlap(
-          group.normalizedIntentKey,
-          activity.userPromptSummary ?? activity.boundedText,
-        ),
+        activityFocusKey(activity) === group.normalizedIntentKey,
     );
     const assistantSourceIds = new Set([
       ...group.candidates.map((candidate) => candidate.sourceMessageId),

@@ -7,16 +7,18 @@ title: "Skills System Current Slice"
 
 ## Slice
 
-`phase2-contiguous-candidate-packets-and-model-cards`
+`pre-milestone-4-model-owned-skill-parity-alignment`
 
 ## Goal
 
-Repair the remaining candidate-discovery and card-rendering gaps before
-Milestone 4 skill eval work begins. Presentation cards are model-authored
-decision briefs, and candidate selection is model-reviewed, but the latest live
-proof showed the packet builder still made hidden deterministic judgments about
-which snippets the reviewer could see. It also showed that deterministic card
-fallbacks are not acceptable visible product copy.
+Carry the model-owned/no-deterministic-judgment architecture into the rest of
+Phase 2 and raise the skills roadmap to a Gbrain/Hermes-class quality bar
+before Milestone 4 eval work begins.
+
+Presentation cards are model-authored decision briefs and candidate selection
+is model-reviewed. The next docs contract makes that boundary permanent across
+skill evals, resolver tests, package E2E, canary, rollback, usage-based
+self-improvement, promotion, and cross-runtime install.
 
 This slice establishes:
 
@@ -50,6 +52,19 @@ This slice establishes:
 - local golden-corpus candidate-review validation before any live gateway
   rebuild, with miss attribution across packet assembly, model review,
   post-model validation/dedupe, and visible-card presentation
+- strict deletion posture for remaining debt: obsolete deterministic judgment
+  paths are removed, not preserved behind compatibility helpers, renamed fields,
+  or test-only shims
+- retrieval cleanup now preserves hybrid deterministic recall signals
+  (lexical/string search, recency, graph/projection cues, source authority) for
+  database candidate assembly while keeping final semantic value judgment
+  model-owned or operator-owned
+- proactivity feedback cleanup so explicit controls may suppress or block, but
+  telemetry does not become deterministic usefulness truth
+- skill quality parity gates: eval generation/execution, resolver/trigger
+  tests, check-resolvable-style reachability and overlap checks, package E2E,
+  install/canary/rollback lifecycle, usage-based self-improvement, and
+  approval-gated cross-runtime install
 
 ## Current outcome
 
@@ -75,6 +90,13 @@ This slice establishes:
   canonical memory truth
 - model-authored `UserFacingProactivityBrief` remains the presentation path for
   surfaced candidates
+- Milestone 4 starts the parity gate rather than only adding generic evals:
+  generated skill evals, trigger/resolver fixtures, reachability/overlap
+  health reports, and review-only package E2E are all required
+- deterministic skill lifecycle code may run declared tests, check exact files,
+  verify hashes, enforce install paths, and apply canary/rollback state; it may
+  not decide skill-worthiness, semantic usefulness, promotion recommendation,
+  or usage-based improvement without model/operator review
 - deterministic `UserFacingProactivityBrief` copy is hidden fallback input and
   diagnostics only; it must not be visible primary card text
 - Codex adapter skips are explicit; in live proof they are degraded unless the
@@ -82,11 +104,14 @@ This slice establishes:
 - the acceptance path now runs function-level candidate-review validation
   before rebuilding the live gateway; the UI proof is for wiring confirmation,
   not first discovery of packet/model/card failures
+- strict audit success is necessary but not sufficient: review must confirm
+  that deleted deterministic judgment behavior was not renamed, moved, or kept
+  live in compatibility helpers
 
 ## Current judgment
 
-The acceptance gate for this slice is candidate usefulness, not just card
-clarity.
+The acceptance gate for this slice is candidate usefulness plus lifecycle
+quality, not just card clarity.
 
 The correct output is not a stream of small source-fragment candidates. The
 correct output is a handful of high-leverage skills or proactive plans per day,
@@ -94,3 +119,7 @@ or no candidate when the work episode does not justify one. The latest proof
 also makes card authorship part of the acceptance gate: if a visible card cannot
 be model-authored into clear title, purpose, and next step, it should not be
 shown.
+
+The next milestone must then prove that a surfaced skill candidate can become a
+properly skilled, reachable, evaled, E2E-tested, rollbackable package without
+restoring deterministic semantic shortcuts.

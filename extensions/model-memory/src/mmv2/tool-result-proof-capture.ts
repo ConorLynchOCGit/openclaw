@@ -46,7 +46,6 @@ export type BoundedToolResultProofFact = {
   errorClass?: string;
   actionName?: string;
   pathCategory?: string;
-  remediationHint?: string;
   resultKind: string;
   rawOutputSha256?: string;
 };
@@ -232,7 +231,10 @@ function readDetails(result: unknown): Record<string, unknown> | undefined {
   return isRecord(details) ? details : result;
 }
 
-function inferStatus(input: { result: unknown; isError?: boolean }): ToolResultProofStatus {
+function resolveExplicitToolResultStatus(input: {
+  result: unknown;
+  isError?: boolean;
+}): ToolResultProofStatus {
   const details = readDetails(input.result);
   const status = readString(details?.status)?.toLowerCase();
   if (status === "approval-pending") {
@@ -253,7 +255,7 @@ function inferStatus(input: { result: unknown; isError?: boolean }): ToolResultP
   return input.result === undefined ? "unknown" : "success";
 }
 
-function inferErrorClass(input: {
+function readBoundedErrorClass(input: {
   result: unknown;
   status: ToolResultProofStatus;
 }): string | undefined {
@@ -269,7 +271,7 @@ function inferErrorClass(input: {
   return candidate.replace(/[^a-z0-9_.:-]+/giu, "_").slice(0, 80);
 }
 
-function inferActionName(details: Record<string, unknown> | undefined): string | undefined {
+function readDeclaredActionName(details: Record<string, unknown> | undefined): string | undefined {
   const input = readRecord(details?.input);
   const action = readString(input?.action);
   if (!action) {
@@ -278,7 +280,10 @@ function inferActionName(details: Record<string, unknown> | undefined): string |
   return action.replace(/[^a-z0-9_.:-]+/giu, "_").slice(0, 80);
 }
 
-function inferPathCategory(details: Record<string, unknown> | undefined, scanText: string) {
+function resolveAllowedPathCategory(
+  details: Record<string, unknown> | undefined,
+  scanText: string,
+) {
   const input = readRecord(details?.input);
   const candidates = [
     readString(input?.path),
@@ -299,35 +304,6 @@ function inferPathCategory(details: Record<string, unknown> | undefined, scanTex
   }
   if (/\/root\/\.openclaw\/workspace|\/home\/node\/\.openclaw\/workspace/iu.test(text)) {
     return "operator_workspace";
-  }
-  return undefined;
-}
-
-function inferOperationalRemediation(input: {
-  details: Record<string, unknown> | undefined;
-  scanText: string;
-  status: ToolResultProofStatus;
-}): string | undefined {
-  if (input.status !== "failure" && input.status !== "timeout") {
-    return undefined;
-  }
-  const text = input.scanText;
-  const inputRecord = readRecord(input.details?.input);
-  const action = readString(inputRecord?.action);
-  if (/EACCES|EPERM|permission denied|read-only/iu.test(text)) {
-    return "inspect writable target or ACL before retrying";
-  }
-  if (
-    action === "install_skill" &&
-    /skillName required|content required|frontmatter|SKILL\.md/iu.test(text)
-  ) {
-    return "retry with install_skill shape containing skillName and SKILL.md content";
-  }
-  if (/pool_pressure|timeout/iu.test(text)) {
-    return "schedule bounded retry after pressure clears";
-  }
-  if (/not approved|blocked|protected/iu.test(text)) {
-    return "use an approved canonical surface or request explicit operator approval";
   }
   return undefined;
 }
@@ -358,10 +334,10 @@ export function buildBoundedToolResultProofFact(
   const urls = collectUrls(scanText);
   const fileCount =
     readNumber(details?.fileCount) ?? readNumber(details?.count) ?? extractFileCount(scanText);
-  const status = inferStatus(input);
-  const actionName = inferActionName(details);
-  const pathCategory = inferPathCategory(details, scanText);
-  const remediationHint = inferOperationalRemediation({ details, scanText, status });
+  const status = resolveExplicitToolResultStatus(input);
+  const actionName = readDeclaredActionName(details);
+  const pathCategory = resolveAllowedPathCategory(details, scanText);
+  const errorClass = readBoundedErrorClass({ result: input.result, status });
   return {
     status,
     toolName: input.toolName,
@@ -377,12 +353,9 @@ export function buildBoundedToolResultProofFact(
     ...(readNumber(details?.exitCode) !== undefined
       ? { exitCode: readNumber(details?.exitCode) }
       : {}),
-    ...(inferErrorClass({ result: input.result, status })
-      ? { errorClass: inferErrorClass({ result: input.result, status }) }
-      : {}),
+    ...(errorClass ? { errorClass } : {}),
     ...(actionName ? { actionName } : {}),
     ...(pathCategory ? { pathCategory } : {}),
-    ...(remediationHint ? { remediationHint } : {}),
     resultKind: resultKind(input.result),
     ...(scanText ? { rawOutputSha256: sha256(scanText) } : {}),
   };
@@ -424,9 +397,6 @@ function renderBoundedFactText(fact: BoundedToolResultProofFact): string {
   }
   if (fact.pathCategory) {
     parts.push(`Path category: ${fact.pathCategory}.`);
-  }
-  if (fact.remediationHint) {
-    parts.push(`Remediation: ${fact.remediationHint}.`);
   }
   return parts.join(" ");
 }
@@ -482,7 +452,6 @@ function buildCandidate(input: {
         input.fact.errorClass,
         input.fact.actionName,
         input.fact.pathCategory,
-        input.fact.remediationHint,
         typeof input.fact.fileCount === "number" ? `file count ${input.fact.fileCount}` : undefined,
       ]
         .filter(Boolean)

@@ -13,27 +13,21 @@ export type Phase2OutcomeFollowupRule = {
   ruleId: string;
   status: Phase2OpportunityLifecycleStatus;
   ageHours: number;
-  reasonCode:
-    | "started_not_finished"
-    | "stale_decision_reopened"
-    | "superseded_closed"
-    | "idle_open_followup";
+  reasonCode: "superseded_closed";
 };
 
 export type Phase2OutcomeFollowupDecision = {
   opportunityId: string;
   nextStatus: Phase2OpportunityLifecycleStatus;
   reasonCode: Phase2OutcomeFollowupRule["reasonCode"];
-  surfaced: boolean;
 };
 
 export type Phase2OutcomeFollowupCheck = {
   checkId: string;
   status: "pass" | "fail";
   reasonCode:
-    | "bounded_followup_only"
+    | "model_review_required_for_followup"
     | "canonical_id_preserved"
-    | "non_spammy_resurfacing"
     | "superseded_closes"
     | "no_dark_data_required";
 };
@@ -43,7 +37,6 @@ export type Phase2OutcomeFollowupTelemetry = {
   reportId: string;
   entryCount: number;
   decisionCount: number;
-  resurfacedCount: number;
   closedCount: number;
   noDarkDataStatus: "pass";
 };
@@ -89,75 +82,28 @@ function addCheck(
   });
 }
 
-function ageHours(now: number, updatedAt: string): number {
-  return Math.max(0, Math.floor((now - new Date(updatedAt).getTime()) / 3_600_000));
-}
-
 export async function buildPhase2ProactivityOutcomeFollowupReport(
   input: Phase2OutcomeFollowupInput = {},
 ): Promise<Phase2OutcomeFollowupReport> {
   const generatedAt = (input.now ?? new Date()).toISOString();
   const rollback = readRollback(input.env);
-  const nowMs = (input.now ?? new Date()).getTime();
   const entries = input.entries ?? [];
   const decisions = rollback
     ? []
     : entries.flatMap((entry): Phase2OutcomeFollowupDecision[] => {
-        const age = ageHours(nowMs, entry.updatedAt);
-        if (entry.status === "planning_started" && age >= 24) {
-          return [
-            {
-              opportunityId: entry.opportunityId,
-              nextStatus: "draft_ready",
-              reasonCode: "started_not_finished",
-              surfaced: true,
-            },
-          ];
-        }
-        if (entry.status === "planned" && age >= 24) {
-          return [
-            {
-              opportunityId: entry.opportunityId,
-              nextStatus: "draft_ready",
-              reasonCode: "started_not_finished",
-              surfaced: true,
-            },
-          ];
-        }
-        if (entry.status === "stale" && age >= 24) {
-          return [
-            {
-              opportunityId: entry.opportunityId,
-              nextStatus: "surfaced",
-              reasonCode: "stale_decision_reopened",
-              surfaced: true,
-            },
-          ];
-        }
         if (entry.status === "superseded") {
           return [
             {
               opportunityId: entry.opportunityId,
               nextStatus: "superseded",
               reasonCode: "superseded_closed",
-              surfaced: false,
-            },
-          ];
-        }
-        if (entry.status === "open" && age >= 48) {
-          return [
-            {
-              opportunityId: entry.opportunityId,
-              nextStatus: "surfaced",
-              reasonCode: "idle_open_followup",
-              surfaced: true,
             },
           ];
         }
         return [];
       });
   const checks: Phase2OutcomeFollowupCheck[] = [];
-  addCheck(checks, "bounded_followup_only", true);
+  addCheck(checks, "model_review_required_for_followup", true);
   addCheck(
     checks,
     "canonical_id_preserved",
@@ -167,15 +113,8 @@ export async function buildPhase2ProactivityOutcomeFollowupReport(
   );
   addCheck(
     checks,
-    "non_spammy_resurfacing",
-    decisions.filter((decision) => decision.surfaced).length <= entries.length,
-  );
-  addCheck(
-    checks,
     "superseded_closes",
-    decisions
-      .filter((decision) => decision.reasonCode === "superseded_closed")
-      .every((decision) => !decision.surfaced),
+    decisions.every((decision) => decision.reasonCode === "superseded_closed"),
   );
   addCheck(checks, "no_dark_data_required", true);
 
@@ -196,7 +135,6 @@ export async function buildPhase2ProactivityOutcomeFollowupReport(
       reportId,
       entryCount: entries.length,
       decisionCount: decisions.length,
-      resurfacedCount: decisions.filter((decision) => decision.surfaced).length,
       closedCount: decisions.filter((decision) => decision.reasonCode === "superseded_closed")
         .length,
       noDarkDataStatus: "pass",

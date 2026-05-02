@@ -11,10 +11,12 @@ describe("prompt-contracts", () => {
       "semantic_extraction",
       "semantic_collision_adjudication",
       "retrieval_request_interpretation",
+      "retrieval_final_inclusion",
       "retrieval_reranking",
       "session_summary_generation",
       "candidate_review_trigger",
       "candidate_review_proposal",
+      "phase2_proactivity_merge_adjudication",
     ]);
   });
 

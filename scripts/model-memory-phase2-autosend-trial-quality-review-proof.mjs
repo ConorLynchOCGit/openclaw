@@ -144,7 +144,7 @@ async function main() {
         repeatedCount: report.telemetry.repeatedCount,
         staleCount: report.telemetry.staleCount,
         unsafePrivateCount: report.telemetry.unsafePrivateCount,
-        wrongContextOrNotUsefulRatio: report.telemetry.wrongContextOrNotUsefulRatio,
+        wrongContextOrNegativeFeedbackRatio: report.telemetry.wrongContextOrNegativeFeedbackRatio,
         blockedReasonCodes: report.telemetry.blockedReasonCodes,
         uiEvidence,
         observedTextSha256: sha256(observedText),

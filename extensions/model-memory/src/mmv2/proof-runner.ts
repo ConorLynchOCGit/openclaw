@@ -119,6 +119,7 @@ function resolveRoutingDecisions(
       reason_codes: decision.reason_codes,
       evidence_quote: decision.evidence_quote,
       confidence: decision.confidence,
+      allow_multiple_top_level_atomic: decision.allow_multiple_top_level_atomic === true,
     };
   });
 }

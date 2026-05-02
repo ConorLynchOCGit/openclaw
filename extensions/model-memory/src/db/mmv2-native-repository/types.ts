@@ -5,6 +5,8 @@ export type ListExistingMemorySummariesForCaptureInput = {
   workspaceId?: string | null;
   sessionId?: string | null;
   kinds?: string[];
+  memoryIds?: string[];
+  queryText?: string | null;
   limit?: number;
 };
 

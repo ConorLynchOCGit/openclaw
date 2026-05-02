@@ -910,6 +910,12 @@ as incidental workspace-file context.
 - start with `references`, `parent_of`, `child_of`, `supersedes`,
   `conflicts_with`, `same_entity_as`, and `mentions`
 - add entity/world packs from projection pages
+- semantic topic/entity/pattern graph recall depends on the Phase 2
+  model-owned semantic graph enrichment slice; deterministic graph traversal may
+  use already-validated graph nodes and edges as recall signals, but it must not
+  create topical sameness, same-entity truth, or pattern membership from
+  keyword/vector similarity as final authority
+- final pack inclusion after graph recall remains model-owned
 
 ### Phase 6: closed-loop optimization
 

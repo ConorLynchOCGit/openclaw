@@ -86,6 +86,11 @@ export const CAPTURE_ROUTING_BATCH_PROMPT_SCHEMA = {
             minimum: 0,
             maximum: 1,
           },
+          allow_multiple_top_level_atomic: {
+            type: "boolean",
+            description:
+              "Set true only when one routed atomic segment contains multiple independent durable facts, preferences, decisions, or scoped tasks that should be extracted as separate top-level atomic candidates.",
+          },
         },
       },
     },

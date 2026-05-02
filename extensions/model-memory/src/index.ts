@@ -1,6 +1,7 @@
 export * from "./benchmark/benchmark-runner.ts";
 export * from "./calibration-report.ts";
 export * from "./context-engine.ts";
+export * from "./codex-session-memory-capture.ts";
 export * from "./daily-continuity-recovery.ts";
 export * from "./derived-artifact.ts";
 export * from "./deterministic-uuid.ts";

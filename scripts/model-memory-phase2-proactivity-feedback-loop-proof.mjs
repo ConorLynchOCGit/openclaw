@@ -53,7 +53,7 @@ async function main() {
 
   const defaultProductSurfacing = path.join(
     root,
-    ".artifacts/model-memory/phase2-product-proactivity-surfacing-proof/20260426T164302781Z/ed58153e-d68e-519d-b2b2-3d7f681dde1a.phase2-product-proactivity-surfacing.json",
+    ".artifacts/model-memory/phase2-product-proactivity-presentation-proof/20260426T164302781Z/ed58153e-d68e-519d-b2b2-3d7f681dde1a.phase2-product-proactivity-presentation.json",
   );
   const productSurfacingReport = await readJson(
     process.env.MODEL_MEMORY_PHASE2_SLICE40_ARTIFACT ?? defaultProductSurfacing,
@@ -148,7 +148,7 @@ async function main() {
         decision: report.decision,
         reportId: report.reportId,
         feedbackCount: report.qualityReport.feedbackCount,
-        usefulCount: report.qualityReport.usefulCount,
+        positiveFeedbackCount: report.qualityReport.positiveFeedbackCount,
         tooRepetitiveCount: report.qualityReport.tooRepetitiveCount,
         unsafePrivateCount: report.qualityReport.unsafePrivateCount,
         rawTextBlockedDecision: rawTextBlocked.decision,

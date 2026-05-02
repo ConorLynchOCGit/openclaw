@@ -2,12 +2,58 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import type { JsonModelExecutionRequest, JsonModelExecutor } from "../model-execution.ts";
 import { buildPhase2LiveProactivityDetectionReport } from "./phase2-live-proactivity-signals.ts";
-import { buildPhase2ProductProactivitySurfacingReport } from "./phase2-product-proactivity-surfacing.ts";
+import { buildPhase2ProductProactivitySurfacingReport } from "./phase2-product-proactivity-presentation.ts";
 import {
   buildPhase2ProactivityNotificationReport,
   writePhase2ProactivityNotificationArtifact,
 } from "./phase2-user-facing-proactivity-notification-ux.ts";
+
+function modelBriefJsonOutput() {
+  return JSON.stringify({
+    schemaVersion: "model_authored_proactivity_brief_output.v1",
+    decision: "surface",
+    kindCode: "follow_up",
+    titleWords: ["Notification", "validation", "follow-up"],
+    oneLinePurposeWords: [
+      "Keeps",
+      "notification",
+      "validation",
+      "tied",
+      "to",
+      "reviewed",
+      "proactivity",
+      "evidence",
+    ],
+    recommendedNextStepWords: [
+      "Review",
+      "the",
+      "notification",
+      "validation",
+      "card",
+      "and",
+      "confirm",
+      "its",
+      "details",
+    ],
+    primaryActionLabelWords: ["Plan", "this"],
+    statusLabelWords: null,
+    detailSummaryWords: ["Bounded", "notification", "evidence", "is", "available"],
+    hiddenDiagnostics: { whyDemotedOrRepairedWords: null, limitations: [] },
+    qualityReasons: [],
+  });
+}
+
+class FakeModelBriefExecutor implements JsonModelExecutor {
+  async execute(request: JsonModelExecutionRequest) {
+    return {
+      outputText: modelBriefJsonOutput(),
+      resolvedModelId: request.contract.modelId,
+      usage: { promptTokens: 120, outputTokens: 80 },
+    };
+  }
+}
 
 async function buildLiveProductSurfacingReport(now: Date) {
   const liveDetectionReport = await buildPhase2LiveProactivityDetectionReport({
@@ -28,8 +74,28 @@ async function buildLiveProductSurfacingReport(now: Date) {
         noDarkDataStatus: "pass",
       },
     ],
+    modelReviewedOpportunities: [
+      {
+        sourceId: "notification-live-source-1",
+        workItemKind: "planning_request",
+        title: "Notification validation follow-up",
+        whyNow: "A model-reviewed candidate identified a concrete notification validation item.",
+        proposedNextStep: "Review the notification validation card and confirm its details.",
+        expectedUserValue: "Keeps notification validation tied to reviewed proactivity evidence.",
+        evidenceSummary: "OpenClaw notification validation has a concrete live proactivity item.",
+        confidence: "high",
+      },
+    ],
   });
-  return buildPhase2ProductProactivitySurfacingReport({ now, liveDetectionReport });
+  return buildPhase2ProductProactivitySurfacingReport({
+    now,
+    liveDetectionReport,
+    modelBriefOptions: {
+      enabled: true,
+      executor: new FakeModelBriefExecutor(),
+      modelId: "openai-codex/gpt-5.4",
+    },
+  });
 }
 
 describe("phase2 user-facing proactivity notification ux", () => {
@@ -53,7 +119,7 @@ describe("phase2 user-facing proactivity notification ux", () => {
     expect(sent.decision).toBe("notification_ux_enabled");
     expect(sent.notificationState.items[0]).toMatchObject({
       status: "visible",
-      boundedDisplayText: "Advance current openclaw work",
+      boundedDisplayText: "Notification validation follow-up",
     });
     expect(sent.telemetry.notificationSurfaceIsTranscriptOnly).toBe(false);
     expect(sent.telemetry.transcriptDeliveryStillAvailable).toBe(true);

@@ -46,7 +46,6 @@ type CurrentPathBlocker =
   | "no_unique_dominant_candidate"
   | "batch_choice_or_attach_threshold"
   | "already_exact_identity"
-  | "already_deterministic_attach"
   | "already_legit_distinct";
 
 export type CoreClaimDeltaMeasurementCase = {
@@ -270,9 +269,6 @@ function determineCurrentPathBlocker(input: {
 }): CurrentPathBlocker {
   if (input.auditCase.replayPathClassification === "exact_identity") {
     return "already_exact_identity";
-  }
-  if (input.auditCase.replayPathClassification === "deterministic_attach") {
-    return "already_deterministic_attach";
   }
   if (input.auditCase.missClass === "legit_distinct") {
     return "already_legit_distinct";

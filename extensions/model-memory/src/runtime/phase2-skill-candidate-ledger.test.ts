@@ -130,7 +130,7 @@ describe("phase2 skill candidate ledger", () => {
       installTargets: ["workspace_skills_dir"],
     });
     expect(report.records[0]?.suggestedSkillName).toContain("skill-candidate-ledger-integration");
-    expect(report.records[0]?.recurrenceCount).toBe(3);
+    expect(report.records[0]?.recurrenceCount).toBe(2);
     expect(report.opportunities[0]?.skillCandidate.skillCandidateId).toBe(
       report.records[0]?.skillCandidateId,
     );
@@ -265,7 +265,7 @@ describe("phase2 skill candidate ledger", () => {
     expect(current.records[0]?.createdAt).toBe(previous.records[0]?.createdAt);
   });
 
-  it("creates a candidate from repeated bounded assistant activity even without extracted opportunities", async () => {
+  it("does not create skill candidates from activity text without model-reviewed opportunities", async () => {
     const report = await buildPhase2SkillCandidateLedgerReport({
       now: new Date("2026-04-28T10:15:00.000Z"),
       activities: [
@@ -297,20 +297,8 @@ describe("phase2 skill candidate ledger", () => {
       assistantCandidates: [],
     });
 
-    expect(report.decision).toBe("skill_candidates_ready");
-    expect(report.records).toHaveLength(1);
-    expect(report.records[0]).toMatchObject({
-      sourceRuntime: "openclaw_session",
-      candidateType: "repeated_work_pattern",
-      lifecycleStatus: "detected",
-      installTargets: ["workspace_skills_dir"],
-    });
-    expect(report.records[0]?.recurrenceCount).toBe(3);
-    expect(report.records[0]?.provenanceRefs).toEqual(
-      expect.arrayContaining([
-        "chat://main/assistant_turn/assistant-activity-1",
-        "chat://main/assistant_turn/assistant-activity-2",
-      ]),
-    );
+    expect(report.decision).toBe("no_skill_candidates");
+    expect(report.records).toHaveLength(0);
+    expect(report.opportunities).toHaveLength(0);
   });
 });

@@ -2,7 +2,7 @@ import type { AdmissionDecisionBatch, CanonicalCandidateBatch } from "./contract
 import {
   compareExpectedCollection,
   includesAll,
-  semanticallyMatchesText,
+  normalizedTextIncludes,
   type MmV2PhaseComparisonResult,
 } from "./proof-compare-shared.ts";
 import type { MmV2AdmissionExpectation, MmV2PhaseExpectation } from "./proof-corpus.ts";
@@ -25,7 +25,7 @@ export function compareAdmissionPhase(
       const canonicalText = canonicalById.get(decision.candidate_id)?.canonical_text ?? "";
       return (
         (expected.canonicalTextIncludes === undefined ||
-          semanticallyMatchesText(canonicalText, expected.canonicalTextIncludes)) &&
+          normalizedTextIncludes(canonicalText, expected.canonicalTextIncludes)) &&
         (expected.decision === undefined || decision.decision === expected.decision) &&
         (expected.requiresReconciliation === undefined ||
           decision.requires_reconciliation === expected.requiresReconciliation) &&

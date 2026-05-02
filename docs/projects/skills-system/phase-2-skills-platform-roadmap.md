@@ -12,6 +12,53 @@ The platform target is not "more skills." It is a proactivity-integrated,
 cross-runtime, partially autonomous skill lifecycle system with bounded safety
 and rollback.
 
+The Phase 2 target is also explicit parity or better with mature skill-system
+patterns:
+
+- Gbrain-style quality control: properly skilled packages require skill
+  contracts, tests, integration tests, LLM evals, resolver triggers, resolver
+  evals, reachability/overlap checks, E2E, and filing/ownership coverage.
+- Hermes-style learning loop: observe repeated work, distill reusable skills,
+  reuse them when relevant, refine from feedback, and keep install/edit
+  behavior controllable.
+
+OpenClaw's version of that target must preserve the model-owned judgment
+boundary. Deterministic code may run tests, check files, verify hashes, enforce
+destination rules, and apply canary/rollback state. It must not decide
+skill-worthiness, skill-vs-plan classification, semantic usefulness, promotion,
+retirement, or usage-based improvement without bounded model review or operator
+approval.
+
+Skill and proactivity UX now targets a canonical `Work Queue` rather than
+chat-only cards. The cross-project product contract is recorded in
+[Proactivity And Skills UX Product Brief](/projects/model-memory/specs/proactivity-and-skills-ux-product-brief).
+Skill candidates and existing-skill enhancements remain first-class proactivity
+objects, but durable draft artifacts, revision state, finalized Codex-ready
+prompts, evidence, and future execution records belong in the Work Queue object
+detail rather than transient chat or heartbeat UI.
+
+The surface allocation contract is recorded in
+[Work Queue Information Architecture](/projects/model-memory/specs/work-queue-information-architecture):
+skills share one canonical Work Queue with build plans, tooling, user-review
+tasks, and future agent work; the `Skills` lane supplies filters and grouping,
+not a second queue; skill details own `SKILL.md` draft summaries,
+trigger/resolver notes, safety boundaries, tests/evals checklist, integration
+notes, provenance, and finalized Codex-ready prompts.
+
+The shared lifecycle contract is recorded in
+[Work Queue Interaction And Lifecycle State Model](/projects/model-memory/specs/work-queue-interaction-lifecycle-state-model):
+skill candidates and skill enhancements use the same visible lifecycle shell as
+other work objects, but with skill-specific artifact payloads. Finalized skill
+drafts expose review-only Codex-ready prompts and manual completion tracking;
+install, promotion, and autonomous execution remain hidden until their
+milestones exist.
+
+The first implementation slice is recorded in
+[Work Queue UX Implementation Plan](/projects/model-memory/specs/work-queue-ux-implementation-plan):
+the Skills lane should be rendered through the shared Work Queue adapter and
+detail view, with full skill draft artifacts, version history, prompt copy, and
+hidden diagnostics rather than a separate skill queue.
+
 ## Milestone 1 - Specs and autonomy policy
 
 - Objective: define the canonical lifecycle, autonomy ladder, risk tiers,
@@ -43,8 +90,8 @@ Milestone 2 acceptance details:
 - the ledger is the canonical skill-candidate state
 - the same canonical id must survive across inline, heartbeat, inbox, and
   handoff
-- recurring work updates an existing candidate when the deterministic intent
-  key matches instead of piling up duplicates
+- recurring work updates an existing candidate when explicit structural keys or
+  model-reviewed canonical intent keys match instead of piling up duplicates
 - candidate generation quality and live usefulness are the success gate
 
 ## Milestone 3 - Skillifier MVP scaffold/check/report
@@ -76,7 +123,7 @@ Milestone 3 acceptance details:
 - `skills/<name>/` remains branch/worktree-only, never silent `main` mutation
 - live usefulness and draft reviewability are the success gate
 
-## Milestone 4 - Skill decisioning/compliance eval harness
+## Milestone 4 - Skill quality parity gate v1
 
 Precondition:
 
@@ -118,13 +165,41 @@ Pre-Milestone-4 repair:
   packet/reviewer/validator/card paths that already pass function-level checks
 
 - Objective: prove skills are chosen correctly and followed correctly.
-- Scope: decisioning, avoid, ambiguous/cofire, compliance, workflow-contract,
-  prompt-injection, and sandbox evals.
+- Scope: generated and hand-authored evals, trigger/resolver tests,
+  check-resolvable-style reachability and overlap reporting, review-only
+  package E2E, decisioning, avoid, ambiguous/cofire, compliance,
+  workflow-contract, prompt-injection, sandbox, and cross-runtime fixture
+  coverage.
 - Non-goals: no broad auto-promotion.
-- Proof: deterministic CI-safe eval suite plus opt-in live evals.
-- Safety gate: eval evidence is guardrail only, not runtime authority.
+- Proof: deterministic CI-safe eval runner over declared fixtures, model-owned
+  eval fixture generation for semantic cases, check-resolvable-style health
+  report, package E2E proof for draft packages, plus opt-in live evals.
+- Safety gate: eval evidence is guardrail and promotion evidence, not
+  deterministic semantic authority.
 - User-facing behavior: higher confidence that shipped skills are actually
   usable.
+
+Milestone 4 acceptance details:
+
+- every new skill candidate that reaches draft-ready state has generated eval
+  fixtures or explicit no-eval rationale by risk tier
+- positive, negative, ambiguous/cofire, compliance, workflow-contract,
+  prompt-injection, sandbox, and cross-runtime fixture families exist where
+  applicable
+- trigger/resolver tests prove declared user-language triggers reach the
+  intended skill and unrelated prompts do not route to it
+- check-resolvable-style report identifies orphaned skills, missing resolver
+  metadata, trigger overlap, intent gaps, missing evals, missing E2E, missing
+  rollback, and package integrity drift where enforced
+- review-only draft packages pass package E2E in fixture or shadow mode:
+  loader sees the package, resolver considers it, agent reads `SKILL.md`, the
+  expected output artifact is produced, and rollback/disable path is recorded
+- model-owned review decides semantic eval fixture quality, ambiguous trigger
+  intent, skill-vs-plan classification, and whether observed usage suggests
+  improvement, merge, demotion, or no action
+- deterministic code may execute fixtures, compare expected ids/routes,
+  validate package files, and emit reports, but it must not infer semantic
+  usefulness from scores, keywords, or telemetry
 
 ## Milestone 5 - Vetting, risk, and provenance integration
 
@@ -139,9 +214,11 @@ Pre-Milestone-4 repair:
 
 ## Milestone 6 - Auto-draft and auto-test loop
 
-- Objective: remove the user as bottleneck for low-risk draft generation.
-- Scope: candidate-triggered branch/worktree draft generation and automatic
-  vet/test/eval runs.
+- Objective: remove the user as bottleneck for low-risk draft generation and
+  quality-gate execution.
+- Scope: candidate-triggered branch/worktree draft generation, automatic
+  vet/test/eval runs, generated eval additions from model-reviewed failures,
+  and package E2E smoke runs.
 - Non-goals: no broad install by default.
 - Proof: low-risk candidate automatically drafts a package and returns green or
   red status.
@@ -151,7 +228,8 @@ Pre-Milestone-4 repair:
 ## Milestone 7 - Canary and shadow mode
 
 - Objective: exercise drafted skills in bounded scopes before wider promotion.
-- Scope: session, agent, workspace, or shadow-only enablement.
+- Scope: session, agent, workspace, or shadow-only enablement with explicit
+  canary metrics, disable path, and rollback artifact.
 - Non-goals: no broad default rollout.
 - Proof: canary results attach to the same canonical candidate/package id.
 - Safety gate: automatic disable or demotion on failed canaries.
@@ -164,8 +242,9 @@ Pre-Milestone-4 repair:
 - Scope: instruction-only, no-script, no-network, no-credential,
   limited-scope promotion.
 - Non-goals: no medium-risk or high-risk auto-promotion.
-- Proof: passing tests, vetting, and canary can auto-enable a low-risk skill in
-  a limited scope with rollback metadata.
+- Proof: passing tests, evals, resolver/trigger tests, check-resolvable-style
+  health report, package E2E, vetting, and canary can auto-enable a low-risk
+  skill in a limited scope with rollback metadata.
 - Safety gate: broad/global enablement still gated.
 - User-facing behavior: routine skill improvements appear automatically where
   safe.
@@ -176,20 +255,36 @@ Pre-Milestone-4 repair:
   runtimes.
 - Scope: OpenClaw workspace/shared/plugin adapters and Codex skills adapters.
 - Non-goals: no unsafe wrapper divergence.
-- Proof: same skill package is discoverable in both runtimes with preserved
-  provenance.
+- Proof: same skill package is discoverable, triggerable, evaled, E2E-tested,
+  and rollbackable in both runtimes with preserved provenance.
 - Safety gate: compatibility checks and path recording required.
 - User-facing behavior: successful skills travel between Codex and OpenClaw.
 
 ## Milestone 10 - Autonomous skill maintenance
 
-- Objective: keep the skill fleet healthy without constant manual cleanup.
-- Scope: stale candidate pruning, metadata drift repair, eval additions from
-  failures, unused skill retirement proposals, and health reports.
+- Objective: close the usage-based self-improvement loop while keeping semantic
+  improvement judgment model-owned or operator-owned.
+- Scope: bounded usage/failure/correction observation, model-reviewed repair or
+  no-action decisions, stale candidate pruning, metadata drift repair, eval
+  additions from failures, unused skill retirement proposals, merge/demotion
+  proposals, and health reports.
 - Non-goals: no silent high-risk mutation.
 - Proof: maintenance jobs create bounded artifacts and repair opportunities.
 - Safety gate: human-authored content is not auto-deleted.
 - User-facing behavior: less skill rot and duplicate clutter.
+
+Milestone 10 acceptance details:
+
+- usage telemetry and feedback can trigger model review by structural cadence
+  or explicit events, but cannot deterministically infer usefulness, promotion,
+  retirement, merge, or repair
+- each improvement proposal includes source refs, failure/use evidence, model
+  rationale, changed evals or package patch, expected quality gate, and
+  rollback path
+- no-op/no-action is a valid model-reviewed outcome when evidence is weak
+- successful maintenance changes rerun evals, resolver tests,
+  check-resolvable-style report, package E2E, and canary checks before any
+  promotion
 
 ## Milestone 11 - Skills Studio UI
 

@@ -365,6 +365,26 @@ function deriveRuntimeMemoryIdentity(object: RuntimeProjectedMemoryObject): {
   };
 }
 
+function buildRuntimeSearchText(input: {
+  identitySearchText: string;
+  canonicalText?: string;
+  durableSearchText?: string;
+}): string {
+  const seen = new Set<string>();
+  return [input.identitySearchText, input.canonicalText, input.durableSearchText]
+    .map((value) => normalizeRuntimeIdentityText(value))
+    .filter((value) => {
+      if (!value || seen.has(value)) {
+        return false;
+      }
+      seen.add(value);
+      return true;
+    })
+    .join(" ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 function mapLifecycleStatus(status: DurableMemoryRecord["status"]): ModelMemoryLifecycleState {
   switch (status) {
     case "active":
@@ -679,7 +699,11 @@ export function buildRuntimeMemoryRecordFromDurable(
     payload: object.payload,
     normalizedSubject: identity.normalizedSubject,
     normalizedTitle: identity.normalizedTitle,
-    normalizedSearchText: identity.normalizedSearchText,
+    normalizedSearchText: buildRuntimeSearchText({
+      identitySearchText: identity.normalizedSearchText,
+      canonicalText: record.canonical_text,
+      durableSearchText: record.search_text,
+    }),
     sourceEvidenceSearchText: record.source_refs
       .map((ref) => [ref.source_id, ref.segment_id, ref.evidence_quote].filter(Boolean).join(" "))
       .join(" "),

@@ -17,6 +17,7 @@ describe("TAB_GROUPS", () => {
   });
 
   it("routes every published settings slice", () => {
+    expect(tabFromPath("/work-queue")).toBe("workQueue");
     expect(tabFromPath("/communications")).toBe("communications");
     expect(tabFromPath("/appearance")).toBe("appearance");
     expect(tabFromPath("/automation")).toBe("automation");

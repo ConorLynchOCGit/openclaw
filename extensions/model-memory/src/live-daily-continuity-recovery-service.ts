@@ -9,6 +9,7 @@ import {
   type CapturedObjectWriteStore,
 } from "./db/captured-object-write-compatibility.ts";
 import type { LiveMemoryPersistenceResult } from "./db/mmv2-native-repository.ts";
+import type { ListExistingMemorySummariesForCaptureInput } from "./db/mmv2-native-repository/types.ts";
 import { RuntimeContextRepository } from "./db/runtime-context-repository.ts";
 import {
   emitMemoryIngestionCloseoutIfConfigured,
@@ -20,6 +21,7 @@ import {
 } from "./ingestion/shared-pipeline.ts";
 import type { ExistingMemorySummary } from "./mmv2/contracts.ts";
 import { recoverDailyContinuityV2ForLiveStorage } from "./mmv2/live-document-ingestion.ts";
+import { createReconciliationNeighborRecallProvider } from "./mmv2/reconciliation-neighbor-recall.ts";
 import type { LiveMemoryBatch, LiveMemoryWriteResult } from "./mmv2/recording.ts";
 import { summarizePersistedLiveMemoryWriteResults } from "./mmv2/recording.ts";
 import { rebuildDerivedRuntimeState } from "./runtime-rebuild-orchestrator.ts";
@@ -27,6 +29,9 @@ import type { SemanticCollisionAdjudicator } from "./semantic-collision-adjudica
 
 type MmV2AwareCanonicalRepository = ModelMemoryCanonicalRepository & {
   listExistingMemorySummaries?: () => Promise<ExistingMemorySummary[]>;
+  listExistingMemorySummariesForCapture?: (
+    input: ListExistingMemorySummariesForCaptureInput,
+  ) => Promise<ExistingMemorySummary[]>;
   persistLiveMemoryBatch?: (batch: LiveMemoryBatch) => Promise<LiveMemoryPersistenceResult>;
 };
 
@@ -61,7 +66,10 @@ export async function recoverDailyContinuityCandidatesLive(input: {
         dailyRecord: input.recovery.dailyRecord,
         modelId: input.recovery.modelId,
         interpreter: input.recovery.interpreter,
-        reconciliationNeighbors: await canonicalRepository.listExistingMemorySummaries!(),
+        reconciliationNeighborProvider: createReconciliationNeighborRecallProvider({
+          canonicalRepository,
+          projectId: input.recovery.dailyRecord.projectId ?? null,
+        }),
       })
     : await recoverDailyContinuityCandidates(input.recovery);
   const source = await canonicalRepository.persistSource(result.source);

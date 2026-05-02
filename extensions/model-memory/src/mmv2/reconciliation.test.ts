@@ -22,7 +22,7 @@ describe("mmv2/reconciliation", () => {
     expect(result?.decision).toBe("keep_existing_ignore_candidate");
   });
 
-  it("supersedes older preference states via deterministic shortcut", () => {
+  it("does not supersede older preference states via deterministic semantic shortcut", () => {
     const source = createMmV2TestSource("I prefer detailed answers.");
     const candidate = buildCanonicalCandidate(
       source.rawEvent,
@@ -47,8 +47,7 @@ describe("mmv2/reconciliation", () => {
     });
 
     const result = applyDeterministicReconciliationShortcuts(candidate, [existing]);
-    expect(result?.decision).toBe("supersede_existing");
-    expect(result?.conflict_type).toBe("preference_changed");
+    expect(result).toBeNull();
   });
 
   it("supersedes only structurally targeted preferences from explicit correction candidates", () => {
@@ -233,7 +232,7 @@ describe("mmv2/reconciliation", () => {
     expect(result?.target_memory_ids).toEqual([]);
   });
 
-  it("inserts a narrower-scoped preference as scoped coexistence instead of superseding", () => {
+  it("does not resolve narrower-scoped preference conflicts without model reconciliation", () => {
     const source = createMmV2TestSource("For this project, I prefer detailed answers.");
     const candidate = buildCanonicalCandidate(
       source.rawEvent,
@@ -276,9 +275,7 @@ describe("mmv2/reconciliation", () => {
     });
 
     const result = applyDeterministicReconciliationShortcuts(candidate, [existing]);
-    expect(result?.decision).toBe("insert_new");
-    expect(result?.conflict_type).toBe("scope_narrowing");
-    expect(result?.target_memory_ids).toEqual(["memory-001"]);
+    expect(result).toBeNull();
   });
 
   it("falls through to the model path for scoped conflicts", async () => {

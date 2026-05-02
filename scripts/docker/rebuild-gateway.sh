@@ -27,7 +27,7 @@ fi
 cd "$ROOT_DIR"
 
 echo "==> Rebuilding and recreating openclaw-gateway"
-docker compose up -d --build openclaw-gateway
+docker compose up -d --build --force-recreate openclaw-gateway
 
 echo "==> Waiting for gateway health"
 for attempt in $(seq 1 90); do

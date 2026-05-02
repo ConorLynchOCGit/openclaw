@@ -47,10 +47,13 @@ import type {
   ProductProactivityActionType,
   ProductProactivityFeedbackControl,
   ProductProactivityQueueItem,
+  WorkQueueFilter,
+  WorkQueueNotification,
 } from "./types.ts";
 import type { ChatAttachment, ChatQueueItem } from "./ui-types.ts";
 import type { NostrProfileFormState } from "./views/channels.nostr-profile-form.ts";
 import type { SessionLogEntry } from "./views/usage.ts";
+import type { WorkQueueObject } from "./work-queue.ts";
 
 export type AppViewState = {
   settings: UiSettings;
@@ -105,6 +108,12 @@ export type AppViewState = {
   proactivityInboxError: string | null;
   proactivityInboxView: ProactivityInboxView;
   productProactivityEditedMessages: Record<string, string>;
+  workQueueFilter: WorkQueueFilter;
+  workQueueSearchQuery: string;
+  workQueueSelectedObjectId: string | null;
+  workQueueNotifications: WorkQueueNotification[];
+  workQueueRevisionDrafts: Record<string, string>;
+  workQueueArtifactBodies: Record<string, string>;
   personalAutoSendUx: PersonalAutoSendUxSettings | null;
   personalAutoSendUxLoading: boolean;
   personalAutoSendUxError: string | null;
@@ -436,12 +445,18 @@ export type AppViewState = {
     setChatMessage: (next: string) => void;
     handleSendChat: (messageOverride?: string, opts?: { restoreDraft?: boolean }) => Promise<void>;
     handleAbortChat: () => Promise<void>;
+    getVisibleWorkQueueObjects: () => WorkQueueObject[];
+    getSelectedWorkQueueObject: () => WorkQueueObject | null;
     loadProductProactivityQueue: () => Promise<void>;
     loadProactivityInbox: () => Promise<void>;
     handleProductProactivityApproveSend: (queueItemId: string) => Promise<void>;
     handleProductProactivityWorkAction: (
       queueItemId: string,
       action: ProductProactivityActionType,
+    ) => Promise<void>;
+    handleProactivityPlanReview: (
+      queueItemId: string,
+      reviewStatus: "recommendation_finalized" | "revision_requested",
     ) => Promise<void>;
     handleProductProactivityDismiss: (queueItemId: string) => void;
     handleProductProactivitySnooze: (queueItemId: string) => void;
@@ -451,6 +466,16 @@ export type AppViewState = {
     ) => void;
     handleProductProactivityEditMessage: (queueItemId: string, value: string) => void;
     setProactivityInboxView: (view: ProactivityInboxView) => void;
+    setWorkQueueFilter: (view: WorkQueueFilter) => void;
+    setWorkQueueSearchQuery: (value: string) => void;
+    selectWorkQueueObject: (objectId: string | null, opts?: { replace?: boolean }) => void;
+    dismissWorkQueueNotification: (notificationId: string) => void;
+    updateWorkQueueRevisionDraft: (objectId: string, value: string) => void;
+    handleWorkQueueFinalize: (objectId: string) => Promise<void>;
+    handleWorkQueueRequestRevision: (objectId: string) => Promise<void>;
+    handleWorkQueueRestore: (objectId: string) => Promise<void>;
+    handleWorkQueueMarkComplete: (objectId: string) => Promise<void>;
+    handleWorkQueueCopyCodexPrompt: (objectId: string) => Promise<void>;
     loadPersonalAutoSendUx: (userDisabled?: boolean) => Promise<void>;
     handlePersonalAutoSendDisable: () => Promise<void>;
     removeQueuedMessage: (id: string) => void;

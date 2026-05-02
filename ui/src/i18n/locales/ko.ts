@@ -148,6 +148,7 @@ export const ko: TranslationMap = {
   tabs: {
     agents: "에이전트",
     overview: "개요",
+    workQueue: "작업 대기열",
     channels: "채널",
     instances: "인스턴스",
     sessions: "세션",
@@ -169,6 +170,7 @@ export const ko: TranslationMap = {
   subtitles: {
     agents: "워크스페이스, 도구, 정체성.",
     overview: "상태, 진입점, 상태 정보.",
+    workQueue: "지속 가능한 계획, 스킬 및 수동 실행 인계.",
     channels: "채널 및 설정.",
     instances: "연결된 클라이언트와 노드.",
     sessions: "활성 세션 및 기본값.",

@@ -9,7 +9,7 @@ import {
 } from "./test-helpers.ts";
 
 describe("mmv2/canonicalization", () => {
-  it("repairs modality drift for claim wording", async () => {
+  it("does not deterministically reject canonical wording based on modality terms", async () => {
     const source = createMmV2TestSource("I prefer concise answers.");
     const segment = source.segmented.segments[0];
     const atomicBatch = {
@@ -38,18 +38,6 @@ describe("mmv2/canonicalization", () => {
             ),
           ],
         }),
-      "mmv2-canonicalization-repair-v1": () =>
-        captureOne({
-          schema_version: "canonical_candidates.v1",
-          event_id: source.rawEvent.event_id,
-          canonical_candidates: [
-            buildCanonicalCandidate(
-              source.rawEvent,
-              segment.segment_id,
-              "I prefer concise answers.",
-            ),
-          ],
-        }),
     });
 
     const result = await canonicalizeCandidates({
@@ -63,6 +51,6 @@ describe("mmv2/canonicalization", () => {
       compositeBatch,
     });
 
-    expect(result.canonical_candidates[0].canonical_text).toBe("The user prefers concise answers.");
+    expect(result.canonical_candidates[0].canonical_text).toBe("Always give concise answers.");
   });
 });

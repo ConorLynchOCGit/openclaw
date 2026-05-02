@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildPhase2LiveProactivityDetectionReport,
   writePhase2LiveProactivityDetectionArtifact,
+  type Phase2ModelReviewedLiveProactivityOpportunity,
   type Phase2LiveProactivitySignalSource,
 } from "./phase2-live-proactivity-signals.ts";
 
@@ -29,8 +30,25 @@ function source(
   };
 }
 
+function modelReviewedOpportunity(
+  sourceId: string,
+  overrides: Partial<Phase2ModelReviewedLiveProactivityOpportunity> = {},
+): Phase2ModelReviewedLiveProactivityOpportunity {
+  return {
+    sourceId,
+    workItemKind: "planning_request",
+    title: "Model-reviewed live follow-up",
+    whyNow: "A model-reviewed candidate identified this live signal as worth operator review.",
+    proposedNextStep: "Review the model-reviewed live follow-up before any execution.",
+    expectedUserValue: "Keeps live proactivity tied to model-reviewed candidate judgment.",
+    evidenceSummary: "Evidence comes from the bounded live signal source.",
+    confidence: "high",
+    ...overrides,
+  };
+}
+
 describe("phase2 live proactivity signals", () => {
-  it("creates live opportunities from real event-shaped sources", async () => {
+  it("keeps real event-shaped sources as structural signals without model-reviewed opportunities", async () => {
     const report = await buildPhase2LiveProactivityDetectionReport({
       now: new Date("2026-04-27T06:00:00.000Z"),
       sources: [
@@ -44,20 +62,42 @@ describe("phase2 live proactivity signals", () => {
       ],
     });
 
-    expect(report.decision).toBe("live_opportunities_detected");
-    expect(report.opportunities).toHaveLength(7);
-    expect(report.opportunities[0]).toMatchObject({
-      title: expect.any(String),
-      whyNow: expect.any(String),
-      proposedNextStep: expect.any(String),
-      expectedUserValue: expect.any(String),
-      evidenceSummary: expect.any(String),
-      noDarkDataStatus: "pass",
-    });
+    expect(report.decision).toBe("no_live_opportunities");
+    expect(report.signals).toHaveLength(7);
+    expect(report.opportunities).toHaveLength(0);
+    expect(
+      report.checks.find((check) => check.reasonCode === "model_reviewed_opportunity_required")
+        ?.status,
+    ).toBe("fail");
+    expect(report.telemetry.opportunityCount).toBe(0);
+    expect(JSON.stringify(report)).not.toContain("Plan a bounded next step");
     expect(report.policy.staticFallbackPrimaryAllowed).toBe(false);
     expect(report.policy.semanticSimilarityTruthAllowed).toBe(false);
     expect(report.telemetry.autonomousSendingEnabled).toBe(false);
     expect(report.telemetry.actionExecutionObserved).toBe(false);
+  });
+
+  it("surfaces only model-reviewed opportunities tied to live signals", async () => {
+    const report = await buildPhase2LiveProactivityDetectionReport({
+      now: new Date("2026-04-27T06:00:00.000Z"),
+      sources: [source("active_work_state", "ordinary_turn_capture")],
+      modelReviewedOpportunities: [
+        modelReviewedOpportunity("source-active_work_state", {
+          title: "Model-reviewed Skills planning follow-up",
+          proposedNextStep: "Review the Skills planning follow-up before starting new work.",
+        }),
+      ],
+    });
+
+    expect(report.decision).toBe("live_opportunities_detected");
+    expect(report.opportunities).toHaveLength(1);
+    expect(report.opportunities[0]).toMatchObject({
+      sourceId: "source-active_work_state",
+      title: "Model-reviewed Skills planning follow-up",
+      proposedNextStep: "Review the Skills planning follow-up before starting new work.",
+      noDarkDataStatus: "pass",
+    });
+    expect(report.policy.requireModelReviewedOpportunity).toBe(true);
   });
 
   it("blocks missing provenance, raw/private material, and no-dark-data failures", async () => {

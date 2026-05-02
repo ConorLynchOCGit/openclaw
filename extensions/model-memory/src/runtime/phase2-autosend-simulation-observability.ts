@@ -16,14 +16,14 @@ import {
   buildPhase2ProductProactivitySurfacingReport,
   type Phase2ProductProactivityQueueItemStatus,
   type Phase2ProductProactivitySurfacingReport,
-} from "./phase2-product-proactivity-surfacing.ts";
+} from "./phase2-product-proactivity-presentation.ts";
 
 export const PHASE2_AUTOSEND_SIMULATION_OBSERVABILITY_SCHEMA_VERSION =
   "phase2_autosend_simulation_observability.v1" as const;
 export const PHASE2_AUTOSEND_SIMULATION_OBSERVABILITY_REPORT_SCHEMA_VERSION =
   "phase2_autosend_simulation_observability_report.v1" as const;
 
-export type Phase2AutoSendSimulationUsefulnessSignal =
+export type Phase2AutoSendSimulationControlSignal =
   | "generated"
   | "approved_manually"
   | "dismissed"
@@ -47,7 +47,7 @@ export type Phase2AutoSendSimulationCandidateObservation = {
   messageClass: string;
   wouldHaveAutoSent: boolean;
   actualManualDecision: Phase2AutoSendSimulationDecisionComparison["actualManualDecision"];
-  usefulnessSignals: Phase2AutoSendSimulationUsefulnessSignal[];
+  controlSignals: Phase2AutoSendSimulationControlSignal[];
   sourceRefs: string[];
   sourceProfileIds: SourceProfileId[];
   authorityTiers: SourceAuthorityTier[];
@@ -95,7 +95,7 @@ export type Phase2AutoSendSimulationTelemetry = {
   schemaVersion: typeof PHASE2_AUTOSEND_SIMULATION_OBSERVABILITY_SCHEMA_VERSION;
   reportId: string;
   observationCount: number;
-  usefulnessSignals: Phase2AutoSendSimulationUsefulnessSignal[];
+  controlSignals: Phase2AutoSendSimulationControlSignal[];
   sourceRefs: string[];
   sourceProfileIds: SourceProfileId[];
   authorityTiers: SourceAuthorityTier[];
@@ -132,7 +132,7 @@ export type Phase2AutoSendSimulationReport = {
     sessionKey: string;
     simulationReportVisible: boolean;
     comparisonVisible: boolean;
-    usefulnessSignalsVisible: boolean;
+    controlSignalsVisible: boolean;
     terminalEvidence: boolean;
   };
 };
@@ -338,24 +338,24 @@ export async function buildPhase2AutoSendSimulationObservabilityReport(
   const failedReasonCodes = checks
     .filter((check) => check.status === "fail")
     .map((check) => check.reasonCode);
-  const usefulnessSignals: Phase2AutoSendSimulationUsefulnessSignal[] = ["generated"];
+  const controlSignals: Phase2AutoSendSimulationControlSignal[] = ["generated"];
   if (actualManualDecision === "approved_manually") {
-    usefulnessSignals.push("approved_manually");
+    controlSignals.push("approved_manually");
   }
   if (actualManualDecision === "dismissed") {
-    usefulnessSignals.push("dismissed");
+    controlSignals.push("dismissed");
   }
   if (actualManualDecision === "snoozed") {
-    usefulnessSignals.push("snoozed");
+    controlSignals.push("snoozed");
   }
   if (actualManualDecision === "blocked") {
-    usefulnessSignals.push("blocked");
+    controlSignals.push("blocked");
   }
   if (input.forceRepeatedSuggestion) {
-    usefulnessSignals.push("repeated");
+    controlSignals.push("repeated");
   }
   if (input.forceStaleSuggestion) {
-    usefulnessSignals.push("stale");
+    controlSignals.push("stale");
   }
   const candidateId =
     readinessReport?.candidates[0]?.candidateId ??
@@ -383,14 +383,14 @@ export async function buildPhase2AutoSendSimulationObservabilityReport(
       family: "context_artifact",
       artifactType: "phase2_autosend_simulation_observation",
       targetId: candidateId,
-      seed: { generatedAt, usefulnessSignals, failedReasonCodes },
+      seed: { generatedAt, controlSignals, failedReasonCodes },
     }),
     candidateId,
     messageClass:
       readinessReport?.candidates[0]?.messageClass ?? queueItem?.messageClass ?? "unknown",
     wouldHaveAutoSent,
     actualManualDecision,
-    usefulnessSignals,
+    controlSignals,
     sourceRefs,
     sourceProfileIds,
     authorityTiers,
@@ -415,12 +415,12 @@ export async function buildPhase2AutoSendSimulationObservabilityReport(
           ? "degraded"
           : "healthy",
     generatedCount: 1,
-    approvedManuallyCount: usefulnessSignals.includes("approved_manually") ? 1 : 0,
-    dismissedCount: usefulnessSignals.includes("dismissed") ? 1 : 0,
-    snoozedCount: usefulnessSignals.includes("snoozed") ? 1 : 0,
-    blockedCount: usefulnessSignals.includes("blocked") || failedReasonCodes.length > 0 ? 1 : 0,
-    repeatedCount: usefulnessSignals.includes("repeated") ? 1 : 0,
-    staleCount: usefulnessSignals.includes("stale") ? 1 : 0,
+    approvedManuallyCount: controlSignals.includes("approved_manually") ? 1 : 0,
+    dismissedCount: controlSignals.includes("dismissed") ? 1 : 0,
+    snoozedCount: controlSignals.includes("snoozed") ? 1 : 0,
+    blockedCount: controlSignals.includes("blocked") || failedReasonCodes.length > 0 ? 1 : 0,
+    repeatedCount: controlSignals.includes("repeated") ? 1 : 0,
+    staleCount: controlSignals.includes("stale") ? 1 : 0,
     blockedReasonCodes: failedReasonCodes,
   };
   const decision: Phase2AutoSendSimulationReport["decision"] = rollback
@@ -438,9 +438,7 @@ export async function buildPhase2AutoSendSimulationObservabilityReport(
     schemaVersion: PHASE2_AUTOSEND_SIMULATION_OBSERVABILITY_SCHEMA_VERSION,
     reportId,
     observationCount: 1,
-    usefulnessSignals: uniqueSortedStrings(
-      usefulnessSignals,
-    ) as Phase2AutoSendSimulationUsefulnessSignal[],
+    controlSignals: uniqueSortedStrings(controlSignals) as Phase2AutoSendSimulationControlSignal[],
     sourceRefs,
     sourceProfileIds,
     authorityTiers,
