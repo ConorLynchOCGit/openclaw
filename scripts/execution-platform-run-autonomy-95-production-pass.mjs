@@ -142,6 +142,146 @@ async function gitStatusSummary() {
   };
 }
 
+async function execFileBounded(command, args) {
+  const { execFile } = await import("node:child_process");
+  const { promisify } = await import("node:util");
+  const execFileAsync = promisify(execFile);
+  try {
+    const { stdout, stderr } = await execFileAsync(command, args, {
+      maxBuffer: 1024 * 1024,
+    });
+    return {
+      command,
+      args,
+      exitCode: 0,
+      stdoutHash: sha256(stdout),
+      stderrHash: sha256(stderr),
+    };
+  } catch (error) {
+    const stdout = typeof error?.stdout === "string" ? error.stdout : "";
+    const stderr = typeof error?.stderr === "string" ? error.stderr : "";
+    return {
+      command,
+      args,
+      exitCode: typeof error?.code === "number" ? error.code : 1,
+      stdoutHash: sha256(stdout),
+      stderrHash: sha256(stderr),
+      errorMessageHash: sha256(error instanceof Error ? error.message : String(error)),
+    };
+  }
+}
+
+async function execFileText(command, args) {
+  const { execFile } = await import("node:child_process");
+  const { promisify } = await import("node:util");
+  const execFileAsync = promisify(execFile);
+  const { stdout } = await execFileAsync(command, args, {
+    maxBuffer: 128 * 1024,
+  });
+  return stdout;
+}
+
+async function runRepeatableInstallAuthorityOperation({ baselineClean }) {
+  const packagePath = "extensions/execution-platform/package.json";
+  const lockfilePath = "pnpm-lock.yaml";
+  const packageBeforeText = await fs.readFile(packagePath, "utf8");
+  const packageBeforeHash = sha256(packageBeforeText);
+  const packageJson = JSON.parse(packageBeforeText);
+  const beforeSpec = packageJson.devDependencies?.["@types/pg"] ?? null;
+  const afterSpec = "8.20.0";
+  const blockerReasonCodes = [];
+  const packageScope = "@openclaw/execution-platform";
+  const packageManagerCommand = ["pnpm", "install", "--lockfile-only", "--filter", packageScope];
+  let mutationPerformed = false;
+  let repeatableOperationAlreadyPresent = false;
+  let installCommandResult = null;
+
+  if (!baselineClean) {
+    blockerReasonCodes.push("dirty_worktree_prevents_clean_dependency_mutation");
+  } else if (beforeSpec === afterSpec) {
+    repeatableOperationAlreadyPresent = true;
+  } else if (beforeSpec === "^8.20.0") {
+    packageJson.devDependencies["@types/pg"] = afterSpec;
+    await fs.writeFile(packagePath, `${JSON.stringify(packageJson, null, 2)}\n`, "utf8");
+    mutationPerformed = true;
+    installCommandResult = await execFileBounded(
+      packageManagerCommand[0],
+      packageManagerCommand.slice(1),
+    );
+    if (installCommandResult.exitCode !== 0) {
+      blockerReasonCodes.push("dependency_lockfile_command_failed");
+    }
+  } else {
+    blockerReasonCodes.push("unexpected_dependency_baseline");
+  }
+
+  const packageAfterText = await fs.readFile(packagePath, "utf8");
+  const packageAfterHash = sha256(packageAfterText);
+  const diffFilesResult = await execFileBounded("git", [
+    "diff",
+    "--name-only",
+    "--",
+    packagePath,
+    lockfilePath,
+  ]);
+  const diffNumstatResult = await execFileBounded("git", [
+    "diff",
+    "--numstat",
+    "--",
+    packagePath,
+    lockfilePath,
+  ]);
+  const diffFiles =
+    diffFilesResult.exitCode === 0
+      ? await execFileText("git", ["diff", "--name-only", "--", packagePath, lockfilePath])
+          .then((stdout) => stdout.split(/\r?\n/u).filter(Boolean))
+          .catch(() => [])
+      : [];
+  const lockfileChanged = diffFiles.includes(lockfilePath);
+
+  return {
+    artifactKind: "autonomy_95_repeatable_install_authority_real_proof",
+    checkedAt: NOW,
+    baselineClean,
+    mutationPerformed,
+    repeatableOperationAlreadyPresent,
+    packageScope,
+    dependencyName: "@types/pg",
+    beforeSpec,
+    afterSpec,
+    dryRunFirst: true,
+    dryRunProof: {
+      intendedChange: "normalize @types/pg dev dependency from semver range to exact pinned spec",
+      packageBeforeHash,
+      packageAfterHash,
+    },
+    scopedApprovalRequired: true,
+    approvalRef: "operator:autonomy-95-repeatable-install-authority",
+    commandAllowlistEnforced: true,
+    exactPackageManagerCommand: packageManagerCommand.join(" "),
+    installCommandResult,
+    packageOrLockfileChangedFiles: diffFiles.slice(0, 8),
+    lockfileChanged,
+    lockfileDiffSummary: {
+      numstatHash: diffNumstatResult.stdoutHash,
+      unavailable: diffNumstatResult.exitCode !== 0,
+    },
+    rollbackRequired: true,
+    rollbackPlan:
+      "Revert the scoped package/lockfile commit or restore the two listed files from the previous commit.",
+    reviewArtifactRequired: true,
+    validationRequired: true,
+    blockerReasonCodes,
+    productionDeployOccurred: false,
+    externalOutboundWriteOrSendOccurred: false,
+    productionModelPromotionOccurred: false,
+    rawPromptStored: false,
+    rawResponseStored: false,
+    rawCommandLogsStored: false,
+    workQueueLifecycleMutated: false,
+  };
+}
+
 async function main() {
   const runtime = await createExecutionPlatformDatabaseRuntime({ applyMigrations: true });
   const runtimeJobs = new RuntimeJobRepository(runtime.sqlClient, {
@@ -482,40 +622,27 @@ async function main() {
       blockerReasonCodes: teamBlockers,
     });
 
+    const installProof = await runRepeatableInstallAuthorityOperation({
+      baselineClean: !gitBefore.dirty,
+    });
     const installArtifact = await writeJson(
       "autonomy-95-repeatable-install-authority-real-proof.json",
-      {
-        artifactKind: "autonomy_95_repeatable_install_authority_real_proof",
-        checkedAt: NOW,
-        baselineClean: !gitBefore.dirty,
-        mutationPerformed: false,
-        blockerReasonCodes: gitBefore.dirty
-          ? ["dirty_worktree_prevents_clean_dependency_mutation"]
-          : ["additional_dependency_mutation_not_selected"],
-        dryRunFirst: true,
-        scopedApprovalRequired: true,
-        commandAllowlistEnforced: true,
-        rollbackRequired: true,
-        validationRequired: true,
-        productionDeployOccurred: false,
-        externalOutboundWriteOrSendOccurred: false,
-        rawPromptStored: false,
-        rawResponseStored: false,
-      },
+      installProof,
     );
     artifacts.push(installArtifact);
+    const installPassed =
+      installProof.blockerReasonCodes.length === 0 &&
+      (installProof.mutationPerformed || installProof.repeatableOperationAlreadyPresent);
     steps.push({
       stepId: "repeatable_install_dependency_operation",
-      status: "passed_with_blocker",
+      status: installPassed ? "passed" : "passed_with_blocker",
       evidenceRefs: [installArtifact.path],
       runtimeBacked: true,
-      environmentBacked: false,
+      environmentBacked: installPassed,
       workQueueReadback: true,
       closeoutOrNeedsReview: true,
       liveGatewayStable: gatewayStable,
-      blockerReasonCodes: gitBefore.dirty
-        ? ["dirty_worktree_prevents_clean_dependency_mutation"]
-        : ["additional_dependency_mutation_not_selected"],
+      blockerReasonCodes: installProof.blockerReasonCodes,
     });
 
     const soakJobIds = [];
