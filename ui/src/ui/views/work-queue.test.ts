@@ -40,6 +40,7 @@ function makeObject(id: string, overrides: Partial<WorkQueueObject> = {}): WorkQ
       updatedAt: "2026-05-01T00:00:00.000Z",
       openQuestions: ["Should we tighten the scope?"],
     },
+    execution: null,
     queueItem: {
       queueItemId: `queue-${id}`,
       candidateId: `candidate-${id}`,
@@ -144,6 +145,9 @@ function createProps(overrides: Partial<WorkQueueProps> = {}): WorkQueueProps {
     onMarkComplete: () => undefined,
     onCopyCodexPrompt: () => undefined,
     onDismiss: () => undefined,
+    onPauseExecution: undefined,
+    onRedirectExecution: undefined,
+    onCancelExecution: undefined,
     ...overrides,
   };
 }
@@ -257,6 +261,210 @@ describe("work queue view", () => {
     expect(container.textContent).not.toContain("Copy Codex prompt");
     const evidenceDetails = container.querySelectorAll("details")[0];
     expect(evidenceDetails.open).toBe(false);
+  });
+
+  it("renders read-only execution truth without lifecycle mutation controls", () => {
+    const item = makeObject("execution-a", {
+      execution: {
+        runtimeJobState: "running",
+        executorKind: "executor.codex_bridge",
+        sessionId: "session-123",
+        streamSummary: "4 events, latest final response",
+        heartbeatStatus: "fresh",
+        processStatus: "completed",
+        validationStatus: "passed",
+        closeoutStatus: "present",
+        reviewStatus: "human_review_required",
+        fileScopeStatus: "satisfied",
+        controlState: "applied",
+        rebuildState: "not_required",
+        authorityStatuses: [
+          {
+            artifactType: "codex_bridge.rebuild_authority_proof",
+            profileId: "rebuild-authority-v2",
+            status: "succeeded",
+          },
+        ],
+        artifactRefs: ["runtime-job://job-1/artifact"],
+        lifecycleTruthSource: "work_queue_repository",
+        executionTruthSource: "execution_platform_runtime_jobs",
+        uiMutationAllowed: false,
+      },
+    });
+    const container = document.createElement("div");
+    render(
+      renderWorkQueue(
+        createProps({
+          items: [item],
+          selectedObject: item,
+          filter: "active",
+        }),
+      ),
+      container,
+    );
+
+    expect(container.textContent).toContain("Execution truth");
+    expect(container.textContent).toContain("executor.codex_bridge");
+    expect(container.textContent).toContain("rebuild-authority-v2: succeeded");
+    expect(container.textContent).toContain("execution_platform_runtime_jobs");
+    expect(container.textContent).toMatch(/UI lifecycle mutation is\s+not available/u);
+    expect(container.textContent).not.toContain("Run execution");
+    expect(container.textContent).toContain("Execution controls are read-only");
+  });
+
+  it("renders server-backed execution control buttons only when callbacks exist", () => {
+    const item = makeObject("execution-controls", {
+      execution: {
+        runtimeJobState: "running",
+        executorKind: "executor.codex_bridge",
+        sessionId: "session-controls",
+        streamSummary: "running",
+        heartbeatStatus: "fresh",
+        processStatus: "running",
+        validationStatus: "unknown",
+        closeoutStatus: "missing",
+        reviewStatus: "unknown",
+        fileScopeStatus: "unknown",
+        controlState: "pending",
+        rebuildState: "not_required",
+        artifactRefs: [],
+        lifecycleTruthSource: "work_queue_repository",
+        executionTruthSource: "execution_platform_runtime_jobs",
+        uiMutationAllowed: false,
+      },
+    });
+    const onPauseExecution = vi.fn();
+    const onRedirectExecution = vi.fn();
+    const onCancelExecution = vi.fn();
+    const container = document.createElement("div");
+    render(
+      renderWorkQueue(
+        createProps({
+          items: [item],
+          selectedObject: item,
+          filter: "active",
+          onPauseExecution,
+          onRedirectExecution,
+          onCancelExecution,
+        }),
+      ),
+      container,
+    );
+
+    expect(container.textContent).toContain("Pause");
+    expect(container.textContent).toContain("Redirect");
+    expect(container.textContent).toContain("Cancel");
+    const buttons = [...container.querySelectorAll("button")].filter((button) =>
+      ["Pause", "Redirect", "Cancel"].includes(button.textContent?.trim() ?? ""),
+    );
+    buttons[0]?.click();
+    buttons[1]?.click();
+    buttons[2]?.click();
+    expect(onPauseExecution).toHaveBeenCalledWith(item);
+    expect(onRedirectExecution).toHaveBeenCalledWith(item);
+    expect(onCancelExecution).toHaveBeenCalledWith(item);
+  });
+
+  it("renders agent-team execution state from runtime truth", () => {
+    const item = makeObject("agent-team-execution", {
+      execution: {
+        runtimeJobState: "succeeded",
+        executorKind: "executor.agent_team",
+        sessionId: "team-session",
+        streamSummary: "14 events",
+        heartbeatStatus: "fresh",
+        processStatus: "completed",
+        validationStatus: "passed",
+        closeoutStatus: "present",
+        reviewStatus: "reviewed",
+        fileScopeStatus: "not_applicable",
+        controlState: "none",
+        rebuildState: "not_required",
+        artifactRefs: ["runtime-job://job-1/agent-team/runtime-evidence"],
+        lifecycleTruthSource: "work_queue_repository",
+        executionTruthSource: "execution_platform_runtime_jobs",
+        uiMutationAllowed: false,
+        agentTeam: {
+          agentTeamRunId: "team-run-1",
+          currentTeamState: "completed",
+          activeRole: "observability_scribe",
+          completedRoles: ["context_scout", "implementation_engineer", "test_engineer"],
+          pendingRoles: [],
+          blockedRoles: [],
+          needsReviewRoles: ["context_scout"],
+          latestHandoff: "handoff-1",
+          validationState: "passed",
+          reviewState: "reviewed",
+          securityReviewState: "local_codex_review",
+          closeoutState: "present",
+          authorityStatus: "allowed",
+          modelReadiness: [
+            { modelId: "moonshotai/kimi-k2.6", status: "allowed" },
+            { modelId: "deepseek/deepseek-v4-pro", status: "needs_review" },
+          ],
+          teamStreamSummary: {
+            eventCount: 14,
+            latestSummary: "closeout requirement recorded",
+            blockerReasonCodes: [],
+          },
+          modelAccountingSummary: {
+            runCount: 6,
+            totalLatencyMs: 1200,
+            totalTokenCount: 4200,
+            estimatedCostUsd: 0.02,
+            providerUsageComplete: true,
+            costSource: "provider_reported",
+          },
+          providerReliabilitySummary: {
+            perModel: [
+              {
+                modelId: "deepseek/deepseek-v4-pro",
+                provider: "openrouter",
+                callCount: 1,
+                successCount: 1,
+                needsReviewCount: 0,
+                rateLimitCount: 0,
+                noContentCount: 0,
+                retryCount: 1,
+                averageLatencyMs: 900,
+                maxLatencyMs: 900,
+                usageComplete: true,
+                costSource: "provider_reported",
+                latestReasonCodes: [],
+                readiness: "qualified",
+              },
+            ],
+            sourceArtifactRefs: ["runtime-job://job-1/agent-team/provider-reliability"],
+          },
+          failureRecoveryState: "repaired",
+          blockers: [],
+          artifactRefs: ["runtime-job://job-1/agent-team/stream-summary"],
+        },
+      },
+    });
+    const container = document.createElement("div");
+    render(
+      renderWorkQueue(
+        createProps({
+          items: [item],
+          selectedObject: item,
+          filter: "active",
+        }),
+      ),
+      container,
+    );
+
+    expect(container.textContent).toContain("Agent team");
+    expect(container.textContent).toContain("team-run-1");
+    expect(container.textContent).toContain("observability_scribe");
+    expect(container.textContent).toContain("deepseek/deepseek-v4-pro: needs_review");
+    expect(container.textContent).toContain("14 events");
+    expect(container.textContent).toContain("6 runs");
+    expect(container.textContent).toContain("Provider reliability");
+    expect(container.textContent).toContain("retries 1");
+    expect(container.textContent).toContain(
+      "Agent-team state is projected from server/runtime truth",
+    );
   });
 
   it("does not show stale draft CTAs for auto-drafted plan or skill items", () => {

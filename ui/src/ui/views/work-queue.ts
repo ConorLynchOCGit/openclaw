@@ -30,6 +30,9 @@ export type WorkQueueProps = {
   onMarkComplete: (objectId: string) => Promise<unknown> | void;
   onCopyCodexPrompt: (objectId: string) => Promise<unknown> | void;
   onDismiss: (queueItemId: string) => Promise<unknown> | void;
+  onPauseExecution?: (object: WorkQueueObject) => Promise<unknown> | void;
+  onRedirectExecution?: (object: WorkQueueObject) => Promise<unknown> | void;
+  onCancelExecution?: (object: WorkQueueObject) => Promise<unknown> | void;
 };
 
 const FILTERS: Array<{ id: WorkQueueFilter; label: string }> = [
@@ -243,6 +246,238 @@ function renderHistory(item: WorkQueueObject) {
   `;
 }
 
+function renderExecutionTruth(props: WorkQueueProps, item: WorkQueueObject) {
+  const execution = item.execution;
+  if (!execution) {
+    return nothing;
+  }
+  const serverBackedControls =
+    props.onPauseExecution && props.onRedirectExecution && props.onCancelExecution;
+  return html`
+    <section class="work-queue-detail-section" aria-label="Execution truth">
+      <div class="work-queue-detail-section__header">
+        <h3>Execution truth</h3>
+        <span class="work-queue-detail-section__meta">${execution.runtimeJobState}</span>
+      </div>
+      <div class="work-queue-evidence-grid">
+        <div>
+          <strong>Executor</strong>
+          <div>${execution.executorKind}</div>
+        </div>
+        <div>
+          <strong>Session</strong>
+          <div>${execution.sessionId ?? "None"}</div>
+        </div>
+        <div>
+          <strong>Stream</strong>
+          <div>${execution.streamSummary}</div>
+        </div>
+        <div>
+          <strong>Heartbeat</strong>
+          <div>${execution.heartbeatStatus}</div>
+        </div>
+        <div>
+          <strong>Process</strong>
+          <div>${execution.processStatus}</div>
+        </div>
+        <div>
+          <strong>Validation</strong>
+          <div>${execution.validationStatus}</div>
+        </div>
+        <div>
+          <strong>Closeout</strong>
+          <div>${execution.closeoutStatus}</div>
+        </div>
+        <div>
+          <strong>Review</strong>
+          <div>${execution.reviewStatus}</div>
+        </div>
+        <div>
+          <strong>File scope</strong>
+          <div>${execution.fileScopeStatus}</div>
+        </div>
+        <div>
+          <strong>Controls</strong>
+          <div>${execution.controlState}</div>
+        </div>
+        <div>
+          <strong>Rebuild</strong>
+          <div>${execution.rebuildState}</div>
+        </div>
+        <div>
+          <strong>Authority</strong>
+          <div>
+            ${execution.authorityStatuses && execution.authorityStatuses.length > 0
+              ? execution.authorityStatuses
+                  .slice(0, 3)
+                  .map(
+                    (authority) =>
+                      `${authority.profileId ?? authority.artifactType}: ${authority.status}`,
+                  )
+                  .join(", ")
+              : "runtime-backed"}
+          </div>
+        </div>
+        <div>
+          <strong>Lifecycle source</strong>
+          <div>${execution.lifecycleTruthSource}</div>
+        </div>
+        <div>
+          <strong>Execution source</strong>
+          <div>${execution.executionTruthSource}</div>
+        </div>
+      </div>
+      <p class="work-queue-detail-summary">
+        Execution state comes from server/runtime truth. UI lifecycle mutation is
+        ${execution.uiMutationAllowed ? "available" : "not available"}.
+      </p>
+      ${serverBackedControls
+        ? html`
+            <div class="work-queue-action-row" aria-label="Server-backed execution controls">
+              <button
+                class="btn btn--secondary btn--sm"
+                @click=${() => props.onPauseExecution?.(item)}
+              >
+                Pause
+              </button>
+              <button
+                class="btn btn--secondary btn--sm"
+                @click=${() => props.onRedirectExecution?.(item)}
+              >
+                Redirect
+              </button>
+              <button
+                class="btn btn--secondary btn--sm"
+                @click=${() => props.onCancelExecution?.(item)}
+              >
+                Cancel
+              </button>
+            </div>
+          `
+        : html`
+            <p class="work-queue-detail-summary">
+              Execution controls are read-only until server-backed control actions are supplied.
+            </p>
+          `}
+      ${execution.artifactRefs.length > 0
+        ? html`
+            <ul class="work-queue-history-list">
+              ${execution.artifactRefs.slice(0, 4).map((ref) => html`<li>${ref}</li>`)}
+            </ul>
+          `
+        : nothing}
+      ${execution.agentTeam
+        ? html`
+            <section class="work-queue-detail-section" aria-label="Agent team state">
+              <div class="work-queue-detail-section__header">
+                <h3>Agent team</h3>
+                <span class="work-queue-detail-section__meta">
+                  ${execution.agentTeam.currentTeamState}
+                </span>
+              </div>
+              <div class="work-queue-evidence-grid">
+                <div>
+                  <strong>Run</strong>
+                  <div>${execution.agentTeam.agentTeamRunId ?? "None"}</div>
+                </div>
+                <div>
+                  <strong>Active role</strong>
+                  <div>${execution.agentTeam.activeRole ?? "None"}</div>
+                </div>
+                <div>
+                  <strong>Completed roles</strong>
+                  <div>${execution.agentTeam.completedRoles.join(", ") || "None"}</div>
+                </div>
+                <div>
+                  <strong>Pending roles</strong>
+                  <div>${execution.agentTeam.pendingRoles.join(", ") || "None"}</div>
+                </div>
+                <div>
+                  <strong>Needs review</strong>
+                  <div>${execution.agentTeam.needsReviewRoles.join(", ") || "None"}</div>
+                </div>
+                <div>
+                  <strong>Latest handoff</strong>
+                  <div>${execution.agentTeam.latestHandoff ?? "None"}</div>
+                </div>
+                <div>
+                  <strong>Validation</strong>
+                  <div>${execution.agentTeam.validationState}</div>
+                </div>
+                <div>
+                  <strong>Review</strong>
+                  <div>${execution.agentTeam.reviewState}</div>
+                </div>
+                <div>
+                  <strong>Security review</strong>
+                  <div>${execution.agentTeam.securityReviewState ?? "unknown"}</div>
+                </div>
+                <div>
+                  <strong>Closeout</strong>
+                  <div>${execution.agentTeam.closeoutState}</div>
+                </div>
+                <div>
+                  <strong>Authority</strong>
+                  <div>${execution.agentTeam.authorityStatus}</div>
+                </div>
+                <div>
+                  <strong>Model readiness</strong>
+                  <div>
+                    ${execution.agentTeam.modelReadiness
+                      .map((model) => `${model.modelId}: ${model.status}`)
+                      .join(", ") || "None"}
+                  </div>
+                </div>
+                <div>
+                  <strong>Team stream</strong>
+                  <div>
+                    ${execution.agentTeam.teamStreamSummary
+                      ? `${execution.agentTeam.teamStreamSummary.eventCount} events, latest ${execution.agentTeam.teamStreamSummary.latestSummary ?? "none"}`
+                      : "0 events"}
+                  </div>
+                </div>
+                <div>
+                  <strong>Cost/latency</strong>
+                  <div>
+                    ${execution.agentTeam.modelAccountingSummary
+                      ? `${execution.agentTeam.modelAccountingSummary.runCount} runs, ${execution.agentTeam.modelAccountingSummary.totalLatencyMs}ms, cost ${execution.agentTeam.modelAccountingSummary.estimatedCostUsd ?? "unknown"} (${execution.agentTeam.modelAccountingSummary.costSource ?? "unknown"})`
+                      : "unknown"}
+                  </div>
+                </div>
+                <div>
+                  <strong>Provider reliability</strong>
+                  <div>
+                    ${execution.agentTeam.providerReliabilitySummary?.perModel.length
+                      ? execution.agentTeam.providerReliabilitySummary.perModel
+                          .slice(0, 3)
+                          .map(
+                            (model) =>
+                              `${model.modelId}: ${model.successCount}/${model.callCount} ok, retries ${model.retryCount}, rate limits ${model.rateLimitCount}, readiness ${model.readiness}`,
+                          )
+                          .join("; ")
+                      : "unknown"}
+                  </div>
+                </div>
+                <div>
+                  <strong>Recovery</strong>
+                  <div>${execution.agentTeam.failureRecoveryState ?? "none"}</div>
+                </div>
+                <div>
+                  <strong>Blockers</strong>
+                  <div>${execution.agentTeam.blockers?.join(", ") || "None"}</div>
+                </div>
+              </div>
+              <p class="work-queue-detail-summary">
+                Agent-team state is projected from server/runtime truth and does not mutate Work
+                Queue lifecycle.
+              </p>
+            </section>
+          `
+        : nothing}
+    </section>
+  `;
+}
+
 function renderActionBar(props: WorkQueueProps, item: WorkQueueObject) {
   const revisionValue = props.revisionDrafts[item.id] ?? "";
   return html`
@@ -376,7 +611,7 @@ function renderDetail(props: WorkQueueProps) {
       </header>
       ${renderFailureStatus(item)} ${renderArtifactSection(props, item)}
       ${renderOpenQuestions(item)} ${renderActionBar(props, item)} ${renderEvidence(item)}
-      ${renderHistory(item)}
+      ${renderExecutionTruth(props, item)} ${renderHistory(item)}
     </section>
   `;
 }

@@ -58,7 +58,9 @@ raw chat or Codex transcript mining.
 
 The preferred and only normal candidate-review substrate is a
 `work_episode_outcome_pack.v1` emitted after meaningful Codex or OpenClaw task
-work. A pack records bounded summaries of files touched, tests run,
+work. This is a global closeout protocol, not a Model Memory-only feature.
+Model Memory is the current storage/discovery owner and first consumer. A pack
+records bounded summaries of files touched, tests run,
 failures/fixes, final outcome, unresolved questions, follow-up candidates, and
 skill improvement evidence. It carries refs, hashes, provenance, and safety
 flags, but it must not contain raw full transcripts, raw provider prompts, raw
@@ -92,8 +94,20 @@ existing skill enhancements. Skill and enhancement drafts are review-only:
 install, promotion, auto-enablement, and execution remain blocked in this
 pre-Milestone-4 lane.
 
-Manual Codex/OpenClaw emission helpers write pack artifacts. Runtime discovery
-indexes those artifacts on the next pack scan using structural
+Manual Codex/OpenClaw emission helpers and the generic OpenClaw closeout service
+write pack artifacts. Runtime discovery also accepts Execution Platform
+closeout packs when bridge/runtime work emits `work_episode_outcome_pack.v1`
+into the same artifact root. Slice 8M wires automatic closeout into real
+Execution Platform bridge live-run paths and adds a next-run gate for missing
+prior closeout. Those packs are the normal substrate for proactivity and skill
+review after meaningful execution platform work; runtime job completion or
+Codex process completion alone is not enough to treat the user goal as
+complete.
+
+Missing closeout after meaningful Codex/OpenClaw/Execution Platform work is a
+process gap. Candidate review should wait for the structured pack or a bounded
+explicit waiver instead of mining raw transcript tails.
+Runtime discovery indexes those artifacts on the next pack scan using structural
 `episodeId + contentHash` idempotency. The helpers do not need to mutate the
 OpenClaw state index directly in this slice.
 
@@ -472,3 +486,36 @@ Model documents:
 - What exact evidence belongs in the default evidence drawer?
 - What is the future migration path from manual Codex prompt to agent-assigned
   execution?
+
+## Slice 8P-Correction Closeout Contract Update
+
+`work_episode_outcome_pack.v1` remains the global closeout protocol for
+meaningful OpenClaw/Codex work episodes. Model Memory is the current consumer
+and discovery surface, but it is not the owner of the concept.
+
+Manual/non-bridge OpenClaw/Codex work now has a practical closeout path:
+
+- `src/infra/manual-work-episode-closeout.ts`
+- `scripts/openclaw-emit-manual-work-closeout.mjs`
+
+The script emits bounded pack evidence from structured input. It must not
+persist raw transcripts, raw prompts, hidden reasoning, secrets, raw logs, or
+unbounded command/tool output.
+
+Proactivity and skill review should prefer the pack over transcript tails. A
+missing pack after meaningful work is a process gap and should block candidate
+generation when the missing evidence would affect the review.
+
+The app-level assistant finalization hook is still pending. Until that hook is
+wired, meaningful manual work should use the manual closeout service/script.
+
+## Slice 8R Skill Audit Evidence Boundary
+
+Skill audit lint is rule coverage evidence only. It can show that required
+phrases, prohibited actions, runtime-boundary statements, and validation
+expectations are present or missing, but it cannot prove skill quality.
+
+Proactivity and skill review must not treat deterministic lint as "deep
+critique", best-in-class proof, or qualitative review. Qualitative skill review
+must be a separate human-reviewed or explicitly model-reviewed artifact labeled
+as judgment.

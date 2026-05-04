@@ -1,0 +1,16 @@
+{
+  "name": "@openclaw/execution-platform",
+  "version": "2026.5.2",
+  "private": true,
+  "description": "Shared durable execution substrate for OpenClaw runtime jobs",
+  "type": "module",
+  "dependencies": {
+    "pg": "^8.20.0",
+    "pg-mem": "^3.0.14",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@types/node": "25.6.0",
+    "@types/pg": "^8.20.0"
+  }
+}

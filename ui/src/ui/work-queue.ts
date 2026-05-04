@@ -23,6 +23,81 @@ export type WorkQueueObjectArtifact = {
   openQuestions: string[];
 };
 
+export type WorkQueueExecutionSummary = {
+  runtimeJobState: string;
+  executorKind: string;
+  sessionId: string | null;
+  streamSummary: string;
+  heartbeatStatus: string;
+  processStatus: string;
+  validationStatus: string;
+  closeoutStatus: string;
+  reviewStatus: string;
+  fileScopeStatus: string;
+  controlState: string;
+  rebuildState: string;
+  authorityStatuses?: Array<{
+    artifactType: string;
+    status: string;
+    profileId: string | null;
+  }>;
+  agentTeam?: {
+    agentTeamRunId: string | null;
+    currentTeamState: string;
+    activeRole: string | null;
+    completedRoles: string[];
+    pendingRoles: string[];
+    blockedRoles: string[];
+    needsReviewRoles: string[];
+    latestHandoff: string | null;
+    validationState: string;
+    reviewState: string;
+    securityReviewState?: string;
+    closeoutState: string;
+    authorityStatus: string;
+    modelReadiness: Array<{ modelId: string; status: string }>;
+    teamStreamSummary?: {
+      eventCount: number;
+      latestSummary: string | null;
+      blockerReasonCodes: string[];
+    };
+    modelAccountingSummary?: {
+      runCount: number;
+      totalLatencyMs: number;
+      totalTokenCount: number | null;
+      estimatedCostUsd: number | null;
+      providerUsageComplete: boolean;
+      costSource?: string;
+    };
+    providerReliabilitySummary?: {
+      perModel: Array<{
+        modelId: string;
+        provider: string;
+        callCount: number;
+        successCount: number;
+        needsReviewCount: number;
+        rateLimitCount: number;
+        noContentCount: number;
+        retryCount: number;
+        averageLatencyMs: number;
+        maxLatencyMs: number;
+        usageComplete: boolean;
+        costSource: string;
+        latestReasonCodes: string[];
+        readiness: string;
+      }>;
+      sourceArtifactRefs: string[];
+    };
+    failureRecoveryState?: string;
+    blockers?: string[];
+    artifactRefs: string[];
+  } | null;
+  artifactRefs: string[];
+  lifecycleTruthSource: string;
+  executionTruthSource: string;
+  uiMutationAllowed: false;
+};
+
 export type WorkQueueObject = {
   id: string;
   queueItemId: string;
@@ -45,9 +120,32 @@ export type WorkQueueObject = {
   proofHashes: string[];
   diagnostics: string[];
   artifact: WorkQueueObjectArtifact;
+  execution: WorkQueueExecutionSummary | null;
   queueItem: ProductProactivityQueueItem;
   inboxItem: ProactivityInboxItem | null;
 };
+
+export type WorkQueueExecutionActionClient = {
+  pause: (input: { object: WorkQueueObject }) => unknown;
+  redirect: (input: { object: WorkQueueObject; reason: string }) => unknown;
+  cancel: (input: { object: WorkQueueObject }) => unknown;
+};
+
+export function createWorkQueueExecutionActionCallbacks(client: WorkQueueExecutionActionClient): {
+  onPauseExecution: (object: WorkQueueObject) => unknown;
+  onRedirectExecution: (object: WorkQueueObject) => unknown;
+  onCancelExecution: (object: WorkQueueObject) => unknown;
+} {
+  return {
+    onPauseExecution: (object) => client.pause({ object }),
+    onRedirectExecution: (object) =>
+      client.redirect({
+        object,
+        reason: `Redirect requested for ${object.execution?.sessionId ?? object.id}`,
+      }),
+    onCancelExecution: (object) => client.cancel({ object }),
+  };
+}
 
 function readReviewStatus(
   queueItem: ProductProactivityQueueItem,
@@ -416,6 +514,7 @@ export function buildWorkQueueObjects(input: {
           ...(queueItem.userFacingBrief?.quality.reasons ?? []),
         ].filter((entry): entry is string => Boolean(entry)),
         artifact,
+        execution: null,
         queueItem,
         inboxItem,
       } satisfies WorkQueueObject;
