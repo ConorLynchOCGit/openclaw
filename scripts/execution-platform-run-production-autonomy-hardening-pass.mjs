@@ -219,7 +219,7 @@ async function authenticatedPostJson(config, pathSuffix, body) {
 }
 
 async function submitAndRunNativeJob(config, promptSummary, prompt) {
-  const workItemId = `prod-autonomy-${sha256(promptSummary).slice(0, 12)}`;
+  const workItemId = `prod-autonomy-${sha256(`${promptSummary}:${Date.now()}`).slice(0, 12)}`;
   const submit = await authenticatedPostJson(config, "/api/execution-platform/execution/submit", {
     prompt,
     workItemId,
