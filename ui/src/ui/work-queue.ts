@@ -41,6 +41,24 @@ export type WorkQueueExecutionSummary = {
     status: string;
     profileId: string | null;
   }>;
+  workflow?: {
+    route: string | null;
+    workflowId: string | null;
+    workflowDisplayName: string | null;
+    jobType: string;
+    executorId: string | null;
+    authorityProfile: string | null;
+    approvalState: string;
+    workflowStatus: string;
+    validationState: string;
+    reviewState: string;
+    closeoutState: string;
+    blockerReasonCodes: string[];
+    controlAvailability: string[];
+    artifactRefs: string[];
+    lifecycleState: string;
+    workQueueLifecycleMutationAllowed: false;
+  } | null;
   agentTeam?: {
     agentTeamRunId: string | null;
     currentTeamState: string;

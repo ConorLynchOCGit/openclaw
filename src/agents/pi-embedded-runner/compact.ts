@@ -153,6 +153,64 @@ function createCompactionDiagId(): string {
   return `cmp-${Date.now().toString(36)}-${generateSecureToken(4)}`;
 }
 
+const MANUAL_COMPACTION_BOOTSTRAP_TOTAL_MAX_CHARS = 80_000;
+const MANUAL_COMPACTION_BOOTSTRAP_MIN_TOTAL_CHARS = 20_000;
+const MANUAL_COMPACTION_BOOTSTRAP_MAX_FILE_CHARS = 24_000;
+
+function resolveManualCompactionBootstrapConfig(params: {
+  config?: OpenClawConfig;
+  contextTokens: number;
+  trigger?: string;
+}): OpenClawConfig | undefined {
+  if (!params.config || params.trigger !== "manual") {
+    return params.config;
+  }
+
+  const contextBoundTotal = Math.max(
+    MANUAL_COMPACTION_BOOTSTRAP_MIN_TOTAL_CHARS,
+    Math.floor(params.contextTokens * 0.4),
+  );
+  const safeTotal = Math.min(MANUAL_COMPACTION_BOOTSTRAP_TOTAL_MAX_CHARS, contextBoundTotal);
+  const currentDefaults = params.config.agents?.defaults;
+  const currentTotal =
+    typeof currentDefaults?.bootstrapTotalMaxChars === "number" &&
+    Number.isFinite(currentDefaults.bootstrapTotalMaxChars) &&
+    currentDefaults.bootstrapTotalMaxChars > 0
+      ? Math.floor(currentDefaults.bootstrapTotalMaxChars)
+      : safeTotal;
+  const nextTotal = Math.min(currentTotal, safeTotal);
+  const safePerFile = Math.max(
+    8_000,
+    Math.min(MANUAL_COMPACTION_BOOTSTRAP_MAX_FILE_CHARS, Math.floor(nextTotal / 3)),
+  );
+  const currentPerFile =
+    typeof currentDefaults?.bootstrapMaxChars === "number" &&
+    Number.isFinite(currentDefaults.bootstrapMaxChars) &&
+    currentDefaults.bootstrapMaxChars > 0
+      ? Math.floor(currentDefaults.bootstrapMaxChars)
+      : safePerFile;
+  const nextPerFile = Math.min(currentPerFile, safePerFile);
+
+  if (
+    currentDefaults?.bootstrapTotalMaxChars === nextTotal &&
+    currentDefaults?.bootstrapMaxChars === nextPerFile
+  ) {
+    return params.config;
+  }
+
+  return {
+    ...params.config,
+    agents: {
+      ...params.config.agents,
+      defaults: {
+        ...currentDefaults,
+        bootstrapMaxChars: nextPerFile,
+        bootstrapTotalMaxChars: nextTotal,
+      },
+    },
+  };
+}
+
 function prepareCompactionSessionAgent(params: {
   session: { agent: { streamFn?: unknown } };
   providerStreamFn: unknown;
@@ -456,20 +514,9 @@ export async function compactEmbeddedPiSessionDirect(
       agentId: effectiveSkillAgentId,
     });
 
-    const sessionLabel = params.sessionKey ?? params.sessionId;
-    const resolvedMessageProvider = params.messageChannel ?? params.messageProvider;
-    const { contextFiles } = await resolveBootstrapContextForRun({
-      workspaceDir: effectiveWorkspace,
-      config: params.config,
-      sessionKey: params.sessionKey,
-      sessionId: params.sessionId,
-      warn: makeBootstrapWarn({
-        sessionLabel,
-        warn: (message) => log.warn(message),
-      }),
-    });
-    // Apply contextTokens cap to model so pi-coding-agent's auto-compaction
-    // threshold uses the effective limit, not the native context window.
+    // Manual /compact needs enough prompt room to summarize the transcript. If
+    // the normal bootstrap context is already oversized, using it here can make
+    // the compaction request fail before history is reduced.
     const runtimeModelWithContext = runtimeModel as ProviderRuntimeModel;
     const ctxInfo = resolveContextWindowInfo({
       cfg: params.config,
@@ -479,6 +526,25 @@ export async function compactEmbeddedPiSessionDirect(
       modelContextWindow: runtimeModelWithContext.contextWindow,
       defaultTokens: DEFAULT_CONTEXT_TOKENS,
     });
+    const bootstrapConfig = resolveManualCompactionBootstrapConfig({
+      config: params.config,
+      contextTokens: ctxInfo.tokens,
+      trigger,
+    });
+    const sessionLabel = params.sessionKey ?? params.sessionId;
+    const resolvedMessageProvider = params.messageChannel ?? params.messageProvider;
+    const { contextFiles } = await resolveBootstrapContextForRun({
+      workspaceDir: effectiveWorkspace,
+      config: bootstrapConfig,
+      sessionKey: params.sessionKey,
+      sessionId: params.sessionId,
+      warn: makeBootstrapWarn({
+        sessionLabel,
+        warn: (message) => log.warn(message),
+      }),
+    });
+    // Apply contextTokens cap to model so pi-coding-agent's auto-compaction
+    // threshold uses the effective limit, not the native context window.
     const effectiveModel = applyAuthHeaderOverride(
       applyLocalNoAuthHeaderOverride(
         ctxInfo.tokens < (runtimeModelWithContext.contextWindow ?? Infinity)

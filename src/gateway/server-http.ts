@@ -92,6 +92,9 @@ let sessionHistoryHttpModulePromise:
   | undefined;
 let sessionKillHttpModulePromise: Promise<typeof import("./session-kill-http.js")> | undefined;
 let toolsInvokeHttpModulePromise: Promise<typeof import("./tools-invoke-http.js")> | undefined;
+let executionPlatformHttpModulePromise:
+  | Promise<typeof import("./execution-platform-http.js")>
+  | undefined;
 
 function getBundledChannelsModule() {
   bundledChannelsModulePromise ??= import("../channels/plugins/bundled.js");
@@ -143,6 +146,11 @@ function getToolsInvokeHttpModule() {
   return toolsInvokeHttpModulePromise;
 }
 
+function getExecutionPlatformHttpModule() {
+  executionPlatformHttpModulePromise ??= import("./execution-platform-http.js");
+  return executionPlatformHttpModulePromise;
+}
+
 type HookDispatchers = {
   dispatchWakeHook: (value: { text: string; mode: "now" | "next-heartbeat" }) => void;
   dispatchAgentHook: (value: HookAgentDispatchPayload) => string;
@@ -190,6 +198,7 @@ const GATEWAY_PROBE_STATUS_BY_PATH = new Map<string, "live" | "ready">([
   ["/ready", "ready"],
   ["/readyz", "ready"],
 ]);
+const PRODUCTION_AUTONOMY_MARKER = "production-autonomy-hardening-2026-05-05";
 async function resolvePluginGatewayAuthBypassPaths(
   configSnapshot: OpenClawConfig,
 ): Promise<Set<string>> {
@@ -306,6 +315,7 @@ async function handleGatewayProbeRequest(
   if (buildInfo.buildSignature) {
     res.setHeader("X-OpenClaw-Build-Signature", buildInfo.buildSignature);
   }
+  res.setHeader("X-OpenClaw-Production-Autonomy-Marker", PRODUCTION_AUTONOMY_MARKER);
 
   let statusCode: number;
   let body: string;
@@ -1037,6 +1047,29 @@ export function createGatewayHttpServer(opts: {
         requestStages.push({
           name: "canvas-http",
           run: () => canvasHost.handleHttpRequest(req, res),
+        });
+      }
+      if (requestPath.startsWith("/api/execution-platform/")) {
+        requestStages.push({
+          name: "execution-platform",
+          run: async () => {
+            const requestAuth = await authorizeGatewayHttpRequestOrReply({
+              req,
+              res,
+              auth: resolvedAuth,
+              trustedProxies,
+              allowRealIpFallback,
+              rateLimiter,
+            });
+            if (!requestAuth) {
+              return true;
+            }
+            return (await getExecutionPlatformHttpModule()).handleExecutionPlatformHttpRequest(
+              req,
+              res,
+              { config: configSnapshot, requestAuth },
+            );
+          },
         });
       }
       // Plugin routes run before the Control UI SPA catch-all so explicitly

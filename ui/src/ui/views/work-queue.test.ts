@@ -285,6 +285,24 @@ describe("work queue view", () => {
             status: "succeeded",
           },
         ],
+        workflow: {
+          route: "workflow_execution",
+          workflowId: "agent_team.coding",
+          workflowDisplayName: "Coding Agent Team",
+          jobType: "executor.agent_team",
+          executorId: "workflow-executor:agent_team.coding",
+          authorityProfile: "local_yolo",
+          approvalState: "not_required",
+          workflowStatus: "accepted",
+          validationState: "accepted",
+          reviewState: "required",
+          closeoutState: "required",
+          blockerReasonCodes: [],
+          controlAvailability: ["pause", "redirect", "cancel"],
+          artifactRefs: ["runtime-job://job-1/execution/compiled-request"],
+          lifecycleState: "running",
+          workQueueLifecycleMutationAllowed: false,
+        },
         artifactRefs: ["runtime-job://job-1/artifact"],
         lifecycleTruthSource: "work_queue_repository",
         executionTruthSource: "execution_platform_runtime_jobs",
@@ -305,6 +323,8 @@ describe("work queue view", () => {
 
     expect(container.textContent).toContain("Execution truth");
     expect(container.textContent).toContain("executor.codex_bridge");
+    expect(container.textContent).toContain("Coding Agent Team");
+    expect(container.textContent).toContain("workflow_execution");
     expect(container.textContent).toContain("rebuild-authority-v2: succeeded");
     expect(container.textContent).toContain("execution_platform_runtime_jobs");
     expect(container.textContent).toMatch(/UI lifecycle mutation is\s+not available/u);

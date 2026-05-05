@@ -4,6 +4,9 @@ export type OperatorApprovalKind =
   | "security_override"
   | "deploy_dry_run"
   | "model_promotion_dry_run"
+  | "production_deploy"
+  | "external_outbound_write"
+  | "production_model_promotion"
   | "acp_transport_use"
   | "v4_pro_test_engineer_use";
 

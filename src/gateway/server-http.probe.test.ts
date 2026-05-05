@@ -65,6 +65,10 @@ describe("gateway probe endpoints", () => {
           "X-OpenClaw-Build-Signature",
           expect.any(String),
         );
+        expect(res.setHeader).toHaveBeenCalledWith(
+          "X-OpenClaw-Production-Autonomy-Marker",
+          "production-autonomy-hardening-2026-05-05",
+        );
       },
     });
   });

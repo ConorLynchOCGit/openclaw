@@ -4,7 +4,10 @@ export type RuntimeAuthorityKind =
   | "install_dependency"
   | "outbound_network"
   | "deploy_dry_run"
-  | "model_promotion_dry_run";
+  | "model_promotion_dry_run"
+  | "production_deploy"
+  | "external_outbound_write"
+  | "production_model_promotion";
 
 export type AuthorityEscalationDecision = {
   artifactKind: "authority_escalation_decision";
@@ -66,10 +69,45 @@ export function decideAuthorityEscalation(input: {
   ) {
     reasonCodes.push("model_eval_evidence_required");
   }
+  if (input.requestedAuthority === "production_deploy") {
+    if (!input.targetConfigured) {
+      reasonCodes.push("production_deploy_scope_required");
+    }
+    if (!input.rollbackPlanRef) {
+      reasonCodes.push("production_deploy_rollback_required");
+    }
+    if (auditArtifactRefs.length === 0) {
+      reasonCodes.push("production_deploy_audit_required");
+    }
+  }
+  if (input.requestedAuthority === "external_outbound_write") {
+    if (!input.targetConfigured) {
+      reasonCodes.push("external_outbound_write_allowlist_required");
+    }
+    if (auditArtifactRefs.length === 0) {
+      reasonCodes.push("external_outbound_write_audit_required");
+    }
+  }
+  if (input.requestedAuthority === "production_model_promotion") {
+    if ((input.evalEvidenceRefs ?? []).length === 0) {
+      reasonCodes.push("production_model_eval_evidence_required");
+    }
+    if (!input.rollbackPlanRef) {
+      reasonCodes.push("production_model_rollback_required");
+    }
+    if (auditArtifactRefs.length === 0) {
+      reasonCodes.push("production_model_promotion_audit_required");
+    }
+  }
   if (
-    ["install_dependency", "deploy_dry_run", "model_promotion_dry_run"].includes(
-      input.requestedAuthority,
-    )
+    [
+      "install_dependency",
+      "deploy_dry_run",
+      "model_promotion_dry_run",
+      "production_deploy",
+      "external_outbound_write",
+      "production_model_promotion",
+    ].includes(input.requestedAuthority)
   ) {
     if (!input.reviewRef) {
       reasonCodes.push("review_required");
@@ -92,9 +130,12 @@ export function decideAuthorityEscalation(input: {
     approvalRefs,
     auditArtifactRefs,
     reviewRequired: input.requestedAuthority !== "local_yolo",
-    rollbackPlanRequired: ["install_dependency", "deploy_dry_run"].includes(
-      input.requestedAuthority,
-    ),
+    rollbackPlanRequired: [
+      "install_dependency",
+      "deploy_dry_run",
+      "production_deploy",
+      "production_model_promotion",
+    ].includes(input.requestedAuthority),
     noHiddenEscalation: true,
     rawPromptStored: false,
     rawResponseStored: false,

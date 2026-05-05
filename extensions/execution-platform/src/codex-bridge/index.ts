@@ -77,6 +77,7 @@ export * from "./supervisor-adapter.ts";
 export * from "./supervisor-dry-run.ts";
 export * from "./types.ts";
 export * from "./work-episode-closeout.ts";
+export * from "./workflow-queued-runner.ts";
 export * from "./trusted-local-yolo-profile.ts";
 export * from "./yolo-bridge-authority.ts";
 export * from "./yolo-code-writing-pilot-plan.ts";

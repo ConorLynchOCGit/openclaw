@@ -44,6 +44,7 @@ export type AgentTeamQueuedRunnerOptions = {
   runtimeJobs: RuntimeJobRepository;
   workerId: string;
   queueName?: string;
+  runtimeJobId?: string;
   now?: () => Date;
 };
 
@@ -71,6 +72,7 @@ export class AgentTeamQueuedRunner {
       workerId: this.options.workerId,
       queueName: this.queueName,
       jobTypes: [AGENT_TEAM_JOB_TYPE],
+      runtimeJobId: this.options.runtimeJobId,
     });
     if (!claimed) {
       return this.empty({ claimed: false });
@@ -130,8 +132,37 @@ export class AgentTeamQueuedRunner {
     modelRosterDecisions: ModelRosterEnforcementDecision[];
   }> {
     const payload = asRecord(job.payload);
+    const workflowId = stringValue(payload.workflowId, "agent_team.coding");
+    const executorId = `workflow-executor:${workflowId}`;
     const teamRunId = stringValue(payload.teamRunId, `team-run-${job.jobId}`);
     const objective = stringValue(payload.objective, "agent-team-runtime-read-model-projection");
+    await this.options.runtimeJobs.recordEvent({
+      jobId: job.jobId,
+      eventType: "execution.workflow_dispatch_started",
+      workerId: this.options.workerId,
+      data: {
+        workflowId,
+        jobType: job.jobType,
+        executorId,
+        genericWorkflowDispatch: true,
+      },
+    });
+    await this.options.runtimeJobs.attachArtifact({
+      jobId: job.jobId,
+      artifactType: "execution.workflow_dispatch",
+      storageKind: "metadata",
+      uri: `runtime-job://${job.jobId}/execution/workflow-dispatch/${workflowId}`,
+      contentType: "application/json",
+      metadata: {
+        workflowId,
+        jobType: job.jobType,
+        executorId,
+        dispatchedTo: "agent_team_queued_runner",
+        codingTeamSpecialPath: false,
+        closeoutRequired: true,
+        workQueueLifecycleMutated: false,
+      } as JsonValue,
+    });
     const plan = createFirstAgentTeamImplementationPlan({
       planId: `${teamRunId}-plan`,
       createdAt: this.now().toISOString(),

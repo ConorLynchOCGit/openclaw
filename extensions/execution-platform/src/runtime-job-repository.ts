@@ -109,6 +109,7 @@ export type ClaimRuntimeJobInput = {
   workerId: string;
   queueName?: string;
   jobTypes?: string[];
+  runtimeJobId?: string;
 };
 
 export type ListRecentRuntimeJobsInput = {
@@ -433,11 +434,15 @@ export class RuntimeJobRepository {
     const leaseToken = randomUUID();
 
     return this.sql.withTransaction(async (tx) => {
-      const jobTypeFilter =
-        input.jobTypes && input.jobTypes.length > 0 ? "AND job_type = ANY($3::text[])" : "";
+      const filters: string[] = [];
       const params: unknown[] = [queueName, now];
       if (input.jobTypes && input.jobTypes.length > 0) {
         params.push(input.jobTypes);
+        filters.push(`job_type = ANY($${params.length}::text[])`);
+      }
+      if (input.runtimeJobId?.trim()) {
+        params.push(input.runtimeJobId.trim());
+        filters.push(`job_id = $${params.length}`);
       }
       const lockClause = this.claimStrategy === "skip-locked" ? "FOR UPDATE SKIP LOCKED" : "";
       const selected = await tx.query<RuntimeJobRow>(
@@ -448,7 +453,7 @@ export class RuntimeJobRepository {
             queue_name = $1
             AND state = 'pending'
             AND available_at <= $2::timestamptz
-            ${jobTypeFilter}
+            ${filters.length > 0 ? `AND ${filters.join(" AND ")}` : ""}
           ORDER BY priority DESC, created_at ASC, job_id ASC
           LIMIT 1
           ${lockClause}

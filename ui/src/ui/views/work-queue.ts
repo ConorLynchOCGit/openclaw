@@ -318,6 +318,30 @@ function renderExecutionTruth(props: WorkQueueProps, item: WorkQueueObject) {
               : "runtime-backed"}
           </div>
         </div>
+        ${execution.workflow
+          ? html`
+              <div>
+                <strong>Workflow</strong>
+                <div>
+                  ${execution.workflow.workflowDisplayName ??
+                  execution.workflow.workflowId ??
+                  "unknown"}
+                </div>
+              </div>
+              <div>
+                <strong>Route</strong>
+                <div>${execution.workflow.route ?? "unknown"}</div>
+              </div>
+              <div>
+                <strong>Workflow status</strong>
+                <div>${execution.workflow.workflowStatus}</div>
+              </div>
+              <div>
+                <strong>Workflow blockers</strong>
+                <div>${execution.workflow.blockerReasonCodes.join(", ") || "None"}</div>
+              </div>
+            `
+          : nothing}
         <div>
           <strong>Lifecycle source</strong>
           <div>${execution.lifecycleTruthSource}</div>

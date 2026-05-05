@@ -41,6 +41,25 @@ export type WorkQueueExecutionReadModel = {
       status: string;
       profileId: string | null;
     }>;
+    workflow: {
+      route: string | null;
+      workflowId: string | null;
+      workflowDisplayName: string | null;
+      jobType: string;
+      executorId: string | null;
+      authorityProfile: string | null;
+      approvalState: string;
+      workflowStatus: string;
+      validationState: string;
+      reviewState: string;
+      closeoutState: string;
+      blockerReasonCodes: string[];
+      controlAvailability: string[];
+      artifactRefs: string[];
+      extension: JsonValue;
+      lifecycleState: RuntimeJob["state"];
+      workQueueLifecycleMutationAllowed: false;
+    };
     agentTeam: {
       agentTeamRunId: string | null;
       currentTeamState: string;
@@ -154,6 +173,101 @@ function authorityStatusArtifacts(artifacts: RuntimeJobArtifact[]): Array<{
       };
     })
     .slice(0, 20);
+}
+
+function productionAuthorityCockpitArtifacts(artifacts: RuntimeJobArtifact[]): JsonValue {
+  return artifacts
+    .filter(
+      (artifact) =>
+        artifact.artifactType.includes("production_authority") ||
+        artifact.artifactType.includes("production_deploy") ||
+        artifact.artifactType.includes("external_outbound_write") ||
+        artifact.artifactType.includes("production_model_promotion") ||
+        artifact.artifactType.includes("default_on"),
+    )
+    .map((artifact) => {
+      const record = asRecord(artifact.metadata);
+      return {
+        artifactType: artifact.artifactType,
+        authorityId: stringValue(record?.authorityId),
+        state: stringValue(record?.state) ?? stringValue(record?.status),
+        target: stringValue(record?.target) ?? stringValue(record?.requestedTarget),
+        killSwitchStatus: record?.killSwitchActive === true ? "active" : "inactive_or_unknown",
+        rollbackStatus:
+          record?.rollbackAvailable === true || record?.rollbackAvailable === "true"
+            ? "available"
+            : "unknown",
+        auditRefs: Array.isArray(record?.auditRefs)
+          ? record.auditRefs.filter((item): item is string => typeof item === "string").slice(0, 10)
+          : [],
+        uri: artifact.uri,
+      };
+    })
+    .slice(0, 20);
+}
+
+function workflowProjection(
+  job: RuntimeJob,
+  artifacts: RuntimeJobArtifact[],
+): WorkQueueExecutionRuntimeJobReadModel["workflow"] {
+  const payload = asRecord(job.payload);
+  const compiled = latestArtifact(artifacts, "execution.workflow_request_compiled");
+  const compiledRecord = asRecord(compiled?.metadata);
+  const validation = latestArtifact(artifacts, "execution.intent_validation");
+  const validationRecord = asRecord(validation?.metadata);
+  const route = latestArtifact(artifacts, "execution.intent_router_decision");
+  const routeRecord = asRecord(route?.metadata);
+  const routeDecision = asRecord(routeRecord?.routeDecision);
+  const workflowId = stringValue(compiledRecord?.workflowId) ?? stringValue(payload?.workflowId);
+  const workflowDisplayName =
+    stringValue(asRecord(compiledRecord?.runtimeJobCreateRequest)?.workflowDisplayName) ??
+    stringValue(payload?.workflowDisplayName);
+  const blockerReasonCodes = Array.isArray(validationRecord?.reasonCodes)
+    ? validationRecord.reasonCodes.filter((item): item is string => typeof item === "string")
+    : workflowId
+      ? []
+      : ["workflow_evidence_missing"];
+  return {
+    route: stringValue(routeDecision?.route),
+    workflowId,
+    workflowDisplayName,
+    jobType: job.jobType,
+    executorId: workflowId ? `workflow-executor:${workflowId}` : null,
+    authorityProfile:
+      stringValue(compiledRecord?.authorityProfile) ?? stringValue(payload?.authorityProfile),
+    approvalState:
+      stringValue(validationRecord?.approvalKind) ??
+      (validationRecord?.requiresApproval === true ? "approval_required" : "not_required"),
+    workflowStatus:
+      stringValue(validationRecord?.outcome) ??
+      (job.state === "succeeded" ? "completed" : job.state),
+    validationState: stringValue(validationRecord?.outcome) ?? "unknown",
+    reviewState: workflowId ? "required" : "unknown",
+    closeoutState: artifacts.some((artifact) => artifact.artifactType.includes("work_episode"))
+      ? "present"
+      : workflowId
+        ? "required"
+        : "unknown",
+    blockerReasonCodes,
+    controlAvailability: workflowId
+      ? ["pause", "redirect", "cancel", "retry", "mark_needs_review", "view_closeout"]
+      : [],
+    artifactRefs: artifacts
+      .filter((artifact) => artifact.artifactType.startsWith("execution."))
+      .map((artifact) => artifact.uri)
+      .slice(0, 20),
+    extension: workflowId
+      ? {
+          extensionKind: workflowId,
+          childWorkflowRequests: Array.isArray(payload?.childWorkflowRequests)
+            ? payload.childWorkflowRequests.slice(0, 10)
+            : [],
+          productionAuthorityCockpit: productionAuthorityCockpitArtifacts(artifacts),
+        }
+      : {},
+    lifecycleState: job.state,
+    workQueueLifecycleMutationAllowed: false,
+  };
 }
 
 function modelReadinessFromTeamEvidence(
@@ -355,6 +469,7 @@ export async function buildWorkQueueExecutionReadModel(input: {
       controlCommandState: control ? "present" : null,
       rebuildRecoveryState: metadataStatus(rebuild, ["status"]),
       authorityStatuses: authorityStatusArtifacts(artifacts),
+      workflow: workflowProjection(job, artifacts),
       agentTeam: agentTeamProjection(teamEvidence, artifacts),
       reviewStatus: stringValue(reviewRecord?.qualitativeFinding),
       completedWorkStatus:
@@ -394,6 +509,7 @@ export function summarizeWorkQueueExecutionForUi(model: WorkQueueExecutionReadMo
     reviewStatus: model.runtimeJobs.at(-1)?.reviewStatus ?? "unknown",
     controlCommandState: model.runtimeJobs.at(-1)?.controlCommandState ?? "unknown",
     authorityStatuses: model.runtimeJobs.at(-1)?.authorityStatuses ?? [],
+    workflow: model.runtimeJobs.at(-1)?.workflow ?? null,
     agentTeam: model.runtimeJobs.at(-1)?.agentTeam ?? null,
     uiMutationAllowed: false,
     lifecycleTruthSource: model.lifecycleTruthSource,

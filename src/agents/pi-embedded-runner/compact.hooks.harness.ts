@@ -69,6 +69,9 @@ export const resolveMemorySearchConfigMock = vi.fn(() => ({
     },
   },
 }));
+export const resolveBootstrapContextForRunMock = vi.fn(async (_params?: unknown) => ({
+  contextFiles: [],
+}));
 export const resolveSessionAgentIdMock = vi.fn(() => "main");
 export const estimateTokensMock = vi.fn((_message?: unknown) => 10);
 export const sessionMessages: unknown[] = [
@@ -114,6 +117,8 @@ export function resetCompactSessionStateMocks(): void {
       },
     },
   });
+  resolveBootstrapContextForRunMock.mockReset();
+  resolveBootstrapContextForRunMock.mockResolvedValue({ contextFiles: [] });
   resolveSessionAgentIdMock.mockReset();
   resolveSessionAgentIdMock.mockReturnValue("main");
   estimateTokensMock.mockReset();
@@ -346,7 +351,7 @@ export async function loadCompactHooksHarness(): Promise<{
 
   vi.doMock("../bootstrap-files.js", () => ({
     makeBootstrapWarn: vi.fn(() => () => {}),
-    resolveBootstrapContextForRun: vi.fn(async () => ({ contextFiles: [] })),
+    resolveBootstrapContextForRun: resolveBootstrapContextForRunMock,
   }));
 
   vi.doMock("../pi-bundle-mcp-tools.js", () => ({

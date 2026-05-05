@@ -10,6 +10,7 @@ import {
   hookRunner,
   loadCompactHooksHarness,
   registerProviderStreamForModelMock,
+  resolveBootstrapContextForRunMock,
   resolveContextEngineMock,
   resolveEmbeddedAgentStreamFnMock,
   resolveMemorySearchConfigMock,
@@ -208,6 +209,30 @@ describe("compactEmbeddedPiSessionDirect hooks", () => {
       workspaceDir: "/tmp/workspace",
       allowGatewaySubagentBinding: true,
     });
+  });
+
+  it("caps bootstrap context only for manual compaction requests", async () => {
+    await compactEmbeddedPiSessionDirect({
+      sessionId: "session-1",
+      sessionKey: "agent:main:main",
+      sessionFile: "/tmp/session.jsonl",
+      workspaceDir: "/tmp/workspace",
+      config: {
+        agents: {
+          defaults: {
+            bootstrapMaxChars: 60_000,
+            bootstrapTotalMaxChars: 240_000,
+          },
+        },
+      } as never,
+      trigger: "manual",
+    });
+
+    const bootstrapCall = resolveBootstrapContextForRunMock.mock.calls.at(-1)?.[0] as
+      | { config?: { agents?: { defaults?: Record<string, unknown> } } }
+      | undefined;
+    expect(bootstrapCall?.config?.agents?.defaults?.bootstrapTotalMaxChars).toBe(51_200);
+    expect(bootstrapCall?.config?.agents?.defaults?.bootstrapMaxChars).toBe(17_066);
   });
 
   it("routes compaction through shared stream resolution and extra params", async () => {
