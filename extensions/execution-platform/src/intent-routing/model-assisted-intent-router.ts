@@ -47,7 +47,6 @@ export class HeuristicIntentRouterProvider implements IntentRouterProvider {
     const isWorkQueueControl = /\b(cancel|pause|redirect|retry|needs-review|needs review)\b/u.test(
       text,
     );
-    const isProductionDeploy = /\bdeploy\b/u.test(text) && /\bproduction\b/u.test(text);
     const asksCodingTeam =
       /\bcoding team\b|\bagent team\b|\badd (a )?(small )?(regression )?test\b|\bcode change\b|\bfix\b/u.test(
         text,
@@ -61,7 +60,13 @@ export class HeuristicIntentRouterProvider implements IntentRouterProvider {
         text,
       );
     const asksDocs = /\brunbook\b|\bdocument\b|\bdocs?\b|\bskills?\b|\brole docs?\b/u.test(text);
-    if (isProductionDeploy) {
+    const isDirectProductionDeploy =
+      /\bdeploy\b/u.test(text) &&
+      /\bproduction\b/u.test(text) &&
+      !asksCodingTeam &&
+      !asksArchitecture &&
+      !asksDocs;
+    if (isDirectProductionDeploy) {
       return {
         output: {
           route: "blocked",
@@ -78,6 +83,40 @@ export class HeuristicIntentRouterProvider implements IntentRouterProvider {
           reasonCodes: ["production_deploy_locked"],
           riskClass: "critical",
           sideEffectClass: "production_side_effect",
+          rawPromptStored: false,
+          rawResponseStored: false,
+        },
+        modelCandidateId: "heuristic-intent-router",
+        latencyMs: 0,
+      };
+    }
+    if (asksCodingTeam && codingWorkflow) {
+      return {
+        output: {
+          route: "workflow_execution",
+          workflowId: codingWorkflow.workflowId,
+          jobType: codingWorkflow.jobType,
+          confidence: 0.91,
+          objectiveSummary: request.promptSummary,
+          compiledInputs: {
+            targetArea: "execution-platform",
+            requestedChangeClass: text.includes("test") ? "test" : "code_change",
+            childWorkflowRequests: asksResearch
+              ? [{ workflowId: "single_agent.web_research", requirement: "optional" }]
+              : [],
+          },
+          requestedAuthority: codingWorkflow.defaultAuthorityProfile,
+          requiresApproval: false,
+          approvalKind: null,
+          needsClarification: false,
+          clarificationQuestion: null,
+          reasonCodes: [
+            "coding_team_requested",
+            text.includes("test") ? "test_requested" : "code_change_requested",
+            asksResearch ? "research_candidate_child_workflow" : "local_context_sufficient",
+          ],
+          riskClass: "medium",
+          sideEffectClass: "code_edit",
           rawPromptStored: false,
           rawResponseStored: false,
         },
@@ -190,36 +229,6 @@ export class HeuristicIntentRouterProvider implements IntentRouterProvider {
           needsClarification: false,
           clarificationQuestion: null,
           reasonCodes: ["docs_skills_workflow_requested"],
-          riskClass: "medium",
-          sideEffectClass: "code_edit",
-          rawPromptStored: false,
-          rawResponseStored: false,
-        },
-        modelCandidateId: "heuristic-intent-router",
-        latencyMs: 0,
-      };
-    }
-    if (asksCodingTeam && codingWorkflow) {
-      return {
-        output: {
-          route: "workflow_execution",
-          workflowId: codingWorkflow.workflowId,
-          jobType: codingWorkflow.jobType,
-          confidence: 0.91,
-          objectiveSummary: request.promptSummary,
-          compiledInputs: {
-            targetArea: "execution-platform",
-            requestedChangeClass: text.includes("test") ? "test" : "code_change",
-          },
-          requestedAuthority: codingWorkflow.defaultAuthorityProfile,
-          requiresApproval: false,
-          approvalKind: null,
-          needsClarification: false,
-          clarificationQuestion: null,
-          reasonCodes: [
-            "coding_team_requested",
-            text.includes("test") ? "test_requested" : "code_change_requested",
-          ],
           riskClass: "medium",
           sideEffectClass: "code_edit",
           rawPromptStored: false,

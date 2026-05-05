@@ -64,6 +64,32 @@ describe("intent routing", () => {
     expect(decision.rawResponseStored).toBe(false);
   });
 
+  it("prioritizes explicit coding-team delegation over research and direct deploy blockers", async () => {
+    const router = new ModelAssistedIntentRouter();
+    await expect(
+      router.route({
+        prompt:
+          "Have the coding team run a production authority control smoke, verify runtime readback, and close it out.",
+      }),
+    ).resolves.toMatchObject({
+      routeDecision: {
+        route: "workflow_execution",
+        workflowId: "agent_team.coding",
+      },
+    });
+    await expect(
+      router.route({
+        prompt:
+          "Have the coding team complete a tiny validated fix and deploy it if policy permits.",
+      }),
+    ).resolves.toMatchObject({
+      routeDecision: {
+        route: "workflow_execution",
+        workflowId: "agent_team.coding",
+      },
+    });
+  });
+
   it("routes research, architecture, docs, controls, and blocked requests across workflows", async () => {
     const router = new ModelAssistedIntentRouter();
     await expect(

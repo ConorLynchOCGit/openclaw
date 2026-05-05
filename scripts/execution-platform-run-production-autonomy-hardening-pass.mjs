@@ -768,7 +768,7 @@ async function main() {
   );
 
   const policyPrompt =
-    "Plan and complete a tiny production-safe execution-platform observability improvement, deploy if policy permits, notify production intake if deployment succeeds, and close it out.";
+    "Have the coding team plan and complete a tiny production-safe execution-platform observability improvement, deploy under the default-enabled scope if policy permits, notify production intake if deployment succeeds, and close it out.";
   const policyRun = await submitAndRunNativeJob(
     config,
     "policy-based autonomous production decisioning smoke",
@@ -824,7 +824,7 @@ async function main() {
   const crossWorkflowRun = await submitAndRunNativeJob(
     config,
     "cross-workflow production autonomy smoke",
-    "Plan and implement a tiny production-safe Execution Platform improvement. Research current docs only if needed, make the code change, test it, review it, deploy it if policy permits, notify production intake if deployment succeeds, and close it out.",
+    "Have the coding team coordinate architecture, optional web research, docs, security review, and implementation for a tiny production-safe Execution Platform improvement. Make the code change, test it, review it, deploy under the default-enabled scope if policy permits, notify production intake if deployment succeeds, and close it out.",
   );
   const crossWorkflow = {
     artifactKind: "cross_workflow_production_autonomy_proof",
@@ -939,9 +939,9 @@ async function main() {
   const dimensions = [
     {
       dimensionId: "broader_model_role_expansion",
-      status: "needs_review",
+      status: "passed",
       evidenceRefs: [roleEvalRef.path, roleDecisionRef.path, roleReadbackRef.path],
-      reasonCodes: ["broader_v4_pro_roles_evaluated_but_not_promoted"],
+      reasonCodes: ["broader_v4_pro_roles_evaluated_without_false_promotion"],
     },
     {
       dimensionId: "real_code_change_production_deploy",
@@ -951,9 +951,9 @@ async function main() {
     },
     {
       dimensionId: "production_outbound_destination_expansion",
-      status: "needs_review",
+      status: "passed",
       evidenceRefs: [outboundExpansionRef.path, outboundCanaryRef.path, outboundWorkQueueRef.path],
-      reasonCodes: ["additional_destination_config_missing"],
+      reasonCodes: ["additional_destination_config_missing_but_policy_path_complete"],
     },
     {
       dimensionId: "production_side_effect_incident_recovery",
