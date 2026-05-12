@@ -38,7 +38,7 @@ describe("OpenClaw convergence slice tracker", () => {
   it("defines the full convergence roadmap with bounded source refs", () => {
     const definitions = buildOpenClawConvergenceSliceDefinitions();
 
-    expect(definitions).toHaveLength(89);
+    expect(definitions).toHaveLength(90);
     expect(definitions[0]).toMatchObject({
       sliceId: "openclaw-convergence.slice-01",
       trackerKind: "historical_slice",
@@ -137,11 +137,11 @@ describe("OpenClaw convergence slice tracker", () => {
       planningStatus: "completed",
     });
     expect(definitions.at(-1)).toMatchObject({
-      sliceId: "openclaw-convergence.active-queue-33",
+      sliceId: "openclaw-convergence.active-queue-34",
       title: "Release Rollback Runbook Closeout",
       planningStatus: "planned",
       legacySliceId: "openclaw-convergence.slice-56",
-      activeQueuePosition: 33,
+      activeQueuePosition: 34,
     });
     expect(definitions[50]).toMatchObject({
       sliceId: "openclaw-convergence.slice-51",
@@ -163,11 +163,11 @@ describe("OpenClaw convergence slice tracker", () => {
     const summary = summarizeOpenClawActiveQueueRebase();
     const next = getNextActiveConvergenceQueueItem();
 
-    expect(activeQueue).toHaveLength(33);
+    expect(activeQueue).toHaveLength(34);
     expect(activeQueue.map((item) => item.activeQueuePosition)).toEqual(
-      Array.from({ length: 33 }, (_, index) => index + 1),
+      Array.from({ length: 34 }, (_, index) => index + 1),
     );
-    expect(new Set(activeQueue.map((item) => item.activeQueueId)).size).toBe(33);
+    expect(new Set(activeQueue.map((item) => item.activeQueueId)).size).toBe(34);
     expect(activeQueue[0]).toMatchObject({
       sliceId: "openclaw-convergence.active-queue-01",
       title: "Coding Team Codex-Parity Trust Soak",
@@ -252,7 +252,7 @@ describe("OpenClaw convergence slice tracker", () => {
     });
     expect(activeQueue[17]).toMatchObject({
       sliceId: "openclaw-convergence.active-queue-18",
-      title: "Managed Multi-Prompt Coding Soak",
+      title: "Work Queue Canonical Runtime Redesign",
       dependsOnActiveQueueIds: ["openclaw-convergence.active-queue-17"],
       planningStatus: "planned",
       legacySliceId: null,
@@ -261,8 +261,17 @@ describe("OpenClaw convergence slice tracker", () => {
     });
     expect(activeQueue[18]).toMatchObject({
       sliceId: "openclaw-convergence.active-queue-19",
-      title: "Proactivity Work Queue Quality Soak",
+      title: "Managed Multi-Prompt Coding Soak",
       dependsOnActiveQueueIds: ["openclaw-convergence.active-queue-18"],
+      planningStatus: "planned",
+      legacySliceId: null,
+      remainingQueuePosition: 10,
+      remainingQueueLabel: "remaining-queue-10",
+    });
+    expect(activeQueue[19]).toMatchObject({
+      sliceId: "openclaw-convergence.active-queue-20",
+      title: "Proactivity Work Queue Quality Soak",
+      dependsOnActiveQueueIds: ["openclaw-convergence.active-queue-19"],
       planningStatus: "planned",
       legacySliceId: "openclaw-convergence.slice-49",
     });
@@ -283,8 +292,8 @@ describe("OpenClaw convergence slice tracker", () => {
       historicalSliceCount: 56,
       completedHistoricalSliceCount: 38,
       supersededHistoricalPlannedCount: 18,
-      activeQueueItemCount: 33,
-      outstandingActiveQueueItemCount: 24,
+      activeQueueItemCount: 34,
+      outstandingActiveQueueItemCount: 25,
       nextActiveQueueItem: {
         activeQueueId: "openclaw-convergence.active-queue-09",
         remainingQueueLabel: "remaining-queue-01",
@@ -302,10 +311,10 @@ describe("OpenClaw convergence slice tracker", () => {
       const sliceTwo = readback.find((item) => item.workItemId === "openclaw-convergence.slice-02");
       const truthTwo = await workQueue.readWorkItemTruth("openclaw-convergence.slice-02");
 
-      expect(seeded).toMatchObject({ created: 89, existing: 0, updated: 0 });
+      expect(seeded).toMatchObject({ created: 90, existing: 0, updated: 0 });
       expect(
         readback.filter((item) => item.itemType === CONVERGENCE_SLICE_WORK_ITEM_TYPE),
-      ).toHaveLength(89);
+      ).toHaveLength(90);
       expect(sliceOne?.convergenceSlice?.planningStatus).toBe("completed");
       expect(sliceOne?.lifecycleState).toBe("draft");
       expect(sliceOne?.runtimeJobIds).toEqual([]);
@@ -324,7 +333,7 @@ describe("OpenClaw convergence slice tracker", () => {
       const truthOne = await workQueue.readWorkItemTruth("openclaw-convergence.slice-01");
       const projected = truthOne ? projectConvergenceSliceTracker(truthOne) : null;
 
-      expect(reseeded).toMatchObject({ created: 0, existing: 89, updated: 89 });
+      expect(reseeded).toMatchObject({ created: 0, existing: 90, updated: 90 });
       expect(projected?.artifactRefs).toContain(
         ".artifacts/execution-platform/openclaw-session-health-repair-summary.json",
       );

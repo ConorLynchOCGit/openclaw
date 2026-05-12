@@ -349,6 +349,18 @@ const ACTIVE_QUEUE_ENTRIES: ActiveQueueEntry[] = [
   },
   {
     legacySliceNumber: null,
+    title: "Work Queue Canonical Runtime Redesign",
+    ownerSystemArea: "work-queue",
+    nextAction:
+      "Move active/closed queue state, active-position numbering, parent/child mutation, and closeout-driven queue updates into DB/runtime truth so docs and source tracker files become snapshots, not the live queue owner.",
+    sourceDocRefs: [
+      "docs/projects/execution-platform/specs/work-queue-execution-truth.md",
+      "docs/projects/execution-platform/specs/runtime-work-graph.md",
+      "docs/projects/execution-platform/specs/codex-parity-runtime.md",
+    ],
+  },
+  {
+    legacySliceNumber: null,
     title: "Managed Multi-Prompt Coding Soak",
     ownerSystemArea: "codex-bridge",
     nextAction:
