@@ -117,6 +117,7 @@ export class DynamicTestRepairLoop {
       repairWorker?: DynamicRepairWorker;
       maxRepairAttempts?: number;
       operationTimeoutMs?: number;
+      reviewPassedValidations?: boolean;
     },
   ) {}
 
@@ -195,6 +196,111 @@ export class DynamicTestRepairLoop {
         artifactRefs: [validation.validationRef],
       });
       if (validation.status === "passed") {
+        if (this.options.reviewPassedValidations) {
+          const testReview = await this.options.graphs.addNode({
+            graphId: input.graphId,
+            nodeKind: "test_review",
+            assignedRole: "test_engineer",
+            modelOrWorkerRef: "policy://runtime-work-graph/test-engineer",
+            nodeStatus: "running",
+            inputHandoffRefs: [validation.validationRef],
+            metadata: {
+              reviewKind: "passed_validation_review",
+              rawPromptStored: false,
+              rawResponseStored: false,
+            },
+          });
+          testReviewNodeIds.push(testReview.nodeId);
+          await this.options.graphs.recordCheckpoint({
+            graphId: input.graphId,
+            checkpointKind: "test_engineer_passed_validation_review_started",
+            stateSummary: "Test engineer review started from bounded passing validation evidence.",
+            artifactRefs: [validation.validationRef, graphRef("node", testReview.nodeId)],
+          });
+          try {
+            const diagnosis = await withOperationTimeout({
+              promise: this.options.testEngineer.diagnose({
+                graphId: input.graphId,
+                failedValidationRefs: [],
+                failedValidationSummaries: [
+                  `Validation passed; review for coverage gaps and recommend no_op_repair unless a real issue remains: ${validation.summary}`,
+                ],
+                changedFileRefs: currentChangedFileRefs,
+                maxOutputTokens: 2_000,
+              }),
+              timeoutMs: operationTimeoutMs,
+              reasonCode: "test_engineer_passed_validation_review_timeout",
+            });
+            await this.options.graphs.recordRoleInvocation({
+              graphId: input.graphId,
+              nodeId: testReview.nodeId,
+              roleId: "test_engineer",
+              modelRef: "policy://runtime-work-graph/test-engineer",
+              providerPath: "model-task-middleware",
+              transportKind: "model_task",
+              modelRunRef: diagnosis.modelRunRef,
+              outputHash: diagnosis.responseHash,
+              latencyMs: diagnosis.latencyMs,
+              artifactRefs:
+                diagnosis.artifactRefs.length > 0
+                  ? diagnosis.artifactRefs
+                  : [validation.validationRef],
+            });
+            await this.options.graphs.updateNodeStatus({
+              nodeId: testReview.nodeId,
+              nodeStatus:
+                diagnosis.recommendation === "repair" ||
+                diagnosis.recommendation === "context_scout" ||
+                diagnosis.recommendation === "escalate" ||
+                diagnosis.recommendation === "human_task" ||
+                diagnosis.recommendation === "needs_review"
+                  ? "needs_review"
+                  : "succeeded",
+              outputArtifactRefs:
+                diagnosis.artifactRefs.length > 0
+                  ? diagnosis.artifactRefs
+                  : [validation.validationRef],
+            });
+            await this.options.graphs.recordCheckpoint({
+              graphId: input.graphId,
+              checkpointKind: "test_engineer_passed_validation_review_completed",
+              stateSummary: `Test engineer reviewed passing validation and recommended ${diagnosis.recommendation}.`,
+              artifactRefs:
+                diagnosis.artifactRefs.length > 0
+                  ? diagnosis.artifactRefs
+                  : [validation.validationRef],
+            });
+            if (
+              diagnosis.recommendation === "repair" ||
+              diagnosis.recommendation === "context_scout" ||
+              diagnosis.recommendation === "escalate" ||
+              diagnosis.recommendation === "human_task" ||
+              diagnosis.recommendation === "needs_review"
+            ) {
+              currentReasonCodes.push(
+                `passed_validation_review_requires_attention:${diagnosis.recommendation}`,
+              );
+              unresolvedValidationFailures.push(
+                `passed_validation_review_not_clean:${hash(validation.validationRef).slice(0, 16)}`,
+              );
+              break;
+            }
+          } catch (error) {
+            const reasonCode = isDynamicTestRepairTimeout(error)
+              ? error.reasonCode
+              : "test_engineer_passed_validation_review_failed";
+            await this.options.graphs.updateNodeStatus({
+              nodeId: testReview.nodeId,
+              nodeStatus: "needs_review",
+              outputArtifactRefs: [validation.validationRef],
+            });
+            currentReasonCodes.push(reasonCode);
+            unresolvedValidationFailures.push(
+              `passed_validation_review_failed:${hash(validation.validationRef).slice(0, 16)}`,
+            );
+            break;
+          }
+        }
         commandIndex += 1;
         continue;
       }

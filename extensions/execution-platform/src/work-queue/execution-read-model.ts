@@ -1355,6 +1355,18 @@ function agentTeamProjection(
     (artifact) => artifact.artifactType === "agent_team.coding_real_work_task_graph",
   );
   const taskGraphRecord = asRecord(taskGraphArtifact?.metadata);
+  const dynamicTaskGraphArtifact = artifacts.findLast(
+    (artifact) => artifact.artifactType === "agent_team.dynamic_orchestrator_plan",
+  );
+  const dynamicTaskGraphRecord = asRecord(dynamicTaskGraphArtifact?.metadata);
+  const dynamicTaskGraphPlan = asRecord(dynamicTaskGraphRecord?.plan);
+  const dynamicTaskGraphNodes = Array.isArray(dynamicTaskGraphPlan?.childTasks)
+    ? dynamicTaskGraphPlan.childTasks
+    : [];
+  const dynamicTaskGraphReasonCodes = [
+    ...stringArrayValue(dynamicTaskGraphRecord?.reasonCodes, 10),
+    ...stringArrayValue(dynamicTaskGraphPlan?.reasonCodes, 10),
+  ].slice(0, 20);
   const closeoutQualityState =
     resultReview?.accepted === true
       ? "accepted"
@@ -1445,12 +1457,24 @@ function agentTeamProjection(
       sourceArtifactRefs: providerReliabilityRecord?.sourceArtifactRefs ?? [],
     },
     taskGraph: {
-      graphId: stringValue(taskGraphRecord?.graphId),
-      state: taskGraphArtifact ? "present" : evidence ? "missing" : "unknown",
-      requiredSourceEdit: booleanValue(taskGraphRecord?.requiredSourceEdit),
-      nodeCount: Array.isArray(taskGraphRecord?.nodes) ? taskGraphRecord.nodes.length : 0,
-      artifactRef: taskGraphArtifact?.uri ?? null,
-      reasonCodes: stringArrayValue(taskGraphRecord?.reasonCodes, 20),
+      graphId:
+        stringValue(taskGraphRecord?.graphId) ?? stringValue(dynamicTaskGraphRecord?.graphId),
+      state:
+        taskGraphArtifact || dynamicTaskGraphArtifact
+          ? "present"
+          : evidence
+            ? "missing"
+            : "unknown",
+      requiredSourceEdit:
+        booleanValue(taskGraphRecord?.requiredSourceEdit) ??
+        dynamicTaskGraphNodes.some((node) => asRecord(node)?.actionKind === "coding"),
+      nodeCount: Array.isArray(taskGraphRecord?.nodes)
+        ? taskGraphRecord.nodes.length
+        : dynamicTaskGraphNodes.length,
+      artifactRef: taskGraphArtifact?.uri ?? dynamicTaskGraphArtifact?.uri ?? null,
+      reasonCodes: taskGraphArtifact
+        ? stringArrayValue(taskGraphRecord?.reasonCodes, 20)
+        : dynamicTaskGraphReasonCodes,
     },
     securityReviewState:
       stringValue(securityReviewRecord?.reviewKind) ??

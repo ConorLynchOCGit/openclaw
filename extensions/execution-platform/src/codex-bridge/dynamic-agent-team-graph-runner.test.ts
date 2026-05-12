@@ -193,10 +193,14 @@ describe("dynamic agent-team graph production path", () => {
         expect.arrayContaining([
           "context_scout",
           "implementation_engineer",
+          "test_engineer",
           "reviewer",
           "observability_scribe",
         ]),
       );
+      expect(
+        result.evidence?.roleExecutionEvidence?.filter((role) => role.roleId === "context_scout"),
+      ).toHaveLength(2);
       const snapshot = await runtimeWorkGraphs.readGraphSnapshot(
         "team-run-dynamic-agent-team-graph-job-runtime-work-graph",
       );
@@ -212,8 +216,16 @@ describe("dynamic agent-team graph production path", () => {
         ]),
       );
       expect(snapshot!.roleInvocations.map((invocation) => invocation.roleId)).toEqual(
-        expect.arrayContaining(["orchestrator", "context_scout", "implementation_engineer"]),
+        expect.arrayContaining([
+          "orchestrator",
+          "context_scout",
+          "implementation_engineer",
+          "test_engineer",
+        ]),
       );
+      expect(
+        snapshot!.roleInvocations.filter((invocation) => invocation.roleId === "context_scout"),
+      ).toHaveLength(2);
       const artifacts = await runtimeJobs.listArtifacts("dynamic-agent-team-graph-job");
       expect(
         artifacts.some(

@@ -136,10 +136,10 @@ function queryRuntimeEvidence(input) {
           durationMs: item.durationMs ?? null,
         })).slice(0, 12),
         reasonCodes: Array.isArray(record.reasonCodes) ? record.reasonCodes.slice(0, 40) : [],
-        rawPromptStored: record.rawPromptStored === false,
-        rawResponseStored: record.rawResponseStored === false,
-        rawProviderLogStored: record.rawProviderLogStored === false,
-        rawCommandLogsStored: record.rawCommandLogsStored === false,
+        rawPromptStored: record.rawPromptStored ?? null,
+        rawResponseStored: record.rawResponseStored ?? null,
+        rawProviderLogStored: record.rawProviderLogStored ?? null,
+        rawCommandLogsStored: record.rawCommandLogsStored ?? null,
       };
     }
     async function main() {
@@ -198,6 +198,15 @@ function queryRuntimeEvidence(input) {
                 ? asRecord(taskGraph.metadata).nodes.map((node) => ({ roleId: node.roleId, modelId: node.modelId })).slice(0, 16)
                 : [],
             } : null,
+            dynamicTaskGraph: dynamicOrchestrator
+              ? {
+                  graphId: asRecord(dynamicOrchestrator.metadata).graphId ?? null,
+                  nodeCount: Array.isArray(asRecord(asRecord(dynamicOrchestrator.metadata).plan).childTasks)
+                    ? asRecord(asRecord(dynamicOrchestrator.metadata).plan).childTasks.length
+                    : 0,
+                  artifactType: "agent_team.dynamic_orchestrator_plan",
+                }
+              : null,
             runtimeEvidence: runtimeEvidence ? {
               teamRunId: evidenceMetadata.teamRunId ?? null,
               reviewState: evidenceMetadata.reviewState ?? null,
@@ -306,7 +315,12 @@ function evaluate(evidence) {
     : [];
   const changedFiles = Array.isArray(parity?.changedFileRefs) ? parity.changedFileRefs : [];
   const roleCount = evidence?.runtimeEvidence?.roleExecutionEvidenceCount ?? 0;
+  const roleIds = Array.isArray(evidence?.runtimeEvidence?.models)
+    ? evidence.runtimeEvidence.models.map((role) => role.roleId).filter(Boolean)
+    : [];
+  const repeatedRolePresent = roleIds.some((roleId, index) => roleIds.indexOf(roleId) !== index);
   const taskNodeCount = evidence?.taskGraph?.nodeCount ?? 0;
+  const dynamicTaskNodeCount = evidence?.dynamicTaskGraph?.nodeCount ?? 0;
   const dynamicGraphPresent = Boolean(
     evidence?.dynamicOrchestrator?.graphId &&
     evidence?.runtimeEvidence?.dynamicGraphId &&
@@ -327,15 +341,16 @@ function evaluate(evidence) {
     changedFiles.length > 0 &&
     validationPassed &&
     roleCount >= 4 &&
-    (taskNodeCount >= 4 || dynamicGraphPresent) &&
+    repeatedRolePresent &&
+    (taskNodeCount >= 4 || dynamicTaskNodeCount >= 2 || dynamicGraphPresent) &&
     dynamicGraphPresent &&
     validationRepairAccepted &&
     dynamicProgressVisible &&
     evidence?.runtimeEvidence?.closeoutState === "present" &&
-    parity.rawPromptStored === true &&
-    parity.rawResponseStored === true &&
-    parity.rawProviderLogStored === true &&
-    parity.rawCommandLogsStored === true;
+    parity.rawPromptStored === false &&
+    parity.rawResponseStored === false &&
+    parity.rawProviderLogStored === false &&
+    parity.rawCommandLogsStored === false;
   const reasonCodes = [
     ...(evidence?.state === "succeeded" ? [] : ["runtime_job_not_succeeded"]),
     ...(parity?.status === "completed" ? [] : ["codex_parity_adapter_not_completed"]),
@@ -343,7 +358,10 @@ function evaluate(evidence) {
     ...(requiredValidationKnown ? [] : ["validation_states_not_known"]),
     ...(validationPassed ? [] : ["validation_not_all_passed"]),
     ...(roleCount >= 4 ? [] : ["insufficient_openclaw_role_evidence"]),
-    ...(taskNodeCount >= 4 || dynamicGraphPresent ? [] : ["task_graph_nodes_missing"]),
+    ...(repeatedRolePresent ? [] : ["repeated_role_invocation_missing"]),
+    ...(taskNodeCount >= 4 || dynamicTaskNodeCount >= 2 || dynamicGraphPresent
+      ? []
+      : ["task_graph_nodes_missing"]),
     ...(dynamicGraphPresent ? [] : ["dynamic_runtime_work_graph_missing"]),
     ...(validationRepairAccepted ? [] : ["validation_repair_loop_not_passed"]),
     ...(dynamicProgressVisible ? [] : ["dynamic_runtime_progress_missing"]),
@@ -355,7 +373,9 @@ function evaluate(evidence) {
     changedFiles,
     validationRecords,
     roleCount,
+    repeatedRolePresent,
     taskNodeCount,
+    dynamicTaskNodeCount,
     dynamicProgressCount: evidence?.dynamicProgress?.count ?? 0,
     dynamicProgressStages: Array.isArray(evidence?.dynamicProgress?.stages)
       ? evidence.dynamicProgress.stages.slice(-20)
@@ -445,6 +465,7 @@ async function main() {
     workItemId: evidence?.workItemId ?? null,
     teamRunId: evidence?.runtimeEvidence?.teamRunId ?? null,
     taskGraph: evidence?.taskGraph ?? null,
+    dynamicTaskGraph: evidence?.dynamicTaskGraph ?? null,
     roleModels: evidence?.runtimeEvidence?.models ?? [],
     transports: evidence?.runtimeEvidence?.transports ?? [],
     dynamicProgress: evidence?.dynamicProgress ?? null,
@@ -468,6 +489,7 @@ async function main() {
     validationRecords: review.validationRecords,
     roleCount: review.roleCount,
     taskNodeCount: review.taskNodeCount,
+    dynamicTaskNodeCount: review.dynamicTaskNodeCount,
     rawPromptStored: false,
     rawResponseStored: false,
     rawTranscriptStored: false,

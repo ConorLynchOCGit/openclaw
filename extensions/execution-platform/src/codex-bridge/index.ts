@@ -21,6 +21,7 @@ export * from "./bridge-result-review.ts";
 export * from "./code-writing-pilot-live-entrypoint.ts";
 export * from "./codex-app-server-parity-executor.ts";
 export * from "./codex-parity-implementation-bridge.ts";
+export * from "./codex-parity-production-success-gates.ts";
 export * from "./codex-parity-readiness-audit.ts";
 export * from "./codex-parity-role-model-policy.ts";
 export * from "./codex-parity-runtime-adapter.ts";

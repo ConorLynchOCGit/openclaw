@@ -220,15 +220,25 @@ describe("OpenClaw convergence slice tracker", () => {
       sliceId: "openclaw-convergence.active-queue-09",
       title: "Runtime Parity Gap Audit And Kill Switches",
       dependsOnActiveQueueIds: ["openclaw-convergence.active-queue-08"],
-      planningStatus: "planned",
+      planningStatus: "completed",
       legacySliceId: null,
     });
     expect(activeQueue[9]).toMatchObject({
       sliceId: "openclaw-convergence.active-queue-10",
       title: "Persistent Codex Adapter Loop",
       dependsOnActiveQueueIds: ["openclaw-convergence.active-queue-09"],
-      planningStatus: "planned",
+      planningStatus: "needs_review",
       legacySliceId: null,
+    });
+    expect(activeQueue[11]).toMatchObject({
+      sliceId: "openclaw-convergence.active-queue-12",
+      title: "Dynamic OpenClaw Role Graph Executor",
+      planningStatus: "completed",
+    });
+    expect(activeQueue[16]).toMatchObject({
+      sliceId: "openclaw-convergence.active-queue-17",
+      title: "Long-Form UX Codex Parity Proof",
+      planningStatus: "completed",
     });
     expect(activeQueue[17]).toMatchObject({
       sliceId: "openclaw-convergence.active-queue-18",
@@ -245,8 +255,8 @@ describe("OpenClaw convergence slice tracker", () => {
       legacySliceId: "openclaw-convergence.slice-49",
     });
     expect(next).toMatchObject({
-      activeQueueId: "openclaw-convergence.active-queue-09",
-      title: "Runtime Parity Gap Audit And Kill Switches",
+      activeQueueId: "openclaw-convergence.active-queue-10",
+      title: "Persistent Codex Adapter Loop",
     });
     expect(summary).toMatchObject({
       historicalSliceCount: 56,
@@ -254,8 +264,8 @@ describe("OpenClaw convergence slice tracker", () => {
       supersededHistoricalPlannedCount: 18,
       activeQueueItemCount: 33,
       nextActiveQueueItem: {
-        activeQueueId: "openclaw-convergence.active-queue-09",
-        title: "Runtime Parity Gap Audit And Kill Switches",
+        activeQueueId: "openclaw-convergence.active-queue-10",
+        title: "Persistent Codex Adapter Loop",
       },
       workQueueLifecycleMutationAllowed: false,
     });

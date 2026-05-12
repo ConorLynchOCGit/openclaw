@@ -532,6 +532,57 @@ function skillifierProactivityGateSummary(input: {
   ].join("; ");
 }
 
+function skillifierFollowOnSoakChecklist(input: {
+  opportunityState: string | null | undefined;
+  opportunitySeedRef: string | null;
+  closeoutCapsuleRefCount: number;
+  roleModelRefCount: number;
+  validationEvidenceRefCount: number;
+  closeoutCapsuleCoverageSummary: string;
+  roleModelCoverageSummary: string;
+  validationCoverageSummary: string;
+}) {
+  const opportunityState = input.opportunityState ?? "unknown";
+  const seedReady =
+    Boolean(input.opportunitySeedRef) &&
+    skillifierOpportunityStateSupportsFollowOnSoak(input.opportunityState);
+  const closeoutReady = input.closeoutCapsuleRefCount > 0;
+  const roleModelReady = input.roleModelRefCount > 0;
+  const validationReady = input.validationEvidenceRefCount > 0;
+  const checks = [
+    {
+      checkId: "opportunity_seed_quality",
+      status: seedReady ? "ready" : "needs_review",
+      summary: seedReady
+        ? `seed ref linked with opportunity state ${opportunityState}`
+        : `seed ref missing or opportunity state ${opportunityState} not follow-on ready`,
+    },
+    {
+      checkId: "closeout_capsule_refs",
+      status: closeoutReady ? "ready" : "needs_review",
+      summary: closeoutReady
+        ? input.closeoutCapsuleCoverageSummary
+        : "closeout capsule refs missing",
+    },
+    {
+      checkId: "role_model_refs",
+      status: roleModelReady ? "ready" : "needs_review",
+      summary: roleModelReady ? input.roleModelCoverageSummary : "role/model refs missing",
+    },
+    {
+      checkId: "bounded_validation_evidence",
+      status: validationReady ? "ready" : "needs_review",
+      summary: validationReady
+        ? input.validationCoverageSummary
+        : "bounded validation evidence missing",
+    },
+  ] as const;
+  return {
+    state: checks.every((check) => check.status === "ready") ? "ready" : "needs_review",
+    checks,
+  };
+}
+
 function skillifierRuntimeViewModel(item: WorkQueueObject) {
   const execution = item.execution;
   const skillifier = execution?.skillifier;
@@ -704,7 +755,25 @@ function skillifierRuntimeViewModel(item: WorkQueueObject) {
     validationRefCount: validationRefs.length,
     reviewRefCount: reviewRefs.length,
   });
-  const soakEvidenceSummary = `${readinessState}: ${proactivityGateSummary}; closeout capsule refs ${closeoutCapsuleRefs.length}/10 shown, role/model refs ${roleModelRefs.length}/8 shown, bounded validation refs ${validationEvidenceRefs.length}/10 shown.`;
+  const followOnSoakChecklist = skillifierFollowOnSoakChecklist({
+    opportunityState,
+    opportunitySeedRef,
+    closeoutCapsuleRefCount: closeoutCapsuleRefs.length,
+    roleModelRefCount: roleModelRefs.length,
+    validationEvidenceRefCount: validationEvidenceRefs.length,
+    closeoutCapsuleCoverageSummary,
+    roleModelCoverageSummary,
+    validationCoverageSummary,
+  });
+  const boundedEvidenceDigest = [
+    `seed_quality=${skillifierOpportunitySeedQuality(opportunitySeedRef, opportunityState)}`,
+    `closeout_capsule_refs=${closeoutCapsuleRefs.length}`,
+    `role_model_refs=${roleModelRefs.length}`,
+    `validation_refs=${validationRefs.length}`,
+    `review_refs=${reviewRefs.length}`,
+    `bounded_validation_evidence=${validationEvidenceRefs.length > 0 ? "linked" : "missing"}`,
+  ].join("; ");
+  const soakEvidenceSummary = `${readinessState}: ${proactivityGateSummary}; follow_on_soak_checklist=${followOnSoakChecklist.state}; closeout capsule refs ${closeoutCapsuleRefs.length}/10 shown, role/model refs ${roleModelRefs.length}/8 shown, bounded validation refs ${validationEvidenceRefs.length}/10 shown.`;
   const evidenceSnapshotSummary = [
     `seed=${opportunitySeedRef ?? "missing"}`,
     `closeout=${closeoutCapsuleRefs[0] ?? "missing"}`,
@@ -760,7 +829,10 @@ function skillifierRuntimeViewModel(item: WorkQueueObject) {
       roleModelRefs,
       validationEvidenceSummary,
       proactivityGateSummary,
+      followOnSoakChecklistState: followOnSoakChecklist.state,
+      followOnSoakChecklist: followOnSoakChecklist.checks,
       soakEvidenceSummary,
+      boundedEvidenceDigest,
       evidenceSnapshotSummary,
     },
   };
@@ -1055,8 +1127,16 @@ ${execution.closeoutCapsule.humanReport.reportMarkdown ?? ""}</pre
                   <div>${skillifier.readbackQuality.proactivityGateSummary}</div>
                 </div>
                 <div>
+                  <strong>Follow-on soak checklist</strong>
+                  <div>${skillifier.readbackQuality.followOnSoakChecklistState}</div>
+                </div>
+                <div>
                   <strong>Soak evidence summary</strong>
                   <div>${skillifier.readbackQuality.soakEvidenceSummary}</div>
+                </div>
+                <div>
+                  <strong>Bounded evidence digest</strong>
+                  <div>${skillifier.readbackQuality.boundedEvidenceDigest}</div>
                 </div>
                 <div>
                   <strong>Evidence snapshot</strong>
@@ -1095,6 +1175,14 @@ ${execution.closeoutCapsule.humanReport.reportMarkdown ?? ""}</pre
                     ]
                       .filter((value): value is string => Boolean(value))
                       .join("; ") || "none"}
+                  </div>
+                </div>
+                <div>
+                  <strong>Soak checklist details</strong>
+                  <div>
+                    ${skillifier.readbackQuality.followOnSoakChecklist
+                      .map((check) => `${check.checkId}:${check.status} (${check.summary})`)
+                      .join(" | ")}
                   </div>
                 </div>
                 <div>

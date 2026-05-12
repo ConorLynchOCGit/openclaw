@@ -476,6 +476,100 @@ const ACTIVE_QUEUE_RECONCILED_STATES: Record<number, ReconciledSliceState> = {
       "Proceed to active-queue-09 Runtime Parity Gap Audit And Kill Switches; Skillifier work is runtime-backed, Work Queue-visible, and review-gated for skill-file apply, but coding parity must be fixed before the next broad soak.",
     blockerReasonCodes: [],
   },
+  9: {
+    planningStatus: "completed",
+    artifactRefs: [
+      ".artifacts/execution-platform/codex-parity-live-ux-proof-run.json",
+      ".artifacts/execution-platform/codex-parity-live-ux-quality-review.json",
+      ".artifacts/execution-platform/codex-parity-live-ux-work-queue-readback.json",
+      ".artifacts/execution-platform/codex-parity-plus-gateway-rebuild-reload-proof-v2.json",
+    ],
+    nextAction:
+      "Use production success gates and live evidence extraction fixes as the baseline for the remaining Codex parity block.",
+    blockerReasonCodes: [],
+  },
+  10: {
+    planningStatus: "needs_review",
+    artifactRefs: [
+      ".artifacts/execution-platform/codex-parity-live-ux-proof-run.json",
+      ".artifacts/execution-platform/codex-parity-live-ux-quality-review.json",
+    ],
+    nextAction:
+      "Prove continuation on the same Codex adapter thread after a live validation failure; the long-form pass completed without needing repair.",
+    blockerReasonCodes: ["live_failed_validation_continuation_unproven"],
+  },
+  11: {
+    planningStatus: "needs_review",
+    artifactRefs: [
+      ".artifacts/execution-platform/dynamic-test-repair-loop-proof.json",
+      ".artifacts/execution-platform/codex-parity-live-ux-proof-run.json",
+    ],
+    nextAction:
+      "Run a live production-path failed-validation repair case and require the same runtime job to classify, repair, rerun, and close out.",
+    blockerReasonCodes: ["live_failed_validation_repair_unproven"],
+  },
+  12: {
+    planningStatus: "completed",
+    artifactRefs: [
+      ".artifacts/execution-platform/codex-parity-live-ux-proof-run.json",
+      ".artifacts/execution-platform/codex-parity-live-ux-work-queue-readback.json",
+    ],
+    nextAction:
+      "Dynamic OpenClaw role graph execution is live for GPT-5.5 orchestration, repeated Kimi context scout calls, Codex implementation, test review, reviewer, observability, and final closeout.",
+    blockerReasonCodes: [],
+  },
+  13: {
+    planningStatus: "needs_review",
+    artifactRefs: [
+      ".artifacts/execution-platform/managed-multi-action-project-soak-summary.json",
+      ".artifacts/execution-platform/codex-parity-live-ux-proof-run.json",
+    ],
+    nextAction:
+      "Prove owner-visible scope expansion or human decision nodes in the Codex parity runtime path, not only in the earlier managed multi-action graph proof.",
+    blockerReasonCodes: ["codex_parity_scope_human_live_case_unproven"],
+  },
+  14: {
+    planningStatus: "needs_review",
+    artifactRefs: [
+      ".artifacts/execution-platform/kimi-live-source-edit-proof.json",
+      ".artifacts/execution-platform/codex-parity-live-ux-proof-run.json",
+    ],
+    nextAction:
+      "Run Kimi as the standard implementation lane on a real direct-main-repo coding task with source edits, validation, and escalation if needed.",
+    blockerReasonCodes: ["kimi_standard_implementation_live_case_unproven"],
+  },
+  15: {
+    planningStatus: "completed",
+    artifactRefs: [
+      ".artifacts/execution-platform/codex-parity-live-ux-work-queue-readback.json",
+      ".artifacts/execution-platform/codex-parity-live-ux-quality-review.json",
+    ],
+    nextAction:
+      "Owner readback now surfaces dynamic task graph fallback, role/model refs, repeated roles, source edits, validation refs, progress stages, and closeout evidence.",
+    blockerReasonCodes: [],
+  },
+  16: {
+    planningStatus: "completed",
+    artifactRefs: [
+      ".artifacts/execution-platform/codex-parity-live-ux-proof-run.json",
+      ".artifacts/execution-platform/codex-parity-live-ux-quality-review.json",
+    ],
+    nextAction:
+      "Closeout remains after accepted runtime evidence in the live proof; next failed-repair proof must confirm closeout accurately reports needs-review/failure when evidence is rejected.",
+    blockerReasonCodes: [],
+  },
+  17: {
+    planningStatus: "completed",
+    artifactRefs: [
+      ".artifacts/execution-platform/codex-parity-live-ux-proof-preflight.json",
+      ".artifacts/execution-platform/codex-parity-live-ux-proof-run.json",
+      ".artifacts/execution-platform/codex-parity-live-ux-quality-review.json",
+      ".artifacts/execution-platform/codex-parity-live-ux-work-queue-readback.json",
+    ],
+    nextAction:
+      "Proceed through the remaining parity blockers before active-queue-18 Managed Multi-Prompt Coding Soak.",
+    blockerReasonCodes: [],
+  },
 };
 
 const RECONCILED_SLICE_STATES: Record<number, ReconciledSliceState> = {

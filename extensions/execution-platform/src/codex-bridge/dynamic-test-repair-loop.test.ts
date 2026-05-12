@@ -115,6 +115,67 @@ describe("dynamic test/repair loop", () => {
     });
   });
 
+  it("can ask the test engineer to review passing validation without creating a repair", async () => {
+    const database = await createExecutionPlatformPgMemTestDatabase();
+    try {
+      await applyExecutionPlatformMigrations(database.sql);
+      const graphs = new RuntimeWorkGraphRepository(database.sql);
+      await graphs.createGraph({
+        graphId: "graph-pass-review",
+        workflowId: "agent_team.coding",
+        orchestratorModelRef: "openai-codex/gpt-5.5",
+      });
+      const implementation = await graphs.addNode({
+        graphId: "graph-pass-review",
+        nodeId: "implementation-pass-review",
+        nodeKind: "implementation",
+        assignedRole: "implementation_engineer",
+        nodeStatus: "succeeded",
+      });
+      const result = await new DynamicTestRepairLoop({
+        graphs,
+        reviewPassedValidations: true,
+        testEngineer: {
+          async diagnose(input) {
+            expect(input.failedValidationRefs).toHaveLength(0);
+            return {
+              modelRunRef: "test-review-pass-run",
+              responseHash: "test-review-pass-hash",
+              latencyMs: 5,
+              recommendation: "no_op_repair",
+              reasonCodes: ["passed_validation_reviewed"],
+              artifactRefs: ["artifact://passed-validation-review"],
+              rawPromptStored: false,
+              rawResponseStored: false,
+            };
+          },
+        },
+        validationRunner: {
+          async run() {
+            return {
+              validationRef: "validation://passed",
+              status: "passed",
+              summary: "Focused validation passed.",
+            };
+          },
+        },
+      }).run({
+        graphId: "graph-pass-review",
+        implementationNodeId: implementation.nodeId,
+        changedFileRefs: ["extensions/execution-platform/src/workflows/runtime-work-graph.ts"],
+        validationCommandRefs: ["pnpm test:file runtime-work-graph.test.ts"],
+      });
+
+      expect(result.finalState).toBe("passed");
+      expect(result.testReviewNodeIds).toHaveLength(1);
+      expect(result.repairNodeIds).toHaveLength(0);
+      expect(result.repairAttemptCount).toBe(0);
+      expect(result.reasonCodes).toContain("dynamic_validation_loop_completed");
+    } finally {
+      await database.close();
+    }
+  });
+
   it("times out stalled test engineer diagnosis instead of hanging the graph", async () => {
     await withLoop(["failed"], async ({ graphs, implementationNodeId }) => {
       const loop = new DynamicTestRepairLoop({

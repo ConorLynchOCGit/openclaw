@@ -430,6 +430,104 @@ describe("Work Queue front-door routing projection", () => {
     });
   });
 
+  it("surfaces dynamic orchestrator graph as the live task graph in owner readback", async () => {
+    await withRuntime(async ({ runtimeJobs, workQueue }) => {
+      const job = await runtimeJobs.enqueueJob({
+        jobId: "dynamic-graph-readback-job",
+        jobType: "executor.agent_team",
+        workItemId: "dynamic-graph-readback-item",
+        payload: { workflowId: "agent_team.coding" },
+      });
+      await workQueue.createWorkItem({
+        workItemId: "dynamic-graph-readback-item",
+        itemType: "execution_workflow",
+        title: "Dynamic graph readback",
+      });
+      await workQueue.createWorkRun({
+        workItemId: "dynamic-graph-readback-item",
+        executorKind: "runtime_job",
+        runtimeJobId: job.jobId,
+        runState: "running",
+        metadata: { workQueueLifecycleMutated: false },
+      });
+      await runtimeJobs.attachArtifact({
+        jobId: job.jobId,
+        artifactType: "agent_team.dynamic_orchestrator_plan",
+        storageKind: "metadata",
+        uri: "runtime-job://dynamic-graph-readback-job/runtime-work-graph/orchestrator/plan",
+        metadata: {
+          graphId: "dynamic-graph-1",
+          modelRef: "openai-codex/gpt-5.5",
+          providerPath: "codex_app_server",
+          rawPromptStored: false,
+          rawResponseStored: false,
+          rawProviderLogStored: false,
+          plan: {
+            childTasks: [
+              {
+                actionId: "implementation",
+                actionKind: "coding",
+                assignedRole: "implementation_engineer",
+              },
+              { actionId: "validation", actionKind: "qa_test", assignedRole: "test_engineer" },
+              { actionId: "review", actionKind: "review", assignedRole: "reviewer" },
+            ],
+            reasonCodes: ["dynamic_orchestrator_graph_created"],
+          },
+          workQueueLifecycleMutated: false,
+        },
+      });
+      await recordAgentTeamRuntimeEvidence({
+        runtimeJobs,
+        evidence: createAgentTeamRuntimeEvidence({
+          teamRunId: "team-run-dynamic-graph-readback",
+          runtimeJobId: job.jobId,
+          objective: "Expose dynamic graph readback.",
+          roster: [
+            {
+              roleId: "implementation_engineer",
+              modelId: "model://fixture-impl",
+              status: "allowed",
+            },
+          ],
+          roleAssignments: [
+            {
+              roleId: "implementation_engineer",
+              modelId: "model://fixture-impl",
+              assignedAt: "2026-05-09T00:00:00.000Z",
+              status: "completed",
+            },
+          ],
+          modelRoutingEvidence: {
+            graphId: "dynamic-graph-1",
+            orchestratorModelRef: "openai-codex/gpt-5.5",
+            staticSingleJobSequenceUsed: false,
+            inlineRoleOnlyExecutionAllowed: false,
+          },
+          validationState: "running",
+          reviewState: "not_started",
+          closeoutState: "missing",
+        }),
+      });
+
+      const model = await buildWorkQueueExecutionReadModel({
+        workQueue,
+        runtimeJobs,
+        workItemId: "dynamic-graph-readback-item",
+      });
+
+      expect(model.runtimeJobs[0]?.agentTeam.taskGraph).toMatchObject({
+        graphId: "dynamic-graph-1",
+        state: "present",
+        requiredSourceEdit: true,
+        nodeCount: 3,
+        artifactRef:
+          "runtime-job://dynamic-graph-readback-job/runtime-work-graph/orchestrator/plan",
+        reasonCodes: ["dynamic_orchestrator_graph_created"],
+      });
+    });
+  });
+
   it("surfaces missing required source edits in owner runtime readback", async () => {
     await withRuntime(async ({ runtimeJobs, workQueue }) => {
       const job = await runtimeJobs.enqueueJob({

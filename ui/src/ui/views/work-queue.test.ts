@@ -499,6 +499,15 @@ describe("work queue view", () => {
       "opportunity_state=accepted ready; seed_ref linked; closeout_capsule_ref linked; role_model_refs linked; validation_evidence linked",
     );
     expect(container.textContent).toContain("Soak evidence summary");
+    expect(container.textContent).toContain("follow_on_soak_checklist=ready");
+    expect(container.textContent).toContain("Follow-on soak checklist");
+    expect(container.textContent).toContain("Soak checklist details");
+    expect(container.textContent).toContain("Bounded evidence digest");
+    expect(container.textContent).toContain(
+      "seed_quality=linked and accepted; closeout_capsule_refs=1; role_model_refs=1; validation_refs=1; review_refs=1; bounded_validation_evidence=linked",
+    );
+    expect(container.textContent).toContain("opportunity_seed_quality:ready");
+    expect(container.textContent).toContain("bounded_validation_evidence:ready");
     expect(container.textContent).toContain("Opportunity seed quality");
     expect(container.textContent).toContain("linked and accepted");
     expect(container.textContent).toContain("Evidence snapshot");
@@ -597,6 +606,9 @@ describe("work queue view", () => {
     expect(container.textContent).toContain("Readback readiness state");
     expect(container.textContent).toContain("needs_review");
     expect(normalizedText(container)).toContain("opportunity_state=stale needs_review");
+    expect(container.textContent).toContain("Follow-on soak checklist");
+    expect(container.textContent).toContain("follow_on_soak_checklist=needs_review");
+    expect(container.textContent).toContain("opportunity_seed_quality:needs_review");
   });
 
   it("renders needs-review opportunity state distinctly", () => {
@@ -1126,6 +1138,10 @@ describe("work queue view", () => {
     );
     expect(container.textContent).toContain("Proactivity soak gate");
     expect(container.textContent).toContain("Soak evidence summary");
+    expect(container.textContent).toContain("Bounded evidence digest");
+    expect(container.textContent).toContain(
+      "seed_quality=missing seed ref; closeout_capsule_refs=1; role_model_refs=1; validation_refs=2; review_refs=1; bounded_validation_evidence=linked",
+    );
     expect(container.textContent).toContain(
       "needs_review: opportunity_state=needs_review needs_review; seed_ref missing; closeout_capsule_ref linked; role_model_refs linked; validation_evidence linked",
     );
