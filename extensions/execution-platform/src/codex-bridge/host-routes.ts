@@ -178,6 +178,18 @@ export async function handleExecutionPlatformQueueRunnerHostRoute(
       return true;
     }
     if (readBoolean(body.nativeWorkflowRunOnce) === true && dependencies.runtimeJobs) {
+      if (readBoolean(body.gatewayWorkerRunOnceProofMode) !== true) {
+        writeJson(res, 409, {
+          accepted: false,
+          nativeWorkflowRunOnce: true,
+          blockingReasons: ["gateway_worker_run_once_disabled_by_enqueue_only_boundary"],
+          reasonCodes: ["gateway_must_enqueue_runtime_jobs_not_execute_workers"],
+          daemonStarted: false,
+          schedulerStarted: false,
+          workQueueLifecycleMutated: false,
+        });
+        return true;
+      }
       const auth = authFromBody(body);
       if (!auth.authenticated || !auth.actorId) {
         writeJson(res, 401, { accepted: false, blockingReasons: ["operator_auth_required"] });

@@ -43,8 +43,17 @@ const CODE_WRITING_PILOT_STREAM_EVENT_TYPE = "codex_bridge.code_writing_pilot_st
 const CODE_WRITING_PILOT_HEARTBEAT_EVENT_TYPE = "codex_bridge.code_writing_pilot_heartbeat";
 const CODE_WRITING_PILOT_COMPLETED_EVENT_TYPE = "codex_bridge.code_writing_pilot_completed";
 const DEFAULT_MAX_CODE_WRITING_LIVE_METADATA_BYTES = 96 * 1024;
-const DEFAULT_REPO_PATH = "/root/services/openclaw-roles/live";
-const DEFAULT_WORKSPACE_DOCS_PATH = "/root/.openclaw/workspace/docs/projects/execution-platform";
+function defaultRepoPath(): string {
+  return process.env.OPENCLAW_HOST_OPERATOR_REPO_ROOT?.trim() || process.cwd();
+}
+
+function defaultWorkspaceDocsPath(): string {
+  const workspaceRoot = process.env.OPENCLAW_HOST_OPERATOR_WORKSPACE_ROOT?.trim();
+  if (workspaceRoot) {
+    return path.join(workspaceRoot, "docs/projects/execution-platform");
+  }
+  return path.join(process.cwd(), "docs/projects/execution-platform");
+}
 
 export type CodeWritingPilotExecutionApproval = {
   approvedBy: string;
@@ -126,6 +135,7 @@ export type CodeWritingPilotLiveSuccessCriteria = {
   processResultRecorded: boolean;
   streamOrProcessEvidenceRecorded: boolean;
   fileScopeSatisfied: boolean;
+  requiredSourceEditSatisfied: boolean;
   focusedValidationPassed: boolean;
   workQueueLifecycleNotMutated: true;
   noRebuildAutobailoutSubagentAcpPromotionInstallDeployOutbound: boolean;
@@ -136,6 +146,21 @@ export type CodeWritingPilotLiveSuccessCriteria = {
     validationEvidence: CodeWritingPilotValidationEvidence | null;
   };
   completedWorkPathSatisfied: boolean;
+};
+
+export type CodeWritingPilotSourceEditRequirement = {
+  artifactKind: "codex_bridge_code_writing_pilot_source_edit_requirement";
+  required: boolean;
+  status: "satisfied" | "missing_required_source_edit" | "not_required";
+  reasonCode:
+    | "required_source_edit_satisfied"
+    | "required_source_edit_missing"
+    | "source_edit_not_required_read_only";
+  patchType: string | null;
+  actualFilesChanged: string[];
+  rawPromptStored: false;
+  rawResponseStored: false;
+  rawLogsStored: false;
 };
 
 export type CodeWritingPilotLiveResult = {
@@ -154,6 +179,7 @@ export type CodeWritingPilotLiveResult = {
   selectedObjectiveId: string | null;
   approvedTargetFiles: string[];
   actualFilesChanged: string[];
+  sourceEditRequirement: CodeWritingPilotSourceEditRequirement;
   fileScopeSatisfied: boolean;
   codexCliInvoked: boolean;
   commandExecuted: boolean;
@@ -245,6 +271,29 @@ function boundLivePilotMetadata(value: JsonValue): JsonValue {
   });
 }
 
+function streamEventEvidence(
+  line: string,
+  normalized: CodexBridgeNormalizedStreamEvent,
+): Record<string, JsonValue> {
+  return {
+    liveCodeWritingPilotRunId: null,
+    rawLineHash: createHash("sha256").update(line).digest("hex"),
+    rawLineStored: false,
+    rawCommandOutputStored: false,
+    rawProviderLogStored: false,
+    normalized: {
+      eventKind: normalized.eventKind,
+      sourceProtocol: normalized.sourceProtocol,
+      sequence: normalized.sequence,
+      occurredAt: normalized.occurredAt,
+      summary: `${normalized.eventKind} recorded`,
+      providerCallMade: normalized.providerCallMade,
+      liveExecutorCallMade: normalized.liveExecutorCallMade,
+      data: null,
+    },
+  };
+}
+
 function assertJsonByteLength(value: JsonValue, maxBytes: number, name: string): void {
   if (jsonByteLength(value) > maxBytes) {
     throw new Error(`${name} exceeds ${maxBytes} bytes`);
@@ -305,6 +354,51 @@ function validationRepairAuthority(input: { approval: CodeWritingPilotExecutionA
   };
 }
 
+function sourceEditRequirement(input: {
+  patchType: string | null | undefined;
+  actualFilesChanged: string[];
+}): CodeWritingPilotSourceEditRequirement {
+  const patchType = input.patchType ?? null;
+  const required = patchType !== "read_only";
+  if (!required) {
+    return {
+      artifactKind: "codex_bridge_code_writing_pilot_source_edit_requirement",
+      required,
+      status: "not_required",
+      reasonCode: "source_edit_not_required_read_only",
+      patchType,
+      actualFilesChanged: input.actualFilesChanged.slice(0, 40),
+      rawPromptStored: false,
+      rawResponseStored: false,
+      rawLogsStored: false,
+    };
+  }
+  const changed = input.actualFilesChanged.length > 0;
+  return {
+    artifactKind: "codex_bridge_code_writing_pilot_source_edit_requirement",
+    required,
+    status: changed ? "satisfied" : "missing_required_source_edit",
+    reasonCode: changed ? "required_source_edit_satisfied" : "required_source_edit_missing",
+    patchType,
+    actualFilesChanged: input.actualFilesChanged.slice(0, 40),
+    rawPromptStored: false,
+    rawResponseStored: false,
+    rawLogsStored: false,
+  };
+}
+
+function completedWorkPathReason(input: {
+  criteria: CodeWritingPilotLiveSuccessCriteria;
+  sourceEditRequirement: CodeWritingPilotSourceEditRequirement;
+}): string {
+  if (input.sourceEditRequirement.status === "missing_required_source_edit") {
+    return "required_source_edit_missing";
+  }
+  return input.criteria.completedWorkPathSatisfied
+    ? "process_completed_file_scope_satisfied_validation_passed_closeout_emitted_and_required_source_edit_satisfied"
+    : "process_completion_is_not_task_success_without_scope_validation_closeout_and_required_source_edit";
+}
+
 function promptText(input: {
   objective: string;
   approvedTargetFiles: string[];
@@ -313,13 +407,13 @@ function promptText(input: {
 }): string {
   const validationRepair = input.validationRepair.enabled
     ? [
+        "You may run bounded read-only diagnostic shell commands needed to inspect files inside the approved scope, such as pwd, ls, rg, sed, cat, and git diff/status.",
         "You may run only the approved validation commands listed below, and only to validate this patch.",
         "Approved validation commands:",
         ...input.validationRepair.commands.map((command) => `- ${command}`),
         `Maximum validation/repair attempts: ${input.validationRepair.maxAttempts}`,
         "If validation fails, inspect the bounded failure output, repair only the approved file, and rerun only approved validation commands within the attempt limit.",
-        "Do not run commands outside the approved validation command list.",
-        "Do not run any other shell command.",
+        "Do not run write/deploy/install/network/rebuild commands outside the approved validation command list.",
       ]
     : ["Do not run shell commands."];
   const scopeLines =
@@ -347,6 +441,9 @@ function promptText(input: {
     "Do not promote models.",
     "Do not deploy or send outbound data.",
     "Do not store raw transcripts, hidden reasoning, secrets, or raw logs.",
+    "For implementation tasks, success requires a git-visible source or test file change inside the approved scope.",
+    "Before your final response, verify git status/diff shows at least one approved-scope file changed; if none changed, make the smallest relevant source/test hardening inside the approved scope.",
+    "Do not claim files were changed or tests passed unless your approved-scope git/status and approved validation command evidence support that claim.",
     "Keep the patch minimal.",
     "Return a short final response summarizing the source/test patch and the approved validation command results.",
   ].join("\n");
@@ -496,6 +593,7 @@ function successCriteria(input: {
   processResult: LiveCodexRunnerResult | null;
   eventCount: number;
   fileScopeSatisfied: boolean;
+  sourceEditRequirement: CodeWritingPilotSourceEditRequirement;
   validationEvidence: CodeWritingPilotValidationEvidence | null;
   closeoutEmitted: boolean;
 }): CodeWritingPilotLiveSuccessCriteria {
@@ -539,6 +637,7 @@ function successCriteria(input: {
     process?.commandExecuted === true &&
     process.status === "completed" &&
     input.fileScopeSatisfied &&
+    input.sourceEditRequirement.status !== "missing_required_source_edit" &&
     focusedValidationPassed &&
     noForbidden &&
     input.closeoutEmitted;
@@ -549,6 +648,8 @@ function successCriteria(input: {
     processResultRecorded: process !== null,
     streamOrProcessEvidenceRecorded: input.eventCount > 0 || process !== null,
     fileScopeSatisfied: input.fileScopeSatisfied,
+    requiredSourceEditSatisfied:
+      input.sourceEditRequirement.status !== "missing_required_source_edit",
     focusedValidationPassed,
     workQueueLifecycleNotMutated: true,
     noRebuildAutobailoutSubagentAcpPromotionInstallDeployOutbound: noForbidden,
@@ -572,8 +673,8 @@ export class CodeWritingPilotLiveEntrypointRepository {
     this.now = options.now ?? (() => new Date());
     this.maxArtifactMetadataBytes =
       options.maxArtifactMetadataBytes ?? DEFAULT_MAX_CODE_WRITING_LIVE_METADATA_BYTES;
-    this.repoPath = options.repoPath ?? DEFAULT_REPO_PATH;
-    this.workspaceDocsPath = options.workspaceDocsPath ?? DEFAULT_WORKSPACE_DOCS_PATH;
+    this.repoPath = options.repoPath ?? defaultRepoPath();
+    this.workspaceDocsPath = options.workspaceDocsPath ?? defaultWorkspaceDocsPath();
     this.closeout =
       options.closeoutRepository ??
       new ExecutionPlatformWorkEpisodeCloseoutRepository(runtimeJobs, {
@@ -613,6 +714,7 @@ export class CodeWritingPilotLiveEntrypointRepository {
       descriptor,
       options: {
         enableLiveCodexPilot: input.approval.enableLiveCodexPilot,
+        allowedRepoPath: this.repoPath,
         maxRuntimeMs: input.approval.maxRuntimeMs,
         maxStdoutBytes: input.approval.maxStdoutBytes,
         maxStderrBytes: input.approval.maxStderrBytes,
@@ -693,6 +795,7 @@ export class CodeWritingPilotLiveEntrypointRepository {
         new LiveCodexRunner({
           ...input.liveRunnerOptions,
           enableLiveCodexPilot: true,
+          allowedRepoPath: this.repoPath,
           maxRuntimeMs: input.approval.maxRuntimeMs,
           maxStdoutBytes: input.approval.maxStdoutBytes,
           maxStderrBytes: input.approval.maxStderrBytes,
@@ -722,9 +825,8 @@ export class CodeWritingPilotLiveEntrypointRepository {
               jobId: input.plan.runtimeJobId,
               eventType: CODE_WRITING_PILOT_STREAM_EVENT_TYPE,
               data: {
+                ...streamEventEvidence(line, normalized),
                 liveCodeWritingPilotRunId,
-                raw: boundLivePilotMetadata(line),
-                normalized: boundLivePilotMetadata(normalized as unknown as JsonValue),
               },
             });
           },
@@ -814,9 +916,23 @@ export class CodeWritingPilotLiveEntrypointRepository {
         ],
       },
     });
+    const sourceRequirement = sourceEditRequirement({
+      patchType: latest.sourceEditRequirement.patchType,
+      actualFilesChanged: latest.actualFilesChanged,
+    });
+    const criteria = successCriteria({
+      preflightAllowed: latest.blockingReasons.length === 0,
+      processResult: latest.processResult,
+      eventCount: latest.eventCount,
+      fileScopeSatisfied: latest.fileScopeSatisfied,
+      sourceEditRequirement: sourceRequirement,
+      validationEvidence: input.validationEvidence,
+      closeoutEmitted: true,
+    });
     const updated: CodeWritingPilotLiveResult = {
       ...latest,
       validationEvidence: input.validationEvidence,
+      sourceEditRequirement: sourceRequirement,
       workEpisodeCloseout: {
         emitted: true,
         packPath: closeout.metadata.packPath,
@@ -846,24 +962,12 @@ export class CodeWritingPilotLiveEntrypointRepository {
           validationEvidence: input.validationEvidence,
         };
       })(),
-      completedWorkPathSatisfied:
-        latest.processResult?.status === "completed" &&
-        latest.fileScopeSatisfied &&
-        input.validationEvidence.status === "passed",
-      completedWorkPathReason:
-        latest.processResult?.status === "completed" &&
-        latest.fileScopeSatisfied &&
-        input.validationEvidence.status === "passed"
-          ? "process_completed_file_scope_satisfied_and_focused_validation_passed"
-          : "validation_or_file_scope_evidence_missing_or_failed",
-      successCriteria: successCriteria({
-        preflightAllowed: latest.blockingReasons.length === 0,
-        processResult: latest.processResult,
-        eventCount: latest.eventCount,
-        fileScopeSatisfied: latest.fileScopeSatisfied,
-        validationEvidence: input.validationEvidence,
-        closeoutEmitted: true,
+      completedWorkPathSatisfied: criteria.completedWorkPathSatisfied,
+      completedWorkPathReason: completedWorkPathReason({
+        criteria,
+        sourceEditRequirement: sourceRequirement,
       }),
+      successCriteria: criteria,
     };
     await this.persistLiveResult(updated);
     await this.runtimeJobs.recordEvent({
@@ -978,11 +1082,16 @@ export class CodeWritingPilotLiveEntrypointRepository {
       packHash: null,
       eligibilityStatus: null,
     };
+    const sourceRequirement = sourceEditRequirement({
+      patchType: input.input.plan.selectedObjective?.patchType,
+      actualFilesChanged: input.fileScopeReport.actualFilesChanged,
+    });
     const criteria = successCriteria({
       preflightAllowed: input.blockingReasons.length === 0,
       processResult: input.processResult,
       eventCount: input.eventCount,
       fileScopeSatisfied: input.fileScopeReport.fileScopeSatisfied,
+      sourceEditRequirement: sourceRequirement,
       validationEvidence: input.validationEvidence,
       closeoutEmitted: closeout.emitted,
     });
@@ -1002,6 +1111,7 @@ export class CodeWritingPilotLiveEntrypointRepository {
       selectedObjectiveId: input.input.plan.selectedObjective?.candidateId ?? null,
       approvedTargetFiles: input.fileScopeReport.approvedTargetFiles,
       actualFilesChanged: input.fileScopeReport.actualFilesChanged,
+      sourceEditRequirement: sourceRequirement,
       fileScopeSatisfied: input.fileScopeReport.fileScopeSatisfied,
       codexCliInvoked: input.processResult?.codexCliInvoked ?? false,
       commandExecuted: input.processResult?.commandExecuted ?? false,
@@ -1053,9 +1163,10 @@ export class CodeWritingPilotLiveEntrypointRepository {
         };
       })(),
       completedWorkPathSatisfied: criteria.completedWorkPathSatisfied,
-      completedWorkPathReason: criteria.completedWorkPathSatisfied
-        ? "process_completed_file_scope_satisfied_validation_passed_and_closeout_emitted"
-        : "process_completion_is_not_task_success_without_scope_validation_and_closeout",
+      completedWorkPathReason: completedWorkPathReason({
+        criteria,
+        sourceEditRequirement: sourceRequirement,
+      }),
       workEpisodeCloseout: closeout,
       workQueueLifecycleMutated: false,
       rebuildPerformed: false,

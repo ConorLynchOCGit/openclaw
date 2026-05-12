@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { QueryResultRow } from "pg";
 import type { SqlClient } from "../db/sql-client.ts";
 import type { JsonValue, RuntimeJob, RuntimeJobRepository } from "../runtime-job-repository.ts";
+import { projectConvergenceSliceTracker } from "./convergence-slice-tracker.ts";
 import type {
   WorkItem,
   WorkItemArtifact,
@@ -137,6 +138,14 @@ export type WorkQueueRepositoryOptions = {
 export type CreateWorkItemInput = {
   workItemId?: string;
   itemType: string;
+  title: string;
+  description?: string | null;
+  metadata?: JsonValue;
+  actorId?: string | null;
+};
+
+export type UpdateWorkItemPlanningMetadataInput = {
+  workItemId: string;
   title: string;
   description?: string | null;
   metadata?: JsonValue;
@@ -402,6 +411,39 @@ export class WorkQueueRepository {
       return decodeItem(result.rows[0]!);
     });
     return item;
+  }
+
+  async updateWorkItemPlanningMetadata(
+    input: UpdateWorkItemPlanningMetadataInput,
+  ): Promise<WorkItem> {
+    assertJsonByteLength(input.metadata, this.maxJsonBytes, "work item metadata");
+    const now = this.now();
+    return this.sql.withTransaction(async (tx) => {
+      const result = await tx.query<WorkItemRow>(
+        `
+          UPDATE execution_platform.work_items
+          SET title = $2,
+              description = $3,
+              metadata = $4::jsonb,
+              updated_at = $5::timestamptz
+          WHERE work_item_id = $1
+          RETURNING *
+        `,
+        [input.workItemId, input.title, input.description ?? null, encodeJson(input.metadata), now],
+      );
+      const row = result.rows[0];
+      if (!row) {
+        throw new Error(`work_item_not_found:${input.workItemId}`);
+      }
+      await this.recordLifecycleEventInTx(tx, {
+        workItemId: input.workItemId,
+        eventType: "work_item.planning_metadata_updated",
+        actorId: input.actorId ?? null,
+        data: { title: input.title },
+        eventTime: now,
+      });
+      return decodeItem(row);
+    });
   }
 
   async createWorkItemVersion(input: CreateWorkItemVersionInput): Promise<WorkItemVersion> {
@@ -1053,6 +1095,7 @@ export class WorkQueueRepository {
         runtimeJobIds: truth.runs
           .map((run) => run.runtimeJobId)
           .filter((runtimeJobId): runtimeJobId is string => Boolean(runtimeJobId)),
+        convergenceSlice: projectConvergenceSliceTracker(truth),
         updatedAt: truth.item.updatedAt,
       });
     }

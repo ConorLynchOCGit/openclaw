@@ -134,6 +134,8 @@ describe("handleCompactCommand", () => {
           space: "workspace-1",
           spawnedBy: "agent:main:parent",
           totalTokens: 12345,
+          totalTokensFresh: true,
+          contextTokens: 200000,
         },
       } as HandleCommandsParams,
       true,
@@ -158,6 +160,8 @@ describe("handleCompactCommand", () => {
         senderUsername: "alice_u",
         senderE164: "+15551234567",
         agentDir: "/tmp/openclaw-agent-compact",
+        currentTokenCount: 12345,
+        tokenBudget: 200000,
       }),
     );
   });

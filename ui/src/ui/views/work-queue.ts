@@ -198,6 +198,81 @@ function renderFailureStatus(item: WorkQueueObject) {
   `;
 }
 
+function renderConvergenceSliceTracker(item: WorkQueueObject) {
+  const slice = item.convergenceSlice;
+  if (!slice) {
+    return nothing;
+  }
+  return html`
+    <section class="work-queue-detail-section" aria-label="Convergence slice tracker">
+      <div class="work-queue-detail-section__header">
+        <h3>Convergence slice</h3>
+        <span class="work-queue-detail-section__meta">${slice.planningStatus}</span>
+      </div>
+      <div class="work-queue-evidence-grid">
+        <div>
+          <strong>Slice</strong>
+          <div>${slice.sliceId}</div>
+        </div>
+        <div>
+          <strong>Track</strong>
+          <div>${slice.track}</div>
+        </div>
+        <div>
+          <strong>Wave</strong>
+          <div>${slice.wave}</div>
+        </div>
+        <div>
+          <strong>Owner area</strong>
+          <div>${slice.ownerSystemArea}</div>
+        </div>
+        <div>
+          <strong>Priority</strong>
+          <div>${slice.priority}</div>
+        </div>
+        <div>
+          <strong>Dependencies</strong>
+          <div>${slice.dependsOnSliceIds.join(", ") || "None"}</div>
+        </div>
+        <div>
+          <strong>Blockers</strong>
+          <div>${slice.blockerReasonCodes.join(", ") || "None"}</div>
+        </div>
+        <div>
+          <strong>Runtime refs</strong>
+          <div>${slice.runtimeJobRefs.length} refs</div>
+        </div>
+        <div>
+          <strong>Work Queue lifecycle</strong>
+          <div>${slice.runtimeState.lifecycleState}</div>
+        </div>
+        <div>
+          <strong>Lifecycle source</strong>
+          <div>${slice.runtimeState.lifecycleTruthSource}</div>
+        </div>
+      </div>
+      <p class="work-queue-detail-summary">${slice.nextAction ?? "No next action recorded."}</p>
+      <p class="work-queue-detail-summary">
+        Planning status is tracker metadata, not execution lifecycle. Work Queue lifecycle mutation
+        is not allowed.
+      </p>
+      <details class="work-queue-detail-section">
+        <summary>Slice refs</summary>
+        <div class="work-queue-evidence-grid">
+          <div>
+            <strong>Docs</strong>
+            <div>${slice.sourceDocRefs.slice(0, 6).join(", ") || "None"}</div>
+          </div>
+          <div>
+            <strong>Artifacts</strong>
+            <div>${slice.artifactRefs.slice(0, 6).join(", ") || "None"}</div>
+          </div>
+        </div>
+      </details>
+    </section>
+  `;
+}
+
 function renderEvidence(item: WorkQueueObject) {
   return html`
     <details class="work-queue-detail-section">
@@ -246,13 +321,462 @@ function renderHistory(item: WorkQueueObject) {
   `;
 }
 
+function runtimeGraphImplementationReadinessSummary(
+  runtimeGraph: NonNullable<NonNullable<WorkQueueObject["execution"]>["runtimeGraph"]>,
+): string {
+  const approvedParentPlanCount = runtimeGraph.approvedPlanRefs?.length ?? 0;
+  const codingChildren = runtimeGraph.childActions.filter((child) => child.actionKind === "coding");
+  const codingChildrenWithReadback = codingChildren.filter(
+    (child) =>
+      Boolean(child.runtimeJobId) || Boolean(child.graphNodeRef) || child.evidenceRefs.length > 0,
+  );
+  const codingDependencyCount = runtimeGraph.dependencyEdges.filter(
+    (edge) =>
+      codingChildren.some((child) => child.workItemId === edge.workItemId) ||
+      codingChildren.some((child) => child.workItemId === edge.dependsOnWorkItemId),
+  ).length;
+  const codingChildrenWithValidationReadback = codingChildren.filter((child) =>
+    child.evidenceRefs.some((ref) => isValidationLikeRef(ref)),
+  );
+  const modelRolesWithArtifacts = runtimeGraph.roleInvocations.filter(
+    (role) => role.producedArtifactRefs.length > 0,
+  );
+  const humanTasksWithReadback = runtimeGraph.humanTasks.filter(
+    (task) => Boolean(task.resumeTokenRef) || task.blockingGraphNodeRefs.length > 0,
+  );
+  const modelEvidenceSummary = modelRolesWithArtifacts
+    .slice(0, 3)
+    .map((role) => `${role.roleId} via ${role.modelRef}`)
+    .join(", ");
+  const planningRole = modelRolesWithArtifacts.find((role) => role.roleId === "orchestrator");
+  const implementationRole = modelRolesWithArtifacts.find(
+    (role) => role.roleId === "implementation_engineer",
+  );
+  const readinessParts = [
+    `${approvedParentPlanCount} approved parent plan ${approvedParentPlanCount === 1 ? "ref" : "refs"}`,
+    `${codingChildrenWithReadback.length}/${codingChildren.length} coding child actions carry runtime/readback links`,
+    `${codingDependencyCount} parent/child dependencies recorded`,
+  ];
+  if (codingChildren.length > 0) {
+    readinessParts.push(
+      `${codingChildrenWithValidationReadback.length}/${codingChildren.length} coding child actions expose bounded validation readback`,
+    );
+  }
+  if (runtimeGraph.humanTasks.length > 0) {
+    readinessParts.push(
+      `${humanTasksWithReadback.length}/${runtimeGraph.humanTasks.length} owner/human task readbacks carry resume or blocker linkage`,
+    );
+  }
+  readinessParts.push(
+    `${modelRolesWithArtifacts.length}/${runtimeGraph.roleInvocations.length} model roles emitted bounded artifact evidence${modelEvidenceSummary ? ` (${modelEvidenceSummary})` : ""}`,
+  );
+  if (planningRole && implementationRole) {
+    readinessParts.push(
+      `planning/implementation handoff visible (${planningRole.roleId} via ${planningRole.modelRef} -> ${implementationRole.roleId} via ${implementationRole.modelRef})`,
+    );
+  }
+  return `${readinessParts.join("; ")}.`;
+}
+
+function isValidationLikeRef(value: string): boolean {
+  return value.startsWith("validation://") || /^pnpm test:file\b/u.test(value);
+}
+
+function runtimeGraphChildReadbackRef(
+  child: NonNullable<
+    NonNullable<WorkQueueObject["execution"]>["runtimeGraph"]
+  >["childActions"][number],
+): string {
+  return (
+    child.runtimeJobId ??
+    child.evidenceRefs.find((ref) => isValidationLikeRef(ref)) ??
+    child.evidenceRefs[0] ??
+    child.graphNodeRef ??
+    "not linked"
+  );
+}
+
+function runtimeGraphValidationReadbackSummary(
+  runtimeGraph: NonNullable<NonNullable<WorkQueueObject["execution"]>["runtimeGraph"]>,
+): string {
+  if (runtimeGraph.validationRepairLoops.length === 0) {
+    return "No validation readback recorded.";
+  }
+  const recentLoops = runtimeGraph.validationRepairLoops
+    .slice(0, 2)
+    .map((entry) =>
+      entry.repairNodeRef
+        ? `${entry.status}: ${entry.validationRef} -> ${entry.repairNodeRef}`
+        : `${entry.status}: ${entry.validationRef}`,
+    )
+    .join(" | ");
+  return `${runtimeGraph.validationRepairLoops.length} loop(s) recorded; ${recentLoops}`;
+}
+
+function runtimeGraphParentChildReadbackSummary(
+  runtimeGraph: NonNullable<NonNullable<WorkQueueObject["execution"]>["runtimeGraph"]>,
+): string {
+  const parentPlanRef =
+    runtimeGraph.approvedPlanRefs?.[0] ?? "No approved parent plan ref recorded";
+  const childReadbacks = runtimeGraph.childActions
+    .filter((child) => Boolean(child.runtimeJobId) || child.evidenceRefs.length > 0)
+    .slice(0, 3)
+    .map((child) => {
+      const readbackRef = runtimeGraphChildReadbackRef(child);
+      return `${child.title ?? child.workItemId} (${child.assignedWorkflow}) -> ${readbackRef}`;
+    });
+  return childReadbacks.length > 0
+    ? `${parentPlanRef} -> ${childReadbacks.join(" | ")}`
+    : `${parentPlanRef} -> no child readback links recorded`;
+}
+
+function uniqueRefs(values: Array<string | null | undefined>, maxItems = 10): string[] {
+  const refs = new Set<string>();
+  for (const value of values) {
+    const normalized = typeof value === "string" ? value.trim() : "";
+    if (!normalized) {
+      continue;
+    }
+    refs.add(normalized);
+    if (refs.size >= maxItems) {
+      break;
+    }
+  }
+  return [...refs];
+}
+
+function allUniqueRefs(values: Array<string | null | undefined>): string[] {
+  return uniqueRefs(values, 1_000);
+}
+
+function refsMatching(refs: string[], pattern: RegExp, maxItems = 10): string[] {
+  return uniqueRefs(
+    refs.filter((ref) => pattern.test(ref)),
+    maxItems,
+  );
+}
+
+function cappedRefSummary(input: {
+  shownCount: number;
+  totalCount: number;
+  cap: number;
+  label: string;
+}): string {
+  const hiddenCount = Math.max(0, input.totalCount - input.shownCount);
+  const base = `${input.shownCount}/${input.totalCount} ${input.label} shown (cap ${input.cap})`;
+  return hiddenCount > 0 ? `${base}; ${hiddenCount} hidden` : base;
+}
+
+function skillifierOpportunitySeedQuality(
+  opportunitySeedRef: string | null,
+  opportunityState: string | null | undefined,
+): string {
+  if (!opportunitySeedRef) {
+    return "missing seed ref";
+  }
+  switch (opportunityState) {
+    case "accepted":
+      return "linked and accepted";
+    case "needs_review":
+      return "linked and needs review";
+    case "blocked":
+      return "linked but blocked";
+    case "stale":
+      return "linked but stale";
+    case "duplicate_suppressed":
+      return "linked and duplicate suppressed";
+    case "reviewed":
+    case "captured":
+      return `linked (${opportunityState})`;
+    default:
+      return "linked (state unknown)";
+  }
+}
+
+function skillifierCloseoutCapsuleQuality(
+  closeoutCapsuleRef: string | null,
+  closeoutCapsuleHash: string | null,
+): string {
+  if (!closeoutCapsuleRef) {
+    return "missing capsule ref";
+  }
+  return closeoutCapsuleHash ? "ref + hash linked" : "ref linked; hash missing";
+}
+
+function skillifierOpportunityStateSupportsFollowOnSoak(
+  opportunityState: string | null | undefined,
+): boolean {
+  return opportunityState === "accepted" || opportunityState === "reviewed";
+}
+
+function skillifierProactivityGateSummary(input: {
+  opportunityState: string | null | undefined;
+  opportunitySeedRef: string | null;
+  closeoutCapsuleRefCount: number;
+  roleModelRefCount: number;
+  validationRefCount: number;
+  reviewRefCount: number;
+}): string {
+  return [
+    skillifierOpportunityStateSupportsFollowOnSoak(input.opportunityState)
+      ? `opportunity_state=${input.opportunityState ?? "unknown"} ready`
+      : `opportunity_state=${input.opportunityState ?? "unknown"} needs_review`,
+    input.opportunitySeedRef ? "seed_ref linked" : "seed_ref missing",
+    input.closeoutCapsuleRefCount > 0
+      ? "closeout_capsule_ref linked"
+      : "closeout_capsule_ref missing",
+    input.roleModelRefCount > 0 ? "role_model_refs linked" : "role_model_refs missing",
+    input.validationRefCount > 0 || input.reviewRefCount > 0
+      ? "validation_evidence linked"
+      : "validation_evidence missing",
+  ].join("; ");
+}
+
+function skillifierRuntimeViewModel(item: WorkQueueObject) {
+  const execution = item.execution;
+  const skillifier = execution?.skillifier;
+  const workflowSkillifier = execution?.workflow?.extension?.skillifier ?? null;
+  if (!execution || (!skillifier && !workflowSkillifier)) {
+    return null;
+  }
+  const artifactRefs = [
+    ...execution.artifactRefs,
+    ...(execution.workflow?.artifactRefs ?? []),
+    ...(execution.middleware?.modelTask.artifactRefs ?? []),
+    ...(execution.middleware?.dbOperation.artifactRefs ?? []),
+  ];
+  const factualRefs = execution.closeoutCapsule?.factualRefs;
+  const closeoutCapsuleRuntimeRef =
+    artifactRefs.find((ref) => ref.includes("/closeout-capsule/")) ??
+    (factualRefs?.runtimeJobId && execution.closeoutCapsule?.capsuleId
+      ? `runtime-job://${factualRefs.runtimeJobId}/closeout-capsule/${execution.closeoutCapsule.capsuleId}`
+      : null);
+  const opportunity =
+    skillifier?.opportunity ??
+    workflowSkillifier?.opportunity ??
+    (skillifier?.opportunitySeedRef || workflowSkillifier?.opportunitySeedRef
+      ? {
+          state: "captured",
+          capsuleRefs: uniqueRefs([
+            skillifier?.closeoutCapsuleRef,
+            workflowSkillifier?.closeoutCapsuleRef,
+            closeoutCapsuleRuntimeRef,
+          ]),
+          artifactRefs: uniqueRefs([
+            ...(skillifier?.reviewRefs ?? []),
+            ...(workflowSkillifier?.reviewRefs ?? []),
+          ]),
+          modelTaskRefs: uniqueRefs([
+            ...(skillifier?.modelTaskRefs ?? []),
+            ...(workflowSkillifier?.modelTaskRefs ?? []),
+          ]),
+          dbOperationRefs: uniqueRefs([
+            ...(skillifier?.dbOperationRefs ?? []),
+            ...(workflowSkillifier?.dbOperationRefs ?? []),
+          ]),
+          reviewRefs: uniqueRefs([
+            ...(skillifier?.reviewRefs ?? []),
+            ...(workflowSkillifier?.reviewRefs ?? []),
+          ]),
+          reasonCodes: [],
+          eli5Status: "OpenClaw captured the opportunity and stored only bounded breadcrumbs.",
+          limitations: [],
+          rawPromptStored: false,
+          rawResponseStored: false,
+          rawLogsStored: false,
+          workQueueLifecycleMutationAllowed: false,
+        }
+      : null);
+  const runtimeJobId =
+    skillifier?.runtimeJobId ?? workflowSkillifier?.runtimeJobId ?? execution.runtimeJobId ?? null;
+  const outcomeState =
+    skillifier?.outcomeState ??
+    workflowSkillifier?.outcomeState ??
+    execution.reviewStatus ??
+    execution.runtimeJobState;
+  const opportunitySeedRef =
+    skillifier?.opportunitySeedRef ?? workflowSkillifier?.opportunitySeedRef ?? null;
+  const opportunityState = opportunity?.state ?? outcomeState;
+  const closeoutCapsuleRef =
+    skillifier?.closeoutCapsuleRef ??
+    workflowSkillifier?.closeoutCapsuleRef ??
+    closeoutCapsuleRuntimeRef ??
+    execution.closeoutCapsule?.capsuleId ??
+    null;
+  const closeoutCapsuleHash =
+    skillifier?.closeoutCapsuleHash ?? workflowSkillifier?.closeoutCapsuleHash ?? null;
+  const modelRefs = uniqueRefs([
+    ...(skillifier?.modelRefs ?? []),
+    ...(workflowSkillifier?.modelRefs ?? []),
+    execution.closeoutCapsule?.modelRef,
+  ]);
+  const modelTaskRefs = uniqueRefs([
+    ...(skillifier?.modelTaskRefs ?? []),
+    ...(workflowSkillifier?.modelTaskRefs ?? []),
+    ...(execution.middleware?.modelTask.artifactRefs ?? []),
+  ]);
+  const dbOperationRefs = uniqueRefs([
+    ...(skillifier?.dbOperationRefs ?? []),
+    ...(workflowSkillifier?.dbOperationRefs ?? []),
+    ...(execution.middleware?.dbOperation.artifactRefs ?? []),
+  ]);
+  const directValidationRefs = [
+    ...(skillifier?.validationRefs ?? []),
+    ...(workflowSkillifier?.validationRefs ?? []),
+  ];
+  const artifactValidationRefs = refsMatching(
+    [...artifactRefs, ...(factualRefs?.validationRefs ?? [])],
+    /(?:^validation:\/\/|\/validation(?:\/|$)|model-task\/validation(?:\/|$)|^pnpm test:file\b)/u,
+  );
+  const validationRefs =
+    directValidationRefs.length > 0 ? uniqueRefs(directValidationRefs) : artifactValidationRefs;
+  const reviewRefs =
+    (skillifier?.reviewRefs?.length ?? 0) > 0 || (workflowSkillifier?.reviewRefs?.length ?? 0) > 0
+      ? uniqueRefs([...(skillifier?.reviewRefs ?? []), ...(workflowSkillifier?.reviewRefs ?? [])])
+      : refsMatching(artifactRefs, /(?:^review:\/\/|\/review(?:\/|$)|result_review)/u);
+  const roleModelRefs = uniqueRefs(
+    [
+      ...(execution.runtimeGraph?.roleInvocations.map(
+        (role) => `${role.roleId}:${role.modelRef}`,
+      ) ?? []),
+      ...(execution.agentTeam?.roleReports?.map((role) => `${role.roleId}:${role.modelId}`) ?? []),
+      ...modelRefs.map((modelRef) => `skillifier:${modelRef}`),
+    ],
+    8,
+  );
+  const validationEvidenceRefs = uniqueRefs(
+    [...validationRefs, ...(opportunity?.modelTaskRefs ?? []), ...(opportunity?.reviewRefs ?? [])],
+    10,
+  );
+  const closeoutCapsuleRefs = uniqueRefs(
+    [closeoutCapsuleRef, ...(opportunity?.capsuleRefs ?? [])],
+    10,
+  );
+  const readinessState =
+    skillifierOpportunityStateSupportsFollowOnSoak(opportunityState) &&
+    opportunitySeedRef &&
+    closeoutCapsuleRef &&
+    roleModelRefs.length > 0 &&
+    validationEvidenceRefs.length > 0
+      ? "ready_for_follow_on_soak"
+      : "needs_review";
+  const closeoutCapsuleCoverageSummary = cappedRefSummary({
+    shownCount: closeoutCapsuleRefs.length,
+    totalCount: allUniqueRefs([closeoutCapsuleRef, ...(opportunity?.capsuleRefs ?? [])]).length,
+    cap: 10,
+    label: "closeout capsule refs",
+  });
+  const roleModelCoverageSummary = cappedRefSummary({
+    shownCount: roleModelRefs.length,
+    totalCount: allUniqueRefs([
+      ...(execution.runtimeGraph?.roleInvocations.map(
+        (role) => `${role.roleId}:${role.modelRef}`,
+      ) ?? []),
+      ...(execution.agentTeam?.roleReports?.map((role) => `${role.roleId}:${role.modelId}`) ?? []),
+      ...(skillifier?.modelRefs ?? []).map((modelRef) => `skillifier:${modelRef}`),
+      ...(workflowSkillifier?.modelRefs ?? []).map((modelRef) => `skillifier:${modelRef}`),
+      ...(execution.closeoutCapsule?.modelRef
+        ? [`skillifier:${execution.closeoutCapsule.modelRef}`]
+        : []),
+    ]).length,
+    cap: 8,
+    label: "role/model refs",
+  });
+  const validationCoverageSummary = cappedRefSummary({
+    shownCount: validationEvidenceRefs.length,
+    totalCount: allUniqueRefs([
+      ...(directValidationRefs.length > 0 ? directValidationRefs : artifactValidationRefs),
+      ...(opportunity?.modelTaskRefs ?? []),
+      ...(opportunity?.reviewRefs ?? []),
+    ]).length,
+    cap: 10,
+    label: "bounded validation refs",
+  });
+  const validationEvidenceSummary =
+    validationEvidenceRefs.length > 0
+      ? `bounded refs present (${validationRefs.length} validation, ${reviewRefs.length} review, ${validationCoverageSummary})`
+      : "missing bounded refs";
+  const proactivityGateSummary = skillifierProactivityGateSummary({
+    opportunityState,
+    opportunitySeedRef,
+    closeoutCapsuleRefCount: closeoutCapsuleRefs.length,
+    roleModelRefCount: roleModelRefs.length,
+    validationRefCount: validationRefs.length,
+    reviewRefCount: reviewRefs.length,
+  });
+  const soakEvidenceSummary = `${readinessState}: ${proactivityGateSummary}; closeout capsule refs ${closeoutCapsuleRefs.length}/10 shown, role/model refs ${roleModelRefs.length}/8 shown, bounded validation refs ${validationEvidenceRefs.length}/10 shown.`;
+  const evidenceSnapshotSummary = [
+    `seed=${opportunitySeedRef ?? "missing"}`,
+    `closeout=${closeoutCapsuleRefs[0] ?? "missing"}`,
+    `role_model=${roleModelRefs[0] ?? "missing"}`,
+    `validation=${validationEvidenceRefs[0] ?? "missing"}`,
+  ].join("; ");
+  return {
+    runtimeJobId,
+    opportunity,
+    outcomeState,
+    candidateType: skillifier?.candidateType ?? workflowSkillifier?.candidateType ?? null,
+    candidateId: skillifier?.candidateId ?? workflowSkillifier?.candidateId ?? null,
+    opportunitySeedRef,
+    closeoutCapsuleRef,
+    closeoutCapsuleHash,
+    targetSkillRef: skillifier?.targetSkillRef ?? workflowSkillifier?.targetSkillRef ?? null,
+    targetSkillPath: skillifier?.targetSkillPath ?? workflowSkillifier?.targetSkillPath ?? null,
+    candidateApplied:
+      skillifier?.candidateApplied === true || workflowSkillifier?.candidateApplied === true,
+    modelRefs,
+    modelTaskRefs,
+    dbOperationRefs,
+    validationRefs,
+    reviewRefs,
+    limitations: uniqueRefs([
+      ...(skillifier?.limitations ?? []),
+      ...(workflowSkillifier?.limitations ?? []),
+      ...(execution.humanCloseoutSummary?.limitations ?? []),
+      ...(execution.closeoutCapsule?.humanReport?.limitations ?? []),
+    ]),
+    eli5Progress:
+      skillifier?.eli5Progress ??
+      workflowSkillifier?.eli5Progress ??
+      execution.humanCloseoutSummary?.eli5Progress ??
+      execution.closeoutCapsule?.humanReport?.eli5Progress ??
+      null,
+    nextAction:
+      skillifier?.nextAction ?? workflowSkillifier?.nextAction ?? item.recommendedNextStep ?? null,
+    readbackQuality: {
+      readinessState,
+      opportunitySeedQuality: skillifierOpportunitySeedQuality(
+        opportunitySeedRef,
+        opportunityState,
+      ),
+      closeoutCapsuleQuality: skillifierCloseoutCapsuleQuality(
+        closeoutCapsuleRef,
+        closeoutCapsuleHash,
+      ),
+      closeoutCapsuleCoverageSummary,
+      closeoutCapsuleRefs,
+      roleModelCoverageSummary,
+      validationCoverageSummary,
+      roleModelRefs,
+      validationEvidenceSummary,
+      proactivityGateSummary,
+      soakEvidenceSummary,
+      evidenceSnapshotSummary,
+    },
+  };
+}
+
 function renderExecutionTruth(props: WorkQueueProps, item: WorkQueueObject) {
   const execution = item.execution;
   if (!execution) {
     return nothing;
   }
-  const serverBackedControls =
+  const skillifier = skillifierRuntimeViewModel(item);
+  const hasRuntimeJob = Boolean(execution.runtimeJobId);
+  const serverBackedControlsAvailable =
     props.onPauseExecution && props.onRedirectExecution && props.onCancelExecution;
+  const serverBackedControlsEnabled = Boolean(serverBackedControlsAvailable && hasRuntimeJob);
+  const routing = execution.workflow?.routing ?? null;
   return html`
     <section class="work-queue-detail-section" aria-label="Execution truth">
       <div class="work-queue-detail-section__header">
@@ -260,6 +784,10 @@ function renderExecutionTruth(props: WorkQueueProps, item: WorkQueueObject) {
         <span class="work-queue-detail-section__meta">${execution.runtimeJobState}</span>
       </div>
       <div class="work-queue-evidence-grid">
+        <div>
+          <strong>Runtime job</strong>
+          <div>${execution.runtimeJobId ?? "None"}</div>
+        </div>
         <div>
           <strong>Executor</strong>
           <div>${execution.executorKind}</div>
@@ -340,6 +868,54 @@ function renderExecutionTruth(props: WorkQueueProps, item: WorkQueueObject) {
                 <strong>Workflow blockers</strong>
                 <div>${execution.workflow.blockerReasonCodes.join(", ") || "None"}</div>
               </div>
+              ${routing
+                ? html`
+                    <div>
+                      <strong>Route state</strong>
+                      <div>${routing.state}</div>
+                    </div>
+                    <div>
+                      <strong>Route validation</strong>
+                      <div>${routing.validatorOutcome ?? "unknown"}</div>
+                    </div>
+                    <div>
+                      <strong>Route response</strong>
+                      <div>${routing.responseMode ?? "unknown"}</div>
+                    </div>
+                    <div>
+                      <strong>Router model</strong>
+                      <div>${routing.routerModelRef ?? "unknown"}</div>
+                    </div>
+                    <div>
+                      <strong>Router schema</strong>
+                      <div>${routing.routerSchemaVersion ?? "unknown"}</div>
+                    </div>
+                    <div>
+                      <strong>Clarification</strong>
+                      <div>
+                        ${routing.clarificationRef?.questionSummary ??
+                        routing.clarificationOutcome ??
+                        "none"}
+                      </div>
+                    </div>
+                    <div>
+                      <strong>Compiler</strong>
+                      <div>${routing.compilerOutcome ?? "unknown"}</div>
+                    </div>
+                    <div>
+                      <strong>Route artifacts</strong>
+                      <div>${routing.artifactRefs.length} refs</div>
+                    </div>
+                    <div>
+                      <strong>Child handoffs</strong>
+                      <div>${routing.childWorkflowHandoffCount}</div>
+                    </div>
+                    <div>
+                      <strong>Route reasons</strong>
+                      <div>${routing.reasonCodes.slice(0, 4).join(", ") || "None"}</div>
+                    </div>
+                  `
+                : nothing}
             `
           : nothing}
         <div>
@@ -353,30 +929,422 @@ function renderExecutionTruth(props: WorkQueueProps, item: WorkQueueObject) {
       </div>
       <p class="work-queue-detail-summary">
         Execution state comes from server/runtime truth. UI lifecycle mutation is
-        ${execution.uiMutationAllowed ? "available" : "not available"}.
+        ${execution.uiMutationAllowed ? "available" : "not available"}. Controls are runtime-backed
+        and never mark lifecycle directly.
       </p>
-      ${serverBackedControls
+      ${execution.humanCloseoutSummary && !execution.agentTeam?.humanCloseoutSummary
+        ? html`
+            <div class="work-queue-detail-section__subsection">
+              <h4>Human closeout</h4>
+              <div class="work-queue-evidence-grid">
+                <div>
+                  <strong>What changed</strong>
+                  <div>${execution.humanCloseoutSummary.whatChanged ?? "unknown"}</div>
+                </div>
+                <div>
+                  <strong>Result</strong>
+                  <div>${execution.humanCloseoutSummary.result ?? "unknown"}</div>
+                </div>
+                <div>
+                  <strong>Validation</strong>
+                  <div>${execution.humanCloseoutSummary.testsRun?.join(", ") || "None"}</div>
+                </div>
+                <div>
+                  <strong>ELI5 progress</strong>
+                  <div>${execution.humanCloseoutSummary.eli5Progress ?? "unknown"}</div>
+                </div>
+              </div>
+            </div>
+          `
+        : nothing}
+      ${execution.closeoutCapsule?.humanReport
+        ? html`
+            <div class="work-queue-detail-section__subsection">
+              <h4>Closeout Capsule</h4>
+              <div class="work-queue-evidence-grid">
+                <div>
+                  <strong>Source</strong>
+                  <div>${execution.closeoutCapsule.humanReport.source ?? "unknown"}</div>
+                </div>
+                <div>
+                  <strong>Task success</strong>
+                  <div>
+                    ${execution.closeoutCapsule.structuredSummary?.taskSuccess ?? "unknown"}
+                  </div>
+                </div>
+                <div>
+                  <strong>ELI5 progress</strong>
+                  <div>${execution.closeoutCapsule.humanReport.eli5Progress ?? "unknown"}</div>
+                </div>
+                <div>
+                  <strong>Opportunity seeds</strong>
+                  <div>
+                    ${execution.closeoutCapsule.opportunitySeeds
+                      ?.slice(0, 5)
+                      .map((seed) => seed.title ?? seed.kind ?? "seed")
+                      .join(", ") || "None"}
+                  </div>
+                </div>
+              </div>
+              <pre class="work-queue-detail-prewrap">
+${execution.closeoutCapsule.humanReport.reportMarkdown ?? ""}</pre
+              >
+            </div>
+          `
+        : nothing}
+      ${skillifier
+        ? html`
+            <div class="work-queue-detail-section__subsection">
+              <h4>Skillifier runtime</h4>
+              <div class="work-queue-evidence-grid">
+                <div>
+                  <strong>Runtime job</strong>
+                  <div>${skillifier.runtimeJobId ?? "unknown"}</div>
+                </div>
+                <div>
+                  <strong>Opportunity state</strong>
+                  <div>${skillifier.opportunity?.state ?? "unknown"}</div>
+                </div>
+                <div>
+                  <strong>Outcome</strong>
+                  <div>${skillifier.outcomeState ?? "unknown"}</div>
+                </div>
+                <div>
+                  <strong>Candidate</strong>
+                  <div>
+                    ${skillifier.candidateType ?? "unknown"} /
+                    ${skillifier.candidateId ?? "unknown"}
+                  </div>
+                </div>
+                <div>
+                  <strong>Opportunity seed</strong>
+                  <div>${skillifier.opportunitySeedRef ?? "unknown"}</div>
+                </div>
+                <div>
+                  <strong>Opportunity seed quality</strong>
+                  <div>${skillifier.readbackQuality.opportunitySeedQuality}</div>
+                </div>
+                <div>
+                  <strong>Closeout Capsule</strong>
+                  <div>
+                    ${skillifier.closeoutCapsuleRef ?? "unknown"}${skillifier.closeoutCapsuleHash
+                      ? ` / ${skillifier.closeoutCapsuleHash}`
+                      : ""}
+                  </div>
+                </div>
+                <div>
+                  <strong>Closeout capsule quality</strong>
+                  <div>${skillifier.readbackQuality.closeoutCapsuleQuality}</div>
+                </div>
+                <div>
+                  <strong>Target skill</strong>
+                  <div>
+                    ${skillifier.targetSkillRef ?? skillifier.targetSkillPath ?? "proposal_only"}
+                  </div>
+                </div>
+                <div>
+                  <strong>Applied change</strong>
+                  <div>${skillifier.candidateApplied ? "yes" : "proposal only"}</div>
+                </div>
+                <div>
+                  <strong>Readback readiness state</strong>
+                  <div>${skillifier.readbackQuality.readinessState}</div>
+                </div>
+                <div>
+                  <strong>Proactivity soak gate</strong>
+                  <div>${skillifier.readbackQuality.proactivityGateSummary}</div>
+                </div>
+                <div>
+                  <strong>Soak evidence summary</strong>
+                  <div>${skillifier.readbackQuality.soakEvidenceSummary}</div>
+                </div>
+                <div>
+                  <strong>Evidence snapshot</strong>
+                  <div>${skillifier.readbackQuality.evidenceSnapshotSummary}</div>
+                </div>
+                <div>
+                  <strong>Role/model refs</strong>
+                  <div>
+                    ${skillifier.readbackQuality.roleModelCoverageSummary}:
+                    ${skillifier.readbackQuality.roleModelRefs.join(", ") || "None"}
+                  </div>
+                </div>
+                <div>
+                  <strong>Validation evidence</strong>
+                  <div>
+                    ${skillifier.readbackQuality.validationEvidenceSummary}; refs
+                    ${skillifier.validationRefs.length} validation, ${skillifier.reviewRefs.length}
+                    review
+                  </div>
+                </div>
+                <div>
+                  <strong>Readback gaps</strong>
+                  <div>
+                    ${[
+                      skillifier.opportunitySeedRef ? null : "opportunity seed ref missing",
+                      skillifier.closeoutCapsuleRef ? null : "closeout capsule ref missing",
+                      skillifier.readbackQuality.closeoutCapsuleRefs.length > 0
+                        ? null
+                        : "closeout capsule refs missing",
+                      skillifier.readbackQuality.roleModelRefs.length > 0
+                        ? null
+                        : "role/model refs missing",
+                      skillifier.validationRefs.length > 0 || skillifier.reviewRefs.length > 0
+                        ? null
+                        : "bounded validation evidence missing",
+                    ]
+                      .filter((value): value is string => Boolean(value))
+                      .join("; ") || "none"}
+                  </div>
+                </div>
+                <div>
+                  <strong>Model refs</strong>
+                  <div>${skillifier.modelRefs.join(", ") || "None"}</div>
+                </div>
+                <div>
+                  <strong>Model-task refs</strong>
+                  <div>${skillifier.modelTaskRefs.join(", ") || "None"}</div>
+                </div>
+                <div>
+                  <strong>DB-operation refs</strong>
+                  <div>${skillifier.dbOperationRefs.join(", ") || "None"}</div>
+                </div>
+                <div>
+                  <strong>Validation refs</strong>
+                  <div>${skillifier.validationRefs.join(", ") || "None"}</div>
+                </div>
+                <div>
+                  <strong>Review refs</strong>
+                  <div>${skillifier.reviewRefs.join(", ") || "None"}</div>
+                </div>
+                <div>
+                  <strong>Opportunity reasons</strong>
+                  <div>${skillifier.opportunity?.reasonCodes.join(", ") || "None"}</div>
+                </div>
+                <div>
+                  <strong>Opportunity artifacts</strong>
+                  <div>${skillifier.opportunity?.artifactRefs.join(", ") || "None"}</div>
+                </div>
+                <div>
+                  <strong>Closeout capsule refs</strong>
+                  <div>
+                    ${skillifier.readbackQuality.closeoutCapsuleCoverageSummary}:
+                    ${skillifier.readbackQuality.closeoutCapsuleRefs.join(", ") || "None"}
+                  </div>
+                </div>
+                <div>
+                  <strong>ELI5 progress</strong>
+                  <div>
+                    ${skillifier.opportunity?.eli5Status ?? skillifier.eli5Progress ?? "unknown"}
+                  </div>
+                </div>
+                <div>
+                  <strong>Next action</strong>
+                  <div>${skillifier.nextAction ?? "unknown"}</div>
+                </div>
+              </div>
+              ${[...(skillifier.opportunity?.limitations ?? []), ...skillifier.limitations].length
+                ? html`
+                    <div class="work-queue-detail-section__subsection">
+                      <h4>Limitations</h4>
+                      <ul class="work-queue-history-list">
+                        ${uniqueRefs([
+                          ...(skillifier.opportunity?.limitations ?? []),
+                          ...skillifier.limitations,
+                        ]).map((limitation) => html`<li>${limitation}</li>`)}
+                      </ul>
+                    </div>
+                  `
+                : nothing}
+              <p class="work-queue-detail-summary">
+                Skillifier runtime state is bounded owner-facing readback only. Runtime jobs remain
+                lifecycle truth, and proposal state is distinct from an applied skill file change.
+              </p>
+            </div>
+          `
+        : nothing}
+      ${execution.runtimeGraph
+        ? html`
+            <div class="work-queue-detail-section__subsection">
+              <h4>Runtime Work Graph</h4>
+              <div class="work-queue-evidence-grid">
+                <div>
+                  <strong>Graph</strong>
+                  <div>${execution.runtimeGraph.graphId}</div>
+                </div>
+                <div>
+                  <strong>Parent item</strong>
+                  <div>${execution.runtimeGraph.parentWorkItemId ?? "unknown"}</div>
+                </div>
+                <div>
+                  <strong>Owner objective</strong>
+                  <div>${execution.runtimeGraph.ownerObjectiveSummary ?? "not recorded"}</div>
+                </div>
+                <div>
+                  <strong>Children</strong>
+                  <div>${execution.runtimeGraph.childActions.length}</div>
+                </div>
+                <div>
+                  <strong>Dependencies</strong>
+                  <div>${execution.runtimeGraph.dependencyEdges.length}</div>
+                </div>
+                <div>
+                  <strong>Role calls</strong>
+                  <div>${execution.runtimeGraph.roleInvocations.length}</div>
+                </div>
+                <div>
+                  <strong>Human tasks</strong>
+                  <div>${execution.runtimeGraph.humanTasks.length}</div>
+                </div>
+                <div>
+                  <strong>Validation/repair</strong>
+                  <div>${execution.runtimeGraph.validationRepairLoops.length}</div>
+                </div>
+                <div>
+                  <strong>Closeout</strong>
+                  <div>
+                    ${execution.runtimeGraph.finalCloseoutRef ??
+                    execution.runtimeGraph.closeoutRef ??
+                    "missing"}
+                  </div>
+                </div>
+                <div>
+                  <strong>Approved plans</strong>
+                  <div>
+                    ${execution.runtimeGraph.approvedPlanRefs?.slice(0, 3).join(", ") || "None"}
+                  </div>
+                </div>
+                <div>
+                  <strong>Parent/child readback</strong>
+                  <div>${runtimeGraphParentChildReadbackSummary(execution.runtimeGraph)}</div>
+                </div>
+                <div>
+                  <strong>ELI5 progress</strong>
+                  <div>${execution.runtimeGraph.eli5Progress ?? "unknown"}</div>
+                </div>
+                <div>
+                  <strong>Implementation readiness</strong>
+                  <div>${runtimeGraphImplementationReadinessSummary(execution.runtimeGraph)}</div>
+                </div>
+                <div>
+                  <strong>Validation readback</strong>
+                  <div>${runtimeGraphValidationReadbackSummary(execution.runtimeGraph)}</div>
+                </div>
+                <div>
+                  <strong>Lifecycle owner</strong>
+                  <div>
+                    ${execution.runtimeGraph.planningStatusIsLifecycleState
+                      ? "incorrect"
+                      : "runtime jobs"}
+                  </div>
+                </div>
+              </div>
+              <div class="work-queue-detail-section__subsection">
+                <h4>Child actions</h4>
+                <ul class="work-queue-history-list">
+                  ${execution.runtimeGraph.childActions.slice(0, 10).map(
+                    (child) => html`
+                      <li>
+                        <strong>${child.title ?? child.workItemId}</strong>
+                        <div>${child.actionKind} - ${child.assignedRole}</div>
+                        <div>${child.assignedWorkflow}</div>
+                        <div>Runtime: ${child.runtimeJobId ?? "not linked"}</div>
+                        <div>Graph node: ${child.graphNodeRef ?? "not linked"}</div>
+                        <div>Evidence: ${child.evidenceRefs.slice(0, 2).join(", ") || "None"}</div>
+                        <div>Blockers: ${child.blockerReasonCodes.join(", ") || "None"}</div>
+                      </li>
+                    `,
+                  )}
+                </ul>
+              </div>
+              <div class="work-queue-detail-section__subsection">
+                <h4>Role invocations</h4>
+                <ul class="work-queue-history-list">
+                  ${execution.runtimeGraph.roleInvocations.slice(0, 10).map(
+                    (role) => html`
+                      <li>
+                        <strong>${role.roleId}</strong>
+                        <div>${role.modelRef} - ${role.status}</div>
+                        <div>
+                          ${role.providerPath ?? "unknown"} / ${role.transportKind ?? "unknown"}
+                        </div>
+                        <div>${role.modelRunRef ?? "no model run ref"}</div>
+                        <div>
+                          Artifacts: ${role.producedArtifactRefs.slice(0, 2).join(", ") || "None"}
+                        </div>
+                      </li>
+                    `,
+                  )}
+                </ul>
+              </div>
+              <div class="work-queue-detail-section__subsection">
+                <h4>Validation/repair details</h4>
+                <ul class="work-queue-history-list">
+                  ${execution.runtimeGraph.validationRepairLoops.slice(0, 5).map(
+                    (entry) => html`
+                      <li>
+                        <strong>${entry.validationRef}</strong>
+                        <div>${entry.status}</div>
+                        <div>Repair node: ${entry.repairNodeRef ?? "not linked"}</div>
+                        <div>Reasons: ${entry.reasonCodes.join(", ") || "None"}</div>
+                      </li>
+                    `,
+                  )}
+                </ul>
+              </div>
+              <div class="work-queue-detail-section__subsection">
+                <h4>Human tasks</h4>
+                <ul class="work-queue-history-list">
+                  ${execution.runtimeGraph.humanTasks.slice(0, 5).map(
+                    (task) => html`
+                      <li>
+                        <strong>${task.humanTaskId}</strong>
+                        <div>${task.state}</div>
+                        <div>${task.resumeTokenRef ?? "no resume ref"}</div>
+                      </li>
+                    `,
+                  )}
+                </ul>
+              </div>
+              <p class="work-queue-detail-summary">
+                Runtime Work Graph state is owner-facing projection/readback. Runtime jobs remain
+                lifecycle truth and Work Queue lifecycle mutation is not allowed here.
+              </p>
+            </div>
+          `
+        : nothing}
+      ${serverBackedControlsAvailable
         ? html`
             <div class="work-queue-action-row" aria-label="Server-backed execution controls">
               <button
                 class="btn btn--secondary btn--sm"
+                ?disabled=${!serverBackedControlsEnabled}
                 @click=${() => props.onPauseExecution?.(item)}
               >
                 Pause
               </button>
               <button
                 class="btn btn--secondary btn--sm"
+                ?disabled=${!serverBackedControlsEnabled}
                 @click=${() => props.onRedirectExecution?.(item)}
               >
                 Redirect
               </button>
               <button
                 class="btn btn--secondary btn--sm"
+                ?disabled=${!serverBackedControlsEnabled}
                 @click=${() => props.onCancelExecution?.(item)}
               >
                 Cancel
               </button>
             </div>
+            ${serverBackedControlsEnabled
+              ? nothing
+              : html`
+                  <p class="work-queue-detail-summary">
+                    Unsafe controls are disabled until a runtime job is available.
+                  </p>
+                `}
           `
         : html`
             <p class="work-queue-detail-summary">
@@ -487,10 +1455,105 @@ function renderExecutionTruth(props: WorkQueueProps, item: WorkQueueObject) {
                   <div>${execution.agentTeam.failureRecoveryState ?? "none"}</div>
                 </div>
                 <div>
+                  <strong>Closeout quality</strong>
+                  <div>
+                    ${execution.agentTeam.closeoutQuality
+                      ? `${execution.agentTeam.closeoutQuality.state} (${execution.agentTeam.closeoutQuality.goalSatisfaction ?? "unknown"})`
+                      : "unknown"}
+                  </div>
+                </div>
+                <div>
                   <strong>Blockers</strong>
                   <div>${execution.agentTeam.blockers?.join(", ") || "None"}</div>
                 </div>
               </div>
+              ${execution.agentTeam.roleReports?.length
+                ? html`
+                    <div class="work-queue-detail-section__subsection">
+                      <h4>Role work</h4>
+                      <ul class="work-queue-history-list">
+                        ${execution.agentTeam.roleReports.slice(0, 8).map(
+                          (role) => html`
+                            <li>
+                              <strong>${role.roleId}</strong>
+                              <div>${role.modelId} - ${role.status}</div>
+                              <div>${role.whatRoleDid}</div>
+                            </li>
+                          `,
+                        )}
+                      </ul>
+                    </div>
+                  `
+                : nothing}
+              ${execution.agentTeam.humanCloseoutSummary
+                ? html`
+                    <div class="work-queue-detail-section__subsection">
+                      <h4>Human closeout</h4>
+                      <div class="work-queue-evidence-grid">
+                        <div>
+                          <strong>What changed</strong>
+                          <div>${execution.agentTeam.humanCloseoutSummary.whatChanged}</div>
+                        </div>
+                        <div>
+                          <strong>Validation</strong>
+                          <div>
+                            ${execution.agentTeam.humanCloseoutSummary.testsRun.join(", ") ||
+                            "None"}
+                          </div>
+                        </div>
+                        <div>
+                          <strong>Result</strong>
+                          <div>${execution.agentTeam.humanCloseoutSummary.result}</div>
+                        </div>
+                        <div>
+                          <strong>ELI5 progress</strong>
+                          <div>${execution.agentTeam.humanCloseoutSummary.eli5Progress}</div>
+                        </div>
+                      </div>
+                    </div>
+                  `
+                : nothing}
+              ${execution.agentTeam.closeoutCapsule?.humanReport
+                ? html`
+                    <div class="work-queue-detail-section__subsection">
+                      <h4>Closeout Capsule</h4>
+                      <div class="work-queue-evidence-grid">
+                        <div>
+                          <strong>Source</strong>
+                          <div>
+                            ${execution.agentTeam.closeoutCapsule.humanReport.source ?? "unknown"}
+                          </div>
+                        </div>
+                        <div>
+                          <strong>Quality</strong>
+                          <div>
+                            ${execution.agentTeam.closeoutCapsule.structuredSummary
+                              ?.qualityAssessment ?? "unknown"}
+                          </div>
+                        </div>
+                        <div>
+                          <strong>Workflow fit</strong>
+                          <div>
+                            ${execution.agentTeam.closeoutCapsule.structuredSummary
+                              ?.workflowFitAssessment ?? "unknown"}
+                          </div>
+                        </div>
+                        <div>
+                          <strong>Opportunities</strong>
+                          <div>
+                            ${execution.agentTeam.closeoutCapsule.opportunitySeeds
+                              ?.slice(0, 5)
+                              .map((seed) => seed.title ?? seed.kind ?? "seed")
+                              .join(", ") || "None"}
+                          </div>
+                        </div>
+                      </div>
+                      <pre class="work-queue-detail-prewrap">
+${execution.agentTeam.closeoutCapsule.humanReport.reportMarkdown ?? ""}</pre
+                      >
+                    </div>
+                  `
+                : nothing}
               <p class="work-queue-detail-summary">
                 Agent-team state is projected from server/runtime truth and does not mutate Work
                 Queue lifecycle.
@@ -634,7 +1697,8 @@ function renderDetail(props: WorkQueueProps) {
         </div>
       </header>
       ${renderFailureStatus(item)} ${renderArtifactSection(props, item)}
-      ${renderOpenQuestions(item)} ${renderActionBar(props, item)} ${renderEvidence(item)}
+      ${renderOpenQuestions(item)} ${renderActionBar(props, item)}
+      ${renderConvergenceSliceTracker(item)} ${renderEvidence(item)}
       ${renderExecutionTruth(props, item)} ${renderHistory(item)}
     </section>
   `;

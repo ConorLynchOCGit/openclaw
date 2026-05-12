@@ -55,6 +55,13 @@ export type ChildWorkflowRef = {
   requiredByDefault: boolean;
   requestPolicyRef: string;
 };
+export type WorkflowPermissionModelRef = {
+  permissionModelId: string;
+  summary: string;
+  allowedLocalActionKinds: string[];
+  approvalRequiredActionKinds: string[];
+  blockedActionKinds: string[];
+};
 
 export const executionWorkflowContractSchema = z.object({
   workflowId: z.string().min(3).max(120),
@@ -131,6 +138,15 @@ export const executionWorkflowContractSchema = z.object({
     )
     .max(30)
     .optional(),
+  permissionModel: z
+    .object({
+      permissionModelId: z.string().min(1).max(160),
+      summary: z.string().min(1).max(500),
+      allowedLocalActionKinds: z.array(z.string().min(1).max(80)).max(40),
+      approvalRequiredActionKinds: z.array(z.string().min(1).max(80)).max(40),
+      blockedActionKinds: z.array(z.string().min(1).max(80)).max(40),
+    })
+    .optional(),
   closeoutRequirement: z.object({
     required: z.literal(true),
     closeoutKind: z.enum(["work_episode_outcome_pack", "runtime_artifact"]),
@@ -188,6 +204,8 @@ export function createWorkflowContractRouterSummary(contract: ExecutionWorkflowC
   routingHints: string[];
   defaultAuthorityProfile: string;
   supportedAuthorityProfiles: string[];
+  permissionModelId: string | null;
+  permissionSummary: string | null;
 } {
   return {
     workflowId: contract.workflowId,
@@ -201,5 +219,7 @@ export function createWorkflowContractRouterSummary(contract: ExecutionWorkflowC
     routingHints: contract.intentPatterns.routingHints.slice(0, 10),
     defaultAuthorityProfile: contract.defaultAuthorityProfile,
     supportedAuthorityProfiles: contract.supportedAuthorityProfiles.slice(0, 20),
+    permissionModelId: contract.permissionModel?.permissionModelId ?? null,
+    permissionSummary: contract.permissionModel?.summary.slice(0, 500) ?? null,
   };
 }

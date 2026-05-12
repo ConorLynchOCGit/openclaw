@@ -2,9 +2,11 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { decidePromptRouterMemoryPolicy } from "../../extensions/execution-platform/runtime-api.js";
 import type { OpenClawConfig } from "../config/config.js";
 import { createMemoryCaptureJobStore } from "./model-memory.capture-jobs.js";
 import {
+  assembleRouteAwareBootstrapContextPack,
   buildLiveRetrievalEnvelope,
   buildProjectionBootstrapContextFiles,
   buildCompletedAssistantTurnCaptureInput,
@@ -24,6 +26,26 @@ import {
 
 afterEach(() => {
   vi.unstubAllEnvs();
+});
+
+describe("Model Memory compatibility retrieval overlay", () => {
+  it("keeps production live-runtime exports on the route-aware context-pack module", async () => {
+    const source = await fs.readFile("src/agents/model-memory.live-runtime.ts", "utf8");
+
+    expect(source).toContain("./model-memory/live-runtime/route-aware-context-pack.js");
+    expect(source).not.toContain("./model-memory/live-runtime/retrieval-context.js");
+  });
+
+  it("hard-disables the legacy retrieval-context overlay outside explicit compatibility mode", async () => {
+    const source = await fs.readFile(
+      "src/agents/model-memory/live-runtime/retrieval-context.ts",
+      "utf8",
+    );
+
+    expect(source).toContain("OPENCLAW_MODEL_MEMORY_COMPAT_RETRIEVAL_CONTEXT_ENABLED");
+    expect(source).toContain("model_memory_retrieval_context_compatibility_overlay_disabled");
+    expect(source).toContain("./route-aware-context-pack.js");
+  });
 });
 
 describe("resolveModelMemoryLiveRuntimeStatus", () => {
@@ -367,6 +389,18 @@ describe("live retrieval context helpers", () => {
         currentTurnText: "   ",
       }),
     ).toBe(false);
+    expect(
+      shouldAttemptLiveRetrievalContext({
+        status: enabledStatus,
+        currentTurnText: "What do I prefer?",
+        memoryPolicyDecision: decidePromptRouterMemoryPolicy({
+          routeKind: "protocol",
+          promptHash: "hash",
+          boundedPromptSummary: "protocol handled",
+          contextBudgetRemainingTokens: 0,
+        }),
+      }),
+    ).toBe(false);
   });
 
   it("builds a live-context retrieval envelope without persisting root file proof as scope", () => {
@@ -407,6 +441,31 @@ describe("live retrieval context helpers", () => {
     expect(envelope.scope).toMatchObject({
       memoryTraceId: "memory_trace_turn_aaaaaaaaaaaaaaaaaaaaaaaa",
     });
+  });
+
+  it("bounds bootstrap context files through route-aware context pack assembly", () => {
+    const memoryPolicyDecision = decidePromptRouterMemoryPolicy({
+      routeKind: "chat_send",
+      promptHash: "hash",
+      boundedPromptSummary: "ordinary chat with memory allowed",
+      contextBudgetRemainingTokens: 700,
+    });
+
+    const result = assembleRouteAwareBootstrapContextPack({
+      memoryPolicyDecision,
+      contextBudgetRemainingTokens: 700,
+      contextFiles: [
+        { path: ".openclaw/model-memory/projections/memory.md", content: "x".repeat(1_200) },
+        { path: ".openclaw/model-memory/projections/user.md", content: "small" },
+        { path: ".openclaw/model-memory/retrieval-context.md", content: "selected memory" },
+      ],
+    });
+
+    expect(result.contextPackDecision.totalTokenEstimate).toBeLessThanOrEqual(700);
+    expect(result.contextFiles.map((file) => file.path)).not.toContain(
+      ".openclaw/model-memory/projections/memory.md",
+    );
+    expect(result.contextPackDecision.rawPromptStored).toBe(false);
   });
 });
 

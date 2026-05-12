@@ -58,6 +58,56 @@ export const MODEL_ROUTE_CANDIDATES: ModelRouteCandidate[] = [
     },
   },
   {
+    provider: "openrouter",
+    model: "moonshotai/kimi-k2.6",
+    family: "Moonshot",
+    capabilities: ["structured_json", "json_schema", "reasoning", "code_execution_ready"],
+    metadata: {
+      lane: "implementation_candidate",
+      executionEnabled: false,
+    },
+  },
+  {
+    provider: "openrouter",
+    model: "deepseek/deepseek-v4-flash",
+    family: "DeepSeek",
+    capabilities: ["structured_json", "json_schema", "low_cost"],
+    metadata: {
+      lane: "fast_structured_json",
+      executionEnabled: false,
+    },
+  },
+  {
+    provider: "openrouter",
+    model: "deepseek/deepseek-v4-pro",
+    family: "DeepSeek",
+    capabilities: ["structured_json", "json_schema", "reasoning"],
+    metadata: {
+      lane: "review_reasoning_candidate",
+      executionEnabled: false,
+    },
+  },
+  {
+    provider: "openai",
+    model: "openai-codex/gpt-5.4",
+    family: "OpenAI-Codex",
+    capabilities: ["structured_json", "json_schema", "large_context", "reasoning"],
+    metadata: {
+      lane: "codex_app_server_structured_json",
+      executionEnabled: false,
+    },
+  },
+  {
+    provider: "openai",
+    model: "openai-codex/gpt-5.4-mini",
+    family: "OpenAI-Codex",
+    capabilities: ["structured_json", "json_schema", "low_cost"],
+    metadata: {
+      lane: "codex_app_server_memory_json",
+      executionEnabled: false,
+    },
+  },
+  {
     provider: "minimax",
     model: "minimax-structured-json",
     family: "MiniMax",

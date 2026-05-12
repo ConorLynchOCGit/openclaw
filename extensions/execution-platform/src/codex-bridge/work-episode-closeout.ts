@@ -24,6 +24,7 @@ import type {
   RuntimeJobEvent,
   RuntimeJobRepository,
 } from "../runtime-job-repository.ts";
+import { closeoutCapsuleHash, type CloseoutCapsule } from "./closeout-capsule.ts";
 import { CODEX_BRIDGE_JOB_TYPE, isCodexBridgeJobPayload } from "./types.ts";
 
 const DEFAULT_OUTCOME_PACK_RELATIVE_ROOT = ".artifacts/model-memory/work-episode-outcome-pack";
@@ -139,6 +140,7 @@ export type ExecutionPlatformCloseoutInput = {
   workQueueLinkRefs?: string[];
   sourceRefs?: string[];
   contentHashes?: string[];
+  closeoutCapsule?: CloseoutCapsule;
 };
 
 export type ExecutionPlatformCloseoutArtifactMetadata = {
@@ -158,6 +160,9 @@ export type ExecutionPlatformCloseoutArtifactMetadata = {
   sourceLiveSmokeRunId?: string | null;
   sourceRequestId?: string | null;
   sourcePackHash?: string | null;
+  closeoutCapsuleId?: string | null;
+  closeoutCapsuleHash?: string | null;
+  closeoutCapsuleRef?: string | null;
 };
 
 export type ExecutionPlatformCloseoutStatus = {
@@ -199,6 +204,7 @@ export type EmitExecutionPlatformCloseoutInput = {
   followUpCandidates?: ExecutionPlatformCloseoutFollowUp[];
   skillImprovementEvidence?: ExecutionPlatformCloseoutSkillEvidence[];
   sourceRefs?: string[];
+  closeoutCapsule?: CloseoutCapsule;
 };
 
 export type EmitExecutionPlatformCloseoutResult = {
@@ -474,6 +480,9 @@ export function buildWorkEpisodeOutcomePackFromExecutionPlatformCloseout(
   const sourceRefs = unique(
     [
       `runtime-job://${input.runtimeJobId}`,
+      input.closeoutCapsule
+        ? `runtime-job://${input.runtimeJobId}/closeout-capsule/${input.closeoutCapsule.capsuleId}`
+        : undefined,
       ...smokeRefs,
       ...(input.artifactRefs ?? []),
       ...(input.supabasePersistenceProofRefs ?? []),
@@ -495,16 +504,39 @@ export function buildWorkEpisodeOutcomePackFromExecutionPlatformCloseout(
     completedObjective: input.completedObjective,
     recoveryRecommendation: input.recoveryRecommendation,
     userGoal: input.userGoal,
-    workSummary: input.workSummary,
-    finalOutcome: input.finalOutcome,
+    workSummary: input.closeoutCapsule?.structuredSummary.qualityAssessment ?? input.workSummary,
+    finalOutcome: input.closeoutCapsule?.structuredSummary.taskSuccess ?? input.finalOutcome,
     filesTouched: input.filesTouched ?? [],
     testsRun: input.testsRun ?? [],
     failuresAndFixes: input.failuresAndFixes ?? [],
     unresolvedQuestions: input.unresolvedQuestions ?? [],
-    followUpCandidates: input.followUpCandidates ?? [],
-    skillImprovementEvidence: input.skillImprovementEvidence ?? [],
+    followUpCandidates:
+      input.followUpCandidates ??
+      input.closeoutCapsule?.opportunitySeeds
+        .filter((seed) => seed.kind === "proactive_plan" || seed.kind === "follow_up_work_item")
+        .map((seed) => ({
+          title: seed.title,
+          rationale: seed.rationale,
+          sourceRefs: seed.evidenceRefs,
+        })) ??
+      [],
+    skillImprovementEvidence:
+      input.skillImprovementEvidence ??
+      input.closeoutCapsule?.opportunitySeeds
+        .filter(
+          (seed) => seed.kind === "new_skill_candidate" || seed.kind === "existing_skill_edit",
+        )
+        .map((seed) => ({
+          workflowName: seed.kind,
+          evidence: seed.rationale,
+          suggestedDirection: seed.recommendedNextStep,
+          sourceRefs: seed.evidenceRefs,
+        })) ??
+      [],
     sourceRefs,
-    contentHashes: input.contentHashes,
+    contentHashes: input.closeoutCapsule
+      ? unique([closeoutCapsuleHash(input.closeoutCapsule), ...(input.contentHashes ?? [])], 8)
+      : input.contentHashes,
   });
 }
 
@@ -670,6 +702,13 @@ export class ExecutionPlatformWorkEpisodeCloseoutRepository {
       sourceLiveSmokeRunId: mergedInput.smokeResult?.liveSmokeRunId ?? null,
       sourceRequestId: mergedInput.smokeResult?.requestId ?? null,
       sourcePackHash: pack.contentHashes[0] ?? null,
+      closeoutCapsuleId: mergedInput.closeoutCapsule?.capsuleId ?? null,
+      closeoutCapsuleHash: mergedInput.closeoutCapsule
+        ? closeoutCapsuleHash(mergedInput.closeoutCapsule)
+        : null,
+      closeoutCapsuleRef: mergedInput.closeoutCapsule
+        ? `runtime-job://${input.runtimeJobId}/closeout-capsule/${mergedInput.closeoutCapsule.capsuleId}`
+        : null,
     };
     const statResult = await stat(packArtifact.jsonPath);
     const runtimeArtifact = await this.attachCloseoutArtifact({

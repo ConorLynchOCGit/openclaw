@@ -2,6 +2,23 @@ import fs from "node:fs";
 import path from "node:path";
 import { CURRENT_SESSION_VERSION, SessionManager } from "@mariozechner/pi-coding-agent";
 import { resolveSendableOutboundReplyParts } from "openclaw/plugin-sdk/reply-payload";
+import {
+  AcpCodexCodingWorkerAdapter,
+  AgentTeamQueuedRunner,
+  buildExecutionPlatformFeatureFlagRegistry,
+  CodexParityImplementationBridge,
+  evaluateExecutionPlatformFlag,
+  ModelCloseoutCapsuleReporter,
+  OpenRouterAgentTeamModelClient,
+  parseCloseoutCapsule,
+  projectCloseoutCapsuleOpportunitySeedsToWorkQueue,
+  RuntimeWorkerSupervisor,
+  runProtocolPreGate,
+  WorkflowQueuedRunner,
+  type AcpCodexCodingWorkerRunResult,
+  type AgentTeamClaimedJobExecutionResult,
+} from "../../../extensions/execution-platform/runtime-api.js";
+import { CodexAppServerJsonExecutor } from "../../../extensions/model-memory/src/mmv2/codex-app-server-json-executor.js";
 import { resolveSessionAgentId } from "../../agents/agent-scope.js";
 import { resolveThinkingDefault } from "../../agents/model-selection.js";
 import { rewriteTranscriptEntriesInSessionFile } from "../../agents/pi-embedded-runner/transcript-rewrite.js";
@@ -12,6 +29,7 @@ import { createReplyDispatcher } from "../../auto-reply/reply/reply-dispatcher.j
 import type { MsgContext } from "../../auto-reply/templating.js";
 import { extractCanvasFromText } from "../../chat/canvas-render.js";
 import { resolveSessionFilePath } from "../../config/sessions.js";
+import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import { jsonUtf8Bytes } from "../../infra/json-utf8-bytes.js";
 import { getAgentScopedMediaLocalRoots } from "../../media/local-roots.js";
 import { isAudioFileName } from "../../media/mime.js";
@@ -52,6 +70,7 @@ import { MediaOffloadError } from "../chat-attachments.js";
 import { stripEnvelopeFromMessage, stripEnvelopeFromMessages } from "../chat-sanitize.js";
 import { augmentChatHistoryWithCliSessionImports } from "../cli-session-history.js";
 import { isSuppressedControlReplyText } from "../control-reply-text.js";
+import { getExecutionPlatformRuntime } from "../execution-platform-http.js";
 import { ADMIN_SCOPE } from "../method-scopes.js";
 import {
   GATEWAY_CLIENT_CAPS,
@@ -1369,6 +1388,59 @@ function appendAssistantTranscriptMessage(params: {
   });
 }
 
+function appendUserTranscriptMessage(params: {
+  message: string;
+  sessionId: string;
+  storePath: string | undefined;
+  sessionFile?: string;
+  agentId?: string;
+  idempotencyKey: string;
+  timestamp: number;
+}): TranscriptAppendResult {
+  const transcriptPath = resolveTranscriptPath({
+    sessionId: params.sessionId,
+    storePath: params.storePath,
+    sessionFile: params.sessionFile,
+    agentId: params.agentId,
+  });
+  if (!transcriptPath) {
+    return { ok: false, error: "transcript path not resolved" };
+  }
+  if (!fs.existsSync(transcriptPath)) {
+    const ensured = ensureTranscriptFile({
+      transcriptPath,
+      sessionId: params.sessionId,
+    });
+    if (!ensured.ok) {
+      return { ok: false, error: ensured.error ?? "failed to create transcript file" };
+    }
+  }
+  if (transcriptHasIdempotencyKey(transcriptPath, params.idempotencyKey)) {
+    return { ok: true };
+  }
+
+  const messageBody = {
+    ...buildChatSendTranscriptMessage({
+      message: params.message,
+      savedImages: [],
+      timestamp: params.timestamp,
+    }),
+    idempotencyKey: params.idempotencyKey,
+  };
+  try {
+    const sessionManager = SessionManager.open(transcriptPath);
+    const messageId = sessionManager.appendMessage(messageBody);
+    emitSessionTranscriptUpdate({
+      sessionFile: transcriptPath,
+      message: messageBody,
+      messageId,
+    });
+    return { ok: true, messageId, message: messageBody };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
 function collectSessionAbortPartials(params: {
   chatAbortControllers: Map<string, ChatAbortControllerEntry>;
   chatRunBuffers: Map<string, string>;
@@ -1683,6 +1755,597 @@ function broadcastChatError(params: {
   params.context.broadcast("chat", payload);
   params.context.nodeSendToSession(params.sessionKey, "chat", payload);
   params.context.agentRunSeq.delete(params.runId);
+}
+
+const EXECUTION_CHAT_INTENT_PATTERN =
+  /\b(?:use (?:the )?(?:full )?(?:coding|agent) team|coding team|agent team|full team|build|implement|fix|add (?:a )?(?:small )?(?:regression )?test|make (?:a )?(?:tiny|small) .*change|deploy if policy permits|close it out)\b/iu;
+
+export const LEGACY_EXECUTION_CHAT_INTENT_FALLBACK_ENV =
+  "OPENCLAW_LEGACY_SEMANTIC_INTENT_ROUTING_FALLBACK";
+
+export function isLegacyExecutionChatIntentFallbackEnabled(
+  env: Record<string, string | undefined> = process.env,
+): boolean {
+  return env[LEGACY_EXECUTION_CHAT_INTENT_FALLBACK_ENV] === "1";
+}
+
+function isHighRiskForLegacyExecutionChatFallback(message: string): boolean {
+  return /\b(production|deploy|send|outbound|install|dependency|model promotion|promote model|work queue lifecycle)\b/iu.test(
+    message,
+  );
+}
+
+export function shouldAttemptExecutionWorkflowChatTurn(
+  message: string,
+  options: { allowTemporaryLegacySemanticFallback?: boolean } = {},
+): boolean {
+  const trimmed = message.trim();
+  const preGate = runProtocolPreGate({
+    text: message,
+    sourceRoute: "ux",
+    auth: { authenticated: true, actorId: "operator:gateway-chat" },
+    requireAuthentication: false,
+  });
+  if (preGate.kind !== "continue_to_intent_routing") {
+    return false;
+  }
+  if (isChatStopCommandText(trimmed)) {
+    return false;
+  }
+  const fallbackEnabled =
+    options.allowTemporaryLegacySemanticFallback === true ||
+    isLegacyExecutionChatIntentFallbackEnabled();
+  if (!fallbackEnabled || isHighRiskForLegacyExecutionChatFallback(trimmed)) {
+    return false;
+  }
+  return EXECUTION_CHAT_INTENT_PATTERN.test(trimmed);
+}
+
+export function evaluateGatewayChatFrontDoorHandoffReadiness(input: {
+  config?: OpenClawConfig | null;
+  env?: Record<string, string | undefined>;
+}) {
+  const registry = buildExecutionPlatformFeatureFlagRegistry({
+    config: input.config ?? null,
+    env: input.env ?? process.env,
+    scope: "owner_only",
+  });
+  const handoffDecision = evaluateExecutionPlatformFlag(
+    registry,
+    "normal_chat_gateway_front_door_handoff",
+    { critical: true },
+  );
+  const ownerCanaryDecision = evaluateExecutionPlatformFlag(
+    registry,
+    "two_lane_router_owner_canary",
+    { critical: true },
+  );
+  const nativeSubmitDecision = evaluateExecutionPlatformFlag(
+    registry,
+    "native_execution_submit_front_door",
+    { critical: true },
+  );
+  const killSwitchDecision = evaluateExecutionPlatformFlag(registry, "live_router_kill_switch", {
+    critical: true,
+  });
+  const allowed =
+    handoffDecision.allowed &&
+    ownerCanaryDecision.allowed &&
+    nativeSubmitDecision.allowed &&
+    killSwitchDecision.allowed;
+  return {
+    artifactKind: "gateway_chat_front_door_handoff_readiness" as const,
+    allowed,
+    decision: allowed ? ("allowed" as const) : ("blocked" as const),
+    handoffDecision,
+    ownerCanaryDecision,
+    nativeSubmitDecision,
+    killSwitchDecision,
+    reasonCodes: [
+      ...handoffDecision.reasonCodes,
+      ...ownerCanaryDecision.reasonCodes,
+      ...nativeSubmitDecision.reasonCodes,
+      ...killSwitchDecision.reasonCodes,
+      ...(allowed ? ["gateway_chat_front_door_handoff_owner_default_allowed"] : []),
+    ].slice(0, 40),
+    runtimeJobsCreated: false,
+    authorityGranted: false,
+    controlsApplied: false,
+    workQueueLifecycleMutated: false,
+    rawPromptStored: false,
+    rawResponseStored: false,
+    rawProviderLogStored: false,
+  };
+}
+
+export function shouldAttemptIntentFrontDoorChatTurn(
+  message: string,
+  options: {
+    config?: OpenClawConfig | null;
+    env?: Record<string, string | undefined>;
+    allowWithoutFeatureGate?: boolean;
+  } = {},
+): boolean {
+  const trimmed = message.trim();
+  const preGate = runProtocolPreGate({
+    text: message,
+    sourceRoute: "ux",
+    auth: { authenticated: true, actorId: "operator:gateway-chat" },
+    requireAuthentication: false,
+  });
+  if (preGate.kind !== "continue_to_intent_routing" || isChatStopCommandText(trimmed)) {
+    return false;
+  }
+  if (options.allowWithoutFeatureGate === true) {
+    return true;
+  }
+  return evaluateGatewayChatFrontDoorHandoffReadiness({
+    config: options.config ?? null,
+    env: options.env,
+  }).allowed;
+}
+
+export function shouldPreserveNormalChatAfterFrontDoorSubmit(input: {
+  accepted: boolean;
+  runtimeJobId: string | null;
+  reasonCodes?: string[] | null;
+  frontDoorRouterResult?: { output?: { route?: string | null } | null } | null;
+  frontDoorCompiledRequest?: { artifactKind?: string | null } | null;
+}): boolean {
+  const reasonCodes = input.reasonCodes ?? [];
+  if (
+    reasonCodes.includes("structured_model_intent_router_provider_not_configured") ||
+    reasonCodes.includes("front_door_required_for_free_form_execution_submit")
+  ) {
+    return true;
+  }
+  const route = input.frontDoorRouterResult?.output?.route ?? null;
+  if (
+    !input.accepted &&
+    !input.runtimeJobId &&
+    (route === "chat_response" || route === "status_response" || route === "plan_only")
+  ) {
+    return true;
+  }
+  if (input.frontDoorCompiledRequest?.artifactKind === "front_door_compiled_plan_only") {
+    return true;
+  }
+  return false;
+}
+
+export function buildExecutionChatAssistantText(input: {
+  accepted: boolean;
+  workflowId: string | null;
+  runtimeJobId: string | null;
+  teamRunId: string | null;
+  completed: boolean;
+  failed: boolean;
+  closeoutState: string;
+  reasonCodes: string[];
+  closeout?: Record<string, unknown> | null;
+}): string {
+  const capsule = asChatRecord(input.closeout?.closeoutCapsule);
+  const humanReport = asChatRecord(capsule?.humanReport);
+  const reportMarkdown = humanReport ? stringField(humanReport, "reportMarkdown", "") : "";
+  if (humanReport && reportMarkdown && stringField(humanReport, "source", "") === "model") {
+    const refs = [
+      input.workflowId ? `Workflow selected: ${input.workflowId}` : null,
+      input.runtimeJobId ? `Runtime job: ${input.runtimeJobId}` : null,
+      input.teamRunId ? `Team run: ${input.teamRunId}` : null,
+      `Closeout: ${input.closeoutState}`,
+      input.reasonCodes.length > 0 ? `Reason codes: ${input.reasonCodes.join(", ")}` : null,
+    ].filter((line): line is string => Boolean(line));
+    return [reportMarkdown, refs.length ? `\nRefs:\n${refs.join("\n")}` : null]
+      .filter((line): line is string => typeof line === "string")
+      .join("\n");
+  }
+  const status = input.completed
+    ? "completed"
+    : input.failed
+      ? "needs review"
+      : input.accepted
+        ? "accepted"
+        : "not routed";
+  const humanCloseout = asChatRecord(input.closeout?.humanCloseoutSummary);
+  const agentTeam = asChatRecord(input.closeout?.agentTeam);
+  const closeoutQuality = asChatRecord(input.closeout?.closeoutQuality);
+  const roleAssignments = arrayRecords(agentTeam?.roleAssignments);
+  const roster = arrayRecords(agentTeam?.roster);
+  const permission = asChatRecord(agentTeam?.permissionEvidence);
+  const whatChanged = humanCloseout ? stringField(humanCloseout, "whatChanged", "") : "";
+  const result = humanCloseout ? stringField(humanCloseout, "result", "") : "";
+  const eli5Progress = humanCloseout ? stringField(humanCloseout, "eli5Progress", "") : "";
+  const filesTouched = stringArray(humanCloseout?.filesTouched).slice(0, 8);
+  const testsRun = stringArray(humanCloseout?.testsRun).slice(0, 8);
+  const limitations = [
+    ...stringArray(humanCloseout?.limitations),
+    ...stringArray(closeoutQuality?.limitations),
+  ].slice(0, 8);
+  const requiredFixes = stringArray(closeoutQuality?.requiredFixes).slice(0, 8);
+  const lines = [
+    `Execution Platform ${status}.`,
+    input.workflowId ? `Workflow selected: ${input.workflowId}` : null,
+    input.runtimeJobId ? `Runtime job: ${input.runtimeJobId}` : null,
+    input.teamRunId ? `Team run: ${input.teamRunId}` : null,
+    roleAssignments.length > 0
+      ? `Roles used: ${roleAssignments
+          .slice(0, 8)
+          .map(
+            (role) =>
+              `${stringField(role, "roleId", "unknown")} (${stringField(role, "modelId", "unknown")}, ${stringField(role, "status", "unknown")})`,
+          )
+          .join("; ")}`
+      : null,
+    roster.length > 0
+      ? `Model refs: ${roster
+          .slice(0, 8)
+          .map(
+            (role) =>
+              `${stringField(role, "roleId", "role")}: ${stringField(role, "modelId", "unknown")}`,
+          )
+          .join("; ")}`
+      : null,
+    permission
+      ? `Permission model: ${stringField(permission, "permissionModelId", "unknown")} (${stringField(permission, "decision", "unknown")})`
+      : null,
+    whatChanged ? `What changed: ${whatChanged}` : null,
+    result ? `Result: ${result}` : null,
+    filesTouched.length > 0 ? `Files/artifacts: ${filesTouched.join(", ")}` : null,
+    testsRun.length > 0 ? `Validation: ${testsRun.join(", ")}` : null,
+    `Closeout: ${input.closeoutState}${capsule ? " (degraded: model-authored capsule missing)" : ""}`,
+    closeoutQuality
+      ? `Closeout quality: ${stringField(closeoutQuality, "goalSatisfaction", "unknown")}${closeoutQuality.needsReview === true ? " (needs review)" : ""}`
+      : null,
+    limitations.length > 0 ? `Limitations: ${limitations.join("; ")}` : null,
+    requiredFixes.length > 0 ? `Required fixes: ${requiredFixes.join("; ")}` : null,
+    eli5Progress ? `ELI5: ${eli5Progress}` : null,
+    input.reasonCodes.length > 0 ? `Reason codes: ${input.reasonCodes.join(", ")}` : null,
+    "Work Queue readback is runtime-truth backed; lifecycle was not mutated by the UI.",
+  ];
+  return lines.filter((line): line is string => typeof line === "string").join("\n");
+}
+
+export function buildFrontDoorHandoffFailureAssistantText(
+  input: {
+    reasonCodes?: string[] | null;
+  } = {},
+): string {
+  const reasonCodes = input.reasonCodes?.length ? input.reasonCodes : ["front_door_handoff_failed"];
+  return [
+    "Execution Platform front-door handoff failed before a runtime job could be created.",
+    "I did not fall back to ordinary chat/tool execution for this work request.",
+    `Reason codes: ${reasonCodes.slice(0, 12).join(", ")}`,
+  ].join("\n");
+}
+
+function asChatRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function arrayRecords(value: unknown): Array<Record<string, unknown>> {
+  return Array.isArray(value)
+    ? value.filter(
+        (item): item is Record<string, unknown> =>
+          Boolean(item) && typeof item === "object" && !Array.isArray(item),
+      )
+    : [];
+}
+
+function stringArray(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === "string")
+    : [];
+}
+
+function stringField(record: Record<string, unknown>, key: string, fallback: string): string {
+  const value = record[key];
+  return typeof value === "string" && value.trim() ? value : fallback;
+}
+
+async function runAgentTeamChatJobThroughWorkerSupervisor(input: {
+  runtimeJobs: Awaited<ReturnType<typeof getExecutionPlatformRuntime>>["runtimeJobs"];
+  runtimeWorkGraphs: Awaited<ReturnType<typeof getExecutionPlatformRuntime>>["runtimeWorkGraphs"];
+  runtimeJobId: string;
+  workerId: string;
+  closeoutReporter: ModelCloseoutCapsuleReporter;
+}): Promise<{
+  completed: boolean;
+  failed: boolean;
+  teamRunId: string | null;
+  reasonCodes: string[];
+}> {
+  let claimedExecution: AgentTeamClaimedJobExecutionResult | null = null;
+  let claimedTeamRunId: string | null = null;
+  const openRouterApiKey = process.env.OPENROUTER_API_KEY?.trim();
+  const roleModelClient = openRouterApiKey
+    ? new OpenRouterAgentTeamModelClient({
+        apiKey: openRouterApiKey,
+        retryPolicy: {
+          maxAttempts: 2,
+          timeoutMs: 240_000,
+        },
+        requestProfilesByModelId: {
+          "deepseek/deepseek-v4-pro": {
+            responseFormatMode: "native",
+            reasoningMode: "omit",
+            maxTokens: 1_600,
+          },
+          "moonshotai/kimi-k2.6": {
+            responseFormatMode: "native",
+            reasoningMode: "omit",
+            maxTokens: 2_400,
+          },
+        },
+      })
+    : undefined;
+  const queuedRunner = new AgentTeamQueuedRunner({
+    runtimeJobs: input.runtimeJobs,
+    runtimeWorkGraphs: input.runtimeWorkGraphs,
+    workerId: input.workerId,
+    queueName: "agent-team",
+    runtimeJobId: input.runtimeJobId,
+    closeoutReporter: input.closeoutReporter,
+    roleModelClient,
+    implementationBridge: new CodexParityImplementationBridge({
+      runtimeJobs: input.runtimeJobs,
+      approvedRepoScopePaths: [
+        "extensions/execution-platform/src/codex-bridge/",
+        "extensions/execution-platform/src/workers/",
+        "extensions/execution-platform/src/intent-front-door/",
+        "extensions/execution-platform/src/work-queue/",
+        "ui/src/ui/",
+        "scripts/",
+      ],
+      approvedValidationCommands: [
+        "pnpm test:file extensions/execution-platform/src/codex-bridge/agent-team-quality-proof.test.ts",
+        "pnpm test:file ui/src/ui/views/work-queue.test.ts",
+      ],
+    }),
+  });
+  const workerAdapter = new AcpCodexCodingWorkerAdapter({
+    runtimeJobs: input.runtimeJobs,
+    runner: {
+      async run({ job }): Promise<AcpCodexCodingWorkerRunResult> {
+        claimedExecution = await queuedRunner.runClaimedJobForAdapter(job);
+        claimedTeamRunId = claimedExecution.evidence.teamRunId;
+        const evidence = claimedExecution.evidence;
+        const closeoutCapsule = claimedExecution.closeoutCapsule;
+        const closeoutRefs = [
+          `runtime-job://${job.jobId}/closeout-capsule/${closeoutCapsule.capsuleId}`,
+        ];
+        const roleRefs = evidence.roster.map((role) => `role://${role.roleId}`).slice(0, 20);
+        const modelRefs = evidence.roster.map((role) => role.modelId).slice(0, 20);
+        const validationRefs =
+          claimedExecution.validationRefs.length > 0
+            ? claimedExecution.validationRefs
+            : [`runtime-job://${job.jobId}/agent-team/validation`];
+        const reviewRefs = evidence.artifactRefs
+          .filter((ref) => ref.includes("security-review") || ref.includes("result-review"))
+          .slice(0, 20);
+        const completedWorkEvidenceRefs = claimedExecution.cleanSuccessAccepted
+          ? [...evidence.artifactRefs, ...closeoutRefs].slice(0, 40)
+          : [];
+        return {
+          status: claimedExecution.cleanSuccessAccepted ? "completed" : "needs_review",
+          summary: claimedExecution.cleanSuccessAccepted
+            ? "Coding worker completed bounded work with model-authored closeout evidence."
+            : `Coding worker needs review: ${claimedExecution.blockingReasonCodes.join(", ")}`,
+          teamRunId: evidence.teamRunId,
+          workflowId: "agent_team.coding",
+          roleRefs,
+          modelRefs,
+          validationRefs: validationRefs.slice(0, 20),
+          reviewRefs,
+          closeoutRefs,
+          completedWorkEvidenceRefs,
+          artifactRefs: [...evidence.artifactRefs, ...closeoutRefs].slice(0, 40),
+          closeoutCapsule,
+          evidence,
+          roleExecutionEvidence: evidence.roleExecutionEvidence,
+          reasonCodes: claimedExecution.cleanSuccessAccepted
+            ? ["agent_team_queued_runner_completed"]
+            : claimedExecution.blockingReasonCodes,
+          result: {
+            teamRunId: evidence.teamRunId,
+            closeoutCapsuleId: closeoutCapsule.capsuleId,
+            cleanSuccessAccepted: claimedExecution.cleanSuccessAccepted,
+            changedFileRefs: claimedExecution.changedFileRefs,
+            validationRefs,
+            rawPromptStored: false,
+            rawResponseStored: false,
+            rawLogsStored: false,
+            workQueueLifecycleMutated: false,
+          },
+          rawPromptStored: false,
+          rawResponseStored: false,
+          rawLogsStored: false,
+          workQueueLifecycleMutated: false,
+        };
+      },
+    },
+  });
+  const supervisorResult = await new RuntimeWorkerSupervisor({
+    repository: input.runtimeJobs,
+    workerId: input.workerId,
+    queueName: "agent-team",
+    adapters: [workerAdapter],
+  }).runOnce({ runtimeJobId: input.runtimeJobId });
+  return {
+    completed: supervisorResult.completed,
+    failed: supervisorResult.claimed && !supervisorResult.completed,
+    teamRunId: claimedTeamRunId,
+    reasonCodes: supervisorResult.reasonCodes,
+  };
+}
+
+async function tryRunExecutionWorkflowChatTurn(params: {
+  cfg: OpenClawConfig;
+  context: GatewayRequestContext;
+  sessionKey: string;
+  sessionId: string;
+  storePath: string | undefined;
+  sessionFile?: string;
+  agentId?: string;
+  runId: string;
+  message: string;
+}): Promise<{ handled: boolean; runtimeJobId: string | null; teamRunId: string | null }> {
+  if (
+    !shouldAttemptIntentFrontDoorChatTurn(params.message, { config: params.cfg }) &&
+    !shouldAttemptExecutionWorkflowChatTurn(params.message)
+  ) {
+    return { handled: false, runtimeJobId: null, teamRunId: null };
+  }
+  const runtime = await getExecutionPlatformRuntime(params.cfg);
+  const workItemId = `${params.runId}-execution-work`;
+  const submit = await runtime.nativeExecutionRpc.submit({
+    prompt: params.message,
+    auth: {
+      actorId: "operator:main",
+      authenticated: true,
+      role: "operator",
+      sessionId: params.sessionKey,
+      sourceRoute: "ux",
+    },
+    workItemId,
+    sourceRoute: "ux",
+    sourcePromptRef: {
+      refKind: "gateway_chat_transcript",
+      sessionKey: params.sessionKey,
+      sessionId: params.sessionId,
+      runId: params.runId,
+      sourceRoute: "ux",
+      rawPromptStored: false,
+    },
+  });
+  if (shouldPreserveNormalChatAfterFrontDoorSubmit(submit)) {
+    return { handled: false, runtimeJobId: null, teamRunId: null };
+  }
+  appendUserTranscriptMessage({
+    message: params.message,
+    sessionId: params.sessionId,
+    storePath: params.storePath,
+    sessionFile: params.sessionFile,
+    agentId: params.agentId,
+    idempotencyKey: `${params.runId}:execution-platform-user`,
+    timestamp: Date.now(),
+  });
+  if (!submit.accepted || !submit.runtimeJobId) {
+    const clarification = submit.frontDoorClarification?.clarification;
+    const message =
+      buildExecutionChatAssistantText({
+        accepted: submit.accepted,
+        workflowId: submit.workflowId,
+        runtimeJobId: submit.runtimeJobId,
+        teamRunId: null,
+        completed: false,
+        failed: true,
+        closeoutState: clarification ? "clarification_required" : "not_created",
+        reasonCodes: submit.reasonCodes ?? ["execution_submit_not_accepted"],
+        closeout: null,
+      }) + (clarification ? `\nClarification: ${clarification.questionSummary}` : "");
+    const appended = appendAssistantTranscriptMessage({
+      message,
+      sessionId: params.sessionId,
+      storePath: params.storePath,
+      sessionFile: params.sessionFile,
+      agentId: params.agentId,
+      createIfMissing: true,
+      idempotencyKey: `${params.runId}:execution-platform-not-accepted`,
+    });
+    broadcastChatFinal({
+      context: params.context,
+      runId: params.runId,
+      sessionKey: params.sessionKey,
+      message: appended.message,
+    });
+    return { handled: true, runtimeJobId: null, teamRunId: null };
+  }
+
+  const job = await runtime.runtimeJobs.getJob(submit.runtimeJobId);
+  const closeoutReporter = new ModelCloseoutCapsuleReporter({
+    executor: new CodexAppServerJsonExecutor({
+      cwd: process.cwd(),
+      requestTimeoutMs: 300_000,
+      reasoningEffort: "medium",
+    }),
+    modelId: "openai-codex/gpt-5.4",
+    reasoningEffort: "medium",
+    maxOutputTokens: 12_000,
+  });
+  const runOnce =
+    job?.jobType === "executor.agent_team"
+      ? await runAgentTeamChatJobThroughWorkerSupervisor({
+          runtimeJobs: runtime.runtimeJobs,
+          runtimeWorkGraphs: runtime.runtimeWorkGraphs,
+          runtimeJobId: submit.runtimeJobId,
+          workerId: `chat:${params.sessionKey}`,
+          closeoutReporter,
+        })
+      : await new WorkflowQueuedRunner({
+          runtimeJobs: runtime.runtimeJobs,
+          workerId: `chat:${params.sessionKey}`,
+          queueName: "agent-team",
+          runtimeJobId: submit.runtimeJobId,
+          closeoutReporter,
+        }).runOnce();
+  const closeout = await runtime.nativeExecutionRpc.readCloseout(submit.runtimeJobId);
+  const closeoutRecord =
+    closeout && typeof closeout === "object" && !Array.isArray(closeout)
+      ? (closeout as Record<string, unknown>)
+      : {};
+  try {
+    if (closeoutRecord.closeoutCapsule) {
+      await projectCloseoutCapsuleOpportunitySeedsToWorkQueue({
+        workQueue: runtime.workQueue,
+        capsule: parseCloseoutCapsule(closeoutRecord.closeoutCapsule),
+        actorId: "operator:main",
+      });
+    }
+  } catch {
+    // Closeout opportunity projection is advisory; the runtime closeout remains readable.
+  }
+  const closeoutState =
+    typeof closeoutRecord.closeoutState === "string" ? closeoutRecord.closeoutState : "unknown";
+  const reasonCodes = [
+    ...(submit.reasonCodes ?? []),
+    ...("reasonCodes" in runOnce && Array.isArray(runOnce.reasonCodes) ? runOnce.reasonCodes : []),
+    ...(runOnce.failed ? ["workflow_runner_failed"] : []),
+  ];
+  const message = buildExecutionChatAssistantText({
+    accepted: submit.accepted,
+    workflowId: submit.workflowId,
+    runtimeJobId: submit.runtimeJobId,
+    teamRunId:
+      "teamRunId" in runOnce && typeof runOnce.teamRunId === "string" ? runOnce.teamRunId : null,
+    completed: runOnce.completed,
+    failed: runOnce.failed,
+    closeoutState,
+    reasonCodes,
+    closeout: closeoutRecord,
+  });
+  const appended = appendAssistantTranscriptMessage({
+    message,
+    sessionId: params.sessionId,
+    storePath: params.storePath,
+    sessionFile: params.sessionFile,
+    agentId: params.agentId,
+    createIfMissing: true,
+    idempotencyKey: `${params.runId}:execution-platform-final`,
+  });
+  broadcastChatFinal({
+    context: params.context,
+    runId: params.runId,
+    sessionKey: params.sessionKey,
+    message: appended.message,
+  });
+  return {
+    handled: true,
+    runtimeJobId: submit.runtimeJobId,
+    teamRunId:
+      "teamRunId" in runOnce && typeof runOnce.teamRunId === "string" ? runOnce.teamRunId : null,
+  };
 }
 
 export const chatHandlers: GatewayRequestHandlers = {
@@ -2246,6 +2909,84 @@ export const chatHandlers: GatewayRequestHandlers = {
           `webchat eager user transcript update failed: ${formatForLog(transcriptErr)}`,
         );
       });
+
+      const frontDoorHandoffExpected = shouldAttemptIntentFrontDoorChatTurn(
+        typeof params.message === "string" ? params.message : parsedMessage,
+        { config: cfg },
+      );
+      try {
+        const executionTurn = await tryRunExecutionWorkflowChatTurn({
+          cfg,
+          context,
+          sessionKey,
+          sessionId: entry?.sessionId ?? clientRunId,
+          storePath: loadSessionEntry(sessionKey).storePath,
+          sessionFile: entry?.sessionFile,
+          agentId,
+          runId: clientRunId,
+          message: typeof params.message === "string" ? params.message : parsedMessage,
+        });
+        if (executionTurn.handled) {
+          await rewriteUserTranscriptMedia();
+          setGatewayDedupeEntry({
+            dedupe: context.dedupe,
+            key: `chat:${clientRunId}`,
+            entry: {
+              ts: Date.now(),
+              ok: true,
+              payload: {
+                runId: clientRunId,
+                status: "ok" as const,
+                runtimeJobId: executionTurn.runtimeJobId,
+                teamRunId: executionTurn.teamRunId,
+              },
+            },
+          });
+          context.chatAbortControllers.delete(clientRunId);
+          return;
+        }
+      } catch (executionErr) {
+        context.logGateway.warn(
+          `execution workflow chat routing skipped: ${formatForLog(executionErr)}`,
+        );
+        if (frontDoorHandoffExpected) {
+          const message = buildFrontDoorHandoffFailureAssistantText({
+            reasonCodes: ["front_door_handoff_exception", "ordinary_chat_fallback_suppressed"],
+          });
+          const latest = loadSessionEntry(sessionKey);
+          const appended = appendAssistantTranscriptMessage({
+            message,
+            sessionId: latest.entry?.sessionId ?? entry?.sessionId ?? clientRunId,
+            storePath: latest.storePath,
+            sessionFile: latest.entry?.sessionFile ?? entry?.sessionFile,
+            agentId,
+            createIfMissing: true,
+            idempotencyKey: `${clientRunId}:execution-platform-front-door-exception`,
+          });
+          broadcastChatFinal({
+            context,
+            runId: clientRunId,
+            sessionKey,
+            message: appended.message,
+          });
+          setGatewayDedupeEntry({
+            dedupe: context.dedupe,
+            key: `chat:${clientRunId}`,
+            entry: {
+              ts: Date.now(),
+              ok: true,
+              payload: {
+                runId: clientRunId,
+                status: "ok" as const,
+                runtimeJobId: null,
+                teamRunId: null,
+              },
+            },
+          });
+          context.chatAbortControllers.delete(clientRunId);
+          return;
+        }
+      }
 
       let agentRunStarted = false;
       void dispatchInboundMessage({

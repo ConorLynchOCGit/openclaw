@@ -6,9 +6,14 @@ import {
 } from "../codex-bridge/operator-approval-records.ts";
 import { decideProductionDefaultEnablement } from "../intent-routing/production-default-enablement-gate.ts";
 import {
+  buildOutboundDestinationProfile,
+  buildOutboundDestinationRegistryProof,
+} from "./outbound-destination-registry.ts";
+import {
   buildOutboundWriteAuthorityProof,
   secretLikePayloadBlocked,
 } from "./outbound-write-authority.ts";
+import { buildProductReliabilityReadinessAudit } from "./product-reliability-readiness-audit.ts";
 import { buildProductionAuthorityReadinessAudit } from "./production-authority-readiness-audit.ts";
 import {
   createProductionAuthorityUnlockContract,
@@ -133,6 +138,63 @@ describe("production authority unlock", () => {
     });
     expect(promotion.defaultEnabled).toBe(true);
     expect(promotion.v4ProRoleBoundaryPreserved).toBe(true);
+  });
+
+  it("profiles scoped outbound destinations without overstating missing configs", () => {
+    const productionIntake = buildOutboundDestinationProfile({
+      destinationId: "production_intake",
+      allowlist: "https://gateway.example.test/webhook/intake",
+      methodAllowlist: "POST",
+      payloadPolicy: "redacted-json-v1",
+      rateLimit: "5/minute",
+      killSwitch: "kill-switch://outbound-write",
+      incidentOwner: "operator:primary",
+      compensatingAction: "audit-follow-up",
+    });
+    const stagedReadonly = buildOutboundDestinationProfile({
+      destinationId: "tailscale_staged_readonly",
+      allowlist: "https://tailnet.example.test/",
+      readOnly: true,
+      payloadPolicy: "bounded-readonly-summary-v1",
+      rateLimit: "10/minute",
+      killSwitch: "kill-switch://outbound-readonly",
+      incidentOwner: "operator:primary",
+    });
+    const telegram = buildOutboundDestinationProfile({
+      destinationId: "telegram_operator_notification",
+      methodAllowlist: "POST",
+      payloadPolicy: "redacted-operational-notice-v1",
+      rateLimit: "3/minute",
+      killSwitch: "kill-switch://telegram-operator",
+      incidentOwner: "operator:primary",
+    });
+    const registry = buildOutboundDestinationRegistryProof([
+      productionIntake,
+      stagedReadonly,
+      telegram,
+    ]);
+
+    expect(productionIntake).toMatchObject({
+      state: "configured",
+      canaryAllowed: true,
+      rawPayloadStored: false,
+      workQueueLifecycleMutated: false,
+    });
+    expect(stagedReadonly).toMatchObject({
+      state: "read_only",
+      methodAllowlist: ["GET", "HEAD"],
+    });
+    expect(telegram).toMatchObject({
+      state: "blocked_config_missing",
+      missingConfig: expect.arrayContaining([
+        "OPENCLAW_OUTBOUND_DESTINATION_TELEGRAM_OPERATOR_NOTIFICATION_ALLOWLIST",
+      ]),
+    });
+    expect(registry).toMatchObject({
+      productionIntakeDefaultEnabled: true,
+      allConfiguredDestinationsScoped: true,
+      rawPayloadStored: false,
+    });
   });
 
   it("transitions default-enablement only when runtime unlock state is supplied", () => {
@@ -269,5 +331,45 @@ describe("production authority unlock", () => {
     });
     expect(blocked.readyAsPrimaryProductionOperator).toBe(false);
     expect(blocked.hardBlockers).toEqual(["native_ux_authority:gateway_route_missing"]);
+  });
+
+  it("requires every product reliability dimension before declaring normal-build readiness", () => {
+    const partial = buildProductReliabilityReadinessAudit({
+      dimensions: [
+        {
+          dimensionId: "normal_ux_prompt_path",
+          status: "passed",
+          evidenceRefs: ["artifact://normal-ux"],
+          reasonCodes: [],
+        },
+      ],
+      productionDeployOccurred: true,
+      externalOutboundWriteSendOccurred: true,
+      productionModelPromotionOccurred: true,
+      noRawContentStored: true,
+      workQueueLifecycleMutated: false,
+    });
+    expect(partial.reliableForNormalProductBuilding).toBe(false);
+    expect(partial.hardBlockers).toEqual(
+      expect.arrayContaining(["authenticated_execution_submit:dimension_not_run"]),
+    );
+
+    const ready = buildProductReliabilityReadinessAudit({
+      dimensions: partial.dimensions.map((dimension) => ({
+        ...dimension,
+        status: "passed",
+        evidenceRefs:
+          dimension.evidenceRefs.length > 0 ? dimension.evidenceRefs : ["artifact://ok"],
+        reasonCodes: [],
+      })),
+      productionDeployOccurred: true,
+      externalOutboundWriteSendOccurred: true,
+      productionModelPromotionOccurred: true,
+      noRawContentStored: true,
+      workQueueLifecycleMutated: false,
+    });
+    expect(ready.scorePercent).toBe(100);
+    expect(ready.reliableForNormalProductBuilding).toBe(true);
+    expect(ready.rawPromptStored).toBe(false);
   });
 });

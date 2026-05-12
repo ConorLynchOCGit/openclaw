@@ -1,9 +1,14 @@
+import {
+  createWorkflowPermissionReadback,
+  type WorkflowPermissionReadback,
+} from "../authority/workflow-permission-readback.ts";
 import type {
   JsonValue,
   RuntimeJobArtifact,
   RuntimeJobRepository,
 } from "../runtime-job-repository.ts";
 import type { AgentTeamRoleId } from "./agent-team-plan.ts";
+import type { AgentTeamRoleExecutionEvidence } from "./agent-team-quality-proof.ts";
 
 export const AGENT_TEAM_JOB_TYPE = "executor.agent_team";
 
@@ -33,6 +38,7 @@ export type AgentTeamRuntimeEvidence = {
     assignedAt: string;
     status: "assigned" | "completed" | "blocked" | "needs_review";
   }>;
+  roleExecutionEvidence?: AgentTeamRoleExecutionEvidence[];
   roleEligibility: Record<string, "allowed" | "needs_review" | "blocked">;
   activeRole: AgentTeamRoleId | null;
   handoffHistory: AgentTeamHandoffEvidence[];
@@ -41,7 +47,9 @@ export type AgentTeamRuntimeEvidence = {
   validationState: "not_run" | "running" | "passed" | "failed" | "needs_review";
   closeoutState: "missing" | "required" | "present";
   authorityStatus: "allowed" | "needs_review" | "blocked";
+  permissionEvidence: WorkflowPermissionReadback;
   modelRoutingEvidence: JsonValue;
+  sourcePromptResolution?: JsonValue;
   controlState: "none" | "pending" | "applied" | "rejected";
   streamEvidenceRefs: string[];
   artifactRefs: string[];
@@ -81,6 +89,7 @@ export function createAgentTeamRuntimeEvidence(input: {
   objective: string;
   roster: AgentTeamRuntimeEvidence["roster"];
   roleAssignments?: AgentTeamRuntimeEvidence["roleAssignments"];
+  roleExecutionEvidence?: AgentTeamRoleExecutionEvidence[];
   roleEligibility?: AgentTeamRuntimeEvidence["roleEligibility"];
   activeRole?: AgentTeamRoleId | null;
   handoffHistory?: AgentTeamHandoffEvidence[];
@@ -88,7 +97,9 @@ export function createAgentTeamRuntimeEvidence(input: {
   validationState?: AgentTeamRuntimeEvidence["validationState"];
   closeoutState?: AgentTeamRuntimeEvidence["closeoutState"];
   authorityStatus?: AgentTeamRuntimeEvidence["authorityStatus"];
+  permissionEvidence?: AgentTeamRuntimeEvidence["permissionEvidence"];
   modelRoutingEvidence?: JsonValue;
+  sourcePromptResolution?: JsonValue;
   controlState?: AgentTeamRuntimeEvidence["controlState"];
   streamEvidenceRefs?: string[];
   artifactRefs?: string[];
@@ -114,6 +125,7 @@ export function createAgentTeamRuntimeEvidence(input: {
     objective: input.objective,
     roster: input.roster,
     roleAssignments: input.roleAssignments ?? [],
+    roleExecutionEvidence: input.roleExecutionEvidence ?? [],
     roleEligibility: input.roleEligibility ?? {},
     activeRole: input.activeRole ?? null,
     handoffHistory,
@@ -122,7 +134,14 @@ export function createAgentTeamRuntimeEvidence(input: {
     validationState: input.validationState ?? "not_run",
     closeoutState: input.closeoutState ?? "required",
     authorityStatus: input.authorityStatus ?? "needs_review",
+    permissionEvidence:
+      input.permissionEvidence ??
+      createWorkflowPermissionReadback({
+        workflowId: "agent_team.coding",
+        authorityProfile: "local_yolo",
+      }),
     modelRoutingEvidence: input.modelRoutingEvidence ?? {},
+    sourcePromptResolution: input.sourcePromptResolution,
     controlState: input.controlState ?? "none",
     streamEvidenceRefs: input.streamEvidenceRefs ?? [],
     artifactRefs: input.artifactRefs ?? [],

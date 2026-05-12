@@ -24,6 +24,7 @@ export type WorkQueueObjectArtifact = {
 };
 
 export type WorkQueueExecutionSummary = {
+  runtimeJobId?: string | null;
   runtimeJobState: string;
   executorKind: string;
   sessionId: string | null;
@@ -56,6 +57,86 @@ export type WorkQueueExecutionSummary = {
     blockerReasonCodes: string[];
     controlAvailability: string[];
     artifactRefs: string[];
+    routing?: {
+      state: string;
+      route: string | null;
+      responseMode: string | null;
+      executeNow: boolean | null;
+      confidence: number | null;
+      workflowId: string | null;
+      jobType: string | null;
+      routerModelRef?: string | null;
+      routerConfigVersion?: string | null;
+      routerSchemaVersion?: string | null;
+      workflowRegistryVersion?: string | null;
+      authoritySnapshotVersion?: string | null;
+      escalationOutcome: string | null;
+      validatorOutcome: string | null;
+      actionSemanticsOutcome: string | null;
+      clarificationOutcome: string | null;
+      clarificationRef: {
+        clarificationId: string | null;
+        questionSummary: string | null;
+        allowedAnswerShape: string | null;
+        targetRefs: string[];
+      } | null;
+      compilerOutcome: string | null;
+      multiIntentPlanOutcome: string | null;
+      childWorkflowHandoffCount: number;
+      artifactRefs: string[];
+      reasonCodes: string[];
+      rawPromptStored: false;
+      rawResponseStored: false;
+      rawLogsStored: false;
+      workQueueLifecycleMutationAllowed: false;
+    } | null;
+    extension?: {
+      extensionKind?: string | null;
+      skillifier?: {
+        runtimeJobId?: string | null;
+        opportunity?: {
+          state:
+            | "captured"
+            | "reviewed"
+            | "accepted"
+            | "duplicate_suppressed"
+            | "stale"
+            | "blocked"
+            | "needs_review"
+            | "unknown";
+          capsuleRefs: string[];
+          artifactRefs: string[];
+          modelTaskRefs: string[];
+          dbOperationRefs: string[];
+          reviewRefs: string[];
+          reasonCodes: string[];
+          eli5Status?: string | null;
+          limitations?: string[];
+          rawPromptStored: false;
+          rawResponseStored: false;
+          rawLogsStored: false;
+          workQueueLifecycleMutationAllowed: false;
+        } | null;
+        opportunitySeedRef?: string | null;
+        closeoutCapsuleRef?: string | null;
+        closeoutCapsuleHash?: string | null;
+        candidateId?: string | null;
+        candidateType?: string | null;
+        outcomeState?: string | null;
+        targetSkillRef?: string | null;
+        targetSkillPath?: string | null;
+        candidateApplied?: boolean;
+        modelRefs?: string[];
+        modelTaskRefs?: string[];
+        dbOperationRefs?: string[];
+        validationRefs?: string[];
+        reviewRefs?: string[];
+        artifactRefs?: string[];
+        limitations?: string[];
+        eli5Progress?: string | null;
+        nextAction?: string | null;
+      } | null;
+    } | null;
     lifecycleState: string;
     workQueueLifecycleMutationAllowed: false;
   } | null;
@@ -107,13 +188,253 @@ export type WorkQueueExecutionSummary = {
       sourceArtifactRefs: string[];
     };
     failureRecoveryState?: string;
+    roleReports?: Array<{
+      roleId: string;
+      modelId: string;
+      status: string;
+      whatRoleDid: string;
+    }>;
+    closeoutQuality?: {
+      state: string;
+      goalSatisfaction: string | null;
+      limitations: string[];
+      requiredFixes: string[];
+    };
+    closeoutCapsule?: {
+      capsuleId?: string;
+      humanReport?: {
+        source?: string;
+        reportMarkdown?: string;
+        eli5Progress?: string;
+        limitations?: string[];
+      };
+      structuredSummary?: {
+        taskSuccess?: string;
+        qualityAssessment?: string;
+        workflowFitAssessment?: string;
+        agentModelFitAssessment?: string;
+        missingWork?: string[];
+      };
+      opportunitySeeds?: Array<{
+        kind?: string;
+        title?: string;
+        recommendedNextStep?: string;
+        confidence?: string;
+      }>;
+    } | null;
+    humanCloseoutSummary?: {
+      whatChanged: string;
+      whyItChanged: string;
+      filesTouched: string[];
+      testsRun: string[];
+      result: string;
+      limitations: string[];
+      nextStep: string;
+      eli5Progress: string;
+    } | null;
     blockers?: string[];
     artifactRefs: string[];
+  } | null;
+  humanCloseoutSummary?: {
+    whatChanged?: string;
+    result?: string;
+    testsRun?: string[];
+    limitations?: string[];
+    eli5Progress?: string;
+  } | null;
+  skillifier?: {
+    runtimeJobId?: string | null;
+    opportunity?: {
+      state:
+        | "captured"
+        | "reviewed"
+        | "accepted"
+        | "duplicate_suppressed"
+        | "stale"
+        | "blocked"
+        | "needs_review"
+        | "unknown";
+      capsuleRefs: string[];
+      artifactRefs: string[];
+      modelTaskRefs: string[];
+      dbOperationRefs: string[];
+      reviewRefs: string[];
+      reasonCodes: string[];
+      eli5Status?: string | null;
+      limitations?: string[];
+      rawPromptStored: false;
+      rawResponseStored: false;
+      rawLogsStored: false;
+      workQueueLifecycleMutationAllowed: false;
+    } | null;
+    opportunitySeedRef?: string | null;
+    closeoutCapsuleRef?: string | null;
+    closeoutCapsuleHash?: string | null;
+    candidateId?: string | null;
+    candidateType?: string | null;
+    outcomeState?: string | null;
+    targetSkillRef?: string | null;
+    targetSkillPath?: string | null;
+    candidateApplied?: boolean;
+    modelRefs?: string[];
+    modelTaskRefs?: string[];
+    dbOperationRefs?: string[];
+    validationRefs?: string[];
+    reviewRefs?: string[];
+    limitations?: string[];
+    eli5Progress?: string | null;
+    nextAction?: string | null;
+    rawPromptStored: false;
+    rawResponseStored: false;
+    rawLogsStored: false;
+    workQueueLifecycleMutationAllowed: false;
+  } | null;
+  middleware?: {
+    modelTask: {
+      state: string;
+      contractId: string | null;
+      validationState: string;
+      providerCallMade: boolean | null;
+      artifactRefs: string[];
+    };
+    scriptJob: {
+      state: string;
+      scriptId: string | null;
+      lane: string | null;
+      exitCode: number | null;
+      shellExecutionAllowed: false;
+      artifactRefs: string[];
+    };
+    dbOperation: {
+      state: string;
+      operationName: string | null;
+      operationKind: string | null;
+      lane: string | null;
+      decision: string | null;
+      rawRowsStored: false;
+      artifactRefs: string[];
+    };
+    rawPromptStored: false;
+    rawResponseStored: false;
+    rawLogsStored: false;
+    rawDbRowsStored: false;
+    authorityGranted: false;
+    workQueueLifecycleMutationAllowed: false;
+  } | null;
+  closeoutCapsule?: {
+    capsuleId?: string;
+    modelRef?: string | null;
+    factualRefs?: {
+      runtimeJobId?: string;
+      validationRefs?: string[];
+    };
+    humanReport?: {
+      source?: string;
+      reportMarkdown?: string;
+      eli5Progress?: string;
+      limitations?: string[];
+    };
+    structuredSummary?: {
+      taskSuccess?: string;
+      qualityAssessment?: string;
+      workflowFitAssessment?: string;
+      agentModelFitAssessment?: string;
+      missingWork?: string[];
+    };
+    opportunitySeeds?: Array<{
+      kind?: string;
+      title?: string;
+      recommendedNextStep?: string;
+      confidence?: string;
+    }>;
+  } | null;
+  runtimeGraph?: {
+    graphId: string;
+    parentWorkItemId?: string | null;
+    ownerObjectiveSummary?: string | null;
+    approvedPlanRefs?: string[];
+    planningStatusIsLifecycleState: false;
+    childActions: Array<{
+      workItemId: string;
+      title?: string | null;
+      actionKind: string;
+      assignedRole: string;
+      assignedWorkflow: string;
+      runtimeJobId?: string | null;
+      graphNodeRef?: string | null;
+      blockerReasonCodes: string[];
+      evidenceRefs: string[];
+    }>;
+    dependencyEdges: Array<{
+      workItemId: string;
+      dependsOnWorkItemId: string;
+      dependencyType: string;
+    }>;
+    roleInvocations: Array<{
+      roleId: string;
+      modelRef: string;
+      providerPath?: string | null;
+      transportKind?: string | null;
+      modelRunRef?: string | null;
+      status: string;
+      latencyMs?: number | null;
+      producedArtifactRefs: string[];
+    }>;
+    humanTasks: Array<{
+      humanTaskId: string;
+      state: string;
+      ownerOperatorId?: string | null;
+      resumeTokenRef?: string | null;
+      blockingGraphNodeRefs: string[];
+    }>;
+    validationRepairLoops: Array<{
+      validationRef: string;
+      repairNodeRef?: string | null;
+      status: string;
+      reasonCodes: string[];
+    }>;
+    closeoutRef?: string | null;
+    finalCloseoutRef?: string | null;
+    limitations: string[];
+    eli5Progress?: string | null;
+    artifactRefs: string[];
+    rawPromptStored: false;
+    rawResponseStored: false;
+    rawLogsStored: false;
+    workQueueLifecycleMutationAllowed: false;
   } | null;
   artifactRefs: string[];
   lifecycleTruthSource: string;
   executionTruthSource: string;
   uiMutationAllowed: false;
+};
+
+export type WorkQueueConvergenceSliceSummary = {
+  sliceId: string;
+  title: string;
+  track: string;
+  wave: string;
+  planningStatus: string;
+  priority: number;
+  dependsOnSliceIds: string[];
+  sourceDocRefs: string[];
+  artifactRefs: string[];
+  runtimeJobRefs: string[];
+  blockerReasonCodes: string[];
+  nextAction: string | null;
+  ownerSystemArea: string;
+  runtimeState: {
+    lifecycleState: string;
+    runCount: number;
+    runtimeJobIds: string[];
+    lifecycleTruthSource: string;
+    planningStatusIsLifecycleState: false;
+  };
+  rawPromptStored: false;
+  rawResponseStored: false;
+  rawTranscriptStored: false;
+  rawLogsStored: false;
+  workQueueLifecycleMutationAllowed: false;
 };
 
 export type WorkQueueObject = {
@@ -139,6 +460,7 @@ export type WorkQueueObject = {
   diagnostics: string[];
   artifact: WorkQueueObjectArtifact;
   execution: WorkQueueExecutionSummary | null;
+  convergenceSlice?: WorkQueueConvergenceSliceSummary | null;
   queueItem: ProductProactivityQueueItem;
   inboxItem: ProactivityInboxItem | null;
 };

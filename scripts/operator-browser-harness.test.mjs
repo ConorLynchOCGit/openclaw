@@ -265,6 +265,87 @@ void test("findTranscriptTerminalEvidenceFromEvents skips turn-activity records"
   });
 });
 
+void test("findTranscriptTerminalEvidenceFromEvents can require a matching assistant pattern", () => {
+  const evidence = findTranscriptTerminalEvidenceFromEvents(
+    [
+      {
+        type: "message",
+        id: "user-new",
+        timestamp: "2026-04-21T11:00:00.000Z",
+        message: { role: "user", content: [{ type: "text", text: "UX proof" }] },
+      },
+      {
+        type: "message",
+        id: "assistant-status",
+        timestamp: "2026-04-21T11:00:01.000Z",
+        message: { role: "assistant", content: [{ type: "text", text: "Checking workspace" }] },
+      },
+      {
+        type: "message",
+        id: "assistant-execution",
+        timestamp: "2026-04-21T11:00:02.000Z",
+        message: {
+          role: "assistant",
+          content: [{ type: "text", text: "Execution Platform completed.\nRuntime job: job-1" }],
+        },
+      },
+    ],
+    {
+      prompt: "UX proof",
+      startedAtMs: Date.parse("2026-04-21T10:59:55.000Z"),
+      assistantPattern: "Execution Platform completed",
+    },
+  );
+  assert.deepEqual(evidence, {
+    source: "session-jsonl",
+    userMessageId: "user-new",
+    assistantMessageId: "assistant-execution",
+    userTimestamp: "2026-04-21T11:00:00.000Z",
+    assistantTimestamp: "2026-04-21T11:00:02.000Z",
+    assistantText: "Execution Platform completed.\nRuntime job: job-1",
+  });
+});
+
+void test("findTranscriptTerminalEvidenceFromEvents does not cross into a later user turn", () => {
+  const evidence = findTranscriptTerminalEvidenceFromEvents(
+    [
+      {
+        type: "message",
+        id: "user-new",
+        timestamp: "2026-04-21T11:00:00.000Z",
+        message: { role: "user", content: [{ type: "text", text: "UX proof" }] },
+      },
+      {
+        type: "message",
+        id: "assistant-status",
+        timestamp: "2026-04-21T11:00:01.000Z",
+        message: { role: "assistant", content: [{ type: "text", text: "Checking workspace" }] },
+      },
+      {
+        type: "message",
+        id: "user-next",
+        timestamp: "2026-04-21T11:00:03.000Z",
+        message: { role: "user", content: [{ type: "text", text: "next prompt" }] },
+      },
+      {
+        type: "message",
+        id: "assistant-execution",
+        timestamp: "2026-04-21T11:00:04.000Z",
+        message: {
+          role: "assistant",
+          content: [{ type: "text", text: "Execution Platform completed.\nRuntime job: job-2" }],
+        },
+      },
+    ],
+    {
+      prompt: "UX proof",
+      startedAtMs: Date.parse("2026-04-21T10:59:55.000Z"),
+      assistantPattern: "Execution Platform completed",
+    },
+  );
+  assert.equal(evidence, null);
+});
+
 void test("listPendingRequests soft-fails to an empty list when the CLI lookup errors", () => {
   const originalExecPath = process.execPath;
   const originalConfigPath = process.env.OPENCLAW_CONFIG_PATH;

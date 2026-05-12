@@ -70,6 +70,7 @@ import {
 } from "../../extensions/model-memory/runtime-api.js";
 import { resolveAgentWorkspaceDir, resolveSessionAgentId } from "../agents/agent-scope.js";
 import { OpenAICompatibleLiveJsonExecutor } from "../agents/model-memory.live-json-executor.js";
+import { createRuntimeMiddlewareBackedJsonExecutor } from "../agents/model-memory/live-runtime/runtime-middleware-bridge.js";
 import { loadWorkspaceSkillEntries } from "../agents/skills.js";
 import { stripInboundMetadata } from "../auto-reply/reply/strip-inbound-meta.js";
 import { loadConfig } from "../config/config.js";
@@ -379,10 +380,12 @@ function buildModelAuthoredBriefOptions(params: {
   return {
     enabled,
     executor: enabled
-      ? new OpenAICompatibleLiveJsonExecutor({
-          config: params.cfg,
-          requestTimeoutMs: timeoutMs,
-        })
+      ? createRuntimeMiddlewareBackedJsonExecutor(
+          new OpenAICompatibleLiveJsonExecutor({
+            config: params.cfg,
+            requestTimeoutMs: timeoutMs,
+          }),
+        )
       : null,
     modelId: readString(params.env[MODEL_AUTHORED_BRIEFS_MODEL_ENV]) ?? "openai-codex/gpt-5.4",
     reasoningEffort: readAllowedValue(
@@ -435,10 +438,12 @@ function buildCandidateReviewOptions(params: {
   return {
     enabled,
     executor: enabled
-      ? new OpenAICompatibleLiveJsonExecutor({
-          config: params.cfg,
-          requestTimeoutMs: timeoutMs,
-        })
+      ? createRuntimeMiddlewareBackedJsonExecutor(
+          new OpenAICompatibleLiveJsonExecutor({
+            config: params.cfg,
+            requestTimeoutMs: timeoutMs,
+          }),
+        )
       : null,
     modelId: readString(params.env[CANDIDATE_REVIEW_MODEL_ENV]) ?? "openai-codex/gpt-5.4",
     reasoningEffort: readAllowedValue(

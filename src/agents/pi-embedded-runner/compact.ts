@@ -287,6 +287,12 @@ function normalizeObservedTokenCount(value: unknown): number | undefined {
     : undefined;
 }
 
+function normalizeTokenBudget(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) && value > 0
+    ? Math.floor(value)
+    : undefined;
+}
+
 function getMessageTextChars(msg: AgentMessage): number {
   const content = (msg as { content?: unknown }).content;
   if (typeof content === "string") {
@@ -518,7 +524,7 @@ export async function compactEmbeddedPiSessionDirect(
     // the normal bootstrap context is already oversized, using it here can make
     // the compaction request fail before history is reduced.
     const runtimeModelWithContext = runtimeModel as ProviderRuntimeModel;
-    const ctxInfo = resolveContextWindowInfo({
+    const resolvedCtxInfo = resolveContextWindowInfo({
       cfg: params.config,
       provider,
       modelId,
@@ -526,6 +532,11 @@ export async function compactEmbeddedPiSessionDirect(
       modelContextWindow: runtimeModelWithContext.contextWindow,
       defaultTokens: DEFAULT_CONTEXT_TOKENS,
     });
+    const callerTokenBudget = normalizeTokenBudget(params.tokenBudget);
+    const ctxInfo =
+      callerTokenBudget !== undefined && callerTokenBudget < resolvedCtxInfo.tokens
+        ? { ...resolvedCtxInfo, tokens: callerTokenBudget }
+        : resolvedCtxInfo;
     const bootstrapConfig = resolveManualCompactionBootstrapConfig({
       config: params.config,
       contextTokens: ctxInfo.tokens,

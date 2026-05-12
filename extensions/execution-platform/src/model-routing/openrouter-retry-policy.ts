@@ -1,5 +1,6 @@
 export type OpenRouterRetryReasonCode =
   | "openrouter_http_429"
+  | "openrouter_http_503"
   | "openrouter_http_retryable"
   | "openrouter_network_timeout"
   | "openrouter_network_error"
@@ -12,6 +13,7 @@ export type OpenRouterRetryPolicy = {
   jitterMs: number;
   rateLimitCooldownMs: number;
   timeoutMs: number;
+  retryableHttpStatuses: readonly number[];
 };
 
 export type OpenRouterRetryAttemptEvidence = {
@@ -45,9 +47,8 @@ export const DEFAULT_OPENROUTER_RETRY_POLICY: OpenRouterRetryPolicy = {
   jitterMs: 250,
   rateLimitCooldownMs: 4_000,
   timeoutMs: 45_000,
+  retryableHttpStatuses: [408, 409, 425, 429, 500, 502, 503, 504],
 };
-
-const RETRYABLE_HTTP_STATUSES = new Set([408, 409, 425, 429, 500, 502, 503, 504]);
 
 export function retryReasonForOpenRouter(input: {
   httpStatus?: number | null;
@@ -55,6 +56,7 @@ export function retryReasonForOpenRouter(input: {
   noContent?: boolean;
   networkError?: boolean;
   timeout?: boolean;
+  retryableHttpStatuses?: readonly number[];
 }): OpenRouterRetryReasonCode | null {
   if (input.timeout) {
     return "openrouter_network_timeout";
@@ -65,7 +67,15 @@ export function retryReasonForOpenRouter(input: {
   if (input.httpStatus === 429 || input.errorReasonCode === "openrouter_http_429") {
     return "openrouter_http_429";
   }
-  if (typeof input.httpStatus === "number" && RETRYABLE_HTTP_STATUSES.has(input.httpStatus)) {
+  if (input.httpStatus === 503 || input.errorReasonCode === "openrouter_http_503") {
+    return "openrouter_http_503";
+  }
+  const retryableHttpStatuses =
+    input.retryableHttpStatuses ?? DEFAULT_OPENROUTER_RETRY_POLICY.retryableHttpStatuses;
+  if (
+    typeof input.httpStatus === "number" &&
+    new Set(retryableHttpStatuses).has(input.httpStatus)
+  ) {
     return "openrouter_http_retryable";
   }
   if (input.noContent || input.errorReasonCode === "openrouter_no_content") {

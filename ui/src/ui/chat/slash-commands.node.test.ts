@@ -110,6 +110,21 @@ describe("parseSlashCommand", () => {
     });
   });
 
+  it("keeps session slash commands on the protocol path", () => {
+    expect(parseSlashCommand("/compact now")).toMatchObject({
+      command: { key: "compact", executeLocal: true },
+      args: "now",
+    });
+    expect(parseSlashCommand("/new")).toMatchObject({
+      command: { key: "new", executeLocal: true },
+      args: "",
+    });
+    expect(parseSlashCommand("/reset")).toMatchObject({
+      command: { key: "reset", executeLocal: true },
+      args: "",
+    });
+  });
+
   it("refreshes runtime commands from commands.list so docks, plugins, and direct skills appear", async () => {
     const request = async (method: string) => {
       expect(method).toBe("commands.list");

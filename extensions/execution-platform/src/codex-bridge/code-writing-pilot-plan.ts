@@ -34,7 +34,7 @@ export type CodeWritingPilotObjectiveRiskClass =
   | "docs_only_patch"
   | "blocked_too_large";
 
-export type CodeWritingPilotCandidatePatchType = "source_test" | "source" | "docs";
+export type CodeWritingPilotCandidatePatchType = "source_test" | "source" | "docs" | "read_only";
 
 export type CodeWritingPilotObjectiveCandidate = {
   candidateId: string;

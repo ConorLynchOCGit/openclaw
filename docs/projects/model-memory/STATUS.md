@@ -7,7 +7,113 @@ title: "Model Memory Status"
 
 ## Overall
 
-State: `phase2_model_owned_judgment_policy_active`
+State: `phase2_model_owned_judgment_policy_active_memory_runtime_maximality_closed`
+
+2026-05-09 memory-runtime maximality closure update:
+
+- All 13 required hook migrations passed the hard gate with production
+  middleware/runtime evidence, live UX/workflow evidence, qualitative review,
+  and artifact refs.
+- Old direct hook paths are now removed, disabled, or compatibility-only; the
+  primary production path is Execution Platform model-task/DB-operation
+  middleware plus route-aware context-pack policy.
+- Controlled over-budget automatic compaction fired without `/compact` in an
+  `agent:main:main`-equivalent live-session proof and reduced the token ledger
+  from `229300` to `84000`.
+- The rebuilt Tailscale UX gateway passed the owner-visible prompt matrix for
+  ordinary chat recall, follow-up recall, hybrid retrieval, bounded context
+  packs, workflow-shaped memory context, Closeout Capsule opportunity seeds,
+  and Work Queue proactivity surfacing.
+
+Final artifacts:
+
+- `.artifacts/execution-platform/memory-runtime-13-hook-hard-gate-proof.json`
+- `.artifacts/execution-platform/memory-runtime-all-hook-migrations-proof.json`
+- `.artifacts/execution-platform/model-memory-runtime-live-context-compaction-proof.json`
+- `.artifacts/execution-platform/model-memory-runtime-live-proof-summary.json`
+- `.artifacts/execution-platform/model-memory-runtime-wiring-summary.json`
+
+2026-05-09 Execution Platform runtime wiring update:
+
+- Model Memory project docs live in the repository under
+  `docs/projects/model-memory`; the workspace mirror is partial and is not the
+  authoritative source for this project.
+- Prompt-router memory policy is now wired into the live structured native
+  execution path as bounded evidence. Memory policy cannot grant authority,
+  approval, runtime success, deploy/send permission, model promotion, or Work
+  Queue lifecycle mutation.
+- The legacy bootstrap overlay is now bounded by route-aware context-pack
+  assembly before insertion into live session context. This limits default
+  context flooding while preserving compatibility fallback behavior.
+- Work Queue memory readback requires known capture/context/opportunity
+  substates before reporting `ready`.
+- A rebuilt gateway passed a Tailscale safe-bridge memory soak
+  through `agent:main:main`.
+
+Known limitations:
+
+- The follow-up projection validation found no inactive `agents-md`
+  source-memory refs; the earlier warning is stale doc/artifact drift, not an
+  active projection blocker.
+- Memory capture and retrieval/context-pack quality are now assessed by
+  model-authored reviews. Deterministic code validates only schema, bounds,
+  refs, safety flags, and callsite classification; it does not judge semantic
+  quality.
+- Canonical context packs are defined for retrieval, projection, stable
+  memory, tool-result summary, closeout capsule, workflow runtime state, Work
+  Queue readback, and skill context.
+- The legacy bootstrap retrieval overlay path
+  `src/agents/model-memory/live-runtime/retrieval-context.ts` is now hard-
+  disabled outside tests or an explicit compatibility env flag. Production
+  exports use `src/agents/model-memory/live-runtime/route-aware-context-pack.ts`.
+  The accepted live quality window included dense owner-style capture,
+  follow-up recall, workflow context prompts, and model-authored capture plus
+  retrieval/context quality reviews.
+
+2026-05-09 Work Queue controls and memory quality hard-shutdown update:
+
+- `OPENCLAW_WORK_QUEUE_RUNTIME_CONTROLS_ENABLED=1` is live in the gateway
+  container after a runtime-backed owner-only smoke.
+- Dense capture benchmark used a large owner-style prompt with 15+ durable
+  memory candidates and passed model-authored review.
+- Follow-up live UX prompts recalled newly captured memory and route-aware
+  context policy without raw prompt/response artifact storage.
+- Coding, web research, docs/skills, and QA/test workflow prompts ran through
+  live UX/runtime with memory-aware context evidence.
+- Retrieval/context quality passed model-authored review with bounded live
+  prompt refs, selected context-pack refs, suppressed stale refs, output
+  hashes, and no deterministic semantic quality scoring.
+
+2026-05-10 active queue rebase update:
+
+- Execution Platform convergence tracking now preserves the 56 historical
+  slices and adds an 18-item Active Execution Queue for remaining work.
+- Model Memory related work appears in the active queue instead of historical
+  numeric order. Skillifier Runtime Job Migration is now complete as
+  active-queue-08; the next Model Memory adjacent target is active-queue-09,
+  Proactivity Work Queue Quality Soak, followed by Memory Curator Workflow and
+  Skill Curator Workflow.
+- The completed queue now includes active-queue-01 through active-queue-08.
+
+2026-05-11 Skillifier Runtime Job Migration update:
+
+- Active-queue-08 is complete. Skillifier work now has a first-class
+  Execution Platform runtime workflow (`workflow.skillifier` /
+  `executor.skillifier`) and RuntimeWorkerSupervisor adapter
+  (`worker.skillifier.runtime`).
+- Closeout Capsule opportunity seeds can become review-gated Skillifier
+  runtime work, and Skillifier output is represented as bounded
+  `model-memory.skillifier-candidate.v1` candidate/edit proposal artifacts.
+- The live runtime proof completed Skillifier job
+  `active-queue-08-live-skillifier-mp1fr2yn-runtime-job`, with model-task
+  evidence `active-queue-08-live-skillifier-mp1fr2yn-model-task`,
+  DB-operation evidence `active-queue-08-live-skillifier-mp1fr2yn-db-operation`,
+  Work Queue item `active-queue-08-live-skillifier-mp1fr2yn-work-item`, and
+  candidate `skillifier-candidate-26742351f3af276acedc99a59fb1ea5f`.
+- Skillifier does not directly apply skill files yet; candidate apply remains
+  review-gated. No raw prompt/response/transcript/provider/tool/DB row storage,
+  authority grant, deploy, outbound send, model promotion, or Work Queue
+  lifecycle mutation occurred.
 
 2026-05-01 model-owned judgment policy update:
 

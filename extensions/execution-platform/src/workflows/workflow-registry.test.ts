@@ -21,15 +21,31 @@ describe("workflow registry", () => {
     expect(workflow?.jobType).toBe(AGENT_TEAM_JOB_TYPE);
     expect(workflow?.workQueueProjection.lifecycleMutationAllowed).toBe(false);
     expect(workflow?.roles.some((role) => role.roleId === "test_engineer")).toBe(true);
+    expect(workflow?.permissionModel).toMatchObject({
+      permissionModelId: "permission-model://agent_team.coding/local-repo-latitude.v1",
+    });
     expect(JSON.stringify(workflow)).toContain("deepseek-v4-pro-test-engineer-only");
   });
 
-  it("registers web research, architecture, and docs workflow contracts", () => {
+  it("registers web research, architecture, docs, QA, and Skillifier workflow contracts", () => {
     expect(
       getWorkflowContract(DEFAULT_EXECUTION_WORKFLOW_REGISTRY, "single_agent.web_research"),
     ).toMatchObject({
       jobType: "executor.single_agent",
       defaultAuthorityProfile: "outbound_readonly",
+      storagePolicy: {
+        rawPromptStored: false,
+        rawResponseStored: false,
+        rawTranscriptStored: false,
+      },
+      productionSideEffectPolicy: {
+        externalOutboundWriteAllowed: false,
+        productionDeployAllowed: false,
+        productionModelPromotionAllowed: false,
+      },
+      workQueueProjection: {
+        lifecycleMutationAllowed: false,
+      },
     });
     expect(
       getWorkflowContract(DEFAULT_EXECUTION_WORKFLOW_REGISTRY, "agent_team.architecture"),
@@ -41,6 +57,34 @@ describe("workflow registry", () => {
       getWorkflowContract(DEFAULT_EXECUTION_WORKFLOW_REGISTRY, "workflow.docs_skills"),
     ).toMatchObject({
       jobType: "executor.workflow",
+    });
+    expect(
+      getWorkflowContract(DEFAULT_EXECUTION_WORKFLOW_REGISTRY, "agent_team.qa_test"),
+    ).toMatchObject({
+      jobType: AGENT_TEAM_JOB_TYPE,
+      defaultAuthorityProfile: "local_yolo",
+      workQueueProjection: {
+        lifecycleMutationAllowed: false,
+      },
+      storagePolicy: {
+        rawPromptStored: false,
+        rawResponseStored: false,
+        rawTranscriptStored: false,
+      },
+    });
+    expect(
+      getWorkflowContract(DEFAULT_EXECUTION_WORKFLOW_REGISTRY, "workflow.skillifier"),
+    ).toMatchObject({
+      jobType: "executor.skillifier",
+      defaultAuthorityProfile: "local_yolo",
+      workQueueProjection: {
+        lifecycleMutationAllowed: false,
+      },
+      productionSideEffectPolicy: {
+        externalOutboundWriteAllowed: false,
+        productionDeployAllowed: false,
+        productionModelPromotionAllowed: false,
+      },
     });
     expect(validateWorkflowRegistry(DEFAULT_EXECUTION_WORKFLOW_REGISTRY)).toEqual({
       valid: true,
@@ -106,6 +150,9 @@ describe("workflow registry", () => {
     const summary = createWorkflowContractRouterSummary(agentTeamCodingWorkflowContract);
     expect(summary.workflowId).toBe("agent_team.coding");
     expect(summary.examples.length).toBeGreaterThan(0);
+    expect(summary.permissionModelId).toBe(
+      "permission-model://agent_team.coding/local-repo-latitude.v1",
+    );
     expect(JSON.stringify(summary)).not.toContain("secret");
   });
 });

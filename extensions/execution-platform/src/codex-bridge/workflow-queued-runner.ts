@@ -1,4 +1,11 @@
 import type { JsonValue, RuntimeJob, RuntimeJobRepository } from "../runtime-job-repository.ts";
+import { recordCloseoutCapsuleArtifact, type CloseoutCapsule } from "./closeout-capsule.ts";
+import {
+  createDegradedSystemCloseoutCapsule,
+  type CloseoutCapsuleReporterInput,
+  type CloseoutCapsuleReporterResult,
+} from "./model-closeout-capsule-reporter.ts";
+import { resolveRuntimeObjective } from "./source-prompt-ref.ts";
 
 export type WorkflowQueuedRunOnceResult = {
   artifactKind: "workflow_queued_run_once_result";
@@ -24,6 +31,10 @@ export type WorkflowQueuedRunnerOptions = {
   queueName?: string;
   jobTypes?: string[];
   runtimeJobId?: string;
+  sourcePromptSessionRoots?: string[];
+  closeoutReporter?: {
+    createCapsule(input: CloseoutCapsuleReporterInput): Promise<CloseoutCapsuleReporterResult>;
+  };
   now?: () => Date;
 };
 
@@ -41,6 +52,8 @@ export class WorkflowQueuedRunner {
   private readonly queueName: string;
   private readonly jobTypes: string[];
   private readonly now: () => Date;
+  private readonly leaseRenewalIntervalMs = 10_000;
+  private readonly leaseRenewalExtendByMs = 120_000;
 
   constructor(private readonly options: WorkflowQueuedRunnerOptions) {
     this.queueName = options.queueName ?? "agent-team";
@@ -60,6 +73,7 @@ export class WorkflowQueuedRunner {
     }
     const payload = asRecord(claimed.job.payload);
     const workflowId = stringValue(payload.workflowId, "unknown");
+    const stopLeaseRenewal = this.startLeaseRenewal(claimed.leaseToken);
     try {
       await this.recordGenericWorkflowEvidence(claimed.job, workflowId);
       const completed = await this.options.runtimeJobs.completeJob({
@@ -106,11 +120,44 @@ export class WorkflowQueuedRunner {
           message: error instanceof Error ? error.message : "unknown workflow run failure",
         },
       });
+    } finally {
+      stopLeaseRenewal();
     }
+  }
+
+  private startLeaseRenewal(leaseToken: string): () => void {
+    let stopped = false;
+    const renew = (): void => {
+      if (stopped) {
+        return;
+      }
+      void this.options.runtimeJobs
+        .renewLease({
+          leaseToken,
+          workerId: this.options.workerId,
+          extendByMs: this.leaseRenewalExtendByMs,
+        })
+        .catch(() => undefined);
+    };
+    renew();
+    const interval = setInterval(renew, this.leaseRenewalIntervalMs);
+    interval.unref?.();
+    return () => {
+      stopped = true;
+      clearInterval(interval);
+    };
   }
 
   private async recordGenericWorkflowEvidence(job: RuntimeJob, workflowId: string): Promise<void> {
     const now = this.now().toISOString();
+    const payload = asRecord(job.payload);
+    const objectiveResolution = await resolveRuntimeObjective(payload, {
+      sessionSearchRoots: this.options.sourcePromptSessionRoots,
+    });
+    const objective = objectiveResolution.objectiveForEvidence;
+    if (objective === "task-specific-objective-missing") {
+      throw new Error("task_specific_closeout_evidence_required_before_success");
+    }
     await this.options.runtimeJobs.recordEvent({
       jobId: job.jobId,
       eventType: "execution.workflow_dispatch_started",
@@ -135,6 +182,7 @@ export class WorkflowQueuedRunner {
         dispatchedTo: "generic_workflow_queued_runner",
         codingTeamSpecialPath: false,
         closeoutRequired: true,
+        sourcePromptResolution: objectiveResolution.sourcePromptResolution as unknown as JsonValue,
         workQueueLifecycleMutated: false,
       } as JsonValue,
     });
@@ -146,11 +194,87 @@ export class WorkflowQueuedRunner {
       contentType: "application/json",
       metadata: {
         workflowId,
+        objectiveSummary: objective,
         completedAt: now,
         status: "completed",
         boundedSummaryPresent: true,
         rawPromptStored: false,
         rawResponseStored: false,
+        workQueueLifecycleMutated: false,
+      } as JsonValue,
+    });
+    const capsuleInput: CloseoutCapsuleReporterInput = {
+      factualRefs: {
+        runtimeJobId: job.jobId,
+        teamRunId: null,
+        workflowId,
+        status: "completed",
+        roles: [
+          {
+            roleId: `workflow-executor:${workflowId}`,
+            agentId: `workflow-executor:${workflowId}`,
+            modelRef: null,
+            status: "completed",
+          },
+        ],
+        fileRefs: workflowFilesForCloseout(workflowId),
+        artifactRefs: [
+          `runtime-job://${job.jobId}/execution/workflow-dispatch/${workflowId}`,
+          `runtime-job://${job.jobId}/execution/workflow-closeout/${workflowId}`,
+        ],
+        validationRefs: ["generic workflow runtime closeout evidence recorded"],
+        runtimeEventRefs: [`runtime-job://${job.jobId}/events`],
+      },
+      objectiveSummary: objective,
+      boundedRoleEvidence: [
+        {
+          roleId: `workflow-executor:${workflowId}`,
+          agentId: `workflow-executor:${workflowId}`,
+          modelRef: null,
+          askedToDo: objective,
+          evidenceSummary:
+            "Generic workflow runner recorded bounded dispatch and closeout evidence.",
+          artifactRefs: [`runtime-job://${job.jobId}/execution/workflow-closeout/${workflowId}`],
+          validationRefs: ["generic workflow runtime closeout evidence recorded"],
+          limitations: [
+            "generic workflow runner records evidence; it does not prove independent agent edits",
+          ],
+        },
+      ],
+      boundedResultEvidence: {
+        completed: true,
+        needsReview: false,
+        failed: false,
+        findings: [],
+        requiredFixes: [],
+        limitations: [
+          "generic workflow runner records evidence; it does not prove independent agent edits",
+        ],
+      },
+    };
+    const capsuleResult = this.options.closeoutReporter
+      ? await this.options.closeoutReporter.createCapsule(capsuleInput)
+      : createDegradedSystemCloseoutCapsule({
+          ...capsuleInput,
+          reasonCodes: ["closeout_capsule_model_reporter_not_configured"],
+        });
+    const capsule: CloseoutCapsule = capsuleResult.capsule;
+    await recordCloseoutCapsuleArtifact({
+      runtimeJobs: this.options.runtimeJobs,
+      capsule,
+    });
+    await this.options.runtimeJobs.attachArtifact({
+      jobId: job.jobId,
+      artifactType: "workflow_review.human_closeout_summary",
+      storageKind: "metadata",
+      uri: `runtime-job://${job.jobId}/execution/workflow-human-closeout/${workflowId}`,
+      contentType: "application/json",
+      sizeBytes: Buffer.byteLength(JSON.stringify(capsuleResult.legacyHumanSummary), "utf8"),
+      metadata: {
+        ...capsuleResult.legacyHumanSummary,
+        closeoutCapsuleId: capsule.capsuleId,
+        closeoutCapsuleSource: capsuleResult.source,
+        modelAuthored: capsuleResult.source === "model",
         workQueueLifecycleMutated: false,
       } as JsonValue,
     });
@@ -175,5 +299,17 @@ export class WorkflowQueuedRunner {
       schedulerStarted: false,
       ...input,
     };
+  }
+}
+
+function workflowFilesForCloseout(workflowId: string): string[] {
+  switch (workflowId) {
+    case "workflow.docs_skills":
+      return [
+        "extensions/execution-platform/src/workflows/docs-skills-workflow.ts",
+        "extensions/execution-platform/src/codex-bridge/workflow-queued-runner.ts",
+      ];
+    default:
+      return ["extensions/execution-platform/src/codex-bridge/workflow-queued-runner.ts"];
   }
 }

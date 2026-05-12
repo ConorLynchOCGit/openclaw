@@ -32,6 +32,12 @@ import { readPiModelContextTokens } from "./model-context-tokens.js";
 import { resolveModelAsync } from "./model.js";
 import type { EmbeddedPiCompactResult } from "./types.js";
 
+function resolvePositiveTokenBudget(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) && value > 0
+    ? Math.floor(value)
+    : undefined;
+}
+
 /**
  * Compacts a session with lane queueing (session lane + global lane).
  * Use this from outside a lane context. If already inside a lane, use
@@ -88,6 +94,8 @@ export async function compactEmbeddedPiSession(
           modelContextWindow: ceRuntimeModel?.contextWindow,
           defaultTokens: DEFAULT_CONTEXT_TOKENS,
         });
+        const effectiveTokenBudget =
+          resolvePositiveTokenBudget(params.tokenBudget) ?? ceCtxInfo.tokens;
         // When the context engine owns compaction, its compact() implementation
         // bypasses compactEmbeddedPiSessionDirect (which fires the hooks internally).
         // Fire before_compaction / after_compaction hooks here so plugin subscribers
@@ -163,7 +171,7 @@ export async function compactEmbeddedPiSession(
           sessionId: params.sessionId,
           sessionKey: params.sessionKey,
           sessionFile: params.sessionFile,
-          tokenBudget: ceCtxInfo.tokens,
+          tokenBudget: effectiveTokenBudget,
           currentTokenCount: params.currentTokenCount,
           compactionTarget: params.trigger === "manual" ? "threshold" : "budget",
           customInstructions: params.customInstructions,

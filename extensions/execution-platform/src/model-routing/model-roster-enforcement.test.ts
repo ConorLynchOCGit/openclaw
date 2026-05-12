@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { OPERATOR_REQUESTED_AGENT_TEAM_MODEL_CANDIDATES } from "./model-candidate-validation-plan.ts";
 import { enforceModelRoster } from "./model-roster-enforcement.ts";
+import { buildV4ProAllRoleEligibilityProof } from "./v4-pro-role-eligibility.ts";
 
 const evidenceRefs = [
   ".artifacts/execution-platform/openrouter-model-candidate-coding-eval-results.json",
@@ -137,5 +138,48 @@ describe("model roster enforcement", () => {
     expect(override).toMatchObject({ allowed: true, operatorOverrideApplied: true });
     expect(deploy).toMatchObject({ allowed: false, status: "blocked" });
     expect(deploy.reasonCodes).toContain("high_blast_radius_authority_not_allowed_by_model_roster");
+  });
+
+  it("records explicit V4 Pro eligibility for every team role without declaring a global winner", () => {
+    const proof = buildV4ProAllRoleEligibilityProof([
+      {
+        roleId: "test_engineer",
+        qualityPassed: true,
+        costPassed: true,
+        latencyPassed: true,
+        reliabilityPassed: true,
+        rollbackRef: "model-roster://agent_team.coding/test_engineer/rollback",
+        evidenceRefs: ["artifact://test-engineer-eval"],
+        preferred: true,
+      },
+      {
+        roleId: "context_scout",
+        qualityPassed: true,
+        costPassed: true,
+        latencyPassed: true,
+        reliabilityPassed: true,
+        rollbackRef: "model-roster://agent_team.coding/context_scout/rollback",
+        evidenceRefs: ["artifact://context-scout-eval"],
+        fallbackOnly: true,
+      },
+      {
+        roleId: "implementation_engineer",
+        qualityPassed: false,
+        costPassed: true,
+        latencyPassed: true,
+        reliabilityPassed: true,
+        rollbackRef: "model-roster://agent_team.coding/implementation_engineer/rollback",
+        evidenceRefs: ["artifact://implementation-shadow-eval"],
+      },
+    ]);
+
+    expect(proof.everyRoleExplicit).toBe(true);
+    expect(proof.noGlobalWinner).toBe(true);
+    expect(proof.rawPromptStored).toBe(false);
+    expect(proof.promotedRoles).toEqual(["test_engineer"]);
+    expect(proof.fallbackOnlyRoles).toEqual(["context_scout"]);
+    expect(proof.needsReviewRoles).toEqual(
+      expect.arrayContaining(["implementation_engineer", "orchestrator"]),
+    );
   });
 });

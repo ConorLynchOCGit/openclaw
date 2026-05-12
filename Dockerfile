@@ -210,6 +210,16 @@ RUN install -d -m 0755 "$COREPACK_HOME" && \
     done && \
     chmod -R a+rX "$COREPACK_HOME"
 
+# The Execution Platform coding-team worker can hand bounded file-editing work
+# to Codex through the approved runtime bridge. Keep the CLI in the runtime
+# image so live gateway workers do not silently degrade to fixture/injected work.
+ARG OPENCLAW_INSTALL_CODEX_CLI=1
+ARG OPENCLAW_CODEX_CLI_PACKAGE="@openai/codex"
+RUN if [ "${OPENCLAW_INSTALL_CODEX_CLI}" != "0" ]; then \
+      npm install -g "${OPENCLAW_CODEX_CLI_PACKAGE}" && \
+      command -v codex >/dev/null; \
+    fi
+
 # Install additional system packages needed by your skills or extensions.
 # Example: docker build --build-arg OPENCLAW_DOCKER_APT_PACKAGES="python3 wget" .
 ARG OPENCLAW_DOCKER_APT_PACKAGES=""

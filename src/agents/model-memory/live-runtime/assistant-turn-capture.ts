@@ -32,6 +32,7 @@ import {
   type MmV2LiveRepositoryCapabilities,
   type RuntimeRepositoryWithLane,
 } from "./runtime-deps.js";
+import { recordModelMemoryRuntimeDbOperationEvidence } from "./runtime-middleware-bridge.js";
 
 function normalizeCaptureText(text: string | undefined): string {
   return text?.replace(/\s+/g, " ").trim() ?? "";
@@ -306,6 +307,22 @@ export async function captureModelMemoryAssistantTurn(params: {
       const memoryIds = result.writeResults.flatMap((entry) =>
         entry.memoryId ? [entry.memoryId] : [],
       );
+      await recordModelMemoryRuntimeDbOperationEvidence({
+        operationName: "model_memory.assistant_turn_capture_write",
+        operationKind: "write",
+        lane: "interactive",
+        boundedSummary:
+          "Assistant-turn memory capture persisted bounded memory/source records after model-task interpretation.",
+        params: {
+          captureJobId,
+          memoryTraceId,
+          memoryCount: memoryIds.length,
+          sourceHash: result.source.sourceFingerprint,
+          rawPromptStored: false,
+          rawResponseStored: false,
+          rawDbRowsStored: false,
+        },
+      }).catch(() => null);
       const dirtyResult = await markModelMemoryRuntimeDirty({
         config: params.config,
         env: process.env,

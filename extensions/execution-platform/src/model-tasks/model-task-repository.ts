@@ -61,7 +61,7 @@ function mergeRouteEvidence(
   return {
     ...base,
     ...override,
-    providerCallMade: false,
+    providerCallMade: override?.providerCallMade ?? base.providerCallMade ?? false,
     fallbackChain: override?.fallbackChain ?? base.fallbackChain,
   };
 }

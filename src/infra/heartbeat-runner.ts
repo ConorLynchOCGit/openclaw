@@ -117,6 +117,9 @@ export type HeartbeatDeps = OutboundSendDeps &
 const log = createSubsystemLogger("gateway/heartbeat");
 let heartbeatRunnerRuntimePromise: Promise<typeof import("./heartbeat-runner.runtime.js")> | null =
   null;
+const HEARTBEAT_HIDDEN_CONTEXT_MAX_ITEMS = 3;
+const HEARTBEAT_HIDDEN_CONTEXT_MAX_STRING_CHARS = 300;
+const HEARTBEAT_HIDDEN_CONTEXT_MAX_SOURCE_REFS = 5;
 
 function loadHeartbeatRunnerRuntime() {
   heartbeatRunnerRuntimePromise ??= import("./heartbeat-runner.runtime.js");
@@ -631,6 +634,27 @@ function appendHeartbeatWorkspacePathHint(prompt: string, workspaceDir: string):
   return `${prompt}\n${hint}`;
 }
 
+function boundHeartbeatContextString(
+  value: unknown,
+  maxChars = HEARTBEAT_HIDDEN_CONTEXT_MAX_STRING_CHARS,
+) {
+  const text = typeof value === "string" ? value.trim() : "";
+  if (text.length <= maxChars) {
+    return text;
+  }
+  return `${text.slice(0, Math.max(0, maxChars - 18)).trimEnd()}...[truncated]`;
+}
+
+function boundHeartbeatContextStrings(
+  values: unknown[] | undefined,
+  maxItems = HEARTBEAT_HIDDEN_CONTEXT_MAX_ITEMS,
+) {
+  return (Array.isArray(values) ? values : [])
+    .slice(0, maxItems)
+    .map((value) => boundHeartbeatContextString(value))
+    .filter((value) => value.length > 0);
+}
+
 function buildHeartbeatHiddenContextBlock(params: {
   prompt: string;
   startedAt: number;
@@ -673,7 +697,7 @@ function buildHeartbeatHiddenContextBlock(params: {
     userTimezone: time.userTimezone,
     utcTime: new Date(params.startedAt).toISOString(),
     workspaceHeartbeatPath: heartbeatFilePath,
-    heartbeatInstructions: params.prompt,
+    heartbeatInstructions: boundHeartbeatContextString(params.prompt),
     heartbeatResponseStyle: {
       heading: "What would help this user today?",
       allowReversePrompts: true,
@@ -683,24 +707,29 @@ function buildHeartbeatHiddenContextBlock(params: {
       disallowSourceRefs: true,
       disallowSystemText: true,
     },
-    proactivityItems: params.proactivityItems?.map((item) => ({
-      workItemId: item.workItemId,
-      queueItemId: item.queueItemId,
-      opportunityClass: item.opportunityClass ?? "standard",
-      title: item.title,
-      whyNow: item.whyNow,
-      nextStep: item.proposedNextStep,
-      expectedValue: item.expectedUserValue,
-      confidence: item.confidence,
-      draftReady: item.draftReady,
-      evidenceSummary: item.evidenceSummary,
-      sourceRefs: item.sourceRefs,
-    })),
-    reversePromptItems: params.reversePromptItems ?? [],
-    followupItems: params.followupItems ?? [],
-    delightItems: params.delightItems ?? [],
-    selfHealingItems: params.selfHealingItems ?? [],
-    draftReadyItems: params.draftReadyItems ?? [],
+    proactivityItems: params.proactivityItems
+      ?.slice(0, HEARTBEAT_HIDDEN_CONTEXT_MAX_ITEMS)
+      .map((item) => ({
+        workItemId: item.workItemId,
+        queueItemId: item.queueItemId,
+        opportunityClass: item.opportunityClass ?? "standard",
+        title: boundHeartbeatContextString(item.title),
+        whyNow: boundHeartbeatContextString(item.whyNow),
+        nextStep: boundHeartbeatContextString(item.proposedNextStep),
+        expectedValue: boundHeartbeatContextString(item.expectedUserValue),
+        confidence: item.confidence,
+        draftReady: item.draftReady,
+        evidenceSummary: boundHeartbeatContextString(item.evidenceSummary),
+        sourceRefs: boundHeartbeatContextStrings(
+          item.sourceRefs,
+          HEARTBEAT_HIDDEN_CONTEXT_MAX_SOURCE_REFS,
+        ),
+      })),
+    reversePromptItems: boundHeartbeatContextStrings(params.reversePromptItems),
+    followupItems: boundHeartbeatContextStrings(params.followupItems),
+    delightItems: boundHeartbeatContextStrings(params.delightItems),
+    selfHealingItems: boundHeartbeatContextStrings(params.selfHealingItems),
+    draftReadyItems: boundHeartbeatContextStrings(params.draftReadyItems),
   };
   const suffixId = createHash("sha256").update(JSON.stringify(payload)).digest("hex").slice(0, 16);
   return [

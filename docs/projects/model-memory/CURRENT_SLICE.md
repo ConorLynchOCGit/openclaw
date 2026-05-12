@@ -5,6 +5,69 @@ title: "Model Memory Current Slice"
 
 # Current Slice
 
+## 2026-05-09 Runtime Wiring Into Execution Platform
+
+Current runtime slice: `execution-platform-memory-runtime-live-wiring`.
+
+The Model Memory docs source of truth is the repo path
+`docs/projects/model-memory`, not the partial workspace mirror.
+
+This pass wired memory policy/readback into the current Execution Platform
+runtime paths:
+
+- `execution.submit` records bounded memory-policy decisions.
+- route-aware context-pack assembly bounds legacy bootstrap insertion.
+- Work Queue memory readback no longer reports ready with unknown expected
+  substates.
+- capture/proactivity evidence uses model-task and DB-operation refs in the
+  memory-runtime proof path.
+- rebuilt live gateway plus Tailscale safe-bridge UX soak passed hard no-raw
+  storage and no-lifecycle-mutation gates.
+
+Current active queue state:
+
+- Skillifier Runtime Job Migration is complete as active-queue-08. Skillifier
+  work now runs as `workflow.skillifier` / `executor.skillifier` through
+  `worker.skillifier.runtime`, produces bounded candidate/edit proposal
+  artifacts, and appears in Work Queue readback.
+- The accepted proof created runtime job
+  `active-queue-08-live-skillifier-mp1fr2yn-runtime-job`, model-task job
+  `active-queue-08-live-skillifier-mp1fr2yn-model-task`, DB-operation job
+  `active-queue-08-live-skillifier-mp1fr2yn-db-operation`, Work Queue item
+  `active-queue-08-live-skillifier-mp1fr2yn-work-item`, and candidate
+  `skillifier-candidate-26742351f3af276acedc99a59fb1ea5f`.
+- Skill-file apply remains review-gated; the runtime creates candidate
+  proposals, not invisible skill edits.
+- The next Model Memory adjacent target in the active queue is active-queue-09:
+  Proactivity Work Queue Quality Soak.
+
+## 2026-05-09 Dense Capture And Context-Pack Hard Shutdown
+
+Current runtime slice status: `completed`.
+
+The latest pass made the memory quality proof stricter and more live:
+
+- A dense owner-style prompt with 15+ likely durable memory candidates ran
+  through the live Tailscale UX path on `agent:main:main`.
+- Follow-up prompts proved newly captured memory recall and route-aware
+  context-policy recall.
+- Coding, web research, docs/skills, and QA/test workflow prompts ran through
+  live UX/runtime with memory-aware context evidence.
+- Model-authored reviewers passed dense capture quality and workflow
+  retrieval/context quality using bounded prompt refs, output hashes, selected
+  context-pack refs, and suppressed stale refs.
+- The legacy-named retrieval overlay
+  `src/agents/model-memory/live-runtime/retrieval-context.ts` is now hard-
+  disabled outside tests or an explicit compatibility env flag. Production
+  memory context exports use `route-aware-context-pack.ts`.
+- Work Queue runtime controls are ON for owner-only production after a focused
+  runtime-backed smoke.
+
+No raw prompts, raw responses, transcripts, provider logs, tool logs, DB rows,
+or secrets were stored in artifacts. Memory still cannot grant authority,
+create lifecycle success, deploy, send outbound, promote models, or mutate
+Work Queue lifecycle.
+
 ## 2026-04-24 Pre-Phase-2 Execution Lane
 
 This slice records the completed pre-Phase-2 execution lane and the
@@ -544,49 +607,82 @@ The next remaining pre-Phase-2 blocker is now:
 
 ## Current Work Queue
 
-1. Keep the same-repo docs bundle workflows artifact-only until a real owned
+2026-05-09 memory/runtime maximality update:
+
+- The Execution Platform memory-runtime closure pass completed all 13 hook
+  migrations with production middleware/runtime evidence and live UX/workflow
+  evidence.
+- Old direct hook paths are compatibility-only; model-task and DB-operation
+  middleware are the primary runtime evidence path for capture, retrieval,
+  context-pack, skillifier/proactivity, opportunity, heartbeat, and compaction
+  surfaces.
+- Controlled automatic compaction now has a passed over-budget
+  live-equivalent proof.
+- Work Queue tracker/readback should treat Slices 41-47 as completed against
+  `.artifacts/execution-platform/memory-runtime-13-hook-hard-gate-proof.json`
+  and `.artifacts/execution-platform/model-memory-runtime-live-proof-summary.json`.
+- The follow-up memory-quality/context-pack pass uses model-authored quality
+  reviews for capture and retrieval/context usefulness. Deterministic code is
+  limited to schema, bounds, refs, safety flags, and callsite classification.
+- Current projection validation found no inactive `agents-md` source refs; the
+  earlier projection warning is stale doc/artifact drift.
+- The remaining memory compatibility debt is explicit: the legacy bootstrap
+  retrieval overlay at `src/agents/model-memory/live-runtime/retrieval-context.ts`
+  is compatibility-only until the hard-shutdown slice removes or fully
+  disables it.
+
+Next convergence targets:
+
+1. Proactivity Work Queue Quality Soak.
+2. Memory Curator Workflow.
+3. Skill Curator Workflow.
+4. Coding/research/docs/QA/architecture memory-aware workflow quality soak.
+5. Model Memory Compatibility Hard Shutdown.
+6. Final platform coherence audit and owner UX production soak.
+
+7. Keep the same-repo docs bundle workflows artifact-only until a real owned
    downstream docs host is chosen; do not restore the old `openclaw/docs`
    publish assumption or the old cross-repo locale-dispatch path.
-2. Keep `message:preprocessed` routing/telemetry-only until dedupe and
+8. Keep `message:preprocessed` routing/telemetry-only until dedupe and
    no-raw-prompt guarantees are proven.
-3. Treat `ContextEngine.ingest` and `ContextEngine.ingestBatch` hook evidence
+9. Treat `ContextEngine.ingest` and `ContextEngine.ingestBatch` hook evidence
    as production evidence only when it comes from real UI/gateway turns; do not
    fake production verification from direct internal calls.
-4. Do not resume the curated 304-source document-ingest corpus until provider
-   health/credit preflight passes. Resume
-   from checkpoint `checkpoints/model-memory/model-memory-deep-pass-2026-04-22b.json`
-   only with provider credits restored, bounded class-filtered failed-source
-   retry, the runner failure circuit breaker enabled, and the failed-source
-   quarantine report reviewed.
-5. Rerun a narrow `MEMMECH-2026-04-22` proof for durable ordinary-turn
-   capture, capture job events, deferred rebuild state, DB pool telemetry,
-   strict-schema preflight, cache metrics, and no raw ordinary-turn
-   source-window persistence. Runtime pickup is already complete; do not write
-   synthetic proof/eval content into the live durable DB.
-6. Complete Pass 6 cache-aware mini/nano and large-document compression
-   benchmarking, or explicitly decide to defer it before rerunning MEMMECH
-   proof.
-7. Finish the next shared ingestion-funnel slice:
-   - executable pipeline stage orchestration across all capture paths
-   - candidate-level quarantine artifacts/reports
-   - wider per-candidate persistence/savepoint coverage where safe
-   - closeout reports that consume the new integrity audit and provider
-     scorecard outputs
-8. Continue hardening Retrieval Runtime relevance and telemetry without
-   mutating truth:
-   - prefer fresh projection digests backed by active MMV2 ids
-   - record stale/superseded/deleted/conflicted/inactive exclusions
-   - emit `memory_existed_but_excluded` diagnostics when candidates are found
-     but not selected
-   - emit empty-retrieval telemetry
-   - keep lexical/RRF/vector-style ranking read-time only
-9. Continue remaining evaluation coverage for:
-   - tool-result proof capture
-   - projection-backed recall
-   - stale/superseded exclusion
-   - no raw-data persistence
-   - root `USER.md` / `MEMORY.md` no-write
-10. Inventory and quarantine remaining fallback compatibility in small
+10. Do not resume the curated 304-source document-ingest corpus until provider
+    health/credit preflight passes. Resume
+    from checkpoint `checkpoints/model-memory/model-memory-deep-pass-2026-04-22b.json`
+    only with provider credits restored, bounded class-filtered failed-source
+    retry, the runner failure circuit breaker enabled, and the failed-source
+    quarantine report reviewed.
+11. Rerun a narrow `MEMMECH-2026-04-22` proof for durable ordinary-turn
+    capture, capture job events, deferred rebuild state, DB pool telemetry,
+    strict-schema preflight, cache metrics, and no raw ordinary-turn
+    source-window persistence. Runtime pickup is already complete; do not write
+    synthetic proof/eval content into the live durable DB.
+12. Complete Pass 6 cache-aware mini/nano and large-document compression
+    benchmarking, or explicitly decide to defer it before rerunning MEMMECH
+    proof.
+13. Finish the next shared ingestion-funnel slice:
+    - executable pipeline stage orchestration across all capture paths
+    - candidate-level quarantine artifacts/reports
+    - wider per-candidate persistence/savepoint coverage where safe
+    - closeout reports that consume the new integrity audit and provider
+      scorecard outputs
+14. Continue hardening Retrieval Runtime relevance and telemetry without
+    mutating truth:
+    - prefer fresh projection digests backed by active MMV2 ids
+    - record stale/superseded/deleted/conflicted/inactive exclusions
+    - emit `memory_existed_but_excluded` diagnostics when candidates are found
+      but not selected
+    - emit empty-retrieval telemetry
+    - keep lexical/RRF/vector-style ranking read-time only
+15. Continue remaining evaluation coverage for:
+    - tool-result proof capture
+    - projection-backed recall
+    - stale/superseded exclusion
+    - no raw-data persistence
+    - root `USER.md` / `MEMORY.md` no-write
+16. Inventory and quarantine remaining fallback compatibility in small
     reversible slices:
 
 - no broad deletion without tests

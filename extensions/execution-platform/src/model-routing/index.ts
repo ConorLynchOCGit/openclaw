@@ -11,4 +11,5 @@ export * from "./policy.ts";
 export * from "./provider-reliability-summary.ts";
 export * from "./provider-usage-cost-normalizer.ts";
 export * from "./types.ts";
+export * from "./v4-pro-role-eligibility.ts";
 export * from "./v4-pro-test-engineer-authority.ts";

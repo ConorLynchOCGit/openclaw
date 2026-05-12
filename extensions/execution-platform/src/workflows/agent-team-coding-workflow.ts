@@ -1,3 +1,9 @@
+import {
+  CODING_TEAM_APPROVAL_REQUIRED_ACTION_KINDS,
+  CODING_TEAM_BLOCKED_ACTION_KINDS,
+  CODING_TEAM_LOCAL_REPO_ACTION_KINDS,
+  CODING_TEAM_PERMISSION_MODEL_ID,
+} from "../authority/coding-team-permission-model.ts";
 import { AGENT_TEAM_JOB_TYPE } from "../codex-bridge/agent-team-runtime-evidence.ts";
 import type { ExecutionWorkflowContract } from "./workflow-contract.ts";
 
@@ -95,6 +101,14 @@ export const agentTeamCodingWorkflowContract: ExecutionWorkflowContract = {
       requestPolicyRef: "research-routing-policy.v1",
     },
   ],
+  permissionModel: {
+    permissionModelId: CODING_TEAM_PERMISSION_MODEL_ID,
+    summary:
+      "Coding team may edit, test, review, document, and close out bounded local repo work. Deploy, outbound, install, and gateway restart require approval. Secrets, destructive DB mutation, model promotion, authority changes, Work Queue lifecycle mutation, raw storage, and arbitrary shell from text are blocked.",
+    allowedLocalActionKinds: [...CODING_TEAM_LOCAL_REPO_ACTION_KINDS],
+    approvalRequiredActionKinds: [...CODING_TEAM_APPROVAL_REQUIRED_ACTION_KINDS],
+    blockedActionKinds: [...CODING_TEAM_BLOCKED_ACTION_KINDS],
+  },
   closeoutRequirement: {
     required: true,
     closeoutKind: "work_episode_outcome_pack",

@@ -221,7 +221,9 @@ describe("execution autonomy next sequence", () => {
         scope: "authority:install_dependency",
         runtimeJobId: "approval-job",
       });
-      expect(validateOperatorApprovalRecord(validApproval)).toMatchObject({ valid: true });
+      expect(
+        validateOperatorApprovalRecord(validApproval, new Date("2026-05-03T23:00:00.000Z")),
+      ).toMatchObject({ valid: true });
       const expired = createOperatorApprovalRecord({
         ...validApproval,
         approvalId: "expired-approval",

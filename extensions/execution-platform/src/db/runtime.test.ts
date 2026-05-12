@@ -88,9 +88,48 @@ describe("execution platform database runtime", () => {
       databaseName: "model_memory",
       source: "config:plugins.entries.model-memory.config.database.url",
       reusedModelMemoryDatabase: true,
+      explicitlyApprovedSharedRuntimeDatabase: false,
     });
     expect(resolution.connectionString).toContain("application_name=execution-platform");
     expect(resolution.connectionString).toContain("/model_memory?");
+  });
+
+  it("records explicit shared runtime DB approval from config env vars", async () => {
+    const resolution = await resolveExecutionPlatformDatabaseResolution({
+      config: {
+        ...configWithDatabase(
+          "model-memory",
+          "postgresql://mm:secret@example.com:5432/model_memory?sslmode=require",
+        ),
+        env: {
+          vars: {
+            OPENCLAW_EXECUTION_PLATFORM_SHARED_RUNTIME_DB_APPROVED: "true",
+          },
+        },
+      },
+      env: {},
+    });
+
+    expect(resolution).toMatchObject({
+      databaseName: "model_memory",
+      source: "config:plugins.entries.model-memory.config.database.url",
+      reusedModelMemoryDatabase: true,
+      explicitlyApprovedSharedRuntimeDatabase: true,
+    });
+  });
+
+  it("records explicit shared runtime DB approval from process env", async () => {
+    const resolution = await resolveExecutionPlatformDatabaseResolution({
+      config: configWithDatabase(
+        "model-memory",
+        "postgresql://mm:secret@example.com:5432/model_memory?sslmode=require",
+      ),
+      env: {
+        OPENCLAW_EXECUTION_PLATFORM_SHARED_RUNTIME_DB_APPROVED: "enabled",
+      },
+    });
+
+    expect(resolution.explicitlyApprovedSharedRuntimeDatabase).toBe(true);
   });
 
   it("honors pool bounds from Execution Platform env names", () => {

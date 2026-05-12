@@ -1,4 +1,5 @@
 import {
+  clearSharedCodexAppServerClient,
   resolveCodexAppServerRuntimeOptions,
   type CodexAppServerRuntimeOptions,
   type CodexServerNotification,
@@ -332,6 +333,7 @@ async function waitForCompletedTurn(input: {
 
   const timeout = setTimeout(
     () => {
+      input.client.close();
       settleError(new Error("codex app-server turn completion timed out"));
     },
     Math.max(100, input.requestTimeoutMs),
@@ -399,6 +401,10 @@ export class CodexAppServerJsonExecutor implements JsonModelExecutor {
     this.defaultReasoningEffort =
       options.reasoningEffort ??
       readReasoningEffort(process.env[MODEL_MEMORY_CODEX_REASONING_EFFORT_ENV]);
+  }
+
+  close(): void {
+    clearSharedCodexAppServerClient();
   }
 
   async execute(request: JsonModelExecutionRequest): Promise<JsonModelExecutionResponse> {

@@ -848,6 +848,22 @@ describe("compactEmbeddedPiSession hooks (ownsCompaction engine)", () => {
     );
   });
 
+  it("uses the caller supplied token budget for engine-owned compaction", async () => {
+    await compactEmbeddedPiSession(
+      wrappedCompactionArgs({
+        tokenBudget: 200_000,
+        currentTokenCount: 229_253,
+      }),
+    );
+
+    expect(contextEngineCompactMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tokenBudget: 200_000,
+        currentTokenCount: 229_253,
+      }),
+    );
+  });
+
   it("does not fire after_compaction when compaction fails", async () => {
     hookRunner.hasHooks.mockReturnValue(true);
     const sync = vi.fn(async () => {});

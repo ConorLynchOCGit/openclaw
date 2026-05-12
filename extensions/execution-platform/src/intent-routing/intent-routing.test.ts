@@ -7,12 +7,25 @@ import {
 import { buildExecutionPathwayReadinessAudit } from "./execution-pathway-readiness-audit.ts";
 import { parseStructuredIntentRouterOutput } from "./intent-router-schema.ts";
 import { validateIntentForExecution } from "./intent-validator.ts";
-import { ModelAssistedIntentRouter } from "./model-assisted-intent-router.ts";
+import {
+  HeuristicIntentRouterProvider,
+  ModelAssistedIntentRouter,
+} from "./model-assisted-intent-router.ts";
 import { decideProductionDefaultEnablement } from "./production-default-enablement-gate.ts";
 import { compileIntentToRuntimeJobRequest } from "./request-compiler.ts";
 import { evaluateResearchRoutingPolicy } from "./research-routing-policy.ts";
 
 describe("intent routing", () => {
+  function legacyTestFixtureRouter() {
+    return new ModelAssistedIntentRouter(
+      new HeuristicIntentRouterProvider({
+        enabled: true,
+        allowHighRiskOrControlRoutes: true,
+        fallbackLabel: "test-fixture-legacy-semantic-router",
+      }),
+    );
+  }
+
   it("parses structured coding-team routes and rejects raw storage", () => {
     const parsed = parseStructuredIntentRouterOutput({
       route: "workflow_execution",
@@ -53,8 +66,49 @@ describe("intent routing", () => {
     ).toBe(false);
   });
 
-  it("routes natural language to agent_team.coding with the provider abstraction", async () => {
+  it("keeps legacy semantic intent routing disabled by default", async () => {
     const router = new ModelAssistedIntentRouter();
+    await expect(
+      router.route({
+        prompt: "Use the full team to improve the production audit cockpit.",
+      }),
+    ).resolves.toMatchObject({
+      routeDecision: {
+        route: "clarification_required",
+        reasonCodes: ["legacy_semantic_intent_fallback_disabled", "structured_front_door_required"],
+      },
+      modelCandidateId: "legacy-semantic-intent-router-disabled",
+    });
+  });
+
+  it("rejects high-risk and control prompts in the temporary semantic fallback", async () => {
+    const router = new ModelAssistedIntentRouter(
+      new HeuristicIntentRouterProvider({
+        enabled: true,
+        fallbackLabel: "test-fixture-legacy-semantic-router",
+      }),
+    );
+    for (const prompt of [
+      "Cancel job abc.",
+      "Deploy this to production.",
+      "Do not send anything; improve outbound readback.",
+      "Install this dependency.",
+      "Promote the model.",
+    ]) {
+      await expect(router.route({ prompt })).resolves.toMatchObject({
+        routeDecision: {
+          route: "clarification_required",
+          reasonCodes: [
+            "legacy_semantic_fallback_high_risk_or_control_rejected",
+            "structured_front_door_required",
+          ],
+        },
+      });
+    }
+  });
+
+  it("routes natural language to agent_team.coding with the provider abstraction", async () => {
+    const router = legacyTestFixtureRouter();
     const decision = await router.route({
       prompt: "Have the coding team add a small regression test and close it out.",
     });
@@ -65,7 +119,7 @@ describe("intent routing", () => {
   });
 
   it("prioritizes explicit coding-team delegation over research and direct deploy blockers", async () => {
-    const router = new ModelAssistedIntentRouter();
+    const router = legacyTestFixtureRouter();
     await expect(
       router.route({
         prompt:
@@ -88,10 +142,21 @@ describe("intent routing", () => {
         workflowId: "agent_team.coding",
       },
     });
+    await expect(
+      router.route({
+        prompt:
+          "Use the full team to improve the production audit cockpit so deploys, outbound sends, model promotions, rollbacks, kill switches, and closeouts are easy to inspect from Work Queue. Test it, review it, deploy if policy permits, and close out.",
+      }),
+    ).resolves.toMatchObject({
+      routeDecision: {
+        route: "workflow_execution",
+        workflowId: "agent_team.coding",
+      },
+    });
   });
 
   it("routes research, architecture, docs, controls, and blocked requests across workflows", async () => {
-    const router = new ModelAssistedIntentRouter();
+    const router = legacyTestFixtureRouter();
     await expect(
       router.route({ prompt: "Research current OpenAI structured output docs." }),
     ).resolves.toMatchObject({
@@ -128,7 +193,7 @@ describe("intent routing", () => {
   });
 
   it("validates safe coding-team intent deterministically", async () => {
-    const router = new ModelAssistedIntentRouter();
+    const router = legacyTestFixtureRouter();
     const decision = await router.route({
       prompt: "Have the coding team add a small regression test and close it out.",
     });
@@ -164,7 +229,19 @@ describe("intent routing", () => {
         requestedAuthority: "outbound_readonly",
         sideEffectClass: "outbound_readonly",
       }),
-    ).toMatchObject({ disposition: "blocked" });
+    ).toMatchObject({
+      disposition: "mandatory",
+      reasonCodes: ["research_workflow_selected_structured_route"],
+    });
+    expect(
+      evaluateResearchRoutingPolicy({
+        objectiveSummary:
+          "Improve outbound authority readback. Do not send unscoped outbound messages.",
+        workflowId: "agent_team.coding",
+        requestedAuthority: "local_yolo",
+        sideEffectClass: "code_edit",
+      }),
+    ).toMatchObject({ disposition: "not_needed" });
     expect(
       decideProductionDefaultEnablement({
         workflowId: "single_agent.web_research",
@@ -180,7 +257,7 @@ describe("intent routing", () => {
   });
 
   it("accepts bounded web research and compiles child workflow requests", async () => {
-    const router = new ModelAssistedIntentRouter();
+    const router = legacyTestFixtureRouter();
     const research = await router.route({
       prompt: "Research current OpenAI structured output docs.",
     });
@@ -223,7 +300,7 @@ describe("intent routing", () => {
   });
 
   it("blocks production deploy and approval-gates dependency work", async () => {
-    const router = new ModelAssistedIntentRouter();
+    const router = legacyTestFixtureRouter();
     const deploy = await router.route({ prompt: "Deploy this to production." });
     expect(
       validateIntentForExecution({
@@ -260,7 +337,7 @@ describe("intent routing", () => {
   });
 
   it("compiles accepted intent to a bounded runtime job payload", async () => {
-    const router = new ModelAssistedIntentRouter();
+    const router = legacyTestFixtureRouter();
     const decision = await router.route({
       prompt: "Have the coding team add a small regression test and close it out.",
     });

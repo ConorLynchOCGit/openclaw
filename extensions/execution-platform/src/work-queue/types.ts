@@ -143,6 +143,61 @@ export type WorkItemParentWorkflowLink = {
   createdAt: Date;
 };
 
+export const WORK_QUEUE_CONVERGENCE_SLICE_PLANNING_STATUSES = [
+  "planned",
+  "ready",
+  "in_progress",
+  "blocked",
+  "needs_review",
+  "completed",
+  "superseded",
+] as const;
+
+export type WorkQueueConvergenceSlicePlanningStatus =
+  (typeof WORK_QUEUE_CONVERGENCE_SLICE_PLANNING_STATUSES)[number];
+
+export type WorkQueueConvergenceSliceProjection = {
+  artifactKind: "work_queue_convergence_slice_projection";
+  trackerVersion: "openclaw-platform-convergence.v3" | "openclaw-platform-convergence.v4";
+  trackerKind: "historical_slice" | "active_queue_item" | "unknown";
+  sliceId: string;
+  title: string;
+  track: string;
+  wave: string;
+  planningStatus: WorkQueueConvergenceSlicePlanningStatus;
+  priority: number;
+  legacySliceId: string | null;
+  previousSliceId: string | null;
+  historicalSliceId: string | null;
+  activeQueueId: string | null;
+  activeQueuePosition: number | null;
+  supersededByActiveQueueId: string | null;
+  dependsOnSliceIds: string[];
+  dependsOnActiveQueueIds: string[];
+  dependsOnHistoricalSliceIds: string[];
+  sourceDocRefs: string[];
+  artifactRefs: string[];
+  runtimeJobRefs: string[];
+  blockerReasonCodes: string[];
+  nextAction: string | null;
+  ownerSystemArea: string;
+  createdAt: string | null;
+  updatedAt: string | null;
+  planningStateSource: "work_item_metadata";
+  runtimeState: {
+    lifecycleState: WorkItemLifecycleState;
+    runCount: number;
+    runtimeJobIds: string[];
+    lifecycleTruthSource: "work_queue_repository";
+    planningStatusIsLifecycleState: false;
+  };
+  rawPromptStored: false;
+  rawResponseStored: false;
+  rawTranscriptStored: false;
+  rawLogsStored: false;
+  workQueueLifecycleMutationAllowed: false;
+};
+
 export type WorkItemTruth = {
   item: WorkItem;
   currentVersion: WorkItemVersion | null;
@@ -168,5 +223,6 @@ export type WorkQueueReadModelItem = {
   artifactCount: number;
   latestEvent: WorkItemEvent | null;
   runtimeJobIds: string[];
+  convergenceSlice: WorkQueueConvergenceSliceProjection | null;
   updatedAt: Date;
 };

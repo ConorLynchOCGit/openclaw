@@ -4,12 +4,18 @@ import { createExecutionPlatformPgMemTestDatabase } from "../db/pg-test.ts";
 import { RuntimeJobRepository } from "../runtime-job-repository.ts";
 import { buildWorkQueueExecutionReadModel } from "../work-queue/execution-read-model.ts";
 import { WorkQueueRepository } from "../work-queue/work-queue-repository.ts";
+import { createModelAuthoredCloseoutCapsuleFixture } from "../workers/test-closeout-capsule-fixture.ts";
 import {
   createAgentTeamFailureRecoveryArtifact,
   recordAgentTeamFailureRecoveryArtifact,
 } from "./agent-team-failure-recovery.ts";
 import { AGENT_TEAM_JOB_TYPE } from "./agent-team-runtime-evidence.ts";
-import { LiveAgentTeamRunner, type AgentTeamModelClient } from "./live-agent-team-runner.ts";
+import { closeoutCapsuleToLegacyHumanSummary } from "./closeout-capsule.ts";
+import {
+  LiveAgentTeamRunner,
+  OpenRouterAgentTeamModelClient,
+  type AgentTeamModelClient,
+} from "./live-agent-team-runner.ts";
 
 async function withRuntime<T>(
   work: (input: {
@@ -87,7 +93,98 @@ function fakeClient(): AgentTeamModelClient {
   };
 }
 
+function modelCloseoutReporterFixture() {
+  return {
+    async createCapsule(input: {
+      factualRefs: {
+        runtimeJobId: string;
+        teamRunId?: string | null;
+        workflowId?: string | null;
+      };
+    }) {
+      const capsule = createModelAuthoredCloseoutCapsuleFixture({
+        runtimeJobId: input.factualRefs.runtimeJobId,
+        teamRunId: input.factualRefs.teamRunId ?? null,
+        workflowId: input.factualRefs.workflowId ?? "agent_team.coding",
+      });
+      return {
+        source: "model" as const,
+        capsule,
+        legacyHumanSummary: closeoutCapsuleToLegacyHumanSummary(capsule),
+        reasonCodes: ["fixture_model_closeout_created"],
+        rawPromptStored: false as const,
+        rawResponseStored: false as const,
+        rawProviderLogStored: false as const,
+      };
+    },
+  };
+}
+
 describe("live agent-team runner", () => {
+  it("supports a Kimi native JSON request profile without reasoning and honors call token budget", async () => {
+    const bodies: unknown[] = [];
+    const fetchImpl = (async (_url: string | URL | Request, init?: RequestInit) => {
+      const bodyText = typeof init?.body === "string" ? init.body : "{}";
+      bodies.push(JSON.parse(bodyText));
+      return {
+        ok: true,
+        status: 200,
+        async json() {
+          return {
+            choices: [
+              {
+                message: {
+                  content: JSON.stringify({
+                    whatIWasAskedToDo: "implement",
+                    whatIActuallyDid: "implemented bounded change",
+                    evidenceRefs: ["artifact://kimi"],
+                    filesOrArtifactsTouched: ["file.ts"],
+                    validationIPerformed: "test passed",
+                    whatWorked: ["json profile worked"],
+                    whatWasWeakOrFailed: ["none"],
+                    recommendedNextStep: "continue",
+                    confidence: "high",
+                    limitations: ["bounded test"],
+                  }),
+                },
+              },
+            ],
+            usage: { prompt_tokens: 10, completion_tokens: 20, total_tokens: 30 },
+          };
+        },
+      } as Response;
+    }) as typeof fetch;
+
+    const client = new OpenRouterAgentTeamModelClient({
+      apiKey: "test-key",
+      fetchImpl,
+      requestProfilesByModelId: {
+        "moonshotai/kimi-k2.6": {
+          responseFormatMode: "native",
+          reasoningMode: "omit",
+          maxTokens: 2_400,
+        },
+      },
+    });
+
+    const result = await client.callRole({
+      roleId: "implementation_engineer",
+      modelId: "moonshotai/kimi-k2.6",
+      modelCandidateId: "kimi-2-6-coding-candidate",
+      prompt: "Return compact JSON.",
+      responseFormat: "json_object",
+      maxTokens: 3_000,
+    });
+
+    expect(result.status).toBe("succeeded");
+    expect(bodies[0]).toMatchObject({
+      model: "moonshotai/kimi-k2.6",
+      max_tokens: 3_000,
+      response_format: { type: "json_object" },
+    });
+    expect(bodies[0]).not.toHaveProperty("reasoning");
+  });
+
   it("claims one team job, records live-shaped stream/accounting/review evidence, and projects to Work Queue", async () => {
     await withRuntime(async ({ runtimeJobs, workQueue }) => {
       const workItem = await workQueue.createWorkItem({
@@ -102,7 +199,7 @@ describe("live agent-team runner", () => {
         workItemId: workItem.workItemId,
         payload: {
           teamRunId: "live-team-run",
-          objective: "agent-team-runtime-read-model-projection",
+          objective: "Improve live agent-team runtime projection with bounded role evidence.",
         },
       });
       await workQueue.createWorkRun({
@@ -118,6 +215,7 @@ describe("live agent-team runner", () => {
         queueName: "agent-team-live",
         modelClient: fakeClient(),
         maxV4ProEvalFixtures: 2,
+        closeoutReporter: modelCloseoutReporterFixture(),
       }).runOnce();
       const artifacts = await runtimeJobs.listArtifacts(runtimeJob.jobId);
       const events = await runtimeJobs.listEvents(runtimeJob.jobId);

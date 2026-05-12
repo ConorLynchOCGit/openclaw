@@ -22,6 +22,7 @@ export type ExecutionPlatformDatabaseResolution = {
   databaseName: string;
   source: ExecutionPlatformDatabaseSource;
   reusedModelMemoryDatabase: boolean;
+  explicitlyApprovedSharedRuntimeDatabase?: boolean;
 };
 
 export type ExecutionPlatformPgPool = Pool;
@@ -54,6 +55,26 @@ function readPositiveIntegerEnv(name: string, env: NodeJS.ProcessEnv): number | 
   }
   const parsed = Number.parseInt(value, 10);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
+}
+
+function readConfigEnvString(config: OpenClawConfig | undefined, name: string): string | undefined {
+  const envConfig = config?.env;
+  if (!envConfig) {
+    return undefined;
+  }
+  const varsValue = envConfig.vars?.[name];
+  if (typeof varsValue === "string" && varsValue.trim().length > 0) {
+    return varsValue.trim();
+  }
+  const directValue = envConfig[name];
+  if (typeof directValue === "string" && directValue.trim().length > 0) {
+    return directValue.trim();
+  }
+  return undefined;
+}
+
+function flagEnabled(value: string | undefined): boolean {
+  return ["1", "true", "yes", "on", "enabled"].includes(value?.trim().toLowerCase() ?? "");
 }
 
 function readPluginDatabaseConfig(
@@ -100,6 +121,17 @@ function retargetDatabase(connectionString: string, databaseName: string): strin
   return url.toString();
 }
 
+export function redactExecutionPlatformConnectionString(connectionString: string): string {
+  const url = new URL(connectionString);
+  if (url.username) {
+    url.username = "redacted";
+  }
+  if (url.password) {
+    url.password = "redacted";
+  }
+  return url.toString();
+}
+
 async function loadOpenClawConfig(): Promise<OpenClawConfig> {
   const { loadConfig } = await import("../../../../src/config/config.js");
   return loadConfig();
@@ -115,6 +147,10 @@ export async function resolveExecutionPlatformDatabaseResolution(
 ): Promise<ExecutionPlatformDatabaseResolution> {
   const env = input.env ?? process.env;
   const config = input.config ?? (await (input.loadConfig ?? loadOpenClawConfig)());
+  const explicitlyApprovedSharedRuntimeDatabase = flagEnabled(
+    readTrimmedString(env.OPENCLAW_EXECUTION_PLATFORM_SHARED_RUNTIME_DB_APPROVED) ??
+      readConfigEnvString(config, "OPENCLAW_EXECUTION_PLATFORM_SHARED_RUNTIME_DB_APPROVED"),
+  );
   const executionPlatformConfig = readPluginDatabaseConfig(config, "execution-platform");
   const modelMemoryConfig = readPluginDatabaseConfig(config, "model-memory");
   const explicitDatabaseName =
@@ -182,6 +218,8 @@ export async function resolveExecutionPlatformDatabaseResolution(
     databaseName,
     source: selected.source,
     reusedModelMemoryDatabase: selected.reusedModelMemoryDatabase,
+    explicitlyApprovedSharedRuntimeDatabase:
+      selected.reusedModelMemoryDatabase && explicitlyApprovedSharedRuntimeDatabase,
   };
 }
 

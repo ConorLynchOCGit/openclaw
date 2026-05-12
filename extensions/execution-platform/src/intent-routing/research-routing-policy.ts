@@ -22,8 +22,6 @@ const unstableFactPattern =
   /\b(latest|current|recent|today|pricing|prices|schedule|law|regulation|security advisory|api docs|provider|model availability|browser support)\b/iu;
 const optionalPlanningPattern =
   /\b(plan|architecture|architect|spec|design|new build|implementation plan)\b/iu;
-const blockedPattern =
-  /\b(send|post|publish|buy|purchase|scrape and store|store full|raw page|raw transcript|secret|credential)\b/iu;
 const broadPattern = /\b(best|current)\b/iu;
 
 export function evaluateResearchRoutingPolicy(input: {
@@ -34,7 +32,11 @@ export function evaluateResearchRoutingPolicy(input: {
 }): ResearchRoutingPolicyResult {
   const text = input.objectiveSummary.toLowerCase();
   const reasonCodes: string[] = [];
-  if (blockedPattern.test(text) || input.sideEffectClass === "production_side_effect") {
+  const researchRelevant =
+    input.workflowId === "single_agent.web_research" ||
+    explicitResearchPattern.test(text) ||
+    unstableFactPattern.test(text);
+  if (researchRelevant && input.sideEffectClass === "production_side_effect") {
     reasonCodes.push("research_blocked_side_effect_or_raw_storage");
     return result("blocked");
   }
@@ -59,6 +61,10 @@ export function evaluateResearchRoutingPolicy(input: {
         ? "research_explicitly_requested"
         : "research_required_for_unstable_current_fact",
     );
+    return result("mandatory");
+  }
+  if (input.workflowId === "single_agent.web_research") {
+    reasonCodes.push("research_workflow_selected_structured_route");
     return result("mandatory");
   }
   if (

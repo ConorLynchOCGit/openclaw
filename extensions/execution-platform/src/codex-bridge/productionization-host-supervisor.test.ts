@@ -189,6 +189,20 @@ describe("Execution Platform host routes and supervisor productionization", () =
       expect(dryRun.statusCode).toBe(200);
       expect(JSON.stringify(dryRun.json)).toContain("host-route-bridge-job");
 
+      const nativeRunBlocked = await callRoute(
+        (req, res) =>
+          handleExecutionPlatformQueueRunnerHostRoute(req as never, res as never, { runtimeJobs }),
+        {
+          auth: { actorId: "operator", role: "operator", authenticated: true },
+          nativeWorkflowRunOnce: true,
+          runtimeJobId: "host-route-bridge-job",
+        },
+      );
+      expect(nativeRunBlocked.statusCode).toBe(409);
+      expect(JSON.stringify(nativeRunBlocked.json)).toContain(
+        "gateway_worker_run_once_disabled_by_enqueue_only_boundary",
+      );
+
       const pause = await callRoute(
         (req, res) =>
           handleExecutionPlatformWorkQueueControlHostRoute("pause", req as never, res as never, {

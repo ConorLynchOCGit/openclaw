@@ -189,4 +189,74 @@ describe("heartbeat proactivity review", () => {
       expect(sendTelegram.mock.calls[0]?.[1]).not.toContain("HEARTBEAT_OK");
     });
   });
+
+  it("passes bounded proactivity context to heartbeat reply turns", async () => {
+    await withTempHeartbeatSandbox(async ({ tmpDir, storePath }) => {
+      const cfg: OpenClawConfig = {
+        agents: {
+          defaults: {
+            workspace: tmpDir,
+            heartbeat: {
+              every: "5m",
+              target: "telegram",
+            },
+          },
+        },
+        channels: { telegram: { allowFrom: ["*"] } },
+        session: { store: storePath },
+      };
+      const sessionId = "44444444-4444-4444-8444-444444444444";
+      await seedMainSessionStore(storePath, cfg, {
+        sessionId,
+        lastChannel: "telegram",
+        lastProvider: "telegram",
+        lastTo: "-100155462274",
+      });
+      const longText = "bounded heartbeat review context ".repeat(400);
+      const buildProactivityReview = vi.fn().mockResolvedValue({
+        prompt: "What would help this user today?",
+        items: Array.from({ length: 8 }, (_, index) => ({
+          workItemId: `work-item-${index}`,
+          queueItemId: `queue-item-${index}`,
+          opportunityClass: "proactive_plan",
+          title: `Heartbeat item ${index} ${longText}`,
+          whyNow: longText,
+          proposedNextStep: longText,
+          expectedUserValue: longText,
+          confidence: "high",
+          draftReady: false,
+          evidenceSummary: longText,
+          sourceRefs: Array.from({ length: 12 }, (__, refIndex) => `source-${index}-${refIndex}`),
+        })),
+        reversePromptItems: Array.from({ length: 8 }, (_, index) => `reverse-${index} ${longText}`),
+        followupItems: Array.from({ length: 8 }, (_, index) => `followup-${index} ${longText}`),
+        delightItems: Array.from({ length: 8 }, (_, index) => `delight-${index} ${longText}`),
+        selfHealingItems: Array.from({ length: 8 }, (_, index) => `self-${index} ${longText}`),
+        draftReadyItems: Array.from({ length: 8 }, (_, index) => `draft-${index} ${longText}`),
+        state: {},
+      });
+      const getReplySpy = vi.fn().mockResolvedValue({ text: "HEARTBEAT_OK" });
+
+      const result = await runHeartbeatOnce({
+        cfg,
+        agentId: "main",
+        reason: "interval",
+        deps: {
+          buildHeartbeatProactivityReviewText: buildProactivityReview,
+          getReplyFromConfig: getReplySpy,
+          telegram: vi.fn(),
+        } as never,
+      });
+
+      expect(result.status).toBe("ran");
+      const body = String(getReplySpy.mock.calls[0]?.[0]?.Body ?? "");
+      expect(body).toContain("Heartbeat runtime context");
+      expect(body).toContain("...[truncated]");
+      expect(body).toContain("Heartbeat item 2");
+      expect(body).not.toContain("Heartbeat item 3");
+      expect(body).toContain("source-0-4");
+      expect(body).not.toContain("source-0-5");
+      expect(body.length).toBeLessThan(16_000);
+    });
+  });
 });

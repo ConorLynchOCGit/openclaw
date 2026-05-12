@@ -25,6 +25,7 @@ import {
   type ModelMemoryLiveRuntimeStatus,
 } from "./config.js";
 import { CompositeModelMemoryJsonExecutor, ExecutorBackedMmV2SemanticInterpreter } from "./json.js";
+import { createRuntimeMiddlewareBackedJsonExecutor } from "./runtime-middleware-bridge.js";
 
 const log = createSubsystemLogger("model-memory/live-runtime");
 
@@ -115,7 +116,9 @@ export async function getLiveRuntime(config?: OpenClawConfig): Promise<LiveRunti
       key: cacheKey,
       promise: (async () => {
         const db = await createModelMemoryDatabaseRuntime({ config });
-        const executor = new CompositeModelMemoryJsonExecutor(config);
+        const executor = createRuntimeMiddlewareBackedJsonExecutor(
+          new CompositeModelMemoryJsonExecutor(config),
+        );
         return {
           ...db,
           semanticInterpreter: new ExecutorBackedSemanticInterpreter(executor),

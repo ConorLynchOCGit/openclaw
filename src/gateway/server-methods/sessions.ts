@@ -1555,6 +1555,18 @@ export const sessionsHandlers: GatewayRequestHandlers = {
           allowed: false,
           defaultLevel: "off",
         },
+        tokenBudget:
+          typeof entry?.contextTokens === "number" &&
+          Number.isFinite(entry.contextTokens) &&
+          entry.contextTokens > 0
+            ? Math.floor(entry.contextTokens)
+            : undefined,
+        currentTokenCount:
+          typeof entry?.totalTokens === "number" &&
+          Number.isFinite(entry.totalTokens) &&
+          entry.totalTokens > 0
+            ? Math.floor(entry.totalTokens)
+            : undefined,
         trigger: "manual",
       });
 

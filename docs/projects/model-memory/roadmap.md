@@ -24,6 +24,28 @@ title: "Model Memory Roadmap"
 
 ## Progress snapshot
 
+- 2026-05-10 active queue rebase:
+  - the Execution Platform convergence tracker preserves historical slices
+    and uses an 18-item Active Execution Queue for remaining work.
+- 2026-05-11 Skillifier Runtime Job Migration:
+  - active-queue-08 is complete. Skillifier now has
+    `workflow.skillifier` / `executor.skillifier`, `worker.skillifier.runtime`,
+    bounded candidate/edit proposal artifacts, Closeout Capsule opportunity
+    linkage, and Work Queue readback.
+  - the next Model Memory adjacent target is active-queue-09:
+    Proactivity Work Queue Quality Soak.
+- 2026-05-09 dense live memory quality closure:
+  - Work Queue runtime controls are ON for owner-only production after focused
+    runtime-backed smoke.
+  - Dense owner-style live UX capture benchmark passed model-authored review
+    with 15+ durable memory candidates and no raw prompt/response storage.
+  - Follow-up live UX prompts recalled newly captured memory and route-aware
+    context policy.
+  - Coding, web research, docs/skills, and QA/test workflow prompts ran
+    through live UX/runtime with memory-aware context evidence.
+  - The legacy retrieval overlay path is hard-disabled outside tests or an
+    explicit compatibility env flag; production context insertion uses
+    route-aware context packs.
 - The canonical blocker list before Phase 2 is now
   [Pre-Phase-2 Gate Ledger](/projects/model-memory/pre-phase-2-gate-ledger).
 - Final pre-Phase-2 hardening now adds executable shared-ingestion closeout
@@ -106,6 +128,13 @@ title: "Model Memory Roadmap"
 
 ## Current top priorities
 
+0. finish runtime convergence items surfaced on 2026-05-09:
+   - remove or fully disable the final compatibility-only bootstrap retrieval
+     overlay after accepted quality evidence
+   - migrate skillifier/proactivity work into runtime jobs after the live
+     memory-policy/context-pack wiring pass
+   - run memory-aware workflow quality soaks for coding, research,
+     docs/skills, QA/test, and architecture/spec
 1. keep capture seam proof fresh for the active seams:
    `message:preprocessed`, `ContextEngine.ingest`,
    `ContextEngine.ingestBatch`, `tool_result_persist`, `after_tool_call`,
@@ -1056,3 +1085,35 @@ Exit criteria:
     regressing short direct queries or blowing context budgets
 - additional AGENTS rule-recall tuning once the preserved audit shows a stable
   dominant miss shape
+
+## 2026-05-09 Memory Runtime Maximality Closure
+
+Model Memory is now wired through the new Execution Platform runtime/middleware
+paths for the 13 hook migration set. The primary production path is
+model-task/DB-operation runtime evidence plus route-aware context-pack policy;
+old direct paths are compatibility-only. The live Tailscale UX proof covered
+ordinary chat recall, follow-up recall, hybrid retrieval, bounded context packs,
+workflow-shaped memory context, opportunity seeds, Work Queue proactivity, and
+a controlled over-budget automatic compaction proof.
+
+Follow-up on 2026-05-09: memory capture and retrieval/context quality are now
+assessed by model-authored reviews, not deterministic semantic scoring. Current
+projection validation found no inactive `agents-md` source refs, so the prior
+warning is stale doc/artifact drift. Canonical context packs are defined for
+retrieval, projection, stable memory, tool-result summary, closeout capsule,
+workflow runtime state, Work Queue readback, and skill context. The final
+remaining production-adjacent memory compatibility item is the legacy
+bootstrap retrieval overlay at
+`src/agents/model-memory/live-runtime/retrieval-context.ts`, which is
+compatibility-only until the explicit hard-shutdown slice removes or fully
+disables it.
+
+Next roadmap block:
+
+1. Proactivity Work Queue Quality Soak.
+2. Memory-aware workflow quality soak for coding, research, docs/skills,
+   QA/test, and architecture/spec.
+3. Model Memory Compatibility Hard Shutdown.
+4. Memory Curator Workflow.
+5. Skill Curator Workflow.
+6. Final coherence audit and owner UX production soak.

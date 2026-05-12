@@ -15,7 +15,7 @@ import {
 
 const DEFAULT_ALLOWED_COMMAND = "codex" as const;
 const DEFAULT_ALLOWED_ARGS_PREFIX = ["exec", "--json", "--cd"] as const;
-const DEFAULT_ALLOWED_REPO_PATH = "/root/services/openclaw-roles/live" as const;
+const DEFAULT_ALLOWED_REPO_PATH = "/root/services/openclaw-roles/live";
 const DEFAULT_MAX_RUNTIME_MS = 120_000;
 const DEFAULT_MAX_STDOUT_BYTES = 1024 * 1024;
 const DEFAULT_MAX_STDERR_BYTES = 128 * 1024;
@@ -24,8 +24,8 @@ const DEFAULT_KILL_SIGNAL: NodeJS.Signals = "SIGTERM";
 export type LiveCodexRunnerOptions = {
   enableLiveCodexPilot?: boolean;
   allowedCommand?: typeof DEFAULT_ALLOWED_COMMAND;
-  allowedArgsPrefix?: readonly ["exec", "--json", "--cd"];
-  allowedRepoPath?: typeof DEFAULT_ALLOWED_REPO_PATH;
+  allowedArgsPrefix?: readonly string[];
+  allowedRepoPath?: string;
   maxRuntimeMs?: number;
   maxStdoutBytes?: number;
   maxStderrBytes?: number;
@@ -165,6 +165,14 @@ function argsStartWith(args: string[], prefix: readonly string[]): boolean {
   return prefix.every((part, index) => args[index] === part);
 }
 
+function descriptorRepoPathFromArgs(args: string[]): string | null {
+  const cdIndex = args.indexOf("--cd");
+  if (cdIndex < 0) {
+    return null;
+  }
+  return args[cdIndex + 1] ?? null;
+}
+
 function hasForbiddenAuthorityDescriptorFields(descriptor: CodexProcessDescriptor | null): boolean {
   return (
     descriptorValue<boolean>(descriptor, "allowRebuild") === true ||
@@ -201,7 +209,7 @@ export function validateLiveCodexRunnerReadiness(input: {
     }
     if (
       descriptor.cwd !== options.allowedRepoPath ||
-      descriptor.args[3] !== options.allowedRepoPath
+      descriptorRepoPathFromArgs(descriptor.args) !== options.allowedRepoPath
     ) {
       blockingReasons.push("repo_scope_mismatch");
     }
@@ -291,7 +299,7 @@ export function validateLiveCodexRunnerDescriptorOnly(input: {
     }
     if (
       descriptor.cwd !== options.allowedRepoPath ||
-      descriptor.args[3] !== options.allowedRepoPath
+      descriptorRepoPathFromArgs(descriptor.args) !== options.allowedRepoPath
     ) {
       blockingReasons.push("repo_scope_mismatch");
     }
@@ -522,7 +530,12 @@ export class LiveCodexRunner {
           shell: false,
           stdio: ["ignore", "pipe", "pipe"],
           signal: controller.signal,
-          env: { PATH: process.env.PATH ?? "" },
+          env: {
+            PATH: process.env.PATH ?? "",
+            HOME: process.env.HOME ?? "",
+            CODEX_HOME: process.env.CODEX_HOME ?? "",
+            TERM: process.env.TERM ?? "xterm-256color",
+          },
         });
       } catch (error) {
         finish({

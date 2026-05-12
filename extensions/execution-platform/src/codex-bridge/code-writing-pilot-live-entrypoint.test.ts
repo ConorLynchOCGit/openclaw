@@ -88,6 +88,8 @@ async function withLivePilotHarness<T>(
       now: () => now,
       maxArtifactMetadataBytes: 160 * 1024,
       closeoutArtifactRoot: artifactRoot,
+      repoPath: "/root/services/openclaw-roles/live",
+      workspaceDocsPath: "/root/.openclaw/workspace/docs/projects/execution-platform",
     });
     const workQueue = new WorkQueueRepository(database.sql, runtimeJobs, { now: () => now });
     return await work({
@@ -421,6 +423,20 @@ describe("code-writing pilot live entrypoint", () => {
           }),
         ]),
       );
+      const events = await runtimeJobs.listEvents("bridge-live-code-writing");
+      const streamEvent = events.find(
+        (event) => event.eventType === "codex_bridge.code_writing_pilot_stream_event",
+      );
+      expect(streamEvent?.data).toMatchObject({
+        rawLineStored: false,
+        rawCommandOutputStored: false,
+        rawProviderLogStored: false,
+        normalized: expect.objectContaining({
+          data: null,
+        }),
+      });
+      expect(JSON.stringify(streamEvent?.data)).not.toContain("fake-thread");
+      expect(JSON.stringify(streamEvent?.data)).not.toContain('"raw":');
     });
   });
 
@@ -478,8 +494,12 @@ describe("code-writing pilot live entrypoint", () => {
       expect(prompt).toContain(`- ${approvedValidationCommands[1]}`);
       expect(prompt).not.toContain(approvedValidationCommands.join(" && "));
       expect(prompt).toContain("Maximum validation/repair attempts: 2");
-      expect(prompt).toContain("Do not run commands outside the approved validation command list.");
-      expect(prompt).toContain("Do not run any other shell command.");
+      expect(prompt).toContain(
+        "You may run bounded read-only diagnostic shell commands needed to inspect files inside the approved scope",
+      );
+      expect(prompt).toContain(
+        "Do not run write/deploy/install/network/rebuild commands outside the approved validation command list.",
+      );
       expect(prompt).toContain(
         "Return a short final response summarizing the source/test patch and the approved validation command results.",
       );
@@ -658,6 +678,105 @@ describe("code-writing pilot live entrypoint", () => {
       });
     });
   });
+
+  it("does not satisfy source-edit work when validation passes but no file changed", async () => {
+    await withLivePilotHarness(async ({ bridge, entrypoint }) => {
+      await seedBridgeJob(bridge);
+      const result = await entrypoint.runApprovedLivePilot({
+        liveCodeWritingPilotRunId: "live-code-writing-no-delta",
+        plan: plan(),
+        requestSkeleton: request(),
+        promptPackage: promptPackage(),
+        approval: approval(),
+        runner: new LiveCodexRunner({
+          enableLiveCodexPilot: true,
+          spawn: createFakeSpawn({
+            stdoutLines: [
+              JSON.stringify({
+                type: "item.completed",
+                item: { type: "agent_message", text: "I inspected the files but made no edits." },
+              }),
+              JSON.stringify({ type: "turn.completed" }),
+            ],
+          }),
+        }),
+        changedFilesAfterRun: [],
+      });
+      expect(result.sourceEditRequirement).toMatchObject({
+        required: true,
+        status: "missing_required_source_edit",
+        reasonCode: "required_source_edit_missing",
+      });
+
+      const finalized = await entrypoint.recordValidationEvidence({
+        runtimeJobId: "bridge-live-code-writing",
+        liveCodeWritingPilotRunId: "live-code-writing-no-delta",
+        validationEvidence: {
+          command:
+            "pnpm test:file extensions/execution-platform/src/codex-bridge/code-writing-pilot-plan.test.ts",
+          status: "passed",
+          summary: "Focused test passed, but no source delta was produced.",
+          checkedAt: "2026-05-03T03:01:00.000Z",
+        },
+      });
+
+      expect(finalized.completedWorkPathSatisfied).toBe(false);
+      expect(finalized.completedWorkPathReason).toBe("required_source_edit_missing");
+      expect(finalized.successCriteria.requiredSourceEditSatisfied).toBe(false);
+    });
+  });
+
+  it("allows explicitly read-only bridge work to pass without file changes", async () => {
+    await withLivePilotHarness(async ({ bridge, entrypoint }) => {
+      await seedBridgeJob(bridge);
+      const readOnlyPlan = plan({
+        selectedObjective: {
+          ...plan().selectedObjective!,
+          patchType: "read_only",
+        },
+      });
+      const result = await entrypoint.runApprovedLivePilot({
+        liveCodeWritingPilotRunId: "live-code-writing-read-only",
+        plan: readOnlyPlan,
+        requestSkeleton: request(),
+        promptPackage: promptPackage(),
+        approval: approval(),
+        runner: new LiveCodexRunner({
+          enableLiveCodexPilot: true,
+          spawn: createFakeSpawn({
+            stdoutLines: [
+              JSON.stringify({
+                type: "item.completed",
+                item: { type: "agent_message", text: "Completed the approved read-only review." },
+              }),
+              JSON.stringify({ type: "turn.completed" }),
+            ],
+          }),
+        }),
+        changedFilesAfterRun: [],
+      });
+      expect(result.sourceEditRequirement).toMatchObject({
+        required: false,
+        status: "not_required",
+        reasonCode: "source_edit_not_required_read_only",
+      });
+
+      const finalized = await entrypoint.recordValidationEvidence({
+        runtimeJobId: "bridge-live-code-writing",
+        liveCodeWritingPilotRunId: "live-code-writing-read-only",
+        validationEvidence: {
+          command:
+            "pnpm test:file extensions/execution-platform/src/codex-bridge/code-writing-pilot-plan.test.ts",
+          status: "passed",
+          summary: "Read-only review validation passed.",
+          checkedAt: "2026-05-03T03:01:00.000Z",
+        },
+      });
+
+      expect(finalized.completedWorkPathSatisfied).toBe(true);
+      expect(finalized.successCriteria.requiredSourceEditSatisfied).toBe(true);
+    });
+  });
 });
 import { readFileSync as __readAuthorityRegressionFile } from "node:fs";
 import {
@@ -683,9 +802,11 @@ __authorityRegressionIt(
     );
     __authorityRegressionExpect(entrypointSource).toContain("Approved validation commands:");
     __authorityRegressionExpect(entrypointSource).toContain(
-      "Do not run commands outside the approved validation command list.",
+      "bounded read-only diagnostic shell commands needed to inspect files inside the approved scope",
     );
-    __authorityRegressionExpect(entrypointSource).toContain("Do not run any other shell command.");
+    __authorityRegressionExpect(entrypointSource).toContain(
+      "Do not run write/deploy/install/network/rebuild commands outside the approved validation command list.",
+    );
     __authorityRegressionExpect(entrypointSource).toContain("executorValidationCommandAllowed");
     __authorityRegressionExpect(entrypointSource).toContain("approvedValidationCommands");
     __authorityRegressionExpect(entrypointSource).toContain("diagnosticShellAuthorityScope");

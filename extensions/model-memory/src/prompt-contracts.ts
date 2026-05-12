@@ -10,6 +10,9 @@ export const ModelContractNameSchema = z.enum([
   "candidate_review_trigger",
   "candidate_review_proposal",
   "phase2_proactivity_merge_adjudication",
+  "execution_platform_closeout_capsule",
+  "model_memory_capture_quality_review",
+  "model_memory_retrieval_context_quality_review",
 ]);
 
 export type ModelContractName = z.infer<typeof ModelContractNameSchema>;

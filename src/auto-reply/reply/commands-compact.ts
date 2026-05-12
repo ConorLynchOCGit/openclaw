@@ -68,6 +68,12 @@ function formatCompactionReason(reason?: string): string | undefined {
   return text;
 }
 
+function resolvePositiveCompactionNumber(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) && value > 0
+    ? Math.floor(value)
+    : undefined;
+}
+
 export const handleCompactCommand: CommandHandler = async (params) => {
   const compactRequested =
     params.command.commandBodyNormalized === "/compact" ||
@@ -143,6 +149,12 @@ export const handleCompactCommand: CommandHandler = async (params) => {
       defaultLevel: "off",
     },
     customInstructions,
+    tokenBudget: resolvePositiveCompactionNumber(
+      params.contextTokens ?? targetSessionEntry.contextTokens,
+    ),
+    currentTokenCount: resolvePositiveCompactionNumber(
+      runtime.resolveFreshSessionTotalTokens(targetSessionEntry) ?? targetSessionEntry.totalTokens,
+    ),
     trigger: "manual",
     senderIsOwner: params.command.senderIsOwner,
     ownerNumbers: params.command.ownerList.length > 0 ? params.command.ownerList : undefined,

@@ -18,6 +18,7 @@ export type ModelCandidateFamily =
   | "OpenAI-Codex"
   | "GPT mini/nano lanes"
   | "DeepSeek"
+  | "Moonshot"
   | "MiniMax"
   | "Qwen"
   | "OpenRouter-hosted candidates";
@@ -61,7 +62,7 @@ export type ModelRouteDecision = {
   rejected: ModelRouteRejection[];
   requiredCapabilities: ModelCapability[];
   fallbackChain: ModelRouteCandidate[];
-  providerCallMade: false;
+  providerCallMade: boolean;
   reason: string;
 };
 
@@ -69,7 +70,8 @@ export type ModelRouteEvidence = {
   selected?: ModelRouteCandidate;
   reason: string;
   fallbackChain: ModelRouteCandidate[];
-  providerCallMade: false;
+  providerCallMade: boolean;
+  selectedModelRef?: string;
   rejectedCandidates?: ModelRouteRejection[];
   requiredCapabilities?: ModelCapability[];
   policyVersion?: typeof MODEL_ROUTE_POLICY_VERSION;

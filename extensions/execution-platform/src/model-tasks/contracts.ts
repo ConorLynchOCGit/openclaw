@@ -1,6 +1,6 @@
 import { z } from "zod";
-import { createModelRoutePolicyForContract } from "../model-routing/policy.ts";
 import type { JsonValue } from "../runtime-job-repository.ts";
+import { createModelTaskRoutePolicyFromRoster } from "./model-task-model-policy.ts";
 import { ModelTaskContractRegistry } from "./registry.ts";
 import type { ModelTaskContract, ModelTaskContractId } from "./types.ts";
 
@@ -38,7 +38,7 @@ function structuredJsonContract(id: ModelTaskContractId, description: string): M
     description,
     inputSchema: StructuredJsonInputSchema,
     outputSchema: StructuredJsonOutputSchema,
-    routePolicy: createModelRoutePolicyForContract(id),
+    routePolicy: createModelTaskRoutePolicyFromRoster({ contractId: id }),
     scorecard: {
       status: "placeholder",
       notes:
@@ -53,16 +53,40 @@ export const INITIAL_MODEL_TASK_CONTRACTS: ModelTaskContract[] = [
     "Structured JSON contract for future Model Memory model tasks.",
   ),
   structuredJsonContract(
+    "model_memory.capture_interpretation",
+    "Structured JSON contract for Model Memory capture interpretation through model-task middleware.",
+  ),
+  structuredJsonContract(
     "retrieval.structured_json",
     "Structured JSON contract for future retrieval model tasks.",
+  ),
+  structuredJsonContract(
+    "retrieval.request_interpretation",
+    "Structured JSON contract for retrieval request interpretation through model-task middleware.",
+  ),
+  structuredJsonContract(
+    "retrieval.final_inclusion_review",
+    "Structured JSON contract for retrieval final inclusion review through model-task middleware.",
   ),
   structuredJsonContract(
     "proactivity.structured_json",
     "Structured JSON contract for future proactivity model tasks.",
   ),
   structuredJsonContract(
+    "proactivity.opportunity_extraction",
+    "Structured JSON contract for proactivity opportunity extraction through model-task middleware.",
+  ),
+  structuredJsonContract(
+    "proactivity.merge_adjudication",
+    "Structured JSON contract for proactivity merge adjudication through model-task middleware.",
+  ),
+  structuredJsonContract(
     "skillifier.structured_json",
     "Structured JSON contract for future skillifier model tasks.",
+  ),
+  structuredJsonContract(
+    "closeout.opportunity_seed_extraction",
+    "Structured JSON contract for extracting Closeout Capsule opportunity seeds through model-task middleware.",
   ),
   structuredJsonContract(
     "outcome_pack_review.structured_json",
@@ -73,3 +97,5 @@ export const INITIAL_MODEL_TASK_CONTRACTS: ModelTaskContract[] = [
 export function createDefaultModelTaskContractRegistry(): ModelTaskContractRegistry {
   return new ModelTaskContractRegistry(INITIAL_MODEL_TASK_CONTRACTS);
 }
+
+export { StructuredJsonInputSchema, StructuredJsonOutputSchema, structuredJsonContract };

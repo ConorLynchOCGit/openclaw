@@ -1,6 +1,8 @@
 import { agentTeamCodingWorkflowContract } from "./agent-team-coding-workflow.ts";
 import { architectureWorkflowContract } from "./architecture-workflow.ts";
 import { docsSkillsWorkflowContract } from "./docs-skills-workflow.ts";
+import { qaTestWorkflowContract } from "./qa-test-workflow.ts";
+import { skillifierRuntimeWorkflowContract } from "./skillifier-runtime-workflow.ts";
 import { webResearchWorkflowContract } from "./web-research-workflow.ts";
 import {
   createWorkflowContractRouterSummary,
@@ -25,6 +27,8 @@ export const DEFAULT_EXECUTION_WORKFLOW_REGISTRY: WorkflowRegistry = {
     webResearchWorkflowContract,
     architectureWorkflowContract,
     docsSkillsWorkflowContract,
+    qaTestWorkflowContract,
+    skillifierRuntimeWorkflowContract,
   ],
 };
 

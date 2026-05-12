@@ -133,6 +133,37 @@ function createFakeSpawn(input: {
 }
 
 describe("live Codex runner skeleton", () => {
+  it("accepts explicit model args before --cd for parity descriptors", () => {
+    const parityDescriptor = descriptor({
+      args: [
+        "exec",
+        "--json",
+        "--model",
+        "gpt-5.3-codex",
+        "--config",
+        'model_reasoning_effort="xhigh"',
+        "--cd",
+        repoPath,
+        "Return a final answer.",
+      ],
+    });
+
+    const validation = validateLiveCodexRunnerReadiness({
+      descriptor: parityDescriptor,
+      gate: gate({ expectedProcessDescriptor: parityDescriptor }),
+      operatorAcceptance: acceptance(),
+      options: {
+        enableLiveCodexPilot: true,
+        allowedArgsPrefix: ["exec", "--json", "--model"],
+        allowedRepoPath: repoPath,
+      },
+      now: testNow(),
+    });
+
+    expect(validation.allowed).toBe(true);
+    expect(validation.blockingReasons).not.toContain("repo_scope_mismatch");
+  });
+
   it("defaults to disabled and refuses without spawning", async () => {
     let spawnCalled = false;
     const runner = new LiveCodexRunner({
@@ -246,6 +277,8 @@ describe("live Codex runner skeleton", () => {
             stdio: ["ignore", "pipe", "pipe"],
           });
           expect(options.env.PATH).toEqual(expect.any(String));
+          expect(options.env.HOME).toEqual(expect.any(String));
+          expect(options.env.CODEX_HOME).toEqual(expect.any(String));
         },
       }),
     });

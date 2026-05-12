@@ -29,8 +29,28 @@ export interface IntentRouterProvider {
   route(request: IntentRouterProviderRequest): Promise<IntentRouterProviderResponse>;
 }
 
+export const LEGACY_SEMANTIC_INTENT_ROUTING_FALLBACK_ENV =
+  "OPENCLAW_LEGACY_SEMANTIC_INTENT_ROUTING_FALLBACK";
+
+export function isTemporaryLegacySemanticIntentRoutingFallbackEnabled(
+  env: Record<string, string | undefined> = process.env,
+): boolean {
+  return env[LEGACY_SEMANTIC_INTENT_ROUTING_FALLBACK_ENV] === "1";
+}
+
 export class HeuristicIntentRouterProvider implements IntentRouterProvider {
+  constructor(
+    private readonly options: {
+      enabled?: boolean;
+      allowHighRiskOrControlRoutes?: boolean;
+      fallbackLabel?: string;
+    } = {},
+  ) {}
+
   async route(request: IntentRouterProviderRequest): Promise<IntentRouterProviderResponse> {
+    if (this.options.enabled !== true && !isTemporaryLegacySemanticIntentRoutingFallbackEnabled()) {
+      return this.disabledResponse(request);
+    }
     const text = request.promptSummary.toLowerCase();
     const codingWorkflow = request.workflowSummaries.find(
       (workflow) => workflow.workflowId === "agent_team.coding",
@@ -60,12 +80,53 @@ export class HeuristicIntentRouterProvider implements IntentRouterProvider {
         text,
       );
     const asksDocs = /\brunbook\b|\bdocument\b|\bdocs?\b|\bskills?\b|\brole docs?\b/u.test(text);
+    const asksFullTeamExecution =
+      /\bfull team\b/u.test(text) &&
+      /\b(use|run|harden|improve|build|implement|fix|add|make|test|review|deploy if policy permits|close out|close it out)\b/u.test(
+        text,
+      );
     const isDirectProductionDeploy =
       /\bdeploy\b/u.test(text) &&
       /\bproduction\b/u.test(text) &&
       !asksCodingTeam &&
+      !asksFullTeamExecution &&
       !asksArchitecture &&
       !asksDocs;
+    if (
+      this.options.allowHighRiskOrControlRoutes !== true &&
+      (isWorkQueueControl ||
+        isDirectProductionDeploy ||
+        /\b(send|outbound|install|dependency|model promotion|promote(?: the)? model|production)\b/u.test(
+          text,
+        ))
+    ) {
+      return {
+        output: {
+          route: "clarification_required",
+          workflowId: null,
+          jobType: null,
+          confidence: 0.4,
+          objectiveSummary: request.promptSummary,
+          compiledInputs: {},
+          requestedAuthority: null,
+          requiresApproval: false,
+          approvalKind: null,
+          needsClarification: true,
+          clarificationQuestion:
+            "This legacy routing fallback cannot handle controls or high-risk authority requests.",
+          reasonCodes: [
+            "legacy_semantic_fallback_high_risk_or_control_rejected",
+            "structured_front_door_required",
+          ],
+          riskClass: "medium",
+          sideEffectClass: "none",
+          rawPromptStored: false,
+          rawResponseStored: false,
+        },
+        modelCandidateId: this.options.fallbackLabel ?? "legacy-semantic-intent-router-disabled",
+        latencyMs: 0,
+      };
+    }
     if (isDirectProductionDeploy) {
       return {
         output: {
@@ -90,7 +151,7 @@ export class HeuristicIntentRouterProvider implements IntentRouterProvider {
         latencyMs: 0,
       };
     }
-    if (asksCodingTeam && codingWorkflow) {
+    if ((asksCodingTeam || asksFullTeamExecution) && codingWorkflow) {
       return {
         output: {
           route: "workflow_execution",
@@ -112,6 +173,7 @@ export class HeuristicIntentRouterProvider implements IntentRouterProvider {
           clarificationQuestion: null,
           reasonCodes: [
             "coding_team_requested",
+            asksFullTeamExecution ? "full_team_execution_requested" : "explicit_coding_team",
             text.includes("test") ? "test_requested" : "code_change_requested",
             asksResearch ? "research_candidate_child_workflow" : "local_context_sufficient",
           ],
@@ -258,6 +320,32 @@ export class HeuristicIntentRouterProvider implements IntentRouterProvider {
         rawResponseStored: false,
       },
       modelCandidateId: "heuristic-intent-router",
+      latencyMs: 0,
+    };
+  }
+
+  private disabledResponse(request: IntentRouterProviderRequest): IntentRouterProviderResponse {
+    return {
+      output: {
+        route: "clarification_required",
+        workflowId: null,
+        jobType: null,
+        confidence: 0,
+        objectiveSummary: request.promptSummary,
+        compiledInputs: {},
+        requestedAuthority: null,
+        requiresApproval: false,
+        approvalKind: null,
+        needsClarification: true,
+        clarificationQuestion:
+          "The temporary legacy semantic intent fallback is disabled; use the structured Intent Front Door router.",
+        reasonCodes: ["legacy_semantic_intent_fallback_disabled", "structured_front_door_required"],
+        riskClass: "low",
+        sideEffectClass: "none",
+        rawPromptStored: false,
+        rawResponseStored: false,
+      },
+      modelCandidateId: this.options.fallbackLabel ?? "legacy-semantic-intent-router-disabled",
       latencyMs: 0,
     };
   }

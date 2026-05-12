@@ -7,13 +7,14 @@ export {
   type ModelMemoryLiveRuntimeStatus,
 } from "./model-memory/live-runtime/config.js";
 export {
+  assembleRouteAwareBootstrapContextPack,
   buildLiveRetrievalEnvelope,
   buildProjectionBootstrapContextFiles,
   resolveModelMemoryBootstrapOverlay,
   shouldAttemptLiveRetrievalContext,
   type LiveRetrievalContextInput,
   type ModelMemoryBootstrapOverlay,
-} from "./model-memory/live-runtime/retrieval-context.js";
+} from "./model-memory/live-runtime/route-aware-context-pack.js";
 export {
   getModelMemoryRuntimeDirtySnapshot,
   markModelMemoryRuntimeDirty,

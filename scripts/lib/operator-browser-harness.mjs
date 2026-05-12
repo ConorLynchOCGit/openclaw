@@ -181,6 +181,10 @@ function readEventTimestampMs(event) {
 export function findTranscriptTerminalEvidenceFromEvents(events, params = {}) {
   const prompt = typeof params.prompt === "string" ? params.prompt : "";
   const promptForProbe = normalizePromptForProbe(prompt);
+  const assistantPattern =
+    typeof params.assistantPattern === "string" && params.assistantPattern.trim()
+      ? new RegExp(params.assistantPattern, "i")
+      : null;
   const startedAtMs =
     typeof params.startedAtMs === "number" && Number.isFinite(params.startedAtMs)
       ? Math.max(0, params.startedAtMs)
@@ -216,11 +220,17 @@ export function findTranscriptTerminalEvidenceFromEvents(events, params = {}) {
   if (userIndex < 0) {
     return null;
   }
-  const assistant = messages
-    .slice(userIndex + 1)
-    .find(
-      (entry) => entry.role === "assistant" && !entry.openclawKind && entry.text.trim().length > 0,
-    );
+  const nextUserOffset = messages.slice(userIndex + 1).findIndex((entry) => entry.role === "user");
+  const candidateSlice =
+    nextUserOffset >= 0
+      ? messages.slice(userIndex + 1, userIndex + 1 + nextUserOffset)
+      : messages.slice(userIndex + 1);
+  const assistantCandidates = candidateSlice.filter(
+    (entry) => entry.role === "assistant" && !entry.openclawKind && entry.text.trim().length > 0,
+  );
+  const assistant = assistantPattern
+    ? assistantCandidates.find((entry) => assistantPattern.test(entry.text))
+    : assistantCandidates[0];
   if (!assistant) {
     return null;
   }
@@ -875,6 +885,10 @@ export async function waitForTurnStart(page, params) {
 
 export async function waitForTurnTerminal(page, params) {
   const timeoutMs = params.timeoutMs ?? TRANSCRIPT_WAIT_TIMEOUT_MS;
+  const assistantPatternSource =
+    typeof params.assistantPattern === "string" && params.assistantPattern.trim()
+      ? params.assistantPattern
+      : null;
   const startedAtMs =
     typeof params.startedAtMs === "number" && Number.isFinite(params.startedAtMs)
       ? params.startedAtMs
@@ -882,7 +896,15 @@ export async function waitForTurnTerminal(page, params) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() <= deadline) {
     const renderedTerminal = await page.evaluate(
-      ({ sessionKey, mark, runId, prompt, promptForProbe, previousTranscriptCount }) => {
+      ({
+        sessionKey,
+        mark,
+        runId,
+        prompt,
+        promptForProbe,
+        previousTranscriptCount,
+        assistantPatternSource,
+      }) => {
         const probe = window.__OPENCLAW_OPERATOR_PROMPT_PROBE__ ?? { wsMessages: [] };
         const terminalSeen = probe.wsMessages
           .slice(mark.wsMessages ?? 0)
@@ -894,12 +916,15 @@ export async function waitForTurnTerminal(page, params) {
               (msg?.state === "final" || msg?.state === "error" || msg?.state === "aborted"),
           );
         const stop = document.querySelector('button[aria-label="Stop generating"]');
-        if (terminalSeen) {
+        if (terminalSeen && !assistantPatternSource) {
           return !stop;
         }
         if (stop) {
           return false;
         }
+        const assistantPattern = assistantPatternSource
+          ? new RegExp(assistantPatternSource, "i")
+          : null;
         const groups = Array.from(document.querySelectorAll(".chat-group")).map((group) => {
           const roleClass =
             Array.from(group.classList).find((entry) =>
@@ -927,7 +952,12 @@ export async function waitForTurnTerminal(page, params) {
         }
         return visibleGroups
           .slice(userIndex + 1)
-          .some((group) => group.roleClass === "assistant" && group.text.trim().length > 0);
+          .some(
+            (group) =>
+              group.roleClass === "assistant" &&
+              group.text.trim().length > 0 &&
+              (!assistantPattern || assistantPattern.test(group.text)),
+          );
       },
       {
         sessionKey: params.sessionKey,
@@ -936,6 +966,7 @@ export async function waitForTurnTerminal(page, params) {
         prompt: params.prompt ?? "",
         promptForProbe: normalizePromptForProbe(params.prompt ?? ""),
         previousTranscriptCount: params.previousTranscriptCount ?? 0,
+        assistantPatternSource,
       },
     );
     if (renderedTerminal) {
@@ -946,6 +977,7 @@ export async function waitForTurnTerminal(page, params) {
       sessionKey: params.sessionKey,
       prompt: params.prompt ?? "",
       startedAtMs: startedAtMs - 5_000,
+      assistantPattern: assistantPatternSource,
     });
     if (transcriptEvidence) {
       await page.waitForTimeout(750);
@@ -999,6 +1031,50 @@ export async function waitForProgressEvidence(page, params) {
     { timeout: params.timeoutMs ?? 30_000 },
   );
   await page.waitForTimeout(500);
+}
+
+export async function fillOperatorChatTextarea(page, prompt) {
+  const textarea = page.locator(".agent-chat__input textarea").first();
+  const setViaDom = async (value) =>
+    await page.evaluate((value) => {
+      const element = document.querySelector(".agent-chat__input textarea");
+      if (!(element instanceof HTMLTextAreaElement)) {
+        return { ok: false };
+      }
+      const descriptor =
+        Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value") ??
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value");
+      descriptor?.set?.call(element, value);
+      element.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText" }));
+      element.dispatchEvent(new Event("change", { bubbles: true }));
+      return { ok: true };
+    }, value);
+  if (prompt.length > 8_000) {
+    const fallback = await setViaDom(prompt);
+    if (!fallback.ok) {
+      throw new Error("operator chat textarea not found for large prompt fallback");
+    }
+  } else {
+    try {
+      await textarea.fill(prompt, { timeout: 30_000 });
+    } catch (error) {
+      const fallback = await setViaDom(prompt);
+      if (!fallback.ok) {
+        throw new Error("operator chat textarea not found for prompt fallback", {
+          cause: error,
+        });
+      }
+    }
+  }
+  const valueLength = await page.evaluate(() => {
+    const element = document.querySelector(".agent-chat__input textarea");
+    return element instanceof HTMLTextAreaElement ? element.value.length : -1;
+  });
+  if (valueLength !== prompt.length) {
+    throw new Error(
+      `operator chat textarea prompt length mismatch: expected ${prompt.length}, observed ${valueLength}`,
+    );
+  }
 }
 
 export class OperatorBrowserHarness {
@@ -1062,8 +1138,7 @@ export class OperatorBrowserHarness {
     const before = await readOperatorChatState(this.page);
     const effectiveSessionKey = resolveEffectiveSessionKey(before, requestedSessionKey);
     const mark = await markProbe(this.page);
-    const textarea = this.page.locator(".agent-chat__input textarea").first();
-    await textarea.fill(prompt);
+    await fillOperatorChatTextarea(this.page, prompt);
     const sendButton = this.page
       .locator('button[aria-label="Send message"], button[aria-label="Queue message"]')
       .first();
@@ -1115,6 +1190,7 @@ export class OperatorBrowserHarness {
           ? before.transcriptGroups.length
           : 0,
         startedAtMs: sentAtMs,
+        assistantPattern: options.assistantPattern,
         timeoutMs: options.timeoutMs,
       });
     }
@@ -1133,6 +1209,7 @@ export class OperatorBrowserHarness {
       sessionKey: effectiveSessionKey,
       waitFor: options.waitFor || "terminal",
       runId: promptRun?.runId ?? null,
+      sentAtMs,
       completionEvidence,
       before,
       after,

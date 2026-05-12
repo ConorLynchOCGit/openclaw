@@ -10,9 +10,15 @@ export const MODEL_TASK_JOB_TYPE_PREFIX = "model_task.";
 
 export type ModelTaskContractId =
   | "model_memory.structured_json"
+  | "model_memory.capture_interpretation"
   | "retrieval.structured_json"
+  | "retrieval.request_interpretation"
+  | "retrieval.final_inclusion_review"
   | "proactivity.structured_json"
+  | "proactivity.opportunity_extraction"
+  | "proactivity.merge_adjudication"
   | "skillifier.structured_json"
+  | "closeout.opportunity_seed_extraction"
   | "outcome_pack_review.structured_json"
   | (string & {});
 

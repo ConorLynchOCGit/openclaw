@@ -278,4 +278,30 @@ describe("model task middleware", () => {
       expect(providerCall).not.toHaveBeenCalled();
     });
   });
+
+  it("preserves explicit provider-call evidence supplied by an approved executor", async () => {
+    await withModelTaskRepository(async ({ modelTasks }) => {
+      await modelTasks.enqueueModelTask({
+        jobId: "provider-backed-task",
+        contractId: "model_memory.structured_json",
+        input: validInput(),
+      });
+      const claimed = await modelTasks.claimModelTask({ workerId: "model-worker" });
+      await modelTasks.completeModelTask({
+        jobId: "provider-backed-task",
+        leaseToken: claimed!.leaseToken,
+        output: validOutput(),
+        routeEvidence: {
+          providerCallMade: true,
+          selectedModelRef: "openai-codex/gpt-5.4",
+          reason: "approved executor completed the model task",
+        },
+      });
+
+      const status = await modelTasks.readModelTaskStatus("provider-backed-task");
+
+      expect(status.result?.routeEvidence.providerCallMade).toBe(true);
+      expect(status.result?.routeEvidence.selectedModelRef).toBe("openai-codex/gpt-5.4");
+    });
+  });
 });

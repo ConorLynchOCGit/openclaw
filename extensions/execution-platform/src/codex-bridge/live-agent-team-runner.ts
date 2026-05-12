@@ -1,3 +1,4 @@
+import { createWorkflowPermissionReadback } from "../authority/workflow-permission-readback.ts";
 import {
   AGENT_TEAM_ROLE_EVAL_FIXTURES,
   createAgentTeamRoleComparison,
@@ -60,9 +61,15 @@ import {
 } from "./agent-team-stream-evidence.ts";
 import { createContextScoutArtifact, recordContextScoutArtifact } from "./context-scout-pilot.ts";
 import {
+  createDegradedSystemCloseoutCapsule,
+  type CloseoutCapsuleReporterInput,
+  type CloseoutCapsuleReporterResult,
+} from "./model-closeout-capsule-reporter.ts";
+import {
   buildSecurityPrivacyReviewerArtifact,
   recordSecurityPrivacyReviewerArtifact,
 } from "./security-privacy-reviewer.ts";
+import { resolveRuntimeObjective } from "./source-prompt-ref.ts";
 
 export type AgentTeamModelClientResult = {
   status: "succeeded" | "failed" | "needs_review";
@@ -91,15 +98,25 @@ export type AgentTeamModelClient = {
   }): Promise<AgentTeamModelClientResult>;
 };
 
+export type OpenRouterRoleModelRequestProfile = {
+  responseFormatMode?: "native" | "prompt_only" | "auto";
+  reasoningMode?: "exclude" | "omit";
+  maxTokens?: number;
+};
+
 export type LiveAgentTeamRunnerOptions = {
   runtimeJobs: RuntimeJobRepository;
   modelClient: AgentTeamModelClient;
   workerId: string;
   queueName?: string;
+  sourcePromptSessionRoots?: string[];
   now?: () => Date;
   maxV4ProEvalFixtures?: number;
   v4ProRetryDelayMs?: number;
   useV4ProForTestEngineer?: boolean;
+  closeoutReporter?: {
+    createCapsule(input: CloseoutCapsuleReporterInput): Promise<CloseoutCapsuleReporterResult>;
+  };
 };
 
 export type LiveAgentTeamRunResult = {
@@ -241,6 +258,34 @@ function boundedRolePrompt(input: {
   ].join("\n");
 }
 
+function taskSpecificFilesForWorkflow(workflowId: string): string[] {
+  switch (workflowId) {
+    case "agent_team.architecture":
+      return [
+        "extensions/execution-platform/src/workflows/architecture-workflow.ts",
+        "extensions/execution-platform/src/workflows/architecture-spec-review-live-pilot.ts",
+        "extensions/execution-platform/src/workflows/workflow-contract.ts",
+      ];
+    case "agent_team.qa_test":
+      return [
+        "extensions/execution-platform/src/workflows/qa-test-workflow.ts",
+        "extensions/execution-platform/src/workflows/qa-test-review-live-pilot.ts",
+        "extensions/execution-platform/src/codex-bridge/agent-team-result-review.ts",
+      ];
+    case "agent_team.coding":
+      return [
+        "extensions/execution-platform/src/codex-bridge/live-agent-team-runner.ts",
+        "extensions/execution-platform/src/codex-bridge/agent-team-runtime-evidence.ts",
+        "extensions/execution-platform/src/work-queue/execution-read-model.ts",
+      ];
+    default:
+      return [
+        "extensions/execution-platform/src/codex-bridge/live-agent-team-runner.ts",
+        "extensions/execution-platform/src/work-queue/execution-read-model.ts",
+      ];
+  }
+}
+
 function streamEvent(input: {
   runtimeJobId: string;
   teamRunId: string;
@@ -361,7 +406,13 @@ export class LiveAgentTeamRunner {
   }> {
     const payload = asRecord(job.payload);
     const teamRunId = stringValue(payload.teamRunId, `live-team-${job.jobId}`);
-    const objective = stringValue(payload.objective, "agent-team-runtime-read-model-projection");
+    const workflowId = stringValue(payload.workflowId, "agent_team.coding");
+    const objectiveResolution = await resolveRuntimeObjective(payload, {
+      sessionSearchRoots: this.options.sourcePromptSessionRoots,
+    });
+    const objective = objectiveResolution.objectiveForEvidence;
+    const objectiveForModel = objectiveResolution.objectiveForModel;
+    const taskSpecificObjectivePresent = objectiveResolution.taskSpecificObjectivePresent;
     const workQueueLink = job.workItemId ? { workItemId: job.workItemId } : null;
     const useV4ProForTestEngineer =
       this.options.useV4ProForTestEngineer === true ||
@@ -469,7 +520,11 @@ export class LiveAgentTeamRunner {
         throw new Error("context scout evidence is required before implementation");
       }
 
-      const prompt = boundedRolePrompt({ roleId: role.roleId, objective, scoutRef });
+      const prompt = boundedRolePrompt({
+        roleId: role.roleId,
+        objective: objectiveForModel,
+        scoutRef,
+      });
       const promptHash = sha256Text(prompt);
       const modelStartedAt = this.now().toISOString();
       await recordAgentTeamStreamEvent({
@@ -632,10 +687,7 @@ export class LiveAgentTeamRunner {
       runtimeJobId: job.jobId,
       teamRunId,
       objective,
-      filesReviewed: [
-        "extensions/execution-platform/src/codex-bridge/live-agent-team-runner.ts",
-        "extensions/execution-platform/src/work-queue/execution-read-model.ts",
-      ],
+      filesReviewed: taskSpecificFilesForWorkflow(workflowId),
       evidenceRefs: [scoutRef ?? `runtime-job://${job.jobId}/agent-team/context-scout`],
       findings: [],
       exploitabilityNotes: ["no deploy, outbound send, model promotion, or Work Queue mutation"],
@@ -652,28 +704,117 @@ export class LiveAgentTeamRunner {
     const requiredRoleNeedsReviewBeforeReview = assignments.some(
       (assignment) => assignment.status === "needs_review",
     );
+    const capsuleInput: CloseoutCapsuleReporterInput = {
+      factualRefs: {
+        runtimeJobId: job.jobId,
+        teamRunId,
+        workflowId,
+        status:
+          requiredRoleNeedsReviewBeforeReview || !taskSpecificObjectivePresent
+            ? "needs_review"
+            : "completed",
+        roles: assignments.slice(0, 20).map((assignment) => ({
+          roleId: assignment.roleId,
+          agentId: assignment.roleId,
+          modelRef: assignment.modelId,
+          status: assignment.status,
+        })),
+        fileRefs: taskSpecificFilesForWorkflow(workflowId),
+        artifactRefs: [
+          scoutRef ?? `runtime-job://${job.jobId}/agent-team/context-scout`,
+          `runtime-job://${job.jobId}/agent-team/model-run-accounting`,
+          `runtime-job://${job.jobId}/agent-team/security-review`,
+        ],
+        validationRefs: [`runtime-job://${job.jobId}/agent-team/model-run-accounting`],
+        runtimeEventRefs: [`runtime-job://${job.jobId}/events`],
+      },
+      objectiveSummary: objective,
+      boundedRoleEvidence: assignments.slice(0, 20).map((assignment) => ({
+        roleId: assignment.roleId,
+        agentId: assignment.roleId,
+        modelRef: assignment.modelId,
+        askedToDo: objective,
+        evidenceSummary: `${assignment.roleId} returned ${assignment.status} through the live role-output proof path.`,
+        artifactRefs: [`runtime-job://${job.jobId}/agent-team/role/${assignment.roleId}`],
+        validationRefs: [`runtime-job://${job.jobId}/agent-team/model-run-accounting`],
+        limitations:
+          assignment.status === "needs_review"
+            ? ["role returned needs_review"]
+            : ["role-output proof does not by itself prove repo edits were made"],
+      })),
+      boundedResultEvidence: {
+        completed: !requiredRoleNeedsReviewBeforeReview && taskSpecificObjectivePresent,
+        needsReview: requiredRoleNeedsReviewBeforeReview || !taskSpecificObjectivePresent,
+        failed: false,
+        findings: taskSpecificObjectivePresent
+          ? []
+          : ["runtime job did not include objectiveSummary"],
+        requiredFixes: requiredRoleNeedsReviewBeforeReview
+          ? ["rerun with adjusted provider request shape or operator review"]
+          : !taskSpecificObjectivePresent
+            ? ["rerun with a bounded objectiveSummary before marking succeeded"]
+            : [],
+        limitations: requiredRoleNeedsReviewBeforeReview
+          ? ["one or more required model lanes returned needs-review output"]
+          : [
+              "live provider calls were role-output proof, not repo-edit authority",
+              ...(!taskSpecificObjectivePresent ? ["task-specific objective was missing"] : []),
+            ],
+      },
+    };
+    const capsuleResult = this.options.closeoutReporter
+      ? await this.options.closeoutReporter.createCapsule(capsuleInput)
+      : createDegradedSystemCloseoutCapsule({
+          ...capsuleInput,
+          reasonCodes: ["closeout_capsule_model_reporter_not_configured"],
+        });
+    const capsuleIsModelAuthored = capsuleResult.source === "model";
     const resultReview = buildAgentTeamResultReviewArtifact({
       reviewId: `${teamRunId}-live-result-review`,
       teamRunId,
       runtimeJobId: job.jobId,
       objective,
       validationEvidenceRefs: [`runtime-job://${job.jobId}/agent-team/model-run-accounting`],
-      closeoutRefs: [`runtime-job://${job.jobId}/agent-team/closeout-required`],
+      closeoutRefs: [
+        `runtime-job://${job.jobId}/closeout-capsule/${capsuleResult.capsule.capsuleId}`,
+      ],
       filesChanged: [],
       reviewer: "local-codex-operator",
       reviewKind: "local_codex_review",
       judgmentMade: true,
       notDeterministic: true,
-      goalSatisfaction: requiredRoleNeedsReviewBeforeReview ? "needs_review" : "satisfied",
-      findings: [],
+      goalSatisfaction:
+        requiredRoleNeedsReviewBeforeReview ||
+        !taskSpecificObjectivePresent ||
+        !capsuleIsModelAuthored
+          ? "needs_review"
+          : "satisfied",
+      findings: taskSpecificObjectivePresent
+        ? []
+        : ["runtime job did not include objectiveSummary"],
       limitations: requiredRoleNeedsReviewBeforeReview
         ? ["one or more required model lanes returned needs-review output"]
-        : ["live provider calls were role-output proof, not repo-edit authority"],
+        : [
+            "live provider calls were role-output proof, not repo-edit authority",
+            ...(!taskSpecificObjectivePresent ? ["task-specific objective was missing"] : []),
+          ],
       requiredFixes: requiredRoleNeedsReviewBeforeReview
         ? ["rerun with adjusted provider request shape or operator review"]
-        : [],
-      accepted: !requiredRoleNeedsReviewBeforeReview,
-      needsReview: requiredRoleNeedsReviewBeforeReview,
+        : !taskSpecificObjectivePresent
+          ? ["rerun with a bounded objectiveSummary before marking succeeded"]
+          : !capsuleIsModelAuthored
+            ? ["generate a model-authored Closeout Capsule before marking clean success"]
+            : [],
+      closeoutCapsule: capsuleResult.capsule,
+      humanCloseoutSummary: capsuleResult.legacyHumanSummary,
+      accepted:
+        !requiredRoleNeedsReviewBeforeReview &&
+        taskSpecificObjectivePresent &&
+        capsuleIsModelAuthored,
+      needsReview:
+        requiredRoleNeedsReviewBeforeReview ||
+        !taskSpecificObjectivePresent ||
+        !capsuleIsModelAuthored,
       finalAcceptanceBy: "operator",
     });
     await recordAgentTeamResultReviewArtifact({
@@ -788,7 +929,12 @@ export class LiveAgentTeamRunner {
       validationState: requiredRoleNeedsReview ? "needs_review" : "passed",
       closeoutState: "present",
       authorityStatus: "allowed",
+      permissionEvidence: createWorkflowPermissionReadback({
+        workflowId,
+        authorityProfile: stringValue(payload.authorityProfile, "local_yolo"),
+      }),
       modelRoutingEvidence: modelRosterDecisions as unknown as JsonValue,
+      sourcePromptResolution: objectiveResolution.sourcePromptResolution as unknown as JsonValue,
       controlState: "none",
       streamEvidenceRefs: [streamSummaryArtifact.uri],
       artifactRefs: [
@@ -801,6 +947,9 @@ export class LiveAgentTeamRunner {
       ],
     });
     await recordAgentTeamRuntimeEvidence({ runtimeJobs: this.options.runtimeJobs, evidence });
+    if (resultReview.needsReview) {
+      throw new Error("task_specific_closeout_evidence_required_before_success");
+    }
     await this.renewLiveTeamLease(leaseToken);
     return {
       evidence,
@@ -922,6 +1071,7 @@ export class OpenRouterAgentTeamModelClient implements AgentTeamModelClient {
       now?: () => Date;
       retryPolicy?: Partial<OpenRouterRetryPolicy>;
       catalogPricingByModelId?: Record<string, OpenRouterCatalogPricing>;
+      requestProfilesByModelId?: Record<string, OpenRouterRoleModelRequestProfile>;
     },
   ) {}
 
@@ -935,11 +1085,18 @@ export class OpenRouterAgentTeamModelClient implements AgentTeamModelClient {
   }): Promise<AgentTeamModelClientResult> {
     const fetchImpl = this.options.fetchImpl ?? fetch;
     const policy = { ...DEFAULT_OPENROUTER_RETRY_POLICY, ...this.options.retryPolicy };
+    const requestProfile = this.options.requestProfilesByModelId?.[input.modelId] ?? {};
+    const responseFormatMode = requestProfile.responseFormatMode ?? "auto";
+    const reasoningMode = requestProfile.reasoningMode ?? "exclude";
     const attempts: OpenRouterRetryEvidence["attempts"] = [];
     let last: AgentTeamModelClientResult | null = null;
     let jsonModeDisabledAfterNoContent = false;
     let reasoningDirectiveDisabledAfterNoContent = false;
     for (let attempt = 1; attempt <= policy.maxAttempts; attempt += 1) {
+      const responseFormatAllowed =
+        Boolean(input.responseFormat) &&
+        responseFormatMode !== "prompt_only" &&
+        !jsonModeDisabledAfterNoContent;
       const body = {
         model: input.modelId,
         messages: [
@@ -949,11 +1106,11 @@ export class OpenRouterAgentTeamModelClient implements AgentTeamModelClient {
           },
         ],
         temperature: 0,
-        max_tokens: input.maxTokens ?? 700,
-        ...(input.responseFormat && !jsonModeDisabledAfterNoContent
-          ? { response_format: { type: input.responseFormat } }
-          : {}),
-        ...(reasoningDirectiveDisabledAfterNoContent ? {} : { reasoning: { exclude: true } }),
+        max_tokens: input.maxTokens ?? requestProfile.maxTokens ?? 700,
+        ...(responseFormatAllowed ? { response_format: { type: input.responseFormat } } : {}),
+        ...(reasoningMode === "omit" || reasoningDirectiveDisabledAfterNoContent
+          ? {}
+          : { reasoning: { exclude: true } }),
       };
       const started = this.options.now?.().getTime() ?? Date.now();
       const controller = new AbortController();

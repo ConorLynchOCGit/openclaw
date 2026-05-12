@@ -34,6 +34,10 @@ import {
   resolveModelFallbackOptions,
 } from "./agent-runner-utils.js";
 import {
+  estimatePostCompactionLedgerRepairTokens,
+  isNoRealConversationCompactionSkip,
+} from "./compaction-token-repair.js";
+import {
   hasAlreadyFlushedForCurrentCompaction,
   resolveMemoryFlushContextWindowTokens,
   shouldRunMemoryFlush,
@@ -111,6 +115,24 @@ export function resolveEffectivePromptTokens(
   // Flush gating projects the next input context by adding the previous
   // completion and the current user prompt estimate.
   return base + output + estimate;
+}
+
+function resolvePositiveTokenBudget(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) && value > 0
+    ? Math.floor(value)
+    : undefined;
+}
+
+function resolveSessionCompactionContextWindow(params: {
+  resolvedContextWindowTokens: number;
+  entry?: Pick<SessionEntry, "contextTokens"> | null;
+}): number {
+  const resolvedContextWindowTokens = Math.max(1, Math.floor(params.resolvedContextWindowTokens));
+  const sessionContextTokens = resolvePositiveTokenBudget(params.entry?.contextTokens);
+  if (sessionContextTokens !== undefined && sessionContextTokens < resolvedContextWindowTokens) {
+    return sessionContextTokens;
+  }
+  return resolvedContextWindowTokens;
 }
 
 export type SessionTranscriptUsageSnapshot = {
@@ -368,15 +390,19 @@ export async function runPreflightCompactionIfNeeded(params: {
   }
 
   const isCli = isCliProvider(params.followupRun.run.provider, params.cfg);
-  if (params.isHeartbeat || isCli) {
+  if (isCli) {
     return entry ?? params.sessionEntry;
   }
 
-  const contextWindowTokens = resolveMemoryFlushContextWindowTokens({
+  const resolvedContextWindowTokens = resolveMemoryFlushContextWindowTokens({
     cfg: params.cfg,
     provider: params.followupRun.run.provider,
     modelId: params.followupRun.run.model ?? params.defaultModel,
     agentCfgContextTokens: params.agentCfgContextTokens,
+  });
+  const contextWindowTokens = resolveSessionCompactionContextWindow({
+    resolvedContextWindowTokens,
+    entry,
   });
   const memoryFlushPlan = resolveMemoryFlushPlan({ cfg: params.cfg });
   const reserveTokensFloor =
@@ -391,24 +417,26 @@ export async function runPreflightCompactionIfNeeded(params: {
     Number.isFinite(persistedTotalTokens) &&
     persistedTotalTokens > 0;
   const shouldUseTranscriptFallback = entry.totalTokensFresh === false || !hasPersistedTotalTokens;
-  if (!shouldUseTranscriptFallback) {
-    return entry ?? params.sessionEntry;
-  }
   const promptTokenEstimate = estimatePromptTokensForMemoryFlush(
     params.promptForEstimate ?? params.followupRun.prompt,
   );
   const transcriptPromptTokens =
-    typeof freshPersistedTokens === "number"
+    !shouldUseTranscriptFallback || typeof freshPersistedTokens === "number"
       ? undefined
       : estimatePromptTokensFromSessionTranscript({
           sessionId: entry.sessionId,
           storePath: params.storePath,
           sessionFile: entry.sessionFile ?? params.followupRun.run.sessionFile,
         });
-  const projectedTokenCount =
+  const projectedPersistedTokenCount =
+    typeof freshPersistedTokens === "number"
+      ? resolveEffectivePromptTokens(freshPersistedTokens, undefined, promptTokenEstimate)
+      : undefined;
+  const projectedTranscriptTokenCount =
     typeof transcriptPromptTokens === "number"
       ? resolveEffectivePromptTokens(transcriptPromptTokens, undefined, promptTokenEstimate)
       : undefined;
+  const projectedTokenCount = projectedPersistedTokenCount ?? projectedTranscriptTokenCount;
   const tokenCountForCompaction =
     typeof projectedTokenCount === "number" &&
     Number.isFinite(projectedTokenCount) &&
@@ -472,6 +500,7 @@ export async function runPreflightCompactionIfNeeded(params: {
     model: params.followupRun.run.model,
     thinkLevel: params.followupRun.run.thinkLevel,
     bashElevated: params.followupRun.run.bashElevated,
+    tokenBudget: contextWindowTokens,
     trigger: "budget",
     currentTokenCount: tokenCountForCompaction,
     senderIsOwner: params.followupRun.run.senderIsOwner,
@@ -480,6 +509,30 @@ export async function runPreflightCompactionIfNeeded(params: {
   });
 
   if (!result?.ok || !result.compacted) {
+    const repairEstimate =
+      result?.ok && isNoRealConversationCompactionSkip(result.reason)
+        ? (estimatePostCompactionLedgerRepairTokens(sessionFile) ??
+          estimatePostCompactionLedgerRepairTokens(entry.sessionFile) ??
+          estimatePostCompactionLedgerRepairTokens(params.followupRun.run.sessionFile))
+        : undefined;
+    if (repairEstimate && params.sessionStore && params.sessionKey) {
+      await incrementCompactionCount({
+        cfg: params.cfg,
+        sessionEntry: entry,
+        sessionStore: params.sessionStore,
+        sessionKey: params.sessionKey,
+        storePath: params.storePath,
+        amount: 0,
+        tokensAfter: repairEstimate.tokensAfter,
+      });
+      entry = params.sessionStore?.[params.sessionKey] ?? entry;
+      logVerbose(
+        `preflightCompaction repaired stale post-compaction token ledger: ` +
+          `sessionKey=${params.sessionKey} tokensAfter=${repairEstimate.tokensAfter} ` +
+          `source=${repairEstimate.source}`,
+      );
+      return entry ?? params.sessionEntry;
+    }
     logVerbose(
       `preflightCompaction skipped: sessionKey=${params.sessionKey} reason=${result?.reason ?? "not_compacted"}`,
     );
