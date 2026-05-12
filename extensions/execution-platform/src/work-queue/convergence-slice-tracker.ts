@@ -22,6 +22,8 @@ export type ConvergenceSliceDefinition = {
   historicalSliceId: string | null;
   activeQueueId: string | null;
   activeQueuePosition: number | null;
+  remainingQueuePosition?: number | null;
+  remainingQueueLabel?: string | null;
   supersededByActiveQueueId: string | null;
   dependsOnSliceIds: string[];
   dependsOnActiveQueueIds: string[];
@@ -48,6 +50,8 @@ type ConvergenceSliceTrackerMetadata = {
   historicalSliceId: string | null;
   activeQueueId: string | null;
   activeQueuePosition: number | null;
+  remainingQueuePosition: number | null;
+  remainingQueueLabel: string | null;
   supersededByActiveQueueId: string | null;
   dependsOnSliceIds: string[];
   dependsOnActiveQueueIds: string[];
@@ -477,7 +481,7 @@ const ACTIVE_QUEUE_RECONCILED_STATES: Record<number, ReconciledSliceState> = {
     blockerReasonCodes: [],
   },
   9: {
-    planningStatus: "completed",
+    planningStatus: "needs_review",
     artifactRefs: [
       ".artifacts/execution-platform/codex-parity-live-ux-proof-run.json",
       ".artifacts/execution-platform/codex-parity-live-ux-quality-review.json",
@@ -485,8 +489,8 @@ const ACTIVE_QUEUE_RECONCILED_STATES: Record<number, ReconciledSliceState> = {
       ".artifacts/execution-platform/codex-parity-plus-gateway-rebuild-reload-proof-v2.json",
     ],
     nextAction:
-      "Use production success gates and live evidence extraction fixes as the baseline for the remaining Codex parity block.",
-    blockerReasonCodes: [],
+      "Complete the production kill-switch/readiness wiring and prove weak one-shot/proof-shaped paths cannot claim Codex parity success before treating this item as closed.",
+    blockerReasonCodes: ["codex_parity_kill_switch_wiring_unproven"],
   },
   10: {
     planningStatus: "needs_review",
@@ -539,27 +543,27 @@ const ACTIVE_QUEUE_RECONCILED_STATES: Record<number, ReconciledSliceState> = {
     blockerReasonCodes: ["kimi_standard_implementation_live_case_unproven"],
   },
   15: {
-    planningStatus: "completed",
+    planningStatus: "needs_review",
     artifactRefs: [
       ".artifacts/execution-platform/codex-parity-live-ux-work-queue-readback.json",
       ".artifacts/execution-platform/codex-parity-live-ux-quality-review.json",
     ],
     nextAction:
-      "Owner readback now surfaces dynamic task graph fallback, role/model refs, repeated roles, source edits, validation refs, progress stages, and closeout evidence.",
-    blockerReasonCodes: [],
+      "Prove owner readback for a failed-then-repaired runtime job, including repair attempts and limitations, before treating readback as complete.",
+    blockerReasonCodes: ["failed_then_repaired_readback_unproven"],
   },
   16: {
-    planningStatus: "completed",
+    planningStatus: "needs_review",
     artifactRefs: [
       ".artifacts/execution-platform/codex-parity-live-ux-proof-run.json",
       ".artifacts/execution-platform/codex-parity-live-ux-quality-review.json",
     ],
     nextAction:
-      "Closeout remains after accepted runtime evidence in the live proof; next failed-repair proof must confirm closeout accurately reports needs-review/failure when evidence is rejected.",
-    blockerReasonCodes: [],
+      "Prove closeout accurately reports failed/needs-review and repaired histories, not only successful evidence paths.",
+    blockerReasonCodes: ["failed_or_repaired_closeout_ordering_unproven"],
   },
   17: {
-    planningStatus: "completed",
+    planningStatus: "needs_review",
     artifactRefs: [
       ".artifacts/execution-platform/codex-parity-live-ux-proof-preflight.json",
       ".artifacts/execution-platform/codex-parity-live-ux-proof-run.json",
@@ -567,10 +571,34 @@ const ACTIVE_QUEUE_RECONCILED_STATES: Record<number, ReconciledSliceState> = {
       ".artifacts/execution-platform/codex-parity-live-ux-work-queue-readback.json",
     ],
     nextAction:
-      "Proceed through the remaining parity blockers before active-queue-18 Managed Multi-Prompt Coding Soak.",
-    blockerReasonCodes: [],
+      "Rerun a long-form UX proof that includes at least one validation failure and repair inside the same runtime job before marking this complete.",
+    blockerReasonCodes: ["long_form_failed_validation_repair_unproven"],
   },
 };
+
+function isOpenPlanningStatus(status: WorkQueueConvergenceSlicePlanningStatus): boolean {
+  return status !== "completed" && status !== "superseded";
+}
+
+function activeQueuePlanningStatus(position: number): WorkQueueConvergenceSlicePlanningStatus {
+  return ACTIVE_QUEUE_RECONCILED_STATES[position]?.planningStatus ?? "planned";
+}
+
+function remainingQueuePositionForActivePosition(position: number): number | null {
+  if (!isOpenPlanningStatus(activeQueuePlanningStatus(position))) {
+    return null;
+  }
+  return Array.from({ length: position }, (_, index) => index + 1).filter((candidatePosition) =>
+    isOpenPlanningStatus(activeQueuePlanningStatus(candidatePosition)),
+  ).length;
+}
+
+function remainingQueueLabel(position: number): string | null {
+  const remainingPosition = remainingQueuePositionForActivePosition(position);
+  return remainingPosition === null
+    ? null
+    : `remaining-queue-${String(remainingPosition).padStart(2, "0")}`;
+}
 
 const RECONCILED_SLICE_STATES: Record<number, ReconciledSliceState> = {
   1: {
@@ -1106,6 +1134,8 @@ export function buildOpenClawConvergenceSliceDefinitions(): ConvergenceSliceDefi
       historicalSliceId: sliceId(index),
       activeQueueId: null,
       activeQueuePosition: null,
+      remainingQueuePosition: null,
+      remainingQueueLabel: null,
       supersededByActiveQueueId,
       dependsOnSliceIds: number === 1 ? [] : [sliceId(index - 1)],
       dependsOnActiveQueueIds: [],
@@ -1141,6 +1171,8 @@ export function buildOpenClawConvergenceSliceDefinitions(): ConvergenceSliceDefi
       historicalSliceId: legacySliceId,
       activeQueueId: queueId,
       activeQueuePosition: position,
+      remainingQueuePosition: remainingQueuePositionForActivePosition(position),
+      remainingQueueLabel: remainingQueueLabel(position),
       supersededByActiveQueueId: null,
       dependsOnSliceIds: previousQueueId ? [previousQueueId] : [],
       dependsOnActiveQueueIds: previousQueueId ? [previousQueueId] : [],
@@ -1187,6 +1219,8 @@ export function buildConvergenceSliceTrackerMetadata(
     historicalSliceId: definition.historicalSliceId,
     activeQueueId: definition.activeQueueId,
     activeQueuePosition: definition.activeQueuePosition,
+    remainingQueuePosition: definition.remainingQueuePosition ?? null,
+    remainingQueueLabel: definition.remainingQueueLabel ?? null,
     supersededByActiveQueueId: definition.supersededByActiveQueueId,
     dependsOnSliceIds: definition.dependsOnSliceIds.slice(0, 20),
     dependsOnActiveQueueIds: definition.dependsOnActiveQueueIds.slice(0, 20),
@@ -1210,18 +1244,16 @@ export function buildOpenClawActiveConvergenceQueue(): ConvergenceSliceDefinitio
   );
 }
 
+export function buildOpenClawOutstandingConvergenceQueue(): ConvergenceSliceDefinition[] {
+  return buildOpenClawActiveConvergenceQueue()
+    .filter((definition) => isOpenPlanningStatus(definition.planningStatus))
+    .toSorted(
+      (left, right) => (left.remainingQueuePosition ?? 999) - (right.remainingQueuePosition ?? 999),
+    );
+}
+
 export function getNextActiveConvergenceQueueItem(): ConvergenceSliceDefinition | null {
-  return (
-    buildOpenClawActiveConvergenceQueue()
-      .filter(
-        (definition) =>
-          definition.planningStatus !== "completed" && definition.planningStatus !== "superseded",
-      )
-      .toSorted(
-        (left, right) => (left.activeQueuePosition ?? 999) - (right.activeQueuePosition ?? 999),
-      )
-      .at(0) ?? null
-  );
+  return buildOpenClawOutstandingConvergenceQueue().at(0) ?? null;
 }
 
 export function summarizeOpenClawActiveQueueRebase(): {
@@ -1230,12 +1262,15 @@ export function summarizeOpenClawActiveQueueRebase(): {
   completedHistoricalSliceCount: number;
   supersededHistoricalPlannedCount: number;
   activeQueueItemCount: number;
+  outstandingActiveQueueItemCount: number;
   nextActiveQueueItem: {
     activeQueueId: string;
+    remainingQueueLabel: string | null;
     title: string;
     legacySliceId: string | null;
   } | null;
   activeQueueTitles: string[];
+  outstandingQueueTitles: string[];
   rawPromptStored: false;
   rawResponseStored: false;
   rawTranscriptStored: false;
@@ -1247,6 +1282,7 @@ export function summarizeOpenClawActiveQueueRebase(): {
     (definition) => definition.trackerKind === "historical_slice",
   );
   const active = buildOpenClawActiveConvergenceQueue();
+  const outstanding = buildOpenClawOutstandingConvergenceQueue();
   const next = getNextActiveConvergenceQueueItem();
   return {
     trackerVersion: CONVERGENCE_SLICE_TRACKER_VERSION,
@@ -1258,14 +1294,17 @@ export function summarizeOpenClawActiveQueueRebase(): {
       (definition) => definition.planningStatus === "superseded",
     ).length,
     activeQueueItemCount: active.length,
+    outstandingActiveQueueItemCount: outstanding.length,
     nextActiveQueueItem: next
       ? {
           activeQueueId: next.activeQueueId ?? next.sliceId,
+          remainingQueueLabel: next.remainingQueueLabel ?? null,
           title: next.title,
           legacySliceId: next.legacySliceId,
         }
       : null,
     activeQueueTitles: active.map((definition) => definition.title),
+    outstandingQueueTitles: outstanding.map((definition) => definition.title),
     rawPromptStored: false,
     rawResponseStored: false,
     rawTranscriptStored: false,
@@ -1340,6 +1379,8 @@ export function projectConvergenceSliceTracker(
       historicalSliceId: null,
       activeQueueId: null,
       activeQueuePosition: null,
+      remainingQueuePosition: null,
+      remainingQueueLabel: null,
       supersededByActiveQueueId: null,
       dependsOnSliceIds: [],
       dependsOnActiveQueueIds: [],
@@ -1393,6 +1434,8 @@ export function projectConvergenceSliceTracker(
     historicalSliceId: stringValue(metadata.historicalSliceId),
     activeQueueId: stringValue(metadata.activeQueueId),
     activeQueuePosition: numberValue(metadata.activeQueuePosition),
+    remainingQueuePosition: numberValue(metadata.remainingQueuePosition),
+    remainingQueueLabel: stringValue(metadata.remainingQueueLabel),
     supersededByActiveQueueId: stringValue(metadata.supersededByActiveQueueId),
     dependsOnSliceIds: stringArrayValue(metadata.dependsOnSliceIds),
     dependsOnActiveQueueIds: stringArrayValue(metadata.dependsOnActiveQueueIds),

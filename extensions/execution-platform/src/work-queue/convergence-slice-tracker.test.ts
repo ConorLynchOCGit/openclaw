@@ -5,6 +5,7 @@ import { RuntimeJobRepository } from "../runtime-job-repository.ts";
 import {
   buildOpenClawActiveConvergenceQueue,
   buildOpenClawConvergenceSliceDefinitions,
+  buildOpenClawOutstandingConvergenceQueue,
   CONVERGENCE_SLICE_WORK_ITEM_TYPE,
   getNextActiveConvergenceQueueItem,
   projectConvergenceSliceTracker,
@@ -158,6 +159,7 @@ describe("OpenClaw convergence slice tracker", () => {
 
   it("rebases remaining planned work into a contiguous active queue", () => {
     const activeQueue = buildOpenClawActiveConvergenceQueue();
+    const outstandingQueue = buildOpenClawOutstandingConvergenceQueue();
     const summary = summarizeOpenClawActiveQueueRebase();
     const next = getNextActiveConvergenceQueueItem();
 
@@ -220,8 +222,10 @@ describe("OpenClaw convergence slice tracker", () => {
       sliceId: "openclaw-convergence.active-queue-09",
       title: "Runtime Parity Gap Audit And Kill Switches",
       dependsOnActiveQueueIds: ["openclaw-convergence.active-queue-08"],
-      planningStatus: "completed",
+      planningStatus: "needs_review",
       legacySliceId: null,
+      remainingQueuePosition: 1,
+      remainingQueueLabel: "remaining-queue-01",
     });
     expect(activeQueue[9]).toMatchObject({
       sliceId: "openclaw-convergence.active-queue-10",
@@ -229,16 +233,22 @@ describe("OpenClaw convergence slice tracker", () => {
       dependsOnActiveQueueIds: ["openclaw-convergence.active-queue-09"],
       planningStatus: "needs_review",
       legacySliceId: null,
+      remainingQueuePosition: 2,
+      remainingQueueLabel: "remaining-queue-02",
     });
     expect(activeQueue[11]).toMatchObject({
       sliceId: "openclaw-convergence.active-queue-12",
       title: "Dynamic OpenClaw Role Graph Executor",
       planningStatus: "completed",
+      remainingQueuePosition: null,
+      remainingQueueLabel: null,
     });
     expect(activeQueue[16]).toMatchObject({
       sliceId: "openclaw-convergence.active-queue-17",
       title: "Long-Form UX Codex Parity Proof",
-      planningStatus: "completed",
+      planningStatus: "needs_review",
+      remainingQueuePosition: 8,
+      remainingQueueLabel: "remaining-queue-08",
     });
     expect(activeQueue[17]).toMatchObject({
       sliceId: "openclaw-convergence.active-queue-18",
@@ -246,6 +256,8 @@ describe("OpenClaw convergence slice tracker", () => {
       dependsOnActiveQueueIds: ["openclaw-convergence.active-queue-17"],
       planningStatus: "planned",
       legacySliceId: null,
+      remainingQueuePosition: 9,
+      remainingQueueLabel: "remaining-queue-09",
     });
     expect(activeQueue[18]).toMatchObject({
       sliceId: "openclaw-convergence.active-queue-19",
@@ -254,18 +266,29 @@ describe("OpenClaw convergence slice tracker", () => {
       planningStatus: "planned",
       legacySliceId: "openclaw-convergence.slice-49",
     });
+    expect(outstandingQueue[0]).toMatchObject({
+      activeQueueId: "openclaw-convergence.active-queue-09",
+      remainingQueueLabel: "remaining-queue-01",
+      title: "Runtime Parity Gap Audit And Kill Switches",
+    });
+    expect(outstandingQueue.map((item) => item.remainingQueuePosition)).toEqual(
+      Array.from({ length: outstandingQueue.length }, (_, index) => index + 1),
+    );
     expect(next).toMatchObject({
-      activeQueueId: "openclaw-convergence.active-queue-10",
-      title: "Persistent Codex Adapter Loop",
+      activeQueueId: "openclaw-convergence.active-queue-09",
+      remainingQueueLabel: "remaining-queue-01",
+      title: "Runtime Parity Gap Audit And Kill Switches",
     });
     expect(summary).toMatchObject({
       historicalSliceCount: 56,
       completedHistoricalSliceCount: 38,
       supersededHistoricalPlannedCount: 18,
       activeQueueItemCount: 33,
+      outstandingActiveQueueItemCount: 24,
       nextActiveQueueItem: {
-        activeQueueId: "openclaw-convergence.active-queue-10",
-        title: "Persistent Codex Adapter Loop",
+        activeQueueId: "openclaw-convergence.active-queue-09",
+        remainingQueueLabel: "remaining-queue-01",
+        title: "Runtime Parity Gap Audit And Kill Switches",
       },
       workQueueLifecycleMutationAllowed: false,
     });
@@ -360,6 +383,8 @@ describe("OpenClaw convergence slice tracker", () => {
         trackerKind: "active_queue_item",
         activeQueueId: "openclaw-convergence.active-queue-01",
         activeQueuePosition: 1,
+        remainingQueuePosition: null,
+        remainingQueueLabel: null,
         legacySliceId: "openclaw-convergence.slice-52",
         title: "Coding Team Codex-Parity Trust Soak",
         planningStatus: "completed",

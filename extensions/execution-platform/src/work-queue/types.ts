@@ -171,6 +171,8 @@ export type WorkQueueConvergenceSliceProjection = {
   historicalSliceId: string | null;
   activeQueueId: string | null;
   activeQueuePosition: number | null;
+  remainingQueuePosition: number | null;
+  remainingQueueLabel: string | null;
   supersededByActiveQueueId: string | null;
   dependsOnSliceIds: string[];
   dependsOnActiveQueueIds: string[];
