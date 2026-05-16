@@ -666,6 +666,73 @@ export class RuntimeJobRepository {
     });
   }
 
+  async resumePendingJobWithPayloadPatch(input: {
+    jobId: string;
+    payloadPatch: Record<string, JsonValue>;
+    workerId?: string | null;
+    reasonCodes?: string[];
+  }): Promise<RuntimeJob | null> {
+    const now = this.now();
+    assertJsonByteLength(input.payloadPatch as JsonValue, 16_384, "runtime job payload patch");
+    return this.sql.withTransaction(async (tx) => {
+      const current = await tx.query<RuntimeJobRow>(
+        `
+          SELECT *
+          FROM execution_platform.runtime_jobs
+          WHERE job_id = $1 AND state = 'pending'
+          FOR UPDATE
+        `,
+        [input.jobId],
+      );
+      const row = current.rows[0];
+      if (!row) {
+        return null;
+      }
+      const existing =
+        row.payload && typeof row.payload === "object" && !Array.isArray(row.payload)
+          ? (row.payload as Record<string, JsonValue>)
+          : {};
+      const payload = {
+        ...existing,
+        ...input.payloadPatch,
+        rawPromptStored: false,
+        rawResponseStored: false,
+        workQueueLifecycleMutated: false,
+      } satisfies Record<string, JsonValue>;
+      assertJsonByteLength(payload, 131_072, "runtime job resumed payload");
+      const updated = await tx.query<RuntimeJobRow>(
+        `
+          UPDATE execution_platform.runtime_jobs
+          SET
+            payload = $2::jsonb,
+            error = NULL,
+            available_at = $3::timestamptz,
+            deadline_at = NULL,
+            updated_at = $3::timestamptz
+          WHERE job_id = $1 AND state = 'pending'
+          RETURNING *
+        `,
+        [input.jobId, encodeJson(payload), now],
+      );
+      await this.recordEventInTx(tx, {
+        jobId: input.jobId,
+        eventType: "job.human_input_received",
+        workerId: input.workerId ?? null,
+        leaseId: null,
+        data: {
+          reasonCodes: (input.reasonCodes ?? ["human_operator_input_received"]).slice(0, 12),
+          payloadPatchKeys: Object.keys(input.payloadPatch).toSorted().slice(0, 20),
+          rawPromptStored: false,
+          rawResponseStored: false,
+          rawLogsStored: false,
+          workQueueLifecycleMutated: false,
+        },
+        eventTime: now,
+      });
+      return updated.rows[0] ? decodeJob(updated.rows[0]) : null;
+    });
+  }
+
   async cancelJob(jobId: string, reason: string): Promise<RuntimeJob | null> {
     const now = this.now();
     return this.sql.withTransaction(async (tx) => {

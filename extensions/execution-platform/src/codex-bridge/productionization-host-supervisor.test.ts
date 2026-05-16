@@ -6,9 +6,12 @@ import { createExecutionPlatformPgMemTestDatabase } from "../db/pg-test.ts";
 import { RuntimeJobRepository } from "../runtime-job-repository.ts";
 import { buildWorkQueueExecutionReadModel } from "../work-queue/execution-read-model.ts";
 import { WorkQueueRepository } from "../work-queue/work-queue-repository.ts";
+import { HumanOperatorTaskAdapter } from "../workflows/human-operator-task-adapter.ts";
+import { RuntimeWorkGraphRepository } from "../workflows/runtime-work-graph-repository.ts";
 import {
   createExecutionPlatformHostRoutes,
   createProductionSupervisorConfig,
+  handleExecutionPlatformDbWorkQueueHostRoute,
   handleExecutionPlatformQueueRunnerHostRoute,
   handleExecutionPlatformWorkQueueControlHostRoute,
   preflightAcpBridgeEndpoint,
@@ -26,6 +29,7 @@ import { CODEX_BRIDGE_JOB_TYPE } from "./types.ts";
 async function withRuntimeHarness<T>(
   work: (input: {
     runtimeJobs: RuntimeJobRepository;
+    runtimeWorkGraphs: RuntimeWorkGraphRepository;
     workQueue: WorkQueueRepository;
     setNow: (next: Date) => void;
   }) => Promise<T>,
@@ -39,11 +43,15 @@ async function withRuntimeHarness<T>(
       now: () => now,
       maxArtifactMetadataBytes: 256 * 1024,
     });
+    const runtimeWorkGraphs = new RuntimeWorkGraphRepository(database.sql, {
+      now: () => now,
+    });
     const workQueue = new WorkQueueRepository(database.sql, runtimeJobs, {
       now: () => now,
     });
     return await work({
       runtimeJobs,
+      runtimeWorkGraphs,
       workQueue,
       setNow(next) {
         now = next;
@@ -157,6 +165,10 @@ describe("Execution Platform host routes and supervisor productionization", () =
       expect(routes.map((route) => route.path)).toEqual(
         expect.arrayContaining([
           "/api/execution-platform/queue-runner/run-once",
+          "/api/execution-platform/work-queue/list",
+          "/api/execution-platform/work-queue/detail",
+          "/api/execution-platform/work-queue/delta",
+          "/api/execution-platform/work-queue/human-response",
           "/api/execution-platform/work-queue/execution-control/pause",
           "/api/execution-platform/work-queue/execution-control/redirect",
           "/api/execution-platform/work-queue/execution-control/cancel",
@@ -203,6 +215,57 @@ describe("Execution Platform host routes and supervisor productionization", () =
         "gateway_worker_run_once_disabled_by_enqueue_only_boundary",
       );
 
+      await runtimeJobs.enqueueJob({
+        jobId: "host-route-agent-team-native-job",
+        jobType: "executor.agent_team",
+        queueName: "agent-team",
+        payload: { workflowId: "agent_team.coding" },
+      });
+      const configuredNativeRun = await callRoute(
+        (req, res) =>
+          handleExecutionPlatformQueueRunnerHostRoute(req as never, res as never, {
+            runtimeJobs,
+            agentTeamRuntimeRunOnce: async ({ runtimeJobId, workerId }) => ({
+              claimed: true,
+              completed: false,
+              failed: true,
+              runtimeJobId,
+              teamRunId: "team-run-host-route-agent-team-native-job",
+              workflowId: "agent_team.coding",
+              workerId,
+              reasonCodes: ["configured_gateway_agent_team_supervisor_used"],
+            }),
+          }),
+        {
+          auth: { actorId: "operator", role: "operator", authenticated: true },
+          nativeWorkflowRunOnce: true,
+          gatewayWorkerRunOnceProofMode: true,
+          runtimeJobId: "host-route-agent-team-native-job",
+        },
+      );
+      expect(configuredNativeRun.statusCode).toBe(200);
+      expect(JSON.stringify(configuredNativeRun.json)).toContain(
+        "configured_gateway_agent_team_supervisor_used",
+      );
+      expect(JSON.stringify(configuredNativeRun.json)).toContain(
+        "team-run-host-route-agent-team-native-job",
+      );
+
+      const unconfiguredNativeRun = await callRoute(
+        (req, res) =>
+          handleExecutionPlatformQueueRunnerHostRoute(req as never, res as never, { runtimeJobs }),
+        {
+          auth: { actorId: "operator", role: "operator", authenticated: true },
+          nativeWorkflowRunOnce: true,
+          gatewayWorkerRunOnceProofMode: true,
+          runtimeJobId: "host-route-agent-team-native-job",
+        },
+      );
+      expect(unconfiguredNativeRun.statusCode).toBe(409);
+      expect(JSON.stringify(unconfiguredNativeRun.json)).toContain(
+        "configured_agent_team_supervisor_required",
+      );
+
       const pause = await callRoute(
         (req, res) =>
           handleExecutionPlatformWorkQueueControlHostRoute("pause", req as never, res as never, {
@@ -217,6 +280,103 @@ describe("Execution Platform host routes and supervisor productionization", () =
       );
       expect(pause.statusCode).toBe(200);
       expect(JSON.stringify(pause.json)).toContain("pause");
+    });
+  });
+
+  it("serves DB-backed Work Queue list/detail/delta and human resume routes", async () => {
+    await withRuntimeHarness(async ({ runtimeJobs, runtimeWorkGraphs, workQueue }) => {
+      const item = await workQueue.createWorkItem({
+        workItemId: "host-route-db-work-item",
+        itemType: "execution_workflow",
+        title: "DB route work item",
+        description: "Work Queue DB list/detail proof",
+      });
+      const job = await runtimeJobs.enqueueJob({
+        jobId: "host-route-db-runtime-job",
+        jobType: "executor.agent_team",
+        workItemId: item.workItemId,
+        payload: { workflowId: "agent_team.coding" },
+      });
+      await workQueue.createWorkRun({
+        workItemId: item.workItemId,
+        executorKind: "runtime_job",
+        runtimeJobId: job.jobId,
+        runState: "running",
+      });
+      const graph = await runtimeWorkGraphs.createGraph({
+        graphId: "host-route-db-graph",
+        parentWorkItemId: item.workItemId,
+        rootRuntimeJobId: job.jobId,
+        workflowId: "agent_team.coding",
+        orchestratorModelRef: "openai-codex/gpt-5.5",
+      });
+      const human = await new HumanOperatorTaskAdapter(runtimeWorkGraphs).createTask({
+        graphId: graph.graphId,
+        operatorId: "owner:local",
+        promptSummary: "Choose bounded test scope",
+        requiredResponseShape: { type: "object" },
+        blockingNodeRefs: [`runtime-work-graph://${graph.graphId}`],
+      });
+      await workQueue.syncRuntimeGraphNodeToWorkQueue({
+        parentWorkItemId: item.workItemId,
+        graphId: graph.graphId,
+        nodeId: human.node.nodeId,
+        nodeKind: "human_task",
+        assignedRole: "human_operator",
+        assignedWorkflow: "human/operator",
+        queueStatus: "blocked",
+        humanTaskId: human.humanTask.humanTaskId,
+      });
+
+      const dependencies = { runtimeJobs, runtimeWorkGraphs, workQueue };
+      const list = await callRoute(
+        (req, res) =>
+          handleExecutionPlatformDbWorkQueueHostRoute(
+            "list",
+            req as never,
+            res as never,
+            dependencies,
+          ),
+        { bucket: "active" },
+      );
+      const detail = await callRoute(
+        (req, res) =>
+          handleExecutionPlatformDbWorkQueueHostRoute(
+            "detail",
+            req as never,
+            res as never,
+            dependencies,
+          ),
+        { workItemId: item.workItemId },
+      );
+      const resumed = await callRoute(
+        (req, res) =>
+          handleExecutionPlatformDbWorkQueueHostRoute(
+            "human-response",
+            req as never,
+            res as never,
+            dependencies,
+          ),
+        {
+          parentWorkItemId: item.workItemId,
+          graphId: graph.graphId,
+          humanTaskId: human.humanTask.humanTaskId,
+          boundedResponseRef: "owner-decision://host-route-db-work-item/resume",
+        },
+      );
+
+      expect(list.statusCode).toBe(200);
+      expect(JSON.stringify(list.json)).toContain("execution_platform_work_queue_db");
+      expect(JSON.stringify(list.json)).toContain(item.workItemId);
+      expect(detail.statusCode).toBe(200);
+      expect(JSON.stringify(detail.json)).toContain("DB route work item");
+      expect(JSON.stringify(detail.json)).toContain("runtimeJobIds");
+      expect(resumed.statusCode).toBe(200);
+      expect(JSON.stringify(resumed.json)).toContain("db_work_queue_human_response_result");
+      const childTruth = await workQueue.readWorkItemTruth(
+        `runtime-graph:${graph.graphId}:${human.node.nodeId}`,
+      );
+      expect(childTruth?.item.queueStatus).toBe("closed");
     });
   });
 

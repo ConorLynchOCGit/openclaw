@@ -36,6 +36,7 @@ export type AcpCodexCodingWorkerRunResult = {
   evidence?: AgentTeamRuntimeEvidence | null;
   roleExecutionEvidence?: AgentTeamRoleExecutionEvidence[];
   reasonCodes: string[];
+  retryDelayMs?: number;
   result?: JsonValue;
   rawPromptStored: false;
   rawResponseStored: false;
@@ -158,6 +159,7 @@ export class AcpCodexCodingWorkerAdapter implements RuntimeWorkerSupervisorAdapt
         artifactRefs,
         completedWorkEvidenceRefs,
         reasonCodes: run.reasonCodes.slice(0, 30),
+        retryDelayMs: run.retryDelayMs,
         rawPromptStored: false,
         rawResponseStored: false,
         rawLogsStored: false,

@@ -208,13 +208,71 @@ describe("Front-door request compiler", () => {
     ).toThrow(/action semantics outcome/iu);
   });
 
-  it("rejects arbitrary shell command content, missing operator metadata, and lifecycle mutation", () => {
-    expect(() => compile(codingOutput({ objectiveSummary: "run rm -rf / after edit" }))).toThrow(
-      /arbitrary shell command/iu,
-    );
+  it("does not regex-scan prose constraints and rejects only structured blocked actions", () => {
     expect(() =>
-      compile(codingOutput({ objectiveSummary: "read secrets and run destructive DB changes" })),
-    ).toThrow(/arbitrary shell command/iu);
+      compile(codingOutput({ objectiveSummary: "owner text mentions rm -rf as a non-goal" })),
+    ).not.toThrow();
+    expect(() =>
+      compile(
+        codingOutput({
+          objectiveSummary:
+            "owner text says read secrets and destructive DB changes are prohibited boundaries",
+        }),
+      ),
+    ).not.toThrow();
+    expect(() =>
+      compile(
+        codingOutput({
+          objectiveSummary:
+            "Implement a bounded Product/Spec Planning Worker Contract. Do not deploy, send outbound messages, promote models, grant authority, or mutate lifecycle state.",
+          requestedActions: [
+            createCanonicalRouterAction(
+              "code_edit",
+              "bounded source edit with focused validation; do not promote models",
+              0.95,
+            ),
+            createCanonicalRouterAction(
+              "test",
+              "run approved focused validation command pnpm test:file extensions/execution-platform/src/work-queue/product-spec-planning-worker-contract.test.ts",
+              0.9,
+            ),
+          ],
+        }),
+      ),
+    ).not.toThrow();
+    expect(() =>
+      compile(
+        codingOutput({
+          objectiveSummary:
+            "Implement a production runtime workflow. Do not store raw prompts, raw responses, raw transcripts, provider logs, tool logs, command logs, DB rows, secrets, hidden reasoning, or unbounded logs. No deploy/outbound/model promotion occurs.",
+          requestedActions: [
+            createCanonicalRouterAction(
+              "code_edit",
+              "production source edit with bounded validation; do not store secrets or raw command logs",
+              0.95,
+            ),
+            createCanonicalRouterAction(
+              "test",
+              "run approved focused validation through existing test policy",
+              0.9,
+            ),
+          ],
+        }),
+      ),
+    ).not.toThrow();
+    expect(() =>
+      compile(
+        codingOutput({
+          objectiveSummary: "Promote model after the bounded source edit.",
+          requestedActions: [
+            createCanonicalRouterAction("model_promotion", "promote model as primary work", 0.95),
+          ],
+        }),
+      ),
+    ).toThrow(/action semantics outcome/iu);
+  });
+
+  it("rejects missing operator metadata and lifecycle mutation", () => {
     expect(() =>
       compileFrontDoorRequest({
         requestId: "negated-safety-terms-in-prompt",

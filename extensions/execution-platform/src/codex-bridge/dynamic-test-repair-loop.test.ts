@@ -176,6 +176,69 @@ describe("dynamic test/repair loop", () => {
     }
   });
 
+  it("treats passed-validation review timeout as a non-blocking readback warning", async () => {
+    const database = await createExecutionPlatformPgMemTestDatabase();
+    try {
+      await applyExecutionPlatformMigrations(database.sql);
+      const graphs = new RuntimeWorkGraphRepository(database.sql);
+      await graphs.createGraph({
+        graphId: "graph-pass-review-timeout",
+        workflowId: "agent_team.coding",
+        orchestratorModelRef: "openai-codex/gpt-5.5",
+      });
+      const implementation = await graphs.addNode({
+        graphId: "graph-pass-review-timeout",
+        nodeId: "implementation-pass-review-timeout",
+        nodeKind: "implementation",
+        assignedRole: "implementation_engineer",
+        nodeStatus: "succeeded",
+      });
+      const result = await new DynamicTestRepairLoop({
+        graphs,
+        reviewPassedValidations: true,
+        testEngineerOperationTimeoutMs: 5,
+        testEngineer: {
+          async diagnose() {
+            await new Promise((resolve) => setTimeout(resolve, 50));
+            return {
+              modelRunRef: "late-pass-review-run",
+              responseHash: "late-pass-review-hash",
+              latencyMs: 50,
+              recommendation: "no_op_repair",
+              reasonCodes: ["late_pass_review"],
+              artifactRefs: ["artifact://late-pass-review"],
+              rawPromptStored: false,
+              rawResponseStored: false,
+            };
+          },
+        },
+        validationRunner: {
+          async run() {
+            return {
+              validationRef: "validation://passed-timeout",
+              status: "passed",
+              summary: "Focused validation passed.",
+            };
+          },
+        },
+      }).run({
+        graphId: "graph-pass-review-timeout",
+        implementationNodeId: implementation.nodeId,
+        changedFileRefs: ["extensions/execution-platform/src/workflows/runtime-work-graph.ts"],
+        validationCommandRefs: ["pnpm test:file runtime-work-graph.test.ts"],
+      });
+      const snapshot = await graphs.readGraphSnapshot("graph-pass-review-timeout");
+
+      expect(result.finalState).toBe("passed");
+      expect(result.reasonCodes).toContain("dynamic_validation_loop_completed");
+      expect(snapshot?.checkpoints.map((checkpoint) => checkpoint.checkpointKind)).toContain(
+        "test_engineer_passed_validation_review_unavailable",
+      );
+    } finally {
+      await database.close();
+    }
+  });
+
   it("times out stalled test engineer diagnosis instead of hanging the graph", async () => {
     await withLoop(["failed"], async ({ graphs, implementationNodeId }) => {
       const loop = new DynamicTestRepairLoop({

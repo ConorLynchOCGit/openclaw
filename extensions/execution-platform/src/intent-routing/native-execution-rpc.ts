@@ -1388,6 +1388,12 @@ export class NativeExecutionRpcService {
         runtimeJobId: input.runtimeJobId,
         decision,
       });
+      if (input.actionKind === "cancel") {
+        await this.dependencies.runtimeJobs.cancelJob(
+          input.runtimeJobId,
+          `work_queue_control_cancel:${input.actionId}`,
+        );
+      }
     }
     return decision;
   }
@@ -1406,6 +1412,7 @@ export class NativeExecutionRpcService {
 
   async readCloseout(runtimeJobId: string): Promise<JsonValue> {
     const artifacts = await this.dependencies.runtimeJobs.listArtifacts(runtimeJobId);
+    const events = await this.dependencies.runtimeJobs.listEvents(runtimeJobId, 80);
     const job = await this.dependencies.runtimeJobs.getJob(runtimeJobId);
     const closeoutRefs = artifacts
       .filter(
@@ -1450,6 +1457,11 @@ export class NativeExecutionRpcService {
       closeoutCapsuleArtifact?.metadata && typeof closeoutCapsuleArtifact.metadata === "object"
         ? (closeoutCapsuleArtifact.metadata as JsonValue)
         : null;
+    const schedulerProgressEvents = events.filter(
+      (event) => event.eventType === "agent_team.scheduler_progress",
+    );
+    const latestSchedulerProgress = schedulerProgressEvents.at(-1);
+    const latestSchedulerProgressData = asRecord(latestSchedulerProgress?.data);
     return {
       runtimeJobId,
       runtimeJobState: job?.state ?? null,
@@ -1491,6 +1503,41 @@ export class NativeExecutionRpcService {
             closeoutState: stringValueFromRecord(agentTeamEvidenceRecord, "closeoutState"),
           }
         : null,
+      activeGraphProgress: latestSchedulerProgress
+        ? {
+            state: "present",
+            graphId: stringValueFromRecord(latestSchedulerProgressData, "graphId"),
+            activeNodeId: stringValueFromRecord(latestSchedulerProgressData, "nodeId"),
+            activeNodeKind: stringValueFromRecord(latestSchedulerProgressData, "activeNodeKind"),
+            roleId: stringValueFromRecord(latestSchedulerProgressData, "roleId"),
+            modelRef: stringValueFromRecord(latestSchedulerProgressData, "modelRef"),
+            objective: stringValueFromRecord(latestSchedulerProgressData, "currentObjective"),
+            whySelected: stringValueFromRecord(latestSchedulerProgressData, "whyThisNodeWasChosen"),
+            currentPhase:
+              stringValueFromRecord(latestSchedulerProgressData, "currentPhase") ??
+              stringValueFromRecord(latestSchedulerProgressData, "stage"),
+            validationState: stringValueFromRecord(latestSchedulerProgressData, "validationState"),
+            evidenceProducedRefs: stringArrayFromValue(
+              latestSchedulerProgressData?.evidenceProducedRefs,
+            ),
+            openCommitmentIds: stringArrayFromValue(
+              latestSchedulerProgressData?.remainingOpenCommitmentIds,
+            ),
+            nextDecisionNeeded: stringValueFromRecord(
+              latestSchedulerProgressData,
+              "nextDecisionNeeded",
+            ),
+            blockerSummary: stringValueFromRecord(latestSchedulerProgressData, "blockerSummary"),
+            eli5Progress: stringValueFromRecord(latestSchedulerProgressData, "eli5Progress"),
+            latestProgressEventRefs: schedulerProgressEvents
+              .slice(-6)
+              .map((event) => `runtime-event://${event.eventId}`),
+            rawPromptStored: false,
+            rawResponseStored: false,
+            rawProviderLogStored: false,
+            rawToolLogStored: false,
+          }
+        : { state: "missing" },
     } as JsonValue;
   }
 

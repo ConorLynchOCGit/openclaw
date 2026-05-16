@@ -483,6 +483,7 @@ export function buildIntentFrontDoorRouteWorkflowMenu(): string {
     "- single_agent.web_research: current-doc research, bounded citations/source refs.",
     "- agent_team.architecture: architecture/spec planning/review.",
     "- workflow.docs_skills: docs/skills updates.",
+    "- agent_team.product_spec_planning: product/spec planning, plan-only output, or child action graph proposals without automatic execution.",
   ].join("\n");
 }
 
@@ -501,6 +502,8 @@ export function buildLiveRouterSystemPrompt(): string {
     "- If prohibited or conditional actions appear only as constraints around an otherwise allowed primary outcome, route the primary outcome and represent those actions only as negatedActions or conditionalActions.",
     "- If a phrase can be read as a constraint or safety boundary rather than requested work, prefer the constraint reading and let downstream validators enforce it.",
     "- Do not turn validation uncertainty, missing approval, provider state, or later authority checks into route=blocked; classify the route and let deterministic gates fail closed after routing.",
+    "- For workflow_execution prompts, the Mission Contract Ledger will decompose safety constraints, prohibited directive candidates, authority boundaries, storage policy, lifecycle boundaries, and execution gates after runtime job creation. Do not duplicate that work in routing.",
+    "- Do not use route=blocked merely because a long prompt includes safety-boundary text such as do not deploy, no raw logs, do not mutate lifecycle, or do not promote models.",
     "- Do not downgrade an explicit work request to chat or plan because safety constraints are present.",
     "- Use clarification_required when the primary outcome, target, or scope is genuinely ambiguous after using bounded conversation context.",
     "- Use needs_review when the primary outcome is clear but high-risk review is needed before routing can proceed.",

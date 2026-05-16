@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { createHash } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import {
@@ -11,6 +12,7 @@ import {
   type CodexThreadStartResponse,
   type CodexTurn,
   type CodexTurnStartResponse,
+  createIsolatedCodexAppServerClient,
   getSharedCodexAppServerClient,
 } from "../../../codex/runtime-api.ts";
 import type { JsonValue } from "../runtime-job-repository.ts";
@@ -26,6 +28,27 @@ type ParityToolRuntime = {
   cwd: string;
   approvedScopeRefs: string[];
   validationCommandRefs: string[];
+};
+
+type NormalizedCodexProgressEvent = {
+  artifactKind: "codex_app_server_parity_progress_event";
+  method: string;
+  threadId: string;
+  turnId: string;
+  phase: string;
+  itemId?: string;
+  itemType?: string;
+  itemStatus?: string;
+  commandRef?: string;
+  fileRefs?: string[];
+  deltaBytes?: number;
+  deltaHash?: string;
+  errorCode?: string;
+  errorMessageHash?: string;
+  rawPromptStored: false;
+  rawResponseStored: false;
+  rawProviderLogStored: false;
+  rawToolLogStored: false;
 };
 
 function readString(record: Record<string, unknown>, key: string): string | undefined {
@@ -44,6 +67,98 @@ function boundedText(value: string, maxBytes = 24_000): string {
     return value;
   }
   return `${buffer.subarray(0, maxBytes).toString("utf8")}\n[bounded_truncation_applied]`;
+}
+
+function sha256Text(value: string): string {
+  return createHash("sha256").update(value).digest("hex");
+}
+
+function boundedStringArray(value: unknown, max = 20): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value
+    .filter((item): item is string => typeof item === "string" && item.trim().length > 0)
+    .map((item) => item.trim().slice(0, 500))
+    .slice(0, max);
+}
+
+function normalizeCodexProgressEvent(
+  notification: CodexServerNotification,
+  threadId: string,
+  turnId: string,
+): NormalizedCodexProgressEvent | null {
+  const params = notificationParamsForTurn(notification, threadId, turnId);
+  const completedTurn = completedTurnFromNotification(notification, threadId, turnId);
+  if (!params && !completedTurn) {
+    return null;
+  }
+  const item = params ? readRecord(params.item) : null;
+  const itemId =
+    (params ? (readString(params, "itemId") ?? readString(params, "id")) : undefined) ??
+    (typeof item?.id === "string" ? item.id : undefined);
+  const itemType = typeof item?.type === "string" ? item.type : undefined;
+  const itemStatus =
+    typeof item?.status === "string" ? item.status : (completedTurn?.status ?? undefined);
+  const delta = params ? readString(params, "delta") : undefined;
+  const commandRef =
+    typeof item?.command === "string"
+      ? item.command.slice(0, 500)
+      : typeof item?.cmd === "string"
+        ? item.cmd.slice(0, 500)
+        : undefined;
+  const fileRefs = [
+    ...boundedStringArray(item?.files),
+    ...boundedStringArray(item?.fileRefs),
+    ...(typeof item?.path === "string" ? [item.path.slice(0, 500)] : []),
+  ].slice(0, 20);
+  const errorMessage =
+    completedTurn?.error?.message ??
+    (params && typeof params.message === "string" ? params.message : undefined);
+  return {
+    artifactKind: "codex_app_server_parity_progress_event",
+    method: notification.method,
+    threadId,
+    turnId,
+    phase:
+      notification.method === "item/agentMessage/delta"
+        ? "agent_message_delta"
+        : notification.method === "item/reasoning/textDelta" ||
+            notification.method === "item/reasoning/summaryTextDelta"
+          ? "reasoning_delta"
+          : notification.method === "item/plan/delta" || notification.method === "turn/plan/updated"
+            ? "plan_updated"
+            : notification.method === "item/started"
+              ? "item_started"
+              : notification.method === "item/completed"
+                ? "item_completed"
+                : notification.method === "turn/completed"
+                  ? "turn_completed"
+                  : notification.method === "error"
+                    ? "error"
+                    : "notification",
+    ...(itemId ? { itemId } : {}),
+    ...(itemType ? { itemType } : {}),
+    ...(itemStatus ? { itemStatus } : {}),
+    ...(commandRef ? { commandRef } : {}),
+    ...(fileRefs.length > 0 ? { fileRefs } : {}),
+    ...(delta
+      ? {
+          deltaBytes: Buffer.byteLength(delta, "utf8"),
+          deltaHash: sha256Text(delta),
+        }
+      : {}),
+    ...(errorMessage
+      ? {
+          errorCode: "codex_app_server_notification_error",
+          errorMessageHash: sha256Text(errorMessage),
+        }
+      : {}),
+    rawPromptStored: false,
+    rawResponseStored: false,
+    rawProviderLogStored: false,
+    rawToolLogStored: false,
+  };
 }
 
 function validationProcessEnv(): NodeJS.ProcessEnv {
@@ -594,6 +709,7 @@ export type CodexAppServerParityExecutorOptions = {
   reasoningEffort?: "minimal" | "low" | "medium" | "high" | "xhigh";
   timeoutMs?: number;
   serviceTier?: string;
+  useSharedClient?: boolean;
 };
 
 export class CodexAppServerParityExecutor {
@@ -605,6 +721,7 @@ export class CodexAppServerParityExecutor {
     approvedScopeRefs?: string[];
     validationCommandRefs?: string[];
     callbacks?: SupervisorProcessCallbacks;
+    abortSignal?: AbortSignal;
   }): Promise<LiveCodexRunnerResult> {
     const runtime = resolveCodexAppServerRuntimeOptions();
     const timeoutMs = this.options.timeoutMs ?? Math.max(runtime.requestTimeoutMs, 3_600_000);
@@ -616,17 +733,56 @@ export class CodexAppServerParityExecutor {
     const startedAt = Date.now();
 
     try {
-      const client = await getSharedCodexAppServerClient({
-        startOptions: runtime.start,
-        timeoutMs,
-      });
+      const client = this.options.useSharedClient
+        ? await getSharedCodexAppServerClient({
+            startOptions: runtime.start,
+            timeoutMs,
+          })
+        : await createIsolatedCodexAppServerClient({
+            startOptions: runtime.start,
+            timeoutMs,
+          });
       let settle: (turn: CodexTurn) => void = () => undefined;
       let reject: (error: Error) => void = () => undefined;
+      let turnInterruptSent = false;
       const completion = new Promise<CodexTurn>((resolve, rejectCompletion) => {
         settle = resolve;
         reject = rejectCompletion;
       });
       let threadId: string | null = null;
+      const interruptActiveTurn = (reason: string): void => {
+        if (!threadId || !currentTurnId || turnInterruptSent) {
+          return;
+        }
+        turnInterruptSent = true;
+        void client
+          .request("turn/interrupt", { threadId, turnId: currentTurnId } as JsonValue, {
+            timeoutMs: 30_000,
+          })
+          .then(() =>
+            input.callbacks?.onCodexAppServerEvent?.({
+              artifactKind: "codex_app_server_parity_progress_event",
+              method: "turn/interrupt",
+              threadId,
+              turnId: currentTurnId,
+              phase: "turn_interrupt_sent",
+              reason,
+              rawPromptStored: false,
+              rawResponseStored: false,
+              rawProviderLogStored: false,
+              rawToolLogStored: false,
+            } as JsonValue),
+          )
+          .catch(() => undefined);
+      };
+      const abortListener = (): void => {
+        interruptActiveTurn("runtime_job_abort_signal");
+        reject(new Error("codex app-server parity turn aborted"));
+      };
+      if (input.abortSignal?.aborted) {
+        throw new Error("codex app-server parity turn aborted before start");
+      }
+      input.abortSignal?.addEventListener("abort", abortListener, { once: true });
       const toolRuntime: ParityToolRuntime = {
         cwd: input.descriptor.cwd,
         approvedScopeRefs: input.approvedScopeRefs ?? [],
@@ -638,6 +794,10 @@ export class CodexAppServerParityExecutor {
         if (!currentTurnId || !threadId) {
           pending.push(notification);
           return;
+        }
+        const progress = normalizeCodexProgressEvent(notification, threadId, currentTurnId);
+        if (progress) {
+          void input.callbacks?.onCodexAppServerEvent?.(progress as unknown as JsonValue);
         }
         const completed = captureNotification(state, notification, threadId, currentTurnId);
         if (completed) {
@@ -672,13 +832,14 @@ export class CodexAppServerParityExecutor {
         })) as unknown as JsonValue;
       });
       const timeout = setTimeout(() => {
+        interruptActiveTurn("codex_app_server_parity_turn_timeout");
         reject(new Error("codex app-server parity turn timed out"));
       }, timeoutMs);
       timeout.unref?.();
       const thread = await client.request<CodexThreadStartResponse>(
         "thread/start",
         {
-          model: this.options.model ?? "gpt-5.3-codex",
+          model: this.options.model ?? "gpt-5.5",
           modelProvider: "openai",
           cwd: input.descriptor.cwd,
           approvalPolicy: runtime.approvalPolicy,
@@ -703,6 +864,17 @@ export class CodexAppServerParityExecutor {
         { timeoutMs },
       );
       threadId = thread.thread.id;
+      await input.callbacks?.onCodexAppServerEvent?.({
+        artifactKind: "codex_app_server_parity_progress_event",
+        method: "thread/start",
+        threadId,
+        turnId: "pending",
+        phase: "thread_started",
+        rawPromptStored: false,
+        rawResponseStored: false,
+        rawProviderLogStored: false,
+        rawToolLogStored: false,
+      } as JsonValue);
       const turn = await client.request<CodexTurnStartResponse>(
         "turn/start",
         {
@@ -711,7 +883,7 @@ export class CodexAppServerParityExecutor {
           cwd: input.descriptor.cwd,
           approvalPolicy: runtime.approvalPolicy,
           approvalsReviewer: runtime.approvalsReviewer,
-          model: this.options.model ?? thread.model ?? "gpt-5.3-codex",
+          model: this.options.model ?? thread.model ?? "gpt-5.5",
           ...((this.options.serviceTier ?? runtime.serviceTier)
             ? { serviceTier: this.options.serviceTier ?? runtime.serviceTier }
             : {}),
@@ -720,6 +892,17 @@ export class CodexAppServerParityExecutor {
         { timeoutMs },
       );
       currentTurnId = turn.turn.id;
+      await input.callbacks?.onCodexAppServerEvent?.({
+        artifactKind: "codex_app_server_parity_progress_event",
+        method: "turn/start",
+        threadId,
+        turnId: currentTurnId,
+        phase: "turn_started",
+        rawPromptStored: false,
+        rawResponseStored: false,
+        rawProviderLogStored: false,
+        rawToolLogStored: false,
+      } as JsonValue);
       if (
         turn.turn.status === "completed" ||
         turn.turn.status === "failed" ||
@@ -738,6 +921,10 @@ export class CodexAppServerParityExecutor {
         clearTimeout(timeout);
         off();
         offRequests();
+        input.abortSignal?.removeEventListener("abort", abortListener);
+        if (!this.options.useSharedClient) {
+          client.close();
+        }
       });
       const finalMessage = finalAssistantText(completedTurn, state);
       const failed = completedTurn.status === "failed" || completedTurn.status === "interrupted";

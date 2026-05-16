@@ -9,6 +9,9 @@ export type WorkQueueProps = {
   searchQuery: string;
   loading: boolean;
   error: string | null;
+  pushMode?: "idle" | "subscribed" | "fallback_polling" | "gap_replaying";
+  pushError?: string | null;
+  eventCursor?: number | null;
   notifications: Array<{
     id: string;
     kind: "success" | "error";
@@ -33,6 +36,12 @@ export type WorkQueueProps = {
   onPauseExecution?: (object: WorkQueueObject) => Promise<unknown> | void;
   onRedirectExecution?: (object: WorkQueueObject) => Promise<unknown> | void;
   onCancelExecution?: (object: WorkQueueObject) => Promise<unknown> | void;
+  onSubmitHumanTaskResponse?: (input: {
+    object: WorkQueueObject;
+    graphId: string;
+    humanTaskId: string;
+    boundedResponseRef: string;
+  }) => Promise<unknown> | void;
 };
 
 const FILTERS: Array<{ id: WorkQueueFilter; label: string }> = [
@@ -41,8 +50,8 @@ const FILTERS: Array<{ id: WorkQueueFilter; label: string }> = [
   { id: "skills", label: "Skills" },
   { id: "tooling", label: "Tooling" },
   { id: "user_review", label: "User review" },
-  { id: "ready_to_execute", label: "Ready to execute" },
-  { id: "dismissed", label: "Dismissed" },
+  { id: "ready_to_execute", label: "Closed" },
+  { id: "dismissed", label: "Archived" },
   { id: "diagnostics", label: "Diagnostics" },
 ];
 
@@ -51,7 +60,7 @@ const DEFAULT_VISIBLE_ITEMS = 10;
 function groupLabelForFilter(filter: WorkQueueFilter, items: WorkQueueObject[]): string | null {
   switch (filter) {
     case "ready_to_execute":
-      return "Ready to Execute";
+      return "Closed";
     case "dismissed":
       return "Dismissed";
     case "diagnostics":
@@ -112,6 +121,8 @@ function renderNotifications(props: WorkQueueProps) {
 
 function renderListItem(props: WorkQueueProps, item: WorkQueueObject) {
   const selected = props.selectedObject?.id === item.id;
+  const displayTitle =
+    item.queuePosition === null ? item.title : `${item.queuePosition}. ${item.title}`;
   return html`
     <button
       type="button"
@@ -119,10 +130,13 @@ function renderListItem(props: WorkQueueProps, item: WorkQueueObject) {
       @click=${() => props.onSelectObject(item.id)}
     >
       <div class="work-queue-list-item__top">
+        ${item.queuePosition === null
+          ? nothing
+          : html`<span class="work-queue-chip">#${item.queuePosition}</span>`}
         <span class="work-queue-chip">${item.laneLabel}</span>
         <span class="work-queue-chip work-queue-chip--priority">${item.priorityBand}</span>
       </div>
-      <div class="work-queue-list-item__title">${item.title}</div>
+      <div class="work-queue-list-item__title">${displayTitle}</div>
       <div class="work-queue-list-item__summary">${item.summary}</div>
       <div class="work-queue-list-item__meta">
         <span>${item.statusLabel}</span>
@@ -211,7 +225,7 @@ function renderConvergenceSliceTracker(item: WorkQueueObject) {
       </div>
       <div class="work-queue-evidence-grid">
         <div>
-          <strong>Slice</strong>
+          <strong>Technical id</strong>
           <div>${slice.sliceId}</div>
         </div>
         <div>
@@ -282,6 +296,14 @@ function renderEvidence(item: WorkQueueObject) {
           <strong>Source refs</strong>
           <div>${item.sourceRefs.join(", ") || "None"}</div>
         </div>
+        ${item.stableTechnicalId
+          ? html`
+              <div>
+                <strong>Technical id</strong>
+                <div>${item.stableTechnicalId}</div>
+              </div>
+            `
+          : nothing}
         <div>
           <strong>Authority tiers</strong>
           <div>${item.authorityTiers.join(", ") || "None"}</div>
@@ -352,6 +374,16 @@ function runtimeGraphImplementationReadinessSummary(
   const implementationRole = modelRolesWithArtifacts.find(
     (role) => role.roleId === "implementation_engineer",
   );
+  const kimiImplementationRoles = modelRolesWithArtifacts.filter(
+    (role) =>
+      role.roleId === "implementation_engineer" && role.modelRef.toLowerCase().includes("kimi"),
+  );
+  const codexImplementationRoles = modelRolesWithArtifacts.filter(
+    (role) =>
+      role.roleId === "implementation_engineer" &&
+      !role.modelRef.toLowerCase().includes("kimi") &&
+      role.modelRef.toLowerCase().includes("codex"),
+  );
   const readinessParts = [
     `${approvedParentPlanCount} approved parent plan ${approvedParentPlanCount === 1 ? "ref" : "refs"}`,
     `${codingChildrenWithReadback.length}/${codingChildren.length} coding child actions carry runtime/readback links`,
@@ -370,16 +402,57 @@ function runtimeGraphImplementationReadinessSummary(
   readinessParts.push(
     `${modelRolesWithArtifacts.length}/${runtimeGraph.roleInvocations.length} model roles emitted bounded artifact evidence${modelEvidenceSummary ? ` (${modelEvidenceSummary})` : ""}`,
   );
+  readinessParts.push(
+    kimiImplementationRoles.length > 0
+      ? `Kimi standard implementation lane recorded (${kimiImplementationRoles.length} invocation${kimiImplementationRoles.length === 1 ? "" : "s"})`
+      : "Kimi standard implementation lane not yet recorded",
+  );
+  if (codexImplementationRoles.length > 0) {
+    readinessParts.push(
+      `Codex follow-up lane recorded (${codexImplementationRoles.length} invocation${codexImplementationRoles.length === 1 ? "" : "s"})`,
+    );
+  }
   if (planningRole && implementationRole) {
     readinessParts.push(
       `planning/implementation handoff visible (${planningRole.roleId} via ${planningRole.modelRef} -> ${implementationRole.roleId} via ${implementationRole.modelRef})`,
     );
   }
-  return `${readinessParts.join("; ")}.`;
+  const readinessSummary = `${readinessParts.join("; ")}.`;
+  const legacyReadbackSummary = runtimeGraphLegacyImplementationReadinessSummary(readinessSummary);
+  return legacyReadbackSummary === readinessSummary
+    ? readinessSummary
+    : `${legacyReadbackSummary} ${readinessSummary}`;
+}
+
+function runtimeGraphLegacyImplementationReadinessSummary(summary: string): string {
+  return summary
+    .replace(/; Kimi standard implementation lane recorded \(\d+ invocations?\)/u, "")
+    .replace(/; Kimi standard implementation lane not yet recorded/u, "")
+    .replace(/; Codex follow-up lane recorded \(\d+ invocations?\)/u, "")
+    .replace(/;\s+; /u, "; ")
+    .replace(/\s+/gu, " ")
+    .trim();
 }
 
 function isValidationLikeRef(value: string): boolean {
   return value.startsWith("validation://") || /^pnpm test:file\b/u.test(value);
+}
+
+const VALIDATION_REPAIR_REASON_CODE_LABELS: Record<string, string> = {
+  invalid_no_op_repair_for_failed_validation_corrected:
+    "corrected no-op repair linked to passed rerun evidence",
+};
+
+function validationRepairReasonCodeSummary(reasonCodes: string[]): string {
+  if (reasonCodes.length === 0) {
+    return "";
+  }
+  const summaryCodes = reasonCodes
+    .map((value) => value.trim())
+    .filter((value) => value.length > 0)
+    .slice(0, 2)
+    .map((code) => VALIDATION_REPAIR_REASON_CODE_LABELS[code] ?? code);
+  return summaryCodes.length > 0 ? ` [${summaryCodes.join(", ")}]` : "";
 }
 
 function runtimeGraphChildReadbackRef(
@@ -404,11 +477,12 @@ function runtimeGraphValidationReadbackSummary(
   }
   const recentLoops = runtimeGraph.validationRepairLoops
     .slice(0, 2)
-    .map((entry) =>
-      entry.repairNodeRef
-        ? `${entry.status}: ${entry.validationRef} -> ${entry.repairNodeRef}`
-        : `${entry.status}: ${entry.validationRef}`,
-    )
+    .map((entry) => {
+      const reasonCodes = validationRepairReasonCodeSummary(entry.reasonCodes);
+      return entry.repairNodeRef
+        ? `${entry.status}: ${entry.validationRef} -> ${entry.repairNodeRef}${reasonCodes}`
+        : `${entry.status}: ${entry.validationRef}${reasonCodes}`;
+    })
     .join(" | ");
   return `${runtimeGraph.validationRepairLoops.length} loop(s) recorded; ${recentLoops}`;
 }
@@ -428,6 +502,204 @@ function runtimeGraphParentChildReadbackSummary(
   return childReadbacks.length > 0
     ? `${parentPlanRef} -> ${childReadbacks.join(" | ")}`
     : `${parentPlanRef} -> no child readback links recorded`;
+}
+
+type ExecutionSummary = NonNullable<WorkQueueObject["execution"]>;
+
+function planningCapsuleCompileReadiness(execution: ExecutionSummary): string {
+  if (execution.ownerProgressReadback?.currentStage) {
+    const stage = execution.ownerProgressReadback.currentStage;
+    if (/compile/u.test(stage)) {
+      return `owner stage indicates compile readiness work (${stage})`;
+    }
+  }
+  const compilerOutcome = execution.workflow?.routing?.compilerOutcome;
+  if (compilerOutcome) {
+    return compilerOutcome;
+  }
+  if (
+    execution.runtimeGraph?.childActions.some((child) =>
+      child.assignedWorkflow.includes("planning"),
+    )
+  ) {
+    return "planning graph present; compile readiness pending";
+  }
+  return "compile readiness not recorded";
+}
+
+function planningSeedRecord(seed: unknown): Record<string, unknown> | null {
+  return seed && typeof seed === "object" ? (seed as Record<string, unknown>) : null;
+}
+
+function boundedSeedString(value: unknown): string | null {
+  if (typeof value !== "string") {
+    return null;
+  }
+  const normalized = value.trim();
+  return normalized.length > 0 ? normalized : null;
+}
+
+function planningSeedEvidenceRef(seed: unknown): string | null {
+  const record = planningSeedRecord(seed);
+  if (!record || !Array.isArray(record.evidenceRefs)) {
+    return null;
+  }
+  const firstRef = record.evidenceRefs.find((value) => typeof value === "string");
+  return typeof firstRef === "string" ? firstRef : null;
+}
+
+function planningSeedCoverageSummary(seeds: unknown[]): string {
+  if (seeds.length === 0) {
+    return "0 total";
+  }
+  const highConfidenceCount = seeds.filter((seed) => {
+    const record = planningSeedRecord(seed);
+    return (boundedSeedString(record?.confidence) ?? "").toLowerCase().includes("high");
+  }).length;
+  return `${seeds.length} total (high=${highConfidenceCount})`;
+}
+
+function boundedUnknownStringArray(value: unknown, limit = 12): string[] {
+  return Array.isArray(value)
+    ? value.filter((entry): entry is string => typeof entry === "string").slice(0, limit)
+    : [];
+}
+
+function planningCapsuleIntakeReadback(execution: ExecutionSummary) {
+  const runtimeGraph = execution.runtimeGraph;
+  const ownerReadbackRecord = planningSeedRecord(
+    (execution as Record<string, unknown>).ownerReadback,
+  );
+  const ownerPlanningWorkflowRefs = boundedUnknownStringArray(
+    ownerReadbackRecord?.planningWorkflowRefs,
+    12,
+  );
+  const ownerChildActionProposalRefs = boundedUnknownStringArray(
+    ownerReadbackRecord?.childActionProposalRefs,
+    12,
+  );
+  const ownerHumanDecisionRefs = boundedUnknownStringArray(
+    ownerReadbackRecord?.humanDecisionRefs,
+    12,
+  );
+  const opportunitySeeds = Array.isArray(execution.closeoutCapsule?.opportunitySeeds)
+    ? execution.closeoutCapsule.opportunitySeeds
+    : [];
+  const seedCoverageSummary = planningSeedCoverageSummary(opportunitySeeds);
+  const closeoutCapsuleRuntimeRef =
+    execution.closeoutCapsule?.factualRefs?.runtimeJobId && execution.closeoutCapsule?.capsuleId
+      ? `runtime-job://${execution.closeoutCapsule.factualRefs.runtimeJobId}/closeout-capsule/${execution.closeoutCapsule.capsuleId}`
+      : null;
+  const primarySeed = opportunitySeeds[0],
+    seedRecord = planningSeedRecord(primarySeed),
+    seedRationale = boundedSeedString(seedRecord?.rationale),
+    seedRecommendedStep = boundedSeedString(primarySeed?.recommendedNextStep),
+    seedEvidenceRef = planningSeedEvidenceRef(primarySeed),
+    seedConfidence = boundedSeedString(primarySeed?.confidence);
+  const seedKind = boundedSeedString(seedRecord?.kind);
+  const seedTitle = boundedSeedString(seedRecord?.title);
+  const seedIdentity = [seedKind, seedTitle]
+    .filter((value): value is string => Boolean(value))
+    .join(": ");
+  const seedNarrative = [
+    seedIdentity ? `seed=${seedIdentity}` : null,
+    seedRationale,
+    seedRecommendedStep,
+  ]
+    .filter((value): value is string => Boolean(value))
+    .join(" | ");
+  const opportunitySeedRationale =
+    (seedNarrative || null) ??
+    runtimeGraph?.ownerObjectiveSummary ??
+    execution.closeoutCapsule?.humanReport?.reportMarkdown ??
+    "not recorded";
+  const opportunitySeedRationaleSummary =
+    seedConfidence && seedEvidenceRef
+      ? `${opportunitySeedRationale} (confidence=${seedConfidence}; seed_ref=${seedEvidenceRef})`
+      : seedConfidence
+        ? `${opportunitySeedRationale} (confidence=${seedConfidence})`
+        : seedEvidenceRef
+          ? `${opportunitySeedRationale} (seed_ref=${seedEvidenceRef})`
+          : opportunitySeedRationale;
+  const qualityReviewState = [
+    `workflow=${execution.reviewStatus}`,
+    `owner=${execution.ownerProgressReadback?.state ?? "unknown"}`,
+    `quality=${execution.closeoutCapsule?.structuredSummary?.qualityAssessment ?? "unknown"}`,
+    `validation=${execution.ownerProgressReadback?.validationEvidenceState ?? execution.validationStatus ?? "unknown"}`,
+    `closeout=${execution.ownerProgressReadback?.closeoutEvidenceState ?? execution.closeoutStatus ?? "unknown"}`,
+    `planning_owner=${boundedSeedString(ownerReadbackRecord?.state) ?? "unknown"}`,
+    `seeds=${seedCoverageSummary}`,
+  ].join("; ");
+  const planningRefPattern = /(?:planning|plan|child-action|runtime-work-graph|version)/iu;
+  const planningCapsuleRef =
+    uniqueRefs(
+      [
+        ...(runtimeGraph?.approvedPlanRefs ?? []),
+        ...(runtimeGraph?.artifactRefs ?? []).filter((ref) => planningRefPattern.test(ref)),
+        ...ownerPlanningWorkflowRefs,
+        ...ownerChildActionProposalRefs,
+        ...ownerHumanDecisionRefs.filter((ref) => planningRefPattern.test(ref)),
+        closeoutCapsuleRuntimeRef,
+        runtimeGraph?.graphId ? `runtime-graph://${runtimeGraph.graphId}` : null,
+        execution.workflow?.artifactRefs.find((ref) => planningRefPattern.test(ref)) ?? null,
+        execution.artifactRefs.find((ref) => planningRefPattern.test(ref)) ?? null,
+      ],
+      12,
+    ).join(" | ") || "not recorded";
+  const proposedChildActions =
+    runtimeGraph?.childActions.slice(0, 3).map((child) => {
+      const childRef =
+        child.runtimeJobId ?? child.graphNodeRef ?? child.evidenceRefs[0] ?? "not linked";
+      return `${child.title ?? child.workItemId} (${child.assignedWorkflow} -> ${childRef})`;
+    }) ??
+    runtimeGraph?.roleInvocations.slice(0, 3).map((role) => {
+      const roleRef = role.modelRunRef ?? role.producedArtifactRefs[0] ?? "not linked";
+      return `${role.roleId} (${role.modelRef} -> ${roleRef})`;
+    }) ??
+    [];
+  const implementationAttempts =
+    runtimeGraph?.roleInvocations.filter((role) => role.roleId === "implementation_engineer") ?? [];
+  const implementationAttemptSummary =
+    implementationAttempts.length > 0
+      ? `${implementationAttempts.length} attempt(s): ${implementationAttempts.map((role) => role.modelRef).join(", ")}; statuses=${implementationAttempts.map((role) => `${role.modelRef}:${role.status}`).join(", ")}${implementationAttempts.some((role) => role.modelRef.toLowerCase().includes("kimi")) ? `; kimi=${implementationAttempts.filter((role) => role.modelRef.toLowerCase().includes("kimi")).length}` : ""}${implementationAttempts.some((role) => role.modelRef.toLowerCase().includes("codex")) ? `; codex=${implementationAttempts.filter((role) => role.modelRef.toLowerCase().includes("codex")).length}` : ""}`
+      : "no implementation worker attempt recorded";
+  const validationRepairSummary =
+    runtimeGraph && runtimeGraph.validationRepairLoops.length > 0
+      ? runtimeGraph.validationRepairLoops
+          .slice(0, 2)
+          .map((entry) => {
+            const reasonCodes = validationRepairReasonCodeSummary(entry.reasonCodes);
+            if (entry.repairNodeRef) {
+              return `${entry.status}: ${entry.validationRef} -> ${entry.repairNodeRef}${reasonCodes}`;
+            }
+            return `${entry.status}: ${entry.validationRef}${reasonCodes}`;
+          })
+          .join(" | ")
+      : `${execution.validationStatus} (no validation/repair loop refs)`;
+  const finalCloseoutRef =
+    runtimeGraph?.finalCloseoutRef ??
+    runtimeGraph?.closeoutRef ??
+    closeoutCapsuleRuntimeRef ??
+    execution.closeoutCapsule?.capsuleId ??
+    execution.closeoutStatus;
+  const finalCloseout = `${finalCloseoutRef ?? "not recorded"} (state=${execution.closeoutStatus})`;
+  const eli5Progress =
+    execution.ownerProgressReadback?.eli5Progress ??
+    runtimeGraph?.eli5Progress ??
+    execution.closeoutCapsule?.humanReport?.eli5Progress ??
+    "unknown";
+  return {
+    opportunitySeedRationale: opportunitySeedRationaleSummary,
+    opportunitySeedCoverage: seedCoverageSummary,
+    qualityReviewState,
+    planningCapsuleRef,
+    proposedChildActions,
+    compileReadiness: planningCapsuleCompileReadiness(execution),
+    implementationAttemptSummary,
+    validationRepairSummary,
+    finalCloseout,
+    eli5Progress,
+  };
 }
 
 function uniqueRefs(values: Array<string | null | undefined>, maxItems = 10): string[] {
@@ -844,6 +1116,7 @@ function renderExecutionTruth(props: WorkQueueProps, item: WorkQueueObject) {
     return nothing;
   }
   const skillifier = skillifierRuntimeViewModel(item);
+  const planningCapsuleIntake = planningCapsuleIntakeReadback(execution);
   const hasRuntimeJob = Boolean(execution.runtimeJobId);
   const serverBackedControlsAvailable =
     props.onPauseExecution && props.onRedirectExecution && props.onCancelExecution;
@@ -1004,6 +1277,144 @@ function renderExecutionTruth(props: WorkQueueProps, item: WorkQueueObject) {
         ${execution.uiMutationAllowed ? "available" : "not available"}. Controls are runtime-backed
         and never mark lifecycle directly.
       </p>
+      ${execution.ownerProgressReadback
+        ? html`
+            <div class="work-queue-detail-section__subsection">
+              <div class="work-queue-detail-section__header">
+                <h4>Owner progress</h4>
+                <span class="work-queue-detail-section__meta">
+                  ${execution.ownerProgressReadback.state}
+                </span>
+              </div>
+              <p class="work-queue-detail-summary">${execution.ownerProgressReadback.headline}</p>
+              <div class="work-queue-evidence-grid">
+                <div>
+                  <strong>Stage</strong>
+                  <div>${execution.ownerProgressReadback.currentStage}</div>
+                </div>
+                <div>
+                  <strong>Worker</strong>
+                  <div>${execution.ownerProgressReadback.activeWorker ?? "None"}</div>
+                </div>
+                <div>
+                  <strong>Model</strong>
+                  <div>${execution.ownerProgressReadback.activeModelRef ?? "Unknown"}</div>
+                </div>
+                <div>
+                  <strong>Validation evidence</strong>
+                  <div>${execution.ownerProgressReadback.validationEvidenceState}</div>
+                </div>
+                <div>
+                  <strong>Changed files</strong>
+                  <div>${execution.ownerProgressReadback.changedFileState}</div>
+                </div>
+                <div>
+                  <strong>Closeout evidence</strong>
+                  <div>${execution.ownerProgressReadback.closeoutEvidenceState}</div>
+                </div>
+              </div>
+              <p class="work-queue-detail-summary">
+                ${execution.ownerProgressReadback.eli5Progress}
+              </p>
+              <p class="work-queue-detail-summary">
+                Next: ${execution.ownerProgressReadback.nextAction}
+              </p>
+              ${execution.ownerProgressReadback.activeGraphProgress?.state === "present"
+                ? html`
+                    <div class="work-queue-detail-section__subsection">
+                      <div class="work-queue-detail-section__header">
+                        <h4>Runtime graph progress</h4>
+                        <span class="work-queue-detail-section__meta">
+                          ${execution.ownerProgressReadback.activeGraphProgress.currentPhase ??
+                          "active"}
+                        </span>
+                      </div>
+                      <div class="work-queue-evidence-grid">
+                        <div>
+                          <strong>Active node</strong>
+                          <div>
+                            ${execution.ownerProgressReadback.activeGraphProgress.activeNodeId ??
+                            "Unknown"}
+                          </div>
+                        </div>
+                        <div>
+                          <strong>Role</strong>
+                          <div>
+                            ${execution.ownerProgressReadback.activeGraphProgress.roleId ??
+                            "Unknown"}
+                          </div>
+                        </div>
+                        <div>
+                          <strong>Model</strong>
+                          <div>
+                            ${execution.ownerProgressReadback.activeGraphProgress.modelRef ??
+                            "Unknown"}
+                          </div>
+                        </div>
+                        <div>
+                          <strong>Tool event</strong>
+                          <div>
+                            ${execution.ownerProgressReadback.activeGraphProgress
+                              .latestToolEventKind ??
+                            execution.ownerProgressReadback.activeGraphProgress.schedulerToolTrace
+                              .latestToolId ??
+                            execution.ownerProgressReadback.activeGraphProgress.workerToolTrace
+                              .latestWorkerToolId ??
+                            "None"}
+                          </div>
+                        </div>
+                        <div>
+                          <strong>Validation</strong>
+                          <div>
+                            ${execution.ownerProgressReadback.activeGraphProgress.validationState ??
+                            "Unknown"}
+                          </div>
+                        </div>
+                        <div>
+                          <strong>Open commitments</strong>
+                          <div>
+                            ${execution.ownerProgressReadback.activeGraphProgress.openCommitmentIds
+                              .length}
+                          </div>
+                        </div>
+                      </div>
+                      <p class="work-queue-detail-summary">
+                        ${execution.ownerProgressReadback.activeGraphProgress.objective ??
+                        "No current objective recorded."}
+                      </p>
+                      <p class="work-queue-detail-summary">
+                        Why:
+                        ${execution.ownerProgressReadback.activeGraphProgress.whySelected ??
+                        "No selection rationale recorded."}
+                      </p>
+                      ${execution.ownerProgressReadback.activeGraphProgress.evidenceClaimRefs
+                        .length > 0
+                        ? html`
+                            <p class="work-queue-detail-summary">
+                              Evidence claims:
+                              ${execution.ownerProgressReadback.activeGraphProgress.evidenceClaimRefs
+                                .slice(0, 5)
+                                .join(", ")}
+                            </p>
+                          `
+                        : nothing}
+                      ${execution.ownerProgressReadback.activeGraphProgress.workerToolTrace
+                        .workerToolIds.length > 0
+                        ? html`
+                            <p class="work-queue-detail-summary">
+                              Worker tools:
+                              ${execution.ownerProgressReadback.activeGraphProgress.workerToolTrace.workerToolIds
+                                .slice(0, 6)
+                                .join(", ")}
+                            </p>
+                          `
+                        : nothing}
+                    </div>
+                  `
+                : nothing}
+            </div>
+          `
+        : nothing}
       ${execution.humanCloseoutSummary && !execution.agentTeam?.humanCloseoutSummary
         ? html`
             <div class="work-queue-detail-section__subsection">
@@ -1061,6 +1472,55 @@ function renderExecutionTruth(props: WorkQueueProps, item: WorkQueueObject) {
               <pre class="work-queue-detail-prewrap">
 ${execution.closeoutCapsule.humanReport.reportMarkdown ?? ""}</pre
               >
+            </div>
+          `
+        : nothing}
+      ${execution.runtimeGraph || execution.closeoutCapsule?.opportunitySeeds?.length
+        ? html`
+            <div class="work-queue-detail-section__subsection">
+              <h4>Planning Capsule intake</h4>
+              <div class="work-queue-evidence-grid">
+                <div>
+                  <strong>Opportunity seed rationale</strong>
+                  <div>${planningCapsuleIntake.opportunitySeedRationale}</div>
+                </div>
+                <div>
+                  <strong>Opportunity seed coverage</strong>
+                  <div>${planningCapsuleIntake.opportunitySeedCoverage}</div>
+                </div>
+                <div>
+                  <strong>Quality review state</strong>
+                  <div>${planningCapsuleIntake.qualityReviewState}</div>
+                </div>
+                <div>
+                  <strong>Planning Capsule ref</strong>
+                  <div>${planningCapsuleIntake.planningCapsuleRef}</div>
+                </div>
+                <div>
+                  <strong>Proposed child actions</strong>
+                  <div>${planningCapsuleIntake.proposedChildActions.join(" | ") || "None"}</div>
+                </div>
+                <div>
+                  <strong>Compile readiness</strong>
+                  <div>${planningCapsuleIntake.compileReadiness}</div>
+                </div>
+                <div>
+                  <strong>Implementation attempts</strong>
+                  <div>${planningCapsuleIntake.implementationAttemptSummary}</div>
+                </div>
+                <div>
+                  <strong>Validation/repair evidence</strong>
+                  <div>${planningCapsuleIntake.validationRepairSummary}</div>
+                </div>
+                <div>
+                  <strong>Final closeout</strong>
+                  <div>${planningCapsuleIntake.finalCloseout}</div>
+                </div>
+                <div>
+                  <strong>ELI5 progress</strong>
+                  <div>${planningCapsuleIntake.eli5Progress}</div>
+                </div>
+              </div>
             </div>
           `
         : nothing}
@@ -1389,6 +1849,24 @@ ${execution.closeoutCapsule.humanReport.reportMarkdown ?? ""}</pre
                         <strong>${task.humanTaskId}</strong>
                         <div>${task.state}</div>
                         <div>${task.resumeTokenRef ?? "no resume ref"}</div>
+                        ${props.onSubmitHumanTaskResponse &&
+                        (task.state === "waiting" || task.state === "pending")
+                          ? html`
+                              <button
+                                type="button"
+                                class="btn btn--secondary btn--sm"
+                                @click=${() =>
+                                  props.onSubmitHumanTaskResponse?.({
+                                    object: item,
+                                    graphId: execution.runtimeGraph!.graphId,
+                                    humanTaskId: task.humanTaskId,
+                                    boundedResponseRef: `owner-decision://work-queue/${task.humanTaskId}/ui-resume`,
+                                  })}
+                              >
+                                Resume with owner decision
+                              </button>
+                            `
+                          : nothing}
                       </li>
                     `,
                   )}
@@ -1655,6 +2133,22 @@ ${execution.agentTeam.closeoutCapsule.humanReport.reportMarkdown ?? ""}</pre
 
 function renderActionBar(props: WorkQueueProps, item: WorkQueueObject) {
   const revisionValue = props.revisionDrafts[item.id] ?? "";
+  const dbBacked = item.sourceRefs.some((ref) => ref.startsWith("work-queue-db://"));
+  if (dbBacked) {
+    return html`
+      <section class="work-queue-detail-section">
+        <div class="work-queue-actions">
+          <button type="button" class="btn btn--secondary" @click=${() => props.onRefresh()}>
+            Refresh runtime readback
+          </button>
+        </div>
+        <p class="work-queue-detail-summary">
+          Actions for this item are driven by runtime jobs, Closeout Capsules, and human task resume
+          nodes. Code edits are not required to update queue status.
+        </p>
+      </section>
+    `;
+  }
   return html`
     <section class="work-queue-detail-section">
       <div class="work-queue-actions">
@@ -1769,11 +2263,13 @@ function renderDetail(props: WorkQueueProps) {
       </section>
     `;
   }
+  const displayTitle =
+    item.queuePosition === null ? item.title : `${item.queuePosition}. ${item.title}`;
   return html`
     <section class="work-queue-detail">
       <header class="work-queue-detail__header">
         <div class="work-queue-detail__eyebrow">${item.laneLabel} · ${item.objectClassLabel}</div>
-        <h2>${item.title}</h2>
+        <h2>${displayTitle}</h2>
         <div class="work-queue-detail__meta">
           <span class="work-queue-chip">${item.statusLabel}</span>
           <span class="work-queue-chip work-queue-chip--priority">${item.priorityBand}</span>
@@ -1804,6 +2300,17 @@ export function renderWorkQueue(props: WorkQueueProps): TemplateResult {
         <div>
           <div class="page-title">Work Queue</div>
           <div class="page-sub">Review durable plans, skills, and manual execution handoffs.</div>
+          <div class="work-queue-page__push-status">
+            ${props.pushMode === "subscribed"
+              ? "Live updates connected"
+              : props.pushMode === "gap_replaying"
+                ? "Replaying missed updates"
+                : "Live updates using bounded polling fallback"}
+            ${typeof props.eventCursor === "number"
+              ? html` · cursor ${props.eventCursor}`
+              : nothing}
+            ${props.pushError ? html` · ${props.pushError}` : nothing}
+          </div>
         </div>
         <div class="work-queue-page__controls">
           <input

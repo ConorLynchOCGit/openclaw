@@ -1,5 +1,4 @@
 import type { JsonValue } from "../runtime-job-repository.ts";
-import { seedOpenClawConvergenceSliceTracker } from "../work-queue/convergence-slice-tracker.ts";
 import type { WorkQueueRepository } from "../work-queue/work-queue-repository.ts";
 import { listExecutionPlatformMigrationFiles } from "./migrations.ts";
 import type { ExecutionPlatformDatabaseResolution } from "./runtime.ts";
@@ -171,6 +170,10 @@ const REQUIRED_TABLES: Array<{
     store: "workQueueItems",
     tableClass: "work_queue",
   },
+  { tableName: "runtime_tool_definitions", store: "runtimeEvents", tableClass: "runtime" },
+  { tableName: "runtime_tool_invocations", store: "runtimeEvents", tableClass: "runtime" },
+  { tableName: "runtime_tool_events", store: "runtimeEvents", tableClass: "runtime" },
+  { tableName: "runtime_tool_artifacts", store: "runtimeArtifacts", tableClass: "runtime" },
 ];
 
 function allowedStoresForCapability(
@@ -534,20 +537,16 @@ export async function seedConvergenceTrackerWhenDbReady(input: {
       rawLogsStored: false,
     };
   }
-  const seeded = await seedOpenClawConvergenceSliceTracker({
-    workQueue: input.workQueue,
-    actorId: input.actorId ?? "system:execution-platform-db-boundary",
-  });
   return {
     artifactKind: "convergence_tracker_seed_readiness_result",
-    accepted: true,
-    seeded: true,
-    created: seeded.created,
-    existing: seeded.existing,
-    updated: seeded.updated,
-    sliceIds: seeded.sliceIds,
+    accepted: false,
+    seeded: false,
+    created: 0,
+    existing: 0,
+    updated: 0,
+    sliceIds: [],
     readiness: input.readiness,
-    reasonCodes: ["convergence_tracker_seed_completed"],
+    reasonCodes: ["source_code_convergence_tracker_retired_db_primary_work_queue_truth"],
     runtimeJobsCreated: false,
     authorityGranted: false,
     controlsApplied: false,

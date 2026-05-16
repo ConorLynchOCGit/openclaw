@@ -302,7 +302,7 @@ describe("execution platform DB readiness", () => {
     });
   });
 
-  it("seeds convergence tracker only when readiness permits and remains idempotent", async () => {
+  it("keeps legacy convergence tracker seeding retired even when readiness permits", async () => {
     await withPgMem(async ({ sql }) => {
       await applyExecutionPlatformMigrations(sql);
       const runtimeJobs = new RuntimeJobRepository(sql, { claimStrategy: "basic" });
@@ -316,20 +316,23 @@ describe("execution platform DB readiness", () => {
       const readback = await workQueue.readWorkQueue(100);
 
       expect(first).toMatchObject({
-        accepted: true,
-        seeded: true,
-        created: 74,
+        accepted: false,
+        seeded: false,
+        created: 0,
         existing: 0,
         updated: 0,
       });
       expect(second).toMatchObject({
-        accepted: true,
-        seeded: true,
+        accepted: false,
+        seeded: false,
         created: 0,
-        existing: 74,
-        updated: 74,
+        existing: 0,
+        updated: 0,
       });
-      expect(readback.filter((item) => item.convergenceSlice)).toHaveLength(74);
+      expect(first.reasonCodes).toContain(
+        "source_code_convergence_tracker_retired_db_primary_work_queue_truth",
+      );
+      expect(readback.filter((item) => item.convergenceSlice)).toHaveLength(0);
       expect(readback.flatMap((item) => item.runtimeJobIds)).toEqual([]);
       expect(first.runtimeJobsCreated).toBe(false);
       expect(first.workQueueLifecycleMutated).toBe(false);

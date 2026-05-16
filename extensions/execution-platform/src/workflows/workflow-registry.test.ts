@@ -86,6 +86,20 @@ describe("workflow registry", () => {
         productionModelPromotionAllowed: false,
       },
     });
+    expect(
+      getWorkflowContract(DEFAULT_EXECUTION_WORKFLOW_REGISTRY, "agent_team.product_spec_planning"),
+    ).toMatchObject({
+      jobType: "executor.workflow",
+      defaultAuthorityProfile: "read_only",
+      workQueueProjection: {
+        lifecycleMutationAllowed: false,
+      },
+      productionSideEffectPolicy: {
+        externalOutboundWriteAllowed: false,
+        productionDeployAllowed: false,
+        productionModelPromotionAllowed: false,
+      },
+    });
     expect(validateWorkflowRegistry(DEFAULT_EXECUTION_WORKFLOW_REGISTRY)).toEqual({
       valid: true,
       reasonCodes: [],

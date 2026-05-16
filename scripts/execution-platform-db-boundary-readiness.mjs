@@ -7,7 +7,6 @@ import {
   resolveExecutionPlatformDbBoundaryContract,
   seedConvergenceTrackerWhenDbReady,
   RuntimeJobRepository,
-  summarizeOpenClawActiveQueueRebase,
   WorkQueueRepository,
 } from "../extensions/execution-platform/src/index.ts";
 
@@ -201,7 +200,6 @@ async function main() {
     });
     if (seedResult.accepted) {
       const readback = await workQueue.readWorkQueue(100);
-      const activeQueueSummary = summarizeOpenClawActiveQueueRebase();
       writeArtifact("convergence-tracker-live-seed-proof.json", {
         artifactKind: "convergence_tracker_live_seed_proof",
         status: "seeded",
@@ -209,11 +207,8 @@ async function main() {
         existing: seedResult.existing,
         updated: seedResult.updated,
         projectedConvergenceSliceCount: readback.filter((item) => item.convergenceSlice).length,
-        historicalSliceCount: activeQueueSummary.historicalSliceCount,
-        completedHistoricalSliceCount: activeQueueSummary.completedHistoricalSliceCount,
-        supersededHistoricalPlannedCount: activeQueueSummary.supersededHistoricalPlannedCount,
-        activeQueueItemCount: activeQueueSummary.activeQueueItemCount,
-        nextActiveQueueItem: activeQueueSummary.nextActiveQueueItem,
+        activeQueueItemCount: readback.filter((item) => item.queueStatus !== "closed").length,
+        nextActiveQueueItem: readback.find((item) => item.queueStatus === "active") ?? null,
         sliceOneStatus: readback.find((item) => item.workItemId === "openclaw-convergence.slice-01")
           ?.convergenceSlice?.planningStatus,
         sliceTwoStatus: readback.find((item) => item.workItemId === "openclaw-convergence.slice-02")

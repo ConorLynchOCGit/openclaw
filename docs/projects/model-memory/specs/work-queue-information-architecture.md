@@ -192,6 +192,38 @@ The object detail view owns:
 The detail view should be stable and deep-linkable. It must survive `/new`,
 chat deletion, refresh, and gateway rebuilds.
 
+## Execution Platform Runtime Queue Integration
+
+2026-05-14 update: the Work Queue surface is now shared by Model Memory
+proactivity and Execution Platform runtime work. Model Memory still owns
+memory-derived and skill-derived opportunity discovery, but the durable queue
+truth is the Execution Platform DB-backed Work Queue.
+
+Model-generated opportunity seeds should not be shown as thin cards that force
+the owner to reconstruct the work. A useful seed must carry bounded source
+refs and a model-authored explanation of why it matters, what type of work it
+suggests, risks, limitations, and the likely next planning step. When accepted,
+the seed should become a review-gated Work Queue item and then expand into a
+Planning Capsule before any runtime compilation.
+
+The visible queue identity is owner-facing title plus DB-derived queue
+position. Internal ids, hashes, runtime job ids, graph ids, and model refs
+belong in the evidence drawer and detail metadata.
+
+The detail surface must be able to show:
+
+- Planning Capsule versions and revision state.
+- parent/child action graph.
+- dynamic Runtime Work Graph child nodes.
+- role/model/worker refs.
+- Kimi/Codex/file-edit worker attempts and validation evidence.
+- human decision nodes and resume state.
+- Closeout Capsule opportunity seeds.
+- proactivity follow-up queue items.
+
+This preserves the original Work Queue product thesis while making the
+Execution Platform runtime graph the live execution/readback substrate.
+
 ## Candidate Input And Queue Admission
 
 Normal proactivity and skill admission should start from a structured Work

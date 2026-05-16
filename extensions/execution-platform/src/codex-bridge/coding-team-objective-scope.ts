@@ -1,8 +1,3 @@
-import {
-  buildOpenClawActiveConvergenceQueue,
-  type ConvergenceSliceDefinition,
-} from "../work-queue/convergence-slice-tracker.ts";
-
 export type CodingTeamObjectiveScope = {
   artifactKind: "coding_team_objective_scope";
   scopeVersion: "coding-team-objective-scope.v1";
@@ -23,7 +18,12 @@ export type ResolveCodingTeamObjectiveScopeInput = {
   objectiveForEvidence: string;
   fallbackRepoScopePaths: string[];
   fallbackValidationCommands: string[];
-  activeQueueDefinitions?: ConvergenceSliceDefinition[];
+  activeQueueDefinitions?: Array<{
+    activeQueueId: string | null;
+    title: string;
+    ownerSystemArea: string;
+    sourceDocRefs?: string[];
+  }>;
 };
 
 const BASE_ALWAYS_ALLOWED_SCOPE = ["scripts/", "docs/projects/execution-platform/"] as const;
@@ -240,7 +240,7 @@ function roleTaskThemeForScope(input: {
 export function resolveCodingTeamObjectiveScope(
   input: ResolveCodingTeamObjectiveScopeInput,
 ): CodingTeamObjectiveScope {
-  const definitions = input.activeQueueDefinitions ?? buildOpenClawActiveConvergenceQueue();
+  const definitions = input.activeQueueDefinitions ?? [];
   const targetActiveQueueId = activeQueueIdFromObjective(
     `${input.objectiveForEvidence}\n${input.objectiveForModel}`,
   );

@@ -94,7 +94,10 @@ export type AgentTeamModelClient = {
     modelCandidateId: string;
     prompt: string;
     responseFormat?: "json_object";
+    requestProfileOverride?: OpenRouterRoleModelRequestProfile;
     maxTokens?: number;
+    timeoutMs?: number;
+    maxAttempts?: number;
   }): Promise<AgentTeamModelClientResult>;
 };
 
@@ -1081,11 +1084,21 @@ export class OpenRouterAgentTeamModelClient implements AgentTeamModelClient {
     modelCandidateId: string;
     prompt: string;
     responseFormat?: "json_object";
+    requestProfileOverride?: OpenRouterRoleModelRequestProfile;
     maxTokens?: number;
+    timeoutMs?: number;
+    maxAttempts?: number;
   }): Promise<AgentTeamModelClientResult> {
     const fetchImpl = this.options.fetchImpl ?? fetch;
-    const policy = { ...DEFAULT_OPENROUTER_RETRY_POLICY, ...this.options.retryPolicy };
-    const requestProfile = this.options.requestProfilesByModelId?.[input.modelId] ?? {};
+    const policy = {
+      ...DEFAULT_OPENROUTER_RETRY_POLICY,
+      ...this.options.retryPolicy,
+      ...(input.maxAttempts ? { maxAttempts: input.maxAttempts } : {}),
+    };
+    const requestProfile = {
+      ...this.options.requestProfilesByModelId?.[input.modelId],
+      ...input.requestProfileOverride,
+    };
     const responseFormatMode = requestProfile.responseFormatMode ?? "auto";
     const reasoningMode = requestProfile.reasoningMode ?? "exclude";
     const attempts: OpenRouterRetryEvidence["attempts"] = [];
@@ -1114,7 +1127,7 @@ export class OpenRouterAgentTeamModelClient implements AgentTeamModelClient {
       };
       const started = this.options.now?.().getTime() ?? Date.now();
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), policy.timeoutMs);
+      const timeout = setTimeout(() => controller.abort(), input.timeoutMs ?? policy.timeoutMs);
       try {
         const response = await fetchImpl(
           `${this.options.baseUrl ?? "https://openrouter.ai/api/v1"}/chat/completions`,

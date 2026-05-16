@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { z } from "zod";
 import type { JsonValue, RuntimeJobRepository } from "../runtime-job-repository.ts";
+import { MissionContractLedgerSchema } from "../workflows/mission-contract-ledger.ts";
 
 export const CLOSEOUT_CAPSULE_SCHEMA_VERSION = "execution-platform.closeout-capsule.v1";
 export const CLOSEOUT_CAPSULE_ARTIFACT_TYPE = "execution_platform.closeout_capsule";
@@ -92,6 +93,38 @@ export type CloseoutCapsuleStructuredSummary = z.infer<
   typeof CloseoutCapsuleStructuredSummarySchema
 >;
 
+export const CloseoutCapsuleProductSpecPlanningContractSchema = z
+  .object({
+    artifactKind: z.literal("product_spec_planning_worker_contract"),
+    contractVersion: z.literal("v1"),
+    planningMode: z.enum([
+      "plan_only",
+      "child_action_graph_proposal",
+      "child_action_graph_proposals",
+      "compile_ready",
+    ]),
+    planningOutputKind: z.enum([
+      "plan_only_output",
+      "child_action_graph_proposal_output",
+      "compile_ready_output",
+    ]),
+    workflowRefs: stringList(12, 260),
+    childActionProposalRefs: stringList(20, 260),
+    humanDecisionRefs: stringList(12, 260),
+    validationRefs: stringList(20, 260),
+    limitations: stringList(10, 500),
+    eli5Progress: boundedString(1_000),
+    rawPromptStored: z.literal(false),
+    rawResponseStored: z.literal(false),
+    rawLogsStored: z.literal(false),
+    workQueueLifecycleMutationAllowed: z.literal(false),
+  })
+  .strict();
+
+export type CloseoutCapsuleProductSpecPlanningContract = z.infer<
+  typeof CloseoutCapsuleProductSpecPlanningContractSchema
+>;
+
 export const CloseoutCapsuleFactualRefsSchema = z
   .object({
     runtimeJobId: boundedString(180),
@@ -147,6 +180,8 @@ export const CloseoutCapsuleSchema = z
     roleCloseouts: z.array(CloseoutCapsuleRoleCloseoutSchema).max(20),
     opportunitySeeds: z.array(CloseoutCapsuleOpportunitySeedSchema).max(20),
     factualRefs: CloseoutCapsuleFactualRefsSchema,
+    productSpecPlanningContract: CloseoutCapsuleProductSpecPlanningContractSchema.optional(),
+    missionContractLedger: MissionContractLedgerSchema.optional(),
     safetyFlags: CloseoutCapsuleSafetyFlagsSchema,
   })
   .strict();

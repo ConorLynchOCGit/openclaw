@@ -126,13 +126,6 @@ export function compileFrontDoorRequest(
     : null;
   assertNoRawStorage(output);
   assertNoLifecycleMutation(input.validation);
-  assertSafeStructuredContent({
-    objectiveSummary: output.objectiveSummary,
-    actions: [
-      ...input.actionSemantics.allowedRequestedActions,
-      ...input.actionSemantics.allowedConditionalActions,
-    ],
-  });
 
   if (
     output.route === "chat_response" ||
@@ -409,23 +402,6 @@ function assertNoRawStorage(output: CanonicalRouterOutput): void {
 function assertNoLifecycleMutation(validation: IntentValidationDecision): void {
   if (validation.workQueueLifecycleMutationAllowed) {
     throw new Error("work queue lifecycle mutation rejected by compiler");
-  }
-}
-
-function assertSafeStructuredContent(input: {
-  objectiveSummary: string;
-  actions: CanonicalRouterAction[];
-}): void {
-  const serialized = JSON.stringify({
-    objectiveSummary: input.objectiveSummary,
-    actionSummaries: input.actions.map((action) => action.objectSummary),
-  }).toLowerCase();
-  if (
-    /\b(rm -rf|sudo\s|curl\s+.*\|\s*sh|bash\s+-c|powershell|raw-command-log-marker|api\s*key|secret|drop\s+table|truncate\s+table|delete\s+from|destructive\s+db|promote\s+model|model\s+promotion)\b/u.test(
-      serialized,
-    )
-  ) {
-    throw new Error("arbitrary shell command content rejected by compiler");
   }
 }
 

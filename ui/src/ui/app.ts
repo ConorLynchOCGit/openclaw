@@ -123,8 +123,13 @@ import { type ChatAttachment, type ChatQueueItem, type CronFormState } from "./u
 import { generateUUID } from "./uuid.ts";
 import type { NostrProfileFormState } from "./views/channels.nostr-profile-form.ts";
 import {
+  buildDbWorkQueueObjects,
   buildWorkQueueObjects,
   filterWorkQueueObjects,
+  type DbWorkQueueDetail,
+  type DbWorkQueueDetailResult,
+  type DbWorkQueueListResult,
+  type DbWorkQueueSummary,
   type WorkQueueObject,
 } from "./work-queue.ts";
 
@@ -311,6 +316,15 @@ export class OpenClawApp extends LitElement {
   @state() workQueueNotifications: WorkQueueNotification[] = [];
   @state() workQueueRevisionDrafts: Record<string, string> = {};
   @state() workQueueArtifactBodies: Record<string, string> = {};
+  @state() dbWorkQueueItems: DbWorkQueueSummary[] = [];
+  @state() dbWorkQueueDetails: Record<string, DbWorkQueueDetail | undefined> = {};
+  @state() dbWorkQueueLoading = false;
+  @state() dbWorkQueueError: string | null = null;
+  @state() dbWorkQueueDeltaCursor: string | null = null;
+  @state() workQueuePushMode: "idle" | "subscribed" | "fallback_polling" | "gap_replaying" = "idle";
+  @state() workQueuePushError: string | null = null;
+  @state() workQueueEventCursor: number | null = null;
+  @state() dbWorkQueueSourceReady = false;
   @state() personalAutoSendUx: PersonalAutoSendUxSettings | null = null;
   @state() personalAutoSendUxLoading = false;
   @state() personalAutoSendUxError: string | null = null;
@@ -633,6 +647,8 @@ export class OpenClawApp extends LitElement {
   private logsPollInterval: number | null = null;
   private debugPollInterval: number | null = null;
   private logsScrollFrame: number | null = null;
+  private workQueueDeltaPollInterval: number | null = null;
+  private workQueuePushSubscribed = false;
   private toolStreamById = new Map<string, ToolStreamEntry>();
   private toolStreamOrder: string[] = [];
   refreshSessionsAfterChat = new Set<string>();
@@ -688,17 +704,27 @@ export class OpenClawApp extends LitElement {
 
   disconnectedCallback() {
     document.removeEventListener("keydown", this.globalKeydownHandler);
+    this.stopWorkQueueDeltaPolling();
+    void this.unsubscribeWorkQueuePush();
     handleDisconnected(this as unknown as Parameters<typeof handleDisconnected>[0]);
     super.disconnectedCallback();
   }
 
   protected updated(changed: Map<PropertyKey, unknown>) {
     handleUpdated(this as unknown as Parameters<typeof handleUpdated>[0], changed);
+    if (this.connected && this.tab === "workQueue" && this.workQueuePushMode !== "subscribed") {
+      this.startWorkQueueDeltaPolling();
+    } else {
+      this.stopWorkQueueDeltaPolling();
+    }
     if (
       this.connected &&
       (changed.has("connected") || changed.has("sessionKey") || changed.has("tab")) &&
       (this.tab === "chat" || this.tab === "workQueue")
     ) {
+      if (this.tab === "workQueue") {
+        void this.loadDbWorkQueue({ reset: true });
+      }
       void this.loadProductProactivityQueue();
       void this.loadPersonalAutoSendUx();
       void this.loadProactivityInbox();
@@ -706,6 +732,8 @@ export class OpenClawApp extends LitElement {
     if (
       this.tab === "workQueue" &&
       (changed.has("tab") ||
+        changed.has("dbWorkQueueItems") ||
+        changed.has("dbWorkQueueDetails") ||
         changed.has("productProactivityQueue") ||
         changed.has("proactivityInboxDigest") ||
         changed.has("workQueueSelectedObjectId"))
@@ -1123,6 +1151,242 @@ export class OpenClawApp extends LitElement {
     }
   }
 
+  private executionPlatformApiUrl(path: string): string {
+    const gatewayUrl = new URL(this.settings.gatewayUrl, window.location.href);
+    gatewayUrl.protocol = gatewayUrl.protocol === "wss:" ? "https:" : "http:";
+    gatewayUrl.pathname = path;
+    gatewayUrl.search = "";
+    gatewayUrl.hash = "";
+    return gatewayUrl.toString();
+  }
+
+  private async requestExecutionPlatformApi<T>(path: string, body: Record<string, unknown>) {
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+      "x-openclaw-source-route": "ux",
+      "x-openclaw-session-key": this.sessionKey,
+      "x-openclaw-actor-id": "control-ui-operator",
+    };
+    if (this.settings.token.trim()) {
+      headers.Authorization = `Bearer ${this.settings.token.trim()}`;
+    }
+    const response = await fetch(this.executionPlatformApiUrl(path), {
+      method: "POST",
+      headers,
+      body: JSON.stringify(body),
+    });
+    const payload = (await response.json()) as T;
+    if (!response.ok) {
+      throw new Error(JSON.stringify(payload));
+    }
+    return payload;
+  }
+
+  private startWorkQueueDeltaPolling() {
+    if (this.workQueueDeltaPollInterval !== null) {
+      return;
+    }
+    if (this.workQueuePushMode !== "subscribed") {
+      this.workQueuePushMode = "fallback_polling";
+    }
+    this.workQueueDeltaPollInterval = window.setInterval(() => {
+      if (this.connected && this.tab === "workQueue") {
+        void this.loadDbWorkQueue({ delta: true });
+      }
+    }, 10_000);
+  }
+
+  private stopWorkQueueDeltaPolling() {
+    if (this.workQueueDeltaPollInterval === null) {
+      return;
+    }
+    window.clearInterval(this.workQueueDeltaPollInterval);
+    this.workQueueDeltaPollInterval = null;
+  }
+
+  async subscribeWorkQueuePush() {
+    if (!this.client || !this.connected || this.workQueuePushSubscribed) {
+      return;
+    }
+    try {
+      await this.client.request("work_queue.subscribe", {});
+      this.workQueuePushSubscribed = true;
+      this.workQueuePushMode = "subscribed";
+      this.workQueuePushError = null;
+      this.stopWorkQueueDeltaPolling();
+      if (this.workQueueEventCursor !== null) {
+        await this.replayWorkQueueEvents();
+      }
+    } catch (err) {
+      this.workQueuePushSubscribed = false;
+      this.workQueuePushMode = "fallback_polling";
+      this.workQueuePushError = String(err);
+      if (this.connected && this.tab === "workQueue") {
+        this.startWorkQueueDeltaPolling();
+      }
+    }
+  }
+
+  async unsubscribeWorkQueuePush() {
+    if (!this.client || !this.workQueuePushSubscribed) {
+      return;
+    }
+    this.workQueuePushSubscribed = false;
+    try {
+      await this.client.request("work_queue.unsubscribe", {});
+    } catch {
+      /* best effort */
+    }
+    if (this.workQueuePushMode === "subscribed") {
+      this.workQueuePushMode = "idle";
+    }
+  }
+
+  async replayWorkQueueEvents() {
+    if (!this.client || !this.connected) {
+      return;
+    }
+    const afterCursor = this.workQueueEventCursor ?? 0;
+    this.workQueuePushMode = "gap_replaying";
+    try {
+      const replay = (await this.client.request("work_queue.events.replay", {
+        afterCursor,
+        limit: 200,
+      })) as { events?: Array<{ cursor?: number; workItemId?: string }> };
+      for (const event of replay.events ?? []) {
+        await this.handleWorkQueuePushEvent(event);
+      }
+      this.workQueuePushMode = this.workQueuePushSubscribed ? "subscribed" : "fallback_polling";
+      this.workQueuePushError = null;
+    } catch (err) {
+      this.workQueuePushMode = "fallback_polling";
+      this.workQueuePushError = String(err);
+      if (this.connected && this.tab === "workQueue") {
+        this.startWorkQueueDeltaPolling();
+      }
+    }
+  }
+
+  async handleWorkQueuePushEvent(payload: unknown) {
+    const event =
+      payload && typeof payload === "object" ? (payload as Record<string, unknown>) : {};
+    if (typeof event.cursor === "number" && Number.isFinite(event.cursor)) {
+      this.workQueueEventCursor = Math.max(this.workQueueEventCursor ?? 0, event.cursor);
+    }
+    this.dbWorkQueueDetails = {};
+    await this.loadDbWorkQueue({ delta: true });
+    const workItemId = typeof event.workItemId === "string" ? event.workItemId : null;
+    const selected = this.getSelectedWorkQueueObject();
+    if (workItemId && selected?.id === workItemId) {
+      await this.loadDbWorkQueueDetail(workItemId);
+    }
+  }
+
+  async loadDbWorkQueue(opts: { reset?: boolean; delta?: boolean } = {}) {
+    if (this.dbWorkQueueLoading) {
+      return;
+    }
+    this.dbWorkQueueLoading = true;
+    this.dbWorkQueueError = null;
+    try {
+      const filterBucket = "all";
+      const payload = opts.delta
+        ? await this.requestExecutionPlatformApi<DbWorkQueueListResult>(
+            "/api/execution-platform/work-queue/delta",
+            {
+              bucket: filterBucket,
+              limit: 50,
+              updatedSince: this.dbWorkQueueDeltaCursor,
+              searchQuery: this.workQueueSearchQuery,
+            },
+          )
+        : await this.requestExecutionPlatformApi<DbWorkQueueListResult>(
+            "/api/execution-platform/work-queue/list",
+            {
+              bucket: filterBucket,
+              limit: 50,
+              searchQuery: this.workQueueSearchQuery,
+            },
+          );
+      const incoming = Array.isArray(payload.items) ? payload.items : [];
+      if (opts.delta && !opts.reset) {
+        const byId = new Map(this.dbWorkQueueItems.map((item) => [item.workItemId, item]));
+        for (const item of incoming) {
+          byId.set(item.workItemId, item);
+        }
+        this.dbWorkQueueItems = [...byId.values()].toSorted(
+          (left, right) => (left.queuePosition ?? 999_999) - (right.queuePosition ?? 999_999),
+        );
+      } else {
+        this.dbWorkQueueItems = incoming;
+      }
+      this.dbWorkQueueDeltaCursor = payload.deltaCursor ?? this.dbWorkQueueDeltaCursor;
+      this.dbWorkQueueSourceReady = true;
+      const selected = this.getSelectedWorkQueueObject();
+      if (selected) {
+        await this.loadDbWorkQueueDetail(selected.id);
+      }
+    } catch (err) {
+      this.dbWorkQueueError = String(err);
+      this.dbWorkQueueSourceReady = true;
+    } finally {
+      this.dbWorkQueueLoading = false;
+    }
+  }
+
+  async loadDbWorkQueueDetail(workItemId: string) {
+    if (!workItemId || this.dbWorkQueueDetails[workItemId]) {
+      return;
+    }
+    try {
+      const payload = await this.requestExecutionPlatformApi<DbWorkQueueDetailResult>(
+        "/api/execution-platform/work-queue/detail",
+        { workItemId },
+      );
+      if (payload.item) {
+        this.dbWorkQueueDetails = {
+          ...this.dbWorkQueueDetails,
+          [workItemId]: payload.item,
+        };
+      }
+    } catch (err) {
+      this.dbWorkQueueError = String(err);
+    }
+  }
+
+  async submitWorkQueueHumanTaskResponse(input: {
+    objectId: string;
+    graphId: string;
+    humanTaskId: string;
+    boundedResponseRef: string;
+  }) {
+    try {
+      await this.requestExecutionPlatformApi("/api/execution-platform/work-queue/human-response", {
+        parentWorkItemId: input.objectId,
+        graphId: input.graphId,
+        humanTaskId: input.humanTaskId,
+        boundedResponseRef: input.boundedResponseRef,
+      });
+      this.dbWorkQueueDetails = {
+        ...this.dbWorkQueueDetails,
+        [input.objectId]: undefined,
+      };
+      await this.loadDbWorkQueue({ reset: true });
+      await this.loadDbWorkQueueDetail(input.objectId);
+      this.pushWorkQueueNotification({
+        kind: "success",
+        objectId: input.objectId,
+        text: "Human task response recorded and runtime graph resumed.",
+      });
+    } catch (err) {
+      this.pushWorkQueueNotification({
+        kind: "error",
+        objectId: input.objectId,
+        text: `Failed to resume human task: ${String(err)}`,
+      });
+    }
+  }
+
   async loadPersonalAutoSendUx(userDisabled = false) {
     if (!this.client || !this.connected || this.personalAutoSendUxLoading) {
       return;
@@ -1232,10 +1496,16 @@ export class OpenClawApp extends LitElement {
 
   setWorkQueueFilter(view: WorkQueueFilter) {
     this.workQueueFilter = view;
+    if (this.tab === "workQueue") {
+      void this.loadDbWorkQueue({ reset: true });
+    }
   }
 
   setWorkQueueSearchQuery(value: string) {
     this.workQueueSearchQuery = value;
+    if (this.tab === "workQueue") {
+      void this.loadDbWorkQueue({ reset: true });
+    }
   }
 
   selectWorkQueueObject(objectId: string | null, opts?: { replace?: boolean }) {
@@ -1246,6 +1516,12 @@ export class OpenClawApp extends LitElement {
   }
 
   private getWorkQueueObjects(): WorkQueueObject[] {
+    if (this.dbWorkQueueSourceReady || this.tab === "workQueue") {
+      return buildDbWorkQueueObjects({
+        items: this.dbWorkQueueItems,
+        details: this.dbWorkQueueDetails,
+      });
+    }
     return buildWorkQueueObjects({
       queue: this.productProactivityQueue,
       digest: this.proactivityInboxDigest,

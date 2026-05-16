@@ -2,7 +2,12 @@ import { randomUUID } from "node:crypto";
 import type { QueryResultRow } from "pg";
 import type { SqlClient } from "../db/sql-client.ts";
 import type { JsonValue, RuntimeJob, RuntimeJobRepository } from "../runtime-job-repository.ts";
-import { projectConvergenceSliceTracker } from "./convergence-slice-tracker.ts";
+import {
+  projectCanonicalRuntimeQueue as buildCanonicalRuntimeQueueProjection,
+  type CanonicalRuntimeQueueCloseoutReadbackUpdate,
+  type CanonicalRuntimeQueueProjection,
+} from "./canonical-runtime-queue.ts";
+import { projectDbPrimaryWorkQueueItem } from "./db-primary-work-queue-projection.ts";
 import type {
   WorkItem,
   WorkItemArtifact,
@@ -10,6 +15,7 @@ import type {
   WorkItemDependency,
   WorkItemEvent,
   WorkItemLifecycleState,
+  WorkItemQueueStatus,
   WorkItemParentWorkflowLink,
   WorkItemTruth,
   WorkItemVersion,
@@ -20,6 +26,8 @@ import type {
   WorkStep,
   WorkStepState,
 } from "./types.ts";
+import type { WorkQueueEventStore } from "./work-queue-event-store.ts";
+import type { WorkQueueEventType } from "./work-queue-events.ts";
 
 type WorkItemRow = QueryResultRow & {
   work_item_id: string;
@@ -27,6 +35,15 @@ type WorkItemRow = QueryResultRow & {
   title: string;
   description: string | null;
   lifecycle_state: WorkItemLifecycleState;
+  queue_status: WorkItemQueueStatus;
+  queue_rank: number | string | null;
+  closed_at: Date | string | null;
+  closed_by_runtime_job_id: string | null;
+  closed_by_closeout_ref: string | null;
+  closeout_capsule_ref: string | null;
+  validation_ref: string | null;
+  graph_ref: string | null;
+  owner_readback_ref: string | null;
   current_version_id: string | null;
   metadata: JsonValue;
   created_at: Date | string;
@@ -130,9 +147,26 @@ type WorkItemParentWorkflowLinkRow = QueryResultRow & {
   created_at: Date | string;
 };
 
+type WorkItemPlanningSnapshotRow = QueryResultRow & {
+  work_item_id: string;
+  title: string;
+  description: string | null;
+  metadata: JsonValue;
+  current_version_title: string | null;
+  current_version_body: string | null;
+  current_version_artifact_metadata: JsonValue | null;
+};
+
+type WorkItemDependencyKeyRow = QueryResultRow & {
+  work_item_id: string;
+  depends_on_work_item_id: string;
+  dependency_type: string;
+};
+
 export type WorkQueueRepositoryOptions = {
   now?: () => Date;
   maxJsonBytes?: number;
+  eventStore?: WorkQueueEventStore;
 };
 
 export type CreateWorkItemInput = {
@@ -193,6 +227,157 @@ export type CreateWorkStepInput = {
   metadata?: JsonValue;
 };
 
+export type RecordCloseoutProjectionReadbackInput = CanonicalRuntimeQueueCloseoutReadbackUpdate & {
+  artifactId?: string;
+  lifecycleMutationAllowed?: boolean;
+};
+
+export type CompleteWorkQueueItemFromCloseoutInput = {
+  workItemId: string;
+  closeoutRef: string;
+  closeoutHash?: string | null;
+  runtimeJobId?: string | null;
+  validationRef?: string | null;
+  graphRef?: string | null;
+  ownerReadbackRef?: string | null;
+  artifactRefs?: string[];
+  accepted?: boolean;
+  validationRequired?: boolean;
+  sourceEditRequired?: boolean;
+  changedFileRefs?: string[];
+  providerUnavailable?: boolean;
+  closeoutModelTimeout?: boolean;
+  reasonCodes?: string[];
+  actorId?: string | null;
+  rawPromptStored?: false;
+  rawResponseStored?: false;
+  rawTranscriptStored?: false;
+  rawLogsStored?: false;
+  rawDbRowsStored?: false;
+  authorityGranted?: false;
+  controlsApplied?: false;
+  runtimeLifecycleMutated?: false;
+  modelPromotionPerformed?: false;
+};
+
+export type CompleteWorkQueueItemFromCloseoutResult = {
+  artifactKind: "work_queue_item_closeout_transition_result";
+  workItemId: string;
+  status: WorkItemQueueStatus;
+  closed: boolean;
+  idempotent: boolean;
+  closeoutRef: string;
+  runtimeJobId: string | null;
+  validationRef: string | null;
+  reasonCodes: string[];
+  rawPromptStored: false;
+  rawResponseStored: false;
+  rawTranscriptStored: false;
+  rawLogsStored: false;
+  rawDbRowsStored: false;
+  authorityGranted: false;
+  controlsApplied: false;
+  runtimeLifecycleMutated: false;
+  workQueueStatusMutated: boolean;
+  modelPromotionPerformed: false;
+};
+
+export type SyncRuntimeGraphNodeToWorkQueueInput = {
+  parentWorkItemId: string;
+  graphId: string;
+  nodeId: string;
+  nodeKind: string;
+  assignedRole: string;
+  assignedWorkflow: string;
+  queueStatus?: WorkItemQueueStatus;
+  title?: string | null;
+  runtimeJobId?: string | null;
+  humanTaskId?: string | null;
+  graphNodeRef?: string | null;
+  evidenceRefs?: string[];
+  blockerReasonCodes?: string[];
+  optional?: boolean;
+  actorId?: string | null;
+};
+
+export type SyncRuntimeGraphNodeToWorkQueueResult = {
+  artifactKind: "runtime_graph_node_work_queue_sync_result";
+  parentWorkItemId: string;
+  childWorkItemId: string;
+  graphId: string;
+  nodeId: string;
+  created: boolean;
+  idempotent: boolean;
+  rawPromptStored: false;
+  rawResponseStored: false;
+  rawLogsStored: false;
+  rawDbRowsStored: false;
+  workQueueLifecycleMutated: false;
+};
+
+export type RollupParentWorkQueueStatusResult = {
+  artifactKind: "work_queue_parent_rollup_result";
+  parentWorkItemId: string;
+  childWorkItemIds: string[];
+  requiredChildWorkItemIds: string[];
+  optionalChildWorkItemIds: string[];
+  queueStatus: WorkItemQueueStatus;
+  changed: boolean;
+  reasonCodes: string[];
+  rawPromptStored: false;
+  rawResponseStored: false;
+  rawLogsStored: false;
+  rawDbRowsStored: false;
+  runtimeLifecycleMutated: false;
+  workQueueStatusMutated: boolean;
+};
+
+export type WorkQueueListBucket = "active" | "closed" | "all";
+
+export type DbWorkQueueListInput = {
+  bucket?: WorkQueueListBucket;
+  limit?: number;
+  cursor?: string | null;
+  searchQuery?: string | null;
+  updatedSince?: Date | string | null;
+};
+
+export type DbWorkQueueSummary = {
+  workItemId: string;
+  itemType: string;
+  title: string;
+  description: string | null;
+  lifecycleState: WorkItemLifecycleState;
+  queueStatus: WorkItemQueueStatus;
+  queuePosition: number | null;
+  queueRank: number | null;
+  closedAt: string | null;
+  updatedAt: string;
+  runtimeJobIds: string[];
+  graphRef: string | null;
+  validationRef: string | null;
+  closeoutCapsuleRef: string | null;
+  ownerReadbackRef: string | null;
+  convergenceSlice: WorkQueueReadModelItem["convergenceSlice"];
+  rawPromptStored: false;
+  rawResponseStored: false;
+  rawLogsStored: false;
+};
+
+export type DbWorkQueueListResult = {
+  artifactKind: "db_work_queue_list_result";
+  source: "execution_platform_work_queue_db";
+  bucket: WorkQueueListBucket;
+  limit: number;
+  nextCursor: string | null;
+  deltaCursor: string;
+  items: DbWorkQueueSummary[];
+  rawPromptStored: false;
+  rawResponseStored: false;
+  rawLogsStored: false;
+  rawDbRowsStored: false;
+};
+
 const DEFAULT_MAX_JSON_BYTES = 64 * 1024;
 const EVIDENCE_REQUIRED_ITEM_STATES = new Set<WorkItemLifecycleState>([
   "running",
@@ -212,6 +397,10 @@ const EVIDENCE_REQUIRED_STEP_STATES = new Set<WorkStepState>([
   "failed",
   "canceled",
 ]);
+const MAX_CLOSEOUT_PRIORITY_NOTE_LENGTH = 160;
+const ACTIVE_QUEUE_STATUSES = ["active", "blocked", "needs_review"] as const;
+const CLOSED_QUEUE_STATUSES = ["closed", "superseded", "archived"] as const;
+const MAX_WORK_QUEUE_PAGE_SIZE = 100;
 
 function toDate(value: Date | string): Date {
   return value instanceof Date ? value : new Date(value);
@@ -223,6 +412,33 @@ function nullableDate(value: Date | string | null): Date | null {
 
 function encodeJson(value: JsonValue | undefined): string {
   return JSON.stringify(value ?? {});
+}
+
+function clampWorkQueueLimit(value: number | undefined): number {
+  if (!Number.isFinite(value ?? NaN)) {
+    return 50;
+  }
+  return Math.max(1, Math.min(Math.trunc(value!), MAX_WORK_QUEUE_PAGE_SIZE));
+}
+
+function decodeOffsetCursor(value: string | null | undefined): number {
+  if (!value) {
+    return 0;
+  }
+  const normalized = value.startsWith("offset:") ? value.slice("offset:".length) : value;
+  const parsed = Number.parseInt(normalized, 10);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : 0;
+}
+
+function encodeOffsetCursor(offset: number, returnedCount: number, limit: number): string | null {
+  return returnedCount === limit ? `offset:${offset + returnedCount}` : null;
+}
+
+function sqlDate(value: Date | string | null | undefined): Date | null {
+  if (!value) {
+    return null;
+  }
+  return value instanceof Date ? value : new Date(value);
 }
 
 function assertJsonByteLength(value: JsonValue | undefined, maxBytes: number, name: string): void {
@@ -239,6 +455,15 @@ function decodeItem(row: WorkItemRow): WorkItem {
     title: row.title,
     description: row.description,
     lifecycleState: row.lifecycle_state,
+    queueStatus: row.queue_status,
+    queueRank: row.queue_rank === null ? null : Number(row.queue_rank),
+    closedAt: nullableDate(row.closed_at),
+    closedByRuntimeJobId: row.closed_by_runtime_job_id,
+    closedByCloseoutRef: row.closed_by_closeout_ref,
+    closeoutCapsuleRef: row.closeout_capsule_ref,
+    validationRef: row.validation_ref,
+    graphRef: row.graph_ref,
+    ownerReadbackRef: row.owner_readback_ref,
     currentVersionId: row.current_version_id,
     metadata: row.metadata,
     createdAt: toDate(row.created_at),
@@ -359,9 +584,130 @@ function decodeParentWorkflowLink(row: WorkItemParentWorkflowLinkRow): WorkItemP
   };
 }
 
+function readRecord(value: JsonValue | undefined): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
+function readStringArrayFromRecord(record: Record<string, unknown>, key: string): string[] {
+  const value = record[key];
+  return Array.isArray(value)
+    ? value.filter((entry): entry is string => typeof entry === "string")
+    : [];
+}
+
+function mapLifecycleEventToWorkQueueEvent(input: {
+  eventType: string;
+  data?: JsonValue;
+  lifecycleState?: WorkItemLifecycleState | null;
+}): WorkQueueEventType | null {
+  const data = readRecord(input.data);
+  const queueStatus = typeof data.queueStatus === "string" ? data.queueStatus : null;
+  switch (input.eventType) {
+    case "work_item.created":
+      return "work_queue.item_created";
+    case "work_item.runtime_graph_child_created":
+      return "work_queue.child_created";
+    case "work_item.runtime_graph_child_updated":
+      return "work_queue.child_updated";
+    case "work_item.parent_rollup_status_updated":
+      return "work_queue.parent_rollup_updated";
+    case "work_item.queue_status_closed_from_closeout":
+      return "work_queue.closeout_accepted";
+    case "work_item.queue_status_needs_review_from_closeout":
+      return "work_queue.closeout_needs_review";
+    case "work_item.lifecycle_updated":
+      return input.lifecycleState === "succeeded"
+        ? "work_queue.item_closed"
+        : "work_queue.item_updated";
+    default:
+      if (queueStatus === "blocked") {
+        return "work_queue.item_blocked";
+      }
+      if (queueStatus === "active" && input.eventType.includes("unblocked")) {
+        return "work_queue.item_unblocked";
+      }
+      if (queueStatus === "closed" || queueStatus === "superseded" || queueStatus === "archived") {
+        return "work_queue.item_closed";
+      }
+      return "work_queue.item_updated";
+  }
+}
+
+function deriveRuntimeGraphEventTypes(input: {
+  created: boolean;
+  nodeKind: string;
+  queueStatus: WorkItemQueueStatus;
+}): WorkQueueEventType[] {
+  const eventTypes: WorkQueueEventType[] = [
+    input.created ? "work_queue.child_created" : "work_queue.child_updated",
+  ];
+  if (input.queueStatus === "closed" || input.queueStatus === "superseded") {
+    eventTypes.push("work_queue.graph_node_completed");
+  } else if (input.queueStatus === "needs_review") {
+    eventTypes.push("work_queue.graph_node_needs_review");
+  } else if (input.queueStatus === "blocked") {
+    eventTypes.push("work_queue.graph_node_failed");
+  } else if (input.queueStatus === "active") {
+    eventTypes.push("work_queue.graph_node_started");
+  }
+  if (input.queueStatus === "active") {
+    eventTypes.push("work_queue.active_worker_changed", "work_queue.role_invocation_started");
+  } else if (input.queueStatus === "closed" || input.queueStatus === "superseded") {
+    eventTypes.push("work_queue.role_invocation_completed");
+  } else if (input.queueStatus === "needs_review") {
+    eventTypes.push("work_queue.role_invocation_needs_review");
+  } else if (input.queueStatus === "blocked") {
+    eventTypes.push("work_queue.role_invocation_failed");
+  }
+  if (input.nodeKind === "human_task") {
+    eventTypes.push(
+      input.queueStatus === "closed"
+        ? "work_queue.human_task_resumed"
+        : input.queueStatus === "blocked"
+          ? "work_queue.human_task_blocked"
+          : input.queueStatus === "needs_review"
+            ? "work_queue.human_task_expired"
+            : "work_queue.human_task_waiting",
+    );
+  }
+  if (input.nodeKind.includes("validation") || input.nodeKind.includes("test")) {
+    if (input.queueStatus === "active") {
+      eventTypes.push("work_queue.validation_started");
+    } else if (input.queueStatus === "needs_review" || input.queueStatus === "blocked") {
+      eventTypes.push("work_queue.validation_failed");
+    } else if (input.queueStatus === "closed") {
+      eventTypes.push("work_queue.validation_repaired", "work_queue.validation_passed");
+    }
+  }
+  if (input.nodeKind.includes("repair")) {
+    if (input.queueStatus === "active") {
+      eventTypes.push("work_queue.repair_started");
+    } else if (input.queueStatus === "closed") {
+      eventTypes.push("work_queue.repair_completed");
+    } else if (input.queueStatus === "needs_review" || input.queueStatus === "blocked") {
+      eventTypes.push("work_queue.repair_exhausted");
+    }
+  }
+  if (input.nodeKind.includes("closeout")) {
+    if (input.queueStatus === "active") {
+      eventTypes.push("work_queue.closeout_started");
+    } else if (input.queueStatus === "closed") {
+      eventTypes.push("work_queue.closeout_accepted");
+    } else if (input.queueStatus === "needs_review") {
+      eventTypes.push("work_queue.closeout_needs_review");
+    } else if (input.queueStatus === "blocked") {
+      eventTypes.push("work_queue.closeout_rejected");
+    }
+  }
+  return [...new Set(eventTypes)];
+}
+
 export class WorkQueueRepository {
   private readonly now: () => Date;
   private readonly maxJsonBytes: number;
+  private readonly eventStore: WorkQueueEventStore | null;
 
   constructor(
     private readonly sql: SqlClient,
@@ -370,6 +716,7 @@ export class WorkQueueRepository {
   ) {
     this.now = options.now ?? (() => new Date());
     this.maxJsonBytes = options.maxJsonBytes ?? DEFAULT_MAX_JSON_BYTES;
+    this.eventStore = options.eventStore ?? null;
   }
 
   async createWorkItem(input: CreateWorkItemInput): Promise<WorkItem> {
@@ -377,6 +724,14 @@ export class WorkQueueRepository {
     const now = this.now();
     const workItemId = input.workItemId ?? randomUUID();
     const item = await this.sql.withTransaction(async (tx) => {
+      const rankResult = await tx.query<{ next_rank: number | string }>(
+        `
+          SELECT COALESCE(MAX(queue_rank), 0) + 1 AS next_rank
+          FROM execution_platform.work_items
+          WHERE queue_status IN ('active', 'blocked', 'needs_review')
+        `,
+      );
+      const queueRank = Number(rankResult.rows[0]?.next_rank ?? 1);
       const result = await tx.query<WorkItemRow>(
         `
           INSERT INTO execution_platform.work_items (
@@ -384,11 +739,13 @@ export class WorkQueueRepository {
             item_type,
             title,
             description,
+            queue_status,
+            queue_rank,
             metadata,
             created_at,
             updated_at
           )
-          VALUES ($1, $2, $3, $4, $5::jsonb, $6::timestamptz, $6::timestamptz)
+          VALUES ($1, $2, $3, $4, 'active', $5, $6::jsonb, $7::timestamptz, $7::timestamptz)
           RETURNING *
         `,
         [
@@ -396,6 +753,7 @@ export class WorkQueueRepository {
           input.itemType,
           input.title,
           input.description ?? null,
+          queueRank,
           encodeJson(input.metadata),
           now,
         ],
@@ -444,6 +802,88 @@ export class WorkQueueRepository {
       });
       return decodeItem(row);
     });
+  }
+
+  async readWorkItemPlanningSnapshots(workItemIds: string[]): Promise<
+    Map<
+      string,
+      {
+        title: string;
+        description: string | null;
+        metadata: JsonValue;
+        currentVersionTitle: string | null;
+        currentVersionBody: string | null;
+        currentVersionArtifactMetadata: JsonValue;
+        dependencyKeys: string[];
+      }
+    >
+  > {
+    const boundedIds = [...new Set(workItemIds.filter((item) => item.trim().length > 0))].slice(
+      0,
+      500,
+    );
+    const snapshots = new Map<
+      string,
+      {
+        title: string;
+        description: string | null;
+        metadata: JsonValue;
+        currentVersionTitle: string | null;
+        currentVersionBody: string | null;
+        currentVersionArtifactMetadata: JsonValue;
+        dependencyKeys: string[];
+      }
+    >();
+    if (boundedIds.length === 0) {
+      return snapshots;
+    }
+    const placeholders = boundedIds.map((_, index) => `$${index + 1}`).join(", ");
+    const itemRows = await this.sql.query<WorkItemPlanningSnapshotRow>(
+      `
+        SELECT
+          item.work_item_id,
+          item.title,
+          item.description,
+          item.metadata,
+          version.title AS current_version_title,
+          version.body AS current_version_body,
+          version.artifact_metadata AS current_version_artifact_metadata
+        FROM execution_platform.work_items item
+        LEFT JOIN execution_platform.work_item_versions version
+          ON version.version_id = item.current_version_id
+        WHERE item.work_item_id IN (${placeholders})
+      `,
+      boundedIds,
+    );
+    for (const row of itemRows.rows) {
+      snapshots.set(row.work_item_id, {
+        title: row.title,
+        description: row.description,
+        metadata: row.metadata,
+        currentVersionTitle: row.current_version_title,
+        currentVersionBody: row.current_version_body,
+        currentVersionArtifactMetadata: row.current_version_artifact_metadata ?? {},
+        dependencyKeys: [],
+      });
+    }
+    const dependencyRows = await this.sql.query<WorkItemDependencyKeyRow>(
+      `
+        SELECT work_item_id, depends_on_work_item_id, dependency_type
+        FROM execution_platform.work_item_dependencies
+        WHERE work_item_id IN (${placeholders})
+      `,
+      boundedIds,
+    );
+    for (const row of dependencyRows.rows) {
+      const snapshot = snapshots.get(row.work_item_id);
+      if (!snapshot) {
+        continue;
+      }
+      snapshot.dependencyKeys.push(
+        `${row.work_item_id}\u0000${row.depends_on_work_item_id}\u0000${row.dependency_type}`,
+      );
+    }
+    return snapshots;
   }
 
   async createWorkItemVersion(input: CreateWorkItemVersionInput): Promise<WorkItemVersion> {
@@ -1066,21 +1506,60 @@ export class WorkQueueRepository {
     };
   }
 
+  async readRuntimeGraphChildTruths(
+    parentWorkItemId: string,
+    eventLimit = 20,
+  ): Promise<WorkItemTruth[]> {
+    const childRows = await this.sql.query<{ work_item_id: string }>(
+      `
+        SELECT child.work_item_id
+        FROM execution_platform.work_item_parent_workflow_links links
+        JOIN execution_platform.work_items child ON child.work_item_id = links.work_item_id
+        WHERE links.parent_workflow_id = $1
+          AND links.parent_workflow_kind IN ('runtime_work_graph', 'work_queue_parent_child_action_graph')
+        ORDER BY child.created_at ASC, child.work_item_id ASC
+      `,
+      [parentWorkItemId],
+    );
+    const children: WorkItemTruth[] = [];
+    for (const row of childRows.rows.slice(0, 200)) {
+      const truth = await this.readWorkItemTruth(row.work_item_id, eventLimit);
+      if (truth) {
+        children.push(truth);
+      }
+    }
+    return children;
+  }
+
   async readWorkQueue(limit = 50): Promise<WorkQueueReadModelItem[]> {
     const result = await this.sql.query<WorkItemRow>(
       `
         SELECT * FROM execution_platform.work_items
-        ORDER BY updated_at DESC, work_item_id ASC
+        ORDER BY
+          CASE
+            WHEN queue_status IN ('active', 'blocked', 'needs_review') THEN 0
+            WHEN queue_status IN ('closed', 'superseded', 'archived') THEN 1
+            ELSE 2
+          END ASC,
+          CASE WHEN queue_status IN ('active', 'blocked', 'needs_review') THEN COALESCE(queue_rank, 2147483647) END ASC,
+          CASE WHEN queue_status IN ('closed', 'superseded', 'archived') THEN closed_at END DESC NULLS LAST,
+          updated_at DESC,
+          work_item_id ASC
         LIMIT $1
       `,
       [limit],
     );
     const items: WorkQueueReadModelItem[] = [];
+    let activePosition = 0;
+    let closedPosition = 0;
     for (const row of result.rows) {
       const truth = await this.readWorkItemTruth(row.work_item_id, 1);
       if (!truth) {
         continue;
       }
+      const queueStatus = truth.item.queueStatus ?? "active";
+      const isClosed = ["closed", "superseded", "archived"].includes(queueStatus);
+      const position = isClosed ? ++closedPosition : ++activePosition;
       items.push({
         workItemId: truth.item.workItemId,
         itemType: truth.item.itemType,
@@ -1095,11 +1574,744 @@ export class WorkQueueRepository {
         runtimeJobIds: truth.runs
           .map((run) => run.runtimeJobId)
           .filter((runtimeJobId): runtimeJobId is string => Boolean(runtimeJobId)),
-        convergenceSlice: projectConvergenceSliceTracker(truth),
+        convergenceSlice: projectDbPrimaryWorkQueueItem({
+          truth,
+          activePosition: isClosed ? null : position,
+          closedPosition: isClosed ? position : null,
+        }),
+        queueStatus,
+        queuePosition: position,
         updatedAt: truth.item.updatedAt,
       });
     }
     return items;
+  }
+
+  async listDbWorkQueue(input: DbWorkQueueListInput = {}): Promise<DbWorkQueueListResult> {
+    const limit = clampWorkQueueLimit(input.limit);
+    const offset = decodeOffsetCursor(input.cursor);
+    const bucket = input.bucket ?? "active";
+    const statuses =
+      bucket === "active"
+        ? [...ACTIVE_QUEUE_STATUSES]
+        : bucket === "closed"
+          ? [...CLOSED_QUEUE_STATUSES]
+          : [...ACTIVE_QUEUE_STATUSES, ...CLOSED_QUEUE_STATUSES];
+    const search = input.searchQuery?.trim() ?? "";
+    const updatedSince = sqlDate(input.updatedSince);
+    const params: unknown[] = [];
+    const conditions: string[] = [];
+
+    if (statuses.length > 0) {
+      params.push(statuses);
+      conditions.push(`queue_status = ANY($${params.length}::text[])`);
+    }
+    if (search.length > 0) {
+      params.push(`%${search.replace(/[%_]/gu, "\\$&")}%`);
+      conditions.push(
+        `(title ILIKE $${params.length} ESCAPE '\\' OR COALESCE(description, '') ILIKE $${params.length} ESCAPE '\\')`,
+      );
+    }
+    if (updatedSince) {
+      params.push(updatedSince);
+      conditions.push(`updated_at > $${params.length}::timestamptz`);
+    }
+    params.push(limit, offset);
+    const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+    const result = await this.sql.query<WorkItemRow>(
+      `
+        SELECT * FROM execution_platform.work_items
+        ${where}
+        ORDER BY
+          CASE
+            WHEN queue_status IN ('active', 'blocked', 'needs_review') THEN 0
+            WHEN queue_status IN ('closed', 'superseded', 'archived') THEN 1
+            ELSE 2
+          END ASC,
+          CASE WHEN queue_status IN ('active', 'blocked', 'needs_review') THEN COALESCE(queue_rank, 2147483647) END ASC,
+          CASE WHEN queue_status IN ('closed', 'superseded', 'archived') THEN closed_at END DESC NULLS LAST,
+          updated_at DESC,
+          work_item_id ASC
+        LIMIT $${params.length - 1}
+        OFFSET $${params.length}
+      `,
+      params,
+    );
+    const items: DbWorkQueueSummary[] = [];
+    for (const [index, row] of result.rows.entries()) {
+      const truth = await this.readWorkItemTruth(row.work_item_id, 1);
+      if (!truth) {
+        continue;
+      }
+      const queueStatus = truth.item.queueStatus ?? "active";
+      const isClosed = CLOSED_QUEUE_STATUSES.includes(queueStatus as never);
+      const position = offset + index + 1;
+      items.push({
+        workItemId: truth.item.workItemId,
+        itemType: truth.item.itemType,
+        title: truth.item.title,
+        description: truth.item.description,
+        lifecycleState: truth.item.lifecycleState,
+        queueStatus,
+        queuePosition: position,
+        queueRank: truth.item.queueRank ?? null,
+        closedAt: truth.item.closedAt?.toISOString() ?? null,
+        updatedAt: truth.item.updatedAt.toISOString(),
+        runtimeJobIds: truth.runs
+          .map((run) => run.runtimeJobId)
+          .filter((runtimeJobId): runtimeJobId is string => Boolean(runtimeJobId))
+          .slice(0, 20),
+        graphRef: truth.item.graphRef ?? null,
+        validationRef: truth.item.validationRef ?? null,
+        closeoutCapsuleRef: truth.item.closeoutCapsuleRef ?? null,
+        ownerReadbackRef: truth.item.ownerReadbackRef ?? null,
+        convergenceSlice: projectDbPrimaryWorkQueueItem({
+          truth,
+          activePosition: isClosed ? null : position,
+          closedPosition: isClosed ? position : null,
+        }),
+        rawPromptStored: false,
+        rawResponseStored: false,
+        rawLogsStored: false,
+      });
+    }
+    const latestUpdatedAt =
+      items
+        .map((item) => item.updatedAt)
+        .toSorted()
+        .at(-1) ?? new Date(0).toISOString();
+    return {
+      artifactKind: "db_work_queue_list_result",
+      source: "execution_platform_work_queue_db",
+      bucket,
+      limit,
+      nextCursor: encodeOffsetCursor(offset, result.rows.length, limit),
+      deltaCursor: latestUpdatedAt,
+      items,
+      rawPromptStored: false,
+      rawResponseStored: false,
+      rawLogsStored: false,
+      rawDbRowsStored: false,
+    };
+  }
+
+  async recordCloseoutProjectionReadback(
+    input: RecordCloseoutProjectionReadbackInput,
+  ): Promise<WorkItemArtifact> {
+    if (input.accepted === false) {
+      throw new Error("closeout_projection_requires_accepted_capsule");
+    }
+    if (!input.workItemId.trim() || !input.closeoutRef.trim()) {
+      throw new Error("closeout_projection_missing_required_refs");
+    }
+    if (input.lifecycleMutationAllowed === true) {
+      throw new Error("closeout_projection_lifecycle_mutation_rejected");
+    }
+    if ((input.graphRefs?.length ?? 0) > 20) {
+      throw new Error("closeout_projection_graph_refs_exceeds_limit");
+    }
+    if ((input.validationRefs?.length ?? 0) > 20) {
+      throw new Error("closeout_projection_validation_refs_exceeds_limit");
+    }
+    if ((input.humanDecisionRefs?.length ?? 0) > 20) {
+      throw new Error("closeout_projection_human_decision_refs_exceeds_limit");
+    }
+    if ((input.followUpChildWorkItemIds?.length ?? 0) > 50) {
+      throw new Error("closeout_projection_follow_up_child_refs_exceeds_limit_50");
+    }
+    if (
+      input.priorityNote &&
+      input.priorityNote.trim().length > MAX_CLOSEOUT_PRIORITY_NOTE_LENGTH
+    ) {
+      throw new Error("closeout_projection_priority_note_exceeds_limit_160");
+    }
+
+    return this.attachArtifactReference({
+      artifactId: input.artifactId,
+      workItemId: input.workItemId,
+      artifactType: "execution_platform.closeout_projection_readback",
+      storageKind: "metadata",
+      uri: input.closeoutRef,
+      metadata: {
+        accepted: true,
+        workItemId: input.workItemId,
+        closeoutRef: input.closeoutRef,
+        graphRefs: input.graphRefs?.slice(0, 20) ?? [],
+        validationRefs: input.validationRefs?.slice(0, 20) ?? [],
+        humanDecisionRefs: input.humanDecisionRefs?.slice(0, 20) ?? [],
+        followUpChildWorkItemIds: input.followUpChildWorkItemIds?.slice(0, 50) ?? [],
+        blockerReasonCodes: input.blockerReasonCodes?.slice(0, 10) ?? [],
+        limitations: input.limitations?.slice(0, 10) ?? [],
+        priorityNote: input.priorityNote
+          ? input.priorityNote.trim().slice(0, MAX_CLOSEOUT_PRIORITY_NOTE_LENGTH)
+          : null,
+        eli5Progress: input.eli5Progress ?? null,
+        nextStep: input.nextStep ?? null,
+        rawPromptStored: false,
+        rawResponseStored: false,
+        rawLogsStored: false,
+        workQueueLifecycleMutationAllowed: false,
+        lifecycleMutationAllowed: input.lifecycleMutationAllowed ?? false,
+      },
+    });
+  }
+
+  async completeWorkQueueItemFromCloseout(
+    input: CompleteWorkQueueItemFromCloseoutInput,
+  ): Promise<CompleteWorkQueueItemFromCloseoutResult> {
+    if (!input.workItemId.trim() || !input.closeoutRef.trim()) {
+      throw new Error("work_queue_closeout_transition_missing_required_refs");
+    }
+    const rawInput = input as Record<string, unknown>;
+    if (
+      rawInput.rawPromptStored === true ||
+      rawInput.rawResponseStored === true ||
+      rawInput.rawTranscriptStored === true ||
+      rawInput.rawLogsStored === true ||
+      rawInput.rawDbRowsStored === true
+    ) {
+      throw new Error("work_queue_closeout_transition_raw_storage_rejected");
+    }
+    if (
+      rawInput.authorityGranted === true ||
+      rawInput.controlsApplied === true ||
+      rawInput.runtimeLifecycleMutated === true ||
+      rawInput.modelPromotionPerformed === true
+    ) {
+      throw new Error("work_queue_closeout_transition_side_effect_rejected");
+    }
+    if (input.runtimeJobId) {
+      await this.requireRuntimeJob(input.runtimeJobId);
+    }
+
+    const accepted = input.accepted !== false;
+    const validationMissing = input.validationRequired === true && !input.validationRef?.trim();
+    const changedFilesMissing =
+      input.sourceEditRequired === true && (input.changedFileRefs?.length ?? 0) === 0;
+    const providerUnavailable = input.providerUnavailable === true;
+    const closeoutModelTimeout = input.closeoutModelTimeout === true;
+    const mayClose =
+      accepted &&
+      !validationMissing &&
+      !changedFilesMissing &&
+      !providerUnavailable &&
+      !closeoutModelTimeout;
+    const status: WorkItemQueueStatus = mayClose ? "closed" : "needs_review";
+    const reasonCodes = [
+      ...(input.reasonCodes ?? []),
+      ...(accepted ? ["accepted_closeout_evidence"] : ["closeout_not_accepted"]),
+      ...(validationMissing ? ["required_validation_ref_missing"] : []),
+      ...(changedFilesMissing ? ["required_changed_file_evidence_missing"] : []),
+      ...(providerUnavailable ? ["provider_unavailable_needs_review"] : []),
+      ...(closeoutModelTimeout ? ["closeout_model_timeout_needs_review"] : []),
+      ...(mayClose ? ["work_queue_item_closed_from_closeout"] : ["work_queue_item_needs_review"]),
+    ]
+      .filter((value, index, all) => value.trim().length > 0 && all.indexOf(value) === index)
+      .slice(0, 30);
+    const now = this.now();
+
+    return this.sql.withTransaction(async (tx) => {
+      const current = await tx.query<WorkItemRow>(
+        `SELECT * FROM execution_platform.work_items WHERE work_item_id = $1`,
+        [input.workItemId],
+      );
+      const currentRow = current.rows[0];
+      if (!currentRow) {
+        throw new Error(`work_item_not_found:${input.workItemId}`);
+      }
+      const idempotent =
+        currentRow.queue_status === status &&
+        (currentRow.closed_by_closeout_ref === input.closeoutRef ||
+          currentRow.closeout_capsule_ref === input.closeoutRef) &&
+        (input.validationRef === undefined || currentRow.validation_ref === input.validationRef);
+      const currentMetadata =
+        currentRow.metadata &&
+        typeof currentRow.metadata === "object" &&
+        !Array.isArray(currentRow.metadata)
+          ? currentRow.metadata
+          : {};
+      const transitionMetadata = {
+        ...currentMetadata,
+        dbPrimaryQueueStatus: status,
+        closeoutTransitionReasonCodes: reasonCodes,
+        closeoutHash: input.closeoutHash ?? null,
+        closeoutRef: input.closeoutRef,
+        closeoutArtifactRefs: input.artifactRefs?.slice(0, 20) ?? [],
+        workQueueStatusSource: "runtime_closeout_transition_api",
+        rawPromptStored: false,
+        rawResponseStored: false,
+        rawTranscriptStored: false,
+        rawLogsStored: false,
+        rawDbRowsStored: false,
+      };
+      const updated = await tx.query<WorkItemRow>(
+        `
+          UPDATE execution_platform.work_items
+          SET queue_status = $2,
+              closed_at = CASE WHEN $2 = 'closed' THEN COALESCE(closed_at, $3::timestamptz) ELSE closed_at END,
+              closed_by_runtime_job_id = CASE WHEN $2 = 'closed' THEN $4 ELSE closed_by_runtime_job_id END,
+              closed_by_closeout_ref = CASE WHEN $2 = 'closed' THEN $5 ELSE closed_by_closeout_ref END,
+              closeout_capsule_ref = $5,
+              validation_ref = COALESCE($6, validation_ref),
+              graph_ref = COALESCE($7, graph_ref),
+              owner_readback_ref = COALESCE($8, owner_readback_ref),
+              metadata = $9::jsonb,
+              updated_at = $3::timestamptz
+          WHERE work_item_id = $1
+          RETURNING *
+        `,
+        [
+          input.workItemId,
+          status,
+          now,
+          input.runtimeJobId ?? null,
+          input.closeoutRef,
+          input.validationRef ?? null,
+          input.graphRef ?? null,
+          input.ownerReadbackRef ?? null,
+          encodeJson(transitionMetadata),
+        ],
+      );
+      await this.recordLifecycleEventInTx(tx, {
+        workItemId: input.workItemId,
+        eventType: mayClose
+          ? "work_item.queue_status_closed_from_closeout"
+          : "work_item.queue_status_needs_review_from_closeout",
+        actorId: input.actorId ?? "system:work-queue-closeout-transition",
+        data: {
+          queueStatus: status,
+          closeoutRef: input.closeoutRef,
+          runtimeJobId: input.runtimeJobId ?? null,
+          validationRef: input.validationRef ?? null,
+          reasonCodes,
+          runtimeLifecycleMutated: false,
+          rawPromptStored: false,
+          rawResponseStored: false,
+          rawTranscriptStored: false,
+          rawLogsStored: false,
+          rawDbRowsStored: false,
+        },
+        eventTime: now,
+      });
+      return {
+        artifactKind: "work_queue_item_closeout_transition_result",
+        workItemId: input.workItemId,
+        status: updated.rows[0]!.queue_status,
+        closed: updated.rows[0]!.queue_status === "closed",
+        idempotent,
+        closeoutRef: input.closeoutRef,
+        runtimeJobId: input.runtimeJobId ?? null,
+        validationRef: input.validationRef ?? null,
+        reasonCodes,
+        rawPromptStored: false,
+        rawResponseStored: false,
+        rawTranscriptStored: false,
+        rawLogsStored: false,
+        rawDbRowsStored: false,
+        authorityGranted: false,
+        controlsApplied: false,
+        runtimeLifecycleMutated: false,
+        workQueueStatusMutated: true,
+        modelPromotionPerformed: false,
+      };
+    });
+  }
+
+  async syncRuntimeGraphNodeToWorkQueue(
+    input: SyncRuntimeGraphNodeToWorkQueueInput,
+  ): Promise<SyncRuntimeGraphNodeToWorkQueueResult> {
+    if (!input.parentWorkItemId.trim() || !input.graphId.trim() || !input.nodeId.trim()) {
+      throw new Error("runtime_graph_work_queue_sync_missing_required_refs");
+    }
+    const evidenceRefs = (input.evidenceRefs ?? []).slice(0, 20);
+    const blockerReasonCodes = (input.blockerReasonCodes ?? []).slice(0, 10);
+    const now = this.now();
+    const childWorkItemId = `runtime-graph:${input.graphId}:${input.nodeId}`.slice(0, 240);
+    const title =
+      input.title?.trim() ||
+      `${input.nodeKind.replace(/_/gu, " ")} - ${input.assignedRole}`.slice(0, 180);
+    const graphNodeRef =
+      input.graphNodeRef ?? `runtime-work-graph://${input.graphId}/node/${input.nodeId}`;
+    const queueStatus: WorkItemQueueStatus = input.queueStatus ?? "active";
+    const metadata = {
+      actionGraph: {
+        parentWorkItemId: input.parentWorkItemId,
+        graphId: input.graphId,
+        nodeId: input.nodeId,
+        nodeKind: input.nodeKind,
+        actionKind: input.nodeKind,
+        assignedRole: input.assignedRole,
+        assignedWorkflow: input.assignedWorkflow,
+        runtimeJobId: input.runtimeJobId ?? null,
+        humanTaskId: input.humanTaskId ?? null,
+        graphNodeRef,
+        evidenceRefs,
+        blockerReasonCodes,
+        queueStatus,
+        optional: input.optional === true,
+        planningStatusIsLifecycleState: false,
+        rawPromptStored: false,
+        rawResponseStored: false,
+        rawLogsStored: false,
+        workQueueLifecycleMutated: false,
+      },
+    } satisfies JsonValue;
+    assertJsonByteLength(metadata, this.maxJsonBytes, "runtime graph work item metadata");
+    return this.sql.withTransaction(async (tx) => {
+      const parent = await tx.query<WorkItemRow>(
+        `SELECT * FROM execution_platform.work_items WHERE work_item_id = $1 FOR UPDATE`,
+        [input.parentWorkItemId],
+      );
+      if (!parent.rows[0]) {
+        throw new Error(`parent_work_item_not_found:${input.parentWorkItemId}`);
+      }
+      const existing = await tx.query<WorkItemRow>(
+        `SELECT * FROM execution_platform.work_items WHERE work_item_id = $1 FOR UPDATE`,
+        [childWorkItemId],
+      );
+      const created = existing.rows.length === 0;
+      const rankResult = created
+        ? await tx.query<{ next_rank: number | string }>(
+            `
+              SELECT COALESCE(MAX(queue_rank), 0) + 1 AS next_rank
+              FROM execution_platform.work_items
+              WHERE queue_status IN ('active', 'blocked', 'needs_review')
+            `,
+          )
+        : null;
+      const queueRank = Number(rankResult?.rows[0]?.next_rank ?? existing.rows[0]?.queue_rank ?? 1);
+      await tx.query<WorkItemRow>(
+        `
+          INSERT INTO execution_platform.work_items (
+            work_item_id,
+            item_type,
+            title,
+            description,
+            queue_status,
+            queue_rank,
+            graph_ref,
+            metadata,
+            created_at,
+            updated_at
+          )
+          VALUES ($1, $2, $3, $4, $9, $5, $6, $7::jsonb, $8::timestamptz, $8::timestamptz)
+          ON CONFLICT (work_item_id) DO UPDATE
+          SET title = EXCLUDED.title,
+              description = EXCLUDED.description,
+              queue_status = $9,
+              closed_at = CASE WHEN $9 IN ('closed', 'superseded', 'archived') THEN COALESCE(execution_platform.work_items.closed_at, $8::timestamptz) ELSE NULL END,
+              graph_ref = EXCLUDED.graph_ref,
+              metadata = EXCLUDED.metadata,
+              updated_at = EXCLUDED.updated_at
+          RETURNING *
+        `,
+        [
+          childWorkItemId,
+          `runtime_work_graph_node.${input.nodeKind}`.slice(0, 120),
+          title,
+          `${input.nodeKind}: ${input.assignedWorkflow}`.slice(0, 600),
+          queueRank,
+          graphNodeRef,
+          encodeJson(metadata),
+          now,
+          queueStatus,
+        ],
+      );
+      await tx.query(
+        `
+          INSERT INTO execution_platform.work_item_parent_workflow_links (
+            link_id,
+            work_item_id,
+            parent_workflow_id,
+            parent_workflow_kind,
+            metadata,
+            created_at
+          )
+          VALUES ($1, $2, $3, 'runtime_work_graph', $4::jsonb, $5::timestamptz)
+          ON CONFLICT (work_item_id, parent_workflow_id, parent_workflow_kind) DO UPDATE
+          SET metadata = EXCLUDED.metadata
+        `,
+        [
+          randomUUID(),
+          childWorkItemId,
+          input.parentWorkItemId,
+          encodeJson({
+            graphId: input.graphId,
+            nodeId: input.nodeId,
+            graphNodeRef,
+            planningStatusIsLifecycleState: false,
+          } satisfies JsonValue),
+          now,
+        ],
+      );
+      const assignment = await tx.query(
+        `
+          SELECT assignment_id
+          FROM execution_platform.work_item_assignments
+          WHERE work_item_id = $1
+            AND assignee_type = $2
+            AND assignee_id = $3
+            AND role = $4
+          LIMIT 1
+        `,
+        [
+          childWorkItemId,
+          input.nodeKind === "human_task" ? "human" : "workflow",
+          input.assignedWorkflow,
+          input.assignedRole,
+        ],
+      );
+      if (assignment.rows.length === 0) {
+        await tx.query(
+          `
+            INSERT INTO execution_platform.work_item_assignments (
+              assignment_id,
+              work_item_id,
+              assignee_type,
+              assignee_id,
+              role,
+              metadata,
+              created_at
+            )
+            VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7::timestamptz)
+          `,
+          [
+            randomUUID(),
+            childWorkItemId,
+            input.nodeKind === "human_task" ? "human" : "workflow",
+            input.assignedWorkflow,
+            input.assignedRole,
+            encodeJson({ graphId: input.graphId, nodeId: input.nodeId } satisfies JsonValue),
+            now,
+          ],
+        );
+      }
+      await this.recordLifecycleEventInTx(tx, {
+        workItemId: childWorkItemId,
+        eventType: created
+          ? "work_item.runtime_graph_child_created"
+          : "work_item.runtime_graph_child_updated",
+        actorId: input.actorId ?? "system:runtime-work-graph-sync",
+        data: {
+          parentWorkItemId: input.parentWorkItemId,
+          graphId: input.graphId,
+          nodeId: input.nodeId,
+          graphNodeRef,
+          optional: input.optional === true,
+          evidenceRefs,
+          blockerReasonCodes,
+          queueStatus,
+          rawPromptStored: false,
+          rawResponseStored: false,
+          rawLogsStored: false,
+        },
+        eventTime: now,
+      });
+      if (this.eventStore) {
+        const runtimeGraphEventTypes = deriveRuntimeGraphEventTypes({
+          created,
+          nodeKind: input.nodeKind,
+          queueStatus,
+        }).filter((eventType) =>
+          created
+            ? eventType !== "work_queue.child_created"
+            : eventType !== "work_queue.child_updated",
+        );
+        for (const eventType of runtimeGraphEventTypes) {
+          await this.eventStore.appendEvent(
+            {
+              eventType,
+              workItemId: childWorkItemId,
+              parentWorkItemId: input.parentWorkItemId,
+              graphId: input.graphId,
+              nodeId: input.nodeId,
+              runtimeJobId: input.runtimeJobId ?? null,
+              humanTaskId: input.humanTaskId ?? null,
+              queueStatus,
+              reasonCodes: blockerReasonCodes,
+              evidenceRefs,
+              payload: {
+                nodeKind: input.nodeKind,
+                assignedRole: input.assignedRole,
+                assignedWorkflow: input.assignedWorkflow,
+                graphNodeRef,
+                rawPromptStored: false,
+                rawResponseStored: false,
+                rawLogsStored: false,
+              },
+              idempotencyKey: `runtime-graph:${eventType}:${input.graphId}:${input.nodeId}:${queueStatus}`,
+              createdAt: now,
+              rawPromptStored: false,
+              rawResponseStored: false,
+              rawProviderLogStored: false,
+              rawToolLogStored: false,
+              rawDbRowsStored: false,
+              workQueueLifecycleMutated: false,
+            },
+            tx,
+          );
+        }
+      }
+      return {
+        artifactKind: "runtime_graph_node_work_queue_sync_result",
+        parentWorkItemId: input.parentWorkItemId,
+        childWorkItemId,
+        graphId: input.graphId,
+        nodeId: input.nodeId,
+        created,
+        idempotent: !created,
+        rawPromptStored: false,
+        rawResponseStored: false,
+        rawLogsStored: false,
+        rawDbRowsStored: false,
+        workQueueLifecycleMutated: false,
+      };
+    });
+  }
+
+  async rollupParentWorkQueueStatus(input: {
+    parentWorkItemId: string;
+    finalCloseoutRef?: string | null;
+    actorId?: string | null;
+  }): Promise<RollupParentWorkQueueStatusResult> {
+    const now = this.now();
+    return this.sql.withTransaction(async (tx) => {
+      const parent = await tx.query<WorkItemRow>(
+        `SELECT * FROM execution_platform.work_items WHERE work_item_id = $1 FOR UPDATE`,
+        [input.parentWorkItemId],
+      );
+      if (!parent.rows[0]) {
+        throw new Error(`parent_work_item_not_found:${input.parentWorkItemId}`);
+      }
+      const childRows = await tx.query<WorkItemRow>(
+        `
+          SELECT child.*
+          FROM execution_platform.work_item_parent_workflow_links links
+          JOIN execution_platform.work_items child ON child.work_item_id = links.work_item_id
+          WHERE links.parent_workflow_id = $1
+            AND links.parent_workflow_kind IN ('runtime_work_graph', 'work_queue_parent_child_action_graph')
+          ORDER BY child.created_at, child.work_item_id
+        `,
+        [input.parentWorkItemId],
+      );
+      const optionalChildWorkItemIds: string[] = [];
+      const requiredChildren: WorkItemRow[] = [];
+      for (const child of childRows.rows) {
+        const metadata =
+          child.metadata && typeof child.metadata === "object" && !Array.isArray(child.metadata)
+            ? (child.metadata as Record<string, unknown>)
+            : {};
+        const actionGraph =
+          metadata.actionGraph &&
+          typeof metadata.actionGraph === "object" &&
+          !Array.isArray(metadata.actionGraph)
+            ? (metadata.actionGraph as Record<string, unknown>)
+            : {};
+        if (actionGraph.optional === true) {
+          optionalChildWorkItemIds.push(child.work_item_id);
+        } else {
+          requiredChildren.push(child);
+        }
+      }
+      const requiredStatuses = new Set(requiredChildren.map((child) => child.queue_status));
+      const nextStatus: WorkItemQueueStatus =
+        requiredChildren.length === 0
+          ? parent.rows[0].queue_status
+          : [...requiredStatuses].some(
+                (status) => status === "needs_review" || status === "blocked",
+              )
+            ? "needs_review"
+            : requiredChildren.every((child) =>
+                  CLOSED_QUEUE_STATUSES.includes(
+                    child.queue_status as (typeof CLOSED_QUEUE_STATUSES)[number],
+                  ),
+                )
+              ? "closed"
+              : "active";
+      const changed = parent.rows[0].queue_status !== nextStatus;
+      const reasonCodes = [
+        "parent_rollup_evaluated",
+        ...(requiredChildren.length === 0 ? ["parent_rollup_no_required_children"] : []),
+        ...(nextStatus === "closed" ? ["parent_rollup_required_children_closed"] : []),
+        ...(nextStatus === "needs_review" ? ["parent_rollup_required_child_needs_review"] : []),
+        ...(nextStatus === "active" ? ["parent_rollup_required_children_active"] : []),
+      ].slice(0, 20);
+      if (changed) {
+        await tx.query(
+          `
+            UPDATE execution_platform.work_items
+            SET queue_status = $2,
+                closed_at = CASE WHEN $2 = 'closed' THEN COALESCE(closed_at, $3::timestamptz) ELSE NULL END,
+                closed_by_closeout_ref = CASE WHEN $2 = 'closed' THEN COALESCE($4, closed_by_closeout_ref) ELSE closed_by_closeout_ref END,
+                closeout_capsule_ref = COALESCE($4, closeout_capsule_ref),
+                updated_at = $3::timestamptz
+            WHERE work_item_id = $1
+          `,
+          [input.parentWorkItemId, nextStatus, now, input.finalCloseoutRef ?? null],
+        );
+        await this.recordLifecycleEventInTx(tx, {
+          workItemId: input.parentWorkItemId,
+          eventType: "work_item.parent_rollup_status_updated",
+          actorId: input.actorId ?? "system:work-queue-parent-rollup",
+          data: {
+            queueStatus: nextStatus,
+            requiredChildWorkItemIds: requiredChildren.map((child) => child.work_item_id),
+            optionalChildWorkItemIds,
+            reasonCodes,
+            runtimeLifecycleMutated: false,
+            rawPromptStored: false,
+            rawResponseStored: false,
+            rawLogsStored: false,
+          },
+          eventTime: now,
+        });
+      }
+      return {
+        artifactKind: "work_queue_parent_rollup_result",
+        parentWorkItemId: input.parentWorkItemId,
+        childWorkItemIds: childRows.rows.map((child) => child.work_item_id),
+        requiredChildWorkItemIds: requiredChildren.map((child) => child.work_item_id),
+        optionalChildWorkItemIds,
+        queueStatus: nextStatus,
+        changed,
+        reasonCodes,
+        rawPromptStored: false,
+        rawResponseStored: false,
+        rawLogsStored: false,
+        rawDbRowsStored: false,
+        runtimeLifecycleMutated: false,
+        workQueueStatusMutated: changed,
+      };
+    });
+  }
+
+  async projectCanonicalRuntimeQueue(limit = 200): Promise<CanonicalRuntimeQueueProjection> {
+    const boundedLimit = Math.max(1, Math.min(limit, 500));
+    const items = await this.sql.query<WorkItemRow>(
+      `
+        SELECT * FROM execution_platform.work_items
+        ORDER BY
+          CASE
+            WHEN queue_status IN ('active', 'blocked', 'needs_review') THEN 0
+            WHEN queue_status IN ('closed', 'superseded', 'archived') THEN 1
+            ELSE 2
+          END ASC,
+          CASE WHEN queue_status IN ('active', 'blocked', 'needs_review') THEN COALESCE(queue_rank, 2147483647) END ASC,
+          CASE WHEN queue_status IN ('closed', 'superseded', 'archived') THEN closed_at END DESC NULLS LAST,
+          updated_at DESC,
+          work_item_id ASC
+        LIMIT $1
+      `,
+      [boundedLimit],
+    );
+    const truths: WorkItemTruth[] = [];
+    for (const item of items.rows) {
+      const truth = await this.readWorkItemTruth(item.work_item_id, 50);
+      if (truth) {
+        truths.push(truth);
+      }
+    }
+    return buildCanonicalRuntimeQueueProjection(truths);
   }
 
   private async requireRuntimeJob(runtimeJobId: string): Promise<RuntimeJob> {
@@ -1192,6 +2404,46 @@ export class WorkQueueRepository {
         encodeJson(input.data),
       ],
     );
-    return decodeEvent(result.rows[0]!);
+    const event = decodeEvent(result.rows[0]!);
+    const workQueueEventType = mapLifecycleEventToWorkQueueEvent(input);
+    if (workQueueEventType && this.eventStore) {
+      const data = readRecord(input.data);
+      await this.eventStore.appendEvent(
+        {
+          eventType: workQueueEventType,
+          workItemId: input.workItemId,
+          parentWorkItemId:
+            typeof data.parentWorkItemId === "string" ? data.parentWorkItemId : null,
+          graphId: typeof data.graphId === "string" ? data.graphId : null,
+          nodeId: typeof data.nodeId === "string" ? data.nodeId : null,
+          runtimeJobId: typeof data.runtimeJobId === "string" ? data.runtimeJobId : null,
+          humanTaskId: typeof data.humanTaskId === "string" ? data.humanTaskId : null,
+          queueStatus:
+            typeof data.queueStatus === "string" ? (data.queueStatus as WorkItemQueueStatus) : null,
+          reasonCodes: readStringArrayFromRecord(data, "reasonCodes"),
+          evidenceRefs: readStringArrayFromRecord(data, "evidenceRefs"),
+          payload: {
+            lifecycleEventId: event.eventId,
+            lifecycleEventType: input.eventType,
+            lifecycleState: input.lifecycleState ?? null,
+            actorId: input.actorId ?? null,
+            rawPromptStored: false,
+            rawResponseStored: false,
+            rawLogsStored: false,
+            rawDbRowsStored: false,
+          },
+          idempotencyKey: `lifecycle:${event.eventId}`,
+          createdAt: input.eventTime,
+          rawPromptStored: false,
+          rawResponseStored: false,
+          rawProviderLogStored: false,
+          rawToolLogStored: false,
+          rawDbRowsStored: false,
+          workQueueLifecycleMutated: false,
+        },
+        tx,
+      );
+    }
+    return event;
   }
 }

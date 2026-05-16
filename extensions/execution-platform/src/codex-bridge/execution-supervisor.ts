@@ -108,6 +108,7 @@ export type SupervisorProcessResult = SupervisorProcessAudit & {
 export type SupervisorProcessCallbacks = {
   onJsonlLine?: (line: string) => Promise<void> | void;
   onHeartbeat?: () => Promise<void> | void;
+  onCodexAppServerEvent?: (event: JsonValue) => Promise<void> | void;
 };
 
 export type SupervisorProcessRunner = {

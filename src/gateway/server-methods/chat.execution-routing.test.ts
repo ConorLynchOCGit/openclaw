@@ -3,7 +3,9 @@ import {
   evaluateGatewayChatFrontDoorHandoffReadiness,
   buildExecutionChatAssistantText,
   buildFrontDoorHandoffFailureAssistantText,
+  buildHumanOperatorDecisionAssistantText,
   isLegacyExecutionChatIntentFallbackEnabled,
+  parseHumanOperatorDecisionResume,
   shouldAttemptIntentFrontDoorChatTurn,
   shouldAttemptExecutionWorkflowChatTurn,
   shouldPreserveNormalChatAfterFrontDoorSubmit,
@@ -29,6 +31,26 @@ describe("chat execution workflow routing", () => {
     expect(shouldAttemptExecutionWorkflowChatTurn("/reset")).toBe(false);
     expect(shouldAttemptExecutionWorkflowChatTurn("/status")).toBe(false);
     expect(shouldAttemptExecutionWorkflowChatTurn("stop please")).toBe(false);
+  });
+
+  it("keeps legacy semantic execution fallback test-only even when the env var is set", () => {
+    expect(
+      isLegacyExecutionChatIntentFallbackEnabled({
+        OPENCLAW_LEGACY_SEMANTIC_INTENT_ROUTING_FALLBACK: "1",
+      }),
+    ).toBe(false);
+    expect(
+      isLegacyExecutionChatIntentFallbackEnabled({
+        NODE_ENV: "production",
+        OPENCLAW_LEGACY_SEMANTIC_INTENT_ROUTING_FALLBACK: "1",
+      }),
+    ).toBe(false);
+    expect(
+      isLegacyExecutionChatIntentFallbackEnabled({
+        NODE_ENV: "test",
+        OPENCLAW_LEGACY_SEMANTIC_INTENT_ROUTING_FALLBACK: "1",
+      }),
+    ).toBe(true);
   });
 
   it("allows only low-risk temporary fallback when explicitly enabled", () => {
@@ -89,6 +111,31 @@ describe("chat execution workflow routing", () => {
     expect(shouldAttemptIntentFrontDoorChatTurn("/new")).toBe(false);
     expect(shouldAttemptIntentFrontDoorChatTurn("/reset")).toBe(false);
     expect(shouldAttemptIntentFrontDoorChatTurn("stop please")).toBe(false);
+  });
+
+  it("does not swallow long planning prompts as human decision resumes", () => {
+    const longPlanningPrompt = [
+      "You are OpenClaw working in /root/services/openclaw-roles/live.",
+      "Implement Product/Spec Planning as a Runtime Work Graph workflow.",
+      "The planning mode may be plan-only or child action graph proposals.",
+      "This is not a response to a pending human decision.",
+    ].join("\n\n");
+
+    expect(parseHumanOperatorDecisionResume(longPlanningPrompt)).toBeNull();
+    expect(parseHumanOperatorDecisionResume("child_action_graph_proposal")).toEqual({
+      runtimeJobId: null,
+      humanTaskId: null,
+      decision: "child_action_graph_proposal",
+    });
+    expect(
+      parseHumanOperatorDecisionResume(
+        "Decision: plan only for job native-exec-abc123 and human task human-task-def456",
+      ),
+    ).toEqual({
+      runtimeJobId: "native-exec-abc123",
+      humanTaskId: "human-task-def456",
+      decision: "plan_only",
+    });
   });
 
   it("requires gateway, owner canary, native submit, and inactive kill switch gates", () => {
@@ -211,5 +258,43 @@ describe("chat execution workflow routing", () => {
     expect(message).toContain("did not fall back to ordinary chat/tool execution");
     expect(message).toContain("ordinary_chat_fallback_suppressed");
     expect(message).not.toContain("raw prompt");
+  });
+
+  it("renders owner human decisions as plain-language choices instead of generic needs-review text", () => {
+    const message = buildHumanOperatorDecisionAssistantText({
+      workflowId: "agent_team.coding",
+      runtimeJobId: "native-exec-1",
+      metadata: {
+        waitingForOwnerPrompt: true,
+        decisionTitle: "Product/Spec Planning output mode",
+        decisionSummary:
+          "Choose whether this run should stop at a written plan or create review-gated child action graph proposals.",
+        options: [
+          {
+            label: "Child action graph proposal",
+            recommended: true,
+            impact: "Creates proposed child actions for Work Queue review.",
+          },
+          {
+            label: "Plan only",
+            recommended: false,
+            impact: "Keeps the output as a written plan.",
+          },
+        ],
+        naturalLanguageInstruction:
+          "Reply in OpenClaw with your choice in plain language, for example: choose child action graph proposals.",
+        technicalResumeRefs: {
+          humanTaskId: "human-task-1",
+        },
+      },
+    });
+
+    expect(message).toContain("OpenClaw is paused for your decision.");
+    expect(message).toContain("Product/Spec Planning output mode");
+    expect(message).toContain("Child action graph proposal (recommended)");
+    expect(message).toContain("Reply in OpenClaw with your choice");
+    expect(message).toContain("Runtime job: native-exec-1");
+    expect(message).toContain("Human task: human-task-1");
+    expect(message).not.toContain("Execution Platform needs review");
   });
 });

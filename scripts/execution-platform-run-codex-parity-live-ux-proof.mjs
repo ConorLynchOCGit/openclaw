@@ -47,58 +47,139 @@ async function boundedFetch(url) {
 }
 
 function buildLongPrompt(runTag) {
-  const base = [
+  return [
     "You are OpenClaw running a real owner-local coding-team job through the live UX path.",
-    `Proof run tag: ${runTag}.`,
     "",
-    "Goal: complete a small but real product-safe improvement for openclaw-convergence.active-queue-09, Proactivity Work Queue Quality Soak, using the OpenClaw coding team rather than a local proof runner.",
+    `Runtime proof run id: ${runTag}.`,
     "",
-    "Required work product:",
-    "- Improve owner-visible Runtime Work Graph / Work Queue readback for proactivity soak readiness.",
-    "- The smallest acceptable source change is to make readback or evidence summaries clearer about proactivity opportunity seed quality, closeout capsule refs, role/model refs, and bounded validation evidence.",
-    "- Prefer existing files under extensions/execution-platform/src/work-queue/, extensions/execution-platform/src/codex-bridge/, ui/src/ui/, docs/projects/execution-platform/, or scripts/.",
-    "- Add or update focused tests that validate the behavior you changed.",
+    "Goal: implement the first production-safe Product/Spec Planning Worker Contract surface.",
+    "",
+    "This is a real coding task, not a proof runner. Route through agent_team.coding and complete the work through the OpenClaw Runtime Work Graph path.",
+    "",
+    "Current truth:",
+    "",
+    "- Runtime Work Graph exists.",
+    "- Work Queue is projection/control/readback, not lifecycle truth.",
+    "- Runtime jobs remain lifecycle truth.",
+    "- Human operator task adapter exists.",
+    "- Kimi standard implementation adapter exists but still needs live proof as a real implementation lane.",
+    "- Codex parity implementation adapter exists for complex implementation and repair.",
+    "- Dynamic validation repair loop exists and must be exercised in this job.",
+    "- Work Queue readback must show what actually happened, not just process metadata.",
+    "",
+    "Task:",
+    "",
+    "Implement a Product/Spec Planning Worker Contract surface that supports product/spec planning jobs as a first-class workflow contract.",
+    "",
+    "The contract should distinguish at least these modes:",
+    "",
+    "- plan_only: produce a bounded product/spec plan only.",
+    "- child_action_graph_proposal: produce bounded proposed child actions that can later be reviewed/compiled into runtime jobs.",
+    "",
+    "Implement the smallest production-safe version that is genuinely useful and wired into the existing Execution Platform patterns. If the basic surface already exists, make the smallest generally useful hardening, readback, test, or docs improvement that directly supports this Product/Spec Planning Worker Contract objective.",
+    "",
+    "Expected implementation areas may include:",
+    "",
+    "- extensions/execution-platform/src/workflows/",
+    "- extensions/execution-platform/src/work-queue/",
+    "- extensions/execution-platform/src/codex-bridge/",
+    "- relevant tests beside touched files",
+    "- relevant Execution Platform docs/specs if behavior changes",
+    "",
+    "Do not redesign the entire Work Queue in this slice. Keep the implementation scoped to Product/Spec Planning Worker Contract shape, readback, validation, and owner-visible evidence.",
     "",
     "Execution requirements:",
-    "- Route through agent_team.coding.",
-    "- Create a runtime job.",
-    "- Use the RuntimeWorkerSupervisor and Codex parity implementation adapter, not a local proof runner.",
-    "- The OpenClaw orchestrator/context/implementation/test/review role sequence must be visible in runtime evidence or explicitly skipped by a model-authored reason.",
-    "- The implementation worker must make actual source edits if source edits are required.",
-    "- The runtime must run focused validation and record every required validation command as passed, failed, or skipped with a bounded reason.",
-    "- Work Queue/readback should show role/model refs, changed files, validation refs, runtime job id, limitations, and a model-authored closeout.",
-    "- If no source files changed, the job must be needs_review or failed, not succeeded.",
+    "",
+    "1. Orchestrator must run first.",
+    "   - Use the real dynamic Runtime Work Graph path.",
+    "   - Produce child nodes for context, implementation, validation/test, review, and closeout.",
+    "   - Do not use static role artifacts as the source of truth.",
+    "",
+    "2. Kimi must attempt the first scoped standard implementation edit.",
+    "   - Kimi should receive bounded task summary, approved file refs, context refs, and validation refs.",
+    "   - Kimi must either produce a scoped file edit with validation evidence or return needs_review/escalate.",
+    "   - If Kimi cannot complete cleanly, escalate to Codex parity implementation inside the same runtime job.",
+    "   - Do not count Kimi as successful unless real changed-file evidence exists.",
+    "",
+    "3. Include one human/scope decision node.",
+    "   - Ask the owner/operator decision as a bounded human task:",
+    '     "Should Product/Spec Planning default to plan_only, or should it default to child_action_graph_proposal when the prompt asks for implementation planning?"',
+    "   - For this run, use the bounded decision: child_action_graph_proposal.",
+    "   - Resume the graph from that decision.",
+    "   - The human decision must appear in Runtime Work Graph and Work Queue readback.",
+    "",
+    "4. Exercise validation repair in the same runtime job.",
+    "   - Run focused validation.",
+    "   - If validation fails, the test engineer must inspect bounded validation evidence.",
+    "   - The implementation worker must repair inside the same runtime job.",
+    "   - Validation must rerun after repair.",
+    "   - Final success requires accepted validation evidence.",
+    "   - Do not fail the whole job just because the first validation attempt fails.",
+    "",
+    "5. Produce real source changes.",
+    "   - If this task requires code and no source files change, the runtime job must be needs_review or failed, never succeeded.",
+    "   - Do not claim success from prose or process completion.",
+    "",
+    "6. Work Queue/readback must show:",
+    "   - runtime job id",
+    "   - graph id",
+    "   - child nodes",
+    "   - Kimi attempt and result",
+    "   - Codex escalation or repair if used",
+    "   - human decision node and resume ref",
+    "   - role/model refs",
+    "   - changed files",
+    "   - validation attempts",
+    "   - repair attempts",
+    "   - final closeout",
+    "   - limitations",
+    "   - ELI5 progress",
     "",
     "Safety boundaries:",
+    "",
     "- Do not deploy.",
     "- Do not send outbound messages.",
     "- Do not promote models.",
     "- Do not change gateway port, auth, pairing state, ACP endpoint, or unrelated env.",
     "- Do not mutate Work Queue lifecycle directly.",
     "- Do not store raw prompts, raw responses, raw transcripts, provider logs, tool logs, command logs, DB rows, secrets, or hidden reasoning.",
-    "- Store only bounded summaries, hashes, refs, reason codes, model refs, runtime ids, artifact refs, validation refs, and closeout refs.",
-    "- Deterministic code validates shape, refs, bounds, authority, storage, lifecycle, and budgets; model-authored roles judge plan/work quality.",
+    "- Store only bounded summaries, hashes, refs, reason codes, runtime ids, model refs, artifact refs, validation refs, and closeout refs.",
+    "- Deterministic code validates shape, refs, bounds, authority, storage, lifecycle, and budgets.",
+    "- Model-authored roles judge product quality and implementation quality.",
+    "",
+    "Validation requirements:",
+    "",
+    "Run focused tests for the files you touch.",
+    "",
+    "At minimum, add or update tests proving:",
+    "",
+    "- Product/Spec Planning Worker Contract parses/validates.",
+    "- plan_only and child_action_graph_proposal are distinct.",
+    "- owner/human decision can choose the planning default.",
+    "- Work Queue/readback exposes Product/Spec Planning mode and evidence refs.",
+    "- no raw prompt/response/log storage is accepted.",
+    "- Work Queue lifecycle is not mutated.",
     "",
     "Closeout requirements:",
-    "- Produce one final model-authored closeout report.",
-    "- Include what changed, files/artifacts touched, tests/validation, workflow/agents/models used, limitations, and ELI5 progress.",
-    "- Make clear whether the work is ready for active-queue-09 follow-on soak.",
-  ];
-  const sections = [
-    "The owner cares about Codex-parity. Do not claim success from process completion alone. Runtime evidence must prove file changes, validation, review, and closeout.",
-    "The owner cares about dynamic OpenClaw role visibility. Codex-native internal subagents do not replace OpenClaw-visible role evidence. If subagents are used internally, describe them as internal only.",
-    "The owner cares about scalability. Avoid brittle prompt-specific hacks, semantic keyword forests, and deterministic English judgment. Prefer general evidence/readback improvements.",
-    "The owner cares about large prompts. Treat this whole prompt as volatile task input available to the worker path; do not work only from a short summary.",
-    "The owner cares about bounded storage. Use hashes and refs for evidence. Do not copy raw transcripts or raw provider output into artifacts.",
-    "The owner cares about tests. If tests need adjustment after the first implementation pass, the test/review role should identify that from bounded evidence and the implementation worker should repair within budget.",
-    "The owner cares about Work Queue truth. Work Queue is projection/readback/control, not lifecycle truth; runtime jobs remain lifecycle truth.",
-    "The owner cares about proactivity quality. Opportunity seeds should be useful owner-facing follow-up candidates, not generic spam.",
-  ];
-  const repeated = [];
-  while ([...base, ...repeated].join("\n").length < 11_000) {
-    repeated.push("", `Context reinforcement ${repeated.length + 1}:`, ...sections);
-  }
-  return [...base, ...repeated].join("\n").slice(0, 16_000);
+    "",
+    "Produce one final model-authored closeout report with:",
+    "",
+    "- what changed",
+    "- files changed",
+    "- workflow selected",
+    "- roles/agents used",
+    "- models used",
+    "- Kimi result",
+    "- Codex result if used",
+    "- human decision result",
+    "- validation/repair result",
+    "- tests run",
+    "- limitations",
+    "- whether this is production-ready",
+    "- ELI5 progress",
+    "",
+    "The final job should only succeed if runtime evidence supports the work product.",
+  ].join("\n");
 }
 
 function queryRuntimeEvidence(input) {
@@ -171,6 +252,14 @@ function queryRuntimeEvidence(input) {
           const dynamicValidationRepair = latestByType(
             artifacts,
             "agent_team.dynamic_validation_repair_loop",
+          );
+          const kimiAttempt = latestByType(
+            artifacts,
+            "agent_team.kimi_standard_implementation_attempt",
+          );
+          const humanScopeDecision = latestByType(
+            artifacts,
+            "agent_team.human_scope_decision",
           );
           const dynamicProgress = artifacts
             .filter((artifact) => artifact.artifactType === "agent_team.dynamic_progress")
@@ -245,6 +334,26 @@ function queryRuntimeEvidence(input) {
                   validationRefs: Array.isArray(asRecord(dynamicValidationRepair.metadata).validationRefs)
                     ? asRecord(dynamicValidationRepair.metadata).validationRefs.slice(0, 12)
                     : [],
+                }
+              : null,
+            kimiAttempt: kimiAttempt
+              ? {
+                  status: asRecord(kimiAttempt.metadata).status ?? null,
+                  modelRef: asRecord(kimiAttempt.metadata).modelRef ?? null,
+                  providerPath: asRecord(kimiAttempt.metadata).providerPath ?? null,
+                  changedFileRefs: Array.isArray(asRecord(kimiAttempt.metadata).changedFileRefs)
+                    ? asRecord(kimiAttempt.metadata).changedFileRefs.slice(0, 20)
+                    : [],
+                  reasonCodes: Array.isArray(asRecord(kimiAttempt.metadata).reasonCodes)
+                    ? asRecord(kimiAttempt.metadata).reasonCodes.slice(0, 20)
+                    : [],
+                }
+              : null,
+            humanScopeDecision: humanScopeDecision
+              ? {
+                  present: true,
+                  boundedDecisionRef:
+                    asRecord(humanScopeDecision.metadata).boundedDecisionRef ?? null,
                 }
               : null,
             dynamicProgress: {
@@ -328,6 +437,9 @@ function evaluate(evidence) {
     evidence?.runtimeEvidence?.inlineRoleOnlyExecutionAllowed === false,
   );
   const validationRepairAccepted = evidence?.dynamicValidationRepair?.finalState === "passed";
+  const repairAttemptRecorded = (evidence?.dynamicValidationRepair?.repairAttemptCount ?? 0) >= 1;
+  const kimiAttemptPresent = Boolean(evidence?.kimiAttempt?.modelRef);
+  const humanScopeDecisionPresent = Boolean(evidence?.humanScopeDecision?.present);
   const dynamicProgressVisible = (evidence?.dynamicProgress?.count ?? 0) >= 5;
   const requiredValidationKnown =
     validationRecords.length > 0 &&
@@ -345,6 +457,9 @@ function evaluate(evidence) {
     (taskNodeCount >= 4 || dynamicTaskNodeCount >= 2 || dynamicGraphPresent) &&
     dynamicGraphPresent &&
     validationRepairAccepted &&
+    repairAttemptRecorded &&
+    kimiAttemptPresent &&
+    humanScopeDecisionPresent &&
     dynamicProgressVisible &&
     evidence?.runtimeEvidence?.closeoutState === "present" &&
     parity.rawPromptStored === false &&
@@ -364,6 +479,9 @@ function evaluate(evidence) {
       : ["task_graph_nodes_missing"]),
     ...(dynamicGraphPresent ? [] : ["dynamic_runtime_work_graph_missing"]),
     ...(validationRepairAccepted ? [] : ["validation_repair_loop_not_passed"]),
+    ...(repairAttemptRecorded ? [] : ["validation_repair_attempt_missing"]),
+    ...(kimiAttemptPresent ? [] : ["kimi_standard_implementation_attempt_missing"]),
+    ...(humanScopeDecisionPresent ? [] : ["human_scope_decision_missing"]),
     ...(dynamicProgressVisible ? [] : ["dynamic_runtime_progress_missing"]),
     ...(evidence?.runtimeEvidence?.closeoutState === "present" ? [] : ["closeout_missing"]),
   ];
@@ -377,6 +495,9 @@ function evaluate(evidence) {
     taskNodeCount,
     dynamicTaskNodeCount,
     dynamicProgressCount: evidence?.dynamicProgress?.count ?? 0,
+    kimiAttemptPresent,
+    humanScopeDecisionPresent,
+    repairAttemptRecorded,
     dynamicProgressStages: Array.isArray(evidence?.dynamicProgress?.stages)
       ? evidence.dynamicProgress.stages.slice(-20)
       : [],
@@ -469,6 +590,9 @@ async function main() {
     roleModels: evidence?.runtimeEvidence?.models ?? [],
     transports: evidence?.runtimeEvidence?.transports ?? [],
     dynamicProgress: evidence?.dynamicProgress ?? null,
+    kimiAttempt: evidence?.kimiAttempt ?? null,
+    humanScopeDecision: evidence?.humanScopeDecision ?? null,
+    validationRepair: evidence?.dynamicValidationRepair ?? null,
     changedFiles: review.changedFiles,
     validationRecords: review.validationRecords,
     sourceRunRef: runArtifact.path,
@@ -490,6 +614,9 @@ async function main() {
     roleCount: review.roleCount,
     taskNodeCount: review.taskNodeCount,
     dynamicTaskNodeCount: review.dynamicTaskNodeCount,
+    kimiAttemptPresent: review.kimiAttemptPresent,
+    humanScopeDecisionPresent: review.humanScopeDecisionPresent,
+    repairAttemptRecorded: review.repairAttemptRecorded,
     rawPromptStored: false,
     rawResponseStored: false,
     rawTranscriptStored: false,

@@ -53,7 +53,7 @@ import type {
 import type { ChatAttachment, ChatQueueItem } from "./ui-types.ts";
 import type { NostrProfileFormState } from "./views/channels.nostr-profile-form.ts";
 import type { SessionLogEntry } from "./views/usage.ts";
-import type { WorkQueueObject } from "./work-queue.ts";
+import type { DbWorkQueueDetail, DbWorkQueueSummary, WorkQueueObject } from "./work-queue.ts";
 
 export type AppViewState = {
   settings: UiSettings;
@@ -114,6 +114,15 @@ export type AppViewState = {
   workQueueNotifications: WorkQueueNotification[];
   workQueueRevisionDrafts: Record<string, string>;
   workQueueArtifactBodies: Record<string, string>;
+  dbWorkQueueItems: DbWorkQueueSummary[];
+  dbWorkQueueDetails: Record<string, DbWorkQueueDetail | undefined>;
+  dbWorkQueueLoading: boolean;
+  dbWorkQueueError: string | null;
+  dbWorkQueueDeltaCursor: string | null;
+  workQueuePushMode: "idle" | "subscribed" | "fallback_polling" | "gap_replaying";
+  workQueuePushError: string | null;
+  workQueueEventCursor: number | null;
+  dbWorkQueueSourceReady: boolean;
   personalAutoSendUx: PersonalAutoSendUxSettings | null;
   personalAutoSendUxLoading: boolean;
   personalAutoSendUxError: string | null;
@@ -448,6 +457,13 @@ export type AppViewState = {
     getVisibleWorkQueueObjects: () => WorkQueueObject[];
     getSelectedWorkQueueObject: () => WorkQueueObject | null;
     loadProductProactivityQueue: () => Promise<void>;
+    loadDbWorkQueue: (opts?: { reset?: boolean; delta?: boolean }) => Promise<void>;
+    submitWorkQueueHumanTaskResponse: (input: {
+      objectId: string;
+      graphId: string;
+      humanTaskId: string;
+      boundedResponseRef: string;
+    }) => Promise<void>;
     loadProactivityInbox: () => Promise<void>;
     handleProductProactivityApproveSend: (queueItemId: string) => Promise<void>;
     handleProductProactivityWorkAction: (

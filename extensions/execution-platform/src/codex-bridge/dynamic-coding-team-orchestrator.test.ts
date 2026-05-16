@@ -62,6 +62,16 @@ describe("dynamic coding-team orchestrator", () => {
             title: "Implement",
             assignedRole: "implementation_engineer",
             assignedWorkflow: "agent_team.coding",
+            metadata: {
+              objective:
+                "Edit the runtime graph readback implementation for the scoped owner objective.",
+              rationaleForCallingThisRole:
+                "The implementation engineer is required because this child task must change source files.",
+              expectedOutput: "Changed file refs, patch evidence, and validation refs.",
+              acceptanceCriteria: ["Source edit remains inside approved scope."],
+              downstreamConsumer: "test_engineer",
+              targetRefs: ["repo://extensions/execution-platform/src/workflows"],
+            },
           },
           {
             actionId: "test",
@@ -70,6 +80,27 @@ describe("dynamic coding-team orchestrator", () => {
             assignedRole: "test_engineer",
             assignedWorkflow: "agent_team.qa_test",
             dependencyActionIds: ["code"],
+            metadata: {
+              objective: "Validate the runtime graph readback implementation with focused tests.",
+              rationaleForCallingThisRole:
+                "The test engineer is required because validation evidence must be reviewed before closeout.",
+              expectedOutput: "Validation refs and failure classification if any.",
+              acceptanceCriteria: ["Required validation command refs are reviewed."],
+              downstreamConsumer: "reviewer",
+              targetRefs: ["repo://extensions/execution-platform/src/workflows"],
+            },
+          },
+        ],
+        rolePairings: [
+          {
+            roleId: "implementation_engineer",
+            modelOrWorkerRef: "worker.codex.parity-runtime-adapter",
+            reasonCodes: ["implementation_requires_source_edit"],
+          },
+          {
+            roleId: "test_engineer",
+            modelOrWorkerRef: "policy://runtime-work-graph/test-engineer",
+            reasonCodes: ["validation_required"],
           },
         ],
         validationPlan: ["pnpm test:file runtime-work-graph.test.ts"],
@@ -106,6 +137,22 @@ describe("dynamic coding-team orchestrator", () => {
             title: "Implement",
             assignedRole: "implementation_engineer",
             assignedWorkflow: "unapproved.workflow",
+            metadata: {
+              objective:
+                "Edit the runtime graph readback implementation for the scoped owner objective.",
+              rationaleForCallingThisRole:
+                "The implementation engineer is required because this child task must change source files.",
+              expectedOutput: "Changed file refs, patch evidence, and validation refs.",
+              acceptanceCriteria: ["Source edit remains inside approved scope."],
+              downstreamConsumer: "test_engineer",
+              targetRefs: ["repo://extensions/execution-platform/src/workflows"],
+            },
+          },
+        ],
+        rolePairings: [
+          {
+            roleId: "implementation_engineer",
+            modelOrWorkerRef: "worker.codex.parity-runtime-adapter",
           },
         ],
       }),
@@ -123,6 +170,37 @@ describe("dynamic coding-team orchestrator", () => {
         expect(result.deterministicValidation.scopeValid).toBe(false);
         expect(result.deterministicValidation.reasonCodes).toContain(
           "workflow_not_allowed:unapproved.workflow",
+        );
+      },
+    );
+  });
+
+  it("does not silently inject fallback child tasks when orchestration is empty", async () => {
+    await withOrchestrator(
+      JSON.stringify({
+        childTasks: [],
+        rolePairings: [],
+        reasonCodes: ["model_could_not_decompose"],
+      }),
+      async ({ orchestrator, calls }) => {
+        const result = await orchestrator.plan({
+          graphId: "graph-orchestrator",
+          ownerObjectiveSummary: "Make runtime graph readback better.",
+          repoScopeRefs: ["repo://extensions/execution-platform/src/workflows"],
+          contextPackRefs: [],
+          validationCommandRefs: [],
+          allowedWorkflowIds: ["agent_team.coding"],
+          allowHumanTasks: false,
+        });
+
+        expect(calls).toHaveLength(2);
+        expect(result.plan.childTasks).toEqual([]);
+        expect(result.deterministicValidation.graphShapeValid).toBe(false);
+        expect(result.deterministicValidation.reasonCodes).toEqual(
+          expect.arrayContaining([
+            "orchestrator_child_tasks_missing",
+            "orchestrator_role_pairings_missing",
+          ]),
         );
       },
     );

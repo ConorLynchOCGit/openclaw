@@ -12,6 +12,17 @@ export const WORK_ITEM_LIFECYCLE_STATES = [
 
 export type WorkItemLifecycleState = (typeof WORK_ITEM_LIFECYCLE_STATES)[number];
 
+export const WORK_ITEM_QUEUE_STATUSES = [
+  "active",
+  "closed",
+  "blocked",
+  "needs_review",
+  "superseded",
+  "archived",
+] as const;
+
+export type WorkItemQueueStatus = (typeof WORK_ITEM_QUEUE_STATUSES)[number];
+
 export const WORK_RUN_STATES = ["pending", "running", "succeeded", "failed", "canceled"] as const;
 
 export type WorkRunState = (typeof WORK_RUN_STATES)[number];
@@ -39,6 +50,15 @@ export type WorkItem = {
   title: string;
   description: string | null;
   lifecycleState: WorkItemLifecycleState;
+  queueStatus?: WorkItemQueueStatus;
+  queueRank?: number | null;
+  closedAt?: Date | null;
+  closedByRuntimeJobId?: string | null;
+  closedByCloseoutRef?: string | null;
+  closeoutCapsuleRef?: string | null;
+  validationRef?: string | null;
+  graphRef?: string | null;
+  ownerReadbackRef?: string | null;
   currentVersionId: string | null;
   metadata: JsonValue;
   createdAt: Date;
@@ -158,7 +178,10 @@ export type WorkQueueConvergenceSlicePlanningStatus =
 
 export type WorkQueueConvergenceSliceProjection = {
   artifactKind: "work_queue_convergence_slice_projection";
-  trackerVersion: "openclaw-platform-convergence.v3" | "openclaw-platform-convergence.v4";
+  trackerVersion:
+    | "openclaw-platform-convergence.v3"
+    | "openclaw-platform-convergence.v4"
+    | "work-queue-db-primary.v1";
   trackerKind: "historical_slice" | "active_queue_item" | "unknown";
   sliceId: string;
   title: string;
@@ -185,13 +208,19 @@ export type WorkQueueConvergenceSliceProjection = {
   ownerSystemArea: string;
   createdAt: string | null;
   updatedAt: string | null;
-  planningStateSource: "work_item_metadata";
+  planningStateSource: "work_item_metadata" | "work_queue_db";
+  queueStatus?: WorkItemQueueStatus;
+  queuePosition?: number | null;
   runtimeState: {
     lifecycleState: WorkItemLifecycleState;
     runCount: number;
     runtimeJobIds: string[];
     lifecycleTruthSource: "work_queue_repository";
     planningStatusIsLifecycleState: false;
+    validationEvidenceState: "present" | "missing" | "not_required";
+    closeoutEvidenceState: "present" | "missing";
+    ownerReadbackState: "ready" | "needs_review" | "missing";
+    projectionFreshnessState: "fresh" | "needs_review";
   };
   rawPromptStored: false;
   rawResponseStored: false;
@@ -226,5 +255,7 @@ export type WorkQueueReadModelItem = {
   latestEvent: WorkItemEvent | null;
   runtimeJobIds: string[];
   convergenceSlice: WorkQueueConvergenceSliceProjection | null;
+  queueStatus: WorkItemQueueStatus;
+  queuePosition: number | null;
   updatedAt: Date;
 };

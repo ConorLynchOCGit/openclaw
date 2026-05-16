@@ -1,3 +1,4 @@
+import type { WorkQueueEventFilter } from "../../../extensions/execution-platform/src/work-queue/work-queue-events.ts";
 import type { ModelCatalogEntry } from "../../agents/model-catalog.types.js";
 import type { CliDeps } from "../../cli/deps.types.js";
 import type { HealthSummary } from "../../commands/health.types.js";
@@ -79,6 +80,8 @@ export type GatewayRequestContext = {
   unsubscribeSessionMessageEvents: (connId: string, sessionKey: string) => void;
   unsubscribeAllSessionEvents: (connId: string) => void;
   getSessionEventSubscriberConnIds: () => ReadonlySet<string>;
+  subscribeWorkQueueEvents?: (connId: string, filter?: WorkQueueEventFilter) => void;
+  unsubscribeWorkQueueEvents?: (connId: string) => void;
   registerToolEventRecipient: (runId: string, connId: string) => void;
   dedupe: Map<string, DedupeEntry>;
   wizardSessions: Map<string, WizardSession>;

@@ -1143,7 +1143,20 @@ export class OperatorBrowserHarness {
       .locator('button[aria-label="Send message"], button[aria-label="Queue message"]')
       .first();
     const sentAtMs = Date.now();
-    await sendButton.click();
+    try {
+      await sendButton.click({ timeout: options.sendClickTimeoutMs ?? 30_000 });
+    } catch (error) {
+      const state = await readOperatorChatState(this.page).catch(() => null);
+      const diagnostic = {
+        sendButtonLabel: state?.sendButtonLabel ?? null,
+        textareaDisabled: state?.textareaDisabled ?? null,
+        hasTextarea: state?.hasTextarea ?? null,
+        bodyTextHash: state?.bodyTextSnippet ? String(state.bodyTextSnippet.length) : "0",
+      };
+      throw new Error(`operator chat send click failed:${JSON.stringify(diagnostic)}`, {
+        cause: error,
+      });
+    }
     await waitForTurnStart(this.page, {
       prompt,
       sessionKey: effectiveSessionKey,
@@ -1173,7 +1186,12 @@ export class OperatorBrowserHarness {
       source: "rendered-or-websocket",
     };
 
-    if (options.waitFor === "progress") {
+    if (options.waitFor === "dispatch") {
+      completionEvidence = {
+        mode: "dispatch",
+        source: promptRun?.requestId ? "websocket-ack" : "turn-start",
+      };
+    } else if (options.waitFor === "progress") {
       await waitForProgressEvidence(this.page, {
         mark,
         sessionKey: effectiveSessionKey,

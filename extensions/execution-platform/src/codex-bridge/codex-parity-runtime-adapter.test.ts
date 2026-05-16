@@ -115,6 +115,120 @@ describe("Codex parity runtime adapter", () => {
     );
   });
 
+  it("projects bounded Codex app-server progress events through runtime job evidence", async () => {
+    const repo = await tempRoot("codex-direct-main-repo-");
+    await mkdir(path.join(repo, "src"), { recursive: true });
+    await writeFile(path.join(repo, "src/readback.ts"), "export const value = 1;\n", "utf8");
+    const events: Array<{ eventType: string; data: unknown }> = [];
+    const artifacts: unknown[] = [];
+    const executor: CodexParityRuntimeAdapterExecutor = async ({ callbacks }) => {
+      await callbacks.onCodexAppServerEvent?.({
+        artifactKind: "codex_app_server_parity_progress_event",
+        method: "item/completed",
+        threadId: "thread-1",
+        turnId: "turn-1",
+        phase: "item_completed",
+        itemType: "fileChange",
+        fileRefs: ["src/readback.ts"],
+        rawPromptStored: false,
+        rawResponseStored: false,
+        rawProviderLogStored: false,
+        rawToolLogStored: false,
+      });
+      await writeFile(path.join(repo, "src/readback.ts"), "export const value = 2;\n", "utf8");
+      return {
+        status: "completed",
+        exitCode: 0,
+        signal: null,
+        errorMessage: null,
+        finalMessage: "done",
+        emittedEventCount: 1,
+        stdoutBytes: 1,
+        stderrBytes: 0,
+        stderrPreview: null,
+        validation: {
+          allowed: true,
+          blockingReasons: [],
+          executionMode: "codex_app_server_persistent_thread",
+          repoPath: repo,
+          maxRuntimeMs: 3_600_000,
+          commandExecuted: false,
+          codexCliInvoked: false,
+          acpSessionStarted: false,
+          shellCommandExecuted: false,
+          providerCallMade: false,
+          rebuildPerformed: false,
+          schedulerStarted: false,
+          daemonStarted: false,
+          subagentStarted: false,
+          liveExecutionEnabled: false,
+        },
+        controlDecision: null,
+        promptInjectedIntoLiveProcess: false,
+        codexCliInvoked: false,
+        acpSessionStarted: false,
+        shellCommandExecuted: false,
+        providerCallMade: false,
+        rebuildPerformed: false,
+        schedulerStarted: false,
+        daemonStarted: false,
+        subagentStarted: false,
+        liveExecutionEnabled: true,
+        commandExecuted: true,
+      };
+    };
+    const adapter = new CodexParityRuntimeAdapter({
+      executor,
+      runtimeJobs: {
+        async recordEvent(input) {
+          events.push({ eventType: input.eventType, data: input.data });
+          return {} as never;
+        },
+        async attachArtifact(input) {
+          artifacts.push(input);
+          return {} as never;
+        },
+      },
+      async validationRunner(command) {
+        return createCodexParityValidationRecord({
+          commandRef: command.commandRef,
+          approvedCommandId: command.approvedCommandId,
+          status: "passed",
+          exitCode: 0,
+          boundedSummary: "focused validation passed",
+        });
+      },
+    });
+
+    const result = await adapter.run({
+      runtimeJobId: "job-1",
+      graphNodeId: "node-implementation",
+      taskSummary: "Improve readback.",
+      volatilePrompt: "Make the code change.",
+      sourceRepoRoot: repo,
+      approvedScopeRefs: ["src"],
+      validationCommands: [
+        {
+          commandRef: "pnpm test:file src/readback.test.ts",
+          approvedCommandId: "readback",
+          required: true,
+        },
+      ],
+      modelPolicy: { codexCodingModelRef: "openai-codex/gpt-5.3-codex" },
+      sourceEditsRequired: true,
+    });
+
+    expect(result.status).toBe("completed");
+    expect(artifacts.length).toBeGreaterThan(0);
+    expect(events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ eventType: "codex_parity.app_server_progress" }),
+      ]),
+    );
+    expect(JSON.stringify(events)).toContain("fileChange");
+    expect(JSON.stringify(events)).not.toContain('rawResponseStored":true');
+  });
+
   it("does not complete when source edits were required but no file changed", async () => {
     const repo = await tempRoot("codex-direct-main-repo-");
     await mkdir(path.join(repo, "src"), { recursive: true });

@@ -117,6 +117,9 @@ export class DynamicTestRepairLoop {
       repairWorker?: DynamicRepairWorker;
       maxRepairAttempts?: number;
       operationTimeoutMs?: number;
+      validationOperationTimeoutMs?: number;
+      testEngineerOperationTimeoutMs?: number;
+      repairOperationTimeoutMs?: number;
       reviewPassedValidations?: boolean;
     },
   ) {}
@@ -129,6 +132,11 @@ export class DynamicTestRepairLoop {
   }): Promise<DynamicTestRepairLoopResult> {
     const maxRepairAttempts = this.options.maxRepairAttempts ?? 2;
     const operationTimeoutMs = this.options.operationTimeoutMs ?? 180_000;
+    const validationOperationTimeoutMs =
+      this.options.validationOperationTimeoutMs ?? operationTimeoutMs;
+    const testEngineerOperationTimeoutMs =
+      this.options.testEngineerOperationTimeoutMs ?? operationTimeoutMs;
+    const repairOperationTimeoutMs = this.options.repairOperationTimeoutMs ?? operationTimeoutMs;
     const validationNodeIds: string[] = [];
     const testReviewNodeIds: string[] = [];
     const repairNodeIds: string[] = [];
@@ -166,7 +174,7 @@ export class DynamicTestRepairLoop {
       try {
         validation = await withOperationTimeout({
           promise: this.options.validationRunner.run(commandRef),
-          timeoutMs: operationTimeoutMs,
+          timeoutMs: validationOperationTimeoutMs,
           reasonCode: "validation_operation_timeout",
         });
       } catch (error) {
@@ -228,7 +236,7 @@ export class DynamicTestRepairLoop {
                 changedFileRefs: currentChangedFileRefs,
                 maxOutputTokens: 2_000,
               }),
-              timeoutMs: operationTimeoutMs,
+              timeoutMs: testEngineerOperationTimeoutMs,
               reasonCode: "test_engineer_passed_validation_review_timeout",
             });
             await this.options.graphs.recordRoleInvocation({
@@ -294,11 +302,14 @@ export class DynamicTestRepairLoop {
               nodeStatus: "needs_review",
               outputArtifactRefs: [validation.validationRef],
             });
-            currentReasonCodes.push(reasonCode);
-            unresolvedValidationFailures.push(
-              `passed_validation_review_failed:${hash(validation.validationRef).slice(0, 16)}`,
-            );
-            break;
+            currentReasonCodes.push(`${reasonCode}_non_blocking_after_passed_validation`);
+            await this.options.graphs.recordCheckpoint({
+              graphId: input.graphId,
+              checkpointKind: "test_engineer_passed_validation_review_unavailable",
+              stateSummary:
+                "Test engineer review of already-passed validation was unavailable; deterministic validation evidence remains accepted.",
+              artifactRefs: [validation.validationRef, graphRef("node", testReview.nodeId)],
+            });
           }
         }
         commandIndex += 1;
@@ -338,7 +349,7 @@ export class DynamicTestRepairLoop {
             changedFileRefs: currentChangedFileRefs,
             maxOutputTokens: 2_000,
           }),
-          timeoutMs: operationTimeoutMs,
+          timeoutMs: testEngineerOperationTimeoutMs,
           reasonCode: "test_engineer_diagnosis_timeout",
         });
       } catch (error) {
@@ -442,7 +453,7 @@ export class DynamicTestRepairLoop {
               changedFileRefs: currentChangedFileRefs,
               reasonCodes: diagnosis.reasonCodes,
             }),
-            timeoutMs: operationTimeoutMs,
+            timeoutMs: repairOperationTimeoutMs,
             reasonCode: "implementation_repair_timeout",
           });
         } catch (error) {

@@ -2,7 +2,11 @@
 
 import { render } from "lit";
 import { describe, expect, it, vi } from "vitest";
-import { buildWorkQueueObjects, filterWorkQueueObjects } from "../work-queue.ts";
+import {
+  buildDbWorkQueueObjects,
+  buildWorkQueueObjects,
+  filterWorkQueueObjects,
+} from "../work-queue.ts";
 import { renderWorkQueue, type WorkQueueProps } from "./work-queue.ts";
 
 type WorkQueueObject = WorkQueueProps["items"][number];
@@ -12,6 +16,8 @@ function makeObject(id: string, overrides: Partial<WorkQueueObject> = {}): WorkQ
   return {
     id,
     queueItemId: `queue-${id}`,
+    queuePosition: null,
+    stableTechnicalId: `queue-${id}`,
     opportunityId: id,
     lane: "build_plans",
     objectClass: "proactive_plan",
@@ -241,6 +247,25 @@ it("keeps queue filtering coverage alongside DOM rendering coverage", () => {
 });
 
 describe("work queue view", () => {
+  it("renders live update, replay, and fallback polling states", () => {
+    const container = document.createElement("div");
+
+    render(renderWorkQueue(createProps({ pushMode: "subscribed", eventCursor: 42 })), container);
+    expect(normalizedText(container)).toContain("Live updates connected");
+    expect(normalizedText(container)).toContain("cursor 42");
+
+    render(renderWorkQueue(createProps({ pushMode: "gap_replaying", eventCursor: 44 })), container);
+    expect(normalizedText(container)).toContain("Replaying missed updates");
+    expect(normalizedText(container)).toContain("cursor 44");
+
+    render(
+      renderWorkQueue(createProps({ pushMode: "fallback_polling", pushError: "stream-gap" })),
+      container,
+    );
+    expect(normalizedText(container)).toContain("Live updates using bounded polling fallback");
+    expect(normalizedText(container)).toContain("stream-gap");
+  });
+
   it("renders active grouped items and hides dismissed/diagnostics by default", () => {
     const allItems = [
       makeObject("plan-a", { lane: "build_plans", laneLabel: "Build Plans" }),
@@ -291,7 +316,7 @@ describe("work queue view", () => {
     expect(container.textContent).not.toContain("Work item final-a");
   });
 
-  it("renders finalized items under Ready to Execute", () => {
+  it("renders finalized items under the closed bucket", () => {
     const finalized = makeObject("finalized-a", {
       visibleStatus: "finalized",
       statusLabel: "Ready to execute",
@@ -320,7 +345,7 @@ describe("work queue view", () => {
       container,
     );
 
-    expect(container.textContent).toContain("Ready to Execute");
+    expect(container.textContent).toContain("Closed");
     expect(container.textContent).toContain("Copy Codex prompt");
     expect(container.textContent).toContain("Mark complete");
     expect(container.textContent).toContain("Codex-ready prompt");
@@ -420,6 +445,69 @@ describe("work queue view", () => {
           lifecycleState: "running",
           workQueueLifecycleMutationAllowed: false,
         },
+        ownerProgressReadback: {
+          state: "needs_review",
+          headline: "Coding Agent Team is running; review 1 evidence gap.",
+          currentStage: "validation",
+          activeWorker: "test_engineer",
+          activeModelRef: "openai-codex/gpt-5.4",
+          runtimeLifecycleState: "running",
+          validationEvidenceState: "unverified",
+          closeoutEvidenceState: "needs_review",
+          changedFileState: "present",
+          humanDecisionState: "not_required",
+          eli5Progress: "OpenClaw is checking the work before closeout.",
+          limitations: ["Closeout is not accepted yet."],
+          nextAction: "Review bounded runtime evidence.",
+          diagnosticReasonCodes: ["accepted_closeout_evidence_missing"],
+          activeGraphProgress: {
+            state: "present",
+            graphId: "graph-1",
+            activeNodeId: "validation-node",
+            activeNodeKind: "validation",
+            roleId: "test_engineer",
+            modelRef: "openai-codex/gpt-5.4",
+            objective: "Run the focused validation and map it to a commitment.",
+            whySelected: "Validation evidence is required before closeout.",
+            targetRefs: [
+              "extensions/execution-platform/src/workflows/runtime-work-graph-scheduler.ts",
+            ],
+            inputHandoffRefs: ["mission-contract://commitment/validation"],
+            expectedOutput: "Validation evidence claim.",
+            currentPhase: "node_completed",
+            validationState: "passed",
+            evidenceProducedRefs: ["validation://graph-1"],
+            evidenceClaimRefs: ["validation://graph-1"],
+            acceptedCommitmentIds: ["validation"],
+            rejectedCommitmentIds: [],
+            openCommitmentIds: ["closeout"],
+            nextDecisionNeeded: "orchestrator_next_action_for_open_commitments",
+            blockerSummary: "1 blocking commitment remains open.",
+            finalizationState: null,
+            latestToolEventKind: "worker.evidence.handoff",
+            eli5Progress: "The test engineer proved one commitment with bounded evidence.",
+            schedulerToolTrace: {
+              schedulerPhase: "execution_in_progress",
+              latestToolId: "worker.evidence.handoff",
+              invocationRefs: ["runtime-tool://worker-evidence-handoff"],
+            },
+            workerToolTrace: {
+              latestWorkerToolId: "worker.evidence.handoff",
+              workerToolIds: ["worker.evidence.handoff"],
+              invocationRefs: ["runtime-tool://worker-evidence-handoff"],
+              changedFileRefs: [],
+              validationRefs: ["validation://graph-1"],
+              contextRequestRefs: [],
+              editStepIds: [],
+              evidenceClaimRefs: ["validation://graph-1"],
+            },
+            latestProgressEventRefs: ["runtime-event://progress-1"],
+          },
+          rawPromptStored: false,
+          rawResponseStored: false,
+          rawLogsStored: false,
+          workQueueLifecycleMutationAllowed: false,
+        },
         artifactRefs: ["runtime-job://job-1/artifact"],
         lifecycleTruthSource: "work_queue_repository",
         executionTruthSource: "execution_platform_runtime_jobs",
@@ -451,9 +539,296 @@ describe("work queue view", () => {
     expect(container.textContent).toContain("rebuild-authority-v2: succeeded");
     expect(container.textContent).toContain("execution_platform_runtime_jobs");
     expect(container.textContent).toContain("Controls are runtime-backed");
+    expect(container.textContent).toContain("Owner progress");
+    expect(container.textContent).toContain("Coding Agent Team is running");
+    expect(container.textContent).toContain("test_engineer");
+    expect(container.textContent).toContain("openai-codex/gpt-5.4");
+    expect(container.textContent).toContain("Runtime graph progress");
+    expect(container.textContent).toContain("validation-node");
+    expect(container.textContent).toContain("worker.evidence.handoff");
+    expect(container.textContent).toContain("Evidence claims");
+    expect(container.textContent).toContain("validation://graph-1");
+    expect(container.textContent).toContain("OpenClaw is checking the work before closeout.");
     expect(container.textContent).toMatch(/UI lifecycle mutation is\s+not available/u);
     expect(container.textContent).not.toContain("Run execution");
     expect(container.textContent).toContain("Execution controls are read-only");
+  });
+  it("falls back Planning Capsule child readback to role invocations", () => {
+    const item = makeObject("planning-capsule-fallback", {
+      execution: {
+        runtimeJobId: "planning-capsule-fallback-job",
+        runtimeJobState: "running",
+        executorKind: "executor.agent_team",
+        sessionId: "planning-capsule-fallback-session",
+        streamSummary: "5 events",
+        heartbeatStatus: "fresh",
+        processStatus: "running",
+        validationStatus: "unverified",
+        closeoutStatus: "present",
+        reviewStatus: "needs_review",
+        fileScopeStatus: "satisfied",
+        controlState: "none",
+        rebuildState: "not_required",
+        closeoutCapsule: {
+          structuredSummary: { qualityAssessment: "bounded" },
+          opportunitySeeds: [
+            {
+              kind: "proactive_plan",
+              title: "Fallback seed",
+              recommendedNextStep: "Draft fallback child actions.",
+              confidence: "medium",
+            },
+          ],
+        },
+        runtimeGraph: {
+          graphId: "graph-planning-capsule-fallback",
+          planningStatusIsLifecycleState: false,
+          childActions: [],
+          dependencyEdges: [],
+          roleInvocations: [
+            {
+              roleId: "implementation_engineer",
+              modelRef: "moonshotai/kimi-k2.6",
+              modelRunRef: "model-run://planning-capsule-fallback/attempt-1",
+              status: "needs_review",
+              producedArtifactRefs: [],
+            },
+          ],
+          humanTasks: [],
+          validationRepairLoops: [],
+          limitations: [],
+          artifactRefs: [
+            "runtime-job://planning-capsule-fallback-job/runtime-work-graph/version/v2",
+          ],
+          rawPromptStored: false,
+          rawResponseStored: false,
+          rawLogsStored: false,
+          workQueueLifecycleMutationAllowed: false,
+        },
+        artifactRefs: [],
+        lifecycleTruthSource: "work_queue_repository",
+        executionTruthSource: "execution_platform_runtime_jobs",
+        uiMutationAllowed: false,
+      },
+    });
+    const container = document.createElement("div");
+    render(
+      renderWorkQueue(createProps({ items: [item], selectedObject: item, filter: "active" })),
+      container,
+    );
+    const text = normalizedText(container);
+    expect(text).toContain(
+      "seed=proactive_plan: Fallback seed | Draft fallback child actions. (confidence=medium)",
+    );
+    expect(text).toContain(
+      "runtime-job://planning-capsule-fallback-job/runtime-work-graph/version/v2",
+    );
+    expect(text).toContain("seeds=1 total (high=0)");
+  });
+  it("uses owner-readback planning refs when runtime-graph planning refs are sparse", () => {
+    const item = makeObject("planning-owner-ref-fallback", {
+      execution: {
+        runtimeJobId: "planning-owner-ref-job",
+        runtimeJobState: "running",
+        executorKind: "executor.agent_team",
+        sessionId: "planning-owner-ref-session",
+        streamSummary: "7 events",
+        heartbeatStatus: "fresh",
+        processStatus: "running",
+        validationStatus: "unverified",
+        closeoutStatus: "present",
+        reviewStatus: "needs_review",
+        fileScopeStatus: "satisfied",
+        controlState: "none",
+        rebuildState: "not_required",
+        closeoutCapsule: {
+          capsuleId: "capsule-owner-1",
+          factualRefs: { runtimeJobId: "planning-owner-runtime" },
+          structuredSummary: { qualityAssessment: "bounded" },
+          opportunitySeeds: [
+            {
+              kind: "proactive_plan",
+              title: "Owner planning seed",
+              recommendedNextStep: "Link owner planning refs in intake readback.",
+              confidence: "high",
+            },
+          ],
+        },
+        runtimeGraph: {
+          graphId: "graph-planning-owner-ref",
+          planningStatusIsLifecycleState: false,
+          childActions: [],
+          dependencyEdges: [],
+          roleInvocations: [],
+          humanTasks: [],
+          validationRepairLoops: [],
+          limitations: [],
+          artifactRefs: [],
+          rawPromptStored: false,
+          rawResponseStored: false,
+          rawLogsStored: false,
+          workQueueLifecycleMutationAllowed: false,
+        },
+        ownerReadback: {
+          state: "ready",
+          planningWorkflowRefs: ["work-queue://planning-owner-ref-fallback/version/v7"],
+          childActionProposalRefs: ["runtime-work-graph://planning-owner-ref/proposal/child-1"],
+          humanDecisionRefs: ["owner-decision://planning-capsule/review-or-approve-action-graph"],
+        },
+        artifactRefs: [],
+        lifecycleTruthSource: "work_queue_repository",
+        executionTruthSource: "execution_platform_runtime_jobs",
+        uiMutationAllowed: false,
+      } as WorkQueueObject["execution"],
+    });
+    const container = document.createElement("div");
+    render(
+      renderWorkQueue(createProps({ items: [item], selectedObject: item, filter: "active" })),
+      container,
+    );
+    const text = normalizedText(container);
+    expect(text).toContain("work-queue://planning-owner-ref-fallback/version/v7");
+    expect(text).toContain("runtime-work-graph://planning-owner-ref/proposal/child-1");
+    expect(text).toContain(
+      "runtime-job://planning-owner-runtime/closeout-capsule/capsule-owner-1 (state=present)",
+    );
+    expect(text).toContain("planning_owner=ready");
+  });
+
+  it("renders Planning Capsule intake readback details from runtime graph and closeout seeds", () => {
+    const item = makeObject("planning-capsule-intake", {
+      execution: {
+        runtimeJobId: "planning-capsule-intake-job",
+        runtimeJobState: "running",
+        executorKind: "executor.agent_team",
+        sessionId: "planning-capsule-session",
+        streamSummary: "11 events",
+        heartbeatStatus: "fresh",
+        processStatus: "running",
+        validationStatus: "failed",
+        closeoutStatus: "present",
+        reviewStatus: "needs_review",
+        fileScopeStatus: "satisfied",
+        controlState: "none",
+        rebuildState: "not_required",
+        ownerProgressReadback: {
+          state: "needs_review",
+          headline: "Planning Capsule intake needs owner review before compile.",
+          currentStage: "compile_readiness_check",
+          activeWorker: "orchestrator",
+          activeModelRef: "openai-codex/gpt-5.5",
+          runtimeLifecycleState: "running",
+          validationEvidenceState: "failed",
+          closeoutEvidenceState: "accepted",
+          changedFileState: "present",
+          humanDecisionState: "present",
+          eli5Progress: "We turned the seed into a plan draft and checked it before compiling.",
+          limitations: ["Owner approval is still required."],
+          nextAction: "Review planning capsule and approve child graph.",
+          diagnosticReasonCodes: ["validation_repair_needed"],
+          rawPromptStored: false,
+          rawResponseStored: false,
+          rawLogsStored: false,
+          workQueueLifecycleMutationAllowed: false,
+        },
+        closeoutCapsule: {
+          humanReport: {
+            source: "model",
+            reportMarkdown: "Planning capsule intake closeout.",
+            eli5Progress: "The system kept this as planning-only until review passes.",
+          },
+          structuredSummary: { qualityAssessment: "bounded" },
+          opportunitySeeds: [
+            {
+              kind: "proactive_plan",
+              title: "Improve Work Queue planning readback",
+              recommendedNextStep:
+                "Add readback that explains why this seed should become a child plan.",
+              confidence: "high",
+            },
+          ],
+        },
+        runtimeGraph: {
+          graphId: "graph-planning-capsule-intake",
+          parentWorkItemId: "planning-capsule-intake-parent",
+          ownerObjectiveSummary: "Improve Work Queue planning readback for closeout seeds.",
+          approvedPlanRefs: ["work-queue://planning-capsule-intake/version/v3"],
+          planningStatusIsLifecycleState: false,
+          childActions: [
+            {
+              workItemId: "child-plan",
+              title: "Draft action graph",
+              actionKind: "planning",
+              assignedRole: "orchestrator",
+              assignedWorkflow: "agent_team.product_spec_planning",
+              runtimeJobId: "child-job-planning",
+              graphNodeRef: "graph-node://planning",
+              blockerReasonCodes: [],
+              evidenceRefs: ["runtime-job://child-job-planning"],
+            },
+          ],
+          dependencyEdges: [],
+          roleInvocations: [
+            {
+              roleId: "implementation_engineer",
+              modelRef: "moonshotai/kimi-k2.6",
+              status: "closed",
+              producedArtifactRefs: ["runtime-job://child-job-planning"],
+            },
+            {
+              roleId: "implementation_engineer",
+              modelRef: "openai-codex/gpt-5.5",
+              status: "closed",
+              producedArtifactRefs: ["runtime-job://child-job-planning-repair"],
+            },
+          ],
+          humanTasks: [],
+          validationRepairLoops: [
+            {
+              validationRef: "validation://planning-capsule-intake",
+              repairNodeRef: "repair://planning-capsule-intake",
+              status: "failed",
+              reasonCodes: ["validation_failed_once"],
+            },
+          ],
+          closeoutRef: "runtime-job://planning-capsule-intake/closeout",
+          finalCloseoutRef: "runtime-job://planning-capsule-intake/final-closeout",
+          limitations: [],
+          eli5Progress: "Planning capsule intake is review-gated before execution.",
+          artifactRefs: [],
+          rawPromptStored: false,
+          rawResponseStored: false,
+          rawLogsStored: false,
+          workQueueLifecycleMutationAllowed: false,
+        },
+        artifactRefs: [],
+        lifecycleTruthSource: "work_queue_repository",
+        executionTruthSource: "execution_platform_runtime_jobs",
+        uiMutationAllowed: false,
+      } as WorkQueueObject["execution"],
+    });
+    const container = document.createElement("div");
+    render(
+      renderWorkQueue(createProps({ items: [item], selectedObject: item, filter: "active" })),
+      container,
+    );
+    const text = normalizedText(container);
+    expect(text).toContain("Planning Capsule intake");
+    expect(text).toContain("Add readback that explains why this seed should become a child plan.");
+    expect(text).toContain("workflow=needs_review; owner=needs_review; quality=bounded");
+    expect(text).toContain("work-queue://planning-capsule-intake/version/v3");
+    expect(text).toContain(
+      "Draft action graph (agent_team.product_spec_planning -> child-job-planning)",
+    );
+    expect(text).toContain(
+      "owner stage indicates compile readiness work (compile_readiness_check)",
+    );
+    expect(text).toContain("2 attempt(s): moonshotai/kimi-k2.6, openai-codex/gpt-5.5");
+    expect(text).toContain(
+      "failed: validation://planning-capsule-intake -> repair://planning-capsule-intake",
+    );
+    expect(text).toContain("runtime-job://planning-capsule-intake/final-closeout");
+    expect(text).toContain("We turned the seed into a plan draft and checked it before compiling.");
   });
 
   it("renders compact accepted proactivity opportunity readback with bounded refs", () => {
@@ -1676,8 +2051,122 @@ describe("work queue view", () => {
     (container.querySelector(".work-queue-list-item") as HTMLButtonElement).click();
     expect(onSelectObject).toHaveBeenCalledWith(item.id);
     Array.from(container.querySelectorAll<HTMLButtonElement>(".work-queue-filter"))
-      .find((button) => button.textContent?.includes("Ready to execute"))
+      .find((button) => button.textContent?.includes("Closed"))
       ?.click();
     expect(onSetFilter).toHaveBeenCalledWith("ready_to_execute");
+  });
+
+  it("renders DB-backed runtime queue items as read-only active/closed projection", () => {
+    const [active, closed] = buildDbWorkQueueObjects({
+      items: [
+        {
+          workItemId: "db-active-item",
+          itemType: "execution_workflow",
+          title: "DB active item",
+          description: "Active DB item",
+          lifecycleState: "running",
+          queueStatus: "active",
+          queuePosition: 1,
+          queueRank: 1,
+          closedAt: null,
+          updatedAt: "2026-05-14T10:00:00.000Z",
+          runtimeJobIds: ["runtime-active"],
+          graphRef: "runtime-work-graph://graph-active",
+          validationRef: null,
+          closeoutCapsuleRef: null,
+          ownerReadbackRef: null,
+          convergenceSlice: null,
+        },
+        {
+          workItemId: "db-closed-item",
+          itemType: "execution_workflow",
+          title: "DB closed item",
+          description: "Closed DB item",
+          lifecycleState: "succeeded",
+          queueStatus: "closed",
+          queuePosition: 1,
+          queueRank: null,
+          closedAt: "2026-05-14T10:05:00.000Z",
+          updatedAt: "2026-05-14T10:05:00.000Z",
+          runtimeJobIds: ["runtime-closed"],
+          graphRef: "runtime-work-graph://graph-closed",
+          validationRef: "validation://closed",
+          closeoutCapsuleRef: "closeout://closed",
+          ownerReadbackRef: "readback://closed",
+          convergenceSlice: null,
+        },
+      ],
+      details: {},
+    });
+    const activeItems = filterWorkQueueObjects([active, closed], "active", "");
+    const closedItems = filterWorkQueueObjects([active, closed], "ready_to_execute", "");
+    const container = document.createElement("div");
+
+    render(
+      renderWorkQueue(
+        createProps({
+          items: activeItems,
+          selectedObject: active,
+          filter: "active",
+        }),
+      ),
+      container,
+    );
+
+    expect(activeItems.map((item) => item.id)).toEqual(["db-active-item"]);
+    expect(closedItems.map((item) => item.id)).toEqual(["db-closed-item"]);
+    expect(container.textContent).toContain("DB active item");
+    expect(container.textContent).toContain("1. DB active item");
+    expect(container.textContent).toContain("#1");
+    expect(container.textContent).toContain("Refresh runtime readback");
+    expect(container.textContent).not.toContain("Draft plan");
+    expect(container.textContent).not.toContain("Finalize");
+  });
+
+  it("renders DB queue position and title as the owner-facing identity", () => {
+    const [item] = buildDbWorkQueueObjects({
+      items: [
+        {
+          workItemId: "openclaw-convergence.active-queue-45",
+          itemType: "execution_workflow",
+          title: "Release rollback runbook closeout",
+          description: "Close the release and rollback runbook work.",
+          lifecycleState: "running",
+          queueStatus: "active",
+          queuePosition: 1,
+          queueRank: 1,
+          closedAt: null,
+          updatedAt: "2026-05-14T10:00:00.000Z",
+          runtimeJobIds: [],
+          graphRef: null,
+          validationRef: null,
+          closeoutCapsuleRef: null,
+          ownerReadbackRef: null,
+          convergenceSlice: null,
+        },
+      ],
+      details: {},
+    });
+    const container = document.createElement("div");
+
+    render(
+      renderWorkQueue(
+        createProps({
+          items: [item],
+          selectedObject: item,
+          filter: "active",
+        }),
+      ),
+      container,
+    );
+
+    expect(container.querySelector(".work-queue-list-item__title")?.textContent).toContain(
+      "1. Release rollback runbook closeout",
+    );
+    expect(container.querySelector(".work-queue-detail h2")?.textContent).toContain(
+      "1. Release rollback runbook closeout",
+    );
+    expect(container.textContent).toContain("Technical id");
+    expect(container.textContent).toContain("openclaw-convergence.active-queue-45");
   });
 });

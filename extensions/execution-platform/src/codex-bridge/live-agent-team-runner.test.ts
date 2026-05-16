@@ -185,6 +185,70 @@ describe("live agent-team runner", () => {
     expect(bodies[0]).not.toHaveProperty("reasoning");
   });
 
+  it("honors per-call request profile overrides for Kimi patch calls", async () => {
+    const bodies: Array<Record<string, unknown>> = [];
+    const fetchImpl = (async (_url: string | URL | Request, init?: RequestInit) => {
+      const body = typeof init?.body === "string" ? init.body : "";
+      bodies.push(JSON.parse(body));
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          choices: [
+            {
+              message: {
+                content: JSON.stringify({
+                  schemaVersion: "openclaw.kimi.patch-proposal.v1",
+                  status: "needs_review",
+                  fileEdits: [],
+                  validationCommandRefs: [],
+                  limitations: ["bounded"],
+                  rawPromptStored: false,
+                  rawResponseStored: false,
+                  rawProviderLogStored: false,
+                }),
+              },
+            },
+          ],
+          usage: { prompt_tokens: 10, completion_tokens: 20, total_tokens: 30 },
+        }),
+      } as Response;
+    }) as typeof fetch;
+
+    const client = new OpenRouterAgentTeamModelClient({
+      apiKey: "test-key",
+      fetchImpl,
+      requestProfilesByModelId: {
+        "moonshotai/kimi-k2.6": {
+          responseFormatMode: "native",
+          reasoningMode: "exclude",
+          maxTokens: 2_400,
+        },
+      },
+    });
+
+    const result = await client.callRole({
+      roleId: "implementation_engineer",
+      modelId: "moonshotai/kimi-k2.6",
+      modelCandidateId: "kimi-2-6-coding-candidate",
+      prompt: "Return compact JSON.",
+      responseFormat: "json_object",
+      requestProfileOverride: {
+        responseFormatMode: "prompt_only",
+        reasoningMode: "omit",
+        maxTokens: 3_000,
+      },
+    });
+
+    expect(result.status).toBe("succeeded");
+    expect(bodies[0]).toMatchObject({
+      model: "moonshotai/kimi-k2.6",
+      max_tokens: 3_000,
+    });
+    expect(bodies[0]).not.toHaveProperty("response_format");
+    expect(bodies[0]).not.toHaveProperty("reasoning");
+  });
+
   it("claims one team job, records live-shaped stream/accounting/review evidence, and projects to Work Queue", async () => {
     await withRuntime(async ({ runtimeJobs, workQueue }) => {
       const workItem = await workQueue.createWorkItem({

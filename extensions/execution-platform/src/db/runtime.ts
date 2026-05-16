@@ -13,6 +13,7 @@ type JsonRecord = Record<string, unknown>;
 
 export type ExecutionPlatformDatabaseSource =
   | "env:EXECUTION_PLATFORM_DATABASE_URL"
+  | "config:env.vars.EXECUTION_PLATFORM_DATABASE_URL"
   | "config:plugins.entries.execution-platform.config.database.url"
   | "env:MODEL_MEMORY_DATABASE_URL"
   | "config:plugins.entries.model-memory.config.database.url";
@@ -171,6 +172,11 @@ export async function resolveExecutionPlatformDatabaseResolution(
     {
       connectionString: readTrimmedString(env.EXECUTION_PLATFORM_DATABASE_URL),
       source: "env:EXECUTION_PLATFORM_DATABASE_URL",
+      reusedModelMemoryDatabase: false,
+    },
+    {
+      connectionString: readConfigEnvString(config, "EXECUTION_PLATFORM_DATABASE_URL"),
+      source: "config:env.vars.EXECUTION_PLATFORM_DATABASE_URL",
       reusedModelMemoryDatabase: false,
     },
     {

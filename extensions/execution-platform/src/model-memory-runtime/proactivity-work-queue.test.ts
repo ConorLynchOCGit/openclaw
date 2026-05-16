@@ -96,6 +96,99 @@ describe("closeout capsule opportunity projection through DB-operation evidence"
 
   it("projects eligible seeds idempotently and skips no-op seeds", async () => {
     const created: Array<{ workItemId: string; metadata: unknown }> = [];
+    const versions: unknown[] = [];
+    const artifacts: unknown[] = [];
+    const workQueue = {
+      readWorkItemTruth: async () => null,
+      createWorkItem: async (input: { workItemId: string; metadata: unknown }) => {
+        created.push(input);
+      },
+      createWorkItemVersion: async (input: unknown) => {
+        versions.push(input);
+        return {
+          versionId: "version-1",
+          workItemId: "work-item-1",
+          versionNumber: 1,
+          versionState: "draft",
+          title: "Planning Capsule",
+          body: "{}",
+          artifactMetadata: {},
+          createdAt: new Date(),
+          finalizedAt: null,
+        };
+      },
+      attachArtifactReference: async (input: unknown) => {
+        artifacts.push(input);
+        return {
+          artifactId: "artifact-1",
+          workItemId: "work-item-1",
+          versionId: "version-1",
+          artifactType: "execution_platform.planning_capsule",
+          storageKind: "metadata",
+          uri: "work-queue://work-item-1/planning-capsule/planning-from-seed-1",
+          contentType: "application/json",
+          sizeBytes: null,
+          sha256: "sha256:capsule",
+          metadata: { capsuleId: "planning-from-seed-1" },
+          createdAt: new Date(),
+        };
+      },
+    };
+
+    const result = await projectCloseoutCapsuleOpportunitySeedsViaDbOperation({
+      workQueue: workQueue as never,
+      capsule: capsule(),
+      dbOperationEvidence: {
+        dbOperationRefs: ["runtime-job://db-job/db-operation/metadata"],
+        modelTaskRefs: ["runtime-job://model-job/model-task/validation"],
+      },
+      qualityReviewsBySeedId: {
+        "seed-1": {
+          source: "model",
+          usefulness: "useful",
+          specificity: "specific",
+          ownerFit: "high",
+          reviewRef: "runtime-job://job-1/model-task/opportunity-review/seed-1",
+          limitations: [],
+          recommendedQueueKind: "new_skill_candidate",
+        },
+        "seed-1-extra-follow-up": {
+          source: "model",
+          usefulness: "needs_review",
+          specificity: "mixed",
+          ownerFit: "medium",
+          reviewRef: "runtime-job://job-1/model-task/opportunity-review/seed-1-extra-follow-up",
+          limitations: ["Owner should confirm priority."],
+          recommendedQueueKind: "follow_up_work_item",
+        },
+      },
+    });
+
+    expect(result.status).toBe("accepted");
+    expect(result.createdWorkItemIds).toHaveLength(2);
+    expect(result.planningCapsuleRefs).toHaveLength(2);
+    expect(result.reasonCodes).toContain(
+      "accepted_opportunity_seeds_unpacked_to_planning_capsules",
+    );
+    expect(new Set(result.createdWorkItemIds).size).toBe(2);
+    expect(result.skippedSeedIds).toEqual(["seed-2"]);
+    expect(versions).toHaveLength(2);
+    expect(artifacts).toHaveLength(2);
+    expect(created[0]?.metadata).toMatchObject({
+      projectionBoundary: "db_operation_middleware",
+      rawPromptStored: false,
+      rawResponseStored: false,
+      workQueueLifecycleMutated: false,
+      qualityReviewState: "model_reviewed_useful",
+      qualityReview: {
+        usefulness: "useful",
+        reviewRef: "runtime-job://job-1/model-task/opportunity-review/seed-1",
+      },
+    });
+  });
+
+  it("skips model-reviewed stale or generic seeds instead of creating noisy queue items", async () => {
+    const created: Array<{ workItemId: string; metadata: unknown }> = [];
     const workQueue = {
       readWorkItemTruth: async () => null,
       createWorkItem: async (input: { workItemId: string; metadata: unknown }) => {
@@ -108,19 +201,30 @@ describe("closeout capsule opportunity projection through DB-operation evidence"
       capsule: capsule(),
       dbOperationEvidence: {
         dbOperationRefs: ["runtime-job://db-job/db-operation/metadata"],
-        modelTaskRefs: ["runtime-job://model-job/model-task/validation"],
+      },
+      qualityReviewsBySeedId: {
+        "seed-1": {
+          source: "model",
+          usefulness: "too_generic",
+          specificity: "too_broad",
+          ownerFit: "low",
+          reviewRef: "runtime-job://job-1/model-task/opportunity-review/seed-1",
+          limitations: ["The candidate is too generic to queue."],
+        },
+        "seed-1-extra-follow-up": {
+          source: "model",
+          usefulness: "stale",
+          specificity: "mixed",
+          ownerFit: "low",
+          reviewRef: "runtime-job://job-1/model-task/opportunity-review/seed-1-extra-follow-up",
+          limitations: ["Superseded by later work."],
+        },
       },
     });
 
     expect(result.status).toBe("accepted");
-    expect(result.createdWorkItemIds).toHaveLength(2);
-    expect(new Set(result.createdWorkItemIds).size).toBe(2);
-    expect(result.skippedSeedIds).toEqual(["seed-2"]);
-    expect(created[0]?.metadata).toMatchObject({
-      projectionBoundary: "db_operation_middleware",
-      rawPromptStored: false,
-      rawResponseStored: false,
-      workQueueLifecycleMutated: false,
-    });
+    expect(result.createdWorkItemIds).toEqual([]);
+    expect(result.skippedSeedIds).toEqual(["seed-1", "seed-1-extra-follow-up", "seed-2"]);
+    expect(created).toEqual([]);
   });
 });

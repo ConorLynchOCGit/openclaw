@@ -589,6 +589,7 @@ describe("agent-team runtime evidence", () => {
           teamRunId: "long-source-prompt-team",
           workflowId: "agent_team.coding",
           objectiveSummary: "Use OpenClaw to complete active-queue-08.",
+          requireSingleJobCodingTeamQualityProof: true,
           sourcePromptRef: {
             refKind: "gateway_chat_transcript",
             promptHash: sha256Text(longPrompt),

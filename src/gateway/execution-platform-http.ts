@@ -10,23 +10,31 @@ import {
   OpenRouterIntentFrontDoorRouterClient,
   OpenRouterSimpleTriageModelClient,
   ROUTER_MODEL_POLICY_VERSION,
+  RuntimeToolKernel,
+  RuntimeToolRegistry,
+  RuntimeToolTraceRepository,
   resolveLiveRouterModelPolicy,
   NativeExecutionRpcService,
+  registerSchedulerRuntimeTools,
   RuntimeJobRepository,
   RuntimeWorkGraphRepository,
   TwoLaneStructuredModelIntentRouterProvider,
+  WorkQueueEventStore,
   WorkQueueRepository,
   type LiveRouterModelPolicy,
   type RouterModelCandidateRef,
 } from "../../extensions/execution-platform/runtime-api.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
+import { runGatewayAgentTeamRuntimeJobOnce } from "./execution-platform-agent-team-runner.js";
 import type { AuthorizedGatewayHttpRequest } from "./http-utils.js";
 
 type ExecutionPlatformRouteRuntime = {
   runtimeJobs: RuntimeJobRepository;
   runtimeWorkGraphs: RuntimeWorkGraphRepository;
+  workQueueEvents: WorkQueueEventStore;
   workQueue: WorkQueueRepository;
   nativeExecutionRpc: NativeExecutionRpcService;
+  runtimeToolKernel: RuntimeToolKernel;
 };
 
 let runtimePromise: Promise<ExecutionPlatformRouteRuntime> | null = null;
@@ -438,7 +446,7 @@ function resolveNativeHttpAuthContext(
 export function shouldHandleExecutionPlatformPath(pathname: string): boolean {
   return (
     pathname.startsWith("/api/execution-platform/execution/") ||
-    pathname.startsWith("/api/execution-platform/work-queue/execution-control/") ||
+    pathname.startsWith("/api/execution-platform/work-queue/") ||
     pathname === "/api/execution-platform/queue-runner/run-once"
   );
 }
@@ -453,14 +461,34 @@ export async function getExecutionPlatformRuntime(
     });
     const runtimeJobs = new RuntimeJobRepository(database.sqlClient, { claimStrategy: "basic" });
     const runtimeWorkGraphs = new RuntimeWorkGraphRepository(database.sqlClient);
-    const workQueue = new WorkQueueRepository(database.sqlClient, runtimeJobs);
+    const runtimeToolTraces = new RuntimeToolTraceRepository(database.sqlClient);
+    const runtimeToolRegistry = new RuntimeToolRegistry();
+    registerSchedulerRuntimeTools({ registry: runtimeToolRegistry, includeWorkerInvoke: true });
+    const runtimeToolKernel = new RuntimeToolKernel({
+      registry: runtimeToolRegistry,
+      traces: runtimeToolTraces,
+    });
+    const workQueueEvents = new WorkQueueEventStore(database.sqlClient);
+    const workQueue = new WorkQueueRepository(database.sqlClient, runtimeJobs, {
+      eventStore: workQueueEvents,
+    });
     const nativeExecutionRpc = new NativeExecutionRpcService({
       runtimeJobs,
       workQueue,
       structuredRouterProvider: createGatewayStructuredRouterProvider(config) ?? undefined,
     });
-    return { runtimeJobs, runtimeWorkGraphs, workQueue, nativeExecutionRpc };
-  })();
+    return {
+      runtimeJobs,
+      runtimeWorkGraphs,
+      runtimeToolKernel,
+      workQueueEvents,
+      workQueue,
+      nativeExecutionRpc,
+    };
+  })().catch((error) => {
+    runtimePromise = null;
+    throw error;
+  });
   return runtimePromise;
 }
 
@@ -481,8 +509,20 @@ export async function handleExecutionPlatformHttpRequest(
     const runtime = params.runtime ?? (await getExecutionPlatformRuntime(params.config));
     const route = createExecutionPlatformHostRoutes({
       runtimeJobs: runtime.runtimeJobs,
+      runtimeWorkGraphs: runtime.runtimeWorkGraphs,
+      workQueue: runtime.workQueue,
       nativeExecutionRpc: runtime.nativeExecutionRpc,
       nativeHttpAuth: resolveNativeHttpAuthContext(req, params.requestAuth),
+      agentTeamRuntimeRunOnce: ({ runtimeJobId, workerId, queueName }) =>
+        runGatewayAgentTeamRuntimeJobOnce({
+          runtimeJobs: runtime.runtimeJobs,
+          runtimeWorkGraphs: runtime.runtimeWorkGraphs,
+          runtimeToolKernel: runtime.runtimeToolKernel,
+          workQueue: runtime.workQueue,
+          runtimeJobId,
+          workerId,
+          queueName,
+        }),
     }).find((route) => route.path === pathname);
     if (!route) {
       writeJson(res, 404, { error: "execution_platform_route_not_registered" });

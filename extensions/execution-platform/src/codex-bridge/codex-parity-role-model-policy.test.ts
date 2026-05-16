@@ -27,14 +27,25 @@ describe("Codex parity role/model policy", () => {
   it("allows Codex-native subagents only inside complex implementation adapter", () => {
     const policy = buildCodexParityRoleModelPolicy({
       availableModelRefs: ["openai-codex/gpt-5.5", "moonshotai/kimi-k2.6"],
-      codexCodingModelRef: "openai-codex/gpt-5.3-codex",
     });
 
     expect(
       policy.filter((selection) => selection.codexNativeSubagentsAllowed).map((s) => s.roleId),
     ).toEqual(["implementation_complex"]);
+    expect(
+      policy.find((selection) => selection.roleId === "implementation_complex")?.modelRef,
+    ).toBe("openai-codex/gpt-5.5");
     expect(policy.every((selection) => selection.openClawRoleEvidenceRequired)).toBe(true);
     expect(policy.every((selection) => !selection.rawProviderLogStored)).toBe(true);
+  });
+
+  it("records explicit legacy Codex 5.3 selection instead of silently defaulting to it", () => {
+    const selection = selectCodexParityRoleModel("implementation_complex", {
+      codexCodingModelRef: "openai-codex/gpt-5.3-codex",
+    });
+
+    expect(selection.modelRef).toBe("openai-codex/gpt-5.3-codex");
+    expect(selection.reasonCodes).toContain("explicit_legacy_codex_5_3_selection_recorded");
   });
 
   it("records exact blockers instead of silently falling back", () => {

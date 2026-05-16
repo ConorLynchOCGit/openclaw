@@ -1,5 +1,6 @@
 import type { CloseoutCapsule } from "../codex-bridge/closeout-capsule.ts";
 import { closeoutCapsuleHash } from "../codex-bridge/closeout-capsule.ts";
+import { createPlanningCapsuleFromOpportunitySeed } from "../work-queue/planning-lifecycle.ts";
 import type { WorkQueueRepository } from "../work-queue/work-queue-repository.ts";
 import {
   MODEL_MEMORY_RUNTIME_WIRING_VERSION,
@@ -13,6 +14,16 @@ export type CloseoutOpportunityDbOperationEvidence = {
   actorId?: string | null;
 };
 
+export type CloseoutOpportunityQualityReview = {
+  source: "model" | "owner";
+  usefulness: "useful" | "needs_review" | "duplicate" | "stale" | "too_generic";
+  specificity: "specific" | "mixed" | "too_broad";
+  ownerFit: "high" | "medium" | "low" | "unknown";
+  reviewRef: string;
+  limitations: string[];
+  recommendedQueueKind?: string | null;
+};
+
 export type CloseoutOpportunityProjectionDecision = {
   artifactKind: "closeout_capsule_opportunity_runtime_projection_decision";
   version: typeof MODEL_MEMORY_RUNTIME_WIRING_VERSION;
@@ -20,6 +31,7 @@ export type CloseoutOpportunityProjectionDecision = {
   capsuleId: string;
   capsuleHash: string;
   createdWorkItemIds: string[];
+  planningCapsuleRefs: string[];
   skippedSeedIds: string[];
   duplicateWorkItemIds: string[];
   evidenceRefs: MemoryRuntimeEvidenceRef[];
@@ -42,6 +54,8 @@ export async function projectCloseoutCapsuleOpportunitySeedsViaDbOperation(input
   workQueue: WorkQueueRepository;
   capsule: CloseoutCapsule;
   dbOperationEvidence: CloseoutOpportunityDbOperationEvidence;
+  qualityReviewsBySeedId?: Record<string, CloseoutOpportunityQualityReview>;
+  createPlanningCapsuleIntakeForAcceptedSeeds?: boolean;
 }): Promise<CloseoutOpportunityProjectionDecision> {
   const capsuleHash = closeoutCapsuleHash(input.capsule);
   const dbOperationRefs = input.dbOperationEvidence.dbOperationRefs.slice(0, 20);
@@ -53,6 +67,7 @@ export async function projectCloseoutCapsuleOpportunitySeedsViaDbOperation(input
       capsuleId: input.capsule.capsuleId,
       capsuleHash,
       createdWorkItemIds: [],
+      planningCapsuleRefs: [],
       skippedSeedIds: input.capsule.opportunitySeeds.map((seed) => seed.seedId).slice(0, 50),
       duplicateWorkItemIds: [],
       evidenceRefs: [],
@@ -64,10 +79,28 @@ export async function projectCloseoutCapsuleOpportunitySeedsViaDbOperation(input
     };
   }
   const createdWorkItemIds: string[] = [];
+  const planningCapsuleRefs: string[] = [];
   const skippedSeedIds: string[] = [];
   const duplicateWorkItemIds: string[] = [];
   for (const seed of input.capsule.opportunitySeeds) {
+    const qualityReview = input.qualityReviewsBySeedId?.[seed.seedId] ?? {
+      source: "model" as const,
+      usefulness: "needs_review" as const,
+      specificity: "mixed" as const,
+      ownerFit: "unknown" as const,
+      reviewRef: `closeout-capsule://${input.capsule.capsuleId}/opportunity/${seed.seedId}/review-pending`,
+      limitations: ["No model-authored opportunity quality review was provided."],
+      recommendedQueueKind: seed.kind,
+    };
     if (seed.kind === "no_op") {
+      skippedSeedIds.push(seed.seedId);
+      continue;
+    }
+    if (
+      qualityReview.usefulness === "duplicate" ||
+      qualityReview.usefulness === "stale" ||
+      qualityReview.usefulness === "too_generic"
+    ) {
       skippedSeedIds.push(seed.seedId);
       continue;
     }
@@ -97,6 +130,21 @@ export async function projectCloseoutCapsuleOpportunitySeedsViaDbOperation(input
         recommendedNextStep: compactString(seed.recommendedNextStep, 1_000),
         evidenceRefs: seed.evidenceRefs.slice(0, 20),
         confidence: seed.confidence,
+        qualityReview: {
+          source: qualityReview.source,
+          usefulness: qualityReview.usefulness,
+          specificity: qualityReview.specificity,
+          ownerFit: qualityReview.ownerFit,
+          reviewRef: compactString(qualityReview.reviewRef, 300),
+          limitations: qualityReview.limitations
+            .map((entry) => compactString(entry, 300))
+            .slice(0, 8),
+          recommendedQueueKind: qualityReview.recommendedQueueKind
+            ? compactString(qualityReview.recommendedQueueKind, 80)
+            : null,
+        },
+        qualityReviewState:
+          qualityReview.usefulness === "useful" ? "model_reviewed_useful" : "pending_review",
         dbOperationRefs,
         modelTaskRefs: input.dbOperationEvidence.modelTaskRefs?.slice(0, 20) ?? [],
         reviewStatus: "pending_review",
@@ -107,6 +155,18 @@ export async function projectCloseoutCapsuleOpportunitySeedsViaDbOperation(input
       },
     });
     createdWorkItemIds.push(workItemId);
+    if (input.createPlanningCapsuleIntakeForAcceptedSeeds !== false) {
+      const planningCapsule = await createPlanningCapsuleFromOpportunitySeed({
+        workQueue: input.workQueue,
+        workItemId,
+        capsuleId: `planning-from-${seed.seedId}`.replace(/[^a-zA-Z0-9:-]/gu, "-").slice(0, 120),
+        seed,
+        sourceCloseoutRef: `closeout-capsule://${input.capsule.capsuleId}`,
+        qualityReviewRef: qualityReview.reviewRef,
+        actorId: input.dbOperationEvidence.actorId ?? "execution-platform-closeout-capsule",
+      });
+      planningCapsuleRefs.push(planningCapsule.refs.artifactRef);
+    }
   }
   return {
     artifactKind: "closeout_capsule_opportunity_runtime_projection_decision",
@@ -115,6 +175,7 @@ export async function projectCloseoutCapsuleOpportunitySeedsViaDbOperation(input
     capsuleId: input.capsule.capsuleId,
     capsuleHash,
     createdWorkItemIds,
+    planningCapsuleRefs,
     skippedSeedIds,
     duplicateWorkItemIds,
     evidenceRefs: [
@@ -129,7 +190,12 @@ export async function projectCloseoutCapsuleOpportunitySeedsViaDbOperation(input
         boundedSummary: "Model-task evidence for opportunity seed interpretation.",
       })),
     ].slice(0, 40),
-    reasonCodes: ["closeout_opportunity_seeds_projected_via_db_operation_middleware"],
+    reasonCodes: [
+      "closeout_opportunity_seeds_projected_via_db_operation_middleware",
+      ...(planningCapsuleRefs.length > 0
+        ? ["accepted_opportunity_seeds_unpacked_to_planning_capsules"]
+        : []),
+    ],
     rawPromptStored: false,
     rawResponseStored: false,
     rawProviderLogStored: false,

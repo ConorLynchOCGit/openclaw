@@ -903,7 +903,7 @@ describe("native execution rpc", () => {
     }
   });
 
-  it("submits natural language through intent router to runtime job and agent-team dispatch", async () => {
+  it("submits natural language through intent router and rejects legacy agent-team dispatch without dynamic scheduler dependencies", async () => {
     const db = await createExecutionPlatformPgMemTestDatabase();
     try {
       await applyExecutionPlatformMigrations(db.sql);
@@ -937,8 +937,9 @@ describe("native execution rpc", () => {
         closeoutReporter: modelCloseoutReporterFixture(),
       });
       const run = await runner.runOnce();
-      expect(run.completed).toBe(true);
-      expect(run.teamRunId).toBeTruthy();
+      expect(run.completed).toBe(false);
+      expect(run.failed).toBe(true);
+      expect(run.failure?.message).toContain("dynamic_runtime_work_graph_required");
 
       const readModel = await buildWorkQueueExecutionReadModel({
         workQueue,
@@ -947,9 +948,13 @@ describe("native execution rpc", () => {
       });
       expect(readModel.runtimeJobs[0]?.workflow.workflowId).toBe("agent_team.coding");
       expect(readModel.runtimeJobs[0]?.workflow.workQueueLifecycleMutationAllowed).toBe(false);
-      expect(readModel.runtimeJobs[0]?.agentTeam.validationState).toBe("passed");
+      expect(readModel.runtimeJobs[0]?.runtimeJobState).not.toBe("succeeded");
       const closeout = await rpc.readCloseout(submit.runtimeJobId ?? "");
-      expect(JSON.stringify(closeout)).toContain("present");
+      expect(closeout).toMatchObject({
+        closeoutRefs: [],
+        closeoutCapsule: null,
+        humanCloseoutSummary: null,
+      });
     } finally {
       await db.close();
     }
@@ -1016,6 +1021,7 @@ describe("native execution rpc", () => {
         runtimeJobs,
         workerId: "generic-workflow-worker",
         queueName: "agent-team",
+        closeoutReporter: modelCloseoutReporterFixture(),
       });
       const run = await runner.runOnce();
       expect(run.completed).toBe(true);
@@ -1062,6 +1068,50 @@ describe("native execution rpc", () => {
       expect(control.reasonCodes).toContain("linked_runtime_job_not_found");
       const projection = await rpc.readWorkQueueProjection(workItem.workItemId);
       expect(JSON.stringify(projection)).not.toContain("missing-runtime-job");
+    } finally {
+      await db.close();
+    }
+  });
+
+  it("applies cancel controls to runtime job truth instead of only recording UI evidence", async () => {
+    const db = await createExecutionPlatformPgMemTestDatabase();
+    try {
+      await applyExecutionPlatformMigrations(db.sql);
+      const runtimeJobs = new RuntimeJobRepository(db.sql, { claimStrategy: "basic" });
+      const workQueue = new WorkQueueRepository(db.sql, runtimeJobs);
+      const workItem = await workQueue.createWorkItem({
+        workItemId: "work-item-native-cancel-runtime",
+        itemType: "execution_workflow",
+        title: "Native runtime cancel control",
+      });
+      const job = await runtimeJobs.enqueueJob({
+        jobId: "runtime-job-native-cancel",
+        jobType: "agent_team.coding",
+        queueName: "agent-team",
+        workItemId: workItem.workItemId,
+        payload: {},
+      });
+      const rpc = new NativeExecutionRpcService({
+        runtimeJobs,
+        workQueue,
+        intentRouterProvider: legacyTestFixtureProvider(),
+      });
+
+      const control = await rpc.applyControl({
+        actionKind: "cancel",
+        actionId: "native-runtime-cancel",
+        workItemId: workItem.workItemId,
+        runtimeJobId: job.jobId,
+        auth: { actorId: "operator", authenticated: true, role: "operator" },
+      });
+      const canceled = await runtimeJobs.getJob(job.jobId);
+      const events = await runtimeJobs.listEvents(job.jobId, 20);
+
+      expect(control.accepted).toBe(true);
+      expect(canceled?.state).toBe("canceled");
+      expect(events.map((event) => event.eventType)).toEqual(
+        expect.arrayContaining(["work_queue.execution_action_recorded", "job.canceled"]),
+      );
     } finally {
       await db.close();
     }

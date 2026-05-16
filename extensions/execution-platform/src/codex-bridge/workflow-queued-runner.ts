@@ -1,5 +1,9 @@
 import type { JsonValue, RuntimeJob, RuntimeJobRepository } from "../runtime-job-repository.ts";
-import { recordCloseoutCapsuleArtifact, type CloseoutCapsule } from "./closeout-capsule.ts";
+import {
+  parseCloseoutCapsule,
+  recordCloseoutCapsuleArtifact,
+  type CloseoutCapsule,
+} from "./closeout-capsule.ts";
 import {
   createDegradedSystemCloseoutCapsule,
   type CloseoutCapsuleReporterInput,
@@ -48,6 +52,16 @@ function stringValue(value: unknown, fallback: string): string {
   return typeof value === "string" && value.trim() ? value : fallback;
 }
 
+const SCHEDULER_BACKED_WORKFLOWS = new Set(["agent_team.product_spec_planning"]);
+
+function closeoutIsModelAuthored(result: CloseoutCapsuleReporterResult): boolean {
+  return (
+    result.source === "model" &&
+    result.capsule.humanReport.source === "model" &&
+    result.capsule.structuredSummary.taskSuccess !== "unknown"
+  );
+}
+
 export class WorkflowQueuedRunner {
   private readonly queueName: string;
   private readonly jobTypes: string[];
@@ -75,6 +89,23 @@ export class WorkflowQueuedRunner {
     const workflowId = stringValue(payload.workflowId, "unknown");
     const stopLeaseRenewal = this.startLeaseRenewal(claimed.leaseToken);
     try {
+      if (SCHEDULER_BACKED_WORKFLOWS.has(workflowId)) {
+        await this.options.runtimeJobs.recordEvent({
+          jobId: claimed.job.jobId,
+          eventType: "execution.workflow_scheduler_required",
+          workerId: this.options.workerId,
+          data: {
+            workflowId,
+            reasonCode: "product_spec_planning_requires_scheduler_backed_runner",
+            genericWorkflowDispatchAllowed: false,
+            rawPromptStored: false,
+            rawResponseStored: false,
+            rawProviderLogStored: false,
+            workQueueLifecycleMutated: false,
+          } as JsonValue,
+        });
+        throw new Error("product_spec_planning_requires_scheduler_backed_runner");
+      }
       await this.recordGenericWorkflowEvidence(claimed.job, workflowId);
       const completed = await this.options.runtimeJobs.completeJob({
         leaseToken: claimed.leaseToken,
@@ -258,7 +289,27 @@ export class WorkflowQueuedRunner {
           ...capsuleInput,
           reasonCodes: ["closeout_capsule_model_reporter_not_configured"],
         });
-    const capsule: CloseoutCapsule = capsuleResult.capsule;
+    if (!closeoutIsModelAuthored(capsuleResult)) {
+      await this.options.runtimeJobs.recordEvent({
+        jobId: job.jobId,
+        eventType: "execution.workflow_degraded_closeout_rejected",
+        workerId: this.options.workerId,
+        data: {
+          workflowId,
+          closeoutSource: capsuleResult.source,
+          reasonCodes: [
+            "degraded_closeout_diagnostic_only",
+            "model_authored_closeout_required_before_success",
+          ],
+          rawPromptStored: false,
+          rawResponseStored: false,
+          rawProviderLogStored: false,
+          workQueueLifecycleMutated: false,
+        } as JsonValue,
+      });
+      throw new Error("model_authored_closeout_required_before_success");
+    }
+    const capsule: CloseoutCapsule = parseCloseoutCapsule(capsuleResult.capsule);
     await recordCloseoutCapsuleArtifact({
       runtimeJobs: this.options.runtimeJobs,
       capsule,
@@ -304,6 +355,11 @@ export class WorkflowQueuedRunner {
 
 function workflowFilesForCloseout(workflowId: string): string[] {
   switch (workflowId) {
+    case "agent_team.product_spec_planning":
+      return [
+        "extensions/execution-platform/src/workflows/product-spec-planning-workflow.ts",
+        "extensions/execution-platform/src/workflows/runtime-work-graph-scheduler.ts",
+      ];
     case "workflow.docs_skills":
       return [
         "extensions/execution-platform/src/workflows/docs-skills-workflow.ts",

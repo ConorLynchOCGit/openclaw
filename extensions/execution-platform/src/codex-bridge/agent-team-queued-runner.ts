@@ -8,6 +8,8 @@ import {
   type ModelRosterRoleId,
 } from "../model-routing/model-roster-enforcement.ts";
 import type { JsonValue, RuntimeJob, RuntimeJobRepository } from "../runtime-job-repository.ts";
+import type { RuntimeToolKernel } from "../runtime-tool-call/runtime-tool-kernel.ts";
+import type { WorkQueueRepository } from "../work-queue/work-queue-repository.ts";
 import type { RuntimeWorkGraphRepository } from "../workflows/runtime-work-graph-repository.ts";
 import { createFirstAgentTeamImplementationPlan } from "./agent-team-plan.ts";
 import type { AgentTeamRoleId } from "./agent-team-plan.ts";
@@ -36,6 +38,7 @@ import { createContextScoutArtifact, recordContextScoutArtifact } from "./contex
 import { DynamicAgentTeamGraphRunner } from "./dynamic-agent-team-graph-runner.ts";
 import type { DynamicCodingTeamModelClient } from "./dynamic-coding-team-orchestrator.ts";
 import type { DynamicValidationRunner } from "./dynamic-test-repair-loop.ts";
+import type { KimiFileImplementationAdapter } from "./kimi-file-implementation-adapter.ts";
 import type { AgentTeamModelClient } from "./live-agent-team-runner.ts";
 import {
   createDegradedSystemCloseoutCapsule,
@@ -79,8 +82,16 @@ export type AgentTeamQueuedRunnerOptions = {
   };
   roleModelClient?: AgentTeamModelClient;
   implementationBridge?: AgentTeamImplementationBridge;
+  kimiImplementationAdapter?: {
+    run(
+      input: Parameters<KimiFileImplementationAdapter["run"]>[0],
+    ): ReturnType<KimiFileImplementationAdapter["run"]>;
+  };
   runtimeWorkGraphs?: RuntimeWorkGraphRepository;
+  runtimeToolKernel?: RuntimeToolKernel | null;
+  workQueue?: WorkQueueRepository;
   dynamicOrchestratorModelClient?: DynamicCodingTeamModelClient;
+  missionContractModelClient?: DynamicCodingTeamModelClient;
   dynamicValidationRunner?: DynamicValidationRunner;
   now?: () => Date;
 };
@@ -1329,6 +1340,25 @@ export class AgentTeamQueuedRunner {
 
   private async runClaimedJob(job: RuntimeJob): Promise<AgentTeamClaimedJobExecutionResult> {
     const payload = asRecord(job.payload);
+    if (
+      payload.legacyFixedDynamicRunner === true ||
+      payload.proofOnlyLegacyFixedDynamicRunner === true
+    ) {
+      await this.options.runtimeJobs.recordEvent({
+        jobId: job.jobId,
+        eventType: "agent_team.legacy_fixed_runner_rejected",
+        data: {
+          artifactKind: "agent_team_legacy_fixed_runner_rejected",
+          runtimeJobId: job.jobId,
+          reasonCodes: ["legacy_fixed_dynamic_runner_retired"],
+          rawPromptStored: false,
+          rawResponseStored: false,
+          rawProviderLogStored: false,
+          workQueueLifecycleMutated: false,
+        } as JsonValue,
+      });
+      throw new Error("legacy_fixed_dynamic_runner_retired");
+    }
     const workflowId = stringValue(payload.workflowId, "agent_team.coding");
     const executorId = `workflow-executor:${workflowId}`;
     const teamRunId = stringValue(payload.teamRunId, `team-run-${job.jobId}`);
@@ -1373,6 +1403,18 @@ export class AgentTeamQueuedRunner {
       this.options.implementationBridge &&
       this.options.closeoutReporter,
     );
+    const explicitSingleJobQualityProof = readSingleJobQualityProofPayloadFlag(job.payload);
+    if (workflowId === "agent_team.coding" && !explicitSingleJobQualityProof) {
+      if (
+        !liveQualityPathConfigured ||
+        !this.options.runtimeWorkGraphs ||
+        !this.options.runtimeToolKernel
+      ) {
+        throw new Error(
+          "dynamic_runtime_work_graph_required:live coding-team execution requires configured role model, implementation bridge, closeout reporter, runtime work graph, and scheduler tool kernel",
+        );
+      }
+    }
     if (
       liveQualityPathConfigured &&
       this.options.runtimeWorkGraphs &&
@@ -1381,17 +1423,31 @@ export class AgentTeamQueuedRunner {
       return new DynamicAgentTeamGraphRunner({
         runtimeJobs: this.options.runtimeJobs,
         runtimeWorkGraphs: this.options.runtimeWorkGraphs,
+        runtimeToolKernel: this.options.runtimeToolKernel ?? null,
+        requireSchedulerToolKernel: !explicitSingleJobQualityProof,
+        workQueue: this.options.workQueue,
         workerId: this.options.workerId,
         sourcePromptSessionRoots: this.options.sourcePromptSessionRoots,
         roleModelClient: this.options.roleModelClient!,
         orchestratorModelClient: this.options.dynamicOrchestratorModelClient,
+        missionContractModelClient: this.options.missionContractModelClient,
         validationRunner: this.options.dynamicValidationRunner,
         implementationBridge: this.options.implementationBridge!,
+        kimiImplementationAdapter: this.options.kimiImplementationAdapter,
         closeoutReporter: this.options.closeoutReporter,
         now: this.now,
       }).run(job);
     }
-    if (readSingleJobQualityProofPayloadFlag(job.payload) || liveQualityPathConfigured) {
+    if (
+      liveQualityPathConfigured &&
+      workflowId === "agent_team.coding" &&
+      !readSingleJobQualityProofPayloadFlag(job.payload)
+    ) {
+      throw new Error(
+        "dynamic_runtime_work_graph_required:live coding-team execution cannot fall back to the static single-job role sequence",
+      );
+    }
+    if (explicitSingleJobQualityProof || liveQualityPathConfigured) {
       return this.runSingleJobQualityProofJob({
         job,
         workflowId,
@@ -1569,7 +1625,8 @@ export class AgentTeamQueuedRunner {
         }),
       });
     }
-    const capsuleIsModelAuthored = capsuleResult.source === "model";
+    const capsuleIsModelAuthored =
+      capsuleResult.source === "model" && capsuleResult.capsule.humanReport.source === "model";
     const cleanSuccessAccepted = taskSpecificObjectivePresent && capsuleIsModelAuthored;
     const blockingReasonCodes = [
       ...(!taskSpecificObjectivePresent

@@ -10,7 +10,12 @@ import {
   handleWorkQueueRedirectExecutionEndpoint,
   type WorkQueueExecutionControlEndpointAuth,
 } from "../work-queue/execution-control-endpoints.ts";
-import { AgentTeamQueuedRunner } from "./agent-team-queued-runner.ts";
+import {
+  buildWorkQueueExecutionReadModel,
+  summarizeWorkQueueExecutionForUi,
+} from "../work-queue/execution-read-model.ts";
+import type { WorkQueueRepository } from "../work-queue/work-queue-repository.ts";
+import type { RuntimeWorkGraphRepository } from "../workflows/runtime-work-graph-repository.ts";
 import {
   handleQueueRunnerRunOnceEndpoint,
   type QueueRunnerEndpointAuth,
@@ -28,8 +33,24 @@ export type ExecutionPlatformHostRoute = {
 
 export type ExecutionPlatformHostRouteDependencies = {
   runtimeJobs?: RuntimeJobRepository;
+  runtimeWorkGraphs?: RuntimeWorkGraphRepository;
+  workQueue?: WorkQueueRepository;
   nativeExecutionRpc?: NativeExecutionRpcService;
   queueRunnerEndpoint?: typeof handleQueueRunnerRunOnceEndpoint;
+  agentTeamRuntimeRunOnce?: (input: {
+    runtimeJobId: string;
+    workerId: string;
+    queueName?: string | null;
+  }) => Promise<{
+    claimed: boolean;
+    completed: boolean;
+    failed: boolean;
+    runtimeJobId: string | null;
+    teamRunId: string | null;
+    workflowId: string | null;
+    workerId: string;
+    reasonCodes: string[];
+  }>;
   nativeHttpAuth?: TrustedNativeExecutionHttpAuthContext;
 };
 
@@ -62,6 +83,16 @@ function readString(value: unknown): string | undefined {
 
 function readBoolean(value: unknown): boolean | undefined {
   return typeof value === "boolean" ? value : undefined;
+}
+
+function readNumber(value: unknown): number | undefined {
+  const parsed =
+    typeof value === "number"
+      ? value
+      : typeof value === "string" && value.trim()
+        ? Number.parseInt(value, 10)
+        : NaN;
+  return Number.isFinite(parsed) ? parsed : undefined;
 }
 
 async function readJsonBody(req: IncomingMessage, maxBytes = 64 * 1024): Promise<JsonRecord> {
@@ -207,14 +238,26 @@ export async function handleExecutionPlatformQueueRunnerHostRoute(
       }
       const queueName = readString(body.queueName);
       const workerId = readString(body.workerId) ?? `operator:${auth.actorId}`;
+      if (job.jobType === "executor.agent_team" && !dependencies.agentTeamRuntimeRunOnce) {
+        writeJson(res, 409, {
+          accepted: false,
+          nativeWorkflowRunOnce: true,
+          blockingReasons: ["configured_agent_team_supervisor_required"],
+          reasonCodes: ["agent_team_run_once_requires_configured_worker_supervisor"],
+          runtimeJobId: job.jobId,
+          daemonStarted: false,
+          schedulerStarted: false,
+          workQueueLifecycleMutated: false,
+        });
+        return true;
+      }
       const runOnceResult =
-        job.jobType === "executor.agent_team"
-          ? await new AgentTeamQueuedRunner({
-              runtimeJobs: dependencies.runtimeJobs,
-              workerId,
-              queueName,
+        job.jobType === "executor.agent_team" && dependencies.agentTeamRuntimeRunOnce
+          ? await dependencies.agentTeamRuntimeRunOnce({
               runtimeJobId: job.jobId,
-            }).runOnce()
+              workerId,
+              queueName: queueName ?? "agent-team",
+            })
           : await new WorkflowQueuedRunner({
               runtimeJobs: dependencies.runtimeJobs,
               workerId,
@@ -230,6 +273,10 @@ export async function handleExecutionPlatformQueueRunnerHostRoute(
         runtimeJobId: runOnceResult.runtimeJobId,
         teamRunId: "teamRunId" in runOnceResult ? runOnceResult.teamRunId : null,
         workflowId: "workflowId" in runOnceResult ? runOnceResult.workflowId : null,
+        reasonCodes:
+          "reasonCodes" in runOnceResult && Array.isArray(runOnceResult.reasonCodes)
+            ? runOnceResult.reasonCodes.slice(0, 20)
+            : [],
         boundedProof: {
           workerId: runOnceResult.workerId,
           queueName: queueName ?? "agent-team",
@@ -385,6 +432,186 @@ export async function handleExecutionPlatformNativeExecutionHostRoute(
   }
 }
 
+export async function handleExecutionPlatformDbWorkQueueHostRoute(
+  operation: "list" | "detail" | "delta" | "human-response",
+  req: IncomingMessage,
+  res: ServerResponse,
+  dependencies: {
+    runtimeJobs: RuntimeJobRepository;
+    workQueue?: WorkQueueRepository;
+    runtimeWorkGraphs?: RuntimeWorkGraphRepository;
+  },
+): Promise<boolean> {
+  if (req.method !== "POST") {
+    writeJson(res, 405, { error: "method_not_allowed" });
+    return true;
+  }
+  try {
+    const body = await readJsonBody(req);
+    if (unsafeBody(body)) {
+      writeJson(res, 400, { error: "unsafe_request_content" });
+      return true;
+    }
+    if (!dependencies.workQueue) {
+      writeJson(res, 503, {
+        accepted: false,
+        reasonCodes: ["work_queue_repository_not_configured"],
+      });
+      return true;
+    }
+    if (operation === "list" || operation === "delta") {
+      const bucket =
+        body.bucket === "closed" || body.bucket === "all" || body.bucket === "active"
+          ? body.bucket
+          : "active";
+      const result = await dependencies.workQueue.listDbWorkQueue({
+        bucket,
+        limit: readNumber(body.limit),
+        cursor: readString(body.cursor) ?? null,
+        searchQuery: readString(body.searchQuery) ?? null,
+        updatedSince: operation === "delta" ? (readString(body.updatedSince) ?? null) : null,
+      });
+      writeJson(res, 200, {
+        accepted: true,
+        ...result,
+      } as unknown as JsonValue);
+      return true;
+    }
+    if (operation === "detail") {
+      const workItemId = readString(body.workItemId) ?? "";
+      if (!workItemId) {
+        writeJson(res, 400, { accepted: false, reasonCodes: ["work_item_id_required"] });
+        return true;
+      }
+      const truth = await dependencies.workQueue.readWorkItemTruth(workItemId, 5);
+      if (!truth) {
+        writeJson(res, 404, { accepted: false, reasonCodes: ["work_item_not_found"] });
+        return true;
+      }
+      const executionModel = await buildWorkQueueExecutionReadModel({
+        workQueue: dependencies.workQueue,
+        runtimeJobs: dependencies.runtimeJobs,
+        workItemId,
+      });
+      writeJson(res, 200, {
+        accepted: true,
+        artifactKind: "db_work_queue_detail_result",
+        source: "execution_platform_work_queue_db",
+        item: {
+          workItemId: truth.item.workItemId,
+          itemType: truth.item.itemType,
+          title: truth.item.title,
+          description: truth.item.description,
+          lifecycleState: truth.item.lifecycleState,
+          queueStatus: truth.item.queueStatus ?? "active",
+          queueRank: truth.item.queueRank ?? null,
+          closedAt: truth.item.closedAt?.toISOString() ?? null,
+          updatedAt: truth.item.updatedAt.toISOString(),
+          runtimeJobIds: executionModel.linkedRuntimeJobIds,
+          graphRef: truth.item.graphRef ?? null,
+          validationRef: truth.item.validationRef ?? null,
+          closeoutCapsuleRef: truth.item.closeoutCapsuleRef ?? null,
+          ownerReadbackRef: truth.item.ownerReadbackRef ?? null,
+          assignmentCount: truth.assignments.length,
+          dependencyCount: truth.dependencies.length,
+          artifactRefs: truth.artifacts.map((artifact) => artifact.uri).slice(0, 40),
+          eventCursor:
+            truth.events[0]?.eventTime.toISOString() ?? truth.item.updatedAt.toISOString(),
+          execution: summarizeWorkQueueExecutionForUi(executionModel),
+        },
+        rawPromptStored: false,
+        rawResponseStored: false,
+        rawLogsStored: false,
+        rawDbRowsStored: false,
+      } as unknown as JsonValue);
+      return true;
+    }
+    if (operation === "human-response") {
+      if (!dependencies.runtimeWorkGraphs) {
+        writeJson(res, 503, {
+          accepted: false,
+          reasonCodes: ["runtime_work_graph_repository_not_configured"],
+        });
+        return true;
+      }
+      const graphId = readString(body.graphId) ?? "";
+      const humanTaskId = readString(body.humanTaskId) ?? "";
+      const parentWorkItemId = readString(body.parentWorkItemId) ?? "";
+      const boundedResponseRef =
+        readString(body.boundedResponseRef) ??
+        `owner-decision://work-queue/${humanTaskId}/default-response`;
+      if (!graphId || !humanTaskId) {
+        writeJson(res, 400, {
+          accepted: false,
+          reasonCodes: ["human_response_missing_graph_or_task"],
+        });
+        return true;
+      }
+      const resumed = await dependencies.runtimeWorkGraphs.resumeHumanTask({
+        humanTaskId,
+        boundedResponseRef,
+        decisionRefs: [boundedResponseRef],
+      });
+      await dependencies.runtimeWorkGraphs.addEdge({
+        graphId,
+        fromNodeId: resumed.nodeId,
+        toNodeId: null,
+        edgeKind: "human_resume",
+        reasonCodes: ["human_operator_input_received"],
+        artifactRefs: [boundedResponseRef],
+      });
+      if (resumed.nodeId) {
+        await dependencies.runtimeWorkGraphs.updateNodeStatus({
+          nodeId: resumed.nodeId,
+          nodeStatus: "succeeded",
+          outputArtifactRefs: [boundedResponseRef],
+        });
+      }
+      if (dependencies.workQueue && parentWorkItemId && resumed.nodeId) {
+        await dependencies.workQueue.syncRuntimeGraphNodeToWorkQueue({
+          parentWorkItemId,
+          graphId,
+          nodeId: resumed.nodeId,
+          nodeKind: "human_task",
+          assignedRole: "human_operator",
+          assignedWorkflow: "human/operator",
+          queueStatus: "closed",
+          title: "Human operator decision",
+          humanTaskId,
+          graphNodeRef: `runtime-work-graph://${graphId}/node/${resumed.nodeId}`,
+          evidenceRefs: [boundedResponseRef],
+          actorId: "control-ui-operator",
+        });
+        await dependencies.workQueue.rollupParentWorkQueueStatus({
+          parentWorkItemId,
+          actorId: "control-ui-operator",
+        });
+      }
+      writeJson(res, 200, {
+        accepted: true,
+        artifactKind: "db_work_queue_human_response_result",
+        graphId,
+        humanTaskId,
+        boundedResponseRef,
+        taskStatus: resumed.taskStatus,
+        rawPromptStored: false,
+        rawResponseStored: false,
+        rawLogsStored: false,
+        workQueueLifecycleMutated: false,
+      } as unknown as JsonValue);
+      return true;
+    }
+    writeJson(res, 400, { accepted: false, reasonCodes: ["unknown_work_queue_operation"] });
+    return true;
+  } catch (error) {
+    writeJson(res, 400, {
+      accepted: false,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return true;
+  }
+}
+
 export function createExecutionPlatformHostRoutes(
   dependencies: ExecutionPlatformHostRouteDependencies & {
     runtimeJobs: RuntimeJobRepository;
@@ -399,6 +626,8 @@ export function createExecutionPlatformHostRoutes(
       handler: (req, res) =>
         handleExecutionPlatformQueueRunnerHostRoute(req, res, {
           runtimeJobs: dependencies.runtimeJobs,
+          runtimeWorkGraphs: dependencies.runtimeWorkGraphs,
+          workQueue: dependencies.workQueue,
         }),
     },
     ...(
@@ -416,6 +645,21 @@ export function createExecutionPlatformHostRoutes(
       gatewayRuntimeScopeSurface: "trusted-operator" as const,
       handler: (req: IncomingMessage, res: ServerResponse) =>
         handleExecutionPlatformNativeExecutionHostRoute(operation, req, res, dependencies),
+    })),
+    ...(
+      [
+        ["list", "/api/execution-platform/work-queue/list"],
+        ["detail", "/api/execution-platform/work-queue/detail"],
+        ["delta", "/api/execution-platform/work-queue/delta"],
+        ["human-response", "/api/execution-platform/work-queue/human-response"],
+      ] as const
+    ).map(([operation, path]) => ({
+      path,
+      auth: "gateway" as const,
+      match: "exact" as const,
+      gatewayRuntimeScopeSurface: "trusted-operator" as const,
+      handler: (req: IncomingMessage, res: ServerResponse) =>
+        handleExecutionPlatformDbWorkQueueHostRoute(operation, req, res, dependencies),
     })),
     ...(["pause", "redirect", "cancel"] as const).map((commandKind) => ({
       path: `/api/execution-platform/work-queue/execution-control/${commandKind}`,

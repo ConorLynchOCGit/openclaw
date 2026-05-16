@@ -68,6 +68,18 @@ describe("work queue execution truth migration", () => {
       expect(tableNames).toHaveLength(9);
     });
   });
+
+  it("creates DB-primary queue status columns", async () => {
+    await withWorkQueueRepository(async ({ sql }) => {
+      const result = await sql.query(`
+        SELECT queue_status, queue_rank, closed_at, closed_by_closeout_ref
+        FROM execution_platform.work_items
+        LIMIT 0
+      `);
+
+      expect(result.rows).toEqual([]);
+    });
+  });
 });
 
 describe("work queue execution truth repository", () => {
@@ -85,6 +97,8 @@ describe("work queue execution truth repository", () => {
         item: {
           workItemId: "create-read-item",
           lifecycleState: "draft",
+          queueStatus: "active",
+          queueRank: 1,
           title: "Skill review",
         },
         currentVersion: null,
@@ -92,6 +106,188 @@ describe("work queue execution truth repository", () => {
       expect(truth?.events).toEqual(
         expect.arrayContaining([expect.objectContaining({ eventType: "work_item.created" })]),
       );
+    });
+  });
+
+  it("closes a Work Queue item from accepted closeout evidence without source-code status edits", async () => {
+    await withWorkQueueRepository(async ({ workQueue, runtimeJobs }) => {
+      const item = await workQueue.createWorkItem({
+        workItemId: "db-primary-close-item",
+        itemType: "execution_workflow",
+        title: "DB primary close item",
+      });
+      const runtimeJob = await runtimeJobs.enqueueJob({
+        jobId: "db-primary-close-runtime-job",
+        jobType: "executor.agent_team",
+        workItemId: item.workItemId,
+        payload: { boundedSummary: "prove DB primary close transition" },
+      });
+
+      const before = await workQueue.projectCanonicalRuntimeQueue();
+      const result = await workQueue.completeWorkQueueItemFromCloseout({
+        workItemId: item.workItemId,
+        runtimeJobId: runtimeJob.jobId,
+        closeoutRef: "artifact://closeout/db-primary-close-item",
+        closeoutHash: "sha256:db-primary-close",
+        validationRef: "artifact://validation/db-primary-close-item",
+        validationRequired: true,
+        sourceEditRequired: false,
+        artifactRefs: ["artifact://closeout/db-primary-close-item"],
+        reasonCodes: ["test_accepted_closeout"],
+        rawPromptStored: false,
+        rawResponseStored: false,
+        rawTranscriptStored: false,
+        rawLogsStored: false,
+        rawDbRowsStored: false,
+        authorityGranted: false,
+        controlsApplied: false,
+        runtimeLifecycleMutated: false,
+        modelPromotionPerformed: false,
+      });
+      const after = await workQueue.projectCanonicalRuntimeQueue();
+      const truth = await workQueue.readWorkItemTruth(item.workItemId);
+
+      expect(before.active.map((entry) => entry.workItemId)).toContain(item.workItemId);
+      expect(result).toMatchObject({
+        artifactKind: "work_queue_item_closeout_transition_result",
+        workItemId: item.workItemId,
+        status: "closed",
+        closed: true,
+        runtimeLifecycleMutated: false,
+      });
+      expect(truth?.item.queueStatus).toBe("closed");
+      expect(truth?.item.closedByCloseoutRef).toBe("artifact://closeout/db-primary-close-item");
+      expect(after.active.map((entry) => entry.workItemId)).not.toContain(item.workItemId);
+      expect(after.closed.map((entry) => entry.workItemId)).toContain(item.workItemId);
+      expect(after.lifecycleTruthSource).toBe("work_queue_repository");
+      expect(after.sourceTrackerMode).toBe("db_primary_no_source_tracker");
+    });
+  });
+
+  it("keeps closeout transition idempotent and blocks missing validation from closing", async () => {
+    await withWorkQueueRepository(async ({ workQueue }) => {
+      const item = await workQueue.createWorkItem({
+        workItemId: "db-primary-needs-review-item",
+        itemType: "execution_workflow",
+        title: "DB primary needs review item",
+      });
+
+      const first = await workQueue.completeWorkQueueItemFromCloseout({
+        workItemId: item.workItemId,
+        closeoutRef: "artifact://closeout/db-primary-needs-review-item",
+        validationRequired: true,
+        reasonCodes: ["test_missing_validation"],
+      });
+      const second = await workQueue.completeWorkQueueItemFromCloseout({
+        workItemId: item.workItemId,
+        closeoutRef: "artifact://closeout/db-primary-needs-review-item",
+        validationRequired: true,
+        reasonCodes: ["test_missing_validation"],
+      });
+      const truth = await workQueue.readWorkItemTruth(item.workItemId);
+
+      expect(first).toMatchObject({
+        status: "needs_review",
+        closed: false,
+        reasonCodes: expect.arrayContaining(["required_validation_ref_missing"]),
+      });
+      expect(second.idempotent).toBe(true);
+      expect(truth?.item.queueStatus).toBe("needs_review");
+      expect(truth?.item.closedByCloseoutRef).toBeNull();
+    });
+  });
+
+  it("lists active and closed queue items from DB status without source tracker state", async () => {
+    await withWorkQueueRepository(async ({ workQueue }) => {
+      const active = await workQueue.createWorkItem({
+        workItemId: "db-list-active",
+        itemType: "execution_workflow",
+        title: "Active runtime item",
+      });
+      const closed = await workQueue.createWorkItem({
+        workItemId: "db-list-closed",
+        itemType: "execution_workflow",
+        title: "Closed runtime item",
+      });
+      await workQueue.completeWorkQueueItemFromCloseout({
+        workItemId: closed.workItemId,
+        closeoutRef: "artifact://closeout/db-list-closed",
+        validationRef: "artifact://validation/db-list-closed",
+        validationRequired: true,
+        sourceEditRequired: false,
+      });
+
+      const activeList = await workQueue.listDbWorkQueue({ bucket: "active" });
+      const closedList = await workQueue.listDbWorkQueue({ bucket: "closed" });
+
+      expect(activeList.source).toBe("execution_platform_work_queue_db");
+      expect(activeList.items.map((item) => item.workItemId)).toContain(active.workItemId);
+      expect(activeList.items.map((item) => item.workItemId)).not.toContain(closed.workItemId);
+      expect(closedList.items.map((item) => item.workItemId)).toContain(closed.workItemId);
+      expect(closedList.items[0]).toMatchObject({
+        queueStatus: "closed",
+        rawPromptStored: false,
+        rawResponseStored: false,
+        rawLogsStored: false,
+      });
+    });
+  });
+
+  it("syncs runtime graph child nodes into DB Work Queue children and rolls parent status", async () => {
+    await withWorkQueueRepository(async ({ workQueue }) => {
+      const parent = await workQueue.createWorkItem({
+        workItemId: "graph-parent",
+        itemType: "execution_workflow",
+        title: "Graph parent",
+      });
+
+      const runningChild = await workQueue.syncRuntimeGraphNodeToWorkQueue({
+        parentWorkItemId: parent.workItemId,
+        graphId: "graph-1",
+        nodeId: "node-1",
+        nodeKind: "implementation",
+        assignedRole: "implementation_engineer",
+        assignedWorkflow: "agent_team.coding",
+        queueStatus: "active",
+        evidenceRefs: ["runtime-work-graph://graph-1/node/node-1"],
+      });
+      let rollup = await workQueue.rollupParentWorkQueueStatus({
+        parentWorkItemId: parent.workItemId,
+      });
+
+      expect(runningChild.created).toBe(true);
+      expect(rollup.queueStatus).toBe("active");
+      expect(rollup.requiredChildWorkItemIds).toContain(runningChild.childWorkItemId);
+
+      const closedChild = await workQueue.syncRuntimeGraphNodeToWorkQueue({
+        parentWorkItemId: parent.workItemId,
+        graphId: "graph-1",
+        nodeId: "node-1",
+        nodeKind: "implementation",
+        assignedRole: "implementation_engineer",
+        assignedWorkflow: "agent_team.coding",
+        queueStatus: "closed",
+        evidenceRefs: ["artifact://validation/graph-1/node-1"],
+      });
+      rollup = await workQueue.rollupParentWorkQueueStatus({
+        parentWorkItemId: parent.workItemId,
+        finalCloseoutRef: "artifact://closeout/graph-parent",
+      });
+      const parentTruth = await workQueue.readWorkItemTruth(parent.workItemId);
+      const childTruth = await workQueue.readWorkItemTruth(closedChild.childWorkItemId);
+
+      expect(closedChild.idempotent).toBe(true);
+      expect(childTruth?.item.queueStatus).toBe("closed");
+      expect(parentTruth?.item.queueStatus).toBe("closed");
+      expect(parentTruth?.parentWorkflowLinks).toEqual([]);
+      expect(rollup).toMatchObject({
+        queueStatus: "closed",
+        rawPromptStored: false,
+        rawResponseStored: false,
+        rawLogsStored: false,
+        rawDbRowsStored: false,
+        runtimeLifecycleMutated: false,
+      });
     });
   });
 
@@ -123,6 +319,48 @@ describe("work queue execution truth repository", () => {
       expect(truth?.versions.map((version) => version.versionId)).toEqual([
         "versioned-item-v2",
         "versioned-item-v1",
+      ]);
+    });
+  });
+
+  it("reads bounded planning snapshots without loading full truth history", async () => {
+    await withWorkQueueRepository(async ({ workQueue }) => {
+      const item = await workQueue.createWorkItem({
+        workItemId: "planning-snapshot-item",
+        itemType: "openclaw_convergence_slice",
+        title: "Planning snapshot",
+        description: "Snapshot description",
+        metadata: { artifactKind: "work_queue_convergence_slice_tracker_metadata" },
+      });
+      await workQueue.createWorkItemVersion({
+        versionId: "planning-snapshot-version",
+        workItemId: item.workItemId,
+        title: "Planning snapshot version",
+        body: "Bounded version body",
+        artifactMetadata: { trackerVersion: "openclaw-platform-convergence.v4" },
+      });
+      await workQueue.createWorkItem({
+        workItemId: "openclaw-convergence.slice-01",
+        itemType: "openclaw_convergence_slice",
+        title: "Dependency item",
+      });
+      await workQueue.addDependency({
+        workItemId: item.workItemId,
+        dependsOnWorkItemId: "openclaw-convergence.slice-01",
+        dependencyType: "convergence_slice_prerequisite",
+      });
+
+      const snapshots = await workQueue.readWorkItemPlanningSnapshots([item.workItemId]);
+      const snapshot = snapshots.get(item.workItemId);
+
+      expect(snapshot).toMatchObject({
+        title: "Planning snapshot",
+        description: "Snapshot description",
+        currentVersionTitle: "Planning snapshot version",
+        currentVersionBody: "Bounded version body",
+      });
+      expect(snapshot?.dependencyKeys).toEqual([
+        "planning-snapshot-item\u0000openclaw-convergence.slice-01\u0000convergence_slice_prerequisite",
       ]);
     });
   });
@@ -442,6 +680,70 @@ describe("work queue execution truth repository", () => {
       expect(truth?.runs).toEqual([]);
       expect("executionControls" in truth!).toBe(false);
       expect("disabledFutureExecution" in truth!).toBe(false);
+    });
+  });
+  it("projects closeout follow-up child refs as runtime projection backlinks without lifecycle mutation", async () => {
+    await withWorkQueueRepository(async ({ workQueue }) => {
+      const parent = await workQueue.createWorkItem({
+        workItemId: "closeout-parent-item",
+        itemType: "execution_workflow",
+        title: "Closeout parent",
+      });
+      const child = await workQueue.createWorkItem({
+        workItemId: "closeout-child-item",
+        itemType: "execution_workflow",
+        title: "Closeout child",
+      });
+
+      await workQueue.recordCloseoutProjectionReadback({
+        workItemId: parent.workItemId,
+        closeoutRef: "runtime-job://closeout-parent-job/closeout",
+        followUpChildWorkItemIds: [child.workItemId],
+        priorityNote: "Prioritize blocker cleanup before accepting net-new queued coding tasks.",
+        lifecycleMutationAllowed: false,
+      });
+
+      const projection = await workQueue.projectCanonicalRuntimeQueue();
+      const projectedParent = projection.active.find(
+        (item) => item.workItemId === parent.workItemId,
+      );
+      const projectedChild = projection.active.find((item) => item.workItemId === child.workItemId);
+
+      expect(projectedParent?.childWorkItemIds).toContain(child.workItemId);
+      expect(projectedChild?.parentWorkItemIds).toContain(parent.workItemId);
+      expect(projectedParent?.priorityNote).toBe(
+        "Prioritize blocker cleanup before accepting net-new queued coding tasks.",
+      );
+      expect(projectedParent?.workQueueLifecycleMutationAllowed).toBe(false);
+      expect(projection.workQueueLifecycleMutationAllowed).toBe(false);
+    });
+  });
+
+  it("rejects oversized closeout priority notes", async () => {
+    await withWorkQueueRepository(async ({ workQueue }) => {
+      const item = await workQueue.createWorkItem({
+        workItemId: "priority-note-limit-item",
+        itemType: "execution_workflow",
+        title: "Priority note limit",
+      });
+
+      await expect(
+        workQueue.recordCloseoutProjectionReadback({
+          workItemId: item.workItemId,
+          closeoutRef: "runtime-job://priority-note-limit-job/closeout",
+          priorityNote: "x".repeat(161),
+          lifecycleMutationAllowed: false,
+        }),
+      ).rejects.toThrow("closeout_projection_priority_note_exceeds_limit_160");
+
+      await expect(
+        workQueue.recordCloseoutProjectionReadback({
+          workItemId: item.workItemId,
+          closeoutRef: "runtime-job://priority-note-limit-job/closeout",
+          priorityNote: "x".repeat(160),
+          lifecycleMutationAllowed: false,
+        }),
+      ).resolves.toBeTruthy();
     });
   });
 });

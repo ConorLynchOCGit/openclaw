@@ -21,18 +21,25 @@ import type {
   RuntimeJobEvent,
   RuntimeJobRepository,
 } from "../runtime-job-repository.ts";
+import { MISSION_CONTRACT_LEDGER_ARTIFACT_TYPE } from "../workflows/mission-contract-ledger.ts";
 import {
   latestWebResearchRuntimeEvidence,
   type WebResearchRuntimeEvidence,
 } from "../workflows/web-research-runtime-evidence.ts";
-import { projectConvergenceSliceTracker } from "./convergence-slice-tracker.ts";
+import { projectDbPrimaryWorkQueueItem } from "./db-primary-work-queue-projection.ts";
+import { summarizeProductSpecPlanningValidationRepairEvidence } from "./product-spec-planning-validation-repair-evidence.ts";
+import {
+  PRODUCT_SPEC_PLANNING_WORKER_CONTRACT_ARTIFACT_TYPE as PRODUCT_SPEC_PLANNING_WORKER_CONTRACT_ARTIFACT_TYPE_CANONICAL,
+  normalizeProductSpecPlanningMode,
+  validateProductSpecPlanningWorkerContract,
+} from "./product-spec-planning-worker-contract.ts";
 import type { WorkItemTruth, WorkRun } from "./types.ts";
 import type { WorkQueueRepository } from "./work-queue-repository.ts";
 
 export type WorkQueueExecutionReadModel = {
   artifactKind: "work_queue_execution_read_model";
   workItemId: string;
-  convergenceSlice: ReturnType<typeof projectConvergenceSliceTracker>;
+  convergenceSlice: ReturnType<typeof projectDbPrimaryWorkQueueItem>;
   linkedRuntimeJobIds: string[];
   runtimeJobs: Array<{
     runtimeJobId: string;
@@ -113,15 +120,164 @@ export type WorkQueueExecutionReadModel = {
       state: "ready" | "needs_review" | "missing";
       humanReportSummary: string | null;
       eli5Progress: string | null;
+      planningMode: WorkQueueProductSpecPlanningMode | null;
+      planningOutputKind: WorkQueueProductSpecPlanningOutputKind | null;
+      planningWorkflowRefs: string[];
+      planningCapsuleRefs: string[];
+      researchBriefRefs: string[];
+      researchInfluenceRefs: string[];
+      staleExternalAssumptionFlags: string[];
+      childActionProposalRefs: string[];
+      actionGraphProposalRefs: string[];
+      compileReadinessState:
+        | "not_requested"
+        | "needs_validation"
+        | "blocked"
+        | "compile_ready"
+        | null;
+      humanDecisionRefs: string[];
+      humanDecisionRequestRefs: string[];
+      humanDecisionState: "present" | "pending" | "not_required";
+      validationRefs: string[];
+      childProposalSummaries: Array<{
+        actionId: string;
+        title: string | null;
+        assignedWorkflow: string | null;
+        assignedRoleOrOwner: string | null;
+        dependencyCount: number;
+        authorityBoundary: string | null;
+        compileReadinessState: string | null;
+        validationExpectations: string[];
+      }>;
       taskSuccess: string | null;
       qualityAssessment: string | null;
       workflowFitAssessment: string | null;
       agentModelFitAssessment: string | null;
       limitations: string[];
+      missionContract: {
+        state: "present" | "missing" | "needs_review";
+        ledgerStatus: string | null;
+        openBlockingCommitmentCount: number;
+        blockingCommitments: Array<{
+          commitmentId: string;
+          status: string;
+          commitmentText: string;
+          acceptedEvidenceRefs: string[];
+          evidenceClaimRefs: string[];
+          evidenceMap: {
+            sourceChangeRefs: string[];
+            workflowWiringRefs: string[];
+            contractRefs: string[];
+            testRefs: string[];
+            documentationRefs: string[];
+            validationRefs: string[];
+            liveProofRefs: string[];
+            reviewRefs: string[];
+            otherEvidenceRefs: string[];
+          };
+          changedFileRefs: string[];
+          validationRefs: string[];
+          remainingWork: string[];
+        }>;
+        artifactRefs: string[];
+        reasonCodes: string[];
+      };
       opportunitySeedCount: number;
       capsuleId: string | null;
       capsuleHash: string | null;
       reasonCodes: string[];
+      rawPromptStored: false;
+      rawResponseStored: false;
+      rawLogsStored: false;
+      workQueueLifecycleMutationAllowed: false;
+    };
+    ownerProgressReadback: {
+      artifactKind: "work_queue_owner_progress_readback";
+      state: "ready" | "needs_review" | "missing";
+      headline: string;
+      currentStage: string;
+      activeWorker: string | null;
+      activeModelRef: string | null;
+      runtimeLifecycleState: RuntimeJob["state"];
+      validationEvidenceState: "passed" | "failed" | "missing" | "unverified" | "skipped";
+      closeoutEvidenceState: "accepted" | "needs_review" | "missing";
+      changedFileState: "present" | "missing" | "not_required" | "unknown";
+      humanDecisionState: "present" | "pending" | "not_required" | "unknown";
+      eli5Progress: string;
+      limitations: string[];
+      nextAction: string;
+      diagnosticReasonCodes: string[];
+      appServerProgress: {
+        state: "present" | "missing";
+        eventCount: number;
+        activePhase: string | null;
+        lastMethod: string | null;
+        lastItemType: string | null;
+        lastItemStatus: string | null;
+        threadRefs: string[];
+        turnRefs: string[];
+        fileRefs: string[];
+        commandRefs: string[];
+        abortOrInterruptState: string | null;
+        latestEventAt: string | null;
+        rawPromptStored: false;
+        rawResponseStored: false;
+        rawProviderLogStored: false;
+        rawToolLogStored: false;
+      };
+      activeGraphProgress: {
+        state: "present" | "missing";
+        graphId: string | null;
+        activeNodeId: string | null;
+        activeNodeKind: string | null;
+        roleId: string | null;
+        modelRef: string | null;
+        objective: string | null;
+        whySelected: string | null;
+        targetRefs: string[];
+        inputHandoffRefs: string[];
+        expectedOutput: string | null;
+        currentPhase: string | null;
+        validationState: string | null;
+        evidenceProducedRefs: string[];
+        evidenceClaimRefs: string[];
+        acceptedCommitmentIds: string[];
+        rejectedCommitmentIds: string[];
+        openCommitmentIds: string[];
+        nextDecisionNeeded: string | null;
+        blockerSummary: string | null;
+        finalizationState: string | null;
+        latestToolEventKind: string | null;
+        eli5Progress: string | null;
+        costAwareDecision: {
+          selectedCapabilityId: string | null;
+          costClass: string | null;
+          utilityRationale: string | null;
+          costRationale: string | null;
+          whyCheaperOptionsWereInsufficient: string | null;
+          consideredCapabilityIds: string[];
+        };
+        schedulerToolTrace: {
+          schedulerPhase: string | null;
+          latestToolId: string | null;
+          invocationRefs: string[];
+        };
+        workerToolTrace: {
+          latestWorkerToolId: string | null;
+          workerToolIds: string[];
+          invocationRefs: string[];
+          changedFileRefs: string[];
+          validationRefs: string[];
+          contextRequestRefs: string[];
+          editStepIds: string[];
+          evidenceClaimRefs: string[];
+        };
+        latestProgressEventRefs: string[];
+        rawPromptStored: false;
+        rawResponseStored: false;
+        rawProviderLogStored: false;
+        rawToolLogStored: false;
+      };
       rawPromptStored: false;
       rawResponseStored: false;
       rawLogsStored: false;
@@ -168,7 +324,41 @@ export type WorkQueueExecutionReadModel = {
         state: "present" | "missing" | "unknown";
         requiredSourceEdit: boolean | null;
         nodeCount: number;
+        edgeCount: number;
+        repeatedRoleInvocationCount: number;
+        activeWorker: string | null;
+        lastWorker: string | null;
+        currentStage: string | null;
+        repairAttemptCount: number;
+        humanDecisionPresent: boolean;
+        closeoutState: string;
+        finalState: string;
         artifactRef: string | null;
+        nodes: Array<{
+          nodeId: string;
+          stage: string;
+          roleId: string | null;
+          status: string;
+          modelRef: string | null;
+          providerPath: string | null;
+          transportKind: string | null;
+          artifactRefs: string[];
+          validationRefs: string[];
+          reasonCodes: string[];
+        }>;
+        kimiImplementation: {
+          state: "present" | "missing" | "unknown";
+          status: string | null;
+          modelRef: string | null;
+          modelRunRef: string | null;
+          changedFileRefs: string[];
+          validationRefs: string[];
+          attemptCount: number;
+          rejectionStages: string[];
+          escalationRecommended: boolean;
+          artifactRef: string | null;
+          reasonCodes: string[];
+        };
         reasonCodes: string[];
       };
       securityReviewState: string;
@@ -206,12 +396,69 @@ export type WorkQueueExecutionReadModel = {
     closeoutCapsule: JsonValue | null;
     artifactRefs: string[];
   }>;
+  runtimeGraph: WorkQueueRuntimeGraphReadback | null;
   lifecycleTruthSource: "work_queue_repository";
   executionTruthSource: "execution_platform_runtime_jobs";
   uiMutationAllowed: false;
 };
 
 type WorkQueueExecutionRuntimeJobReadModel = WorkQueueExecutionReadModel["runtimeJobs"][number];
+
+type WorkQueueRuntimeGraphReadback = {
+  graphId: string;
+  parentWorkItemId: string | null;
+  ownerObjectiveSummary: string | null;
+  approvedPlanRefs: string[];
+  planningStatusIsLifecycleState: false;
+  childActions: Array<{
+    workItemId: string;
+    title: string | null;
+    actionKind: string;
+    assignedRole: string;
+    assignedWorkflow: string;
+    runtimeJobId: string | null;
+    graphNodeRef: string | null;
+    blockerReasonCodes: string[];
+    evidenceRefs: string[];
+  }>;
+  dependencyEdges: Array<{
+    workItemId: string;
+    dependsOnWorkItemId: string;
+    dependencyType: string;
+  }>;
+  roleInvocations: Array<{
+    roleId: string;
+    modelRef: string;
+    providerPath: string | null;
+    transportKind: string | null;
+    modelRunRef: string | null;
+    status: string;
+    latencyMs: number | null;
+    producedArtifactRefs: string[];
+  }>;
+  humanTasks: Array<{
+    humanTaskId: string;
+    state: string;
+    ownerOperatorId: string | null;
+    resumeTokenRef: string | null;
+    blockingGraphNodeRefs: string[];
+  }>;
+  validationRepairLoops: Array<{
+    validationRef: string;
+    repairNodeRef: string | null;
+    status: string;
+    reasonCodes: string[];
+  }>;
+  closeoutRef: string | null;
+  finalCloseoutRef: string | null;
+  limitations: string[];
+  eli5Progress: string | null;
+  artifactRefs: string[];
+  rawPromptStored: false;
+  rawResponseStored: false;
+  rawLogsStored: false;
+  workQueueLifecycleMutationAllowed: false;
+};
 
 export type WorkQueueWebResearchProjection = {
   artifactKind: "work_queue_web_research_projection";
@@ -375,6 +622,27 @@ export type WorkQueueFrontDoorRoutingProjection = {
   workQueueLifecycleMutationAllowed: false;
 };
 
+const PRODUCT_SPEC_PLANNING_WORKER_CONTRACT_ARTIFACT_TYPE =
+  PRODUCT_SPEC_PLANNING_WORKER_CONTRACT_ARTIFACT_TYPE_CANONICAL;
+
+export const WORK_QUEUE_PRODUCT_SPEC_PLANNING_MODES = [
+  "plan_only",
+  "child_action_graph_proposal",
+  "compile_ready",
+] as const;
+
+export type WorkQueueProductSpecPlanningMode =
+  (typeof WORK_QUEUE_PRODUCT_SPEC_PLANNING_MODES)[number];
+
+export const WORK_QUEUE_PRODUCT_SPEC_PLANNING_OUTPUT_KINDS = [
+  "plan_only_output",
+  "child_action_graph_proposal_output",
+  "compile_ready_output",
+] as const;
+
+export type WorkQueueProductSpecPlanningOutputKind =
+  (typeof WORK_QUEUE_PRODUCT_SPEC_PLANNING_OUTPUT_KINDS)[number];
+
 function asRecord(value: unknown): Record<string, unknown> | null {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
@@ -397,6 +665,314 @@ function stringArrayValue(value: unknown, limit = 20): string[] {
   return Array.isArray(value)
     ? value.filter((item): item is string => typeof item === "string").slice(0, limit)
     : [];
+}
+
+function isSourceChangeEvidenceRef(ref: string): boolean {
+  const normalized = ref.trim().toLowerCase();
+  return (
+    normalized.startsWith("repo://") ||
+    normalized.startsWith("diff://") ||
+    normalized.startsWith("main-repo-change://") ||
+    normalized.includes("/diff/") ||
+    normalized.includes("/source-edit/") ||
+    normalized.includes("/changed-file/")
+  );
+}
+
+function isValidationEvidenceRef(ref: string): boolean {
+  const normalized = ref.trim().toLowerCase();
+  return (
+    normalized.startsWith("validation://") ||
+    normalized.includes("/validation/") ||
+    normalized.endsWith("/validation")
+  );
+}
+
+function isWorkflowWiringEvidenceRef(ref: string): boolean {
+  const normalized = ref.trim().toLowerCase();
+  if (
+    isSourceChangeEvidenceRef(ref) ||
+    isValidationEvidenceRef(ref) ||
+    isReviewEvidenceRef(ref) ||
+    isTestEvidenceRef(ref) ||
+    isDocumentationEvidenceRef(ref) ||
+    isLiveProofEvidenceRef(ref) ||
+    isContractEvidenceRef(ref)
+  ) {
+    return false;
+  }
+  return (
+    normalized.includes("workflow") ||
+    normalized.includes("runtime-work-graph") ||
+    normalized.includes("scheduler") ||
+    normalized.includes("capability") ||
+    normalized.includes("registry") ||
+    normalized.includes("front-door") ||
+    normalized.includes("router") ||
+    normalized.includes("compile-runtime-plan")
+  );
+}
+
+function isContractEvidenceRef(ref: string): boolean {
+  const normalized = ref.trim().toLowerCase();
+  return (
+    normalized.includes("contract") ||
+    normalized.includes("research-brief") ||
+    normalized.includes("planning-capsule") ||
+    normalized.includes("human-decision") ||
+    normalized.includes("action-graph") ||
+    normalized.includes("closeout")
+  );
+}
+
+function isTestEvidenceRef(ref: string): boolean {
+  const normalized = ref.trim().toLowerCase();
+  return (
+    normalized.includes(".test.") ||
+    normalized.startsWith("test://") ||
+    normalized.includes("test:file") ||
+    normalized.includes("vitest") ||
+    normalized.includes("pnpm test")
+  );
+}
+
+function isDocumentationEvidenceRef(ref: string): boolean {
+  const normalized = ref.trim().toLowerCase();
+  return (
+    normalized.startsWith("docs://") ||
+    normalized.includes("/docs/") ||
+    normalized.includes("specs/") ||
+    normalized.includes("status.md") ||
+    normalized.includes("current_slice.md") ||
+    normalized.includes("decisions.md") ||
+    normalized.includes("roadmap.md") ||
+    normalized.includes("runbook")
+  );
+}
+
+function isLiveProofEvidenceRef(ref: string): boolean {
+  const normalized = ref.trim().toLowerCase();
+  return (
+    normalized.includes("live-proof") ||
+    normalized.includes("live_ux") ||
+    normalized.includes("live-ux") ||
+    normalized.includes("ux-proof") ||
+    normalized.includes("runtime-proof")
+  );
+}
+
+function isReviewEvidenceRef(ref: string): boolean {
+  const normalized = ref.trim().toLowerCase();
+  return normalized.startsWith("review://") || normalized.includes("/review/");
+}
+
+function commitmentEvidenceMap(acceptedEvidenceRefs: string[]) {
+  const sourceChangeRefs = acceptedEvidenceRefs.filter(isSourceChangeEvidenceRef).slice(0, 8);
+  const workflowWiringRefs = acceptedEvidenceRefs.filter(isWorkflowWiringEvidenceRef).slice(0, 8);
+  const contractRefs = acceptedEvidenceRefs.filter(isContractEvidenceRef).slice(0, 8);
+  const testRefs = acceptedEvidenceRefs.filter(isTestEvidenceRef).slice(0, 8);
+  const documentationRefs = acceptedEvidenceRefs.filter(isDocumentationEvidenceRef).slice(0, 8);
+  const validationRefs = acceptedEvidenceRefs.filter(isValidationEvidenceRef).slice(0, 8);
+  const liveProofRefs = acceptedEvidenceRefs.filter(isLiveProofEvidenceRef).slice(0, 8);
+  const reviewRefs = acceptedEvidenceRefs.filter(isReviewEvidenceRef).slice(0, 8);
+  const classified = new Set([
+    ...sourceChangeRefs,
+    ...workflowWiringRefs,
+    ...contractRefs,
+    ...testRefs,
+    ...documentationRefs,
+    ...validationRefs,
+    ...liveProofRefs,
+    ...reviewRefs,
+  ]);
+  return {
+    sourceChangeRefs,
+    workflowWiringRefs,
+    contractRefs,
+    testRefs,
+    documentationRefs,
+    validationRefs,
+    liveProofRefs,
+    reviewRefs,
+    otherEvidenceRefs: acceptedEvidenceRefs.filter((ref) => !classified.has(ref)).slice(0, 8),
+  };
+}
+
+function actionGraphRecord(truth: WorkItemTruth): Record<string, unknown> | null {
+  return asRecord(asRecord(truth.item.metadata)?.actionGraph);
+}
+
+function runtimeGraphIdFromTruths(
+  parentTruth: WorkItemTruth,
+  childTruths: WorkItemTruth[],
+): string | null {
+  const parentGraphRef = stringValue(parentTruth.item.graphRef);
+  if (parentGraphRef) {
+    return parentGraphRef;
+  }
+  for (const childTruth of childTruths) {
+    const graphId = stringValue(actionGraphRecord(childTruth)?.graphId);
+    if (graphId) {
+      return graphId;
+    }
+  }
+  return null;
+}
+
+function buildRuntimeGraphReadback(
+  parentTruth: WorkItemTruth,
+  childTruths: WorkItemTruth[],
+): WorkQueueRuntimeGraphReadback | null {
+  const graphId = runtimeGraphIdFromTruths(parentTruth, childTruths);
+  if (!graphId && childTruths.length === 0) {
+    return null;
+  }
+  const graphChildren = childTruths
+    .map((truth) => ({ truth, actionGraph: actionGraphRecord(truth) }))
+    .filter((entry): entry is { truth: WorkItemTruth; actionGraph: Record<string, unknown> } =>
+      Boolean(entry.actionGraph),
+    )
+    .slice(0, 200);
+  if (!graphId || graphChildren.length === 0) {
+    return null;
+  }
+  const childActions = graphChildren.map(({ truth, actionGraph }) => {
+    const evidenceRefs = boundedUniqueStringValues(
+      [
+        ...stringArrayValue(actionGraph.evidenceRefs, 20),
+        ...truth.artifacts.map((artifact) => artifact.uri),
+      ],
+      20,
+    );
+    return {
+      workItemId: truth.item.workItemId,
+      title: truth.item.title,
+      actionKind:
+        stringValue(actionGraph.actionKind) ??
+        stringValue(actionGraph.nodeKind) ??
+        truth.item.itemType,
+      assignedRole:
+        stringValue(actionGraph.assignedRole) ?? truth.assignments[0]?.role ?? "unknown_role",
+      assignedWorkflow:
+        stringValue(actionGraph.assignedWorkflow) ??
+        truth.assignments[0]?.assigneeId ??
+        "unknown_workflow",
+      runtimeJobId:
+        stringValue(actionGraph.runtimeJobId) ??
+        truth.runs.find((run) => run.runtimeJobId)?.runtimeJobId ??
+        null,
+      graphNodeRef: stringValue(actionGraph.graphNodeRef),
+      blockerReasonCodes: stringArrayValue(actionGraph.blockerReasonCodes, 20),
+      evidenceRefs,
+    };
+  });
+  const dependencyEdges = graphChildren.flatMap(({ truth }) =>
+    truth.dependencies.slice(0, 50).map((dependency) => ({
+      workItemId: dependency.workItemId,
+      dependsOnWorkItemId: dependency.dependsOnWorkItemId,
+      dependencyType: dependency.dependencyType,
+    })),
+  );
+  const roleInvocations = graphChildren
+    .filter(({ actionGraph }) => stringValue(actionGraph.nodeKind) !== "human_task")
+    .map(({ truth, actionGraph }) => ({
+      roleId: stringValue(actionGraph.assignedRole) ?? truth.assignments[0]?.role ?? "unknown_role",
+      modelRef:
+        stringValue(actionGraph.modelRef) ??
+        stringValue(actionGraph.assignedWorkflow) ??
+        truth.assignments[0]?.assigneeId ??
+        "unknown_model",
+      providerPath: stringValue(actionGraph.providerPath),
+      transportKind: stringValue(actionGraph.transportKind),
+      modelRunRef: stringValue(actionGraph.modelRunRef),
+      status: truth.item.queueStatus ?? "unknown",
+      latencyMs: numberValue(actionGraph.latencyMs),
+      producedArtifactRefs: boundedUniqueStringValues(
+        [
+          ...stringArrayValue(actionGraph.evidenceRefs, 20),
+          ...truth.artifacts.map((artifact) => artifact.uri),
+        ],
+        20,
+      ),
+    }));
+  const humanTasks = graphChildren
+    .filter(({ actionGraph }) => {
+      const humanTaskId = stringValue(actionGraph.humanTaskId);
+      const nodeKind = stringValue(actionGraph.nodeKind);
+      return Boolean(humanTaskId) || nodeKind === "human_task";
+    })
+    .map(({ truth, actionGraph }) => ({
+      humanTaskId:
+        stringValue(actionGraph.humanTaskId) ??
+        stringValue(actionGraph.graphNodeRef) ??
+        truth.item.workItemId,
+      state: truth.item.queueStatus ?? "unknown",
+      ownerOperatorId: stringValue(actionGraph.ownerOperatorId),
+      resumeTokenRef: stringValue(actionGraph.resumeTokenRef),
+      blockingGraphNodeRefs: stringArrayValue(actionGraph.blockingGraphNodeRefs, 20),
+    }));
+  const repairNodeRef =
+    graphChildren
+      .map(({ actionGraph }) =>
+        stringValue(actionGraph.nodeKind)?.includes("repair")
+          ? stringValue(actionGraph.graphNodeRef)
+          : null,
+      )
+      .find((ref): ref is string => Boolean(ref)) ?? null;
+  const validationRepairLoops = graphChildren
+    .filter(({ actionGraph }) => {
+      const nodeKind = stringValue(actionGraph.nodeKind) ?? "";
+      return nodeKind.includes("validation") || nodeKind.includes("repair");
+    })
+    .slice(0, 50)
+    .map(({ truth, actionGraph }) => ({
+      validationRef:
+        stringValue(actionGraph.graphNodeRef) ??
+        stringArrayValue(actionGraph.evidenceRefs, 1)[0] ??
+        truth.item.workItemId,
+      repairNodeRef,
+      status: truth.item.queueStatus ?? "unknown",
+      reasonCodes: stringArrayValue(actionGraph.blockerReasonCodes, 20),
+    }));
+  const artifactRefs = boundedUniqueStringValues(
+    [
+      ...parentTruth.artifacts.map((artifact) => artifact.uri),
+      ...graphChildren.flatMap(({ truth }) => truth.artifacts.map((artifact) => artifact.uri)),
+      ...childActions.flatMap((child) => child.evidenceRefs),
+    ],
+    50,
+  );
+  return {
+    graphId,
+    parentWorkItemId: parentTruth.item.workItemId,
+    ownerObjectiveSummary:
+      parentTruth.item.description ?? parentTruth.currentVersion?.title ?? null,
+    approvedPlanRefs: boundedUniqueStringValues(
+      [
+        stringValue(parentTruth.item.graphRef),
+        ...parentTruth.artifacts.map((artifact) => artifact.uri),
+      ],
+      10,
+    ),
+    planningStatusIsLifecycleState: false,
+    childActions,
+    dependencyEdges,
+    roleInvocations,
+    humanTasks,
+    validationRepairLoops,
+    closeoutRef: parentTruth.item.closeoutCapsuleRef ?? null,
+    finalCloseoutRef: parentTruth.item.closedByCloseoutRef ?? null,
+    limitations: [],
+    eli5Progress:
+      childActions.length > 0
+        ? "The Work Queue is showing the parent item, child graph nodes, role work, human tasks, validation or repair loops, and closeout refs from DB-backed runtime evidence."
+        : null,
+    artifactRefs,
+    rawPromptStored: false,
+    rawResponseStored: false,
+    rawLogsStored: false,
+    workQueueLifecycleMutationAllowed: false,
+  };
 }
 
 function firstBoundedString(
@@ -958,26 +1534,396 @@ function permissionReadbackProjection(
   });
 }
 
+function planningModeFromDecisionRef(
+  decisionRef: string | null,
+): WorkQueueProductSpecPlanningMode | null {
+  const normalized = decisionRef?.trim().toLowerCase() ?? "";
+  if (!normalized) {
+    return null;
+  }
+  if (normalized.startsWith("owner-decision://product-spec-planning/default-plan-only")) {
+    return "plan_only";
+  }
+  if (
+    normalized.startsWith(
+      "owner-decision://product-spec-planning/default-child-action-graph-proposal",
+    ) ||
+    normalized.startsWith(
+      "owner-decision://product-spec-planning/default-child-action-graph-proposals",
+    )
+  ) {
+    return "child_action_graph_proposal";
+  }
+  return null;
+}
+
 function ownerRuntimeReadback(
   capsuleArtifact: RuntimeJobArtifact | undefined,
+  artifacts: RuntimeJobArtifact[] = [],
 ): WorkQueueExecutionRuntimeJobReadModel["ownerReadback"] {
   const capsule = asRecord(capsuleArtifact?.metadata);
   const humanReport = asRecord(capsule?.humanReport);
   const structuredSummary = asRecord(capsule?.structuredSummary);
   const factualRefs = asRecord(capsule?.factualRefs);
-  const limitations = stringArrayValue(humanReport?.limitations, 10);
+  const missionArtifact = latestArtifact(artifacts, MISSION_CONTRACT_LEDGER_ARTIFACT_TYPE);
+  const capsuleMissionContract = asRecord(capsule?.missionContractLedger);
+  const missionContract = capsuleMissionContract ?? asRecord(missionArtifact?.metadata);
+  const missionBlockingCommitments = Array.isArray(missionContract?.blockingCommitments)
+    ? missionContract.blockingCommitments
+        .map((value) => asRecord(value))
+        .filter(Boolean)
+        .slice(0, 30)
+    : [];
+  const missionOpenBlockingCommitments = missionBlockingCommitments.filter((commitment) => {
+    const status = stringValue(commitment?.status);
+    return status !== "satisfied" && status !== "impossible";
+  });
+  const missionContractReadback = {
+    state: missionContract
+      ? missionOpenBlockingCommitments.length > 0
+        ? ("needs_review" as const)
+        : ("present" as const)
+      : ("missing" as const),
+    ledgerStatus: stringValue(missionContract?.ledgerStatus),
+    openBlockingCommitmentCount: missionOpenBlockingCommitments.length,
+    blockingCommitments: missionBlockingCommitments.map((commitment) => {
+      const acceptedEvidenceRefs = stringArrayValue(commitment?.acceptedEvidenceRefs, 40);
+      const evidenceMap = commitmentEvidenceMap(acceptedEvidenceRefs);
+      return {
+        commitmentId: stringValue(commitment?.commitmentId) ?? "unknown",
+        status: stringValue(commitment?.status) ?? "unknown",
+        commitmentText: stringValue(commitment?.commitmentText)?.slice(0, 600) ?? "",
+        acceptedEvidenceRefs: acceptedEvidenceRefs.slice(0, 8),
+        evidenceClaimRefs: acceptedEvidenceRefs.slice(0, 8),
+        evidenceMap,
+        changedFileRefs: evidenceMap.sourceChangeRefs,
+        validationRefs: evidenceMap.validationRefs,
+        remainingWork: stringArrayValue(commitment?.remainingWork, 8),
+      };
+    }),
+    artifactRefs: missionArtifact ? [missionArtifact.uri] : [],
+    reasonCodes: missionContract
+      ? missionOpenBlockingCommitments.length > 0
+        ? [
+            "mission_contract_blocking_commitments_open",
+            ...missionOpenBlockingCommitments
+              .map((commitment) => stringValue(commitment?.commitmentId))
+              .filter((value): value is string => Boolean(value))
+              .map((id) => `mission_commitment_open:${id}`),
+          ].slice(0, 12)
+        : ["mission_contract_satisfied"]
+      : ["mission_contract_missing"],
+  };
+  const planningContractArtifact = latestArtifact(
+    artifacts,
+    PRODUCT_SPEC_PLANNING_WORKER_CONTRACT_ARTIFACT_TYPE,
+  );
+  const capsulePlanningContractRecord = asRecord(capsule?.productSpecPlanningContract);
+  const artifactPlanningContractRecord = asRecord(planningContractArtifact?.metadata);
+  const planningContract = capsulePlanningContractRecord ?? artifactPlanningContractRecord;
+  const productSpecArtifactRecord = (
+    artifact: RuntimeJobArtifact,
+  ): Record<string, unknown> | null => asRecord(artifact.metadata);
+  const productSpecArtifactKind = (artifact: RuntimeJobArtifact): string | null =>
+    stringValue(productSpecArtifactRecord(artifact)?.artifactKind) ??
+    (artifact.artifactType.startsWith("agent_team.product_spec_planning")
+      ? artifact.artifactType.replace(/^agent_team\./u, "")
+      : null);
+  const productSpecArtifactsByKind = (artifactKind: string): RuntimeJobArtifact[] =>
+    artifacts.filter((artifact) => productSpecArtifactKind(artifact) === artifactKind);
+  const productSpecRecordsByKind = (artifactKind: string): Record<string, unknown>[] =>
+    productSpecArtifactsByKind(artifactKind)
+      .map(productSpecArtifactRecord)
+      .filter((record): record is Record<string, unknown> => Boolean(record));
+  const stringArraysFromRecords = (
+    records: Record<string, unknown>[],
+    key: string,
+    limit = 20,
+  ): string[] => records.flatMap((record) => stringArrayValue(record[key], limit));
+  const planningCapsuleArtifacts = productSpecArtifactsByKind("product_spec_planning_capsule");
+  const researchBriefArtifacts = productSpecArtifactsByKind("product_spec_planning_research_brief");
+  const actionGraphProposalArtifacts = productSpecArtifactsByKind(
+    "product_spec_planning_action_graph_proposal",
+  );
+  const humanDecisionRequestArtifacts = productSpecArtifactsByKind(
+    "product_spec_planning_human_decision_request",
+  );
+  const planningCapsuleRecords = productSpecRecordsByKind("product_spec_planning_capsule");
+  const researchBriefRecords = productSpecRecordsByKind("product_spec_planning_research_brief");
+  const actionGraphProposalRecords = productSpecRecordsByKind(
+    "product_spec_planning_action_graph_proposal",
+  );
+  const humanDecisionRequestRecords = productSpecRecordsByKind(
+    "product_spec_planning_human_decision_request",
+  );
+  const planningModeCandidate = stringValue(planningContract?.planningMode);
+  const planningOutputKindCandidate = stringValue(planningContract?.planningOutputKind);
+  const planningMode = WORK_QUEUE_PRODUCT_SPEC_PLANNING_MODES.includes(
+    planningModeCandidate as WorkQueueProductSpecPlanningMode,
+  )
+    ? (planningModeCandidate as WorkQueueProductSpecPlanningMode)
+    : null;
+  const planningOutputKind = WORK_QUEUE_PRODUCT_SPEC_PLANNING_OUTPUT_KINDS.includes(
+    planningOutputKindCandidate as WorkQueueProductSpecPlanningOutputKind,
+  )
+    ? (planningOutputKindCandidate as WorkQueueProductSpecPlanningOutputKind)
+    : null;
+  const planningWorkflowRefs = boundedUniqueStringValues(
+    stringArrayValue(planningContract?.workflowRefs, 12),
+    12,
+  );
+  const childActionProposalRefs = boundedUniqueStringValues(
+    stringArrayValue(planningContract?.childActionProposalRefs, 20),
+    20,
+  );
+  const validationRefs = boundedUniqueStringValues(
+    stringArrayValue(planningContract?.validationRefs, 20),
+    20,
+  );
+  const runtimeValidationRefs = boundedUniqueStringValues(
+    artifacts
+      .filter(
+        (artifact) =>
+          artifact.artifactType === "agent_team.dynamic_validation" ||
+          artifact.artifactType === "agent_team.dynamic_validation_repair_loop",
+      )
+      .map((artifact) => artifact.uri),
+    20,
+  );
+  const validationRepairEvidence = summarizeProductSpecPlanningValidationRepairEvidence({
+    validationRefs: runtimeValidationRefs,
+    artifacts: artifacts
+      .filter(
+        (artifact) =>
+          artifact.artifactType === "agent_team.dynamic_validation" ||
+          artifact.artifactType === "agent_team.dynamic_validation_repair_loop",
+      )
+      .map((artifact) => ({
+        artifactType: artifact.artifactType,
+        uri: artifact.uri,
+        metadata: asRecord(artifact.metadata),
+      })),
+  });
+  const humanDecisionRefs = boundedUniqueStringValues(
+    [
+      ...stringArrayValue(planningContract?.humanDecisionRefs, 12),
+      ...artifacts
+        .filter((artifact) => artifact.artifactType === "agent_team.human_scope_decision")
+        .flatMap((artifact) => {
+          const decisionRef = stringValue(asRecord(artifact.metadata)?.boundedDecisionRef);
+          return decisionRef ? [decisionRef, artifact.uri] : [artifact.uri];
+        }),
+    ],
+    12,
+  );
+  const humanDecisionRequestRefs = boundedUniqueStringValues(
+    [
+      ...humanDecisionRequestArtifacts.map((artifact) => artifact.uri),
+      ...stringArraysFromRecords(humanDecisionRequestRecords, "decisionRefs", 12),
+      ...stringArraysFromRecords(humanDecisionRequestRecords, "boundedResponseRefs", 12),
+      ...stringArraysFromRecords(humanDecisionRequestRecords, "resumeRefs", 12),
+    ],
+    12,
+  );
+  const planningContractValidation = planningContract
+    ? validateProductSpecPlanningWorkerContract({
+        ...planningContract,
+        rawPromptStored:
+          planningContract.rawPromptStored === undefined ? false : planningContract.rawPromptStored,
+        rawResponseStored:
+          planningContract.rawResponseStored === undefined
+            ? false
+            : planningContract.rawResponseStored,
+        rawLogsStored:
+          planningContract.rawLogsStored === undefined ? false : planningContract.rawLogsStored,
+        workQueueLifecycleMutationAllowed:
+          planningContract.workQueueLifecycleMutationAllowed === undefined
+            ? false
+            : planningContract.workQueueLifecycleMutationAllowed,
+      })
+    : null;
+  const acceptedPlanningContract = planningContractValidation?.accepted
+    ? planningContractValidation.contract
+    : null;
+  const planningContractRejected = Boolean(planningContract) && !acceptedPlanningContract;
+  const inferredPlanningModeFromDecision =
+    humanDecisionRefs
+      .map((ref) => planningModeFromDecisionRef(ref))
+      .find((mode) => mode !== null) ?? null;
+  const resolvedPlanningMode =
+    acceptedPlanningContract?.planningMode ??
+    planningMode ??
+    normalizeProductSpecPlanningMode(stringValue(planningContract?.planningMode)) ??
+    inferredPlanningModeFromDecision;
+  const resolvedPlanningOutputKind =
+    acceptedPlanningContract?.planningOutputKind ??
+    planningOutputKind ??
+    (resolvedPlanningMode === "plan_only"
+      ? "plan_only_output"
+      : resolvedPlanningMode === "child_action_graph_proposal"
+        ? "child_action_graph_proposal_output"
+        : resolvedPlanningMode === "compile_ready"
+          ? "compile_ready_output"
+          : null);
+  const planningContractReasonCodes = boundedUniqueStringValues(
+    planningContractRejected ? (planningContractValidation?.reasonCodes ?? []) : [],
+    12,
+  );
+  const inferredModeReasonCodes =
+    resolvedPlanningMode && !acceptedPlanningContract
+      ? ["product_spec_planning_mode_inferred_without_accepted_contract"]
+      : [];
+  const resolvedPlanningWorkflowRefs = boundedUniqueStringValues(
+    acceptedPlanningContract?.workflowRefs ?? planningWorkflowRefs,
+    12,
+  );
+  const resolvedChildActionProposalRefs = boundedUniqueStringValues(
+    acceptedPlanningContract?.childActionProposalRefs ?? childActionProposalRefs,
+    20,
+  );
+  const planningCapsuleRefs = boundedUniqueStringValues(
+    planningCapsuleArtifacts.map((artifact) => artifact.uri),
+    20,
+  );
+  const researchBriefRefs = boundedUniqueStringValues(
+    researchBriefArtifacts.map((artifact) => artifact.uri),
+    20,
+  );
+  const researchInfluenceRefs = boundedUniqueStringValues(
+    [
+      ...stringArraysFromRecords(planningCapsuleRecords, "researchInfluenceRefs", 20),
+      ...researchBriefArtifacts
+        .filter(
+          (artifact) => productSpecArtifactRecord(artifact)?.influencedPlanningCapsule === true,
+        )
+        .map((artifact) => artifact.uri),
+    ],
+    20,
+  );
+  const staleExternalAssumptionFlags = boundedUniqueStringValues(
+    [
+      ...stringArraysFromRecords(planningCapsuleRecords, "staleExternalAssumptionFlags", 12),
+      ...stringArraysFromRecords(researchBriefRecords, "staleExternalAssumptionFlags", 12),
+    ],
+    12,
+  );
+  const actionGraphProposalRefs = boundedUniqueStringValues(
+    [
+      ...resolvedChildActionProposalRefs,
+      ...actionGraphProposalArtifacts.map((artifact) => artifact.uri),
+    ],
+    20,
+  );
+  const childProposalSummaries = actionGraphProposalRecords
+    .flatMap((record) =>
+      Array.isArray(record.proposedChildActions) ? record.proposedChildActions : [],
+    )
+    .map((value) => asRecord(value))
+    .filter((record): record is Record<string, unknown> => Boolean(record))
+    .map((record) => ({
+      actionId: stringValue(record.actionId) ?? "unknown",
+      title: stringValue(record.title),
+      assignedWorkflow: stringValue(record.assignedWorkflow),
+      assignedRoleOrOwner: stringValue(record.assignedRoleOrOwner),
+      dependencyCount: stringArrayValue(record.dependencies, 20).length,
+      authorityBoundary: stringValue(record.authorityBoundary),
+      compileReadinessState: stringValue(record.runtimeJobCompileReadiness),
+      validationExpectations: stringArrayValue(record.validationExpectations, 12),
+    }))
+    .slice(0, 20);
+  const compileReadinessCandidates = [
+    ...actionGraphProposalRecords.map((record) => stringValue(record.compileReadinessState)),
+    ...planningCapsuleRecords.map((record) => stringValue(record.compileReadinessState)),
+    acceptedPlanningContract?.planningMode === "compile_ready" ? "compile_ready" : null,
+    resolvedPlanningMode === "compile_ready" ? "compile_ready" : null,
+  ];
+  const compileReadinessState =
+    compileReadinessCandidates.find(
+      (
+        candidate,
+      ): candidate is "not_requested" | "needs_validation" | "blocked" | "compile_ready" =>
+        candidate === "not_requested" ||
+        candidate === "needs_validation" ||
+        candidate === "blocked" ||
+        candidate === "compile_ready",
+    ) ?? null;
+  const resolvedValidationRefs = boundedUniqueStringValues(
+    [...(acceptedPlanningContract?.validationRefs ?? validationRefs), ...runtimeValidationRefs],
+    20,
+  );
+  const planningEli5Progress =
+    (acceptedPlanningContract?.eli5Progress ?? stringValue(planningContract?.eli5Progress))?.slice(
+      0,
+      1_000,
+    ) ?? null;
+  const limitations = boundedUniqueStringValues(
+    [
+      ...stringArrayValue(humanReport?.limitations, 10),
+      ...(acceptedPlanningContract?.limitations ??
+        stringArrayValue(planningContract?.limitations, 10)),
+    ],
+    10,
+  );
   const hasModelReport = humanReport?.source === "model" && Boolean(humanReport?.reportMarkdown);
-  const state = hasModelReport ? "ready" : capsuleArtifact ? "needs_review" : "missing";
+  const validationRepairMissingAfterFailure =
+    validationRepairEvidence.hasFailureAttemptRef && !validationRepairEvidence.hasRepairAttemptRef;
+  const state =
+    hasModelReport && !planningContractRejected && !validationRepairMissingAfterFailure
+      ? "ready"
+      : capsuleArtifact || planningContractArtifact
+        ? "needs_review"
+        : "missing";
+  const modelHumanReportSummary = stringValue(humanReport?.reportMarkdown)?.slice(0, 1_000) ?? null;
+  const inferredHumanReportSummary = modelHumanReportSummary
+    ? null
+    : [
+        resolvedPlanningMode ? `Planning mode: ${resolvedPlanningMode}.` : null,
+        stringValue(structuredSummary?.taskSuccess)
+          ? `Task success: ${stringValue(structuredSummary?.taskSuccess)}.`
+          : null,
+        validationRepairEvidence.hasFailureAttemptRef
+          ? validationRepairEvidence.hasRepairAttemptRef
+            ? "Validation failure and repair evidence recorded in this runtime job."
+            : "Validation failure evidence exists, but accepted repair evidence is still missing."
+          : null,
+        humanDecisionRefs.length > 0
+          ? `${humanDecisionRefs.length} bounded human decision ref(s) recorded.`
+          : null,
+      ]
+        .filter((value): value is string => Boolean(value))
+        .join(" ")
+        .slice(0, 1_000) || null;
   return {
     artifactKind: "work_queue_owner_runtime_readback",
     state,
-    humanReportSummary: stringValue(humanReport?.reportMarkdown)?.slice(0, 1_000) ?? null,
-    eli5Progress: stringValue(humanReport?.eli5Progress)?.slice(0, 1_000) ?? null,
+    humanReportSummary: modelHumanReportSummary ?? inferredHumanReportSummary,
+    eli5Progress: stringValue(humanReport?.eli5Progress)?.slice(0, 1_000) ?? planningEli5Progress,
+    planningMode: resolvedPlanningMode,
+    planningOutputKind: resolvedPlanningOutputKind,
+    planningWorkflowRefs: resolvedPlanningWorkflowRefs,
+    planningCapsuleRefs,
+    researchBriefRefs,
+    researchInfluenceRefs,
+    staleExternalAssumptionFlags,
+    childActionProposalRefs: resolvedChildActionProposalRefs,
+    actionGraphProposalRefs,
+    compileReadinessState,
+    humanDecisionRefs,
+    humanDecisionRequestRefs,
+    humanDecisionState:
+      humanDecisionRefs.length > 0
+        ? "present"
+        : humanDecisionRequestRefs.length > 0
+          ? "pending"
+          : "not_required",
+    validationRefs: resolvedValidationRefs,
+    childProposalSummaries,
     taskSuccess: stringValue(structuredSummary?.taskSuccess),
     qualityAssessment: stringValue(structuredSummary?.qualityAssessment),
     workflowFitAssessment: stringValue(structuredSummary?.workflowFitAssessment),
     agentModelFitAssessment: stringValue(structuredSummary?.agentModelFitAssessment),
     limitations,
+    missionContract: missionContractReadback,
     opportunitySeedCount: Array.isArray(capsule?.opportunitySeeds)
       ? capsule.opportunitySeeds.length
       : 0,
@@ -985,14 +1931,315 @@ function ownerRuntimeReadback(
     capsuleHash: stringValue(factualRefs?.capsuleHash) ?? stringValue(capsule?.capsuleHash),
     reasonCodes:
       state === "ready"
-        ? ["model_authored_closeout_capsule_readback_ready"]
+        ? boundedUniqueStringValues(
+            [
+              "model_authored_closeout_capsule_readback_ready",
+              ...validationRepairEvidence.reasonCodes,
+            ],
+            20,
+          )
         : state === "needs_review"
-          ? ["closeout_capsule_model_report_missing_or_degraded"]
+          ? boundedUniqueStringValues(
+              [
+                "closeout_capsule_model_report_missing_or_degraded",
+                ...planningContractReasonCodes,
+                ...inferredModeReasonCodes,
+                ...validationRepairEvidence.reasonCodes,
+              ],
+              20,
+            )
           : ["closeout_capsule_missing"],
     rawPromptStored: false,
     rawResponseStored: false,
     rawLogsStored: false,
     workQueueLifecycleMutationAllowed: false,
+  };
+}
+
+function ownerProgressReadback(input: {
+  job: RuntimeJob;
+  artifacts: RuntimeJobArtifact[];
+  events: RuntimeJobEvent[];
+  ownerReadback: WorkQueueExecutionRuntimeJobReadModel["ownerReadback"];
+  agentTeam: WorkQueueExecutionRuntimeJobReadModel["agentTeam"];
+  changedFileRefs: string[];
+  validationStatus: string | null;
+  closeoutStatus: string | null;
+  workflowId: string | null;
+}): WorkQueueExecutionRuntimeJobReadModel["ownerProgressReadback"] {
+  const latestRole = input.agentTeam.roleReports.at(-1);
+  const activeModelRef =
+    input.agentTeam.roleReports.find((role) => role.roleId === input.agentTeam.activeRole)
+      ?.modelId ??
+    latestRole?.modelId ??
+    null;
+  const validationArtifacts = input.artifacts.filter(
+    (artifact) =>
+      artifact.artifactType.includes("validation") || artifact.uri.includes("/validation/"),
+  );
+  const validationEvidenceState =
+    input.validationStatus === "passed"
+      ? "passed"
+      : input.validationStatus === "failed"
+        ? "failed"
+        : validationArtifacts.some((artifact) => {
+              const record = asRecord(artifact.metadata);
+              return record?.skipped === true || record?.status === "skipped";
+            })
+          ? "skipped"
+          : validationArtifacts.length > 0
+            ? "unverified"
+            : "missing";
+  const closeoutEvidenceState =
+    input.agentTeam.closeoutQuality.state === "accepted" || input.ownerReadback.state === "ready"
+      ? "accepted"
+      : input.closeoutStatus === "present" || input.ownerReadback.state === "needs_review"
+        ? "needs_review"
+        : "missing";
+  const implementationRequired = input.agentTeam.taskGraph.requiredSourceEdit;
+  const changedFileState =
+    input.changedFileRefs.length > 0
+      ? "present"
+      : implementationRequired
+        ? "missing"
+        : implementationRequired === null
+          ? "unknown"
+          : "not_required";
+  const humanDecisionState = input.agentTeam.taskGraph.humanDecisionPresent
+    ? "present"
+    : input.agentTeam.currentTeamState === "waiting_for_human"
+      ? "pending"
+      : "not_required";
+  const needsReviewReasons = [
+    ...(validationEvidenceState === "missing" && ["succeeded", "failed"].includes(input.job.state)
+      ? ["runtime_validation_evidence_missing"]
+      : []),
+    ...(changedFileState === "missing" ? ["implementation_changed_file_evidence_missing"] : []),
+    ...(closeoutEvidenceState !== "accepted" && ["succeeded", "failed"].includes(input.job.state)
+      ? ["accepted_closeout_evidence_missing"]
+      : []),
+    ...input.agentTeam.blockers,
+  ].slice(0, 20);
+  const state =
+    needsReviewReasons.length === 0 && input.job.state !== "pending"
+      ? "ready"
+      : input.job.state === "pending" && input.artifacts.length === 0
+        ? "missing"
+        : "needs_review";
+  const currentStage =
+    input.agentTeam.taskGraph.currentStage ??
+    input.agentTeam.activeRole ??
+    (input.job.state === "pending" ? "queued" : input.job.state);
+  const headline =
+    state === "ready"
+      ? `${input.workflowId ?? input.job.jobType} is ${input.job.state} with accepted runtime evidence.`
+      : `${input.workflowId ?? input.job.jobType} is ${input.job.state}; review ${needsReviewReasons.length || 1} evidence gap(s).`;
+  const eli5Progress =
+    input.ownerReadback.eli5Progress ??
+    input.agentTeam.humanCloseoutSummary?.eli5Progress ??
+    input.agentTeam.teamStreamSummary.latestSummary ??
+    `OpenClaw is at ${currentStage} for this runtime job.`;
+  const nextAction =
+    state === "ready"
+      ? "Review the completed evidence and Closeout Capsule."
+      : needsReviewReasons.includes("runtime_validation_evidence_missing")
+        ? "Run or attach verified validation evidence before claiming success."
+        : needsReviewReasons.includes("implementation_changed_file_evidence_missing")
+          ? "Attach changed-file evidence or mark the implementation task needs_review."
+          : "Review the diagnostic reason codes and bounded runtime evidence.";
+  const appServerProgress = appServerProgressReadback(input.events);
+  const activeGraphProgress = activeGraphProgressReadback(input.events);
+  return {
+    artifactKind: "work_queue_owner_progress_readback",
+    state,
+    headline,
+    currentStage,
+    activeWorker: input.agentTeam.activeRole ?? input.agentTeam.taskGraph.activeWorker,
+    activeModelRef,
+    runtimeLifecycleState: input.job.state,
+    validationEvidenceState,
+    closeoutEvidenceState,
+    changedFileState,
+    humanDecisionState,
+    eli5Progress: eli5Progress.slice(0, 1_000),
+    limitations: [
+      ...new Set([...input.ownerReadback.limitations, ...input.agentTeam.blockers]),
+    ].slice(0, 10),
+    nextAction,
+    diagnosticReasonCodes: needsReviewReasons,
+    appServerProgress,
+    activeGraphProgress,
+    rawPromptStored: false,
+    rawResponseStored: false,
+    rawLogsStored: false,
+    workQueueLifecycleMutationAllowed: false,
+  };
+}
+
+function eventDataRecord(event: RuntimeJobEvent | undefined): Record<string, unknown> {
+  return asRecord(event?.data) ?? {};
+}
+
+function nestedProgressEvent(event: RuntimeJobEvent | undefined): Record<string, unknown> {
+  return asRecord(eventDataRecord(event).event) ?? {};
+}
+
+function appServerProgressReadback(
+  events: RuntimeJobEvent[],
+): WorkQueueExecutionRuntimeJobReadModel["ownerProgressReadback"]["appServerProgress"] {
+  const progressEvents = events.filter(
+    (event) =>
+      event.eventType === "codex_parity.app_server_progress" ||
+      event.eventType === "codex_parity.implementation_model_call_heartbeat" ||
+      event.eventType === "codex_parity.implementation_model_call_started" ||
+      event.eventType === "codex_parity.implementation_model_call_completed" ||
+      event.eventType === "codex_parity.implementation_model_call_abort_requested",
+  );
+  const latest = progressEvents.at(-1);
+  const latestData = eventDataRecord(latest);
+  const latestNested = nestedProgressEvent(latest);
+  const collect = (key: string, maxItems: number): string[] =>
+    [
+      ...new Set(
+        progressEvents.flatMap((event) => {
+          const data = eventDataRecord(event);
+          const nested = nestedProgressEvent(event);
+          const direct = stringValue(data[key]);
+          const nestedSingle = stringValue(nested[key]);
+          return [
+            ...(direct ? [direct] : []),
+            ...(nestedSingle ? [nestedSingle] : []),
+            ...stringArrayValue(data[key], maxItems),
+            ...stringArrayValue(nested[key], maxItems),
+          ];
+        }),
+      ),
+    ].slice(0, maxItems);
+  const abortOrInterrupt = progressEvents.findLast(
+    (event) =>
+      event.eventType === "codex_parity.implementation_model_call_abort_requested" ||
+      Boolean(stringValue(eventDataRecord(event).phase)?.includes("abort")) ||
+      Boolean(stringValue(nestedProgressEvent(event).phase)?.includes("interrupt")),
+  );
+  return {
+    state: progressEvents.length > 0 ? "present" : "missing",
+    eventCount: progressEvents.length,
+    activePhase:
+      stringValue(latestNested.phase) ??
+      stringValue(latestData.phase) ??
+      (latest ? latest.eventType : null),
+    lastMethod: stringValue(latestNested.method) ?? stringValue(latestData.method),
+    lastItemType: stringValue(latestNested.itemType) ?? stringValue(latestData.itemType),
+    lastItemStatus: stringValue(latestNested.status) ?? stringValue(latestData.status),
+    threadRefs: collect("threadId", 6).map((ref) => `codex-thread://${ref}`),
+    turnRefs: collect("turnId", 6).map((ref) => `codex-turn://${ref}`),
+    fileRefs: collect("fileRefs", 20),
+    commandRefs: collect("commandRefs", 20),
+    abortOrInterruptState: abortOrInterrupt ? "requested" : null,
+    latestEventAt: latest?.eventTime.toISOString() ?? null,
+    rawPromptStored: false,
+    rawResponseStored: false,
+    rawProviderLogStored: false,
+    rawToolLogStored: false,
+  };
+}
+
+function activeGraphProgressReadback(
+  events: RuntimeJobEvent[],
+): WorkQueueExecutionRuntimeJobReadModel["ownerProgressReadback"]["activeGraphProgress"] {
+  const progressEvents = events.filter(
+    (event) => event.eventType === "agent_team.scheduler_progress",
+  );
+  const latest = progressEvents.at(-1);
+  const data = eventDataRecord(latest);
+  const collect = (key: string, maxItems: number): string[] =>
+    [
+      ...new Set(
+        progressEvents.flatMap((event) => {
+          const value = eventDataRecord(event)[key];
+          return [
+            ...(typeof value === "string" && value ? [value] : []),
+            ...stringArrayValue(value, maxItems),
+          ];
+        }),
+      ),
+    ].slice(0, maxItems);
+  const reasonCodes = collect("reasonCodes", 60);
+  const workerToolIds = [
+    ...new Set(
+      [
+        ...collect("workerToolIds", 40),
+        ...collect("toolIds", 40),
+        ...reasonCodes
+          .map((code) => code.match(/^scheduler_tool_invoked:(worker\.[a-z0-9_.:-]+)$/u)?.[1])
+          .filter((toolId): toolId is string => Boolean(toolId)),
+      ].filter((toolId) => toolId.startsWith("worker.")),
+    ),
+  ].slice(0, 20);
+  const latestWorkerToolId =
+    typeof data.schedulerToolId === "string" && data.schedulerToolId.startsWith("worker.")
+      ? data.schedulerToolId
+      : (workerToolIds.at(-1) ?? null);
+  return {
+    state: latest ? "present" : "missing",
+    graphId: stringValue(data.graphId),
+    activeNodeId: stringValue(data.nodeId),
+    activeNodeKind: stringValue(data.activeNodeKind),
+    roleId: stringValue(data.roleId),
+    modelRef: stringValue(data.modelRef),
+    objective: stringValue(data.currentObjective),
+    whySelected: stringValue(data.whyThisNodeWasChosen),
+    targetRefs: collect("targetRefs", 12),
+    inputHandoffRefs: collect("inputHandoffRefs", 12),
+    expectedOutput: stringValue(data.expectedOutput),
+    currentPhase: stringValue(data.currentPhase) ?? stringValue(data.stage),
+    validationState: stringValue(data.validationState),
+    evidenceProducedRefs: collect("evidenceProducedRefs", 12),
+    evidenceClaimRefs: collect("evidenceClaimRefs", 20),
+    acceptedCommitmentIds: collect("acceptedCommitmentIds", 12),
+    rejectedCommitmentIds: collect("rejectedCommitmentIds", 12),
+    openCommitmentIds: collect("remainingOpenCommitmentIds", 12),
+    nextDecisionNeeded: stringValue(data.nextDecisionNeeded),
+    blockerSummary: stringValue(data.blockerSummary),
+    finalizationState: stringValue(data.finalizationState),
+    latestToolEventKind: stringValue(data.latestToolEventKind),
+    eli5Progress: stringValue(data.eli5Progress),
+    costAwareDecision: {
+      selectedCapabilityId: stringValue(data.selectedCapabilityId),
+      costClass: stringValue(data.capabilityCostClass),
+      utilityRationale: stringValue(data.capabilityUtilityRationale),
+      costRationale: stringValue(data.capabilityCostRationale),
+      whyCheaperOptionsWereInsufficient: stringValue(data.whyCheaperOptionsWereInsufficient),
+      consideredCapabilityIds: collect("consideredCapabilityIds", 12),
+    },
+    schedulerToolTrace: {
+      schedulerPhase: stringValue(data.schedulerPhase),
+      latestToolId: stringValue(data.schedulerToolId),
+      invocationRefs: collect("schedulerToolInvocationRefs", 20),
+    },
+    workerToolTrace: {
+      latestWorkerToolId,
+      workerToolIds,
+      invocationRefs: [
+        ...new Set([
+          ...collect("schedulerToolInvocationRefs", 20),
+          ...collect("artifactRefs", 20).filter((ref) => ref.startsWith("runtime-tool://")),
+          ...collect("evidenceProducedRefs", 20).filter((ref) => ref.startsWith("runtime-tool://")),
+        ]),
+      ].slice(0, 20),
+      changedFileRefs: collect("changedFileRefs", 20),
+      validationRefs: collect("validationRefs", 20),
+      contextRequestRefs: collect("contextRequestRefs", 20),
+      editStepIds: collect("editStepIds", 20),
+      evidenceClaimRefs: collect("evidenceClaimRefs", 20),
+    },
+    latestProgressEventRefs: progressEvents
+      .slice(-6)
+      .map((event) => `runtime-event://${event.eventId}`),
+    rawPromptStored: false,
+    rawResponseStored: false,
+    rawProviderLogStored: false,
+    rawToolLogStored: false,
   };
 }
 
@@ -1005,6 +2252,187 @@ function modelReadinessFromTeamEvidence(
   return evidence.roster
     .map((entry) => ({ modelId: entry.modelId, status: entry.status }))
     .slice(0, 20);
+}
+
+type AgentTeamDynamicGraphReadbackNode =
+  WorkQueueExecutionRuntimeJobReadModel["agentTeam"]["taskGraph"]["nodes"][number];
+
+function runtimeArtifactRecord(artifact: RuntimeJobArtifact): Record<string, unknown> {
+  return asRecord(artifact.metadata) ?? {};
+}
+
+function progressNodeFromArtifact(artifact: RuntimeJobArtifact): AgentTeamDynamicGraphReadbackNode {
+  const metadata = runtimeArtifactRecord(artifact);
+  return {
+    nodeId: stringValue(metadata.nodeId) ?? artifact.uri,
+    stage: stringValue(metadata.stage) ?? "unknown",
+    roleId: stringValue(metadata.roleId),
+    status: stringValue(metadata.status) ?? "unknown",
+    modelRef: null,
+    providerPath: null,
+    transportKind: null,
+    artifactRefs: stringArrayValue(metadata.artifactRefs, 12),
+    validationRefs: [],
+    reasonCodes: stringArrayValue(metadata.reasonCodes, 12),
+  };
+}
+
+function roleNodeFromArtifact(
+  artifact: RuntimeJobArtifact,
+): Partial<AgentTeamDynamicGraphReadbackNode> {
+  const metadata = runtimeArtifactRecord(artifact);
+  const closeout = asRecord(metadata.closeout);
+  return {
+    nodeId: stringValue(metadata.nodeId) ?? artifact.uri,
+    roleId: stringValue(metadata.roleId) ?? stringValue(closeout?.roleId),
+    modelRef: stringValue(closeout?.modelRef),
+    providerPath: "openrouter",
+    transportKind: "live_model",
+    artifactRefs: [artifact.uri, ...stringArrayValue(closeout?.evidenceRefs, 8)].slice(0, 12),
+    validationRefs: stringArrayValue(closeout?.evidenceRefs, 8).filter((ref) =>
+      ref.includes("/validation/"),
+    ),
+  };
+}
+
+function buildDynamicGraphReadback(input: {
+  artifacts: RuntimeJobArtifact[];
+  evidence: AgentTeamRuntimeEvidence | null;
+  dynamicTaskGraphNodes: unknown[];
+}): {
+  nodes: AgentTeamDynamicGraphReadbackNode[];
+  nodeCount: number;
+  edgeCount: number;
+  repeatedRoleInvocationCount: number;
+  activeWorker: string | null;
+  lastWorker: string | null;
+  currentStage: string | null;
+  repairAttemptCount: number;
+  humanDecisionPresent: boolean;
+  closeoutState: string;
+  finalState: string;
+} {
+  const roleByNode = new Map(
+    input.artifacts
+      .filter((artifact) => artifact.artifactType === "agent_team.dynamic_role_invocation")
+      .map((artifact) => {
+        const node = roleNodeFromArtifact(artifact);
+        return [node.nodeId ?? artifact.uri, node] as const;
+      }),
+  );
+  const progressNodes = input.artifacts
+    .filter((artifact) => artifact.artifactType === "agent_team.dynamic_progress")
+    .map((artifact) => {
+      const node = progressNodeFromArtifact(artifact);
+      const role = roleByNode.get(node.nodeId);
+      return {
+        ...node,
+        ...role,
+        stage: node.stage,
+        status: node.status,
+        roleId: node.roleId ?? role?.roleId ?? null,
+        artifactRefs: [...node.artifactRefs, ...(role?.artifactRefs ?? [])].slice(0, 12),
+        validationRefs: role?.validationRefs ?? [],
+        reasonCodes: [...node.reasonCodes, ...(role?.reasonCodes ?? [])].slice(0, 12),
+      };
+    });
+  const planNodes = input.dynamicTaskGraphNodes
+    .map((node, index): AgentTeamDynamicGraphReadbackNode | null => {
+      const record = asRecord(node);
+      if (!record) {
+        return null;
+      }
+      return {
+        nodeId: stringValue(record.nodeId) ?? `planned-node-${index + 1}`,
+        stage: stringValue(record.actionKind) ?? "planned",
+        roleId: stringValue(record.assignedRole),
+        status: "planned",
+        modelRef: null,
+        providerPath: null,
+        transportKind: null,
+        artifactRefs: [],
+        validationRefs: [],
+        reasonCodes: stringArrayValue(record.reasonCodes, 6),
+      };
+    })
+    .filter((node): node is AgentTeamDynamicGraphReadbackNode => Boolean(node));
+  const nodesByKey = new Map<string, AgentTeamDynamicGraphReadbackNode>();
+  for (const node of [...planNodes, ...progressNodes]) {
+    const key = `${node.stage}:${node.roleId ?? "none"}:${node.nodeId}`;
+    nodesByKey.set(key, node);
+  }
+  const nodes = Array.from(nodesByKey.values()).slice(0, 60);
+  const roleCounts = new Map<string, number>();
+  for (const node of nodes) {
+    if (node.roleId) {
+      roleCounts.set(node.roleId, (roleCounts.get(node.roleId) ?? 0) + 1);
+    }
+  }
+  const repeatedRoleInvocationCount = Array.from(roleCounts.values()).reduce(
+    (sum, count) => sum + Math.max(0, count - 1),
+    0,
+  );
+  const active = nodes.toReversed().find((node) => node.status === "started") ?? null;
+  const lastNode = nodes.at(-1) ?? null;
+  const repairMetadata = asRecord(
+    input.artifacts.findLast(
+      (artifact) => artifact.artifactType === "agent_team.dynamic_validation_repair_loop",
+    )?.metadata,
+  );
+  const closeoutCompleted = nodes.some(
+    (node) => node.stage === "closeout" && node.status === "completed",
+  );
+  const closeoutStarted = nodes.some(
+    (node) => node.stage === "closeout" && node.status === "started",
+  );
+  return {
+    nodes,
+    nodeCount: Math.max(nodes.length, input.dynamicTaskGraphNodes.length),
+    edgeCount: Math.max(0, nodes.length - 1),
+    repeatedRoleInvocationCount,
+    activeWorker: active?.roleId ?? active?.stage ?? null,
+    lastWorker: lastNode?.roleId ?? lastNode?.stage ?? null,
+    currentStage: active?.stage ?? lastNode?.stage ?? null,
+    repairAttemptCount: numberValue(repairMetadata?.repairAttemptCount) ?? 0,
+    humanDecisionPresent: input.artifacts.some(
+      (artifact) => artifact.artifactType === "agent_team.human_scope_decision",
+    ),
+    closeoutState: closeoutCompleted ? "completed" : closeoutStarted ? "started" : "unknown",
+    finalState:
+      input.evidence?.validationState === "passed" && input.evidence.closeoutState === "present"
+        ? "succeeded"
+        : (input.evidence?.validationState ?? "unknown"),
+  };
+}
+
+function latestKimiImplementationReadback(
+  artifacts: RuntimeJobArtifact[],
+): WorkQueueExecutionRuntimeJobReadModel["agentTeam"]["taskGraph"]["kimiImplementation"] {
+  const artifact = artifacts.findLast(
+    (item) => item.artifactType === "agent_team.kimi_standard_implementation_attempt",
+  );
+  const metadata = asRecord(artifact?.metadata);
+  const diagnostics = Array.isArray(metadata?.attemptDiagnostics)
+    ? metadata.attemptDiagnostics
+    : [];
+  return {
+    state: artifact ? "present" : "missing",
+    status: stringValue(metadata?.status),
+    modelRef: stringValue(metadata?.modelRef),
+    modelRunRef: stringValue(metadata?.modelRunRef),
+    changedFileRefs: stringArrayValue(metadata?.changedFileRefs, 20),
+    validationRefs: stringArrayValue(metadata?.validationRefs, 20),
+    attemptCount: diagnostics.length,
+    rejectionStages: boundedUniqueStringValues(
+      diagnostics
+        .map((item) => stringValue(asRecord(item)?.rejectionStage))
+        .filter((value): value is string => Boolean(value)),
+      12,
+    ),
+    escalationRecommended: booleanValue(metadata?.escalatedToCodexBridgeRecommended) ?? false,
+    artifactRef: artifact?.uri ?? null,
+    reasonCodes: stringArrayValue(metadata?.reasonCodes, 20),
+  };
 }
 
 function webResearchProjection(
@@ -1363,6 +2791,12 @@ function agentTeamProjection(
   const dynamicTaskGraphNodes = Array.isArray(dynamicTaskGraphPlan?.childTasks)
     ? dynamicTaskGraphPlan.childTasks
     : [];
+  const dynamicGraphReadback = buildDynamicGraphReadback({
+    artifacts,
+    evidence,
+    dynamicTaskGraphNodes,
+  });
+  const kimiImplementation = latestKimiImplementationReadback(artifacts);
   const dynamicTaskGraphReasonCodes = [
     ...stringArrayValue(dynamicTaskGraphRecord?.reasonCodes, 10),
     ...stringArrayValue(dynamicTaskGraphPlan?.reasonCodes, 10),
@@ -1458,7 +2892,7 @@ function agentTeamProjection(
     },
     taskGraph: {
       graphId:
-        stringValue(taskGraphRecord?.graphId) ?? stringValue(dynamicTaskGraphRecord?.graphId),
+        stringValue(dynamicTaskGraphRecord?.graphId) ?? stringValue(taskGraphRecord?.graphId),
       state:
         taskGraphArtifact || dynamicTaskGraphArtifact
           ? "present"
@@ -1468,10 +2902,23 @@ function agentTeamProjection(
       requiredSourceEdit:
         booleanValue(taskGraphRecord?.requiredSourceEdit) ??
         dynamicTaskGraphNodes.some((node) => asRecord(node)?.actionKind === "coding"),
-      nodeCount: Array.isArray(taskGraphRecord?.nodes)
-        ? taskGraphRecord.nodes.length
-        : dynamicTaskGraphNodes.length,
-      artifactRef: taskGraphArtifact?.uri ?? dynamicTaskGraphArtifact?.uri ?? null,
+      nodeCount: Math.max(
+        dynamicGraphReadback.nodeCount,
+        Array.isArray(taskGraphRecord?.nodes) ? taskGraphRecord.nodes.length : 0,
+      ),
+      edgeCount: dynamicGraphReadback.edgeCount,
+      repeatedRoleInvocationCount: dynamicGraphReadback.repeatedRoleInvocationCount,
+      activeWorker: dynamicGraphReadback.activeWorker,
+      lastWorker: dynamicGraphReadback.lastWorker,
+      currentStage: dynamicGraphReadback.currentStage,
+      repairAttemptCount: dynamicGraphReadback.repairAttemptCount,
+      humanDecisionPresent: dynamicGraphReadback.humanDecisionPresent,
+      closeoutState:
+        evidence?.closeoutState === "present" ? "present" : dynamicGraphReadback.closeoutState,
+      finalState: dynamicGraphReadback.finalState,
+      artifactRef: dynamicTaskGraphArtifact?.uri ?? taskGraphArtifact?.uri ?? null,
+      nodes: dynamicGraphReadback.nodes,
+      kimiImplementation,
       reasonCodes: taskGraphArtifact
         ? stringArrayValue(taskGraphRecord?.reasonCodes, 20)
         : dynamicTaskGraphReasonCodes,
@@ -1518,6 +2965,9 @@ function roleContributionSummary(roleId: string, status: string): string {
 
 function linkedRuntimeJobIds(truth: WorkItemTruth): string[] {
   const ids = new Set<string>();
+  if (truth.item.closedByRuntimeJobId) {
+    ids.add(truth.item.closedByRuntimeJobId);
+  }
   for (const run of truth.runs) {
     if (run.runtimeJobId) {
       ids.add(run.runtimeJobId);
@@ -1960,6 +3410,11 @@ export async function buildWorkQueueExecutionReadModel(input: {
   if (!truth) {
     throw new Error(`work item not found: ${input.workItemId}`);
   }
+  const runtimeGraphChildTruths = await input.workQueue.readRuntimeGraphChildTruths(
+    input.workItemId,
+    20,
+  );
+  const runtimeGraph = buildRuntimeGraphReadback(truth, runtimeGraphChildTruths);
   const now = input.now ?? new Date();
   const jobIds = linkedRuntimeJobIds(truth);
   const runtimeJobs: WorkQueueExecutionRuntimeJobReadModel[] = [];
@@ -2016,6 +3471,12 @@ export async function buildWorkQueueExecutionReadModel(input: {
     const processRecord = asRecord(liveResultRecord?.processResult);
     const heartbeatAgeMs = heartbeat ? now.getTime() - heartbeat.eventTime.getTime() : null;
     const reviewRecord = asRecord(review?.metadata);
+    const workflow = workflowProjection(job, artifacts);
+    const ownerReadback = ownerRuntimeReadback(closeoutCapsuleArtifact, artifacts);
+    const agentTeam = agentTeamProjection(teamEvidence, artifacts);
+    const changedFileRefs = stringArrayValue(liveResultRecord?.actualFilesChanged, 40);
+    const validationStatus = metadataStatus(validation, ["status"]);
+    const closeoutStatus = closeout ? "present" : "missing";
     runtimeJobs.push({
       runtimeJobId,
       runtimeJobState: job.state,
@@ -2028,21 +3489,32 @@ export async function buildWorkQueueExecutionReadModel(input: {
       latestHeartbeat: heartbeat?.eventTime.toISOString() ?? null,
       staleHeartbeat: heartbeatAgeMs !== null && heartbeatAgeMs > 120_000,
       processStatus: stringValue(processRecord?.status),
-      validationStatus: metadataStatus(validation, ["status"]),
-      closeoutStatus: closeout ? "present" : "missing",
+      validationStatus,
+      closeoutStatus,
       fileScopeStatus: metadataStatus(fileScope, ["fileScopeSatisfied"]),
       sourceEditStatus: stringValue(asRecord(liveResultRecord?.sourceEditRequirement)?.reasonCode),
-      changedFileRefs: stringArrayValue(liveResultRecord?.actualFilesChanged, 40),
+      changedFileRefs,
       completedWorkReasonCode: stringValue(liveResultRecord?.completedWorkPathReason),
       controlCommandState: control ? "present" : null,
       rebuildRecoveryState: metadataStatus(rebuild, ["status"]),
       authorityStatuses: authorityStatusArtifacts(artifacts),
-      workflow: workflowProjection(job, artifacts),
+      workflow,
       worker: workerRuntimeProjection(job, artifacts, events),
       runtimeControl: runtimeControlProjection(artifacts),
       permissionReadback: permissionReadbackProjection(job, teamEvidence),
-      ownerReadback: ownerRuntimeReadback(closeoutCapsuleArtifact),
-      agentTeam: agentTeamProjection(teamEvidence, artifacts),
+      ownerReadback,
+      ownerProgressReadback: ownerProgressReadback({
+        job,
+        artifacts,
+        events,
+        ownerReadback,
+        agentTeam,
+        changedFileRefs,
+        validationStatus,
+        closeoutStatus,
+        workflowId: workflow.workflowId,
+      }),
+      agentTeam,
       webResearch: webResearchProjection(webResearchEvidence, artifacts),
       skillifier: skillifierProjection(job, artifacts),
       middleware: middlewareProjection(job, artifacts),
@@ -2071,9 +3543,10 @@ export async function buildWorkQueueExecutionReadModel(input: {
   return {
     artifactKind: "work_queue_execution_read_model",
     workItemId: input.workItemId,
-    convergenceSlice: projectConvergenceSliceTracker(truth),
+    convergenceSlice: projectDbPrimaryWorkQueueItem({ truth }),
     linkedRuntimeJobIds: jobIds,
     runtimeJobs,
+    runtimeGraph,
     lifecycleTruthSource: "work_queue_repository",
     executionTruthSource: "execution_platform_runtime_jobs",
     uiMutationAllowed: false,
@@ -2104,6 +3577,7 @@ export function summarizeWorkQueueExecutionForUi(model: WorkQueueExecutionReadMo
     runtimeControl: latestRuntimeJob?.runtimeControl ?? null,
     permissionReadback: latestRuntimeJob?.permissionReadback ?? null,
     ownerReadback: latestRuntimeJob?.ownerReadback ?? null,
+    ownerProgressReadback: latestRuntimeJob?.ownerProgressReadback ?? null,
     routing: latestRuntimeJob?.workflow.routing ?? null,
     agentTeam: latestRuntimeJob?.agentTeam ?? null,
     webResearch: latestRuntimeJob?.webResearch ?? null,
@@ -2111,6 +3585,7 @@ export function summarizeWorkQueueExecutionForUi(model: WorkQueueExecutionReadMo
     closeoutCapsule: latestRuntimeJob?.closeoutCapsule ?? null,
     humanCloseoutSummary: latestRuntimeJob?.humanCloseoutSummary ?? null,
     skillifier: skillifierRuntimeReadback(latestRuntimeJob),
+    runtimeGraph: model.runtimeGraph,
     workerContractState: workerContractState ?? null,
     uiMutationAllowed: false,
     lifecycleTruthSource: model.lifecycleTruthSource,

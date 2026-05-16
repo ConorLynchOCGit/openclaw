@@ -242,6 +242,67 @@ export type WorkQueueExecutionSummary = {
     limitations?: string[];
     eli5Progress?: string;
   } | null;
+  ownerProgressReadback?: {
+    state: "ready" | "needs_review" | "missing";
+    headline: string;
+    currentStage: string;
+    activeWorker: string | null;
+    activeModelRef: string | null;
+    runtimeLifecycleState: string;
+    validationEvidenceState: string;
+    closeoutEvidenceState: string;
+    changedFileState: string;
+    humanDecisionState: string;
+    eli5Progress: string;
+    limitations: string[];
+    nextAction: string;
+    diagnosticReasonCodes: string[];
+    activeGraphProgress?: {
+      state: "present" | "missing";
+      graphId: string | null;
+      activeNodeId: string | null;
+      activeNodeKind: string | null;
+      roleId: string | null;
+      modelRef: string | null;
+      objective: string | null;
+      whySelected: string | null;
+      targetRefs: string[];
+      inputHandoffRefs: string[];
+      expectedOutput: string | null;
+      currentPhase: string | null;
+      validationState: string | null;
+      evidenceProducedRefs: string[];
+      evidenceClaimRefs: string[];
+      acceptedCommitmentIds: string[];
+      rejectedCommitmentIds: string[];
+      openCommitmentIds: string[];
+      nextDecisionNeeded: string | null;
+      blockerSummary: string | null;
+      finalizationState: string | null;
+      latestToolEventKind: string | null;
+      eli5Progress: string | null;
+      schedulerToolTrace: {
+        schedulerPhase: string | null;
+        latestToolId: string | null;
+        invocationRefs: string[];
+      };
+      workerToolTrace: {
+        latestWorkerToolId: string | null;
+        workerToolIds: string[];
+        invocationRefs: string[];
+        changedFileRefs: string[];
+        validationRefs: string[];
+        contextRequestRefs: string[];
+        editStepIds: string[];
+        evidenceClaimRefs: string[];
+      };
+      latestProgressEventRefs: string[];
+    } | null;
+    rawPromptStored: false;
+    rawResponseStored: false;
+    rawLogsStored: false;
+    workQueueLifecycleMutationAllowed: false;
+  } | null;
   skillifier?: {
     runtimeJobId?: string | null;
     opportunity?: {
@@ -429,6 +490,10 @@ export type WorkQueueConvergenceSliceSummary = {
     runtimeJobIds: string[];
     lifecycleTruthSource: string;
     planningStatusIsLifecycleState: false;
+    validationEvidenceState?: string;
+    closeoutEvidenceState?: string;
+    ownerReadbackState?: string;
+    projectionFreshnessState?: string;
   };
   rawPromptStored: false;
   rawResponseStored: false;
@@ -440,6 +505,8 @@ export type WorkQueueConvergenceSliceSummary = {
 export type WorkQueueObject = {
   id: string;
   queueItemId: string;
+  queuePosition: number | null;
+  stableTechnicalId: string | null;
   opportunityId: string | null;
   lane: WorkQueueLane;
   objectClass: WorkQueueObjectClass;
@@ -463,6 +530,63 @@ export type WorkQueueObject = {
   convergenceSlice?: WorkQueueConvergenceSliceSummary | null;
   queueItem: ProductProactivityQueueItem;
   inboxItem: ProactivityInboxItem | null;
+};
+
+export type DbWorkQueueSummary = {
+  workItemId: string;
+  itemType: string;
+  title: string;
+  description: string | null;
+  lifecycleState: string;
+  queueStatus: string;
+  queuePosition: number | null;
+  queueRank: number | null;
+  closedAt: string | null;
+  updatedAt: string;
+  runtimeJobIds: string[];
+  graphRef: string | null;
+  validationRef: string | null;
+  closeoutCapsuleRef: string | null;
+  ownerReadbackRef: string | null;
+  convergenceSlice?: WorkQueueObject["convergenceSlice"] | null;
+};
+
+export type DbWorkQueueDetail = {
+  workItemId: string;
+  itemType: string;
+  title: string;
+  description: string | null;
+  lifecycleState: string;
+  queueStatus: string;
+  queueRank: number | null;
+  closedAt: string | null;
+  updatedAt: string;
+  runtimeJobIds: string[];
+  graphRef: string | null;
+  validationRef: string | null;
+  closeoutCapsuleRef: string | null;
+  ownerReadbackRef: string | null;
+  artifactRefs: string[];
+  eventCursor: string;
+  execution?: WorkQueueExecutionSummary | null;
+};
+
+export type DbWorkQueueListResult = {
+  accepted: boolean;
+  artifactKind: "db_work_queue_list_result";
+  source: "execution_platform_work_queue_db";
+  bucket: "active" | "closed" | "all";
+  limit: number;
+  nextCursor: string | null;
+  deltaCursor: string;
+  items: DbWorkQueueSummary[];
+};
+
+export type DbWorkQueueDetailResult = {
+  accepted: boolean;
+  artifactKind: "db_work_queue_detail_result";
+  source: "execution_platform_work_queue_db";
+  item: DbWorkQueueDetail;
 };
 
 export type WorkQueueExecutionActionClient = {
@@ -819,6 +943,8 @@ export function buildWorkQueueObjects(input: {
       return {
         id: queueItem.opportunityId ?? queueItem.queueItemId,
         queueItemId: queueItem.queueItemId,
+        queuePosition: null,
+        stableTechnicalId: queueItem.queueItemId,
         opportunityId: queueItem.opportunityId ?? null,
         lane,
         objectClass,
@@ -885,6 +1011,172 @@ export function buildWorkQueueObjects(input: {
         left.title.localeCompare(right.title)
       );
     });
+}
+
+function dbQueueStatusToVisibleStatus(status: string): WorkQueueVisibleStatus {
+  if (status === "closed") {
+    return "finalized";
+  }
+  if (status === "needs_review") {
+    return "needs_revision";
+  }
+  if (status === "blocked") {
+    return "failed";
+  }
+  if (status === "superseded") {
+    return "superseded";
+  }
+  if (status === "archived") {
+    return "dismissed";
+  }
+  return "drafted";
+}
+
+function syntheticDbQueueItem(summary: DbWorkQueueSummary): ProductProactivityQueueItem {
+  return {
+    queueItemId: summary.workItemId,
+    candidateId: summary.workItemId,
+    opportunityId: summary.workItemId,
+    opportunityClass: "proactive_plan",
+    opportunityStatus: summary.queueStatus === "closed" ? "done" : "in_progress",
+    workItemId: summary.workItemId,
+    workItemKind: "planning_request",
+    workItemStatus: summary.queueStatus === "closed" ? "done" : "planned",
+    primaryAction: null,
+    secondaryActions: [],
+    ctaExplanation: "DB-backed Work Queue item.",
+    handoffStatus: "idle",
+    handoffError: null,
+    handoffMessageAnchor: null,
+    plannedArtifact: null,
+    messageClass: "operator_approved_suggestion_available",
+    boundedDisplayText: summary.title,
+    messagePreview: summary.description ?? summary.title,
+    suggestedAction: summary.queueStatus === "closed" ? "Review closeout" : "Review runtime state",
+    candidateSummary: summary.title,
+    expectedUserValue: summary.description ?? summary.title,
+    planTitle: summary.title,
+    problem: summary.description ?? summary.title,
+    proposedMessage: summary.description ?? summary.title,
+    userBenefit: "Track runtime-backed work with DB truth.",
+    evidenceSummary: [
+      summary.graphRef ? `Graph: ${summary.graphRef}` : null,
+      summary.validationRef ? `Validation: ${summary.validationRef}` : null,
+      summary.closeoutCapsuleRef ? `Closeout: ${summary.closeoutCapsuleRef}` : null,
+    ]
+      .filter((value): value is string => Boolean(value))
+      .join(" | "),
+    confidence: "high",
+    blockedIfMissing: [],
+    userFacingBrief: {
+      title: summary.title,
+      kindLabel: "Follow-up",
+      oneLinePurpose: summary.description ?? summary.title,
+      recommendedNextStep:
+        summary.queueStatus === "closed"
+          ? "Review the closeout and evidence."
+          : "Monitor the active runtime work and respond to blockers.",
+      primaryActionLabel: "Open",
+      detailSummary: summary.description ?? undefined,
+      hiddenDiagnostics: {
+        provenanceRefs: [
+          `work-queue-db://${summary.workItemId}`,
+          ...summary.runtimeJobIds.map((id) => `runtime-job://${id}`),
+        ],
+        limitations: [],
+      },
+      quality: { status: "pass", reasons: [] },
+    },
+    resolvedByChatMessageId: null,
+    supersededByOpportunityId: null,
+    dismissalCooldownUntil: null,
+    layer: "actionable",
+    attentionRequired: summary.queueStatus !== "closed",
+    sendStatus: "idle",
+    sendError: null,
+    sentMessageAnchor: null,
+    status: summary.queueStatus === "closed" ? "pending_review" : "planned",
+    eligibleScope: {
+      environment: "live",
+      userId: "local-openclaw-user",
+      recipientId: "local-openclaw-recipient",
+      projectId: "openclaw",
+      sessionKey: "main",
+      operatorId: "local-openclaw-operator",
+      allowedMessageClasses: ["operator_approved_suggestion_available"],
+      proofPrerequisiteIds: [],
+      proofPrerequisiteHashes: [],
+    },
+    sourceRefs: [`work-queue-db://${summary.workItemId}`],
+    sourceProfileIds: ["execution_platform_work_queue_db"],
+    authorityTiers: ["runtime_readback"],
+    contentHashes: [summary.updatedAt],
+    proofHashes: [
+      summary.graphRef,
+      summary.validationRef,
+      summary.closeoutCapsuleRef,
+      summary.ownerReadbackRef,
+    ].filter((value): value is string => Boolean(value)),
+    noDarkDataStatus: "pass",
+    staleLabels: [],
+    conflictLabels: [],
+    blockedReasonCodes: summary.queueStatus === "blocked" ? ["work_queue_item_blocked"] : [],
+    generatedAt: summary.updatedAt,
+    updatedAt: summary.updatedAt,
+  };
+}
+
+export function buildDbWorkQueueObjects(input: {
+  items: DbWorkQueueSummary[];
+  details: Record<string, DbWorkQueueDetail | undefined>;
+}): WorkQueueObject[] {
+  return input.items.map((summary) => {
+    const detail = input.details[summary.workItemId];
+    const queueItem = syntheticDbQueueItem(summary);
+    const visibleStatus = dbQueueStatusToVisibleStatus(summary.queueStatus);
+    return {
+      id: summary.workItemId,
+      queueItemId: summary.workItemId,
+      queuePosition: summary.queuePosition,
+      stableTechnicalId: summary.workItemId,
+      opportunityId: summary.workItemId,
+      lane: "build_plans",
+      objectClass: "proactive_plan",
+      title: summary.title,
+      summary: summary.description ?? summary.title,
+      recommendedNextStep:
+        summary.queueStatus === "closed"
+          ? "Review the closeout and evidence."
+          : "Monitor runtime progress and respond to blockers.",
+      visibleStatus,
+      priorityBand: summary.queueStatus === "needs_review" ? "High" : "Medium",
+      manualPriority: "none",
+      statusLabel: summary.queueStatus,
+      laneLabel: summary.queueStatus === "closed" ? "Closed" : "Active",
+      objectClassLabel: "Runtime work",
+      detailSummary: summary.description,
+      evidenceSummary: queueItem.evidenceSummary ?? null,
+      sourceRefs: queueItem.sourceRefs,
+      authorityTiers: queueItem.authorityTiers,
+      proofHashes: queueItem.proofHashes,
+      diagnostics: queueItem.blockedReasonCodes,
+      artifact: {
+        kind: "plan",
+        title: summary.title,
+        body: summary.description,
+        summary: summary.description,
+        codexPrompt: null,
+        path: null,
+        versionLabel: "DB runtime item",
+        updatedAt: summary.updatedAt,
+        openQuestions: [],
+      },
+      execution: detail?.execution ?? null,
+      convergenceSlice: summary.convergenceSlice ?? null,
+      queueItem,
+      inboxItem: null,
+    };
+  });
 }
 
 export function filterWorkQueueObjects(

@@ -133,7 +133,10 @@ export class CodexParityImplementationBridge implements AgentTeamImplementationB
         approvedCommandId: validationCommandId(commandRef),
         required: true,
       })),
-      modelPolicy: { codexCodingModelRef: "openai-codex/gpt-5.3-codex" },
+      modelPolicy: {
+        codexGpt55Available: true,
+        codexCodingModelRef: process.env.OPENCLAW_CODEX_PARITY_COMPLEX_MODEL_REF?.trim() || null,
+      },
       sourceEditsRequired: true,
     });
     return {

@@ -3,20 +3,13 @@ import path from "node:path";
 import { CURRENT_SESSION_VERSION, SessionManager } from "@mariozechner/pi-coding-agent";
 import { resolveSendableOutboundReplyParts } from "openclaw/plugin-sdk/reply-payload";
 import {
-  AcpCodexCodingWorkerAdapter,
-  AgentTeamQueuedRunner,
   buildExecutionPlatformFeatureFlagRegistry,
-  CodexParityImplementationBridge,
   evaluateExecutionPlatformFlag,
   ModelCloseoutCapsuleReporter,
-  OpenRouterAgentTeamModelClient,
   parseCloseoutCapsule,
   projectCloseoutCapsuleOpportunitySeedsToWorkQueue,
-  RuntimeWorkerSupervisor,
   runProtocolPreGate,
   WorkflowQueuedRunner,
-  type AcpCodexCodingWorkerRunResult,
-  type AgentTeamClaimedJobExecutionResult,
 } from "../../../extensions/execution-platform/runtime-api.js";
 import { CodexAppServerJsonExecutor } from "../../../extensions/model-memory/src/mmv2/codex-app-server-json-executor.js";
 import { resolveSessionAgentId } from "../../agents/agent-scope.js";
@@ -70,6 +63,7 @@ import { MediaOffloadError } from "../chat-attachments.js";
 import { stripEnvelopeFromMessage, stripEnvelopeFromMessages } from "../chat-sanitize.js";
 import { augmentChatHistoryWithCliSessionImports } from "../cli-session-history.js";
 import { isSuppressedControlReplyText } from "../control-reply-text.js";
+import { runGatewayAgentTeamRuntimeJobOnce } from "../execution-platform-agent-team-runner.js";
 import { getExecutionPlatformRuntime } from "../execution-platform-http.js";
 import { ADMIN_SCOPE } from "../method-scopes.js";
 import {
@@ -1766,7 +1760,9 @@ export const LEGACY_EXECUTION_CHAT_INTENT_FALLBACK_ENV =
 export function isLegacyExecutionChatIntentFallbackEnabled(
   env: Record<string, string | undefined> = process.env,
 ): boolean {
-  return env[LEGACY_EXECUTION_CHAT_INTENT_FALLBACK_ENV] === "1";
+  const testRuntime =
+    env.NODE_ENV === "test" || env.VITEST === "true" || env.OPENCLAW_TEST_MINIMAL_GATEWAY === "1";
+  return testRuntime && env[LEGACY_EXECUTION_CHAT_INTENT_FALLBACK_ENV] === "1";
 }
 
 function isHighRiskForLegacyExecutionChatFallback(message: string): boolean {
@@ -1949,6 +1945,7 @@ export function buildExecutionChatAssistantText(input: {
   const humanCloseout = asChatRecord(input.closeout?.humanCloseoutSummary);
   const agentTeam = asChatRecord(input.closeout?.agentTeam);
   const closeoutQuality = asChatRecord(input.closeout?.closeoutQuality);
+  const activeGraphProgress = asChatRecord(input.closeout?.activeGraphProgress);
   const roleAssignments = arrayRecords(agentTeam?.roleAssignments);
   const roster = arrayRecords(agentTeam?.roster);
   const permission = asChatRecord(agentTeam?.permissionEvidence);
@@ -1962,13 +1959,41 @@ export function buildExecutionChatAssistantText(input: {
     ...stringArray(closeoutQuality?.limitations),
   ].slice(0, 8);
   const requiredFixes = stringArray(closeoutQuality?.requiredFixes).slice(0, 8);
+  const activeGraphState = activeGraphProgress
+    ? stringField(activeGraphProgress, "state", "missing")
+    : "missing";
+  const activeGraphObjective = activeGraphProgress
+    ? stringField(activeGraphProgress, "objective", "")
+    : "";
+  const activeGraphPhase = activeGraphProgress
+    ? stringField(activeGraphProgress, "currentPhase", "")
+    : "";
+  const activeGraphRole = activeGraphProgress ? stringField(activeGraphProgress, "roleId", "") : "";
+  const activeGraphNode = activeGraphProgress
+    ? stringField(activeGraphProgress, "activeNodeKind", "")
+    : "";
+  const activeGraphEli5 = activeGraphProgress
+    ? stringField(activeGraphProgress, "eli5Progress", "")
+    : "";
+  const activeGraphOpenCommitments = stringArray(activeGraphProgress?.openCommitmentIds).slice(
+    0,
+    8,
+  );
   const lines = [
     `Execution Platform ${status}.`,
-    input.workflowId ? `Workflow selected: ${input.workflowId}` : null,
-    input.runtimeJobId ? `Runtime job: ${input.runtimeJobId}` : null,
-    input.teamRunId ? `Team run: ${input.teamRunId}` : null,
+    input.failed && !reportMarkdown
+      ? "The workflow did not produce enough accepted closeout evidence for a clean success. I kept the runtime evidence bounded and surfaced the next useful debugging facts below."
+      : null,
+    input.completed && !reportMarkdown
+      ? "The workflow completed through runtime evidence. The model-authored closeout was missing or degraded, so this is a bounded readback summary."
+      : null,
+    "",
+    "What happened:",
+    input.workflowId ? `- Workflow selected: ${input.workflowId}` : null,
+    input.runtimeJobId ? `- Runtime job: ${input.runtimeJobId}` : null,
+    input.teamRunId ? `- Team run: ${input.teamRunId}` : null,
     roleAssignments.length > 0
-      ? `Roles used: ${roleAssignments
+      ? `- Roles used: ${roleAssignments
           .slice(0, 8)
           .map(
             (role) =>
@@ -1977,7 +2002,7 @@ export function buildExecutionChatAssistantText(input: {
           .join("; ")}`
       : null,
     roster.length > 0
-      ? `Model refs: ${roster
+      ? `- Model refs: ${roster
           .slice(0, 8)
           .map(
             (role) =>
@@ -1986,23 +2011,101 @@ export function buildExecutionChatAssistantText(input: {
           .join("; ")}`
       : null,
     permission
-      ? `Permission model: ${stringField(permission, "permissionModelId", "unknown")} (${stringField(permission, "decision", "unknown")})`
+      ? `- Permission model: ${stringField(permission, "permissionModelId", "unknown")} (${stringField(permission, "decision", "unknown")})`
       : null,
-    whatChanged ? `What changed: ${whatChanged}` : null,
-    result ? `Result: ${result}` : null,
-    filesTouched.length > 0 ? `Files/artifacts: ${filesTouched.join(", ")}` : null,
-    testsRun.length > 0 ? `Validation: ${testsRun.join(", ")}` : null,
-    `Closeout: ${input.closeoutState}${capsule ? " (degraded: model-authored capsule missing)" : ""}`,
+    activeGraphState === "present"
+      ? `- Active graph progress: ${[
+          activeGraphPhase || null,
+          activeGraphRole || null,
+          activeGraphNode || null,
+        ]
+          .filter((part): part is string => Boolean(part))
+          .join(" / ")}`
+      : null,
+    activeGraphObjective ? `- Current objective: ${activeGraphObjective}` : null,
+    activeGraphOpenCommitments.length > 0
+      ? `- Open commitments: ${activeGraphOpenCommitments.join(", ")}`
+      : null,
+    whatChanged ? `- What changed: ${whatChanged}` : null,
+    result ? `- Result: ${result}` : null,
+    filesTouched.length > 0 ? `- Files/artifacts: ${filesTouched.join(", ")}` : null,
+    testsRun.length > 0 ? `- Validation: ${testsRun.join(", ")}` : null,
+    `- Closeout: ${input.closeoutState}${capsule ? " (degraded: model-authored capsule missing)" : ""}`,
     closeoutQuality
-      ? `Closeout quality: ${stringField(closeoutQuality, "goalSatisfaction", "unknown")}${closeoutQuality.needsReview === true ? " (needs review)" : ""}`
+      ? `- Closeout quality: ${stringField(closeoutQuality, "goalSatisfaction", "unknown")}${closeoutQuality.needsReview === true ? " (needs review)" : ""}`
       : null,
-    limitations.length > 0 ? `Limitations: ${limitations.join("; ")}` : null,
-    requiredFixes.length > 0 ? `Required fixes: ${requiredFixes.join("; ")}` : null,
-    eli5Progress ? `ELI5: ${eli5Progress}` : null,
-    input.reasonCodes.length > 0 ? `Reason codes: ${input.reasonCodes.join(", ")}` : null,
-    "Work Queue readback is runtime-truth backed; lifecycle was not mutated by the UI.",
+    "",
+    "Limitations and next step:",
+    limitations.length > 0
+      ? `- Limitations: ${limitations.join("; ")}`
+      : "- Limitations: none recorded in bounded readback.",
+    requiredFixes.length > 0 ? `- Required fixes: ${requiredFixes.join("; ")}` : null,
+    eli5Progress
+      ? `- ELI5: ${eli5Progress}`
+      : activeGraphEli5
+        ? `- ELI5: ${activeGraphEli5}`
+        : "- ELI5: OpenClaw created or inspected a runtime job, then reported bounded evidence instead of treating the chat UI as execution truth.",
+    "",
+    "Technical refs:",
+    "- Work Queue readback is runtime-truth backed; lifecycle was not mutated by the UI.",
+    input.reasonCodes.length > 0
+      ? `- Reason codes: ${input.reasonCodes.slice(0, 10).join(", ")}${input.reasonCodes.length > 10 ? " ..." : ""}`
+      : null,
   ];
   return lines.filter((line): line is string => typeof line === "string").join("\n");
+}
+
+export function buildHumanOperatorDecisionAssistantText(input: {
+  workflowId: string | null;
+  runtimeJobId: string;
+  metadata: Record<string, unknown>;
+}): string {
+  const title = stringField(input.metadata, "decisionTitle", "OpenClaw needs your decision");
+  const summary = stringField(
+    input.metadata,
+    "decisionSummary",
+    "The workflow paused before continuing and needs an owner decision.",
+  );
+  const instruction = stringField(
+    input.metadata,
+    "naturalLanguageInstruction",
+    "Reply in OpenClaw with your choice in plain language.",
+  );
+  const options = arrayRecords(input.metadata.options).slice(0, 4);
+  const technicalResumeRefs = asChatRecord(input.metadata.technicalResumeRefs);
+  const humanTaskId = technicalResumeRefs
+    ? stringField(technicalResumeRefs, "humanTaskId", "")
+    : "";
+  const optionLines =
+    options.length > 0
+      ? options.flatMap((option) => {
+          const label = stringField(option, "label", "Option");
+          const impact = stringField(option, "impact", "");
+          const recommended = option.recommended === true ? " (recommended)" : "";
+          return [`- ${label}${recommended}`, impact ? `  ${impact}` : null].filter(
+            (line): line is string => typeof line === "string",
+          );
+        })
+      : ["- Continue with the owner-approved default decision."];
+  return [
+    "OpenClaw is paused for your decision.",
+    "",
+    `Decision: ${title}`,
+    summary,
+    "",
+    "Choices:",
+    ...optionLines,
+    "",
+    instruction,
+    "",
+    "Technical refs:",
+    input.workflowId ? `- Workflow: ${input.workflowId}` : null,
+    `- Runtime job: ${input.runtimeJobId}`,
+    humanTaskId ? `- Human task: ${humanTaskId}` : null,
+    "- The workflow will resume after your reply; Work Queue lifecycle remains runtime-truth backed.",
+  ]
+    .filter((line): line is string => typeof line === "string")
+    .join("\n");
 }
 
 export function buildFrontDoorHandoffFailureAssistantText(
@@ -2044,138 +2147,225 @@ function stringField(record: Record<string, unknown>, key: string, fallback: str
   return typeof value === "string" && value.trim() ? value : fallback;
 }
 
+export function parseHumanOperatorDecisionResume(message: string): {
+  runtimeJobId: string | null;
+  humanTaskId: string | null;
+  decision: "plan_only" | "child_action_graph_proposal";
+} | null {
+  const trimmed = message.trim();
+  const runtimeJobId = message.match(
+    /\b(?:runtime\s*job|job)\s*[:#]?\s*(native-exec-[a-z0-9-]+)/iu,
+  )?.[1];
+  const humanTaskId = message.match(
+    /\b(?:human\s*task|humanTaskId)\s*[:#]?\s*(human-task-[a-z0-9-]+)/iu,
+  )?.[1];
+  const normalized = message.toLowerCase().replace(/[_-]+/gu, " ");
+  const decisionMatch =
+    message.match(/\b(plan_only|child_action_graph_proposal)\b/iu)?.[1] ??
+    (/\bplan\s+only\b/u.test(normalized)
+      ? "plan_only"
+      : /\bchild\s+action\s+graph(?:\s+proposal)?s?\b/u.test(normalized)
+        ? "child_action_graph_proposal"
+        : null);
+  if (!decisionMatch) {
+    return null;
+  }
+  const hasExplicitTaskRef = Boolean(runtimeJobId || humanTaskId);
+  const looksLikeShortDecisionReply =
+    trimmed.length <= 280 &&
+    /^(?:i\s+(?:choose|select|approve|want)|choose|select|approve|decision|resume|use|go with|proceed with)?\s*(?:plan[_\s-]*only|child[_\s-]*action[_\s-]*graph(?:[_\s-]*proposal)?s?)\b/iu.test(
+      trimmed,
+    );
+  if (!hasExplicitTaskRef && !looksLikeShortDecisionReply) {
+    return null;
+  }
+  const decision = decisionMatch.toLowerCase() as "plan_only" | "child_action_graph_proposal";
+  return { runtimeJobId: runtimeJobId ?? null, humanTaskId: humanTaskId ?? null, decision };
+}
+
+async function findLatestWaitingHumanDecision(input: {
+  runtime: Awaited<ReturnType<typeof getExecutionPlatformRuntime>>;
+  sessionKey: string;
+}): Promise<{ runtimeJobId: string; humanTaskId: string } | null> {
+  const jobs = await input.runtime.runtimeJobs.listRecentJobs({
+    jobTypes: ["executor.agent_team"],
+    states: ["pending"],
+    limit: 50,
+  });
+  for (const job of jobs) {
+    const payload = asChatRecord(job.payload);
+    const operator = asChatRecord(payload?.operator);
+    if (stringField(operator ?? {}, "sessionId", input.sessionKey) !== input.sessionKey) {
+      continue;
+    }
+    const artifacts = await input.runtime.runtimeJobs.listArtifacts(job.jobId);
+    const humanDecision = artifacts
+      .filter((artifact) => artifact.artifactType === "agent_team.human_scope_decision")
+      .map((artifact) => asChatRecord(artifact.metadata))
+      .find((metadata) => metadata?.waitingForOwnerPrompt === true);
+    const created = asChatRecord(humanDecision?.created);
+    const humanTask = asChatRecord(created?.humanTask);
+    const humanTaskId = stringField(humanTask ?? {}, "humanTaskId", "");
+    if (!humanTaskId) {
+      continue;
+    }
+    const currentTask = await input.runtime.runtimeWorkGraphs.readHumanTask(humanTaskId);
+    if (currentTask?.taskStatus === "waiting") {
+      return { runtimeJobId: job.jobId, humanTaskId };
+    }
+  }
+  return null;
+}
+
+async function readWaitingHumanDecisionMetadata(input: {
+  runtimeJobs: Awaited<ReturnType<typeof getExecutionPlatformRuntime>>["runtimeJobs"];
+  runtimeJobId: string;
+}): Promise<Record<string, unknown> | null> {
+  const artifacts = await input.runtimeJobs.listArtifacts(input.runtimeJobId);
+  return (
+    artifacts
+      .filter((artifact) => artifact.artifactType === "agent_team.human_scope_decision")
+      .map((artifact) => asChatRecord(artifact.metadata))
+      .find((metadata) => metadata?.waitingForOwnerPrompt === true) ?? null
+  );
+}
+
+async function tryResumeHumanOperatorDecisionFromChat(params: {
+  runtime: Awaited<ReturnType<typeof getExecutionPlatformRuntime>>;
+  context: GatewayRequestContext;
+  sessionKey: string;
+  sessionId: string;
+  storePath: string | undefined;
+  sessionFile?: string;
+  agentId?: string;
+  runId: string;
+  message: string;
+}): Promise<{ handled: boolean; runtimeJobId: string | null; teamRunId: string | null }> {
+  const parsed = parseHumanOperatorDecisionResume(params.message);
+  if (!parsed) {
+    return { handled: false, runtimeJobId: null, teamRunId: null };
+  }
+  const resolved =
+    parsed.runtimeJobId && parsed.humanTaskId
+      ? { runtimeJobId: parsed.runtimeJobId, humanTaskId: parsed.humanTaskId }
+      : await findLatestWaitingHumanDecision({
+          runtime: params.runtime,
+          sessionKey: params.sessionKey,
+        });
+  if (!resolved) {
+    const appended = appendAssistantTranscriptMessage({
+      message:
+        "I understood your human decision, but I could not find a waiting OpenClaw human task in this session to resume.",
+      sessionId: params.sessionId,
+      storePath: params.storePath,
+      sessionFile: params.sessionFile,
+      agentId: params.agentId,
+      createIfMissing: true,
+      idempotencyKey: `${params.runId}:human-decision-no-waiting-task`,
+    });
+    broadcastChatFinal({
+      context: params.context,
+      runId: params.runId,
+      sessionKey: params.sessionKey,
+      message: appended.message,
+    });
+    return { handled: true, runtimeJobId: null, teamRunId: null };
+  }
+  const task = await params.runtime.runtimeWorkGraphs.readHumanTask(resolved.humanTaskId);
+  if (!task || task.taskStatus !== "waiting") {
+    const appended = appendAssistantTranscriptMessage({
+      message: `I could not resume that human decision because the referenced task is not waiting: ${resolved.humanTaskId}.`,
+      sessionId: params.sessionId,
+      storePath: params.storePath,
+      sessionFile: params.sessionFile,
+      agentId: params.agentId,
+      createIfMissing: true,
+      idempotencyKey: `${params.runId}:human-decision-not-resumable`,
+    });
+    broadcastChatFinal({
+      context: params.context,
+      runId: params.runId,
+      sessionKey: params.sessionKey,
+      message: appended.message,
+    });
+    return { handled: true, runtimeJobId: resolved.runtimeJobId, teamRunId: null };
+  }
+  const decisionRef = `owner-decision://product-spec-planning/${parsed.decision}`;
+  await params.runtime.runtimeWorkGraphs.resumeHumanTask({
+    humanTaskId: resolved.humanTaskId,
+    boundedResponseRef: decisionRef,
+    decisionRefs: [`decision://product-spec-planning/${parsed.decision}`],
+  });
+  await params.runtime.runtimeJobs.resumePendingJobWithPayloadPatch({
+    jobId: resolved.runtimeJobId,
+    workerId: `chat:${params.sessionKey}`,
+    payloadPatch: {
+      ownerDecisionRef: decisionRef,
+      ownerHumanTaskId: resolved.humanTaskId,
+      ownerHumanTaskGraphId: task.graphId,
+      ownerDecision: parsed.decision,
+      rawPromptStored: false,
+      rawResponseStored: false,
+      workQueueLifecycleMutated: false,
+    },
+    reasonCodes: ["human_operator_decision_received_from_chat"],
+  });
+  const runOnce = await runAgentTeamChatJobThroughWorkerSupervisor({
+    runtimeJobs: params.runtime.runtimeJobs,
+    runtimeWorkGraphs: params.runtime.runtimeWorkGraphs,
+    runtimeToolKernel: params.runtime.runtimeToolKernel,
+    workQueue: params.runtime.workQueue,
+    runtimeJobId: resolved.runtimeJobId,
+    workerId: `chat:${params.sessionKey}`,
+  });
+  const appended = appendAssistantTranscriptMessage({
+    message: runOnce.completed
+      ? `Human decision received and runtime job resumed: ${resolved.runtimeJobId}.`
+      : `Human decision was recorded, but the resumed runtime job needs review: ${runOnce.reasonCodes.slice(0, 8).join(", ")}`,
+    sessionId: params.sessionId,
+    storePath: params.storePath,
+    sessionFile: params.sessionFile,
+    agentId: params.agentId,
+    createIfMissing: true,
+    idempotencyKey: `${params.runId}:human-decision-resumed`,
+  });
+  broadcastChatFinal({
+    context: params.context,
+    runId: params.runId,
+    sessionKey: params.sessionKey,
+    message: appended.message,
+  });
+  return { handled: true, runtimeJobId: resolved.runtimeJobId, teamRunId: runOnce.teamRunId };
+}
+
 async function runAgentTeamChatJobThroughWorkerSupervisor(input: {
   runtimeJobs: Awaited<ReturnType<typeof getExecutionPlatformRuntime>>["runtimeJobs"];
   runtimeWorkGraphs: Awaited<ReturnType<typeof getExecutionPlatformRuntime>>["runtimeWorkGraphs"];
+  runtimeToolKernel: Awaited<ReturnType<typeof getExecutionPlatformRuntime>>["runtimeToolKernel"];
+  workQueue: Awaited<ReturnType<typeof getExecutionPlatformRuntime>>["workQueue"];
   runtimeJobId: string;
   workerId: string;
-  closeoutReporter: ModelCloseoutCapsuleReporter;
 }): Promise<{
   completed: boolean;
   failed: boolean;
+  status: string;
   teamRunId: string | null;
   reasonCodes: string[];
 }> {
-  let claimedExecution: AgentTeamClaimedJobExecutionResult | null = null;
-  let claimedTeamRunId: string | null = null;
-  const openRouterApiKey = process.env.OPENROUTER_API_KEY?.trim();
-  const roleModelClient = openRouterApiKey
-    ? new OpenRouterAgentTeamModelClient({
-        apiKey: openRouterApiKey,
-        retryPolicy: {
-          maxAttempts: 2,
-          timeoutMs: 240_000,
-        },
-        requestProfilesByModelId: {
-          "deepseek/deepseek-v4-pro": {
-            responseFormatMode: "native",
-            reasoningMode: "omit",
-            maxTokens: 1_600,
-          },
-          "moonshotai/kimi-k2.6": {
-            responseFormatMode: "native",
-            reasoningMode: "omit",
-            maxTokens: 2_400,
-          },
-        },
-      })
-    : undefined;
-  const queuedRunner = new AgentTeamQueuedRunner({
+  const supervisorResult = await runGatewayAgentTeamRuntimeJobOnce({
     runtimeJobs: input.runtimeJobs,
     runtimeWorkGraphs: input.runtimeWorkGraphs,
-    workerId: input.workerId,
-    queueName: "agent-team",
+    runtimeToolKernel: input.runtimeToolKernel,
+    workQueue: input.workQueue,
     runtimeJobId: input.runtimeJobId,
-    closeoutReporter: input.closeoutReporter,
-    roleModelClient,
-    implementationBridge: new CodexParityImplementationBridge({
-      runtimeJobs: input.runtimeJobs,
-      approvedRepoScopePaths: [
-        "extensions/execution-platform/src/codex-bridge/",
-        "extensions/execution-platform/src/workers/",
-        "extensions/execution-platform/src/intent-front-door/",
-        "extensions/execution-platform/src/work-queue/",
-        "ui/src/ui/",
-        "scripts/",
-      ],
-      approvedValidationCommands: [
-        "pnpm test:file extensions/execution-platform/src/codex-bridge/agent-team-quality-proof.test.ts",
-        "pnpm test:file ui/src/ui/views/work-queue.test.ts",
-      ],
-    }),
-  });
-  const workerAdapter = new AcpCodexCodingWorkerAdapter({
-    runtimeJobs: input.runtimeJobs,
-    runner: {
-      async run({ job }): Promise<AcpCodexCodingWorkerRunResult> {
-        claimedExecution = await queuedRunner.runClaimedJobForAdapter(job);
-        claimedTeamRunId = claimedExecution.evidence.teamRunId;
-        const evidence = claimedExecution.evidence;
-        const closeoutCapsule = claimedExecution.closeoutCapsule;
-        const closeoutRefs = [
-          `runtime-job://${job.jobId}/closeout-capsule/${closeoutCapsule.capsuleId}`,
-        ];
-        const roleRefs = evidence.roster.map((role) => `role://${role.roleId}`).slice(0, 20);
-        const modelRefs = evidence.roster.map((role) => role.modelId).slice(0, 20);
-        const validationRefs =
-          claimedExecution.validationRefs.length > 0
-            ? claimedExecution.validationRefs
-            : [`runtime-job://${job.jobId}/agent-team/validation`];
-        const reviewRefs = evidence.artifactRefs
-          .filter((ref) => ref.includes("security-review") || ref.includes("result-review"))
-          .slice(0, 20);
-        const completedWorkEvidenceRefs = claimedExecution.cleanSuccessAccepted
-          ? [...evidence.artifactRefs, ...closeoutRefs].slice(0, 40)
-          : [];
-        return {
-          status: claimedExecution.cleanSuccessAccepted ? "completed" : "needs_review",
-          summary: claimedExecution.cleanSuccessAccepted
-            ? "Coding worker completed bounded work with model-authored closeout evidence."
-            : `Coding worker needs review: ${claimedExecution.blockingReasonCodes.join(", ")}`,
-          teamRunId: evidence.teamRunId,
-          workflowId: "agent_team.coding",
-          roleRefs,
-          modelRefs,
-          validationRefs: validationRefs.slice(0, 20),
-          reviewRefs,
-          closeoutRefs,
-          completedWorkEvidenceRefs,
-          artifactRefs: [...evidence.artifactRefs, ...closeoutRefs].slice(0, 40),
-          closeoutCapsule,
-          evidence,
-          roleExecutionEvidence: evidence.roleExecutionEvidence,
-          reasonCodes: claimedExecution.cleanSuccessAccepted
-            ? ["agent_team_queued_runner_completed"]
-            : claimedExecution.blockingReasonCodes,
-          result: {
-            teamRunId: evidence.teamRunId,
-            closeoutCapsuleId: closeoutCapsule.capsuleId,
-            cleanSuccessAccepted: claimedExecution.cleanSuccessAccepted,
-            changedFileRefs: claimedExecution.changedFileRefs,
-            validationRefs,
-            rawPromptStored: false,
-            rawResponseStored: false,
-            rawLogsStored: false,
-            workQueueLifecycleMutated: false,
-          },
-          rawPromptStored: false,
-          rawResponseStored: false,
-          rawLogsStored: false,
-          workQueueLifecycleMutated: false,
-        };
-      },
-    },
-  });
-  const supervisorResult = await new RuntimeWorkerSupervisor({
-    repository: input.runtimeJobs,
     workerId: input.workerId,
     queueName: "agent-team",
-    adapters: [workerAdapter],
-  }).runOnce({ runtimeJobId: input.runtimeJobId });
+  });
   return {
     completed: supervisorResult.completed,
-    failed: supervisorResult.claimed && !supervisorResult.completed,
-    teamRunId: claimedTeamRunId,
+    failed: supervisorResult.failed,
+    status: supervisorResult.status,
+    teamRunId: supervisorResult.teamRunId,
     reasonCodes: supervisorResult.reasonCodes,
   };
 }
@@ -2191,13 +2381,29 @@ async function tryRunExecutionWorkflowChatTurn(params: {
   runId: string;
   message: string;
 }): Promise<{ handled: boolean; runtimeJobId: string | null; teamRunId: string | null }> {
+  const humanDecisionResume = parseHumanOperatorDecisionResume(params.message);
   if (
+    !humanDecisionResume &&
     !shouldAttemptIntentFrontDoorChatTurn(params.message, { config: params.cfg }) &&
     !shouldAttemptExecutionWorkflowChatTurn(params.message)
   ) {
     return { handled: false, runtimeJobId: null, teamRunId: null };
   }
   const runtime = await getExecutionPlatformRuntime(params.cfg);
+  const humanResume = await tryResumeHumanOperatorDecisionFromChat({
+    runtime,
+    context: params.context,
+    sessionKey: params.sessionKey,
+    sessionId: params.sessionId,
+    storePath: params.storePath,
+    sessionFile: params.sessionFile,
+    agentId: params.agentId,
+    runId: params.runId,
+    message: params.message,
+  });
+  if (humanResume.handled) {
+    return humanResume;
+  }
   const workItemId = `${params.runId}-execution-work`;
   const submit = await runtime.nativeExecutionRpc.submit({
     prompt: params.message,
@@ -2264,31 +2470,31 @@ async function tryRunExecutionWorkflowChatTurn(params: {
   }
 
   const job = await runtime.runtimeJobs.getJob(submit.runtimeJobId);
-  const closeoutReporter = new ModelCloseoutCapsuleReporter({
-    executor: new CodexAppServerJsonExecutor({
-      cwd: process.cwd(),
-      requestTimeoutMs: 300_000,
-      reasoningEffort: "medium",
-    }),
-    modelId: "openai-codex/gpt-5.4",
-    reasoningEffort: "medium",
-    maxOutputTokens: 12_000,
-  });
   const runOnce =
     job?.jobType === "executor.agent_team"
       ? await runAgentTeamChatJobThroughWorkerSupervisor({
           runtimeJobs: runtime.runtimeJobs,
           runtimeWorkGraphs: runtime.runtimeWorkGraphs,
+          runtimeToolKernel: runtime.runtimeToolKernel,
+          workQueue: runtime.workQueue,
           runtimeJobId: submit.runtimeJobId,
           workerId: `chat:${params.sessionKey}`,
-          closeoutReporter,
         })
       : await new WorkflowQueuedRunner({
           runtimeJobs: runtime.runtimeJobs,
           workerId: `chat:${params.sessionKey}`,
           queueName: "agent-team",
           runtimeJobId: submit.runtimeJobId,
-          closeoutReporter,
+          closeoutReporter: new ModelCloseoutCapsuleReporter({
+            executor: new CodexAppServerJsonExecutor({
+              cwd: process.cwd(),
+              requestTimeoutMs: 300_000,
+              reasoningEffort: "medium",
+            }),
+            modelId: "openai-codex/gpt-5.4",
+            reasoningEffort: "medium",
+            maxOutputTokens: 12_000,
+          }),
         }).runOnce();
   const closeout = await runtime.nativeExecutionRpc.readCloseout(submit.runtimeJobId);
   const closeoutRecord =
@@ -2313,6 +2519,44 @@ async function tryRunExecutionWorkflowChatTurn(params: {
     ...("reasonCodes" in runOnce && Array.isArray(runOnce.reasonCodes) ? runOnce.reasonCodes : []),
     ...(runOnce.failed ? ["workflow_runner_failed"] : []),
   ];
+  const runOnceStatus =
+    "status" in runOnce && typeof runOnce.status === "string" ? runOnce.status : null;
+  if (runOnceStatus === "deferred" && reasonCodes.includes("human_operator_input_required")) {
+    const humanDecision = await readWaitingHumanDecisionMetadata({
+      runtimeJobs: runtime.runtimeJobs,
+      runtimeJobId: submit.runtimeJobId,
+    });
+    if (humanDecision) {
+      const message = buildHumanOperatorDecisionAssistantText({
+        workflowId: submit.workflowId,
+        runtimeJobId: submit.runtimeJobId,
+        metadata: humanDecision,
+      });
+      const appended = appendAssistantTranscriptMessage({
+        message,
+        sessionId: params.sessionId,
+        storePath: params.storePath,
+        sessionFile: params.sessionFile,
+        agentId: params.agentId,
+        createIfMissing: true,
+        idempotencyKey: `${params.runId}:execution-platform-human-decision`,
+      });
+      broadcastChatFinal({
+        context: params.context,
+        runId: params.runId,
+        sessionKey: params.sessionKey,
+        message: appended.message,
+      });
+      return {
+        handled: true,
+        runtimeJobId: submit.runtimeJobId,
+        teamRunId:
+          "teamRunId" in runOnce && typeof runOnce.teamRunId === "string"
+            ? runOnce.teamRunId
+            : null,
+      };
+    }
+  }
   const message = buildExecutionChatAssistantText({
     accepted: submit.accepted,
     workflowId: submit.workflowId,

@@ -9,6 +9,21 @@ title: "Model Memory Status"
 
 State: `phase2_model_owned_judgment_policy_active_memory_runtime_maximality_closed`
 
+2026-05-14 Work Queue/proactivity integration update:
+
+- Closeout Capsule opportunity seeds now belong to the DB-backed Execution
+  Platform Work Queue as review-gated intake items, not standalone heartbeat
+  suggestions.
+- A useful seed is not a finished plan. Accepted seeds should expand into a
+  model-authored Planning Capsule before the Plan To Runtime Compiler creates
+  any runtime jobs.
+- Work Queue detail should show seed rationale, source refs, quality review,
+  planning capsule revisions, parent/child graph, runtime evidence, and
+  follow-up seeds.
+- Deterministic code validates shape, refs, bounds, idempotency, cooldowns,
+  storage flags, and lifecycle authority. Semantic usefulness remains model-
+  authored or owner-authored judgment.
+
 2026-05-09 memory-runtime maximality closure update:
 
 - All 13 required hook migrations passed the hard gate with production

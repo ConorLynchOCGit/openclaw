@@ -42,10 +42,10 @@ export type CodexParityRoleModelPolicyInput = {
 };
 
 const GPT_55 = "openai-codex/gpt-5.5";
-const GPT_CODEX = "openai-codex/gpt-5.3-codex";
 const KIMI = "moonshotai/kimi-k2.6";
 const DEEPSEEK_FLASH = "deepseek/deepseek-v4-flash";
 const DEEPSEEK_PRO = "deepseek/deepseek-v4-pro";
+const DISALLOWED_SILENT_COMPLEX_DEFAULTS = new Set(["openai-codex/gpt-5.3-codex"]);
 
 function has(input: CodexParityRoleModelPolicyInput, modelRef: string): boolean {
   return input.availableModelRefs?.includes(modelRef) ?? false;
@@ -144,8 +144,15 @@ export function selectCodexParityRoleModel(
   }
 
   if (roleId === "implementation_complex") {
-    const modelRef = input.codexCodingModelRef?.trim() || GPT_CODEX;
-    const available = Boolean(input.codexCodingModelRef?.trim()) || has(input, modelRef);
+    const requestedModelRef = input.codexCodingModelRef?.trim();
+    const modelRef = requestedModelRef || GPT_55;
+    const explicitLegacySelection = Boolean(
+      requestedModelRef && DISALLOWED_SILENT_COMPLEX_DEFAULTS.has(requestedModelRef),
+    );
+    const available =
+      (modelRef === GPT_55 && codexGpt55Available(input)) ||
+      Boolean(requestedModelRef?.trim()) ||
+      has(input, modelRef);
     return selection({
       roleId,
       modelRef,
@@ -160,6 +167,10 @@ export function selectCodexParityRoleModel(
       reasonCodes: available
         ? [
             "codex_parity_complex_implementation_selected",
+            modelRef === GPT_55
+              ? "codex_gpt_5_5_complex_implementation_selected"
+              : "explicit_non_default_complex_implementation_model_selected",
+            ...(explicitLegacySelection ? ["explicit_legacy_codex_5_3_selection_recorded"] : []),
             "codex_native_subagents_internal_only",
             "openclaw_role_evidence_required",
           ]

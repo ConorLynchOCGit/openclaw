@@ -1145,13 +1145,15 @@ export function renderApp(state: AppViewState) {
               selectedObject: state.getSelectedWorkQueueObject(),
               filter: state.workQueueFilter,
               searchQuery: state.workQueueSearchQuery,
-              loading: state.productProactivityLoading || state.proactivityInboxLoading,
-              error: state.productProactivityError ?? state.proactivityInboxError,
+              loading: state.dbWorkQueueLoading,
+              error: state.dbWorkQueueError,
+              pushMode: state.workQueuePushMode,
+              pushError: state.workQueuePushError,
+              eventCursor: state.workQueueEventCursor,
               notifications: state.workQueueNotifications,
               revisionDrafts: state.workQueueRevisionDrafts,
               artifactBodies: state.workQueueArtifactBodies,
-              onRefresh: () =>
-                Promise.all([state.loadProductProactivityQueue(), state.loadProactivityInbox()]),
+              onRefresh: () => state.loadDbWorkQueue({ reset: true }),
               onSelectObject: (objectId) => state.selectWorkQueueObject(objectId),
               onSetFilter: (filter) => state.setWorkQueueFilter(filter),
               onSetSearchQuery: (value) => state.setWorkQueueSearchQuery(value),
@@ -1173,6 +1175,13 @@ export function renderApp(state: AppViewState) {
               onMarkComplete: (objectId) => state.handleWorkQueueMarkComplete(objectId),
               onCopyCodexPrompt: (objectId) => state.handleWorkQueueCopyCodexPrompt(objectId),
               onDismiss: (queueItemId) => state.handleProductProactivityDismiss(queueItemId),
+              onSubmitHumanTaskResponse: (input) =>
+                state.submitWorkQueueHumanTaskResponse({
+                  objectId: input.object.id,
+                  graphId: input.graphId,
+                  humanTaskId: input.humanTaskId,
+                  boundedResponseRef: input.boundedResponseRef,
+                }),
             })
           : nothing}
         ${state.tab === "channels"

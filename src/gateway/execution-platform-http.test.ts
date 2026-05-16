@@ -11,8 +11,13 @@ import {
 } from "../../extensions/execution-platform/src/intent-front-door/index.ts";
 import { NativeExecutionRpcService } from "../../extensions/execution-platform/src/intent-routing/native-execution-rpc.ts";
 import { RuntimeJobRepository } from "../../extensions/execution-platform/src/runtime-job-repository.ts";
+import { RuntimeToolKernel } from "../../extensions/execution-platform/src/runtime-tool-call/runtime-tool-kernel.ts";
+import { RuntimeToolRegistry } from "../../extensions/execution-platform/src/runtime-tool-call/runtime-tool-registry.ts";
+import { RuntimeToolTraceRepository } from "../../extensions/execution-platform/src/runtime-tool-call/runtime-tool-trace-repository.ts";
+import { WorkQueueEventStore } from "../../extensions/execution-platform/src/work-queue/work-queue-event-store.ts";
 import { WorkQueueRepository } from "../../extensions/execution-platform/src/work-queue/work-queue-repository.ts";
 import { RuntimeWorkGraphRepository } from "../../extensions/execution-platform/src/workflows/runtime-work-graph-repository.ts";
+import { registerSchedulerRuntimeTools } from "../../extensions/execution-platform/src/workflows/scheduler-runtime-tools.ts";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import {
   createGatewayStructuredRouterProvider,
@@ -49,6 +54,17 @@ function fixedFrontDoorProvider(
       };
     },
   };
+}
+
+function createTestRuntimeToolKernel(
+  sql: ConstructorParameters<typeof RuntimeToolTraceRepository>[0],
+) {
+  const registry = new RuntimeToolRegistry();
+  registerSchedulerRuntimeTools({ registry, includeWorkerInvoke: true });
+  return new RuntimeToolKernel({
+    registry,
+    traces: new RuntimeToolTraceRepository(sql),
+  });
 }
 
 function codingWorkflowRoute(): CanonicalRouterOutput {
@@ -188,7 +204,11 @@ describe("execution platform gateway HTTP routes", () => {
     await applyExecutionPlatformMigrations(database.sql);
     const runtimeJobs = new RuntimeJobRepository(database.sql, { claimStrategy: "basic" });
     const runtimeWorkGraphs = new RuntimeWorkGraphRepository(database.sql);
-    const workQueue = new WorkQueueRepository(database.sql, runtimeJobs);
+    const workQueueEvents = new WorkQueueEventStore(database.sql);
+    const workQueue = new WorkQueueRepository(database.sql, runtimeJobs, {
+      eventStore: workQueueEvents,
+    });
+    const runtimeToolKernel = createTestRuntimeToolKernel(database.sql);
     const nativeExecutionRpc = new NativeExecutionRpcService({
       runtimeJobs,
       workQueue,
@@ -204,7 +224,14 @@ describe("execution platform gateway HTTP routes", () => {
       response.res,
       {
         config: {} as OpenClawConfig,
-        runtime: { runtimeJobs, runtimeWorkGraphs, workQueue, nativeExecutionRpc },
+        runtime: {
+          runtimeJobs,
+          runtimeWorkGraphs,
+          runtimeToolKernel,
+          workQueueEvents,
+          workQueue,
+          nativeExecutionRpc,
+        },
       },
     );
 
@@ -227,7 +254,11 @@ describe("execution platform gateway HTTP routes", () => {
     await applyExecutionPlatformMigrations(database.sql);
     const runtimeJobs = new RuntimeJobRepository(database.sql, { claimStrategy: "basic" });
     const runtimeWorkGraphs = new RuntimeWorkGraphRepository(database.sql);
-    const workQueue = new WorkQueueRepository(database.sql, runtimeJobs);
+    const workQueueEvents = new WorkQueueEventStore(database.sql);
+    const workQueue = new WorkQueueRepository(database.sql, runtimeJobs, {
+      eventStore: workQueueEvents,
+    });
+    const runtimeToolKernel = createTestRuntimeToolKernel(database.sql);
     const nativeExecutionRpc = new NativeExecutionRpcService({
       runtimeJobs,
       workQueue,
@@ -244,7 +275,14 @@ describe("execution platform gateway HTTP routes", () => {
 
     await handleExecutionPlatformHttpRequest(req, response.res, {
       config: {} as OpenClawConfig,
-      runtime: { runtimeJobs, runtimeWorkGraphs, workQueue, nativeExecutionRpc },
+      runtime: {
+        runtimeJobs,
+        runtimeWorkGraphs,
+        runtimeToolKernel,
+        workQueueEvents,
+        workQueue,
+        nativeExecutionRpc,
+      },
       requestAuth: { authMethod: "token", trustDeclaredOperatorScopes: false },
     });
 

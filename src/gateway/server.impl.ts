@@ -91,6 +91,7 @@ import { createReadinessChecker } from "./server/readiness.js";
 import { loadGatewayTlsRuntime } from "./server/tls.js";
 import { resolveSharedGatewaySessionGeneration } from "./server/ws-shared-generation.js";
 import { maybeSeedControlUiAllowedOriginsAtStartup } from "./startup-control-ui-origins.js";
+import { createWorkQueueEventSubscriberRegistry } from "./work-queue-event-subscriptions.js";
 
 export { __resetModelCatalogCacheForTest } from "./server-model-catalog.js";
 
@@ -486,6 +487,7 @@ export async function startGatewayServer(
     broadcastVoiceWakeChanged,
     hasMobileNodeConnected,
   } = createGatewayNodeSessionRuntime({ broadcast });
+  const workQueueEventSubscribers = createWorkQueueEventSubscriberRegistry();
   applyGatewayLaneConcurrency(cfgAtStart);
 
   runtimeState = createGatewayServerLiveState({
@@ -611,6 +613,7 @@ export async function startGatewayServer(
         toolEventRecipients,
         sessionEventSubscribers,
         sessionMessageSubscribers,
+        workQueueEventSubscribers,
         chatAbortControllers,
       }),
     );
@@ -683,8 +686,11 @@ export async function startGatewayServer(
       unsubscribeAllSessionEvents: (connId: string) => {
         sessionEventSubscribers.unsubscribe(connId);
         sessionMessageSubscribers.unsubscribeAll(connId);
+        workQueueEventSubscribers.unsubscribe(connId);
       },
       getSessionEventSubscriberConnIds: sessionEventSubscribers.getAll,
+      subscribeWorkQueueEvents: workQueueEventSubscribers.subscribe,
+      unsubscribeWorkQueueEvents: workQueueEventSubscribers.unsubscribe,
       registerToolEventRecipient: toolEventRecipients.add,
       dedupe,
       wizardSessions,

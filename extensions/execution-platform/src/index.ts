@@ -19,6 +19,7 @@ export * from "./model-tasks/types.ts";
 export * from "./model-memory-runtime/index.ts";
 export * from "./observability/index.ts";
 export * from "./runtime-job-repository.ts";
+export * from "./runtime-tool-call/index.ts";
 export * from "./runtime-middleware-live-pilot.ts";
 export * from "./runtime-job-worker.ts";
 export * from "./script-jobs/index.ts";

@@ -951,6 +951,18 @@ export class RuntimeWorkGraphRepository {
     return decodeHumanTask(row.rows[0]);
   }
 
+  async readHumanTask(humanTaskId: string): Promise<HumanTaskInvocation | null> {
+    const row = await this.sql.query<HumanTaskRow>(
+      `
+        SELECT *
+        FROM execution_platform.runtime_work_graph_human_tasks
+        WHERE human_task_id = $1
+      `,
+      [humanTaskId],
+    );
+    return row.rows[0] ? decodeHumanTask(row.rows[0]) : null;
+  }
+
   async readGraphSnapshot(graphId: string): Promise<RuntimeWorkGraphSnapshot | null> {
     const graphResult = await this.sql.query<GraphRow>(
       "SELECT * FROM execution_platform.runtime_work_graphs WHERE graph_id = $1",

@@ -45,6 +45,7 @@ export type CodexParityRuntimeAdapterExecutor = (input: {
   approvedScopeRefs?: string[];
   validationCommandRefs?: string[];
   callbacks: SupervisorProcessCallbacks;
+  abortSignal?: AbortSignal;
 }) => Promise<LiveCodexRunnerResult>;
 
 export type CodexParityRuntimeAdapterInput = {
@@ -286,7 +287,9 @@ function createRefusedProcessResult(input: {
 export class CodexParityRuntimeAdapter {
   constructor(
     private readonly options: {
-      runtimeJobs?: Pick<RuntimeJobRepository, "attachArtifact" | "recordEvent">;
+      runtimeJobs?: Pick<RuntimeJobRepository, "attachArtifact" | "recordEvent"> & {
+        getJob?: RuntimeJobRepository["getJob"];
+      };
       executor?: CodexParityRuntimeAdapterExecutor;
       validationRunner?: CodexParityValidationRunner;
       validationRunnerFactory?: (repoRoot: string) => CodexParityValidationRunner;
@@ -327,33 +330,158 @@ export class CodexParityRuntimeAdapter {
       repoRoot: input.sourceRepoRoot,
       sourcePackageId: `codex-direct-main-repo-adapter-${randomUUID()}`,
     });
-    const runnerResult = modelSelection.missingConfigBlocker
-      ? createRefusedProcessResult({
-          reason: modelSelection.missingConfigBlocker,
-          sourceRepoRoot: input.sourceRepoRoot,
-        })
-      : this.options.executor
-        ? await this.options.executor({
-            descriptor: processDescriptor,
-            prompt,
-            approvedScopeRefs: input.approvedScopeRefs,
-            validationCommandRefs: input.validationCommands.map((command) => command.commandRef),
-            callbacks: {},
+    let lastHeartbeatAt = 0;
+    const modelCallStartedAt = Date.now();
+    const abortController = new AbortController();
+    let controlPoller: NodeJS.Timeout | null = null;
+    const runtimeJobGetter = this.options.runtimeJobs?.getJob;
+    if (runtimeJobGetter) {
+      controlPoller = setInterval(() => {
+        void runtimeJobGetter
+          .call(this.options.runtimeJobs, input.runtimeJobId)
+          .then(async (job) => {
+            if (!job || !["canceled", "failed", "timed_out"].includes(job.state)) {
+              return;
+            }
+            if (abortController.signal.aborted) {
+              return;
+            }
+            await this.options.runtimeJobs?.recordEvent({
+              jobId: input.runtimeJobId,
+              eventType: "codex_parity.implementation_model_call_abort_requested",
+              data: {
+                artifactKind: "codex_parity_progress_event",
+                runtimeJobId: input.runtimeJobId,
+                graphNodeId: input.graphNodeId,
+                phase: "implementation_model_call_abort_requested",
+                runtimeJobState: job.state,
+                modelRef: modelSelection.modelRef,
+                providerPath: modelSelection.providerPath,
+                rawPromptStored: false,
+                rawResponseStored: false,
+                rawProviderLogStored: false,
+              } as JsonValue,
+            });
+            abortController.abort();
           })
-        : await new CodexAppServerParityExecutor({
-            model: modelSelection.modelRef.replace(/^openai-codex\//u, ""),
-            reasoningEffort:
-              modelSelection.reasoningEffort === "not_applicable"
-                ? "xhigh"
-                : modelSelection.reasoningEffort,
-            timeoutMs: modelSelection.timeoutMs,
-          }).run({
+          .catch(() => undefined);
+      }, 5_000);
+      controlPoller.unref?.();
+    }
+    const callbacks: SupervisorProcessCallbacks = {
+      onHeartbeat: async () => {
+        const now = Date.now();
+        if (now - lastHeartbeatAt < 30_000) {
+          return;
+        }
+        lastHeartbeatAt = now;
+        await this.options.runtimeJobs?.recordEvent({
+          jobId: input.runtimeJobId,
+          eventType: "codex_parity.implementation_model_call_heartbeat",
+          data: {
+            artifactKind: "codex_parity_progress_event",
+            runtimeJobId: input.runtimeJobId,
+            graphNodeId: input.graphNodeId,
+            phase: "implementation_model_call_running",
+            modelRef: modelSelection.modelRef,
+            providerPath: modelSelection.providerPath,
+            elapsedMs: now - modelCallStartedAt,
+            rawPromptStored: false,
+            rawResponseStored: false,
+            rawProviderLogStored: false,
+          } as JsonValue,
+        });
+      },
+      onCodexAppServerEvent: async (event) => {
+        await this.options.runtimeJobs?.recordEvent({
+          jobId: input.runtimeJobId,
+          eventType: "codex_parity.app_server_progress",
+          data: {
+            artifactKind: "codex_parity_app_server_progress_projection",
+            runtimeJobId: input.runtimeJobId,
+            graphNodeId: input.graphNodeId,
+            modelRef: modelSelection.modelRef,
+            providerPath: modelSelection.providerPath,
+            event,
+            rawPromptStored: false,
+            rawResponseStored: false,
+            rawProviderLogStored: false,
+          } as JsonValue,
+        });
+      },
+    };
+    await this.options.runtimeJobs?.recordEvent({
+      jobId: input.runtimeJobId,
+      eventType: "codex_parity.implementation_model_call_started",
+      data: {
+        artifactKind: "codex_parity_progress_event",
+        runtimeJobId: input.runtimeJobId,
+        graphNodeId: input.graphNodeId,
+        phase: "implementation_model_call_started",
+        modelRef: modelSelection.modelRef,
+        providerPath: modelSelection.providerPath,
+        timeoutMs: modelSelection.timeoutMs,
+        rawPromptStored: false,
+        rawResponseStored: false,
+        rawProviderLogStored: false,
+      } as JsonValue,
+    });
+    const runnerResult = await (async () => {
+      try {
+        if (modelSelection.missingConfigBlocker) {
+          return createRefusedProcessResult({
+            reason: modelSelection.missingConfigBlocker,
+            sourceRepoRoot: input.sourceRepoRoot,
+          });
+        }
+        if (this.options.executor) {
+          return await this.options.executor({
             descriptor: processDescriptor,
             prompt,
             approvedScopeRefs: input.approvedScopeRefs,
             validationCommandRefs: input.validationCommands.map((command) => command.commandRef),
-            callbacks: {},
+            callbacks,
+            abortSignal: abortController.signal,
           });
+        }
+        return await new CodexAppServerParityExecutor({
+          model: modelSelection.modelRef.replace(/^openai-codex\//u, ""),
+          reasoningEffort:
+            modelSelection.reasoningEffort === "not_applicable"
+              ? "xhigh"
+              : modelSelection.reasoningEffort,
+          timeoutMs: modelSelection.timeoutMs,
+        }).run({
+          descriptor: processDescriptor,
+          prompt,
+          approvedScopeRefs: input.approvedScopeRefs,
+          validationCommandRefs: input.validationCommands.map((command) => command.commandRef),
+          callbacks,
+          abortSignal: abortController.signal,
+        });
+      } finally {
+        if (controlPoller) {
+          clearInterval(controlPoller);
+        }
+      }
+    })();
+    await this.options.runtimeJobs?.recordEvent({
+      jobId: input.runtimeJobId,
+      eventType: "codex_parity.implementation_model_call_completed",
+      data: {
+        artifactKind: "codex_parity_progress_event",
+        runtimeJobId: input.runtimeJobId,
+        graphNodeId: input.graphNodeId,
+        phase: "implementation_model_call_completed",
+        modelRef: modelSelection.modelRef,
+        providerPath: modelSelection.providerPath,
+        status: runnerResult.status,
+        elapsedMs: Date.now() - modelCallStartedAt,
+        rawPromptStored: false,
+        rawResponseStored: false,
+        rawProviderLogStored: false,
+      } as JsonValue,
+    });
     const after = await createMainRepoHashManifest({
       repoRoot: input.sourceRepoRoot,
       approvedScopeRefs: input.approvedScopeRefs,

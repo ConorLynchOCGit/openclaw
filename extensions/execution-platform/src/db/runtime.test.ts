@@ -76,6 +76,30 @@ describe("execution platform database runtime", () => {
     expect(resolution.connectionString).toContain("/execution_platform_live?");
   });
 
+  it("uses dedicated Execution Platform config env vars before plugin config", async () => {
+    const resolution = await resolveExecutionPlatformDatabaseResolution({
+      config: {
+        ...configWithDatabase(
+          "model-memory",
+          "postgresql://mm:secret@example.com:5432/model_memory?sslmode=require",
+        ),
+        env: {
+          vars: {
+            EXECUTION_PLATFORM_DATABASE_URL:
+              "postgresql://ep:secret@example.com:5432/execution_platform?sslmode=require",
+          },
+        },
+      },
+      env: {},
+    });
+
+    expect(resolution).toMatchObject({
+      databaseName: "execution_platform",
+      source: "config:env.vars.EXECUTION_PLATFORM_DATABASE_URL",
+      reusedModelMemoryDatabase: false,
+    });
+  });
+
   it("deliberately reuses the Model Memory Supabase config when no dedicated EP URL exists", async () => {
     const resolution = await resolveExecutionPlatformDatabaseResolution({
       config: configWithDatabase(

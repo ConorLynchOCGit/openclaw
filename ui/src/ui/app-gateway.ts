@@ -95,6 +95,9 @@ type GatewayHost = {
   execApprovalQueue: ExecApprovalRequest[];
   execApprovalError: string | null;
   updateAvailable: UpdateAvailable | null;
+  subscribeWorkQueuePush?: () => Promise<void>;
+  replayWorkQueueEvents?: () => Promise<void>;
+  handleWorkQueuePushEvent?: (payload: unknown) => Promise<void>;
 };
 
 type GatewayHostWithDeferredSessionMessageReload = GatewayHost & {
@@ -285,6 +288,7 @@ export function connectGateway(host: GatewayHost, options?: ConnectGatewayOption
         );
       }
       void subscribeSessions(host as unknown as SessionsState);
+      void host.subscribeWorkQueuePush?.();
       void loadAssistantIdentity(host as unknown as AssistantIdentityState);
       void loadAgents(host as unknown as AgentsState);
       void loadHealthState(host as unknown as HealthState);
@@ -332,6 +336,7 @@ export function connectGateway(host: GatewayHost, options?: ConnectGatewayOption
       }
       host.lastError = `event gap detected (expected seq ${expected}, got ${received}); reconnecting`;
       host.lastErrorCode = null;
+      void host.replayWorkQueueEvents?.();
       connectGateway(host, { reason: "seq-gap" });
     },
   });
@@ -524,6 +529,11 @@ function handleGatewayEventUnsafe(host: GatewayHost, evt: GatewayEventFrame) {
 
   if (evt.event === "sessions.changed") {
     void loadSessions(host as unknown as SessionsState);
+    return;
+  }
+
+  if (evt.event === "work_queue.changed") {
+    void host.handleWorkQueuePushEvent?.(evt.payload);
     return;
   }
 

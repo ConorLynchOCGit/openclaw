@@ -3,6 +3,12 @@ import type { JsonValue } from "../runtime-job-repository.ts";
 import type { WorkQueueActionKind, WorkQueueChildActionInput } from "../work-queue/action-graph.ts";
 import type { RuntimeWorkGraphRepository } from "../workflows/runtime-work-graph-repository.ts";
 import { graphRef } from "../workflows/runtime-work-graph.ts";
+import {
+  normalizeOrchestratorDelegationReview,
+  validateOrchestratorDelegationReviewShape,
+  type ChildWorkOrder,
+  type OrchestratorDelegationReview,
+} from "./child-work-order.ts";
 
 export const DEFAULT_DYNAMIC_ORCHESTRATOR_MODEL_REF = "openai-codex/gpt-5.5";
 export const DEFAULT_DYNAMIC_ORCHESTRATOR_PROVIDER_PATH = "codex_app_server";
@@ -85,6 +91,21 @@ export type DynamicCodingTeamOrchestratorResult = {
   workQueueLifecycleMutated: false;
 };
 
+export type DynamicCodingTeamDelegationReviewResult = {
+  artifactKind: "dynamic_coding_team_delegation_review_result";
+  graphId: string;
+  reviewNodeId: string;
+  roleInvocationId: string;
+  reviewedNodeId: string;
+  reviewedArtifactRefs: string[];
+  review: OrchestratorDelegationReview;
+  deterministicValidation: ReturnType<typeof validateOrchestratorDelegationReviewShape>;
+  rawPromptStored: false;
+  rawResponseStored: false;
+  rawProviderLogStored: false;
+  workQueueLifecycleMutated: false;
+};
+
 function hash(value: string): string {
   return createHash("sha256").update(value).digest("hex");
 }
@@ -94,7 +115,19 @@ function systemPrompt(): string {
     "You are the OpenClaw dynamic coding-team orchestrator.",
     "Draft a bounded action graph for the requested coding-team work.",
     "Return strict JSON only. Do not include raw prompts, raw responses, logs, transcripts, secrets, or hidden reasoning.",
-    "You may propose child tasks, role pairings, human tasks, dependencies, validation plan, context needs, budget plan, and stop conditions.",
+    "You must propose concrete child tasks, role pairings, human tasks when needed, dependencies, validation plan, context needs, budget plan, and stop conditions.",
+    "Each child task metadata must include objective, rationaleForCallingThisRole, expectedOutput, acceptanceCriteria, targetRefs when known, and downstreamConsumer.",
+    "Do not return generic tasks such as implement bounded change, validate implementation, or owner decision checkpoint.",
+    "Do not grant authority, deploy, send outbound messages, promote models, mutate Work Queue lifecycle, or claim runtime success.",
+  ].join("\n");
+}
+
+function delegationReviewSystemPrompt(): string {
+  return [
+    "You are the OpenClaw orchestrator reviewing a delegated child role result.",
+    "Judge whether the child result answered the child work order and decide the next graph action.",
+    "This is model judgment. Be specific and bounded.",
+    "Return strict JSON only. Do not include raw prompts, raw responses, logs, transcripts, secrets, or hidden reasoning.",
     "Do not grant authority, deploy, send outbound messages, promote models, mutate Work Queue lifecycle, or claim runtime success.",
   ].join("\n");
 }
@@ -128,6 +161,12 @@ function stringArray(value: unknown): string[] {
 
 function numberValue(value: unknown, fallback: number): number {
   return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+}
+
+function recordValue(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
 }
 
 function normalizePlan(parsed: Record<string, unknown>, input: DynamicCodingTeamOrchestratorInput) {
@@ -167,6 +206,7 @@ function normalizePlan(parsed: Record<string, unknown>, input: DynamicCodingTeam
         evidenceRefs: stringArray(item.evidenceRefs),
         blockerReasonCodes: [],
         metadata: {
+          ...recordValue(item.metadata),
           repoScopeRefs: input.repoScopeRefs,
           contextPackRefs: input.contextPackRefs,
           rawPromptStored: false,
@@ -175,52 +215,6 @@ function normalizePlan(parsed: Record<string, unknown>, input: DynamicCodingTeam
       };
     })
     .slice(0, 12);
-  if (childTasks.length === 0) {
-    childTasks.push(
-      {
-        actionId: "implementation",
-        actionKind: "coding",
-        title: "Implement bounded coding-team change",
-        assignedRole: "implementation_engineer",
-        assignedWorkflow: "agent_team.coding",
-        evidenceRefs: input.validationCommandRefs,
-        metadata: { repoScopeRefs: input.repoScopeRefs, contextPackRefs: input.contextPackRefs },
-      },
-      {
-        actionId: "validation",
-        actionKind: "qa_test",
-        title: "Validate implementation",
-        assignedRole: "test_engineer",
-        assignedWorkflow: "agent_team.qa_test",
-        dependencyActionIds: ["implementation"],
-        evidenceRefs: input.validationCommandRefs,
-      },
-    );
-  }
-  if (
-    input.allowHumanTasks &&
-    input.allowedWorkflowIds.includes("human/operator") &&
-    !childTasks.some((task) => task.actionKind === "human_operator")
-  ) {
-    const implementation =
-      childTasks.find((task) => task.actionKind === "coding")?.actionId ??
-      childTasks[0]?.actionId ??
-      childTasks[0]?.title;
-    childTasks.push({
-      actionId: "owner-decision",
-      actionKind: "human_operator",
-      title: "Owner decision checkpoint",
-      assignedRole: "owner",
-      assignedWorkflow: "human/operator",
-      dependencyActionIds: implementation ? [implementation] : [],
-      evidenceRefs: ["owner-decision://runtime-work-graph"],
-      metadata: {
-        contextPackRefs: input.contextPackRefs,
-        rawPromptStored: false,
-        rawResponseStored: false,
-      },
-    });
-  }
   const budget = (
     parsed.budgetPlan && typeof parsed.budgetPlan === "object" ? parsed.budgetPlan : {}
   ) as Record<string, unknown>;
@@ -277,8 +271,40 @@ function validatePlan(
   input: DynamicCodingTeamOrchestratorInput,
 ): DynamicCodingTeamOrchestratorResult["deterministicValidation"] {
   const reasonCodes: string[] = [];
+  if (plan.childTasks.length === 0) {
+    reasonCodes.push("orchestrator_child_tasks_missing");
+  }
+  if (plan.rolePairings.length === 0) {
+    reasonCodes.push("orchestrator_role_pairings_missing");
+  }
+  if (
+    plan.rolePairings.some(
+      (pairing) => pairing.roleId === "unknown" || pairing.modelOrWorkerRef === "policy",
+    )
+  ) {
+    reasonCodes.push("orchestrator_role_pairings_generic_or_invalid");
+  }
   const actionIds = new Set(plan.childTasks.map((task) => task.actionId ?? task.title));
   for (const task of plan.childTasks) {
+    const metadata = recordValue(task.metadata);
+    if (typeof metadata.objective !== "string" || metadata.objective.trim().length < 24) {
+      reasonCodes.push(`child_task_objective_missing:${task.actionId ?? task.title}`);
+    }
+    if (
+      typeof metadata.rationaleForCallingThisRole !== "string" ||
+      metadata.rationaleForCallingThisRole.trim().length < 24
+    ) {
+      reasonCodes.push(`child_task_rationale_missing:${task.actionId ?? task.title}`);
+    }
+    if (typeof metadata.expectedOutput !== "string" || metadata.expectedOutput.trim().length < 24) {
+      reasonCodes.push(`child_task_expected_output_missing:${task.actionId ?? task.title}`);
+    }
+    if (!Array.isArray(metadata.acceptanceCriteria) || metadata.acceptanceCriteria.length === 0) {
+      reasonCodes.push(`child_task_acceptance_criteria_missing:${task.actionId ?? task.title}`);
+    }
+    if (typeof metadata.downstreamConsumer !== "string" || !metadata.downstreamConsumer.trim()) {
+      reasonCodes.push(`child_task_downstream_consumer_missing:${task.actionId ?? task.title}`);
+    }
     if (!input.allowedWorkflowIds.includes(task.assignedWorkflow)) {
       reasonCodes.push(`workflow_not_allowed:${task.assignedWorkflow}`);
     }
@@ -292,7 +318,13 @@ function validatePlan(
     reasonCodes.push("budget_exceeds_policy");
   }
   return {
-    graphShapeValid: reasonCodes.every((code) => !code.startsWith("missing_dependency")),
+    graphShapeValid:
+      !reasonCodes.includes("orchestrator_child_tasks_missing") &&
+      !reasonCodes.includes("orchestrator_role_pairings_missing") &&
+      !reasonCodes.includes("orchestrator_role_pairings_generic_or_invalid") &&
+      reasonCodes.every(
+        (code) => !code.startsWith("missing_dependency") && !code.startsWith("child_task_"),
+      ),
     scopeValid: reasonCodes.every((code) => !code.startsWith("workflow_not_allowed")),
     authorityValid: true,
     budgetValid: !reasonCodes.includes("budget_exceeds_policy"),
@@ -338,7 +370,7 @@ export class DynamicCodingTeamOrchestrator {
       },
     });
     const started = Date.now();
-    const response = await this.options.modelClient.runJson({
+    let response = await this.options.modelClient.runJson({
       modelRef: this.policy.modelRef,
       providerPath: this.policy.providerPath,
       systemPrompt: systemPrompt(),
@@ -350,15 +382,58 @@ export class DynamicCodingTeamOrchestrator {
         validationCommandRefs: input.validationCommandRefs,
         allowedWorkflowIds: input.allowedWorkflowIds,
         allowHumanTasks: input.allowHumanTasks,
+        requiredChildTaskMetadata: [
+          "objective",
+          "rationaleForCallingThisRole",
+          "expectedOutput",
+          "acceptanceCriteria",
+          "downstreamConsumer",
+          "targetRefs",
+        ],
         rawPromptStored: false,
         rawResponseStored: false,
       },
       maxOutputTokens: this.policy.maxOutputTokens,
       timeoutMs: this.policy.timeoutMs,
     });
-    const parsed = parseJsonObject(response.responseText);
-    const plan = normalizePlan(parsed, input);
-    const validation = validatePlan(plan, input);
+    let parsed = parseJsonObject(response.responseText);
+    let plan = normalizePlan(parsed, input);
+    let validation = validatePlan(plan, input);
+    let repairAttempted = false;
+    if (
+      !(validation.graphShapeValid && validation.scopeValid && validation.budgetValid) &&
+      validation.storageValid
+    ) {
+      repairAttempted = true;
+      response = await this.options.modelClient.runJson({
+        modelRef: this.policy.modelRef,
+        providerPath: this.policy.providerPath,
+        systemPrompt: [
+          systemPrompt(),
+          "Repair the previous graph. Do not return generic fallback tasks.",
+          "Every child task must include concrete metadata fields and a downstream consumer.",
+          "If the objective cannot be decomposed, return an empty childTasks array and reasonCodes explaining the blocker.",
+        ].join("\n"),
+        userPayload: {
+          graphId: input.graphId,
+          ownerObjectiveSummary: input.ownerObjectiveSummary,
+          repoScopeRefs: input.repoScopeRefs,
+          contextPackRefs: input.contextPackRefs,
+          validationCommandRefs: input.validationCommandRefs,
+          allowedWorkflowIds: input.allowedWorkflowIds,
+          allowHumanTasks: input.allowHumanTasks,
+          priorValidationReasonCodes: validation.reasonCodes.slice(0, 24),
+          repairRequired: true,
+          rawPromptStored: false,
+          rawResponseStored: false,
+        },
+        maxOutputTokens: this.policy.maxOutputTokens,
+        timeoutMs: this.policy.timeoutMs,
+      });
+      parsed = parseJsonObject(response.responseText);
+      plan = normalizePlan(parsed, input);
+      validation = validatePlan(plan, input);
+    }
     const roleInvocation = await this.options.graphs.recordRoleInvocation({
       graphId: input.graphId,
       nodeId: node.nodeId,
@@ -373,6 +448,7 @@ export class DynamicCodingTeamOrchestrator {
       budgetUsage: {
         maxOutputTokens: this.policy.maxOutputTokens,
         timeoutMs: this.policy.timeoutMs,
+        repairAttempted,
       },
     });
     await this.options.graphs.updateNodeStatus({
@@ -423,5 +499,121 @@ export class DynamicCodingTeamOrchestrator {
       reasonCodes: input.reasonCodes,
     });
     return node.nodeId;
+  }
+
+  async reviewDelegation(input: {
+    graphId: string;
+    reviewedNodeId: string;
+    reviewedRoleId: string;
+    workOrder: ChildWorkOrder;
+    childOutputArtifactRefs: string[];
+    childOutputSummary: string;
+    downstreamRoleId?: string;
+  }): Promise<DynamicCodingTeamDelegationReviewResult> {
+    const node = await this.options.graphs.addNode({
+      graphId: input.graphId,
+      nodeKind: "orchestrator_plan",
+      assignedRole: "orchestrator",
+      modelOrWorkerRef: this.policy.modelRef,
+      nodeStatus: "running",
+      inputHandoffRefs: [
+        `work-order://${input.workOrder.workOrderId}`,
+        ...input.childOutputArtifactRefs,
+      ].slice(0, 20),
+      metadata: {
+        delegationReview: true,
+        reviewedWorkOrderId: input.workOrder.workOrderId,
+        reviewedRoleId: input.reviewedRoleId,
+        reviewedNodeId: input.reviewedNodeId,
+      },
+    });
+    await this.options.graphs.addEdge({
+      graphId: input.graphId,
+      fromNodeId: input.reviewedNodeId,
+      toNodeId: node.nodeId,
+      edgeKind: "handoff",
+      reasonCodes: ["child_output_to_orchestrator_delegation_review"],
+      artifactRefs: input.childOutputArtifactRefs.slice(0, 12),
+      metadata: { workOrderId: input.workOrder.workOrderId },
+    });
+    const started = Date.now();
+    const response = await this.options.modelClient.runJson({
+      modelRef: this.policy.modelRef,
+      providerPath: this.policy.providerPath,
+      systemPrompt: delegationReviewSystemPrompt(),
+      userPayload: {
+        graphId: input.graphId,
+        reviewedNodeId: input.reviewedNodeId,
+        reviewedRoleId: input.reviewedRoleId,
+        workOrder: input.workOrder,
+        childOutputArtifactRefs: input.childOutputArtifactRefs.slice(0, 20),
+        childOutputSummary: input.childOutputSummary.slice(0, 2_000),
+        downstreamRoleId: input.downstreamRoleId ?? null,
+        expectedShape: {
+          assessment: {
+            answeredWorkOrder: "boolean",
+            specificEnoughForNextStep: "boolean",
+            missingInformation: ["bounded string"],
+            nextAction:
+              "handoff_to_implementation | rerun_same_role | call_context_scout | call_test_engineer | escalate | human_decision | needs_review",
+            reasoningSummary: "bounded string",
+          },
+          nextNodePlan: {
+            roleId: "bounded role id",
+            objective: "bounded next-node objective",
+            targetRefs: ["bounded refs"],
+          },
+          reasonCodes: ["bounded reason code"],
+        },
+        rawPromptStored: false,
+        rawResponseStored: false,
+      },
+      maxOutputTokens: Math.min(3_000, this.policy.maxOutputTokens),
+      timeoutMs: this.policy.timeoutMs,
+    });
+    const review = normalizeOrchestratorDelegationReview({
+      reviewedWorkOrderId: input.workOrder.workOrderId,
+      reviewedRoleId: input.reviewedRoleId,
+      modelRef: this.policy.modelRef,
+      providerPath: this.policy.providerPath,
+      modelRunRef: response.modelRunRef,
+      responseText: response.responseText,
+    });
+    const validation = validateOrchestratorDelegationReviewShape(review);
+    const roleInvocation = await this.options.graphs.recordRoleInvocation({
+      graphId: input.graphId,
+      nodeId: node.nodeId,
+      roleId: "orchestrator",
+      modelRef: this.policy.modelRef,
+      providerPath: this.policy.providerPath,
+      transportKind: this.policy.providerPath,
+      modelRunRef: response.modelRunRef,
+      outputHash: response.responseHash,
+      latencyMs: response.latencyMs || Date.now() - started,
+      artifactRefs: [graphRef("node", node.nodeId), ...input.childOutputArtifactRefs].slice(0, 12),
+      budgetUsage: {
+        maxOutputTokens: Math.min(3_000, this.policy.maxOutputTokens),
+        timeoutMs: this.policy.timeoutMs,
+      },
+    });
+    await this.options.graphs.updateNodeStatus({
+      nodeId: node.nodeId,
+      nodeStatus: validation.valid ? "succeeded" : "needs_review",
+      outputArtifactRefs: [graphRef("role-invocation", roleInvocation.invocationId)],
+    });
+    return {
+      artifactKind: "dynamic_coding_team_delegation_review_result",
+      graphId: input.graphId,
+      reviewNodeId: node.nodeId,
+      roleInvocationId: roleInvocation.invocationId,
+      reviewedNodeId: input.reviewedNodeId,
+      reviewedArtifactRefs: input.childOutputArtifactRefs.slice(0, 20),
+      review,
+      deterministicValidation: validation,
+      rawPromptStored: false,
+      rawResponseStored: false,
+      rawProviderLogStored: false,
+      workQueueLifecycleMutated: false,
+    };
   }
 }

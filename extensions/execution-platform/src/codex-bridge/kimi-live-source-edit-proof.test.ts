@@ -8,6 +8,19 @@ describe("Kimi live source-edit proof target", () => {
       providerPath: "openrouter",
       validationRef:
         "validation://pnpm-test-file/extensions-execution-platform-src-codex-bridge-kimi-live-source-edit-proof-test",
+      workerLoopTraceRef: "runtime-tool://worker/evidence/handoff",
+      workerLoopV2TraceRefs: [
+        "runtime-tool://worker/v2/evidence/handoff-1",
+        "runtime-tool://worker/v2/evidence/handoff-2",
+      ],
+      toolUsingWorkerTraceRefs: [
+        "runtime-tool://worker/tool-using/evidence/handoff-1",
+        "runtime-tool://worker/tool-using/evidence/handoff-2",
+      ],
+      toolUsingWorkerTraceRefs46003efd: [
+        "runtime-tool://worker/tool-using/evidence/handoff-1-46003efd",
+        "runtime-tool://worker/tool-using/evidence/handoff-2-46003efd",
+      ],
     });
 
     expect(readiness).toEqual({
@@ -17,6 +30,19 @@ describe("Kimi live source-edit proof target", () => {
       providerPath: "openrouter",
       validationRef:
         "validation://pnpm-test-file/extensions-execution-platform-src-codex-bridge-kimi-live-source-edit-proof-test",
+      workerLoopTraceRef: "runtime-tool://worker/evidence/handoff",
+      workerLoopV2TraceRefs: [
+        "runtime-tool://worker/v2/evidence/handoff-1",
+        "runtime-tool://worker/v2/evidence/handoff-2",
+      ],
+      toolUsingWorkerTraceRefs: [
+        "runtime-tool://worker/tool-using/evidence/handoff-1",
+        "runtime-tool://worker/tool-using/evidence/handoff-2",
+      ],
+      toolUsingWorkerTraceRefs46003efd: [
+        "runtime-tool://worker/tool-using/evidence/handoff-1-46003efd",
+        "runtime-tool://worker/tool-using/evidence/handoff-2-46003efd",
+      ],
       liveSourceEditProof: true,
       reasonCodes: ["kimi_live_source_edit_adapter_ready"],
       rawPromptStored: false,

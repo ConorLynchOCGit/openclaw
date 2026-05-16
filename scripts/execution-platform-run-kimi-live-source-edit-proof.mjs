@@ -114,6 +114,7 @@ function buildKimiPrompt(input) {
     "- The function must return exactly this object shape:",
     "{",
     "  artifactKind: 'kimi_live_source_edit_readiness',",
+    "  adapterProofVersion: 'kimi-live-source-edit.v2',",
     "  status: 'ready',",
     "  modelRef: input.modelRef,",
     "  providerPath: input.providerPath,",
@@ -126,6 +127,7 @@ function buildKimiPrompt(input) {
     "  workQueueLifecycleMutated: false",
     "}",
     "- Include reasonCodes ['kimi_live_source_edit_adapter_ready'].",
+    "- Include adapterProofVersion 'kimi-live-source-edit.v2'.",
     "- Set rawPromptStored, rawResponseStored, rawProviderLogStored, and workQueueLifecycleMutated to false.",
   ].join("\n");
 }
@@ -167,9 +169,9 @@ async function main() {
     retryPolicy: { maxAttempts: 2, timeoutMs: 300_000 },
     requestProfilesByModelId: {
       "moonshotai/kimi-k2.6": {
-        responseFormatMode: "prompt_only",
+        responseFormatMode: "native",
         reasoningMode: "omit",
-        maxTokens: 6_000,
+        maxTokens: 8_000,
       },
     },
   });
@@ -181,6 +183,7 @@ async function main() {
         modelId: input.modelRef,
         modelCandidateId: "kimi-2-6-live-source-edit-proof",
         prompt: buildKimiPrompt(input),
+        responseFormat: "json_object",
         maxTokens: input.maxOutputTokens,
       });
       return {
@@ -210,7 +213,7 @@ async function main() {
     budgetPolicy: {
       modelRef: "moonshotai/kimi-k2.6",
       providerPath: "openrouter",
-      maxOutputTokens: 6_000,
+      maxOutputTokens: 8_000,
       timeoutMs: 300_000,
     },
   });
