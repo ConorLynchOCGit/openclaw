@@ -1,4 +1,8 @@
 import { DbOperationRepository } from "../db-operations/db-operation-repository.ts";
+import {
+  createDbOperationExecuteRuntimeToolExecutor,
+  type DbOperationExecuteHandler,
+} from "../db-operations/db-operation-runtime-tool.ts";
 import { isDbOperationPayload } from "../db-operations/types.ts";
 import { createDefaultModelTaskContractRegistry } from "../model-tasks/contracts.ts";
 import { ModelTaskRepository } from "../model-tasks/model-task-repository.ts";
@@ -8,8 +12,13 @@ import {
   type ModelTaskContractId,
 } from "../model-tasks/types.ts";
 import type { JsonValue, RuntimeJob, RuntimeJobRepository } from "../runtime-job-repository.ts";
+import type { RuntimeToolKernel } from "../runtime-tool-call/runtime-tool-kernel.ts";
 import { ScriptJobDefinitionRegistry } from "../script-jobs/registry.ts";
 import { ScriptJobRepository } from "../script-jobs/script-job-repository.ts";
+import {
+  createScriptExecuteRuntimeToolExecutor,
+  type ScriptExecuteHandler,
+} from "../script-jobs/script-runtime-tool.ts";
 import { isScriptJobPayload, type ScriptJobResult } from "../script-jobs/types.ts";
 import type {
   RuntimeWorkerSupervisorAdapter,
@@ -80,6 +89,7 @@ export class ModelTaskMiddlewareWorkerAdapter implements RuntimeWorkerSupervisor
   async execute(input: {
     job: RuntimeJob;
     workerId: string;
+    leaseId: string;
     leaseToken: string;
   }): Promise<RuntimeWorkerSupervisorAdapterResult> {
     const payload = assertModelTaskPayload(input.job);
@@ -89,7 +99,7 @@ export class ModelTaskMiddlewareWorkerAdapter implements RuntimeWorkerSupervisor
       workerId: input.workerId,
     });
     const output = executed.output;
-    await this.repository.completeModelTask({
+    const completed = await this.repository.completeModelTask({
       jobId: input.job.jobId,
       leaseToken: input.leaseToken,
       output,
@@ -99,6 +109,13 @@ export class ModelTaskMiddlewareWorkerAdapter implements RuntimeWorkerSupervisor
         reason: "model task completed by runtime worker supervisor middleware adapter",
       },
     });
+    if (completed?.state !== "succeeded") {
+      return needsReviewResult({
+        summary:
+          "Model-task middleware worker did not produce model.call runtime tool trace evidence.",
+        reasonCodes: ["model_task_middleware_runtime_tool_trace_required"],
+      });
+    }
     const artifactRefs = [
       `runtime-job://${input.job.jobId}/model-task/validation`,
       ...(executed.artifactRefs ?? []),
@@ -133,6 +150,7 @@ export class ScriptMiddlewareWorkerAdapter implements RuntimeWorkerSupervisorAda
     private readonly options: {
       runtimeJobs: RuntimeJobRepository;
       registry: ScriptJobDefinitionRegistry;
+      runtimeToolKernel: RuntimeToolKernel;
       handlers: Record<string, MiddlewareScriptHandler>;
     },
   ) {
@@ -149,6 +167,7 @@ export class ScriptMiddlewareWorkerAdapter implements RuntimeWorkerSupervisorAda
   async execute(input: {
     job: RuntimeJob;
     workerId: string;
+    leaseId: string;
     leaseToken: string;
   }): Promise<RuntimeWorkerSupervisorAdapterResult> {
     const payload = assertScriptJobPayload(input.job);
@@ -165,27 +184,62 @@ export class ScriptMiddlewareWorkerAdapter implements RuntimeWorkerSupervisorAda
         reasonCodes: ["script_middleware_handler_not_registered"],
       });
     }
-    const handled = await handler({ job: input.job, payload, workerId: input.workerId });
+    const definition = this.options.registry.requireScriptJobDefinition(payload.scriptId);
+    const scriptHandler: ScriptExecuteHandler = async () => {
+      const handled = await handler({ job: input.job, payload, workerId: input.workerId });
+      return {
+        output: handled.output,
+        exitCode: handled.exitCode,
+        validationEvidence: handled.validationEvidence,
+        artifactRefs: handled.artifactRefs,
+      };
+    };
+    const toolResult = await this.repository.invokeClaimedScriptJobRuntimeTool({
+      claimed: {
+        job: input.job,
+        leaseId: input.leaseId,
+        leaseToken: input.leaseToken,
+        definition,
+        script: payload,
+      },
+      kernel: this.options.runtimeToolKernel,
+      executor: createScriptExecuteRuntimeToolExecutor({
+        handlers: { [definition.handlerId]: scriptHandler },
+      }),
+      inputSummary: "Execute supervisor-claimed script job through script.execute runtime tool.",
+    });
+    if (
+      toolResult.invocation.invocation.status !== "succeeded" ||
+      (toolResult.exitCode ?? 0) !== 0
+    ) {
+      return needsReviewResult({
+        summary: "Script middleware runtime tool did not produce accepted success evidence.",
+        reasonCodes: ["script_middleware_runtime_tool_not_accepted"],
+      });
+    }
     await this.repository.completeScriptJob({
       jobId: input.job.jobId,
       leaseToken: input.leaseToken,
-      output: handled.output,
-      exitCode: handled.exitCode,
-      validationEvidence: handled.validationEvidence,
+      output: toolResult.output,
+      exitCode: toolResult.exitCode,
+      validationEvidence: toolResult.validationEvidence,
+      runtimeToolTraceRequired: true,
     });
     const artifactRefs = [
       `runtime-job://${input.job.jobId}/script-job/definition`,
-      ...(handled.artifactRefs ?? []),
+      `runtime-job://${input.job.jobId}/script-job/runtime-tool-trace`,
+      toolResult.artifactRef,
     ];
     return completedResult({
-      summary: handled.summary ?? "Script middleware worker completed allowlisted handler.",
-      reasonCodes: ["script_middleware_worker_completed"],
+      summary: "Script middleware worker completed through script.execute runtime tool.",
+      reasonCodes: ["script_middleware_worker_completed", "script_execute_runtime_tool_required"],
       result: {
         family: "middleware_worker_adoption",
         middlewareKind: "script_job",
         scriptId: payload.scriptId,
         handlerId: payload.definitionSnapshot.handlerId,
-        exitCode: handled.exitCode ?? null,
+        exitCode: toolResult.exitCode ?? null,
+        runtimeToolInvocationRef: toolResult.invocation.invocationRef,
         artifactRefs: artifactRefs.slice(0, 30),
         rawPromptStored: false,
         rawResponseStored: false,
@@ -206,6 +260,7 @@ export class DbOperationMiddlewareWorkerAdapter implements RuntimeWorkerSupervis
     private readonly options: {
       runtimeJobs: RuntimeJobRepository;
       operationNames: string[];
+      runtimeToolKernel: RuntimeToolKernel;
       handlers: Record<string, MiddlewareDbOperationHandler>;
       dbBoundaryAccepted: boolean;
     },
@@ -221,6 +276,7 @@ export class DbOperationMiddlewareWorkerAdapter implements RuntimeWorkerSupervis
   async execute(input: {
     job: RuntimeJob;
     workerId: string;
+    leaseId: string;
     leaseToken: string;
   }): Promise<RuntimeWorkerSupervisorAdapterResult> {
     const payload = assertDbOperationPayload(input.job);
@@ -237,25 +293,76 @@ export class DbOperationMiddlewareWorkerAdapter implements RuntimeWorkerSupervis
         reasonCodes: ["db_operation_middleware_handler_not_registered"],
       });
     }
-    const handled = await handler({ job: input.job, payload, workerId: input.workerId });
+    const dbHandler: DbOperationExecuteHandler = async () => {
+      const startedAt = new Date().toISOString();
+      const startMs = Date.now();
+      const handled = await handler({ job: input.job, payload, workerId: input.workerId });
+      const completedAt = new Date().toISOString();
+      return {
+        output: handled.output,
+        telemetry: {
+          telemetryId: `telemetry-${input.job.jobId}`,
+          operationName: payload.operationName,
+          operationKind: payload.operationKind,
+          lane: payload.lane,
+          decision: payload.classification.decision,
+          outcome: "succeeded",
+          timeoutBudgetMs: payload.classification.timeoutBudgetMs,
+          durationMs: Math.max(0, Date.now() - startMs),
+          startedAt,
+          completedAt,
+          pressureSnapshot: payload.pressureSnapshot,
+          classification: payload.classification,
+          jobId: input.job.jobId,
+        },
+        resultSummary: handled.summary,
+      };
+    };
+    const toolResult = await this.repository.invokeClaimedDbOperationRuntimeTool({
+      claimed: {
+        job: input.job,
+        leaseId: input.leaseId,
+        leaseToken: input.leaseToken,
+        operation: payload,
+      },
+      kernel: this.options.runtimeToolKernel,
+      executor: createDbOperationExecuteRuntimeToolExecutor({
+        handlers: { [payload.operationName]: dbHandler },
+      }),
+      inputSummary: "Execute supervisor-claimed DB operation through db_operation.execute.",
+    });
+    if (toolResult.invocation.invocation.status !== "succeeded" || !toolResult.telemetry) {
+      return needsReviewResult({
+        summary: "DB operation middleware runtime tool did not produce accepted success evidence.",
+        reasonCodes: ["db_operation_middleware_runtime_tool_not_accepted"],
+      });
+    }
     await this.repository.completeLongDbOperation({
       jobId: input.job.jobId,
       leaseToken: input.leaseToken,
-      output: handled.output,
+      output: toolResult.output,
+      telemetry: toolResult.telemetry,
+      runtimeToolTraceRequired: true,
     });
     const artifactRefs = [
       `runtime-job://${input.job.jobId}/db-operation/metadata`,
-      ...(handled.artifactRefs ?? []),
+      `runtime-job://${input.job.jobId}/db-operation/runtime-tool-trace`,
+      toolResult.artifactRef,
     ];
     return completedResult({
-      summary: handled.summary ?? "DB operation middleware worker completed approved operation.",
-      reasonCodes: ["db_operation_middleware_worker_completed"],
+      summary:
+        "DB operation middleware worker completed through db_operation.execute runtime tool.",
+      reasonCodes: [
+        "db_operation_middleware_worker_completed",
+        "db_operation_execute_runtime_tool_required",
+      ],
       result: {
         family: "middleware_worker_adoption",
         middlewareKind: "db_operation",
         operationName: payload.operationName,
         operationKind: payload.operationKind,
         lane: payload.lane,
+        runtimeToolInvocationRef: toolResult.invocation.invocationRef,
         artifactRefs: artifactRefs.slice(0, 30),
         rawPromptStored: false,
         rawResponseStored: false,

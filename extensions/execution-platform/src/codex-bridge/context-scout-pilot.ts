@@ -2,6 +2,8 @@ import type { JsonValue, RuntimeJobRepository } from "../runtime-job-repository.
 
 export type ContextScoutArtifact = {
   artifactKind: "agent_team_context_scout";
+  compatibilityStatus: "legacy_diagnostic_only";
+  productionSuccessEvidence: false;
   scoutId: string;
   runtimeJobId: string;
   teamRunId: string;
@@ -24,6 +26,8 @@ export function createContextScoutArtifact(
   input: Omit<
     ContextScoutArtifact,
     | "artifactKind"
+    | "compatibilityStatus"
+    | "productionSuccessEvidence"
     | "readOnly"
     | "writeAccessGranted"
     | "forbiddenAuthorityRequested"
@@ -33,6 +37,8 @@ export function createContextScoutArtifact(
 ): ContextScoutArtifact {
   return {
     artifactKind: "agent_team_context_scout",
+    compatibilityStatus: "legacy_diagnostic_only",
+    productionSuccessEvidence: false,
     ...input,
     readOnly: true,
     writeAccessGranted: false,
@@ -74,7 +80,7 @@ export async function recordContextScoutArtifact(input: {
   const metadata = input.artifact as unknown as JsonValue;
   await input.runtimeJobs.attachArtifact({
     jobId: input.artifact.runtimeJobId,
-    artifactType: "agent_team.context_scout",
+    artifactType: "agent_team.context_scout_legacy_diagnostic",
     storageKind: "metadata",
     uri: `runtime-job://${input.artifact.runtimeJobId}/agent-team/context-scout/${input.artifact.scoutId}`,
     contentType: "application/json",
@@ -83,10 +89,12 @@ export async function recordContextScoutArtifact(input: {
   });
   await input.runtimeJobs.recordEvent({
     jobId: input.artifact.runtimeJobId,
-    eventType: "agent_team.context_scout_recorded",
+    eventType: "agent_team.context_scout_legacy_diagnostic_recorded",
     data: {
       scoutId: input.artifact.scoutId,
       relevantFileCount: input.artifact.relevantFiles.length,
+      compatibilityStatus: "legacy_diagnostic_only",
+      productionSuccessEvidence: false,
     },
   });
 }

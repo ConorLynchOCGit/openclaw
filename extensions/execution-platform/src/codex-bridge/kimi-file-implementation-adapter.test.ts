@@ -154,6 +154,52 @@ describe("Kimi file implementation adapter", () => {
     });
   });
 
+  it("passes a first-class implementation task packet to the model and diagnostics", async () => {
+    const harness = adapter(
+      proposal([
+        {
+          path: "extensions/execution-platform/src/workflows/example.ts",
+          operation: "replace_file",
+          content: "export const packet = true;\n",
+          rationale: "Satisfy the packet target.",
+        },
+      ]),
+    );
+    const result = await harness.adapter.run({
+      microtaskId: "impl-packet-1",
+      microtaskTitle: "Packet-backed edit",
+      exactEditObjective: "Add the packet-backed example export.",
+      taskSummary: "Implement one packet-backed edit.",
+      repoRoot: "/repo",
+      allowedFileRefs: ["extensions/execution-platform/src/workflows/example.ts"],
+      targetFileRefs: ["extensions/execution-platform/src/workflows/example.ts"],
+      contextPackRefs: ["runtime-work-graph://context-handoff-packet/context-1"],
+      validationCommandRefs: ["pnpm test:file example.test.ts"],
+      targetCommitmentIds: ["commitment-1"],
+      acceptanceCriteria: ["Example export exists."],
+      budgetPolicy: { maxOutputTokens: 4_000, timeoutMs: 300_000 },
+    });
+
+    const modelInput = harness.modelInputs[0] as {
+      taskSummary: string;
+      implementationTaskPacket?: {
+        packetRef: string;
+        targetFileRefs: string[];
+        acceptanceCriteria: string[];
+      };
+    };
+    expect(result.status).toBe("completed");
+    expect(modelInput.implementationTaskPacket?.targetFileRefs).toEqual([
+      "extensions/execution-platform/src/workflows/example.ts",
+    ]);
+    expect(modelInput.taskSummary).toContain("ImplementationTaskPacket v2");
+    expect(result.attemptDiagnostics[0]).toMatchObject({
+      targetRefsPresent: true,
+      acceptanceCriteriaPresent: true,
+      implementationPacketRef: modelInput.implementationTaskPacket?.packetRef,
+    });
+  });
+
   it("repairs after an invalid first Kimi response by retrying with bounded failure feedback", async () => {
     const harness = adapter([
       JSON.stringify({ summary: "I looked at the task." }),

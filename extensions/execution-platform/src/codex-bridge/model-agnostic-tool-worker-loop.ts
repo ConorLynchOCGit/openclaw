@@ -1,5 +1,11 @@
 export type ModelAgnosticWorkerPhase =
   | "worker.loop.started"
+  | "worker.model_call.started"
+  | "worker.model_call.waiting"
+  | "worker.model_call.completed"
+  | "worker.model_call.failed"
+  | "worker.phase_queue.deferred"
+  | "worker.phase_queue.replayed"
   | "worker.plan.started"
   | "worker.plan.completed"
   | "worker.explore.started"
@@ -66,10 +72,38 @@ export type ModelAgnosticWorkerPhaseEvent = {
   objectiveSummary: string;
   whySelected: string | null;
   targetRefs: string[];
+  inputPacketRefs: string[];
+  contextRefs: string[];
+  contextSynthesisRefs: string[];
+  codeIntelligenceRefs: string[];
   toolId: string | null;
   toolInvocationRef: string | null;
+  toolStatus: string | null;
+  compoundToolId: string | null;
+  compoundSubEventCount: number | null;
+  compoundSubEventPhases: string[];
   changedFileRefs: string[];
   validationRefs: string[];
+  currentValidationCommandRef: string | null;
+  currentValidationCommandSummary: string | null;
+  editTransactionRefs: string[];
+  editTransactionPhase: string | null;
+  editTransactionStatus: string | null;
+  editTransactionRepairCount: number | null;
+  outputHash: string | null;
+  outputContentLength: number | null;
+  providerLatencyMs: number | null;
+  providerTimeoutMs: number | null;
+  providerFinishReason: string | null;
+  providerTokenCount: number | null;
+  providerUsage: {
+    inputTokenCount: number | null;
+    outputTokenCount: number | null;
+    totalTokenCount: number | null;
+    estimatedCostUsd: number | null;
+    usageUnavailableReason: string | null;
+  } | null;
+  modelProviderDiagnostics: Record<string, unknown> | null;
   commitmentIdsAdvanced: string[];
   blockerSummary: string | null;
   nextAction: string | null;
@@ -91,13 +125,23 @@ export const MODEL_AGNOSTIC_WORKER_SPECIALIZATIONS: ModelAgnosticWorkerSpecializ
     displayName: "Kimi implementation worker",
     roleClass: "implementation",
     workerRef: "worker.kimi.file-implementation",
-    modelPolicyRef: "policy://codex-parity/openclaw-role/implementation-standard/kimi",
-    qualificationProfileIds: ["openrouter.moonshotai.kimi-k2.6"],
+    modelPolicyRef:
+      "policy://codex-parity/openclaw-role/implementation-standard/qwen-controller-kimi-patch",
+    qualificationProfileIds: [
+      "openrouter.qwen.qwen3-coder-next",
+      "openrouter.moonshotai.kimi-k2.6",
+    ],
     providerPath: "openrouter",
     runnableState: "production",
     idealTaskShape:
-      "Scoped implementation or test edit with bounded target refs, acceptance criteria, validation refs, and one repair turn.",
+      "Scoped implementation or test edit with bounded target refs, acceptance criteria, validation refs, Qwen controller/repair/evidence turns, and Kimi reasoning-none patch turns.",
     toolPermissionIds: [
+      "coding.inspect_edit_validate",
+      "coding.add_test_and_validate",
+      "coding.update_docs_and_cross_refs",
+      "coding.refactor_symbol_with_lsp",
+      "coding.fix_type_errors",
+      "coding.apply_small_patch_with_evidence",
       "worker.repo.search",
       "worker.repo.read_files",
       "worker.repo.inspect_tests",
@@ -162,6 +206,8 @@ export const MODEL_AGNOSTIC_WORKER_SPECIALIZATIONS: ModelAgnosticWorkerSpecializ
     idealTaskShape:
       "Focused test creation or repair with explicit test file refs and validation command refs.",
     toolPermissionIds: [
+      "coding.add_test_and_validate",
+      "coding.fix_type_errors",
       "worker.repo.search",
       "worker.repo.read_files",
       "worker.repo.inspect_tests",
@@ -194,6 +240,7 @@ export const MODEL_AGNOSTIC_WORKER_SPECIALIZATIONS: ModelAgnosticWorkerSpecializ
     runnableState: "production",
     idealTaskShape: "Bounded docs/spec/runbook edits with formatting validation where available.",
     toolPermissionIds: [
+      "coding.update_docs_and_cross_refs",
       "worker.repo.search",
       "worker.repo.read_files",
       "worker.edit.plan",
@@ -289,10 +336,38 @@ export function buildModelAgnosticWorkerPhaseEvent(input: {
   objectiveSummary: string;
   whySelected?: string | null;
   targetRefs?: string[];
+  inputPacketRefs?: string[];
+  contextRefs?: string[];
+  contextSynthesisRefs?: string[];
+  codeIntelligenceRefs?: string[];
   toolId?: string | null;
   toolInvocationRef?: string | null;
+  toolStatus?: string | null;
+  compoundToolId?: string | null;
+  compoundSubEventCount?: number | null;
+  compoundSubEventPhases?: string[];
   changedFileRefs?: string[];
   validationRefs?: string[];
+  currentValidationCommandRef?: string | null;
+  currentValidationCommandSummary?: string | null;
+  editTransactionRefs?: string[];
+  editTransactionPhase?: string | null;
+  editTransactionStatus?: string | null;
+  editTransactionRepairCount?: number | null;
+  outputHash?: string | null;
+  outputContentLength?: number | null;
+  providerLatencyMs?: number | null;
+  providerTimeoutMs?: number | null;
+  providerFinishReason?: string | null;
+  providerTokenCount?: number | null;
+  providerUsage?: {
+    inputTokenCount?: number | null;
+    outputTokenCount?: number | null;
+    totalTokenCount?: number | null;
+    estimatedCostUsd?: number | null;
+    usageUnavailableReason?: string | null;
+  } | null;
+  modelProviderDiagnostics?: Record<string, unknown> | null;
   commitmentIdsAdvanced?: string[];
   blockerSummary?: string | null;
   nextAction?: string | null;
@@ -313,10 +388,92 @@ export function buildModelAgnosticWorkerPhaseEvent(input: {
     objectiveSummary: input.objectiveSummary.trim().replace(/\s+/gu, " ").slice(0, 1_000),
     whySelected: input.whySelected?.trim().replace(/\s+/gu, " ").slice(0, 1_000) ?? null,
     targetRefs: [...new Set(input.targetRefs ?? [])].slice(0, 20),
+    inputPacketRefs: [...new Set(input.inputPacketRefs ?? [])].slice(0, 20),
+    contextRefs: [...new Set(input.contextRefs ?? [])].slice(0, 30),
+    contextSynthesisRefs: [...new Set(input.contextSynthesisRefs ?? [])].slice(0, 20),
+    codeIntelligenceRefs: [...new Set(input.codeIntelligenceRefs ?? [])].slice(0, 20),
     toolId: input.toolId ?? null,
     toolInvocationRef: input.toolInvocationRef ?? null,
+    toolStatus: input.toolStatus?.trim().replace(/\s+/gu, " ").slice(0, 120) ?? null,
+    compoundToolId: input.compoundToolId?.trim().replace(/\s+/gu, " ").slice(0, 180) ?? null,
+    compoundSubEventCount:
+      typeof input.compoundSubEventCount === "number" &&
+      Number.isFinite(input.compoundSubEventCount)
+        ? Math.max(0, Math.trunc(input.compoundSubEventCount))
+        : null,
+    compoundSubEventPhases: [...new Set(input.compoundSubEventPhases ?? [])].slice(0, 20),
     changedFileRefs: [...new Set(input.changedFileRefs ?? [])].slice(0, 20),
     validationRefs: [...new Set(input.validationRefs ?? [])].slice(0, 20),
+    currentValidationCommandRef:
+      input.currentValidationCommandRef?.trim().replace(/\s+/gu, " ").slice(0, 320) ?? null,
+    currentValidationCommandSummary:
+      input.currentValidationCommandSummary?.trim().replace(/\s+/gu, " ").slice(0, 700) ?? null,
+    editTransactionRefs: [...new Set(input.editTransactionRefs ?? [])].slice(0, 20),
+    editTransactionPhase:
+      input.editTransactionPhase?.trim().replace(/\s+/gu, " ").slice(0, 120) ?? null,
+    editTransactionStatus:
+      input.editTransactionStatus?.trim().replace(/\s+/gu, " ").slice(0, 120) ?? null,
+    editTransactionRepairCount:
+      typeof input.editTransactionRepairCount === "number" &&
+      Number.isFinite(input.editTransactionRepairCount)
+        ? Math.max(0, Math.trunc(input.editTransactionRepairCount))
+        : null,
+    outputHash: input.outputHash?.trim().replace(/\s+/gu, " ").slice(0, 180) ?? null,
+    outputContentLength:
+      typeof input.outputContentLength === "number" && Number.isFinite(input.outputContentLength)
+        ? Math.max(0, Math.trunc(input.outputContentLength))
+        : null,
+    providerLatencyMs:
+      typeof input.providerLatencyMs === "number" && Number.isFinite(input.providerLatencyMs)
+        ? Math.max(0, Math.trunc(input.providerLatencyMs))
+        : null,
+    providerTimeoutMs:
+      typeof input.providerTimeoutMs === "number" && Number.isFinite(input.providerTimeoutMs)
+        ? Math.max(0, Math.trunc(input.providerTimeoutMs))
+        : null,
+    providerFinishReason:
+      input.providerFinishReason?.trim().replace(/\s+/gu, " ").slice(0, 160) ?? null,
+    providerTokenCount:
+      typeof input.providerTokenCount === "number" && Number.isFinite(input.providerTokenCount)
+        ? Math.max(0, Math.trunc(input.providerTokenCount))
+        : null,
+    providerUsage: input.providerUsage
+      ? {
+          inputTokenCount:
+            typeof input.providerUsage.inputTokenCount === "number" &&
+            Number.isFinite(input.providerUsage.inputTokenCount)
+              ? Math.max(0, Math.trunc(input.providerUsage.inputTokenCount))
+              : null,
+          outputTokenCount:
+            typeof input.providerUsage.outputTokenCount === "number" &&
+            Number.isFinite(input.providerUsage.outputTokenCount)
+              ? Math.max(0, Math.trunc(input.providerUsage.outputTokenCount))
+              : null,
+          totalTokenCount:
+            typeof input.providerUsage.totalTokenCount === "number" &&
+            Number.isFinite(input.providerUsage.totalTokenCount)
+              ? Math.max(0, Math.trunc(input.providerUsage.totalTokenCount))
+              : null,
+          estimatedCostUsd:
+            typeof input.providerUsage.estimatedCostUsd === "number" &&
+            Number.isFinite(input.providerUsage.estimatedCostUsd)
+              ? input.providerUsage.estimatedCostUsd
+              : null,
+          usageUnavailableReason:
+            input.providerUsage.usageUnavailableReason
+              ?.trim()
+              .replace(/\s+/gu, " ")
+              .slice(0, 260) ?? null,
+        }
+      : null,
+    modelProviderDiagnostics: input.modelProviderDiagnostics
+      ? {
+          ...input.modelProviderDiagnostics,
+          rawPromptStored: false,
+          rawResponseStored: false,
+          rawProviderLogStored: false,
+        }
+      : null,
     commitmentIdsAdvanced: [...new Set(input.commitmentIdsAdvanced ?? [])].slice(0, 20),
     blockerSummary: input.blockerSummary?.trim().replace(/\s+/gu, " ").slice(0, 1_000) ?? null,
     nextAction: input.nextAction?.trim().replace(/\s+/gu, " ").slice(0, 1_000) ?? null,

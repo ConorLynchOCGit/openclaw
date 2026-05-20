@@ -49,6 +49,19 @@ export type WorkflowSummaryIndexEntry = {
     supportsChildWorkflows: boolean;
     childWorkflowIds: string[];
   };
+  capabilitySummary: {
+    executableCapabilities: string[];
+    subjectDomains: string[];
+    targetRefKindsSupported: string[];
+    canImplementCode: boolean;
+    canPlan: boolean;
+    canReview: boolean;
+    canResearch: boolean;
+    canCreateChildProposals: boolean;
+    canCompileRuntimeJobs: boolean;
+    canExecuteRuntimeJobs: boolean;
+    canMutateWorkQueueLifecycle: false;
+  };
   modelTransportPolicyRefs: {
     roleModelPolicyRefs: string[];
     transportIds: string[];
@@ -114,9 +127,82 @@ function summarizeProjection(
   };
 }
 
+function summarizeExecutableCapabilities(contract: ExecutionWorkflowContract): string[] {
+  const actionKinds = new Set(contract.permissionModel?.allowedLocalActionKinds ?? []);
+  const validationKinds = new Set(contract.validationGates.map((gate) => gate.validationKind));
+  const roleAuthorities = new Set(contract.roles.map((role) => role.authority));
+  const roleIds = new Set(contract.roles.map((role) => role.roleId));
+  const capabilities = new Set<string>();
+
+  if (contract.workflowId === "agent_team.coding" || actionKinds.has("file_edit")) {
+    capabilities.add("code_edit");
+  }
+  if (actionKinds.has("test_run") || validationKinds.has("focused_tests")) {
+    capabilities.add("test");
+  }
+  if (actionKinds.has("docs_update") || contract.workflowId.includes("docs")) {
+    capabilities.add("docs_update");
+  }
+  if (actionKinds.has("repo_read") || actionKinds.has("git_inspect")) {
+    capabilities.add("plan");
+  }
+  if (actionKinds.has("closeout_emit") || roleAuthorities.has("closeout")) {
+    capabilities.add("closeout");
+  }
+  if (roleAuthorities.has("review") || validationKinds.size > 0) {
+    capabilities.add("review");
+  }
+  if (contract.workflowId.includes("web_research") || roleIds.has("web_researcher")) {
+    capabilities.add("research");
+  }
+  if (
+    (contract.childWorkflowRefs ?? []).some(
+      (child) => child.allowed && child.workflowId.includes("web_research"),
+    )
+  ) {
+    capabilities.add("research");
+  }
+  if (
+    contract.workflowId.includes("product_spec_planning") ||
+    actionKinds.has("propose_child_actions")
+  ) {
+    capabilities.add("plan");
+    capabilities.add("action_graph_proposal");
+    capabilities.add("human_decision");
+  }
+  if (contract.permissionModel?.approvalRequiredActionKinds.includes("create_runtime_jobs")) {
+    capabilities.add("runtime_job_compile");
+  }
+  return Array.from(capabilities).toSorted();
+}
+
+function summarizeSubjectDomains(contract: ExecutionWorkflowContract): string[] {
+  const domains = new Set<string>(["workflow", "work_queue_item"]);
+  if (contract.workflowId.includes("coding")) {
+    domains.add("repo");
+    domains.add("spec");
+    domains.add("workflow");
+  }
+  if (contract.workflowId.includes("product_spec_planning")) {
+    domains.add("product_spec");
+    domains.add("planning_capsule");
+    domains.add("action_graph");
+  }
+  if (contract.workflowId.includes("web_research")) {
+    domains.add("external_source");
+    domains.add("research_brief");
+  }
+  if (contract.workflowId.includes("docs")) {
+    domains.add("docs");
+    domains.add("skills");
+  }
+  return Array.from(domains).toSorted();
+}
+
 export function createWorkflowSummaryIndexEntry(
   contract: ExecutionWorkflowContract,
 ): WorkflowSummaryIndexEntry {
+  const executableCapabilities = summarizeExecutableCapabilities(contract);
   return {
     schemaVersion: WORKFLOW_SUMMARY_INDEX_SCHEMA_VERSION,
     workflowId: contract.workflowId,
@@ -162,6 +248,23 @@ export function createWorkflowSummaryIndexEntry(
         .filter((child) => child.allowed)
         .map((child) => child.workflowId)
         .slice(0, 12),
+    },
+    capabilitySummary: {
+      executableCapabilities,
+      subjectDomains: summarizeSubjectDomains(contract),
+      targetRefKindsSupported: ["workflow", "work_queue_item", "repo", "spec", "docs"].filter(
+        (kind) =>
+          summarizeSubjectDomains(contract).includes(kind) ||
+          ["workflow", "work_queue_item"].includes(kind),
+      ),
+      canImplementCode: executableCapabilities.includes("code_edit"),
+      canPlan: executableCapabilities.includes("plan"),
+      canReview: executableCapabilities.includes("review"),
+      canResearch: executableCapabilities.includes("research"),
+      canCreateChildProposals: executableCapabilities.includes("action_graph_proposal"),
+      canCompileRuntimeJobs: executableCapabilities.includes("runtime_job_compile"),
+      canExecuteRuntimeJobs: contract.status === "enabled",
+      canMutateWorkQueueLifecycle: false,
     },
     modelTransportPolicyRefs: {
       roleModelPolicyRefs: contract.roles

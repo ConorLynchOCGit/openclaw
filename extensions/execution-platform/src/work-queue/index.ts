@@ -6,6 +6,7 @@ export * from "./db-primary-work-queue-projection.ts";
 export * from "./execution-control-api.ts";
 export * from "./execution-control-endpoints.ts";
 export * from "./execution-read-model.ts";
+export * from "./generated-item-lifecycle.ts";
 export * from "./product-spec-planning-proof-review.ts";
 export * from "./product-spec-planning-worker-contract.ts";
 export * from "./planning-lifecycle.ts";

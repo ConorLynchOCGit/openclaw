@@ -1,6 +1,21 @@
 import type { JsonValue } from "../runtime-job-repository.ts";
 import { TEAM_GRAPH_NODE_KINDS, type TeamGraphNodeKind } from "./runtime-work-graph.ts";
 
+export const RUNTIME_NODE_CAPABILITY_PHASES = [
+  "planning",
+  "decomposition",
+  "capability_selection",
+  "context_synthesis",
+  "execution",
+  "validation",
+  "review",
+  "human_decision",
+  "finalization",
+  "closeout",
+] as const;
+
+export type RuntimeNodeCapabilityPhase = (typeof RUNTIME_NODE_CAPABILITY_PHASES)[number];
+
 export type RuntimeNodeCapability = {
   capabilityId: string;
   graphNodeKind: TeamGraphNodeKind;
@@ -15,6 +30,7 @@ export type RuntimeNodeCapability = {
     | "review"
     | "research"
     | "planning"
+    | "docs"
     | "human"
     | "closeout"
     | "observability";
@@ -26,6 +42,7 @@ export type RuntimeNodeCapability = {
   roleId: string;
   workflowId: string;
   supportedWorkflowIds: string[];
+  supportedPhases: RuntimeNodeCapabilityPhase[];
   displayName: string;
   modelPolicyRefs: string[];
   modelQualificationProfileIds: string[];
@@ -100,6 +117,84 @@ export type RuntimeNodeCapabilityManifest = {
   rawProviderLogStored: false;
 };
 
+export type ProviderCapabilityProfile = {
+  artifactKind: "provider_capability_profile";
+  schemaVersion: "execution-platform.provider-capability-profile.v1";
+  profileId: string;
+  capabilityId: string;
+  graphNodeKind: TeamGraphNodeKind;
+  executorKey: string;
+  workerRef: string;
+  requiredMetadataSchemaRef: string;
+  workflowId: string;
+  supportedWorkflowIds: string[];
+  supportedPhases: RuntimeNodeCapabilityPhase[];
+  roleClass: RuntimeNodeCapability["roleClass"];
+  roleId: string;
+  displayName: string;
+  modelPolicyRefs: string[];
+  modelQualificationProfileIds: string[];
+  productionSelectable: boolean;
+  productionSelectionRequiresQualification: boolean;
+  qualificationEvidenceRequired: boolean;
+  allowedAdapters: string[];
+  toolProfileRefs: string[];
+  authorityBoundaries: string[];
+  writable: boolean;
+  canInspectRepo: boolean;
+  canEditSource: boolean;
+  canWriteTests: boolean;
+  canRunValidation: boolean;
+  canDoWebResearch: boolean;
+  canCreatePlanningCapsules: boolean;
+  canProposeChildActions: boolean;
+  canCompileRuntimeJobs: boolean;
+  canRequestHumanInput: boolean;
+  canReviewSecurityPrivacy: boolean;
+  preferredTaskSize: RuntimeNodeCapability["preferredTaskSize"];
+  idealTaskSize: RuntimeNodeCapability["idealTaskSize"];
+  maxTaskSize: RuntimeNodeCapability["maxTaskSize"];
+  maxRecommendedFileCount: number;
+  maxRecommendedDiffSize: number;
+  maxRecommendedContextRefs: number;
+  contextCapacity: RuntimeNodeCapability["contextCapacity"];
+  expectedStrength: RuntimeNodeCapability["expectedStrength"];
+  expectedWeaknesses: string[];
+  estimatedTokenCostClass: RuntimeNodeCapability["estimatedTokenCostClass"];
+  expectedDollarCostClass: RuntimeNodeCapability["expectedDollarCostClass"];
+  costClass: RuntimeNodeCapability["costClass"];
+  latencyClass: RuntimeNodeCapability["latencyClass"];
+  parallelizable: boolean;
+  retryable: boolean;
+  repairable: boolean;
+  failureModes: string[];
+  evidenceProducedKinds: RuntimeNodeCapability["evidenceProducedKinds"];
+  qualifiedEvidenceKinds: RuntimeNodeCapability["evidenceProducedKinds"];
+  commitmentFitKinds: string[];
+  defaultBudgetPolicy: RuntimeNodeCapability["defaultBudgetPolicy"];
+  validationResponsibilities: string[];
+  escalationTargets: string[];
+  knownLimitations: string[];
+  runtimeDerivedFromCapabilityManifest: true;
+  semanticRoutingPerformed: false;
+  authorityGranted: false;
+  rawPromptStored: false;
+  rawResponseStored: false;
+  rawProviderLogStored: false;
+};
+
+export type ProviderCapabilityProfileRegistry = {
+  artifactKind: "provider_capability_profile_registry";
+  schemaVersion: "execution-platform.provider-capability-profile-registry.v1";
+  profiles: ProviderCapabilityProfile[];
+  runtimeDerivedFromCapabilityManifest: true;
+  semanticRoutingPerformed: false;
+  authorityGranted: false;
+  rawPromptStored: false;
+  rawResponseStored: false;
+  rawProviderLogStored: false;
+};
+
 function capability(
   input: Omit<
     RuntimeNodeCapability,
@@ -108,6 +203,7 @@ function capability(
     | "rawProviderLogStored"
     | "idealTaskSize"
     | "supportedWorkflowIds"
+    | "supportedPhases"
     | "maxTaskSize"
     | "contextCapacity"
     | "expectedStrength"
@@ -131,6 +227,7 @@ function capability(
   return {
     ...input,
     supportedWorkflowIds: [input.workflowId],
+    supportedPhases: inferSupportedPhases(input),
     modelQualificationProfileIds: inferModelQualificationProfileIds(input),
     productionSelectionRequiresQualification:
       input.allowedAdapters.includes("model_agnostic_file_edit_worker") ||
@@ -162,7 +259,9 @@ function capability(
         ? "human_authoritative"
         : input.costClass === "premium"
           ? "very_high"
-          : input.roleClass === "research" || input.roleClass === "validation"
+          : input.roleClass === "research" ||
+              input.roleClass === "validation" ||
+              input.roleClass === "docs"
             ? "specialized"
             : input.costClass === "standard"
               ? "high"
@@ -201,6 +300,163 @@ function capability(
   };
 }
 
+function providerProfileId(capability: RuntimeNodeCapability): string {
+  return `capability-profile://${capability.workflowId}/${capability.capabilityId}.v1`;
+}
+
+export function capabilityProductionSelectable(capability: RuntimeNodeCapability): boolean {
+  return (
+    !capability.allowedAdapters.includes("contract_only") &&
+    !capability.authorityBoundaries.includes("not_selectable_in_production") &&
+    capability.executorKey.length > 0 &&
+    capability.workerRef.length > 0 &&
+    capability.requiredMetadataSchemaRef.startsWith("schema://")
+  );
+}
+
+export function providerCapabilityProfileForCapability(
+  capability: RuntimeNodeCapability,
+): ProviderCapabilityProfile {
+  return {
+    artifactKind: "provider_capability_profile",
+    schemaVersion: "execution-platform.provider-capability-profile.v1",
+    profileId: providerProfileId(capability),
+    capabilityId: capability.capabilityId,
+    graphNodeKind: capability.graphNodeKind,
+    executorKey: capability.executorKey,
+    workerRef: capability.workerRef,
+    requiredMetadataSchemaRef: capability.requiredMetadataSchemaRef,
+    workflowId: capability.workflowId,
+    supportedWorkflowIds: capability.supportedWorkflowIds,
+    supportedPhases: capability.supportedPhases,
+    roleClass: capability.roleClass,
+    roleId: capability.roleId,
+    displayName: capability.displayName,
+    modelPolicyRefs: capability.modelPolicyRefs,
+    modelQualificationProfileIds: capability.modelQualificationProfileIds,
+    productionSelectable: capabilityProductionSelectable(capability),
+    productionSelectionRequiresQualification: capability.productionSelectionRequiresQualification,
+    qualificationEvidenceRequired: capability.productionSelectionRequiresQualification,
+    allowedAdapters: capability.allowedAdapters,
+    toolProfileRefs: capability.allowedAdapters.map((adapter) => `tool-profile://${adapter}`),
+    authorityBoundaries: capability.authorityBoundaries,
+    writable: capability.writable,
+    canInspectRepo: capability.canInspectRepo,
+    canEditSource: capability.canEditSource,
+    canWriteTests: capability.canWriteTests,
+    canRunValidation: capability.canRunValidation,
+    canDoWebResearch: capability.canDoWebResearch,
+    canCreatePlanningCapsules: capability.canCreatePlanningCapsules,
+    canProposeChildActions: capability.canProposeChildActions,
+    canCompileRuntimeJobs: capability.canCompileRuntimeJobs,
+    canRequestHumanInput: capability.canRequestHumanInput,
+    canReviewSecurityPrivacy: capability.canReviewSecurityPrivacy,
+    preferredTaskSize: capability.preferredTaskSize,
+    idealTaskSize: capability.idealTaskSize,
+    maxTaskSize: capability.maxTaskSize,
+    maxRecommendedFileCount: capability.maxRecommendedFileCount,
+    maxRecommendedDiffSize: capability.maxRecommendedDiffSize,
+    maxRecommendedContextRefs: capability.maxRecommendedContextRefs,
+    contextCapacity: capability.contextCapacity,
+    expectedStrength: capability.expectedStrength,
+    expectedWeaknesses: capability.expectedWeaknesses,
+    estimatedTokenCostClass: capability.estimatedTokenCostClass,
+    expectedDollarCostClass: capability.expectedDollarCostClass,
+    costClass: capability.costClass,
+    latencyClass: capability.latencyClass,
+    parallelizable: capability.parallelizable,
+    retryable: capability.retryable,
+    repairable: capability.repairable,
+    failureModes: capability.failureModes,
+    evidenceProducedKinds: capability.evidenceProducedKinds,
+    qualifiedEvidenceKinds: capability.evidenceProducedKinds,
+    commitmentFitKinds: capability.commitmentFitKinds,
+    defaultBudgetPolicy: capability.defaultBudgetPolicy,
+    validationResponsibilities: capability.validationResponsibilities,
+    escalationTargets: capability.escalationTargets,
+    knownLimitations: capability.knownLimitations,
+    runtimeDerivedFromCapabilityManifest: true,
+    semanticRoutingPerformed: false,
+    authorityGranted: false,
+    rawPromptStored: false,
+    rawResponseStored: false,
+    rawProviderLogStored: false,
+  };
+}
+
+export function buildProviderCapabilityProfileRegistry(
+  manifest = buildRuntimeNodeCapabilityManifest(),
+): ProviderCapabilityProfileRegistry {
+  return {
+    artifactKind: "provider_capability_profile_registry",
+    schemaVersion: "execution-platform.provider-capability-profile-registry.v1",
+    profiles: manifest.capabilities.map(providerCapabilityProfileForCapability),
+    runtimeDerivedFromCapabilityManifest: true,
+    semanticRoutingPerformed: false,
+    authorityGranted: false,
+    rawPromptStored: false,
+    rawResponseStored: false,
+    rawProviderLogStored: false,
+  };
+}
+
+function inferSupportedPhases(
+  input: Omit<
+    RuntimeNodeCapability,
+    | "rawPromptStored"
+    | "rawResponseStored"
+    | "rawProviderLogStored"
+    | "idealTaskSize"
+    | "supportedWorkflowIds"
+    | "supportedPhases"
+    | "maxTaskSize"
+    | "contextCapacity"
+    | "expectedStrength"
+    | "expectedWeaknesses"
+    | "estimatedTokenCostClass"
+    | "expectedDollarCostClass"
+    | "parallelizable"
+    | "retryable"
+    | "repairable"
+    | "failureModes"
+    | "evidenceProducedKinds"
+    | "commitmentFitKinds"
+    | "defaultBudgetPolicy"
+    | "modelQualificationProfileIds"
+    | "productionSelectionRequiresQualification"
+  >,
+): RuntimeNodeCapabilityPhase[] {
+  if (input.nodeType === "context_synthesis") {
+    return ["context_synthesis", "execution"];
+  }
+  if (input.roleClass === "orchestration") {
+    return ["planning", "decomposition", "capability_selection", "execution"];
+  }
+  if (
+    input.roleClass === "context" ||
+    input.roleClass === "implementation" ||
+    input.roleClass === "docs"
+  ) {
+    return ["execution"];
+  }
+  if (input.roleClass === "validation") {
+    return ["execution", "validation"];
+  }
+  if (input.roleClass === "review") {
+    return ["review", "finalization"];
+  }
+  if (input.roleClass === "research" || input.roleClass === "planning") {
+    return ["execution", "validation"];
+  }
+  if (input.roleClass === "human") {
+    return ["human_decision", "execution"];
+  }
+  if (input.roleClass === "closeout") {
+    return ["finalization", "closeout"];
+  }
+  return ["execution"];
+}
+
 function inferModelQualificationProfileIds(
   input: Omit<
     RuntimeNodeCapability,
@@ -209,6 +465,7 @@ function inferModelQualificationProfileIds(
     | "rawProviderLogStored"
     | "idealTaskSize"
     | "supportedWorkflowIds"
+    | "supportedPhases"
     | "maxTaskSize"
     | "contextCapacity"
     | "expectedStrength"
@@ -228,6 +485,9 @@ function inferModelQualificationProfileIds(
 ): string[] {
   const refs = new Set<string>();
   for (const ref of input.modelPolicyRefs) {
+    if (ref.includes("qwen3-coder-next") || ref.includes("/qwen")) {
+      refs.add("openrouter.qwen.qwen3-coder-next");
+    }
     if (ref.includes("/kimi")) {
       refs.add("openrouter.moonshotai.kimi-k2.6");
     }
@@ -282,6 +542,7 @@ function inferEvidenceKinds(
     | "rawProviderLogStored"
     | "idealTaskSize"
     | "supportedWorkflowIds"
+    | "supportedPhases"
     | "maxTaskSize"
     | "contextCapacity"
     | "expectedStrength"
@@ -330,6 +591,9 @@ function inferEvidenceKinds(
   if (input.roleClass === "observability") {
     kinds.add("readback");
   }
+  if (input.roleClass === "docs") {
+    kinds.add("docs");
+  }
   if (kinds.size === 0) {
     kinds.add("artifact");
   }
@@ -344,6 +608,7 @@ function inferCommitmentFitKinds(
     | "rawProviderLogStored"
     | "idealTaskSize"
     | "supportedWorkflowIds"
+    | "supportedPhases"
     | "maxTaskSize"
     | "contextCapacity"
     | "expectedStrength"
@@ -417,6 +682,47 @@ export function buildRuntimeNodeCapabilityManifest(): RuntimeNodeCapabilityManif
         knownLimitations: ["planning_quality_depends_on_bounded_evidence"],
       }),
       capability({
+        capabilityId: "context_synthesis",
+        graphNodeKind: "context_synthesis",
+        executorKey: "kind:context_synthesis",
+        workerRef: "codex_app_server",
+        requiredMetadataSchemaRef: "schema://runtime-work-graph/node-metadata/context-synthesis.v1",
+        roleClass: "planning",
+        nodeType: "context_synthesis",
+        roleId: "context_synthesis",
+        workflowId: "agent_team.coding",
+        displayName: "Context synthesis and dependency-aware implementation graph planner",
+        modelPolicyRefs: ["policy://codex-parity/openclaw-role/context-synthesis/gpt-5.5"],
+        allowedAdapters: ["codex_app_server"],
+        writable: false,
+        canInspectRepo: true,
+        canEditSource: false,
+        canWriteTests: false,
+        canRunValidation: false,
+        canDoWebResearch: false,
+        canCreatePlanningCapsules: true,
+        canProposeChildActions: true,
+        canCompileRuntimeJobs: false,
+        canRequestHumanInput: true,
+        canReviewSecurityPrivacy: false,
+        preferredTaskSize: "large",
+        maxRecommendedFileCount: 0,
+        maxRecommendedDiffSize: 0,
+        maxRecommendedContextRefs: 60,
+        validationResponsibilities: [
+          "consume_accepted_context_handoffs",
+          "group_commitments_into_worker_ready_units",
+          "map_context_handoffs_to_downstream_nodes",
+          "identify_dependencies_and_parallelism",
+          "block_implementation_until_ready",
+        ],
+        escalationTargets: ["context_scout", "human_decision", "implementation_complex"],
+        costClass: "premium",
+        latencyClass: "slow",
+        authorityBoundaries: ["no_direct_file_write", "no_runtime_lifecycle_mutation"],
+        knownLimitations: ["requires_accepted_context_handoffs_for_complex_missions"],
+      }),
+      capability({
         capabilityId: "implementation_microtask",
         graphNodeKind: "implementation",
         executorKey: "kind:implementation",
@@ -427,8 +733,13 @@ export function buildRuntimeNodeCapabilityManifest(): RuntimeNodeCapabilityManif
         nodeType: "implementation_microtask",
         roleId: "implementation_engineer",
         workflowId: "agent_team.coding",
-        displayName: "Kimi tool-using non-Codex implementation worker loop",
-        modelPolicyRefs: ["policy://codex-parity/openclaw-role/implementation-standard/kimi"],
+        displayName: "Non-Codex tool-using implementation worker loop",
+        modelPolicyRefs: [
+          "policy://codex-parity/openclaw-role/implementation-standard/qwen-controller",
+          "policy://codex-parity/openclaw-role/implementation-standard/kimi-patch-reasoning-none",
+          "policy://codex-parity/openclaw-role/implementation-standard/qwen-validation-repair",
+          "policy://codex-parity/openclaw-role/implementation-standard/qwen-evidence",
+        ],
         allowedAdapters: [
           "worker.kimi.file-implementation",
           "model_agnostic_file_edit_worker",
@@ -454,6 +765,8 @@ export function buildRuntimeNodeCapabilityManifest(): RuntimeNodeCapabilityManif
           "search_allowed_repo_scope",
           "read_bounded_file_snapshots",
           "inspect_related_tests",
+          "select_compound_coding_tool_when_context_is_sufficient",
+          "execute_compound_inspect_edit_validate_evidence_operation",
           "execute_ordered_edit_steps",
           "run_focused_validation",
           "repair_within_budget_or_escalate",
@@ -467,6 +780,7 @@ export function buildRuntimeNodeCapabilityManifest(): RuntimeNodeCapabilityManif
           "not_for_large_architectural_refactors",
           "requires_bounded_tool_results_and_file_snapshots",
           "escalates_after_repeated_same_failure",
+          "router_and_context_scout_qwen_defaults_require_stage_latency_gates_before_promotion",
         ],
       }),
       capability({
@@ -664,7 +978,7 @@ export function buildRuntimeNodeCapabilityManifest(): RuntimeNodeCapabilityManif
         workerRef: "worker.non-codex.docs-editor",
         requiredMetadataSchemaRef:
           "schema://runtime-work-graph/node-metadata/non-codex-docs-editor.v1",
-        roleClass: "implementation",
+        roleClass: "docs",
         nodeType: "non_codex_docs_editor",
         roleId: "docs_skills_writer",
         workflowId: "agent_team.coding",
@@ -734,6 +1048,45 @@ export function buildRuntimeNodeCapabilityManifest(): RuntimeNodeCapabilityManif
         knownLimitations: ["diagnostic_only"],
       }),
       capability({
+        capabilityId: "validation_run",
+        graphNodeKind: "validation",
+        executorKey: "kind:validation",
+        workerRef: "script-middleware",
+        requiredMetadataSchemaRef: "schema://runtime-work-graph/node-metadata/validation-run.v2",
+        roleClass: "validation",
+        nodeType: "validation_run",
+        roleId: "test_engineer",
+        workflowId: "agent_team.coding",
+        displayName: "Focused validation runner",
+        modelPolicyRefs: [],
+        allowedAdapters: ["script-middleware"],
+        writable: false,
+        canInspectRepo: false,
+        canEditSource: false,
+        canWriteTests: false,
+        canRunValidation: true,
+        canDoWebResearch: false,
+        canCreatePlanningCapsules: false,
+        canProposeChildActions: false,
+        canCompileRuntimeJobs: false,
+        canRequestHumanInput: false,
+        canReviewSecurityPrivacy: false,
+        preferredTaskSize: "small",
+        maxRecommendedFileCount: 0,
+        maxRecommendedDiffSize: 0,
+        maxRecommendedContextRefs: 8,
+        validationResponsibilities: [
+          "run_focused_validation",
+          "record_validation_refs",
+          "emit_commitment_evidence_claims",
+        ],
+        escalationTargets: ["non_codex_validation_failure_explainer", "implementation_microtask"],
+        costClass: "cheap",
+        latencyClass: "fast",
+        authorityBoundaries: ["approved_validation_commands_only", "bounded_log_summaries_only"],
+        knownLimitations: ["cannot_repair_failures_without_follow_up_node"],
+      }),
+      capability({
         capabilityId: "reviewer",
         graphNodeKind: "reviewer",
         executorKey: "kind:reviewer",
@@ -771,6 +1124,85 @@ export function buildRuntimeNodeCapabilityManifest(): RuntimeNodeCapabilityManif
         latencyClass: "medium",
         authorityBoundaries: ["read_only", "cannot_mark_runtime_success"],
         knownLimitations: ["quality_judgment_requires_model_review"],
+      }),
+      capability({
+        capabilityId: "observability_readback",
+        graphNodeKind: "observability_readback",
+        executorKey: "kind:observability_readback",
+        workerRef: "worker.observability.runtime",
+        requiredMetadataSchemaRef:
+          "schema://runtime-work-graph/node-metadata/observability-readback.v2",
+        roleClass: "observability",
+        nodeType: "observability_readback",
+        roleId: "observability_scribe",
+        workflowId: "agent_team.coding",
+        displayName: "Owner-facing workflow readback",
+        modelPolicyRefs: ["policy://codex-parity/openclaw-role/observability"],
+        allowedAdapters: ["worker.observability.runtime"],
+        writable: false,
+        canInspectRepo: true,
+        canEditSource: false,
+        canWriteTests: false,
+        canRunValidation: false,
+        canDoWebResearch: false,
+        canCreatePlanningCapsules: false,
+        canProposeChildActions: false,
+        canCompileRuntimeJobs: false,
+        canRequestHumanInput: false,
+        canReviewSecurityPrivacy: false,
+        preferredTaskSize: "small",
+        maxRecommendedFileCount: 12,
+        maxRecommendedDiffSize: 0,
+        maxRecommendedContextRefs: 20,
+        validationResponsibilities: [
+          "surface_runtime_graph_state",
+          "summarize_open_commitments",
+          "emit_owner_readback_refs",
+        ],
+        escalationTargets: ["reviewer", "coding_closeout"],
+        costClass: "cheap",
+        latencyClass: "fast",
+        authorityBoundaries: ["read_only", "bounded_refs_only"],
+        knownLimitations: ["diagnostic_readback_only"],
+      }),
+      capability({
+        capabilityId: "coding_closeout",
+        graphNodeKind: "closeout",
+        executorKey: "kind:closeout",
+        workerRef: "worker.closeout.model-authored",
+        requiredMetadataSchemaRef: "schema://runtime-work-graph/node-metadata/coding-closeout.v2",
+        roleClass: "closeout",
+        nodeType: "coding_closeout",
+        roleId: "closeout_synthesizer",
+        workflowId: "agent_team.coding",
+        displayName: "Coding workflow model-authored closeout",
+        modelPolicyRefs: ["policy://codex-parity/openclaw-role/closeout/gpt-5.5"],
+        allowedAdapters: ["closeout.generate"],
+        writable: false,
+        canInspectRepo: true,
+        canEditSource: false,
+        canWriteTests: false,
+        canRunValidation: false,
+        canDoWebResearch: false,
+        canCreatePlanningCapsules: false,
+        canProposeChildActions: false,
+        canCompileRuntimeJobs: false,
+        canRequestHumanInput: false,
+        canReviewSecurityPrivacy: false,
+        preferredTaskSize: "small",
+        maxRecommendedFileCount: 12,
+        maxRecommendedDiffSize: 0,
+        maxRecommendedContextRefs: 32,
+        validationResponsibilities: [
+          "synthesize_model_authored_closeout",
+          "cite_runtime_evidence_refs",
+          "avoid_degraded_success",
+        ],
+        escalationTargets: ["mark_needs_review"],
+        costClass: "standard",
+        latencyClass: "medium",
+        authorityBoundaries: ["no_runtime_lifecycle_mutation", "bounded_refs_only"],
+        knownLimitations: ["requires_accepted_runtime_evidence"],
       }),
       capability({
         capabilityId: "non_codex_frontend_editor",
@@ -1134,6 +1566,365 @@ export function buildRuntimeNodeCapabilityManifest(): RuntimeNodeCapabilityManif
         authorityBoundaries: ["report_only"],
         knownLimitations: ["cannot claim runtime execution without evidence"],
       }),
+      capability({
+        capabilityId: "architecture_mapper",
+        graphNodeKind: "architecture_spec",
+        executorKey: "kind:architecture_spec",
+        workerRef: "worker.architecture-red-team.mapper",
+        requiredMetadataSchemaRef:
+          "schema://runtime-work-graph/node-metadata/architecture-red-team-mapper.v1",
+        roleClass: "planning",
+        nodeType: "architecture_mapper",
+        roleId: "architecture_mapper",
+        workflowId: "agent_team.architecture_red_team",
+        displayName: "Architecture boundary mapper",
+        modelPolicyRefs: ["policy://architecture-red-team/mapper/gpt-5.5"],
+        allowedAdapters: ["worker.architecture-red-team.runtime"],
+        writable: false,
+        canInspectRepo: true,
+        canEditSource: false,
+        canWriteTests: false,
+        canRunValidation: false,
+        canDoWebResearch: false,
+        canCreatePlanningCapsules: true,
+        canProposeChildActions: true,
+        canCompileRuntimeJobs: false,
+        canRequestHumanInput: false,
+        canReviewSecurityPrivacy: true,
+        preferredTaskSize: "large",
+        maxRecommendedFileCount: 40,
+        maxRecommendedDiffSize: 0,
+        maxRecommendedContextRefs: 48,
+        validationResponsibilities: ["map_boundaries", "separate_model_and_runtime_ownership"],
+        escalationTargets: ["assumption_extractor", "code_auditor"],
+        costClass: "premium",
+        latencyClass: "medium",
+        authorityBoundaries: ["read_only", "bounded_refs_only"],
+        knownLimitations: ["does_not_modify_code_or_grant_proof_readiness"],
+      }),
+      capability({
+        capabilityId: "assumption_extractor",
+        graphNodeKind: "reviewer",
+        executorKey: "kind:reviewer",
+        workerRef: "worker.architecture-red-team.assumption-extractor",
+        requiredMetadataSchemaRef:
+          "schema://runtime-work-graph/node-metadata/assumption-extractor.v1",
+        roleClass: "review",
+        nodeType: "assumption_extractor",
+        roleId: "assumption_extractor",
+        workflowId: "agent_team.architecture_red_team",
+        displayName: "Architecture assumption extractor",
+        modelPolicyRefs: ["policy://architecture-red-team/assumption-extractor/gpt-5.5"],
+        allowedAdapters: ["worker.architecture-red-team.runtime"],
+        writable: false,
+        canInspectRepo: true,
+        canEditSource: false,
+        canWriteTests: false,
+        canRunValidation: false,
+        canDoWebResearch: false,
+        canCreatePlanningCapsules: false,
+        canProposeChildActions: true,
+        canCompileRuntimeJobs: false,
+        canRequestHumanInput: false,
+        canReviewSecurityPrivacy: true,
+        preferredTaskSize: "medium",
+        maxRecommendedFileCount: 32,
+        maxRecommendedDiffSize: 0,
+        maxRecommendedContextRefs: 40,
+        validationResponsibilities: ["surface_falsifiable_assumptions", "assign_risk_level"],
+        escalationTargets: ["falsifiable_question_author", "model_contract_critic"],
+        costClass: "standard",
+        latencyClass: "medium",
+        authorityBoundaries: ["read_only", "model_judges_risk_semantics"],
+        knownLimitations: ["runtime_validates_shape_only"],
+      }),
+      capability({
+        capabilityId: "falsifiable_question_author",
+        graphNodeKind: "planning_capsule",
+        executorKey: "kind:planning_capsule",
+        workerRef: "worker.architecture-red-team.question-author",
+        requiredMetadataSchemaRef:
+          "schema://runtime-work-graph/node-metadata/falsifiable-question-author.v1",
+        roleClass: "planning",
+        nodeType: "falsifiable_question_author",
+        roleId: "falsifiable_question_author",
+        workflowId: "agent_team.architecture_red_team",
+        displayName: "Falsifiable question author",
+        modelPolicyRefs: ["policy://architecture-red-team/question-author/gpt-5.5"],
+        allowedAdapters: ["worker.architecture-red-team.runtime"],
+        writable: false,
+        canInspectRepo: true,
+        canEditSource: false,
+        canWriteTests: false,
+        canRunValidation: false,
+        canDoWebResearch: false,
+        canCreatePlanningCapsules: true,
+        canProposeChildActions: true,
+        canCompileRuntimeJobs: false,
+        canRequestHumanInput: false,
+        canReviewSecurityPrivacy: false,
+        preferredTaskSize: "medium",
+        maxRecommendedFileCount: 24,
+        maxRecommendedDiffSize: 0,
+        maxRecommendedContextRefs: 32,
+        validationResponsibilities: ["turn_assumptions_into_falsifiable_questions"],
+        escalationTargets: ["narrow_web_researcher", "code_auditor"],
+        costClass: "standard",
+        latencyClass: "medium",
+        authorityBoundaries: ["read_only"],
+        knownLimitations: ["question_quality_requires_model_review"],
+      }),
+      capability({
+        capabilityId: "narrow_web_researcher",
+        graphNodeKind: "web_research",
+        executorKey: "kind:web_research",
+        workerRef: "worker.architecture-red-team.web-research",
+        requiredMetadataSchemaRef:
+          "schema://runtime-work-graph/node-metadata/narrow-research-brief.v1",
+        roleClass: "research",
+        nodeType: "narrow_web_researcher",
+        roleId: "narrow_web_researcher",
+        workflowId: "agent_team.architecture_red_team",
+        displayName: "Narrow architecture research brief",
+        modelPolicyRefs: ["policy://architecture-red-team/narrow-web-research"],
+        allowedAdapters: ["worker.web-research.runtime"],
+        writable: false,
+        canInspectRepo: false,
+        canEditSource: false,
+        canWriteTests: false,
+        canRunValidation: false,
+        canDoWebResearch: true,
+        canCreatePlanningCapsules: false,
+        canProposeChildActions: false,
+        canCompileRuntimeJobs: false,
+        canRequestHumanInput: false,
+        canReviewSecurityPrivacy: false,
+        preferredTaskSize: "medium",
+        maxRecommendedFileCount: 0,
+        maxRecommendedDiffSize: 0,
+        maxRecommendedContextRefs: 16,
+        validationResponsibilities: ["produce_bounded_research_brief", "cite_source_refs"],
+        escalationTargets: ["code_auditor", "final_recommendation_reviewer"],
+        costClass: "standard",
+        latencyClass: "medium",
+        authorityBoundaries: ["bounded_citation_refs_only", "no_raw_page_storage"],
+        knownLimitations: ["external_sources_can_be_stale_or_inapplicable"],
+      }),
+      capability({
+        capabilityId: "code_auditor",
+        graphNodeKind: "reviewer",
+        executorKey: "kind:reviewer",
+        workerRef: "worker.architecture-red-team.code-auditor",
+        requiredMetadataSchemaRef:
+          "schema://runtime-work-graph/node-metadata/architecture-code-auditor.v1",
+        roleClass: "review",
+        nodeType: "code_auditor",
+        roleId: "code_auditor",
+        workflowId: "agent_team.architecture_red_team",
+        displayName: "Architecture code gap auditor",
+        modelPolicyRefs: ["policy://architecture-red-team/code-auditor/gpt-5.5"],
+        allowedAdapters: ["worker.architecture-red-team.runtime"],
+        writable: false,
+        canInspectRepo: true,
+        canEditSource: false,
+        canWriteTests: false,
+        canRunValidation: false,
+        canDoWebResearch: false,
+        canCreatePlanningCapsules: false,
+        canProposeChildActions: true,
+        canCompileRuntimeJobs: false,
+        canRequestHumanInput: false,
+        canReviewSecurityPrivacy: true,
+        preferredTaskSize: "large",
+        maxRecommendedFileCount: 60,
+        maxRecommendedDiffSize: 0,
+        maxRecommendedContextRefs: 60,
+        validationResponsibilities: ["map_code_gaps", "cite_repo_refs", "avoid_patch_work"],
+        escalationTargets: ["model_contract_critic", "runtime_evidence_critic"],
+        costClass: "premium",
+        latencyClass: "slow",
+        authorityBoundaries: ["read_only", "no_file_edits"],
+        knownLimitations: ["audit_quality_depends_on_available_refs"],
+      }),
+      capability({
+        capabilityId: "model_contract_critic",
+        graphNodeKind: "reviewer",
+        executorKey: "kind:reviewer",
+        workerRef: "worker.architecture-red-team.model-contract-critic",
+        requiredMetadataSchemaRef:
+          "schema://runtime-work-graph/node-metadata/model-contract-critic.v1",
+        roleClass: "review",
+        nodeType: "model_contract_critic",
+        roleId: "model_contract_critic",
+        workflowId: "agent_team.architecture_red_team",
+        displayName: "Model/runtime contract critic",
+        modelPolicyRefs: ["policy://architecture-red-team/model-contract-critic/gpt-5.5"],
+        allowedAdapters: ["worker.architecture-red-team.runtime"],
+        writable: false,
+        canInspectRepo: true,
+        canEditSource: false,
+        canWriteTests: false,
+        canRunValidation: false,
+        canDoWebResearch: false,
+        canCreatePlanningCapsules: false,
+        canProposeChildActions: true,
+        canCompileRuntimeJobs: false,
+        canRequestHumanInput: false,
+        canReviewSecurityPrivacy: true,
+        preferredTaskSize: "medium",
+        maxRecommendedFileCount: 32,
+        maxRecommendedDiffSize: 0,
+        maxRecommendedContextRefs: 40,
+        validationResponsibilities: ["detect_model_invented_runtime_schema"],
+        escalationTargets: ["runtime_evidence_critic", "work_queue_planner"],
+        costClass: "standard",
+        latencyClass: "medium",
+        authorityBoundaries: ["read_only"],
+        knownLimitations: ["cannot_validate_semantics_without_model_review"],
+      }),
+      capability({
+        capabilityId: "runtime_evidence_critic",
+        graphNodeKind: "observability_readback",
+        executorKey: "kind:observability_readback",
+        workerRef: "worker.architecture-red-team.runtime-evidence-critic",
+        requiredMetadataSchemaRef:
+          "schema://runtime-work-graph/node-metadata/runtime-evidence-critic.v1",
+        roleClass: "observability",
+        nodeType: "runtime_evidence_critic",
+        roleId: "runtime_evidence_critic",
+        workflowId: "agent_team.architecture_red_team",
+        displayName: "Runtime evidence and readback critic",
+        modelPolicyRefs: ["policy://architecture-red-team/runtime-evidence-critic"],
+        allowedAdapters: ["worker.architecture-red-team.runtime"],
+        writable: false,
+        canInspectRepo: true,
+        canEditSource: false,
+        canWriteTests: false,
+        canRunValidation: false,
+        canDoWebResearch: false,
+        canCreatePlanningCapsules: false,
+        canProposeChildActions: true,
+        canCompileRuntimeJobs: false,
+        canRequestHumanInput: false,
+        canReviewSecurityPrivacy: false,
+        preferredTaskSize: "medium",
+        maxRecommendedFileCount: 28,
+        maxRecommendedDiffSize: 0,
+        maxRecommendedContextRefs: 36,
+        validationResponsibilities: ["check_evidence_claims", "check_owner_readback_gaps"],
+        escalationTargets: ["work_queue_planner", "final_recommendation_reviewer"],
+        costClass: "standard",
+        latencyClass: "medium",
+        authorityBoundaries: ["read_only", "cannot_mark_success"],
+        knownLimitations: ["diagnostic_only"],
+      }),
+      capability({
+        capabilityId: "work_queue_planner",
+        graphNodeKind: "action_graph_compile",
+        executorKey: "kind:action_graph_compile",
+        workerRef: "worker.architecture-red-team.work-queue-planner",
+        requiredMetadataSchemaRef:
+          "schema://runtime-work-graph/node-metadata/red-team-work-queue-planner.v1",
+        roleClass: "planning",
+        nodeType: "work_queue_planner",
+        roleId: "work_queue_planner",
+        workflowId: "agent_team.architecture_red_team",
+        displayName: "Red-team work queue planner",
+        modelPolicyRefs: ["policy://architecture-red-team/work-queue-planner"],
+        allowedAdapters: ["worker.plan-to-runtime-compiler"],
+        writable: false,
+        canInspectRepo: true,
+        canEditSource: false,
+        canWriteTests: false,
+        canRunValidation: true,
+        canDoWebResearch: false,
+        canCreatePlanningCapsules: false,
+        canProposeChildActions: true,
+        canCompileRuntimeJobs: false,
+        canRequestHumanInput: true,
+        canReviewSecurityPrivacy: false,
+        preferredTaskSize: "medium",
+        maxRecommendedFileCount: 16,
+        maxRecommendedDiffSize: 0,
+        maxRecommendedContextRefs: 24,
+        validationResponsibilities: ["split_preproof_and_postproof_actions"],
+        escalationTargets: ["human_decision", "final_recommendation_reviewer"],
+        costClass: "standard",
+        latencyClass: "medium",
+        authorityBoundaries: ["proposal_only", "no_work_queue_lifecycle_mutation"],
+        knownLimitations: ["does_not_execute_queue_items"],
+      }),
+      capability({
+        capabilityId: "final_recommendation_reviewer",
+        graphNodeKind: "reviewer",
+        executorKey: "kind:reviewer",
+        workerRef: "worker.architecture-red-team.final-reviewer",
+        requiredMetadataSchemaRef:
+          "schema://runtime-work-graph/node-metadata/red-team-final-reviewer.v1",
+        roleClass: "review",
+        nodeType: "final_recommendation_reviewer",
+        roleId: "final_recommendation_reviewer",
+        workflowId: "agent_team.architecture_red_team",
+        displayName: "Architecture red-team final reviewer",
+        modelPolicyRefs: ["policy://architecture-red-team/final-reviewer/gpt-5.5"],
+        allowedAdapters: ["worker.architecture-red-team.runtime"],
+        writable: false,
+        canInspectRepo: true,
+        canEditSource: false,
+        canWriteTests: false,
+        canRunValidation: false,
+        canDoWebResearch: false,
+        canCreatePlanningCapsules: false,
+        canProposeChildActions: true,
+        canCompileRuntimeJobs: false,
+        canRequestHumanInput: false,
+        canReviewSecurityPrivacy: true,
+        preferredTaskSize: "medium",
+        maxRecommendedFileCount: 24,
+        maxRecommendedDiffSize: 0,
+        maxRecommendedContextRefs: 40,
+        validationResponsibilities: ["judge_sufficiency", "decide_proof_readiness"],
+        escalationTargets: ["red_team_closeout", "human_decision"],
+        costClass: "premium",
+        latencyClass: "medium",
+        authorityBoundaries: ["model_judgment_only", "runtime_validates_blockers"],
+        knownLimitations: ["cannot_override_p0_blockers_without_owner_ref"],
+      }),
+      capability({
+        capabilityId: "red_team_closeout",
+        graphNodeKind: "closeout",
+        executorKey: "kind:closeout",
+        workerRef: "worker.closeout.model-authored",
+        requiredMetadataSchemaRef: "schema://runtime-work-graph/node-metadata/red-team-closeout.v1",
+        roleClass: "closeout",
+        nodeType: "red_team_closeout",
+        roleId: "red_team_closeout",
+        workflowId: "agent_team.architecture_red_team",
+        displayName: "Architecture red-team model-authored closeout",
+        modelPolicyRefs: ["policy://architecture-red-team/closeout/gpt-5.5"],
+        allowedAdapters: ["closeout.generate"],
+        writable: false,
+        canInspectRepo: true,
+        canEditSource: false,
+        canWriteTests: false,
+        canRunValidation: false,
+        canDoWebResearch: false,
+        canCreatePlanningCapsules: false,
+        canProposeChildActions: false,
+        canCompileRuntimeJobs: false,
+        canRequestHumanInput: false,
+        canReviewSecurityPrivacy: false,
+        preferredTaskSize: "small",
+        maxRecommendedFileCount: 12,
+        maxRecommendedDiffSize: 0,
+        maxRecommendedContextRefs: 32,
+        validationResponsibilities: ["cite_gate_evidence_refs", "surface_readiness_decision"],
+        escalationTargets: ["mark_needs_review"],
+        costClass: "standard",
+        latencyClass: "medium",
+        authorityBoundaries: ["bounded_refs_only", "cannot_claim_proof_success"],
+        knownLimitations: ["requires_accepted_gate_validation"],
+      }),
     ],
   };
 }
@@ -1163,30 +1954,321 @@ export function isRuntimeCapabilityId(
   return Boolean(findRuntimeNodeCapability(capabilityId, manifest));
 }
 
+export function findProviderCapabilityProfile(
+  capabilityOrProfileId: string,
+  registry = buildProviderCapabilityProfileRegistry(),
+): ProviderCapabilityProfile | null {
+  return (
+    registry.profiles.find(
+      (profile) =>
+        profile.capabilityId === capabilityOrProfileId ||
+        profile.profileId === capabilityOrProfileId,
+    ) ?? null
+  );
+}
+
+export type ProviderCapabilityProfileRegistryValidation = {
+  valid: boolean;
+  reasonCodes: string[];
+  profileCount: number;
+  productionSelectableProfileIds: string[];
+  diagnosticOnlyProfileIds: string[];
+  rawPromptStored: false;
+  rawResponseStored: false;
+  rawProviderLogStored: false;
+};
+
+export function validateProviderCapabilityProfileRegistry(
+  registry = buildProviderCapabilityProfileRegistry(),
+): ProviderCapabilityProfileRegistryValidation {
+  const reasonCodes: string[] = [];
+  const seenProfileIds = new Set<string>();
+  const seenCapabilityIds = new Set<string>();
+  const productionSelectableProfileIds: string[] = [];
+  const diagnosticOnlyProfileIds: string[] = [];
+
+  for (const profile of registry.profiles) {
+    if (seenProfileIds.has(profile.profileId)) {
+      reasonCodes.push(`provider_capability_profile_duplicate_profile_id:${profile.profileId}`);
+    }
+    if (seenCapabilityIds.has(profile.capabilityId)) {
+      reasonCodes.push(
+        `provider_capability_profile_duplicate_capability_id:${profile.capabilityId}`,
+      );
+    }
+    seenProfileIds.add(profile.profileId);
+    seenCapabilityIds.add(profile.capabilityId);
+
+    if (!TEAM_GRAPH_NODE_KINDS.includes(profile.graphNodeKind)) {
+      reasonCodes.push(`provider_capability_profile_graph_node_kind_invalid:${profile.profileId}`);
+    }
+    if (!profile.executorKey.match(/^(kind|role):/u)) {
+      reasonCodes.push(`provider_capability_profile_executor_key_invalid:${profile.profileId}`);
+    }
+    if (!profile.workerRef) {
+      reasonCodes.push(`provider_capability_profile_worker_ref_missing:${profile.profileId}`);
+    }
+    if (!profile.requiredMetadataSchemaRef.startsWith("schema://")) {
+      reasonCodes.push(`provider_capability_profile_schema_ref_invalid:${profile.profileId}`);
+    }
+    if (profile.rawPromptStored || profile.rawResponseStored || profile.rawProviderLogStored) {
+      reasonCodes.push(`provider_capability_profile_raw_storage_flag_invalid:${profile.profileId}`);
+    }
+    if (profile.productionSelectable) {
+      productionSelectableProfileIds.push(profile.profileId);
+      if (profile.allowedAdapters.includes("contract_only")) {
+        reasonCodes.push(
+          `provider_capability_profile_contract_only_marked_production:${profile.profileId}`,
+        );
+      }
+      if (profile.authorityBoundaries.includes("not_selectable_in_production")) {
+        reasonCodes.push(
+          `provider_capability_profile_not_selectable_marked_production:${profile.profileId}`,
+        );
+      }
+      if (
+        profile.productionSelectionRequiresQualification &&
+        profile.modelQualificationProfileIds.length === 0
+      ) {
+        reasonCodes.push(
+          `provider_capability_profile_qualification_refs_missing:${profile.profileId}`,
+        );
+      }
+    } else {
+      diagnosticOnlyProfileIds.push(profile.profileId);
+    }
+  }
+
+  return {
+    valid: reasonCodes.length === 0,
+    reasonCodes:
+      reasonCodes.length === 0
+        ? ["provider_capability_profile_registry_valid"]
+        : [...new Set(reasonCodes)],
+    profileCount: registry.profiles.length,
+    productionSelectableProfileIds,
+    diagnosticOnlyProfileIds,
+    rawPromptStored: false,
+    rawResponseStored: false,
+    rawProviderLogStored: false,
+  };
+}
+
 export function filterRuntimeNodeCapabilityManifestForExecutors(input: {
   executableExecutorKeys: string[];
   manifest?: RuntimeNodeCapabilityManifest;
+  workflowId?: string | null;
+  phase?: RuntimeNodeCapabilityPhase | null;
 }): RuntimeNodeCapabilityManifest {
   const executable = new Set(input.executableExecutorKeys);
   return {
     ...(input.manifest ?? buildRuntimeNodeCapabilityManifest()),
     capabilities: (input.manifest ?? buildRuntimeNodeCapabilityManifest()).capabilities.filter(
       (capability) =>
-        executable.has(capability.executorKey) ||
-        executable.has(`kind:${capability.graphNodeKind}`) ||
-        executable.has(`role:${capability.roleId}`),
+        executable.has(capability.executorKey) &&
+        (!input.workflowId || capability.supportedWorkflowIds.includes(input.workflowId)) &&
+        capabilitySelectableInPhase(capability, input.phase ?? null),
     ),
+  };
+}
+
+export function capabilitySelectableInPhase(
+  capability: RuntimeNodeCapability,
+  phase: RuntimeNodeCapabilityPhase | null,
+): boolean {
+  if (!phase || capability.supportedPhases.includes(phase)) {
+    return true;
+  }
+  if (phase === "context_synthesis") {
+    return capability.capabilityId === "context_synthesis";
+  }
+  if (phase === "decomposition") {
+    if (capability.capabilityId === "implementation_complex") {
+      return false;
+    }
+    return [
+      "context",
+      "implementation",
+      "validation",
+      "review",
+      "research",
+      "planning",
+      "docs",
+      "human",
+      "observability",
+      "orchestration",
+      "closeout",
+    ].includes(capability.roleClass);
+  }
+  if (phase === "capability_selection") {
+    if (capability.capabilityId === "implementation_complex") {
+      return false;
+    }
+    return [
+      "context",
+      "implementation",
+      "validation",
+      "review",
+      "research",
+      "planning",
+      "docs",
+      "human",
+      "observability",
+      "orchestration",
+      "closeout",
+    ].includes(capability.roleClass);
+  }
+  return false;
+}
+
+export type RuntimeCapabilityExecutorCoverage = {
+  workflowId: string;
+  valid: boolean;
+  requiredCapabilityIds: string[];
+  coveredCapabilityIds: string[];
+  missingCapabilityIds: string[];
+  requiredExecutorKeys: string[];
+  coveredExecutorKeys: string[];
+  missingExecutorKeys: string[];
+  reasonCodes: string[];
+  rawPromptStored: false;
+  rawResponseStored: false;
+  rawProviderLogStored: false;
+};
+
+export function validateRuntimeCapabilityExecutorCoverage(input: {
+  workflowId: string;
+  executableExecutorKeys: string[];
+  manifest?: RuntimeNodeCapabilityManifest;
+}): RuntimeCapabilityExecutorCoverage {
+  const manifest = input.manifest ?? buildRuntimeNodeCapabilityManifest();
+  const executable = new Set(input.executableExecutorKeys);
+  const workflowCapabilities = manifest.capabilities.filter(
+    (capability) => capability.workflowId === input.workflowId,
+  );
+  const coveredCapabilityIds: string[] = [];
+  const missingCapabilityIds: string[] = [];
+  const coveredExecutorKeys = new Set<string>();
+  const missingExecutorKeys = new Set<string>();
+
+  for (const capability of workflowCapabilities) {
+    const acceptedKeys = [
+      capability.executorKey,
+      `kind:${capability.graphNodeKind}`,
+      `role:${capability.roleId}`,
+    ];
+    const matchedKey = acceptedKeys.find((key) => executable.has(key));
+    if (matchedKey) {
+      coveredCapabilityIds.push(capability.capabilityId);
+      coveredExecutorKeys.add(matchedKey);
+    } else {
+      missingCapabilityIds.push(capability.capabilityId);
+      missingExecutorKeys.add(capability.executorKey);
+    }
+  }
+
+  const reasonCodes =
+    missingCapabilityIds.length === 0
+      ? ["runtime_capability_executor_coverage_complete"]
+      : [
+          "runtime_capability_executor_coverage_missing",
+          ...missingCapabilityIds.map((capabilityId) => `missing_capability:${capabilityId}`),
+          ...[...missingExecutorKeys].map((executorKey) => `missing_executor:${executorKey}`),
+        ];
+
+  return {
+    workflowId: input.workflowId,
+    valid: missingCapabilityIds.length === 0,
+    requiredCapabilityIds: workflowCapabilities.map((capability) => capability.capabilityId),
+    coveredCapabilityIds,
+    missingCapabilityIds,
+    requiredExecutorKeys: [
+      ...new Set(workflowCapabilities.map((capability) => capability.executorKey)),
+    ],
+    coveredExecutorKeys: [...coveredExecutorKeys],
+    missingExecutorKeys: [...missingExecutorKeys],
+    reasonCodes,
+    rawPromptStored: false,
+    rawResponseStored: false,
+    rawProviderLogStored: false,
   };
 }
 
 export function runtimeNodeCapabilityManifestForModel(input?: {
   executableExecutorKeys?: string[];
+  workflowId?: string | null;
+  phase?: RuntimeNodeCapabilityPhase | null;
 }): JsonValue {
   const manifest = buildRuntimeNodeCapabilityManifest();
-  return (input?.executableExecutorKeys
+  const filtered = input?.executableExecutorKeys
     ? filterRuntimeNodeCapabilityManifestForExecutors({
         executableExecutorKeys: input.executableExecutorKeys,
+        workflowId: input.workflowId,
+        phase: input.phase,
         manifest,
       })
-    : manifest) as unknown as JsonValue;
+    : manifest;
+  return {
+    artifactKind: filtered.artifactKind,
+    schemaVersion: filtered.schemaVersion,
+    semanticRoutingPerformed: false,
+    authorityGranted: false,
+    rawPromptStored: false,
+    rawResponseStored: false,
+    rawProviderLogStored: false,
+    modelVisibleRuntimeOwnedFieldsOmitted: true,
+    capabilities: filtered.capabilities.map((capability) => {
+      const profile = providerCapabilityProfileForCapability(capability);
+      return {
+        capabilityId: capability.capabilityId,
+        providerCapabilityProfileId: profile.profileId,
+        displayName: capability.displayName,
+        roleClass: capability.roleClass,
+        supportedWorkflowIds: capability.supportedWorkflowIds,
+        supportedPhases: capability.supportedPhases,
+        writable: capability.writable,
+        canInspectRepo: capability.canInspectRepo,
+        canEditSource: capability.canEditSource,
+        canWriteTests: capability.canWriteTests,
+        canRunValidation: capability.canRunValidation,
+        canDoWebResearch: capability.canDoWebResearch,
+        canCreatePlanningCapsules: capability.canCreatePlanningCapsules,
+        canProposeChildActions: capability.canProposeChildActions,
+        canCompileRuntimeJobs: capability.canCompileRuntimeJobs,
+        canRequestHumanInput: capability.canRequestHumanInput,
+        canReviewSecurityPrivacy: capability.canReviewSecurityPrivacy,
+        preferredTaskSize: capability.preferredTaskSize,
+        idealTaskSize: capability.idealTaskSize,
+        maxTaskSize: capability.maxTaskSize,
+        maxRecommendedFileCount: capability.maxRecommendedFileCount,
+        maxRecommendedDiffSize: capability.maxRecommendedDiffSize,
+        maxRecommendedContextRefs: capability.maxRecommendedContextRefs,
+        contextCapacity: capability.contextCapacity,
+        expectedStrength: capability.expectedStrength,
+        expectedWeaknesses: capability.expectedWeaknesses,
+        costClass: capability.costClass,
+        latencyClass: capability.latencyClass,
+        estimatedTokenCostClass: capability.estimatedTokenCostClass,
+        expectedDollarCostClass: capability.expectedDollarCostClass,
+        parallelizable: capability.parallelizable,
+        retryable: capability.retryable,
+        repairable: capability.repairable,
+        evidenceProducedKinds: capability.evidenceProducedKinds,
+        qualifiedEvidenceKinds: profile.qualifiedEvidenceKinds,
+        commitmentFitKinds: capability.commitmentFitKinds,
+        validationResponsibilities: capability.validationResponsibilities,
+        escalationTargets: capability.escalationTargets,
+        authorityBoundaries: capability.authorityBoundaries,
+        toolProfileRefs: profile.toolProfileRefs,
+        knownLimitations: capability.knownLimitations,
+        productionSelectable: profile.productionSelectable,
+        productionSelectionRequiresQualification:
+          capability.productionSelectionRequiresQualification,
+        modelQualificationProfileIds: capability.modelQualificationProfileIds,
+        rawPromptStored: false,
+        rawResponseStored: false,
+        rawProviderLogStored: false,
+      };
+    }),
+  } satisfies JsonValue;
 }

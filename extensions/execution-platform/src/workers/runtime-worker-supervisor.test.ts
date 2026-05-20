@@ -92,6 +92,34 @@ describe("runtime worker supervisor", () => {
       await expect(repository.listEvents("job-supervisor-complete")).resolves.toEqual(
         expect.arrayContaining([
           expect.objectContaining({ eventType: "runtime_worker.supervisor_heartbeat" }),
+          expect.objectContaining({
+            eventType: "runtime_worker.adapter_started",
+            data: expect.objectContaining({
+              adapterId: "worker.acp-codex.coding",
+              currentPhase: "adapter_execute",
+            }),
+          }),
+          expect.objectContaining({
+            eventType: "runtime_worker.adapter_completed",
+            data: expect.objectContaining({
+              adapterId: "worker.acp-codex.coding",
+              status: "completed",
+            }),
+          }),
+          expect.objectContaining({
+            eventType: "runtime_execution.span",
+            data: expect.objectContaining({
+              executionSpan: expect.objectContaining({
+                artifactKind: "runtime_execution_span",
+                spanKind: "worker_phase",
+                status: "succeeded",
+                adapterId: "worker.acp-codex.coding",
+                evidenceRefs: ["runtime-job://job-supervisor-complete/test-proof"],
+                rawPromptStored: false,
+                rawResponseStored: false,
+              }),
+            }),
+          }),
           expect.objectContaining({ eventType: "job.succeeded" }),
         ]),
       );
@@ -193,6 +221,18 @@ describe("runtime worker supervisor", () => {
       await expect(
         repository.listEvents("job-supervisor-failed-adapter-renewal"),
       ).resolves.toHaveLength(eventCountAfterRun);
+      await expect(
+        repository.getJob("job-supervisor-failed-adapter-renewal"),
+      ).resolves.toMatchObject({
+        state: "failed",
+        result: { status: "needs_review" },
+        error: { code: "worker_adapter_needs_review", retryScheduled: false },
+      });
+      expect(
+        (await repository.listEvents("job-supervisor-failed-adapter-renewal")).map(
+          (event) => event.eventType,
+        ),
+      ).toContain("job.needs_review");
     });
   });
 
@@ -232,6 +272,45 @@ describe("runtime worker supervisor", () => {
       await expect(repository.getJob("job-supervisor-needs-review")).resolves.toMatchObject({
         state: "failed",
         error: { code: "completed_status_missing_task_specific_evidence" },
+      });
+    });
+  });
+
+  it("surfaces bounded adapter throw classes in supervisor result reason codes", async () => {
+    await withRepository(async (repository) => {
+      await repository.enqueueJob({
+        jobId: "job-supervisor-adapter-throws",
+        jobType: "executor.agent_team",
+        maxAttempts: 1,
+      });
+      const supervisor = new RuntimeWorkerSupervisor({
+        repository,
+        workerId: "worker-supervisor",
+        adapters: [
+          {
+            adapterId: "worker.acp-codex.coding",
+            jobTypes: ["executor.agent_team"],
+            execute: async () => {
+              throw new Error("artifact metadata exceeds 65536 bytes");
+            },
+          },
+        ],
+      });
+
+      const result = await supervisor.runOnce({
+        runtimeJobId: "job-supervisor-adapter-throws",
+      });
+
+      expect(result).toMatchObject({
+        status: "failed",
+        reasonCodes: ["worker_adapter_threw", "worker_adapter_threw:artifact_metadata_limit"],
+      });
+      await expect(repository.getJob("job-supervisor-adapter-throws")).resolves.toMatchObject({
+        state: "failed",
+        error: {
+          code: "worker_adapter_threw",
+          message: "artifact metadata exceeds 65536 bytes",
+        },
       });
     });
   });

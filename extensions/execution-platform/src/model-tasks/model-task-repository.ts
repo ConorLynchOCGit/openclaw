@@ -7,7 +7,15 @@ import type {
   RuntimeJobEvent,
   RuntimeJobRepository,
 } from "../runtime-job-repository.ts";
+import type { RuntimeToolKernel } from "../runtime-tool-call/runtime-tool-kernel.ts";
+import type { RuntimeToolKernelInvokeResult } from "../runtime-tool-call/runtime-tool-kernel.ts";
 import { classifyModelTaskFallback, type ModelTaskFallbackFailureKind } from "./fallback.ts";
+import {
+  MODEL_CALL_RUNTIME_TOOL_ID,
+  modelCallMetadataFromResult,
+  structuredOutputFromModelCallResult,
+  type ModelCallVolatileInput,
+} from "./model-call-runtime-tool.ts";
 import { ModelTaskContractRegistry } from "./registry.ts";
 import {
   isModelTaskPayload,
@@ -48,6 +56,35 @@ export type FailModelTaskInput = {
   message: string;
   evidence?: JsonValue;
   retryDelayMs?: number;
+};
+
+export type InvokeClaimedModelTaskRuntimeToolInput = {
+  claimed: ClaimedModelTask;
+  kernel: RuntimeToolKernel;
+  modelId: string;
+  providerRef?: string | null;
+  volatileInput: Omit<ModelCallVolatileInput, "contract"> & {
+    contract?: ModelCallVolatileInput["contract"];
+  };
+  inputSummary: string;
+  idempotencyKey?: string;
+  maxStructuredOutputBytes?: number;
+};
+
+export type InvokeClaimedModelTaskRuntimeToolResult = {
+  invocation: RuntimeToolKernelInvokeResult;
+  structuredOutput: JsonValue | null;
+  modelRef: string | null;
+  responseHash: string | null;
+  usage: {
+    promptTokens?: number;
+    outputTokens?: number;
+    cachedInputTokens?: number;
+  } | null;
+  artifactRef: string;
+  rawPromptStored: false;
+  rawResponseStored: false;
+  rawProviderLogStored: false;
 };
 
 export type ModelTaskRepositoryOptions = {
@@ -100,6 +137,39 @@ function fallbackArtifact(jobId: string, metadata: JsonValue): AttachRuntimeJobA
     sizeBytes: Buffer.byteLength(JSON.stringify(metadata), "utf8"),
     metadata,
   };
+}
+
+function runtimeToolTraceArtifact(
+  jobId: string,
+  metadata: JsonValue,
+): AttachRuntimeJobArtifactInput {
+  return {
+    jobId,
+    artifactType: "model_task.runtime_tool_trace",
+    storageKind: "metadata",
+    uri: `runtime-job://${jobId}/model-task/runtime-tool-trace`,
+    contentType: "application/json",
+    sizeBytes: Buffer.byteLength(JSON.stringify(metadata), "utf8"),
+    metadata,
+  };
+}
+
+function isObjectRecord(value: JsonValue): value is Record<string, JsonValue> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function hasRuntimeToolTraceEvidence(artifacts: RuntimeJobArtifact[]): boolean {
+  return artifacts.some((artifact) => {
+    if (artifact.artifactType !== "model_task.runtime_tool_trace") {
+      return false;
+    }
+    const metadata = artifact.metadata;
+    if (!isObjectRecord(metadata)) {
+      return false;
+    }
+    const invocationRef = metadata.invocationRef;
+    return typeof invocationRef === "string" && invocationRef.startsWith("runtime-tool://");
+  });
 }
 
 export class ModelTaskRepository {
@@ -208,6 +278,117 @@ export class ModelTaskRepository {
     };
   }
 
+  async invokeClaimedModelTaskRuntimeTool(
+    input: InvokeClaimedModelTaskRuntimeToolInput,
+  ): Promise<InvokeClaimedModelTaskRuntimeToolResult> {
+    const job = input.claimed.job;
+    if (!isModelTaskPayload(job.payload)) {
+      throw new Error(`claimed runtime job is not a model task: ${job.jobId}`);
+    }
+    const contract = this.registry.require(job.payload.contractId);
+    const volatileInput: ModelCallVolatileInput = {
+      ...input.volatileInput,
+      contract: input.volatileInput.contract ?? {
+        contractName: `execution_platform_model_task_${contract.id}`,
+        contractVersion: "execution-platform.model-task-runtime-tool.v1",
+        modelId: input.modelId,
+      },
+      parseJsonOutput: input.volatileInput.parseJsonOutput ?? true,
+      maxStructuredOutputBytes:
+        input.volatileInput.maxStructuredOutputBytes ?? input.maxStructuredOutputBytes ?? 24_000,
+    };
+    const invocation = await input.kernel.invoke({
+      toolId: MODEL_CALL_RUNTIME_TOOL_ID,
+      runtimeJobId: job.jobId,
+      roleRef: `model_task:${contract.id}`,
+      modelRef: input.modelId,
+      providerRef: input.providerRef ?? job.payload.routeEvidence.selected?.provider ?? null,
+      idempotencyScope: `model_task:${contract.id}:model-call`,
+      idempotencyKey: input.idempotencyKey ?? `${job.jobId}:model-call`,
+      inputSummary: input.inputSummary,
+      volatileInput,
+      budget: {
+        timeoutMs: contract.routePolicy.timeoutMs,
+        maxOutputTokens:
+          typeof volatileInput.responseOptions?.maxOutputTokens === "number"
+            ? volatileInput.responseOptions.maxOutputTokens
+            : null,
+        metadata: {
+          contractId: contract.id,
+          rawPromptStored: false,
+          rawResponseStored: false,
+          rawProviderLogStored: false,
+        },
+      },
+      metadata: {
+        contractId: contract.id,
+        modelTaskJobId: job.jobId,
+        providerRef: input.providerRef ?? null,
+        rawPromptStored: false,
+        rawResponseStored: false,
+        rawProviderLogStored: false,
+      },
+      rawPromptStored: false,
+      rawResponseStored: false,
+      rawTranscriptStored: false,
+      rawProviderLogStored: false,
+      rawToolLogStored: false,
+      rawCommandLogStored: false,
+      rawDbRowsStored: false,
+      secretsStored: false,
+      authorityGranted: false,
+      controlsApplied: false,
+      workQueueLifecycleMutated: false,
+      runtimeLifecycleMutated: false,
+    });
+    const metadata = modelCallMetadataFromResult(invocation.result);
+    const artifactRef = `runtime-job://${job.jobId}/model-task/runtime-tool-trace`;
+    await this.runtimeJobs.attachArtifact(
+      runtimeToolTraceArtifact(job.jobId, {
+        invocationRef: invocation.invocationRef,
+        invocationId: invocation.invocation.invocationId,
+        toolId: invocation.invocation.toolId,
+        toolFamily: invocation.invocation.toolFamily,
+        status: invocation.invocation.status,
+        modelRef: metadata?.modelRef ?? input.modelId,
+        providerRef: metadata?.providerRef ?? input.providerRef ?? null,
+        responseHash: metadata?.responseHash ?? invocation.invocation.outputHash ?? null,
+        usage: metadata?.usage ?? null,
+        reasonCodes: invocation.reasonCodes,
+        rawPromptStored: false,
+        rawResponseStored: false,
+        rawProviderLogStored: false,
+        rawToolLogStored: false,
+        rawCommandLogStored: false,
+      }),
+    );
+    await this.runtimeJobs.recordEvent({
+      jobId: job.jobId,
+      eventType: "model_task.runtime_tool_invoked",
+      data: {
+        contractId: contract.id,
+        invocationRef: invocation.invocationRef,
+        toolId: invocation.invocation.toolId,
+        status: invocation.invocation.status,
+        modelRef: metadata?.modelRef ?? input.modelId,
+        rawPromptStored: false,
+        rawResponseStored: false,
+        rawProviderLogStored: false,
+      },
+    });
+    return {
+      invocation,
+      structuredOutput: structuredOutputFromModelCallResult(invocation.result),
+      modelRef: metadata?.modelRef ?? input.modelId,
+      responseHash: metadata?.responseHash ?? invocation.invocation.outputHash,
+      usage: metadata?.usage ?? null,
+      artifactRef,
+      rawPromptStored: false,
+      rawResponseStored: false,
+      rawProviderLogStored: false,
+    };
+  }
+
   async completeModelTask(input: CompleteModelTaskInput): Promise<RuntimeJob | null> {
     const job = await this.runtimeJobs.getJob(input.jobId);
     if (!job || !isModelTaskPayload(job.payload)) {
@@ -216,6 +397,42 @@ export class ModelTaskRepository {
     const contract = this.registry.require(job.payload.contractId);
     const outputValidation = this.registry.validateOutput(contract.id, input.output);
     const routeEvidence = mergeRouteEvidence(job.payload.routeEvidence, input.routeEvidence);
+    if (routeEvidence.providerCallMade) {
+      const artifacts = await this.runtimeJobs.listArtifacts(job.jobId);
+      if (!hasRuntimeToolTraceEvidence(artifacts)) {
+        const fallback = classifyModelTaskFallback({
+          failureKind: "transport_error",
+          evidence: {
+            reasonCode: "model_task_provider_call_missing_runtime_tool_trace",
+            providerCallMade: true,
+          },
+        });
+        await this.runtimeJobs.recordEvent({
+          jobId: job.jobId,
+          eventType: "model_task.provider_evidence_missing",
+          data: {
+            contractId: contract.id,
+            routeEvidence,
+            fallback,
+          },
+        });
+        await this.runtimeJobs.attachArtifact(
+          fallbackArtifact(job.jobId, {
+            routeEvidence,
+            fallback,
+          }),
+        );
+        return this.runtimeJobs.failJob({
+          leaseToken: input.leaseToken,
+          error: {
+            code: "model_task_provider_call_missing_runtime_tool_trace",
+            contractId: contract.id,
+            routeEvidence,
+            fallback,
+          },
+        });
+      }
+    }
     if (!outputValidation.ok) {
       const fallback = classifyModelTaskFallback({
         failureKind: "schema_validation_failure",

@@ -1,4 +1,6 @@
 import type { JsonValue, RuntimeJob } from "../runtime-job-repository.ts";
+import type { RuntimeToolificationTruthRegistrySummary } from "../runtime-tool-call/runtime-tool-adoption-boundary.ts";
+import type { WorkQueueGeneratedItemLifecycle } from "./generated-item-lifecycle.ts";
 
 export const WORK_ITEM_LIFECYCLE_STATES = [
   "draft",
@@ -61,6 +63,7 @@ export type WorkItem = {
   ownerReadbackRef?: string | null;
   currentVersionId: string | null;
   metadata: JsonValue;
+  generatedItemLifecycle?: WorkQueueGeneratedItemLifecycle | null;
   createdAt: Date;
   updatedAt: Date;
 };
@@ -222,6 +225,7 @@ export type WorkQueueConvergenceSliceProjection = {
     ownerReadbackState: "ready" | "needs_review" | "missing";
     projectionFreshnessState: "fresh" | "needs_review";
   };
+  toolificationTruthRegistry: RuntimeToolificationTruthRegistrySummary | null;
   rawPromptStored: false;
   rawResponseStored: false;
   rawTranscriptStored: false;

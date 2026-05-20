@@ -13,6 +13,31 @@ import {
 export const DEFAULT_DYNAMIC_ORCHESTRATOR_MODEL_REF = "openai-codex/gpt-5.5";
 export const DEFAULT_DYNAMIC_ORCHESTRATOR_PROVIDER_PATH = "codex_app_server";
 
+export type DynamicCodingTeamModelCallProgressEvent = {
+  spanId: string;
+  phase: "started" | "heartbeat" | "completed" | "failed";
+  modelRef: string;
+  providerPath: string;
+  contractName: string;
+  objectiveSummary: string | null;
+  inputHash: string;
+  responseHash?: string | null;
+  responseShapeSummary?: {
+    inputBytes?: number | null;
+    outputBytes: number | null;
+    parsedJsonObject: boolean | null;
+    topLevelKeys: string[];
+  } | null;
+  modelProviderDiagnostics?: JsonValue | null;
+  elapsedMs: number;
+  timeoutMs: number;
+  heartbeatCount: number;
+  reasonCodes: string[];
+  rawPromptStored: false;
+  rawResponseStored: false;
+  rawProviderLogStored: false;
+};
+
 export type DynamicCodingTeamModelClient = {
   runJson(input: {
     modelRef: string;
@@ -21,6 +46,12 @@ export type DynamicCodingTeamModelClient = {
     userPayload: JsonValue;
     maxOutputTokens: number;
     timeoutMs: number;
+    progress?: {
+      spanId?: string;
+      objectiveSummary?: string | null;
+      reasonCodes?: string[];
+      onEvent?: (event: DynamicCodingTeamModelCallProgressEvent) => void | Promise<void>;
+    };
   }): Promise<{
     modelRunRef: string;
     responseText: string | null;

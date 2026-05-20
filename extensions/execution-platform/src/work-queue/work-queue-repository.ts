@@ -2,12 +2,24 @@ import { randomUUID } from "node:crypto";
 import type { QueryResultRow } from "pg";
 import type { SqlClient } from "../db/sql-client.ts";
 import type { JsonValue, RuntimeJob, RuntimeJobRepository } from "../runtime-job-repository.ts";
+import type { RuntimeToolificationGateResult } from "../runtime-tool-call/runtime-tool-adoption-boundary.ts";
 import {
   projectCanonicalRuntimeQueue as buildCanonicalRuntimeQueueProjection,
   type CanonicalRuntimeQueueCloseoutReadbackUpdate,
   type CanonicalRuntimeQueueProjection,
 } from "./canonical-runtime-queue.ts";
 import { projectDbPrimaryWorkQueueItem } from "./db-primary-work-queue-projection.ts";
+import {
+  buildGeneratedWorkQueueItemLifecycle,
+  isGeneratedDebugOnly,
+  mergeGeneratedLifecycleMetadata,
+  readGeneratedTerminalPolicy,
+  readGeneratedWorkQueueItemLifecycle,
+  type WorkQueueGeneratedItemLifecycle,
+  type WorkQueueGeneratedItemOriginKind,
+  type WorkQueueGeneratedItemRetentionPolicy,
+  type WorkQueueGeneratedItemTerminalPolicy,
+} from "./generated-item-lifecycle.ts";
 import type {
   WorkItem,
   WorkItemArtifact,
@@ -178,6 +190,19 @@ export type CreateWorkItemInput = {
   actorId?: string | null;
 };
 
+export type CreateGeneratedWorkItemInput = CreateWorkItemInput & {
+  generatedOriginKind: WorkQueueGeneratedItemOriginKind;
+  generatedTerminalPolicy: WorkQueueGeneratedItemTerminalPolicy;
+  generatedRetentionPolicy?: WorkQueueGeneratedItemRetentionPolicy;
+  parentWorkItemId?: string | null;
+  owningRuntimeJobId?: string | null;
+  owningGraphId?: string | null;
+  owningNodeId?: string | null;
+  ownerVisible?: boolean;
+  createdBy: string;
+  reasonCodes?: string[];
+};
+
 export type UpdateWorkItemPlanningMetadataInput = {
   workItemId: string;
   title: string;
@@ -258,6 +283,16 @@ export type CompleteWorkQueueItemFromCloseoutInput = {
   controlsApplied?: false;
   runtimeLifecycleMutated?: false;
   modelPromotionPerformed?: false;
+  toolificationAdoptionGateResults?: RuntimeToolificationGateResult[];
+  toolificationAdoptionGateEvidenceRefs?: string[];
+};
+
+export type CompleteToolificationWorkQueueItemFromAdoptionGateInput = Omit<
+  CompleteWorkQueueItemFromCloseoutInput,
+  "toolificationAdoptionGateResults" | "toolificationAdoptionGateEvidenceRefs"
+> & {
+  toolificationAdoptionGateResults: RuntimeToolificationGateResult[];
+  toolificationAdoptionGateEvidenceRefs: string[];
 };
 
 export type CompleteWorkQueueItemFromCloseoutResult = {
@@ -340,6 +375,8 @@ export type DbWorkQueueListInput = {
   cursor?: string | null;
   searchQuery?: string | null;
   updatedSince?: Date | string | null;
+  reconcileTerminalProjections?: boolean;
+  includeGeneratedDebugItems?: boolean;
 };
 
 export type DbWorkQueueSummary = {
@@ -362,6 +399,7 @@ export type DbWorkQueueSummary = {
   rawPromptStored: false;
   rawResponseStored: false;
   rawLogsStored: false;
+  generatedItemLifecycle: WorkQueueGeneratedItemLifecycle | null;
 };
 
 export type DbWorkQueueListResult = {
@@ -376,6 +414,20 @@ export type DbWorkQueueListResult = {
   rawResponseStored: false;
   rawLogsStored: false;
   rawDbRowsStored: false;
+};
+
+export type ReconcileTerminalRuntimeProjectionsResult = {
+  artifactKind: "work_queue_terminal_runtime_projection_reconciliation_result";
+  archivedRuntimeGraphChildWorkItemIds: string[];
+  archivedTerminalExecutionWorkItemIds: string[];
+  archivedGeneratedDebugWorkItemIds: string[];
+  canceledRootRuntimeJobIds: string[];
+  updatedGraphIds: string[];
+  rawPromptStored: false;
+  rawResponseStored: false;
+  rawLogsStored: false;
+  rawDbRowsStored: false;
+  runtimeLifecycleMutated: false;
 };
 
 const DEFAULT_MAX_JSON_BYTES = 64 * 1024;
@@ -401,6 +453,7 @@ const MAX_CLOSEOUT_PRIORITY_NOTE_LENGTH = 160;
 const ACTIVE_QUEUE_STATUSES = ["active", "blocked", "needs_review"] as const;
 const CLOSED_QUEUE_STATUSES = ["closed", "superseded", "archived"] as const;
 const MAX_WORK_QUEUE_PAGE_SIZE = 100;
+const TOOLIFICATION_WORK_ITEM_ID_FRAGMENT = ".toolification-";
 
 function toDate(value: Date | string): Date {
   return value instanceof Date ? value : new Date(value);
@@ -466,6 +519,7 @@ function decodeItem(row: WorkItemRow): WorkItem {
     ownerReadbackRef: row.owner_readback_ref,
     currentVersionId: row.current_version_id,
     metadata: row.metadata,
+    generatedItemLifecycle: readGeneratedWorkQueueItemLifecycle(row.metadata),
     createdAt: toDate(row.created_at),
     updatedAt: toDate(row.updated_at),
   };
@@ -595,6 +649,32 @@ function readStringArrayFromRecord(record: Record<string, unknown>, key: string)
   return Array.isArray(value)
     ? value.filter((entry): entry is string => typeof entry === "string")
     : [];
+}
+
+function isToolificationWorkItemId(workItemId: string): boolean {
+  return workItemId.includes(TOOLIFICATION_WORK_ITEM_ID_FRAGMENT);
+}
+
+function acceptedToolificationAdoptionGateResults(
+  results: RuntimeToolificationGateResult[] | undefined,
+): RuntimeToolificationGateResult[] {
+  return (results ?? []).filter((result) => result.accepted);
+}
+
+function toolificationAdoptionGateCanClose(input: {
+  workItemId: string;
+  results?: RuntimeToolificationGateResult[];
+  evidenceRefs?: string[];
+}): boolean {
+  if (!isToolificationWorkItemId(input.workItemId)) {
+    return true;
+  }
+  const acceptedResults = acceptedToolificationAdoptionGateResults(input.results);
+  return (
+    acceptedResults.length > 0 &&
+    acceptedResults.length === (input.results?.length ?? 0) &&
+    (input.evidenceRefs?.filter((ref) => ref.trim().length > 0).length ?? 0) > 0
+  );
 }
 
 function mapLifecycleEventToWorkQueueEvent(input: {
@@ -771,12 +851,71 @@ export class WorkQueueRepository {
     return item;
   }
 
+  async createGeneratedWorkItem(input: CreateGeneratedWorkItemInput): Promise<WorkItem> {
+    const lifecycle = buildGeneratedWorkQueueItemLifecycle({
+      originKind: input.generatedOriginKind,
+      terminalPolicy: input.generatedTerminalPolicy,
+      retentionPolicy: input.generatedRetentionPolicy,
+      parentWorkItemId: input.parentWorkItemId ?? null,
+      owningRuntimeJobId: input.owningRuntimeJobId ?? null,
+      owningGraphId: input.owningGraphId ?? null,
+      owningNodeId: input.owningNodeId ?? null,
+      ownerVisible: input.ownerVisible,
+      createdBy: input.createdBy,
+      reasonCodes: input.reasonCodes,
+    });
+    const item = await this.createWorkItem({
+      workItemId: input.workItemId,
+      itemType: input.itemType,
+      title: input.title,
+      description: input.description,
+      metadata: mergeGeneratedLifecycleMetadata(input.metadata, lifecycle),
+      actorId: input.actorId ?? input.createdBy,
+    });
+    if (input.parentWorkItemId) {
+      await this.linkParentWorkflow({
+        workItemId: item.workItemId,
+        parentWorkflowId: input.parentWorkItemId,
+        parentWorkflowKind:
+          input.generatedOriginKind === "runtime_graph_child"
+            ? "runtime_work_graph"
+            : "work_queue_generated_item",
+        metadata: {
+          generatedItemLifecycle: lifecycle,
+          generatedOriginKind: lifecycle.originKind,
+          terminalPolicy: lifecycle.terminalPolicy,
+          rawPromptStored: false,
+          rawResponseStored: false,
+          rawLogsStored: false,
+          rawDbRowsStored: false,
+        },
+      });
+    }
+    await this.recordLifecycleEvent({
+      workItemId: item.workItemId,
+      eventType: "work_item.generated_lifecycle_registered",
+      actorId: input.actorId ?? input.createdBy,
+      data: {
+        generatedItemLifecycle: lifecycle,
+        rawPromptStored: false,
+        rawResponseStored: false,
+        rawLogsStored: false,
+        rawDbRowsStored: false,
+      },
+    });
+    return {
+      ...item,
+      metadata: mergeGeneratedLifecycleMetadata(input.metadata, lifecycle),
+      generatedItemLifecycle: lifecycle,
+    };
+  }
+
   async updateWorkItemPlanningMetadata(
     input: UpdateWorkItemPlanningMetadataInput,
   ): Promise<WorkItem> {
     assertJsonByteLength(input.metadata, this.maxJsonBytes, "work item metadata");
     const now = this.now();
-    return this.sql.withTransaction(async (tx) => {
+    const result = await this.sql.withTransaction(async (tx) => {
       const result = await tx.query<WorkItemRow>(
         `
           UPDATE execution_platform.work_items
@@ -802,6 +941,7 @@ export class WorkQueueRepository {
       });
       return decodeItem(row);
     });
+    return result;
   }
 
   async readWorkItemPlanningSnapshots(workItemIds: string[]): Promise<
@@ -889,7 +1029,7 @@ export class WorkQueueRepository {
   async createWorkItemVersion(input: CreateWorkItemVersionInput): Promise<WorkItemVersion> {
     assertJsonByteLength(input.artifactMetadata, this.maxJsonBytes, "work item version metadata");
     const now = this.now();
-    return this.sql.withTransaction(async (tx) => {
+    const result = await this.sql.withTransaction(async (tx) => {
       const versionNumberResult = await tx.query<{ next_version_number: number | string }>(
         `
           SELECT COALESCE(MAX(version_number), 0) + 1 AS next_version_number
@@ -942,6 +1082,7 @@ export class WorkQueueRepository {
       });
       return decodeVersion(inserted.rows[0]!);
     });
+    return result;
   }
 
   async finalizeWorkItemVersion(input: {
@@ -950,7 +1091,7 @@ export class WorkQueueRepository {
     actorId?: string | null;
   }): Promise<WorkItem> {
     const now = this.now();
-    return this.sql.withTransaction(async (tx) => {
+    const result = await this.sql.withTransaction(async (tx) => {
       await tx.query(
         `
           UPDATE execution_platform.work_item_versions
@@ -984,6 +1125,7 @@ export class WorkQueueRepository {
       });
       return decodeItem(updated.rows[0]!);
     });
+    return result;
   }
 
   async attachArtifactReference(input: AttachWorkItemArtifactInput): Promise<WorkItemArtifact> {
@@ -1468,7 +1610,8 @@ export class WorkQueueRepository {
         `
           SELECT * FROM execution_platform.work_runs
           WHERE work_item_id = $1
-          ORDER BY created_at ASC, run_id ASC
+          ORDER BY created_at DESC, run_id DESC
+          LIMIT 50
         `,
         [workItemId],
       ),
@@ -1476,14 +1619,15 @@ export class WorkQueueRepository {
         `
           SELECT * FROM execution_platform.work_steps
           WHERE work_item_id = $1
-          ORDER BY created_at ASC, step_id ASC
+          ORDER BY created_at DESC, step_id DESC
+          LIMIT 100
         `,
         [workItemId],
       ),
     ]);
     const versions = versionRows.rows.map(decodeVersion);
     const runs = await Promise.all(
-      runRows.rows.map(async (row) => {
+      runRows.rows.toReversed().map(async (row) => {
         const run = decodeRun(row);
         return {
           ...run,
@@ -1491,6 +1635,7 @@ export class WorkQueueRepository {
         };
       }),
     );
+    const steps = stepRows.rows.toReversed().map(decodeStep);
     return {
       item,
       currentVersion:
@@ -1502,8 +1647,156 @@ export class WorkQueueRepository {
       dependencies: dependencyRows.rows.map(decodeDependency),
       parentWorkflowLinks: workflowRows.rows.map(decodeParentWorkflowLink),
       runs,
-      steps: stepRows.rows.map(decodeStep),
+      steps,
     };
+  }
+
+  private async readWorkItemTruthsForRows(
+    rows: WorkItemRow[],
+    eventLimit = 20,
+  ): Promise<WorkItemTruth[]> {
+    if (rows.length === 0) {
+      return [];
+    }
+    const workItemIds = rows.map((row) => row.work_item_id);
+    const workItemIdPlaceholders = workItemIds.map((_, index) => `$${index + 1}`).join(", ");
+    const [
+      versionRows,
+      artifactRows,
+      eventRows,
+      assignmentRows,
+      dependencyRows,
+      workflowRows,
+      runRows,
+      stepRows,
+    ] = await Promise.all([
+      this.sql.query<WorkItemVersionRow>(
+        `
+          SELECT *
+          FROM execution_platform.work_item_versions
+          WHERE work_item_id IN (${workItemIdPlaceholders})
+          ORDER BY work_item_id ASC, version_number DESC
+        `,
+        workItemIds,
+      ),
+      this.sql.query<WorkItemArtifactRow>(
+        `
+          SELECT *
+          FROM execution_platform.work_item_artifacts
+          WHERE work_item_id IN (${workItemIdPlaceholders})
+          ORDER BY work_item_id ASC, created_at ASC, artifact_id ASC
+        `,
+        workItemIds,
+      ),
+      this.sql.query<WorkItemEventRow>(
+        `
+          SELECT *
+          FROM execution_platform.work_item_events
+          WHERE work_item_id IN (${workItemIdPlaceholders})
+          ORDER BY work_item_id ASC, event_time DESC, event_id DESC
+        `,
+        workItemIds,
+      ),
+      this.sql.query<WorkItemAssignmentRow>(
+        `
+          SELECT *
+          FROM execution_platform.work_item_assignments
+          WHERE work_item_id IN (${workItemIdPlaceholders})
+          ORDER BY work_item_id ASC, created_at ASC, assignment_id ASC
+        `,
+        workItemIds,
+      ),
+      this.sql.query<WorkItemDependencyRow>(
+        `
+          SELECT *
+          FROM execution_platform.work_item_dependencies
+          WHERE work_item_id IN (${workItemIdPlaceholders})
+          ORDER BY work_item_id ASC, created_at ASC, dependency_id ASC
+        `,
+        workItemIds,
+      ),
+      this.sql.query<WorkItemParentWorkflowLinkRow>(
+        `
+          SELECT *
+          FROM execution_platform.work_item_parent_workflow_links
+          WHERE work_item_id IN (${workItemIdPlaceholders})
+          ORDER BY work_item_id ASC, created_at ASC, link_id ASC
+        `,
+        workItemIds,
+      ),
+      this.sql.query<WorkRunRow>(
+        `
+          SELECT *
+          FROM execution_platform.work_runs
+          WHERE work_item_id IN (${workItemIdPlaceholders})
+          ORDER BY work_item_id ASC, created_at DESC, run_id DESC
+        `,
+        workItemIds,
+      ),
+      this.sql.query<WorkStepRow>(
+        `
+          SELECT *
+          FROM execution_platform.work_steps
+          WHERE work_item_id IN (${workItemIdPlaceholders})
+          ORDER BY work_item_id ASC, created_at DESC, step_id DESC
+        `,
+        workItemIds,
+      ),
+    ]);
+
+    const groupByWorkItemId = <T extends { work_item_id: string }>(
+      groupRows: T[],
+    ): Map<string, T[]> => {
+      const map = new Map<string, T[]>();
+      for (const row of groupRows) {
+        const group = map.get(row.work_item_id);
+        if (group) {
+          group.push(row);
+        } else {
+          map.set(row.work_item_id, [row]);
+        }
+      }
+      return map;
+    };
+    const versionsByWorkItemId = groupByWorkItemId(versionRows.rows);
+    const artifactsByWorkItemId = groupByWorkItemId(artifactRows.rows);
+    const eventsByWorkItemId = groupByWorkItemId(eventRows.rows);
+    const assignmentsByWorkItemId = groupByWorkItemId(assignmentRows.rows);
+    const dependenciesByWorkItemId = groupByWorkItemId(dependencyRows.rows);
+    const workflowLinksByWorkItemId = groupByWorkItemId(workflowRows.rows);
+    const runsByWorkItemId = groupByWorkItemId(runRows.rows);
+    const stepsByWorkItemId = groupByWorkItemId(stepRows.rows);
+
+    return rows.map((row) => {
+      const item = decodeItem(row);
+      const versions = (versionsByWorkItemId.get(item.workItemId) ?? []).map(decodeVersion);
+      return {
+        item,
+        currentVersion:
+          versions.find((version) => version.versionId === item.currentVersionId) ?? null,
+        versions,
+        artifacts: (artifactsByWorkItemId.get(item.workItemId) ?? []).map(decodeArtifact),
+        events: (eventsByWorkItemId.get(item.workItemId) ?? [])
+          .slice(0, eventLimit)
+          .map(decodeEvent),
+        assignments: (assignmentsByWorkItemId.get(item.workItemId) ?? []).map(decodeAssignment),
+        dependencies: (dependenciesByWorkItemId.get(item.workItemId) ?? []).map(decodeDependency),
+        parentWorkflowLinks: (workflowLinksByWorkItemId.get(item.workItemId) ?? []).map(
+          decodeParentWorkflowLink,
+        ),
+        runs: (runsByWorkItemId.get(item.workItemId) ?? [])
+          .slice(0, 50)
+          .toReversed()
+          .map((runRow) => ({
+            ...decodeRun(runRow),
+            runtimeJob: null,
+          })),
+        steps: (stepsByWorkItemId.get(item.workItemId) ?? [])
+          .slice(0, 100)
+          .toReversed()
+          .map(decodeStep),
+      };
+    });
   }
 
   async readRuntimeGraphChildTruths(
@@ -1535,6 +1828,7 @@ export class WorkQueueRepository {
     const result = await this.sql.query<WorkItemRow>(
       `
         SELECT * FROM execution_platform.work_items
+        WHERE COALESCE(metadata->'generatedItemLifecycle'->>'terminalPolicy', '') <> 'debug_only'
         ORDER BY
           CASE
             WHEN queue_status IN ('active', 'blocked', 'needs_review') THEN 0
@@ -1552,11 +1846,8 @@ export class WorkQueueRepository {
     const items: WorkQueueReadModelItem[] = [];
     let activePosition = 0;
     let closedPosition = 0;
-    for (const row of result.rows) {
-      const truth = await this.readWorkItemTruth(row.work_item_id, 1);
-      if (!truth) {
-        continue;
-      }
+    const truths = await this.readWorkItemTruthsForRows(result.rows, 1);
+    for (const truth of truths) {
       const queueStatus = truth.item.queueStatus ?? "active";
       const isClosed = ["closed", "superseded", "archived"].includes(queueStatus);
       const position = isClosed ? ++closedPosition : ++activePosition;
@@ -1588,6 +1879,9 @@ export class WorkQueueRepository {
   }
 
   async listDbWorkQueue(input: DbWorkQueueListInput = {}): Promise<DbWorkQueueListResult> {
+    if (input.reconcileTerminalProjections !== false) {
+      await this.reconcileTerminalRuntimeProjections();
+    }
     const limit = clampWorkQueueLimit(input.limit);
     const offset = decodeOffsetCursor(input.cursor);
     const bucket = input.bucket ?? "active";
@@ -1616,12 +1910,17 @@ export class WorkQueueRepository {
       params.push(updatedSince);
       conditions.push(`updated_at > $${params.length}::timestamptz`);
     }
+    if (input.includeGeneratedDebugItems !== true) {
+      conditions.push(
+        `COALESCE(metadata->'generatedItemLifecycle'->>'terminalPolicy', '') <> 'debug_only'`,
+      );
+    }
     params.push(limit, offset);
-    const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+    const filteredWhere = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
     const result = await this.sql.query<WorkItemRow>(
       `
         SELECT * FROM execution_platform.work_items
-        ${where}
+        ${filteredWhere}
         ORDER BY
           CASE
             WHEN queue_status IN ('active', 'blocked', 'needs_review') THEN 0
@@ -1638,11 +1937,8 @@ export class WorkQueueRepository {
       params,
     );
     const items: DbWorkQueueSummary[] = [];
-    for (const [index, row] of result.rows.entries()) {
-      const truth = await this.readWorkItemTruth(row.work_item_id, 1);
-      if (!truth) {
-        continue;
-      }
+    const truths = await this.readWorkItemTruthsForRows(result.rows, 1);
+    for (const [index, truth] of truths.entries()) {
       const queueStatus = truth.item.queueStatus ?? "active";
       const isClosed = CLOSED_QUEUE_STATUSES.includes(queueStatus as never);
       const position = offset + index + 1;
@@ -1673,6 +1969,7 @@ export class WorkQueueRepository {
         rawPromptStored: false,
         rawResponseStored: false,
         rawLogsStored: false,
+        generatedItemLifecycle: truth.item.generatedItemLifecycle ?? null,
       });
     }
     const latestUpdatedAt =
@@ -1756,6 +2053,40 @@ export class WorkQueueRepository {
     });
   }
 
+  async completeToolificationWorkQueueItemFromAdoptionGate(
+    input: CompleteToolificationWorkQueueItemFromAdoptionGateInput,
+  ): Promise<CompleteWorkQueueItemFromCloseoutResult> {
+    if (!isToolificationWorkItemId(input.workItemId)) {
+      throw new Error(
+        `work_queue_toolification_closeout_not_toolification_item:${input.workItemId}`,
+      );
+    }
+    const acceptedResults = acceptedToolificationAdoptionGateResults(
+      input.toolificationAdoptionGateResults,
+    );
+    const accepted =
+      input.accepted !== false &&
+      input.toolificationAdoptionGateResults.length > 0 &&
+      acceptedResults.length === input.toolificationAdoptionGateResults.length &&
+      input.toolificationAdoptionGateEvidenceRefs.some((ref) => ref.trim().length > 0);
+    return this.completeWorkQueueItemFromCloseout({
+      ...input,
+      accepted,
+      toolificationAdoptionGateResults: input.toolificationAdoptionGateResults,
+      toolificationAdoptionGateEvidenceRefs: input.toolificationAdoptionGateEvidenceRefs,
+      artifactRefs: [
+        ...(input.artifactRefs ?? []),
+        ...input.toolificationAdoptionGateEvidenceRefs,
+      ].slice(0, 20),
+      reasonCodes: [
+        ...(input.reasonCodes ?? []),
+        ...(accepted
+          ? ["toolification_closeout_adoption_gate_passed"]
+          : ["toolification_closeout_adoption_gate_rejected"]),
+      ],
+    });
+  }
+
   async completeWorkQueueItemFromCloseout(
     input: CompleteWorkQueueItemFromCloseoutInput,
   ): Promise<CompleteWorkQueueItemFromCloseoutResult> {
@@ -1790,12 +2121,18 @@ export class WorkQueueRepository {
       input.sourceEditRequired === true && (input.changedFileRefs?.length ?? 0) === 0;
     const providerUnavailable = input.providerUnavailable === true;
     const closeoutModelTimeout = input.closeoutModelTimeout === true;
+    const toolificationAdoptionGateMissing = !toolificationAdoptionGateCanClose({
+      workItemId: input.workItemId,
+      results: input.toolificationAdoptionGateResults,
+      evidenceRefs: input.toolificationAdoptionGateEvidenceRefs,
+    });
     const mayClose =
       accepted &&
       !validationMissing &&
       !changedFilesMissing &&
       !providerUnavailable &&
-      !closeoutModelTimeout;
+      !closeoutModelTimeout &&
+      !toolificationAdoptionGateMissing;
     const status: WorkItemQueueStatus = mayClose ? "closed" : "needs_review";
     const reasonCodes = [
       ...(input.reasonCodes ?? []),
@@ -1804,48 +2141,60 @@ export class WorkQueueRepository {
       ...(changedFilesMissing ? ["required_changed_file_evidence_missing"] : []),
       ...(providerUnavailable ? ["provider_unavailable_needs_review"] : []),
       ...(closeoutModelTimeout ? ["closeout_model_timeout_needs_review"] : []),
+      ...(toolificationAdoptionGateMissing
+        ? ["toolification_adoption_gate_evidence_required"]
+        : isToolificationWorkItemId(input.workItemId)
+          ? ["toolification_adoption_gate_evidence_accepted"]
+          : []),
       ...(mayClose ? ["work_queue_item_closed_from_closeout"] : ["work_queue_item_needs_review"]),
     ]
       .filter((value, index, all) => value.trim().length > 0 && all.indexOf(value) === index)
       .slice(0, 30);
     const now = this.now();
 
-    return this.sql.withTransaction(async (tx) => {
-      const current = await tx.query<WorkItemRow>(
-        `SELECT * FROM execution_platform.work_items WHERE work_item_id = $1`,
-        [input.workItemId],
-      );
-      const currentRow = current.rows[0];
-      if (!currentRow) {
-        throw new Error(`work_item_not_found:${input.workItemId}`);
-      }
-      const idempotent =
-        currentRow.queue_status === status &&
-        (currentRow.closed_by_closeout_ref === input.closeoutRef ||
-          currentRow.closeout_capsule_ref === input.closeoutRef) &&
-        (input.validationRef === undefined || currentRow.validation_ref === input.validationRef);
-      const currentMetadata =
-        currentRow.metadata &&
-        typeof currentRow.metadata === "object" &&
-        !Array.isArray(currentRow.metadata)
-          ? currentRow.metadata
-          : {};
-      const transitionMetadata = {
-        ...currentMetadata,
-        dbPrimaryQueueStatus: status,
-        closeoutTransitionReasonCodes: reasonCodes,
-        closeoutHash: input.closeoutHash ?? null,
-        closeoutRef: input.closeoutRef,
-        closeoutArtifactRefs: input.artifactRefs?.slice(0, 20) ?? [],
-        workQueueStatusSource: "runtime_closeout_transition_api",
-        rawPromptStored: false,
-        rawResponseStored: false,
-        rawTranscriptStored: false,
-        rawLogsStored: false,
-        rawDbRowsStored: false,
-      };
-      const updated = await tx.query<WorkItemRow>(
-        `
+    const result: CompleteWorkQueueItemFromCloseoutResult = await this.sql.withTransaction(
+      async (tx) => {
+        const current = await tx.query<WorkItemRow>(
+          `SELECT * FROM execution_platform.work_items WHERE work_item_id = $1`,
+          [input.workItemId],
+        );
+        const currentRow = current.rows[0];
+        if (!currentRow) {
+          throw new Error(`work_item_not_found:${input.workItemId}`);
+        }
+        const idempotent =
+          currentRow.queue_status === status &&
+          (currentRow.closed_by_closeout_ref === input.closeoutRef ||
+            currentRow.closeout_capsule_ref === input.closeoutRef) &&
+          (input.validationRef === undefined || currentRow.validation_ref === input.validationRef);
+        const currentMetadata =
+          currentRow.metadata &&
+          typeof currentRow.metadata === "object" &&
+          !Array.isArray(currentRow.metadata)
+            ? currentRow.metadata
+            : {};
+        const transitionMetadata = {
+          ...currentMetadata,
+          dbPrimaryQueueStatus: status,
+          closeoutTransitionReasonCodes: reasonCodes,
+          closeoutHash: input.closeoutHash ?? null,
+          closeoutRef: input.closeoutRef,
+          closeoutArtifactRefs: input.artifactRefs?.slice(0, 20) ?? [],
+          toolificationAdoptionGateEvidenceRefs:
+            input.toolificationAdoptionGateEvidenceRefs?.slice(0, 20) ?? [],
+          toolificationAdoptionGateResultRefs:
+            input.toolificationAdoptionGateResults
+              ?.flatMap((result) => result.evidenceRefs)
+              .slice(0, 20) ?? [],
+          workQueueStatusSource: "runtime_closeout_transition_api",
+          rawPromptStored: false,
+          rawResponseStored: false,
+          rawTranscriptStored: false,
+          rawLogsStored: false,
+          rawDbRowsStored: false,
+        };
+        const updated = await tx.query<WorkItemRow>(
+          `
           UPDATE execution_platform.work_items
           SET queue_status = $2,
               closed_at = CASE WHEN $2 = 'closed' THEN COALESCE(closed_at, $3::timestamptz) ELSE closed_at END,
@@ -1860,61 +2209,68 @@ export class WorkQueueRepository {
           WHERE work_item_id = $1
           RETURNING *
         `,
-        [
-          input.workItemId,
-          status,
-          now,
-          input.runtimeJobId ?? null,
-          input.closeoutRef,
-          input.validationRef ?? null,
-          input.graphRef ?? null,
-          input.ownerReadbackRef ?? null,
-          encodeJson(transitionMetadata),
-        ],
-      );
-      await this.recordLifecycleEventInTx(tx, {
-        workItemId: input.workItemId,
-        eventType: mayClose
-          ? "work_item.queue_status_closed_from_closeout"
-          : "work_item.queue_status_needs_review_from_closeout",
-        actorId: input.actorId ?? "system:work-queue-closeout-transition",
-        data: {
-          queueStatus: status,
+          [
+            input.workItemId,
+            status,
+            now,
+            input.runtimeJobId ?? null,
+            input.closeoutRef,
+            input.validationRef ?? null,
+            input.graphRef ?? null,
+            input.ownerReadbackRef ?? null,
+            encodeJson(transitionMetadata),
+          ],
+        );
+        await this.recordLifecycleEventInTx(tx, {
+          workItemId: input.workItemId,
+          eventType: mayClose
+            ? "work_item.queue_status_closed_from_closeout"
+            : "work_item.queue_status_needs_review_from_closeout",
+          actorId: input.actorId ?? "system:work-queue-closeout-transition",
+          data: {
+            queueStatus: status,
+            closeoutRef: input.closeoutRef,
+            runtimeJobId: input.runtimeJobId ?? null,
+            validationRef: input.validationRef ?? null,
+            reasonCodes,
+            runtimeLifecycleMutated: false,
+            rawPromptStored: false,
+            rawResponseStored: false,
+            rawTranscriptStored: false,
+            rawLogsStored: false,
+            rawDbRowsStored: false,
+          },
+          eventTime: now,
+        });
+        return {
+          artifactKind: "work_queue_item_closeout_transition_result",
+          workItemId: input.workItemId,
+          status: updated.rows[0]!.queue_status,
+          closed: updated.rows[0]!.queue_status === "closed",
+          idempotent,
           closeoutRef: input.closeoutRef,
           runtimeJobId: input.runtimeJobId ?? null,
           validationRef: input.validationRef ?? null,
           reasonCodes,
-          runtimeLifecycleMutated: false,
           rawPromptStored: false,
           rawResponseStored: false,
           rawTranscriptStored: false,
           rawLogsStored: false,
           rawDbRowsStored: false,
-        },
-        eventTime: now,
+          authorityGranted: false,
+          controlsApplied: false,
+          runtimeLifecycleMutated: false,
+          workQueueStatusMutated: true,
+          modelPromotionPerformed: false,
+        };
+      },
+    );
+    if (result.closed) {
+      await this.reconcileTerminalRuntimeProjections({
+        actorId: input.actorId ?? "system:work-queue-closeout-transition",
       });
-      return {
-        artifactKind: "work_queue_item_closeout_transition_result",
-        workItemId: input.workItemId,
-        status: updated.rows[0]!.queue_status,
-        closed: updated.rows[0]!.queue_status === "closed",
-        idempotent,
-        closeoutRef: input.closeoutRef,
-        runtimeJobId: input.runtimeJobId ?? null,
-        validationRef: input.validationRef ?? null,
-        reasonCodes,
-        rawPromptStored: false,
-        rawResponseStored: false,
-        rawTranscriptStored: false,
-        rawLogsStored: false,
-        rawDbRowsStored: false,
-        authorityGranted: false,
-        controlsApplied: false,
-        runtimeLifecycleMutated: false,
-        workQueueStatusMutated: true,
-        modelPromotionPerformed: false,
-      };
-    });
+    }
+    return result;
   }
 
   async syncRuntimeGraphNodeToWorkQueue(
@@ -1933,7 +2289,23 @@ export class WorkQueueRepository {
     const graphNodeRef =
       input.graphNodeRef ?? `runtime-work-graph://${input.graphId}/node/${input.nodeId}`;
     const queueStatus: WorkItemQueueStatus = input.queueStatus ?? "active";
+    const generatedItemLifecycle = buildGeneratedWorkQueueItemLifecycle({
+      originKind: "runtime_graph_child",
+      terminalPolicy: input.optional === true ? "close_with_parent" : "archive_with_parent",
+      parentWorkItemId: input.parentWorkItemId,
+      owningRuntimeJobId: input.runtimeJobId ?? null,
+      owningGraphId: input.graphId,
+      owningNodeId: input.nodeId,
+      createdBy: input.actorId ?? "system:runtime-work-graph-sync",
+      reasonCodes: ["runtime_graph_node_materialized_to_work_queue_child"],
+    });
     const metadata = {
+      generatedItemLifecycle,
+      generatedOriginKind: generatedItemLifecycle.originKind,
+      generatedTerminalPolicy: generatedItemLifecycle.terminalPolicy,
+      generatedRetentionPolicy: generatedItemLifecycle.retentionPolicy,
+      generatedDebugOnly: generatedItemLifecycle.debugOnly,
+      generatedOwnerVisible: generatedItemLifecycle.ownerVisible,
       actionGraph: {
         parentWorkItemId: input.parentWorkItemId,
         graphId: input.graphId,
@@ -2285,11 +2657,421 @@ export class WorkQueueRepository {
     });
   }
 
+  async reconcileTerminalRuntimeProjections(
+    input: {
+      actorId?: string | null;
+    } = {},
+  ): Promise<ReconcileTerminalRuntimeProjectionsResult> {
+    const actorId = input.actorId ?? "system:work-queue-terminal-projection-reconcile";
+    const now = this.now();
+    const staleChildren = await this.sql.query<
+      WorkItemRow & {
+        parent_work_item_id: string;
+        parent_queue_status: WorkItemQueueStatus;
+        parent_closeout_ref: string | null;
+        parent_runtime_job_id: string | null;
+      }
+    >(
+      `
+        SELECT child.*,
+               parent.work_item_id AS parent_work_item_id,
+               parent.queue_status AS parent_queue_status,
+               parent.closed_by_closeout_ref AS parent_closeout_ref,
+               parent.closed_by_runtime_job_id AS parent_runtime_job_id
+        FROM execution_platform.work_items child
+        JOIN execution_platform.work_item_parent_workflow_links links
+          ON links.work_item_id = child.work_item_id
+        JOIN execution_platform.work_items parent
+          ON parent.work_item_id = links.parent_workflow_id
+        WHERE child.queue_status IN ('active', 'blocked', 'needs_review')
+          AND child.work_item_id LIKE 'runtime-graph:%'
+          AND parent.queue_status IN ('closed', 'superseded', 'archived')
+        ORDER BY child.queue_rank ASC NULLS LAST, child.updated_at DESC
+      `,
+    );
+    const terminalExecutionItems = await this.sql.query<
+      WorkItemRow & {
+        run_id: string;
+        runtime_job_id: string;
+        runtime_job_state: "failed" | "canceled" | "timed_out";
+        cancellation_reason: string | null;
+      }
+    >(
+      `
+        SELECT wi.*,
+               wr.run_id,
+               wr.runtime_job_id,
+               rj.state AS runtime_job_state,
+               rj.cancellation_reason
+        FROM execution_platform.work_items wi
+        JOIN execution_platform.work_runs wr ON wr.work_item_id = wi.work_item_id
+        JOIN execution_platform.runtime_jobs rj ON rj.job_id = wr.runtime_job_id
+        WHERE wi.queue_status IN ('active', 'blocked', 'needs_review')
+          AND wi.item_type = 'execution_workflow'
+          AND rj.state IN ('failed', 'canceled', 'timed_out')
+        ORDER BY wi.queue_rank ASC NULLS LAST, wi.updated_at DESC
+      `,
+    );
+    const generatedDebugItems = await this.sql.query<WorkItemRow>(
+      `
+        SELECT *
+        FROM execution_platform.work_items
+        WHERE queue_status IN ('active', 'blocked', 'needs_review')
+          AND COALESCE(metadata->'generatedItemLifecycle'->>'terminalPolicy', metadata->>'terminalPolicy', '') = 'debug_only'
+        ORDER BY queue_rank ASC NULLS LAST, updated_at DESC
+      `,
+    );
+    const graphIds = [
+      ...new Set(
+        staleChildren.rows
+          .map((row) => {
+            const metadata = readRecord(row.metadata);
+            const actionGraph = readRecord((metadata.actionGraph ?? null) as JsonValue);
+            return typeof actionGraph.graphId === "string" ? actionGraph.graphId : null;
+          })
+          .filter((value): value is string => Boolean(value)),
+      ),
+    ];
+    const graphTerminalStatusById = new Map<string, "succeeded" | "canceled">();
+    for (const row of staleChildren.rows) {
+      const metadata = readRecord(row.metadata);
+      const actionGraph = readRecord((metadata.actionGraph ?? null) as JsonValue);
+      const graphId = typeof actionGraph.graphId === "string" ? actionGraph.graphId : null;
+      if (!graphId) {
+        continue;
+      }
+      const terminalStatus = row.parent_queue_status === "closed" ? "succeeded" : "canceled";
+      const current = graphTerminalStatusById.get(graphId);
+      graphTerminalStatusById.set(
+        graphId,
+        current === "canceled" || terminalStatus === "canceled" ? "canceled" : terminalStatus,
+      );
+    }
+    const rootJobs =
+      graphIds.length === 0
+        ? []
+        : (
+            await this.sql.query<{ graph_id: string; root_runtime_job_id: string }>(
+              `
+                SELECT graph_id, root_runtime_job_id
+                FROM execution_platform.runtime_work_graphs
+                WHERE graph_id = ANY($1::text[])
+                  AND root_runtime_job_id IS NOT NULL
+              `,
+              [graphIds],
+            )
+          ).rows;
+    const canceledRootRuntimeJobIds: string[] = [];
+    for (const row of rootJobs) {
+      const canceled = await this.runtimeJobs.cancelJob(
+        row.root_runtime_job_id,
+        "work_queue_terminal_projection_reconcile_parent_terminal",
+      );
+      if (canceled) {
+        canceledRootRuntimeJobIds.push(row.root_runtime_job_id);
+      }
+    }
+    const archivedRuntimeGraphChildWorkItemIds: string[] = [];
+    const archivedTerminalExecutionWorkItemIds: string[] = [];
+    const archivedGeneratedDebugWorkItemIds: string[] = [];
+    const archivedIds = new Set<string>();
+    await this.sql.withTransaction(async (tx) => {
+      for (const row of staleChildren.rows) {
+        const currentMetadata = readRecord(row.metadata);
+        const parentIsClosed = row.parent_queue_status === "closed";
+        const metadata = {
+          ...currentMetadata,
+          terminalProjectionReconciliation: {
+            reason: "generated runtime child projection outlived terminal parent",
+            parentWorkItemId: row.parent_work_item_id,
+            parentQueueStatus: row.parent_queue_status,
+            parentCloseoutRef: row.parent_closeout_ref,
+            parentRuntimeJobId: row.parent_runtime_job_id,
+            previousQueueStatus: row.queue_status,
+            reconciledAt: now.toISOString(),
+            rawPromptStored: false,
+            rawResponseStored: false,
+            rawLogsStored: false,
+            rawDbRowsStored: false,
+          },
+          rawPromptStored: false,
+          rawResponseStored: false,
+          rawLogsStored: false,
+          rawDbRowsStored: false,
+        } satisfies JsonValue;
+        await tx.query(
+          `
+            UPDATE execution_platform.work_items
+            SET queue_status = 'archived',
+                lifecycle_state = CASE WHEN lifecycle_state = 'running' THEN 'canceled' ELSE lifecycle_state END,
+                closed_at = COALESCE(closed_at, $2::timestamptz),
+                closed_by_closeout_ref = COALESCE(closed_by_closeout_ref, $3),
+                metadata = $4::jsonb,
+                updated_at = $2::timestamptz
+            WHERE work_item_id = $1
+          `,
+          [
+            row.work_item_id,
+            now,
+            parentIsClosed ? row.parent_closeout_ref : null,
+            encodeJson(metadata),
+          ],
+        );
+        await this.recordLifecycleEventInTx(tx, {
+          workItemId: row.work_item_id,
+          eventType: "work_item.terminal_runtime_child_projection_archived",
+          actorId,
+          data: {
+            parentWorkItemId: row.parent_work_item_id,
+            parentQueueStatus: row.parent_queue_status,
+            parentCloseoutRef: row.parent_closeout_ref,
+            reasonCodes: [
+              "parent_work_item_terminal",
+              "generated_child_projection_stale",
+              "removed_from_active_queue",
+            ],
+            rawPromptStored: false,
+            rawResponseStored: false,
+            rawLogsStored: false,
+            rawDbRowsStored: false,
+          },
+          eventTime: now,
+        });
+        archivedRuntimeGraphChildWorkItemIds.push(row.work_item_id);
+        archivedIds.add(row.work_item_id);
+      }
+      if (graphIds.length > 0) {
+        const graphMetadata = {
+          terminalProjectionReconciliation: {
+            reason: "terminal parent work item reconciled generated child projections",
+            reconciledAt: now.toISOString(),
+            rawPromptStored: false,
+            rawResponseStored: false,
+            rawLogsStored: false,
+            rawDbRowsStored: false,
+          },
+        } satisfies JsonValue;
+        for (const graphId of graphIds) {
+          const graphRow = await tx.query<{ metadata: JsonValue }>(
+            "SELECT metadata FROM execution_platform.runtime_work_graphs WHERE graph_id = $1",
+            [graphId],
+          );
+          const mergedGraphMetadata = {
+            ...readRecord(graphRow.rows[0]?.metadata),
+            ...graphMetadata,
+          } satisfies JsonValue;
+          await tx.query(
+            `
+              UPDATE execution_platform.runtime_work_graphs
+              SET graph_status = CASE WHEN graph_status = 'running' THEN $2 ELSE graph_status END,
+                  metadata = $3::jsonb,
+                  updated_at = $4::timestamptz
+              WHERE graph_id = $1
+            `,
+            [
+              graphId,
+              graphTerminalStatusById.get(graphId) ?? "canceled",
+              encodeJson(mergedGraphMetadata),
+              now,
+            ],
+          );
+        }
+        for (const graphId of graphIds) {
+          const nodeRows = await tx.query<{ node_id: string; metadata: JsonValue }>(
+            `
+              SELECT node_id, metadata
+              FROM execution_platform.runtime_work_graph_nodes
+              WHERE graph_id = $1
+                AND node_status IN ('planned', 'running', 'needs_review')
+            `,
+            [graphId],
+          );
+          for (const nodeRow of nodeRows.rows) {
+            const mergedNodeMetadata = {
+              ...readRecord(nodeRow.metadata),
+              ...graphMetadata,
+            } satisfies JsonValue;
+            await tx.query(
+              `
+                UPDATE execution_platform.runtime_work_graph_nodes
+                SET node_status = 'skipped',
+                    metadata = $2::jsonb,
+                    completed_at = COALESCE(completed_at, $3::timestamptz),
+                    updated_at = $3::timestamptz
+                WHERE node_id = $1
+              `,
+              [nodeRow.node_id, encodeJson(mergedNodeMetadata), now],
+            );
+          }
+        }
+      }
+      for (const row of terminalExecutionItems.rows) {
+        if (archivedIds.has(row.work_item_id)) {
+          continue;
+        }
+        const currentMetadata = readRecord(row.metadata);
+        const terminalPolicy = readGeneratedTerminalPolicy(row.metadata);
+        const debugOnly = terminalPolicy === "debug_only" || isGeneratedDebugOnly(row.metadata);
+        const queueStatus: WorkItemQueueStatus =
+          debugOnly || row.runtime_job_state === "canceled" ? "archived" : "needs_review";
+        const lifecycleState: WorkItemLifecycleState =
+          row.runtime_job_state === "canceled" ? "canceled" : "failed";
+        const metadata = {
+          ...currentMetadata,
+          terminalProjectionReconciliation: {
+            reason: "generated execution projection outlived terminal runtime job",
+            runtimeJobId: row.runtime_job_id,
+            runtimeJobState: row.runtime_job_state,
+            cancellationReason: row.cancellation_reason,
+            previousQueueStatus: row.queue_status,
+            reconciledAt: now.toISOString(),
+            rawPromptStored: false,
+            rawResponseStored: false,
+            rawLogsStored: false,
+            rawDbRowsStored: false,
+          },
+          rawPromptStored: false,
+          rawResponseStored: false,
+          rawLogsStored: false,
+          rawDbRowsStored: false,
+        } satisfies JsonValue;
+        await tx.query(
+          `
+            UPDATE execution_platform.work_items
+            SET queue_status = $2,
+                lifecycle_state = $3,
+                closed_at = CASE WHEN $2 = 'archived' THEN COALESCE(closed_at, $4::timestamptz) ELSE closed_at END,
+                closed_by_runtime_job_id = COALESCE(closed_by_runtime_job_id, $5),
+                metadata = $6::jsonb,
+                updated_at = $4::timestamptz
+            WHERE work_item_id = $1
+          `,
+          [
+            row.work_item_id,
+            queueStatus,
+            lifecycleState,
+            now,
+            row.runtime_job_id,
+            encodeJson(metadata),
+          ],
+        );
+        await tx.query(
+          `
+            UPDATE execution_platform.work_runs
+            SET run_state = $2,
+                completed_at = COALESCE(completed_at, $3::timestamptz),
+                updated_at = $3::timestamptz
+            WHERE run_id = $1
+          `,
+          [row.run_id, row.runtime_job_state === "canceled" ? "canceled" : "failed", now],
+        );
+        await this.recordLifecycleEventInTx(tx, {
+          workItemId: row.work_item_id,
+          runId: row.run_id,
+          eventType: "work_item.terminal_execution_projection_reconciled",
+          lifecycleState,
+          actorId,
+          data: {
+            runtimeJobId: row.runtime_job_id,
+            runtimeJobState: row.runtime_job_state,
+            queueStatus,
+            reasonCodes: [
+              "runtime_job_terminal",
+              "generated_execution_projection_stale",
+              queueStatus === "archived"
+                ? "removed_from_active_queue"
+                : "kept_needs_review_for_failed_execution",
+              ...(debugOnly ? ["generated_debug_item_archived"] : []),
+            ],
+            rawPromptStored: false,
+            rawResponseStored: false,
+            rawLogsStored: false,
+            rawDbRowsStored: false,
+          },
+          eventTime: now,
+        });
+        archivedTerminalExecutionWorkItemIds.push(row.work_item_id);
+        if (queueStatus === "archived") {
+          archivedIds.add(row.work_item_id);
+        }
+      }
+      for (const row of generatedDebugItems.rows) {
+        if (archivedIds.has(row.work_item_id)) {
+          continue;
+        }
+        const currentMetadata = readRecord(row.metadata);
+        const metadata = {
+          ...currentMetadata,
+          terminalProjectionReconciliation: {
+            reason: "generated debug item is not owner roadmap work",
+            previousQueueStatus: row.queue_status,
+            reconciledAt: now.toISOString(),
+            rawPromptStored: false,
+            rawResponseStored: false,
+            rawLogsStored: false,
+            rawDbRowsStored: false,
+          },
+          rawPromptStored: false,
+          rawResponseStored: false,
+          rawLogsStored: false,
+          rawDbRowsStored: false,
+        } satisfies JsonValue;
+        await tx.query(
+          `
+            UPDATE execution_platform.work_items
+            SET queue_status = 'archived',
+                lifecycle_state = CASE WHEN lifecycle_state = 'running' THEN 'canceled' ELSE lifecycle_state END,
+                closed_at = COALESCE(closed_at, $2::timestamptz),
+                metadata = $3::jsonb,
+                updated_at = $2::timestamptz
+            WHERE work_item_id = $1
+          `,
+          [row.work_item_id, now, encodeJson(metadata)],
+        );
+        await this.recordLifecycleEventInTx(tx, {
+          workItemId: row.work_item_id,
+          eventType: "work_item.generated_debug_projection_archived",
+          actorId,
+          data: {
+            previousQueueStatus: row.queue_status,
+            reasonCodes: [
+              "generated_debug_only_item",
+              "not_owner_roadmap_work",
+              "removed_from_active_queue",
+            ],
+            rawPromptStored: false,
+            rawResponseStored: false,
+            rawLogsStored: false,
+            rawDbRowsStored: false,
+          },
+          eventTime: now,
+        });
+        archivedGeneratedDebugWorkItemIds.push(row.work_item_id);
+        archivedIds.add(row.work_item_id);
+      }
+    });
+    return {
+      artifactKind: "work_queue_terminal_runtime_projection_reconciliation_result",
+      archivedRuntimeGraphChildWorkItemIds,
+      archivedTerminalExecutionWorkItemIds,
+      archivedGeneratedDebugWorkItemIds,
+      canceledRootRuntimeJobIds,
+      updatedGraphIds: graphIds,
+      rawPromptStored: false,
+      rawResponseStored: false,
+      rawLogsStored: false,
+      rawDbRowsStored: false,
+      runtimeLifecycleMutated: false,
+    };
+  }
+
   async projectCanonicalRuntimeQueue(limit = 200): Promise<CanonicalRuntimeQueueProjection> {
+    await this.reconcileTerminalRuntimeProjections();
     const boundedLimit = Math.max(1, Math.min(limit, 500));
     const items = await this.sql.query<WorkItemRow>(
       `
         SELECT * FROM execution_platform.work_items
+        WHERE COALESCE(metadata->'generatedItemLifecycle'->>'terminalPolicy', '') <> 'debug_only'
         ORDER BY
           CASE
             WHEN queue_status IN ('active', 'blocked', 'needs_review') THEN 0
@@ -2304,13 +3086,7 @@ export class WorkQueueRepository {
       `,
       [boundedLimit],
     );
-    const truths: WorkItemTruth[] = [];
-    for (const item of items.rows) {
-      const truth = await this.readWorkItemTruth(item.work_item_id, 50);
-      if (truth) {
-        truths.push(truth);
-      }
-    }
+    const truths = await this.readWorkItemTruthsForRows(items.rows, 50);
     return buildCanonicalRuntimeQueueProjection(truths);
   }
 

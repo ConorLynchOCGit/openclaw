@@ -15,7 +15,12 @@ import {
   RuntimeToolTraceRepository,
   resolveLiveRouterModelPolicy,
   NativeExecutionRpcService,
+  ModelCloseoutCapsuleReporter,
+  registerCloseoutFinalizationRuntimeTools,
+  registerCloseoutGenerateRuntimeTool,
+  registerRouterFrontDoorRuntimeTools,
   registerSchedulerRuntimeTools,
+  registerValidationQaRuntimeTools,
   RuntimeJobRepository,
   RuntimeWorkGraphRepository,
   TwoLaneStructuredModelIntentRouterProvider,
@@ -24,6 +29,7 @@ import {
   type LiveRouterModelPolicy,
   type RouterModelCandidateRef,
 } from "../../extensions/execution-platform/runtime-api.js";
+import { CodexAppServerJsonExecutor } from "../../extensions/model-memory/src/mmv2/codex-app-server-json-executor.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { runGatewayAgentTeamRuntimeJobOnce } from "./execution-platform-agent-team-runner.js";
 import type { AuthorizedGatewayHttpRequest } from "./http-utils.js";
@@ -174,7 +180,21 @@ export function createGatewayStructuredRouterProvider(config: OpenClawConfig) {
     "deepseek/deepseek-v4-flash";
   const advancedModelRef =
     configValue(config, "OPENCLAW_INTENT_FRONT_DOOR_ADVANCED_ROUTER_MODEL_REF") ??
-    "openai-codex/gpt-5.4";
+    "openai-codex/gpt-5.5";
+  const requiredAdvancedModelRef =
+    configValue(config, "OPENCLAW_INTENT_FRONT_DOOR_ADVANCED_ROUTER_REQUIRED_MODEL_REF") ??
+    "openai-codex/gpt-5.5";
+  if (advancedModelRef !== requiredAdvancedModelRef) {
+    console.warn(
+      JSON.stringify({
+        event: "execution_platform_front_door_model_policy_mismatch",
+        expectedModelRef: requiredAdvancedModelRef,
+        configuredModelRef: advancedModelRef,
+        reasonCode: "front_door_advanced_router_model_policy_mismatch",
+      }),
+    );
+    return null;
+  }
   const triagePolicy: LiveRouterModelPolicy = {
     artifactKind: "intent_front_door_live_router_model_policy",
     policyId: "router-policy://intent-front-door/live-router/simple-triage",
@@ -272,7 +292,7 @@ export function createGatewayStructuredRouterProvider(config: OpenClawConfig) {
     requiredCapabilities: ["structured_json", "json_schema", "reasoning", "large_context"],
     fallbackModelRef:
       configValue(config, "OPENCLAW_INTENT_FRONT_DOOR_ADVANCED_ROUTER_FALLBACK_MODEL_REF") ??
-      "openai-codex/gpt-5.4",
+      "openai-codex/gpt-5.5",
     escalationModelRef: escalationModelRef ?? advancedModelRef,
     killSwitchRef:
       configValue(config, "OPENCLAW_INTENT_FRONT_DOOR_ROUTER_KILL_SWITCH_REF") ??
@@ -463,7 +483,23 @@ export async function getExecutionPlatformRuntime(
     const runtimeWorkGraphs = new RuntimeWorkGraphRepository(database.sqlClient);
     const runtimeToolTraces = new RuntimeToolTraceRepository(database.sqlClient);
     const runtimeToolRegistry = new RuntimeToolRegistry();
+    registerRouterFrontDoorRuntimeTools({ registry: runtimeToolRegistry });
     registerSchedulerRuntimeTools({ registry: runtimeToolRegistry, includeWorkerInvoke: true });
+    registerValidationQaRuntimeTools({ registry: runtimeToolRegistry });
+    registerCloseoutFinalizationRuntimeTools({ registry: runtimeToolRegistry });
+    registerCloseoutGenerateRuntimeTool({
+      registry: runtimeToolRegistry,
+      reporter: new ModelCloseoutCapsuleReporter({
+        executor: new CodexAppServerJsonExecutor({
+          cwd: process.cwd(),
+          requestTimeoutMs: 300_000,
+          reasoningEffort: "medium",
+        }),
+        modelId: "openai-codex/gpt-5.5",
+        reasoningEffort: "medium",
+        maxOutputTokens: 12_000,
+      }),
+    });
     const runtimeToolKernel = new RuntimeToolKernel({
       registry: runtimeToolRegistry,
       traces: runtimeToolTraces,
@@ -475,6 +511,7 @@ export async function getExecutionPlatformRuntime(
     const nativeExecutionRpc = new NativeExecutionRpcService({
       runtimeJobs,
       workQueue,
+      runtimeToolKernel,
       structuredRouterProvider: createGatewayStructuredRouterProvider(config) ?? undefined,
     });
     return {
@@ -510,6 +547,7 @@ export async function handleExecutionPlatformHttpRequest(
     const route = createExecutionPlatformHostRoutes({
       runtimeJobs: runtime.runtimeJobs,
       runtimeWorkGraphs: runtime.runtimeWorkGraphs,
+      runtimeToolKernel: runtime.runtimeToolKernel,
       workQueue: runtime.workQueue,
       nativeExecutionRpc: runtime.nativeExecutionRpc,
       nativeHttpAuth: resolveNativeHttpAuthContext(req, params.requestAuth),

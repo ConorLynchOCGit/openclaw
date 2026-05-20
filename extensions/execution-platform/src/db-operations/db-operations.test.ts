@@ -2,7 +2,14 @@ import { describe, expect, it, vi } from "vitest";
 import { applyExecutionPlatformMigrations } from "../db/migrations.ts";
 import { createExecutionPlatformPgMemTestDatabase } from "../db/pg-test.ts";
 import { RuntimeJobRepository } from "../runtime-job-repository.ts";
+import { RuntimeToolKernel } from "../runtime-tool-call/runtime-tool-kernel.ts";
+import { RuntimeToolRegistry } from "../runtime-tool-call/runtime-tool-registry.ts";
+import { RuntimeToolTraceRepository } from "../runtime-tool-call/runtime-tool-trace-repository.ts";
 import { DbOperationRepository } from "./db-operation-repository.ts";
+import {
+  createDbOperationExecuteRuntimeToolExecutor,
+  registerDbOperationExecuteRuntimeTool,
+} from "./db-operation-runtime-tool.ts";
 import {
   classifyDbOperation,
   classifyPoolPressureDeferral,
@@ -24,6 +31,7 @@ async function withDbOperationRepository<T>(
     runtimeJobs: RuntimeJobRepository;
     dbOperations: DbOperationRepository;
     telemetry: DbOperationTelemetryRepository;
+    sql: Awaited<ReturnType<typeof createExecutionPlatformPgMemTestDatabase>>["sql"];
   }) => Promise<T>,
 ): Promise<T> {
   const database = await createExecutionPlatformPgMemTestDatabase();
@@ -35,7 +43,7 @@ async function withDbOperationRepository<T>(
     });
     const telemetry = new DbOperationTelemetryRepository();
     const dbOperations = new DbOperationRepository(runtimeJobs, { telemetry });
-    return await work({ runtimeJobs, dbOperations, telemetry });
+    return await work({ runtimeJobs, dbOperations, telemetry, sql: database.sql });
   } finally {
     await database.close();
   }
@@ -287,6 +295,77 @@ describe("durable DB operation runtime jobs", () => {
           operationName: "projection.rebuild",
           output: { rebuiltRows: 25 },
         },
+      });
+    });
+  });
+
+  it("invokes DB operations through db_operation.execute runtime tools and requires trace evidence for live completion", async () => {
+    await withDbOperationRepository(async ({ dbOperations, sql }) => {
+      await dbOperations.enqueueLongDbOperation({
+        jobId: "runtime-tool-db-operation",
+        operationName: "projection.rebuild",
+        operationKind: "maintenance",
+        lane: "maintenance",
+      });
+      const claimed = await dbOperations.claimLongDbOperation({ workerId: "db-worker" });
+      const registry = new RuntimeToolRegistry();
+      registerDbOperationExecuteRuntimeTool({ registry, handlers: {} });
+      const traces = new RuntimeToolTraceRepository(sql);
+      const kernel = new RuntimeToolKernel({ registry, traces });
+      const toolResult = await dbOperations.invokeClaimedDbOperationRuntimeTool({
+        claimed: claimed!,
+        kernel,
+        executor: createDbOperationExecuteRuntimeToolExecutor({
+          handlers: {
+            "projection.rebuild": () => ({
+              output: { rebuiltRows: 25, rawRowsStored: false },
+              telemetry: longOperationTelemetry("runtime-tool-db-operation"),
+              resultSummary: "Projection rebuild completed with bounded row-count evidence.",
+              rowCount: 25,
+            }),
+          },
+        }),
+        inputSummary: "Run projection rebuild through db_operation.execute.",
+      });
+      const completed = await dbOperations.completeLongDbOperation({
+        jobId: "runtime-tool-db-operation",
+        leaseToken: claimed!.leaseToken,
+        output: toolResult.output,
+        telemetry: toolResult.telemetry,
+        runtimeToolTraceRequired: true,
+      });
+      const status = await dbOperations.readDbOperationStatus("runtime-tool-db-operation");
+
+      expect(completed).toMatchObject({ state: "succeeded" });
+      expect(toolResult.invocation.invocation.toolId).toBe("db_operation.execute");
+      expect(status.evidence.artifacts).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ artifactType: "db_operation.runtime_tool_trace" }),
+        ]),
+      );
+    });
+  });
+
+  it("rejects DB operation completion when runtime tool trace evidence is required but missing", async () => {
+    await withDbOperationRepository(async ({ dbOperations }) => {
+      await dbOperations.enqueueLongDbOperation({
+        jobId: "db-operation-without-trace",
+        operationName: "projection.rebuild",
+        operationKind: "maintenance",
+        lane: "maintenance",
+      });
+      const claimed = await dbOperations.claimLongDbOperation({ workerId: "db-worker" });
+
+      const failed = await dbOperations.completeLongDbOperation({
+        jobId: "db-operation-without-trace",
+        leaseToken: claimed!.leaseToken,
+        output: { rebuiltRows: 1 },
+        runtimeToolTraceRequired: true,
+      });
+
+      expect(failed).toMatchObject({
+        state: "pending",
+        error: { code: "db_operation_runtime_tool_trace_missing" },
       });
     });
   });

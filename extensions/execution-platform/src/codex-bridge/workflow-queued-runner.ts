@@ -1,15 +1,49 @@
 import type { JsonValue, RuntimeJob, RuntimeJobRepository } from "../runtime-job-repository.ts";
+import type { RuntimeToolKernel } from "../runtime-tool-call/runtime-tool-kernel.ts";
+import { DEFAULT_WORKFLOW_DEFINITION_REGISTRY } from "../workflows/workflow-definition-registry.ts";
 import {
-  parseCloseoutCapsule,
-  recordCloseoutCapsuleArtifact,
-  type CloseoutCapsule,
-} from "./closeout-capsule.ts";
+  WORKFLOW_DEFINITION_RESOLUTION_ARTIFACT_TYPE,
+  workflowDefinitionResolutionArtifactMetadata,
+  workflowDefinitionResolutionFor,
+  type WorkflowDefinition,
+} from "../workflows/workflow-definition.ts";
+import { DEFAULT_WORKFLOW_PLUGIN_REGISTRY } from "../workflows/workflow-plugin-registry.ts";
 import {
-  createDegradedSystemCloseoutCapsule,
   type CloseoutCapsuleReporterInput,
   type CloseoutCapsuleReporterResult,
 } from "./model-closeout-capsule-reporter.ts";
-import { resolveRuntimeObjective } from "./source-prompt-ref.ts";
+
+export const GENERIC_WORKFLOW_RUNNER_RETIREMENT_WORK_ITEM_ID =
+  "openclaw-convergence.workflow-runtime-03-generic-runner-retirement";
+
+export const GENERIC_WORKFLOW_RUNNER_RETIREMENT_ARTIFACT_TYPE =
+  "execution.generic_workflow_runner_retirement";
+
+export type GenericWorkflowRunnerRetirementStatus =
+  | "canonical_engine_required"
+  | "blocked_migration_required"
+  | "definition_missing"
+  | "test_only";
+
+export type GenericWorkflowRunnerRetirementMetadata = {
+  artifactKind: "generic_workflow_runner_retirement";
+  workflowId: string;
+  status: GenericWorkflowRunnerRetirementStatus;
+  definitionId: string | null;
+  definitionStatus: string | null;
+  productionEnabled: boolean | null;
+  schedulerBacked: boolean | null;
+  pluginRegistered: boolean;
+  genericProductionSuccessAllowed: false;
+  canonicalWorkflowEngineRequired: true;
+  workflowQueuedRunnerRole: "migration_shim_only";
+  reasonCodes: string[];
+  ownerSummary: string;
+  rawPromptStored: false;
+  rawResponseStored: false;
+  rawLogsStored: false;
+  workQueueLifecycleMutated: false;
+};
 
 export type WorkflowQueuedRunOnceResult = {
   artifactKind: "workflow_queued_run_once_result";
@@ -17,10 +51,14 @@ export type WorkflowQueuedRunOnceResult = {
   claimed: boolean;
   completed: boolean;
   failed: boolean;
+  status: GenericWorkflowRunnerRetirementStatus | null;
   runtimeJobId: string | null;
   workflowId: string | null;
   jobType: string | null;
   failure: { stage: string; message: string } | null;
+  reasonCodes: string[];
+  canonicalWorkflowEngineRequired: true;
+  genericProductionSuccessAllowed: false;
   closeoutRequired: true;
   rawPromptStored: false;
   rawResponseStored: false;
@@ -36,6 +74,7 @@ export type WorkflowQueuedRunnerOptions = {
   jobTypes?: string[];
   runtimeJobId?: string;
   sourcePromptSessionRoots?: string[];
+  runtimeToolKernel?: RuntimeToolKernel | null;
   closeoutReporter?: {
     createCapsule(input: CloseoutCapsuleReporterInput): Promise<CloseoutCapsuleReporterResult>;
   };
@@ -52,27 +91,25 @@ function stringValue(value: unknown, fallback: string): string {
   return typeof value === "string" && value.trim() ? value : fallback;
 }
 
-const SCHEDULER_BACKED_WORKFLOWS = new Set(["agent_team.product_spec_planning"]);
-
-function closeoutIsModelAuthored(result: CloseoutCapsuleReporterResult): boolean {
-  return (
-    result.source === "model" &&
-    result.capsule.humanReport.source === "model" &&
-    result.capsule.structuredSummary.taskSuccess !== "unknown"
-  );
+function workflowSpecificRetirementReasonCodes(workflowId: string): string[] {
+  if (workflowId === "agent_team.product_spec_planning") {
+    return [
+      "product_spec_planning_requires_scheduler_backed_runner",
+      "product_spec_planning_generic_runner_cannot_emit_contract_artifacts",
+    ];
+  }
+  return [];
 }
 
 export class WorkflowQueuedRunner {
   private readonly queueName: string;
   private readonly jobTypes: string[];
-  private readonly now: () => Date;
   private readonly leaseRenewalIntervalMs = 10_000;
   private readonly leaseRenewalExtendByMs = 120_000;
 
   constructor(private readonly options: WorkflowQueuedRunnerOptions) {
     this.queueName = options.queueName ?? "agent-team";
     this.jobTypes = options.jobTypes ?? ["executor.single_agent", "executor.workflow"];
-    this.now = options.now ?? (() => new Date());
   }
 
   async runOnce(): Promise<WorkflowQueuedRunOnceResult> {
@@ -89,48 +126,73 @@ export class WorkflowQueuedRunner {
     const workflowId = stringValue(payload.workflowId, "unknown");
     const stopLeaseRenewal = this.startLeaseRenewal(claimed.leaseToken);
     try {
-      if (SCHEDULER_BACKED_WORKFLOWS.has(workflowId)) {
-        await this.options.runtimeJobs.recordEvent({
-          jobId: claimed.job.jobId,
-          eventType: "execution.workflow_scheduler_required",
-          workerId: this.options.workerId,
-          data: {
-            workflowId,
-            reasonCode: "product_spec_planning_requires_scheduler_backed_runner",
-            genericWorkflowDispatchAllowed: false,
-            rawPromptStored: false,
-            rawResponseStored: false,
-            rawProviderLogStored: false,
-            workQueueLifecycleMutated: false,
-          } as JsonValue,
-        });
-        throw new Error("product_spec_planning_requires_scheduler_backed_runner");
-      }
-      await this.recordGenericWorkflowEvidence(claimed.job, workflowId);
-      const completed = await this.options.runtimeJobs.completeJob({
-        leaseToken: claimed.leaseToken,
-        result: {
+      const definition = DEFAULT_WORKFLOW_DEFINITION_REGISTRY.getWorkflowDefinition(workflowId);
+      if (!definition) {
+        const metadata = await this.recordGenericWorkflowRetirement({
+          job: claimed.job,
           workflowId,
-          completedWorkPathSatisfied: true,
-          closeoutPresent: true,
-        } as JsonValue,
-      });
-      if (!completed) {
+          definition: null,
+          status: "definition_missing",
+          reasonCodes: ["workflow_definition_missing", "generic_workflow_runner_retired"],
+        });
+        await this.options.runtimeJobs.failJob({
+          leaseToken: claimed.leaseToken,
+          error: metadata as unknown as JsonValue,
+        });
         return this.empty({
           claimed: true,
           failed: true,
+          status: metadata.status,
           runtimeJobId: claimed.job.jobId,
           workflowId,
           jobType: claimed.job.jobType,
-          failure: { stage: "complete_job", message: "lease expired before completion" },
+          failure: { stage: "workflow_run_once", message: "generic_workflow_runner_retired" },
+          reasonCodes: metadata.reasonCodes,
         });
       }
+      await this.options.runtimeJobs.attachArtifact({
+        jobId: claimed.job.jobId,
+        artifactType: WORKFLOW_DEFINITION_RESOLUTION_ARTIFACT_TYPE,
+        storageKind: "metadata",
+        uri: `runtime-job://${claimed.job.jobId}/execution/workflow-definition/${workflowId}`,
+        contentType: "application/json",
+        metadata: workflowDefinitionResolutionArtifactMetadata(
+          workflowDefinitionResolutionFor(definition),
+        ),
+      });
+      const status: GenericWorkflowRunnerRetirementStatus = definition.productionEnabled
+        ? "canonical_engine_required"
+        : "blocked_migration_required";
+      const metadata = await this.recordGenericWorkflowRetirement({
+        job: claimed.job,
+        workflowId,
+        definition,
+        status,
+        reasonCodes: [
+          "generic_workflow_runner_retired",
+          "canonical_workflow_runtime_engine_required",
+          ...workflowSpecificRetirementReasonCodes(workflowId),
+          ...(definition.productionEnabled ? ["workflow_definition_production_enabled"] : []),
+          ...(definition.productionEnabled ? [] : ["workflow_definition_not_production_enabled"]),
+          ...(definition.schedulerBacked ? ["workflow_definition_scheduler_backed"] : []),
+          ...(DEFAULT_WORKFLOW_PLUGIN_REGISTRY.hasWorkflowPlugin(workflowId)
+            ? ["workflow_plugin_registered"]
+            : ["workflow_plugin_missing_or_not_required"]),
+        ],
+      });
+      await this.options.runtimeJobs.failJob({
+        leaseToken: claimed.leaseToken,
+        error: metadata as unknown as JsonValue,
+      });
       return this.empty({
         claimed: true,
-        completed: true,
+        failed: true,
+        status,
         runtimeJobId: claimed.job.jobId,
         workflowId,
         jobType: claimed.job.jobType,
+        failure: { stage: "workflow_run_once", message: "generic_workflow_runner_retired" },
+        reasonCodes: metadata.reasonCodes,
       });
     } catch (error) {
       await this.options.runtimeJobs.failJob({
@@ -143,6 +205,7 @@ export class WorkflowQueuedRunner {
       return this.empty({
         claimed: true,
         failed: true,
+        status: "blocked_migration_required",
         runtimeJobId: claimed.job.jobId,
         workflowId,
         jobType: claimed.job.jobType,
@@ -150,6 +213,7 @@ export class WorkflowQueuedRunner {
           stage: "workflow_run_once",
           message: error instanceof Error ? error.message : "unknown workflow run failure",
         },
+        reasonCodes: ["generic_workflow_runner_retired", "workflow_run_once_failed"],
       });
     } finally {
       stopLeaseRenewal();
@@ -179,156 +243,48 @@ export class WorkflowQueuedRunner {
     };
   }
 
-  private async recordGenericWorkflowEvidence(job: RuntimeJob, workflowId: string): Promise<void> {
-    const now = this.now().toISOString();
-    const payload = asRecord(job.payload);
-    const objectiveResolution = await resolveRuntimeObjective(payload, {
-      sessionSearchRoots: this.options.sourcePromptSessionRoots,
-    });
-    const objective = objectiveResolution.objectiveForEvidence;
-    if (objective === "task-specific-objective-missing") {
-      throw new Error("task_specific_closeout_evidence_required_before_success");
-    }
-    await this.options.runtimeJobs.recordEvent({
-      jobId: job.jobId,
-      eventType: "execution.workflow_dispatch_started",
-      workerId: this.options.workerId,
-      data: {
-        workflowId,
-        jobType: job.jobType,
-        executorId: `workflow-executor:${workflowId}`,
-        genericWorkflowDispatch: true,
-      },
-    });
-    await this.options.runtimeJobs.attachArtifact({
-      jobId: job.jobId,
-      artifactType: "execution.workflow_dispatch",
-      storageKind: "metadata",
-      uri: `runtime-job://${job.jobId}/execution/workflow-dispatch/${workflowId}`,
-      contentType: "application/json",
-      metadata: {
-        workflowId,
-        jobType: job.jobType,
-        executorId: `workflow-executor:${workflowId}`,
-        dispatchedTo: "generic_workflow_queued_runner",
-        codingTeamSpecialPath: false,
-        closeoutRequired: true,
-        sourcePromptResolution: objectiveResolution.sourcePromptResolution as unknown as JsonValue,
-        workQueueLifecycleMutated: false,
-      } as JsonValue,
-    });
-    await this.options.runtimeJobs.attachArtifact({
-      jobId: job.jobId,
-      artifactType: "execution.workflow_closeout",
-      storageKind: "metadata",
-      uri: `runtime-job://${job.jobId}/execution/workflow-closeout/${workflowId}`,
-      contentType: "application/json",
-      metadata: {
-        workflowId,
-        objectiveSummary: objective,
-        completedAt: now,
-        status: "completed",
-        boundedSummaryPresent: true,
-        rawPromptStored: false,
-        rawResponseStored: false,
-        workQueueLifecycleMutated: false,
-      } as JsonValue,
-    });
-    const capsuleInput: CloseoutCapsuleReporterInput = {
-      factualRefs: {
-        runtimeJobId: job.jobId,
-        teamRunId: null,
-        workflowId,
-        status: "completed",
-        roles: [
-          {
-            roleId: `workflow-executor:${workflowId}`,
-            agentId: `workflow-executor:${workflowId}`,
-            modelRef: null,
-            status: "completed",
-          },
-        ],
-        fileRefs: workflowFilesForCloseout(workflowId),
-        artifactRefs: [
-          `runtime-job://${job.jobId}/execution/workflow-dispatch/${workflowId}`,
-          `runtime-job://${job.jobId}/execution/workflow-closeout/${workflowId}`,
-        ],
-        validationRefs: ["generic workflow runtime closeout evidence recorded"],
-        runtimeEventRefs: [`runtime-job://${job.jobId}/events`],
-      },
-      objectiveSummary: objective,
-      boundedRoleEvidence: [
-        {
-          roleId: `workflow-executor:${workflowId}`,
-          agentId: `workflow-executor:${workflowId}`,
-          modelRef: null,
-          askedToDo: objective,
-          evidenceSummary:
-            "Generic workflow runner recorded bounded dispatch and closeout evidence.",
-          artifactRefs: [`runtime-job://${job.jobId}/execution/workflow-closeout/${workflowId}`],
-          validationRefs: ["generic workflow runtime closeout evidence recorded"],
-          limitations: [
-            "generic workflow runner records evidence; it does not prove independent agent edits",
-          ],
-        },
-      ],
-      boundedResultEvidence: {
-        completed: true,
-        needsReview: false,
-        failed: false,
-        findings: [],
-        requiredFixes: [],
-        limitations: [
-          "generic workflow runner records evidence; it does not prove independent agent edits",
-        ],
-      },
+  private async recordGenericWorkflowRetirement(input: {
+    job: RuntimeJob;
+    workflowId: string;
+    definition: WorkflowDefinition | null;
+    status: GenericWorkflowRunnerRetirementStatus;
+    reasonCodes: string[];
+  }): Promise<GenericWorkflowRunnerRetirementMetadata> {
+    const metadata: GenericWorkflowRunnerRetirementMetadata = {
+      artifactKind: "generic_workflow_runner_retirement",
+      workflowId: input.workflowId,
+      status: input.status,
+      definitionId: input.definition?.definitionId ?? null,
+      definitionStatus: input.definition?.status ?? null,
+      productionEnabled: input.definition?.productionEnabled ?? null,
+      schedulerBacked: input.definition?.schedulerBacked ?? null,
+      pluginRegistered: DEFAULT_WORKFLOW_PLUGIN_REGISTRY.hasWorkflowPlugin(input.workflowId),
+      genericProductionSuccessAllowed: false,
+      canonicalWorkflowEngineRequired: true,
+      workflowQueuedRunnerRole: "migration_shim_only",
+      reasonCodes: input.reasonCodes,
+      ownerSummary:
+        "Generic workflow dispatch is retired for production success. This workflow must run through the canonical workflow runtime engine with definition/plugin readiness, runtime tool traces, evidence profile, completion review, and model-authored closeout.",
+      rawPromptStored: false,
+      rawResponseStored: false,
+      rawLogsStored: false,
+      workQueueLifecycleMutated: false,
     };
-    const capsuleResult = this.options.closeoutReporter
-      ? await this.options.closeoutReporter.createCapsule(capsuleInput)
-      : createDegradedSystemCloseoutCapsule({
-          ...capsuleInput,
-          reasonCodes: ["closeout_capsule_model_reporter_not_configured"],
-        });
-    if (!closeoutIsModelAuthored(capsuleResult)) {
-      await this.options.runtimeJobs.recordEvent({
-        jobId: job.jobId,
-        eventType: "execution.workflow_degraded_closeout_rejected",
-        workerId: this.options.workerId,
-        data: {
-          workflowId,
-          closeoutSource: capsuleResult.source,
-          reasonCodes: [
-            "degraded_closeout_diagnostic_only",
-            "model_authored_closeout_required_before_success",
-          ],
-          rawPromptStored: false,
-          rawResponseStored: false,
-          rawProviderLogStored: false,
-          workQueueLifecycleMutated: false,
-        } as JsonValue,
-      });
-      throw new Error("model_authored_closeout_required_before_success");
-    }
-    const capsule: CloseoutCapsule = parseCloseoutCapsule(capsuleResult.capsule);
-    await recordCloseoutCapsuleArtifact({
-      runtimeJobs: this.options.runtimeJobs,
-      capsule,
+    await this.options.runtimeJobs.recordEvent({
+      jobId: input.job.jobId,
+      eventType: "execution.generic_workflow_runner_retired",
+      workerId: this.options.workerId,
+      data: metadata as unknown as JsonValue,
     });
     await this.options.runtimeJobs.attachArtifact({
-      jobId: job.jobId,
-      artifactType: "workflow_review.human_closeout_summary",
+      jobId: input.job.jobId,
+      artifactType: GENERIC_WORKFLOW_RUNNER_RETIREMENT_ARTIFACT_TYPE,
       storageKind: "metadata",
-      uri: `runtime-job://${job.jobId}/execution/workflow-human-closeout/${workflowId}`,
+      uri: `runtime-job://${input.job.jobId}/execution/generic-workflow-runner-retirement/${input.workflowId}`,
       contentType: "application/json",
-      sizeBytes: Buffer.byteLength(JSON.stringify(capsuleResult.legacyHumanSummary), "utf8"),
-      metadata: {
-        ...capsuleResult.legacyHumanSummary,
-        closeoutCapsuleId: capsule.capsuleId,
-        closeoutCapsuleSource: capsuleResult.source,
-        modelAuthored: capsuleResult.source === "model",
-        workQueueLifecycleMutated: false,
-      } as JsonValue,
+      metadata: metadata as unknown as JsonValue,
     });
+    return metadata;
   }
 
   private empty(input: Partial<WorkflowQueuedRunOnceResult>): WorkflowQueuedRunOnceResult {
@@ -338,10 +294,14 @@ export class WorkflowQueuedRunner {
       claimed: false,
       completed: false,
       failed: false,
+      status: null,
       runtimeJobId: null,
       workflowId: null,
       jobType: null,
       failure: null,
+      reasonCodes: [],
+      canonicalWorkflowEngineRequired: true,
+      genericProductionSuccessAllowed: false,
       closeoutRequired: true,
       rawPromptStored: false,
       rawResponseStored: false,
@@ -350,22 +310,5 @@ export class WorkflowQueuedRunner {
       schedulerStarted: false,
       ...input,
     };
-  }
-}
-
-function workflowFilesForCloseout(workflowId: string): string[] {
-  switch (workflowId) {
-    case "agent_team.product_spec_planning":
-      return [
-        "extensions/execution-platform/src/workflows/product-spec-planning-workflow.ts",
-        "extensions/execution-platform/src/workflows/runtime-work-graph-scheduler.ts",
-      ];
-    case "workflow.docs_skills":
-      return [
-        "extensions/execution-platform/src/workflows/docs-skills-workflow.ts",
-        "extensions/execution-platform/src/codex-bridge/workflow-queued-runner.ts",
-      ];
-    default:
-      return ["extensions/execution-platform/src/codex-bridge/workflow-queued-runner.ts"];
   }
 }

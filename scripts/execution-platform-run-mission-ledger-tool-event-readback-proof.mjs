@@ -572,6 +572,73 @@ async function main() {
     });
 
     const result = await scheduler.run(graphId);
+    const terminalProgressRef = `runtime-job://${job.jobId}/runtime-work-graph/progress/${String(
+      progressEventRefs.length + 1,
+    ).padStart(3, "0")}-scheduler_terminal`;
+    progressEventRefs.push(terminalProgressRef);
+    await runtimeJobs.recordEvent({
+      jobId: job.jobId,
+      eventType: "agent_team.scheduler_progress",
+      data: {
+        stage: "scheduler_terminal",
+        status: result.status === "succeeded" ? "completed" : result.status,
+        graphId,
+        runtimeJobId: job.jobId,
+        currentPhase: "scheduler_terminal",
+        validationState: result.status === "succeeded" ? "passed" : result.status,
+        evidenceProducedRefs: result.decisionRefs.slice(0, 20),
+        evidenceClaimRefs: result.decisionRefs.slice(0, 20),
+        remainingOpenCommitmentIds:
+          result.missionLedger?.commitments
+            ?.filter((commitment) => commitment.blocking && commitment.status !== "satisfied")
+            .map((commitment) => commitment.commitmentId)
+            .slice(0, 20) ?? [],
+        nextDecisionNeeded: result.status === "succeeded" ? "none" : "owner_review",
+        blockerSummary:
+          result.missionLedger?.openBlockingCommitmentCount > 0
+            ? `${result.missionLedger.openBlockingCommitmentCount} blocking commitment(s) remain open.`
+            : null,
+        finalizationState: result.status,
+        latestToolEventKind: "scheduler.create_closeout_request",
+        schedulerPhase:
+          result.status === "succeeded" ? "finalization_completed" : "finalization_review",
+        schedulerToolId: "scheduler.create_closeout_request",
+        schedulerToolInvocationRefs: result.decisionRefs
+          .filter((ref) => ref.startsWith("runtime-tool://"))
+          .slice(0, 20),
+        eli5Progress:
+          result.status === "succeeded"
+            ? "OpenClaw finished the graph and no blocking Mission Ledger commitments remain open."
+            : "OpenClaw stopped the graph with bounded evidence for review.",
+        rawPromptStored: false,
+        rawResponseStored: false,
+        rawProviderLogStored: false,
+        rawToolLogStored: false,
+      },
+    });
+    await runtimeJobs.attachArtifact({
+      jobId: job.jobId,
+      artifactType: "agent_team.scheduler_progress",
+      storageKind: "metadata",
+      uri: terminalProgressRef,
+      contentType: "application/json",
+      metadata: {
+        artifactKind: "agent_team_scheduler_terminal_progress",
+        graphId,
+        runtimeJobId: job.jobId,
+        schedulerStatus: result.status,
+        openBlockingCommitmentCount: result.missionLedger?.openBlockingCommitmentCount ?? null,
+        remainingOpenCommitmentIds:
+          result.missionLedger?.commitments
+            ?.filter((commitment) => commitment.blocking && commitment.status !== "satisfied")
+            .map((commitment) => commitment.commitmentId)
+            .slice(0, 20) ?? [],
+        finalizationState: result.status,
+        rawPromptStored: false,
+        rawResponseStored: false,
+        rawProviderLogStored: false,
+      },
+    });
     await runtimeJobs.attachArtifact({
       jobId: job.jobId,
       artifactType: "execution_platform.closeout_capsule",

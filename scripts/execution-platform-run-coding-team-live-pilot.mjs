@@ -21,6 +21,13 @@ async function ep() {
   return executionPlatform;
 }
 
+async function codingTeamLivePilotApi() {
+  return await tsImport(
+    path.join(root, "extensions/execution-platform/src/codex-bridge/coding-team-live-pilot.ts"),
+    import.meta.url,
+  );
+}
+
 function hasArg(name) {
   return process.argv.includes(name);
 }
@@ -339,8 +346,8 @@ async function runFixture() {
     applyExecutionPlatformMigrations,
     RuntimeJobRepository,
     WorkQueueRepository,
-    runCodingTeamLivePilot,
   } = await ep();
+  const { runCodingTeamLivePilot } = await codingTeamLivePilotApi();
   const database = await createExecutionPlatformPgMemTestDatabase();
   try {
     await applyExecutionPlatformMigrations(database.sql);
@@ -382,8 +389,8 @@ async function inspectLiveAndMaybeRun() {
       evaluateWorkQueueLiveLinkageGate,
       RuntimeJobRepository,
       WorkQueueRepository,
-      runCodingTeamLivePilot,
     } = await ep();
+    const { runCodingTeamLivePilot } = await codingTeamLivePilotApi();
     runtime = await createExecutionPlatformDatabaseRuntime({ applyMigrations: false });
     const boundary = resolveExecutionPlatformDbBoundaryContract({ resolution: runtime.resolution });
     const readiness = await inspectExecutionPlatformDbReadiness({

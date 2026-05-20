@@ -1,9 +1,11 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
+import type { FrontDoorSourcePromptRef } from "../intent-front-door/request-compiler.ts";
 import {
   NativeExecutionRpcService,
   type NativeExecutionRpcAuth,
 } from "../intent-routing/native-execution-rpc.ts";
 import type { JsonValue, RuntimeJobRepository } from "../runtime-job-repository.ts";
+import type { RuntimeToolKernel } from "../runtime-tool-call/runtime-tool-kernel.ts";
 import {
   handleWorkQueueCancelExecutionEndpoint,
   handleWorkQueuePauseExecutionEndpoint,
@@ -15,13 +17,13 @@ import {
   summarizeWorkQueueExecutionForUi,
 } from "../work-queue/execution-read-model.ts";
 import type { WorkQueueRepository } from "../work-queue/work-queue-repository.ts";
+import { ProductionWorkflowExecutionFactory } from "../workflows/production-workflow-execution-factory.ts";
 import type { RuntimeWorkGraphRepository } from "../workflows/runtime-work-graph-repository.ts";
 import {
   handleQueueRunnerRunOnceEndpoint,
   type QueueRunnerEndpointAuth,
   type QueueRunnerEndpointRequest,
 } from "./queued-bridge-runner-endpoint.ts";
-import { WorkflowQueuedRunner } from "./workflow-queued-runner.ts";
 
 export type ExecutionPlatformHostRoute = {
   path: string;
@@ -34,6 +36,7 @@ export type ExecutionPlatformHostRoute = {
 export type ExecutionPlatformHostRouteDependencies = {
   runtimeJobs?: RuntimeJobRepository;
   runtimeWorkGraphs?: RuntimeWorkGraphRepository;
+  runtimeToolKernel?: RuntimeToolKernel | null;
   workQueue?: WorkQueueRepository;
   nativeExecutionRpc?: NativeExecutionRpcService;
   queueRunnerEndpoint?: typeof handleQueueRunnerRunOnceEndpoint;
@@ -45,6 +48,7 @@ export type ExecutionPlatformHostRouteDependencies = {
     claimed: boolean;
     completed: boolean;
     failed: boolean;
+    status: string;
     runtimeJobId: string | null;
     teamRunId: string | null;
     workflowId: string | null;
@@ -79,6 +83,10 @@ function isRecord(value: unknown): value is JsonRecord {
 
 function readString(value: unknown): string | undefined {
   return typeof value === "string" && value.trim().length > 0 ? value.trim() : undefined;
+}
+
+function readPromptText(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim().length > 0 ? value : undefined;
 }
 
 function readBoolean(value: unknown): boolean | undefined {
@@ -134,6 +142,32 @@ function readSourceRoute(value: unknown): NativeExecutionSourceRoute | undefined
     value === "service"
     ? value
     : undefined;
+}
+
+function readSourcePromptRef(
+  value: unknown,
+): Omit<FrontDoorSourcePromptRef, "promptHash" | "promptLength"> | undefined {
+  if (value === undefined || value === null) {
+    return undefined;
+  }
+  if (!isRecord(value)) {
+    throw new Error("source_prompt_ref_object_required");
+  }
+  const refKind = readString(value.refKind);
+  if (refKind !== "gateway_chat_transcript" && refKind !== "native_submit") {
+    throw new Error("source_prompt_ref_kind_invalid");
+  }
+  if (value.rawPromptStored !== false) {
+    throw new Error("source_prompt_ref_raw_prompt_flag_required_false");
+  }
+  return {
+    refKind,
+    sessionKey: readString(value.sessionKey) ?? null,
+    sessionId: readString(value.sessionId) ?? null,
+    runId: readString(value.runId) ?? null,
+    sourceRoute: readString(value.sourceRoute) ?? null,
+    rawPromptStored: false,
+  };
 }
 
 function readApprovalRefs(value: unknown) {
@@ -251,19 +285,17 @@ export async function handleExecutionPlatformQueueRunnerHostRoute(
         });
         return true;
       }
-      const runOnceResult =
-        job.jobType === "executor.agent_team" && dependencies.agentTeamRuntimeRunOnce
-          ? await dependencies.agentTeamRuntimeRunOnce({
-              runtimeJobId: job.jobId,
-              workerId,
-              queueName: queueName ?? "agent-team",
-            })
-          : await new WorkflowQueuedRunner({
-              runtimeJobs: dependencies.runtimeJobs,
-              workerId,
-              queueName,
-              runtimeJobId: job.jobId,
-            }).runOnce();
+      const runOnceResult = await new ProductionWorkflowExecutionFactory({
+        runtimeJobs: dependencies.runtimeJobs,
+        runtimeWorkGraphs: dependencies.runtimeWorkGraphs,
+        runtimeToolKernel: dependencies.runtimeToolKernel ?? null,
+        workQueue: dependencies.workQueue,
+        agentTeamRuntimeRunOnce: dependencies.agentTeamRuntimeRunOnce,
+      }).runOnce({
+        runtimeJobId: job.jobId,
+        workerId,
+        queueName: queueName ?? "agent-team",
+      });
       writeJson(res, runOnceResult.claimed ? 200 : 400, {
         accepted: runOnceResult.claimed,
         nativeWorkflowRunOnce: true,
@@ -386,11 +418,12 @@ export async function handleExecutionPlatformNativeExecutionHostRoute(
     const result =
       operation === "submit"
         ? await service.submit({
-            prompt: readString(body.prompt) ?? "",
+            prompt: readPromptText(body.prompt) ?? "",
             auth,
             workItemId: readString(body.workItemId) ?? null,
             approvalRefs: readApprovalRefs(body.approvalRefs),
             sourceRoute: auth.sourceRoute,
+            sourcePromptRef: readSourcePromptRef(body.sourcePromptRef),
           })
         : operation === "status"
           ? await service.status(runtimeJobId)

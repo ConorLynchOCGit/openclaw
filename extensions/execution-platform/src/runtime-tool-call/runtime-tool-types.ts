@@ -10,24 +10,39 @@ export type RuntimeToolStatus =
   | "skipped";
 
 export type RuntimeToolFamily =
+  | "router.front_door"
   | "scheduler.decompose_graph"
   | "scheduler.select_next_node"
   | "scheduler.evaluate_node_result"
   | "scheduler.repair_decision"
+  | "source_prompt.context"
+  | "context_scout.tool_loop"
+  | "code_intelligence.query"
   | "model.call"
   | "worker.invoke"
+  | "coding.compound"
+  | "edit_transaction.lifecycle"
   | "file_edit.propose"
   | "file_edit.apply"
+  | "validation.plan"
   | "validation.run"
+  | "validation.result"
+  | "validation.review"
+  | "qa.review"
   | "db_operation.execute"
   | "script.execute"
   | "work_queue.project_event"
   | "human_task.request"
   | "human_task.resume"
   | "closeout.generate"
+  | "closeout.finalize"
   | "memory.retrieve"
   | "memory.capture"
   | "research.fetch"
+  | "product_spec_planning.create_spec"
+  | "product_spec_planning.review_spec"
+  | "product_spec_planning.validate_spec"
+  | "product_spec_planning.generate_spec"
   | "diagnostic.bounded";
 
 export type RuntimeToolAuthorityClass =
@@ -98,6 +113,12 @@ export type RuntimeToolInvocationInput = RuntimeToolInvocationRef & {
   inputRef?: string | null;
   inputHash?: string | null;
   inputSummary: string;
+  /**
+   * Volatile executor-only input. This is intentionally not persisted by the
+   * trace repository and is for data such as provider prompts that must be
+   * available to an executor without becoming stored trace content.
+   */
+  volatileInput?: unknown;
   budget?: RuntimeToolBudget;
   metadata?: JsonValue;
   abortSignal?: AbortSignal;

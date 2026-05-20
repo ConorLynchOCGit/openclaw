@@ -24,6 +24,43 @@ title: "Model Memory Roadmap"
 
 ## Progress snapshot
 
+- 2026-05-17 Runtime Toolification Priority Update:
+  - Model Memory toolification now follows the same boundary as the generic
+    orchestration runtime: the model judges usefulness, durability, relevance,
+    conflict, supersession, context-pack usefulness, compaction loss/risk, and
+    proactivity quality; runtime owns schema, ids, refs, route budgets, MMV2
+    writes, Work Queue candidate refs, cooldowns, idempotency, raw-storage
+    rejection, authority, lifecycle separation, and tool traces.
+  - the dedicated memory toolification item merges older memory runtime
+    wiring, middleware adoption, compatibility hard-shutdown, dense capture
+    benchmark, retrieval/context quality, compaction, and proactivity-to-Work
+    Queue goals into one staged runtime-tool pass.
+  - capture should run as prepare source window, draft candidates, classify
+    durability, detect conflict/supersession, review raw-storage risk, compile
+    write refs, commit memory ref, and review capture quality.
+  - retrieval/context should run as draft intent, select sources, compile
+    queries, fetch candidates, rank candidates, assemble context pack, review
+    usefulness, and insert pack ref.
+  - proactivity should run as extract opportunity candidates,
+    dedupe/cooldown, adjudicate usefulness, project review-gated Work Queue
+    candidates, and owner-review gate.
+  - this item should run after the Product/Spec Planning proof unless memory
+    becomes the immediate proof objective. Router/front-door, validation/QA,
+    and closeout finalization now sit before Product/Spec because they are
+    direct pre-proof failure risks.
+- 2026-05-16 Runtime Toolification Integration:
+  - the next Model Memory convergence work should move memory capture,
+    retrieval, route-aware context packs, compaction, and proactivity onto
+    Execution Platform runtime tools.
+  - model-task and DB-operation refs become compatibility facades over
+    canonical tool families instead of independent evidence layers.
+  - Work Queue readback should cite memory tool invocation refs and bounded
+    artifacts for capture/retrieval/context/proactivity evidence.
+  - proactivity seeds, memory-review follow-ups, and memory proof diagnostics
+    must use Execution Platform generated-item lifecycle semantics before they
+    become Work Queue rows. Review-gated memory opportunities may become real
+    owner work; proof diagnostics and unaccepted proposals must stay debug or
+    proposal state.
 - 2026-05-10 active queue rebase:
   - the Execution Platform convergence tracker preserves historical slices
     and uses an 18-item Active Execution Queue for remaining work.

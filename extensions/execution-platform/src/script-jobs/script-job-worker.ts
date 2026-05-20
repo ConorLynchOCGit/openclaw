@@ -18,10 +18,15 @@ export type ScriptJobWorkerAdapterOptions = {
   queueName?: string;
   handlers: Record<string, ScriptJobHandler>;
   retryDelayMs?: number;
+  proofOnly: true;
 };
 
 export class ScriptJobWorkerAdapter {
-  constructor(private readonly options: ScriptJobWorkerAdapterOptions) {}
+  constructor(private readonly options: ScriptJobWorkerAdapterOptions) {
+    if (!options.proofOnly) {
+      throw new Error("script_job_worker_adapter_retired_use_script_execute_runtime_tool");
+    }
+  }
 
   async runOnce(): Promise<RuntimeJob | null> {
     const claimed = await this.options.repository.claimScriptJob({

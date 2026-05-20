@@ -1,3 +1,9 @@
+import {
+  RUNTIME_TOOLIFICATION_TRUTH_REGISTRY_WORK_ITEM_ID,
+  buildRuntimeToolificationTruthRegistry,
+  summarizeRuntimeToolificationTruthRegistry,
+  type RuntimeToolificationTruthRegistrySummary,
+} from "../runtime-tool-call/runtime-tool-adoption-boundary.ts";
 import type {
   WorkItemQueueStatus,
   WorkItemTruth,
@@ -20,6 +26,22 @@ function stringValue(value: unknown): string | null {
 
 function numberValue(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function toolificationTruthRegistrySummary(input: {
+  workItemId: string;
+  metadataValue: unknown;
+}): RuntimeToolificationTruthRegistrySummary | null {
+  if (input.workItemId === RUNTIME_TOOLIFICATION_TRUTH_REGISTRY_WORK_ITEM_ID) {
+    return summarizeRuntimeToolificationTruthRegistry({
+      surfaces: buildRuntimeToolificationTruthRegistry(),
+    });
+  }
+  const record = asRecord(input.metadataValue);
+  if (!record || record.artifactKind !== "runtime_toolification_truth_registry_summary") {
+    return null;
+  }
+  return record as unknown as RuntimeToolificationTruthRegistrySummary;
 }
 
 function stringArray(value: unknown, maxItems: number): string[] {
@@ -135,6 +157,10 @@ export function projectDbPrimaryWorkQueueItem(input: {
         truth.item.ownerReadbackRef || truth.item.closeoutCapsuleRef ? "ready" : "missing",
       projectionFreshnessState: blockerReasonCodes.length === 0 ? "fresh" : "needs_review",
     },
+    toolificationTruthRegistry: toolificationTruthRegistrySummary({
+      workItemId: truth.item.workItemId,
+      metadataValue: metadata?.toolificationTruthRegistry,
+    }),
     rawPromptStored: false,
     rawResponseStored: false,
     rawTranscriptStored: false,

@@ -21,6 +21,18 @@ describe("Kimi live source-edit proof target", () => {
         "runtime-tool://worker/tool-using/evidence/handoff-1-46003efd",
         "runtime-tool://worker/tool-using/evidence/handoff-2-46003efd",
       ],
+      toolUsingWorkerTraceRefs5db60a57: [
+        "runtime-tool://worker/tool-using/evidence/handoff-1-5db60a57",
+        "runtime-tool://worker/tool-using/evidence/handoff-2-5db60a57",
+      ],
+      toolUsingWorkerTraceRefs020714a8: [
+        "runtime-tool://worker/tool-using/evidence/handoff-1-020714a8",
+        "runtime-tool://worker/tool-using/evidence/handoff-2-020714a8",
+      ],
+      toolUsingWorkerTraceRefs5d1e652c: [
+        "runtime-tool://worker/tool-using/evidence/handoff-1-5d1e652c",
+        "runtime-tool://worker/tool-using/evidence/handoff-2-5d1e652c",
+      ],
     });
 
     expect(readiness).toEqual({
@@ -42,6 +54,18 @@ describe("Kimi live source-edit proof target", () => {
       toolUsingWorkerTraceRefs46003efd: [
         "runtime-tool://worker/tool-using/evidence/handoff-1-46003efd",
         "runtime-tool://worker/tool-using/evidence/handoff-2-46003efd",
+      ],
+      toolUsingWorkerTraceRefs5db60a57: [
+        "runtime-tool://worker/tool-using/evidence/handoff-1-5db60a57",
+        "runtime-tool://worker/tool-using/evidence/handoff-2-5db60a57",
+      ],
+      toolUsingWorkerTraceRefs020714a8: [
+        "runtime-tool://worker/tool-using/evidence/handoff-1-020714a8",
+        "runtime-tool://worker/tool-using/evidence/handoff-2-020714a8",
+      ],
+      toolUsingWorkerTraceRefs5d1e652c: [
+        "runtime-tool://worker/tool-using/evidence/handoff-1-5d1e652c",
+        "runtime-tool://worker/tool-using/evidence/handoff-2-5d1e652c",
       ],
       liveSourceEditProof: true,
       reasonCodes: ["kimi_live_source_edit_adapter_ready"],

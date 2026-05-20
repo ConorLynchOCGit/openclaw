@@ -1,1 +1,66 @@
-[]
+[
+  {
+    "file": "extensions/execution-platform/src/codex-bridge/acp-endpoint-setup.ts",
+    "line": 4,
+    "kind": "import",
+    "specifier": "../../../../src/config/paths.ts",
+    "resolvedPath": "src/config/paths.ts",
+    "reason": "imports core src path outside plugin-sdk from an extension"
+  },
+  {
+    "file": "extensions/execution-platform/src/codex-bridge/acp-endpoint-setup.ts",
+    "line": 291,
+    "kind": "dynamic-import",
+    "specifier": "../../../../src/gateway/call.ts",
+    "resolvedPath": "src/gateway/call.ts",
+    "reason": "dynamically imports core src path outside plugin-sdk from an extension"
+  },
+  {
+    "file": "extensions/execution-platform/src/codex-bridge/acp-runtime-config.ts",
+    "line": 3,
+    "kind": "import",
+    "specifier": "../../../../src/config/paths.ts",
+    "resolvedPath": "src/config/paths.ts",
+    "reason": "imports core src path outside plugin-sdk from an extension"
+  },
+  {
+    "file": "extensions/execution-platform/src/codex-bridge/acp-runtime-config.ts",
+    "line": 4,
+    "kind": "import",
+    "specifier": "../../../../src/gateway/call.ts",
+    "resolvedPath": "src/gateway/call.ts",
+    "reason": "imports core src path outside plugin-sdk from an extension"
+  },
+  {
+    "file": "extensions/execution-platform/src/codex-bridge/work-episode-closeout.ts",
+    "line": 18,
+    "kind": "import",
+    "specifier": "../../../../src/infra/work-episode-outcome-pack.ts",
+    "resolvedPath": "src/infra/work-episode-outcome-pack.ts",
+    "reason": "imports core src path outside plugin-sdk from an extension"
+  },
+  {
+    "file": "extensions/execution-platform/src/db/runtime.ts",
+    "line": 6,
+    "kind": "import",
+    "specifier": "../../../../src/config/types.openclaw.js",
+    "resolvedPath": "src/config/types.openclaw.js",
+    "reason": "imports core src path outside plugin-sdk from an extension"
+  },
+  {
+    "file": "extensions/execution-platform/src/db/runtime.ts",
+    "line": 143,
+    "kind": "dynamic-import",
+    "specifier": "../../../../src/config/config.js",
+    "resolvedPath": "src/config/config.js",
+    "reason": "dynamically imports core src path outside plugin-sdk from an extension"
+  },
+  {
+    "file": "extensions/execution-platform/src/intent-front-door/protocol-pre-gate.ts",
+    "line": 1,
+    "kind": "import",
+    "specifier": "../../../../src/auto-reply/commands-registry.shared.js",
+    "resolvedPath": "src/auto-reply/commands-registry.shared.js",
+    "reason": "imports core src path outside plugin-sdk from an extension"
+  }
+]

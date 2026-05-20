@@ -33,6 +33,28 @@ Canonical DB fields now include:
 - `graph_ref`
 - `owner_readback_ref`
 
+## Generated Item Lifecycle Addendum
+
+DB-primary Work Queue truth also requires generated item semantics. Source code
+or proof scripts may seed initial planning items, but generated runtime/proof
+children must be classified before they enter active queue readback.
+
+Generated items must carry:
+
+- `originKind`
+- `terminalPolicy`
+- `parentWorkItemId`
+- `owningRuntimeJobId`
+- graph/node refs when available
+- retention policy
+- raw-storage flags
+
+Default active/closed buckets are owner-facing. They should not show
+`proof_diagnostic`, `middleware_fixture`, or `debug_only` generated rows. Those
+rows remain available through debug/admin readback and proof artifacts.
+
+See `work-queue-generated-item-lifecycle.md`.
+
 Runtime/server transition API:
 
 - `WorkQueueRepository.completeWorkQueueItemFromCloseout(...)`

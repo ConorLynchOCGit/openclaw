@@ -104,7 +104,7 @@ describe("coding-team objective scope", () => {
     );
   });
 
-  it("falls back conservatively when no structured active queue id is present", () => {
+  it("defaults unclassified execution-platform work to the canonical execution-platform source surface", () => {
     const scope = resolveCodingTeamObjectiveScope({
       objectiveForModel: "Make a small coding-team bridge repair.",
       objectiveForEvidence: "Make a small bridge repair.",
@@ -116,10 +116,15 @@ describe("coding-team objective scope", () => {
     });
 
     expect(scope.targetActiveQueueId).toBeNull();
-    expect(scope.approvedRepoScopePaths).toEqual([
-      "extensions/execution-platform/src/codex-bridge/",
-    ]);
-    expect(scope.reasonCodes).toContain("fallback_repo_scope_used");
+    expect(scope.approvedRepoScopePaths).toEqual(
+      expect.arrayContaining([
+        "extensions/execution-platform/src/codex-bridge/",
+        "extensions/execution-platform/src/workflows/",
+        "extensions/execution-platform/src/work-queue/",
+        "extensions/execution-platform/src/runtime-tool-call/",
+      ]),
+    );
+    expect(scope.reasonCodes).toContain("owner_system_area_scope_resolved");
   });
 
   it("keeps work queue and UI validations as separate project commands", () => {
@@ -139,5 +144,32 @@ describe("coding-team objective scope", () => {
       "pnpm test:file extensions/execution-platform/src/work-queue/execution-read-model.test.ts",
       "pnpm test:file ui/src/ui/views/work-queue.test.ts",
     ]);
+  });
+
+  it("augments canonical execution-platform scope with explicit paths instead of narrowing away source", () => {
+    const scope = resolveCodingTeamObjectiveScope({
+      objectiveForModel: [
+        "Implement Product/Spec Planning Production Upgrade.",
+        "Also update scripts/execution-platform-run-product-spec-checkpointed-test.mjs",
+        "and docs/projects/execution-platform/specs/runtime-work-graph.md.",
+      ].join("\n"),
+      objectiveForEvidence:
+        "Implement Product/Spec Planning Production Upgrade with scripts and docs updates.",
+      fallbackRepoScopePaths: ["extensions/execution-platform/src/codex-bridge/"],
+      fallbackValidationCommands: [
+        "pnpm test:file extensions/execution-platform/src/codex-bridge/agent-team-quality-proof.test.ts",
+      ],
+      activeQueueDefinitions,
+    });
+
+    expect(scope.approvedRepoScopePaths).toEqual(
+      expect.arrayContaining([
+        "extensions/execution-platform/src/workflows/",
+        "extensions/execution-platform/src/codex-bridge/",
+        "scripts/",
+        "docs/projects/execution-platform/specs/",
+      ]),
+    );
+    expect(scope.reasonCodes).toContain("explicit_repo_paths_augmented_base_scope");
   });
 });

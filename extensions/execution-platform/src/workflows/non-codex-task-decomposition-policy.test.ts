@@ -122,11 +122,56 @@ describe("non-Codex task decomposition policy", () => {
     expect(validation.reasonCodes).toEqual(
       expect.arrayContaining([
         "non_codex_decomposition_codex_broad_first_for_complex_mission",
-        "non_codex_decomposition_initial_child_count_insufficient",
         "non_codex_decomposition_edges_or_parallel_justification_missing",
         "non_codex_decomposition_codex_escalation_missing_cheaper_option_rationale:codex-do-everything",
       ]),
     );
+  });
+
+  it("allows discovery-first decomposition when commitments are covered by planned later work", () => {
+    const validation = validateNonCodexTaskDecompositionDecision({
+      decision: decision({
+        newNodes: [
+          {
+            nodeId: "context-runtime",
+            nodeKind: "context_scout",
+            capabilityId: "context_scout",
+            assignedRole: "context_scout",
+            commitmentIdsAdvanced: ["context"],
+            whyThisRoleIsNeededNow: "Context lowers implementation uncertainty.",
+            exactObjective: "Find runtime graph files and scheduler touch points.",
+            evidenceExpectation: "Context handoff refs.",
+            expectedOutput: "Bounded context refs.",
+            acceptanceCriteria: ["Names target files."],
+            downstreamConsumer: "orchestrator",
+          },
+          {
+            nodeId: "context-readback",
+            nodeKind: "context_scout",
+            capabilityId: "context_scout",
+            assignedRole: "context_scout",
+            commitmentIdsAdvanced: ["implementation"],
+            whyThisRoleIsNeededNow: "Readback context is needed before choosing edit nodes.",
+            exactObjective: "Find Work Queue readback files and integration risks.",
+            evidenceExpectation: "Readback context handoff refs.",
+            expectedOutput: "Bounded readback refs.",
+            acceptanceCriteria: ["Names target files."],
+            downstreamConsumer: "orchestrator",
+          },
+        ],
+        metadata: {
+          parallelIndependentNodesJustification:
+            "The two context scouts inspect disjoint surfaces before implementation.",
+          plannedLaterCommitmentIds: ["validation"],
+        },
+      }),
+      snapshotSummary: snapshot(),
+      missionLedger: complexLedger(),
+      capabilityManifest: buildRuntimeNodeCapabilityManifest(),
+    });
+
+    expect(validation.valid).toBe(true);
+    expect(validation.reasonCodes).toEqual([]);
   });
 
   it("rejects non-Codex child tasks without task family and qualification evidence", () => {
@@ -238,6 +283,66 @@ describe("non-Codex task decomposition policy", () => {
         ],
       }),
       snapshotSummary: snapshot(),
+      missionLedger: complexLedger(),
+      capabilityManifest: buildRuntimeNodeCapabilityManifest(),
+    });
+
+    expect(validation.valid).toBe(true);
+    expect(validation.reasonCodes).toEqual([]);
+  });
+
+  it("accepts nested utility target commitments and stop conditions from model-style node metadata", () => {
+    const validation = validateNonCodexTaskDecompositionDecision({
+      decision: decision({
+        newNodes: [
+          {
+            nodeId: "kimi-nested-utility",
+            nodeKind: "implementation",
+            capabilityId: "implementation_microtask",
+            assignedRole: "implementation_engineer",
+            whyThisRoleIsNeededNow: "A cheaper implementation lane can handle this scoped edit.",
+            exactObjective: "Apply the bounded edit described by the context handoff.",
+            evidenceExpectation: "Changed-file refs and validation refs.",
+            expectedOutput: "Patch evidence and validation result refs.",
+            acceptanceCriteria: ["Only approved files are edited."],
+            downstreamConsumer: "validation-1",
+            metadata: {
+              taskFamily: "small_source_edit",
+              selectedModelQualificationProfileId: "openrouter.moonshotai.kimi-k2.6",
+              qualificationEvidenceRefs: [
+                ".artifacts/execution-platform/model-agnostic-worker-qualification-matrix.json",
+              ],
+              costAwareUtilityDecision: {
+                selectedCapabilityId: "implementation_microtask",
+                targetCommitmentIds: ["implementation"],
+                utilityRationale: "The node advances a bounded implementation commitment.",
+                costRationale: "Kimi is cheaper than Codex for this scoped edit.",
+                stopOrEscalationCondition:
+                  "Escalate to Codex if validation fails after one bounded repair.",
+              },
+              rawPromptStored: false,
+              rawResponseStored: false,
+              rawProviderLogStored: false,
+            },
+          },
+        ],
+        metadata: {
+          parallelIndependentNodesJustification:
+            "This is a post-context implementation node with no parallel dependency.",
+        },
+      }),
+      snapshotSummary: {
+        ...snapshot(),
+        nodeSummaries: [
+          {
+            nodeId: "context",
+            nodeKind: "context_scout",
+            assignedRole: "context_scout",
+            nodeStatus: "succeeded",
+            outputArtifactRefs: ["context-handoff://runtime"],
+          },
+        ],
+      },
       missionLedger: complexLedger(),
       capabilityManifest: buildRuntimeNodeCapabilityManifest(),
     });

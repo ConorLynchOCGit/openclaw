@@ -126,7 +126,7 @@ async function candidateSessionFiles(
 ): Promise<string[]> {
   const candidates = new Set<string>();
   for (const root of roots) {
-    if (root.endsWith(".jsonl")) {
+    if (/\.(jsonl|json|txt|md)$/iu.test(root)) {
       candidates.add(root);
       continue;
     }
@@ -135,6 +135,8 @@ async function candidateSessionFiles(
     }
     if (ref.runId) {
       candidates.add(path.join(root, `${ref.runId}.jsonl`));
+      candidates.add(path.join(root, `${ref.runId}.json`));
+      candidates.add(path.join(root, `${ref.runId}.prompt.txt`));
     }
   }
   const existing: string[] = [];
@@ -144,6 +146,22 @@ async function candidateSessionFiles(
     }
   }
   return existing;
+}
+
+function textFromNativeSubmitFile(text: string): string | null {
+  try {
+    const parsed = JSON.parse(text) as unknown;
+    const record = asRecord(parsed);
+    for (const key of ["prompt", "ownerPrompt", "objective", "fullPrompt", "taskPrompt"]) {
+      const value = optionalString(record[key]);
+      if (value) {
+        return value;
+      }
+    }
+  } catch {
+    // Plain prompt files are expected for native submit lane proofs.
+  }
+  return text.trim() ? text : null;
 }
 
 function textFromTranscriptEntry(line: string): string | null {
@@ -181,20 +199,6 @@ export async function resolveSourcePromptText(
   ref: RuntimeSourcePromptRef,
   options: ResolveRuntimeObjectiveOptions = {},
 ): Promise<{ promptText: string | null; evidence: SourcePromptResolutionEvidence }> {
-  if (ref.refKind !== "gateway_chat_transcript") {
-    return {
-      promptText: null,
-      evidence: sourcePromptResolutionEvidence({
-        status: "unsupported",
-        reasonCodes: ["source_prompt_ref_kind_not_resolvable"],
-        promptHash: ref.promptHash,
-        promptLength: ref.promptLength,
-        sessionId: ref.sessionId,
-        sessionKey: ref.sessionKey,
-        runId: ref.runId,
-      }),
-    };
-  }
   const maxPromptChars = options.maxPromptChars ?? 240_000;
   if (ref.promptLength > maxPromptChars) {
     return {
@@ -230,6 +234,28 @@ export async function resolveSourcePromptText(
   }
   for (const file of files) {
     const text = await fs.readFile(file, "utf8");
+    if (ref.refKind === "native_submit") {
+      const promptText = textFromNativeSubmitFile(text);
+      if (
+        promptText &&
+        promptText.length === ref.promptLength &&
+        sha256Text(promptText) === ref.promptHash
+      ) {
+        return {
+          promptText,
+          evidence: sourcePromptResolutionEvidence({
+            status: "resolved",
+            reasonCodes: ["source_prompt_ref_resolved_from_native_submit_file"],
+            promptHash: ref.promptHash,
+            promptLength: ref.promptLength,
+            sessionId: ref.sessionId,
+            sessionKey: ref.sessionKey,
+            runId: ref.runId,
+          }),
+        };
+      }
+      continue;
+    }
     for (const line of text.split(/\r?\n/u)) {
       if (!line.trim()) {
         continue;

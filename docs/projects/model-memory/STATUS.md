@@ -9,6 +9,43 @@ title: "Model Memory Status"
 
 State: `phase2_model_owned_judgment_policy_active_memory_runtime_maximality_closed`
 
+2026-05-17 Proactive hardening update:
+
+- The next Model Memory runtime work must use staged memory tools, not a
+  single model JSON response or middleware-shaped proof artifact.
+- Capture, retrieval/context, compaction, and proactivity each get a narrow
+  tool sequence where the model judges usefulness/relevance/quality and
+  runtime compiles ids, refs, MMV2 writes, context-pack refs, Work Queue
+  candidate refs, raw-storage flags, and runtime traces.
+- This merges older memory runtime wiring, compatibility shutdown, dense
+  capture quality, retrieval/context quality, compaction, and proactivity
+  proof goals into the single queued item "Memory, Retrieval, Context, And
+  Proactivity Toolification."
+- Priority: run after the Product/Spec Planning proof unless memory becomes
+  the immediate proof target. Router/front-door, validation/QA, and closeout
+  finalization now run before Product/Spec because they are direct proof
+  stability risks.
+
+2026-05-16 Runtime Toolification integration update:
+
+- Model Memory remains MMV2-native semantic truth, but the next memory
+  convergence pass should move capture, retrieval, context-pack assembly,
+  compaction, proactivity extraction, proactivity adjudication, and Work Queue
+  projection evidence onto Execution Platform Runtime Tool-Call Kernel traces.
+- Existing model-task and DB-operation refs should become compatibility
+  facades over `model.call`, `db_operation.execute`, or memory-specific tools
+  implemented on top of those primitives.
+- Execution Platform model-task middleware has now collapsed live model calls
+  onto `model.call` runtime tool traces; DB-operation and memory-specific
+  toolification remain queued follow-up work. The model-task facade now fails
+  closed when a live provider-call claim lacks runtime tool trace evidence.
+- Work Queue readback should cite runtime tool invocation refs for memory
+  operations, not only old middleware refs.
+- The new target spec is
+  [Runtime Toolification Integration](/projects/model-memory/specs/runtime-toolification-integration).
+- Memory still cannot grant authority, runtime success, deploy/send
+  permission, model promotion, or Work Queue lifecycle mutation.
+
 2026-05-14 Work Queue/proactivity integration update:
 
 - Closeout Capsule opportunity seeds now belong to the DB-backed Execution

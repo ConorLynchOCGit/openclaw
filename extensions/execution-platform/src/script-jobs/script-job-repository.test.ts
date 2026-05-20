@@ -2,9 +2,16 @@ import { describe, expect, it, vi } from "vitest";
 import { applyExecutionPlatformMigrations } from "../db/migrations.ts";
 import { createExecutionPlatformPgMemTestDatabase } from "../db/pg-test.ts";
 import { RuntimeJobRepository } from "../runtime-job-repository.ts";
+import { RuntimeToolKernel } from "../runtime-tool-call/runtime-tool-kernel.ts";
+import { RuntimeToolRegistry } from "../runtime-tool-call/runtime-tool-registry.ts";
+import { RuntimeToolTraceRepository } from "../runtime-tool-call/runtime-tool-trace-repository.ts";
 import { ScriptJobDefinitionRegistry } from "./registry.ts";
 import { ScriptJobRepository } from "./script-job-repository.ts";
 import { ScriptJobWorkerAdapter } from "./script-job-worker.ts";
+import {
+  createScriptExecuteRuntimeToolExecutor,
+  registerScriptExecuteRuntimeTool,
+} from "./script-runtime-tool.ts";
 import { scriptJobType } from "./types.ts";
 import { createValidationLaneEvidence, listValidationLaneDefinitions } from "./validation-lanes.ts";
 
@@ -13,6 +20,7 @@ async function withScriptJobRepository<T>(
     runtimeJobs: RuntimeJobRepository;
     scriptJobs: ScriptJobRepository;
     registry: ScriptJobDefinitionRegistry;
+    sql: Awaited<ReturnType<typeof createExecutionPlatformPgMemTestDatabase>>["sql"];
   }) => Promise<T>,
 ): Promise<T> {
   const database = await createExecutionPlatformPgMemTestDatabase();
@@ -25,7 +33,7 @@ async function withScriptJobRepository<T>(
     const registry = new ScriptJobDefinitionRegistry();
     const scriptJobs = new ScriptJobRepository(runtimeJobs, { registry });
     registerDemoDefinition(scriptJobs);
-    return await work({ runtimeJobs, scriptJobs, registry });
+    return await work({ runtimeJobs, scriptJobs, registry, sql: database.sql });
   } finally {
     await database.close();
   }
@@ -196,6 +204,7 @@ describe("runtime-backed script jobs", () => {
         handlers: {
           "demo.validation.handler": handler,
         },
+        proofOnly: true,
       });
 
       const completed = await worker.runOnce();
@@ -225,6 +234,7 @@ describe("runtime-backed script jobs", () => {
         repository: scriptJobs,
         workerId: "script-worker",
         handlers: {},
+        proofOnly: true,
       });
 
       const failed = await worker.runOnce();
@@ -236,6 +246,19 @@ describe("runtime-backed script jobs", () => {
           scriptId: "validation.demo",
         },
       });
+    });
+  });
+
+  it("keeps the retired in-process script worker behind an explicit proof-only guard", async () => {
+    await withScriptJobRepository(async ({ scriptJobs }) => {
+      expect(
+        () =>
+          new ScriptJobWorkerAdapter({
+            repository: scriptJobs,
+            workerId: "script-worker",
+            handlers: {},
+          } as never),
+      ).toThrow("script_job_worker_adapter_retired_use_script_execute_runtime_tool");
     });
   });
 
@@ -264,6 +287,80 @@ describe("runtime-backed script jobs", () => {
           output: { passed: true },
           validationEvidence: { turboRuntimeTruth: false },
         },
+      });
+    });
+  });
+
+  it("invokes script jobs through script.execute runtime tools and requires trace evidence for live completion", async () => {
+    await withScriptJobRepository(async ({ scriptJobs, sql }) => {
+      await scriptJobs.enqueueScriptJob({
+        jobId: "runtime-tool-script-job",
+        scriptId: "validation.demo",
+        lane: "test",
+      });
+      const claimed = await scriptJobs.claimScriptJob({ workerId: "script-worker" });
+      const registry = new RuntimeToolRegistry();
+      registerScriptExecuteRuntimeTool({ registry, handlers: {} });
+      const traces = new RuntimeToolTraceRepository(sql);
+      const kernel = new RuntimeToolKernel({ registry, traces });
+      const result = await scriptJobs.invokeClaimedScriptJobRuntimeTool({
+        claimed: claimed!,
+        kernel,
+        executor: createScriptExecuteRuntimeToolExecutor({
+          handlers: {
+            "demo.validation.handler": () => ({
+              output: { passed: true },
+              exitCode: 0,
+              validationEvidence: validationEvidence(),
+              commandRef: "handler://demo.validation.handler",
+              stdoutBytes: 0,
+              stderrBytes: 0,
+              stdoutSha256: "e3b0c44298fc1c149afbf4c8996fb924",
+              stderrSha256: "e3b0c44298fc1c149afbf4c8996fb924",
+            }),
+          },
+        }),
+        inputSummary: "Run demo validation through script.execute.",
+      });
+      const completed = await scriptJobs.completeScriptJob({
+        jobId: "runtime-tool-script-job",
+        leaseToken: claimed!.leaseToken,
+        output: result.output,
+        exitCode: result.exitCode,
+        validationEvidence: result.validationEvidence,
+        runtimeToolTraceRequired: true,
+      });
+      const status = await scriptJobs.readScriptJobStatus("runtime-tool-script-job");
+
+      expect(completed).toMatchObject({ state: "succeeded" });
+      expect(result.invocation.invocation.toolId).toBe("script.execute");
+      expect(status.evidence.artifacts).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ artifactType: "script_job.runtime_tool_trace" }),
+        ]),
+      );
+    });
+  });
+
+  it("rejects live script completion when runtime tool trace evidence is required but missing", async () => {
+    await withScriptJobRepository(async ({ scriptJobs }) => {
+      await scriptJobs.enqueueScriptJob({
+        jobId: "script-job-without-trace",
+        scriptId: "validation.demo",
+        lane: "test",
+      });
+      const claimed = await scriptJobs.claimScriptJob({ workerId: "script-worker" });
+
+      const failed = await scriptJobs.completeScriptJob({
+        jobId: "script-job-without-trace",
+        leaseToken: claimed!.leaseToken,
+        output: { passed: true },
+        runtimeToolTraceRequired: true,
+      });
+
+      expect(failed).toMatchObject({
+        state: "pending",
+        error: { code: "script_job_runtime_tool_trace_missing" },
       });
     });
   });
@@ -424,6 +521,7 @@ describe("validation lane primitives", () => {
         repository: scriptJobs,
         workerId: "script-worker",
         handlers: {},
+        proofOnly: true,
       });
       await worker.runOnce();
 

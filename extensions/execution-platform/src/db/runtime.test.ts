@@ -1,7 +1,11 @@
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { createExecutionPlatformPgMemTestDatabase } from "./pg-test.ts";
 import {
   createExecutionPlatformDatabaseRuntime,
+  readExecutionPlatformDatabaseConfigLite,
   resolveExecutionPlatformDatabaseResolution,
   resolveExecutionPlatformPgPoolConfig,
 } from "./runtime.ts";
@@ -97,6 +101,109 @@ describe("execution platform database runtime", () => {
       databaseName: "execution_platform",
       source: "config:env.vars.EXECUTION_PLATFORM_DATABASE_URL",
       reusedModelMemoryDatabase: false,
+    });
+  });
+
+  it("loads narrow database config without validating unrelated channel config", async () => {
+    const dir = mkdtempSync(path.join(tmpdir(), "openclaw-ep-db-lite-"));
+    const configPath = path.join(dir, "openclaw.json");
+    writeFileSync(
+      configPath,
+      JSON.stringify(
+        {
+          channels: {
+            deliberately: {
+              large: "this section must not be validated by database resolution",
+            },
+          },
+          env: {
+            vars: {
+              EXECUTION_PLATFORM_DATABASE_URL:
+                "postgresql://ep:secret@example.com:5432/execution_platform?sslmode=require",
+            },
+          },
+        },
+        null,
+        2,
+      ),
+      "utf8",
+    );
+    const loadConfig = vi.fn(() => {
+      throw new Error("full_config_loader_should_not_run");
+    });
+
+    const resolution = await resolveExecutionPlatformDatabaseResolution({
+      env: { OPENCLAW_CONFIG_PATH: configPath },
+      loadConfig,
+    });
+
+    expect(loadConfig).not.toHaveBeenCalled();
+    expect(resolution).toMatchObject({
+      databaseName: "execution_platform",
+      source: "config:env.vars.EXECUTION_PLATFORM_DATABASE_URL",
+      reusedModelMemoryDatabase: false,
+    });
+  });
+
+  it("falls back to explicit loader when narrow database config is absent", async () => {
+    const dir = mkdtempSync(path.join(tmpdir(), "openclaw-ep-db-lite-empty-"));
+    const configPath = path.join(dir, "openclaw.json");
+    mkdirSync(path.dirname(configPath), { recursive: true });
+    writeFileSync(
+      configPath,
+      JSON.stringify({ channels: { discord: { enabled: false } } }),
+      "utf8",
+    );
+    const loadConfig = vi.fn(() =>
+      configWithDatabase(
+        "model-memory",
+        "postgresql://mm:secret@example.com:5432/model_memory?sslmode=require",
+      ),
+    );
+
+    const resolution = await resolveExecutionPlatformDatabaseResolution({
+      env: { OPENCLAW_CONFIG_PATH: configPath },
+      loadConfig,
+    });
+
+    expect(loadConfig).toHaveBeenCalledTimes(1);
+    expect(resolution).toMatchObject({
+      databaseName: "model_memory",
+      source: "config:plugins.entries.model-memory.config.database.url",
+      reusedModelMemoryDatabase: true,
+    });
+  });
+
+  it("exposes the lite database config reader for script/readback probes", () => {
+    const dir = mkdtempSync(path.join(tmpdir(), "openclaw-ep-db-lite-reader-"));
+    const configPath = path.join(dir, "openclaw.json");
+    writeFileSync(
+      configPath,
+      JSON.stringify({
+        plugins: {
+          entries: {
+            "execution-platform": {
+              config: {
+                database: {
+                  url: "${EP_TEST_URL}",
+                  databaseName: "execution_platform_live",
+                },
+              },
+            },
+          },
+        },
+      }),
+      "utf8",
+    );
+
+    const config = readExecutionPlatformDatabaseConfigLite({
+      OPENCLAW_CONFIG_PATH: configPath,
+      EP_TEST_URL: "postgresql://ep:secret@example.com:5432/postgres",
+    });
+
+    expect(config?.plugins?.entries?.["execution-platform"]?.config?.database).toMatchObject({
+      url: "postgresql://ep:secret@example.com:5432/postgres",
+      databaseName: "execution_platform_live",
     });
   });
 

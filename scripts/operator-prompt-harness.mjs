@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 
+import fs from "node:fs";
 import process from "node:process";
+import { pathToFileURL } from "node:url";
 import {
   DEFAULT_MAIN_SESSION_ALIAS,
   OperatorBrowserHarness,
@@ -10,6 +12,8 @@ function parseArgs(argv) {
   const options = {
     sessionKey: DEFAULT_MAIN_SESSION_ALIAS,
     prompt: null,
+    promptFile: null,
+    promptStdin: false,
     waitFor: "terminal",
     json: false,
     headless: true,
@@ -25,6 +29,15 @@ function parseArgs(argv) {
     if (arg === "--prompt") {
       options.prompt = argv[index + 1] ?? options.prompt;
       index += 1;
+      continue;
+    }
+    if (arg === "--prompt-file") {
+      options.promptFile = argv[index + 1] ?? options.promptFile;
+      index += 1;
+      continue;
+    }
+    if (arg === "--stdin") {
+      options.promptStdin = true;
       continue;
     }
     if (arg === "--wait-for") {
@@ -60,11 +73,13 @@ function parseArgs(argv) {
 function printHelp() {
   process.stdout.write(
     [
-      "Usage: node scripts/operator-prompt-harness.mjs --session <session-key> --prompt <text> [options]",
+      "Usage: node scripts/operator-prompt-harness.mjs --session <session-key> (--prompt <text> | --prompt-file <path> | --stdin) [options]",
       "",
       "Options:",
       "  --session <key>      Session alias or canonical session key. Default: main",
       "  --prompt <text>      Prompt to send through the authenticated Control UI",
+      "  --prompt-file <path> Read prompt bytes from a UTF-8 file; safest for long prompts/code fences",
+      "  --stdin              Read prompt bytes from stdin; safest for generated prompts",
       "  --wait-for <mode>    terminal | progress. Default: terminal",
       "  --timeout <ms>       Wait timeout in milliseconds for prompt completion/progress",
       "  --json               Emit structured JSON",
@@ -72,6 +87,24 @@ function printHelp() {
       "  -h, --help           Show this help",
     ].join("\n"),
   );
+}
+
+export function resolvePromptInput(options) {
+  const sources = [
+    typeof options.prompt === "string" ? "prompt" : null,
+    typeof options.promptFile === "string" ? "prompt-file" : null,
+    options.promptStdin ? "stdin" : null,
+  ].filter(Boolean);
+  if (sources.length !== 1) {
+    throw new Error("exactly one prompt source is required: --prompt, --prompt-file, or --stdin");
+  }
+  if (typeof options.promptFile === "string") {
+    return fs.readFileSync(options.promptFile, "utf-8");
+  }
+  if (options.promptStdin) {
+    return fs.readFileSync(0, "utf-8");
+  }
+  return options.prompt;
 }
 
 function renderTextResult(result) {
@@ -94,9 +127,17 @@ function renderTextResult(result) {
 
 async function main() {
   const options = parseArgs(process.argv.slice(2));
-  if (options.help || !options.prompt) {
+  if (options.help) {
     printHelp();
-    process.exit(options.help ? 0 : 1);
+    process.exit(0);
+  }
+  let prompt;
+  try {
+    prompt = resolvePromptInput(options);
+  } catch (error) {
+    printHelp();
+    process.stderr.write(`\n${error instanceof Error ? error.message : String(error)}\n`);
+    process.exit(1);
   }
   if (!["terminal", "progress"].includes(options.waitFor)) {
     throw new Error(`unsupported --wait-for mode: ${options.waitFor}`);
@@ -104,7 +145,7 @@ async function main() {
 
   const harness = await new OperatorBrowserHarness({ headless: options.headless }).start();
   try {
-    const result = await harness.sendPrompt(options.prompt, {
+    const result = await harness.sendPrompt(prompt, {
       sessionKey: options.sessionKey,
       waitFor: options.waitFor,
       timeoutMs: options.timeoutMs,
@@ -119,7 +160,9 @@ async function main() {
   }
 }
 
-await main().catch((error) => {
-  process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
-  process.exit(1);
-});
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  await main().catch((error) => {
+    process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
+    process.exit(1);
+  });
+}

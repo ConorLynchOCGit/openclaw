@@ -90,6 +90,38 @@ describe("source prompt ref resolution", () => {
     expect(resolved.sourcePromptResolution.status).toBe("resolved");
   });
 
+  it("resolves native submit prompt files by hash and length for worker parity lanes", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-native-source-prompt-"));
+    const runId = "native-run-1";
+    const prompt = "Native submit full prompt.\nFULL_NATIVE_PROMPT_TAIL";
+    await fs.writeFile(path.join(root, `${runId}.prompt.txt`), prompt, "utf8");
+
+    const resolved = await resolveRuntimeObjective(
+      {
+        objectiveSummary: "Native submit full prompt.",
+        sourcePromptRef: {
+          refKind: "native_submit",
+          promptHash: sha256Text(prompt),
+          promptLength: prompt.length,
+          sessionId: null,
+          sessionKey: null,
+          runId,
+          sourceRoute: "native_submit",
+          rawPromptStored: false,
+        },
+      },
+      { sessionSearchRoots: [root] },
+    );
+
+    expect(resolved.objectiveForModel).toContain("FULL_NATIVE_PROMPT_TAIL");
+    expect(resolved.objectiveForEvidence).toBe("Native submit full prompt.");
+    expect(resolved.sourcePromptResolution).toMatchObject({
+      status: "resolved",
+      reasonCodes: ["source_prompt_ref_resolved_from_native_submit_file"],
+      rawPromptStored: false,
+    });
+  });
+
   it("fails unresolved on hash mismatch without returning transcript content", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-source-mismatch-"));
     const sessionId = "source-mismatch-session";

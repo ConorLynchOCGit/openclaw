@@ -84,8 +84,14 @@ async function main() {
     resolveExecutionPlatformDbBoundaryContract,
     evaluateWorkQueueLiveLinkageGate,
     RuntimeJobRepository,
+    RuntimeToolKernel,
+    RuntimeToolRegistry,
+    RuntimeToolTraceRepository,
     WorkQueueRepository,
     ModelCloseoutCapsuleReporter,
+    registerModelCallRuntimeTool,
+    registerScriptExecuteRuntimeTool,
+    registerDbOperationExecuteRuntimeTool,
     runModelTaskMiddlewareLiveCompletion,
     runScriptMiddlewareLiveCompletion,
     runDbOperationMiddlewareLiveCompletion,
@@ -148,6 +154,16 @@ async function main() {
       requestTimeoutMs: 120_000,
       reasoningEffort: "low",
     });
+    const runtimeToolRegistry = new RuntimeToolRegistry();
+    const runtimeToolTraces = new RuntimeToolTraceRepository(runtime.sqlClient);
+    registerModelCallRuntimeTool({ registry: runtimeToolRegistry, executor });
+    registerScriptExecuteRuntimeTool({ registry: runtimeToolRegistry, handlers: {} });
+    registerDbOperationExecuteRuntimeTool({ registry: runtimeToolRegistry, handlers: {} });
+    const runtimeToolKernel = new RuntimeToolKernel({
+      registry: runtimeToolRegistry,
+      traces: runtimeToolTraces,
+      defaultTimeoutMs: 240_000,
+    });
     const closeoutReporter = new ModelCloseoutCapsuleReporter({
       executor,
       modelId: "openai-codex/gpt-5.4",
@@ -162,6 +178,7 @@ async function main() {
       runtimeJobs,
       workQueue,
       executor,
+      runtimeToolKernel,
       closeoutReporter,
       createWorkQueueFixture: true,
       runtimeJobId: `slice-20-model-task-live-${sha256(now().toISOString()).slice(0, 10)}`,
@@ -187,6 +204,7 @@ async function main() {
 
     const scriptResult = await runScriptMiddlewareLiveCompletion({
       runtimeJobs,
+      runtimeToolKernel,
       workQueue,
       createWorkQueueFixture: true,
       runtimeJobId: `slice-21-script-live-${sha256(now().toISOString()).slice(0, 10)}`,
@@ -219,6 +237,7 @@ async function main() {
 
     const dbResult = await runDbOperationMiddlewareLiveCompletion({
       runtimeJobs,
+      runtimeToolKernel,
       workQueue,
       createWorkQueueFixture: true,
       runtimeJobId: `slice-22-db-live-${sha256(now().toISOString()).slice(0, 10)}`,

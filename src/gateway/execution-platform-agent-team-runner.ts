@@ -1,6 +1,6 @@
 import {
   AcpCodexCodingWorkerAdapter,
-  AgentTeamQueuedRunner,
+  CodingTeamRuntimeJobRunner,
   CodexParityImplementationBridge,
   HumanOperatorInputRequiredError,
   ModelCloseoutCapsuleReporter,
@@ -34,7 +34,7 @@ function createGatewayCloseoutReporter(): ModelCloseoutCapsuleReporter {
       requestTimeoutMs: 300_000,
       reasoningEffort: "medium",
     }),
-    modelId: "openai-codex/gpt-5.4",
+    modelId: "openai-codex/gpt-5.5",
     reasoningEffort: "medium",
     maxOutputTokens: 12_000,
   });
@@ -60,6 +60,11 @@ function createGatewayRoleModelClient(): OpenRouterAgentTeamModelClient | undefi
       "moonshotai/kimi-k2.6": {
         responseFormatMode: "prompt_only",
         reasoningMode: "omit",
+        maxTokens: 8_000,
+      },
+      "qwen/qwen3-coder-next": {
+        responseFormatMode: "prompt_only",
+        reasoningMode: "none",
         maxTokens: 8_000,
       },
     },
@@ -105,7 +110,7 @@ export async function runGatewayAgentTeamRuntimeJobOnce(input: {
   let claimedExecution: AgentTeamClaimedJobExecutionResult | null = null;
   let claimedTeamRunId: string | null = null;
   const roleModelClient = createGatewayRoleModelClient();
-  const queuedRunner = new AgentTeamQueuedRunner({
+  const queuedRunner = new CodingTeamRuntimeJobRunner({
     runtimeJobs: input.runtimeJobs,
     runtimeWorkGraphs: input.runtimeWorkGraphs,
     runtimeToolKernel: input.runtimeToolKernel ?? null,

@@ -2,9 +2,18 @@ import type {
   AttachRuntimeJobArtifactInput,
   JsonValue,
   RuntimeJob,
+  RuntimeJobArtifact,
   RuntimeJobRepository,
 } from "../runtime-job-repository.ts";
+import type { RuntimeToolKernel } from "../runtime-tool-call/runtime-tool-kernel.ts";
+import type { RuntimeToolKernelInvokeResult } from "../runtime-tool-call/runtime-tool-kernel.ts";
+import type { RuntimeToolExecutor } from "../runtime-tool-call/runtime-tool-types.ts";
 import { ScriptJobDefinitionRegistry, type RegisterScriptJobDefinitionInput } from "./registry.ts";
+import {
+  SCRIPT_EXECUTE_RUNTIME_TOOL_ID,
+  scriptExecuteMetadataFromResult,
+  type ScriptExecuteVolatileInput,
+} from "./script-runtime-tool.ts";
 import {
   isScriptJobPayload,
   isScriptJobResult,
@@ -38,6 +47,7 @@ export type CompleteScriptJobInput = {
   output?: JsonValue;
   exitCode?: number;
   validationEvidence?: ValidationLaneEvidence;
+  runtimeToolTraceRequired?: boolean;
 };
 
 export type FailScriptJobInput = {
@@ -47,6 +57,26 @@ export type FailScriptJobInput = {
   message: string;
   retryDelayMs?: number;
   evidence?: JsonValue;
+};
+
+export type InvokeClaimedScriptJobRuntimeToolInput = {
+  claimed: ClaimedScriptJob;
+  kernel: RuntimeToolKernel;
+  executor?: RuntimeToolExecutor;
+  inputSummary: string;
+  idempotencyKey?: string;
+  volatileInput?: Partial<ScriptExecuteVolatileInput>;
+};
+
+export type InvokeClaimedScriptJobRuntimeToolResult = {
+  invocation: RuntimeToolKernelInvokeResult;
+  output: JsonValue;
+  exitCode: number | undefined;
+  validationEvidence: ValidationLaneEvidence | undefined;
+  artifactRef: string;
+  rawStdoutStored: false;
+  rawStderrStored: false;
+  rawCommandLogStored: false;
 };
 
 export type ScriptJobRepositoryOptions = {
@@ -74,6 +104,39 @@ function definitionArtifact(jobId: string, metadata: JsonValue): AttachRuntimeJo
     sizeBytes: jsonByteLength(metadata),
     metadata,
   };
+}
+
+function runtimeToolTraceArtifact(
+  jobId: string,
+  metadata: JsonValue,
+): AttachRuntimeJobArtifactInput {
+  return {
+    jobId,
+    artifactType: "script_job.runtime_tool_trace",
+    storageKind: "metadata",
+    uri: `runtime-job://${jobId}/script-job/runtime-tool-trace`,
+    contentType: "application/json",
+    sizeBytes: jsonByteLength(metadata),
+    metadata,
+  };
+}
+
+function isRecord(value: JsonValue): value is Record<string, JsonValue> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function hasRuntimeToolTraceEvidence(artifacts: RuntimeJobArtifact[]): boolean {
+  return artifacts.some((artifact) => {
+    if (artifact.artifactType !== "script_job.runtime_tool_trace") {
+      return false;
+    }
+    const metadata = artifact.metadata;
+    if (!isRecord(metadata)) {
+      return false;
+    }
+    const invocationRef = metadata.invocationRef;
+    return typeof invocationRef === "string" && invocationRef.startsWith("runtime-tool://");
+  });
 }
 
 export class ScriptJobRepository {
@@ -177,6 +240,18 @@ export class ScriptJobRepository {
     if (!job || !isScriptJobPayload(job.payload)) {
       throw new Error(`script job not found: ${input.jobId}`);
     }
+    if (input.runtimeToolTraceRequired) {
+      const artifacts = await this.runtimeJobs.listArtifacts(job.jobId);
+      if (!hasRuntimeToolTraceEvidence(artifacts)) {
+        return this.failScriptJob({
+          jobId: input.jobId,
+          leaseToken: input.leaseToken,
+          code: "script_job_runtime_tool_trace_missing",
+          message: "script job completion requires script.execute runtime tool trace evidence",
+          evidence: { scriptId: job.payload.scriptId, runtimeToolTraceRequired: true },
+        });
+      }
+    }
     const definition = this.registry.requireScriptJobDefinition(job.payload.scriptId);
     assertJsonByteLength(
       input.output,
@@ -204,6 +279,111 @@ export class ScriptJobRepository {
       leaseToken: input.leaseToken,
       result,
     });
+  }
+
+  async invokeClaimedScriptJobRuntimeTool(
+    input: InvokeClaimedScriptJobRuntimeToolInput,
+  ): Promise<InvokeClaimedScriptJobRuntimeToolResult> {
+    const job = input.claimed.job;
+    if (!isScriptJobPayload(job.payload)) {
+      throw new Error(`claimed runtime job is not a script job: ${job.jobId}`);
+    }
+    const definition = this.registry.requireScriptJobDefinition(job.payload.scriptId);
+    const invokeInput = {
+      toolId: SCRIPT_EXECUTE_RUNTIME_TOOL_ID,
+      runtimeJobId: job.jobId,
+      roleRef: `script_job:${definition.scriptId}`,
+      idempotencyScope: `script_job:${definition.scriptId}:script-execute`,
+      idempotencyKey: input.idempotencyKey ?? `${job.jobId}:script-execute`,
+      inputSummary: input.inputSummary,
+      volatileInput: {
+        definition,
+        script: job.payload,
+        ...input.volatileInput,
+      },
+      budget: {
+        timeoutMs: definition.timeoutMs,
+        metadata: {
+          scriptId: definition.scriptId,
+          handlerId: definition.handlerId,
+          rawStdoutStored: false,
+          rawStderrStored: false,
+          rawCommandLogStored: false,
+        },
+      },
+      metadata: {
+        scriptId: definition.scriptId,
+        handlerId: definition.handlerId,
+        lane: job.payload.lane,
+        rawStdoutStored: false,
+        rawStderrStored: false,
+        rawCommandLogStored: false,
+      },
+      rawPromptStored: false,
+      rawResponseStored: false,
+      rawTranscriptStored: false,
+      rawProviderLogStored: false,
+      rawToolLogStored: false,
+      rawCommandLogStored: false,
+      rawDbRowsStored: false,
+      secretsStored: false,
+      authorityGranted: false,
+      controlsApplied: false,
+      workQueueLifecycleMutated: false,
+      runtimeLifecycleMutated: false,
+    } as const;
+    const invocation = input.executor
+      ? await input.kernel.invokeWithExecutor(invokeInput, input.executor)
+      : await input.kernel.invoke(invokeInput);
+    const metadata = scriptExecuteMetadataFromResult(invocation.result);
+    const artifactRef = `runtime-job://${job.jobId}/script-job/runtime-tool-trace`;
+    await this.runtimeJobs.attachArtifact(
+      runtimeToolTraceArtifact(job.jobId, {
+        invocationRef: invocation.invocationRef,
+        invocationId: invocation.invocation.invocationId,
+        toolId: invocation.invocation.toolId,
+        toolFamily: invocation.invocation.toolFamily,
+        status: invocation.invocation.status,
+        scriptId: definition.scriptId,
+        handlerId: definition.handlerId,
+        lane: job.payload.lane,
+        commandRef: metadata?.commandRef ?? null,
+        exitCode: metadata?.exitCode ?? null,
+        durationMs: metadata?.durationMs ?? null,
+        stdoutBytes: metadata?.stdoutBytes ?? null,
+        stderrBytes: metadata?.stderrBytes ?? null,
+        stdoutSha256: metadata?.stdoutSha256 ?? null,
+        stderrSha256: metadata?.stderrSha256 ?? null,
+        timedOut: metadata?.timedOut ?? false,
+        validationRefs: metadata?.validationRefs ?? [],
+        reasonCodes: invocation.reasonCodes,
+        rawStdoutStored: false,
+        rawStderrStored: false,
+        rawCommandLogStored: false,
+      }),
+    );
+    await this.runtimeJobs.recordEvent({
+      jobId: job.jobId,
+      eventType: "script_job.runtime_tool_invoked",
+      data: {
+        scriptId: definition.scriptId,
+        invocationRef: invocation.invocationRef,
+        status: invocation.invocation.status,
+        rawStdoutStored: false,
+        rawStderrStored: false,
+        rawCommandLogStored: false,
+      },
+    });
+    return {
+      invocation,
+      output: (metadata?.output as JsonValue | undefined) ?? {},
+      exitCode: typeof metadata?.exitCode === "number" ? metadata.exitCode : undefined,
+      validationEvidence: metadata?.validationEvidence as ValidationLaneEvidence | undefined,
+      artifactRef,
+      rawStdoutStored: false,
+      rawStderrStored: false,
+      rawCommandLogStored: false,
+    };
   }
 
   async failScriptJob(input: FailScriptJobInput): Promise<RuntimeJob | null> {

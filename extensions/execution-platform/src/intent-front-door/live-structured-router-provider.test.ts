@@ -219,7 +219,7 @@ describe("LiveStructuredModelIntentRouterProvider", () => {
     const execute = vi.fn(async (request) => {
       expect(request.contract).toMatchObject({
         contractName: "CanonicalRouterOutput",
-        modelId: "openai-codex/gpt-5.4",
+        modelId: "openai-codex/gpt-5.5",
       });
       expect(request.systemPrompt).toContain("CanonicalRouterOutput JSON schema");
       expect(request.userPrompt).toContain("boundedPromptSummary");
@@ -232,7 +232,7 @@ describe("LiveStructuredModelIntentRouterProvider", () => {
       expect(request.responseOptions?.maxOutputTokens).toBe(4_000);
       return {
         outputText: JSON.stringify(output),
-        resolvedModelId: "openai-codex/gpt-5.4",
+        resolvedModelId: "openai-codex/gpt-5.5",
       };
     });
     const client = new CodexAppServerIntentFrontDoorRouterClient({
@@ -247,13 +247,13 @@ describe("LiveStructuredModelIntentRouterProvider", () => {
         ...policyDecision(),
         selectedModel: {
           provider: "openai-codex",
-          model: "openai-codex/gpt-5.4",
+          model: "openai-codex/gpt-5.5",
           family: "OpenAI-Codex",
           capabilities: ["structured_json", "json_schema"],
           status: "enabled",
-          policyRef: "openai-codex/gpt-5.4",
+          policyRef: "openai-codex/gpt-5.5",
         },
-        routerModelRef: "openai-codex/gpt-5.4",
+        routerModelRef: "openai-codex/gpt-5.5",
         reasoningEffort: "medium",
         maxTokens: 4_000,
       },
@@ -265,12 +265,129 @@ describe("LiveStructuredModelIntentRouterProvider", () => {
     expect(execute).toHaveBeenCalledOnce();
     expect(response.status).toBe("succeeded");
     expect(response.output).toEqual(output);
-    expect(response.modelRef).toBe("openai-codex/gpt-5.4");
+    expect(response.modelRef).toBe("openai-codex/gpt-5.5");
     expect(response.latencyMs).toBe(123);
     expect(response.reasonCodes).toContain("codex_app_server_router_response_received");
     expect(response.rawPromptStored).toBe(false);
     expect(response.rawResponseStored).toBe(false);
     expect(response.rawProviderLogStored).toBe(false);
+  });
+
+  it("repairs invalid canonical router enum output with one bounded model turn", async () => {
+    const repaired = createBaseCanonicalRouterOutput({
+      route: "workflow_execution",
+      responseMode: "create_runtime_job",
+      executeNow: true,
+      workflowId: "agent_team.coding",
+      jobType: "executor.agent_team",
+      requestedActions: [{ action: "code_edit", objectSummary: "implement", confidence: 0.9 }],
+      sideEffectClass: "code_edit",
+    });
+    const invalid = {
+      ...repaired,
+      requestedActions: [{ action: "implementation", objectSummary: "implement", confidence: 0.9 }],
+    };
+    const calls: unknown[] = [];
+    const client: IntentFrontDoorRouterModelClient = {
+      async route(request) {
+        calls.push(request);
+        return {
+          status: "succeeded",
+          output: calls.length === 1 ? invalid : repaired,
+          providerRef: "provider-profile://fixture",
+          modelRef: "openai-codex/gpt-5.5",
+          latencyMs: 10,
+          estimatedCostUsd: 0.001,
+          retryCount: 0,
+          responseHash: `sha256:${calls.length}`,
+          reasonCodes: [`fixture_client_called_${calls.length}`],
+          rawPromptStored: false,
+          rawResponseStored: false,
+          rawProviderLogStored: false,
+        };
+      },
+    };
+    const router = new StructuredModelIntentRouter(
+      new LiveStructuredModelIntentRouterProvider({
+        policyDecision: {
+          ...policyDecision(),
+          routerModelRef: "openai-codex/gpt-5.5",
+          selectedModel: {
+            provider: "openai-codex",
+            model: "openai-codex/gpt-5.5",
+            family: "OpenAI-Codex",
+            capabilities: ["structured_json", "json_schema"],
+            status: "enabled",
+            policyRef: "openai-codex/gpt-5.5",
+          },
+        },
+        client,
+      }),
+    );
+
+    const result = await router.route(routerRequest());
+    const repairRequest = calls[1] as {
+      schemaRepair?: { parseIssues?: unknown[]; allowedEnumValues?: { actions?: string[] } };
+    };
+
+    expect(result.valid).toBe(true);
+    expect(result.output?.requestedActions[0]?.action).toBe("code_edit");
+    expect(result.metadata.retryCount).toBe(1);
+    expect(result.metadata.reasonCodes).toContain("router_schema_repair_succeeded");
+    expect(repairRequest.schemaRepair?.parseIssues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          path: "requestedActions.0.action",
+        }),
+      ]),
+    );
+    expect(repairRequest.schemaRepair?.allowedEnumValues?.actions).toContain("code_edit");
+  });
+
+  it("rejects invalid canonical router enum output when bounded repair also fails", async () => {
+    const base = createBaseCanonicalRouterOutput({
+      route: "workflow_execution",
+      responseMode: "create_runtime_job",
+      executeNow: true,
+      workflowId: "agent_team.coding",
+      jobType: "executor.agent_team",
+      requestedActions: [{ action: "code_edit", objectSummary: "implement", confidence: 0.9 }],
+      sideEffectClass: "code_edit",
+    });
+    const invalid = {
+      ...base,
+      requestedActions: [{ action: "implementation", objectSummary: "implement", confidence: 0.9 }],
+    };
+    const client: IntentFrontDoorRouterModelClient = {
+      async route() {
+        return {
+          status: "succeeded",
+          output: invalid,
+          providerRef: "provider-profile://fixture",
+          modelRef: "openai-codex/gpt-5.5",
+          latencyMs: 10,
+          estimatedCostUsd: 0.001,
+          retryCount: 0,
+          responseHash: "sha256:invalid",
+          reasonCodes: ["fixture_client_called"],
+          rawPromptStored: false,
+          rawResponseStored: false,
+          rawProviderLogStored: false,
+        };
+      },
+    };
+    const router = new StructuredModelIntentRouter(
+      new LiveStructuredModelIntentRouterProvider({
+        policyDecision: policyDecision(),
+        client,
+      }),
+    );
+
+    const result = await router.route(routerRequest());
+
+    expect(result.valid).toBe(false);
+    expect(result.metadata.degradationState).toBe("schema_failure");
+    expect(result.metadata.reasonCodes).toContain("router_schema_repair_failed");
   });
 
   it("rejects raw-storage-flagged provider output through canonical schema", async () => {
@@ -607,7 +724,7 @@ describe("OpenRouterIntentFrontDoorRouterClient", () => {
   it("does not report Codex app-server router succeeded when output cannot be parsed", async () => {
     const execute = vi.fn<JsonModelExecutor["execute"]>().mockResolvedValue({
       outputText: "not json",
-      resolvedModelId: "openai-codex/gpt-5.4",
+      resolvedModelId: "openai-codex/gpt-5.5",
     });
     const client = new CodexAppServerIntentFrontDoorRouterClient({
       executor: { execute },

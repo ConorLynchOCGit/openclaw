@@ -1,3 +1,6 @@
+import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { applyExecutionPlatformMigrations } from "../db/migrations.ts";
 import { createExecutionPlatformPgMemTestDatabase } from "../db/pg-test.ts";
@@ -11,37 +14,7 @@ import {
   fileEditWorkerProfileFor,
   ModelAgnosticFileEditWorkerAdapter,
 } from "./file-edit-worker-adapter.ts";
-import type { KimiMicrotaskImplementationExecutorResult } from "./kimi-microtask-implementation-executor.ts";
-
-function kimiResult(
-  overrides: Partial<KimiMicrotaskImplementationExecutorResult> = {},
-): KimiMicrotaskImplementationExecutorResult {
-  return {
-    artifactKind: "kimi_microtask_implementation_executor_result",
-    microtaskId: "task-1",
-    microtaskTitle: "Scoped edit",
-    status: "completed",
-    modelRef: "moonshotai/kimi-k2.6",
-    providerPath: "openrouter",
-    modelRunRef: "openrouter://kimi/run",
-    changedFileRefs: ["extensions/execution-platform/src/work-queue/planning-lifecycle.ts"],
-    diffHash: "sha256:diff",
-    validationRefs: ["validation://passed"],
-    artifactRefs: ["runtime-work-graph://kimi/result"],
-    limitations: [],
-    contextExpansionRequests: [],
-    editPlanSteps: [],
-    evidenceClaims: [],
-    attemptDiagnostics: [],
-    reasonCodes: ["kimi_microtask_completed"],
-    escalatedToCodexBridgeRecommended: false,
-    rawPromptStored: false,
-    rawResponseStored: false,
-    rawProviderLogStored: false,
-    workQueueLifecycleMutated: false,
-    ...overrides,
-  };
-}
+import { NonCodexToolUsingWorkerLoop } from "./non-codex-tool-using-worker-loop.ts";
 
 describe("ModelAgnosticFileEditWorkerAdapter", () => {
   const baseInput = {
@@ -59,115 +32,53 @@ describe("ModelAgnosticFileEditWorkerAdapter", () => {
     acceptanceCriteria: ["changed-file evidence", "validation evidence"],
   };
 
-  it("routes Kimi through the generic file edit worker contract", async () => {
-    let exactEditObjective = "";
-    let contextScoutHandoff = "";
-    let recommendedEditPoint = "";
-    let rationaleForCallingThisRole = "";
-    const adapter = new ModelAgnosticFileEditWorkerAdapter({
-      kimiExecutor: {
-        async run(input) {
-          exactEditObjective = input.exactEditObjective;
-          contextScoutHandoff = input.contextScoutHandoff ?? "";
-          recommendedEditPoint = input.recommendedEditPoints?.[0]?.path ?? "";
-          rationaleForCallingThisRole = input.rationaleForCallingThisRole ?? "";
-          return kimiResult();
-        },
-      },
-    });
-
-    const result = await adapter.run({
-      ...baseInput,
-      previousFailureSummary: "validation failed once",
-      priorFailureRefs: ["validation://failed"],
-      rationaleForCallingThisRole:
-        "The orchestrator selected Kimi because this is a standard one-file edit packet.",
-      contextScoutHandoff: "Context scout found the exact planning lifecycle helper to edit.",
-      recommendedEditPoints: [
-        {
-          path: "extensions/execution-platform/src/work-queue/planning-lifecycle.ts",
-          symbolOrRegion: "buildPlanningCapsule",
-          reason: "This helper owns the target output shape.",
-        },
-      ],
-    });
-
-    expect(exactEditObjective).toContain("Previous bounded failure summary");
-    expect(contextScoutHandoff).toContain("exact planning lifecycle helper");
-    expect(recommendedEditPoint).toBe(
-      "extensions/execution-platform/src/work-queue/planning-lifecycle.ts",
-    );
-    expect(rationaleForCallingThisRole).toContain("standard one-file edit packet");
-    expect(result.status).toBe("applied_change");
-    expect(result.workerKind).toBe("kimi_standard_implementation");
-    expect(result.changedFileRefs).toEqual([
-      "extensions/execution-platform/src/work-queue/planning-lifecycle.ts",
-    ]);
-    expect(result.reasonCodes).toContain("file_edit_worker_generic_adapter_used");
-    expect(result.reasonCodes).toContain("file_edit_worker_kimi_standard_implementation");
-    expect(result.workerProfile).toMatchObject({
-      profileId: "file-edit-worker.kimi-standard.v1",
-      responseFormatMode: "prompt_only",
-      escalationWorkerKind: "codex_complex_implementation",
-      qualificationCandidateIds: ["openrouter.moonshotai.kimi-k2.6"],
-    });
-    expect(result.workerProfile.preferredEditFormats).toContain("search_replace_block");
-    expect(result.rawPromptStored).toBe(false);
-  });
-
-  it("maps Kimi failure into escalation instead of fake implementation success", async () => {
-    const adapter = new ModelAgnosticFileEditWorkerAdapter({
-      kimiExecutor: {
-        async run() {
-          return kimiResult({
-            status: "escalated",
-            changedFileRefs: [],
-            diffHash: null,
-            validationRefs: [],
-            limitations: ["Kimi returned prose instead of a patch."],
-            reasonCodes: ["kimi_no_json_object"],
-            escalatedToCodexBridgeRecommended: true,
-          });
-        },
-      },
-    });
+  it("retires the Kimi JSON patch proposal path from production success", async () => {
+    const adapter = new ModelAgnosticFileEditWorkerAdapter({});
 
     const result = await adapter.run(baseInput);
 
-    expect(result.status).toBe("escalate");
-    expect(result.changedFileRefs).toEqual([]);
-    expect(result.reasonCodes).toContain("kimi_no_json_object");
-  });
-
-  it("represents non-Kimi workers as policy slots under the same contract", async () => {
-    const adapter = new ModelAgnosticFileEditWorkerAdapter({
-      kimiExecutor: {
-        async run() {
-          throw new Error("kimi should not run");
-        },
-      },
-    });
-
-    const result = await adapter.run({
-      ...baseInput,
-      workerKind: "frontend_implementation",
-      workerId: "worker.frontend.file-edit",
-    });
-
     expect(result.status).toBe("needs_review");
-    expect(result.sourceAdapterKind).toBe("policy_slot");
-    expect(result.workerProfile.profileId).toBe(
-      "file-edit-worker.frontend_implementation.policy-slot.v1",
-    );
-    expect(result.reasonCodes).toContain("file_edit_worker_policy_slot_requires_executor");
+    expect(result.changedFileRefs).toEqual([]);
+    expect(result.sourceAdapterKind).toBe("kimi_microtask_executor_retired");
+    expect(result.reasonCodes).toContain("file_edit_worker_kimi_patch_json_path_retired");
+    expect(result.reasonCodes).toContain("non_codex_tool_worker_runtime_required");
   });
 
   it("keeps model-specific editing behavior in explicit profiles instead of prompt hacks", () => {
     expect(fileEditWorkerProfileFor("kimi_standard_implementation")).toMatchObject({
       responseFormatMode: "prompt_only",
       maxTargetFiles: 6,
+      maxToolSelectionTurns: 5,
+      maxRecommendedContextRefs: 18,
+      reasoningMode: "none",
+      jsonReliabilityMode: "policy_owned",
+      knownFailureModes: expect.arrayContaining(["malformed_single_tool_action"]),
       wholeFileReplacement: "allowed_when_small",
+      qualificationCandidateIds: expect.arrayContaining([
+        "openrouter.qwen.qwen3-coder-next",
+        "openrouter.moonshotai.kimi-k2.6",
+      ]),
     });
+    const kimiProfile = fileEditWorkerProfileFor("kimi_standard_implementation");
+    expect(kimiProfile.modelPolicySlots).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          slot: "controller",
+          modelRef: "qwen/qwen3-coder-next",
+          reasoningMode: "none",
+        }),
+        expect.objectContaining({
+          slot: "patch",
+          modelRef: "moonshotai/kimi-k2.6",
+          reasoningMode: "none",
+        }),
+        expect.objectContaining({
+          slot: "validation_repair",
+          modelRef: "qwen/qwen3-coder-next",
+          reasoningMode: "none",
+        }),
+      ]),
+    );
     expect(fileEditWorkerProfileFor("codex_complex_implementation")).toMatchObject({
       providerPath: "codex_app_server",
       maxRepairAttempts: 5,
@@ -175,7 +86,12 @@ describe("ModelAgnosticFileEditWorkerAdapter", () => {
     });
   });
 
-  it("records first-class runtime tool traces for the non-Codex file-edit worker loop", async () => {
+  it("routes production Kimi work through NonCodexToolWorkerRuntime tool actions", async () => {
+    const repoRoot = await mkdtemp(path.join(tmpdir(), "openclaw-file-edit-adapter-"));
+    const fileRef = "extensions/execution-platform/src/work-queue/planning-lifecycle.ts";
+    await mkdir(path.dirname(path.join(repoRoot, fileRef)), { recursive: true });
+    await writeFile(path.join(repoRoot, fileRef), "export const label = 'before';\n", "utf8");
+
     const database = await createExecutionPlatformPgMemTestDatabase();
     try {
       await applyExecutionPlatformMigrations(database.sql);
@@ -206,120 +122,160 @@ describe("ModelAgnosticFileEditWorkerAdapter", () => {
         modelOrWorkerRef: "worker.kimi.file-implementation",
         nodeStatus: "running",
       });
+
       const adapter = new ModelAgnosticFileEditWorkerAdapter({
         runtimeToolKernel,
-        kimiExecutor: {
-          async run() {
-            return kimiResult({
-              contextExpansionRequests: [
-                {
-                  requestId: "context-1",
-                  requestedFileRefs: [
-                    "extensions/execution-platform/src/work-queue/planning-lifecycle.test.ts",
+        toolUsingKimiWorkerLoop: new NonCodexToolUsingWorkerLoop({
+          runtimeToolKernel,
+          modelClient: {
+            async nextTurn(input) {
+              if (input.modelSlot === "context_decision") {
+                return {
+                  modelRunRef: "openrouter://qwen/tool-worker-context",
+                  responseText: JSON.stringify({
+                    toolCalls: [
+                      {
+                        callId: "read",
+                        toolId: "worker.repo.read_files",
+                        reason: "Read target before editing.",
+                        input: { fileRefs: [fileRef] },
+                      },
+                    ],
+                  }),
+                  responseHash: "sha256:tool-worker-context",
+                  latencyMs: 5,
+                  rawPromptStored: false,
+                  rawResponseStored: false,
+                };
+              }
+              if (input.modelSlot === "patch") {
+                return {
+                  modelRunRef: "openrouter://kimi/tool-worker-author",
+                  responseText: JSON.stringify({
+                    toolCalls: [
+                      {
+                        callId: "plan",
+                        toolId: "worker.edit.plan",
+                        reason: "Plan scoped edit.",
+                        input: {
+                          editPlanSteps: [
+                            {
+                              stepId: "step-1",
+                              objective: "Change label value.",
+                              targetFileRefs: [fileRef],
+                              validationExpectation: "Focused validation passes.",
+                              commitmentIdsAdvanced: ["commitment-source-edit"],
+                            },
+                          ],
+                        },
+                      },
+                      {
+                        callId: "apply",
+                        toolId: "worker.edit.apply_patch",
+                        reason: "Apply runtime-owned edit.",
+                        input: {
+                          fileEdits: [
+                            {
+                              path: fileRef,
+                              operation: "replace_text",
+                              oldText: "label = 'before'",
+                              newText: "label = 'after'",
+                              rationale: "Scoped worker edit.",
+                            },
+                          ],
+                        },
+                      },
+                    ],
+                  }),
+                  responseHash: "sha256:tool-worker-author",
+                  latencyMs: 5,
+                  rawPromptStored: false,
+                  rawResponseStored: false,
+                };
+              }
+              if (input.modelSlot === "controller") {
+                return {
+                  modelRunRef: "openrouter://qwen/tool-worker-validation",
+                  responseText: JSON.stringify({
+                    toolCalls: [
+                      {
+                        callId: "validate",
+                        toolId: "worker.validation.run",
+                        reason: "Run focused validation.",
+                        input: { commandRefs: ["pnpm test:file planning-lifecycle.test.ts"] },
+                      },
+                    ],
+                  }),
+                  responseHash: "sha256:tool-worker-validation",
+                  latencyMs: 5,
+                  rawPromptStored: false,
+                  rawResponseStored: false,
+                };
+              }
+              if (input.modelSlot === "validation_repair") {
+                return {
+                  modelRunRef: "openrouter://qwen/strict-validation-repair-escalate",
+                  responseText: JSON.stringify({
+                    toolCalls: [
+                      {
+                        callId: "strict-escalate",
+                        toolId: "worker.escalate",
+                        reason:
+                          "Validation was not allowed to proceed because the controller/applicator phase boundary was violated.",
+                        input: {
+                          reason: "Controller attempted applicator work in strict split mode.",
+                          unsuitableReasonCodes: [
+                            "worker_phase_authority_blocked_controller_applicator",
+                          ],
+                        },
+                      },
+                    ],
+                  }),
+                  responseHash: "sha256:strict-validation-repair-escalate",
+                  latencyMs: 1,
+                  rawPromptStored: false,
+                  rawResponseStored: false,
+                };
+              }
+              return {
+                modelRunRef: "openrouter://qwen/tool-worker-evidence",
+                responseText: JSON.stringify({
+                  toolCalls: [
+                    {
+                      callId: "claim",
+                      toolId: "worker.evidence.claim",
+                      reason: "Claim commitment evidence.",
+                      input: {
+                        evidenceClaims: [
+                          {
+                            commitmentId: "commitment-source-edit",
+                            claimSummary: "Kimi tool worker edited and validated the scoped file.",
+                            changedFileRefs: [fileRef],
+                            validationRefs: ["validation://passed"],
+                            confidence: "high",
+                          },
+                        ],
+                      },
+                    },
                   ],
-                  reason: "Need adjacent focused validation context.",
-                  commitmentIds: ["commitment-source-edit"],
-                  status: "provided",
-                  providedContextRefs: ["context-pack://kimi/context-1"],
-                  deniedReasonCode: null,
-                  rawPromptStored: false,
-                  rawResponseStored: false,
-                },
-              ],
-              editPlanSteps: [
-                {
-                  stepId: "step-1",
-                  objective: "Update production helper.",
-                  targetFileRefs: [
-                    "extensions/execution-platform/src/work-queue/planning-lifecycle.ts",
-                  ],
-                  validationExpectation: "Focused validation passes.",
-                  rollbackBoundary: "step",
-                  commitmentIdsAdvanced: ["commitment-source-edit"],
-                },
-              ],
-              evidenceClaims: [
-                {
-                  commitmentId: "commitment-source-edit",
-                  evidenceRef: "runtime-work-graph://kimi/evidence/source-edit",
-                  claimSummary: "Kimi edited the scoped file and validation passed.",
-                  changedFileRefs: [
-                    "extensions/execution-platform/src/work-queue/planning-lifecycle.ts",
-                  ],
-                  validationRefs: ["validation://passed"],
-                  limitations: [],
-                  confidence: "high",
-                  rawPromptStored: false,
-                  rawResponseStored: false,
-                },
-              ],
-              attemptDiagnostics: [
-                {
-                  attempt: 1,
-                  modelRef: "moonshotai/kimi-k2.6",
-                  providerPath: "openrouter",
-                  modelRunRef: "openrouter://kimi/first",
-                  responseHash: "sha256:first",
-                  responsePresent: true,
-                  responseLength: 200,
-                  latencyMs: 25,
-                  maxOutputTokens: 8_000,
-                  timeoutMs: 480_000,
-                  hadFencedJson: false,
-                  hadJsonObject: true,
-                  topLevelKeys: ["fileEdits"],
-                  hadFileEditsKey: true,
-                  parsedStatus: "patch_proposed",
-                  parsedNeedsReview: null,
-                  parsedFileEditCount: 1,
-                  boundedBlockerSummary: null,
-                  hadPatchLikeContent: false,
-                  schemaParseState: "valid",
-                  schemaFailureCategories: [],
-                  normalizedEditCount: 1,
-                  rejectionStage: null,
-                  reasonCodes: ["kimi_patch_response_normalized"],
-                  rawPromptStored: false,
-                  rawResponseStored: false,
-                  rawProviderLogStored: false,
-                },
-                {
-                  attempt: 2,
-                  modelRef: "moonshotai/kimi-k2.6",
-                  providerPath: "openrouter",
-                  modelRunRef: "openrouter://kimi/repair",
-                  responseHash: "sha256:repair",
-                  responsePresent: true,
-                  responseLength: 240,
-                  latencyMs: 30,
-                  maxOutputTokens: 8_000,
-                  timeoutMs: 480_000,
-                  hadFencedJson: false,
-                  hadJsonObject: true,
-                  topLevelKeys: ["fileEdits"],
-                  hadFileEditsKey: true,
-                  parsedStatus: "patch_proposed",
-                  parsedNeedsReview: null,
-                  parsedFileEditCount: 1,
-                  boundedBlockerSummary: null,
-                  hadPatchLikeContent: false,
-                  schemaParseState: "valid",
-                  schemaFailureCategories: [],
-                  normalizedEditCount: 1,
-                  rejectionStage: null,
-                  reasonCodes: ["kimi_patch_response_normalized"],
-                  rawPromptStored: false,
-                  rawResponseStored: false,
-                  rawProviderLogStored: false,
-                },
-              ],
-              reasonCodes: [
-                "kimi_patch_applied_and_validated",
-                "kimi_patch_repaired_after_feedback",
-              ],
-            });
+                }),
+                responseHash: "sha256:tool-worker-evidence",
+                latencyMs: 5,
+                rawPromptStored: false,
+                rawResponseStored: false,
+              };
+            },
           },
-        },
+          validationRunner: {
+            async run() {
+              return {
+                validationRef: "validation://passed",
+                status: "passed",
+                summary: "focused validation passed",
+              };
+            },
+          },
+        }),
       });
 
       const result = await adapter.run({
@@ -327,29 +283,217 @@ describe("ModelAgnosticFileEditWorkerAdapter", () => {
         runtimeJobId: "job-file-edit-worker-loop",
         graphId: "graph-file-edit-worker-loop",
         nodeId: "node-kimi-edit",
+        repoRoot,
+        allowedFileRefs: ["extensions/execution-platform/src/work-queue/"],
+        targetFileRefs: [fileRef],
+        targetCommitmentIds: ["commitment-source-edit"],
+        budgetPolicy: { maxTurns: 4 },
       });
+
+      expect(result.status).toBe("applied_change");
+      expect(result.sourceAdapterKind).toBe("non_codex_tool_worker_runtime");
+      expect(result.changedFileRefs).toEqual([fileRef]);
+      expect(result.validationRefs).toEqual(["validation://passed"]);
+      expect(result.evidenceClaims[0]?.commitmentId).toBe("commitment-source-edit");
+      expect(result.workerPhaseRefs.length).toBeGreaterThan(0);
+      expect(result.workerPhases.map((phase) => phase.phase)).toEqual(
+        expect.arrayContaining(["context", "author", "applicator", "validation", "evidence"]),
+      );
+      expect(result.reasonCodes).not.toContain("file_edit_worker_kimi_patch_json_path_retired");
+      await expect(readFile(path.join(repoRoot, fileRef), "utf8")).resolves.toContain(
+        "label = 'after'",
+      );
       const invocations = await traces.listInvocations({
         graphId: "graph-file-edit-worker-loop",
         limit: 50,
       });
       const toolIds = invocations.map((invocation) => invocation.toolId);
+      expect(toolIds).toEqual(
+        expect.arrayContaining([
+          "worker.repo.read_files",
+          "worker.edit.plan",
+          "worker.edit.apply_patch",
+          "worker.validation.run",
+          "worker.evidence.claim",
+        ]),
+      );
+    } finally {
+      await database.close();
+    }
+  });
 
-      expect(result.status).toBe("applied_change");
-      expect(result.runtimeToolInvocationRefs.length).toBeGreaterThan(0);
-      expect(toolIds).toContain("worker.file_context.inspect");
-      expect(toolIds).toContain("worker.context.request_more");
-      expect(toolIds).toContain("worker.context.provide_bounded_snapshot");
-      expect(toolIds).toContain("worker.file_edit.plan");
-      expect(toolIds).toContain("worker.file_edit.propose_patch");
-      expect(toolIds).toContain("worker.file_edit.repair");
-      expect(toolIds).toContain("worker.file_edit.apply_patch");
-      expect(toolIds).toContain("worker.validation.run");
-      expect(toolIds).toContain("worker.evidence.handoff");
-      expect(toolIds).not.toContain("worker.file_edit.escalate");
-      expect(result.reasonCodes).toContain("scheduler_tool_invoked:worker.file_edit.apply_patch");
-      expect(result.editPlanSteps[0]?.stepId).toBe("step-1");
-      expect(result.evidenceClaims[0]?.commitmentId).toBe("commitment-source-edit");
-      expect(result.rawPromptStored).toBe(false);
+  it("blocks production controller turns from applying edits directly", async () => {
+    const repoRoot = await mkdtemp(path.join(tmpdir(), "openclaw-file-edit-adapter-strict-phase-"));
+    const fileRef = "extensions/execution-platform/src/work-queue/strict-phase.ts";
+    await mkdir(path.dirname(path.join(repoRoot, fileRef)), { recursive: true });
+    await writeFile(path.join(repoRoot, fileRef), "export const strictPhase = 'before';\n", "utf8");
+
+    const database = await createExecutionPlatformPgMemTestDatabase();
+    try {
+      await applyExecutionPlatformMigrations(database.sql);
+      const registry = new RuntimeToolRegistry();
+      registerSchedulerRuntimeTools({ registry, includeWorkerInvoke: true });
+      const traces = new RuntimeToolTraceRepository(database.sql);
+      const runtimeToolKernel = new RuntimeToolKernel({ registry, traces });
+      const adapter = new ModelAgnosticFileEditWorkerAdapter({
+        runtimeToolKernel,
+        toolUsingKimiWorkerLoop: new NonCodexToolUsingWorkerLoop({
+          runtimeToolKernel,
+          modelClient: {
+            async nextTurn(input) {
+              if (input.modelSlot === "context_decision") {
+                return {
+                  modelRunRef: "openrouter://qwen/strict-context",
+                  responseText: JSON.stringify({
+                    toolCalls: [
+                      {
+                        callId: "read-target",
+                        toolId: "worker.repo.read_files",
+                        reason: "Read before editing.",
+                        input: { fileRefs: [fileRef] },
+                      },
+                    ],
+                  }),
+                  responseHash: "sha256:strict-context",
+                  latencyMs: 1,
+                  rawPromptStored: false,
+                  rawResponseStored: false,
+                };
+              }
+              if (input.modelSlot === "patch") {
+                return {
+                  modelRunRef: "openrouter://kimi/strict-author",
+                  responseText: JSON.stringify({
+                    toolCalls: [
+                      {
+                        callId: "plan-target",
+                        toolId: "worker.edit.plan",
+                        reason: "Plan the edit only.",
+                        input: {
+                          editPlanSteps: [
+                            {
+                              stepId: "step-1",
+                              objective: "Change strictPhase value.",
+                              targetFileRefs: [fileRef],
+                              validationExpectation: "not reached",
+                              commitmentIdsAdvanced: ["commitment-strict-phase"],
+                            },
+                          ],
+                        },
+                      },
+                      {
+                        callId: "apply-author-edit",
+                        toolId: "worker.edit.apply_patch",
+                        reason: "Patch author applies the first scoped edit.",
+                        input: {
+                          fileEdits: [
+                            {
+                              path: fileRef,
+                              operation: "replace_text",
+                              oldText: "'before'",
+                              newText: "'mid'",
+                              rationale: "This edit is allowed because it is in the patch lane.",
+                            },
+                          ],
+                        },
+                      },
+                    ],
+                  }),
+                  responseHash: "sha256:strict-author",
+                  latencyMs: 1,
+                  rawPromptStored: false,
+                  rawResponseStored: false,
+                };
+              }
+              if (input.modelSlot === "controller") {
+                return {
+                  modelRunRef: "openrouter://qwen/strict-controller-bad-apply",
+                  responseText: JSON.stringify({
+                    toolCalls: [
+                      {
+                        callId: "bad-controller-apply",
+                        toolId: "worker.edit.apply_patch",
+                        reason: "Controller incorrectly tries to apply an edit.",
+                        input: {
+                          fileEdits: [
+                            {
+                              path: fileRef,
+                              operation: "replace_text",
+                              oldText: "'mid'",
+                              newText: "'after'",
+                              rationale: "This must be blocked in strict production mode.",
+                            },
+                          ],
+                        },
+                      },
+                    ],
+                  }),
+                  responseHash: "sha256:strict-controller-bad-apply",
+                  latencyMs: 1,
+                  rawPromptStored: false,
+                  rawResponseStored: false,
+                };
+              }
+              return {
+                modelRunRef: `openrouter://qwen/strict-${input.modelSlot}-escalate`,
+                responseText: JSON.stringify({
+                  toolCalls: [
+                    {
+                      callId: `strict-${input.modelSlot}-escalate`,
+                      toolId: "worker.escalate",
+                      reason: "Stop after the strict phase-boundary proof.",
+                      input: {
+                        reason: `Unexpected slot ${input.modelSlot} after strict phase-boundary proof.`,
+                        unsuitableReasonCodes: ["strict_phase_test_terminal_escalation"],
+                      },
+                    },
+                  ],
+                }),
+                responseHash: `sha256:strict-${input.modelSlot}-escalate`,
+                latencyMs: 1,
+                rawPromptStored: false,
+                rawResponseStored: false,
+              };
+            },
+          },
+          validationRunner: {
+            async run() {
+              throw new Error("validation_should_not_run_when_controller_applies");
+            },
+          },
+        }),
+      });
+
+      const result = await adapter.run({
+        ...baseInput,
+        repoRoot,
+        allowedFileRefs: ["extensions/execution-platform/src/work-queue/"],
+        targetFileRefs: [fileRef],
+        targetCommitmentIds: ["commitment-strict-phase"],
+        budgetPolicy: { maxTurns: 3 },
+      });
+
+      expect(result.status).toBe("escalate");
+      expect(result.changedFileRefs).toEqual([fileRef]);
+      expect(result.reasonCodes).toEqual(
+        expect.arrayContaining([
+          "worker_phase_authority_blocked:controller:applicator:worker.edit.apply_patch",
+          "non_codex_tool_worker_edit_transaction_not_accepted",
+        ]),
+      );
+      expect(result.workerPhases).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            phase: "applicator",
+            status: "blocked",
+            toolId: "worker.edit.apply_patch",
+          }),
+        ]),
+      );
+      await expect(readFile(path.join(repoRoot, fileRef), "utf8")).resolves.toContain("'mid'");
+      await expect(readFile(path.join(repoRoot, fileRef), "utf8")).resolves.not.toContain(
+        "'after'",
+      );
     } finally {
       await database.close();
     }

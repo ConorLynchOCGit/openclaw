@@ -151,6 +151,61 @@ describe("child work order contract", () => {
     });
   });
 
+  it("does not invent directory target refs when context scout omits concrete files", () => {
+    const output = parseContextScoutOutput({
+      responseText: JSON.stringify({
+        existingPatterns: ["scheduler-backed plugins live under workflows"],
+        handoffSummaryForImplementation:
+          "Need a concrete repo scan before implementation can proceed.",
+      }),
+      targetRefs: ["extensions/execution-platform/src/workflows/"],
+      validationCommandRefs: [],
+    });
+
+    expect(output.relevantFiles).toEqual([]);
+    expect(validateContextScoutOutputShape(output)).toMatchObject({
+      valid: false,
+      reasonCodes: ["context_scout_required_relevant_files_missing"],
+      semanticQualityJudgedByDeterministicCode: false,
+    });
+  });
+
+  it("accepts model-authored context file aliases without requiring one exact JSON field name", () => {
+    const output = parseContextScoutOutput({
+      responseText: JSON.stringify({
+        relevantFileRefs: [
+          {
+            fileRef: "extensions/execution-platform/src/workflows/product-spec-planning-plugin.ts",
+            reason: "Defines product/spec planning workflow plugin.",
+            symbols: ["buildProductSpecPlanningWorkflowPlugin"],
+          },
+        ],
+        likelyEditPoints: [
+          {
+            fileRef: "extensions/execution-platform/src/workflows/product-spec-planning-plugin.ts",
+            region: "workflow definition",
+            rationale: "Wire scheduler-backed planning node executors.",
+          },
+        ],
+        handoffSummaryForImplementation:
+          "Use the product/spec planning plugin as the first implementation target.",
+      }),
+      targetRefs: ["extensions/execution-platform/src/workflows/"],
+      validationCommandRefs: [],
+    });
+
+    expect(output.relevantFiles[0]).toMatchObject({
+      path: "extensions/execution-platform/src/workflows/product-spec-planning-plugin.ts",
+      whyRelevant: "Defines product/spec planning workflow plugin.",
+      keySymbolsOrFunctions: ["buildProductSpecPlanningWorkflowPlugin"],
+    });
+    expect(output.recommendedEditPoints[0]).toMatchObject({
+      path: "extensions/execution-platform/src/workflows/product-spec-planning-plugin.ts",
+      symbolOrRegion: "workflow definition",
+      reason: "Wire scheduler-backed planning node executors.",
+    });
+  });
+
   it("validates only required shape, not semantic usefulness", () => {
     const output = parseContextScoutOutput({
       responseText: JSON.stringify({

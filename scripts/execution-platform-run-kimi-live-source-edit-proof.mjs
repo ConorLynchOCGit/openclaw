@@ -163,7 +163,14 @@ async function main() {
     path.join(root, "extensions/execution-platform/src/index.ts"),
     import.meta.url,
   );
-  const { KimiFileImplementationAdapter, OpenRouterAgentTeamModelClient } = ep;
+  const kimiApi = await tsImport(
+    path.join(
+      root,
+      "extensions/execution-platform/src/codex-bridge/kimi-file-implementation-adapter.ts",
+    ),
+    import.meta.url,
+  );
+  const { OpenRouterAgentTeamModelClient } = ep;
   const openRouter = new OpenRouterAgentTeamModelClient({
     apiKey,
     retryPolicy: { maxAttempts: 2, timeoutMs: 300_000 },
@@ -198,7 +205,7 @@ async function main() {
       };
     },
   };
-  const adapter = new KimiFileImplementationAdapter({
+  const adapter = new kimiApi.KimiFileImplementationAdapter({
     modelClient,
     validationRunner: boundedValidationRunner(),
   });

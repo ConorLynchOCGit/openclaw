@@ -2,6 +2,13 @@ import { describe, expect, it } from "vitest";
 import { applyExecutionPlatformMigrations } from "../db/migrations.ts";
 import { createExecutionPlatformPgMemTestDatabase } from "../db/pg-test.ts";
 import { RuntimeJobRepository } from "../runtime-job-repository.ts";
+import {
+  RUNTIME_TOOLIFICATION_TRUTH_REGISTRY_WORK_ITEM_ID,
+  buildRuntimeToolificationTruthRegistry,
+  evaluateRuntimeToolificationAdoptionGate,
+  summarizeRuntimeToolificationTruthRegistry,
+} from "../runtime-tool-call/runtime-tool-adoption-boundary.ts";
+import { RuntimeWorkGraphRepository } from "../workflows/runtime-work-graph-repository.ts";
 import { WorkQueueRepository } from "./work-queue-repository.ts";
 
 async function withWorkQueueRepository<T>(
@@ -106,6 +113,205 @@ describe("work queue execution truth repository", () => {
       expect(truth?.events).toEqual(
         expect.arrayContaining([expect.objectContaining({ eventType: "work_item.created" })]),
       );
+    });
+  });
+
+  it("surfaces runtime toolification truth registry state through DB-backed readback", async () => {
+    await withWorkQueueRepository(async ({ workQueue }) => {
+      const summary = summarizeRuntimeToolificationTruthRegistry({
+        surfaces: buildRuntimeToolificationTruthRegistry(),
+      });
+      await workQueue.createWorkItem({
+        workItemId: "toolification-truth-readback",
+        itemType: "implementation_slice",
+        title: "Runtime Toolification Truth Registry",
+        metadata: {
+          toolificationTruthRegistry: summary,
+          rawPromptStored: false,
+          rawResponseStored: false,
+        },
+      });
+
+      const list = await workQueue.listDbWorkQueue({ bucket: "active" });
+      const item = list.items.find((entry) => entry.workItemId === "toolification-truth-readback");
+
+      expect(item?.convergenceSlice?.toolificationTruthRegistry).toMatchObject({
+        artifactKind: "runtime_toolification_truth_registry_summary",
+        registryVersion: "runtime-toolification-truth-registry.v1",
+        surfaceCount: expect.any(Number),
+        rawPromptStored: false,
+        rawResponseStored: false,
+      });
+      expect(
+        item?.convergenceSlice?.toolificationTruthRegistry?.nextQueueItemIds.length,
+      ).toBeGreaterThan(0);
+    });
+  });
+
+  it("derives canonical registry readback for the registry item when metadata is missing", async () => {
+    await withWorkQueueRepository(async ({ workQueue }) => {
+      await workQueue.createWorkItem({
+        workItemId: RUNTIME_TOOLIFICATION_TRUTH_REGISTRY_WORK_ITEM_ID,
+        itemType: "implementation_slice",
+        title: "Runtime Toolification Truth Registry",
+        metadata: {
+          rawPromptStored: false,
+          rawResponseStored: false,
+        },
+      });
+
+      const list = await workQueue.listDbWorkQueue({ bucket: "active" });
+      const item = list.items.find(
+        (entry) => entry.workItemId === RUNTIME_TOOLIFICATION_TRUTH_REGISTRY_WORK_ITEM_ID,
+      );
+
+      expect(item?.convergenceSlice?.toolificationTruthRegistry).toMatchObject({
+        artifactKind: "runtime_toolification_truth_registry_summary",
+        registryVersion: "runtime-toolification-truth-registry.v1",
+      });
+      expect(
+        item?.convergenceSlice?.toolificationTruthRegistry?.nextQueueItemIds.length,
+      ).toBeGreaterThan(0);
+    });
+  });
+
+  it("ignores stale registry metadata for the canonical registry item", async () => {
+    await withWorkQueueRepository(async ({ workQueue }) => {
+      await workQueue.createWorkItem({
+        workItemId: RUNTIME_TOOLIFICATION_TRUTH_REGISTRY_WORK_ITEM_ID,
+        itemType: "implementation_slice",
+        title: "Runtime Toolification Truth Registry",
+        metadata: {
+          toolificationTruthRegistry: {
+            artifactKind: "runtime_toolification_truth_registry_summary",
+            registryVersion: "runtime-toolification-truth-registry.v1",
+            surfaceCount: 0,
+            productionPrimaryCount: 0,
+            liveUxProvenCount: 99,
+            queuedForToolificationCount: 0,
+            compatibilityOnlyCount: 0,
+            blockedCount: 0,
+            adoptionGateAcceptedCount: 0,
+            adoptionGateRejectedCount: 0,
+            nextQueueItemIds: ["stale://wrong"],
+            surfaceStatuses: [],
+            reasonCodes: ["stale_metadata_should_not_win"],
+            rawPromptStored: false,
+            rawResponseStored: false,
+            rawLogsStored: false,
+            secretsStored: false,
+          },
+          rawPromptStored: false,
+          rawResponseStored: false,
+        },
+      });
+
+      const list = await workQueue.listDbWorkQueue({ bucket: "active" });
+      const item = list.items.find(
+        (entry) => entry.workItemId === RUNTIME_TOOLIFICATION_TRUTH_REGISTRY_WORK_ITEM_ID,
+      );
+
+      expect(item?.convergenceSlice?.toolificationTruthRegistry?.surfaceCount).toBeGreaterThan(0);
+      expect(item?.convergenceSlice?.toolificationTruthRegistry?.nextQueueItemIds).not.toContain(
+        "stale://wrong",
+      );
+    });
+  });
+
+  it("requires accepted adoption-gate evidence before closing toolification items", async () => {
+    await withWorkQueueRepository(async ({ workQueue }) => {
+      const surfaces = buildRuntimeToolificationTruthRegistry();
+      const surface = surfaces.find((entry) => entry.surfaceId === "model-call-toolification")!;
+      const acceptedGate = evaluateRuntimeToolificationAdoptionGate({
+        surface,
+        claim: {
+          surfaceId: surface.surfaceId,
+          claimKind: "production_primary",
+          claimedStatus: "production_primary",
+          evidenceRefs: ["artifact://toolification/model-call/evidence"],
+          toolInvocationRefs: ["runtime-tool://model-call/1"],
+          workQueueReadbackRefs: ["work-queue-readback://model-call"],
+          closeoutRefs: ["closeout://model-call"],
+          retiredCompatibilityRefs: [
+            "repo://extensions/execution-platform/src/model-tasks/fallback.ts",
+          ],
+          rawPromptStored: false,
+          rawResponseStored: false,
+          rawLogsStored: false,
+          secretsStored: false,
+        },
+      });
+      const rejectedGate = evaluateRuntimeToolificationAdoptionGate({
+        surface,
+        claim: {
+          surfaceId: surface.surfaceId,
+          claimKind: "production_primary",
+          claimedStatus: "production_primary",
+          evidenceRefs: ["artifact://toolification/model-call/evidence"],
+          rawPromptStored: false,
+          rawResponseStored: false,
+          rawLogsStored: false,
+          secretsStored: false,
+        },
+      });
+
+      await workQueue.createWorkItem({
+        workItemId: "openclaw-convergence.toolification-test-missing-gate",
+        itemType: "implementation_slice",
+        title: "Missing gate",
+      });
+      const missing = await workQueue.completeWorkQueueItemFromCloseout({
+        workItemId: "openclaw-convergence.toolification-test-missing-gate",
+        closeoutRef: "closeout://missing-gate",
+        validationRef: "artifact://missing-gate/validation",
+        validationRequired: true,
+        sourceEditRequired: false,
+        accepted: true,
+        rawPromptStored: false,
+        rawResponseStored: false,
+      });
+      expect(missing.closed).toBe(false);
+      expect(missing.status).toBe("needs_review");
+      expect(missing.reasonCodes).toContain("toolification_adoption_gate_evidence_required");
+
+      await workQueue.createWorkItem({
+        workItemId: "openclaw-convergence.toolification-test-rejected-gate",
+        itemType: "implementation_slice",
+        title: "Rejected gate",
+      });
+      const rejected = await workQueue.completeToolificationWorkQueueItemFromAdoptionGate({
+        workItemId: "openclaw-convergence.toolification-test-rejected-gate",
+        closeoutRef: "closeout://rejected-gate",
+        validationRef: "artifact://rejected-gate/validation",
+        validationRequired: true,
+        sourceEditRequired: false,
+        toolificationAdoptionGateResults: [rejectedGate],
+        toolificationAdoptionGateEvidenceRefs: ["artifact://rejected-gate/gate"],
+        rawPromptStored: false,
+        rawResponseStored: false,
+      });
+      expect(rejected.closed).toBe(false);
+      expect(rejected.status).toBe("needs_review");
+
+      await workQueue.createWorkItem({
+        workItemId: "openclaw-convergence.toolification-test-accepted-gate",
+        itemType: "implementation_slice",
+        title: "Accepted gate",
+      });
+      const accepted = await workQueue.completeToolificationWorkQueueItemFromAdoptionGate({
+        workItemId: "openclaw-convergence.toolification-test-accepted-gate",
+        closeoutRef: "closeout://accepted-gate",
+        validationRef: "artifact://accepted-gate/validation",
+        validationRequired: true,
+        sourceEditRequired: false,
+        toolificationAdoptionGateResults: [acceptedGate],
+        toolificationAdoptionGateEvidenceRefs: ["artifact://accepted-gate/gate"],
+        rawPromptStored: false,
+        rawResponseStored: false,
+      });
+      expect(accepted.closed).toBe(true);
+      expect(accepted.status).toBe("closed");
+      expect(accepted.reasonCodes).toContain("toolification_adoption_gate_evidence_accepted");
     });
   });
 
@@ -288,6 +494,220 @@ describe("work queue execution truth repository", () => {
         rawDbRowsStored: false,
         runtimeLifecycleMutated: false,
       });
+    });
+  });
+
+  it("archives generated runtime graph children when their parent item is terminal", async () => {
+    await withWorkQueueRepository(async ({ runtimeJobs, workQueue, sql }) => {
+      const graphs = new RuntimeWorkGraphRepository(sql, {
+        now: () => new Date("2026-05-02T00:00:00.000Z"),
+      });
+      const parent = await workQueue.createWorkItem({
+        workItemId: "terminal-parent",
+        itemType: "execution_workflow",
+        title: "Terminal parent",
+      });
+      const runtimeJob = await runtimeJobs.enqueueJob({
+        jobId: "terminal-parent-runtime-job",
+        jobType: "executor.agent_team",
+        workItemId: parent.workItemId,
+      });
+      await graphs.createGraph({
+        graphId: "terminal-parent-graph",
+        parentWorkItemId: parent.workItemId,
+        rootRuntimeJobId: runtimeJob.jobId,
+        workflowId: "agent_team.coding",
+        orchestratorModelRef: "openai-codex/gpt-5.5",
+        graphStatus: "running",
+      });
+      await graphs.addNode({
+        graphId: "terminal-parent-graph",
+        nodeId: "terminal-parent-node",
+        nodeKind: "implementation",
+        assignedRole: "implementation_engineer",
+        nodeStatus: "planned",
+      });
+      const child = await workQueue.syncRuntimeGraphNodeToWorkQueue({
+        parentWorkItemId: parent.workItemId,
+        graphId: "terminal-parent-graph",
+        nodeId: "terminal-parent-node",
+        nodeKind: "implementation",
+        assignedRole: "implementation_engineer",
+        assignedWorkflow: "agent_team.coding",
+        queueStatus: "active",
+      });
+
+      await workQueue.completeWorkQueueItemFromCloseout({
+        workItemId: parent.workItemId,
+        runtimeJobId: runtimeJob.jobId,
+        closeoutRef: "artifact://closeout/terminal-parent",
+        validationRequired: false,
+        sourceEditRequired: false,
+      });
+      const active = await workQueue.listDbWorkQueue({ bucket: "active" });
+      const childTruth = await workQueue.readWorkItemTruth(child.childWorkItemId);
+      const snapshot = await graphs.readGraphSnapshot("terminal-parent-graph");
+
+      expect(active.items.map((item) => item.workItemId)).not.toContain(child.childWorkItemId);
+      expect(childTruth?.item.queueStatus).toBe("archived");
+      expect(childTruth?.events.map((event) => event.eventType)).toContain(
+        "work_item.terminal_runtime_child_projection_archived",
+      );
+      expect(snapshot?.graph.graphStatus).toBe("succeeded");
+      expect(snapshot?.nodes[0]?.nodeStatus).toBe("skipped");
+    });
+  });
+
+  it("removes generated execution items from active queue when their runtime job is canceled", async () => {
+    await withWorkQueueRepository(async ({ runtimeJobs, workQueue }) => {
+      const item = await workQueue.createWorkItem({
+        workItemId: "terminal-execution-item",
+        itemType: "execution_workflow",
+        title: "Terminal execution item",
+      });
+      const runtimeJob = await runtimeJobs.enqueueJob({
+        jobId: "terminal-execution-runtime-job",
+        jobType: "executor.agent_team",
+        workItemId: item.workItemId,
+      });
+      await workQueue.createWorkRun({
+        runId: "terminal-execution-run",
+        workItemId: item.workItemId,
+        executorKind: "runtime_job",
+        runtimeJobId: runtimeJob.jobId,
+        runState: "running",
+      });
+      await runtimeJobs.cancelJob(runtimeJob.jobId, "operator canceled proof");
+
+      const active = await workQueue.listDbWorkQueue({ bucket: "active" });
+      const truth = await workQueue.readWorkItemTruth(item.workItemId);
+
+      expect(active.items.map((entry) => entry.workItemId)).not.toContain(item.workItemId);
+      expect(truth?.item.queueStatus).toBe("archived");
+      expect(truth?.item.lifecycleState).toBe("canceled");
+      expect(truth?.runs[0]?.runState).toBe("canceled");
+      expect(truth?.events.map((event) => event.eventType)).toContain(
+        "work_item.terminal_execution_projection_reconciled",
+      );
+    });
+  });
+
+  it("hides generated debug-only proof items from owner queue readback by default", async () => {
+    await withWorkQueueRepository(async ({ workQueue }) => {
+      const roadmapItem = await workQueue.createWorkItem({
+        workItemId: "owner-roadmap-item",
+        itemType: "implementation_slice",
+        title: "Owner roadmap item",
+      });
+      const generated = await workQueue.createGeneratedWorkItem({
+        workItemId: "generated-proof-debug-item",
+        itemType: "execution_workflow",
+        title: "Generated proof debug item",
+        generatedOriginKind: "proof_diagnostic",
+        generatedTerminalPolicy: "debug_only",
+        createdBy: "test-proof-runner",
+        reasonCodes: ["not_owner_roadmap_work"],
+      });
+
+      const ownerActive = await workQueue.listDbWorkQueue({
+        bucket: "active",
+        reconcileTerminalProjections: false,
+      });
+      const debugActive = await workQueue.listDbWorkQueue({
+        bucket: "active",
+        includeGeneratedDebugItems: true,
+        reconcileTerminalProjections: false,
+      });
+
+      expect(ownerActive.items.map((item) => item.workItemId)).toContain(roadmapItem.workItemId);
+      expect(ownerActive.items.map((item) => item.workItemId)).not.toContain(generated.workItemId);
+      expect(debugActive.items.map((item) => item.workItemId)).toContain(generated.workItemId);
+      expect(
+        debugActive.items.find((item) => item.workItemId === generated.workItemId)
+          ?.generatedItemLifecycle,
+      ).toMatchObject({
+        originKind: "proof_diagnostic",
+        terminalPolicy: "debug_only",
+        rawPromptStored: false,
+        rawResponseStored: false,
+      });
+    });
+  });
+
+  it("archives failed generated proof diagnostics instead of leaving them needs_review", async () => {
+    await withWorkQueueRepository(async ({ runtimeJobs, workQueue }) => {
+      const item = await workQueue.createGeneratedWorkItem({
+        workItemId: "failed-generated-proof-diagnostic",
+        itemType: "execution_workflow",
+        title: "Failed generated proof diagnostic",
+        generatedOriginKind: "proof_diagnostic",
+        generatedTerminalPolicy: "debug_only",
+        createdBy: "test-proof-runner",
+        reasonCodes: ["generic_runner_retirement_diagnostic_child"],
+      });
+      const runtimeJob = await runtimeJobs.enqueueJob({
+        jobId: "failed-generated-proof-runtime-job",
+        jobType: "executor.workflow",
+        queueName: "proof",
+        workItemId: item.workItemId,
+        maxAttempts: 1,
+      });
+      const claimed = await runtimeJobs.claimNextJob({
+        workerId: "test-worker",
+        queueName: "proof",
+      });
+      await runtimeJobs.failJob({
+        leaseToken: claimed!.leaseToken,
+        error: {
+          code: "intentional_diagnostic_failure",
+          message: "Intentional bounded diagnostic failure.",
+        },
+      });
+      await workQueue.createWorkRun({
+        runId: "failed-generated-proof-run",
+        workItemId: item.workItemId,
+        executorKind: "runtime_job",
+        runtimeJobId: runtimeJob.jobId,
+        runState: "running",
+      });
+
+      const reconcile = await workQueue.reconcileTerminalRuntimeProjections();
+      const truth = await workQueue.readWorkItemTruth(item.workItemId);
+      const ownerActive = await workQueue.listDbWorkQueue({
+        bucket: "active",
+        reconcileTerminalProjections: false,
+      });
+
+      expect(reconcile.archivedTerminalExecutionWorkItemIds).toContain(item.workItemId);
+      expect(truth?.item.queueStatus).toBe("archived");
+      expect(truth?.item.lifecycleState).toBe("failed");
+      expect(ownerActive.items.map((entry) => entry.workItemId)).not.toContain(item.workItemId);
+      expect(truth?.events.map((event) => event.eventType)).toContain(
+        "work_item.terminal_execution_projection_reconciled",
+      );
+    });
+  });
+
+  it("archives generated middleware fixtures without requiring source-code status edits", async () => {
+    await withWorkQueueRepository(async ({ workQueue }) => {
+      const fixture = await workQueue.createGeneratedWorkItem({
+        workItemId: "middleware-fixture-debug-item",
+        itemType: "script_middleware",
+        title: "Script middleware fixture",
+        generatedOriginKind: "middleware_fixture",
+        generatedTerminalPolicy: "debug_only",
+        createdBy: "middleware-live-proof",
+        reasonCodes: ["middleware_fixture_created_for_live_completion_proof"],
+      });
+
+      const reconcile = await workQueue.reconcileTerminalRuntimeProjections();
+      const truth = await workQueue.readWorkItemTruth(fixture.workItemId);
+
+      expect(reconcile.archivedGeneratedDebugWorkItemIds).toContain(fixture.workItemId);
+      expect(truth?.item.queueStatus).toBe("archived");
+      expect(truth?.events.map((event) => event.eventType)).toContain(
+        "work_item.generated_debug_projection_archived",
+      );
     });
   });
 

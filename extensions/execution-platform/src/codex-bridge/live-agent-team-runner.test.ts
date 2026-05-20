@@ -249,6 +249,99 @@ describe("live agent-team runner", () => {
     expect(bodies[0]).not.toHaveProperty("reasoning");
   });
 
+  it("sends Qwen packet-author prompt-only calls with reasoning none and bounded request diagnostics", async () => {
+    const bodies: Array<Record<string, unknown>> = [];
+    const fetchImpl = (async (_url: string | URL | Request, init?: RequestInit) => {
+      const body = typeof init?.body === "string" ? init.body : "";
+      bodies.push(JSON.parse(body));
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          choices: [
+            {
+              finish_reason: "stop",
+              native_finish_reason: "stop",
+              message: {
+                content: JSON.stringify({
+                  commitmentWorkPackets: [
+                    {
+                      commitmentId: "commitment-1",
+                      workerObjective: "write the packet",
+                      rawPromptStored: false,
+                      rawResponseStored: false,
+                      rawProviderLogStored: false,
+                    },
+                  ],
+                }),
+              },
+            },
+          ],
+          usage: {
+            prompt_tokens: 100,
+            completion_tokens: 200,
+            total_tokens: 300,
+            completion_tokens_details: { reasoning_tokens: 0 },
+            cost: 0.01,
+          },
+        }),
+      } as Response;
+    }) as typeof fetch;
+
+    const client = new OpenRouterAgentTeamModelClient({
+      apiKey: "test-key",
+      fetchImpl,
+      requestProfilesByModelId: {
+        "qwen/qwen3-coder-next": {
+          responseFormatMode: "native",
+          reasoningMode: "omit",
+          maxTokens: 2_400,
+        },
+      },
+    });
+
+    const result = await client.callRole({
+      roleId: "context_scout",
+      modelId: "qwen/qwen3-coder-next",
+      modelCandidateId: "qwen3-coder-next-commitment-packet-author",
+      prompt: "Return packet JSON.",
+      responseFormat: "json_object",
+      requestProfileOverride: {
+        responseFormatMode: "prompt_only",
+        reasoningMode: "none",
+        maxTokens: 8_000,
+      },
+      maxTokens: 8_000,
+      timeoutMs: 120_000,
+      maxAttempts: 1,
+    });
+
+    expect(result.status).toBe("succeeded");
+    expect(bodies[0]).toMatchObject({
+      model: "qwen/qwen3-coder-next",
+      max_tokens: 8_000,
+      reasoning: { effort: "none", exclude: true },
+    });
+    expect(bodies[0]).not.toHaveProperty("response_format");
+    expect(result.providerResponseDiagnostics).toMatchObject({
+      modelCallSpanId: expect.stringContaining("qwen3-coder-next-commitment-packet-author"),
+      choiceCount: 1,
+      providerBodyKeys: expect.arrayContaining(["choices", "usage"]),
+      requestProfileDiagnostics: {
+        responseFormatMode: "prompt_only",
+        reasoningMode: "none",
+        maxTokens: 8_000,
+        timeoutMs: 120_000,
+        maxAttempts: 1,
+        hasResponseFormat: false,
+        hasReasoning: true,
+        reasoningEffort: "none",
+        reasoningExclude: true,
+        rawPromptStored: false,
+      },
+    });
+  });
+
   it("claims one team job, records live-shaped stream/accounting/review evidence, and projects to Work Queue", async () => {
     await withRuntime(async ({ runtimeJobs, workQueue }) => {
       const workItem = await workQueue.createWorkItem({

@@ -1,3 +1,7 @@
+import {
+  RUNTIME_EXECUTION_SPAN_EVENT_TYPE,
+  buildRuntimeExecutionSpan,
+} from "../observability/runtime-execution-span.ts";
 import type { JsonValue, RuntimeJob, RuntimeJobRepository } from "../runtime-job-repository.ts";
 
 export type RuntimeWorkerSupervisorAdapterResultStatus =
@@ -28,6 +32,7 @@ export type RuntimeWorkerSupervisorAdapter = {
   execute(input: {
     job: RuntimeJob;
     workerId: string;
+    leaseId: string;
     leaseToken: string;
   }): Promise<RuntimeWorkerSupervisorAdapterResult>;
 };
@@ -74,6 +79,20 @@ function boundedError(error: unknown): JsonValue {
     code: "worker_adapter_threw",
     message: error instanceof Error ? error.message.slice(0, 300) : String(error).slice(0, 300),
   };
+}
+
+function boundedErrorReasonCode(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  if (message.includes("artifact metadata exceeds")) {
+    return "worker_adapter_threw:artifact_metadata_limit";
+  }
+  if (message.includes("timeout") || message.includes("Timeout")) {
+    return "worker_adapter_threw:timeout";
+  }
+  if (message.includes("schema") || message.includes("parse")) {
+    return "worker_adapter_threw:contract_parse";
+  }
+  return "worker_adapter_threw:unclassified";
 }
 
 function statusFromAdapterStatus(
@@ -143,6 +162,15 @@ export class RuntimeWorkerSupervisor {
         workQueueLifecycleMutated: false,
       },
     });
+    await this.recordSupervisorSpan({
+      job: claimed.job,
+      leaseId: claimed.leaseId,
+      spanId: `${claimed.job.jobId}:runtime-worker:supervisor`,
+      phase: "supervisor_heartbeat",
+      status: "heartbeat",
+      currentAction: "Supervisor claimed or renewed visibility for this runtime job.",
+      reasonCodes: ["runtime_worker_supervisor_heartbeat"],
+    });
 
     const candidates = this.adaptersByJobType.get(claimed.job.jobType) ?? [];
     const adapter =
@@ -176,9 +204,35 @@ export class RuntimeWorkerSupervisor {
       leaseToken: claimed.leaseToken,
     });
     try {
+      await this.options.repository.recordEvent({
+        jobId: claimed.job.jobId,
+        eventType: "runtime_worker.adapter_started",
+        workerId: this.options.workerId,
+        leaseId: claimed.leaseId,
+        data: {
+          adapterId: adapter.adapterId,
+          jobType: claimed.job.jobType,
+          currentPhase: "adapter_execute",
+          rawPromptStored: false,
+          rawResponseStored: false,
+          rawLogsStored: false,
+          workQueueLifecycleMutated: false,
+        },
+      });
+      await this.recordSupervisorSpan({
+        job: claimed.job,
+        leaseId: claimed.leaseId,
+        spanId: `${claimed.job.jobId}:runtime-worker:${adapter.adapterId}`,
+        phase: "adapter_execute",
+        status: "running",
+        adapterId: adapter.adapterId,
+        currentAction: `Executing worker adapter ${adapter.adapterId}.`,
+        reasonCodes: ["runtime_worker_adapter_started"],
+      });
       const adapterResult = await adapter.execute({
         job: claimed.job,
         workerId: this.options.workerId,
+        leaseId: claimed.leaseId,
         leaseToken: claimed.leaseToken,
       });
       await this.options.repository.attachArtifact({
@@ -199,6 +253,43 @@ export class RuntimeWorkerSupervisor {
           rawLogsStored: false,
           workQueueLifecycleMutated: false,
         },
+      });
+      await this.options.repository.recordEvent({
+        jobId: claimed.job.jobId,
+        eventType: "runtime_worker.adapter_completed",
+        workerId: this.options.workerId,
+        leaseId: claimed.leaseId,
+        data: {
+          adapterId: adapter.adapterId,
+          status: adapterResult.status,
+          currentPhase: "adapter_result_recorded",
+          artifactRefs: (adapterResult.artifactRefs ?? []).slice(0, 30),
+          completedWorkEvidenceRefs: (adapterResult.completedWorkEvidenceRefs ?? []).slice(0, 30),
+          reasonCodes: adapterResult.reasonCodes.slice(0, 30),
+          rawPromptStored: false,
+          rawResponseStored: false,
+          rawLogsStored: false,
+          workQueueLifecycleMutated: false,
+        },
+      });
+      await this.recordSupervisorSpan({
+        job: claimed.job,
+        leaseId: claimed.leaseId,
+        spanId: `${claimed.job.jobId}:runtime-worker:${adapter.adapterId}`,
+        phase: "adapter_result_recorded",
+        status:
+          adapterResult.status === "completed"
+            ? "succeeded"
+            : adapterResult.status === "failed"
+              ? "failed"
+              : adapterResult.status === "blocked"
+                ? "blocked"
+                : "needs_review",
+        adapterId: adapter.adapterId,
+        currentAction: adapterResult.summary,
+        outputRefs: adapterResult.artifactRefs ?? [],
+        evidenceRefs: adapterResult.completedWorkEvidenceRefs ?? [],
+        reasonCodes: adapterResult.reasonCodes,
       });
       if (
         adapterResult.status === "completed" &&
@@ -230,6 +321,23 @@ export class RuntimeWorkerSupervisor {
             completedWorkEvidenceRefs: adapterResult.completedWorkEvidenceRefs ?? [],
           },
         });
+      } else if (adapterResult.status === "needs_review") {
+        await this.options.repository.markJobNeedsReview({
+          leaseToken: claimed.leaseToken,
+          error: {
+            code: "worker_adapter_needs_review",
+            adapterId: adapter.adapterId,
+            summary: adapterResult.summary.slice(0, 500),
+            reasonCodes: adapterResult.reasonCodes.slice(0, 30),
+            retryScheduled: false,
+          },
+          result: adapterResult.result ?? {
+            status: "needs_review",
+            artifactRefs: adapterResult.artifactRefs ?? [],
+            completedWorkEvidenceRefs: adapterResult.completedWorkEvidenceRefs ?? [],
+            reasonCodes: adapterResult.reasonCodes.slice(0, 30),
+          },
+        });
       } else {
         await this.options.repository.failJob({
           leaseToken: claimed.leaseToken,
@@ -255,6 +363,34 @@ export class RuntimeWorkerSupervisor {
         reasonCodes: adapterResult.reasonCodes,
       });
     } catch (error) {
+      const errorReasonCode = boundedErrorReasonCode(error);
+      await this.options.repository.recordEvent({
+        jobId: claimed.job.jobId,
+        eventType: "runtime_worker.adapter_failed",
+        workerId: this.options.workerId,
+        leaseId: claimed.leaseId,
+        data: {
+          adapterId: adapter.adapterId,
+          currentPhase: "adapter_execute_failed",
+          reasonCodes: ["worker_adapter_threw", errorReasonCode],
+          error: boundedError(error),
+          rawPromptStored: false,
+          rawResponseStored: false,
+          rawLogsStored: false,
+          workQueueLifecycleMutated: false,
+        },
+      });
+      await this.recordSupervisorSpan({
+        job: claimed.job,
+        leaseId: claimed.leaseId,
+        spanId: `${claimed.job.jobId}:runtime-worker:${adapter.adapterId}`,
+        phase: "adapter_execute_failed",
+        status: "failed",
+        adapterId: adapter.adapterId,
+        blockerSummary:
+          error instanceof Error ? error.message.slice(0, 500) : String(error).slice(0, 500),
+        reasonCodes: ["worker_adapter_threw", errorReasonCode],
+      });
       await this.options.repository.failJob({
         leaseToken: claimed.leaseToken,
         retryDelayMs: this.options.retryDelayMs,
@@ -266,7 +402,7 @@ export class RuntimeWorkerSupervisor {
         runtimeJobId: claimed.job.jobId,
         jobType: claimed.job.jobType,
         adapterId: adapter.adapterId,
-        reasonCodes: ["worker_adapter_threw"],
+        reasonCodes: ["worker_adapter_threw", errorReasonCode],
       });
     } finally {
       stopLeaseRenewal();
@@ -306,6 +442,58 @@ export class RuntimeWorkerSupervisor {
       workQueueLifecycleMutated: false,
       ...input,
     };
+  }
+
+  private async recordSupervisorSpan(input: {
+    job: RuntimeJob;
+    leaseId: string;
+    spanId: string;
+    phase: string;
+    status: "heartbeat" | "running" | "succeeded" | "needs_review" | "failed" | "blocked";
+    adapterId?: string | null;
+    currentAction?: string | null;
+    blockerSummary?: string | null;
+    outputRefs?: string[];
+    evidenceRefs?: string[];
+    reasonCodes?: string[];
+  }): Promise<void> {
+    const executionSpan = buildRuntimeExecutionSpan({
+      spanId: input.spanId,
+      rootSpanId: `${input.job.jobId}:runtime-worker`,
+      runtimeJobId: input.job.jobId,
+      workItemId: input.job.workItemId,
+      spanKind: input.phase === "supervisor_heartbeat" ? "supervisor_lease" : "worker_phase",
+      phase: input.phase,
+      status: input.status,
+      workerRef: this.options.workerId,
+      adapterId: input.adapterId ?? null,
+      objective:
+        typeof input.job.payload === "object" &&
+        input.job.payload !== null &&
+        !Array.isArray(input.job.payload) &&
+        typeof input.job.payload.objectiveSummary === "string"
+          ? input.job.payload.objectiveSummary
+          : null,
+      currentAction: input.currentAction ?? null,
+      blockerSummary: input.blockerSummary ?? null,
+      outputRefs: input.outputRefs ?? [],
+      evidenceRefs: input.evidenceRefs ?? [],
+      reasonCodes: input.reasonCodes ?? [],
+    });
+    await this.options.repository.recordEvent({
+      jobId: input.job.jobId,
+      eventType: RUNTIME_EXECUTION_SPAN_EVENT_TYPE,
+      workerId: this.options.workerId,
+      leaseId: input.leaseId,
+      data: {
+        executionSpan,
+        sourceEventType: "runtime_worker.supervisor",
+        rawPromptStored: false,
+        rawResponseStored: false,
+        rawLogsStored: false,
+        workQueueLifecycleMutated: false,
+      },
+    });
   }
 
   private startLeaseRenewal(input: {

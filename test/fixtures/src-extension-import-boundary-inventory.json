@@ -32,11 +32,203 @@
     "reason": "imports bundled plugin file from src boundary"
   },
   {
+    "file": "src/agents/model-memory/live-runtime/route-aware-context-pack.ts",
+    "line": 5,
+    "kind": "import",
+    "specifier": "../../../../extensions/execution-platform/src/model-memory-runtime/context-pack-policy.ts",
+    "resolvedPath": "extensions/execution-platform/src/model-memory-runtime/context-pack-policy.ts",
+    "reason": "imports bundled plugin file from src boundary"
+  },
+  {
+    "file": "src/agents/model-memory/live-runtime/route-aware-context-pack.ts",
+    "line": 10,
+    "kind": "import",
+    "specifier": "../../../../extensions/execution-platform/src/model-memory-runtime/prompt-router-memory-policy.ts",
+    "resolvedPath": "extensions/execution-platform/src/model-memory-runtime/prompt-router-memory-policy.ts",
+    "reason": "imports bundled plugin file from src boundary"
+  },
+  {
+    "file": "src/agents/model-memory/live-runtime/runtime-middleware-bridge.ts",
+    "line": 2,
+    "kind": "import",
+    "specifier": "../../../../extensions/execution-platform/src/db-operations/db-operation-repository.ts",
+    "resolvedPath": "extensions/execution-platform/src/db-operations/db-operation-repository.ts",
+    "reason": "imports bundled plugin file from src boundary"
+  },
+  {
+    "file": "src/agents/model-memory/live-runtime/runtime-middleware-bridge.ts",
+    "line": 7,
+    "kind": "import",
+    "specifier": "../../../../extensions/execution-platform/src/db-operations/db-operation-runtime-tool.ts",
+    "resolvedPath": "extensions/execution-platform/src/db-operations/db-operation-runtime-tool.ts",
+    "reason": "imports bundled plugin file from src boundary"
+  },
+  {
+    "file": "src/agents/model-memory/live-runtime/runtime-middleware-bridge.ts",
+    "line": 11,
+    "kind": "import",
+    "specifier": "../../../../extensions/execution-platform/src/db-operations/types.ts",
+    "resolvedPath": "extensions/execution-platform/src/db-operations/types.ts",
+    "reason": "imports bundled plugin file from src boundary"
+  },
+  {
+    "file": "src/agents/model-memory/live-runtime/runtime-middleware-bridge.ts",
+    "line": 12,
+    "kind": "import",
+    "specifier": "../../../../extensions/execution-platform/src/db/runtime.ts",
+    "resolvedPath": "extensions/execution-platform/src/db/runtime.ts",
+    "reason": "imports bundled plugin file from src boundary"
+  },
+  {
+    "file": "src/agents/model-memory/live-runtime/runtime-middleware-bridge.ts",
+    "line": 13,
+    "kind": "import",
+    "specifier": "../../../../extensions/execution-platform/src/model-tasks/contracts.ts",
+    "resolvedPath": "extensions/execution-platform/src/model-tasks/contracts.ts",
+    "reason": "imports bundled plugin file from src boundary"
+  },
+  {
+    "file": "src/agents/model-memory/live-runtime/runtime-middleware-bridge.ts",
+    "line": 14,
+    "kind": "import",
+    "specifier": "../../../../extensions/execution-platform/src/model-tasks/model-call-runtime-tool.ts",
+    "resolvedPath": "extensions/execution-platform/src/model-tasks/model-call-runtime-tool.ts",
+    "reason": "imports bundled plugin file from src boundary"
+  },
+  {
+    "file": "src/agents/model-memory/live-runtime/runtime-middleware-bridge.ts",
+    "line": 15,
+    "kind": "import",
+    "specifier": "../../../../extensions/execution-platform/src/model-tasks/model-task-repository.ts",
+    "resolvedPath": "extensions/execution-platform/src/model-tasks/model-task-repository.ts",
+    "reason": "imports bundled plugin file from src boundary"
+  },
+  {
+    "file": "src/agents/model-memory/live-runtime/runtime-middleware-bridge.ts",
+    "line": 19,
+    "kind": "import",
+    "specifier": "../../../../extensions/execution-platform/src/model-tasks/types.ts",
+    "resolvedPath": "extensions/execution-platform/src/model-tasks/types.ts",
+    "reason": "imports bundled plugin file from src boundary"
+  },
+  {
+    "file": "src/agents/model-memory/live-runtime/runtime-middleware-bridge.ts",
+    "line": 23,
+    "kind": "import",
+    "specifier": "../../../../extensions/execution-platform/src/runtime-job-repository.ts",
+    "resolvedPath": "extensions/execution-platform/src/runtime-job-repository.ts",
+    "reason": "imports bundled plugin file from src boundary"
+  },
+  {
+    "file": "src/agents/model-memory/live-runtime/runtime-middleware-bridge.ts",
+    "line": 24,
+    "kind": "import",
+    "specifier": "../../../../extensions/execution-platform/src/runtime-tool-call/runtime-tool-kernel.ts",
+    "resolvedPath": "extensions/execution-platform/src/runtime-tool-call/runtime-tool-kernel.ts",
+    "reason": "imports bundled plugin file from src boundary"
+  },
+  {
+    "file": "src/agents/model-memory/live-runtime/runtime-middleware-bridge.ts",
+    "line": 25,
+    "kind": "import",
+    "specifier": "../../../../extensions/execution-platform/src/runtime-tool-call/runtime-tool-registry.ts",
+    "resolvedPath": "extensions/execution-platform/src/runtime-tool-call/runtime-tool-registry.ts",
+    "reason": "imports bundled plugin file from src boundary"
+  },
+  {
+    "file": "src/agents/model-memory/live-runtime/runtime-middleware-bridge.ts",
+    "line": 26,
+    "kind": "import",
+    "specifier": "../../../../extensions/execution-platform/src/runtime-tool-call/runtime-tool-trace-repository.ts",
+    "resolvedPath": "extensions/execution-platform/src/runtime-tool-call/runtime-tool-trace-repository.ts",
+    "reason": "imports bundled plugin file from src boundary"
+  },
+  {
+    "file": "src/gateway/execution-platform-agent-team-runner.ts",
+    "line": 15,
+    "kind": "import",
+    "specifier": "../../extensions/execution-platform/runtime-api.js",
+    "resolvedPath": "extensions/execution-platform/runtime-api.js",
+    "reason": "imports bundled plugin file from src boundary"
+  },
+  {
+    "file": "src/gateway/execution-platform-agent-team-runner.ts",
+    "line": 16,
+    "kind": "import",
+    "specifier": "../../extensions/model-memory/src/mmv2/codex-app-server-json-executor.js",
+    "resolvedPath": "extensions/model-memory/src/mmv2/codex-app-server-json-executor.js",
+    "reason": "imports bundled plugin file from src boundary"
+  },
+  {
+    "file": "src/gateway/execution-platform-http.ts",
+    "line": 31,
+    "kind": "import",
+    "specifier": "../../extensions/execution-platform/runtime-api.js",
+    "resolvedPath": "extensions/execution-platform/runtime-api.js",
+    "reason": "imports bundled plugin file from src boundary"
+  },
+  {
+    "file": "src/gateway/execution-platform-http.ts",
+    "line": 32,
+    "kind": "import",
+    "specifier": "../../extensions/model-memory/src/mmv2/codex-app-server-json-executor.js",
+    "resolvedPath": "extensions/model-memory/src/mmv2/codex-app-server-json-executor.js",
+    "reason": "imports bundled plugin file from src boundary"
+  },
+  {
+    "file": "src/gateway/server-methods/chat.ts",
+    "line": 12,
+    "kind": "import",
+    "specifier": "../../../extensions/execution-platform/runtime-api.js",
+    "resolvedPath": "extensions/execution-platform/runtime-api.js",
+    "reason": "imports bundled plugin file from src boundary"
+  },
+  {
     "file": "src/gateway/server-methods/model-memory-proactivity.ts",
     "line": 9,
     "kind": "import",
     "specifier": "../../../extensions/model-memory/runtime-api.js",
     "resolvedPath": "extensions/model-memory/runtime-api.js",
+    "reason": "imports bundled plugin file from src boundary"
+  },
+  {
+    "file": "src/gateway/server-methods/shared-types.ts",
+    "line": 1,
+    "kind": "import",
+    "specifier": "../../../extensions/execution-platform/src/work-queue/work-queue-events.ts",
+    "resolvedPath": "extensions/execution-platform/src/work-queue/work-queue-events.ts",
+    "reason": "imports bundled plugin file from src boundary"
+  },
+  {
+    "file": "src/gateway/server-methods/work-queue-events.ts",
+    "line": 7,
+    "kind": "import",
+    "specifier": "../../../extensions/execution-platform/runtime-api.js",
+    "resolvedPath": "extensions/execution-platform/runtime-api.js",
+    "reason": "imports bundled plugin file from src boundary"
+  },
+  {
+    "file": "src/gateway/server-runtime-subscriptions.ts",
+    "line": 1,
+    "kind": "import",
+    "specifier": "../../extensions/execution-platform/src/work-queue/work-queue-events.ts",
+    "resolvedPath": "extensions/execution-platform/src/work-queue/work-queue-events.ts",
+    "reason": "imports bundled plugin file from src boundary"
+  },
+  {
+    "file": "src/gateway/work-queue-event-subscriptions.ts",
+    "line": 4,
+    "kind": "import",
+    "specifier": "../../extensions/execution-platform/src/work-queue/work-queue-events.ts",
+    "resolvedPath": "extensions/execution-platform/src/work-queue/work-queue-events.ts",
+    "reason": "imports bundled plugin file from src boundary"
+  },
+  {
+    "file": "src/gateway/work-queue-event-subscriptions.ts",
+    "line": 5,
+    "kind": "import",
+    "specifier": "../../extensions/execution-platform/src/work-queue/work-queue-events.ts",
+    "resolvedPath": "extensions/execution-platform/src/work-queue/work-queue-events.ts",
     "reason": "imports bundled plugin file from src boundary"
   },
   {
@@ -54,5 +246,13 @@
     "specifier": "../../extensions/model-memory/runtime-api.js",
     "resolvedPath": "extensions/model-memory/runtime-api.js",
     "reason": "imports bundled plugin file from src boundary"
+  },
+  {
+    "file": "src/infra/work-episode-outcome-pack.ts",
+    "line": 20,
+    "kind": "export",
+    "specifier": "../../extensions/model-memory/src/runtime/phase2-work-episode-outcome-pack.ts",
+    "resolvedPath": "extensions/model-memory/src/runtime/phase2-work-episode-outcome-pack.ts",
+    "reason": "re-exports bundled plugin file from src boundary"
   }
 ]

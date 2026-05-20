@@ -96,6 +96,19 @@ describe("RuntimeToolKernel", () => {
         rawPromptStored: false,
         rawResponseStored: false,
       });
+      const record = await traces.readInvocation(result.invocation.invocationId);
+      expect(record?.metadata).toMatchObject({
+        executionSpan: {
+          artifactKind: "runtime_execution_span",
+          spanKind: "runtime_tool",
+          status: "succeeded",
+          toolId: "diagnostic.bounded_echo",
+          outputRefs: ["artifact://runtime-tool/diagnostic-1"],
+          rawPromptStored: false,
+          rawResponseStored: false,
+          rawToolLogStored: false,
+        },
+      });
     });
   });
 
@@ -182,8 +195,39 @@ describe("RuntimeToolKernel", () => {
 
       expect(result.invocation.status).toBe("failed");
       expect(result.reasonCodes).toContain("runtime_tool_executor_threw");
+      expect(result.reasonCodes).toContain("runtime_tool_executor_error_code:Error");
       const record = await traces.readInvocation(result.invocation.invocationId);
       expect(record?.errorSummary).toContain("simulated executor failure");
+      expect(record?.metadata).toMatchObject({
+        errorCode: "Error",
+        errorSummary: "simulated executor failure with bounded diagnostic",
+        rawPromptStored: false,
+        rawResponseStored: false,
+        rawProviderLogStored: false,
+        rawToolLogStored: false,
+      });
+    });
+  });
+
+  it("records artifact metadata limit failures with a specific reason code", async () => {
+    await withKernel(async ({ kernel, registry }) => {
+      registry.register(diagnosticTool(), {
+        async execute() {
+          throw new Error("artifact metadata exceeds 65536 bytes");
+        },
+      });
+
+      const result = await kernel.invoke({
+        toolId: "diagnostic.bounded_echo",
+        idempotencyScope: "test",
+        idempotencyKey: "artifact-metadata-limit",
+        inputSummary: "fail with artifact metadata limit",
+        rawPromptStored: false,
+        rawResponseStored: false,
+      });
+
+      expect(result.invocation.status).toBe("failed");
+      expect(result.reasonCodes).toContain("runtime_tool_executor_artifact_metadata_limit");
     });
   });
 
@@ -462,11 +506,11 @@ describe("RuntimeToolKernel", () => {
         }),
         expect.objectContaining({
           surfaceId: "scheduler-decisions",
-          status: "queued_for_toolification",
+          status: "scheduler_node_execution_primary",
         }),
         expect.objectContaining({
           surfaceId: "work-queue-tool-event-readback",
-          status: "queued_for_toolification",
+          status: "production_primary",
         }),
       ]),
     );

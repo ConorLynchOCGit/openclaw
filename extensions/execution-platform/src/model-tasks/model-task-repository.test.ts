@@ -1,12 +1,17 @@
 import { describe, expect, it, vi } from "vitest";
 import { applyExecutionPlatformMigrations } from "../db/migrations.ts";
 import { createExecutionPlatformPgMemTestDatabase } from "../db/pg-test.ts";
+import type { SqlClient } from "../db/sql-client.ts";
 import { RuntimeJobRepository } from "../runtime-job-repository.ts";
+import { RuntimeToolKernel } from "../runtime-tool-call/runtime-tool-kernel.ts";
+import { RuntimeToolRegistry } from "../runtime-tool-call/runtime-tool-registry.ts";
+import { RuntimeToolTraceRepository } from "../runtime-tool-call/runtime-tool-trace-repository.ts";
 import {
   createDefaultModelTaskContractRegistry,
   INITIAL_MODEL_TASK_CONTRACTS,
 } from "./contracts.ts";
 import { classifyModelTaskFallback } from "./fallback.ts";
+import { registerModelCallRuntimeTool } from "./model-call-runtime-tool.ts";
 import { ModelTaskRepository } from "./model-task-repository.ts";
 import { ModelTaskContractRegistry } from "./registry.ts";
 import { modelTaskJobType } from "./types.ts";
@@ -16,6 +21,7 @@ async function withModelTaskRepository<T>(
     runtimeJobs: RuntimeJobRepository;
     modelTasks: ModelTaskRepository;
     registry: ModelTaskContractRegistry;
+    sql: SqlClient;
   }) => Promise<T>,
 ): Promise<T> {
   const database = await createExecutionPlatformPgMemTestDatabase();
@@ -27,7 +33,7 @@ async function withModelTaskRepository<T>(
     });
     const registry = createDefaultModelTaskContractRegistry();
     const modelTasks = new ModelTaskRepository(runtimeJobs, { registry });
-    return await work({ runtimeJobs, modelTasks, registry });
+    return await work({ runtimeJobs, modelTasks, registry, sql: database.sql });
   } finally {
     await database.close();
   }
@@ -50,13 +56,19 @@ function validOutput() {
 }
 
 describe("model task middleware", () => {
-  it("registers and lists the five initial structured JSON contracts", () => {
+  it("registers and lists the initial structured JSON contracts", () => {
     const registry = createDefaultModelTaskContractRegistry();
 
     expect(registry.list().map((contract) => contract.id)).toEqual([
+      "closeout.opportunity_seed_extraction",
+      "model_memory.capture_interpretation",
       "model_memory.structured_json",
       "outcome_pack_review.structured_json",
+      "proactivity.merge_adjudication",
+      "proactivity.opportunity_extraction",
       "proactivity.structured_json",
+      "retrieval.final_inclusion_review",
+      "retrieval.request_interpretation",
       "retrieval.structured_json",
       "skillifier.structured_json",
     ]);
@@ -279,16 +291,16 @@ describe("model task middleware", () => {
     });
   });
 
-  it("preserves explicit provider-call evidence supplied by an approved executor", async () => {
+  it("rejects provider-call claims without model.call runtime tool trace evidence", async () => {
     await withModelTaskRepository(async ({ modelTasks }) => {
       await modelTasks.enqueueModelTask({
-        jobId: "provider-backed-task",
+        jobId: "provider-claim-without-trace-task",
         contractId: "model_memory.structured_json",
         input: validInput(),
       });
       const claimed = await modelTasks.claimModelTask({ workerId: "model-worker" });
-      await modelTasks.completeModelTask({
-        jobId: "provider-backed-task",
+      const failed = await modelTasks.completeModelTask({
+        jobId: "provider-claim-without-trace-task",
         leaseToken: claimed!.leaseToken,
         output: validOutput(),
         routeEvidence: {
@@ -298,10 +310,94 @@ describe("model task middleware", () => {
         },
       });
 
-      const status = await modelTasks.readModelTaskStatus("provider-backed-task");
+      const status = await modelTasks.readModelTaskStatus("provider-claim-without-trace-task");
 
+      expect(failed).toMatchObject({
+        state: "failed",
+        error: {
+          code: "model_task_provider_call_missing_runtime_tool_trace",
+          fallback: {
+            executeFallback: false,
+          },
+        },
+      });
+      expect(status.evidence.events).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ eventType: "model_task.provider_evidence_missing" }),
+        ]),
+      );
+      expect(status.result).toBeNull();
+    });
+  });
+
+  it("invokes approved model calls through RuntimeToolKernel without storing raw prompts or responses", async () => {
+    await withModelTaskRepository(async ({ modelTasks, sql }) => {
+      await modelTasks.enqueueModelTask({
+        jobId: "runtime-tool-backed-task",
+        contractId: "model_memory.structured_json",
+        input: validInput(),
+      });
+      const claimed = await modelTasks.claimModelTask({ workerId: "model-worker" });
+      expect(claimed).toBeTruthy();
+
+      const traces = new RuntimeToolTraceRepository(sql);
+      const registry = new RuntimeToolRegistry();
+      registerModelCallRuntimeTool({
+        registry,
+        executor: {
+          async execute() {
+            return {
+              outputText: JSON.stringify(validOutput()),
+              resolvedModelId: "openai-codex/gpt-5.4",
+              usage: { promptTokens: 12, outputTokens: 34 },
+            };
+          },
+        },
+      });
+      const kernel = new RuntimeToolKernel({ registry, traces });
+
+      const modelCall = await modelTasks.invokeClaimedModelTaskRuntimeTool({
+        claimed: claimed!,
+        kernel,
+        modelId: "openai-codex/gpt-5.4",
+        providerRef: "codex_app_server_json_executor",
+        inputSummary: "Run a bounded structured JSON model task.",
+        volatileInput: {
+          systemPrompt: "Return JSON only.",
+          userPrompt: "Classify the bounded candidate.",
+          responseFormat: "json",
+        },
+      });
+      await modelTasks.completeModelTask({
+        jobId: "runtime-tool-backed-task",
+        leaseToken: claimed!.leaseToken,
+        output: modelCall.structuredOutput!,
+        routeEvidence: {
+          providerCallMade: true,
+          selectedModelRef: modelCall.modelRef ?? undefined,
+          reason: "model.call runtime tool completed model task output",
+          tokenUsage: { inputTokens: 12, outputTokens: 34, totalTokens: 46 },
+        },
+      });
+
+      const status = await modelTasks.readModelTaskStatus("runtime-tool-backed-task");
+      expect(modelCall.invocation.invocation.toolId).toBe("model.call");
       expect(status.result?.routeEvidence.providerCallMade).toBe(true);
-      expect(status.result?.routeEvidence.selectedModelRef).toBe("openai-codex/gpt-5.4");
+      expect(status.evidence.artifacts).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ artifactType: "model_task.runtime_tool_trace" }),
+        ]),
+      );
+      const invocation = await traces.readInvocation(modelCall.invocation.invocation.invocationId);
+      expect(invocation).toMatchObject({
+        toolId: "model.call",
+        status: "succeeded",
+        rawPromptStored: false,
+        rawResponseStored: false,
+        rawProviderLogStored: false,
+      });
+      expect(JSON.stringify(invocation?.metadata)).not.toContain("Return JSON only.");
+      expect(JSON.stringify(invocation?.metadata)).not.toContain("Classify the bounded candidate.");
     });
   });
 });

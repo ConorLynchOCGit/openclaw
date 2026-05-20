@@ -101,10 +101,10 @@ describe("LiveRouterModelPolicy", () => {
       ],
       providerSecretConfigured: true,
     });
-    const gpt54Decision = resolveLiveRouterModelPolicy({
+    const gpt55Decision = resolveLiveRouterModelPolicy({
       policy: {
         ...LIVE_ROUTER_MODEL_POLICY_FIXTURE,
-        policyId: "intent-front-door.advanced.gpt-5.4-codex",
+        policyId: "intent-front-door.advanced.gpt-5.5-codex",
         routerProviderProfile: {
           ...LIVE_ROUTER_MODEL_POLICY_FIXTURE.routerProviderProfile!,
           providerKind: "approved_model_routing_client",
@@ -116,14 +116,14 @@ describe("LiveRouterModelPolicy", () => {
           reasoningEffort: "medium",
           speedPreference: "latency",
         },
-        routerModelRef: "openai-codex/gpt-5.4",
+        routerModelRef: "openai-codex/gpt-5.5",
       },
       candidates: [
         {
           ...LIVE_ROUTER_MODEL_CANDIDATE_FIXTURE,
           provider: "openai-codex",
-          model: "openai-codex/gpt-5.4",
-          policyRef: "openai-codex/gpt-5.4",
+          model: "openai-codex/gpt-5.5",
+          policyRef: "openai-codex/gpt-5.5",
         },
       ],
       providerSecretConfigured: true,
@@ -132,11 +132,11 @@ describe("LiveRouterModelPolicy", () => {
     expect(v4ProDecision.allowed).toBe(true);
     expect(v4ProDecision.maxTokens).toBe(8_000);
     expect(v4ProDecision.reasoningEffort).toBe("medium");
-    expect(gpt54Decision.allowed).toBe(true);
-    expect(gpt54Decision.providerKind).toBe("approved_model_routing_client");
-    expect(gpt54Decision.routerModelRef).toBe("openai-codex/gpt-5.4");
-    expect(gpt54Decision.maxTokens).toBe(8_000);
-    expect(gpt54Decision.providerCallMade).toBe(false);
-    expect(gpt54Decision.modelPromotionPerformed).toBe(false);
+    expect(gpt55Decision.allowed).toBe(true);
+    expect(gpt55Decision.providerKind).toBe("approved_model_routing_client");
+    expect(gpt55Decision.routerModelRef).toBe("openai-codex/gpt-5.5");
+    expect(gpt55Decision.maxTokens).toBe(8_000);
+    expect(gpt55Decision.providerCallMade).toBe(false);
+    expect(gpt55Decision.modelPromotionPerformed).toBe(false);
   });
 });

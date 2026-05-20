@@ -234,6 +234,18 @@ export class RuntimeToolTraceRepository {
     rejectRawFlags(input.invocation as unknown as Record<string, unknown>);
     const invocationId = input.invocation.invocationId ?? `runtime-tool-${randomUUID()}`;
     const budget = input.invocation.budget ?? {};
+    const budgetSummary = {
+      budgetRef: budget.budgetRef ?? null,
+      timeoutMs: budget.timeoutMs ?? null,
+      maxInputTokens: budget.maxInputTokens ?? null,
+      maxOutputTokens: budget.maxOutputTokens ?? null,
+      maxCostUsd: budget.maxCostUsd ?? null,
+      ...(typeof budget.metadata === "object" &&
+      budget.metadata !== null &&
+      !Array.isArray(budget.metadata)
+        ? budget.metadata
+        : {}),
+    };
     const result = await this.sql.query<RuntimeToolInvocationRow>(
       `
         INSERT INTO execution_platform.runtime_tool_invocations (
@@ -271,7 +283,7 @@ export class RuntimeToolTraceRepository {
         input.invocation.inputHash ?? null,
         bounded(input.invocation.inputSummary, input.definition.storagePolicy.maxInputSummaryChars),
         budget.budgetRef ?? null,
-        encodeJson(budget.metadata ?? {}),
+        encodeJson(budgetSummary),
         encodeJson(input.invocation.metadata),
         this.now(),
       ],

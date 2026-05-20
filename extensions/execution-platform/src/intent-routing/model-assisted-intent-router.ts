@@ -35,7 +35,9 @@ export const LEGACY_SEMANTIC_INTENT_ROUTING_FALLBACK_ENV =
 export function isTemporaryLegacySemanticIntentRoutingFallbackEnabled(
   env: Record<string, string | undefined> = process.env,
 ): boolean {
-  return env[LEGACY_SEMANTIC_INTENT_ROUTING_FALLBACK_ENV] === "1";
+  const testRuntime =
+    env.NODE_ENV === "test" || env.VITEST === "true" || env.OPENCLAW_TEST_MINIMAL_GATEWAY === "1";
+  return testRuntime && env[LEGACY_SEMANTIC_INTENT_ROUTING_FALLBACK_ENV] === "1";
 }
 
 export class HeuristicIntentRouterProvider implements IntentRouterProvider {

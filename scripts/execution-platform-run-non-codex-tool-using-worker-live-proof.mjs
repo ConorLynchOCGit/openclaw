@@ -36,6 +36,43 @@ async function writeJson(name, value) {
   return { path: `.artifacts/execution-platform/${name}`, sha256: sha256(body) };
 }
 
+function safeArtifactSegment(value) {
+  return String(value ?? "unknown")
+    .replace(/[^a-z0-9._-]+/giu, "-")
+    .replace(/^-+|-+$/gu, "")
+    .slice(0, 80);
+}
+
+function summarizeWorkerPhaseEvent(event, extra = {}) {
+  return {
+    artifactKind: "non_codex_tool_using_worker_progress_event",
+    phase: event.phase,
+    runtimeJobId: event.runtimeJobId,
+    graphId: event.graphId,
+    nodeId: event.nodeId,
+    roleId: event.roleId,
+    workerId: event.workerId,
+    modelRef: event.modelRef,
+    providerPath: event.providerPath,
+    toolId: event.toolId,
+    toolInvocationRef: event.toolInvocationRef,
+    objectiveSummary: event.objectiveSummary,
+    targetRefs: event.targetRefs,
+    changedFileRefs: event.changedFileRefs,
+    validationRefs: event.validationRefs,
+    blockerSummary: event.blockerSummary,
+    nextAction: event.nextAction,
+    eli5Progress: event.eli5Progress,
+    reasonCodes: event.reasonCodes,
+    rawPromptStored: false,
+    rawResponseStored: false,
+    rawProviderLogStored: false,
+    rawToolLogStored: false,
+    secretsStored: false,
+    ...extra,
+  };
+}
+
 async function readTextIfExists(filePath) {
   try {
     return await readFile(filePath, "utf8");
@@ -74,69 +111,6 @@ async function loadDotenvFiles() {
       }
     }
   }
-}
-
-function boundedSnapshots(input) {
-  return input.fileSnapshots
-    .slice(0, 4)
-    .map((snapshot) =>
-      [
-        `--- ${snapshot.path} sha256:${snapshot.contentHash} truncated:${snapshot.truncated ? "true" : "false"} ---`,
-        snapshot.boundedContent,
-      ].join("\n"),
-    )
-    .join("\n\n");
-}
-
-function buildKimiPrompt(input) {
-  const hasExpandedContext =
-    input.expandedContextRefs.length > 0 ||
-    input.contextPackRefs.some((ref) => ref.startsWith("repo-read://"));
-  const failureSummary = input.previousFailureSummary
-    ? `Previous bounded failure summary: ${input.previousFailureSummary}`
-    : "";
-  return [
-    "You are the Kimi implementation lane for OpenClaw's Non-Codex Tool-Using File-Edit Worker.",
-    "Return exactly one JSON object. No markdown. No explanation outside JSON.",
-    "Use schemaVersion openclaw.kimi.patch-proposal.v1.",
-    "Storage flags must be false. Do not store raw prompts, raw responses, or raw provider logs.",
-    `Attempt: ${input.attempt}`,
-    `Expanded context refs: ${input.expandedContextRefs.join(", ") || "none"}`,
-    failureSummary,
-    "Bounded target file snapshots:",
-    boundedSnapshots(input),
-    !hasExpandedContext
-      ? [
-          "If the bounded snapshots are insufficient, return needs_review with one contextRequests entry before editing.",
-          `Request ${testFile} only if the worker tool results did not provide enough bounded test context.`,
-        ].join("\n")
-      : [
-          "Now apply the scoped two-step edit.",
-          `Now apply the scoped fresh-run edit for field ${proofTraceFieldName}.`,
-          `Step 1: in the readiness input type, add ${proofTraceFieldName}?: string[].`,
-          `Step 2: in the returned readiness object, add ${proofTraceFieldName}: input.${proofTraceFieldName} ?? [].`,
-          `Step 3: in the focused test, pass ${proofTraceFieldName} with two runtime-tool refs and assert the same array in the expected object.`,
-          "Include editSteps for production helper and test update.",
-          "Include evidenceClaims for commitment non_codex_tool_using_worker.",
-          "Prefer replace_text edits copied exactly from snapshots. Whole-file replacement is allowed for these small files if safer.",
-        ].join("\n"),
-    "Return shape:",
-    "{",
-    '  "schemaVersion": "openclaw.kimi.patch-proposal.v1",',
-    '  "status": "patch_proposed" | "needs_review",',
-    '  "contextRequests": [{"requestId":"context-1","requestedFileRefs":["..."],"reason":"...","commitmentIds":["non_codex_tool_using_worker"]}],',
-    '  "editSteps": [{"stepId":"step-1","objective":"...","targetFileRefs":["..."],"validationExpectation":"...","rollbackBoundary":"step","commitmentIdsAdvanced":["non_codex_tool_using_worker"]}],',
-    '  "fileEdits": [{"path":"...","operation":"replace_text","oldText":"...","newText":"...","rationale":"..."}],',
-    `  "validationCommandRefs": ["${validationCommandRef}"],`,
-    '  "limitations": [],',
-    '  "evidenceClaims": [{"commitmentId":"non_codex_tool_using_worker","evidenceRef":"runtime-work-graph://kimi/evidence/non-codex-tool-using-worker","claimSummary":"...","changedFileRefs":["..."],"validationRefs":["validation://pending"],"limitations":[],"confidence":"medium","rawPromptStored":false,"rawResponseStored":false}],',
-    '  "rawPromptStored": false,',
-    '  "rawResponseStored": false,',
-    '  "rawProviderLogStored": false',
-    "}",
-  ]
-    .filter(Boolean)
-    .join("\n");
 }
 
 function validationRunner() {
@@ -193,17 +167,6 @@ function validationRunner() {
       }
     },
   };
-}
-
-function buildToolSelectionPrompt(input) {
-  return [
-    input.taskSummary,
-    "For this proof, you must request exactly these tool calls before editing:",
-    `1. worker.repo.search with query "buildKimiLiveSourceEditReadiness".`,
-    `2. worker.repo.read_files for ${targetFile} and ${testFile}.`,
-    "3. worker.repo.inspect_tests.",
-    "Return JSON only with a toolCalls array. Do not include prose.",
-  ].join("\n");
 }
 
 async function main() {
@@ -317,51 +280,49 @@ async function main() {
       requestProfilesByModelId: {
         "moonshotai/kimi-k2.6": {
           responseFormatMode: "native",
-          reasoningMode: "omit",
+          reasoningMode: "none",
           maxTokens: 10_000,
+        },
+        "qwen/qwen3-coder-next": {
+          responseFormatMode: "prompt_only",
+          reasoningMode: "none",
+          maxTokens: 4_000,
         },
       },
     });
-    const modelClient = {
-      async proposeFileEdits(input) {
-        const started = Date.now();
-        const result = await openRouter.callRole({
-          roleId: "implementation_engineer",
-          modelId: input.modelRef,
-          modelCandidateId: "kimi-non-codex-tool-using-worker-proof",
-          prompt: buildKimiPrompt(input),
-          responseFormat: "json_object",
-          maxTokens: input.maxOutputTokens,
-          timeoutMs: input.timeoutMs,
-          maxAttempts: input.maxProviderAttempts,
-        });
-        const responseHash = result.responseHash ?? sha256(result.errorReasonCode ?? "no_response");
-        return {
-          modelRunRef: `openrouter://non-codex-tool-using-worker/${responseHash.slice(0, 16)}`,
-          responseText: result.responseText,
-          responseHash,
-          latencyMs: Date.now() - started,
-          rawPromptStored: false,
-          rawResponseStored: false,
-        };
-      },
-    };
-
     const liveValidationRunner = validationRunner();
-    const kimiAdapter = new ep.KimiFileImplementationAdapter({
-      modelClient,
-      validationRunner: liveValidationRunner,
-    });
     const workerPhaseEvents = [];
+    let workerPhaseEventIndex = 0;
     const adapter = new ep.ModelAgnosticFileEditWorkerAdapter({
       runtimeToolKernel,
-      kimiExecutor: new ep.KimiMicrotaskImplementationExecutor({
-        adapter: kimiAdapter,
-      }),
       toolUsingKimiWorkerLoop: new ep.NonCodexToolUsingWorkerLoop({
         runtimeToolKernel,
         async phaseSink(event) {
           workerPhaseEvents.push(event);
+          workerPhaseEventIndex += 1;
+          const progressEvent = summarizeWorkerPhaseEvent(event, {
+            runId,
+            eventIndex: workerPhaseEventIndex,
+          });
+          await writeJson("non-codex-tool-using-worker-live-state.json", progressEvent);
+          await writeJson(
+            `non-codex-tool-using-worker-state-${String(workerPhaseEventIndex).padStart(3, "0")}-${safeArtifactSegment(event.phase)}.json`,
+            progressEvent,
+          );
+          console.log(
+            JSON.stringify({
+              kind: "non_codex_worker_progress",
+              runId,
+              eventIndex: workerPhaseEventIndex,
+              phase: event.phase,
+              modelRef: event.modelRef,
+              toolId: event.toolId,
+              nextAction: event.nextAction,
+              blockerSummary: event.blockerSummary,
+              eli5Progress: event.eli5Progress,
+              reasonCodes: event.reasonCodes,
+            }),
+          );
           await runtimeJobs.recordEvent({
             jobId: job.jobId,
             eventType: "agent_team.scheduler_progress",
@@ -405,11 +366,16 @@ async function main() {
               roleId: "implementation_engineer",
               modelId: input.modelRef,
               modelCandidateId: "kimi-non-codex-tool-selection-proof",
-              prompt: buildToolSelectionPrompt(input),
+              prompt: input.taskSummary,
               responseFormat: "json_object",
-              maxTokens: Math.min(input.maxOutputTokens, 4_000),
-              timeoutMs: Math.min(input.timeoutMs, 180_000),
-              maxAttempts: 1,
+              requestProfileOverride: {
+                responseFormatMode: input.responseFormatMode ?? "prompt_only",
+                reasoningMode: input.reasoningMode ?? "none",
+                maxTokens: Math.min(input.maxOutputTokens, 8_000),
+              },
+              maxTokens: Math.min(input.maxOutputTokens, 8_000),
+              timeoutMs: Math.min(input.timeoutMs, 480_000),
+              maxAttempts: Math.max(1, Math.min(input.maxAttempts ?? 1, 2)),
             });
             const responseHash =
               result.responseHash ?? sha256(result.errorReasonCode ?? "no_response");
@@ -423,9 +389,7 @@ async function main() {
             };
           },
         },
-        patchModelClient: modelClient,
         validationRunner: liveValidationRunner,
-        patchAdapter: kimiAdapter,
       }),
     });
 
@@ -480,7 +444,17 @@ async function main() {
         providerPath: "openrouter",
         maxOutputTokens: 10_000,
         timeoutMs: 480_000,
+        maxTurns: 8,
+        maxToolCalls: 12,
         maxAttempts: 6,
+        modelPolicy: {
+          controller: { modelRef: "qwen/qwen3-coder-next" },
+          patch: { modelRef: "moonshotai/kimi-k2.6", reasoningMode: "none" },
+          validation_repair: { modelRef: "qwen/qwen3-coder-next" },
+          evidence: { modelRef: "qwen/qwen3-coder-next" },
+          context_decision: { modelRef: "qwen/qwen3-coder-next" },
+          escalation: { modelRef: "qwen/qwen3-coder-next" },
+        },
       },
     });
 

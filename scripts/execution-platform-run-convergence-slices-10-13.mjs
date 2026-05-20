@@ -142,12 +142,14 @@ async function runFixture() {
       workQueue,
       createWorkQueueFixture: true,
       runtimeJobId: "script-middleware-fixture-job",
+      proofOnly: true,
     });
     const dbOperation = await runDbOperationMiddlewarePilot({
       runtimeJobs,
       workQueue,
       createWorkQueueFixture: true,
       runtimeJobId: "db-operation-middleware-fixture-job",
+      proofOnly: true,
     });
     await writeJson("research-to-coding-handoff-fixture-proof.json", {
       artifactKind: "research_to_coding_handoff_fixture_proof",
@@ -267,11 +269,13 @@ async function runLiveRuntimeOnly() {
     const script = await runScriptMiddlewarePilot({
       runtimeJobs,
       runtimeJobId: `script-middleware-live-${suffix}`,
+      proofOnly: true,
     });
     const dbReadiness = await inspectLiveDbReadinessForDbOperationMiddleware();
     const dbOperation = await runDbOperationMiddlewarePilot({
       runtimeJobs,
       runtimeJobId: `db-operation-middleware-live-${suffix}`,
+      proofOnly: true,
       boundedOutput: {
         boundedResultSummary: "Live DB readiness inspected with bounded metadata only.",
         readiness: dbReadiness,

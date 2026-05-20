@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type { IncomingMessage } from "node:http";
 import { Readable } from "node:stream";
 import { afterEach, describe, expect, it } from "vitest";
@@ -9,6 +10,7 @@ import {
   type CanonicalRouterOutput,
   type StructuredModelIntentRouterProvider,
 } from "../../extensions/execution-platform/src/intent-front-door/index.ts";
+import { registerRouterFrontDoorRuntimeTools } from "../../extensions/execution-platform/src/intent-front-door/router-runtime-tools.ts";
 import { NativeExecutionRpcService } from "../../extensions/execution-platform/src/intent-routing/native-execution-rpc.ts";
 import { RuntimeJobRepository } from "../../extensions/execution-platform/src/runtime-job-repository.ts";
 import { RuntimeToolKernel } from "../../extensions/execution-platform/src/runtime-tool-call/runtime-tool-kernel.ts";
@@ -40,6 +42,10 @@ function jsonRequest(path: string, body: unknown): IncomingMessage {
   return req;
 }
 
+function sha256Text(value: string): string {
+  return createHash("sha256").update(value, "utf8").digest("hex");
+}
+
 function fixedFrontDoorProvider(
   output: CanonicalRouterOutput,
 ): StructuredModelIntentRouterProvider {
@@ -60,6 +66,7 @@ function createTestRuntimeToolKernel(
   sql: ConstructorParameters<typeof RuntimeToolTraceRepository>[0],
 ) {
   const registry = new RuntimeToolRegistry();
+  registerRouterFrontDoorRuntimeTools({ registry });
   registerSchedulerRuntimeTools({ registry, includeWorkerInvoke: true });
   return new RuntimeToolKernel({
     registry,
@@ -162,6 +169,27 @@ describe("execution platform gateway HTTP routes", () => {
     } as OpenClawConfig);
 
     expect(provider).not.toBeNull();
+  });
+
+  it("does not register the live router provider when advanced-router model policy is stale", () => {
+    const provider = createGatewayStructuredRouterProvider({
+      env: {
+        vars: {
+          OPENCLAW_INTENT_FRONT_DOOR_LIVE_ROUTER_ENABLED: "1",
+          OPENCLAW_TWO_LANE_ROUTER_OWNER_CANARY_ENABLED: "1",
+          OPENCLAW_NATIVE_EXECUTION_SUBMIT_FRONT_DOOR_ENABLED: "1",
+          OPENCLAW_INTENT_FRONT_DOOR_ROUTER_PROVIDER_PROFILE: "provider://fixture",
+          OPENCLAW_INTENT_FRONT_DOOR_ROUTER_MODEL_REF:
+            "model-route://intent-front-door/router/fixture",
+          OPENCLAW_INTENT_FRONT_DOOR_ROUTER_POLICY_REF: "router-policy://fixture",
+          OPENCLAW_INTENT_FRONT_DOOR_ADVANCED_ROUTER_MODEL_REF: "openai-codex/gpt-5.4",
+          OPENCLAW_INTENT_FRONT_DOOR_ADVANCED_ROUTER_REQUIRED_MODEL_REF: "openai-codex/gpt-5.5",
+          OPENROUTER_API_KEY: "fixture-key",
+        },
+      },
+    } as OpenClawConfig);
+
+    expect(provider).toBeNull();
   });
 
   it("does not register the live router provider until owner and native submit gates are enabled", () => {
@@ -268,6 +296,14 @@ describe("execution platform gateway HTTP routes", () => {
     const req = jsonRequest("/api/execution-platform/execution/submit", {
       prompt: "Have the coding team add a small regression test and close it out.",
       workItemId: "native-http-auth-context-work-item",
+      sourcePromptRef: {
+        refKind: "native_submit",
+        sessionKey: "agent:main:main",
+        sessionId: "agent:main:main",
+        runId: "native-http-auth-context-run",
+        sourceRoute: "ux",
+        rawPromptStored: false,
+      },
     });
     req.headers["x-openclaw-actor-id"] = "operator-from-http";
     req.headers["x-openclaw-session-key"] = "agent:main:main";
@@ -297,8 +333,77 @@ describe("execution platform gateway HTTP routes", () => {
     const job = await runtimeJobs.getJob(payload.runtimeJobId);
     expect(job?.payload).toMatchObject({
       operator: { actorId: "operator-from-http", sessionId: "agent:main:main" },
+      sourcePromptRef: {
+        refKind: "native_submit",
+        sessionKey: "agent:main:main",
+        sessionId: "agent:main:main",
+        runId: "native-http-auth-context-run",
+        sourceRoute: "ux",
+        rawPromptStored: false,
+      },
       rawPromptStored: false,
       rawResponseStored: false,
+    });
+  });
+
+  it("preserves exact native submit prompt bytes for source prompt replay", async () => {
+    const database = await createExecutionPlatformPgMemTestDatabase();
+    databases.push(database);
+    await applyExecutionPlatformMigrations(database.sql);
+    const runtimeJobs = new RuntimeJobRepository(database.sql, { claimStrategy: "basic" });
+    const runtimeWorkGraphs = new RuntimeWorkGraphRepository(database.sql);
+    const workQueueEvents = new WorkQueueEventStore(database.sql);
+    const workQueue = new WorkQueueRepository(database.sql, runtimeJobs, {
+      eventStore: workQueueEvents,
+    });
+    const runtimeToolKernel = createTestRuntimeToolKernel(database.sql);
+    const nativeExecutionRpc = new NativeExecutionRpcService({
+      runtimeJobs,
+      workQueue,
+      structuredRouterProvider: fixedFrontDoorProvider(codingWorkflowRoute()),
+    });
+    const prompt = "Implement Product/Spec Planning.\n\nPreserve this final newline.\n";
+    const response = createResponse();
+    const req = jsonRequest("/api/execution-platform/execution/submit", {
+      prompt,
+      workItemId: "native-http-preserve-prompt-work-item",
+      sourcePromptRef: {
+        refKind: "native_submit",
+        sessionKey: "agent:main:main",
+        sessionId: "agent:main:main",
+        runId: "native-http-preserve-prompt-run",
+        sourceRoute: "ux",
+        rawPromptStored: false,
+      },
+    });
+    req.headers["x-openclaw-actor-id"] = "operator-from-http";
+    req.headers["x-openclaw-session-key"] = "agent:main:main";
+    req.headers["x-openclaw-source-route"] = "ux";
+
+    await handleExecutionPlatformHttpRequest(req, response.res, {
+      config: {} as OpenClawConfig,
+      runtime: {
+        runtimeJobs,
+        runtimeWorkGraphs,
+        runtimeToolKernel,
+        workQueueEvents,
+        workQueue,
+        nativeExecutionRpc,
+      },
+      requestAuth: { authMethod: "token", trustDeclaredOperatorScopes: false },
+    });
+
+    expect(response.res.statusCode).toBe(200);
+    const payload = JSON.parse(response.getBody()) as { runtimeJobId: string };
+    const job = await runtimeJobs.getJob(payload.runtimeJobId);
+    const jobPayload =
+      job?.payload && typeof job.payload === "object" && !Array.isArray(job.payload)
+        ? job.payload
+        : {};
+    expect(jobPayload.sourcePromptRef).toMatchObject({
+      promptHash: sha256Text(prompt),
+      promptLength: prompt.length,
+      rawPromptStored: false,
     });
   });
 

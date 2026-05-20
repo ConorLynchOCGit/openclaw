@@ -73,4 +73,7 @@ Each project should keep its own:
   <Card title="Workflows" href="/projects/workflows" icon="git-branch">
     Durable workflow outlines, handoff contracts, and approval-queue schemas.
   </Card>
+  <Card title="Execution Platform" href="/projects/execution-platform" icon="route">
+    Runtime jobs, Work Queue, workflow graph execution, tool traces, and closeout gates.
+  </Card>
 </Columns>

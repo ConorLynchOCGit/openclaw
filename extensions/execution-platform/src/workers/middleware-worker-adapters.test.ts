@@ -1,12 +1,17 @@
 import { describe, expect, it } from "vitest";
 import { DbOperationRepository } from "../db-operations/db-operation-repository.ts";
+import { registerDbOperationExecuteRuntimeTool } from "../db-operations/db-operation-runtime-tool.ts";
 import { applyExecutionPlatformMigrations } from "../db/migrations.ts";
 import { createExecutionPlatformPgMemTestDatabase } from "../db/pg-test.ts";
 import { createDefaultModelTaskContractRegistry } from "../model-tasks/contracts.ts";
 import { ModelTaskRepository } from "../model-tasks/model-task-repository.ts";
 import { RuntimeJobRepository } from "../runtime-job-repository.ts";
+import { RuntimeToolKernel } from "../runtime-tool-call/runtime-tool-kernel.ts";
+import { RuntimeToolRegistry } from "../runtime-tool-call/runtime-tool-registry.ts";
+import { RuntimeToolTraceRepository } from "../runtime-tool-call/runtime-tool-trace-repository.ts";
 import { ScriptJobDefinitionRegistry } from "../script-jobs/registry.ts";
 import { ScriptJobRepository } from "../script-jobs/script-job-repository.ts";
+import { registerScriptExecuteRuntimeTool } from "../script-jobs/script-runtime-tool.ts";
 import { createValidationLaneEvidence } from "../script-jobs/validation-lanes.ts";
 import {
   DbOperationMiddlewareWorkerAdapter,
@@ -15,7 +20,12 @@ import {
 } from "./middleware-worker-adapters.ts";
 import { RuntimeWorkerSupervisor } from "./runtime-worker-supervisor.ts";
 
-async function withRuntime<T>(work: (runtimeJobs: RuntimeJobRepository) => Promise<T>) {
+async function withRuntime<T>(
+  work: (input: {
+    runtimeJobs: RuntimeJobRepository;
+    sql: ConstructorParameters<typeof RuntimeToolTraceRepository>[0];
+  }) => Promise<T>,
+) {
   const db = await createExecutionPlatformPgMemTestDatabase();
   try {
     await applyExecutionPlatformMigrations(db.sql);
@@ -23,15 +33,22 @@ async function withRuntime<T>(work: (runtimeJobs: RuntimeJobRepository) => Promi
       claimStrategy: "basic",
       now: () => new Date("2026-05-09T00:00:00.000Z"),
     });
-    return await work(runtimeJobs);
+    return await work({ runtimeJobs, sql: db.sql });
   } finally {
     await db.close();
   }
 }
 
+function scriptDbToolKernel(sql: ConstructorParameters<typeof RuntimeToolTraceRepository>[0]) {
+  const registry = new RuntimeToolRegistry();
+  registerScriptExecuteRuntimeTool({ registry, handlers: {} });
+  registerDbOperationExecuteRuntimeTool({ registry, handlers: {} });
+  return new RuntimeToolKernel({ registry, traces: new RuntimeToolTraceRepository(sql) });
+}
+
 describe("middleware worker adapters", () => {
-  it("lets RuntimeWorkerSupervisor claim and complete model-task middleware jobs", async () => {
-    await withRuntime(async (runtimeJobs) => {
+  it("does not let direct model-task middleware workers masquerade as live provider evidence", async () => {
+    await withRuntime(async ({ runtimeJobs }) => {
       const modelTasks = new ModelTaskRepository(runtimeJobs, {
         registry: createDefaultModelTaskContractRegistry(),
       });
@@ -66,21 +83,25 @@ describe("middleware worker adapters", () => {
       }).runOnce();
 
       expect(result).toMatchObject({
-        status: "completed",
+        status: "needs_review",
         adapterId: "worker.middleware.model-task",
         runtimeJobId: "model-task-supervisor-adoption",
+        reasonCodes: ["model_task_middleware_runtime_tool_trace_required"],
       });
       await expect(
         modelTasks.readModelTaskStatus("model-task-supervisor-adoption"),
       ).resolves.toMatchObject({
-        job: { state: "succeeded" },
-        result: { routeEvidence: { providerCallMade: true, selectedModelRef: "test/model" } },
+        job: {
+          state: "failed",
+          error: { code: "model_task_provider_call_missing_runtime_tool_trace" },
+        },
+        result: null,
       });
     });
   });
 
   it("lets RuntimeWorkerSupervisor claim and complete allowlisted script jobs", async () => {
-    await withRuntime(async (runtimeJobs) => {
+    await withRuntime(async ({ runtimeJobs, sql }) => {
       const registry = new ScriptJobDefinitionRegistry([
         {
           scriptId: "execution-platform.test.allowlisted",
@@ -105,6 +126,7 @@ describe("middleware worker adapters", () => {
           new ScriptMiddlewareWorkerAdapter({
             runtimeJobs,
             registry,
+            runtimeToolKernel: scriptDbToolKernel(sql),
             handlers: {
               "test.allowlisted": async () => ({
                 output: { boundedOutputSummary: "Allowlisted handler completed." },
@@ -133,12 +155,17 @@ describe("middleware worker adapters", () => {
       ).resolves.toMatchObject({
         job: { state: "succeeded" },
         result: { exitCode: 0 },
+        evidence: {
+          artifacts: expect.arrayContaining([
+            expect.objectContaining({ artifactType: "script_job.runtime_tool_trace" }),
+          ]),
+        },
       });
     });
   });
 
   it("rejects command-shaped script payloads before handler execution", async () => {
-    await withRuntime(async (runtimeJobs) => {
+    await withRuntime(async ({ runtimeJobs, sql }) => {
       const registry = new ScriptJobDefinitionRegistry([
         {
           scriptId: "execution-platform.test.reject-command",
@@ -164,6 +191,7 @@ describe("middleware worker adapters", () => {
           new ScriptMiddlewareWorkerAdapter({
             runtimeJobs,
             registry,
+            runtimeToolKernel: scriptDbToolKernel(sql),
             handlers: {
               "test.reject-command": async () => {
                 throw new Error("handler should not run");
@@ -184,7 +212,7 @@ describe("middleware worker adapters", () => {
   });
 
   it("lets RuntimeWorkerSupervisor claim and complete DB operation jobs", async () => {
-    await withRuntime(async (runtimeJobs) => {
+    await withRuntime(async ({ runtimeJobs, sql }) => {
       const dbOps = new DbOperationRepository(runtimeJobs);
       await dbOps.enqueueLongDbOperation({
         jobId: "db-operation-supervisor-adoption",
@@ -200,6 +228,7 @@ describe("middleware worker adapters", () => {
           new DbOperationMiddlewareWorkerAdapter({
             runtimeJobs,
             operationNames: ["execution_platform.test.readiness"],
+            runtimeToolKernel: scriptDbToolKernel(sql),
             dbBoundaryAccepted: true,
             handlers: {
               "execution_platform.test.readiness": async () => ({
@@ -220,12 +249,17 @@ describe("middleware worker adapters", () => {
       ).resolves.toMatchObject({
         job: { state: "succeeded" },
         result: { operationName: "execution_platform.test.readiness" },
+        evidence: {
+          artifacts: expect.arrayContaining([
+            expect.objectContaining({ artifactType: "db_operation.runtime_tool_trace" }),
+          ]),
+        },
       });
     });
   });
 
   it("blocks DB operation middleware when boundary is not accepted", async () => {
-    await withRuntime(async (runtimeJobs) => {
+    await withRuntime(async ({ runtimeJobs, sql }) => {
       const dbOps = new DbOperationRepository(runtimeJobs);
       await dbOps.enqueueLongDbOperation({
         jobId: "db-operation-boundary-rejected",
@@ -242,6 +276,7 @@ describe("middleware worker adapters", () => {
           new DbOperationMiddlewareWorkerAdapter({
             runtimeJobs,
             operationNames: ["execution_platform.test.blocked"],
+            runtimeToolKernel: scriptDbToolKernel(sql),
             dbBoundaryAccepted: false,
             handlers: {},
           }),

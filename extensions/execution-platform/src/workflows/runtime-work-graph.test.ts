@@ -58,6 +58,40 @@ describe("runtime work graph repository", () => {
     });
   });
 
+  it("records checkpoints idempotently without duplicate graph refs", async () => {
+    await withGraphRepository(async ({ graphs }) => {
+      const graph = await graphs.createGraph({
+        graphId: "graph-idempotent-checkpoint",
+        workflowId: "agent_team.coding",
+        orchestratorModelRef: "openai-codex/gpt-5.5",
+      });
+      await graphs.recordCheckpoint({
+        graphId: graph.graphId,
+        checkpointId: "boundary-replay-context-scout",
+        checkpointKind: "boundary_replay_context_scout",
+        stateSummary: "Initial context scout checkpoint.",
+        artifactRefs: ["runtime-job://job/context-scout/a"],
+      });
+      const second = await graphs.recordCheckpoint({
+        graphId: graph.graphId,
+        checkpointId: "boundary-replay-context-scout",
+        checkpointKind: "boundary_replay_context_scout",
+        stateSummary: "Updated context scout checkpoint.",
+        artifactRefs: ["runtime-job://job/context-scout/b"],
+      });
+      const snapshot = await graphs.readGraphSnapshot(graph.graphId);
+
+      expect(second.stateSummary).toBe("Updated context scout checkpoint.");
+      expect(snapshot?.checkpoints).toHaveLength(1);
+      expect(
+        snapshot?.graph.checkpointRefs.filter(
+          (ref) => ref === "runtime-work-graph://checkpoint/boundary-replay-context-scout",
+        ),
+      ).toHaveLength(1);
+      expect(snapshot?.checkpoints[0]?.artifactRefs).toEqual(["runtime-job://job/context-scout/b"]);
+    });
+  });
+
   it("records repeated role invocations and handoff edges", async () => {
     await withGraphRepository(async ({ graphs }) => {
       await graphs.createGraph({

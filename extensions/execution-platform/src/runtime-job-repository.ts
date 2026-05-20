@@ -666,6 +666,59 @@ export class RuntimeJobRepository {
     });
   }
 
+  async markJobNeedsReview(input: {
+    leaseToken: string;
+    error: JsonValue;
+    result?: JsonValue;
+  }): Promise<RuntimeJob | null> {
+    const now = this.now();
+    return this.sql.withTransaction(async (tx) => {
+      const row = await this.loadActiveLeaseJob(tx, input.leaseToken, now);
+      if (!row) {
+        return null;
+      }
+      const updated = await tx.query<RuntimeJobRow>(
+        `
+          UPDATE execution_platform.runtime_jobs
+          SET
+            state = 'failed',
+            error = $2::jsonb,
+            result = $3::jsonb,
+            available_at = $4::timestamptz,
+            completed_at = $4::timestamptz,
+            worker_id = NULL,
+            lease_id = NULL,
+            lease_expires_at = NULL,
+            deadline_at = NULL,
+            updated_at = $4::timestamptz
+          WHERE job_id = $1 AND state = 'running'
+          RETURNING *
+        `,
+        [
+          row.job_id,
+          encodeJson(input.error),
+          encodeJson(input.result ?? { status: "needs_review" }),
+          now,
+        ],
+      );
+      await this.releaseLeaseInTx(tx, input.leaseToken, now, "failed");
+      await this.recordEventInTx(tx, {
+        jobId: row.job_id,
+        eventType: "job.needs_review",
+        workerId: row.worker_id,
+        leaseId: row.lease_id,
+        data: {
+          attempt: row.attempts,
+          maxAttempts: row.max_attempts,
+          error: input.error,
+          retryScheduled: false,
+        },
+        eventTime: now,
+      });
+      return updated.rows[0] ? decodeJob(updated.rows[0]) : null;
+    });
+  }
+
   async resumePendingJobWithPayloadPatch(input: {
     jobId: string;
     payloadPatch: Record<string, JsonValue>;
@@ -925,6 +978,20 @@ export class RuntimeJobRepository {
     return result.rows.map(decodeEvent);
   }
 
+  async listRecentEvents(jobId: string, limit = 50): Promise<RuntimeJobEvent[]> {
+    const result = await this.sql.query<RuntimeJobEventRow>(
+      `
+        SELECT *
+        FROM execution_platform.runtime_job_events
+        WHERE job_id = $1
+        ORDER BY event_time DESC, event_id DESC
+        LIMIT $2
+      `,
+      [jobId, limit],
+    );
+    return result.rows.map(decodeEvent).toReversed();
+  }
+
   async attachArtifact(input: AttachRuntimeJobArtifactInput): Promise<RuntimeJobArtifact> {
     if (input.uri.length > 2048) {
       throw new Error("artifact uri exceeds 2048 characters");
@@ -938,7 +1005,17 @@ export class RuntimeJobRepository {
       }
     }
     const metadata = input.metadata ?? {};
-    assertJsonByteLength(metadata, this.maxArtifactMetadataBytes, "artifact metadata");
+    try {
+      assertJsonByteLength(metadata, this.maxArtifactMetadataBytes, "artifact metadata");
+    } catch (error) {
+      if (error instanceof Error) {
+        throw new Error(
+          `${error.message}; artifactType=${input.artifactType}; uri=${input.uri.slice(0, 240)}`,
+          { cause: error },
+        );
+      }
+      throw error;
+    }
     const now = this.now();
     const result = await this.sql.query<RuntimeJobArtifactRow>(
       `

@@ -903,6 +903,74 @@ describe("native execution rpc", () => {
     }
   });
 
+  it("repairs executor workflow when router confuses target subject with executor", async () => {
+    const db = await createExecutionPlatformPgMemTestDatabase();
+    try {
+      await applyExecutionPlatformMigrations(db.sql);
+      const runtimeJobs = new RuntimeJobRepository(db.sql, { claimStrategy: "basic" });
+      const wrongExecutor = createBaseCanonicalRouterOutput({
+        route: "workflow_execution",
+        responseMode: "create_runtime_job",
+        executeNow: true,
+        executorWorkflowId: "agent_team.product_spec_planning",
+        workflowId: "agent_team.product_spec_planning",
+        jobType: "executor.workflow",
+        confidence: 0.94,
+        objectiveSummary: "Implement a production workflow upgrade.",
+        requestedCapabilities: ["code_edit", "test", "docs_update", "review", "closeout"],
+        requestedActions: [
+          createCanonicalRouterAction("code_edit", "implement the target workflow", 0.94),
+          createCanonicalRouterAction("test", "validate the target workflow", 0.9),
+        ],
+        subjectWorkflowIds: ["agent_team.product_spec_planning"],
+        targetSubjectRefs: [
+          {
+            targetKind: "workflow",
+            targetRef: "workflow://agent_team.product_spec_planning",
+            confidence: 0.95,
+          },
+        ],
+        sideEffectClass: "code_edit",
+      });
+      const repairedExecutor = createBaseCanonicalRouterOutput({
+        ...wrongExecutor,
+        executorWorkflowId: "agent_team.coding",
+        workflowId: "agent_team.coding",
+        jobType: "executor.agent_team",
+        selectedExecutionReason:
+          "The requested capabilities require source edits, tests, docs, review, and closeout.",
+        targetSubjectReason:
+          "Product/Spec Planning is the workflow being upgraded, not the executor.",
+      });
+      const provider = sequenceFrontDoorProvider([wrongExecutor, repairedExecutor]);
+      const rpc = new NativeExecutionRpcService({
+        runtimeJobs,
+        structuredRouterProvider: provider,
+      });
+      const submit = await rpc.submit({
+        prompt: "Implement the Product/Spec Planning Production Upgrade.",
+        auth: {
+          actorId: "operator",
+          authenticated: true,
+          role: "operator",
+          sessionId: "session-1",
+        },
+      });
+
+      expect(submit.accepted).toBe(true);
+      expect(provider.requests).toHaveLength(2);
+      expect(submit.workflowId).toBe("agent_team.coding");
+      expect(submit.frontDoorCompiledRequest).toMatchObject({
+        executorWorkflowId: "agent_team.coding",
+        subjectWorkflowIds: ["agent_team.product_spec_planning"],
+      });
+      const artifacts = await runtimeJobs.listArtifacts(submit.runtimeJobId ?? "");
+      expect(JSON.stringify(artifacts)).toContain("workflow://agent_team.product_spec_planning");
+    } finally {
+      await db.close();
+    }
+  });
+
   it("submits natural language through intent router and rejects legacy agent-team dispatch without dynamic scheduler dependencies", async () => {
     const db = await createExecutionPlatformPgMemTestDatabase();
     try {
@@ -982,7 +1050,7 @@ describe("native execution rpc", () => {
     }
   });
 
-  it("submits web research through generic workflow dispatch and applies native controls", async () => {
+  it("submits web research but generic workflow runner cannot produce production success", async () => {
     const db = await createExecutionPlatformPgMemTestDatabase();
     try {
       await applyExecutionPlatformMigrations(db.sql);
@@ -1024,10 +1092,16 @@ describe("native execution rpc", () => {
         closeoutReporter: modelCloseoutReporterFixture(),
       });
       const run = await runner.runOnce();
-      expect(run.completed).toBe(true);
+      expect(run.completed).toBe(false);
+      expect(run.failed).toBe(true);
+      expect(run.status).toBe("blocked_migration_required");
       expect(run.workflowId).toBe("single_agent.web_research");
       const projection = await rpc.readWorkQueueProjection(workItem.workItemId);
       expect(JSON.stringify(projection)).toContain("single_agent.web_research");
+      const artifacts = await runtimeJobs.listArtifacts(submit.runtimeJobId);
+      expect(artifacts.map((artifact) => artifact.artifactType)).toContain(
+        "execution.generic_workflow_runner_retirement",
+      );
     } finally {
       await db.close();
     }

@@ -9,6 +9,10 @@ import type { ExecutionWorkflowContract } from "../workflows/workflow-contract.t
 import type { ActionSemanticsDecision } from "./action-semantics.ts";
 import type { IntentValidationDecision } from "./intent-validator.ts";
 import type { CanonicalRouterAction, CanonicalRouterOutput } from "./router-schema.ts";
+import {
+  assertRouterFrontDoorToolProtocolCanCompile,
+  type RouterFrontDoorToolProtocolResult,
+} from "./router-tool-protocol.ts";
 
 export const FRONT_DOOR_REQUEST_COMPILER_VERSION = "intent-front-door.request-compiler.v1";
 export const FRONT_DOOR_PROMPT_SUMMARY_MAX_CHARS = 600;
@@ -25,6 +29,11 @@ export type FrontDoorCompiledRuntimeJobRequest = {
   compilerVersion: typeof FRONT_DOOR_REQUEST_COMPILER_VERSION;
   requestId: string;
   workflowId: string;
+  executorWorkflowId: string;
+  subjectWorkflowIds: string[];
+  targetSubjectRefs: Array<{ targetKind: string; targetRef: string; confidence: number | null }>;
+  requestedCapabilities: string[];
+  constraints: Array<{ constraintKind: string; objectSummary: string; confidence: number }>;
   jobType: string;
   queueName: string;
   objectiveSummary: string;
@@ -37,6 +46,9 @@ export type FrontDoorCompiledRuntimeJobRequest = {
   approvalRefs: string[];
   permissionDecisionRef: string | null;
   permissionEvidence: FrontDoorPermissionEvidence | null;
+  routerToolProtocolRef: string | null;
+  routerToolInvocationRefs: string[];
+  missionLedgerHandoffRef: string | null;
   roleGraphRefs: string[];
   modelTransportPolicyRefs: string[];
   workQueueLink: { workItemId: string | null; runId: string | null };
@@ -109,6 +121,7 @@ export type FrontDoorRequestCompilerInput = {
   runId?: string | null;
   queueName?: string;
   idempotencyKey?: string;
+  routerToolProtocol?: RouterFrontDoorToolProtocolResult | null;
 };
 
 export function compileFrontDoorRequest(
@@ -126,6 +139,7 @@ export function compileFrontDoorRequest(
     : null;
   assertNoRawStorage(output);
   assertNoLifecycleMutation(input.validation);
+  assertRouterFrontDoorToolProtocolCanCompile(input.routerToolProtocol);
 
   if (
     output.route === "chat_response" ||
@@ -171,8 +185,10 @@ export function compileFrontDoorRequest(
   if (!input.workflow) {
     throw new Error("workflow contract is required for runtime compilation");
   }
+  const executorWorkflowId = output.executorWorkflowId ?? output.workflowId;
   if (
-    output.workflowId !== input.workflow.workflowId ||
+    executorWorkflowId !== input.workflow.workflowId ||
+    (output.workflowId && output.workflowId !== executorWorkflowId) ||
     output.jobType !== input.workflow.jobType
   ) {
     throw new Error("router output workflow does not match workflow contract");
@@ -190,6 +206,11 @@ export function compileFrontDoorRequest(
   });
   const permissionEvidence = permissionPlan ? createPermissionEvidence(permissionPlan) : null;
   assertPermissionPlanCanCompile(permissionPlan, input.approvalRefs ?? []);
+  const routerToolProtocolRef = input.routerToolProtocol
+    ? `router-front-door-tool-protocol://${input.requestId}`
+    : null;
+  const routerToolInvocationRefs = input.routerToolProtocol?.toolInvocationRefs ?? [];
+  const missionLedgerHandoffRef = input.routerToolProtocol?.missionLedgerHandoffRef ?? null;
   const roleGraphRefs = input.workflow.roles.map(
     (role) => `${input.workflow!.workflowId}:${role.roleId}`,
   );
@@ -199,6 +220,13 @@ export function compileFrontDoorRequest(
   ];
   const payload = {
     workflowId: input.workflow.workflowId,
+    executorWorkflowId: input.workflow.workflowId,
+    subjectWorkflowIds: output.subjectWorkflowIds as JsonValue,
+    targetSubjectRefs: output.targetSubjectRefs as unknown as JsonValue,
+    requestedCapabilities: output.requestedCapabilities as JsonValue,
+    constraints: output.constraints as unknown as JsonValue,
+    selectedExecutionReason: output.selectedExecutionReason,
+    targetSubjectReason: output.targetSubjectReason,
     workflowDisplayName: input.workflow.displayName,
     jobType: input.workflow.jobType,
     objective: output.objectiveSummary,
@@ -214,6 +242,10 @@ export function compileFrontDoorRequest(
       ? `${permissionPlan.permissionModelId}#${permissionPlan.decision}`
       : null,
     permissionEvidence: permissionEvidence as JsonValue,
+    routerToolProtocolRef,
+    routerToolInvocationRefs: routerToolInvocationRefs as JsonValue,
+    routerToolProtocol: (input.routerToolProtocol ?? null) as unknown as JsonValue,
+    missionLedgerHandoffRef,
     roleGraphRefs: roleGraphRefs as JsonValue,
     modelTransportPolicyRefs: modelTransportPolicyRefs as JsonValue,
     closeoutRequired: true,
@@ -233,6 +265,15 @@ export function compileFrontDoorRequest(
     compilerVersion: FRONT_DOOR_REQUEST_COMPILER_VERSION,
     requestId: input.requestId,
     workflowId: input.workflow.workflowId,
+    executorWorkflowId: input.workflow.workflowId,
+    subjectWorkflowIds: output.subjectWorkflowIds,
+    targetSubjectRefs: output.targetSubjectRefs.map((ref) => ({
+      targetKind: ref.targetKind,
+      targetRef: ref.targetRef,
+      confidence: ref.confidence ?? null,
+    })),
+    requestedCapabilities: output.requestedCapabilities,
+    constraints: output.constraints,
     jobType: input.workflow.jobType,
     queueName,
     objectiveSummary: output.objectiveSummary,
@@ -247,6 +288,9 @@ export function compileFrontDoorRequest(
       ? `${permissionPlan.permissionModelId}#${permissionPlan.decision}`
       : null,
     permissionEvidence,
+    routerToolProtocolRef,
+    routerToolInvocationRefs,
+    missionLedgerHandoffRef,
     roleGraphRefs,
     modelTransportPolicyRefs,
     workQueueLink: { workItemId: input.workItemId ?? null, runId: input.runId ?? null },

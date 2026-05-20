@@ -347,8 +347,18 @@ async function codexOrFixtureModelClient() {
   }
 }
 
-function kimiFixtureAdapter(epkg) {
-  return new epkg.KimiFileImplementationAdapter({
+async function kimiAdapterApi() {
+  return await tsImport(
+    path.join(
+      root,
+      "extensions/execution-platform/src/codex-bridge/kimi-file-implementation-adapter.ts",
+    ),
+    import.meta.url,
+  );
+}
+
+function kimiFixtureAdapter(kimiApi) {
+  return new kimiApi.KimiFileImplementationAdapter({
     modelClient: {
       async proposeFileEdits() {
         const unique = new Date().toISOString();
@@ -540,7 +550,7 @@ async function main() {
     ),
   }));
 
-  const kimi = kimiFixtureAdapter(epkg);
+  const kimi = kimiFixtureAdapter(await kimiAdapterApi());
   const kimiResult = await kimi.run({
     taskSummary:
       "Create bounded Kimi adapter proof output for Runtime Work Graph standard implementation lane.",

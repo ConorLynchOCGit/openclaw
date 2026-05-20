@@ -1,24 +1,38 @@
-import type { JsonValue } from "../runtime-job-repository.ts";
 import type { RuntimeToolKernel } from "../runtime-tool-call/runtime-tool-kernel.ts";
-import {
-  invokeSchedulerRuntimeTool,
-  type SchedulerRuntimeToolId,
-} from "../workflows/scheduler-runtime-tools.ts";
+import type { ImplementationTaskPacket } from "../workflows/mission-work-packets.ts";
+import type { EditTransactionRecord } from "./edit-transaction-engine.ts";
 import type {
   KimiContextExpansionRequest,
   KimiEditPlanStep,
   KimiEvidenceClaim,
 } from "./kimi-file-implementation-adapter.ts";
-import {
-  KimiMicrotaskImplementationExecutor,
-  type KimiMicrotaskImplementationExecutorInput,
-  type KimiMicrotaskImplementationExecutorResult,
-} from "./kimi-microtask-implementation-executor.ts";
+import type { ProviderCapabilitySlotGate } from "./model-agnostic-worker-qualification.ts";
 import type {
+  NonCodexWorkerModelSlotPolicy,
   NonCodexToolResult,
   NonCodexToolUsingWorkerLoop,
   NonCodexToolUsingWorkerLoopResult,
 } from "./non-codex-tool-using-worker-loop.ts";
+import type { WorkerPhaseRecord } from "./worker-controller-author-applicator.ts";
+
+export type FileEditWorkerContextExpansion = {
+  requestedFileRefs?: string[];
+  providedContextRefs?: string[];
+  deniedReasonCode?: string | null;
+};
+
+export type FileEditWorkerBudgetPolicy = {
+  modelRef?: string;
+  providerPath?: string;
+  maxOutputTokens?: number;
+  timeoutMs?: number;
+  maxAttempts?: number;
+  modelPolicy?: Partial<{
+    [slot in NonCodexWorkerModelSlotPolicy["slot"]]: Partial<
+      Omit<NonCodexWorkerModelSlotPolicy, "slot">
+    >;
+  }>;
+};
 
 export type FileEditWorkerKind =
   | "kimi_standard_implementation"
@@ -40,10 +54,23 @@ export type FileEditWorkerProfile = {
   workerKind: FileEditWorkerKind;
   modelRef: string;
   providerPath: string;
+  taskFamilies: string[];
+  idealTaskSize: "micro" | "small" | "medium" | "large";
   responseFormatMode: "prompt_only" | "native_json" | "policy_owned";
   preferredEditFormats: FileEditFormatMode[];
   maxTargetFiles: number;
+  maxRecommendedContextRefs: number;
+  maxRecommendedPatchBytes: number;
+  maxToolSelectionTurns: number;
   maxRepairAttempts: number;
+  reasoningMode: "none" | "exclude" | "low" | "medium" | "policy_owned";
+  modelPolicySlots?: NonCodexWorkerModelSlotPolicy[];
+  contextBudgetTokens: number;
+  outputBudgetTokens: number;
+  jsonReliabilityMode: "strict_schema" | "tolerant_extraction" | "policy_owned";
+  validationCapability: "focused_commands" | "policy_owned";
+  knownFailureModes: string[];
+  escalationRules: string[];
   wholeFileReplacement: "allowed_when_small" | "disallowed" | "policy_owned";
   escalationWorkerKind?: FileEditWorkerKind;
   qualificationCandidateIds: string[];
@@ -59,6 +86,7 @@ export type FileEditWorkerAdapterInput = {
   taskId: string;
   taskTitle: string;
   exactEditObjective: string;
+  implementationTaskPacket?: ImplementationTaskPacket;
   rationaleForCallingThisRole?: string;
   downstreamConsumer?: string;
   expectedOutput?: string;
@@ -71,16 +99,25 @@ export type FileEditWorkerAdapterInput = {
   repoRoot: string;
   allowedFileRefs: string[];
   targetFileRefs: string[];
+  deniedFileRefs?: string[];
   contextPackRefs: string[];
+  sourcePromptExcerptRefs?: string[];
+  contextSynthesisRefs?: string[];
+  priorNodeOutputRefs?: string[];
   validationCommandRefs: string[];
   acceptanceCriteria: string[];
   targetCommitmentIds?: string[];
-  contextExpansion?: KimiMicrotaskImplementationExecutorInput["contextExpansion"];
+  expectedEvidenceClaimKinds?: string[];
+  stopIfMissingOrEscalate?: string[];
+  budgetPolicyRefs?: string[];
+  contextExpansion?: FileEditWorkerContextExpansion;
   priorFailureRefs?: string[];
   previousFailureSummary?: string | null;
-  budgetPolicy?: Partial<KimiMicrotaskImplementationExecutorInput["budgetPolicy"]> & {
+  budgetPolicy?: FileEditWorkerBudgetPolicy & {
     maxFiles?: number;
     maxDiffBytes?: number;
+    maxTurns?: number;
+    maxToolCalls?: number;
     maxRepairAttempts?: number;
   };
 };
@@ -105,12 +142,21 @@ export type FileEditWorkerAdapterResult = {
   contextExpansionRequests: KimiContextExpansionRequest[];
   editPlanSteps: KimiEditPlanStep[];
   evidenceClaims: KimiEvidenceClaim[];
+  editTransactionRefs: string[];
+  editTransactions: EditTransactionRecord[];
+  workerPhaseRefs: string[];
+  workerPhases: WorkerPhaseRecord[];
   toolResults: NonCodexToolResult[];
   reasonCodes: string[];
-  sourceAdapterKind: "kimi_microtask_executor" | "non_codex_tool_using_worker_loop" | "policy_slot";
+  sourceAdapterKind:
+    | "non_codex_tool_worker_runtime"
+    | "kimi_microtask_executor_retired"
+    | "policy_slot";
   workerProfile: FileEditWorkerProfile;
+  modelPolicySlots: NonCodexWorkerModelSlotPolicy[];
+  providerCapabilitySlotGate: ProviderCapabilitySlotGate | null;
   runtimeToolInvocationRefs: string[];
-  sourceResult?: KimiMicrotaskImplementationExecutorResult | NonCodexToolUsingWorkerLoopResult;
+  sourceResult?: NonCodexToolUsingWorkerLoopResult;
   rawPromptStored: false;
   rawResponseStored: false;
   rawProviderLogStored: false;
@@ -130,15 +176,6 @@ function uniqueStrings(values: string[], max = 20): string[] {
   return [...new Set(values.filter((value) => value.trim().length > 0))].slice(0, max);
 }
 
-function statusFromKimi(result: KimiMicrotaskImplementationExecutorResult) {
-  if (result.status === "completed") {
-    return "applied_change" as const;
-  }
-  return result.escalatedToCodexBridgeRecommended
-    ? ("escalate" as const)
-    : ("needs_review" as const);
-}
-
 export function fileEditWorkerProfileFor(kind: FileEditWorkerKind): FileEditWorkerProfile {
   if (kind === "kimi_standard_implementation") {
     return {
@@ -146,6 +183,8 @@ export function fileEditWorkerProfileFor(kind: FileEditWorkerKind): FileEditWork
       workerKind: kind,
       modelRef: "moonshotai/kimi-k2.6",
       providerPath: "openrouter",
+      taskFamilies: ["scoped_source_edit", "scoped_test_edit", "small_docs_edit"],
+      idealTaskSize: "small",
       responseFormatMode: "prompt_only",
       preferredEditFormats: [
         "replace_text",
@@ -155,10 +194,94 @@ export function fileEditWorkerProfileFor(kind: FileEditWorkerKind): FileEditWork
         "strict_json",
       ],
       maxTargetFiles: 6,
+      maxRecommendedContextRefs: 18,
+      maxRecommendedPatchBytes: 24_000,
+      maxToolSelectionTurns: 5,
       maxRepairAttempts: 5,
+      reasoningMode: "none",
+      modelPolicySlots: [
+        {
+          slot: "controller",
+          modelRef: "qwen/qwen3-coder-next",
+          providerPath: "openrouter",
+          reasoningMode: "none",
+          responseFormatMode: "prompt_only",
+          maxOutputTokens: 4_000,
+          timeoutMs: 180_000,
+          maxAttempts: 1,
+        },
+        {
+          slot: "patch",
+          modelRef: "moonshotai/kimi-k2.6",
+          providerPath: "openrouter",
+          reasoningMode: "none",
+          responseFormatMode: "prompt_only",
+          maxOutputTokens: 10_000,
+          timeoutMs: 480_000,
+          maxAttempts: 1,
+        },
+        {
+          slot: "validation_repair",
+          modelRef: "qwen/qwen3-coder-next",
+          providerPath: "openrouter",
+          reasoningMode: "none",
+          responseFormatMode: "prompt_only",
+          maxOutputTokens: 4_000,
+          timeoutMs: 180_000,
+          maxAttempts: 1,
+        },
+        {
+          slot: "evidence",
+          modelRef: "qwen/qwen3-coder-next",
+          providerPath: "openrouter",
+          reasoningMode: "none",
+          responseFormatMode: "prompt_only",
+          maxOutputTokens: 4_000,
+          timeoutMs: 180_000,
+          maxAttempts: 1,
+        },
+        {
+          slot: "context_decision",
+          modelRef: "qwen/qwen3-coder-next",
+          providerPath: "openrouter",
+          reasoningMode: "none",
+          responseFormatMode: "prompt_only",
+          maxOutputTokens: 4_000,
+          timeoutMs: 180_000,
+          maxAttempts: 1,
+        },
+        {
+          slot: "escalation",
+          modelRef: "qwen/qwen3-coder-next",
+          providerPath: "openrouter",
+          reasoningMode: "none",
+          responseFormatMode: "prompt_only",
+          maxOutputTokens: 4_000,
+          timeoutMs: 180_000,
+          maxAttempts: 1,
+        },
+      ],
+      contextBudgetTokens: 24_000,
+      outputBudgetTokens: 10_000,
+      jsonReliabilityMode: "policy_owned",
+      validationCapability: "focused_commands",
+      knownFailureModes: [
+        "empty_response_when_reasoning_starves_output",
+        "malformed_single_tool_action",
+        "tool_action_without_scope",
+        "patch_conflict_or_noop",
+      ],
+      escalationRules: [
+        "request bounded context before editing when target snapshots are insufficient",
+        "repair once or within budget after validation failure",
+        "escalate to Codex after bounded repair or when task exceeds file/diff scope",
+      ],
       wholeFileReplacement: "allowed_when_small",
       escalationWorkerKind: "codex_complex_implementation",
-      qualificationCandidateIds: ["openrouter.moonshotai.kimi-k2.6"],
+      qualificationCandidateIds: [
+        "openrouter.qwen.qwen3-coder-next",
+        "openrouter.moonshotai.kimi-k2.6",
+      ],
     };
   }
   if (kind === "codex_complex_implementation") {
@@ -167,10 +290,24 @@ export function fileEditWorkerProfileFor(kind: FileEditWorkerKind): FileEditWork
       workerKind: kind,
       modelRef: "policy.codex.strongest-coding",
       providerPath: "codex_app_server",
+      taskFamilies: ["complex_source_edit", "integration", "large_refactor", "repair_escalation"],
+      idealTaskSize: "large",
       responseFormatMode: "policy_owned",
       preferredEditFormats: ["small_whole_file", "fenced_unified_diff", "replace_text"],
       maxTargetFiles: 20,
+      maxRecommendedContextRefs: 60,
+      maxRecommendedPatchBytes: 120_000,
+      maxToolSelectionTurns: 0,
       maxRepairAttempts: 5,
+      reasoningMode: "policy_owned",
+      contextBudgetTokens: 80_000,
+      outputBudgetTokens: 32_000,
+      jsonReliabilityMode: "policy_owned",
+      validationCapability: "policy_owned",
+      knownFailureModes: ["cost_monopoly_if_selected_before_decomposition"],
+      escalationRules: [
+        "use after decomposition/context/scoped worker attempts or explicit unsuitability proof",
+      ],
       wholeFileReplacement: "policy_owned",
       qualificationCandidateIds: ["codex.policy.strongest-coding"],
     };
@@ -180,10 +317,22 @@ export function fileEditWorkerProfileFor(kind: FileEditWorkerKind): FileEditWork
     workerKind: kind,
     modelRef: "policy-owned",
     providerPath: "policy-owned",
+    taskFamilies: [],
+    idealTaskSize: "small",
     responseFormatMode: "policy_owned",
     preferredEditFormats: ["replace_text", "fenced_unified_diff", "relaxed_json"],
     maxTargetFiles: 6,
+    maxRecommendedContextRefs: 0,
+    maxRecommendedPatchBytes: 0,
+    maxToolSelectionTurns: 0,
     maxRepairAttempts: 2,
+    reasoningMode: "policy_owned",
+    contextBudgetTokens: 0,
+    outputBudgetTokens: 0,
+    jsonReliabilityMode: "policy_owned",
+    validationCapability: "policy_owned",
+    knownFailureModes: ["executor_not_registered"],
+    escalationRules: ["register a concrete executor before production selection"],
     wholeFileReplacement: "policy_owned",
     escalationWorkerKind: "codex_complex_implementation",
     qualificationCandidateIds: [],
@@ -193,151 +342,10 @@ export function fileEditWorkerProfileFor(kind: FileEditWorkerKind): FileEditWork
 export class ModelAgnosticFileEditWorkerAdapter implements FileEditWorkerExecutor {
   constructor(
     private readonly options: {
-      kimiExecutor: Pick<KimiMicrotaskImplementationExecutor, "run">;
       toolUsingKimiWorkerLoop?: Pick<NonCodexToolUsingWorkerLoop, "run">;
       runtimeToolKernel?: RuntimeToolKernel | null;
     },
   ) {}
-
-  private async recordWorkerTool(input: {
-    adapterInput: FileEditWorkerAdapterInput;
-    toolId: SchedulerRuntimeToolId;
-    inputSummary: string;
-    metadata?: JsonValue;
-  }): Promise<{ refs: string[]; reasonCodes: string[] }> {
-    if (!this.options.runtimeToolKernel || !input.adapterInput.graphId) {
-      return { refs: [], reasonCodes: [] };
-    }
-    const invocation = await invokeSchedulerRuntimeTool({
-      kernel: this.options.runtimeToolKernel,
-      toolId: input.toolId,
-      runtimeJobId: input.adapterInput.runtimeJobId ?? null,
-      graphId: input.adapterInput.graphId,
-      nodeId: input.adapterInput.nodeId ?? null,
-      roleRef: input.adapterInput.roleId,
-      modelRef: fileEditWorkerProfileFor(input.adapterInput.workerKind).modelRef,
-      idempotencyKey: `${input.adapterInput.taskId}:${input.toolId}`,
-      inputRef: input.adapterInput.nodeId
-        ? `runtime-work-graph://node/${input.adapterInput.nodeId}`
-        : `file-edit-worker://task/${input.adapterInput.taskId}`,
-      inputSummary: input.inputSummary,
-      metadata: {
-        workerKind: input.adapterInput.workerKind,
-        workerId: input.adapterInput.workerId,
-        taskId: input.adapterInput.taskId,
-        targetFileRefs: input.adapterInput.targetFileRefs.slice(0, 20),
-        validationCommandRefs: input.adapterInput.validationCommandRefs.slice(0, 8),
-        ...((input.metadata && typeof input.metadata === "object" && !Array.isArray(input.metadata)
-          ? input.metadata
-          : {}) as Record<string, JsonValue>),
-        rawPromptStored: false,
-        rawResponseStored: false,
-        rawProviderLogStored: false,
-        rawToolLogStored: false,
-      } as JsonValue,
-    });
-    return {
-      refs: [invocation.invocationRef],
-      reasonCodes: [`scheduler_tool_invoked:${input.toolId}`, ...invocation.reasonCodes],
-    };
-  }
-
-  private async recordWorkerToolSequence(input: {
-    adapterInput: FileEditWorkerAdapterInput;
-    result: KimiMicrotaskImplementationExecutorResult;
-    workerProfile: FileEditWorkerProfile;
-  }): Promise<{ refs: string[]; reasonCodes: string[] }> {
-    const refs: string[] = [];
-    const reasonCodes: string[] = [];
-    const record = async (
-      toolId: SchedulerRuntimeToolId,
-      inputSummary: string,
-      metadata: JsonValue = null,
-    ) => {
-      const recorded = await this.recordWorkerTool({
-        adapterInput: input.adapterInput,
-        toolId,
-        inputSummary,
-        metadata,
-      });
-      refs.push(...recorded.refs);
-      reasonCodes.push(...recorded.reasonCodes);
-    };
-    await record("worker.file_context.inspect", "Inspect bounded file/context refs.", {
-      contextPackRefs: input.adapterInput.contextPackRefs.slice(0, 20),
-    });
-    for (const request of input.result.contextExpansionRequests) {
-      await record("worker.context.request_more", "Request bounded additional worker context.", {
-        requestId: request.requestId,
-        requestedFileRefs: request.requestedFileRefs.slice(0, 12),
-        reason: request.reason,
-        commitmentIds: request.commitmentIds.slice(0, 12),
-      });
-      await record(
-        request.status === "provided"
-          ? "worker.context.provide_bounded_snapshot"
-          : "worker.context.deny_request",
-        request.status === "provided"
-          ? "Provide bounded additional worker context."
-          : "Deny additional worker context request.",
-        {
-          requestId: request.requestId,
-          providedContextRefs: request.providedContextRefs.slice(0, 12),
-          deniedReasonCode: request.deniedReasonCode,
-        },
-      );
-    }
-    await record("worker.file_edit.plan", "Create bounded file-edit worker plan.", {
-      profileId: input.workerProfile.profileId,
-      preferredEditFormats: input.workerProfile.preferredEditFormats,
-      editPlanSteps: input.result.editPlanSteps.slice(0, 12),
-    });
-    await record("worker.file_edit.propose_patch", "Request structured patch/file-edit proposal.", {
-      modelRef: input.result.modelRef,
-      providerPath: input.result.providerPath,
-      modelRunRef: input.result.modelRunRef,
-      attemptCount: input.result.attemptDiagnostics.length,
-    });
-    if (input.result.attemptDiagnostics.length > 1) {
-      await record("worker.file_edit.repair", "Run bounded file-edit repair turn.", {
-        attemptCount: input.result.attemptDiagnostics.length,
-        priorFailureStage: input.result.attemptDiagnostics.at(-2)?.rejectionStage ?? null,
-      });
-    }
-    if (input.result.changedFileRefs.length > 0) {
-      await record("worker.file_edit.apply_patch", "Apply approved scoped patch/file edit.", {
-        changedFileRefs: input.result.changedFileRefs.slice(0, 20),
-        diffHash: input.result.diffHash,
-      });
-    }
-    if (input.result.validationRefs.length > 0) {
-      await record("worker.validation.run", "Run approved validation command refs.", {
-        validationRefs: input.result.validationRefs.slice(0, 20),
-      });
-    }
-    if (input.result.status !== "completed") {
-      await record("worker.validation.classify_failure", "Classify bounded worker-loop failure.", {
-        limitations: input.result.limitations.slice(0, 8),
-        reasonCodes: input.result.reasonCodes.slice(0, 12),
-      });
-      if (input.result.escalatedToCodexBridgeRecommended) {
-        await record("worker.file_edit.escalate", "Escalate bounded file-edit worker evidence.", {
-          escalationWorkerKind: input.workerProfile.escalationWorkerKind ?? null,
-          reasonCodes: input.result.reasonCodes.slice(0, 12),
-        });
-      }
-    }
-    await record("worker.evidence.handoff", "Hand off bounded file-edit worker evidence.", {
-      status: input.result.status,
-      changedFileRefs: input.result.changedFileRefs.slice(0, 20),
-      validationRefs: input.result.validationRefs.slice(0, 20),
-      artifactRefs: input.result.artifactRefs.slice(0, 20),
-      evidenceClaims: input.result.evidenceClaims.slice(0, 20),
-      rawPromptStored: false,
-      rawResponseStored: false,
-    });
-    return { refs: uniqueStrings(refs, 40), reasonCodes: uniqueStrings(reasonCodes, 40) };
-  }
 
   async run(input: FileEditWorkerAdapterInput): Promise<FileEditWorkerAdapterResult> {
     const workerProfile = fileEditWorkerProfileFor(input.workerKind);
@@ -352,6 +360,7 @@ export class ModelAgnosticFileEditWorkerAdapter implements FileEditWorkerExecuto
           roleId: input.roleId,
           taskId: input.taskId,
           taskTitle: input.taskTitle,
+          implementationTaskPacket: input.implementationTaskPacket,
           exactEditObjective: [
             input.exactEditObjective,
             input.previousFailureSummary
@@ -363,18 +372,42 @@ export class ModelAgnosticFileEditWorkerAdapter implements FileEditWorkerExecuto
           repoRoot: input.repoRoot,
           allowedFileRefs: input.allowedFileRefs,
           targetFileRefs: input.targetFileRefs,
+          deniedFileRefs: input.deniedFileRefs,
           contextPackRefs: input.contextPackRefs,
+          sourcePromptExcerptRefs: input.sourcePromptExcerptRefs,
+          contextSynthesisRefs: input.contextSynthesisRefs,
+          priorNodeOutputRefs: input.priorNodeOutputRefs,
           validationCommandRefs: input.validationCommandRefs,
           acceptanceCriteria: input.acceptanceCriteria,
           targetCommitmentIds: input.targetCommitmentIds,
+          expectedEvidenceClaimKinds: input.expectedEvidenceClaimKinds,
+          stopIfMissingOrEscalate: input.stopIfMissingOrEscalate,
+          budgetPolicyRefs: input.budgetPolicyRefs,
           budgetPolicy: {
             modelRef: input.budgetPolicy?.modelRef ?? "moonshotai/kimi-k2.6",
             providerPath: input.budgetPolicy?.providerPath ?? "openrouter",
             maxOutputTokens: input.budgetPolicy?.maxOutputTokens ?? 10_000,
             timeoutMs: input.budgetPolicy?.timeoutMs ?? 480_000,
-            maxTurns: 2,
-            maxToolCalls: 8,
-            maxAttempts: input.budgetPolicy?.maxAttempts ?? 5,
+            maxTurns: input.budgetPolicy?.maxTurns ?? workerProfile.maxToolSelectionTurns,
+            maxToolCalls: input.budgetPolicy?.maxToolCalls ?? 8,
+            maxAttempts: input.budgetPolicy?.maxAttempts ?? workerProfile.maxRepairAttempts,
+            phaseAuthorityMode: "strict",
+            modelPolicy:
+              input.budgetPolicy?.modelPolicy ??
+              Object.fromEntries(
+                (workerProfile.modelPolicySlots ?? []).map((slotPolicy) => [
+                  slotPolicy.slot,
+                  {
+                    modelRef: slotPolicy.modelRef,
+                    providerPath: slotPolicy.providerPath,
+                    reasoningMode: slotPolicy.reasoningMode,
+                    responseFormatMode: slotPolicy.responseFormatMode,
+                    maxOutputTokens: slotPolicy.maxOutputTokens,
+                    timeoutMs: slotPolicy.timeoutMs,
+                    maxAttempts: slotPolicy.maxAttempts,
+                  },
+                ]),
+              ),
           },
         });
         return {
@@ -402,6 +435,10 @@ export class ModelAgnosticFileEditWorkerAdapter implements FileEditWorkerExecuto
           contextExpansionRequests: result.contextExpansionRequests,
           editPlanSteps: result.editPlanSteps,
           evidenceClaims: result.evidenceClaims,
+          editTransactionRefs: result.editTransactionRefs,
+          editTransactions: result.editTransactions,
+          workerPhaseRefs: result.workerPhaseRefs,
+          workerPhases: result.workerPhases,
           toolResults: result.toolResults,
           reasonCodes: uniqueStrings(
             [
@@ -411,8 +448,10 @@ export class ModelAgnosticFileEditWorkerAdapter implements FileEditWorkerExecuto
             ],
             60,
           ),
-          sourceAdapterKind: "non_codex_tool_using_worker_loop",
+          sourceAdapterKind: "non_codex_tool_worker_runtime",
           workerProfile,
+          modelPolicySlots: result.modelPolicySlots,
+          providerCapabilitySlotGate: result.providerCapabilitySlotGate,
           runtimeToolInvocationRefs: result.toolResults.map(
             (toolResult) => toolResult.invocationRef,
           ),
@@ -424,37 +463,6 @@ export class ModelAgnosticFileEditWorkerAdapter implements FileEditWorkerExecuto
           workQueueLifecycleMutated: false,
         };
       }
-      const result = await this.options.kimiExecutor.run({
-        microtaskId: input.taskId,
-        microtaskTitle: input.taskTitle,
-        exactEditObjective: [
-          input.exactEditObjective,
-          input.previousFailureSummary
-            ? `Previous bounded failure summary: ${bounded(input.previousFailureSummary, 1_200)}`
-            : "",
-        ]
-          .filter(Boolean)
-          .join("\n"),
-        rationaleForCallingThisRole: input.rationaleForCallingThisRole,
-        downstreamConsumer: input.downstreamConsumer,
-        expectedOutput: input.expectedOutput,
-        contextScoutHandoff: input.contextScoutHandoff,
-        recommendedEditPoints: input.recommendedEditPoints,
-        repoRoot: input.repoRoot,
-        allowedFileRefs: input.allowedFileRefs,
-        targetFileRefs: input.targetFileRefs,
-        contextPackRefs: input.contextPackRefs,
-        validationCommandRefs: input.validationCommandRefs,
-        targetCommitmentIds: input.targetCommitmentIds,
-        contextExpansion: input.contextExpansion,
-        acceptanceCriteria: input.acceptanceCriteria,
-        budgetPolicy: input.budgetPolicy,
-      });
-      const workerToolTrace = await this.recordWorkerToolSequence({
-        adapterInput: input,
-        result,
-        workerProfile,
-      });
       return {
         artifactKind: "file_edit_worker_adapter_result",
         adapterSchemaVersion: "openclaw.file-edit-worker-adapter.v1",
@@ -462,34 +470,39 @@ export class ModelAgnosticFileEditWorkerAdapter implements FileEditWorkerExecuto
         workerId: input.workerId,
         roleId: input.roleId,
         taskId: input.taskId,
-        status: statusFromKimi(result),
-        modelRef: result.modelRef,
-        providerPath: result.providerPath,
-        modelRunRef: result.modelRunRef,
-        changedFileRefs: result.changedFileRefs,
-        diffHash: result.diffHash,
-        validationRefs: result.validationRefs,
-        artifactRefs: uniqueStrings([...result.artifactRefs, ...workerToolTrace.refs], 40),
+        status: "needs_review",
+        modelRef: workerProfile.modelRef,
+        providerPath: workerProfile.providerPath,
+        modelRunRef: null,
+        changedFileRefs: [],
+        diffHash: null,
+        validationRefs: [],
+        artifactRefs: [],
         priorFailureRefs: uniqueStrings(input.priorFailureRefs ?? [], 12),
-        limitations: result.limitations,
-        contextExpansionRequests: result.contextExpansionRequests,
-        editPlanSteps: result.editPlanSteps,
-        evidenceClaims: result.evidenceClaims,
+        limitations: [
+          "The legacy Kimi microtask JSON patch-proposal executor is retired from production. Configure NonCodexToolWorkerRuntime for this worker.",
+        ],
+        contextExpansionRequests: [],
+        editPlanSteps: [],
+        evidenceClaims: [],
+        editTransactionRefs: [],
+        editTransactions: [],
+        workerPhaseRefs: [],
+        workerPhases: [],
         toolResults: [],
         reasonCodes: uniqueStrings(
           [
             "file_edit_worker_generic_adapter_used",
-            "file_edit_worker_kimi_standard_implementation",
-            "file_edit_worker_prompt_only_profile",
-            ...result.reasonCodes,
-            ...workerToolTrace.reasonCodes,
+            "file_edit_worker_kimi_patch_json_path_retired",
+            "non_codex_tool_worker_runtime_required",
           ],
           40,
         ),
-        sourceAdapterKind: "kimi_microtask_executor",
+        sourceAdapterKind: "kimi_microtask_executor_retired",
         workerProfile,
-        runtimeToolInvocationRefs: workerToolTrace.refs,
-        sourceResult: result,
+        modelPolicySlots: workerProfile.modelPolicySlots ?? [],
+        providerCapabilitySlotGate: null,
+        runtimeToolInvocationRefs: [],
         rawPromptStored: false,
         rawResponseStored: false,
         rawProviderLogStored: false,
@@ -520,6 +533,10 @@ export class ModelAgnosticFileEditWorkerAdapter implements FileEditWorkerExecuto
       contextExpansionRequests: [],
       editPlanSteps: [],
       evidenceClaims: [],
+      editTransactionRefs: [],
+      editTransactions: [],
+      workerPhaseRefs: [],
+      workerPhases: [],
       toolResults: [],
       reasonCodes: [
         "file_edit_worker_generic_adapter_used",
@@ -527,6 +544,8 @@ export class ModelAgnosticFileEditWorkerAdapter implements FileEditWorkerExecuto
       ],
       sourceAdapterKind: "policy_slot",
       workerProfile,
+      modelPolicySlots: workerProfile.modelPolicySlots ?? [],
+      providerCapabilitySlotGate: null,
       runtimeToolInvocationRefs: [],
       rawPromptStored: false,
       rawResponseStored: false,

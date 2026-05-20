@@ -254,7 +254,13 @@ async function main() {
     resolveExecutionPlatformDbBoundaryContract,
     evaluateWorkQueueLiveLinkageGate,
     RuntimeJobRepository,
+    RuntimeToolKernel,
+    RuntimeToolRegistry,
+    RuntimeToolTraceRepository,
     WorkQueueRepository,
+    registerModelCallRuntimeTool,
+    registerScriptExecuteRuntimeTool,
+    registerDbOperationExecuteRuntimeTool,
     runModelTaskMiddlewareLiveCompletion,
     runScriptMiddlewareLiveCompletion,
     runDbOperationMiddlewareLiveCompletion,
@@ -373,11 +379,22 @@ async function main() {
       requestTimeoutMs: 180_000,
       reasoningEffort: "low",
     });
+    const runtimeToolRegistry = new RuntimeToolRegistry();
+    const runtimeToolTraces = new RuntimeToolTraceRepository(runtime.sqlClient);
+    registerModelCallRuntimeTool({ registry: runtimeToolRegistry, executor });
+    registerScriptExecuteRuntimeTool({ registry: runtimeToolRegistry, handlers: {} });
+    registerDbOperationExecuteRuntimeTool({ registry: runtimeToolRegistry, handlers: {} });
+    const runtimeToolKernel = new RuntimeToolKernel({
+      registry: runtimeToolRegistry,
+      traces: runtimeToolTraces,
+      defaultTimeoutMs: 240_000,
+    });
     const suffix = sha256(now().toISOString()).slice(0, 10);
     const modelResult = await runModelTaskMiddlewareLiveCompletion({
       runtimeJobs,
       workQueue,
       executor,
+      runtimeToolKernel,
       createWorkQueueFixture: true,
       runtimeJobId: `full-platform-model-task-${suffix}`,
       modelId: "openai-codex/gpt-5.4",
@@ -387,6 +404,7 @@ async function main() {
     });
     const scriptResult = await runScriptMiddlewareLiveCompletion({
       runtimeJobs,
+      runtimeToolKernel,
       workQueue,
       createWorkQueueFixture: true,
       runtimeJobId: `full-platform-script-${suffix}`,
@@ -394,6 +412,7 @@ async function main() {
     });
     const dbResult = await runDbOperationMiddlewareLiveCompletion({
       runtimeJobs,
+      runtimeToolKernel,
       workQueue,
       createWorkQueueFixture: true,
       runtimeJobId: `full-platform-db-${suffix}`,

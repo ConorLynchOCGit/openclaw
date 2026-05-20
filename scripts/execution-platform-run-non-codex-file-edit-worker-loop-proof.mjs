@@ -173,6 +173,20 @@ async function main() {
     path.join(root, "extensions/execution-platform/src/index.ts"),
     import.meta.url,
   );
+  const kimiApi = await tsImport(
+    path.join(
+      root,
+      "extensions/execution-platform/src/codex-bridge/kimi-microtask-implementation-executor.ts",
+    ),
+    import.meta.url,
+  );
+  const kimiAdapterApi = await tsImport(
+    path.join(
+      root,
+      "extensions/execution-platform/src/codex-bridge/kimi-file-implementation-adapter.ts",
+    ),
+    import.meta.url,
+  );
   const runtime = await ep.createExecutionPlatformDatabaseRuntime({ applyMigrations: true });
   try {
     const runtimeJobs = new ep.RuntimeJobRepository(runtime.sqlClient, { claimStrategy: "basic" });
@@ -292,8 +306,8 @@ async function main() {
     };
     const adapter = new ep.ModelAgnosticFileEditWorkerAdapter({
       runtimeToolKernel,
-      kimiExecutor: new ep.KimiMicrotaskImplementationExecutor({
-        adapter: new ep.KimiFileImplementationAdapter({
+      kimiExecutor: new kimiApi.KimiMicrotaskImplementationExecutor({
+        adapter: new kimiAdapterApi.KimiFileImplementationAdapter({
           modelClient,
           validationRunner: validationRunner(),
         }),

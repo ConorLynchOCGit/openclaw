@@ -294,6 +294,10 @@ export class ModelCloseoutCapsuleReporter {
       evidenceRefs: input.factualRefs.artifactRefs,
     });
     const taskSuccess = normalizeTaskSuccess(modelCloseout.successAssessment);
+    const boundedFactualRefs = {
+      ...input.factualRefs,
+      roles: input.factualRefs.roles.slice(-20),
+    };
     const capsule = parseCloseoutCapsule({
       artifactKind: "execution_platform_closeout_capsule",
       schemaVersion: CLOSEOUT_CAPSULE_SCHEMA_VERSION,
@@ -313,8 +317,8 @@ export class ModelCloseoutCapsuleReporter {
         agentModelFitAssessment: modelCloseout.workflowAgentModelFitAssessment,
         missingWork: taskSuccess === "satisfied" ? [] : modelCloseout.limitations.slice(0, 10),
         validationSummary:
-          input.factualRefs.validationRefs.length > 0
-            ? clampCloseoutText(input.factualRefs.validationRefs.slice(0, 6).join("; "), 1_000)
+          boundedFactualRefs.validationRefs.length > 0
+            ? clampCloseoutText(boundedFactualRefs.validationRefs.slice(0, 6).join("; "), 1_000)
             : "No validation refs were provided to the closeout reporter.",
         riskSummary:
           input.boundedResultEvidence.limitations.length > 0
@@ -326,12 +330,12 @@ export class ModelCloseoutCapsuleReporter {
         opportunitySeedIds: opportunitySeeds.map((seed) => seed.seedId),
       },
       roleCloseouts: buildRoleCloseoutsFromEvidence({
-        runtimeJobId: input.factualRefs.runtimeJobId,
+        runtimeJobId: boundedFactualRefs.runtimeJobId,
         roleEvidence: input.boundedRoleEvidence,
         modelCloseout,
       }),
       opportunitySeeds,
-      factualRefs: input.factualRefs,
+      factualRefs: boundedFactualRefs,
       safetyFlags: {
         rawPromptStored: false,
         rawResponseStored: false,
@@ -459,6 +463,7 @@ function buildRoleCloseoutsFromEvidence(input: {
   modelCloseout: ModelAuthoredCloseout;
 }): CloseoutCapsule["roleCloseouts"] {
   return input.roleEvidence
+    .slice(-20)
     .map((role) => {
       const evidenceRefs = [...role.artifactRefs, ...role.validationRefs].slice(0, 12);
       const limitationSummary =
@@ -716,7 +721,7 @@ export function createDegradedSystemCloseoutCapsule(
       riskSummary: "Do not treat deterministic fallback as clean success.",
       opportunitySeedIds: [opportunitySeed.seedId],
     },
-    roleCloseouts: input.factualRefs.roles.map((role) => ({
+    roleCloseouts: input.factualRefs.roles.slice(-20).map((role) => ({
       roleId: role.roleId,
       agentId: role.agentId,
       modelRef: role.modelRef,
@@ -736,7 +741,10 @@ export function createDegradedSystemCloseoutCapsule(
       rawToolLogStored: false,
     })),
     opportunitySeeds: [opportunitySeed],
-    factualRefs: input.factualRefs,
+    factualRefs: {
+      ...input.factualRefs,
+      roles: input.factualRefs.roles.slice(-20),
+    },
     safetyFlags: {
       rawPromptStored: false,
       rawResponseStored: false,

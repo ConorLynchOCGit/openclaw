@@ -295,6 +295,13 @@ const ProductSpecPlanningActionStorageBoundarySchema = z
   })
   .strict();
 
+const PRODUCT_SPEC_PLANNING_ACTION_AUTHORITY_BOUNDARIES = [
+  "proposal_only",
+  "read_only",
+  "requires_human_approval",
+  "requires_compiler_authority",
+] as const;
+
 export const ProductSpecPlanningActionGraphProposalSchema = z
   .object({
     artifactKind: z.literal("product_spec_planning_action_graph_proposal"),
@@ -314,12 +321,7 @@ export const ProductSpecPlanningActionGraphProposalSchema = z
             expectedEvidenceRefs: boundedStringList(20, 260),
             requiredContextRefs: boundedStringList(20, 260),
             validationExpectations: boundedStringList(12, 500),
-            authorityBoundary: z.enum([
-              "proposal_only",
-              "read_only",
-              "requires_human_approval",
-              "requires_compiler_authority",
-            ]),
+            authorityBoundary: z.enum(PRODUCT_SPEC_PLANNING_ACTION_AUTHORITY_BOUNDARIES),
             storageBoundary: ProductSpecPlanningActionStorageBoundarySchema,
             runtimeJobCompileReadiness: z.enum(["not_requested", "blocked", "compile_ready"]),
             blockersOrRisks: boundedStringList(12, 500),
@@ -408,6 +410,37 @@ function hasProductSpecPlanningRawStorageRef(ref: string): boolean {
   );
 }
 
+function productSpecPlanningActionGraphPreparseReasonCodes(value: unknown): string[] {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return [];
+  }
+  const record = value as Record<string, unknown>;
+  if (!Array.isArray(record.proposedChildActions)) {
+    return [];
+  }
+  const allowedAuthorityBoundaries = new Set<string>(
+    PRODUCT_SPEC_PLANNING_ACTION_AUTHORITY_BOUNDARIES,
+  );
+  return record.proposedChildActions.flatMap((action, index) => {
+    if (!action || typeof action !== "object" || Array.isArray(action)) {
+      return [];
+    }
+    const actionRecord = action as Record<string, unknown>;
+    const authorityBoundary = actionRecord.authorityBoundary;
+    if (
+      typeof authorityBoundary !== "string" ||
+      allowedAuthorityBoundaries.has(authorityBoundary)
+    ) {
+      return [];
+    }
+    const actionId =
+      typeof actionRecord.actionId === "string" && actionRecord.actionId.trim().length > 0
+        ? actionRecord.actionId.trim()
+        : `index_${index}`;
+    return [`product_spec_planning_action_graph_invalid_authority:${actionId}`];
+  });
+}
+
 export function validateProductSpecPlanningActionGraphProposal(value: unknown) {
   const parsed = ProductSpecPlanningActionGraphProposalSchema.safeParse(value);
   const invalidResult = (reasonCodes: string[]) => ({
@@ -423,6 +456,7 @@ export function validateProductSpecPlanningActionGraphProposal(value: unknown) {
   if (!parsed.success) {
     return invalidResult([
       "product_spec_planning_action_graph_proposal_schema_invalid",
+      ...productSpecPlanningActionGraphPreparseReasonCodes(value),
       ...parsed.error.issues.slice(0, 10).map((issue) => {
         const suffix = issue.path.join("_") || "root";
         return `product_spec_planning_action_graph_proposal_invalid_${suffix}`;
@@ -436,12 +470,13 @@ export function validateProductSpecPlanningActionGraphProposal(value: unknown) {
     reasonCodes.push("product_spec_planning_action_graph_duplicate_action_id");
   }
   for (const action of proposal.proposedChildActions) {
-    if (action.expectedEvidenceRefs.length === 0) {
+    const actionCompileReady = action.runtimeJobCompileReadiness === "compile_ready";
+    if (actionCompileReady && action.expectedEvidenceRefs.length === 0) {
       reasonCodes.push(
         `product_spec_planning_action_graph_evidence_refs_missing:${action.actionId}`,
       );
     }
-    if (action.requiredContextRefs.length === 0) {
+    if (actionCompileReady && action.requiredContextRefs.length === 0) {
       reasonCodes.push(
         `product_spec_planning_action_graph_context_refs_missing:${action.actionId}`,
       );

@@ -13,6 +13,10 @@ import type {
 } from "./codex-bridge/model-closeout-capsule-reporter.ts";
 import { DbOperationRepository } from "./db-operations/db-operation-repository.ts";
 import {
+  createDbOperationExecuteRuntimeToolExecutor,
+  type DbOperationExecuteHandler,
+} from "./db-operations/db-operation-runtime-tool.ts";
+import {
   type DbOperationKind,
   type DbOperationLane,
   type DbOperationTelemetry,
@@ -28,8 +32,13 @@ import { createDefaultModelTaskContractRegistry } from "./model-tasks/contracts.
 import { ModelTaskRepository } from "./model-tasks/model-task-repository.ts";
 import type { ModelTaskContractId } from "./model-tasks/types.ts";
 import type { JsonValue, RuntimeJobRepository } from "./runtime-job-repository.ts";
+import type { RuntimeToolKernel } from "./runtime-tool-call/runtime-tool-kernel.ts";
 import { ScriptJobDefinitionRegistry } from "./script-jobs/registry.ts";
 import { ScriptJobRepository } from "./script-jobs/script-job-repository.ts";
+import {
+  createScriptExecuteRuntimeToolExecutor,
+  type ScriptExecuteHandler,
+} from "./script-jobs/script-runtime-tool.ts";
 import { createValidationLaneEvidence } from "./script-jobs/validation-lanes.ts";
 import { buildWorkQueueExecutionReadModel } from "./work-queue/execution-read-model.ts";
 import type { WorkQueueRepository } from "./work-queue/work-queue-repository.ts";
@@ -50,8 +59,6 @@ const ModelTaskLiveOutputSchema = z
     limitations: z.array(z.string().trim().min(1).max(500)).max(8),
   })
   .strict();
-
-type ModelTaskLiveOutput = z.infer<typeof ModelTaskLiveOutputSchema>;
 
 const MODEL_TASK_LIVE_OUTPUT_JSON_SCHEMA = {
   type: "object",
@@ -159,6 +166,7 @@ export async function runModelTaskMiddlewareLiveCompletion(input: {
   runtimeJobs: RuntimeJobRepository;
   workQueue?: WorkQueueRepository | null;
   executor: RuntimeMiddlewareJsonModelExecutor;
+  runtimeToolKernel: RuntimeToolKernel;
   closeoutReporter?: RuntimeMiddlewareCloseoutReporter | null;
   runtimeJobId?: string;
   contractId?: ModelTaskContractId;
@@ -168,6 +176,12 @@ export async function runModelTaskMiddlewareLiveCompletion(input: {
   maxOutputTokens?: number;
   closeoutMode?: "inline_model_output" | "reporter" | "none";
 }): Promise<RuntimeMiddlewarePilotResult & { closeoutCapsuleRef: string | null }> {
+  if (
+    !input.runtimeToolKernel ||
+    typeof (input.runtimeToolKernel as { invoke?: unknown }).invoke !== "function"
+  ) {
+    throw new Error("model_task_runtime_tool_kernel_required");
+  }
   const contractId = input.contractId ?? "outcome_pack_review.structured_json";
   const boundedInputSummary =
     "Use the approved model-task middleware path to produce bounded live completion evidence.";
@@ -178,11 +192,15 @@ export async function runModelTaskMiddlewareLiveCompletion(input: {
       ? `model-task-live-completion-work-item-${sha256(runtimeJobId).slice(0, 12)}`
       : null;
   if (workItemId && input.workQueue) {
-    await input.workQueue.createWorkItem({
+    await input.workQueue.createGeneratedWorkItem({
       workItemId,
       itemType: "model_task_middleware",
       title: "Model-task middleware live completion",
       metadata: { workQueueLifecycleMutated: false, rawPromptStored: false },
+      generatedOriginKind: "middleware_fixture",
+      generatedTerminalPolicy: "debug_only",
+      createdBy: "runtime-middleware-live-completion",
+      reasonCodes: ["middleware_fixture_created_for_live_completion_proof"],
     });
   }
   const repository = new ModelTaskRepository(input.runtimeJobs, {
@@ -225,59 +243,82 @@ export async function runModelTaskMiddlewareLiveCompletion(input: {
     throw new Error("model_task_middleware_job_not_claimed");
   }
   const modelId = input.modelId ?? "openai-codex/gpt-5.4";
-  const startedAt = Date.now();
-  const response = await withLeaseRenewal(input.runtimeJobs, claimed.leaseToken, () =>
-    input.executor.execute({
-      contract: {
-        contractName: "execution_platform_model_task_middleware_live_completion",
-        contractVersion: MODEL_TASK_LIVE_OUTPUT_SCHEMA_VERSION,
-        modelId,
-      },
-      systemPrompt: [
-        "You are completing a bounded OpenClaw Execution Platform model-task middleware proof.",
-        "Return only strict JSON matching the supplied schema.",
-        "Do not include raw prompts, raw responses, transcripts, provider logs, command logs, secrets, or hidden reasoning.",
-        "Use only the supplied runtime job id and bounded task facts as current proof context.",
-        "Do not cite or rely on prior artifact files, previous runtime jobs, or workspace state.",
-        "Summarize the proof in human-readable language and cite only bounded evidence refs.",
-      ].join("\n"),
-      userPrompt: JSON.stringify(
-        {
-          boundedTaskSummary: boundedInputSummary,
-          runtimeJobId,
-          contractId,
-          currentProofOnly: true,
-          prohibitedInference:
-            "Do not mention any runtime job id other than the supplied runtimeJobId.",
-          expectedSafety: {
-            rawPromptStored: false,
-            rawResponseStored: false,
-            rawProviderLogStored: false,
-            authorityGranted: false,
-            runtimeJobsCreatedByModel: false,
-            workQueueLifecycleMutated: false,
-          },
+  const modelCall = await withLeaseRenewal(input.runtimeJobs, claimed.leaseToken, () =>
+    repository.invokeClaimedModelTaskRuntimeTool({
+      claimed,
+      kernel: input.runtimeToolKernel,
+      modelId,
+      providerRef: "codex_app_server_json_executor",
+      inputSummary:
+        "Run the approved model.call runtime tool for bounded model-task middleware completion.",
+      volatileInput: {
+        contract: {
+          contractName: "execution_platform_model_task_middleware_live_completion",
+          contractVersion: MODEL_TASK_LIVE_OUTPUT_SCHEMA_VERSION,
+          modelId,
         },
-        null,
-        2,
-      ),
-      responseFormat: "json",
-      responseOptions: {
-        maxOutputTokens: input.maxOutputTokens ?? 3_000,
-        reasoningEffort: input.reasoningEffort ?? "low",
-        verbosity: "low",
-        transport: {
-          type: "json_schema",
-          name: "execution_platform_model_task_middleware_live_completion",
-          strict: true,
-          schema: MODEL_TASK_LIVE_OUTPUT_JSON_SCHEMA,
+        systemPrompt: [
+          "You are completing a bounded OpenClaw Execution Platform model-task middleware proof.",
+          "Return only strict JSON matching the supplied schema.",
+          "Do not include raw prompts, raw responses, transcripts, provider logs, command logs, secrets, or hidden reasoning.",
+          "Use only the supplied runtime job id and bounded task facts as current proof context.",
+          "Do not cite or rely on prior artifact files, previous runtime jobs, or workspace state.",
+          "Summarize the proof in human-readable language and cite only bounded evidence refs.",
+        ].join("\n"),
+        userPrompt: JSON.stringify(
+          {
+            boundedTaskSummary: boundedInputSummary,
+            runtimeJobId,
+            contractId,
+            currentProofOnly: true,
+            prohibitedInference:
+              "Do not mention any runtime job id other than the supplied runtimeJobId.",
+            expectedSafety: {
+              rawPromptStored: false,
+              rawResponseStored: false,
+              rawProviderLogStored: false,
+              authorityGranted: false,
+              runtimeJobsCreatedByModel: false,
+              workQueueLifecycleMutated: false,
+            },
+          },
+          null,
+          2,
+        ),
+        responseFormat: "json",
+        responseOptions: {
+          maxOutputTokens: input.maxOutputTokens ?? 3_000,
+          reasoningEffort: input.reasoningEffort ?? "low",
+          verbosity: "low",
+          transport: {
+            type: "json_schema",
+            name: "execution_platform_model_task_middleware_live_completion",
+            strict: true,
+            schema: MODEL_TASK_LIVE_OUTPUT_JSON_SCHEMA,
+          },
         },
       },
     }),
   );
-  const latencyMs = Math.max(0, Date.now() - startedAt);
-  const output = parseModelTaskLiveOutput(response.outputText);
-  const modelRef = response.resolvedModelId ?? modelId;
+  if (modelCall.invocation.invocation.status !== "succeeded" || !modelCall.structuredOutput) {
+    await repository.failModelTask({
+      jobId: runtimeJobId,
+      leaseToken: claimed.leaseToken,
+      failureKind:
+        modelCall.invocation.invocation.status === "failed"
+          ? "provider_failure"
+          : "transport_error",
+      message: "model.call runtime tool did not return accepted structured output",
+      evidence: {
+        invocationRef: modelCall.invocation.invocationRef,
+        status: modelCall.invocation.invocation.status,
+        reasonCodes: modelCall.invocation.reasonCodes,
+      },
+    });
+    throw new Error("model_task_runtime_tool_model_call_not_accepted");
+  }
+  const output = ModelTaskLiveOutputSchema.parse(modelCall.structuredOutput);
+  const modelRef = modelCall.modelRef ?? modelId;
   const modelEvidenceRef = `runtime-job://${runtimeJobId}/model-task/live-provider-evidence`;
   await input.runtimeJobs.attachArtifact({
     jobId: runtimeJobId,
@@ -286,11 +327,11 @@ export async function runModelTaskMiddlewareLiveCompletion(input: {
     uri: modelEvidenceRef,
     contentType: "application/json",
     metadata: {
-      providerPath: "approved_json_model_executor",
+      providerPath: "model_call_runtime_tool",
       modelRef,
-      responseHash: sha256(response.outputText),
-      latencyMs,
-      usage: response.usage ?? null,
+      responseHash: modelCall.responseHash,
+      usage: modelCall.usage,
+      runtimeToolInvocationRef: modelCall.invocation.invocationRef,
       schemaValid: true,
       rawPromptStored: false,
       rawResponseStored: false,
@@ -312,7 +353,15 @@ export async function runModelTaskMiddlewareLiveCompletion(input: {
     routeEvidence: {
       providerCallMade: true,
       selectedModelRef: modelRef,
-      reason: "approved model executor completed strict JSON model-task middleware output",
+      reason: "model.call runtime tool completed strict JSON model-task middleware output",
+      tokenUsage: {
+        inputTokens: modelCall.usage?.promptTokens,
+        outputTokens: modelCall.usage?.outputTokens,
+        totalTokens:
+          modelCall.usage?.promptTokens !== undefined || modelCall.usage?.outputTokens !== undefined
+            ? (modelCall.usage?.promptTokens ?? 0) + (modelCall.usage?.outputTokens ?? 0)
+            : undefined,
+      },
     },
   });
   let closeoutCapsuleRef: string | null = null;
@@ -493,11 +542,15 @@ export async function runModelTaskMiddlewarePilot(input: {
       ? `model-task-live-use-work-item-${sha256(runtimeJobId).slice(0, 12)}`
       : null;
   if (workItemId && input.workQueue) {
-    await input.workQueue.createWorkItem({
+    await input.workQueue.createGeneratedWorkItem({
       workItemId,
       itemType: "model_task_middleware",
       title: "Model-task middleware pilot",
       metadata: { workQueueLifecycleMutated: false, rawPromptStored: false },
+      generatedOriginKind: "middleware_fixture",
+      generatedTerminalPolicy: "debug_only",
+      createdBy: "runtime-middleware-live-pilot",
+      reasonCodes: ["middleware_fixture_created_for_pilot_proof"],
     });
   }
   const repository = new ModelTaskRepository(input.runtimeJobs, {
@@ -569,7 +622,11 @@ export async function runScriptMiddlewarePilot(input: {
   workQueue?: WorkQueueRepository | null;
   runtimeJobId?: string;
   createWorkQueueFixture?: boolean;
+  proofOnly: true;
 }): Promise<RuntimeMiddlewarePilotResult> {
+  if (!input.proofOnly) {
+    throw new Error("script_middleware_pilot_retired_use_script_execute_runtime_tool");
+  }
   const scriptId = "execution-platform.safe-artifact-index";
   const runtimeJobId = input.runtimeJobId ?? `script-live-use-${sha256(scriptId).slice(0, 12)}`;
   const workItemId =
@@ -577,11 +634,15 @@ export async function runScriptMiddlewarePilot(input: {
       ? `script-live-use-work-item-${sha256(runtimeJobId).slice(0, 12)}`
       : null;
   if (workItemId && input.workQueue) {
-    await input.workQueue.createWorkItem({
+    await input.workQueue.createGeneratedWorkItem({
       workItemId,
       itemType: "script_middleware",
       title: "Script middleware pilot",
       metadata: { workQueueLifecycleMutated: false, rawLogsStored: false },
+      generatedOriginKind: "middleware_fixture",
+      generatedTerminalPolicy: "debug_only",
+      createdBy: "runtime-middleware-live-pilot",
+      reasonCodes: ["middleware_fixture_created_for_pilot_proof"],
     });
   }
   const registry = new ScriptJobDefinitionRegistry([
@@ -654,12 +715,19 @@ export async function runScriptMiddlewarePilot(input: {
 
 export async function runScriptMiddlewareLiveCompletion(input: {
   runtimeJobs: RuntimeJobRepository;
+  runtimeToolKernel: RuntimeToolKernel;
   workQueue?: WorkQueueRepository | null;
   runtimeJobId?: string;
   createWorkQueueFixture?: boolean;
   commandRunner?: AllowlistedCommandRunner;
   cwd?: string;
 }): Promise<RuntimeMiddlewarePilotResult> {
+  if (
+    !input.runtimeToolKernel ||
+    typeof (input.runtimeToolKernel as { invoke?: unknown }).invoke !== "function"
+  ) {
+    throw new Error("script_runtime_tool_kernel_required");
+  }
   const scriptId = "execution-platform.node-check.starter-workflow-soak";
   const runtimeJobId =
     input.runtimeJobId ?? `script-live-completion-${sha256(scriptId).slice(0, 12)}`;
@@ -668,11 +736,15 @@ export async function runScriptMiddlewareLiveCompletion(input: {
       ? `script-live-completion-work-item-${sha256(runtimeJobId).slice(0, 12)}`
       : null;
   if (workItemId && input.workQueue) {
-    await input.workQueue.createWorkItem({
+    await input.workQueue.createGeneratedWorkItem({
       workItemId,
       itemType: "script_middleware",
       title: "Script middleware live completion",
       metadata: { workQueueLifecycleMutated: false, rawLogsStored: false },
+      generatedOriginKind: "middleware_fixture",
+      generatedTerminalPolicy: "debug_only",
+      createdBy: "runtime-middleware-live-completion",
+      reasonCodes: ["middleware_fixture_created_for_live_completion_proof"],
     });
   }
   const registry = new ScriptJobDefinitionRegistry([
@@ -717,13 +789,59 @@ export async function runScriptMiddlewareLiveCompletion(input: {
   const cwd = input.cwd ?? process.cwd();
   const command = process.execPath;
   const args = ["--check", "scripts/execution-platform-run-starter-workflow-live-quality-soak.mjs"];
-  const commandResult = await (input.commandRunner ?? runAllowlistedNodeCheckCommand)({
-    command,
-    args,
-    cwd,
-    timeoutMs: 60_000,
-  });
   const commandEvidenceRef = `runtime-job://${runtimeJobId}/script-job/allowlisted-command-evidence`;
+  const scriptHandler: ScriptExecuteHandler = async () => {
+    const commandResult = await (input.commandRunner ?? runAllowlistedNodeCheckCommand)({
+      command,
+      args,
+      cwd,
+      timeoutMs: 60_000,
+    });
+    const evidence = createValidationLaneEvidence({
+      laneId: "proof",
+      outcome: commandResult.exitCode === 0 && !commandResult.timedOut ? "passed" : "failed",
+      startedAt: new Date().toISOString(),
+      completedAt: new Date().toISOString(),
+      durationMs: commandResult.durationMs,
+      summary:
+        commandResult.exitCode === 0 && !commandResult.timedOut
+          ? "Allowlisted node syntax check completed successfully."
+          : "Allowlisted node syntax check failed or timed out.",
+      artifactRefs: [commandEvidenceRef],
+    });
+    return {
+      output: {
+        boundedOutputSummary:
+          commandResult.exitCode === 0 && !commandResult.timedOut
+            ? "Script middleware completed allowlisted node syntax check with bounded evidence."
+            : "Script middleware recorded allowlisted command failure with bounded evidence.",
+        rawStdoutStored: false,
+        rawStderrStored: false,
+      },
+      exitCode: commandResult.exitCode,
+      validationEvidence: evidence,
+      commandRef:
+        "node --check scripts/execution-platform-run-starter-workflow-live-quality-soak.mjs",
+      durationMs: commandResult.durationMs,
+      stdoutBytes: commandResult.stdoutBytes,
+      stderrBytes: commandResult.stderrBytes,
+      stdoutSha256: commandResult.stdoutSha256,
+      stderrSha256: commandResult.stderrSha256,
+      timedOut: commandResult.timedOut,
+      artifactRefs: [commandEvidenceRef],
+    };
+  };
+  const scriptToolResult = await withLeaseRenewal(input.runtimeJobs, claimed.leaseToken, () =>
+    repository.invokeClaimedScriptJobRuntimeTool({
+      claimed,
+      kernel: input.runtimeToolKernel,
+      executor: createScriptExecuteRuntimeToolExecutor({
+        handlers: { "safe.node.check.script": scriptHandler },
+      }),
+      inputSummary: "Run allowlisted node syntax check through script.execute runtime tool.",
+    }),
+  );
+  const metadata = scriptToolResult;
   await input.runtimeJobs.attachArtifact({
     jobId: runtimeJobId,
     artifactType: "script_job.allowlisted_command_evidence",
@@ -734,43 +852,42 @@ export async function runScriptMiddlewareLiveCompletion(input: {
       scriptId,
       commandRef:
         "node --check scripts/execution-platform-run-starter-workflow-live-quality-soak.mjs",
-      exitCode: commandResult.exitCode,
-      durationMs: commandResult.durationMs,
-      stdoutBytes: commandResult.stdoutBytes,
-      stderrBytes: commandResult.stderrBytes,
-      stdoutSha256: commandResult.stdoutSha256,
-      stderrSha256: commandResult.stderrSha256,
-      timedOut: commandResult.timedOut,
+      exitCode: metadata.exitCode ?? null,
+      durationMs: null,
+      stdoutBytes: null,
+      stderrBytes: null,
+      stdoutSha256: null,
+      stderrSha256: null,
+      timedOut: false,
+      runtimeToolInvocationRef: scriptToolResult.invocation.invocationRef,
       rawStdoutStored: false,
       rawStderrStored: false,
       rawCommandLogStored: false,
     },
   });
-  const evidence = createValidationLaneEvidence({
-    laneId: "proof",
-    outcome: commandResult.exitCode === 0 && !commandResult.timedOut ? "passed" : "failed",
-    startedAt: new Date().toISOString(),
-    completedAt: new Date().toISOString(),
-    durationMs: commandResult.durationMs,
-    summary:
-      commandResult.exitCode === 0 && !commandResult.timedOut
-        ? "Allowlisted node syntax check completed successfully."
-        : "Allowlisted node syntax check failed or timed out.",
-    artifactRefs: [commandEvidenceRef],
-  });
+  if (
+    scriptToolResult.invocation.invocation.status !== "succeeded" ||
+    scriptToolResult.exitCode !== 0
+  ) {
+    await repository.failScriptJob({
+      jobId: runtimeJobId,
+      leaseToken: claimed.leaseToken,
+      code: "script_execute_runtime_tool_failed",
+      message: "script.execute runtime tool did not return accepted success evidence",
+      evidence: {
+        invocationRef: scriptToolResult.invocation.invocationRef,
+        status: scriptToolResult.invocation.invocation.status,
+      },
+    });
+    throw new Error("script_execute_runtime_tool_not_accepted");
+  }
   await repository.completeScriptJob({
     jobId: runtimeJobId,
     leaseToken: claimed.leaseToken,
-    output: {
-      boundedOutputSummary:
-        commandResult.exitCode === 0 && !commandResult.timedOut
-          ? "Script middleware completed allowlisted node syntax check with bounded evidence."
-          : "Script middleware recorded allowlisted command failure with bounded evidence.",
-      rawStdoutStored: false,
-      rawStderrStored: false,
-    },
-    exitCode: commandResult.exitCode,
-    validationEvidence: evidence,
+    output: scriptToolResult.output,
+    exitCode: scriptToolResult.exitCode,
+    validationEvidence: scriptToolResult.validationEvidence,
+    runtimeToolTraceRequired: true,
   });
   return await middlewareResult({
     runtimeJobs: input.runtimeJobs,
@@ -793,7 +910,11 @@ export async function runDbOperationMiddlewarePilot(input: {
   lane?: DbOperationLane;
   boundedOutput?: JsonValue;
   createWorkQueueFixture?: boolean;
+  proofOnly: true;
 }): Promise<RuntimeMiddlewarePilotResult> {
+  if (!input.proofOnly) {
+    throw new Error("db_operation_middleware_pilot_retired_use_db_operation_execute_runtime_tool");
+  }
   const operationName = input.operationName ?? "execution_platform.readiness.inspect";
   const runtimeJobId =
     input.runtimeJobId ?? `db-operation-live-use-${sha256(operationName).slice(0, 12)}`;
@@ -802,11 +923,15 @@ export async function runDbOperationMiddlewarePilot(input: {
       ? `db-operation-live-use-work-item-${sha256(runtimeJobId).slice(0, 12)}`
       : null;
   if (workItemId && input.workQueue) {
-    await input.workQueue.createWorkItem({
+    await input.workQueue.createGeneratedWorkItem({
       workItemId,
       itemType: "db_operation_middleware",
       title: "DB operation middleware pilot",
       metadata: { workQueueLifecycleMutated: false, rawRowsStored: false },
+      generatedOriginKind: "middleware_fixture",
+      generatedTerminalPolicy: "debug_only",
+      createdBy: "runtime-middleware-live-pilot",
+      reasonCodes: ["middleware_fixture_created_for_pilot_proof"],
     });
   }
   const repository = new DbOperationRepository(input.runtimeJobs);
@@ -875,11 +1000,18 @@ export async function runDbOperationMiddlewarePilot(input: {
 
 export async function runDbOperationMiddlewareLiveCompletion(input: {
   runtimeJobs: RuntimeJobRepository;
+  runtimeToolKernel: RuntimeToolKernel;
   workQueue?: WorkQueueRepository | null;
   runtimeJobId?: string;
   createWorkQueueFixture?: boolean;
   readiness: ExecutionPlatformDbReadinessReport;
 }): Promise<RuntimeMiddlewarePilotResult> {
+  if (
+    !input.runtimeToolKernel ||
+    typeof (input.runtimeToolKernel as { invoke?: unknown }).invoke !== "function"
+  ) {
+    throw new Error("db_operation_runtime_tool_kernel_required");
+  }
   const gate = evaluateWorkQueueLiveLinkageGate({ readiness: input.readiness });
   if (!gate.enabled) {
     return {
@@ -907,28 +1039,129 @@ export async function runDbOperationMiddlewareLiveCompletion(input: {
       workQueueLifecycleMutated: false,
     };
   }
-  return await runDbOperationMiddlewarePilot({
-    runtimeJobs: input.runtimeJobs,
-    workQueue: input.workQueue,
-    runtimeJobId:
-      input.runtimeJobId ??
-      `db-operation-live-completion-${sha256(input.readiness.boundary.boundaryKind).slice(0, 12)}`,
-    operationName: "execution_platform.runtime_db_boundary.live_readiness",
+  const operationName = "execution_platform.runtime_db_boundary.live_readiness";
+  const runtimeJobId =
+    input.runtimeJobId ??
+    `db-operation-live-completion-${sha256(input.readiness.boundary.boundaryKind).slice(0, 12)}`;
+  const workItemId =
+    input.createWorkQueueFixture && input.workQueue
+      ? `db-operation-live-use-work-item-${sha256(runtimeJobId).slice(0, 12)}`
+      : null;
+  if (workItemId && input.workQueue) {
+    await input.workQueue.createGeneratedWorkItem({
+      workItemId,
+      itemType: "db_operation_middleware",
+      title: "DB operation middleware live completion",
+      metadata: { workQueueLifecycleMutated: false, rawRowsStored: false },
+      generatedOriginKind: "middleware_fixture",
+      generatedTerminalPolicy: "debug_only",
+      createdBy: "runtime-middleware-live-completion",
+      reasonCodes: ["middleware_fixture_created_for_live_completion_proof"],
+    });
+  }
+  const repository = new DbOperationRepository(input.runtimeJobs);
+  await repository.enqueueLongDbOperation({
+    jobId: runtimeJobId,
+    operationName,
     operationKind: "read",
     lane: "background",
-    createWorkQueueFixture: input.createWorkQueueFixture,
-    boundedOutput: {
-      boundedResultSummary: "DB middleware completed approved runtime DB boundary readiness proof.",
-      boundaryKind: input.readiness.boundary.boundaryKind,
-      readinessState: input.readiness.readinessState,
-      workQueueLiveLinkageMayAttach: input.readiness.workQueueLiveLinkageMayAttach,
-      reasonCodes: input.readiness.reasonCodes.slice(0, 20),
-      missingTables: input.readiness.missingTables,
-      missingMigrationRefs: input.readiness.missingMigrationRefs,
-      rawRowsStored: false,
-      rawDbRowsStored: false,
-      rawLogsStored: false,
-    },
+    queueName: "db-operation",
+    workItemId,
+    idempotencyKey: `${operationName}:${runtimeJobId}:live-completion`,
+    params: { boundedInputSummary: "Inspect approved runtime DB readiness summary only." },
+    estimatedDurationMs: 100,
+    maxAttempts: 1,
+  });
+  if (workItemId && input.workQueue) {
+    await input.workQueue.createWorkRun({
+      workItemId,
+      executorKind: "runtime_job",
+      runtimeJobId,
+      metadata: { runKind: "db_operation_middleware", workQueueLifecycleMutationAllowed: false },
+    });
+  }
+  const claimed = await repository.claimLongDbOperation({
+    workerId: "db-operation-live-completion-worker",
+    queueName: "db-operation",
+    operationNames: [operationName],
+  });
+  if (!claimed) {
+    throw new Error("db_operation_middleware_job_not_claimed");
+  }
+  const dbHandler: DbOperationExecuteHandler = () => {
+    const startedAt = new Date().toISOString();
+    const completedAt = new Date().toISOString();
+    return {
+      output: {
+        boundedResultSummary:
+          "DB middleware completed approved runtime DB boundary readiness proof.",
+        boundaryKind: input.readiness.boundary.boundaryKind,
+        readinessState: input.readiness.readinessState,
+        workQueueLiveLinkageMayAttach: input.readiness.workQueueLiveLinkageMayAttach,
+        reasonCodes: input.readiness.reasonCodes.slice(0, 20),
+        missingTables: input.readiness.missingTables,
+        missingMigrationRefs: input.readiness.missingMigrationRefs,
+        rawRowsStored: false,
+        rawDbRowsStored: false,
+        rawLogsStored: false,
+      },
+      telemetry: {
+        telemetryId: `telemetry-${runtimeJobId}`,
+        operationName,
+        operationKind: claimed.operation.operationKind,
+        lane: claimed.operation.lane,
+        decision: claimed.operation.classification.decision,
+        outcome: "succeeded",
+        timeoutBudgetMs: claimed.operation.classification.timeoutBudgetMs,
+        durationMs: 1,
+        startedAt,
+        completedAt,
+        classification: claimed.operation.classification,
+        jobId: runtimeJobId,
+      },
+      resultSummary: "DB middleware completed approved runtime DB boundary readiness proof.",
+      rowCount: 0,
+    };
+  };
+  const dbToolResult = await withLeaseRenewal(input.runtimeJobs, claimed.leaseToken, () =>
+    repository.invokeClaimedDbOperationRuntimeTool({
+      claimed,
+      kernel: input.runtimeToolKernel,
+      executor: createDbOperationExecuteRuntimeToolExecutor({
+        handlers: { [operationName]: dbHandler },
+      }),
+      inputSummary: "Run approved DB readiness inspection through db_operation.execute.",
+    }),
+  );
+  if (dbToolResult.invocation.invocation.status !== "succeeded" || !dbToolResult.telemetry) {
+    await repository.failLongDbOperation({
+      jobId: runtimeJobId,
+      leaseToken: claimed.leaseToken,
+      code: "db_operation_execute_runtime_tool_failed",
+      message: "db_operation.execute runtime tool did not return accepted success evidence",
+      evidence: {
+        invocationRef: dbToolResult.invocation.invocationRef,
+        status: dbToolResult.invocation.invocation.status,
+      },
+    });
+    throw new Error("db_operation_execute_runtime_tool_not_accepted");
+  }
+  await repository.completeLongDbOperation({
+    jobId: runtimeJobId,
+    leaseToken: claimed.leaseToken,
+    output: dbToolResult.output,
+    telemetry: dbToolResult.telemetry,
+    runtimeToolTraceRequired: true,
+  });
+  return await middlewareResult({
+    runtimeJobs: input.runtimeJobs,
+    workQueue: input.workQueue,
+    workItemId,
+    runtimeJobId,
+    artifactKind: "db_operation_middleware_pilot_result",
+    middlewareKind: "db_operation",
+    boundedInputSummary: "DB operation middleware live boundary check.",
+    boundedOutputSummary: "DB middleware completed approved runtime DB boundary readiness proof.",
   });
 }
 
@@ -1006,18 +1239,6 @@ async function middlewareResult(input: {
 
 function sha256(value: string): string {
   return createHash("sha256").update(value).digest("hex");
-}
-
-function parseModelTaskLiveOutput(outputText: string): ModelTaskLiveOutput {
-  const trimmed = outputText.trim();
-  const jsonText = trimmed.startsWith("```")
-    ? trimmed
-        .replace(/^```(?:json)?\s*/i, "")
-        .replace(/\s*```$/i, "")
-        .trim()
-    : trimmed;
-  const parsed = JSON.parse(jsonText) as unknown;
-  return ModelTaskLiveOutputSchema.parse(parsed);
 }
 
 function clampText(value: string, maxLength: number): string {

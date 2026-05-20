@@ -1516,7 +1516,7 @@ export class OpenClawApp extends LitElement {
   }
 
   private getWorkQueueObjects(): WorkQueueObject[] {
-    if (this.dbWorkQueueSourceReady || this.tab === "workQueue") {
+    if (this.dbWorkQueueSourceReady || this.dbWorkQueueItems.length > 0) {
       return buildDbWorkQueueObjects({
         items: this.dbWorkQueueItems,
         details: this.dbWorkQueueDetails,

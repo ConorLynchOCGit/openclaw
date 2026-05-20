@@ -13,8 +13,13 @@ describe("model-agnostic tool worker loop contract", () => {
     expect(modelAgnosticWorkerSpecializationFor("kimi_implementation")).toMatchObject({
       runnableState: "production",
       workerRef: "worker.kimi.file-implementation",
-      qualificationProfileIds: ["openrouter.moonshotai.kimi-k2.6"],
+      qualificationProfileIds: expect.arrayContaining([
+        "openrouter.qwen.qwen3-coder-next",
+        "openrouter.moonshotai.kimi-k2.6",
+      ]),
       toolPermissionIds: expect.arrayContaining([
+        "coding.inspect_edit_validate",
+        "coding.apply_small_patch_with_evidence",
         "worker.repo.search",
         "worker.edit.apply_patch",
         "worker.validation.run",
@@ -49,8 +54,11 @@ describe("model-agnostic tool worker loop contract", () => {
       providerPath: "openrouter",
       objectiveSummary: "  Add a small helper.  ".repeat(100),
       targetRefs: ["src/a.ts", "src/a.ts"],
-      toolId: "worker.repo.read_files",
+      toolId: "coding.inspect_edit_validate",
       toolInvocationRef: "runtime-tool://read-1",
+      compoundToolId: "coding.inspect_edit_validate",
+      compoundSubEventCount: 4,
+      compoundSubEventPhases: ["inspect", "apply_patch", "validate", "validate"],
       commitmentIdsAdvanced: ["commitment-1"],
       eli5Progress: "The worker read the files it needs before editing.",
       reasonCodes: ["worker_repo_read_files_completed"],
@@ -61,6 +69,9 @@ describe("model-agnostic tool worker loop contract", () => {
     expect(event).toMatchObject({
       artifactKind: "model_agnostic_worker_phase_event",
       phase: "worker.tool.completed",
+      compoundToolId: "coding.inspect_edit_validate",
+      compoundSubEventCount: 4,
+      compoundSubEventPhases: ["inspect", "apply_patch", "validate"],
       rawPromptStored: false,
       rawResponseStored: false,
       rawProviderLogStored: false,

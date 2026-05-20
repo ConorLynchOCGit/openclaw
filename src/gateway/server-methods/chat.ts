@@ -5,13 +5,11 @@ import { resolveSendableOutboundReplyParts } from "openclaw/plugin-sdk/reply-pay
 import {
   buildExecutionPlatformFeatureFlagRegistry,
   evaluateExecutionPlatformFlag,
-  ModelCloseoutCapsuleReporter,
   parseCloseoutCapsule,
+  ProductionWorkflowExecutionFactory,
   projectCloseoutCapsuleOpportunitySeedsToWorkQueue,
   runProtocolPreGate,
-  WorkflowQueuedRunner,
 } from "../../../extensions/execution-platform/runtime-api.js";
-import { CodexAppServerJsonExecutor } from "../../../extensions/model-memory/src/mmv2/codex-app-server-json-executor.js";
 import { resolveSessionAgentId } from "../../agents/agent-scope.js";
 import { resolveThinkingDefault } from "../../agents/model-selection.js";
 import { rewriteTranscriptEntriesInSessionFile } from "../../agents/pi-embedded-runner/transcript-rewrite.js";
@@ -24,6 +22,7 @@ import { extractCanvasFromText } from "../../chat/canvas-render.js";
 import { resolveSessionFilePath } from "../../config/sessions.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import { jsonUtf8Bytes } from "../../infra/json-utf8-bytes.js";
+import { clearOwnerTurnActivity, markOwnerTurnActive } from "../../infra/owner-turn-activity.js";
 import { getAgentScopedMediaLocalRoots } from "../../media/local-roots.js";
 import { isAudioFileName } from "../../media/mime.js";
 import type { PromptImageOrderEntry } from "../../media/prompt-image-order.js";
@@ -1637,6 +1636,7 @@ function abortChatRunsForSessionKeyWithPartials(params: {
       stopReason: params.stopReason,
     });
     if (res.aborted) {
+      clearOwnerTurnActivity({ runId, sessionKey: params.sessionKey });
       runIds.push(runId);
     }
   }
@@ -2469,33 +2469,26 @@ async function tryRunExecutionWorkflowChatTurn(params: {
     return { handled: true, runtimeJobId: null, teamRunId: null };
   }
 
-  const job = await runtime.runtimeJobs.getJob(submit.runtimeJobId);
-  const runOnce =
-    job?.jobType === "executor.agent_team"
-      ? await runAgentTeamChatJobThroughWorkerSupervisor({
-          runtimeJobs: runtime.runtimeJobs,
-          runtimeWorkGraphs: runtime.runtimeWorkGraphs,
-          runtimeToolKernel: runtime.runtimeToolKernel,
-          workQueue: runtime.workQueue,
-          runtimeJobId: submit.runtimeJobId,
-          workerId: `chat:${params.sessionKey}`,
-        })
-      : await new WorkflowQueuedRunner({
-          runtimeJobs: runtime.runtimeJobs,
-          workerId: `chat:${params.sessionKey}`,
-          queueName: "agent-team",
-          runtimeJobId: submit.runtimeJobId,
-          closeoutReporter: new ModelCloseoutCapsuleReporter({
-            executor: new CodexAppServerJsonExecutor({
-              cwd: process.cwd(),
-              requestTimeoutMs: 300_000,
-              reasoningEffort: "medium",
-            }),
-            modelId: "openai-codex/gpt-5.4",
-            reasoningEffort: "medium",
-            maxOutputTokens: 12_000,
-          }),
-        }).runOnce();
+  const runOnce = await new ProductionWorkflowExecutionFactory({
+    runtimeJobs: runtime.runtimeJobs,
+    runtimeWorkGraphs: runtime.runtimeWorkGraphs,
+    runtimeToolKernel: runtime.runtimeToolKernel,
+    workQueue: runtime.workQueue,
+    agentTeamRuntimeRunOnce: (input) =>
+      runGatewayAgentTeamRuntimeJobOnce({
+        runtimeJobs: runtime.runtimeJobs,
+        runtimeWorkGraphs: runtime.runtimeWorkGraphs,
+        runtimeToolKernel: runtime.runtimeToolKernel,
+        workQueue: runtime.workQueue,
+        runtimeJobId: input.runtimeJobId,
+        workerId: input.workerId,
+        queueName: input.queueName ?? "agent-team",
+      }),
+  }).runOnce({
+    runtimeJobId: submit.runtimeJobId,
+    workerId: `chat:${params.sessionKey}`,
+    queueName: "agent-team",
+  });
   const closeout = await runtime.nativeExecutionRpc.readCloseout(submit.runtimeJobId);
   const closeoutRecord =
     closeout && typeof closeout === "object" && !Array.isArray(closeout)
@@ -2682,6 +2675,7 @@ export const chatHandlers: GatewayRequestHandlers = {
       sessionKey: string;
       runId?: string;
     };
+    const { canonicalKey: sessionKey } = loadSessionEntry(rawSessionKey);
 
     const ops = createChatAbortOps(context);
     const requester = resolveChatAbortRequester(client);
@@ -2690,7 +2684,7 @@ export const chatHandlers: GatewayRequestHandlers = {
       const res = abortChatRunsForSessionKeyWithPartials({
         context,
         ops,
-        sessionKey: rawSessionKey,
+        sessionKey,
         abortOrigin: "rpc",
         stopReason: "rpc",
         requester,
@@ -2708,7 +2702,7 @@ export const chatHandlers: GatewayRequestHandlers = {
       respond(true, { ok: true, aborted: false, runIds: [] });
       return;
     }
-    if (active.sessionKey !== rawSessionKey) {
+    if (active.sessionKey !== sessionKey) {
       respond(
         false,
         undefined,
@@ -2724,13 +2718,16 @@ export const chatHandlers: GatewayRequestHandlers = {
     const partialText = context.chatRunBuffers.get(runId);
     const res = abortChatRunById(ops, {
       runId,
-      sessionKey: rawSessionKey,
+      sessionKey,
       stopReason: "rpc",
     });
+    if (res.aborted) {
+      clearOwnerTurnActivity({ runId, sessionKey });
+    }
     if (res.aborted && partialText && partialText.trim()) {
       persistAbortedPartials({
         context,
-        sessionKey: rawSessionKey,
+        sessionKey,
         snapshots: [
           {
             runId,
@@ -2931,10 +2928,17 @@ export const chatHandlers: GatewayRequestHandlers = {
 
     try {
       const abortController = new AbortController();
+      markOwnerTurnActive({
+        sessionKey,
+        runId: clientRunId,
+        source: "chat_send",
+        reason: "chat_send_accepted",
+        nowMs: now,
+      });
       context.chatAbortControllers.set(clientRunId, {
         controller: abortController,
         sessionId: entry?.sessionId ?? clientRunId,
-        sessionKey: rawSessionKey,
+        sessionKey,
         startedAtMs: now,
         expiresAtMs: resolveChatRunExpiresAtMs({ now, timeoutMs }),
         ownerConnId: normalizeOptionalText(client?.connId),
@@ -3187,6 +3191,7 @@ export const chatHandlers: GatewayRequestHandlers = {
             },
           });
           context.chatAbortControllers.delete(clientRunId);
+          clearOwnerTurnActivity({ runId: clientRunId, sessionKey });
           return;
         }
       } catch (executionErr) {
@@ -3228,6 +3233,7 @@ export const chatHandlers: GatewayRequestHandlers = {
             },
           });
           context.chatAbortControllers.delete(clientRunId);
+          clearOwnerTurnActivity({ runId: clientRunId, sessionKey });
           return;
         }
       }
@@ -3387,8 +3393,10 @@ export const chatHandlers: GatewayRequestHandlers = {
         })
         .finally(() => {
           context.chatAbortControllers.delete(clientRunId);
+          clearOwnerTurnActivity({ runId: clientRunId, sessionKey });
         });
     } catch (err) {
+      clearOwnerTurnActivity({ runId: clientRunId, sessionKey });
       const error = errorShape(ErrorCodes.UNAVAILABLE, String(err));
       const payload = {
         runId: clientRunId,

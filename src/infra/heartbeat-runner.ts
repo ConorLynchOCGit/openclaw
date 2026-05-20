@@ -99,6 +99,7 @@ import {
   resolveHeartbeatDeliveryTarget,
   resolveHeartbeatSenderContext,
 } from "./outbound/targets.js";
+import { getActiveOwnerTurnForSession } from "./owner-turn-activity.js";
 import {
   consumeSystemEventEntries,
   peekSystemEventEntries,
@@ -111,6 +112,7 @@ export type HeartbeatDeps = OutboundSendDeps &
     buildHeartbeatProactivityReviewText?: typeof buildHeartbeatProactivityReviewText;
     runtime?: RuntimeEnv;
     getQueueSize?: (lane?: string) => number;
+    getActiveOwnerTurnForSession?: typeof getActiveOwnerTurnForSession;
     nowMs?: () => number;
   };
 
@@ -898,6 +900,19 @@ export async function runHeartbeatOnce(opts: {
     return { status: "skipped", reason: preflight.skipReason };
   }
   const { entry, sessionKey, storePath, suppressOriginatingContext } = preflight.session;
+
+  const activeOwnerTurn = (opts.deps?.getActiveOwnerTurnForSession ?? getActiveOwnerTurnForSession)(
+    sessionKey,
+    startedAt,
+  );
+  if (activeOwnerTurn) {
+    emitHeartbeatEvent({
+      status: "skipped",
+      reason: "owner-turn-in-flight",
+      durationMs: Date.now() - startedAt,
+    });
+    return { status: "skipped", reason: "owner-turn-in-flight" };
+  }
 
   // Check the resolved session lane — if it is busy, skip to avoid interrupting
   // an active streaming turn.  The wake-layer retry (heartbeat-wake.ts) will

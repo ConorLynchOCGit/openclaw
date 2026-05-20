@@ -3,11 +3,13 @@ import { DEFAULT_EXECUTION_WORKFLOW_REGISTRY } from "../workflows/workflow-regis
 import { enforceActionSemantics } from "./action-semantics.ts";
 import { validateIntentFrontDoorDecision } from "./intent-validator.ts";
 import { compileFrontDoorRequest } from "./request-compiler.ts";
+import { ROUTER_FRONT_DOOR_RUNTIME_TOOL_IDS } from "./router-runtime-tools.ts";
 import {
   createBaseCanonicalRouterOutput,
   createCanonicalRouterAction,
   parseCanonicalRouterOutput,
 } from "./router-schema.ts";
+import { buildRouterFrontDoorToolProtocolResult } from "./router-tool-protocol.ts";
 import { buildWorkflowSummaryIndex } from "./workflow-summary-index.ts";
 
 const workflow = DEFAULT_EXECUTION_WORKFLOW_REGISTRY.workflows[0]!;
@@ -116,6 +118,157 @@ describe("Front-door request compiler", () => {
       workQueueLifecycleMutated: false,
     });
     expect(JSON.stringify(result.runtimeJobCreateRequest.payload)).not.toContain("full raw prompt");
+  });
+
+  it("compiles implementation work with a non-executor workflow target subject", () => {
+    const output = codingOutput({
+      subjectWorkflowIds: ["agent_team.product_spec_planning"],
+      targetSubjectRefs: [
+        {
+          targetKind: "workflow",
+          targetRef: "workflow://agent_team.product_spec_planning",
+          confidence: 0.96,
+        },
+      ],
+      requestedCapabilities: ["code_edit", "test", "docs_update", "review", "closeout"],
+      constraints: [
+        { constraintKind: "deploy", objectSummary: "do not deploy", confidence: 0.99 },
+        {
+          constraintKind: "raw_storage",
+          objectSummary: "do not store raw prompts or provider logs",
+          confidence: 0.99,
+        },
+      ],
+      selectedExecutionReason:
+        "Requested capabilities require source edits, tests, docs, review, and closeout.",
+      targetSubjectReason:
+        "Product/Spec Planning is the workflow being upgraded, not the executor workflow.",
+      requestedActions: [
+        createCanonicalRouterAction("code_edit", "upgrade Product/Spec Planning workflow", 0.95),
+        createCanonicalRouterAction("test", "validate Product/Spec Planning workflow", 0.9),
+        createCanonicalRouterAction("docs_update", "document Product/Spec Planning workflow", 0.9),
+        createCanonicalRouterAction("review", "review Product/Spec Planning workflow", 0.9),
+        createCanonicalRouterAction("closeout", "close out bounded runtime evidence", 0.9),
+      ],
+    });
+
+    const result = compile(output);
+    if (result.artifactKind !== "front_door_compiled_runtime_job_request") {
+      throw new Error("expected runtime job compile result");
+    }
+    expect(result).toMatchObject({
+      workflowId: "agent_team.coding",
+      executorWorkflowId: "agent_team.coding",
+      subjectWorkflowIds: ["agent_team.product_spec_planning"],
+      requestedCapabilities: ["code_edit", "test", "docs_update", "review", "closeout"],
+    });
+    expect(result.targetSubjectRefs).toEqual([
+      {
+        targetKind: "workflow",
+        targetRef: "workflow://agent_team.product_spec_planning",
+        confidence: 0.96,
+      },
+    ]);
+    expect(result.runtimeJobCreateRequest.payload).toMatchObject({
+      workflowId: "agent_team.coding",
+      executorWorkflowId: "agent_team.coding",
+      subjectWorkflowIds: ["agent_team.product_spec_planning"],
+      targetSubjectRefs: [
+        {
+          targetKind: "workflow",
+          targetRef: "workflow://agent_team.product_spec_planning",
+          confidence: 0.96,
+        },
+      ],
+      requestedCapabilities: ["code_edit", "test", "docs_update", "review", "closeout"],
+    });
+  });
+
+  it("carries router tool protocol refs into runtime job payload and Mission Ledger handoff", () => {
+    const output = codingOutput({
+      requestedCapabilities: ["code_edit", "test", "review", "closeout"],
+      constraints: [
+        {
+          constraintKind: "safety_boundary",
+          objectSummary: "Do not deploy or mutate Work Queue lifecycle.",
+          confidence: 0.99,
+        },
+      ],
+    });
+    const routerToolProtocol = buildRouterFrontDoorToolProtocolResult({
+      requestId: "runtime-job://front-door-test",
+      promptHash: "prompt-hash",
+      routerOutput: output,
+      validation: acceptedValidation(output),
+      toolInvocations: ROUTER_FRONT_DOOR_RUNTIME_TOOL_IDS.map((toolId) => ({
+        toolId,
+        invocationRef: `runtime-tool://${toolId}`,
+        status: "succeeded",
+        outputRef: `runtime-tool-output://${toolId}`,
+        reasonCodes: [`${toolId.replaceAll(".", "_")}_recorded`],
+        rawPromptStored: false,
+        rawResponseStored: false,
+        rawProviderLogStored: false,
+        rawToolLogStored: false,
+      })),
+    });
+
+    const result = compileFrontDoorRequest({
+      requestId: "runtime-job://front-door-test",
+      routerOutput: output,
+      validation: acceptedValidation(output),
+      actionSemantics: enforceActionSemantics({
+        requestedActions: output.requestedActions,
+        conditionalActions: output.conditionalActions,
+        mentionedActions: output.mentionedActions,
+        negatedActions: output.negatedActions,
+      }),
+      workflow,
+      operator: { actorId: "operator", sessionId: "session-1" },
+      promptHash: "prompt-hash",
+      promptSummary: "bounded prompt summary",
+      promptLength: 10_000,
+      routerToolProtocol,
+    });
+
+    if (result.artifactKind !== "front_door_compiled_runtime_job_request") {
+      throw new Error("expected runtime job compile result");
+    }
+    expect(result.routerToolInvocationRefs).toHaveLength(ROUTER_FRONT_DOOR_RUNTIME_TOOL_IDS.length);
+    expect(result.missionLedgerHandoffRef).toBe(routerToolProtocol.missionLedgerHandoffRef);
+    expect(result.runtimeJobCreateRequest.payload).toMatchObject({
+      routerToolProtocolRef: "router-front-door-tool-protocol://runtime-job://front-door-test",
+      missionLedgerHandoffRef: routerToolProtocol.missionLedgerHandoffRef,
+    });
+  });
+
+  it("rejects a target workflow when selected as executor without required capabilities", () => {
+    const productSpecWorkflow = DEFAULT_EXECUTION_WORKFLOW_REGISTRY.workflows.find(
+      (candidate) => candidate.workflowId === "agent_team.product_spec_planning",
+    )!;
+    const output = createBaseCanonicalRouterOutput({
+      route: "workflow_execution",
+      responseMode: "create_runtime_job",
+      executeNow: true,
+      executorWorkflowId: productSpecWorkflow.workflowId,
+      workflowId: productSpecWorkflow.workflowId,
+      jobType: productSpecWorkflow.jobType,
+      confidence: 0.96,
+      objectiveSummary: "Implement Product/Spec Planning source edits.",
+      requestedCapabilities: ["code_edit", "test"],
+      requestedActions: [
+        createCanonicalRouterAction("code_edit", "implementation source edits", 0.96),
+      ],
+      sideEffectClass: "code_edit",
+    });
+    const validation = validateIntentFrontDoorDecision({
+      parseResult: parseCanonicalRouterOutput(output),
+      workflowSummaryIndex,
+      auth,
+      authority: { snapshotFresh: true, supportedAuthorityProfiles: ["read_only", "local_yolo"] },
+    });
+    expect(validation.outcome).toBe("needs_review");
+    expect(validation.reasonCodes).toContain("executor_capability_unsupported:code_edit");
   });
 
   it("does not compile chat/status runtime jobs and returns bounded plan-only artifacts", () => {

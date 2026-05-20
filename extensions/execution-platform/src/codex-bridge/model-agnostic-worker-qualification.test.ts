@@ -3,6 +3,7 @@ import {
   buildModelAgnosticWorkerQualificationMatrix,
   buildQualificationTaskFamilyResult,
   createModelAgnosticWorkerQualificationRecord,
+  evaluateModelPolicyStagePromotionGate,
   MODEL_AGNOSTIC_WORKER_CANDIDATE_PROFILES,
   selectModelAgnosticWorkerCandidate,
 } from "./model-agnostic-worker-qualification.ts";
@@ -12,6 +13,7 @@ describe("model-agnostic worker qualification matrix", () => {
     expect(MODEL_AGNOSTIC_WORKER_CANDIDATE_PROFILES.map((profile) => profile.candidateId)).toEqual(
       expect.arrayContaining([
         "openrouter.moonshotai.kimi-k2.6",
+        "openrouter.qwen.qwen3-coder-next",
         "openrouter.deepseek.deepseek-v4-flash",
         "openrouter.deepseek.deepseek-v4-pro",
         "codex.policy.strongest-coding",
@@ -145,5 +147,43 @@ describe("model-agnostic worker qualification matrix", () => {
         matrix,
       }).profile?.candidateId,
     ).toBe("openrouter.deepseek.deepseek-v4-flash");
+  });
+
+  it("blocks router and context-scout Qwen default promotion until stage gates pass", () => {
+    const blocked = evaluateModelPolicyStagePromotionGate({
+      stage: "router_front_door",
+      candidateId: "openrouter.qwen.qwen3-coder-next",
+      observations: [
+        {
+          stage: "router_front_door",
+          candidateId: "openrouter.qwen.qwen3-coder-next",
+          validOutput: true,
+          latencyMs: 2_000,
+          evidenceRef: "artifact://qwen/router/1",
+        },
+      ],
+    });
+
+    expect(blocked.status).toBe("blocked");
+    expect(blocked.reasonCodes).toContain("model_policy_stage_gate_insufficient_runs");
+    expect(blocked.reasonCodes).toContain(
+      "qwen_router_context_default_promotion_requires_stage_gate",
+    );
+
+    const passed = evaluateModelPolicyStagePromotionGate({
+      stage: "context_scout",
+      candidateId: "openrouter.qwen.qwen3-coder-next",
+      observations: Array.from({ length: 8 }, (_, index) => ({
+        stage: "context_scout" as const,
+        candidateId: "openrouter.qwen.qwen3-coder-next",
+        validOutput: true,
+        latencyMs: 3_000 + index,
+        evidenceRef: `artifact://qwen/context/${index + 1}`,
+      })),
+    });
+
+    expect(passed.status).toBe("passed");
+    expect(passed.reasonCodes).toEqual([]);
+    expect(passed.evidenceRefs).toHaveLength(8);
   });
 });

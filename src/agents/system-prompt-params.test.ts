@@ -11,7 +11,9 @@ async function makeTempDir(label: string): Promise<string> {
 }
 
 async function makeRepoRoot(root: string): Promise<void> {
-  await fs.mkdir(path.join(root, ".git"), { recursive: true });
+  const gitDir = path.join(root, ".git");
+  await fs.mkdir(gitDir, { recursive: true });
+  await fs.writeFile(path.join(gitDir, "HEAD"), "ref: refs/heads/main\n", "utf-8");
 }
 
 function buildParams(params: { config?: OpenClawConfig; workspaceDir?: string; cwd?: string }) {

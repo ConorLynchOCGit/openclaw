@@ -501,5 +501,114 @@ describe("product/spec planning worker contract", () => {
     expect(invalidRawRef.reasonCodes).toContain(
       "product_spec_planning_action_graph_raw_storage_ref_not_allowed:research",
     );
+    const missingCompileRefs = validateProductSpecPlanningActionGraphProposal({
+      ...valid.proposal!,
+      proposedChildActions: [
+        {
+          ...valid.proposal!.proposedChildActions[0],
+          expectedEvidenceRefs: [],
+          requiredContextRefs: [],
+        },
+        valid.proposal!.proposedChildActions[1],
+      ],
+    });
+    expect(missingCompileRefs.accepted).toBe(false);
+    expect(missingCompileRefs.compileReady).toBe(false);
+    expect(missingCompileRefs.reasonCodes).toEqual(
+      expect.arrayContaining([
+        "product_spec_planning_action_graph_evidence_refs_missing:research",
+        "product_spec_planning_action_graph_context_refs_missing:research",
+      ]),
+    );
+    const cyclic = validateProductSpecPlanningActionGraphProposal({
+      ...valid.proposal!,
+      proposedChildActions: [
+        {
+          ...valid.proposal!.proposedChildActions[0],
+          dependencies: ["implementation"],
+        },
+        {
+          ...valid.proposal!.proposedChildActions[1],
+          dependencies: ["research"],
+        },
+      ],
+    });
+    expect(cyclic.accepted).toBe(false);
+    expect(cyclic.reasonCodes).toContain(
+      "product_spec_planning_action_graph_dependency_cycle:research",
+    );
+    const invalidAuthority = validateProductSpecPlanningActionGraphProposal({
+      ...valid.proposal!,
+      proposedChildActions: [
+        {
+          ...valid.proposal!.proposedChildActions[0],
+          authorityBoundary: "execute_now",
+        },
+        valid.proposal!.proposedChildActions[1],
+      ],
+    });
+    expect(invalidAuthority.accepted).toBe(false);
+    expect(invalidAuthority.childActionsExecuted).toBe(false);
+    expect(invalidAuthority.runtimeJobsCreated).toBe(false);
+    expect(invalidAuthority.reasonCodes).toEqual(
+      expect.arrayContaining([
+        "product_spec_planning_action_graph_proposal_schema_invalid",
+        "product_spec_planning_action_graph_invalid_authority:research",
+      ]),
+    );
+  });
+
+  it("allows draft action proposals to defer compile-only evidence and context refs", () => {
+    const storageBoundary = {
+      rawPromptStored: false,
+      rawResponseStored: false,
+      rawTranscriptStored: false,
+      rawProviderLogStored: false,
+      rawToolLogStored: false,
+      rawDbRowsStored: false,
+      secretsStored: false,
+      hiddenReasoningStored: false,
+    } as const;
+    const draft = validateProductSpecPlanningActionGraphProposal({
+      artifactKind: "product_spec_planning_action_graph_proposal",
+      contractVersion: "v1",
+      proposalId: "proposal-draft",
+      planningMode: "child_action_graph_proposal",
+      proposedChildActions: [
+        {
+          actionId: "implementation-planning",
+          title: "Plan implementation follow-up",
+          objective: "Prepare a child implementation action for later compiler validation.",
+          assignedWorkflow: "agent_team.coding",
+          assignedRoleOrOwner: "implementation_engineer",
+          dependencies: [],
+          expectedEvidenceRefs: [],
+          requiredContextRefs: [],
+          validationExpectations: ["Compiler validates refs before runtime jobs are created."],
+          authorityBoundary: "proposal_only",
+          storageBoundary,
+          runtimeJobCompileReadiness: "not_requested",
+          blockersOrRisks: ["Needs compiler-owned evidence refs before execution."],
+        },
+      ],
+      dependencyValidationRef: "validation://proposal-draft/dependencies",
+      compileReadinessState: "needs_validation",
+      validationRefs: ["validation://proposal-draft/shape"],
+      childActionsExecuted: false,
+      runtimeJobsCreated: false,
+      workQueueLifecycleMutationAllowed: false,
+      rawPromptStored: false,
+      rawResponseStored: false,
+      rawLogsStored: false,
+    });
+
+    expect(draft.accepted).toBe(true);
+    expect(draft.compileReady).toBe(false);
+    expect(draft.reasonCodes).not.toContain(
+      "product_spec_planning_action_graph_evidence_refs_missing:implementation-planning",
+    );
+    expect(draft.reasonCodes).not.toContain(
+      "product_spec_planning_action_graph_context_refs_missing:implementation-planning",
+    );
   });
 });

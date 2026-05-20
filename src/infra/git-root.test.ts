@@ -4,6 +4,12 @@ import { describe, expect, it } from "vitest";
 import { withTempDir } from "../test-helpers/temp-dir.js";
 import { findGitRoot, resolveGitHeadPath } from "./git-root.js";
 
+async function createGitDir(repoRoot: string): Promise<void> {
+  const gitDir = path.join(repoRoot, ".git");
+  await fs.mkdir(gitDir, { recursive: true });
+  await fs.writeFile(path.join(gitDir, "HEAD"), "ref: refs/heads/main\n", "utf-8");
+}
+
 async function expectGitRootResolution(params: {
   label: string;
   setup: (
@@ -24,7 +30,7 @@ describe("git-root", () => {
       label: "git-root-self",
       setup: async (temp: string) => {
         const repoRoot = path.join(temp, "repo");
-        await fs.mkdir(path.join(repoRoot, ".git"), { recursive: true });
+        await createGitDir(repoRoot);
         return {
           startPath: repoRoot,
           expectedRoot: repoRoot,
@@ -38,7 +44,7 @@ describe("git-root", () => {
       setup: async (temp: string) => {
         const repoRoot = path.join(temp, "repo");
         const workspace = path.join(repoRoot, "nested", "workspace");
-        await fs.mkdir(path.join(repoRoot, ".git"), { recursive: true });
+        await createGitDir(repoRoot);
         await fs.mkdir(workspace, { recursive: true });
         return {
           startPath: workspace,
@@ -56,6 +62,7 @@ describe("git-root", () => {
         const gitDir = path.join(repoRoot, ".actual-git");
         await fs.mkdir(workspace, { recursive: true });
         await fs.mkdir(gitDir, { recursive: true });
+        await fs.writeFile(path.join(gitDir, "HEAD"), "ref: refs/heads/main\n", "utf-8");
         await fs.writeFile(path.join(repoRoot, ".git"), "gitdir: .actual-git\n", "utf-8");
         return {
           startPath: workspace,
@@ -71,13 +78,13 @@ describe("git-root", () => {
         const parentRoot = path.join(temp, "repo");
         const childRoot = path.join(parentRoot, "child");
         const nested = path.join(childRoot, "nested");
-        await fs.mkdir(path.join(parentRoot, ".git"), { recursive: true });
+        await createGitDir(parentRoot);
         await fs.mkdir(nested, { recursive: true });
         await fs.writeFile(path.join(childRoot, ".git"), "not-a-gitdir-pointer\n", "utf-8");
         return {
           startPath: nested,
           expectedRoot: childRoot,
-          expectedHead: path.join(parentRoot, ".git", "HEAD"),
+          expectedHead: null,
         };
       },
     },
@@ -104,7 +111,7 @@ describe("git-root", () => {
     await withTempDir({ prefix: "openclaw-git-root-depth-" }, async (temp) => {
       const repoRoot = path.join(temp, "repo");
       const nested = path.join(repoRoot, "a", "b", "c");
-      await fs.mkdir(path.join(repoRoot, ".git"), { recursive: true });
+      await createGitDir(repoRoot);
       await fs.mkdir(nested, { recursive: true });
 
       expect(findGitRoot(nested, { maxDepth: 2 })).toBeNull();

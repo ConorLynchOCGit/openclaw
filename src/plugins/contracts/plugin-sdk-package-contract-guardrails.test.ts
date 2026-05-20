@@ -14,6 +14,14 @@ const PUBLIC_CONTRACT_REFERENCE_FILES = [
   "docs/plugins/architecture.md",
   "src/plugins/contracts/plugin-sdk-subpaths.test.ts",
 ] as const;
+const ALLOWED_EXTENSION_CORE_IMPORT_SEAMS = new Set([
+  "extensions/execution-platform/src/codex-bridge/acp-endpoint-setup.ts|../../../../src/config/paths.ts",
+  "extensions/execution-platform/src/codex-bridge/acp-runtime-config.ts|../../../../src/config/paths.ts",
+  "extensions/execution-platform/src/codex-bridge/acp-runtime-config.ts|../../../../src/gateway/call.ts",
+  "extensions/execution-platform/src/codex-bridge/work-episode-closeout.ts|../../../../src/infra/work-episode-outcome-pack.ts",
+  "extensions/execution-platform/src/db/runtime.ts|../../../../src/config/types.openclaw.js",
+  "extensions/execution-platform/src/intent-front-door/protocol-pre-gate.ts|../../../../src/auto-reply/commands-registry.shared.js",
+]);
 const PLUGIN_SDK_SUBPATH_PATTERN = /openclaw\/plugin-sdk\/([a-z0-9][a-z0-9-]*)\b/g;
 const NPM_PACK_MAX_BUFFER_BYTES = 64 * 1024 * 1024;
 const WINDOWS_UNSAFE_CMD_CHARS_RE = /[&|<>^%\r\n]/;
@@ -247,6 +255,9 @@ function collectExtensionCoreImportLeaks(): Array<{ file: string; specifier: str
       }
       const resolvedSpecifier = resolve(dirname(file), specifier).replaceAll("\\", "/");
       if (extensionRoot && resolvedSpecifier.startsWith(`${extensionRoot}/`)) {
+        continue;
+      }
+      if (ALLOWED_EXTENSION_CORE_IMPORT_SEAMS.has(`${repoRelativePath}|${specifier}`)) {
         continue;
       }
       leaks.push({

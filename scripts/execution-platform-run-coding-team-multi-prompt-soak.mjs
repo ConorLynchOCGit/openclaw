@@ -32,6 +32,13 @@ async function ep() {
   return executionPlatform;
 }
 
+async function codingTeamLivePilotApi() {
+  return await tsImport(
+    path.join(root, "extensions/execution-platform/src/codex-bridge/coding-team-live-pilot.ts"),
+    import.meta.url,
+  );
+}
+
 function hasArg(name) {
   return process.argv.includes(name);
 }
@@ -381,8 +388,8 @@ async function main() {
     evaluateWorkQueueLiveLinkageGate,
     RuntimeJobRepository,
     WorkQueueRepository,
-    runCodingTeamLivePilot,
   } = await ep();
+  const { runCodingTeamLivePilot } = await codingTeamLivePilotApi();
 
   let runtime;
   const runArtifacts = [];

@@ -8,6 +8,9 @@ import {
   compileMultiIntentPlan,
   enforceActionSemantics,
   evaluateRouterEscalationPolicy,
+  buildRouterFrontDoorToolProtocolResult,
+  invokeRouterFrontDoorRuntimeTool,
+  ROUTER_FRONT_DOOR_RUNTIME_TOOL_IDS,
   NoopRoutingTelemetryStore,
   parseCanonicalRouterOutput,
   RuntimeArtifactRoutingTelemetryStore,
@@ -28,6 +31,7 @@ import {
   type StructuredModelIntentRouterProvider,
   type StructuredModelIntentRouterResult,
   type CanonicalIntentRoute,
+  type RouterFrontDoorToolProtocolResult,
 } from "../intent-front-door/index.ts";
 import {
   runProtocolPreGate,
@@ -39,6 +43,7 @@ import {
   type PromptRouterMemoryRouteKind,
 } from "../model-memory-runtime/index.ts";
 import type { JsonValue, RuntimeJob, RuntimeJobRepository } from "../runtime-job-repository.ts";
+import type { RuntimeToolKernel } from "../runtime-tool-call/runtime-tool-kernel.ts";
 import {
   recordWorkQueueExecutionAction,
   decideWorkQueueExecutionAction,
@@ -142,6 +147,7 @@ export type NativeExecutionSubmitResult = {
 
 export type NativeExecutionRpcDependencies = {
   runtimeJobs: RuntimeJobRepository;
+  runtimeToolKernel?: RuntimeToolKernel;
   workQueue?: WorkQueueRepository;
   registry?: WorkflowRegistry;
   structuredRouterProvider?: StructuredModelIntentRouterProvider;
@@ -360,10 +366,87 @@ function buildActionSeparationRepairRequest(input: {
   });
 }
 
+function buildExecutorCapabilityRepairRequest(input: {
+  originalRequest: ReturnType<typeof buildStructuredModelIntentRouterRequest>;
+  originalPrompt: string;
+  currentResult: StructuredModelIntentRouterResult;
+  validation: ReturnType<typeof validateIntentFrontDoorDecision>;
+}): ReturnType<typeof buildStructuredModelIntentRouterRequest> {
+  const currentRouterSummary = summarizeActionSeparationRouterOutput(input.currentResult);
+  const validationSummary = JSON.stringify({
+    outcome: input.validation.outcome,
+    workflowId: input.validation.workflowId,
+    reasonCodes: input.validation.reasonCodes.slice(0, 20),
+    rawPromptStored: false,
+    rawResponseStored: false,
+  });
+  const repairContext = buildConversationRoutingContext({
+    ...input.originalRequest.conversationContext,
+    recentContextSummary: [
+      input.originalRequest.conversationContext.recentContextSummary,
+      `Executor capability validation summary: ${validationSummary}`,
+      `Current router output summary: ${currentRouterSummary}`,
+    ]
+      .filter(Boolean)
+      .join(" "),
+    reasonCodes: [
+      ...input.originalRequest.conversationContext.reasonCodes,
+      "executor_capability_repair_attempted",
+      "executor_subject_capability_split_review",
+    ],
+  });
+  return buildStructuredModelIntentRouterRequest({
+    promptHash: input.originalRequest.promptHash,
+    volatilePromptText: JSON.stringify({
+      repairTask:
+        "Re-emit CanonicalRouterOutput by selecting an executorWorkflowId whose executable capabilities satisfy requestedCapabilities, while preserving mentioned target workflows/systems as subjectWorkflowIds and targetSubjectRefs. Do not rewrite target subjects into executorWorkflowId unless the target workflow itself can execute the requested capabilities. Keep workflowId equal to executorWorkflowId.",
+      originalPrompt: input.originalPrompt,
+      currentRouterOutput: JSON.parse(currentRouterSummary),
+      validation: JSON.parse(validationSummary),
+      rawPromptStored: false,
+      rawResponseStored: false,
+    }),
+    promptSummary: input.originalRequest.promptSummary,
+    conversationContext: repairContext,
+    workflowCandidateSelection: {
+      workflowRegistryVersion: input.originalRequest.workflowRegistryVersion,
+      candidates: input.originalRequest.workflowSummaries,
+      reasonCodes: ["executor_capability_repair_reuses_workflow_candidates"],
+      finalRouteDecisionMade: false,
+      authorityGranted: false,
+      runtimeJobCreated: false,
+      workQueueLifecycleMutationAllowed: false,
+      rawPromptStored: false,
+      rawResponseStored: false,
+    },
+    authoritySnapshotRefs: input.originalRequest.authoritySnapshotRefs,
+    authoritySnapshotVersion: input.originalRequest.authoritySnapshotVersion,
+    routerModelPolicyRef: input.originalRequest.routerModelPolicyRef,
+    routerConfigVersion: `${input.originalRequest.routerConfigVersion}:executor-capability-repair`,
+    sourceRoute: input.originalRequest.sourceRoute,
+    requestId: `${input.originalRequest.requestId}:executor-capability-repair`,
+    sessionId: input.originalRequest.sessionId,
+    reasonCodes: [
+      ...input.originalRequest.reasonCodes,
+      "executor_capability_repair_attempted",
+      "executor_selected_without_required_capability",
+    ],
+    maxWorkflowCandidates: input.originalRequest.workflowSummaries.length,
+  });
+}
+
 function actionSemanticsNeedsModelRepair(
   actionSemantics: ReturnType<typeof enforceActionSemantics>,
 ): boolean {
   return actionSemantics.reasonCodes.some((reason) => reason.includes("conflicts_with_negation"));
+}
+
+function validationNeedsExecutorCapabilityRepair(
+  validation: ReturnType<typeof validateIntentFrontDoorDecision>,
+): boolean {
+  return validation.reasonCodes.some((reason) =>
+    reason.startsWith("executor_capability_unsupported:"),
+  );
 }
 
 function collectAuthorityProfiles(registry: WorkflowRegistry): string[] {
@@ -500,6 +583,60 @@ export class NativeExecutionRpcService {
     this.registry = dependencies.registry ?? DEFAULT_EXECUTION_WORKFLOW_REGISTRY;
     this.provider = dependencies.intentRouterProvider ?? new HeuristicIntentRouterProvider();
     this.structuredRouterProvider = dependencies.structuredRouterProvider ?? null;
+  }
+
+  private async recordRouterFrontDoorToolProtocol(input: {
+    requestId: string;
+    promptHash: string;
+    promptSummary: string;
+    output: NonNullable<StructuredModelIntentRouterResult["output"]>;
+    validation: IntentValidationDecision;
+    routed: StructuredModelIntentRouterResult;
+  }): Promise<RouterFrontDoorToolProtocolResult> {
+    const kernel = this.dependencies.runtimeToolKernel;
+    if (!kernel) {
+      return buildRouterFrontDoorToolProtocolResult({
+        requestId: input.requestId,
+        promptHash: input.promptHash,
+        routerOutput: input.output,
+        validation: input.validation,
+        toolInvocations: [],
+      });
+    }
+    const toolInvocations = [];
+    for (const toolId of ROUTER_FRONT_DOOR_RUNTIME_TOOL_IDS) {
+      toolInvocations.push(
+        await invokeRouterFrontDoorRuntimeTool({
+          kernel,
+          toolId,
+          requestId: input.requestId,
+          modelRef: input.routed.metadata.modelCandidateId ?? null,
+          providerRef: input.routed.metadata.providerRef ?? null,
+          idempotencyKey: `${input.promptHash}:${toolId}`,
+          inputHash: input.promptHash,
+          inputSummary: `${toolId}: ${input.promptSummary}`,
+          metadata: {
+            route: input.output.route,
+            executorWorkflowId: input.output.executorWorkflowId ?? input.output.workflowId,
+            subjectWorkflowIds: input.output.subjectWorkflowIds,
+            requestedCapabilities: input.output.requestedCapabilities,
+            constraintKinds: input.output.constraints.map(
+              (constraint) => constraint.constraintKind,
+            ),
+            validationOutcome: input.validation.outcome,
+            rawPromptStored: false,
+            rawResponseStored: false,
+          },
+        }),
+      );
+    }
+    return buildRouterFrontDoorToolProtocolResult({
+      requestId: input.requestId,
+      promptHash: input.promptHash,
+      routerOutput: input.output,
+      validation: input.validation,
+      toolInvocations,
+    });
   }
 
   async submit(request: NativeExecutionSubmitRequest): Promise<NativeExecutionSubmitResult> {
@@ -911,6 +1048,19 @@ export class NativeExecutionRpcService {
         stages = computeFrontDoorStages(routed);
       }
     }
+    if (validationNeedsExecutorCapabilityRepair(stages.validation)) {
+      const repairRequest = buildExecutorCapabilityRepairRequest({
+        originalRequest: routerRequest,
+        originalPrompt: request.prompt,
+        currentResult: routed,
+        validation: stages.validation,
+      });
+      const repaired = await router.route(repairRequest);
+      if (repaired.valid && repaired.output) {
+        routed = repaired;
+        stages = computeFrontDoorStages(routed);
+      }
+    }
     const {
       output,
       frontDoorMemoryPolicy,
@@ -975,7 +1125,7 @@ export class NativeExecutionRpcService {
       });
       return this.submitResult({
         statusCode: output.route === "work_queue_control" ? 202 : 400,
-        workflowId: output.workflowId,
+        workflowId: output.executorWorkflowId ?? output.workflowId,
         jobType: output.jobType,
         frontDoorRouterResult: routed,
         frontDoorEscalation: escalation,
@@ -992,9 +1142,18 @@ export class NativeExecutionRpcService {
       });
     }
 
-    const workflow = output.workflowId
-      ? getWorkflowContract(this.registry, output.workflowId)
+    const executorWorkflowId = output.executorWorkflowId ?? output.workflowId;
+    const workflow = executorWorkflowId
+      ? getWorkflowContract(this.registry, executorWorkflowId)
       : null;
+    const routerToolProtocol = await this.recordRouterFrontDoorToolProtocol({
+      requestId,
+      promptHash,
+      promptSummary,
+      output,
+      validation,
+      routed,
+    });
     const compiled = compileFrontDoorRequest({
       requestId,
       routerOutput: output,
@@ -1014,6 +1173,7 @@ export class NativeExecutionRpcService {
       workItemId: request.workItemId,
       queueName: this.dependencies.queueName,
       idempotencyKey: requestId,
+      routerToolProtocol,
     });
     if (compiled.artifactKind === "front_door_compiled_plan_only") {
       await this.recordFrontDoorRoutingTelemetry({
@@ -1123,6 +1283,10 @@ export class NativeExecutionRpcService {
           title: compiled.objectiveSummary,
           metadata: {
             workflowId: compiled.workflowId,
+            executorWorkflowId: compiled.executorWorkflowId,
+            subjectWorkflowIds: compiled.subjectWorkflowIds,
+            targetSubjectRefs: compiled.targetSubjectRefs,
+            requestedCapabilities: compiled.requestedCapabilities,
             jobType: compiled.jobType,
             route: output.route,
             promptHash: compiled.promptHash,
@@ -1140,6 +1304,10 @@ export class NativeExecutionRpcService {
         runState: "running",
         metadata: {
           workflowId: compiled.workflowId,
+          executorWorkflowId: compiled.executorWorkflowId,
+          subjectWorkflowIds: compiled.subjectWorkflowIds,
+          targetSubjectRefs: compiled.targetSubjectRefs,
+          requestedCapabilities: compiled.requestedCapabilities,
           jobType: compiled.jobType,
           frontDoorNativeExecutionSubmit: true,
           sourceRoute: request.sourceRoute ?? request.auth.sourceRoute ?? null,
@@ -1190,6 +1358,10 @@ export class NativeExecutionRpcService {
       eventType: "execution.front_door_workflow_request_submitted",
       data: {
         workflowId: compiled.workflowId,
+        executorWorkflowId: compiled.executorWorkflowId,
+        subjectWorkflowIds: compiled.subjectWorkflowIds,
+        targetSubjectRefs: compiled.targetSubjectRefs,
+        requestedCapabilities: compiled.requestedCapabilities,
         jobType: compiled.jobType,
         promptHash: compiled.promptHash,
         sourceRoute: request.sourceRoute ?? request.auth.sourceRoute ?? null,

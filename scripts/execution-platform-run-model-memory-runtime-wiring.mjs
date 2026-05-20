@@ -511,6 +511,9 @@ async function main() {
   const { CodexAppServerJsonExecutor } = await codexExecutor();
   const {
     RuntimeJobRepository,
+    RuntimeToolKernel,
+    RuntimeToolRegistry,
+    RuntimeToolTraceRepository,
     WorkQueueRepository,
     ModelCloseoutCapsuleReporter,
     recordCloseoutCapsuleArtifact,
@@ -525,6 +528,9 @@ async function main() {
     resolveExecutionPlatformDbBoundaryContract,
     inspectExecutionPlatformDbReadiness,
     evaluateWorkQueueLiveLinkageGate,
+    registerModelCallRuntimeTool,
+    registerScriptExecuteRuntimeTool,
+    registerDbOperationExecuteRuntimeTool,
     runModelTaskMiddlewareLiveCompletion,
     runDbOperationMiddlewareLiveCompletion,
     resolveModelTaskRoster,
@@ -741,6 +747,16 @@ async function main() {
       requestTimeoutMs: 240_000,
       reasoningEffort: "low",
     });
+    const runtimeToolRegistry = new RuntimeToolRegistry();
+    const runtimeToolTraces = new RuntimeToolTraceRepository(runtime.sqlClient);
+    registerModelCallRuntimeTool({ registry: runtimeToolRegistry, executor });
+    registerScriptExecuteRuntimeTool({ registry: runtimeToolRegistry, handlers: {} });
+    registerDbOperationExecuteRuntimeTool({ registry: runtimeToolRegistry, handlers: {} });
+    const runtimeToolKernel = new RuntimeToolKernel({
+      registry: runtimeToolRegistry,
+      traces: runtimeToolTraces,
+      defaultTimeoutMs: 240_000,
+    });
     const closeoutReporter = new ModelCloseoutCapsuleReporter({
       executor,
       modelId: "openai-codex/gpt-5.4",
@@ -756,6 +772,7 @@ async function main() {
       runtimeJobs,
       workQueue,
       executor,
+      runtimeToolKernel,
       createWorkQueueFixture: true,
       runtimeJobId: modelRuntimeJobId,
       contractId: "model_memory.capture_interpretation",
@@ -766,6 +783,7 @@ async function main() {
     });
     const dbOperationResult = await runDbOperationMiddlewareLiveCompletion({
       runtimeJobs,
+      runtimeToolKernel,
       workQueue,
       createWorkQueueFixture: true,
       runtimeJobId: dbRuntimeJobId,

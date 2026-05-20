@@ -74,7 +74,8 @@ export function validateIntentForExecution(input: {
   const decision = input.routeDecision;
   const now = input.now ?? new Date();
   const reasonCodes: string[] = [];
-  const workflow = getWorkflowContract(input.registry, decision.workflowId);
+  const executorWorkflowId = decision.executorWorkflowId ?? decision.workflowId;
+  const workflow = getWorkflowContract(input.registry, executorWorkflowId);
 
   if (decision.rawPromptStored || decision.rawResponseStored) {
     reasonCodes.push("raw_prompt_or_response_storage_rejected");
@@ -93,8 +94,12 @@ export function validateIntentForExecution(input: {
       decision.route === "work_queue_control" ? "needs_review" : "clarification_required",
     );
   }
+  if (decision.workflowId && executorWorkflowId && decision.workflowId !== executorWorkflowId) {
+    reasonCodes.push("legacy_workflow_id_executor_mismatch");
+    return result("blocked");
+  }
   if (!workflow) {
-    reasonCodes.push("workflow_not_registered");
+    reasonCodes.push("executor_workflow_not_registered");
     return result("blocked");
   }
   if (!workflowCanRouteToLiveExecution(workflow)) {

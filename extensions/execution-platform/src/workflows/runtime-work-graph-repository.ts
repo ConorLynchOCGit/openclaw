@@ -210,6 +210,12 @@ function json(value: JsonValue | undefined): string {
   return JSON.stringify(value ?? {});
 }
 
+function jsonObject(value: JsonValue | undefined): Record<string, JsonValue> {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, JsonValue>)
+    : {};
+}
+
 function stringArray(value: JsonValue): string[] {
   return parseStringArray(value);
 }
@@ -444,6 +450,32 @@ export class RuntimeWorkGraphRepository {
     return decodeGraph(row.rows[0]!);
   }
 
+  async updateGraphStatus(input: {
+    graphId: string;
+    graphStatus: TeamRunGraphStatus;
+    finalCloseoutRef?: string | null;
+    metadata?: JsonValue;
+  }): Promise<TeamRunGraph> {
+    this.assertMetadata(input.metadata, "runtime work graph status metadata");
+    const now = this.now();
+    const row = await this.sql.query<GraphRow>(
+      `
+        UPDATE execution_platform.runtime_work_graphs
+        SET graph_status = $2,
+            final_closeout_ref = COALESCE($3, final_closeout_ref),
+            metadata = $4::jsonb,
+            updated_at = $5::timestamptz
+        WHERE graph_id = $1
+        RETURNING *
+      `,
+      [input.graphId, input.graphStatus, input.finalCloseoutRef ?? null, json(input.metadata), now],
+    );
+    if (!row.rows[0]) {
+      throw new Error(`runtime_work_graph_not_found:${input.graphId}`);
+    }
+    return decodeGraph(row.rows[0]);
+  }
+
   async addNode(input: {
     nodeId?: string;
     graphId: string;
@@ -512,9 +544,50 @@ export class RuntimeWorkGraphRepository {
     nodeStatus: TeamGraphNodeStatus;
     outputArtifactRefs?: string[];
     humanTaskId?: string | null;
+    metadataPatch?: JsonValue;
   }): Promise<TeamGraphNode> {
     assertBoundedStringArray(input.outputArtifactRefs ?? [], "output artifact refs");
+    this.assertMetadata(input.metadataPatch, "node status metadata patch");
     const now = this.now();
+    if (input.metadataPatch !== undefined) {
+      const existing = await this.sql.query<NodeRow>(
+        `SELECT * FROM execution_platform.runtime_work_graph_nodes WHERE node_id = $1`,
+        [input.nodeId],
+      );
+      if (!existing.rows[0]) {
+        throw new Error(`runtime_work_graph_node_not_found:${input.nodeId}`);
+      }
+      const mergedMetadata = {
+        ...jsonObject(existing.rows[0].metadata),
+        ...jsonObject(input.metadataPatch),
+      };
+      const row = await this.sql.query<NodeRow>(
+        `
+          UPDATE execution_platform.runtime_work_graph_nodes
+          SET node_status = $2,
+              output_artifact_refs = COALESCE($3::jsonb, output_artifact_refs),
+              human_task_id = COALESCE($4, human_task_id),
+              metadata = $5::jsonb,
+              started_at = CASE WHEN $2 = 'running' THEN COALESCE(started_at, $6::timestamptz) ELSE started_at END,
+              completed_at = CASE WHEN $2 IN ('succeeded', 'failed', 'skipped') THEN $6::timestamptz ELSE completed_at END,
+              updated_at = $6::timestamptz
+          WHERE node_id = $1
+          RETURNING *
+        `,
+        [
+          input.nodeId,
+          input.nodeStatus,
+          input.outputArtifactRefs ? JSON.stringify(input.outputArtifactRefs) : null,
+          input.humanTaskId ?? null,
+          json(mergedMetadata),
+          now,
+        ],
+      );
+      if (!row.rows[0]) {
+        throw new Error(`runtime_work_graph_node_not_found:${input.nodeId}`);
+      }
+      return decodeNode(row.rows[0]);
+    }
     const row = await this.sql.query<NodeRow>(
       `
         UPDATE execution_platform.runtime_work_graph_nodes
@@ -568,6 +641,10 @@ export class RuntimeWorkGraphRepository {
           created_at
         )
         VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7::jsonb, $8::jsonb, $9::timestamptz)
+        ON CONFLICT (edge_id) DO UPDATE
+        SET reason_codes = EXCLUDED.reason_codes,
+            artifact_refs = EXCLUDED.artifact_refs,
+            metadata = EXCLUDED.metadata
         RETURNING *
       `,
       [
@@ -836,6 +913,12 @@ export class RuntimeWorkGraphRepository {
             created_at
           )
           VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7::timestamptz)
+          ON CONFLICT (checkpoint_id) DO UPDATE SET
+            graph_id = EXCLUDED.graph_id,
+            checkpoint_kind = EXCLUDED.checkpoint_kind,
+            state_summary = EXCLUDED.state_summary,
+            artifact_refs = EXCLUDED.artifact_refs,
+            budget_ledger_ref = EXCLUDED.budget_ledger_ref
           RETURNING *
         `,
         [
@@ -853,6 +936,7 @@ export class RuntimeWorkGraphRepository {
         [input.graphId],
       );
       const currentRefs = stringArray(current.rows[0]?.checkpoint_refs ?? []);
+      const checkpointRef = graphRef("checkpoint", checkpointId);
       await tx.query(
         `
           UPDATE execution_platform.runtime_work_graphs
@@ -860,11 +944,7 @@ export class RuntimeWorkGraphRepository {
               updated_at = $3::timestamptz
           WHERE graph_id = $1
         `,
-        [
-          input.graphId,
-          JSON.stringify([...currentRefs, graphRef("checkpoint", checkpointId)]),
-          now,
-        ],
+        [input.graphId, JSON.stringify([...new Set([...currentRefs, checkpointRef])]), now],
       );
       return inserted.rows[0]!;
     });

@@ -25,6 +25,22 @@ export const RISK_CLASS_VALUES = ["low", "medium", "high", "critical"] as const;
 export const structuredIntentRouterOutputSchema = z
   .object({
     route: z.enum(INTENT_ROUTE_VALUES),
+    executorWorkflowId: z.string().min(1).max(120).nullable().optional(),
+    subjectWorkflowIds: z.array(z.string().min(1).max(120)).max(20).optional(),
+    targetSubjectRefs: z
+      .array(
+        z
+          .object({
+            targetKind: z.string().min(1).max(80),
+            targetRef: z.string().min(1).max(240),
+            confidence: z.number().min(0).max(1).optional(),
+          })
+          .strict(),
+      )
+      .max(20)
+      .optional(),
+    requestedCapabilities: z.array(z.string().min(1).max(80)).max(20).optional(),
+    constraints: z.array(z.string().min(1).max(200)).max(30).optional(),
     workflowId: z.string().min(1).max(120).nullable(),
     jobType: z.string().min(1).max(120).nullable(),
     confidence: z.number().min(0).max(1),
@@ -43,10 +59,21 @@ export const structuredIntentRouterOutputSchema = z
   })
   .superRefine((value, context) => {
     if (value.route === "workflow_execution") {
-      if (!value.workflowId) {
+      if (!value.executorWorkflowId && !value.workflowId) {
         context.addIssue({
           code: "custom",
-          message: "workflow_execution_requires_workflow_id",
+          message: "workflow_execution_requires_executor_workflow_id",
+          path: ["executorWorkflowId"],
+        });
+      }
+      if (
+        value.executorWorkflowId &&
+        value.workflowId &&
+        value.executorWorkflowId !== value.workflowId
+      ) {
+        context.addIssue({
+          code: "custom",
+          message: "workflow_id_must_match_executor_workflow_id",
           path: ["workflowId"],
         });
       }

@@ -5,6 +5,64 @@ title: "Model Memory Decisions"
 
 # Model Memory Decisions
 
+## 2026-05-17 - Memory toolification must be staged, not one-shot schema output
+
+Decision:
+
+- Model Memory capture, retrieval, context-pack assembly/insertion,
+  compaction, and proactivity must use staged runtime tools.
+- the model owns memory usefulness, durability, conflict/supersession,
+  relevance, context-pack usefulness, compaction loss/risk, and opportunity
+  quality judgments.
+- runtime owns memory ids, source refs, context-pack refs, route budgets, MMV2
+  write refs, Work Queue candidate refs, cooldowns, idempotency, raw-storage
+  rejection, authority boundaries, lifecycle separation, and tool traces.
+- memory and proactivity cannot grant authority, approval, deployment,
+  outbound send permission, model promotion, runtime job success, or Work Queue
+  lifecycle mutation.
+
+Reasoning:
+
+- the Execution Platform orchestration work proved that asking a model to
+  hand-author runtime-owned envelopes creates schema choke and brittle repair
+  loops.
+- memory capture and retrieval are high-frequency, high-impact model-heavy
+  surfaces, so they need the same staged working interface before being treated
+  as maximally production-wired.
+- using memory-specific tools over the Runtime Tool-Call Kernel preserves MMV2
+  semantic truth while giving operators traceable capture, retrieval,
+  context-pack, compaction, and proactivity evidence.
+
+## 2026-05-16 - Runtime tools become the memory execution evidence layer
+
+Decision:
+
+- MMV2 SQL remains the semantic source of truth for durable memories.
+- Execution Platform runtime jobs remain lifecycle truth for workflow
+  execution.
+- Runtime Tool-Call Kernel traces become the canonical evidence layer for
+  memory capture, retrieval, context-pack assembly/insertion, compaction,
+  proactivity extraction/adjudication, and Work Queue projection steps.
+- Existing model-task and DB-operation refs must become compatibility facades
+  over runtime tools or retire from production-primary memory evidence.
+- Work Queue memory readback must cite runtime tool invocation refs and
+  bounded artifacts, not only middleware refs.
+- Deterministic code validates shape, refs, bounds, storage flags, authority,
+  lifecycle separation, idempotency, and cooldowns. Model-authored or
+  owner-authored review judges semantic usefulness.
+
+Reasoning:
+
+- the memory runtime was hardened before the Runtime Tool-Call Kernel existed,
+  so it still has middleware-shaped evidence paths that can understate whether
+  production execution is truly toolified
+- keeping middleware as a parallel truth layer would recreate the same drift
+  that the Execution Platform has been removing from Work Queue, closeout, and
+  workflow execution
+- memory and proactivity are high-value surfaces for owner context, so their
+  production evidence must be traceable through the same runtime tool substrate
+  as coding, planning, validation, and closeout work
+
 ## 2026-05-01 - Model-owned judgment is a standing Phase 2 rule
 
 Decision:

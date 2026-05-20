@@ -61,6 +61,7 @@ authority is MMV2-native durable truth unless a spec explicitly says otherwise.
 46. [Work Queue Information Architecture](/projects/model-memory/specs/work-queue-information-architecture)
 47. [Work Queue Interaction And Lifecycle State Model](/projects/model-memory/specs/work-queue-interaction-lifecycle-state-model)
 48. [Work Queue UX Implementation Plan](/projects/model-memory/specs/work-queue-ux-implementation-plan)
+49. [Runtime Toolification Integration](/projects/model-memory/specs/runtime-toolification-integration)
 
 ## Companion project docs
 

@@ -4,6 +4,7 @@ import type { JsonValue } from "../runtime-job-repository.ts";
 export const TEAM_GRAPH_NODE_KINDS = [
   "orchestrator_plan",
   "context_scout",
+  "context_synthesis",
   "implementation",
   "validation",
   "test_review",
@@ -27,6 +28,14 @@ export type TeamGraphNodeKind = (typeof TEAM_GRAPH_NODE_KINDS)[number];
 export const TEAM_GRAPH_EDGE_KINDS = [
   "depends_on",
   "handoff",
+  "context_supplies",
+  "synthesis_groups",
+  "implementation_depends_on",
+  "validation_depends_on",
+  "review_depends_on",
+  "closeout_depends_on",
+  "human_decision_blocks",
+  "proof_depends_on",
   "validation_failed",
   "repair_requested",
   "escalation",

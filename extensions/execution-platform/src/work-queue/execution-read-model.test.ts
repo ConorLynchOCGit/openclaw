@@ -6,10 +6,12 @@ import {
 } from "../codex-bridge/agent-team-runtime-evidence.ts";
 import { applyExecutionPlatformMigrations } from "../db/migrations.ts";
 import { createExecutionPlatformPgMemTestDatabase } from "../db/pg-test.ts";
+import { buildRuntimeExecutionSpan } from "../observability/runtime-execution-span.ts";
 import { RuntimeJobRepository } from "../runtime-job-repository.ts";
 import { applyRuntimeWorkerSupervisorControl } from "../workers/runtime-worker-supervisor-controls.ts";
 import { createModelAuthoredCloseoutCapsuleFixture } from "../workers/test-closeout-capsule-fixture.ts";
 import { recordWorkerCloseoutCapsule } from "../workers/worker-closeout-capsule.ts";
+import { buildAgentTeamCodingWorkflowPlugin } from "../workflows/agent-team-coding-plugin.ts";
 import {
   SKILLIFIER_RUNTIME_JOB_TYPE,
   SKILLIFIER_WORKFLOW_ID,
@@ -18,6 +20,28 @@ import {
   createWebResearchRuntimeEvidence,
   recordWebResearchRuntimeEvidence,
 } from "../workflows/web-research-runtime-evidence.ts";
+import {
+  WORKFLOW_COMPLETION_REVIEW_ARTIFACT_TYPE,
+  createWorkflowCompletionReviewFromCloseout,
+  evaluateWorkflowCompletionReviewGate,
+  workflowCompletionReviewArtifactMetadata,
+} from "../workflows/workflow-completion-review.ts";
+import { requireCanonicalWorkflowDefinition } from "../workflows/workflow-definition-registry.ts";
+import {
+  WORKFLOW_DEFINITION_RESOLUTION_ARTIFACT_TYPE,
+  workflowDefinitionResolutionArtifactMetadata,
+  workflowDefinitionResolutionFor,
+} from "../workflows/workflow-definition.ts";
+import {
+  WORKFLOW_EVIDENCE_PROFILE_EVALUATION_ARTIFACT_TYPE,
+  evaluateWorkflowEvidenceProfile,
+  workflowEvidenceProfileEvaluationArtifactMetadata,
+} from "../workflows/workflow-evidence-profile.ts";
+import {
+  WORKFLOW_PLUGIN_RESOLUTION_ARTIFACT_TYPE,
+  workflowPluginResolutionArtifactMetadata,
+  workflowPluginResolutionFor,
+} from "../workflows/workflow-plugin.ts";
 import { projectCanonicalRuntimeQueue } from "./canonical-runtime-queue.ts";
 import {
   buildWorkQueueExecutionReadModel,
@@ -31,6 +55,7 @@ import "./product-spec-planning-mission-readback.test.ts";
 import "./product-spec-planning-proof-review.test.ts";
 import "./product-spec-planning-commitment-review.test.ts";
 import "../codex-bridge/workflow-queued-runner.test.ts";
+import "../workflows/product-spec-planning-plugin.test.ts";
 import "../workflows/runtime-node-capability-registry.test.ts";
 import "../workflows/runtime-work-graph-scheduler.test.ts";
 
@@ -52,6 +77,297 @@ async function withRuntime<T>(
 }
 
 describe("Work Queue front-door routing projection", () => {
+  it("surfaces canonical workflow definition, runtime engine, and completion review state", async () => {
+    await withRuntime(async ({ runtimeJobs, workQueue }) => {
+      const workItem = await workQueue.createWorkItem({
+        workItemId: "workflow-definition-readback-item",
+        itemType: "execution_workflow",
+        title: "Workflow definition readback",
+      });
+      const runtimeJob = await runtimeJobs.enqueueJob({
+        jobId: "workflow-definition-readback-job",
+        jobType: "executor.agent_team",
+        queueName: "agent-team",
+        workItemId: workItem.workItemId,
+        payload: { workflowId: "agent_team.coding" },
+      });
+      await workQueue.createWorkRun({
+        runId: "workflow-definition-readback-run",
+        workItemId: workItem.workItemId,
+        executorKind: "runtime_job",
+        runtimeJobId: runtimeJob.jobId,
+        runState: "running",
+      });
+      const definition = requireCanonicalWorkflowDefinition("agent_team.coding");
+      const plugin = buildAgentTeamCodingWorkflowPlugin({
+        definition,
+        executors: {
+          "kind:context_scout": {} as never,
+          "kind:implementation": {} as never,
+          "kind:validation": {} as never,
+          "kind:test_review": {} as never,
+          "kind:repair": {} as never,
+          "kind:reviewer": {} as never,
+          "kind:observability_readback": {} as never,
+          "kind:human_task": {} as never,
+          "kind:closeout": {} as never,
+          "role:context_scout": {} as never,
+          "role:implementation_engineer": {} as never,
+          "role:test_engineer": {} as never,
+          "role:reviewer": {} as never,
+          "role:observability_scribe": {} as never,
+        },
+      });
+      const profile = evaluateWorkflowEvidenceProfile({
+        workflowId: definition.workflowId,
+        runtimeJobId: runtimeJob.jobId,
+        workItemId: workItem.workItemId,
+        closeoutSource: "model",
+        evidenceClassRefs: {
+          runtime_graph: ["runtime-graph://graph-1"],
+          scheduler_tool_trace: ["runtime-tool://scheduler.select_next_node/invocation-1"],
+          worker_tool_trace: ["runtime-tool://worker.invoke/invocation-1"],
+          source_change: ["repo://file.ts#hash"],
+          validation: ["validation://focused"],
+          review: ["review://reviewer"],
+          closeout: ["closeout://capsule-1"],
+          work_queue_readback: ["work-queue://workflow-definition-readback-item/readback"],
+        },
+        rawPromptStored: false,
+        rawResponseStored: false,
+        rawLogsStored: false,
+      });
+      const capsule = createModelAuthoredCloseoutCapsuleFixture({
+        runtimeJobId: runtimeJob.jobId,
+        workflowId: definition.workflowId,
+      });
+      const completionReview = createWorkflowCompletionReviewFromCloseout({
+        definition,
+        runtimeJobId: runtimeJob.jobId,
+        closeoutCapsule: capsule,
+        workflowEvidenceProfile: profile,
+        profileEvaluationRef: "runtime-job://workflow-definition-readback-job/profile",
+        missionLedgerRefs: ["runtime-job://workflow-definition-readback-job/ledger"],
+        runtimeGraphRefs: ["runtime-graph://graph-1"],
+        runtimeToolTraceRefs: ["runtime-tool://scheduler.select_next_node/invocation-1"],
+        validationRefs: ["validation://focused"],
+        reviewRefs: ["review://reviewer"],
+        closeoutRefs: ["closeout://capsule-1"],
+        workQueueReadbackRefs: ["work-queue://workflow-definition-readback-item/readback"],
+        limitations: [],
+      });
+      const completionReviewGate = evaluateWorkflowCompletionReviewGate({
+        definition,
+        review: completionReview,
+        requiredEvidenceRefs: ["runtime-graph://graph-1", "closeout://capsule-1"],
+        completionReviewRef: "runtime-job://workflow-definition-readback-job/completion-review",
+      });
+      await runtimeJobs.attachArtifact({
+        jobId: runtimeJob.jobId,
+        artifactType: WORKFLOW_DEFINITION_RESOLUTION_ARTIFACT_TYPE,
+        storageKind: "metadata",
+        uri: "runtime-job://workflow-definition-readback-job/execution/workflow-definition/agent_team.coding",
+        contentType: "application/json",
+        metadata: workflowDefinitionResolutionArtifactMetadata(
+          workflowDefinitionResolutionFor(definition),
+        ),
+      });
+      await runtimeJobs.attachArtifact({
+        jobId: runtimeJob.jobId,
+        artifactType: WORKFLOW_PLUGIN_RESOLUTION_ARTIFACT_TYPE,
+        storageKind: "metadata",
+        uri: "runtime-job://workflow-definition-readback-job/execution/workflow-plugin/agent_team.coding",
+        contentType: "application/json",
+        metadata: workflowPluginResolutionArtifactMetadata(
+          workflowPluginResolutionFor({ plugin, definition }),
+        ),
+      });
+      await runtimeJobs.attachArtifact({
+        jobId: runtimeJob.jobId,
+        artifactType: "execution.runtime_workflow_graph_engine_readiness",
+        storageKind: "metadata",
+        uri: "runtime-job://workflow-definition-readback-job/execution/runtime-workflow-graph-engine/agent_team.coding",
+        contentType: "application/json",
+        metadata: {
+          artifactKind: "runtime_workflow_graph_engine_readiness",
+          engineId: "runtime-workflow-graph-engine.v1",
+          workflowId: definition.workflowId,
+          definitionId: definition.definitionId,
+          pluginId: plugin.pluginId,
+          pluginReady: true,
+          ready: true,
+          reasonCodes: ["workflow_definition_production_enabled"],
+          missingExecutorKeys: [],
+          missingPluginExecutorKeys: [],
+          missingRuntimeToolFamilies: [],
+          rawPromptStored: false,
+          rawResponseStored: false,
+          rawLogsStored: false,
+          workQueueLifecycleMutated: false,
+        },
+      });
+      await runtimeJobs.attachArtifact({
+        jobId: runtimeJob.jobId,
+        artifactType: "execution.generic_orchestration_runtime_result",
+        storageKind: "metadata",
+        uri: "runtime-job://workflow-definition-readback-job/execution/generic-orchestration-runtime/result/agent_team.coding",
+        contentType: "application/json",
+        metadata: {
+          artifactKind: "generic_orchestration_runtime_result",
+          engineId: "generic-orchestration-runtime-engine.v1",
+          workflowId: definition.workflowId,
+          runtimeJobId: runtimeJob.jobId,
+          status: "succeeded",
+          schedulerStatus: "succeeded",
+          graphId: "graph-1",
+          executedNodeIds: ["node-context", "node-implementation", "node-closeout"],
+          addedNodeIds: ["node-context", "node-implementation", "node-closeout"],
+          decisionRefs: ["runtime-tool://scheduler/decision-1"],
+          reasonCodes: ["generic_orchestration_runtime_scheduler_executed"],
+          rawPromptStored: false,
+          rawResponseStored: false,
+          rawProviderLogStored: false,
+          rawLogsStored: false,
+          workQueueLifecycleMutated: false,
+        },
+      });
+      await runtimeJobs.attachArtifact({
+        jobId: runtimeJob.jobId,
+        artifactType: WORKFLOW_COMPLETION_REVIEW_ARTIFACT_TYPE,
+        storageKind: "metadata",
+        uri: "runtime-job://workflow-definition-readback-job/execution/completion-review",
+        contentType: "application/json",
+        metadata: workflowCompletionReviewArtifactMetadata(completionReview),
+      });
+      await runtimeJobs.attachArtifact({
+        jobId: runtimeJob.jobId,
+        artifactType: "execution.workflow_completion_review_gate",
+        storageKind: "metadata",
+        uri: "runtime-job://workflow-definition-readback-job/execution/completion-review-gate",
+        contentType: "application/json",
+        metadata: completionReviewGate,
+      });
+
+      const readback = await buildWorkQueueExecutionReadModel({
+        runtimeJobs,
+        workQueue,
+        workItemId: workItem.workItemId,
+      });
+
+      expect(readback.runtimeJobs[0]?.workflow.extension).toMatchObject({
+        workflowDefinition: {
+          workflowId: "agent_team.coding",
+          status: "production_ready",
+          productionEnabled: true,
+          schedulerBacked: true,
+          completionReviewRequired: true,
+        },
+        workflowPlugin: {
+          pluginId: "workflow-plugin.agent_team.coding.v1",
+          workflowId: "agent_team.coding",
+          status: "production_ready",
+          productionEnabled: true,
+          completionReviewRequired: true,
+          stagedSchedulerProtocolRequired: true,
+          stagedGraphAcceptanceRequired: true,
+          runtimeDerivedNodeEnvelopeRequired: true,
+          runtimeDerivedExpectedEvidenceRequired: true,
+          modelAuthoredStructureReviewRequired: true,
+          firstNodeApprovalRequired: true,
+          directImplementationFirstMovePolicy: "simple_only",
+          degradedCloseoutSuccessAllowed: false,
+        },
+        runtimeWorkflowEngine: {
+          ready: true,
+          pluginId: "workflow-plugin.agent_team.coding.v1",
+          pluginReady: true,
+          missingExecutorKeys: [],
+          missingPluginExecutorKeys: [],
+          missingRuntimeToolFamilies: [],
+        },
+        genericOrchestrationRuntime: {
+          engineId: "generic-orchestration-runtime-engine.v1",
+          status: "succeeded",
+          schedulerStatus: "succeeded",
+          graphId: "graph-1",
+          executedNodeIds: ["node-context", "node-implementation", "node-closeout"],
+        },
+        completionReview: {
+          outcome: "accepted",
+          confidence: "high",
+        },
+        completionReviewGate: {
+          accepted: true,
+          outcome: "accepted",
+        },
+      });
+    });
+  });
+
+  it("surfaces workflow evidence profile status and missing classes in readback", async () => {
+    await withRuntime(async ({ runtimeJobs, workQueue }) => {
+      const workItem = await workQueue.createWorkItem({
+        workItemId: "workflow-profile-readback-item",
+        itemType: "execution_workflow",
+        title: "Workflow profile readback",
+      });
+      const runtimeJob = await runtimeJobs.enqueueJob({
+        jobId: "workflow-profile-readback-job",
+        jobType: "executor.agent_team",
+        queueName: "agent-team",
+        workItemId: workItem.workItemId,
+        payload: { workflowId: "agent_team.coding" },
+      });
+      await workQueue.createWorkRun({
+        runId: "workflow-profile-readback-run",
+        workItemId: workItem.workItemId,
+        executorKind: "runtime_job",
+        runtimeJobId: runtimeJob.jobId,
+        runState: "running",
+      });
+      const evaluation = evaluateWorkflowEvidenceProfile({
+        workflowId: "agent_team.coding",
+        runtimeJobId: runtimeJob.jobId,
+        workItemId: workItem.workItemId,
+        closeoutSource: "model",
+        evidenceClassRefs: {
+          runtime_graph: ["runtime-graph://graph-1"],
+          closeout: ["closeout://capsule-1"],
+        },
+        rawPromptStored: false,
+        rawResponseStored: false,
+        rawLogsStored: false,
+      });
+      await runtimeJobs.attachArtifact({
+        jobId: runtimeJob.jobId,
+        artifactType: WORKFLOW_EVIDENCE_PROFILE_EVALUATION_ARTIFACT_TYPE,
+        storageKind: "metadata",
+        uri: "runtime-job://workflow-profile-readback-job/execution/workflow-evidence-profile/agent_team.coding",
+        contentType: "application/json",
+        metadata: workflowEvidenceProfileEvaluationArtifactMetadata(evaluation),
+      });
+
+      const readback = await buildWorkQueueExecutionReadModel({
+        runtimeJobs,
+        workQueue,
+        workItemId: workItem.workItemId,
+      });
+
+      expect(readback.runtimeJobs[0]?.workflow.blockerReasonCodes).toEqual(
+        expect.arrayContaining([
+          "workflow_evidence_profile_not_accepted",
+          "workflow_evidence_missing:scheduler_tool_trace",
+        ]),
+      );
+      expect(readback.runtimeJobs[0]?.workflow.extension).toMatchObject({
+        workflowEvidenceProfile: {
+          accepted: false,
+          missingEvidenceClasses: expect.arrayContaining(["scheduler_tool_trace"]),
+        },
+      });
+    });
+  });
+
   it("derives deterministic active/closed positions from runtime truth when timestamps tie", () => {
     const updatedAt = new Date("2026-05-14T00:00:00.000Z");
     const truth = (workItemId: string, lifecycleState: "running" | "succeeded") => ({
@@ -226,6 +542,7 @@ describe("Work Queue front-door routing projection", () => {
         storageKind: "metadata",
         uri: "runtime-job://planning-decision-readback-job/runtime-work-graph/human-scope-decision/owner-choice",
         metadata: {
+          decisionState: "accepted",
           boundedDecisionRef:
             "owner-decision://product-spec-planning/default-child-action-graph-proposals",
           rawPromptStored: false,
@@ -249,8 +566,145 @@ describe("Work Queue front-door routing projection", () => {
           "owner-decision://product-spec-planning/default-child-action-graph-proposals",
           "runtime-job://planning-decision-readback-job/runtime-work-graph/human-scope-decision/owner-choice",
         ],
+        planningDecisionState: "accepted",
       });
       expect(model.runtimeJobs[0]?.ownerReadback.workQueueLifecycleMutationAllowed).toBe(false);
+    });
+  });
+
+  it("surfaces Product/Spec Planning decision options and pending or rejected states", async () => {
+    await withRuntime(async ({ runtimeJobs, workQueue }) => {
+      const runtimeJobId = "planning-decision-state-readback-job";
+      const workItemId = "planning-decision-state-readback-item";
+      const job = await runtimeJobs.enqueueJob({
+        jobId: runtimeJobId,
+        jobType: "executor.agent_team",
+        workItemId,
+        payload: { workflowId: "agent_team.product_spec_planning", authorityProfile: "read_only" },
+      });
+      await workQueue.createWorkItem({
+        workItemId,
+        itemType: "execution_workflow",
+        title: "Planning decision state readback",
+      });
+      await workQueue.createWorkRun({
+        workItemId,
+        executorKind: "runtime_job",
+        runtimeJobId: job.jobId,
+        runState: "running",
+        metadata: { workQueueLifecycleMutated: false },
+      });
+      const capsule = createModelAuthoredCloseoutCapsuleFixture({
+        runtimeJobId: job.jobId,
+        teamRunId: "team-run-planning-decision-state-readback",
+        workflowId: "agent_team.product_spec_planning",
+      });
+      await recordWorkerCloseoutCapsule({ runtimeJobs, capsule });
+      await runtimeJobs.attachArtifact({
+        jobId: job.jobId,
+        artifactType: "agent_team.product_spec_planning_human_decision_request",
+        storageKind: "metadata",
+        uri: `runtime-job://${runtimeJobId}/runtime-work-graph/human-decision/request-1`,
+        metadata: {
+          artifactKind: "product_spec_planning_human_decision_request",
+          decisionState: "pending",
+          decisionRefs: ["owner-decision://product-spec-planning/default-compile-ready"],
+          optionsAndTradeoffs: [
+            "Approve compile readiness after one reviewer pass.",
+            "Reject compile readiness and keep this as plan-only.",
+          ],
+          whatHappensAfterEachOption: [
+            "The compiler can validate child proposals, but still cannot execute them.",
+            "The planning job closes without compile-ready child proposals.",
+          ],
+          requiredResponseShape:
+            "Choose approve_compile_ready or reject_compile_ready, with a short reason.",
+          deadlineExpiresAt: "2026-05-20T00:00:00.000Z",
+          blockingGraphRefs: ["runtime-work-graph://planning-decision-state/blocking-node"],
+          resumeRefs: ["runtime-work-graph://planning-decision-state/resume-after-owner"],
+          boundedResponseRefs: ["owner-response://planning-decision-state/pending"],
+          rawPromptStored: false,
+          rawResponseStored: false,
+          rawLogsStored: false,
+          workQueueLifecycleMutationAllowed: false,
+        },
+      });
+
+      const pendingModel = await buildWorkQueueExecutionReadModel({
+        workQueue,
+        runtimeJobs,
+        workItemId,
+      });
+      const pendingReadback = pendingModel.runtimeJobs[0]?.ownerReadback;
+
+      expect(pendingReadback).toMatchObject({
+        planningMode: "compile_ready",
+        planningOutputKind: "compile_ready_output",
+        humanDecisionState: "pending",
+        planningDecisionState: "pending",
+        humanDecisionResponseShape:
+          "Choose approve_compile_ready or reject_compile_ready, with a short reason.",
+        humanDecisionDeadlineExpiresAt: "2026-05-20T00:00:00.000Z",
+        humanDecisionBlockingGraphRefs: [
+          "runtime-work-graph://planning-decision-state/blocking-node",
+        ],
+        humanDecisionResumeRefs: [
+          "runtime-work-graph://planning-decision-state/resume-after-owner",
+        ],
+        humanDecisionBoundedResponseRefs: ["owner-response://planning-decision-state/pending"],
+      });
+      expect(pendingReadback?.humanDecisionOptions).toEqual([
+        {
+          optionId: "option-1",
+          optionSummary: "Approve compile readiness after one reviewer pass.",
+          tradeoffSummary: "Approve compile readiness after one reviewer pass.",
+          afterSelectionSummary:
+            "The compiler can validate child proposals, but still cannot execute them.",
+          decisionRef: null,
+        },
+        {
+          optionId: "option-2",
+          optionSummary: "Reject compile readiness and keep this as plan-only.",
+          tradeoffSummary: "Reject compile readiness and keep this as plan-only.",
+          afterSelectionSummary: "The planning job closes without compile-ready child proposals.",
+          decisionRef: null,
+        },
+      ]);
+
+      await runtimeJobs.attachArtifact({
+        jobId: job.jobId,
+        artifactType: "agent_team.human_scope_decision",
+        storageKind: "metadata",
+        uri: `runtime-job://${runtimeJobId}/runtime-work-graph/human-decision/rejected`,
+        metadata: {
+          decisionState: "rejected",
+          boundedDecisionRef:
+            "owner-decision://product-spec-planning/default-compile-ready/rejected",
+          boundedResponseRef: "owner-response://planning-decision-state/rejected",
+          rawPromptStored: false,
+          rawResponseStored: false,
+          rawLogsStored: false,
+          workQueueLifecycleMutated: false,
+        },
+      });
+
+      const rejectedModel = await buildWorkQueueExecutionReadModel({
+        workQueue,
+        runtimeJobs,
+        workItemId,
+      });
+
+      expect(rejectedModel.runtimeJobs[0]?.ownerReadback).toMatchObject({
+        humanDecisionState: "present",
+        planningDecisionState: "rejected",
+        humanDecisionRefs: expect.arrayContaining([
+          "owner-decision://product-spec-planning/default-compile-ready/rejected",
+          `runtime-job://${runtimeJobId}/runtime-work-graph/human-decision/rejected`,
+        ]),
+        rawPromptStored: false,
+        rawResponseStored: false,
+        workQueueLifecycleMutationAllowed: false,
+      });
     });
   });
 
@@ -409,6 +863,9 @@ describe("Work Queue front-door routing projection", () => {
         uri: `runtime-job://${runtimeJobId}/runtime-work-graph/planning-capsule/capsule-1-v2`,
         metadata: {
           artifactKind: "product_spec_planning_capsule",
+          capsuleVersion: 2,
+          previousCapsuleRef: `runtime-job://${runtimeJobId}/runtime-work-graph/planning-capsule/capsule-1-v1`,
+          modelAuthored: true,
           researchInfluenceRefs: [
             `runtime-job://${runtimeJobId}/runtime-work-graph/research/research-brief-1`,
           ],
@@ -488,6 +945,34 @@ describe("Work Queue front-door routing projection", () => {
         ],
         compileReadinessState: "compile_ready",
         humanDecisionState: "present",
+      });
+      expect(readback?.planningEvidenceSummary).toMatchObject({
+        artifactKind: "product_spec_planning_owner_evidence_summary",
+        runtimeWorkflowMappingRefs: [
+          "workflow://agent_team.product_spec_planning",
+          `runtime-job://${runtimeJobId}/runtime-work-graph/planning-surface`,
+        ],
+        planningCapsuleLifecycleState: "final_accepted",
+        planningCapsuleLifecycleRefs: [
+          `runtime-job://${runtimeJobId}/runtime-work-graph/planning-capsule/capsule-1-v2`,
+        ],
+        actionGraphCompileReadinessState: "compile_ready",
+        actionGraphCompileReadinessRefs: expect.arrayContaining([
+          `runtime-job://${runtimeJobId}/runtime-work-graph/action-graph/proposal-1`,
+          "validation://planning-surface/compile-readiness",
+        ]),
+        childActionsExecuted: false,
+        runtimeJobsCreated: false,
+        boundedEvidenceState: "bounded",
+        rawStorageEvidenceRefs: [],
+        reasonCodes: expect.arrayContaining([
+          "product_spec_planning_runtime_workflow_mapping_present",
+          "product_spec_planning_capsule_lifecycle:final_accepted",
+          "product_spec_planning_compile_readiness:compile_ready",
+          "product_spec_planning_proposed_child_actions_not_executed",
+          "product_spec_planning_child_runtime_jobs_not_created",
+          "product_spec_planning_bounded_evidence_refs_only",
+        ]),
       });
       expect(readback?.humanDecisionRequestRefs).toEqual(
         expect.arrayContaining([
@@ -592,6 +1077,21 @@ describe("Work Queue front-door routing projection", () => {
               ],
               remainingWork: [],
             },
+            {
+              commitmentId: "commitment-production-evidence-buckets",
+              status: "satisfied",
+              commitmentText:
+                "Expose workflow registration, executable node mapping, orchestrator-first, and compile-readiness evidence buckets.",
+              acceptedEvidenceRefs: [
+                "workflow://agent_team.product_spec_planning",
+                "runtime-node-capability://agent_team.product_spec_planning/planning_orchestrator",
+                "runtime-node-capability://agent_team.product_spec_planning/compile_runtime_plan",
+                `runtime-job://${runtimeJobId}/runtime-work-graph/planning-orchestrator-first`,
+                `runtime-job://${runtimeJobId}/runtime-work-graph/action-graph/proposal`,
+                "validation://product-spec-planning/compile-runtime-plan",
+              ],
+              remainingWork: [],
+            },
           ],
         },
       });
@@ -637,6 +1137,127 @@ describe("Work Queue front-door routing projection", () => {
       expect(model.runtimeJobs[0]?.ownerReadback.missionContract.reasonCodes).toContain(
         "mission_contract_satisfied",
       );
+      expect(model.runtimeJobs[0]?.ownerReadback.missionContract).toMatchObject({
+        boundedEvidenceState: "bounded",
+        rawStorageEvidenceRefs: [],
+      });
+      expect(model.runtimeJobs[0]?.ownerReadback.planningEvidenceSummary).toMatchObject({
+        changedFileRefs: [
+          `runtime-job://${runtimeJobId}/codex-direct-main-repo/diff/main-repo-change`,
+          "repo://extensions/execution-platform/src/work-queue/execution-read-model.test.ts",
+        ],
+        runtimeWorkflowMappingRefs: [
+          "workflow://agent_team.product_spec_planning",
+          `runtime-job://${runtimeJobId}/runtime-work-graph/product-spec-planning/graph`,
+        ],
+        workflowRegistrationEvidenceRefs: ["workflow://agent_team.product_spec_planning"],
+        executableNodeMappingEvidenceRefs: expect.arrayContaining([
+          "runtime-node-capability://agent_team.product_spec_planning/planning_orchestrator",
+          "runtime-node-capability://agent_team.product_spec_planning/compile_runtime_plan",
+        ]),
+        orchestratorFirstEvidenceRefs: [
+          `runtime-job://${runtimeJobId}/runtime-work-graph/planning-orchestrator-first`,
+        ],
+        actionGraphCompileReadinessRefs: expect.arrayContaining([
+          `runtime-job://${runtimeJobId}/runtime-work-graph/action-graph/proposal`,
+          `runtime-job://${runtimeJobId}/codex-direct-main-repo/validation`,
+        ]),
+        actionGraphProposalCompileValidationRefs: expect.arrayContaining([
+          `runtime-job://${runtimeJobId}/runtime-work-graph/action-graph/proposal`,
+          "validation://product-spec-planning/compile-runtime-plan",
+        ]),
+        commitmentEvidenceClaimRefs: expect.arrayContaining([
+          "workflow://agent_team.product_spec_planning",
+          "runtime-node-capability://agent_team.product_spec_planning/planning_orchestrator",
+          "validation://product-spec-planning/compile-runtime-plan",
+        ]),
+        boundedEvidenceState: "bounded",
+        rawStorageEvidenceRefs: [],
+        reasonCodes: expect.arrayContaining([
+          "product_spec_planning_source_change_evidence_present",
+          "product_spec_planning_runtime_workflow_mapping_present",
+          "product_spec_planning_workflow_registration_evidence_present",
+          "product_spec_planning_executable_node_mapping_evidence_present",
+          "product_spec_planning_orchestrator_first_evidence_present",
+          "product_spec_planning_action_graph_compile_validation_evidence_present",
+          "product_spec_planning_commitment_evidence_claim_refs_present",
+          "product_spec_planning_bounded_evidence_refs_only",
+        ]),
+      });
+    });
+  });
+
+  it("flags unbounded Product/Spec Planning Mission Ledger evidence refs in readback", async () => {
+    await withRuntime(async ({ runtimeJobs, workQueue }) => {
+      const runtimeJobId = "planning-ledger-raw-ref-readback-job";
+      const workItemId = "planning-ledger-raw-ref-readback-item";
+      const job = await runtimeJobs.enqueueJob({
+        jobId: runtimeJobId,
+        jobType: "executor.agent_team",
+        workItemId,
+        payload: { workflowId: "agent_team.product_spec_planning", authorityProfile: "read_only" },
+      });
+      await workQueue.createWorkItem({
+        workItemId,
+        itemType: "execution_workflow",
+        title: "Planning ledger raw ref readback",
+      });
+      await workQueue.createWorkRun({
+        workItemId,
+        executorKind: "runtime_job",
+        runtimeJobId: job.jobId,
+        runState: "running",
+        metadata: { workQueueLifecycleMutated: false },
+      });
+      const capsule = createModelAuthoredCloseoutCapsuleFixture({
+        runtimeJobId: job.jobId,
+        teamRunId: "team-run-planning-ledger-raw-ref-readback",
+        workflowId: "agent_team.product_spec_planning",
+      });
+      await recordWorkerCloseoutCapsule({ runtimeJobs, capsule });
+      await runtimeJobs.attachArtifact({
+        jobId: job.jobId,
+        artifactType: "execution_platform.mission_contract_ledger",
+        storageKind: "metadata",
+        uri: `runtime-job://${runtimeJobId}/mission-contract-ledger/product-spec-planning/1`,
+        metadata: {
+          artifactKind: "mission_contract_ledger",
+          ledgerStatus: "satisfied",
+          blockingCommitments: [
+            {
+              commitmentId: "commitment-raw-ref",
+              status: "satisfied",
+              commitmentText: "Reject raw provider log refs as bounded ledger evidence.",
+              acceptedEvidenceRefs: [
+                `runtime-job://${runtimeJobId}/provider-log/raw-transcript/full`,
+              ],
+              remainingWork: [],
+            },
+          ],
+        },
+      });
+
+      const model = await buildWorkQueueExecutionReadModel({
+        workQueue,
+        runtimeJobs,
+        workItemId,
+      });
+
+      expect(model.runtimeJobs[0]?.ownerReadback.missionContract).toMatchObject({
+        boundedEvidenceState: "needs_review",
+        rawStorageEvidenceRefs: [`runtime-job://${runtimeJobId}/provider-log/raw-transcript/full`],
+        reasonCodes: expect.arrayContaining(["mission_contract_raw_storage_evidence_ref_present"]),
+      });
+      expect(model.runtimeJobs[0]?.ownerReadback.planningEvidenceSummary).toMatchObject({
+        boundedEvidenceState: "needs_review",
+        rawStorageEvidenceRefs: [`runtime-job://${runtimeJobId}/provider-log/raw-transcript/full`],
+        reasonCodes: expect.arrayContaining([
+          "product_spec_planning_bounded_evidence_needs_review",
+        ]),
+      });
+      expect(model.runtimeJobs[0]?.ownerReadback.rawPromptStored).toBe(false);
+      expect(model.runtimeJobs[0]?.ownerReadback.rawResponseStored).toBe(false);
+      expect(model.runtimeJobs[0]?.ownerReadback.rawLogsStored).toBe(false);
     });
   });
 
@@ -1486,6 +2107,36 @@ describe("Work Queue front-door routing projection", () => {
           ],
           escalatedToCodexBridgeRecommended: true,
           reasonCodes: ["kimi_patch_schema_invalid"],
+          boundedAdapterDiagnostics: {
+            sourceResult: {
+              repairClassificationRefs: [
+                "non-codex-worker-repair-classification://readback-validation",
+              ],
+              repairClassifications: [
+                {
+                  artifactKind: "runtime_repair_classification",
+                  schemaVersion: "v1",
+                  classificationId: "readback-validation",
+                  classificationRef: "non-codex-worker-repair-classification://readback-validation",
+                  failureClass: "validation_failure_repairable",
+                  failedBoundaryKind: "validation",
+                  repairStrategy: "same_boundary_repair",
+                  selectedRepairBoundary: "validation",
+                  failedCommitmentIds: ["commitment-readback"],
+                  reasonCodes: ["worker_validation_run_failed"],
+                  expectedNextAction: "Repair validation and rerun.",
+                  rawPromptStored: false,
+                  rawResponseStored: false,
+                  rawProviderLogStored: false,
+                  rawToolLogStored: false,
+                  rawCommandLogStored: false,
+                  rawDbRowsStored: false,
+                  secretsStored: false,
+                  workQueueLifecycleMutated: false,
+                },
+              ],
+            },
+          },
           rawPromptStored: false,
           rawResponseStored: false,
           rawProviderLogStored: false,
@@ -1549,6 +2200,21 @@ describe("Work Queue front-door routing projection", () => {
           attemptCount: 1,
           rejectionStages: ["schema_parse"],
           escalationRecommended: true,
+          repairClassificationRefs: [
+            "non-codex-worker-repair-classification://readback-validation",
+          ],
+          repairClassifications: [
+            {
+              classificationRef: "non-codex-worker-repair-classification://readback-validation",
+              failureClass: "validation_failure_repairable",
+              failedBoundaryKind: "validation",
+              repairStrategy: "same_boundary_repair",
+              selectedRepairBoundary: "validation",
+              expectedNextAction: "Repair validation and rerun.",
+              failedCommitmentIds: ["commitment-readback"],
+              reasonCodes: ["worker_validation_run_failed"],
+            },
+          ],
         },
         artifactRef:
           "runtime-job://dynamic-graph-readback-job/runtime-work-graph/orchestrator/plan",
@@ -1667,6 +2333,64 @@ describe("Work Queue front-door routing projection", () => {
       expect(model.runtimeJobs[0]?.ownerReadback.state).toBe("missing");
       expect(model.runtimeJobs[0]?.workflow.lifecycleState).toBe("succeeded");
       expect(model.runtimeJobs[0]?.workflow.workQueueLifecycleMutationAllowed).toBe(false);
+    });
+  });
+
+  it("surfaces terminal adapter needs_review separately from retry lifecycle", async () => {
+    await withRuntime(async ({ runtimeJobs, workQueue }) => {
+      const job = await runtimeJobs.enqueueJob({
+        jobId: "adapter-needs-review-job",
+        jobType: "executor.agent_team",
+        workItemId: "adapter-needs-review-item",
+        payload: { workflowId: "agent_team.coding" },
+        maxAttempts: 3,
+      });
+      const claim = await runtimeJobs.claimNextJob({
+        workerId: "worker",
+        runtimeJobId: job.jobId,
+      });
+      await runtimeJobs.markJobNeedsReview({
+        leaseToken: claim!.leaseToken,
+        error: {
+          code: "worker_adapter_needs_review",
+          retryScheduled: false,
+          summary: "Context synthesis needs focused repair.",
+          reasonCodes: ["context_synthesis_group_guidance_missing"],
+        },
+        result: {
+          status: "needs_review",
+          artifactRefs: ["runtime-job://adapter-needs-review-job/context-synthesis/input-manifest"],
+          completedWorkEvidenceRefs: [],
+          reasonCodes: ["context_synthesis_group_guidance_missing"],
+        },
+      });
+      await workQueue.createWorkItem({
+        workItemId: "adapter-needs-review-item",
+        itemType: "execution_workflow",
+        title: "Adapter needs review",
+      });
+      await workQueue.createWorkRun({
+        workItemId: "adapter-needs-review-item",
+        executorKind: "runtime_job",
+        runtimeJobId: job.jobId,
+        runState: "running",
+        metadata: { workQueueLifecycleMutated: false },
+      });
+
+      const model = await buildWorkQueueExecutionReadModel({
+        workQueue,
+        runtimeJobs,
+        workItemId: "adapter-needs-review-item",
+      });
+
+      expect(model.runtimeJobs[0]?.runtimeJobState).toBe("failed");
+      expect(model.runtimeJobs[0]?.ownerProgressReadback.terminalAdapterOutcome).toMatchObject({
+        status: "needs_review",
+        errorCode: "worker_adapter_needs_review",
+        retryScheduled: false,
+        reasonCodes: ["context_synthesis_group_guidance_missing"],
+      });
+      expect(model.runtimeJobs[0]?.ownerProgressReadback.nextAction).toContain("diagnostic");
     });
   });
 
@@ -2216,6 +2940,7 @@ it("surfaces active scheduler graph progress in owner progress readback", async 
         activeNodeKind: "context_scout",
         roleId: "context_scout",
         modelRef: "deepseek/deepseek-v4-flash",
+        providerPath: "openrouter",
         currentObjective: "Find target files for the implementation.",
         whyThisNodeWasChosen: "Implementation needs bounded file refs before editing.",
         targetRefs: ["extensions/execution-platform/src/work-queue/execution-read-model.ts"],
@@ -2224,13 +2949,43 @@ it("surfaces active scheduler graph progress in owner progress readback", async 
         currentPhase: "node_started",
         validationState: "not_started",
         selectedCapabilityId: "context_scout",
+        selectedProviderCapabilityProfileId:
+          "capability-profile://agent_team.coding/context_scout.v1",
+        workerRef: "openrouter_model_lane",
+        capabilityRoleClass: "context",
         capabilityCostClass: "cheap",
+        capabilityLatencyClass: "medium",
+        capabilityContextCapacity: "large",
+        providerProfileProductionSelectable: true,
+        providerProfileRequiresQualification: false,
+        selectedModelQualificationProfileId: null,
+        qualificationEvidenceRefs: [],
         capabilityUtilityRationale:
           "The context scout is the cheapest way to reduce file uncertainty.",
         capabilityCostRationale: "Use a cheap context lane before expensive implementation.",
         consideredCapabilityIds: ["context_scout", "implementation_complex"],
+        consideredProviderCapabilityProfileIds: [
+          "capability-profile://agent_team.coding/context_scout.v1",
+          "capability-profile://agent_team.coding/implementation_complex.v1",
+        ],
         evidenceProducedRefs: ["artifact://context/context-1"],
         evidenceClaimRefs: ["artifact://context/context-1"],
+        genericNodeExecutionResultRefs: ["runtime-work-graph://node/context-1/generic-node-result"],
+        evidenceClaims: [
+          {
+            evidenceClaimId: "evidence-claim:runtime-work-graph-1:context-1:context:1",
+            commitmentId: "context",
+            evidenceKind: "artifact",
+            evidenceRef: "artifact://context/context-1",
+            claimSummary: "Context scout produced a bounded handoff.",
+            producedByNodeId: "context-1",
+            producedByCapabilityId: "context_scout",
+            producedByExecutorKey: "role:context_scout",
+            validationRefs: [],
+            changedFileRefs: [],
+            limitations: [],
+          },
+        ],
         acceptedCommitmentIds: ["context"],
         rejectedCommitmentIds: [],
         remainingOpenCommitmentIds: ["code-edit", "validation"],
@@ -2241,9 +2996,81 @@ it("surfaces active scheduler graph progress in owner progress readback", async 
         schedulerPhase: "execution_in_progress",
         schedulerToolId: "worker.invoke",
         schedulerToolInvocationRefs: ["runtime-tool://worker-invoke-1"],
+        modelCallSpanId: "model-call-context-1",
+        modelCallPhase: "heartbeat",
+        modelCallSpanInputHash: "sha256:model-input-context-1",
+        modelCallSpanResponseHash: null,
+        modelCallSpanElapsedMs: 30_000,
+        modelCallSpanTimeoutMs: 900_000,
+        modelCallSpanHeartbeatCount: 2,
+        modelCallSpanResponseShapeSummary: null,
+        sourcePromptHash: "prompt-hash-1",
+        sourcePromptLength: 12345,
+        sourcePromptResolutionStatus: "resolved",
+        sourcePromptSectionRefs: ["source-prompt://prompt-hash-1/section-001/0-1000"],
+        sourcePromptExcerptRequestRefs: ["runtime-job://job/source-prompt/excerpt/request-1"],
+        sourcePromptExcerptProvidedRefs: ["runtime-job://job/source-prompt/excerpt/request-1"],
+        sourcePromptExcerptDeniedRefs: [],
+        verifiedContextFileRefs: [
+          "extensions/execution-platform/src/work-queue/execution-read-model.ts",
+        ],
+        contextHandoffPacketRefs: ["runtime-job://job/context-handoff/context-1"],
+        contextQualityState: "accepted",
+        openContextBlockers: [],
+        budgetPolicyRef: "runtime-task-budget://agent_team.coding/context_scout/standard",
+        budgetClass: "standard",
+        runtimeToolTimeoutMs: 900_000,
+        modelCallTimeoutMs: 900_000,
+        workerLoopTurnTimeoutMs: 900_000,
+        validationCommandTimeoutMs: 900_000,
+        progressEmissionIntervalMs: 10_000,
+        staleProgressAfterMs: 120_000,
+        leaseTimeoutMs: 180_000,
+        leaseHeartbeatMs: 60_000,
+        elapsedMs: 1250,
+        budgetRemainingMs: 898_750,
+        heartbeatState: "worker_call_started",
         rawPromptStored: false,
         rawResponseStored: false,
         rawProviderLogStored: false,
+      },
+    });
+    await runtimeJobs.recordEvent({
+      jobId: job.jobId,
+      eventType: "runtime_execution.span",
+      data: {
+        executionSpan: buildRuntimeExecutionSpan({
+          spanId: "model-call-context-1",
+          rootSpanId: "active-graph-progress-runtime-job:runtime-work-graph-1",
+          runtimeJobId: job.jobId,
+          graphId: "runtime-work-graph-1",
+          nodeId: "context-1",
+          workItemId,
+          spanKind: "model_call",
+          status: "heartbeat",
+          phase: "heartbeat",
+          roleId: "context_scout",
+          modelRef: "deepseek/deepseek-v4-flash",
+          providerPath: "openrouter",
+          objective: "Find target files for the implementation.",
+          whySelected: "Implementation needs bounded file refs before editing.",
+          currentAction: "Context scout model call is running.",
+          inputRefs: ["mission-contract://commitment/code-edit"],
+          inputHash: "sha256:model-input-context-1",
+          evidenceRefs: ["artifact://context/context-1"],
+          elapsedMs: 30_000,
+          timeoutMs: 900_000,
+          staleAfterMs: 120_000,
+          reasonCodes: ["model_call_span_heartbeat"],
+        }),
+        rawPromptStored: false,
+        rawResponseStored: false,
+        rawProviderLogStored: false,
+        rawToolLogStored: false,
+        rawCommandLogStored: false,
+        rawDbRowsStored: false,
+        secretsStored: false,
+        workQueueLifecycleMutated: false,
       },
     });
 
@@ -2269,19 +3096,97 @@ it("surfaces active scheduler graph progress in owner progress readback", async 
       validationState: "not_started",
       costAwareDecision: {
         selectedCapabilityId: "context_scout",
+        selectedProviderCapabilityProfileId:
+          "capability-profile://agent_team.coding/context_scout.v1",
+        workerRef: "openrouter_model_lane",
+        roleClass: "context",
         costClass: "cheap",
+        latencyClass: "medium",
+        contextCapacity: "large",
+        productionSelectable: true,
+        productionSelectionRequiresQualification: false,
+        selectedModelQualificationProfileId: null,
+        qualificationEvidenceRefs: [],
         utilityRationale: "The context scout is the cheapest way to reduce file uncertainty.",
         costRationale: "Use a cheap context lane before expensive implementation.",
         whyCheaperOptionsWereInsufficient: null,
         consideredCapabilityIds: ["context_scout", "implementation_complex"],
+        consideredProviderCapabilityProfileIds: [
+          "capability-profile://agent_team.coding/context_scout.v1",
+          "capability-profile://agent_team.coding/implementation_complex.v1",
+        ],
       },
       schedulerToolTrace: {
         schedulerPhase: "execution_in_progress",
         latestToolId: "worker.invoke",
         invocationRefs: ["runtime-tool://worker-invoke-1"],
       },
+      modelCallProgress: {
+        state: "present",
+        spanId: "model-call-context-1",
+        phase: "heartbeat",
+        modelRef: "deepseek/deepseek-v4-flash",
+        providerPath: "openrouter",
+        roleId: "context_scout",
+        nodeId: "context-1",
+        objective: "Find target files for the implementation.",
+        inputHash: "sha256:model-input-context-1",
+        responseHash: null,
+        elapsedMs: 30_000,
+        timeoutMs: 900_000,
+        heartbeatCount: 2,
+        responseShapeSummary: null,
+        rawPromptStored: false,
+        rawResponseStored: false,
+        rawProviderLogStored: false,
+      },
+      spanProgress: {
+        state: "present",
+        currentSpanId: "model-call-context-1",
+        currentSpanKind: "model_call",
+        currentPhase: "heartbeat",
+        currentStatus: "heartbeat",
+        currentModelRef: "deepseek/deepseek-v4-flash",
+        currentObjective: "Find target files for the implementation.",
+        currentInputRefs: ["mission-contract://commitment/code-edit"],
+        currentEvidenceRefs: ["artifact://context/context-1"],
+        rawPromptStored: false,
+        rawResponseStored: false,
+        rawProviderLogStored: false,
+      },
+      sourcePrompt: {
+        promptHash: "prompt-hash-1",
+        promptLength: 12345,
+        resolutionStatus: "resolved",
+        sectionRefs: ["source-prompt://prompt-hash-1/section-001/0-1000"],
+        excerptRequestRefs: ["runtime-job://job/source-prompt/excerpt/request-1"],
+        excerptProvidedRefs: ["runtime-job://job/source-prompt/excerpt/request-1"],
+        excerptDeniedRefs: [],
+      },
+      contextScout: {
+        qualityState: "accepted",
+        verifiedFileRefs: ["extensions/execution-platform/src/work-queue/execution-read-model.ts"],
+        handoffPacketRefs: ["runtime-job://job/context-handoff/context-1"],
+        openBlockers: [],
+      },
       evidenceProducedRefs: ["artifact://context/context-1"],
       evidenceClaimRefs: ["artifact://context/context-1"],
+      genericNodeExecutionResultRefs: ["runtime-work-graph://node/context-1/generic-node-result"],
+      evidenceClaims: [
+        {
+          evidenceClaimId: "evidence-claim:runtime-work-graph-1:context-1:context:1",
+          commitmentId: "context",
+          evidenceKind: "artifact",
+          evidenceRef: "artifact://context/context-1",
+          claimSummary: "Context scout produced a bounded handoff.",
+          producedByNodeId: "context-1",
+          producedByCapabilityId: "context_scout",
+          producedByExecutorKey: "role:context_scout",
+          validationRefs: [],
+          changedFileRefs: [],
+          limitations: [],
+        },
+      ],
       acceptedCommitmentIds: ["context"],
       rejectedCommitmentIds: [],
       openCommitmentIds: ["code-edit", "validation"],
@@ -2289,9 +3194,684 @@ it("surfaces active scheduler graph progress in owner progress readback", async 
       blockerSummary: "2 blocking commitments remain open.",
       latestToolEventKind: "worker.invoke",
       eli5Progress: "The context scout is finding the files the implementer should edit.",
+      budget: {
+        policyRef: "runtime-task-budget://agent_team.coding/context_scout/standard",
+        budgetClass: "standard",
+        runtimeToolTimeoutMs: 900_000,
+        modelCallTimeoutMs: 900_000,
+        workerLoopTurnTimeoutMs: 900_000,
+        validationCommandTimeoutMs: 900_000,
+        progressEmissionIntervalMs: 10_000,
+        staleProgressAfterMs: 120_000,
+        leaseTimeoutMs: 180_000,
+        leaseHeartbeatMs: 60_000,
+        elapsedMs: 1250,
+        budgetRemainingMs: 898_750,
+        heartbeatState: "worker_call_started",
+      },
       rawPromptStored: false,
       rawResponseStored: false,
       rawProviderLogStored: false,
+    });
+  });
+});
+
+it("surfaces boundary replay checkpoints and plans in owner graph progress readback", async () => {
+  await withRuntime(async ({ runtimeJobs, workQueue }) => {
+    const workItemId = "boundary-replay-readback-work-item";
+    const job = await runtimeJobs.enqueueJob({
+      jobId: "boundary-replay-readback-job",
+      jobType: "executor.agent_team",
+      queueName: "agent-team",
+      workItemId,
+      payload: { workflowId: "agent_team.coding", objectiveSummary: "Replay from context." },
+    });
+    await workQueue.createWorkItem({
+      workItemId,
+      itemType: "execution_workflow",
+      title: "Boundary replay readback",
+    });
+    await workQueue.createWorkRun({
+      workItemId,
+      executorKind: "runtime_job",
+      runtimeJobId: job.jobId,
+      runState: "running",
+      metadata: { workQueueLifecycleMutated: false },
+    });
+    await runtimeJobs.recordEvent({
+      jobId: job.jobId,
+      eventType: "agent_team.scheduler_progress",
+      data: {
+        stage: "boundary_replay_checkpoint",
+        currentPhase: "boundary_replay_context_scout",
+        artifactRefs: [
+          "runtime-job://boundary-replay-readback-job/boundary-replay/graph/context_scout/checkpoint-1",
+          "runtime-work-graph://checkpoint/boundary-replay-checkpoint-1",
+        ],
+        reasonCodes: ["boundary_replay_checkpoint_recorded", "boundary:context_scout"],
+        eli5Progress: "OpenClaw recorded a replay checkpoint for context_scout.",
+        rawPromptStored: false,
+        rawResponseStored: false,
+        rawProviderLogStored: false,
+      },
+    });
+    await runtimeJobs.recordEvent({
+      jobId: job.jobId,
+      eventType: "execution.boundary_replay_checkpoint",
+      data: {
+        checkpointRef:
+          "runtime-job://boundary-replay-readback-job/boundary-replay/graph/context_scout/checkpoint-1",
+        graphCheckpointRef: "runtime-work-graph://checkpoint/boundary-replay-checkpoint-1",
+        checkpointKind: "context_scout",
+        replayStartPolicy: "allowed_from_checkpoint",
+        replaySafetyStatus: "safe_to_replay",
+        replayFreshnessStatus: "fresh",
+        replayContinuationMode: "continue_scheduler",
+        reasonCodes: ["context_scout_boundary_checkpoint_recorded"],
+        rawPromptStored: false,
+        rawResponseStored: false,
+        rawProviderLogStored: false,
+      },
+    });
+    await runtimeJobs.recordEvent({
+      jobId: job.jobId,
+      eventType: "execution.boundary_replay_plan",
+      data: {
+        planRef:
+          "runtime-job://boundary-replay-readback-job/boundary-replay-plan/graph/context_scout/plan-1",
+        requestedStartBoundary: "context_scout",
+        status: "accepted",
+        latestAcceptedCheckpointRef:
+          "runtime-job://boundary-replay-readback-job/boundary-replay/graph/context_scout/checkpoint-1",
+        exactContinuationMode: "continue_scheduler",
+        exactContinuationAction:
+          "Continue production scheduler from context_scout through GenericOrchestrationRuntime.",
+        skippedUpstreamCheckpointKinds: [
+          "router_payload",
+          "mission_ledger",
+          "commitment_packet_authoring",
+          "commitment_packet_review",
+          "context_scout",
+        ],
+        resumeFromArtifactRefs: ["runtime-job://boundary-replay-readback-job/context-scout"],
+        invalidReasonCodes: [],
+        acceptedCheckpointRefs: [
+          "runtime-job://boundary-replay-readback-job/boundary-replay/graph/context_scout/checkpoint-1",
+        ],
+        staleCheckpointRefs: [],
+        rejectedCheckpointRefs: [],
+        reasonCodes: ["boundary_replay_plan_compiled"],
+        rawPromptStored: false,
+        rawResponseStored: false,
+        rawProviderLogStored: false,
+      },
+    });
+
+    const model = await buildWorkQueueExecutionReadModel({
+      workQueue,
+      runtimeJobs,
+      workItemId,
+    });
+
+    expect(
+      model.runtimeJobs[0]?.ownerProgressReadback.activeGraphProgress.boundaryReplay,
+    ).toMatchObject({
+      state: "present",
+      latestCheckpointKind: "context_scout",
+      checkpointRefs: [
+        "runtime-job://boundary-replay-readback-job/boundary-replay/graph/context_scout/checkpoint-1",
+      ],
+      graphCheckpointRefs: ["runtime-work-graph://checkpoint/boundary-replay-checkpoint-1"],
+      planRefs: [
+        "runtime-job://boundary-replay-readback-job/boundary-replay-plan/graph/context_scout/plan-1",
+      ],
+      replayStartPolicy: "allowed_from_checkpoint",
+      replaySafetyStatus: "safe_to_replay",
+      replayFreshnessStatus: "fresh",
+      replayContinuationMode: "continue_scheduler",
+      exactContinuationMode: "continue_scheduler",
+      exactContinuationAction:
+        "Continue production scheduler from context_scout through GenericOrchestrationRuntime.",
+      latestAcceptedCheckpointRef:
+        "runtime-job://boundary-replay-readback-job/boundary-replay/graph/context_scout/checkpoint-1",
+      skippedUpstreamCheckpointKinds: [
+        "router_payload",
+        "mission_ledger",
+        "commitment_packet_authoring",
+        "commitment_packet_review",
+        "context_scout",
+      ],
+      resumeFromArtifactRefs: ["runtime-job://boundary-replay-readback-job/context-scout"],
+      invalidReasonCodes: [],
+      rawPromptStored: false,
+      rawResponseStored: false,
+      rawProviderLogStored: false,
+      rawToolLogStored: false,
+    });
+  });
+});
+
+it("uses terminal graph progress for open commitments instead of stale historical node state", async () => {
+  await withRuntime(async ({ runtimeJobs, workQueue }) => {
+    const workItemId = "terminal-graph-progress-work-item";
+    const job = await runtimeJobs.enqueueJob({
+      jobId: "terminal-graph-progress-job",
+      jobType: "executor.agent_team",
+      queueName: "agent-team",
+      workItemId,
+      payload: { workflowId: "agent_team.coding", objectiveSummary: "Close commitments." },
+    });
+    await workQueue.createWorkItem({
+      workItemId,
+      itemType: "execution_workflow",
+      title: "Terminal graph progress readback",
+    });
+    await workQueue.createWorkRun({
+      workItemId,
+      executorKind: "runtime_job",
+      runtimeJobId: job.jobId,
+      runState: "running",
+      metadata: { workQueueLifecycleMutated: false },
+    });
+    await runtimeJobs.recordEvent({
+      jobId: job.jobId,
+      eventType: "agent_team.scheduler_progress",
+      data: {
+        graphId: "terminal-runtime-graph",
+        nodeId: "implementation-1",
+        activeNodeKind: "implementation",
+        roleId: "implementation_engineer",
+        currentPhase: "node_started",
+        remainingOpenCommitmentIds: ["implementation", "validation"],
+        nextDecisionNeeded: "node_result",
+        rawPromptStored: false,
+        rawResponseStored: false,
+        rawProviderLogStored: false,
+      },
+    });
+    for (let index = 0; index < 55; index += 1) {
+      await runtimeJobs.recordEvent({
+        jobId: job.jobId,
+        eventType: "runtime.heartbeat",
+        data: {
+          heartbeatIndex: index,
+          rawPromptStored: false,
+          rawResponseStored: false,
+          rawProviderLogStored: false,
+        },
+      });
+    }
+    await runtimeJobs.recordEvent({
+      jobId: job.jobId,
+      eventType: "agent_team.scheduler_progress",
+      data: {
+        graphId: "terminal-runtime-graph",
+        currentPhase: "scheduler_terminal",
+        validationState: "passed",
+        remainingOpenCommitmentIds: [],
+        nextDecisionNeeded: "none",
+        finalizationState: "succeeded",
+        schedulerPhase: "finalization_completed",
+        schedulerToolId: "scheduler.create_closeout_request",
+        schedulerToolInvocationRefs: ["runtime-tool://terminal-closeout"],
+        eli5Progress: "The scheduler finished and all blocking commitments are closed.",
+        rawPromptStored: false,
+        rawResponseStored: false,
+        rawProviderLogStored: false,
+      },
+    });
+    await runtimeJobs.recordEvent({
+      jobId: job.jobId,
+      eventType: "agent_team.scheduler_progress",
+      data: {
+        graphId: "terminal-runtime-graph",
+        nodeId: "implementation-1",
+        activeNodeKind: "implementation",
+        roleId: "implementation_engineer",
+        currentPhase: "node_started",
+        remainingOpenCommitmentIds: ["implementation", "validation"],
+        nextDecisionNeeded: "node_result",
+        rawPromptStored: false,
+        rawResponseStored: false,
+        rawProviderLogStored: false,
+      },
+    });
+
+    const model = await buildWorkQueueExecutionReadModel({
+      workQueue,
+      runtimeJobs,
+      workItemId,
+    });
+
+    expect(model.runtimeJobs[0]?.ownerProgressReadback.activeGraphProgress).toMatchObject({
+      state: "present",
+      graphId: "terminal-runtime-graph",
+      currentPhase: "scheduler_terminal",
+      validationState: "passed",
+      openCommitmentIds: [],
+      nextDecisionNeeded: "none",
+      finalizationState: "succeeded",
+      schedulerToolTrace: {
+        schedulerPhase: "finalization_completed",
+        latestToolId: "scheduler.create_closeout_request",
+        invocationRefs: ["runtime-tool://terminal-closeout"],
+      },
+      eli5Progress: "The scheduler finished and all blocking commitments are closed.",
+    });
+  });
+});
+
+it("surfaces first-class validation worker progress and repair refs", async () => {
+  await withRuntime(async ({ runtimeJobs, workQueue }) => {
+    const workItemId = "validation-worker-readback-work-item";
+    const job = await runtimeJobs.enqueueJob({
+      jobId: "validation-worker-readback-job",
+      jobType: "executor.agent_team",
+      queueName: "agent-team",
+      workItemId,
+      payload: { workflowId: "agent_team.coding", objectiveSummary: "Validate edits." },
+    });
+    await workQueue.createWorkItem({
+      workItemId,
+      itemType: "execution_workflow",
+      title: "Validation worker readback",
+    });
+    await workQueue.createWorkRun({
+      workItemId,
+      executorKind: "runtime_job",
+      runtimeJobId: job.jobId,
+      runState: "running",
+      metadata: { workQueueLifecycleMutated: false },
+    });
+    await runtimeJobs.recordEvent({
+      jobId: job.jobId,
+      eventType: "agent_team.scheduler_progress",
+      data: {
+        graphId: "validation-readback-graph",
+        nodeId: "validation-1",
+        activeNodeKind: "validation",
+        roleId: "test_engineer",
+        currentPhase: "validation_command_needs_review",
+        validationState: "needs_review",
+        validationTaskPacketRefs: ["runtime-work-graph://validation-task-packet/packet"],
+        validationPlanRefs: ["runtime-tool://validation/plan"],
+        validationCommandRefs: ["validation-command://focused"],
+        validationCommandSummaries: ["Run focused test files: example.test.ts."],
+        currentValidationCommandRef: "validation-command://focused",
+        currentValidationCommandSummary: "Run focused test files: example.test.ts.",
+        currentValidationCommandStatus: "failed",
+        validationResultRefs: ["runtime-job://job/validation/result"],
+        validationFailureRefs: ["runtime-tool://validation/classify"],
+        validationRepairPlanRefs: ["runtime-tool://validation/repair-plan"],
+        validationRepairNodeRefs: ["runtime-work-graph://graph/node/repair"],
+        validationRepairHandoffRefs: ["runtime-job://job/validation-repair-handoff/repair"],
+        validationQaEvidencePacketRefs: ["runtime-job://job/validation-qa/validation-1"],
+        validationQaToolInvocationRefs: [
+          "runtime-tool://validation/plan",
+          "runtime-tool://validation/run",
+        ],
+        validationBlockingCommitmentIds: ["commitment-1"],
+        validationQaLatestSummary:
+          "Validation failed; failure classification, commitment mapping, and same-job repair node refs were recorded.",
+        eli5Progress:
+          "OpenClaw ran the tests, found failures, and turned them into repair instructions.",
+        rawPromptStored: false,
+        rawResponseStored: false,
+        rawProviderLogStored: false,
+      },
+    });
+
+    const model = await buildWorkQueueExecutionReadModel({
+      workQueue,
+      runtimeJobs,
+      workItemId,
+    });
+
+    expect(
+      model.runtimeJobs[0]?.ownerProgressReadback.activeGraphProgress.validationQa,
+    ).toMatchObject({
+      state: "needs_review",
+      taskPacketRefs: ["runtime-work-graph://validation-task-packet/packet"],
+      planRefs: ["runtime-tool://validation/plan"],
+      commandRefs: ["validation-command://focused"],
+      commandSummaries: ["Run focused test files: example.test.ts."],
+      currentCommandRef: "validation-command://focused",
+      currentCommandStatus: "failed",
+      resultRefs: ["runtime-job://job/validation/result"],
+      failureRefs: ["runtime-tool://validation/classify"],
+      repairPlanRefs: ["runtime-tool://validation/repair-plan"],
+      repairNodeRefs: ["runtime-work-graph://graph/node/repair"],
+      repairHandoffRefs: ["runtime-job://job/validation-repair-handoff/repair"],
+      evidencePacketRefs: ["runtime-job://job/validation-qa/validation-1"],
+      blockingCommitmentIds: ["commitment-1"],
+    });
+  });
+});
+
+it("keeps active node detail visible when child sync events are newer", async () => {
+  await withRuntime(async ({ runtimeJobs, workQueue }) => {
+    const workItemId = "active-graph-child-sync-readback-work-item";
+    const job = await runtimeJobs.enqueueJob({
+      jobId: "active-graph-child-sync-readback-job",
+      jobType: "executor.agent_team",
+      queueName: "agent-team",
+      workItemId,
+      payload: { workflowId: "agent_team.coding", objectiveSummary: "Improve planning." },
+    });
+    await workQueue.createWorkItem({
+      workItemId,
+      itemType: "execution_workflow",
+      title: "Active graph child sync readback",
+    });
+    await workQueue.createWorkRun({
+      workItemId,
+      executorKind: "runtime_job",
+      runtimeJobId: job.jobId,
+      runState: "running",
+      metadata: { workQueueLifecycleMutated: false },
+    });
+    await runtimeJobs.attachArtifact({
+      jobId: job.jobId,
+      artifactType: "execution_platform.mission_contract_ledger",
+      storageKind: "metadata",
+      uri: "runtime-job://active-graph-child-sync-readback-job/mission-contract/mission-1/1",
+      contentType: "application/json",
+      metadata: {
+        artifactKind: "mission_contract_ledger",
+        missionId: "mission-1",
+        ledgerStatus: "active",
+        missionGate: "clear_to_execute",
+        ownerObjectiveSummary: "Improve Product/Spec Planning.",
+        blockingCommitments: [
+          {
+            commitmentId: "planning-workflow",
+            status: "pending",
+            commitmentText: "Wire Product/Spec Planning as a production workflow.",
+            whyItMatters: "Owners need planning work to execute through runtime truth.",
+            expectedEvidenceDescription: "Source edits, focused validation, and readback proof.",
+            acceptedEvidenceRefs: [],
+            remainingWork: ["Implement workflow registration and readback."],
+            blocking: true,
+          },
+        ],
+        nonBlockingCommitments: [],
+        rawPromptStored: false,
+        rawResponseStored: false,
+      },
+    });
+    await runtimeJobs.recordEvent({
+      jobId: job.jobId,
+      eventType: "agent_team.scheduler_progress",
+      data: {
+        graphId: "child-sync-runtime-graph",
+        schedulerToolId: "scheduler.draft_commitment_work_breakdown",
+        currentPhase: "work_breakdown_compiled",
+        commitmentWorkPackets: [
+          {
+            packetRef: "runtime-work-graph://commitment-work-packet/planning-workflow/abc123",
+            commitmentId: "planning-workflow",
+            acceptanceCriteriaCount: 3,
+            expectedEvidenceKinds: ["mission_commitment_evidence"],
+            likelyRepoAreas: ["extensions/execution-platform/src/workflows/"],
+          },
+        ],
+        rawPromptStored: false,
+        rawResponseStored: false,
+        rawProviderLogStored: false,
+      },
+    });
+    await runtimeJobs.recordEvent({
+      jobId: job.jobId,
+      eventType: "agent_team.scheduler_progress",
+      data: {
+        graphId: "child-sync-runtime-graph",
+        stage: "context_synthesis_node",
+        status: "completed",
+        roleId: "context_synthesis",
+        nodeId: "context_synthesis_global_barrier",
+        artifactRefs: ["runtime-work-graph://child-sync-runtime-graph/context-synthesis/accepted"],
+        currentPhase: "context_synthesis_accepted",
+        schedulerPhase: "context_synthesis_accepted",
+        contextSynthesisRef:
+          "runtime-work-graph://child-sync-runtime-graph/context-synthesis/accepted",
+        contextSynthesisStatus: "accepted",
+        contextSynthesisImplementationGroupCount: 16,
+        contextSynthesisDependencyCount: 7,
+        contextSynthesisParallelGroupCount: 4,
+        contextSynthesisBlockerCount: 0,
+        contextSynthesisValidationLaneCount: 3,
+        contextSynthesisReviewLaneCount: 2,
+        contextSynthesisWorkerFitSummary:
+          "Use scoped workers for independent implementation groups and reserve Codex for integration repair.",
+        contextSynthesisGraphCompileInputSummary:
+          "Accepted synthesis produced 16 groups, 7 dependencies, and 3 validation lanes.",
+        contextSynthesisImplementationGroupIds: ["group-a", "group-b"],
+        contextSynthesisTargetRefs: ["extensions/execution-platform/src/workflows/"],
+        contextSynthesisValidationLanes: ["workflow tests", "readback tests"],
+        contextSynthesisReviewLanes: ["runtime workflow review"],
+        contextSynthesisSemanticCodeIntelligenceRefs: ["code-intelligence://semantic/abc123"],
+        contextSnapshotRefs: ["context-snapshot://synthesis/abc123"],
+        eli5Progress:
+          "OpenClaw accepted the context synthesis map and can now compile implementation nodes.",
+        rawPromptStored: false,
+        rawResponseStored: false,
+        rawProviderLogStored: false,
+      },
+    });
+    await runtimeJobs.recordEvent({
+      jobId: job.jobId,
+      eventType: "agent_team.scheduler_progress",
+      data: {
+        graphId: "child-sync-runtime-graph",
+        nodeId: "context-1",
+        activeNodeKind: "context_scout",
+        roleId: "context_scout",
+        modelRef: "moonshotai/kimi-k2.6",
+        currentObjective: "Find workflow and readback surfaces for Product/Spec Planning.",
+        whyThisNodeWasChosen: "Context is required before implementation child nodes.",
+        targetRefs: ["extensions/execution-platform/src/workflows/"],
+        currentPhase: "node_started",
+        schedulerPhase: "execution_in_progress",
+        codeIntelligenceToolId: "code.get_definition",
+        codeIntelligenceRuntimeToolInvocationRefs: ["runtime-tool://code-definition-1"],
+        codeIntelligenceResultRefs: ["code-intelligence://code.get_definition/abc123"],
+        codeIntelligenceSymbolRefs: ["code-symbol://workflow.ts:10:buildWorkflow"],
+        codeIntelligenceDiagnosticRefs: ["code-diagnostic://workflow.ts:12:ts2322"],
+        codeIntelligenceRelatedTestRefs: ["repo-file://workflow.test.ts#abc123"],
+        codeIntelligenceImpactRefs: ["repo-file://workflow.ts#abc123"],
+        codeIntelligenceSemanticMode: "typescript_semantic",
+        codeIntelligenceBackendId: "typescript_language_service",
+        codeIntelligenceBackendState: "ready",
+        codeIntelligenceBackendHealthRef:
+          "code-intelligence-backend-health://typescript_language_service/abc123",
+        codeIntelligenceWorkspaceSnapshotRef: "code-intelligence-workspace://abc123",
+        codeIntelligenceSemanticConfidence: "high",
+        codeIntelligenceFallbackUsed: false,
+        codeIntelligenceFallbackReasonCodes: [],
+        codeIntelligenceDiagnosticVersionRef: "code-intelligence-diagnostics://abc123",
+        codeIntelligenceProjectConfigRefs: ["repo-config://tsconfig.json#abc123"],
+        codeIntelligenceLimitations: [],
+        codeIntelligenceBackendLatencyMs: 17,
+        codeIntelligenceSymbolCount: 1,
+        codeIntelligenceLocationCount: 1,
+        codeIntelligenceDiagnosticCount: 1,
+        codeIntelligenceImportEdgeCount: 0,
+        codeIntelligenceRelatedTestCount: 1,
+        codeIntelligenceCodeActionCount: 0,
+        codeIntelligenceSummary: "Resolved TypeScript semantic definition.",
+        rawPromptStored: false,
+        rawResponseStored: false,
+        rawProviderLogStored: false,
+      },
+    });
+    await runtimeJobs.recordEvent({
+      jobId: job.jobId,
+      eventType: "agent_team.scheduler_progress",
+      data: {
+        graphId: "child-sync-runtime-graph",
+        stage: "work_queue_child_sync",
+        status: "completed",
+        roleId: "context_scout",
+        nodeId: "context-1",
+        artifactRefs: ["work-queue://child-context-1"],
+        reasonCodes: ["work_queue_child_created"],
+        currentPhase: "work_queue_child_synced",
+        rawPromptStored: false,
+        rawResponseStored: false,
+        rawProviderLogStored: false,
+      },
+    });
+    await runtimeJobs.recordEvent({
+      jobId: job.jobId,
+      eventType: "agent_team.scheduler_progress",
+      data: {
+        graphId: "child-sync-runtime-graph",
+        stage: "scheduler_parallel_frontier",
+        status: "started",
+        schedulerToolId: "scheduler.select_next_node",
+        currentPhase: "parallel_frontier_evaluated",
+        parallelFrontier: {
+          artifactKind: "runtime_work_graph_parallel_frontier_readback",
+          schemaVersion: "execution-platform.runtime-work-graph.parallel-frontier.v1",
+          currentSuperstep: 2,
+          maxParallelNodeExecutions: 4,
+          dependencyLayerCount: 3,
+          readyNodeIds: ["implementation-a", "implementation-b"],
+          rawRunnableNodeIds: ["implementation-a", "implementation-b"],
+          selectedNodeIds: ["implementation-a", "implementation-b"],
+          runningNodeIds: [],
+          completedNodeIds: ["context-1"],
+          blockedNodeIds: [],
+          failedNodeIds: [],
+          needsReviewNodeIds: [],
+          waitingForHumanNodeIds: [],
+          skippedReasonCodes: [],
+          conflictDomains: [
+            { nodeId: "implementation-a", keys: ["write:src/a.ts"] },
+            { nodeId: "implementation-b", keys: ["write:src/b.ts"] },
+          ],
+          providerConcurrencyBudgets: [
+            {
+              key: "provider:profile:openrouter.qwen3-coder-next",
+              limit: 2,
+              runnableNodeIds: ["implementation-a", "implementation-b", "implementation-c"],
+              selectedNodeIds: ["implementation-a", "implementation-b"],
+              skippedNodeIds: ["implementation-c"],
+            },
+          ],
+          joinReadyNodeIds: [],
+          contextSynthesisRefs: [
+            "runtime-work-graph://child-sync-runtime-graph/context-synthesis/accepted",
+          ],
+          implementationGroupCount: 16,
+          rawPromptStored: false,
+          rawResponseStored: false,
+          rawProviderLogStored: false,
+          rawToolLogStored: false,
+        },
+        rawPromptStored: false,
+        rawResponseStored: false,
+        rawProviderLogStored: false,
+      },
+    });
+
+    const model = await buildWorkQueueExecutionReadModel({
+      workQueue,
+      runtimeJobs,
+      workItemId,
+    });
+
+    expect(
+      model.runtimeJobs[0]?.ownerReadback.missionContract.blockingCommitments[0],
+    ).toMatchObject({
+      commitmentId: "planning-workflow",
+      whyItMatters: "Owners need planning work to execute through runtime truth.",
+      expectedEvidenceDescription: "Source edits, focused validation, and readback proof.",
+    });
+    expect(model.runtimeJobs[0]?.ownerProgressReadback.activeGraphProgress).toMatchObject({
+      activeNodeId: "context-1",
+      activeNodeKind: "context_scout",
+      roleId: "context_scout",
+      modelRef: "moonshotai/kimi-k2.6",
+      objective: "Find workflow and readback surfaces for Product/Spec Planning.",
+      whySelected: "Context is required before implementation child nodes.",
+      currentPhase: "parallel_frontier_evaluated",
+      codeIntelligence: {
+        state: "present",
+        semanticMode: "typescript_semantic",
+        backendId: "typescript_language_service",
+        backendState: "ready",
+        backendHealthRef: "code-intelligence-backend-health://typescript_language_service/abc123",
+        workspaceSnapshotRef: "code-intelligence-workspace://abc123",
+        semanticConfidence: "high",
+        fallbackUsed: false,
+        diagnosticVersionRef: "code-intelligence-diagnostics://abc123",
+        projectConfigRefs: ["repo-config://tsconfig.json#abc123"],
+        backendLatencyMs: 17,
+        resultCounts: {
+          symbols: 1,
+          locations: 1,
+          diagnostics: 1,
+          importEdges: 0,
+          relatedTests: 1,
+          codeActions: 0,
+        },
+        activeToolId: "code.get_definition",
+        resultRefs: ["code-intelligence://code.get_definition/abc123"],
+        diagnosticRefs: ["code-diagnostic://workflow.ts:12:ts2322"],
+        latestSummary: "Resolved TypeScript semantic definition.",
+      },
+      commitmentWorkPackets: [
+        {
+          packetRef: "runtime-work-graph://commitment-work-packet/planning-workflow/abc123",
+          commitmentId: "planning-workflow",
+          acceptanceCriteriaCount: 3,
+          expectedEvidenceKinds: ["mission_commitment_evidence"],
+          likelyRepoAreas: ["extensions/execution-platform/src/workflows/"],
+        },
+      ],
+      contextSynthesis: {
+        state: "accepted",
+        synthesisRef: "runtime-work-graph://child-sync-runtime-graph/context-synthesis/accepted",
+        status: "accepted",
+        implementationGroupCount: 16,
+        dependencyCount: 7,
+        parallelGroupCount: 4,
+        blockerCount: 0,
+        validationLaneCount: 3,
+        reviewLaneCount: 2,
+        workerFitSummary:
+          "Use scoped workers for independent implementation groups and reserve Codex for integration repair.",
+        graphCompileInputSummary:
+          "Accepted synthesis produced 16 groups, 7 dependencies, and 3 validation lanes.",
+        implementationGroupIds: ["group-a", "group-b"],
+        validationLanes: ["workflow tests", "readback tests"],
+        reviewLanes: ["runtime workflow review"],
+        semanticCodeIntelligenceRefs: ["code-intelligence://semantic/abc123"],
+        nextDecision: "compile_post_synthesis_graph",
+      },
+      parallelFrontier: {
+        state: "present",
+        currentSuperstep: 2,
+        maxParallelNodeExecutions: 4,
+        dependencyLayerCount: 3,
+        readyNodeIds: ["implementation-a", "implementation-b"],
+        selectedNodeIds: ["implementation-a", "implementation-b"],
+        completedNodeIds: ["context-1"],
+        providerConcurrencyBudgets: [
+          {
+            key: "provider:profile:openrouter.qwen3-coder-next",
+            limit: 2,
+            runnableNodeIds: ["implementation-a", "implementation-b", "implementation-c"],
+            selectedNodeIds: ["implementation-a", "implementation-b"],
+            skippedNodeIds: ["implementation-c"],
+          },
+        ],
+        contextSynthesisRefs: [
+          "runtime-work-graph://child-sync-runtime-graph/context-synthesis/accepted",
+        ],
+        implementationGroupCount: 16,
+      },
     });
   });
 });
@@ -2322,13 +3902,52 @@ it("links closed work items to their closeout runtime job for progress readback"
         modelRef: "moonshotai/kimi-k2.6",
         currentObjective: "Apply a scoped non-Codex file edit.",
         currentPhase: "worker_loop_completed",
+        status: "succeeded",
         validationState: "passed",
         changedFileRefs: ["extensions/execution-platform/src/codex-bridge/proof.ts"],
         validationRefs: ["validation://closed-runtime-progress"],
+        evidenceProducedRefs: ["runtime-tool://worker-evidence-handoff"],
+        evidenceClaimRefs: ["evidence-claim://worker-edit-proof"],
         schedulerPhase: "execution_in_progress",
         schedulerToolId: "worker.evidence.handoff",
         schedulerToolInvocationRefs: ["runtime-tool://worker-evidence-handoff"],
         workerToolIds: ["worker.repo.search", "worker.evidence.handoff"],
+        workerInternalToolStatus: "succeeded",
+        workerInternalCompoundToolId: "coding.inspect_edit_validate",
+        workerInternalCompoundSubEventCount: 6,
+        workerInternalCompoundSubEventPhases: [
+          "inspect",
+          "plan",
+          "apply_patch",
+          "validate",
+          "emit_evidence",
+          "close",
+        ],
+        workerInternalInputPacketRefs: ["implementation-task-packet://closed-runtime-progress"],
+        workerInternalContextRefs: [
+          "context-handoff://closed-runtime-progress/context",
+          "context-synthesis://closed-runtime-progress/synthesis",
+          "code-intelligence://closed-runtime-progress/symbols",
+        ],
+        workerInternalContextSynthesisRefs: [
+          "context-synthesis://closed-runtime-progress/synthesis",
+        ],
+        workerInternalCodeIntelligenceRefs: ["code-intelligence://closed-runtime-progress/symbols"],
+        currentValidationCommandRef: "validation-command://closed-runtime-progress/focused",
+        currentValidationCommandSummary: "Run focused worker validation.",
+        currentValidationCommandStatus: "succeeded",
+        editTransactionRefs: ["edit-transaction://closed-runtime-progress"],
+        editTransactionPhase: "closed",
+        editTransactionStatus: "closed",
+        editTransactionRepairCount: 1,
+        workerInternalOutputHash: "sha256:closed-runtime-worker-output",
+        workerInternalOutputContentLength: 240,
+        workerInternalProviderLatencyMs: 1234,
+        workerInternalProviderTimeoutMs: 480000,
+        workerInternalProviderFinishReason: "content",
+        workerInternalProviderTokenCount: 512,
+        nextDecisionNeeded: "review_worker_evidence",
+        eli5Progress: "The non-Codex worker applied a scoped edit and handed off evidence.",
         reasonCodes: ["scheduler_tool_invoked:worker.evidence.handoff"],
         rawPromptStored: false,
         rawResponseStored: false,
@@ -2366,6 +3985,59 @@ it("links closed work items to their closeout runtime job for progress readback"
         invocationRefs: ["runtime-tool://worker-evidence-handoff"],
         changedFileRefs: ["extensions/execution-platform/src/codex-bridge/proof.ts"],
         validationRefs: ["validation://closed-runtime-progress"],
+      },
+      workerInternal: {
+        state: "present",
+        phase: "worker_loop_completed",
+        phaseStatus: "succeeded",
+        objective: "Apply a scoped non-Codex file edit.",
+        roleId: "implementation_engineer",
+        modelRef: "moonshotai/kimi-k2.6",
+        selectedToolId: "worker.evidence.handoff",
+        toolStatus: "succeeded",
+        compoundToolId: "coding.inspect_edit_validate",
+        compoundSubEventCount: 6,
+        compoundSubEventPhases: [
+          "inspect",
+          "plan",
+          "apply_patch",
+          "validate",
+          "emit_evidence",
+          "close",
+        ],
+        toolInvocationRefs: ["runtime-tool://worker-evidence-handoff"],
+        inputPacketRefs: ["implementation-task-packet://closed-runtime-progress"],
+        contextRefs: [
+          "context-handoff://closed-runtime-progress/context",
+          "context-synthesis://closed-runtime-progress/synthesis",
+          "code-intelligence://closed-runtime-progress/symbols",
+        ],
+        contextSynthesisRefs: ["context-synthesis://closed-runtime-progress/synthesis"],
+        codeIntelligenceRefs: ["code-intelligence://closed-runtime-progress/symbols"],
+        currentValidationCommandRef: "validation-command://closed-runtime-progress/focused",
+        currentValidationCommandSummary: "Run focused worker validation.",
+        currentValidationCommandStatus: "succeeded",
+        editTransactionRefs: ["edit-transaction://closed-runtime-progress"],
+        editTransactionPhase: "closed",
+        editTransactionStatus: "closed",
+        editTransactionRepairCount: 1,
+        changedFileRefs: ["extensions/execution-platform/src/codex-bridge/proof.ts"],
+        validationRefs: ["validation://closed-runtime-progress"],
+        evidenceRefs: ["runtime-tool://worker-evidence-handoff"],
+        evidenceClaimRefs: ["evidence-claim://worker-edit-proof"],
+        outputHash: "sha256:closed-runtime-worker-output",
+        outputContentLength: 240,
+        providerLatencyMs: 1234,
+        providerTimeoutMs: 480000,
+        providerFinishReason: "content",
+        providerTokenCount: 512,
+        nextDecision: "review_worker_evidence",
+        eli5: "The non-Codex worker applied a scoped edit and handed off evidence.",
+        rawPromptStored: false,
+        rawResponseStored: false,
+        rawProviderLogStored: false,
+        rawToolLogStored: false,
+        rawDbRowsStored: false,
       },
     });
   });

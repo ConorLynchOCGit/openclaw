@@ -195,4 +195,99 @@ describe("CanonicalRouterSchema", () => {
     expect(parsed.output?.negatedActions[0]?.action).toBe("outbound_send");
     expect(parsed.output?.conditionalActions[0]?.action).toBe("deploy");
   });
+
+  it("bounds model-authored action and constraint summaries instead of blocking routing", () => {
+    const longModelAuthoredSummary = Array.from(
+      { length: 20 },
+      (_, index) => `bounded runtime action detail ${index + 1}`,
+    ).join("; ");
+    const parsed = parseCanonicalRouterOutput({
+      ...createBaseCanonicalRouterOutput({
+        route: "workflow_execution",
+        responseMode: "create_runtime_job",
+        executeNow: true,
+        workflowId: "agent_team.coding",
+        jobType: "executor.agent_team",
+        sideEffectClass: "code_edit",
+      }),
+      requestedActions: [
+        {
+          action: "code_edit",
+          objectSummary: longModelAuthoredSummary,
+          confidence: 0.95,
+        },
+      ],
+      constraints: [
+        {
+          constraintKind: "safety_boundary",
+          objectSummary: longModelAuthoredSummary,
+          confidence: 0.99,
+        },
+      ],
+    });
+
+    expect(parsed.valid).toBe(true);
+    expect(parsed.reasonCodes).toContain("canonical_router_output_bounds_repaired");
+    expect(parsed.output?.requestedActions[0]?.objectSummary.length).toBeLessThanOrEqual(300);
+    expect(parsed.output?.constraints[0]?.objectSummary.length).toBeLessThanOrEqual(300);
+  });
+
+  it("separates executor workflow from target workflow subjects", () => {
+    const output = createBaseCanonicalRouterOutput({
+      route: "workflow_execution",
+      responseMode: "create_runtime_job",
+      executeNow: true,
+      executorWorkflowId: "agent_team.coding",
+      workflowId: "agent_team.coding",
+      jobType: "executor.agent_team",
+      subjectWorkflowIds: ["agent_team.product_spec_planning"],
+      targetSubjectRefs: [
+        {
+          targetKind: "workflow",
+          targetRef: "workflow://agent_team.product_spec_planning",
+          confidence: 0.95,
+        },
+      ],
+      requestedCapabilities: ["code_edit", "test", "docs_update", "review", "closeout"],
+      constraints: [{ constraintKind: "deploy", objectSummary: "do not deploy", confidence: 0.99 }],
+      selectedExecutionReason:
+        "The primary outcome requires source edits, validation, docs, review, and closeout.",
+      targetSubjectReason:
+        "Product/Spec Planning is the workflow being upgraded, not the executor.",
+      requestedActions: [
+        createCanonicalRouterAction("code_edit", "implement workflow upgrade", 0.95),
+        createCanonicalRouterAction("test", "validate workflow upgrade", 0.9),
+      ],
+      sideEffectClass: "code_edit",
+    });
+
+    const parsed = parseCanonicalRouterOutput(output);
+    expect(parsed.valid).toBe(true);
+    expect(parsed.output?.executorWorkflowId).toBe("agent_team.coding");
+    expect(parsed.output?.workflowId).toBe("agent_team.coding");
+    expect(parsed.output?.subjectWorkflowIds).toContain("agent_team.product_spec_planning");
+    expect(parsed.output?.targetSubjectRefs[0]?.targetRef).toBe(
+      "workflow://agent_team.product_spec_planning",
+    );
+  });
+
+  it("rejects workflow execution when legacy workflowId conflicts with executorWorkflowId", () => {
+    const parsed = parseCanonicalRouterOutput({
+      ...createBaseCanonicalRouterOutput({
+        route: "workflow_execution",
+        responseMode: "create_runtime_job",
+        executeNow: true,
+        executorWorkflowId: "agent_team.coding",
+        workflowId: "agent_team.coding",
+        jobType: "executor.agent_team",
+        requestedActions: [createCanonicalRouterAction("code_edit", "edit code", 0.9)],
+        sideEffectClass: "code_edit",
+      }),
+      workflowId: "agent_team.product_spec_planning",
+    });
+    expect(parsed.valid).toBe(false);
+    expect(parsed.reasonCodes).toContain(
+      "canonical_router_schema_workflow_id_must_match_executor_workflow_id",
+    );
+  });
 });

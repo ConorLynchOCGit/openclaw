@@ -2,8 +2,12 @@ import type { JsonValue } from "../runtime-job-repository.ts";
 import type { MissionContractLedgerSummary } from "./mission-contract-ledger.ts";
 import type { OrchestratorGraphNodeSpec } from "./orchestrator-graph-decision.ts";
 import {
+  buildProviderCapabilityProfileRegistry,
   buildRuntimeNodeCapabilityManifest,
+  findProviderCapabilityProfile,
   findRuntimeNodeCapability,
+  providerCapabilityProfileForCapability,
+  type ProviderCapabilityProfile,
   type RuntimeNodeCapability,
   type RuntimeNodeCapabilityManifest,
 } from "./runtime-node-capability-registry.ts";
@@ -13,6 +17,7 @@ export type CostAwareCapabilityUtilityDecision = {
   decisionId: string;
   consideredCapabilityIds: string[];
   selectedCapabilityId: string;
+  selectedProviderCapabilityProfileId?: string | null;
   selectedNodeKind: string;
   selectedExecutorKey: string;
   targetCommitmentIds: string[];
@@ -97,6 +102,12 @@ export function normalizeCostAwareCapabilityUtilityDecision(
       record.consideredCapabilityIds ?? record.consideredCapabilities,
     ),
     selectedCapabilityId,
+    selectedProviderCapabilityProfileId:
+      stringValue(
+        record.selectedProviderCapabilityProfileId ??
+          record.providerCapabilityProfileId ??
+          record.profileId,
+      ) || null,
     selectedNodeKind: stringValue(record.selectedNodeKind ?? record.graphNodeKind),
     selectedExecutorKey: stringValue(record.selectedExecutorKey ?? record.executorKey),
     targetCommitmentIds: stringArray(record.targetCommitmentIds ?? record.commitmentIdsAdvanced),
@@ -131,16 +142,31 @@ export function utilityDecisionFromNodeMetadata(
   const explicit = normalizeCostAwareCapabilityUtilityDecision(
     metadata.utilityDecision ?? metadata.costAwareUtilityDecision,
   );
-  if (explicit) {
-    return explicit;
-  }
   if (!node.capabilityId) {
     return null;
   }
-  return {
+  const capability = findRuntimeNodeCapability(node.capabilityId);
+  const selectedModelQualificationProfileId =
+    stringValue(
+      metadata.selectedModelQualificationProfileId ??
+        metadata.modelQualificationProfileId ??
+        metadata.qualificationProfileId,
+    ) || (capability ? (defaultQualificationProfileIdForCapability(capability) ?? "") : "");
+  const qualificationEvidenceRefs =
+    stringArray(metadata.qualificationEvidenceRefs ?? metadata.modelQualificationEvidenceRefs)
+      .length > 0
+      ? stringArray(metadata.qualificationEvidenceRefs ?? metadata.modelQualificationEvidenceRefs)
+      : capability?.productionSelectionRequiresQualification && selectedModelQualificationProfileId
+        ? [`model-profile://${selectedModelQualificationProfileId}/runtime-capability`]
+        : [];
+  const derived: CostAwareCapabilityUtilityDecision = {
     decisionId: `${node.nodeId}:utility`,
     consideredCapabilityIds: stringArray(metadata.consideredCapabilityIds),
     selectedCapabilityId: node.capabilityId,
+    selectedProviderCapabilityProfileId:
+      stringValue(
+        metadata.selectedProviderCapabilityProfileId ?? metadata.providerCapabilityProfileId,
+      ) || null,
     selectedNodeKind: node.nodeKind,
     selectedExecutorKey: node.executorKey ?? "",
     targetCommitmentIds: node.commitmentIdsAdvanced ?? [],
@@ -152,18 +178,54 @@ export function utilityDecisionFromNodeMetadata(
     expectedEvidence: stringArray(
       metadata.expectedEvidence ?? [node.evidenceExpectation].filter(Boolean),
     ),
-    selectedModelQualificationProfileId:
-      stringValue(
-        metadata.selectedModelQualificationProfileId ??
-          metadata.modelQualificationProfileId ??
-          metadata.qualificationProfileId,
-      ) || null,
-    qualificationEvidenceRefs: stringArray(
-      metadata.qualificationEvidenceRefs ?? metadata.modelQualificationEvidenceRefs,
-    ),
+    selectedModelQualificationProfileId: selectedModelQualificationProfileId || null,
+    qualificationEvidenceRefs,
     expectedDownstreamConsumer: node.downstreamConsumer,
     budgetRef: stringValue(metadata.budgetRef) || null,
-    stopOrEscalationCondition: stringValue(metadata.stopOrEscalationCondition),
+    stopOrEscalationCondition:
+      stringValue(metadata.stopOrEscalationCondition ?? metadata.escalationCondition) ||
+      `Return to orchestrator if ${node.nodeId} cannot satisfy its acceptance criteria or produce bounded evidence.`,
+    rawPromptStored: false,
+    rawResponseStored: false,
+    rawProviderLogStored: false,
+  };
+  if (!explicit) {
+    return derived;
+  }
+  return {
+    decisionId: explicit.decisionId || derived.decisionId,
+    consideredCapabilityIds:
+      explicit.consideredCapabilityIds.length > 0
+        ? explicit.consideredCapabilityIds
+        : derived.consideredCapabilityIds,
+    selectedCapabilityId: explicit.selectedCapabilityId || derived.selectedCapabilityId,
+    selectedProviderCapabilityProfileId:
+      explicit.selectedProviderCapabilityProfileId ?? derived.selectedProviderCapabilityProfileId,
+    selectedNodeKind: explicit.selectedNodeKind || derived.selectedNodeKind,
+    selectedExecutorKey: explicit.selectedExecutorKey || derived.selectedExecutorKey,
+    targetCommitmentIds:
+      explicit.targetCommitmentIds.length > 0
+        ? explicit.targetCommitmentIds
+        : derived.targetCommitmentIds,
+    utilityRationale: explicit.utilityRationale || derived.utilityRationale,
+    costRationale: explicit.costRationale || derived.costRationale,
+    whyCheaperOptionsWereInsufficient:
+      explicit.whyCheaperOptionsWereInsufficient ?? derived.whyCheaperOptionsWereInsufficient,
+    whyThisIsNotDuplicateWork:
+      explicit.whyThisIsNotDuplicateWork || derived.whyThisIsNotDuplicateWork,
+    expectedEvidence:
+      explicit.expectedEvidence.length > 0 ? explicit.expectedEvidence : derived.expectedEvidence,
+    selectedModelQualificationProfileId:
+      explicit.selectedModelQualificationProfileId ?? derived.selectedModelQualificationProfileId,
+    qualificationEvidenceRefs:
+      (explicit.qualificationEvidenceRefs ?? []).length > 0
+        ? explicit.qualificationEvidenceRefs
+        : derived.qualificationEvidenceRefs,
+    expectedDownstreamConsumer:
+      explicit.expectedDownstreamConsumer || derived.expectedDownstreamConsumer,
+    budgetRef: explicit.budgetRef ?? derived.budgetRef,
+    stopOrEscalationCondition:
+      explicit.stopOrEscalationCondition || derived.stopOrEscalationCondition,
     rawPromptStored: false,
     rawResponseStored: false,
     rawProviderLogStored: false,
@@ -176,6 +238,30 @@ function openCommitmentIds(summary?: MissionContractLedgerSummary | null): Set<s
       .filter((commitment) => commitment.blocking && commitment.status !== "satisfied")
       .map((commitment) => commitment.commitmentId),
   );
+}
+
+function derivedExpectedEvidence(input: {
+  decision: CostAwareCapabilityUtilityDecision;
+  capability: RuntimeNodeCapability | null;
+  missionLedgerSummary?: MissionContractLedgerSummary | null;
+}): string[] {
+  const values = new Set<string>();
+  for (const value of input.decision.expectedEvidence) {
+    values.add(value);
+  }
+  for (const value of input.capability?.evidenceProducedKinds ?? []) {
+    values.add(value);
+  }
+  const targetCommitments = new Set(input.decision.targetCommitmentIds);
+  for (const commitment of input.missionLedgerSummary?.commitments ?? []) {
+    if (targetCommitments.size > 0 && !targetCommitments.has(commitment.commitmentId)) {
+      continue;
+    }
+    if (commitment.expectedEvidenceDescription) {
+      values.add(commitment.expectedEvidenceDescription.slice(0, 240));
+    }
+  }
+  return [...values].filter(Boolean).slice(0, 32);
 }
 
 function priorCapabilityAttempts(summary: RuntimeWorkGraphSchedulerSnapshotSummary): Set<string> {
@@ -198,6 +284,31 @@ function cheaperAlternatives(
       other.workflowId === capability.workflowId &&
       other.roleClass === capability.roleClass,
   );
+}
+
+function isCheapestCapability(
+  capability: RuntimeNodeCapability,
+  manifest: RuntimeNodeCapabilityManifest,
+): boolean {
+  return cheaperAlternatives(capability, manifest).length === 0;
+}
+
+function defaultQualificationProfileIdForCapability(
+  capability: RuntimeNodeCapability,
+): string | null {
+  if (!capability.productionSelectionRequiresQualification) {
+    return null;
+  }
+  if (capability.canEditSource) {
+    return (
+      capability.modelQualificationProfileIds.find((profileId) =>
+        profileId.includes("kimi-k2.6"),
+      ) ??
+      capability.modelQualificationProfileIds[0] ??
+      null
+    );
+  }
+  return capability.modelQualificationProfileIds[0] ?? null;
 }
 
 export function validateCostAwareCapabilityUtilityDecision(input: {
@@ -225,6 +336,13 @@ export function validateCostAwareCapabilityUtilityDecision(input: {
     input.decision.selectedCapabilityId,
     manifest,
   );
+  const profileRegistry = buildProviderCapabilityProfileRegistry(manifest);
+  const selectedProfile =
+    selectedCapability &&
+    findProviderCapabilityProfile(
+      input.decision.selectedProviderCapabilityProfileId || selectedCapability.capabilityId,
+      profileRegistry,
+    );
   if (!input.decision.decisionId) {
     reasonCodes.push("cost_aware_decision_id_missing");
   }
@@ -234,10 +352,29 @@ export function validateCostAwareCapabilityUtilityDecision(input: {
     );
   }
   if (selectedCapability) {
-    if (input.decision.selectedNodeKind !== selectedCapability.graphNodeKind) {
+    if (!selectedProfile) {
+      reasonCodes.push("cost_aware_provider_capability_profile_missing");
+    } else {
+      if (selectedProfile.capabilityId !== selectedCapability.capabilityId) {
+        reasonCodes.push("cost_aware_provider_capability_profile_capability_mismatch");
+      }
+      if (!selectedProfile.productionSelectable) {
+        reasonCodes.push("cost_aware_provider_capability_profile_not_production_selectable");
+      }
+      if (!selectedProfile.supportedWorkflowIds.includes(input.snapshotSummary.workflowId)) {
+        reasonCodes.push("cost_aware_provider_capability_profile_not_supported_for_workflow");
+      }
+    }
+    if (
+      input.decision.selectedNodeKind &&
+      input.decision.selectedNodeKind !== selectedCapability.graphNodeKind
+    ) {
       reasonCodes.push("cost_aware_selected_node_kind_mismatch");
     }
-    if (input.decision.selectedExecutorKey !== selectedCapability.executorKey) {
+    if (
+      input.decision.selectedExecutorKey &&
+      input.decision.selectedExecutorKey !== selectedCapability.executorKey
+    ) {
       reasonCodes.push("cost_aware_selected_executor_key_mismatch");
     }
     if (!selectedCapability.supportedWorkflowIds.includes(input.snapshotSummary.workflowId)) {
@@ -262,21 +399,29 @@ export function validateCostAwareCapabilityUtilityDecision(input: {
   if (openCommitments.size > 0 && input.decision.targetCommitmentIds.length === 0) {
     reasonCodes.push("cost_aware_target_commitments_missing");
   }
-  for (const commitmentId of input.decision.targetCommitmentIds) {
-    if (openCommitments.size > 0 && !openCommitments.has(commitmentId)) {
-      reasonCodes.push(`cost_aware_target_commitment_not_open:${commitmentId}`);
+  if (openCommitments.size > 0 && input.decision.targetCommitmentIds.length > 0) {
+    const openTargetCount = input.decision.targetCommitmentIds.filter((commitmentId) =>
+      openCommitments.has(commitmentId),
+    ).length;
+    if (openTargetCount === 0) {
+      reasonCodes.push("cost_aware_no_open_target_commitment");
     }
   }
   if (!input.decision.utilityRationale) {
     reasonCodes.push("cost_aware_utility_rationale_missing");
   }
-  if (!input.decision.costRationale) {
+  if (
+    !input.decision.costRationale &&
+    !(selectedCapability && isCheapestCapability(selectedCapability, manifest))
+  ) {
     reasonCodes.push("cost_aware_cost_rationale_missing");
   }
-  if (!input.decision.whyThisIsNotDuplicateWork) {
-    reasonCodes.push("cost_aware_duplicate_work_rationale_missing");
-  }
-  if (input.decision.expectedEvidence.length === 0) {
+  const effectiveExpectedEvidence = derivedExpectedEvidence({
+    decision: input.decision,
+    capability: selectedCapability,
+    missionLedgerSummary: input.missionLedgerSummary,
+  });
+  if (effectiveExpectedEvidence.length === 0) {
     reasonCodes.push("cost_aware_expected_evidence_missing");
   }
   if (!input.decision.expectedDownstreamConsumer) {
@@ -316,22 +461,64 @@ export function costAwareDecisionReadback(input: {
   decision: CostAwareCapabilityUtilityDecision;
   capability: RuntimeNodeCapability;
 }): JsonValue {
+  const profile = providerCapabilityProfileForCapability(input.capability);
+  const registry = buildProviderCapabilityProfileRegistry();
   return {
     selectedCapabilityId: input.decision.selectedCapabilityId,
+    selectedProviderCapabilityProfileId: profile.profileId,
     selectedNodeKind: input.decision.selectedNodeKind,
     selectedExecutorKey: input.decision.selectedExecutorKey,
     workerRef: input.capability.workerRef,
     roleClass: input.capability.roleClass,
     costClass: input.capability.costClass,
+    latencyClass: input.capability.latencyClass,
+    contextCapacity: input.capability.contextCapacity,
+    preferredTaskSize: input.capability.preferredTaskSize,
+    maxTaskSize: input.capability.maxTaskSize,
     expectedStrength: input.capability.expectedStrength,
+    productionSelectable: profile.productionSelectable,
+    productionSelectionRequiresQualification: profile.productionSelectionRequiresQualification,
+    qualificationEvidenceRequired: profile.qualificationEvidenceRequired,
     targetCommitmentIds: input.decision.targetCommitmentIds.slice(0, 12),
     consideredCapabilityIds: input.decision.consideredCapabilityIds.slice(0, 12),
+    consideredProviderCapabilityProfileIds: input.decision.consideredCapabilityIds
+      .map((capabilityId) => findProviderCapabilityProfile(capabilityId, registry))
+      .filter((candidate): candidate is ProviderCapabilityProfile => Boolean(candidate))
+      .map((candidate) => candidate.profileId)
+      .slice(0, 12),
     utilityRationale: input.decision.utilityRationale,
     costRationale: input.decision.costRationale,
     whyCheaperOptionsWereInsufficient: input.decision.whyCheaperOptionsWereInsufficient ?? null,
-    expectedEvidence: input.decision.expectedEvidence.slice(0, 12),
+    expectedEvidence: [
+      ...new Set([...input.decision.expectedEvidence, ...input.capability.evidenceProducedKinds]),
+    ].slice(0, 12),
+    expectedEvidenceSource:
+      input.decision.expectedEvidence.length > 0
+        ? "model_plus_runtime_derived"
+        : "runtime_derived_from_capability",
     selectedModelQualificationProfileId: input.decision.selectedModelQualificationProfileId ?? null,
+    modelQualificationProfileIds: profile.modelQualificationProfileIds.slice(0, 12),
     qualificationEvidenceRefs: (input.decision.qualificationEvidenceRefs ?? []).slice(0, 12),
+    providerCapabilityProfile: {
+      profileId: profile.profileId,
+      capabilityId: profile.capabilityId,
+      workerRef: profile.workerRef,
+      roleClass: profile.roleClass,
+      costClass: profile.costClass,
+      latencyClass: profile.latencyClass,
+      contextCapacity: profile.contextCapacity,
+      preferredTaskSize: profile.preferredTaskSize,
+      maxTaskSize: profile.maxTaskSize,
+      toolProfileRefs: profile.toolProfileRefs.slice(0, 12),
+      qualifiedEvidenceKinds: profile.qualifiedEvidenceKinds.slice(0, 12),
+      authorityBoundaries: profile.authorityBoundaries.slice(0, 12),
+      productionSelectable: profile.productionSelectable,
+      productionSelectionRequiresQualification: profile.productionSelectionRequiresQualification,
+      runtimeDerivedFromCapabilityManifest: true,
+      rawPromptStored: false,
+      rawResponseStored: false,
+      rawProviderLogStored: false,
+    },
     expectedDownstreamConsumer: input.decision.expectedDownstreamConsumer,
     stopOrEscalationCondition: input.decision.stopOrEscalationCondition,
     eli5: `OpenClaw chose ${input.decision.selectedCapabilityId} because it was the best fit for the next commitment within the budget and capability policy.`,

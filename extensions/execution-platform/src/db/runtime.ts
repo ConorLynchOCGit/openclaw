@@ -1,3 +1,7 @@
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import JSON5 from "json5";
 import { Pool, type PoolConfig } from "pg";
 import type { OpenClawConfig } from "../../../../src/config/types.openclaw.js";
 import { applyExecutionPlatformMigrations } from "./migrations.ts";
@@ -8,6 +12,8 @@ const DEFAULT_MODEL_MEMORY_DATABASE_NAME = "model_memory";
 const DEFAULT_POOL_MAX = 5;
 const DEFAULT_POOL_IDLE_TIMEOUT_MS = 30_000;
 const DEFAULT_POOL_CONNECTION_TIMEOUT_MS = 10_000;
+const DEFAULT_OPENCLAW_STATE_DIR = ".openclaw";
+const DEFAULT_OPENCLAW_CONFIG_FILENAME = "openclaw.json";
 
 type JsonRecord = Record<string, unknown>;
 
@@ -138,6 +144,176 @@ async function loadOpenClawConfig(): Promise<OpenClawConfig> {
   return loadConfig();
 }
 
+function resolveLiteConfigPath(env: NodeJS.ProcessEnv): string {
+  const explicit = readTrimmedString(env.OPENCLAW_CONFIG_PATH);
+  if (explicit) {
+    return explicit.startsWith("~")
+      ? path.join(os.homedir(), explicit.slice(1))
+      : path.resolve(explicit);
+  }
+  const stateDir = readTrimmedString(env.OPENCLAW_STATE_DIR)
+    ? path.resolve(readTrimmedString(env.OPENCLAW_STATE_DIR)!)
+    : path.join(os.homedir(), DEFAULT_OPENCLAW_STATE_DIR);
+  return path.join(stateDir, DEFAULT_OPENCLAW_CONFIG_FILENAME);
+}
+
+function maybeSubstituteEnvRef(
+  value: string | undefined,
+  env: NodeJS.ProcessEnv,
+): string | undefined {
+  if (!value?.includes("${")) {
+    return value;
+  }
+  return value.replace(/\$\{([A-Z_][A-Z0-9_]*)\}/gu, (match, name: string) => {
+    const next = env[name];
+    return typeof next === "string" && next.length > 0 ? next : match;
+  });
+}
+
+function readLiteConfigEnvString(
+  config: JsonRecord,
+  name: string,
+  env: NodeJS.ProcessEnv,
+): string | undefined {
+  const envConfig = isRecord(config.env) ? config.env : undefined;
+  const vars = isRecord(envConfig?.vars) ? envConfig.vars : undefined;
+  const varsValue = readTrimmedString(vars?.[name]);
+  if (varsValue) {
+    return maybeSubstituteEnvRef(varsValue, env);
+  }
+  const directValue = readTrimmedString(envConfig?.[name]);
+  return maybeSubstituteEnvRef(directValue, env);
+}
+
+function readLitePluginDatabaseConfig(
+  config: JsonRecord,
+  pluginId: string,
+  env: NodeJS.ProcessEnv,
+): DatabasePluginConfig {
+  const plugins = isRecord(config.plugins) ? config.plugins : undefined;
+  const entries = isRecord(plugins?.entries) ? plugins.entries : undefined;
+  const entry = isRecord(entries?.[pluginId]) ? entries[pluginId] : undefined;
+  const entryConfig = isRecord(entry?.config) ? entry.config : undefined;
+  const database = isRecord(entryConfig?.database) ? entryConfig.database : undefined;
+  if (!database) {
+    return {};
+  }
+  return {
+    url: maybeSubstituteEnvRef(readTrimmedString(database.url), env),
+    databaseName:
+      readTrimmedString(database.databaseName) ??
+      readTrimmedString(database.name) ??
+      readTrimmedString(database.dbName),
+  };
+}
+
+function liteConfigHasExecutionPlatformDatabaseFields(
+  config: JsonRecord,
+  env: NodeJS.ProcessEnv,
+): boolean {
+  return Boolean(
+    readLiteConfigEnvString(config, "EXECUTION_PLATFORM_DATABASE_URL", env) ??
+    readLitePluginDatabaseConfig(config, "execution-platform", env).url ??
+    readLiteConfigEnvString(config, "MODEL_MEMORY_DATABASE_URL", env) ??
+    readLitePluginDatabaseConfig(config, "model-memory", env).url ??
+    readLiteConfigEnvString(config, "OPENCLAW_EXECUTION_PLATFORM_SHARED_RUNTIME_DB_APPROVED", env),
+  );
+}
+
+export function readExecutionPlatformDatabaseConfigLite(
+  env: NodeJS.ProcessEnv = process.env,
+): OpenClawConfig | undefined {
+  const configPath = resolveLiteConfigPath(env);
+  let parsed: unknown;
+  try {
+    if (!fs.existsSync(configPath)) {
+      return undefined;
+    }
+    parsed = JSON5.parse(fs.readFileSync(configPath, "utf8"));
+  } catch {
+    return undefined;
+  }
+  if (!isRecord(parsed) || !liteConfigHasExecutionPlatformDatabaseFields(parsed, env)) {
+    return undefined;
+  }
+  const executionPlatformDatabase = readLitePluginDatabaseConfig(parsed, "execution-platform", env);
+  const modelMemoryDatabase = readLitePluginDatabaseConfig(parsed, "model-memory", env);
+  return {
+    env: {
+      vars: {
+        ...(readLiteConfigEnvString(parsed, "EXECUTION_PLATFORM_DATABASE_URL", env)
+          ? {
+              EXECUTION_PLATFORM_DATABASE_URL: readLiteConfigEnvString(
+                parsed,
+                "EXECUTION_PLATFORM_DATABASE_URL",
+                env,
+              ),
+            }
+          : {}),
+        ...(readLiteConfigEnvString(
+          parsed,
+          "OPENCLAW_EXECUTION_PLATFORM_SHARED_RUNTIME_DB_APPROVED",
+          env,
+        )
+          ? {
+              OPENCLAW_EXECUTION_PLATFORM_SHARED_RUNTIME_DB_APPROVED: readLiteConfigEnvString(
+                parsed,
+                "OPENCLAW_EXECUTION_PLATFORM_SHARED_RUNTIME_DB_APPROVED",
+                env,
+              ),
+            }
+          : {}),
+        ...(readLiteConfigEnvString(parsed, "MODEL_MEMORY_DATABASE_URL", env)
+          ? {
+              MODEL_MEMORY_DATABASE_URL: readLiteConfigEnvString(
+                parsed,
+                "MODEL_MEMORY_DATABASE_URL",
+                env,
+              ),
+            }
+          : {}),
+      },
+    },
+    plugins: {
+      entries: {
+        ...(executionPlatformDatabase.url
+          ? {
+              "execution-platform": {
+                config: {
+                  database: executionPlatformDatabase,
+                },
+              },
+            }
+          : {}),
+        ...(modelMemoryDatabase.url
+          ? {
+              "model-memory": {
+                config: {
+                  database: modelMemoryDatabase,
+                },
+              },
+            }
+          : {}),
+      },
+    },
+  } as OpenClawConfig;
+}
+
+async function loadDatabaseConfigForResolution(input: {
+  config?: OpenClawConfig;
+  env: NodeJS.ProcessEnv;
+  loadConfig?: () => Promise<OpenClawConfig> | OpenClawConfig;
+}): Promise<OpenClawConfig> {
+  if (input.config) {
+    return input.config;
+  }
+  const liteConfig = readExecutionPlatformDatabaseConfigLite(input.env);
+  if (liteConfig) {
+    return liteConfig;
+  }
+  return await (input.loadConfig ?? loadOpenClawConfig)();
+}
+
 export async function resolveExecutionPlatformDatabaseResolution(
   input: {
     config?: OpenClawConfig;
@@ -147,7 +323,11 @@ export async function resolveExecutionPlatformDatabaseResolution(
   } = {},
 ): Promise<ExecutionPlatformDatabaseResolution> {
   const env = input.env ?? process.env;
-  const config = input.config ?? (await (input.loadConfig ?? loadOpenClawConfig)());
+  const config = await loadDatabaseConfigForResolution({
+    config: input.config,
+    env,
+    loadConfig: input.loadConfig,
+  });
   const explicitlyApprovedSharedRuntimeDatabase = flagEnabled(
     readTrimmedString(env.OPENCLAW_EXECUTION_PLATFORM_SHARED_RUNTIME_DB_APPROVED) ??
       readConfigEnvString(config, "OPENCLAW_EXECUTION_PLATFORM_SHARED_RUNTIME_DB_APPROVED"),

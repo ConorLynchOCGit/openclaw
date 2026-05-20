@@ -179,12 +179,24 @@ export function validateIntentFrontDoorDecision(
     );
   }
 
-  const workflow = findWorkflowSummary(input, output.workflowId);
-  if (!output.workflowId || !output.jobType) {
-    return decision("blocked", output, reasonCodes.concat("workflow_id_and_job_type_required"));
+  const executorWorkflowId = output.executorWorkflowId ?? output.workflowId;
+  const workflow = findWorkflowSummary(input, executorWorkflowId);
+  if (!executorWorkflowId || !output.jobType) {
+    return decision(
+      "blocked",
+      output,
+      reasonCodes.concat("executor_workflow_id_and_job_type_required"),
+    );
+  }
+  if (output.workflowId && output.workflowId !== executorWorkflowId) {
+    return decision("blocked", output, reasonCodes.concat("legacy_workflow_id_executor_mismatch"));
   }
   if (!workflow) {
-    return decision("blocked", output, reasonCodes.concat("workflow_not_registered"));
+    return decision(
+      "blocked",
+      output,
+      reasonCodes.concat("executor_workflow_not_registered", "workflow_not_registered"),
+    );
   }
   if (!workflow.executable) {
     return decision(
@@ -195,6 +207,20 @@ export function validateIntentFrontDoorDecision(
   }
   if (output.jobType !== workflow.jobType) {
     return decision("blocked", output, reasonCodes.concat("workflow_job_type_mismatch"));
+  }
+  const unsupportedCapabilities = output.requestedCapabilities.filter(
+    (capability) => !workflow.capabilitySummary.executableCapabilities.includes(capability),
+  );
+  if (unsupportedCapabilities.length > 0) {
+    return decision(
+      "needs_review",
+      output,
+      reasonCodes.concat(
+        unsupportedCapabilities.map(
+          (capability) => `executor_capability_unsupported:${capability}`,
+        ),
+      ),
+    );
   }
   if (output.confidence < (input.minimumExecutionConfidence ?? 0.75)) {
     return decision(
@@ -360,7 +386,7 @@ function decision(
     outcome,
     accepted: outcome === "accepted" || outcome === "plan_only_allowed",
     route: output?.route ?? null,
-    workflowId: output?.workflowId ?? null,
+    workflowId: output?.executorWorkflowId ?? output?.workflowId ?? null,
     jobType: output?.jobType ?? null,
     requiresApproval: outcome === "approval_required" || Boolean(output?.requiresApproval),
     approvalKind: output?.approvalKind ?? output?.requestedAuthority ?? null,

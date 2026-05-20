@@ -106,7 +106,7 @@ describe("ProviderDegradationPolicy", () => {
   it("treats malformed and schema-invalid output as untrusted", () => {
     const decision = evaluateProviderDegradation({
       failureState: "schema_parse_failure",
-      parseResult: { valid: false, output: null, reasonCodes: ["schema_bad"] },
+      parseResult: { valid: false, output: null, reasonCodes: ["schema_bad"], schemaIssues: [] },
     });
 
     expect(decision.outcome).toBe("needs_review");

@@ -5,6 +5,42 @@ title: "Model Memory Current Slice"
 
 # Current Slice
 
+## 2026-05-16 Runtime Toolification Integration
+
+Current Model Memory planning slice:
+`execution-platform-runtime-toolification-integration`.
+
+The next memory-adjacent convergence item is no longer another middleware-ref
+proof. It should migrate memory capture, retrieval, context-pack insertion,
+compaction, proactivity extraction/adjudication, and Work Queue projection
+evidence onto Execution Platform runtime tools through staged memory-specific
+tool protocols.
+
+Execution Platform has landed Work Queue Generated Item Lifecycle And Proof
+Child Cleanup before the next Product/Spec Planning live proof. Model Memory
+toolification should use the same generated-item contract for proactivity
+seeds, memory-review follow-ups, and any proof diagnostics so memory evidence
+does not create stale active queue rows.
+
+Target state:
+
+- MMV2 remains semantic memory truth.
+- runtime jobs remain execution lifecycle truth.
+- runtime tools own bounded step traces.
+- Work Queue owns projection, readback, and control.
+- model-task and DB-operation middleware refs become compatibility facades or
+  are retired from production-primary memory evidence.
+
+2026-05-17 priority note:
+
+- Router/front-door tool protocol, validation/QA toolification, and closeout
+  finalization now sit before the Product/Spec Planning proof.
+- Model Memory toolification sits after Product/Spec unless memory becomes the
+  immediate proof objective.
+- The Model Memory item should still be maximal when it runs: dense capture,
+  retrieval/context, compaction, and proactivity should all be live-wired,
+  model-reviewed, Work Queue-visible, and runtime-tool traced.
+
 ## 2026-05-09 Runtime Wiring Into Execution Platform
 
 Current runtime slice: `execution-platform-memory-runtime-live-wiring`.

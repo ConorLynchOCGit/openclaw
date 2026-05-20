@@ -6,6 +6,10 @@ import path from "node:path";
 import { promisify } from "node:util";
 import JSON5 from "json5";
 import { z } from "zod";
+import {
+  buildImplementationTaskPacket,
+  type ImplementationTaskPacket,
+} from "../workflows/mission-work-packets.ts";
 
 const execFileAsync = promisify(execFile);
 
@@ -14,6 +18,7 @@ export type KimiPatchModelClient = {
     modelRef: string;
     providerPath: string;
     taskSummary: string;
+    implementationTaskPacket?: ImplementationTaskPacket;
     allowedFileRefs: string[];
     fileSnapshots: Array<{
       path: string;
@@ -78,6 +83,7 @@ export type KimiEvidenceClaim = {
   confidence: "low" | "medium" | "high";
   rawPromptStored: false;
   rawResponseStored: false;
+  rawProviderLogStored: false;
 };
 
 export type KimiFileImplementationAdapterInput = {
@@ -87,6 +93,7 @@ export type KimiFileImplementationAdapterInput = {
   acceptanceCriteria?: string[];
   targetFileRefs?: string[];
   taskSummary: string;
+  implementationTaskPacket?: ImplementationTaskPacket;
   repoRoot: string;
   allowedFileRefs: string[];
   contextPackRefs: string[];
@@ -159,6 +166,12 @@ export type KimiAttemptDiagnostics = {
   parsedFileEditCount: number;
   boundedBlockerSummary: string | null;
   hadPatchLikeContent: boolean;
+  hadDiffBlock?: boolean;
+  hadSearchReplaceBlock?: boolean;
+  parsedContextRequestCount?: number;
+  targetRefsPresent?: boolean;
+  acceptanceCriteriaPresent?: boolean;
+  implementationPacketRef?: string | null;
   schemaParseState: "valid" | "invalid" | "not_attempted";
   schemaFailureCategories: KimiPatchSchemaFailureCategory[];
   normalizedEditCount: number;
@@ -190,6 +203,31 @@ export type KimiFileImplementationAdapterResult = {
   rawResponseStored: false;
   rawProviderLogStored: false;
   workQueueLifecycleMutated: false;
+};
+
+export type KimiPatchAttemptProgressEvent = {
+  phase:
+    | "kimi.patch.attempt_started"
+    | "kimi.patch.response_received"
+    | "kimi.patch.response_rejected"
+    | "kimi.patch.apply_started"
+    | "kimi.patch.validation_started"
+    | "kimi.patch.completed"
+    | "kimi.patch.needs_review";
+  attempt: number;
+  modelRef: string;
+  providerPath: string;
+  modelRunRef?: string | null;
+  reasonCodes?: string[];
+  changedFileRefs?: string[];
+  validationRefs?: string[];
+  blockerSummary?: string | null;
+  targetRefs?: string[];
+  acceptanceCriteria?: string[];
+  implementationPacketRef?: string | null;
+  rawPromptStored: false;
+  rawResponseStored: false;
+  rawProviderLogStored: false;
 };
 
 type ParsedEdit = {
@@ -687,6 +725,7 @@ function normalizeEvidenceClaims(parsed: Record<string, unknown>): KimiEvidenceC
             : "medium",
         rawPromptStored: false,
         rawResponseStored: false,
+        rawProviderLogStored: false,
       } satisfies KimiEvidenceClaim;
     })
     .filter((claim) => claim.commitmentId.length > 0 && claim.evidenceRef.length > 0)
@@ -737,6 +776,9 @@ function analyzePatchResponse(input: {
   maxOutputTokens: number;
   timeoutMs: number;
   singleTargetFileRef?: string | null;
+  targetRefsPresent: boolean;
+  acceptanceCriteriaPresent: boolean;
+  implementationPacketRef?: string | null;
 }): {
   edits: ParsedEdit[];
   contextRequests: KimiContextExpansionRequest[];
@@ -862,6 +904,12 @@ function analyzePatchResponse(input: {
       boundedBlockerSummary,
       hadPatchLikeContent:
         looksLikeUnifiedDiff(responseText) || looksLikeSearchReplaceBlock(responseText),
+      hadDiffBlock: looksLikeUnifiedDiff(responseText),
+      hadSearchReplaceBlock: looksLikeSearchReplaceBlock(responseText),
+      parsedContextRequestCount: contextRequests.length,
+      targetRefsPresent: input.targetRefsPresent,
+      acceptanceCriteriaPresent: input.acceptanceCriteriaPresent,
+      implementationPacketRef: input.implementationPacketRef ?? null,
       schemaParseState: schemaState,
       schemaFailureCategories: [...failureCategories].slice(0, 12),
       normalizedEditCount: edits.length,
@@ -1165,6 +1213,7 @@ function normalizeSuccessfulEvidenceClaims(input: {
     confidence: "medium" as const,
     rawPromptStored: false as const,
     rawResponseStored: false as const,
+    rawProviderLogStored: false as const,
   }));
   const byCommitment = new Map<string, KimiEvidenceClaim>();
   for (const claim of [...existing, ...generated]) {
@@ -1175,6 +1224,7 @@ function normalizeSuccessfulEvidenceClaims(input: {
       validationRefs: claim.validationRefs.length > 0 ? claim.validationRefs : input.validationRefs,
       rawPromptStored: false,
       rawResponseStored: false,
+      rawProviderLogStored: false,
     });
   }
   return [...byCommitment.values()].slice(0, 20);
@@ -1190,6 +1240,7 @@ export class KimiFileImplementationAdapter {
         edit: ParsedEdit,
         allowedFileRefs: string[],
       ) => Promise<{ changed: boolean; beforeHash: string; afterHash: string }>;
+      progressSink?: (event: KimiPatchAttemptProgressEvent) => void | Promise<void>;
     },
   ) {}
 
@@ -1203,6 +1254,29 @@ export class KimiFileImplementationAdapter {
       allowedFileRefs: input.targetFileRefs?.length ? input.targetFileRefs : input.allowedFileRefs,
       scopeFileRefs: input.allowedFileRefs,
     });
+    const implementationTaskPacket =
+      input.implementationTaskPacket ??
+      buildImplementationTaskPacket({
+        microtaskId: input.microtaskId,
+        microtaskTitle: input.microtaskTitle,
+        exactEditObjective: input.exactEditObjective ?? input.taskSummary,
+        taskSummary: input.taskSummary,
+        targetCommitmentIds: input.targetCommitmentIds ?? [],
+        targetFileRefs: input.targetFileRefs ?? [],
+        allowedFileRefs: input.allowedFileRefs,
+        contextPacketRefs: input.contextPackRefs,
+        validationCommandRefs: input.validationCommandRefs,
+        acceptanceCriteria: input.acceptanceCriteria ?? [],
+        downstreamConsumer: "validation_and_review",
+        successEvidenceDescriptions: input.acceptanceCriteria ?? [],
+      });
+    const taskSummaryForModel = [
+      "ImplementationTaskPacket v2:",
+      JSON.stringify(implementationTaskPacket, null, 2),
+      "",
+      "Additional bounded task summary:",
+      input.taskSummary,
+    ].join("\n");
     const apply = this.options.applyFile ?? defaultApplyFile;
     const maxAttempts = Math.max(1, Math.min(6, input.budgetPolicy.maxAttempts ?? 3));
     let previousFailureSummary: string | undefined;
@@ -1215,10 +1289,24 @@ export class KimiFileImplementationAdapter {
     const evidenceClaims: KimiEvidenceClaim[] = [];
     const expandedContextRefs: string[] = [];
     for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+      await this.options.progressSink?.({
+        phase: "kimi.patch.attempt_started",
+        attempt,
+        modelRef,
+        providerPath,
+        targetRefs: implementationTaskPacket.targetFileRefs,
+        acceptanceCriteria: implementationTaskPacket.acceptanceCriteria,
+        implementationPacketRef: implementationTaskPacket.packetRef,
+        reasonCodes: ["kimi_patch_attempt_started"],
+        rawPromptStored: false,
+        rawResponseStored: false,
+        rawProviderLogStored: false,
+      });
       const response = await this.options.modelClient.proposeFileEdits({
         modelRef,
         providerPath,
-        taskSummary: input.taskSummary.slice(0, 6_000),
+        taskSummary: taskSummaryForModel.slice(0, 8_000),
+        implementationTaskPacket,
         allowedFileRefs: input.allowedFileRefs,
         fileSnapshots,
         contextPackRefs: input.contextPackRefs,
@@ -1231,6 +1319,20 @@ export class KimiFileImplementationAdapter {
         maxProviderAttempts: Math.min(2, input.budgetPolicy.maxAttempts ?? 2),
       });
       lastModelRunRef = response.modelRunRef;
+      await this.options.progressSink?.({
+        phase: "kimi.patch.response_received",
+        attempt,
+        modelRef,
+        providerPath,
+        modelRunRef: response.modelRunRef,
+        targetRefs: implementationTaskPacket.targetFileRefs,
+        acceptanceCriteria: implementationTaskPacket.acceptanceCriteria,
+        implementationPacketRef: implementationTaskPacket.packetRef,
+        reasonCodes: ["kimi_patch_response_received"],
+        rawPromptStored: false,
+        rawResponseStored: false,
+        rawProviderLogStored: false,
+      });
       const analyzed = analyzePatchResponse({
         responseText: response.responseText,
         responseHash: response.responseHash,
@@ -1242,11 +1344,15 @@ export class KimiFileImplementationAdapter {
         maxOutputTokens: input.budgetPolicy.maxOutputTokens,
         timeoutMs: input.budgetPolicy.timeoutMs,
         singleTargetFileRef:
-          input.targetFileRefs?.length === 1
-            ? input.targetFileRefs[0]!
-            : input.allowedFileRefs.length === 1 && !input.allowedFileRefs[0]!.endsWith("/")
-              ? input.allowedFileRefs[0]!
+          implementationTaskPacket.targetFileRefs.length === 1
+            ? implementationTaskPacket.targetFileRefs[0]!
+            : implementationTaskPacket.allowedFileRefs.length === 1 &&
+                !implementationTaskPacket.allowedFileRefs[0]!.endsWith("/")
+              ? implementationTaskPacket.allowedFileRefs[0]!
               : null,
+        targetRefsPresent: implementationTaskPacket.targetFileRefs.length > 0,
+        acceptanceCriteriaPresent: implementationTaskPacket.acceptanceCriteria.length > 0,
+        implementationPacketRef: implementationTaskPacket.packetRef,
       });
       attemptDiagnostics.push(analyzed.diagnostics);
       editPlanSteps.push(...analyzed.editPlanSteps);
@@ -1307,12 +1413,41 @@ export class KimiFileImplementationAdapter {
               : analyzed.diagnostics.rejectionStage === "schema_parse"
                 ? "kimi_patch_schema_invalid"
                 : "kimi_no_valid_patch_proposal";
+        await this.options.progressSink?.({
+          phase: "kimi.patch.response_rejected",
+          attempt,
+          modelRef,
+          providerPath,
+          modelRunRef: response.modelRunRef,
+          targetRefs: implementationTaskPacket.targetFileRefs,
+          acceptanceCriteria: implementationTaskPacket.acceptanceCriteria,
+          implementationPacketRef: implementationTaskPacket.packetRef,
+          reasonCodes: [lastFailureReasonCode, ...analyzed.diagnostics.reasonCodes],
+          blockerSummary: previousFailureSummary,
+          rawPromptStored: false,
+          rawResponseStored: false,
+          rawProviderLogStored: false,
+        });
         continue;
       }
       const changedFileRefs: string[] = [];
       const diffParts: string[] = [];
       const attemptSnapshots = await snapshotFiles(input.repoRoot, fileRefsForEdits(edits));
       try {
+        await this.options.progressSink?.({
+          phase: "kimi.patch.apply_started",
+          attempt,
+          modelRef,
+          providerPath,
+          modelRunRef: response.modelRunRef,
+          targetRefs: implementationTaskPacket.targetFileRefs,
+          acceptanceCriteria: implementationTaskPacket.acceptanceCriteria,
+          implementationPacketRef: implementationTaskPacket.packetRef,
+          reasonCodes: ["kimi_patch_apply_started"],
+          rawPromptStored: false,
+          rawResponseStored: false,
+          rawProviderLogStored: false,
+        });
         for (const edit of edits) {
           const applied = await apply(input.repoRoot, edit, input.allowedFileRefs);
           if (applied.changed) {
@@ -1346,6 +1481,21 @@ export class KimiFileImplementationAdapter {
         ]);
         continue;
       }
+      await this.options.progressSink?.({
+        phase: "kimi.patch.validation_started",
+        attempt,
+        modelRef,
+        providerPath,
+        modelRunRef: response.modelRunRef,
+        changedFileRefs,
+        targetRefs: implementationTaskPacket.targetFileRefs,
+        acceptanceCriteria: implementationTaskPacket.acceptanceCriteria,
+        implementationPacketRef: implementationTaskPacket.packetRef,
+        reasonCodes: ["kimi_patch_validation_started"],
+        rawPromptStored: false,
+        rawResponseStored: false,
+        rawProviderLogStored: false,
+      });
       const validation = await Promise.all(
         input.validationCommandRefs
           .slice(0, 3)
@@ -1355,6 +1505,22 @@ export class KimiFileImplementationAdapter {
       const validationPassed = validation.every((item) => item.status === "passed");
       if (validationPassed) {
         const uniqueChangedFileRefs = [...new Set(changedFileRefs)].slice(0, 40);
+        await this.options.progressSink?.({
+          phase: "kimi.patch.completed",
+          attempt,
+          modelRef,
+          providerPath,
+          modelRunRef: response.modelRunRef,
+          changedFileRefs: uniqueChangedFileRefs,
+          validationRefs,
+          targetRefs: implementationTaskPacket.targetFileRefs,
+          acceptanceCriteria: implementationTaskPacket.acceptanceCriteria,
+          implementationPacketRef: implementationTaskPacket.packetRef,
+          reasonCodes: ["kimi_patch_completed"],
+          rawPromptStored: false,
+          rawResponseStored: false,
+          rawProviderLogStored: false,
+        });
         return {
           artifactKind: "kimi_file_implementation_adapter_result",
           status: "completed",
@@ -1397,6 +1563,24 @@ export class KimiFileImplementationAdapter {
       lastFailureReasonCode = "kimi_patch_validation_needs_review_after_repair_attempts";
       updateAttemptDiagnostics(attemptDiagnostics, "validation", ["kimi_patch_validation_failed"]);
     }
+    await this.options.progressSink?.({
+      phase: "kimi.patch.needs_review",
+      attempt: maxAttempts,
+      modelRef,
+      providerPath,
+      modelRunRef: lastModelRunRef,
+      validationRefs,
+      targetRefs: implementationTaskPacket.targetFileRefs,
+      acceptanceCriteria: implementationTaskPacket.acceptanceCriteria,
+      implementationPacketRef: implementationTaskPacket.packetRef,
+      reasonCodes: [lastFailureReasonCode],
+      blockerSummary:
+        previousFailureSummary ??
+        "Kimi did not return a valid openclaw.kimi.patch-proposal.v1 create/replace file edit.",
+      rawPromptStored: false,
+      rawResponseStored: false,
+      rawProviderLogStored: false,
+    });
     return this.needsReview({
       modelRef,
       providerPath,

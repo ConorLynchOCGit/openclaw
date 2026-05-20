@@ -229,6 +229,7 @@ describe("Execution Platform host routes and supervisor productionization", () =
               claimed: true,
               completed: false,
               failed: true,
+              status: "failed",
               runtimeJobId,
               teamRunId: "team-run-host-route-agent-team-native-job",
               workflowId: "agent_team.coding",

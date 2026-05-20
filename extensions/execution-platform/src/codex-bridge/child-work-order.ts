@@ -136,6 +136,86 @@ function recordValue(value: unknown): Record<string, unknown> {
     : {};
 }
 
+function firstStringField(record: Record<string, unknown>, fieldNames: string[]): string | null {
+  for (const fieldName of fieldNames) {
+    const value = record[fieldName];
+    if (typeof value === "string" && value.trim().length > 0) {
+      return bounded(value, 260);
+    }
+  }
+  return null;
+}
+
+function arrayFromFirstField(record: Record<string, unknown>, fieldNames: string[]): unknown[] {
+  for (const fieldName of fieldNames) {
+    const value = record[fieldName];
+    if (Array.isArray(value)) {
+      return value;
+    }
+  }
+  return [];
+}
+
+function normalizeContextFileItems(value: unknown[]): Array<{
+  path: string;
+  whyRelevant: string;
+  keySymbolsOrFunctions: string[];
+}> {
+  return value
+    .map((item): Record<string, unknown> | null =>
+      typeof item === "string"
+        ? { path: item }
+        : item && typeof item === "object" && !Array.isArray(item)
+          ? (item as Record<string, unknown>)
+          : null,
+    )
+    .filter((item): item is Record<string, unknown> => item !== null)
+    .map((item) => ({
+      path:
+        firstStringField(item, ["path", "fileRef", "file", "targetFileRef", "repoFileRef"]) ?? "",
+      whyRelevant:
+        firstStringField(item, ["whyRelevant", "reason", "rationale", "summary"]) ??
+        "Model-authored context scout file reference.",
+      keySymbolsOrFunctions: compactStrings(
+        item.keySymbolsOrFunctions ?? item.symbols ?? item.keySymbols ?? item.functions,
+        8,
+        120,
+      ),
+    }))
+    .filter((item) => item.path.length > 0)
+    .slice(0, 12);
+}
+
+function normalizeContextEditPointItems(
+  value: unknown[],
+  fallbackFiles: ContextScoutOutput["relevantFiles"],
+): ContextScoutOutput["recommendedEditPoints"] {
+  return value
+    .map((item): Record<string, unknown> | null =>
+      typeof item === "string"
+        ? { path: item }
+        : item && typeof item === "object" && !Array.isArray(item)
+          ? (item as Record<string, unknown>)
+          : null,
+    )
+    .filter((item): item is Record<string, unknown> => item !== null)
+    .map((item, index) => ({
+      path:
+        firstStringField(item, ["path", "fileRef", "file", "targetFileRef", "repoFileRef"]) ??
+        fallbackFiles[index]?.path ??
+        fallbackFiles[0]?.path ??
+        "",
+      symbolOrRegion:
+        firstStringField(item, ["symbolOrRegion", "symbol", "region", "functionName"]) ??
+        "nearest matching implementation/test region",
+      reason:
+        firstStringField(item, ["reason", "whyRelevant", "rationale", "summary"]) ??
+        "Model-authored context scout edit point.",
+    }))
+    .filter((item) => item.path.length > 0)
+    .slice(0, 10);
+}
+
 function defaultObjectiveForRole(input: {
   roleId: string;
   taskTitle: string;
@@ -410,53 +490,32 @@ export function parseContextScoutOutput(input: {
       parsed = {};
     }
   }
-  const relevantFilesSource = Array.isArray(parsed.relevantFiles) ? parsed.relevantFiles : [];
-  const relevantFiles = relevantFilesSource
-    .filter((item): item is Record<string, unknown> => Boolean(item && typeof item === "object"))
-    .map((item, index) => ({
-      path:
-        typeof item.path === "string"
-          ? bounded(item.path, 260)
-          : bounded(input.targetRefs[index] ?? input.targetRefs[0] ?? "unknown", 260),
-      whyRelevant:
-        typeof item.whyRelevant === "string"
-          ? bounded(item.whyRelevant, 400)
-          : "Relevant to the child work order target scope.",
-      keySymbolsOrFunctions: compactStrings(item.keySymbolsOrFunctions, 8, 120),
-    }))
-    .slice(0, 12);
-  if (relevantFiles.length === 0) {
-    relevantFiles.push(
-      ...input.targetRefs.slice(0, 5).map((ref) => ({
-        path: ref,
-        whyRelevant: "Target ref supplied by work order scope.",
-        keySymbolsOrFunctions: [],
-      })),
-    );
-  }
+  const relevantFiles = normalizeContextFileItems(
+    arrayFromFirstField(parsed, [
+      "relevantFiles",
+      "relevantFileRefs",
+      "verifiedFileRefs",
+      "fileRefs",
+      "files",
+      "targetFileRefs",
+      "candidateFileRefs",
+    ]),
+  );
   return {
     roleId: "context_scout",
     relevantFiles,
     existingPatterns: compactStrings(parsed.existingPatterns, 10, 260),
     risks: compactStrings(parsed.risks, 10, 260),
-    recommendedEditPoints: (Array.isArray(parsed.recommendedEditPoints)
-      ? parsed.recommendedEditPoints
-      : []
-    )
-      .filter((item): item is Record<string, unknown> => Boolean(item && typeof item === "object"))
-      .map((item, index) => ({
-        path:
-          typeof item.path === "string"
-            ? bounded(item.path, 260)
-            : (relevantFiles[index]?.path ?? relevantFiles[0]?.path ?? "unknown"),
-        symbolOrRegion:
-          typeof item.symbolOrRegion === "string"
-            ? bounded(item.symbolOrRegion, 160)
-            : "nearest matching implementation/test region",
-        reason:
-          typeof item.reason === "string" ? bounded(item.reason, 300) : "Relevant edit point.",
-      }))
-      .slice(0, 10),
+    recommendedEditPoints: normalizeContextEditPointItems(
+      arrayFromFirstField(parsed, [
+        "recommendedEditPoints",
+        "editPoints",
+        "likelyEditPoints",
+        "implementationTargets",
+        "targetFileRefs",
+      ]),
+      relevantFiles,
+    ),
     validationSuggestions: compactStrings(parsed.validationSuggestions, 8, 260).concat(
       input.validationCommandRefs.slice(0, 4),
     ),

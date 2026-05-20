@@ -83,6 +83,7 @@ export type AgentTeamModelClientResult = {
   } | null;
   catalogPricing?: OpenRouterCatalogPricing | null;
   retryEvidence?: OpenRouterRetryEvidence | null;
+  providerResponseDiagnostics?: JsonValue | null;
   errorReasonCode?: string | null;
   httpStatus?: number | null;
 };
@@ -103,7 +104,7 @@ export type AgentTeamModelClient = {
 
 export type OpenRouterRoleModelRequestProfile = {
   responseFormatMode?: "native" | "prompt_only" | "auto";
-  reasoningMode?: "exclude" | "omit";
+  reasoningMode?: "exclude" | "omit" | "none";
   maxTokens?: number;
 };
 
@@ -1101,6 +1102,8 @@ export class OpenRouterAgentTeamModelClient implements AgentTeamModelClient {
     };
     const responseFormatMode = requestProfile.responseFormatMode ?? "auto";
     const reasoningMode = requestProfile.reasoningMode ?? "exclude";
+    const promptHash = sha256Text(input.prompt);
+    const modelCallSpanId = `openrouter:${input.modelCandidateId}:${promptHash.slice(0, 16)}:${Date.now().toString(36)}`;
     const attempts: OpenRouterRetryEvidence["attempts"] = [];
     let last: AgentTeamModelClientResult | null = null;
     let jsonModeDisabledAfterNoContent = false;
@@ -1121,10 +1124,51 @@ export class OpenRouterAgentTeamModelClient implements AgentTeamModelClient {
         temperature: 0,
         max_tokens: input.maxTokens ?? requestProfile.maxTokens ?? 700,
         ...(responseFormatAllowed ? { response_format: { type: input.responseFormat } } : {}),
-        ...(reasoningMode === "omit" || reasoningDirectiveDisabledAfterNoContent
-          ? {}
-          : { reasoning: { exclude: true } }),
+        ...(reasoningMode === "none"
+          ? { reasoning: { effort: "none", exclude: true } }
+          : reasoningMode === "omit" || reasoningDirectiveDisabledAfterNoContent
+            ? {}
+            : { reasoning: { exclude: true } }),
       };
+      const bodyRecord = body as Record<string, unknown>;
+      const reasoningRecord =
+        bodyRecord.reasoning && typeof bodyRecord.reasoning === "object"
+          ? (bodyRecord.reasoning as Record<string, unknown>)
+          : null;
+      const requestProfileDiagnostics = {
+        modelCallSpanId,
+        modelRef: input.modelId,
+        modelCandidateId: input.modelCandidateId,
+        responseFormatMode,
+        reasoningMode: reasoningDirectiveDisabledAfterNoContent
+          ? "omit_after_no_content"
+          : reasoningMode,
+        maxTokens: body.max_tokens,
+        timeoutMs: input.timeoutMs ?? policy.timeoutMs,
+        maxAttempts: policy.maxAttempts,
+        attempt,
+        promptHash: `sha256:${promptHash}`,
+        promptByteLength: Buffer.byteLength(input.prompt, "utf8"),
+        hasResponseFormat: Boolean(bodyRecord.response_format),
+        responseFormatType:
+          bodyRecord.response_format && typeof bodyRecord.response_format === "object"
+            ? (((bodyRecord.response_format as Record<string, unknown>).type as
+                | string
+                | undefined) ?? null)
+            : null,
+        hasReasoning: Boolean(reasoningRecord),
+        reasoningEffort:
+          reasoningRecord && typeof reasoningRecord.effort === "string"
+            ? reasoningRecord.effort
+            : null,
+        reasoningExclude:
+          reasoningRecord && typeof reasoningRecord.exclude === "boolean"
+            ? reasoningRecord.exclude
+            : null,
+        rawPromptStored: false,
+        rawResponseStored: false,
+        rawProviderLogStored: false,
+      } satisfies JsonValue;
       const started = this.options.now?.().getTime() ?? Date.now();
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), input.timeoutMs ?? policy.timeoutMs);
@@ -1156,10 +1200,53 @@ export class OpenRouterAgentTeamModelClient implements AgentTeamModelClient {
             ? (choice.message as Record<string, unknown> | undefined)
             : undefined;
         const content = typeof message?.content === "string" ? message.content : "";
+        const finishReason =
+          typeof choice?.finish_reason === "string" ? choice.finish_reason : null;
         const usage =
           providerBody?.usage && typeof providerBody.usage === "object"
             ? (providerBody.usage as Record<string, unknown>)
             : {};
+        const completionTokenDetails =
+          usage.completion_tokens_details && typeof usage.completion_tokens_details === "object"
+            ? (usage.completion_tokens_details as Record<string, unknown>)
+            : {};
+        const providerResponseDiagnostics = {
+          modelCallSpanId,
+          requestProfileDiagnostics,
+          finishReason,
+          nativeFinishReason:
+            typeof choice?.native_finish_reason === "string" ? choice.native_finish_reason : null,
+          choiceCount: Array.isArray(providerBody?.choices) ? providerBody.choices.length : null,
+          providerBodyKeys:
+            providerBody && typeof providerBody === "object"
+              ? Object.keys(providerBody).slice(0, 16)
+              : [],
+          errorKeys:
+            providerBody?.error && typeof providerBody.error === "object"
+              ? Object.keys(providerBody.error as Record<string, unknown>).slice(0, 12)
+              : [],
+          messageKeys:
+            message && typeof message === "object" ? Object.keys(message).slice(0, 12) : [],
+          contentType: message
+            ? Array.isArray(message.content)
+              ? "array"
+              : typeof message.content
+            : null,
+          contentLength: content.length,
+          reasoningTokenCount:
+            typeof completionTokenDetails.reasoning_tokens === "number"
+              ? completionTokenDetails.reasoning_tokens
+              : null,
+          completionTokenCount:
+            typeof usage.completion_tokens === "number" ? usage.completion_tokens : null,
+          rawPromptStored: false,
+          rawResponseStored: false,
+          rawProviderLogStored: false,
+        } satisfies JsonValue;
+        const emptyReasonCode =
+          response.ok && !content.trim() && finishReason === "length"
+            ? "openrouter_no_content_finish_length"
+            : "openrouter_no_content";
         const reasonCode = retryReasonForOpenRouter({
           httpStatus: response.status,
           errorReasonCode: response.ok
@@ -1193,11 +1280,12 @@ export class OpenRouterAgentTeamModelClient implements AgentTeamModelClient {
             estimatedCostUsd: typeof usage.cost === "number" ? usage.cost : null,
           },
           catalogPricing: this.options.catalogPricingByModelId?.[input.modelId] ?? null,
+          providerResponseDiagnostics,
           httpStatus: response.status,
           errorReasonCode: response.ok
             ? content.trim()
               ? null
-              : "openrouter_no_content"
+              : emptyReasonCode
             : response.status === 429
               ? "openrouter_http_429"
               : "openrouter_http_error",
@@ -1234,6 +1322,14 @@ export class OpenRouterAgentTeamModelClient implements AgentTeamModelClient {
           responseHash: null,
           usage: null,
           catalogPricing: this.options.catalogPricingByModelId?.[input.modelId] ?? null,
+          providerResponseDiagnostics: {
+            modelCallSpanId,
+            requestProfileDiagnostics,
+            errorKind: reasonCode,
+            rawPromptStored: false,
+            rawResponseStored: false,
+            rawProviderLogStored: false,
+          },
           httpStatus: null,
           errorReasonCode: reasonCode,
         };
@@ -1253,6 +1349,7 @@ export class OpenRouterAgentTeamModelClient implements AgentTeamModelClient {
         responseHash: null,
         usage: null,
         catalogPricing: this.options.catalogPricingByModelId?.[input.modelId] ?? null,
+        providerResponseDiagnostics: null,
         httpStatus: null,
         errorReasonCode: "openrouter_network_error",
       } satisfies AgentTeamModelClientResult);

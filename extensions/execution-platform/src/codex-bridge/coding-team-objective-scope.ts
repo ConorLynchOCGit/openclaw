@@ -189,6 +189,22 @@ function scopePathsForOwner(ownerSystemArea: string, title: string | null): stri
       "extensions/execution-platform/src/work-queue/",
     ];
   }
+  if (normalizedOwner.includes("execution-platform") || normalizedOwner === "execution platform") {
+    return [
+      ...BASE_ALWAYS_ALLOWED_SCOPE,
+      "extensions/execution-platform/src/codex-bridge/",
+      "extensions/execution-platform/src/workflows/",
+      "extensions/execution-platform/src/workers/",
+      "extensions/execution-platform/src/work-queue/",
+      "extensions/execution-platform/src/runtime-tool-call/",
+      "extensions/execution-platform/src/intent-front-door/",
+      "extensions/execution-platform/src/intent-routing/",
+      "extensions/execution-platform/src/model-tasks/",
+      "extensions/execution-platform/src/script-jobs/",
+      "extensions/execution-platform/src/db-operations/",
+      "src/gateway/",
+    ];
+  }
   return [];
 }
 
@@ -253,12 +269,16 @@ export function resolveCodingTeamObjectiveScope(
   const explicitRepoPathScopes = extractExplicitRepoPathScopes(
     `${input.objectiveForEvidence}\n${input.objectiveForModel}`,
   );
+  const baseScopePaths =
+    scopedPaths.length > 0
+      ? scopedPaths
+      : input.fallbackRepoScopePaths.length > 0
+        ? input.fallbackRepoScopePaths
+        : [...BASE_ALWAYS_ALLOWED_SCOPE];
   const approvedRepoScopePaths = unique(
     explicitRepoPathScopes.length > 0
-      ? [...BASE_ALWAYS_ALLOWED_SCOPE, ...explicitRepoPathScopes]
-      : scopedPaths.length > 0
-        ? scopedPaths
-        : input.fallbackRepoScopePaths,
+      ? [...baseScopePaths, ...explicitRepoPathScopes]
+      : baseScopePaths,
   );
   const approvedValidationCommands = unique(
     validationCommandsForScope({
@@ -276,6 +296,7 @@ export function resolveCodingTeamObjectiveScope(
       ? ["owner_system_area_scope_resolved"]
       : ["fallback_repo_scope_used"]),
     ...(explicitRepoPathScopes.length > 0 ? ["explicit_repo_path_scope_resolved"] : []),
+    ...(explicitRepoPathScopes.length > 0 ? ["explicit_repo_paths_augmented_base_scope"] : []),
   ];
   return {
     artifactKind: "coding_team_objective_scope",

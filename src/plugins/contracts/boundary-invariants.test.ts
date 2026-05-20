@@ -13,6 +13,7 @@ const ALLOWED_BUNDLED_CAPABILITY_METADATA_CONSUMERS = new Set([
 ]);
 
 const ALLOWED_EXTENSION_PATH_STRING_TESTS = new Set([
+  "src/agents/model-memory.live-runtime.test.ts",
   "src/plugin-sdk/browser-maintenance.test.ts",
   "src/channels/plugins/bundled.shape-guard.test.ts",
   "src/cli/capability-cli.test.ts",

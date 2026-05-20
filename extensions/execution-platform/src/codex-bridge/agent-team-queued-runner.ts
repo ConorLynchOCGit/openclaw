@@ -38,7 +38,6 @@ import { createContextScoutArtifact, recordContextScoutArtifact } from "./contex
 import { DynamicAgentTeamGraphRunner } from "./dynamic-agent-team-graph-runner.ts";
 import type { DynamicCodingTeamModelClient } from "./dynamic-coding-team-orchestrator.ts";
 import type { DynamicValidationRunner } from "./dynamic-test-repair-loop.ts";
-import type { KimiFileImplementationAdapter } from "./kimi-file-implementation-adapter.ts";
 import type { AgentTeamModelClient } from "./live-agent-team-runner.ts";
 import {
   createDegradedSystemCloseoutCapsule,
@@ -62,7 +61,7 @@ export type AgentTeamQueuedRunOnceResult = {
   teamRunId: string | null;
   modelRosterDecisions: ModelRosterEnforcementDecision[];
   evidence: AgentTeamRuntimeEvidence | null;
-  failure: { stage: string; message: string } | null;
+  failure: { stage: string; message: string; reasonCodes?: string[] } | null;
   closeoutRequired: true;
   rawPromptStored: false;
   rawResponseStored: false;
@@ -82,11 +81,6 @@ export type AgentTeamQueuedRunnerOptions = {
   };
   roleModelClient?: AgentTeamModelClient;
   implementationBridge?: AgentTeamImplementationBridge;
-  kimiImplementationAdapter?: {
-    run(
-      input: Parameters<KimiFileImplementationAdapter["run"]>[0],
-    ): ReturnType<KimiFileImplementationAdapter["run"]>;
-  };
   runtimeWorkGraphs?: RuntimeWorkGraphRepository;
   runtimeToolKernel?: RuntimeToolKernel | null;
   workQueue?: WorkQueueRepository;
@@ -668,7 +662,11 @@ export class AgentTeamQueuedRunner {
           failed: true,
           runtimeJobId: claimed.job.jobId,
           teamRunId: run.evidence.teamRunId,
-          failure: { stage: "agent_team_run_once", message },
+          failure: {
+            stage: "agent_team_run_once",
+            message,
+            reasonCodes: run.blockingReasonCodes.slice(0, 40),
+          },
           modelRosterDecisions: run.modelRosterDecisions,
           evidence: run.evidence,
         });
@@ -1433,7 +1431,6 @@ export class AgentTeamQueuedRunner {
         missionContractModelClient: this.options.missionContractModelClient,
         validationRunner: this.options.dynamicValidationRunner,
         implementationBridge: this.options.implementationBridge!,
-        kimiImplementationAdapter: this.options.kimiImplementationAdapter,
         closeoutReporter: this.options.closeoutReporter,
         now: this.now,
       }).run(job);

@@ -36,7 +36,7 @@ const SOURCE_EDIT_TASK_FAMILIES = new Set<NonCodexTaskFamily>([
   "frontend_scoped_edit",
 ]);
 
-function jsonRecord(value: JsonValue | undefined | null): Record<string, unknown> {
+function jsonRecord(value: JsonValue | unknown | undefined | null): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : {};
@@ -79,9 +79,20 @@ function qualificationEvidenceRefs(node: OrchestratorGraphNodeSpec): string[] {
   return stringArray(metadata.qualificationEvidenceRefs ?? metadata.modelQualificationEvidenceRefs);
 }
 
+function nestedUtilityRecord(node: OrchestratorGraphNodeSpec): Record<string, unknown> {
+  const metadata = jsonRecord(node.metadata);
+  return jsonRecord(metadata.utilityDecision ?? metadata.costAwareUtilityDecision);
+}
+
 function stopOrEscalationCondition(node: OrchestratorGraphNodeSpec): string {
   const metadata = jsonRecord(node.metadata);
-  return stringValue(metadata.stopOrEscalationCondition ?? metadata.escalationCondition);
+  const utility = nestedUtilityRecord(node);
+  return stringValue(
+    metadata.stopOrEscalationCondition ??
+      metadata.escalationCondition ??
+      utility.stopOrEscalationCondition ??
+      utility.escalationCondition,
+  );
 }
 
 function taskFamilyIsSourceEdit(taskFamily: string): boolean {
@@ -134,15 +145,50 @@ function parallelJustified(decision: OrchestratorGraphDecision): boolean {
   return Boolean(stringValue(metadata.parallelIndependentNodesJustification));
 }
 
+function plannedOrDeferredCommitments(decision: OrchestratorGraphDecision): Set<string> {
+  const metadata = jsonRecord(decision.metadata ?? {});
+  return new Set(
+    [
+      ...stringArray(metadata.plannedLaterCommitmentIds),
+      ...stringArray(metadata.deferredCommitmentIds),
+      ...stringArray(metadata.humanDecisionCommitmentIds),
+      ...stringArray(metadata.discoveryUnblockedCommitmentIds),
+    ].filter(Boolean),
+  );
+}
+
 function isBroadCodexImplementation(node: OrchestratorGraphNodeSpec): boolean {
   return node.nodeKind === "implementation" && node.capabilityId === "implementation_complex";
 }
 
+function isProgressiveContextAcquisitionFirstMove(nodes: OrchestratorGraphNodeSpec[]): boolean {
+  if (nodes.length !== 1) {
+    return false;
+  }
+  const [node] = nodes;
+  if (!node) {
+    return false;
+  }
+  const capabilityId = node.capabilityId ?? "";
+  const joined = [node.nodeKind, node.assignedRole, capabilityId].join(" ").toLowerCase();
+  return (
+    joined.includes("context") ||
+    joined.includes("research") ||
+    joined.includes("planning_orchestrator")
+  );
+}
+
 function targetCommitments(node: OrchestratorGraphNodeSpec): string[] {
   const metadata = jsonRecord(node.metadata);
+  const utility = nestedUtilityRecord(node);
   return node.commitmentIdsAdvanced?.length
     ? node.commitmentIdsAdvanced
-    : stringArray(metadata.targetCommitmentIds ?? metadata.commitmentIdsAdvanced);
+    : stringArray(
+        metadata.targetCommitmentIds ??
+          metadata.commitmentIdsAdvanced ??
+          utility.targetCommitmentIds ??
+          utility.commitmentIdsAdvanced,
+      );
 }
 
 export function validateNonCodexTaskDecompositionDecision(input: {
@@ -159,14 +205,29 @@ export function validateNonCodexTaskDecompositionDecision(input: {
   const isFirstGraphDecision = firstGraphDecision(input.snapshotSummary);
 
   if (complexCodingMission && isFirstGraphDecision && nodes.length > 0) {
+    const progressiveContextFirst = isProgressiveContextAcquisitionFirstMove(nodes);
     if (nodes.some(isBroadCodexImplementation)) {
       reasonCodes.push("non_codex_decomposition_codex_broad_first_for_complex_mission");
     }
-    if (nodes.length < Math.min(3, complexCommitmentCount)) {
-      reasonCodes.push("non_codex_decomposition_initial_child_count_insufficient");
-    }
-    if (!hasGraphStructure(input.decision) && !parallelJustified(input.decision)) {
+    if (
+      !progressiveContextFirst &&
+      !hasGraphStructure(input.decision) &&
+      !parallelJustified(input.decision)
+    ) {
       reasonCodes.push("non_codex_decomposition_edges_or_parallel_justification_missing");
+    }
+    const coveredCommitments = new Set<string>(plannedOrDeferredCommitments(input.decision));
+    for (const node of nodes) {
+      for (const commitmentId of targetCommitments(node)) {
+        coveredCommitments.add(commitmentId);
+      }
+    }
+    for (const commitment of input.missionLedger?.blockingCommitments ?? []) {
+      if (!progressiveContextFirst && !coveredCommitments.has(commitment.commitmentId)) {
+        reasonCodes.push(
+          `non_codex_decomposition_commitment_coverage_missing:${commitment.commitmentId}`,
+        );
+      }
     }
   }
 

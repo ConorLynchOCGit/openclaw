@@ -1,17 +1,29 @@
 import { createHash } from "node:crypto";
 import { DbOperationRepository } from "../../../../extensions/execution-platform/src/db-operations/db-operation-repository.ts";
+import {
+  createDbOperationExecuteRuntimeToolExecutor,
+  registerDbOperationExecuteRuntimeTool,
+  type DbOperationExecuteHandler,
+} from "../../../../extensions/execution-platform/src/db-operations/db-operation-runtime-tool.ts";
 import type {
   DbOperationKind,
   DbOperationLane,
 } from "../../../../extensions/execution-platform/src/db-operations/types.ts";
 import { createExecutionPlatformDatabaseRuntime } from "../../../../extensions/execution-platform/src/db/runtime.ts";
 import { createDefaultModelTaskContractRegistry } from "../../../../extensions/execution-platform/src/model-tasks/contracts.ts";
+import { registerModelCallRuntimeTool } from "../../../../extensions/execution-platform/src/model-tasks/model-call-runtime-tool.ts";
 import { ModelTaskRepository } from "../../../../extensions/execution-platform/src/model-tasks/model-task-repository.ts";
-import type { ModelTaskContractId } from "../../../../extensions/execution-platform/src/model-tasks/types.ts";
+import {
+  isModelTaskPayload,
+  type ModelTaskContractId,
+} from "../../../../extensions/execution-platform/src/model-tasks/types.ts";
 import {
   RuntimeJobRepository,
   type JsonValue,
 } from "../../../../extensions/execution-platform/src/runtime-job-repository.ts";
+import { RuntimeToolKernel } from "../../../../extensions/execution-platform/src/runtime-tool-call/runtime-tool-kernel.ts";
+import { RuntimeToolRegistry } from "../../../../extensions/execution-platform/src/runtime-tool-call/runtime-tool-registry.ts";
+import { RuntimeToolTraceRepository } from "../../../../extensions/execution-platform/src/runtime-tool-call/runtime-tool-trace-repository.ts";
 import type {
   JsonModelExecutionRequest,
   JsonModelExecutionResponse,
@@ -22,6 +34,7 @@ type ExecutionRuntimeHandle = {
   runtimeJobs: RuntimeJobRepository;
   modelTasks: ModelTaskRepository;
   dbOperations: DbOperationRepository;
+  toolTraces: RuntimeToolTraceRepository;
 };
 
 let executionRuntimePromise: Promise<ExecutionRuntimeHandle> | undefined;
@@ -111,9 +124,25 @@ async function executionRuntime(): Promise<ExecutionRuntimeHandle> {
         registry: createDefaultModelTaskContractRegistry(),
       }),
       dbOperations: new DbOperationRepository(runtimeJobs),
+      toolTraces: new RuntimeToolTraceRepository(runtime.sqlClient),
     };
   })();
   return executionRuntimePromise;
+}
+
+function modelCallKernel(input: {
+  traces: RuntimeToolTraceRepository;
+  executor: JsonModelExecutor;
+}): RuntimeToolKernel {
+  const registry = new RuntimeToolRegistry();
+  registerModelCallRuntimeTool({ registry, executor: input.executor });
+  return new RuntimeToolKernel({ registry, traces: input.traces });
+}
+
+function dbOperationKernel(input: { traces: RuntimeToolTraceRepository }): RuntimeToolKernel {
+  const registry = new RuntimeToolRegistry();
+  registerDbOperationExecuteRuntimeTool({ registry, handlers: {} });
+  return new RuntimeToolKernel({ registry, traces: input.traces });
 }
 
 function boundedRequestMetadata(request: JsonModelExecutionRequest): JsonValue {
@@ -140,6 +169,49 @@ function boundedRequestMetadata(request: JsonModelExecutionRequest): JsonValue {
     rawResponseStored: false,
     rawProviderLogStored: false,
   };
+}
+
+function runtimeToolResponseOptions(options: JsonModelExecutionRequest["responseOptions"]): {
+  transport?: {
+    type: "json_schema";
+    name: string;
+    strict: boolean;
+    schema: unknown;
+  };
+  maxOutputTokens?: number;
+  reasoningEffort?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh";
+  verbosity?: "low" | "medium" | "high";
+} {
+  const output: ReturnType<typeof runtimeToolResponseOptions> = {};
+  if (typeof options?.maxOutputTokens === "number") {
+    output.maxOutputTokens = options.maxOutputTokens;
+  }
+  if (
+    options?.reasoningEffort === "none" ||
+    options?.reasoningEffort === "minimal" ||
+    options?.reasoningEffort === "low" ||
+    options?.reasoningEffort === "medium" ||
+    options?.reasoningEffort === "high" ||
+    options?.reasoningEffort === "xhigh"
+  ) {
+    output.reasoningEffort = options.reasoningEffort;
+  }
+  if (
+    options?.verbosity === "low" ||
+    options?.verbosity === "medium" ||
+    options?.verbosity === "high"
+  ) {
+    output.verbosity = options.verbosity;
+  }
+  if (options?.transport?.type === "json_schema") {
+    output.transport = {
+      type: "json_schema",
+      name: options.transport.name,
+      strict: options.transport.strict ?? true,
+      schema: options.transport.schema,
+    };
+  }
+  return output;
 }
 
 export class RuntimeMiddlewareBackedJsonExecutor implements JsonModelExecutor {
@@ -182,59 +254,88 @@ export class RuntimeMiddlewareBackedJsonExecutor implements JsonModelExecutor {
         reason: "model-memory live runtime enqueued model call through model-task middleware",
       },
     });
-    const claimed = await runtime.runtimeJobs.claimNextJob({
+    const claimedJob = await runtime.runtimeJobs.claimNextJob({
       workerId: "model-memory-runtime-model-task-worker",
       queueName: "model-task",
       jobTypes: [`model_task.${contractId}`],
       runtimeJobId: jobId,
     });
-    if (!claimed || claimed.job.jobId !== jobId) {
+    if (
+      !claimedJob ||
+      claimedJob.job.jobId !== jobId ||
+      !isModelTaskPayload(claimedJob.job.payload)
+    ) {
       throw new Error("model_memory_runtime_model_task_claim_failed");
     }
-    const startedAt = Date.now();
+    const contract = runtime.modelTasks.getContract(contractId);
+    if (!contract) {
+      throw new Error("model_memory_runtime_model_task_contract_missing");
+    }
+    const claimed = {
+      ...claimedJob,
+      contract,
+      task: claimedJob.job.payload,
+    };
     try {
-      const response = await this.underlying.execute(request);
-      const latencyMs = Math.max(0, Date.now() - startedAt);
-      const modelRef = response.resolvedModelId ?? request.contract.modelId;
-      const evidenceRef = `runtime-job://${jobId}/model-memory/model-task-provider-evidence`;
-      await runtime.runtimeJobs.attachArtifact({
-        jobId,
-        artifactType: "model_memory.model_task_provider_evidence",
-        storageKind: "metadata",
-        uri: evidenceRef,
-        contentType: "application/json",
-        metadata: {
-          contractName: request.contract.contractName,
-          modelRef,
-          responseHash: sha256(response.outputText),
-          latencyMs,
-          usage: response.usage ?? null,
-          rawPromptStored: false,
-          rawResponseStored: false,
-          rawProviderLogStored: false,
+      const toolResult = await runtime.modelTasks.invokeClaimedModelTaskRuntimeTool({
+        claimed,
+        kernel: modelCallKernel({ traces: runtime.toolTraces, executor: this.underlying }),
+        modelId: request.contract.modelId,
+        providerRef: "model_memory_runtime_json_executor",
+        volatileInput: {
+          contract: request.contract,
+          systemPrompt: request.systemPrompt,
+          userPrompt: request.userPrompt,
+          responseFormat: "json",
+          responseOptions: runtimeToolResponseOptions(request.responseOptions),
+          parseJsonOutput: true,
+          maxStructuredOutputBytes: 24_000,
         },
+        inputSummary: `Run Model Memory ${request.contract.contractName} through model.call runtime tool.`,
       });
+      if (toolResult.invocation.invocation.status !== "succeeded" || !toolResult.structuredOutput) {
+        await runtime.modelTasks.failModelTask({
+          jobId,
+          leaseToken: claimed.leaseToken,
+          failureKind: "provider_failure",
+          message: "model.call runtime tool did not return accepted structured output",
+          evidence: {
+            contractName: request.contract.contractName,
+            invocationRef: toolResult.invocation.invocationRef,
+            reasonCodes: toolResult.invocation.reasonCodes,
+            rawPromptStored: false,
+            rawResponseStored: false,
+            rawProviderLogStored: false,
+          },
+        });
+        throw new Error("model_memory_model_call_runtime_tool_not_accepted");
+      }
+      const modelRef = toolResult.modelRef ?? request.contract.modelId;
       await runtime.modelTasks.completeModelTask({
         jobId,
         leaseToken: claimed.leaseToken,
         output: {
           result: {
             boundedOutputSummary: `Model Memory ${request.contract.contractName} completed through model-task middleware.`,
-            responseHash: sha256(response.outputText),
+            responseHash: toolResult.responseHash,
             modelRef,
             rawPromptStored: false,
             rawResponseStored: false,
           },
           confidence: "high",
-          evidence: [evidenceRef],
+          evidence: [toolResult.artifactRef],
         },
         routeEvidence: {
           providerCallMade: true,
           selectedModelRef: modelRef,
-          reason: "model-memory runtime model-task middleware completed provider call",
+          reason: "model-memory runtime model-task middleware completed model.call runtime tool",
         },
       });
-      return response;
+      return {
+        outputText: JSON.stringify(toolResult.structuredOutput),
+        resolvedModelId: modelRef,
+        usage: toolResult.usage ?? undefined,
+      };
     } catch (error) {
       await runtime.modelTasks.failModelTask({
         jobId,
@@ -305,17 +406,62 @@ export async function recordModelMemoryRuntimeDbOperationEvidence(input: {
   if (!claimed || claimed.job.jobId !== jobId) {
     throw new Error("model_memory_runtime_db_operation_claim_failed");
   }
+  const dbHandler: DbOperationExecuteHandler = () => {
+    const startedAt = new Date().toISOString();
+    return {
+      output: asJsonValue({
+        boundedSummary: input.boundedSummary,
+        rawDbRowsStored: false,
+        workQueueLifecycleMutated: false,
+      }),
+      telemetry: {
+        telemetryId: `telemetry-${jobId}`,
+        operationName: input.operationName,
+        operationKind: input.operationKind,
+        lane: input.lane,
+        decision: claimed.operation.classification.decision,
+        outcome: "succeeded",
+        timeoutBudgetMs: claimed.operation.classification.timeoutBudgetMs,
+        durationMs: 1,
+        startedAt,
+        completedAt: new Date().toISOString(),
+        classification: claimed.operation.classification,
+        jobId,
+      },
+      resultSummary: input.boundedSummary,
+    };
+  };
+  const toolResult = await runtime.dbOperations.invokeClaimedDbOperationRuntimeTool({
+    claimed,
+    kernel: dbOperationKernel({ traces: runtime.toolTraces }),
+    executor: createDbOperationExecuteRuntimeToolExecutor({
+      handlers: { [input.operationName]: dbHandler },
+    }),
+    inputSummary: `Run Model Memory DB operation ${input.operationName} through db_operation.execute.`,
+  });
+  if (toolResult.invocation.invocation.status !== "succeeded" || !toolResult.telemetry) {
+    await runtime.dbOperations.failLongDbOperation({
+      jobId,
+      leaseToken: claimed.leaseToken,
+      code: "model_memory_db_operation_runtime_tool_not_accepted",
+      message: "db_operation.execute runtime tool did not return accepted success evidence",
+      evidence: {
+        invocationRef: toolResult.invocation.invocationRef,
+        reasonCodes: toolResult.invocation.reasonCodes,
+        rawDbRowsStored: false,
+      },
+    });
+    throw new Error("model_memory_db_operation_runtime_tool_not_accepted");
+  }
   await runtime.dbOperations.completeLongDbOperation({
     jobId,
     leaseToken: claimed.leaseToken,
-    output: asJsonValue({
-      boundedSummary: input.boundedSummary,
-      rawDbRowsStored: false,
-      workQueueLifecycleMutated: false,
-    }),
+    output: toolResult.output,
+    telemetry: toolResult.telemetry,
+    runtimeToolTraceRequired: true,
   });
   return {
     jobId,
-    evidenceRef: `runtime-job://${jobId}/db-operation/metadata`,
+    evidenceRef: toolResult.artifactRef,
   };
 }

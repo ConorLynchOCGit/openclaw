@@ -4,6 +4,7 @@ import { getActivePluginRegistry, setActivePluginRegistry } from "../plugins/run
 import { createOutboundTestPlugin, createTestRegistry } from "../test-utils/channel-plugins.js";
 import { type HeartbeatDeps, runHeartbeatOnce } from "./heartbeat-runner.js";
 import { seedMainSessionStore, withTempHeartbeatSandbox } from "./heartbeat-runner.test-utils.js";
+import { markOwnerTurnActive, resetOwnerTurnActivityForTest } from "./owner-turn-activity.js";
 import { resetSystemEventsForTest, enqueueSystemEvent } from "./system-events.js";
 
 vi.mock("jiti", () => ({ createJiti: () => () => ({}) }));
@@ -33,6 +34,7 @@ afterAll(() => {
 
 beforeEach(() => {
   resetSystemEventsForTest();
+  resetOwnerTurnActivityForTest();
 });
 
 describe("heartbeat runner skips when target session lane is busy", () => {
@@ -134,6 +136,151 @@ describe("heartbeat runner skips when target session lane is busy", () => {
 
       expect(replySpy).toHaveBeenCalled();
       expect(result.status).toBe("ran");
+    });
+  });
+
+  it("returns owner-turn-in-flight when chat.send accepted work is active even if queues are idle", async () => {
+    await withTempHeartbeatSandbox(async ({ storePath, replySpy }) => {
+      const cfg: OpenClawConfig = {
+        agents: {
+          defaults: {
+            heartbeat: { every: "30m" },
+            model: { primary: "test/model" },
+          },
+        },
+        channels: {
+          telegram: {
+            enabled: true,
+            token: "fake",
+            allowFrom: ["123"],
+          },
+        },
+      } as unknown as OpenClawConfig;
+
+      const sessionKey = await seedMainSessionStore(storePath, cfg, {
+        lastChannel: "telegram",
+        lastProvider: "telegram",
+        lastTo: "123",
+      });
+
+      markOwnerTurnActive({
+        sessionKey,
+        runId: "owner-run-1",
+        source: "test",
+        reason: "test-owner-turn",
+        nowMs: 1_000,
+      });
+
+      const result = await runHeartbeatOnce({
+        cfg,
+        deps: {
+          getQueueSize: () => 0,
+          nowMs: () => 1_001,
+          getReplyFromConfig: replySpy,
+        } as HeartbeatDeps,
+      });
+
+      expect(result.status).toBe("skipped");
+      if (result.status === "skipped") {
+        expect(result.reason).toBe("owner-turn-in-flight");
+      }
+      expect(replySpy).not.toHaveBeenCalled();
+    });
+  });
+
+  it("protects the base session when heartbeat resolves an isolated :heartbeat sibling", async () => {
+    await withTempHeartbeatSandbox(async ({ storePath, replySpy }) => {
+      const cfg: OpenClawConfig = {
+        agents: {
+          defaults: {
+            heartbeat: { every: "30m", isolatedSession: true },
+            model: { primary: "test/model" },
+          },
+        },
+        channels: {
+          telegram: {
+            enabled: true,
+            token: "fake",
+            allowFrom: ["123"],
+          },
+        },
+      } as unknown as OpenClawConfig;
+
+      const sessionKey = await seedMainSessionStore(storePath, cfg, {
+        lastChannel: "telegram",
+        lastProvider: "telegram",
+        lastTo: "123",
+      });
+
+      markOwnerTurnActive({
+        sessionKey,
+        runId: "owner-run-isolated",
+        source: "test",
+        nowMs: 2_000,
+      });
+
+      const result = await runHeartbeatOnce({
+        cfg,
+        sessionKey: `${sessionKey}:heartbeat`,
+        deps: {
+          getQueueSize: () => 0,
+          nowMs: () => 2_001,
+          getReplyFromConfig: replySpy,
+        } as HeartbeatDeps,
+      });
+
+      expect(result.status).toBe("skipped");
+      if (result.status === "skipped") {
+        expect(result.reason).toBe("owner-turn-in-flight");
+      }
+      expect(replySpy).not.toHaveBeenCalled();
+    });
+  });
+
+  it("expires stale owner-turn activity so heartbeat can recover after a crash", async () => {
+    await withTempHeartbeatSandbox(async ({ storePath, replySpy }) => {
+      const cfg: OpenClawConfig = {
+        agents: {
+          defaults: {
+            heartbeat: { every: "30m" },
+            model: { primary: "test/model" },
+          },
+        },
+        channels: {
+          telegram: {
+            enabled: true,
+            token: "fake",
+            allowFrom: ["123"],
+          },
+        },
+      } as unknown as OpenClawConfig;
+
+      const sessionKey = await seedMainSessionStore(storePath, cfg, {
+        lastChannel: "telegram",
+        lastProvider: "telegram",
+        lastTo: "123",
+      });
+
+      markOwnerTurnActive({
+        sessionKey,
+        runId: "owner-run-expired",
+        source: "test",
+        nowMs: 1_000,
+        ttlMs: 50,
+      });
+      replySpy.mockResolvedValue({ text: "HEARTBEAT_OK" });
+
+      const result = await runHeartbeatOnce({
+        cfg,
+        deps: {
+          getQueueSize: () => 0,
+          nowMs: () => 2_000,
+          getReplyFromConfig: replySpy,
+        } as HeartbeatDeps,
+      });
+
+      expect(result.status).toBe("ran");
+      expect(replySpy).toHaveBeenCalled();
     });
   });
 });

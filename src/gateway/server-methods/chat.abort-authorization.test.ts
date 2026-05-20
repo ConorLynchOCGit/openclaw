@@ -6,6 +6,8 @@ import {
 } from "./chat.abort.test-helpers.js";
 import { chatHandlers } from "./chat.js";
 
+const canonicalMainSessionKey = "agent:main:main";
+
 async function invokeSingleRunAbort({
   context,
   runId = "run-1",
@@ -35,7 +37,9 @@ function createSingleAbortContext() {
     chatAbortControllers: new Map([
       [
         "run-1",
-        createActiveRun("main", { owner: { connId: "conn-owner", deviceId: "dev-owner" } }),
+        createActiveRun(canonicalMainSessionKey, {
+          owner: { connId: "conn-owner", deviceId: "dev-owner" },
+        }),
       ],
     ]),
   });
@@ -62,7 +66,12 @@ describe("chat.abort authorization", () => {
   it("allows the same paired device to abort after reconnecting", async () => {
     const context = createChatAbortContext({
       chatAbortControllers: new Map([
-        ["run-1", createActiveRun("main", { owner: { connId: "conn-old", deviceId: "dev-1" } })],
+        [
+          "run-1",
+          createActiveRun(canonicalMainSessionKey, {
+            owner: { connId: "conn-old", deviceId: "dev-1" },
+          }),
+        ],
       ]),
     });
 
@@ -85,8 +94,8 @@ describe("chat.abort authorization", () => {
   it("only aborts session-scoped runs owned by the requester", async () => {
     const context = createChatAbortContext({
       chatAbortControllers: new Map([
-        ["run-mine", createActiveRun("main", { owner: { deviceId: "dev-1" } })],
-        ["run-other", createActiveRun("main", { owner: { deviceId: "dev-2" } })],
+        ["run-mine", createActiveRun(canonicalMainSessionKey, { owner: { deviceId: "dev-1" } })],
+        ["run-other", createActiveRun(canonicalMainSessionKey, { owner: { deviceId: "dev-2" } })],
       ]),
     });
 

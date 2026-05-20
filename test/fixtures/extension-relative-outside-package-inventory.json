@@ -1,7 +1,143 @@
 [
   {
+    "file": "extensions/execution-platform/src/codex-bridge/acp-endpoint-setup.ts",
+    "line": 4,
+    "kind": "import",
+    "specifier": "../../../../src/config/paths.ts",
+    "resolvedPath": "src/config/paths.ts",
+    "reason": "imports core src path via relative path outside the extension package"
+  },
+  {
+    "file": "extensions/execution-platform/src/codex-bridge/acp-endpoint-setup.ts",
+    "line": 291,
+    "kind": "dynamic-import",
+    "specifier": "../../../../src/gateway/call.ts",
+    "resolvedPath": "src/gateway/call.ts",
+    "reason": "dynamically imports core src path via relative path outside the extension package"
+  },
+  {
+    "file": "extensions/execution-platform/src/codex-bridge/acp-runtime-config.ts",
+    "line": 3,
+    "kind": "import",
+    "specifier": "../../../../src/config/paths.ts",
+    "resolvedPath": "src/config/paths.ts",
+    "reason": "imports core src path via relative path outside the extension package"
+  },
+  {
+    "file": "extensions/execution-platform/src/codex-bridge/acp-runtime-config.ts",
+    "line": 4,
+    "kind": "import",
+    "specifier": "../../../../src/gateway/call.ts",
+    "resolvedPath": "src/gateway/call.ts",
+    "reason": "imports core src path via relative path outside the extension package"
+  },
+  {
+    "file": "extensions/execution-platform/src/codex-bridge/codex-app-server-parity-executor.ts",
+    "line": 17,
+    "kind": "import",
+    "specifier": "../../../codex/runtime-api.ts",
+    "resolvedPath": "extensions/codex/runtime-api.ts",
+    "reason": "imports another bundled plugin via relative path outside the extension package"
+  },
+  {
+    "file": "extensions/execution-platform/src/codex-bridge/dynamic-agent-team-graph-runner.ts",
+    "line": 6,
+    "kind": "import",
+    "specifier": "../../../model-memory/src/mmv2/codex-app-server-json-executor.ts",
+    "resolvedPath": "extensions/model-memory/src/mmv2/codex-app-server-json-executor.ts",
+    "reason": "imports another bundled plugin via relative path outside the extension package"
+  },
+  {
+    "file": "extensions/execution-platform/src/codex-bridge/dynamic-agent-team-graph-runner.ts",
+    "line": 7,
+    "kind": "import",
+    "specifier": "../../../model-memory/src/model-execution.ts",
+    "resolvedPath": "extensions/model-memory/src/model-execution.ts",
+    "reason": "imports another bundled plugin via relative path outside the extension package"
+  },
+  {
+    "file": "extensions/execution-platform/src/codex-bridge/model-closeout-capsule-reporter.ts",
+    "line": 5,
+    "kind": "import",
+    "specifier": "../../../model-memory/src/model-execution.ts",
+    "resolvedPath": "extensions/model-memory/src/model-execution.ts",
+    "reason": "imports another bundled plugin via relative path outside the extension package"
+  },
+  {
+    "file": "extensions/execution-platform/src/codex-bridge/model-closeout-capsule-reporter.ts",
+    "line": 6,
+    "kind": "import",
+    "specifier": "../../../model-memory/src/model-execution.ts",
+    "resolvedPath": "extensions/model-memory/src/model-execution.ts",
+    "reason": "imports another bundled plugin via relative path outside the extension package"
+  },
+  {
+    "file": "extensions/execution-platform/src/codex-bridge/work-episode-closeout.ts",
+    "line": 18,
+    "kind": "import",
+    "specifier": "../../../../src/infra/work-episode-outcome-pack.ts",
+    "resolvedPath": "src/infra/work-episode-outcome-pack.ts",
+    "reason": "imports core src path via relative path outside the extension package"
+  },
+  {
+    "file": "extensions/execution-platform/src/db/runtime.ts",
+    "line": 6,
+    "kind": "import",
+    "specifier": "../../../../src/config/types.openclaw.js",
+    "resolvedPath": "src/config/types.openclaw.js",
+    "reason": "imports core src path via relative path outside the extension package"
+  },
+  {
+    "file": "extensions/execution-platform/src/db/runtime.ts",
+    "line": 143,
+    "kind": "dynamic-import",
+    "specifier": "../../../../src/config/config.js",
+    "resolvedPath": "src/config/config.js",
+    "reason": "dynamically imports core src path via relative path outside the extension package"
+  },
+  {
+    "file": "extensions/execution-platform/src/intent-front-door/live-structured-router-provider.ts",
+    "line": 2,
+    "kind": "import",
+    "specifier": "../../../model-memory/src/mmv2/codex-app-server-json-executor.ts",
+    "resolvedPath": "extensions/model-memory/src/mmv2/codex-app-server-json-executor.ts",
+    "reason": "imports another bundled plugin via relative path outside the extension package"
+  },
+  {
+    "file": "extensions/execution-platform/src/intent-front-door/live-structured-router-provider.ts",
+    "line": 6,
+    "kind": "import",
+    "specifier": "../../../model-memory/src/model-execution.ts",
+    "resolvedPath": "extensions/model-memory/src/model-execution.ts",
+    "reason": "imports another bundled plugin via relative path outside the extension package"
+  },
+  {
+    "file": "extensions/execution-platform/src/intent-front-door/protocol-pre-gate.ts",
+    "line": 1,
+    "kind": "import",
+    "specifier": "../../../../src/auto-reply/commands-registry.shared.js",
+    "resolvedPath": "src/auto-reply/commands-registry.shared.js",
+    "reason": "imports core src path via relative path outside the extension package"
+  },
+  {
+    "file": "extensions/execution-platform/src/model-memory-runtime/memory-capture-quality-eval.ts",
+    "line": 5,
+    "kind": "import",
+    "specifier": "../../../model-memory/src/model-execution.ts",
+    "resolvedPath": "extensions/model-memory/src/model-execution.ts",
+    "reason": "imports another bundled plugin via relative path outside the extension package"
+  },
+  {
+    "file": "extensions/execution-platform/src/model-memory-runtime/retrieval-context-quality-eval.ts",
+    "line": 5,
+    "kind": "import",
+    "specifier": "../../../model-memory/src/model-execution.ts",
+    "resolvedPath": "extensions/model-memory/src/model-execution.ts",
+    "reason": "imports another bundled plugin via relative path outside the extension package"
+  },
+  {
     "file": "extensions/model-memory/src/mmv2/codex-app-server-json-executor.ts",
-    "line": 10,
+    "line": 11,
     "kind": "import",
     "specifier": "../../../codex/runtime-api.ts",
     "resolvedPath": "extensions/codex/runtime-api.ts",
