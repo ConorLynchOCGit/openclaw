@@ -5,10 +5,12 @@ import {
   flattenModelDecisionFields,
   missingField,
   repairRequestForMissingFields,
+  runtimeOwnedFieldReasonCodesForRecords,
   type ModelDecisionMissingField,
   type ModelDecisionRepairRequest,
 } from "../model-decision-contracts/index.ts";
 import type { JsonValue } from "../runtime-job-repository.ts";
+import { normalizeExecutionIntent, type ExecutionIntent } from "./execution-intent.ts";
 import {
   buildRuntimeNodeCapabilityManifest,
   findRuntimeNodeCapability,
@@ -24,6 +26,11 @@ import {
   type TeamGraphEdgeKind,
   type TeamGraphNodeKind,
 } from "./runtime-work-graph.ts";
+import {
+  WORK_INTENT_NODE_KIND,
+  compileWorkIntent,
+  type CompiledWorkIntentGraphNode,
+} from "./work-intent.ts";
 
 export const ORCHESTRATOR_GRAPH_DECISION_KINDS = [
   "add_nodes",
@@ -86,12 +93,28 @@ export type OrchestratorGraphDecision = {
   reasonCodes: string[];
   commitmentIdsAdvanced?: string[];
   expectedEvidenceDescription?: string | null;
+  requestContextIntent?: RequestContextIntent | null;
   runAfterAdd?: boolean;
   metadata?: JsonValue;
   rawPromptStored: false;
   rawResponseStored: false;
   rawProviderLogStored: false;
   workQueueLifecycleMutated: false;
+};
+
+export type RequestContextIntent = {
+  failedNodeIds: string[];
+  targetNodeIds: string[];
+  targetCommitmentIds: string[];
+  missingContextQuestions: string[];
+  contextObjective: string;
+  downstreamConsumer: string;
+  successCriteria: string[];
+  inputRefs: string[];
+  targetRefs: string[];
+  selectedCapabilityId: string;
+  stopIfMissing: string[];
+  rationale: string;
 };
 
 export type OrchestratorGraphDecisionValidation = {
@@ -106,6 +129,12 @@ export type OrchestratorGraphRejectedNodeDiagnostic = {
   providedCapabilityId: string | null;
   matchingCapabilityId: string | null;
   expectedGraphNodeKind: TeamGraphNodeKind | null;
+  workUnitId?: string;
+  selectedCapabilityId?: string;
+  executionIntent?: ExecutionIntent;
+  compatibilityReason?: string;
+  path?: string;
+  validValues?: string[];
   errorCode: string;
   message: string;
   rawPromptStored: false;
@@ -216,6 +245,16 @@ function targetNodeIdFromDecisionRecord(record: Record<string, unknown>): string
   );
 }
 
+function slugRuntimeId(value: string, fallback: string): string {
+  const slug = value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_.-]+/gu, "-")
+    .replace(/^-+|-+$/gu, "")
+    .slice(0, 80);
+  return slug || fallback;
+}
+
 function firstArrayValue(record: Record<string, unknown>, keys: string[]): unknown[] {
   for (const key of keys) {
     const value = record[key];
@@ -306,6 +345,12 @@ function capabilityDiagnostic(input: {
   providedCapabilityId: string | null;
   matchingCapabilityId: string | null;
   expectedGraphNodeKind: TeamGraphNodeKind | null;
+  workUnitId?: string;
+  selectedCapabilityId?: string;
+  executionIntent?: ExecutionIntent;
+  compatibilityReason?: string;
+  path?: string;
+  validValues?: string[];
   errorCode: string;
   message: string;
 }): OrchestratorGraphRejectedNodeDiagnostic {
@@ -350,6 +395,73 @@ function missingFieldsForDecision(
         "Decompose the complex mission into parallel context scouts before implementation.",
       ),
     );
+  }
+  if (decision.decisionKind === "request_context") {
+    const intent = decision.requestContextIntent ?? null;
+    if (!intent) {
+      fields.push(
+        missingField(
+          "requestContextIntent",
+          "object",
+          "Context repair must be model-authored semantic intent; runtime compiles graph nodes, ids, executors, and edges.",
+          {
+            failedNodeIds: ["implementation-1"],
+            targetNodeIds: ["implementation-1"],
+            targetCommitmentIds: ["commitment-1"],
+            missingContextQuestions: ["Which files implement the workflow registration?"],
+            contextObjective: "Find bounded repo files and handoff guidance for implementation-1.",
+            downstreamConsumer: "implementation-1",
+            successCriteria: ["Verified existing file refs", "Concrete handoff summary"],
+          },
+        ),
+      );
+      return fields;
+    }
+    if (
+      intent.targetNodeIds.length === 0 &&
+      intent.failedNodeIds.length === 0 &&
+      intent.targetCommitmentIds.length === 0
+    ) {
+      fields.push(
+        missingField(
+          "requestContextIntent.targetNodeIds",
+          "string[]",
+          "Runtime needs either the node that should receive repaired context or the commitment ids needing sharper context.",
+          ["implementation-1"],
+        ),
+      );
+    }
+    if (intent.targetCommitmentIds.length === 0) {
+      fields.push(
+        missingField(
+          "requestContextIntent.targetCommitmentIds",
+          "string[]",
+          "Context repair must stay tied to Mission Ledger commitments.",
+          ["commitment-1"],
+        ),
+      );
+    }
+    if (intent.missingContextQuestions.length === 0) {
+      fields.push(
+        missingField(
+          "requestContextIntent.missingContextQuestions",
+          "string[]",
+          "The context scout needs concrete questions to answer, not a generic repair label.",
+          ["Which existing files register the workflow plugin?"],
+        ),
+      );
+    }
+    if (!intent.contextObjective) {
+      fields.push(
+        missingField(
+          "requestContextIntent.contextObjective",
+          "string",
+          "The context scout needs a bounded objective for the repaired handoff.",
+          "Find workflow registry, scheduler executor, and readback files for the blocked implementation node.",
+        ),
+      );
+    }
+    return fields;
   }
   for (const [index, node] of (decision.newNodes ?? []).entries()) {
     const prefix = `newNodes[${index}]`;
@@ -409,7 +521,7 @@ function missingFieldsForDecision(
           `${prefix}.commitmentIds`,
           "string[]",
           "Every complex-mission node must advance at least one Mission Ledger commitment.",
-          ["product-spec-planning-canonical-surface"],
+          ["workflow-canonical-surface"],
         ),
       );
     }
@@ -429,12 +541,28 @@ function missingFieldsForDecision(
           `${prefix}.objective`,
           "string",
           "The worker needs a concrete objective, not a generic role label.",
-          "Identify Product/Spec Planning registration files and scheduler integration points.",
+          "Identify the target workflow registration files and scheduler integration points.",
         ),
       );
     }
   }
   return fields;
+}
+
+function missingFieldsForRejectedDiagnostics(
+  diagnostics: OrchestratorGraphRejectedNodeDiagnostic[],
+): ModelDecisionMissingField[] {
+  return diagnostics
+    .filter((diagnostic) => diagnostic.path && diagnostic.errorCode.includes("missing"))
+    .map((diagnostic) =>
+      missingField(
+        diagnostic.path!,
+        "valid model-authored semantic field",
+        diagnostic.message,
+        diagnostic.validValues?.[0],
+        diagnostic.validValues,
+      ),
+    );
 }
 
 function normalizeNode(
@@ -866,6 +994,334 @@ function compileEscalationIntent(
   };
 }
 
+function requestContextIntentFromRecord(
+  record: Record<string, unknown>,
+): RequestContextIntent | null {
+  const source = flattenModelDecisionFields(
+    asRecord(
+      record.requestContextIntent ??
+        record.contextRequestIntent ??
+        record.contextRequest ??
+        record.repairIntent,
+    ),
+  );
+  const merged = {
+    ...source,
+    ...Object.fromEntries(
+      [
+        "failedNodeIds",
+        "targetNodeIds",
+        "targetCommitmentIds",
+        "commitmentIdsAdvanced",
+        "missingContextQuestions",
+        "contextObjective",
+        "downstreamConsumer",
+        "successCriteria",
+        "inputRefs",
+        "targetRefs",
+        "selectedCapabilityId",
+        "capabilityId",
+        "stopIfMissing",
+        "rationale",
+      ]
+        .filter((key) => record[key] !== undefined)
+        .map((key) => [key, record[key]]),
+    ),
+  };
+  const explicitTargetNodeId = targetNodeIdFromDecisionRecord(record);
+  const failedNodeIds = arrayFromAny(merged, [
+    "failedNodeIds",
+    "blockedNodeIds",
+    "sourceNodeIds",
+    "repairTargetNodeIds",
+  ]);
+  const targetNodeIds = [
+    ...new Set([
+      ...arrayFromAny(merged, ["targetNodeIds", "downstreamNodeIds", "nodeIds"]),
+      ...(explicitTargetNodeId ? [explicitTargetNodeId] : []),
+    ]),
+  ].slice(0, 24);
+  const contextObjective = firstString(merged, [
+    "contextObjective",
+    "objective",
+    "repairObjective",
+    "requestedContextObjective",
+  ]);
+  const explicitMissingContextQuestions = arrayFromAny(merged, [
+    "missingContextQuestions",
+    "contextQuestions",
+    "requiredContextQuestions",
+    "questions",
+  ]);
+  const singleContextQuestion = firstString(merged, [
+    "missingContextQuestion",
+    "contextQuestion",
+    "requiredContextQuestion",
+    "question",
+  ]);
+  const modelAuthoredContextObjective =
+    contextObjective ||
+    firstString(record, [
+      "contextObjective",
+      "repairObjective",
+      "requestedContextObjective",
+      "rationaleForDecision",
+      "expectedEvidenceDescription",
+    ]);
+  const missingContextQuestions =
+    explicitMissingContextQuestions.length > 0
+      ? explicitMissingContextQuestions
+      : singleContextQuestion
+        ? [singleContextQuestion]
+        : modelAuthoredContextObjective
+          ? [modelAuthoredContextObjective]
+          : [];
+  const targetCommitmentIds = arrayFromAny(merged, [
+    "targetCommitmentIds",
+    "commitmentIdsAdvanced",
+    "commitmentIds",
+  ]);
+  if (
+    failedNodeIds.length === 0 &&
+    targetNodeIds.length === 0 &&
+    !modelAuthoredContextObjective &&
+    missingContextQuestions.length === 0 &&
+    targetCommitmentIds.length === 0
+  ) {
+    return null;
+  }
+  return {
+    failedNodeIds,
+    targetNodeIds,
+    targetCommitmentIds,
+    missingContextQuestions,
+    contextObjective: modelAuthoredContextObjective,
+    downstreamConsumer:
+      firstString(merged, ["downstreamConsumer", "consumer", "blockedConsumer"]) ||
+      targetNodeIds[0] ||
+      "implementation_and_validation",
+    successCriteria: arrayFromAny(merged, [
+      "successCriteria",
+      "acceptanceCriteria",
+      "validationCriteria",
+    ]),
+    inputRefs: arrayFromAny(merged, [
+      "inputRefs",
+      "inputHandoffRefs",
+      "handoffRefs",
+      "evidenceRefs",
+    ]),
+    targetRefs: arrayFromAny(merged, ["targetRefs", "fileRefs", "sourceRefs", "artifactRefs"]),
+    selectedCapabilityId:
+      firstString(merged, [
+        "selectedCapabilityId",
+        "capabilityId",
+        "requestedCapabilityId",
+        "capability",
+      ]) || "context_scout",
+    stopIfMissing: arrayFromAny(merged, ["stopIfMissing", "stopConditions", "blockers"]),
+    rationale: firstString(merged, ["rationale", "whyNeeded", "roleRationale"]) || "",
+  };
+}
+
+function compileRequestContextIntent(
+  record: Record<string, unknown>,
+  options: Required<Pick<OrchestratorGraphDecisionCompileOptions, "capabilityManifest">>,
+): {
+  intent: RequestContextIntent | null;
+  nodes: OrchestratorGraphNodeSpec[];
+  edges: OrchestratorGraphEdgeSpec[];
+  acceptedAliasFields: string[];
+  reasonCodes: string[];
+} {
+  if (stringValue(record.decisionKind) !== "request_context") {
+    return { intent: null, nodes: [], edges: [], acceptedAliasFields: [], reasonCodes: [] };
+  }
+  const intent = requestContextIntentFromRecord(record);
+  const reasonCodes: string[] = [];
+  if (!intent) {
+    return {
+      intent: null,
+      nodes: [],
+      edges: [],
+      acceptedAliasFields: [],
+      reasonCodes: ["request_context_intent_missing"],
+    };
+  }
+  const capability = findRuntimeNodeCapability(
+    intent.selectedCapabilityId || "context_scout",
+    options.capabilityManifest,
+  );
+  if (!capability) {
+    return {
+      intent,
+      nodes: [],
+      edges: [],
+      acceptedAliasFields: ["requestContextIntent"],
+      reasonCodes: [`request_context_capability_unknown:${intent.selectedCapabilityId}`],
+    };
+  }
+  if (capability.graphNodeKind !== "context_scout" || capability.roleClass !== "context") {
+    reasonCodes.push(`request_context_capability_not_context_invalid:${capability.capabilityId}`);
+  }
+  const targetNodeIds = [...new Set([...intent.targetNodeIds, ...intent.failedNodeIds])].slice(
+    0,
+    24,
+  );
+  if (targetNodeIds.length === 0 && intent.targetCommitmentIds.length === 0) {
+    reasonCodes.push("request_context_target_node_missing");
+  }
+  if (intent.targetCommitmentIds.length === 0) {
+    reasonCodes.push("request_context_commitment_ids_missing");
+  }
+  if (intent.missingContextQuestions.length === 0) {
+    reasonCodes.push("request_context_questions_missing");
+  }
+  if (!intent.contextObjective) {
+    reasonCodes.push("request_context_objective_missing");
+  }
+  if (blockingCompileReasonCodes(reasonCodes).length > 0) {
+    return {
+      intent,
+      nodes: [],
+      edges: [],
+      acceptedAliasFields: ["requestContextIntent"],
+      reasonCodes,
+    };
+  }
+  const baseNodeId = `${slugRuntimeId(
+    targetNodeIds[0] ?? intent.targetCommitmentIds[0] ?? "context",
+    "context",
+  )}-context-repair`;
+  const nodeId = slugRuntimeId(
+    firstString(record, ["contextNodeId", "repairNodeId"]) || baseNodeId,
+    baseNodeId,
+  );
+  const successCriteria =
+    intent.successCriteria.length > 0
+      ? intent.successCriteria
+      : [
+          "Produces verified existing repo file refs.",
+          "Answers each missing context question.",
+          "Emits a model-authored handoff summary for the blocked downstream node.",
+        ];
+  const whyThisIsNotDuplicateWork =
+    intent.rationale ||
+    `This context request targets unresolved question(s) for ${[
+      ...targetNodeIds,
+      ...intent.targetCommitmentIds,
+    ]
+      .slice(0, 4)
+      .join(", ")}: ${intent.missingContextQuestions.slice(0, 2).join(" | ")}`;
+  const costRationale =
+    firstString(record, ["costRationale"]) ||
+    "Context scout is the cheapest context-class capability for resolving missing bounded repo context before implementation.";
+  const stopOrEscalationCondition =
+    intent.stopIfMissing[0] ||
+    "Return to orchestrator if the context scout cannot produce verified repo refs and a bounded handoff.";
+  const expectedEvidence = capability.evidenceProducedKinds.length
+    ? capability.evidenceProducedKinds
+    : ["context_handoff"];
+  const node: OrchestratorGraphNodeSpec = {
+    nodeId,
+    nodeKind: capability.graphNodeKind,
+    capabilityId: capability.capabilityId,
+    executorKey: capability.executorKey,
+    workerRef: capability.workerRef,
+    requiredMetadataSchemaRef: capability.requiredMetadataSchemaRef,
+    assignedRole: capability.roleId,
+    modelOrWorkerRef: capability.workerRef,
+    inputHandoffRefs: intent.inputRefs,
+    expectedOutput: `Context handoff resolving: ${intent.missingContextQuestions
+      .slice(0, 4)
+      .join(" | ")}`,
+    acceptanceCriteria: successCriteria,
+    downstreamConsumer: intent.downstreamConsumer,
+    commitmentIdsAdvanced: intent.targetCommitmentIds,
+    whyThisRoleIsNeededNow:
+      intent.rationale || "Downstream implementation is blocked on missing bounded repo context.",
+    exactObjective: intent.contextObjective,
+    evidenceExpectation: "Bounded context handoff packet with verified refs and limitations.",
+    targetRefs: intent.targetRefs,
+    metadata: jsonValue({
+      genericSchedulerProtocolCompiled: true,
+      schedulerProtocolCompiler: "request_context_intent",
+      schedulerCompiledFromDecisionKind: "request_context",
+      requestContextIntent: jsonValue(intent),
+      targetNodeIds,
+      failedNodeIds: intent.failedNodeIds,
+      missingContextQuestions: intent.missingContextQuestions,
+      stopIfMissing: intent.stopIfMissing,
+      capabilityId: capability.capabilityId,
+      graphNodeKind: capability.graphNodeKind,
+      executorKey: capability.executorKey,
+      workerRef: capability.workerRef,
+      requiredMetadataSchemaRef: capability.requiredMetadataSchemaRef,
+      consideredCapabilityIds: [capability.capabilityId],
+      utilityRationale:
+        intent.rationale || "Resolve missing bounded repo context before implementation.",
+      costRationale,
+      whyThisIsNotDuplicateWork,
+      stopOrEscalationCondition,
+      expectedEvidence,
+      expectedEvidenceSource: "runtime_derived_from_capability_manifest",
+      costAwareUtilityDecision: {
+        decisionId: `${nodeId}:utility`,
+        consideredCapabilityIds: [capability.capabilityId],
+        selectedCapabilityId: capability.capabilityId,
+        selectedProviderCapabilityProfileId: null,
+        selectedNodeKind: capability.graphNodeKind,
+        selectedExecutorKey: capability.executorKey,
+        targetCommitmentIds: intent.targetCommitmentIds,
+        utilityRationale:
+          intent.rationale || "Resolve missing bounded repo context before implementation.",
+        costRationale,
+        whyCheaperOptionsWereInsufficient: null,
+        whyThisIsNotDuplicateWork,
+        expectedEvidence,
+        selectedModelQualificationProfileId: null,
+        qualificationEvidenceRefs: [],
+        expectedDownstreamConsumer: intent.downstreamConsumer,
+        budgetRef: null,
+        stopOrEscalationCondition,
+        rawPromptStored: false,
+        rawResponseStored: false,
+        rawProviderLogStored: false,
+      },
+      requestContextRepairMode:
+        targetNodeIds.length > 0
+          ? "target_node_context_repair"
+          : "pre_implementation_commitment_context_refinement",
+      rawPromptStored: false,
+      rawResponseStored: false,
+      rawProviderLogStored: false,
+    }) as JsonValue,
+  };
+  const edges = targetNodeIds.map((targetNodeId) => ({
+    edgeId: `${nodeId}-context-supplies-${targetNodeId}`,
+    fromNodeId: nodeId,
+    toNodeId: targetNodeId,
+    edgeKind: "context_supplies" as const,
+    reasonCodes: ["request_context_intent_runtime_compiled_edge"],
+    artifactRefs: [],
+    metadata: {
+      schedulerCompiledFromDecisionKind: "request_context",
+      rawPromptStored: false,
+      rawResponseStored: false,
+      rawProviderLogStored: false,
+    },
+  }));
+  return {
+    intent,
+    nodes: [node],
+    edges,
+    acceptedAliasFields: [
+      record.contextRequest !== undefined ? "contextRequest" : "requestContextIntent",
+    ],
+    reasonCodes: ["request_context_intent_compiled", ...reasonCodes],
+  };
+}
+
 function escalationNodeFromCapability(input: {
   capability: RuntimeNodeCapability;
   nodeId: string;
@@ -987,21 +1443,8 @@ type StagedWorkBreakdownUnit = {
   targetRefs: string[];
   inputRefs: string[];
   dependencyWorkUnitIds: string[];
+  executionIntent: ExecutionIntent;
 };
-
-const STAGED_RUNTIME_OWNED_FIELDS = [
-  "nodeId",
-  "nodeKind",
-  "graphNodeKind",
-  "executorKey",
-  "workerRef",
-  "requiredMetadataSchemaRef",
-  "expectedEvidence",
-  "expectedEvidenceKinds",
-  "selectedNodeKind",
-  "selectedExecutorKey",
-  "canonicalNodeId",
-] as const;
 
 function stagedSourceRecord(record: Record<string, unknown>): {
   source: Record<string, unknown>;
@@ -1016,18 +1459,12 @@ function stagedSourceRecord(record: Record<string, unknown>): {
 }
 
 function runtimeOwnedFieldReasonCodes(input: { records: unknown[]; pathPrefix: string }): string[] {
-  const reasonCodes: string[] = [];
-  for (const [index, value] of input.records.entries()) {
-    const record = flattenModelDecisionFields(asRecord(value));
-    for (const field of STAGED_RUNTIME_OWNED_FIELDS) {
-      if (record[field] !== undefined) {
-        reasonCodes.push(
-          `staged_scheduler_runtime_owned_field_rejected:${input.pathPrefix}[${index}].${field}`,
-        );
-      }
-    }
-  }
-  return reasonCodes;
+  return runtimeOwnedFieldReasonCodesForRecords({
+    records: input.records,
+    pathPrefix: input.pathPrefix,
+    boundaryKind: "scheduler_staged_protocol",
+    codePrefix: "staged_scheduler_runtime_owned_field_rejected",
+  });
 }
 
 type StagedCapabilitySelection = {
@@ -1053,6 +1490,7 @@ type StagedNodeContract = {
   downstreamConsumer: string;
   targetRefs: string[];
   dependencyWorkUnitIds: string[];
+  executionIntent: ExecutionIntent;
 };
 
 function firstRecordArray(record: Record<string, unknown>, keys: string[]): unknown[] {
@@ -1121,6 +1559,15 @@ function stagedWorkUnits(record: Record<string, unknown>): StagedWorkBreakdownUn
           "dependsOn",
           "dependencies",
         ]),
+        executionIntent:
+          normalizeExecutionIntent(
+            firstString(unit, [
+              "executionIntent",
+              "workIntent",
+              "nodeExecutionIntent",
+              "taskExecutionIntent",
+            ]),
+          ) ?? "unspecified",
       } satisfies StagedWorkBreakdownUnit;
     })
     .filter((unit) => unit.workUnitId && unit.objective);
@@ -1272,6 +1719,15 @@ function stagedNodeContracts(record: Record<string, unknown>): StagedNodeContrac
           "dependsOn",
           "dependencies",
         ]),
+        executionIntent:
+          normalizeExecutionIntent(
+            firstString(contract, [
+              "executionIntent",
+              "workIntent",
+              "nodeExecutionIntent",
+              "taskExecutionIntent",
+            ]),
+          ) ?? "unspecified",
       } satisfies StagedNodeContract;
     })
     .filter((contract) => contract.workUnitId);
@@ -1316,6 +1772,27 @@ function qualificationEvidenceForCapability(capabilityId: string): string[] {
     return ["model-profile://test-authoring/validated"];
   }
   return [`model-profile://${capabilityId}/runtime-capability-manifest`];
+}
+
+function orchestratorNodeFromWorkIntent(
+  node: CompiledWorkIntentGraphNode,
+): OrchestratorGraphNodeSpec {
+  return {
+    nodeId: node.nodeId,
+    nodeKind: node.nodeKind,
+    assignedRole: node.assignedRole,
+    modelOrWorkerRef: node.modelOrWorkerRef,
+    inputHandoffRefs: node.inputHandoffRefs,
+    expectedOutput: node.expectedOutput,
+    acceptanceCriteria: node.acceptanceCriteria,
+    downstreamConsumer: node.downstreamConsumer,
+    commitmentIdsAdvanced: node.commitmentIdsAdvanced,
+    whyThisRoleIsNeededNow: node.whyThisRoleIsNeededNow,
+    exactObjective: node.exactObjective,
+    evidenceExpectation: node.evidenceExpectation,
+    targetRefs: node.targetRefs,
+    metadata: node.metadata,
+  };
 }
 
 function taskFamilyForCapability(capabilityId: string): string {
@@ -1432,21 +1909,8 @@ function nodesFromStagedSchedulerProtocol(
       reasonCodes.push(`staged_selected_capability_unknown:${selection.capabilityId}`);
       continue;
     }
-    const selectedQualificationProfile =
-      selection.selectedModelQualificationProfileId ??
-      capability.modelQualificationProfileIds[0] ??
-      null;
-    const qualificationEvidenceRefs =
-      selection.qualificationEvidenceRefs.length > 0
-        ? selection.qualificationEvidenceRefs
-        : capability.productionSelectionRequiresQualification
-          ? qualificationEvidenceForCapability(capability.capabilityId)
-          : [];
-    const nodeId = sanitizeId(
-      `${capability.graphNodeKind}-${unit.workUnitId}`,
-      `${capability.graphNodeKind}-${index + 1}`,
-    );
-    const targetCommitmentIds = unit.commitmentIds;
+    const modelAuthoredExecutionIntent =
+      contract.executionIntent !== "unspecified" ? contract.executionIntent : unit.executionIntent;
     const splitInputRefs = splitStagedInputRefs([...unit.inputRefs, ...contract.inputRefs]);
     const targetRefs = [
       ...new Set([...contract.targetRefs, ...unit.targetRefs, ...splitInputRefs.targetRefs]),
@@ -1455,70 +1919,73 @@ function nodesFromStagedSchedulerProtocol(
     const expectedOutput = contract.expectedOutput || unit.expectedOutcome;
     const roleRationale = contract.roleRationale || unit.rationale || selection.utilityRationale;
     const exactObjective = contract.objective || unit.objective;
-    nodes.push({
-      nodeId,
-      nodeKind: capability.graphNodeKind,
-      capabilityId: capability.capabilityId,
-      executorKey: capability.executorKey,
-      workerRef: capability.workerRef,
-      requiredMetadataSchemaRef: capability.requiredMetadataSchemaRef,
-      assignedRole: capability.roleId,
-      modelOrWorkerRef: capability.workerRef,
-      inputHandoffRefs: splitInputRefs.inputHandoffRefs,
+    const workIntent = compileWorkIntent({
+      decisionId: firstString(record, ["decisionId"]) || "model-decision",
+      workUnitId: unit.workUnitId,
+      title: unit.title,
+      objective: exactObjective,
+      commitmentIds: unit.commitmentIds,
+      executionIntent: modelAuthoredExecutionIntent,
+      selectedCapabilityId: selection.capabilityId,
+      consideredCapabilityIds: selection.consideredCapabilityIds,
+      capabilityRationale: roleRationale,
+      costRationale:
+        selection.costRationale ||
+        `Runtime will validate ${capability.capabilityId} through the capability manifest before executable graph promotion.`,
+      whyCheaperOptionsWereInsufficient: selection.whyCheaperOptionsWereInsufficient,
+      whyThisIsNotDuplicateWork:
+        selection.whyThisIsNotDuplicateWork ||
+        `This staged work unit ${unit.workUnitId} has not produced accepted evidence yet.`,
       expectedOutput,
-      acceptanceCriteria,
-      downstreamConsumer: contract.downstreamConsumer,
-      commitmentIdsAdvanced: targetCommitmentIds,
-      whyThisRoleIsNeededNow: roleRationale,
-      exactObjective,
-      evidenceExpectation: null,
+      successCriteria: acceptanceCriteria,
+      contextQuestions: [],
       targetRefs,
-      metadata: jsonValue({
-        stagedSchedulerProtocolCompiled: true,
-        workUnitId: unit.workUnitId,
-        workUnitTitle: unit.title,
-        commitmentIdsAdvanced: targetCommitmentIds,
-        whyThisRoleIsNeededNow: roleRationale,
-        exactObjective,
-        expectedOutput,
-        acceptanceCriteria,
-        capabilityId: capability.capabilityId,
-        taskFamily: taskFamilyForCapability(capability.capabilityId),
-        workerTaskFamily: taskFamilyForCapability(capability.capabilityId),
-        nonCodexTaskFamily: taskFamilyForCapability(capability.capabilityId),
-        graphNodeKind: capability.graphNodeKind,
-        executorKey: capability.executorKey,
-        workerRef: capability.workerRef,
-        requiredMetadataSchemaRef: capability.requiredMetadataSchemaRef,
-        targetRefs,
-        inputHandoffRefs: splitInputRefs.inputHandoffRefs,
-        consideredCapabilityIds:
-          selection.consideredCapabilityIds.length > 0
-            ? selection.consideredCapabilityIds
-            : [capability.capabilityId],
-        selectedCapabilityId: capability.capabilityId,
-        targetCommitmentIds,
-        utilityRationale: selection.utilityRationale || roleRationale,
-        costRationale:
-          selection.costRationale ||
-          `Runtime selected ${capability.capabilityId} from the capability manifest for ${unit.workUnitId}.`,
-        whyCheaperOptionsWereInsufficient: selection.whyCheaperOptionsWereInsufficient,
-        whyThisIsNotDuplicateWork:
-          selection.whyThisIsNotDuplicateWork ||
-          `This staged work unit ${unit.workUnitId} has not produced accepted evidence yet.`,
-        selectedModelQualificationProfileId: selectedQualificationProfile,
-        qualificationEvidenceRefs,
-        stopOrEscalationCondition:
-          selection.stopOrEscalationCondition ||
-          `Return to the orchestrator if ${unit.workUnitId} cannot satisfy its success criteria.`,
-        expectedDownstreamConsumer: contract.downstreamConsumer,
-        expectedEvidence: capability.evidenceProducedKinds,
-        expectedEvidenceSource: "runtime_derived_from_capability_manifest",
-        rawPromptStored: false,
-        rawResponseStored: false,
-        rawProviderLogStored: false,
-      }) as JsonValue,
+      inputRefs: splitInputRefs.inputHandoffRefs,
+      validationNeeds: [],
+      dependencyWorkUnitIds: [
+        ...new Set([...unit.dependencyWorkUnitIds, ...contract.dependencyWorkUnitIds]),
+      ],
+      downstreamConsumer: contract.downstreamConsumer,
+      stopIfMissing: selection.stopOrEscalationCondition
+        ? [selection.stopOrEscalationCondition]
+        : [],
+      parallelismRationale: stagedEdgeValues(source).parallelIndependentNodesJustification,
+      rationale: unit.rationale || selection.utilityRationale,
+      capabilityManifest: options.capabilityManifest,
+      sourceRecord: {
+        workUnit: unit,
+        capabilitySelection: selection,
+        nodeContractDraft: contract,
+      },
+      sourcePath: `${staged.sourceLabel}.workIntent[${index}]`,
     });
+    diagnostics.push(
+      ...workIntent.diagnostics.map((diagnostic) =>
+        capabilityDiagnostic({
+          nodeIndex: index,
+          providedNodeKind: WORK_INTENT_NODE_KIND,
+          providedCapabilityId: selection.capabilityId,
+          matchingCapabilityId: capability.capabilityId,
+          expectedGraphNodeKind: WORK_INTENT_NODE_KIND,
+          workUnitId: unit.workUnitId,
+          selectedCapabilityId: selection.capabilityId,
+          executionIntent:
+            workIntent.capabilityValidation.executionIntent ?? modelAuthoredExecutionIntent,
+          compatibilityReason: diagnostic.errorCode,
+          path: diagnostic.path,
+          validValues: diagnostic.validValues,
+          errorCode: diagnostic.errorCode,
+          message: diagnostic.message,
+        }),
+      ),
+    );
+    reasonCodes.push(
+      ...workIntent.reasonCodes.map((code) => `staged_work_intent:${unit.workUnitId}:${code}`),
+    );
+    if (!workIntent.node) {
+      continue;
+    }
+    nodes.push(orchestratorNodeFromWorkIntent(workIntent.node));
   }
   const nodeIdByWorkUnit = new Map(
     nodes
@@ -1701,45 +2168,72 @@ function explicitNodeDependencyEdges(
   return edges;
 }
 
-function nodeRoleClass(node: OrchestratorGraphNodeSpec): string {
-  const values = [
-    node.nodeKind,
-    node.assignedRole,
-    node.capabilityId ?? "",
-    typeof asRecord(node.metadata).taskFamily === "string"
-      ? String(asRecord(node.metadata).taskFamily)
-      : "",
-  ]
-    .join(" ")
-    .toLowerCase();
-  if (values.includes("context_scout") || values.includes("context")) {
-    return "context";
+type OrchestratorNodeRoleClass = RuntimeNodeCapability["roleClass"] | "other";
+
+const RUNTIME_NODE_ROLE_CLASSES = new Set<RuntimeNodeCapability["roleClass"]>([
+  "orchestration",
+  "context",
+  "implementation",
+  "validation",
+  "review",
+  "research",
+  "planning",
+  "docs",
+  "human",
+  "closeout",
+  "observability",
+]);
+
+function roleClassForKnownNodeKind(nodeKind: string): OrchestratorNodeRoleClass {
+  switch (nodeKind) {
+    case "work_intent":
+      return "orchestration";
+    case "context_scout":
+      return "context";
+    case "implementation":
+      return "implementation";
+    case "validation":
+    case "test_review":
+    case "test_authoring":
+    case "repair":
+      return "validation";
+    case "reviewer":
+    case "security_review":
+      return "review";
+    case "orchestrator_plan":
+    case "context_synthesis":
+      return "planning";
+    case "web_research":
+      return "research";
+    case "docs_update":
+      return "docs";
+    case "human_task":
+      return "human";
+    case "closeout":
+      return "closeout";
+    case "observability_readback":
+      return "observability";
+    default:
+      return "other";
   }
-  if (values.includes("implementation") || values.includes("repair")) {
-    return "implementation";
+}
+
+function nodeRoleClass(node: OrchestratorGraphNodeSpec): OrchestratorNodeRoleClass {
+  const capabilityId = node.capabilityId ?? stringValue(asRecord(node.metadata).capabilityId);
+  const capability = capabilityId ? findRuntimeNodeCapability(capabilityId) : null;
+  if (capability) {
+    return capability.roleClass;
   }
-  if (values.includes("validation") || values.includes("test") || values.includes("qa")) {
-    return "validation";
-  }
-  if (values.includes("review")) {
-    return "review";
-  }
-  if (values.includes("observability") || values.includes("readback")) {
-    return "observability";
-  }
-  if (values.includes("closeout")) {
-    return "closeout";
-  }
-  if (values.includes("human")) {
-    return "human";
-  }
-  if (values.includes("planning")) {
-    return "planning";
-  }
-  if (values.includes("research")) {
-    return "research";
-  }
-  return "other";
+  const explicitRoleClass = asRecord(node.metadata).roleClass;
+  return typeof explicitRoleClass === "string" &&
+    RUNTIME_NODE_ROLE_CLASSES.has(explicitRoleClass as RuntimeNodeCapability["roleClass"])
+    ? (explicitRoleClass as RuntimeNodeCapability["roleClass"])
+    : typeof asRecord(node.metadata).targetCapabilityRoleClass === "string" &&
+        RUNTIME_NODE_ROLE_CLASSES.has(
+          asRecord(node.metadata).targetCapabilityRoleClass as RuntimeNodeCapability["roleClass"],
+        )
+      ? (asRecord(node.metadata).targetCapabilityRoleClass as RuntimeNodeCapability["roleClass"])
+      : roleClassForKnownNodeKind(node.nodeKind);
 }
 
 function nodeMatchesDownstreamConsumer(node: OrchestratorGraphNodeSpec, consumer: string): boolean {
@@ -1757,6 +2251,18 @@ function nodeMatchesDownstreamConsumer(node: OrchestratorGraphNodeSpec, consumer
     node.workerRef ?? "",
     typeof metadata.workUnitId === "string" ? metadata.workUnitId : "",
     typeof metadata.taskFamily === "string" ? metadata.taskFamily : "",
+    typeof metadata.targetCapabilityRoleClass === "string"
+      ? metadata.targetCapabilityRoleClass
+      : "",
+    typeof metadata.targetCapabilityGraphNodeKind === "string"
+      ? metadata.targetCapabilityGraphNodeKind
+      : "",
+    typeof metadata.targetCapabilityWorkerRef === "string"
+      ? metadata.targetCapabilityWorkerRef
+      : "",
+    typeof metadata.targetCapabilityExecutorKey === "string"
+      ? metadata.targetCapabilityExecutorKey
+      : "",
   ].some((value) =>
     sanitizeId(value, "")
       .replace(/[-:_.]+/g, "")
@@ -1937,6 +2443,8 @@ function blockingCompileReasonCodes(reasonCodes: string[]): string[] {
       code.includes("_unknown") ||
       code.includes("_invalid") ||
       code.includes("_rejected") ||
+      code.includes("_conflict") ||
+      code.includes("_not_allowed") ||
       code.includes("runtime_owned_field") ||
       code.includes("staged_scheduler_model_authored_runtime_envelope_not_allowed"),
   );
@@ -1984,39 +2492,75 @@ export function compileOrchestratorGraphDecision(
   const selectedCapabilityNodes = nodesFromSelectedCapabilities(record.selectedCapabilities, {
     capabilityManifest,
   });
-  const stagedSchedulerNodes = nodesFromStagedSchedulerProtocol(record, { capabilityManifest });
+  const stagedSchedulerNodes = nodesFromStagedSchedulerProtocol(record, {
+    capabilityManifest,
+  });
   const escalationIntentNodes = compileEscalationIntent(record, { capabilityManifest });
+  const requestContextIntentNodes = compileRequestContextIntent(record, { capabilityManifest });
+  const requestContextHasModelAuthoredRuntimeEnvelope =
+    decisionKind === "request_context" &&
+    ((Array.isArray(record.newNodes) && record.newNodes.length > 0) ||
+      (Array.isArray(record.selectedCapabilities) && record.selectedCapabilities.length > 0) ||
+      stagedWorkUnits(stagedSourceRecord(record).source).length > 0);
+  const ignoreRequestContextRuntimeEnvelope =
+    requestContextHasModelAuthoredRuntimeEnvelope && requestContextIntentNodes.nodes.length > 0;
   const modelAuthoredRuntimeEnvelopeReasonCodes =
+    !ignoreRequestContextRuntimeEnvelope &&
     options.requireStagedProtocolForNodeCreation &&
     ((Array.isArray(record.newNodes) && record.newNodes.length > 0) ||
       (Array.isArray(record.selectedCapabilities) && record.selectedCapabilities.length > 0))
       ? ["staged_scheduler_model_authored_runtime_envelope_not_allowed"]
       : [];
+  const requestContextModelAuthoredEnvelopeReasonCodes =
+    requestContextHasModelAuthoredRuntimeEnvelope
+      ? ignoreRequestContextRuntimeEnvelope
+        ? ["request_context_model_authored_runtime_envelope_ignored"]
+        : ["request_context_model_authored_runtime_envelope_not_allowed"]
+      : [];
+  const nodeResultReasonCodes = ignoreRequestContextRuntimeEnvelope
+    ? []
+    : nodeResults.flatMap((result) => result.reasonCodes);
+  const selectedCapabilityReasonCodes = ignoreRequestContextRuntimeEnvelope
+    ? []
+    : selectedCapabilityNodes.reasonCodes;
+  const stagedSchedulerReasonCodes = ignoreRequestContextRuntimeEnvelope
+    ? []
+    : stagedSchedulerNodes.reasonCodes;
   const newNodes = [
-    ...nodeResults
-      .map((result) => result.node)
-      .filter((node): node is OrchestratorGraphNodeSpec => Boolean(node)),
-    ...selectedCapabilityNodes.nodes,
-    ...stagedSchedulerNodes.nodes,
+    ...(ignoreRequestContextRuntimeEnvelope
+      ? []
+      : nodeResults
+          .map((result) => result.node)
+          .filter((node): node is OrchestratorGraphNodeSpec => Boolean(node))),
+    ...(ignoreRequestContextRuntimeEnvelope ? [] : selectedCapabilityNodes.nodes),
+    ...(ignoreRequestContextRuntimeEnvelope ? [] : stagedSchedulerNodes.nodes),
     ...escalationIntentNodes.nodes,
+    ...requestContextIntentNodes.nodes,
   ];
   const rejectedNodeDiagnostics = [
-    ...nodeResults.flatMap((result) => result.diagnostics),
-    ...selectedCapabilityNodes.diagnostics,
-    ...stagedSchedulerNodes.diagnostics,
+    ...(ignoreRequestContextRuntimeEnvelope
+      ? []
+      : nodeResults.flatMap((result) => result.diagnostics)),
+    ...(ignoreRequestContextRuntimeEnvelope ? [] : selectedCapabilityNodes.diagnostics),
+    ...(ignoreRequestContextRuntimeEnvelope ? [] : stagedSchedulerNodes.diagnostics),
   ];
   const acceptedAliasFields = [
-    ...nodeResults.flatMap((result) => result.acceptedAliasFields),
-    ...selectedCapabilityNodes.acceptedAliasFields,
-    ...stagedSchedulerNodes.acceptedAliasFields,
+    ...(ignoreRequestContextRuntimeEnvelope
+      ? []
+      : nodeResults.flatMap((result) => result.acceptedAliasFields)),
+    ...(ignoreRequestContextRuntimeEnvelope ? [] : selectedCapabilityNodes.acceptedAliasFields),
+    ...(ignoreRequestContextRuntimeEnvelope ? [] : stagedSchedulerNodes.acceptedAliasFields),
     ...escalationIntentNodes.acceptedAliasFields,
+    ...requestContextIntentNodes.acceptedAliasFields,
   ];
   const compileReasonCodes = [
-    ...nodeResults.flatMap((result) => result.reasonCodes),
-    ...selectedCapabilityNodes.reasonCodes,
-    ...stagedSchedulerNodes.reasonCodes,
+    ...nodeResultReasonCodes,
+    ...selectedCapabilityReasonCodes,
+    ...stagedSchedulerReasonCodes,
     ...escalationIntentNodes.reasonCodes,
+    ...requestContextIntentNodes.reasonCodes,
     ...modelAuthoredRuntimeEnvelopeReasonCodes,
+    ...requestContextModelAuthoredEnvelopeReasonCodes,
   ];
   const explicitEdges = edgeValuesFromDecision(record);
   const newEdges =
@@ -2043,6 +2587,7 @@ export function compileOrchestratorGraphDecision(
         ...newEdges,
         ...stagedSchedulerNodes.edges,
         ...escalationIntentNodes.edges,
+        ...requestContextIntentNodes.edges,
         ...compiledDependencyEdges,
       ],
     }),
@@ -2052,9 +2597,19 @@ export function compileOrchestratorGraphDecision(
       typeof record.expectedEvidenceDescription === "string"
         ? boundedRuntimeWorkGraphString(record.expectedEvidenceDescription)
         : null,
-    runAfterAdd: booleanValue(record.runAfterAdd) || escalationIntentNodes.nodes.length > 0,
+    requestContextIntent: requestContextIntentNodes.intent,
+    runAfterAdd:
+      booleanValue(record.runAfterAdd) ||
+      escalationIntentNodes.nodes.length > 0 ||
+      requestContextIntentNodes.nodes.length > 0,
     metadata: jsonValue({
       ...asRecord(decisionMetadata(record)),
+      ...(requestContextIntentNodes.nodes.length > 0
+        ? {
+            genericSchedulerProtocolCompiled: true,
+            schedulerProtocolCompiler: "request_context_intent",
+          }
+        : {}),
       ...(stagedSchedulerNodes.parallelIndependentNodesJustification
         ? {
             parallelIndependentNodesJustification:
@@ -2089,10 +2644,14 @@ export function compileOrchestratorGraphDecision(
     rejectedNodeDiagnostics,
     repairRequest: repairRequestForMissingFields({
       failedDecisionId: decision.decisionId || null,
-      missingFields: missingFieldsForDecision(decision),
+      missingFields: [
+        ...missingFieldsForDecision(decision),
+        ...missingFieldsForRejectedDiagnostics(rejectedNodeDiagnostics),
+      ],
       preserveFields: [
         ...(decision.decisionId ? ["decisionId"] : []),
         ...(decision.rationaleForDecision ? ["rationaleForDecision"] : []),
+        ...(decision.requestContextIntent ? ["requestContextIntent"] : []),
         ...newNodes.flatMap((node, index) => {
           const prefix = `newNodes[${index}]`;
           return [

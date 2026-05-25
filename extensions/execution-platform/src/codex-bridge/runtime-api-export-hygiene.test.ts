@@ -11,6 +11,9 @@ describe("codex bridge runtime API export hygiene", () => {
     expect(exported.createContextScoutArtifact).toBeUndefined();
     expect(exported.KimiFileImplementationAdapter).toBeUndefined();
     expect(exported.KimiMicrotaskImplementationExecutor).toBeUndefined();
+    expect(exported.buildKimiLiveSourceEditReadiness).toBeUndefined();
+    expect(exported.evaluateSingleJobCodingTeamQualityProof).toBeUndefined();
+    expect(exported.SINGLE_JOB_CODING_TEAM_QUALITY_GATE_ID).toBeUndefined();
     expect(exported.CodingTeamRuntimeJobRunner).toBeTypeOf("function");
   });
 });

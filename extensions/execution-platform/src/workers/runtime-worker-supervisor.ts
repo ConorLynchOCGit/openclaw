@@ -86,6 +86,30 @@ function boundedErrorReasonCode(error: unknown): string {
   if (message.includes("artifact metadata exceeds")) {
     return "worker_adapter_threw:artifact_metadata_limit";
   }
+  if (
+    message.includes("split_required") ||
+    message.includes("resource materialization") ||
+    message.includes("resource_materialization")
+  ) {
+    return "worker_adapter_threw:resource_materialization_boundary";
+  }
+  if (message.includes("commitment_packet_author_fanout_failed")) {
+    return "worker_adapter_threw:commitment_packet_authoring_boundary";
+  }
+  if (
+    message.includes("mission_ledger_stage_contract") ||
+    message.includes("mission_ledger_acceptance") ||
+    message.includes("staged_mission_ledger")
+  ) {
+    return "worker_adapter_threw:mission_ledger_stage_contract";
+  }
+  if (
+    message.includes("unknown_candidate_ref") ||
+    message.includes("candidateLocalRefs") ||
+    message.includes("candidateRefs")
+  ) {
+    return "worker_adapter_threw:mission_ledger_contract_parse";
+  }
   if (message.includes("timeout") || message.includes("Timeout")) {
     return "worker_adapter_threw:timeout";
   }
@@ -93,6 +117,17 @@ function boundedErrorReasonCode(error: unknown): string {
     return "worker_adapter_threw:contract_parse";
   }
   return "worker_adapter_threw:unclassified";
+}
+
+function adapterThrownShouldTerminalizeNeedsReview(reasonCode: string): boolean {
+  return [
+    "worker_adapter_threw:artifact_metadata_limit",
+    "worker_adapter_threw:resource_materialization_boundary",
+    "worker_adapter_threw:commitment_packet_authoring_boundary",
+    "worker_adapter_threw:mission_ledger_stage_contract",
+    "worker_adapter_threw:mission_ledger_contract_parse",
+    "worker_adapter_threw:contract_parse",
+  ].includes(reasonCode);
 }
 
 function statusFromAdapterStatus(
@@ -385,12 +420,41 @@ export class RuntimeWorkerSupervisor {
         leaseId: claimed.leaseId,
         spanId: `${claimed.job.jobId}:runtime-worker:${adapter.adapterId}`,
         phase: "adapter_execute_failed",
-        status: "failed",
+        status: adapterThrownShouldTerminalizeNeedsReview(errorReasonCode)
+          ? "needs_review"
+          : "failed",
         adapterId: adapter.adapterId,
         blockerSummary:
           error instanceof Error ? error.message.slice(0, 500) : String(error).slice(0, 500),
         reasonCodes: ["worker_adapter_threw", errorReasonCode],
       });
+      if (adapterThrownShouldTerminalizeNeedsReview(errorReasonCode)) {
+        await this.options.repository.markJobNeedsReview({
+          leaseToken: claimed.leaseToken,
+          error: boundedError(error),
+          result: {
+            status: "needs_review",
+            reasonCodes: ["worker_adapter_threw", errorReasonCode],
+            retryScheduled: false,
+            rawPromptStored: false,
+            rawResponseStored: false,
+            rawLogsStored: false,
+            workQueueLifecycleMutated: false,
+          },
+        });
+        return this.result({
+          status: "needs_review",
+          claimed: true,
+          runtimeJobId: claimed.job.jobId,
+          jobType: claimed.job.jobType,
+          adapterId: adapter.adapterId,
+          reasonCodes: [
+            "worker_adapter_threw",
+            errorReasonCode,
+            "worker_adapter_failure_terminalized_needs_review",
+          ],
+        });
+      }
       await this.options.repository.failJob({
         leaseToken: claimed.leaseToken,
         retryDelayMs: this.options.retryDelayMs,

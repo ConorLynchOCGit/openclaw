@@ -20,6 +20,21 @@ import type {
   RuntimeToolExecutorInput,
   RuntimeToolExecutorResult,
 } from "../runtime-tool-call/runtime-tool-types.ts";
+import {
+  assertModelTaskPolicy,
+  buildModelTaskTelemetryEnvelope,
+  classifyModelTaskCall,
+  isModelTaskClass,
+  type ModelTaskClassification,
+} from "./model-task-classification.ts";
+import {
+  buildStructuredAdapterProviderProfile,
+  classifyStructuredAdapterOutcome,
+  structuredAdapterDiagnostics,
+  structuredAdapterPreflight,
+  type StructuredAdapterOutcome,
+  type StructuredAdapterPreflight,
+} from "./structured-tool-schema-adapter.ts";
 
 export const MODEL_CALL_RUNTIME_TOOL_ID = "model.call";
 export const MODEL_CALL_RUNTIME_TOOL_VERSION = "v1";
@@ -63,6 +78,8 @@ export type ModelCallVolatileInput = Parameters<ModelCallJsonExecutor["execute"]
 
 export type ModelCallRuntimeToolMetadata = {
   artifactKind: "model_call_runtime_tool_metadata";
+  modelTaskClassification: ModelTaskClassification;
+  modelTaskTelemetry: JsonValue;
   modelRef: string;
   providerRef: string | null;
   responseHash: string;
@@ -74,6 +91,9 @@ export type ModelCallRuntimeToolMetadata = {
   structuredOutput?: JsonValue;
   structuredOutputHash?: string;
   structuredOutputStored: boolean;
+  structuredAdapterProfileRef: string;
+  structuredAdapterPreflight: StructuredAdapterPreflight;
+  structuredAdapterOutcome?: StructuredAdapterOutcome;
   rawPromptStored: false;
   rawResponseStored: false;
   rawProviderLogStored: false;
@@ -87,6 +107,19 @@ function jsonObject(value: JsonValue | undefined): Record<string, JsonValue> {
   return value && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, JsonValue>)
     : {};
+}
+
+function usageJson(
+  usage: Awaited<ReturnType<ModelCallJsonExecutor["execute"]>>["usage"] | undefined,
+): JsonValue | null {
+  if (!usage) {
+    return null;
+  }
+  return {
+    promptTokens: usage.promptTokens ?? null,
+    outputTokens: usage.outputTokens ?? null,
+    cachedInputTokens: usage.cachedInputTokens ?? null,
+  };
 }
 
 function requireModelCallVolatileInput(input: RuntimeToolExecutorInput): ModelCallVolatileInput {
@@ -108,6 +141,40 @@ function requireModelCallVolatileInput(input: RuntimeToolExecutorInput): ModelCa
     throw new Error("model_call_volatile_input_invalid");
   }
   return record as ModelCallVolatileInput;
+}
+
+function modelTaskClassificationFromMetadata(
+  input: RuntimeToolExecutorInput,
+  request: ModelCallVolatileInput,
+): ModelTaskClassification {
+  const metadata = jsonObject(input.metadata);
+  const existing = jsonObject(metadata.modelTaskClassification);
+  if (
+    existing.artifactKind === "model_task_classification" &&
+    isModelTaskClass(existing.taskClass)
+  ) {
+    return existing as unknown as ModelTaskClassification;
+  }
+  const taskClass = isModelTaskClass(metadata.taskClass) ? metadata.taskClass : null;
+  if (!taskClass) {
+    throw new Error("model_call_task_classification_missing");
+  }
+  return classifyModelTaskCall({
+    taskClass,
+    callSite:
+      typeof metadata.callSite === "string" ? metadata.callSite : request.contract.contractName,
+    workflowId: typeof metadata.workflowId === "string" ? metadata.workflowId : null,
+    graphId: typeof metadata.graphId === "string" ? metadata.graphId : null,
+    nodeId: typeof metadata.nodeId === "string" ? metadata.nodeId : null,
+    runtimeJobId: typeof input.runtimeJobId === "string" ? input.runtimeJobId : null,
+    overrideModelRef: request.contract.modelId,
+    overridePolicyRef:
+      typeof metadata.overridePolicyRef === "string" ? metadata.overridePolicyRef : null,
+    overrideReasonCode:
+      typeof metadata.overrideReasonCode === "string" ? metadata.overrideReasonCode : null,
+    overrideRationale:
+      typeof metadata.overrideRationale === "string" ? metadata.overrideRationale : null,
+  });
 }
 
 function parseStructuredOutput(outputText: string): JsonValue {
@@ -151,19 +218,72 @@ export function createModelCallRuntimeToolExecutor(
   return {
     async execute(input) {
       const request = requireModelCallVolatileInput(input);
+      const classification = modelTaskClassificationFromMetadata(input, request);
+      assertModelTaskPolicy({ classification, providerCallRequested: true });
+      const adapterProfile = buildStructuredAdapterProviderProfile(classification);
+      const inputBytes = Buffer.byteLength(
+        `${request.systemPrompt}\n${request.userPrompt}`,
+        "utf8",
+      );
+      const preflight = structuredAdapterPreflight({
+        profile: adapterProfile,
+        inputBytes,
+        requestedMaxOutputTokens:
+          request.responseOptions?.maxOutputTokens ?? classification.maxOutputTokens,
+        requestedTimeoutMs: input.budget?.timeoutMs ?? classification.timeoutMs,
+      });
+      if (!preflight.accepted) {
+        return {
+          status: "needs_review",
+          outputRef: `runtime-tool-output://${input.invocationId ?? input.idempotencyKey}/model-call/preflight-blocked`,
+          outputHash: `sha256:${sha256(JSON.stringify(preflight))}`,
+          outputSummary:
+            preflight.blockingReason ??
+            "Structured adapter preflight blocked the model call before provider invocation.",
+          reasonCodes: preflight.reasonCodes,
+          metadata: {
+            modelTaskClassification: classification,
+            modelTaskTelemetry: buildModelTaskTelemetryEnvelope({
+              classification,
+              usage: null,
+              usageUnavailableReason: "structured_adapter_preflight_blocked",
+            }),
+            structuredAdapterProfile: adapterProfile,
+            structuredAdapterPreflight: preflight,
+            structuredOutputStored: false,
+            rawPromptStored: false,
+            rawResponseStored: false,
+            rawProviderLogStored: false,
+          } as unknown as JsonValue,
+          rawPromptStored: false,
+          rawResponseStored: false,
+          rawProviderLogStored: false,
+          rawToolLogStored: false,
+          rawCommandLogStored: false,
+          rawDbRowsStored: false,
+        };
+      }
       const startedAt = Date.now();
       const response = await executor.execute(request);
       const latencyMs = Math.max(0, Date.now() - startedAt);
       const modelRef = response.resolvedModelId ?? request.contract.modelId;
       const responseHash = sha256(response.outputText);
       const metadataBase = jsonObject(input.metadata);
+      const usage = usageJson(response.usage);
       const metadata: ModelCallRuntimeToolMetadata = {
         artifactKind: "model_call_runtime_tool_metadata",
+        modelTaskClassification: classification,
+        modelTaskTelemetry: buildModelTaskTelemetryEnvelope({
+          classification,
+          usage,
+        }),
         modelRef,
         providerRef: input.providerRef ?? null,
         responseHash,
         usage: response.usage ?? null,
         structuredOutputStored: false,
+        structuredAdapterProfileRef: adapterProfile.profileRef,
+        structuredAdapterPreflight: preflight,
         rawPromptStored: false,
         rawResponseStored: false,
         rawProviderLogStored: false,
@@ -178,6 +298,10 @@ export function createModelCallRuntimeToolExecutor(
           ...metadataBase,
           ...metadata,
           latencyMs,
+          taskClass: classification.taskClass,
+          modelPolicyRef: classification.modelPolicyRef,
+          reasoningMode: classification.reasoningMode,
+          parserMode: classification.parserMode,
           rawPromptStored: false,
           rawResponseStored: false,
           rawProviderLogStored: false,
@@ -190,10 +314,68 @@ export function createModelCallRuntimeToolExecutor(
         rawDbRowsStored: false,
       };
       if (request.parseJsonOutput ?? true) {
-        const structuredOutput = parseStructuredOutput(response.outputText);
+        let structuredOutput: JsonValue;
+        try {
+          structuredOutput = parseStructuredOutput(response.outputText);
+        } catch {
+          const diagnostics = structuredAdapterDiagnostics({
+            profile: adapterProfile,
+            attempt: 1,
+            latencyMs,
+            content: response.outputText,
+            errorReasonCode: "model_call_json_parse_failed",
+            inputBytes,
+            usage: response.usage ?? null,
+          });
+          const outcome = classifyStructuredAdapterOutcome({
+            profile: adapterProfile,
+            diagnostics,
+            parsedJsonValid: false,
+            schemaIssuePaths: ["root"],
+          });
+          return {
+            ...result,
+            status: "needs_review",
+            outputSummary: outcome.operatorSummary,
+            reasonCodes: [...(result.reasonCodes ?? []), ...outcome.reasonCodes],
+            metadata: {
+              modelTaskClassification: classification as unknown as JsonValue,
+              modelTaskTelemetry: buildModelTaskTelemetryEnvelope({
+                classification,
+                usage,
+              }),
+              taskClass: classification.taskClass,
+              modelPolicyRef: classification.modelPolicyRef,
+              reasoningMode: classification.reasoningMode,
+              parserMode: classification.parserMode,
+              structuredAdapterProfile: adapterProfile as unknown as JsonValue,
+              structuredAdapterPreflight: preflight as unknown as JsonValue,
+              structuredAdapterOutcome: outcome as unknown as JsonValue,
+              structuredOutputStored: false,
+              rawPromptStored: false,
+              rawResponseStored: false,
+              rawProviderLogStored: false,
+            } as unknown as JsonValue,
+          };
+        }
         const maxStructuredOutputBytes = request.maxStructuredOutputBytes ?? 24_000;
         const outputBytes = boundedJsonBytes(structuredOutput);
         if (outputBytes > maxStructuredOutputBytes) {
+          const diagnostics = structuredAdapterDiagnostics({
+            profile: adapterProfile,
+            attempt: 1,
+            latencyMs,
+            content: response.outputText,
+            errorReasonCode: "model_call_structured_output_exceeds_bound",
+            inputBytes,
+            usage: response.usage ?? null,
+          });
+          const outcome = classifyStructuredAdapterOutcome({
+            profile: adapterProfile,
+            diagnostics,
+            parsedJsonValid: true,
+            schemaIssuePaths: ["structuredOutput"],
+          });
           return {
             ...result,
             status: "needs_review",
@@ -202,22 +384,33 @@ export function createModelCallRuntimeToolExecutor(
               "model_call_structured_output_exceeds_bound",
             ],
             metadata: {
-              ...(result.metadata as Record<string, JsonValue>),
+              modelTaskClassification: classification as unknown as JsonValue,
+              modelTaskTelemetry: buildModelTaskTelemetryEnvelope({
+                classification,
+                usage,
+              }),
+              taskClass: classification.taskClass,
+              modelPolicyRef: classification.modelPolicyRef,
+              reasoningMode: classification.reasoningMode,
+              parserMode: classification.parserMode,
+              structuredAdapterProfile: adapterProfile as unknown as JsonValue,
+              structuredAdapterPreflight: preflight as unknown as JsonValue,
+              structuredAdapterOutcome: outcome as unknown as JsonValue,
               structuredOutputStored: false,
               structuredOutputBytes: outputBytes,
               maxStructuredOutputBytes,
-            },
+            } as unknown as JsonValue,
           };
         }
         return {
           ...result,
           metadata: {
-            ...(result.metadata as Record<string, JsonValue>),
+            ...jsonObject(result.metadata),
             structuredOutput,
             structuredOutputHash: `sha256:${sha256(JSON.stringify(structuredOutput))}`,
             structuredOutputStored: true,
             structuredOutputBytes: outputBytes,
-          },
+          } as unknown as JsonValue,
         };
       }
       return result;

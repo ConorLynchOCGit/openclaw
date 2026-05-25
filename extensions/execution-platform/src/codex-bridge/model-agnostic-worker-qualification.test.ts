@@ -41,7 +41,7 @@ describe("model-agnostic worker qualification matrix", () => {
           ],
           modelRunRefs: ["openrouter://non-codex-tool-using-worker/kimi"],
           changedFileRefs: [
-            "extensions/execution-platform/src/codex-bridge/kimi-live-source-edit-proof.ts",
+            "extensions/execution-platform/src/codex-bridge/non-codex-tool-using-worker-loop.ts",
           ],
           validationRefs: ["validation://passed"],
           liveModelCallMade: true,

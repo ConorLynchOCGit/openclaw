@@ -1,5 +1,1683 @@
 # Execution Platform Status
 
+## 2026-05-25 Product/Spec System Spec Refresh And Proof Readiness
+
+The Product/Spec Planning production workflow spec now describes the actual
+system being built, not only the proof harness. Product/Spec Planning is a
+first-class planning/proposal workflow on the generic orchestration runtime.
+Its canonical outcomes are `PlanningIntentRecord`, optional `ResearchBrief`,
+`PlanningCapsule`, optional `HumanPlanningDecision`, `ActionGraphProposal`,
+`CompileRuntimePlanResult`, and `ProductSpecPlanningCloseout`.
+
+The canonical node shape is planning-first:
+
+1. `planning_orchestrator`
+2. optional `web_research`
+3. `planning_capsule`
+4. optional `human_task`
+5. `action_graph_compile`
+6. `reviewer`
+7. `closeout`
+
+Product/Spec Planning remains proposal-only: it can compile child work
+proposals and feasibility evidence, but cannot execute child runtime jobs or
+mutate child lifecycle state without a later explicit authority boundary.
+
+The proof prompt has been updated to require:
+
+- `openclaw-convergence.control-plane-07-readback-telemetry-proof` closed
+  from readback/runtime evidence before the full proof;
+- live gateway check/test/build/start health evidence before proof
+  submission;
+- prompt hash recording from the canonical prompt artifact;
+- WorkIntent-first coding-team behavior for Product/Spec-as-target prompts;
+- no `context_synthesis group -> implementation node` shortcut.
+
+The immediate queue remains:
+
+1. `openclaw-convergence.control-plane-07-readback-telemetry-proof`
+2. `openclaw-convergence.active-queue-34`
+
+## 2026-05-24 WorkIntent Control-Plane Recovery Queue Reset
+
+The current Product/Spec proof path is now gated by the WorkIntent
+control-plane contract:
+
+- `docs/projects/execution-platform/specs/work-intent-control-plane-contract.md`
+- `docs/projects/execution-platform/specs/control-plane-coding-team-recovery.md`
+
+The latest failure class is systemic: model-authored semantic groups,
+context handoffs, scheduler graph nodes, resource materialization, workers,
+validation, and evidence still do not share one canonical contract for work
+kind, capability, resources, progress, evidence, and next transition. The
+forbidden production path is now explicit:
+
+```text
+context_synthesis group -> implementation node
+```
+
+Context synthesis remains available only as explicit workflow-defined
+coordination or diagnostic replay infrastructure. It is not default glue for
+the coding-team Product/Spec proof.
+
+Re-ranked pre-proof Work Queue path:
+
+1. `openclaw-convergence.control-plane-01-spec-reconciliation`
+   - Spec Reconciliation And Control-Plane Reset. **Closed.**
+2. `openclaw-convergence.control-plane-02-workintent-contract-compiler`
+   - WorkIntent Contract And Runtime Compiler. **Closed.**
+3. `openclaw-convergence.control-plane-03-context-synthesis-retirement-replay-alignment`
+   - Coding Path Context Synthesis Retirement And Replay Alignment. **Closed.**
+4. `openclaw-convergence.control-plane-04-node-scoped-context-readiness`
+   - Node-Scoped Context Broker And Readiness Enforcement. **Closed.**
+5. `openclaw-convergence.control-plane-05-resource-materialization-worker-gate`
+   - Resource Materialization And NodeExecutionPacket Worker Gate. **Closed.**
+6. `openclaw-convergence.control-plane-06-worker-small-verb-edit-smoke`
+   - Worker Small-Verb Edit Smoke Proof. **Closed.**
+7. `openclaw-convergence.control-plane-07-readback-telemetry-proof`
+   - Owner Readback And Telemetry Proof. **Next.**
+8. `openclaw-convergence.active-queue-34`
+   - Product/Spec Planning Workflow Plugin Production Proof.
+
+The full tool facade expansion remains preserved as a post-proof queue item,
+not dropped.
+
+Implementation evidence for the closed WorkIntent compiler item:
+
+- `extensions/execution-platform/src/workflows/work-intent.ts` defines the
+  runtime-compiled, non-runnable `work_intent` node contract and rejects
+  missing explicit execution intent, runtime-authored envelope fields, unknown
+  capabilities, and execution-intent/capability conflicts.
+- `extensions/execution-platform/src/workflows/orchestrator-graph-decision.ts`
+  compiles staged scheduler work units into WorkIntent nodes by default rather
+  than executable implementation nodes. The previous staged-scheduler
+  executable-node bypass flag was removed.
+- `extensions/execution-platform/src/workflows/runtime-work-graph-scheduler.ts`
+  treats WorkIntent as non-runnable control-plane state, exposes WorkIntent
+  scheduler tools, and validates WorkIntent metadata without requiring the
+  executable worker envelope.
+- `extensions/execution-platform/src/workflows/cost-aware-capability-policy.ts`
+  and `post-synthesis-graph-policy.ts` read target capability metadata from
+  WorkIntent manifests without Product/Spec string classifiers.
+- Focused validation passed:
+  `pnpm test:file extensions/execution-platform/src/workflows/work-intent.test.ts extensions/execution-platform/src/workflows/orchestrator-graph-decision.test.ts extensions/execution-platform/src/workflows/runtime-work-graph-scheduler.test.ts extensions/execution-platform/src/workflows/no-semantic-cheats.test.ts`
+  passed 140 tests.
+- Scoped type validation passed:
+  `pnpm tsgo:fast -- ...work-intent/orchestrator/scheduler/capability-policy/post-synthesis/worker-loop files`.
+
+Implementation evidence for the closed worker small-verb edit smoke item:
+
+- after-resource replay selected the Product/Spec-derived
+  source-spec-intake implementation node from
+  `product-spec-replay-f69b40c5defa3687`;
+- the worker received a hydrated `NodeExecutionPacket`, coding resource
+  packet, implementation context packet, implementation task packet, and
+  canonical readiness state;
+- Qwen handled controller/context selection and Kimi handled the forced
+  patch-author slot with `reasoningMode: none`;
+- bounded snapshot windows now support distant large-file ranges through
+  explicit `targetRegions`/`lineRanges`, with runtime-owned hashes, bounds,
+  line ranges, and truncation state;
+- the worker applied a scoped source edit, ran structural validation, recorded
+  commitment-linked evidence, and rolled back the changed file under
+  `rollback_after_review_artifact` for review;
+- focused worker-loop tests and scoped type validation passed, including a
+  regression for a 1,000-line file with two distant patch windows.
+
+Implementation evidence for the closed context-synthesis retirement item:
+
+- `runtimeCompiledPostSynthesisGraphDecision` no longer builds executable
+  implementation, validation, review, readback, or closeout nodes from an
+  accepted context-synthesis artifact.
+- Accepted context-synthesis groups are coordination evidence only. The
+  scheduler can compile them into non-runnable `work_intent` nodes only when
+  each group provides model-authored `executionIntent`, selected/recommended
+  capability, objective, expected output, success criteria, and downstream
+  consumer fields.
+- Missing or conflicting group fields produce `mark_needs_review` with
+  `runtime_post_synthesis_workintent_compile_blocked` and bounded per-group
+  diagnostics; runtime does not infer semantic intent from group prose.
+- Boundary replay now treats `after-context-synthesis` as legacy diagnostic
+  only and requires accepted node-scoped context for `after-graph-selection`.
+- Focused validation passed:
+  `pnpm test:file extensions/execution-platform/src/workflows/runtime-work-graph-scheduler.test.ts extensions/execution-platform/src/codex-bridge/product-spec-boundary-replay-topology.test.ts extensions/execution-platform/src/workflows/no-semantic-cheats.test.ts`
+  passed 107 tests.
+- Additional regression validation passed:
+  `pnpm test:file extensions/execution-platform/src/workflows/boundary-replay-checkpoints.test.ts extensions/execution-platform/src/workflows/orchestrator-graph-decision.test.ts`
+  passed 46 tests.
+- Scoped type validation passed:
+  `pnpm tsgo:fast -- extensions/execution-platform/src/workflows/runtime-work-graph-scheduler.ts extensions/execution-platform/src/workflows/runtime-work-graph-scheduler.test.ts extensions/execution-platform/src/codex-bridge/dynamic-agent-team-graph-runner.ts extensions/execution-platform/src/codex-bridge/product-spec-boundary-replay-topology.test.ts extensions/execution-platform/src/workflows/no-semantic-cheats.test.ts scripts/execution-platform-run-product-spec-boundary-replay.mjs`.
+
+Implementation evidence for the closed node-scoped context broker/readiness
+item:
+
+- WorkIntent nodes that require `context_handoff` now block at
+  `node_scoped_context_supply` when context is missing, in progress, or only
+  signal-level evidence.
+- `accepted_with_limitations` context cannot unlock implementation unless
+  the node carries a consumer-specific limitation waiver ref.
+- Context broker requests are compiled from canonical readiness state and
+  dispatched as prerequisite context scout nodes with request refs,
+  target-node ids, reason codes, semantic questions, candidate resource refs,
+  and `context_supplies` edges.
+- `ContextScoutExecutionPacket` carries the broker request summary and prompt
+  instruction so context scouts answer the downstream consumer's specific
+  question.
+- Scheduler snapshots/readback expose root runtime job id, resource
+  requirement kinds, target refs, context questions, context snapshot refs,
+  context status, limitation status, and waiver refs.
+- Focused validation passed:
+  `pnpm test:file extensions/execution-platform/src/workflows/context-broker.test.ts extensions/execution-platform/src/workflows/context-scout-execution-packet.test.ts extensions/execution-platform/src/workflows/node-resource-materialization.test.ts extensions/execution-platform/src/workflows/runtime-work-graph-scheduler.test.ts`
+  passed 114 tests.
+- Regression validation passed:
+  `pnpm test:file extensions/execution-platform/src/workflows/no-semantic-cheats.test.ts extensions/execution-platform/src/codex-bridge/product-spec-boundary-replay-topology.test.ts`
+  passed 14 tests.
+- Work Queue readback validation passed:
+  `pnpm test:file extensions/execution-platform/src/work-queue/execution-read-model.test.ts`
+  passed 168 tests.
+- Scoped type validation passed over context-broker, context-scout packet,
+  scheduler, scheduler contracts, context-scout executor, and dynamic graph
+  runner files.
+
+Implementation evidence for the closed resource materialization / worker gate
+item:
+
+- `extensions/execution-platform/src/workflows/node-resource-materialization.ts`
+  now defines a first-class `read_only_resource_packet` contract alongside
+  coding resource packets.
+- canonical readiness blocks missing resource bodies, resource kind mismatch,
+  read-only packets carrying changed-file evidence, implementation nodes
+  without `source_edit`, and coding workers without target snapshots/new-file
+  intents plus validation refs or validation discovery.
+- worker invocation now requires a hydrated domain resource packet body for
+  both coding and read-only resource kinds. Manifest refs remain graph/readback
+  state; they are not sufficient at the worker boundary.
+- scheduler resource gating no longer honors `nodeExecutionPacketRequired:
+false` for file-edit node kinds. That metadata can only opt out non-file-edit
+  lanes.
+- owner-facing node packet readback includes execution intent, evidence mode,
+  node id/kind, capability, executor, and worker ref.
+- Focused validation passed:
+  `pnpm test:file extensions/execution-platform/src/workflows/node-resource-materialization.test.ts`
+  passed 16 tests.
+- Scheduler validation passed:
+  `pnpm test:file extensions/execution-platform/src/workflows/runtime-work-graph-scheduler.test.ts`
+  passed 93 tests.
+- Regression validation passed:
+  `pnpm test:file extensions/execution-platform/src/workflows/no-semantic-cheats.test.ts extensions/execution-platform/src/codex-bridge/product-spec-boundary-replay-topology.test.ts extensions/execution-platform/src/work-queue/execution-read-model.test.ts`
+  passed 182 tests.
+- Provider-free frontier proof passed:
+  `node scripts/execution-platform-run-scheduler-frontier-no-progress-evaluation-throttle-proof.mjs`.
+- Scoped type validation passed via `pnpm tsgo:fast` over the touched
+  materialization, scheduler, test, readback, and proof script surfaces.
+
+## 2026-05-24 Control-Plane Coding Team Recovery
+
+This section is superseded by the WorkIntent queue reset above. The governing
+recovery specs are now `control-plane-coding-team-recovery.md` and
+`work-intent-control-plane-contract.md`.
+
+The latest top-of-pipe proof reached Mission Ledger, packet authoring, staged
+scheduler entry, context scouts, and then failed before implementation at
+context-synthesis group expansion. The hard blocker was deterministic:
+Qwen group-expansion payloads exceeded structured-adapter input bounds and
+requested a timeout above the selected profile. No source edits landed.
+
+Direction:
+
+- stop treating global context synthesis as the default pre-implementation
+  proof gate;
+- create task DAG nodes first from obligations/packets;
+- supply context to those nodes on demand;
+- run implementation only from hydrated `NodeExecutionPacket`s;
+- prove one real Product/Spec-derived worker edit before another full
+  Product/Spec proof;
+- keep the full toolification catalog documented as post-proof architecture.
+
+Implementation update:
+
+- added the governing control-plane recovery spec;
+- updated project index, current slice, roadmap, decisions, and spec index;
+- added a pre-proof coding tool facade normalization path for small public
+  tool verbs such as `repo.search`, `repo.open_file`, `edit.search_replace`,
+  `edit.apply_patch`, `checks.run`, and `context.request_more`, which
+  normalize into existing runtime-owned worker tools instead of exposing raw
+  internal graph/runtime schemas.
+
+## 2026-05-24 Progress, Readback, And Runtime Event Modularization
+
+Status: implemented with focused validation passing; closeout script added
+for DB Work Queue lifecycle.
+
+Completed item:
+
+- `openclaw-convergence.pre-proof-02-progress-readback-runtime-event-modularization`
+  - Progress, Readback, And Runtime Event Modularization.
+
+Implementation evidence:
+
+- `extensions/execution-platform/src/work-queue/execution-read-model.ts`
+  now delegates active graph progress and runtime artifact payload manifest
+  projection to production projection modules instead of owning the old
+  monolithic projection bodies inline.
+- `extensions/execution-platform/src/work-queue/projections/active-graph-progress.ts`
+  owns active graph progress assembly over scheduler events, compact
+  latest-run-state, graph/frontier summaries, branch results, readiness refs,
+  worker progress, model call progress, and boundary replay refs.
+- `extensions/execution-platform/src/work-queue/projections/boundary-replay-readback.ts`
+  owns boundary replay readback projection from compact checkpoint/plan refs
+  and latest-run-state replay state.
+- `extensions/execution-platform/src/work-queue/projections/worker-internal-progress.ts`
+  owns worker-internal model/tool/phase/latency/output-hash/readiness
+  projection without raw prompt, provider, tool, command, DB, or hidden
+  reasoning bodies.
+- `extensions/execution-platform/src/work-queue/projections/model-usage-walltime.ts`
+  owns model-call phase, walltime, usage, task policy, and provider
+  diagnostics projection with bounded diagnostic body scrubbing.
+- `extensions/execution-platform/src/work-queue/projections/runtime-artifact-manifest.ts`
+  owns payload manifest projection by refs, counts, artifact types, and
+  hydration tool id only.
+- `extensions/execution-platform/src/work-queue/projections/readback-projections.test.ts`
+  proves projection modules are testable outside full Work Queue read-model
+  construction, preserve active node/branch/blocker/readiness/model/tool
+  readback, and do not expose body-shaped raw provider content.
+
+Validation:
+
+- `pnpm test:file extensions/execution-platform/src/work-queue/projections/readback-projections.test.ts extensions/execution-platform/src/work-queue/execution-read-model.test.ts extensions/execution-platform/src/observability/latest-run-state.test.ts`
+  passed 176 tests.
+- `pnpm tsgo:fast -- extensions/execution-platform/src/work-queue/execution-read-model.ts extensions/execution-platform/src/work-queue/projections/active-graph-progress.ts extensions/execution-platform/src/work-queue/projections/boundary-replay-readback.ts extensions/execution-platform/src/work-queue/projections/model-usage-walltime.ts extensions/execution-platform/src/work-queue/projections/worker-internal-progress.ts extensions/execution-platform/src/work-queue/projections/runtime-artifact-manifest.ts extensions/execution-platform/src/work-queue/projections/projection-utils.ts extensions/execution-platform/src/work-queue/projections/readback-projections.test.ts`
+  passed via the repo fallback checker.
+
+Next item:
+
+- `openclaw-convergence.toolification-13-compatibility-retirement-bypass-audit`
+  - Compatibility Retirement And Middleware Bypass Audit.
+
+## 2026-05-24 Generic Replay And Readiness Lifecycle
+
+Status: implemented with focused validation passing; closeout script added
+for DB Work Queue lifecycle.
+
+Completed item:
+
+- `openclaw-convergence.post-proof-03-generic-replay-readiness-lifecycle`
+  - Generic Replay And Readiness Lifecycle.
+
+Implementation evidence:
+
+- `extensions/execution-platform/src/workflows/boundary-replay-registry.ts`
+  now owns the workflow-agnostic boundary registry: boundary ids, required
+  upstream checkpoints, versioned normalizers, resume command defaults,
+  allowed next transitions, terminal blocker classes, readback projection
+  fields, and diagnostic-only policy.
+- `extensions/execution-platform/src/workflows/boundary-replay-checkpoints.ts`
+  now compiles replay plans and production continuations from the registry
+  instead of private dependency maps. Plans carry registry version,
+  diagnostic-only status, allowed transitions, blocker classes, readback
+  fields, and exact missing checkpoint kinds.
+- `after_context_synthesis` is hard-coded by registry as diagnostic-only.
+  Replay plans for that boundary require explicit diagnostic allowance and
+  cannot become normal production continuation by default.
+- Work Queue active graph readback now surfaces registry-backed replay fields:
+  registry version, diagnostic-only status, allowed next transitions,
+  terminal blocker classes, readback projection fields, latest accepted
+  checkpoint kind, and missing checkpoint kinds.
+- The Product/Spec replay CLI now resolves supported boundaries through the
+  canonical registry and records registry-aware checkpoints instead of
+  carrying a separate legacy boundary policy.
+
+Validation:
+
+- `pnpm test:file extensions/execution-platform/src/workflows/boundary-replay-checkpoints.test.ts extensions/execution-platform/src/work-queue/execution-read-model.test.ts extensions/execution-platform/src/workflows/execution-platform-boundary-guardrails.test.ts extensions/execution-platform/src/workflows/no-semantic-cheats.test.ts`
+  passed 203 tests.
+
+Next item:
+
+- `openclaw-convergence.pre-proof-02-progress-readback-runtime-event-modularization`
+  - Progress, Readback, And Runtime Event Modularization.
+
+## 2026-05-24 Dynamic Runner Plugin Thinning
+
+Status: implemented with focused validation passing; closeout script added
+for DB Work Queue lifecycle.
+
+Completed item:
+
+- `openclaw-convergence.post-proof-02-dynamic-runner-plugin-thinning`
+  - Dynamic Runner Plugin Thinning.
+
+Implementation evidence:
+
+- `extensions/execution-platform/src/workflows/generic-orchestration-runtime-execution.ts`
+  now owns generic workflow plugin resolution artifacts, generic runtime
+  readiness artifacts, generic runtime spine readiness/lifecycle artifacts,
+  and generic orchestration runtime result persistence.
+- `extensions/execution-platform/src/codex-bridge/dynamic-agent-team-graph-runner.ts`
+  delegates generic runtime execution artifact lifecycle to
+  `runAndPersistGenericSchedulerGraph(...)` instead of instantiating and
+  persisting generic runtime/spine objects inline.
+- `extensions/execution-platform/src/codex-bridge/coding-team-runtime-adapter.ts`
+  owns coding-team scheduler executor registration. The dynamic runner now
+  calls that adapter rather than locally spelling the role/kind executor map.
+- `extensions/execution-platform/src/workflows/generic-orchestration-runtime-execution.test.ts`
+  proves generic start/result artifact persistence outside the coding runner.
+- `extensions/execution-platform/src/codex-bridge/coding-team-runtime-adapter.test.ts`
+  proves coding-specific executor registration stays in the coding adapter
+  surface.
+- `extensions/execution-platform/src/codex-bridge/dynamic-agent-team-graph-runner.test.ts`
+  now guards that the dynamic runner delegates generic runtime artifact
+  lifecycle to the generic execution service.
+
+Validation:
+
+- `pnpm test:file extensions/execution-platform/src/workflows/generic-orchestration-runtime-execution.test.ts extensions/execution-platform/src/codex-bridge/coding-team-runtime-adapter.test.ts extensions/execution-platform/src/workflows/generic-runtime-spine.test.ts extensions/execution-platform/src/workflows/generic-orchestration-runtime.test.ts extensions/execution-platform/src/workflows/runtime-workflow-graph-engine.test.ts extensions/execution-platform/src/workflows/execution-platform-boundary-guardrails.test.ts extensions/execution-platform/src/workflows/no-semantic-cheats.test.ts extensions/execution-platform/src/codex-bridge/dynamic-agent-team-graph-runner.test.ts`
+  passed 53 tests.
+
+Next item:
+
+- `openclaw-convergence.post-proof-03-generic-replay-readiness-lifecycle`
+  - Generic Replay And Readiness Lifecycle.
+
+## 2026-05-24 Generic Runtime Spine Extraction
+
+Status: implemented with focused validation passing; closeout script added
+for DB Work Queue lifecycle.
+
+Completed item:
+
+- `openclaw-convergence.post-proof-01-generic-runtime-spine-extraction`
+  - Generic Runtime Spine Extraction.
+
+Implementation evidence:
+
+- `extensions/execution-platform/src/workflows/generic-runtime-spine.ts`
+  now owns the generic production lifecycle boundary for workflow readiness
+  composition, scheduler-option gates, scheduler-result lifecycle status, and
+  graph-evidence false-success prevention.
+- `extensions/execution-platform/src/workflows/generic-orchestration-runtime.ts`
+  delegates readiness, scheduler-option, and scheduler-result lifecycle
+  decisions to the spine instead of keeping those decisions inline.
+- `extensions/execution-platform/src/codex-bridge/dynamic-agent-team-graph-runner.ts`
+  persists first-class generic runtime spine readiness and lifecycle artifacts
+  while keeping coding executors/adapters in the coding plugin surface.
+- `extensions/execution-platform/src/workflows/generic-runtime-spine.test.ts`
+  proves production coding readiness, a non-coding docs/skills readiness
+  lane, scheduler-option gate rejection, and false-success downgrade through
+  the same generic spine.
+- `extensions/execution-platform/src/workflows/no-semantic-cheats.test.ts`
+  now guards the generic spine against coding adapter, Product/Spec, proof,
+  and replay imports.
+- `scripts/execution-platform-record-generic-runtime-spine-closeout.mjs`
+  records bounded closeout evidence and a full source-inventory boundary
+  audit. Remaining broad hard blocks are explicitly deferred to the dynamic
+  runner thinning and compatibility-retirement items.
+
+Validation:
+
+- `pnpm test:file extensions/execution-platform/src/workflows/generic-runtime-spine.test.ts extensions/execution-platform/src/workflows/generic-orchestration-runtime.test.ts extensions/execution-platform/src/workflows/runtime-workflow-graph-engine.test.ts extensions/execution-platform/src/workflows/execution-platform-boundary-guardrails.test.ts extensions/execution-platform/src/workflows/no-semantic-cheats.test.ts`
+  passed 31 tests.
+- `pnpm tsgo:fast ...` over the generic spine/runtime/runner touched slice
+  passed.
+
+Next item:
+
+- `openclaw-convergence.post-proof-02-dynamic-runner-plugin-thinning`
+  - Dynamic Runner Plugin Thinning.
+
+## 2026-05-24 Boundary Guardrails Implementation
+
+Status: implemented and focused validation passing; closeout script added for
+DB Work Queue lifecycle.
+
+Completed item:
+
+- `openclaw-convergence.pre-proof-01-execution-platform-characterization-guardrails`
+  - Characterization And Import Boundary Guardrails.
+
+Implementation evidence:
+
+- `extensions/execution-platform/src/workflows/execution-platform-boundary-guardrails.ts`
+  defines the typed boundary classifier, module ownership map, import
+  extraction/resolution helpers, and guardrail audit result.
+- `extensions/execution-platform/src/workflows/execution-platform-boundary-guardrails.test.ts`
+  proves classification, production/proof import blocking, diagnostic
+  proof-script imports of runtime services, context-synthesis replay-glue
+  detection, and current production module characterization.
+- `extensions/execution-platform/src/workflows/no-semantic-cheats.test.ts`
+  now runs the typed audit against current production files and guards against
+  Product/Spec-specific examples in generic graph repair prompts.
+- `extensions/execution-platform/src/workflows/generic-workflow-runner-retirement-contract.ts`
+  now owns the generic-runner retirement constants so Work Queue readback does
+  not import the deleted generic queued workflow runner module.
+- `scripts/execution-platform-record-boundary-guardrails-closeout.mjs`
+  records bounded audit and closeout evidence with raw-storage flags false.
+
+Validation:
+
+- `pnpm test:file extensions/execution-platform/src/workflows/execution-platform-boundary-guardrails.test.ts extensions/execution-platform/src/workflows/no-semantic-cheats.test.ts extensions/execution-platform/src/codex-bridge/product-spec-boundary-replay-topology.test.ts extensions/execution-platform/src/codex-bridge/runtime-api-export-hygiene.test.ts extensions/execution-platform/src/workers/middleware-bypass-audit.test.ts`
+  passed 21 tests.
+
+Next item:
+
+- `openclaw-convergence.post-proof-01-generic-runtime-spine-extraction`
+  - Generic Runtime Spine Extraction.
+
+## 2026-05-23 Pre-Product/Spec Modularization Queue Update
+
+The next Product/Spec proof is no longer the immediate queue head. The
+latest replay/topology cleanup showed that stale proof/runtime glue can
+reintroduce older architecture even after production policy moves on. The
+refactor work that was previously deferred until after Product/Spec is now a
+pre-proof cleanup tranche.
+
+Governing spec:
+
+- `docs/projects/execution-platform/specs/pre-product-spec-execution-platform-modularization.md`
+
+Promoted queue items before Product/Spec:
+
+1. `openclaw-convergence.pre-proof-01-execution-platform-characterization-guardrails`
+   - Characterization And Import Boundary Guardrails.
+2. `openclaw-convergence.post-proof-01-generic-runtime-spine-extraction`
+   - Generic Runtime Spine Extraction. **Promoted to pre-proof despite the
+     historical id.**
+3. `openclaw-convergence.post-proof-02-dynamic-runner-plugin-thinning`
+   - Dynamic Runner Plugin Thinning. **Promoted to pre-proof despite the
+     historical id.**
+4. `openclaw-convergence.post-proof-03-generic-replay-readiness-lifecycle`
+   - Generic Replay And Readiness Lifecycle. **Promoted to pre-proof despite
+     the historical id.**
+5. `openclaw-convergence.pre-proof-02-progress-readback-runtime-event-modularization`
+   - Progress, Readback, And Runtime Event Modularization.
+6. `openclaw-convergence.toolification-13-compatibility-retirement-bypass-audit`
+   - Compatibility Retirement And Middleware Bypass Audit. **Closed from DB
+     closeout with accepted adoption-gate evidence.**
+7. `openclaw-convergence.model-contract-compiler-consolidation`
+   - Model Contract Compiler Consolidation. **Closed from DB closeout after
+     focused compiler/orchestrator/no-semantic-cheats validation.**
+8. `openclaw-convergence.active-queue-34`
+   - Product/Spec Planning Workflow Plugin Production Proof.
+
+Refactor-like items not promoted:
+
+- `openclaw-convergence.post-proof-04-cross-workflow-orchestration-proof-lanes`
+  remains post-proof because it is a cross-workflow proof expansion rather
+  than cleanup needed before the Product/Spec slice.
+- runtime artifact retention/pruning, scheduler phase budgets, Work Queue
+  frontier delta streams, workflow breadth, memory/proactivity
+  toolification, role/model benchmarks, and future team adapters remain
+  after Product/Spec unless a later proof failure directly implicates them.
+
+## 2026-05-23 Demand-Driven Frontier Orchestration Update
+
+Latest after-resource worker-smoke update:
+
+- split-child readiness now works for materialized implementation children;
+- bounded repo read windows and partial denied refs now work in the
+  non-Codex worker loop;
+- repeated pre-edit context expansion is now blocked before unlimited
+  context-only churn;
+- the remaining blocker is not "Kimi failed to edit." The selected node is
+  source-grounding/read-only evidence, but the proof harness dispatched it as
+  edit-required implementation and expected changed-file refs.
+
+New P0 spec:
+
+- `docs/projects/execution-platform/specs/execution-intent-evidence-mode-and-worker-dispatch.md`
+
+This is a generic scheduler/runtime contract issue. Models must author
+execution intent; runtime must compile evidence mode and route only
+edit-required nodes to file-edit workers.
+
+The latest Product/Spec replay reached context scout handoffs, implementation
+context materialization, and split implementation task packet creation, then
+failed before source edits because `agent_team.scheduler_progress` metadata
+attempted to store a 114KB body against the 64KB manifest contract. The
+failure is generic: large workflow graph expansion and progress emission can
+still grow faster than useful worker execution.
+
+New governing spec:
+
+- `docs/projects/execution-platform/specs/demand-driven-frontier-orchestration-and-context-broker.md`
+
+Pre-proof queue direction after Work Queue reconciliation:
+
+1. GraphPatch Payload Store And Progress Compaction. **Complete.**
+2. Demand-Driven Context Broker And Lazy Readiness. **Complete.**
+3. Expansion Controller And Dynamic Fanout Admission. **Complete.**
+4. Superstep Frontier Runtime And Branch Results. **Complete.**
+5. Readback Projection And Replay Boundary Expansion. **Complete.**
+6. Semantic Microtask Refinement And Worker Packet Quality. **Complete.**
+7. Product/Spec Replay From The Failed Boundary. **Complete.**
+8. Execution Intent, Evidence Mode, And Worker Dispatch. **Complete.**
+9. Full Product/Spec Planning Workflow Plugin Production Proof. **Next.**
+10. Runtime Artifact Retention And Pruning Policy. **Immediate post-proof.**
+11. Scheduler Phase Budget Governor. **Immediate post-proof.**
+12. Work Queue Frontier Delta Stream And Branch Controls. **Immediate
+    post-proof.**
+
+Work Queue lifecycle cleanup:
+
+- `openclaw-convergence.mission-ledger-stability-diagnostics` is closed from
+  existing implementation/docs evidence. It no longer sits in the active
+  Product/Spec proof path.
+- `openclaw-convergence.staged-mission-ledger-obligation-candidate-compiler`
+  is superseded as diagnostic-only infrastructure. It is not a production
+  Mission Ledger path and is not a Product/Spec blocker.
+- The three remaining policy/readback items are active after Product/Spec,
+  not before it.
+
+This supersedes the old idea that all context fanout must complete before any
+implementation branch can move. Implementation-bearing nodes may inspect
+their execution packet, request missing context/resources, and produce an
+edit plan, but file edits and success claims remain blocked until canonical
+`NodeReadinessState` is executable for that branch.
+
+GraphPatch implementation evidence:
+
+- `execution_platform.runtime_graph_patch` is registered as a payload-backed
+  runtime artifact contract.
+- production `DynamicAgentTeamGraphRunner.attachProgress` writes a graph
+  patch payload before `agent_team.scheduler_progress`.
+- scheduler progress now carries graph patch refs/counts/hashes/samples
+  instead of large frontier/graph bodies.
+- latest-run-state and Work Queue readback project graph patch state.
+- closeout:
+  `.artifacts/execution-platform/graphpatch-payload-progress-compaction/closeout.json`
+- validation:
+  `pnpm test:file extensions/execution-platform/src/workflows/runtime-graph-patch.test.ts extensions/execution-platform/src/runtime-artifact-contracts.test.ts extensions/execution-platform/src/codex-bridge/dynamic-agent-team-graph-runner.test.ts extensions/execution-platform/src/work-queue/execution-read-model.test.ts`
+  passed 182 tests.
+
+Demand-Driven Context Broker implementation evidence:
+
+- `ContextBrokerRequest` is a strict payload-backed runtime artifact at
+  `execution_platform.context_broker.request`.
+- production implementation resource materialization now emits a
+  branch-local context broker request when canonical `NodeReadinessState`
+  returns `repairAction: request_context_repair`.
+- scheduler runtime tools include
+  `context_broker.submit_request`,
+  `context_broker.resolve_inherited_context`,
+  `context_broker.dispatch_context_scout`, and
+  `context_broker.mark_consumer_ready`.
+- scheduler progress/latest-run-state/Work Queue readback expose broker
+  request refs, statuses, dedupe keys, consumer nodes, next transition, and
+  bounded reason codes.
+- closeout:
+  `.artifacts/execution-platform/demand-driven-context-broker-lazy-readiness/closeout.json`
+- validation:
+  `pnpm test:file extensions/execution-platform/src/workflows/context-broker.test.ts extensions/execution-platform/src/runtime-artifact-contracts.test.ts extensions/execution-platform/src/workflows/scheduler-runtime-tools.test.ts extensions/execution-platform/src/observability/latest-run-state.test.ts extensions/execution-platform/src/work-queue/execution-read-model.test.ts`
+  passed 178 tests.
+
+Expansion Controller implementation evidence:
+
+- `extensions/execution-platform/src/workflows/runtime-work-graph-expansion-controller.ts`
+  defines the canonical admission policy and decision object.
+- production scheduler graph writes now pass through
+  `scheduler.evaluate_expansion_admission` before persistence.
+- non-prerequisite graph growth defers when executable frontier work is ready;
+  runtime-owned prerequisite context/repair edges remain admissible.
+- large graph writes page by node/edge budgets rather than pushing oversized
+  graph mutations into one progress/persistence event.
+- absolute budget breaches terminalize as `needs_review` with bounded
+  admission diagnostics instead of growing the graph.
+- latest-run-state and Work Queue readback project admission status, counts,
+  admitted/deferred ids, ready frontier ids, policy ref, and next transition.
+- closeout:
+  `.artifacts/execution-platform/expansion-controller-dynamic-fanout-admission/closeout.json`
+- validation:
+  `pnpm test:file extensions/execution-platform/src/workflows/runtime-work-graph-expansion-controller.test.ts extensions/execution-platform/src/workflows/runtime-work-graph-scheduler.test.ts extensions/execution-platform/src/workflows/scheduler-runtime-tools.test.ts extensions/execution-platform/src/observability/latest-run-state.test.ts extensions/execution-platform/src/work-queue/execution-read-model.test.ts`
+  passed 269 tests.
+
+Superstep Frontier Runtime implementation evidence:
+
+- `extensions/execution-platform/src/workflows/runtime-work-graph-superstep.ts`
+  defines canonical branch-result status and readback fields.
+- production `RuntimeWorkGraphScheduler.tryRunParallelRunnableFrontier(...)`
+  records branch-local results, isolates branch exceptions, preserves sibling
+  success/evidence, and halts systemic repeated sibling failures.
+- scheduler runtime tools include open, branch-result, and join operations for
+  supersteps.
+- Work Queue readback and latest-run-state project branch status,
+  blocker/error path, readiness ref, next transition, evidence refs, and
+  reason codes.
+- closeout:
+  `.artifacts/execution-platform/superstep-frontier-runtime-branch-results/closeout.json`
+- validation:
+  `pnpm test:file extensions/execution-platform/src/workflows/runtime-work-graph-scheduler.test.ts extensions/execution-platform/src/workflows/scheduler-runtime-tools.test.ts extensions/execution-platform/src/observability/latest-run-state.test.ts extensions/execution-platform/src/work-queue/execution-read-model.test.ts`
+  passed 268 tests.
+
+Readback Projection And Replay Boundary Expansion implementation evidence:
+
+- `BoundaryReplayService` now uses explicit structural checkpoint
+  dependencies rather than enum order when compiling replay plans.
+- granular canonical checkpoint kinds now include context request/handoff,
+  context synthesis, expansion admission, graph patch write, resource
+  materialization, worker invocation/edit, validation, and closeout boundaries.
+- production implementation resource materialization records canonical
+  resource-materialization and worker-invocation checkpoints with bounded
+  refs and replay continuation modes.
+- latest-run-state includes compact boundary replay state; Work Queue readback
+  projects boundary replay from latest-run-state plus explicit checkpoint/plan
+  events.
+- Product/Spec boundary replay now records canonical boundary checkpoint
+  artifacts for resource-materialization proof points instead of graph
+  checkpoints alone.
+- closeout:
+  `.artifacts/execution-platform/readback-projection-replay-boundary-expansion/closeout.json`
+- validation:
+  `pnpm test:file extensions/execution-platform/src/workflows/boundary-replay-checkpoints.test.ts extensions/execution-platform/src/observability/latest-run-state.test.ts extensions/execution-platform/src/work-queue/execution-read-model.test.ts`
+  passed 178 tests.
+
+Semantic Microtask Refinement And Worker Packet Quality implementation evidence:
+
+- governing spec:
+  `docs/projects/execution-platform/specs/semantic-microtask-refinement-and-worker-packet-quality.md`
+- reason: after-resource boundary smoke proved replay can hydrate and invoke a
+  worker, but the selected packet was still a broad work-intent/file chunk.
+  Runtime must not convert repo-scope refs or directory discovery scope into
+  arbitrary executable edits.
+- production direction: context scout recommended edit points and future
+  semantic microtask refinement artifacts provide model-authored
+  file/symbol-change intent; runtime compiles refs, snapshots, validation,
+  readiness, and worker packets.
+- implementation evidence:
+  `ImplementationTaskPacket` now carries file-change intents,
+  `ImplementationContextSnapshotCompiler` blocks broad directory/file chunks
+  without semantic intent, and boundary replay preserves context handoff
+  recommended edit points plus limitations.
+- boundary replay evidence:
+  `.artifacts/execution-platform/product-spec-replay-proof-resource-materialization/proof.json`
+  now marks the old Product/Spec after-resource packets as `needs_review`
+  before worker invocation with exact missing file-change intent reason codes,
+  instead of accepting stale ready metadata.
+- closeout:
+  `.artifacts/execution-platform/semantic-microtask-worker-packet-quality/closeout.json`
+- focused validation:
+  `pnpm test:file extensions/execution-platform/src/workflows/implementation-context-snapshot-compiler.test.ts extensions/execution-platform/src/workflows/node-resource-materialization.test.ts extensions/execution-platform/src/workflows/mission-work-packets.test.ts extensions/execution-platform/src/codex-bridge/non-codex-tool-using-worker-loop.test.ts`
+  passed 58 tests.
+- scheduler/runner validation:
+  `pnpm test:file extensions/execution-platform/src/codex-bridge/dynamic-agent-team-graph-runner.test.ts extensions/execution-platform/src/workflows/context-broker.test.ts extensions/execution-platform/src/workflows/runtime-work-graph-scheduler.test.ts`
+  passed 108 tests.
+
+Latest Product/Spec resource-boundary replay evidence:
+
+- runtime job: `product-spec-replay-mpika9c1`
+- graph:
+  `team-run-native-exec-7507e654ba4db90c-checkpoint-replay-mpika9c0-runtime-work-graph`
+- boundary: `before-resource-materialization`
+- result: `succeeded`
+- ready `NodeExecutionPacket` count: 2
+- selected targets:
+  - `extensions/execution-platform/src/intent-front-door/intent-front-door-readiness-audit.ts`
+  - `extensions/execution-platform/src/runtime-tool-call/runtime-tool-kernel.ts`
+  - `extensions/execution-platform/src/work-queue/execution-read-model.ts`
+- proof artifact:
+  `.artifacts/execution-platform/product-spec-replay-proof-resource-materialization/proof.json`
+
+This proof used context-handoff payload artifacts and model-authored concrete
+edit points to compile file-resolved implementation packets. It did not rerun
+router, Mission Ledger, packet authoring, graph selection, or context scout.
+The next step is the full Product/Spec Planning proof from the top.
+
+## 2026-05-22 Pre-Product/Spec Proof Stabilization Plan
+
+Status: first four stabilization items implemented and lane-proven; Mission
+Ledger Stability Diagnostics is implemented; the Staged Mission Ledger
+Obligation Candidate Compiler has been rolled back out of production and is
+now diagnostic/proof-only. Production coding-team Mission Ledger creation is
+back on the prior working single-pass path.
+
+The latest Product/Spec proof series no longer points to one isolated
+Product/Spec feature gap. It shows generic runtime failure classes that can
+block any large workflow before source edits:
+
+- body-bearing artifacts can still reach artifact metadata through adjacent
+  production paths even after the payload store was introduced;
+- scheduler iterations can keep expanding or reusing context/prerequisite
+  graph shape instead of executing an existing ready frontier;
+- reused-only node/edge decisions can look like progress;
+- context-only phases can over-call expensive global Mission Ledger
+  evaluation;
+- graph/runtime-result payload surfaces still need a focused large-graph lane
+  proof so body-heavy scheduler state never returns to metadata.
+
+New specs:
+
+- `docs/projects/execution-platform/specs/runtime-artifact-contract-registry-and-payload-boundary.md`
+- `docs/projects/execution-platform/specs/scheduler-frontier-no-progress-and-evaluation-throttle.md`
+- `docs/projects/execution-platform/specs/operator-frontier-readback-and-latest-run-state.md`
+- `docs/projects/execution-platform/specs/large-graph-storage-and-scheduler-lane.md`
+- `docs/projects/execution-platform/specs/pre-product-spec-proof-stabilization-plan.md`
+- `docs/projects/execution-platform/specs/staged-mission-ledger-obligation-candidate-compiler.md`
+
+New pre-proof DB Work Queue order:
+
+1. `openclaw-convergence.runtime-artifact-contract-registry-payload-boundary`
+   - Runtime Artifact Contract Registry And Payload Boundary. **Complete.**
+2. `openclaw-convergence.scheduler-frontier-no-progress-evaluation-throttle`
+   - Scheduler Frontier, No-Progress, And Evaluation Throttle. **Complete.**
+3. `openclaw-convergence.operator-frontier-readback-latest-run-state`
+   - Operator Frontier Readback And Latest Run State. **Complete.**
+4. `openclaw-convergence.product-spec-large-graph-storage-scheduler-lane`
+   - Large Graph Storage And Scheduler Lane. **Complete.**
+5. `openclaw-convergence.mission-ledger-stability-diagnostics`
+   - Mission Ledger Stability Diagnostics. **Implemented; harmless
+     commitment-count variance is diagnostic-only, while packet coverage,
+     runtime boundaries, mission gate changes, and GPT rescue dependence
+     remain proof concerns.**
+6. `openclaw-convergence.staged-mission-ledger-obligation-candidate-compiler`
+   - Staged Mission Ledger Obligation Candidate Compiler. **Diagnostic-only.
+     It is hard-disabled from production unless explicitly enabled by
+     `OPENCLAW_ENABLE_STAGED_MISSION_LEDGER_DIAGNOSTIC=true` and a per-job
+     diagnostic payload flag.**
+7. `openclaw-convergence.active-queue-34`
+   - Product/Spec Planning Workflow Plugin Production Proof.
+
+Product/Spec should resume only after items 1-4 have lane proof. Items 1-4
+are now implemented and lane-proven. Item 5 is implemented and is currently
+blocking the next Product/Spec proof because the live repeated checkpoint lane
+found material Mission Ledger/packet drift plus packet rescue dependence.
+Item 6 remains useful as diagnostic infrastructure, but it is not the
+production Mission Ledger path. The staged attempt added latency and failed
+earlier than the original working flow on a model-authored constraint-volume
+schema boundary. Production is restored to the single-pass Mission Ledger call
+with bounded normalization and diagnostics. Proof-mode GPT rescue dependence
+remains a proof concern, not clean success. The broad `openrouter_no_content`
+symptom is still supplemented with bounded diagnostics:
+model/provider/profile, request-shape, timeout, native finish reason, choice
+count, content length, parsed length, retry, concurrency slot, input bundle
+ref/hash, classified reason class, and retry eligibility.
+
+Runtime Artifact Contract Registry implementation evidence:
+
+- `extensions/execution-platform/src/runtime-artifact-contracts.ts` owns
+  registered storage contracts and bounded manifest/body policies.
+- `RuntimeJobRepository.attachRuntimeArtifactByContract(...)` is the canonical
+  attach path for registered body-bearing artifacts and emits
+  `job.artifact_contract_attached` events with contract id, payload ref, byte
+  count, and raw-storage flags.
+- direct `attachArtifact(...)` and direct `attachJsonPayloadArtifact(...)`
+  reject registered body-bearing artifact writes that bypass the contract.
+- production runner, context scout executor, boundary replay, and diagnostic
+  scripts now write registered packet/context/resource/runtime-result bodies
+  through contract-backed payload storage.
+- validation:
+  `pnpm test:file extensions/execution-platform/src/runtime-job-repository.test.ts extensions/execution-platform/src/runtime-artifact-contracts.test.ts extensions/execution-platform/src/codex-bridge/commitment-packet-review-boundary-replay.test.ts extensions/execution-platform/src/codex-bridge/context-scout-boundary-replay.test.ts extensions/execution-platform/src/work-queue/execution-read-model.test.ts`
+  passed 188 tests.
+- type validation:
+  `pnpm tsgo:fast ...` over the touched contract/repository/runner/replay/
+  readback/script slice passed via the full-repo fallback checker.
+
+Scheduler Frontier implementation evidence:
+
+- `RuntimeWorkGraphScheduler` now builds canonical frontier state before
+  expansion and, when production coding-team construction opts in, executes a
+  ready frontier before invoking the orchestrator for more graph shape.
+- Reused-only graph persistence writes `RuntimeWorkGraphNoProgressSignature`
+  evidence and repeated identical signatures halt cleanly as `needs_review`
+  instead of spinning.
+- Mission Ledger evaluation is throttled for context-only node output unless
+  closure claims or an explicit mission-evaluation request are present.
+- Work Queue owner progress readback projects scheduler frontier,
+  no-progress, and Mission Ledger throttle state.
+- validation:
+  `pnpm test:file extensions/execution-platform/src/workflows/runtime-work-graph-scheduler.test.ts`
+  passed 83 tests.
+- validation:
+  `pnpm test:file extensions/execution-platform/src/work-queue/execution-read-model.test.ts`
+  passed 159 tests.
+- type validation:
+  `pnpm tsgo:fast extensions/execution-platform/src/workflows/runtime-work-graph-scheduler.ts extensions/execution-platform/src/workflows/runtime-work-graph-scheduler.test.ts extensions/execution-platform/src/workflows/scheduler-runtime-tools.ts extensions/execution-platform/src/codex-bridge/dynamic-agent-team-graph-runner.ts extensions/execution-platform/src/work-queue/execution-read-model.ts extensions/execution-platform/src/work-queue/execution-read-model.test.ts`
+  passed through the repo fallback checker.
+- provider-free runtime proof:
+  `.artifacts/execution-platform/scheduler-frontier-no-progress-evaluation-throttle/proof.json`.
+
+Operator Frontier Readback implementation evidence:
+
+- `LatestRunState.activeFrontier` now includes selected/running/completed/
+  blocked/failed/needs-review/waiting node ids, open commitment ids,
+  branch-level blockers, no-progress root cause, Mission Ledger throttle state,
+  and next transition.
+- `DynamicAgentTeamGraphRunner` writes
+  `execution_platform.latest_run_state` and
+  `execution.latest_run_state_updated` after scheduler progress boundaries.
+- Work Queue owner progress readback projects the latest-run-state frontier
+  and agreement-checks graph id, selected nodes, blocked nodes, and
+  transition against scheduler frontier events.
+- validation:
+  `pnpm test:file extensions/execution-platform/src/observability/latest-run-state.test.ts`
+  passed.
+- validation:
+  `pnpm test:file extensions/execution-platform/src/work-queue/execution-read-model.test.ts`
+  passed 159 tests.
+- type validation:
+  `pnpm tsgo:fast extensions/execution-platform/src/observability/latest-run-state.ts extensions/execution-platform/src/observability/latest-run-state.test.ts extensions/execution-platform/src/codex-bridge/dynamic-agent-team-graph-runner.ts extensions/execution-platform/src/work-queue/execution-read-model.ts extensions/execution-platform/src/work-queue/execution-read-model.test.ts`
+  passed through the repo fallback checker.
+- provider-free runtime proof:
+  `.artifacts/execution-platform/operator-frontier-readback-latest-run-state/proof.json`.
+
+Large Graph Storage implementation evidence:
+
+- `execution_platform.implementation_resource_materialization_result` and
+  `execution_platform.node_readiness_state` are now payload-required runtime
+  artifact contracts.
+- `agent_team.scheduler_progress` is now a registered bounded manifest
+  contract, matching the live scheduler progress artifact type consumed by
+  Work Queue readback.
+- `DynamicAgentTeamGraphRunner` writes implementation resource
+  materialization results and node readiness states through
+  `attachRuntimeArtifactByContract(...)`.
+- `RuntimeWorkGraphRepository` accepts bounded context snapshot ref arrays
+  without treating them as embedded bodies, while still rejecting packet/body
+  metadata.
+- `RuntimeWorkGraphScheduler` bounds upstream context snapshot refs in node
+  metadata to a sample plus count/truncation flags before execution.
+- validation:
+  `pnpm test:file extensions/execution-platform/src/runtime-artifact-contracts.test.ts extensions/execution-platform/src/runtime-job-repository.test.ts extensions/execution-platform/src/workflows/runtime-work-graph.test.ts extensions/execution-platform/src/workflows/runtime-work-graph-scheduler.test.ts`
+  passed.
+- provider-free runtime proof:
+  `.artifacts/execution-platform/large-graph-storage-scheduler-lane/proof.json`.
+
+Mission Ledger Stability Diagnostics implementation evidence:
+
+- `extensions/execution-platform/src/workflows/mission-ledger-stability-diagnostics.ts`
+  compares two checkpointed Product/Spec Mission Ledger and Commitment Work
+  Packet runs using structural gates and bounded provider diagnostics.
+- Diagnostic artifacts are payload-required runtime contracts:
+  `execution_platform.mission_ledger_stability_diagnostic_run`,
+  `execution_platform.mission_ledger_stability_diagnostic_pair`, and
+  `execution_platform.mission_ledger_stability_verdict`.
+- `scripts/execution-platform-run-mission-ledger-stability-diagnostics.mjs`
+  runs the repeated checkpointed lane and writes bounded proof artifacts.
+- `scripts/execution-platform-record-mission-ledger-stability-diagnostics-closeout.mjs`
+  records the Work Queue closeout or needs-review state from the verdict.
+- validation passed:
+  `pnpm test:file extensions/execution-platform/src/runtime-artifact-contracts.test.ts extensions/execution-platform/src/work-queue/execution-read-model.test.ts extensions/execution-platform/src/workflows/mission-ledger-stability-diagnostics.test.ts`.
+- type validation passed:
+  `pnpm tsgo:fast extensions/execution-platform/src/runtime-artifact-contracts.ts extensions/execution-platform/src/runtime-artifact-contracts.test.ts extensions/execution-platform/src/workflows/mission-ledger-stability-diagnostics.ts extensions/execution-platform/src/workflows/mission-ledger-stability-diagnostics.test.ts extensions/execution-platform/src/workflows/index.ts extensions/execution-platform/src/workflows/runtime-work-graph-scheduler.ts extensions/execution-platform/src/work-queue/execution-read-model.ts extensions/execution-platform/src/work-queue/execution-read-model.test.ts extensions/execution-platform/src/codex-bridge/dynamic-agent-team-graph-runner.ts`.
+- live diagnostic proof:
+  `.artifacts/execution-platform/mission-ledger-stability-diagnostics/proof.json`.
+- verdict:
+  `needs_review_structural_drift`; `safeToRunProductSpecProof: false`;
+  Run A produced 10 blocking commitments / 10 packets, Run B produced 13
+  blocking commitments / 13 packets, Qwen no-content/retry count was 3, GPT
+  rescue count was 6, and structural drift score was about 0.8846.
+- Work Queue closeout recorded
+  `openclaw-convergence.mission-ledger-stability-diagnostics` as
+  `needs_review`, not closed.
+
+Staged Mission Ledger Obligation Candidate Compiler status:
+
+- Governing spec:
+  `docs/projects/execution-platform/specs/staged-mission-ledger-obligation-candidate-compiler.md`.
+- The staged compiler remains implemented for diagnostic and proof research.
+- It is not a live production success path for coding-team Mission Ledger
+  creation.
+- Production execution uses `mission_ledger.production_single_pass`.
+- Diagnostic runs may opt into staged behavior only with the explicit
+  environment allow-list and payload flag named above.
+- Failed fast-model packet calls remain reason-classified and replayable from
+  bounded input bundle refs; repeated same-input no-content blocks a clean
+  proof unless explicitly accepted as a provider incident.
+
+## 2026-05-22 Split-Required Resource Materialization Transition
+
+Status: implemented and replay-proven as a pre-Product/Spec proof gate.
+
+Latest proof evidence:
+
+- runtime job: `native-exec-55dc1cc6a3e94232`
+- Work Queue item: `product-spec-checkpointed-64c74c8c5ece-g6svuj`
+- graph id:
+  `team-run-native-exec-55dc1cc6a3e94232-runtime-work-graph`
+- prompt hash:
+  `64c74c8c5ecee1ac51099bccb895f3fe4f225778614692015ec2b4450d364922`
+- proof wall time after submit: about 20.2 minutes.
+- graph reached 47 nodes, 49 edges, and 21 role invocations.
+- Commitment Work Packets: 10/10 completed, 0 packet failures, 0 no-content
+  responses, 0 retries, 0 GPT rescue/fallbacks.
+- Qwen usage captured: 318,900 tokens, estimated `$0.1119`.
+- GPT-5.5 usage remains estimated only because Codex app-server did not
+  return actual usage.
+
+Failure evidence:
+
+- `implementation_context_materialization_blocked`
+- `implementation_context_resource_packet_bounds_exceeded`
+- `implementation_context_resolved_target_file_refs_exceeds_packet_bound:120:100`
+- `post_context_task_split_required_for_file_resolved_microtasks`
+- `worker_adapter_threw:unclassified`
+- `scheduler_terminal_with_10_open_blocking_commitments`
+
+Original root cause:
+
+- the runtime correctly blocked worker invocation when a high-level
+  implementation parent exceeded packet/resource bounds;
+- the scheduler did not apply a graph transition from split-required parent
+  to executable child nodes;
+- the parent remained the active runnable unit and terminalized as a generic
+  adapter failure instead of scheduler/readiness evidence.
+
+Implementation result:
+
+- production runner hooks now treat `split_required` as a graph transition,
+  not a worker adapter result;
+- split parent nodes are aggregate/non-runnable rollups with
+  `commitmentClosureEligible: false`;
+- accepted split task packets become executable child graph nodes and child
+  Work Queue items;
+- scheduler execution continues to the child frontier after materialization;
+- supervisor classification no longer reports resource materialization
+  boundaries as `worker_adapter_threw:unclassified`;
+- replay supports `before-split-required-materialization` and
+  `after-split-required-materialization`.
+
+Validation and proof:
+
+- `pnpm test:file extensions/execution-platform/src/workflows/runtime-work-graph-scheduler.test.ts -t "continues to materialized split children"`
+  passed.
+- `pnpm test:file extensions/execution-platform/src/workflows/implementation-context-snapshot-compiler.test.ts -t split-required`
+  passed.
+- `pnpm test:file extensions/execution-platform/src/workers/runtime-worker-supervisor.test.ts -t "resource materialization"`
+  passed.
+- `pnpm tsgo:fast` passed.
+- `before-split-required-materialization` replay against
+  `native-exec-55dc1cc6a3e94232` succeeded with 20 ready child
+  `NodeExecutionPacket` refs from the split-required parent and preserved one
+  precise sibling context-repair blocker.
+
+Governing spec:
+
+- `docs/projects/execution-platform/specs/split-required-resource-materialization-transition.md`
+
+Next DB Work Queue item:
+
+- Product/Spec Planning production proof remains the near-term proof target.
+  If the sibling context blocker recurs, repair the context handoff layer;
+  split-required resource materialization is no longer the blocker.
+
+## 2026-05-21 Resource Materialization Boundary Replay And Canonical Node Readiness
+
+Status: implemented and lane-proven as the current pre-Product/Spec
+resource-readiness boundary. The payload store is the canonical body-storage
+substrate, replay can now restart before or after resource materialization,
+and implementation workers are gated by a canonical `NodeReadinessState`.
+
+Failure evidence:
+
+- runtime job: `native-exec-78e1b33861780884`
+- graph id:
+  `team-run-native-exec-78e1b33861780884-runtime-work-graph`
+- failed implementation nodes:
+  - `g-faee9af635-implementation-wu-002-plugin-runtime-wiring`
+  - `g-faee9af635-implementation-wu-003-planning-artifacts-compile-readiness`
+  - `g-faee9af635-implementation-wu-004-readback-projection`
+- post-payload-store replay returned `needs_review` with:
+  `accepted_context_synthesis_or_node_scoped_context_required_before_after_graph_selection_replay`.
+  That reason code is historical evidence; current replay now requires
+  node-scoped context for `after-graph-selection` and keeps
+  `after-context-synthesis` diagnostic-only.
+
+Root cause:
+
+- replay is restarting from `after-graph-selection`, which is too early and
+  too broad for the failure. The failed boundary is implementation-resource
+  materialization after graph/context evidence exists.
+- scheduler, replay, Work Queue readback, and proof gates need one canonical
+  `NodeReadinessState` instead of separate interpretations of graph,
+  context, resource, and executable readiness.
+- graph node metadata must remain manifest-only; payload bodies belong in the
+  Runtime Artifact Payload Store.
+
+New governing spec:
+
+- `docs/projects/execution-platform/specs/resource-materialization-boundary-replay-and-canonical-node-readiness.md`
+
+DB Work Queue item:
+
+- `openclaw-convergence.resource-materialization-boundary-replay-canonical-readiness`
+  - Resource Materialization Boundary Replay And Canonical Node Readiness.
+
+Implementation evidence:
+
+- canonical readiness schema and evaluators:
+  `extensions/execution-platform/src/workflows/node-resource-materialization.ts`
+- manifest-only graph metadata enforcement:
+  `extensions/execution-platform/src/workflows/runtime-work-graph.ts`
+  and
+  `extensions/execution-platform/src/workflows/runtime-work-graph-repository.ts`
+- production runner readiness payload write:
+  `extensions/execution-platform/src/codex-bridge/dynamic-agent-team-graph-runner.ts`
+- checkpoint replay boundaries and latest-run-state:
+  `scripts/execution-platform-run-product-spec-boundary-replay.mjs`
+
+Validation and proof:
+
+- `pnpm test:file extensions/execution-platform/src/workflows/node-resource-materialization.test.ts extensions/execution-platform/src/workflows/runtime-work-graph.test.ts extensions/execution-platform/src/workflows/runtime-work-graph-scheduler.test.ts`
+  passed: 3 files, 89 tests.
+- `pnpm tsgo:fast extensions/execution-platform/src/workflows/node-resource-materialization.ts extensions/execution-platform/src/workflows/node-resource-materialization.test.ts extensions/execution-platform/src/workflows/runtime-work-graph.ts extensions/execution-platform/src/workflows/runtime-work-graph-repository.ts extensions/execution-platform/src/workflows/runtime-work-graph.test.ts extensions/execution-platform/src/workflows/runtime-work-graph-scheduler.ts extensions/execution-platform/src/workflows/runtime-work-graph-scheduler.test.ts extensions/execution-platform/src/codex-bridge/dynamic-agent-team-graph-runner.ts`
+  passed; script policy fell back to full-repo verification.
+- `before-resource-materialization` replay against
+  `native-exec-78e1b33861780884` now exits successfully without rerunning
+  upstream phases, preserves the exact non-worker blocker
+  `context_supply_handoff_artifact_missing` for `bc-015`, and identifies the
+  existing ready materialized frontier.
+- `after-resource-materialization` replay against the same runtime job exits
+  successfully with 4 inspected implementation nodes, 4 executable nodes, and
+  0 blocked nodes.
+
+Remaining Product/Spec proof gate:
+
+- rerun or resume the Product/Spec proof from the nearest executable frontier
+  and continue into implementation. The `bc-015` context handoff blocker
+  remains upstream evidence for the next proof run, not a resource
+  materialization storage/readiness failure.
+- before the full proof is counted, close or explicitly supersede
+  `openclaw-convergence.parallel-frontier-resource-boundary-hardening` through
+  the new
+  `docs/projects/execution-platform/specs/pre-product-spec-frontier-worker-proof-gate.md`
+  lane: branch isolation, context-limitation negative test, owner readback
+  trace gate, and one executable frontier worker smoke.
+
+Post-proof architecture follow-up:
+
+- `docs/projects/execution-platform/specs/post-proof-generic-runtime-extraction.md`
+  records the next extraction block after Product/Spec: generic runtime spine
+  extraction, dynamic runner plugin thinning, generic replay/readiness
+  lifecycle, and cross-workflow orchestration proof lanes.
+
+## 2026-05-21 Runtime Artifact Payload Store And Bounded Manifests
+
+Status: implemented as the canonical runtime payload/body storage boundary
+for large Execution Platform JSON artifacts. The Product/Spec proof still
+needs a resource-storage boundary replay before another full top-of-pipe
+proof is counted.
+
+Failure evidence:
+
+- runtime job: `native-exec-78e1b33861780884`
+- prompt hash:
+  `64c74c8c5ecee1ac51099bccb895f3fe4f225778614692015ec2b4450d364922`
+- prompt length: `17694`
+- final proof status: `needs_review`
+- runtime job state: `failed`
+- terminal reason codes:
+  - `worker_adapter_threw`
+  - `worker_adapter_threw:artifact_metadata_limit`
+- graph reached 9 nodes, 11 edges, and 3 role invocations.
+- context scout and context-repair scout handoffs were accepted.
+- implementation workers never received executable packet input.
+
+Root cause:
+
+- production runner paths still attach full implementation resource packet
+  bodies as runtime artifact metadata:
+  `execution_platform.implementation_context_packet`,
+  `execution_platform.implementation_resource_materialization_result`, and
+  `execution_platform.implementation_task_packet`.
+- runtime artifact metadata correctly enforces a bounded byte limit.
+- the architecture bug is using metadata as the payload container.
+
+New governing spec:
+
+- `docs/projects/execution-platform/specs/runtime-artifact-payload-store-and-bounded-manifests.md`
+
+DB Work Queue item:
+
+- `openclaw-convergence.runtime-artifact-payload-store-bounded-manifests`
+  - Runtime Artifact Payload Store And Bounded Manifests.
+
+Implementation evidence:
+
+- migration:
+  `extensions/execution-platform/migrations/0008_runtime_job_artifact_payloads.sql`
+- repository payload APIs:
+  `extensions/execution-platform/src/runtime-job-repository.ts`
+- production runner payload manifests:
+  `extensions/execution-platform/src/codex-bridge/dynamic-agent-team-graph-runner.ts`
+- scheduler payload tools:
+  `extensions/execution-platform/src/workflows/scheduler-runtime-tools.ts`
+- Work Queue payload manifest readback:
+  `extensions/execution-platform/src/work-queue/execution-read-model.ts`
+- Product/Spec boundary replay payload helper:
+  `scripts/execution-platform-run-product-spec-boundary-replay.mjs`
+
+Validation:
+
+- `pnpm test:file extensions/execution-platform/src/runtime-job-repository.test.ts extensions/execution-platform/src/workflows/scheduler-runtime-tools.test.ts extensions/execution-platform/src/work-queue/execution-read-model.test.ts`
+  passed: 3 files, 176 tests.
+- `pnpm tsgo:fast extensions/execution-platform/src/runtime-job-repository.ts extensions/execution-platform/src/runtime-job-repository.test.ts extensions/execution-platform/src/workflows/scheduler-runtime-tools.ts extensions/execution-platform/src/workflows/scheduler-runtime-tools.test.ts extensions/execution-platform/src/work-queue/execution-read-model.ts extensions/execution-platform/src/work-queue/execution-read-model.test.ts extensions/execution-platform/src/codex-bridge/dynamic-agent-team-graph-runner.ts`
+  passed; script policy fell back to full-repo verification.
+
+Satisfied success gates:
+
+- full implementation/resource/node packet bodies are persisted in a
+  canonical payload/body store.
+- runtime artifact metadata stores bounded manifests only.
+- scheduler, replay, readback, and worker invocation hydrate packets by ref.
+- production runner split-node metadata stores refs/summaries instead of full
+  packet bodies.
+
+Remaining proof gate:
+
+- replay the failed Product/Spec resource-storage boundary without rerunning
+  upstream Mission Ledger, packet authoring, scheduler decomposition, or
+  context scout.
+
+## 2026-05-21 Parallel Frontier Resource Boundary Hardening
+
+Status: documented as the next pre-Product/Spec proof blocker and inserted
+ahead of the Product/Spec production proof in the Work Queue.
+
+The latest checkpointed Product/Spec proof advanced beyond the older
+context-scout packet blocker. It proved UX-compatible submission, prompt
+hash/length preservation, source-prompt context indexing, Mission Ledger,
+Commitment Work Packets, scheduler graph acceptance, Work Queue child sync,
+and parallel frontier selection. It still failed before implementation.
+
+Failure evidence:
+
+- runtime job: `native-exec-68321aa82d7d6146`
+- Work Queue item: `product-spec-checkpointed-64c74c8c5ece-fc8awb`
+- prompt hash:
+  `64c74c8c5ecee1ac51099bccb895f3fe4f225778614692015ec2b4450d364922`
+- prompt length: `17694`
+- final proof status: `needs_review`
+- proof process wall time: `926s`
+- submit accepted in `150.483s`
+- front-door router latency: `67.513s`
+- Qwen usage: `165685` tokens, estimated `$0.06117807`
+- GPT-5.5 actual usage was unavailable from provider telemetry and remains
+  estimate-only for this run.
+
+Root causes:
+
+- implementation resource packet compiler/schema bounds diverged; an
+  oversized `resolvedTargetFileRefs` packet escaped as a thrown schema error
+  instead of a scheduler-owned `split_required` or `context_repair_required`
+  readiness result.
+- context handoffs with runtime-fallback limitations could be treated as
+  implementation-usable without a consumer-specific nonblocking waiver.
+- context repair/acquisition nodes could be created without consumer edges,
+  making them diagnostic work rather than readiness progress.
+- parallel frontier execution could collapse the adapter result from one
+  branch exception while sibling branches continued emitting.
+- Work Queue/latest-run-state readback did not expose the exact schema path,
+  bound, branch id, node id, limitation class, consumer edge state, and next
+  legal transition.
+
+New governing spec:
+
+- `docs/projects/execution-platform/specs/parallel-frontier-resource-boundary-hardening.md`
+
+Next DB Work Queue item:
+
+- `openclaw-convergence.parallel-frontier-resource-boundary-hardening`
+  - Parallel Frontier Resource Boundary Hardening.
+
+DB Work Queue update:
+
+- script:
+  `scripts/execution-platform-record-parallel-frontier-resource-boundary-queue.mjs`
+- artifact:
+  `.artifacts/execution-platform/parallel-frontier-resource-boundary-work-queue-update.json`
+- artifact hash:
+  `sha256:a074be5374bd529ffe15b2d0619fc23b03d77fa7025c8da7425565d2f8ef0b11`
+- queue order:
+  `openclaw-convergence.parallel-frontier-resource-boundary-hardening`
+  at rank 89, then `openclaw-convergence.active-queue-34` at rank 90.
+  The prior
+  `openclaw-convergence.context-scout-execution-packet-request-context-repair`
+  item was closed from checkpointed proof evidence because the latest run
+  advanced beyond its original oversized-prompt/provider-timeout/repair-envelope
+  failure class.
+
+Required success gates:
+
+- resource compilers safe-return structured readiness evidence and do not
+  throw opaque schema errors into worker adapters.
+- runtime-only context fallback cannot cleanly unlock implementation.
+- consumer-specific nonblocking limitation waivers are required for
+  `accepted_with_limitations` handoffs to execute downstream workers.
+- context repair nodes have consumer edges or diagnostic-only lifecycle.
+- parallel frontier supersteps isolate branch failures and preserve sibling
+  evidence.
+- owner readback surfaces the exact branch/node/schema/context edge blocker
+  and replay boundary.
+
+## 2026-05-21 Context Scout Execution Packet And Request-Context Repair
+
+Status: implemented and closed from checkpointed proof evidence. Focused
+tests and typecheck passed, and the later Product/Spec checkpointed run
+advanced beyond the original context-scout oversized-prompt,
+provider-timeout, and request-context-envelope failure class. Remaining
+Product/Spec proof blockers are tracked by
+`openclaw-convergence.parallel-frontier-resource-boundary-hardening`.
+
+The latest full Product/Spec Planning proof proved the route, source-prompt
+context indexing, Mission Ledger, Commitment Work Packets, scheduler graph,
+and Work Queue child sync, then failed before any role invocation because
+context scout provider calls were blocked by structured-adapter preflight.
+
+Failure evidence:
+
+- runtime job: `native-exec-06e162ea7066ac2e`
+- prompt hash:
+  `da653d2e62b859d27dd1ae409bcdec4ca638dac97c2b2338429651e7641731ea`
+- route: `agent_team.coding`
+- job type: `executor.agent_team`
+- Mission Ledger: valid, `clear_to_execute`
+- blocking commitments: 13
+- Commitment Work Packets: 13/13 produced
+- scheduler graph: 10 nodes, 14 edges
+- role invocation count: 0
+- first open gate: `context_supply`
+- final result: `needs_review`
+
+Root causes:
+
+- context scout role calls were still assembled as oversized monolithic
+  prompts. The failed calls were about 42 KB against a 32 KB
+  `local_semantic_extraction` policy bound.
+- the node lifecycle timeout was passed through as a provider-call timeout:
+  900 seconds requested against a 90 second policy hard timeout.
+- request-context repair diagnostics still pushed the model toward old
+  model-authored `newNodes`/runtime-envelope fields even though staged
+  scheduler policy requires runtime-owned graph compilation.
+
+New governing spec:
+
+- `docs/projects/execution-platform/specs/context-scout-execution-packet-and-request-context-repair.md`
+
+Completed DB Work Queue item:
+
+- `openclaw-convergence.context-scout-execution-packet-request-context-repair`
+  - Context Scout Execution Packet And Request-Context Repair Compiler.
+
+DB Work Queue update:
+
+- script: `scripts/execution-platform-record-context-scout-repair-queue.mjs`
+- artifact:
+  `.artifacts/execution-platform/context-scout-repair-work-queue-update.json`
+- artifact hash:
+  `sha256:598a63d5125eec668c964500523a118a3e4656b1a193ffebe30cf9157b9da6c4`
+- queue order:
+  later superseded by
+  `openclaw-convergence.parallel-frontier-resource-boundary-hardening` after
+  checkpointed proof evidence advanced past this failure class.
+
+Implemented changes:
+
+- production context-scout calls now use bounded runtime-compiled
+  `ContextScoutExecutionPacket`s instead of monolithic role prompts.
+- context-scout provider timeout is derived from model-task policy rather
+  than node lifecycle timeout.
+- request-context repair now takes semantic `requestContextIntent` and
+  runtime-compiles prerequisite context-scout nodes and `context_supplies`
+  edges.
+- scheduler runtime tools and Work Queue readback now surface context-scout
+  packet/tool/preflight state.
+
+Validation:
+
+- focused packet/compiler/tool tests passed.
+- `pnpm tsgo:fast` passed.
+- focused context-scout boundary replay tests hung in the existing replay
+  harness and were terminated; this is recorded as a replay caveat, not a
+  Product/Spec proof pass.
+
+## 2026-05-21 Runtime Node Readiness And Transition Engine
+
+Status: implemented, focused proof passed, and closed in the DB Work Queue.
+
+The prior full Product/Spec Planning proof did not produce implementation
+edits. It proved route, source-prompt context, Mission Ledger, Commitment Work
+Packets, scheduler graph persistence, and Work Queue child sync, but failed
+before role invocation.
+
+Failure evidence:
+
+- runtime job: `native-exec-eb9bbce0b5e01416`
+- graph: `team-run-native-exec-eb9bbce0b5e01416-runtime-work-graph`
+- graph node count: 8
+- graph edge count: 7
+- role invocation count: 0
+- first open gate: `context_supply`
+- accepted context target count: 0
+- missing context target count: 5
+- approved first node:
+  `g-8f66b09a8c-implementation-wu_workflow_definition_and_registration`
+- terminal reason codes:
+  `worker_adapter_threw`, `worker_adapter_threw:unclassified`
+
+Diagnosis: graph acceptance still bypassed node lifecycle readiness. The
+scheduler approved an implementation node before context/resource
+preconditions were satisfied. That is a generic runtime transition failure,
+not a Product/Spec-specific planning issue and not a Kimi/Qwen worker-quality
+issue.
+
+New governing spec:
+
+- `docs/projects/execution-platform/specs/runtime-node-readiness-transition-engine.md`
+
+Implementation completed:
+
+- scheduler runtime tools now include
+  `scheduler.evaluate_frontier_readiness`,
+  `scheduler.open_executable_frontier`,
+  `scheduler.record_node_transition`,
+  `scheduler.create_prerequisite_node`,
+  `scheduler.link_prerequisite_to_target`,
+  `scheduler.block_node_for_precondition`,
+  `scheduler.promote_work_intent_to_executable`, and transition-repair tools.
+- runtime node capabilities now declare lifecycle/precondition metadata,
+  including context, resource packet, snapshot, validation, authority,
+  evidence, budget, and parallelism requirements.
+- scheduler execution paths now pass through transition readiness before
+  worker invocation for `runAfterAdd`, direct `run_node`, closeout-node, and
+  parallel frontier execution.
+- direct production `approve_and_run_first_node` semantics are retired from
+  the live scheduler path; executable frontier/open/promotion tools are the
+  production route.
+- missing node-scoped context creates runtime-owned prerequisite context scout
+  nodes and context-supply edges instead of invoking implementation workers.
+
+Focused proof:
+
+- script:
+  `scripts/execution-platform-run-runtime-node-readiness-transition-proof.mjs`
+- artifact:
+  `.artifacts/execution-platform/runtime-node-readiness-transition/proof.json`
+- validated behavior: a run-after-add implementation work-intent node creates
+  context prerequisites, does not invoke the implementation executor, emits
+  transition readiness, and does not use `scheduler.approve_and_run_first_node`.
+
+Next DB Work Queue item:
+
+- `openclaw-convergence.active-queue-34` - Product/Spec Planning Workflow
+  Plugin Production Proof.
+
+DB Work Queue update:
+
+- script: `scripts/execution-platform-record-resource-materialization-queue.mjs`
+- artifact:
+  `.artifacts/execution-platform/resource-materialization-work-queue-update.json`
+- artifact hash:
+  `sha256:9ef593692e6e9ebbede6e400b25a8e792207a919ede80b043824596106faf1e3`
+- active queue head:
+  `openclaw-convergence.active-queue-34` at rank 88 after closing
+  `openclaw-convergence.runtime-node-readiness-transition-engine`.
+- stale generated diagnostic rows archived in this reconciliation: 9.
+
+## 2026-05-20 Model Task Classification And Resource Materialization
+
+Status: Model Task Classification And Utility Router v2, Generic Node
+Resource Materialization Layer, and Implementation Context Snapshot Compiler
+implemented. The next pre-proof blocker is Structured Tool/Schema Adapter
+Hardening.
+
+Implemented runtime wiring:
+
+- canonical task classes and policy registry are live in
+  `extensions/execution-platform/src/model-tasks/model-task-classification.ts`.
+- `model.call` runtime tool invocations now require task classification
+  metadata; runtime rejects unclassified model calls and provider calls for
+  `resource_materialization`.
+- Dynamic coding-team Codex JSON calls, Mission Ledger, packet rescue/review,
+  scheduler global reasoning, context synthesis, context synthesis repair,
+  role model calls, synthesis expansion, and non-Codex tool selection now
+  carry task-class call-site metadata.
+- runtime execution spans and Work Queue owner readback surface model task
+  class, policy ref, reasoning mode, parser mode, and bounded telemetry refs.
+- implementation nodes now pass through
+  `ImplementationContextPacket -> ImplementationTaskPacket ->
+CodingResourcePacket -> NodeExecutionPacket` before worker invocation.
+- runtime tools `context.resolve_target_refs`,
+  `repo.snapshot_target_files`,
+  `context.compile_implementation_context_packet`,
+  `implementation.compile_task_packet`, and
+  `implementation.evaluate_readiness` are registered as first-class
+  resource-materialization operations.
+
+Validation:
+
+- `pnpm test:file extensions/execution-platform/src/model-tasks/model-task-classification.test.ts extensions/execution-platform/src/observability/runtime-execution-span.test.ts`
+- `pnpm test:file extensions/execution-platform/src/codex-bridge/dynamic-agent-team-graph-runner.test.ts`
+- `pnpm exec tsx scripts/execution-platform-run-model-task-classification-proof.mjs`
+- focused `tsgo --ignoreConfig` lane over the new classifier/readback modules.
+
+Proof artifact:
+
+- `.artifacts/execution-platform/model-task-classification-proof.json`
+- `.artifacts/execution-platform/implementation-context-snapshot-compiler/proof.json`
+
+Validation note:
+
+- `pnpm tsgo:fast` currently fails before checking code with `TS5112`
+  because the wrapper forwards changed file paths while a repo
+  `tsconfig.json` is present.
+- Full root `tsc --noEmit --project tsconfig.json` currently loads 12,237
+  files and can exceed Node's default heap. This is a validation-script
+  boundary to repair separately, not evidence that this classifier pass failed.
+
+The next Product/Spec proof is blocked by a generic runtime boundary, not a
+Product/Spec-specific implementation detail. The failed proof had useful
+context handoff evidence but no worker-ready implementation resources, so the
+runtime correctly blocked before Kimi/Qwen/Codex implementation. The fix is a
+first-class resource materialization layer with canonical readiness state.
+
+New source-of-truth spec:
+`docs/projects/execution-platform/specs/model-task-classification-and-resource-materialization.md`.
+
+Additional resource-materialization wiring completed:
+
+- `NodeExecutionPacket` and `CodingResourcePacket` schemas, compiler,
+  readiness evaluator, and readback summary live in
+  `extensions/execution-platform/src/workflows/node-resource-materialization.ts`.
+- scheduler runtime tools now include `node.compile_execution_packet`,
+  `node.evaluate_readiness`, `node.record_readiness_blocker`,
+  `node.promote_ready_packet`, and `node.plan_resource_repair`.
+- production coding workflow policy requires node execution packets before
+  worker execution.
+- DynamicAgentTeamGraphRunner compiles and attaches node/resource packets
+  before implementation nodes call Kimi/Qwen/Codex workers.
+- Runtime Work Graph Scheduler blocks implementation/repair/test-authoring
+  worker execution when a ready packet is missing.
+- Work Queue owner readback now surfaces resource materialization state,
+  node packet ref, resource packet ref, readiness codes, blockers, and next
+  action.
+- `scripts/run-tsgo-fast.mjs` now generates a targeted tsconfig instead of
+  forwarding changed file paths beside `--project`, preventing TS5112.
+- `scripts/run-tsgo.mjs` now sets a bounded Node heap budget for tsgo so full
+  validation is not limited by Node's default heap.
+
+Validation:
+
+- `pnpm test:file extensions/execution-platform/src/workflows/node-resource-materialization.test.ts extensions/execution-platform/src/workflows/agent-team-coding-plugin.test.ts`
+- `pnpm test:file extensions/execution-platform/src/workflows/scheduler-runtime-tools.test.ts extensions/execution-platform/src/workflows/generic-orchestration-runtime.test.ts extensions/execution-platform/src/work-queue/execution-read-model.test.ts`
+- `pnpm test:file extensions/execution-platform/src/workflows/product-spec-planning-plugin.test.ts extensions/execution-platform/src/workflows/architecture-red-team-plugin.test.ts extensions/execution-platform/src/workflows/workflow-plugin.test.ts`
+- `node --test scripts/lib/tsgo-fast-target-config.test.mjs`
+- `pnpm exec tsx scripts/execution-platform-run-node-resource-materialization-proof.mjs`
+- `node scripts/run-tsgo-fast.mjs --noEmit`
+
+Proof artifact:
+
+- `.artifacts/execution-platform/node-resource-materialization/proof.json`
+
+Pre-proof queue block:
+
+1. Model Task Classification And Utility Router v2. **Complete.**
+2. Generic Node Resource Materialization Layer. **Complete 2026-05-20.**
+3. Implementation Context Snapshot Compiler. **Complete 2026-05-20.**
+4. Structured Tool/Schema Adapter Hardening. **Complete 2026-05-20.**
+5. Scheduler Readiness State Unification. **Complete 2026-05-20.**
+6. Product/Spec Replay Proof. **Complete 2026-05-21.**
+7. Full Product/Spec Planning Workflow Plugin Production Proof. **Next.**
+
+Queue reconciliation rule: generated Product/Spec proof children and direct
+runtime attempts are runtime diagnostics, not roadmap work. They should be
+archived or superseded through Work Queue lifecycle metadata and removed from
+the active roadmap lane before the next proof.
+
+DB Work Queue update:
+
+- script:
+
+Structured Tool/Schema Adapter Hardening is now implemented for fast-model
+structured calls:
+
+- `model.call` and OpenRouter role calls build explicit provider profiles and
+  preflight input/output/timeout policy before provider invocation.
+- no-content responses retry the same bounded semantic task without mutating
+  response format, reasoning mode, or prompt scope.
+- schema failures terminalize as field-specific repair diagnostics with
+  missing paths and preserved fields instead of whole-object regeneration.
+- Work Queue readback surfaces structured adapter profile, diagnostics, and
+  outcome alongside model task telemetry.
+- proof artifact:
+  `.artifacts/execution-platform/structured-tool-schema-adapter/proof.json`.
+
+Scheduler Readiness State Unification is now implemented:
+
+- `NodeReadinessState` is the canonical readiness object for node execution
+  gating, including phase, context/freshness/snapshot/validation/authority/
+  evidence sub-statuses, repair action, next transitions, blockers, and raw
+  storage flags.
+- scheduler worker invocation consumes canonical readiness and records it in
+  node metadata and progress events.
+- missing `NodeExecutionPacket` now still produces a bounded
+  `NodeReadinessState`, so readback and repair can explain exactly which
+  runtime-owned boundary is missing.
+- Work Queue readback exposes readiness state, status, phase, repair action,
+  sub-statuses, blockers, and transitions.
+- proof artifact:
+  `.artifacts/execution-platform/scheduler-readiness-state-unification/proof.json`.
+  `scripts/execution-platform-record-resource-materialization-queue.mjs`
+- artifact:
+  `.artifacts/execution-platform/resource-materialization-work-queue-update.json`
+- artifact hash:
+  `sha256:5d2a587f09d35882ea24c89c8ef46cde8d75aa026e55edad449938070c432970`
+- active Product/Spec proof-generated/direct child rows archived as
+  diagnostic runtime artifacts: 140
+- superseded overlap rows:
+  `openclaw-convergence.scheduler-first-node-scoped-context-supply`,
+  `openclaw-convergence.post-context-implementation-task-compiler`,
+  `openclaw-convergence.toolification-16-capability-policy-compiler-hardening`,
+  and `openclaw-convergence.non-codex-tool-using-worker`.
+- retained but reprioritized post-proof:
+  `openclaw-convergence.model-contract-compiler-consolidation` and
+  `openclaw-convergence.product-spec-proof-latency-parallelism`.
+
+## 2026-05-20 Post-Context Implementation Task Compiler
+
+Status: documented as the next Product/Spec proof blocker.
+
+The latest Product/Spec graph was valid as a high-level coding work-intent
+graph but invalid as an executable implementation graph. The first
+implementation node selected the Kimi file-edit lane while carrying broad
+directory-level target refs and no readable target file snapshots, so the
+implementation-readiness gate correctly blocked before worker invocation.
+
+Clarification:
+
+- `planning_orchestrator`, `web_research`, `planning_capsule`,
+  `human_planning_decision`, `action_graph_proposal`, and
+  `compile_runtime_plan` are Product/Spec workflow primitives to build. They
+  are not expected to execute as nodes inside the `agent_team.coding` graph
+  that is implementing Product/Spec Planning.
+- The coding-team graph must instead create implementation tasks that
+  explicitly build/register/test/read back those primitives.
+
+Next implementation target:
+
+- add a production post-context compiler that converts work-intent groups plus
+  accepted node-scoped context handoffs into file-resolved
+  `ImplementationTaskPacket`s.
+- create executable implementation/test/docs/readback nodes only from accepted
+  task packets.
+- replay Product/Spec from the node-scoped context boundary and verify that
+  Kimi/non-Codex receives concrete file snapshots, validation refs, allowed
+  edit scope, and evidence expectations.
+
+Spec:
+`docs/projects/execution-platform/specs/post-context-implementation-task-compiler.md`.
+
+## 2026-05-20 Scheduler-First Node-Scoped Context Supply
+
+Status: documented and entering implementation.
+
+Decision summary:
+
+- complex implementation workflows should create a draft work-intent graph
+  from accepted Commitment Work Packets before repo context scout fanout.
+- context scout should normally run per draft work node, not per high-level
+  Mission Ledger commitment.
+- global context synthesis is optional and should run only for cross-node
+  coordination needs.
+- implementation readiness remains the gate that prevents worker execution
+  without resolved target refs, snapshots or explicit new-file intent,
+  validation refs/discovery plan, commitment mapping, and context handoff.
+
+Spec:
+`docs/projects/execution-platform/specs/scheduler-first-node-scoped-context-supply.md`.
+
+## 2026-05-20 Packet And Implementation Readiness Boundary Repair
+
+Status: implemented, focused validation passed, and a narrow real-model lane
+passed. This pass did not rerun the full Product/Spec proof.
+
+Completed runtime wiring:
+
+- CommitmentWorkPacket authoring now uses the intended two-step Qwen protocol:
+  semantic packet content first, then targeted normalization for missing
+  semantic fields only. Runtime compiles the canonical packet envelope,
+  refs, raw-storage flags, and scheduler validation shape.
+- packet author telemetry now records phase, rescue usage, provider
+  diagnostics, input/output sizes, latency, retry evidence, and a clean-proof
+  expectation that normal Product/Spec packet proof should not require GPT-5.5
+  rescue unless explicitly accepted as a provider incident.
+- implementation readiness now blocks worker invocation when implementation
+  nodes lack readable target snapshots, validation refs, commitment mapping,
+  or an accepted context handoff summary. Missing/nonexistent target refs are
+  classified as upstream context failure, not Kimi/non-Codex worker failure.
+- scheduler repair for failed implementation readiness is runtime-compiled:
+  the runtime creates focused `context_scout` repair nodes and repair edges
+  from failed implementation evidence instead of asking the model to author
+  executable repair graph envelopes.
+- the non-Codex worker packet validator now preserves missing validation refs
+  and missing commitment mappings as readiness/context signals, while the
+  production runner remains responsible for blocking implementation before
+  worker invocation. This prevents duplicate worker-internal gates from
+  bypassing the worker loop's own context/validation derivation.
+- structural validation failure detection in the non-Codex worker rollback
+  path now checks substring signals correctly, so schema/contract edits that
+  fail parser/TypeScript-style validation can be rolled back and escalated.
+
+Real-model lane:
+
+- `pnpm exec tsx scripts/execution-platform-run-commitment-packet-real-model-lane.mjs`
+- model: `qwen/qwen3-coder-next`
+- result: succeeded
+- artifact:
+  `.artifacts/execution-platform/commitment-packet-real-model-lane-mpe1w7xq.json`
+- semantic-content call: 17.7s, 4.6 KB prompt, scheduler-valid semantic
+  packet content.
+- targeted-normalization call: 1.7s, no missing semantic fields after merge.
+- runtime-compiled packet passed `validateCommitmentWorkPacketsForScheduler`.
+
+Validation:
+
+- `pnpm test:file extensions/execution-platform/src/codex-bridge/dynamic-agent-team-graph-runner.test.ts extensions/execution-platform/src/workflows/runtime-work-graph-scheduler.test.ts extensions/execution-platform/src/workflows/mission-work-packets.test.ts`
+- `pnpm test:file extensions/execution-platform/src/codex-bridge/non-codex-tool-using-worker-loop.test.ts extensions/execution-platform/src/codex-bridge/model-agnostic-tool-worker-loop.test.ts extensions/execution-platform/src/codex-bridge/file-edit-worker-adapter.test.ts extensions/execution-platform/src/workflows/mission-work-packets.test.ts`
+- `pnpm tsgo:full`
+
+Next step: run the saved Product/Spec proof replay from the packet/context or
+implementation-readiness boundary, not a full restart, and inspect whether the
+new packets, readiness gate, and runtime-compiled context repair unblock real
+implementation nodes.
+
 ## 2026-05-20 Product/Spec Proof Repair Pass
 
 Status: implemented and focused validation passed. This pass repaired the
@@ -74,15 +1752,30 @@ Completed runtime wiring:
   requiring the canonical workflow runtime engine; they cannot claim generic
   queued-runner production success.
 - agent-team production execution remains scheduler-backed through the
-  gateway worker supervisor path and a canonical
-  `CodingTeamRuntimeJobRunner` public API alias; `AgentTeamQueuedRunner` is no
-  longer exported from the production runtime barrel.
+  gateway worker supervisor path and the canonical
+  `CodingTeamRuntimeJobRunner` public API; `AgentTeamQueuedRunner` has been
+  deleted rather than retained as a compatibility alias.
+- the generic `WorkflowQueuedRunner` migration shim, its tests, and its
+  retirement proof script have also been deleted; non-agent-team workflows
+  must use canonical workflow definitions/plugins and the runtime graph engine.
 - public runtime exports no longer expose retired proof-era adapters and
-  pilots: `WorkflowQueuedRunner`, `AgentTeamQueuedRunner`,
-  `runCodingTeamLivePilot`, legacy context-scout pilot helpers, or low-level
-  Kimi patch-JSON adapter classes.
-- proof scripts that still need retired/diagnostic fixtures import them
-  directly from test/proof files instead of through public runtime APIs.
+  pilots: queued runners, starter workflow live pilots, single-job quality
+  proof gates, legacy context-scout pilot helpers, or low-level Kimi
+  patch-JSON adapter classes.
+- obsolete proof scripts/tests and their support modules were removed:
+  coding-team live pilot, owner-work-batch, native/final-pathway submit proof,
+  old autonomy passes, sequential live agent-team runner, legacy semantic
+  intent router, old request compiler, context-scout pilot, and low-level
+  Kimi patch-JSON/microtask adapter lane. The cleanup was extended to remove
+  the generic workflow runner retirement proof, starter workflow live pilots,
+  research-to-coding handoff pilot, normal UX dogfood proof, single-job
+  coding-team quality proof, and old Kimi source-edit proof target.
+- `NativeExecutionRpcService` now requires the typed Front Door provider for
+  free-form execution submit; the legacy model-assisted/heuristic router is
+  not a production fallback.
+- the old `live-agent-team-runner.ts` module is now only the bounded
+  OpenRouter role-model client/types used by the scheduler-backed runtime; it
+  no longer contains the retired sequential team runner.
 - stale generated Product/Spec and middleware proof/helper rows were retired
   through the DB Work Queue generated-item lifecycle reconciliation path.
 - workflow definition/evidence-profile type drift was fixed; `pnpm tsgo:fast`
@@ -96,6 +1789,8 @@ Focused validation:
 - `pnpm test:file extensions/execution-platform/src/intent-front-door/router-tool-protocol.test.ts extensions/execution-platform/src/intent-front-door/router-runtime-tools.test.ts extensions/execution-platform/src/workflows/mission-contract-ledger.test.ts extensions/execution-platform/src/workflows/mission-work-packets.test.ts extensions/execution-platform/src/workflows/scheduler-runtime-tools.test.ts extensions/execution-platform/src/workflows/pre-proof-mission-packet-graph-lane.test.ts extensions/execution-platform/src/workflows/context-scout-tool-loop.test.ts extensions/execution-platform/src/workflows/runtime-work-graph-scheduler.test.ts extensions/execution-platform/src/workflows/validation-qa-runtime-tools.test.ts extensions/execution-platform/src/codex-bridge/non-codex-tool-using-worker-loop.test.ts extensions/execution-platform/src/codex-bridge/model-agnostic-tool-worker-loop.test.ts extensions/execution-platform/src/codex-bridge/closeout-finalization-runtime-tools.test.ts extensions/execution-platform/src/workflows/production-workflow-execution-factory.test.ts extensions/execution-platform/src/codex-bridge/runtime-api-export-hygiene.test.ts`
 - `pnpm tsgo:fast`
 - `node scripts/execution-platform-run-code-intelligence-model-usability-proof.mjs`
+- compatibility retirement source audit across `extensions/execution-platform/src`
+  and `scripts`: passed with zero hard blocks.
 
 Narrow model lane proof result:
 
@@ -176,26 +1871,8 @@ DB Work Queue closeout:
   `closed`
 
 Next pre-Product/Spec item:
-`openclaw-convergence.coding-leap-06-fallback-compat-retirement` -
-Fallback And Compatibility Retirement.
-
-Diagnosis recorded for the next item:
-
-- production gateway/chat/host routes still expose queued-runner construction
-  beside the canonical scheduler-backed path;
-- `AgentTeamQueuedRunner` still contains static single-job proof branches,
-  legacy context-scout pilot artifacts, fallback scope defaults, and degraded
-  closeout construction;
-- public runtime barrels still export retired/proof-era adapters and pilots;
-- compatibility readback maps must remain registry-derived and be regression
-  tested against drift;
-- proof/replay harnesses must be isolated from production lifecycle closeout;
-- stale generated Product/Spec proof/helper rows must be retired through
-  generated-item lifecycle policy and prevented from surviving as active owner
-  roadmap work;
-- the standing `pnpm tsgo:fast` workflow-definition/evidence-profile type
-  errors are now part of this queue item, because the Product/Spec proof needs
-  full TypeScript validation rather than another focused-test exception.
+`openclaw-convergence.model-contract-compiler-consolidation` - Model Contract
+Compiler Consolidation And Schema Boundary Unification.
 
 ## 2026-05-19 Worker-Internal Streaming And Operator Readback
 
@@ -906,8 +2583,8 @@ Major changes:
 
 - Product/Spec Planning is documented as a workflow plugin on
   GenericOrchestrationRuntime, not a bespoke planning runner.
-- WorkflowQueuedRunner/facade compatibility is documented as historical or
-  diagnostic only, never a production success path.
+- deleted generic workflow runner/facade compatibility is documented as
+  historical only, never a production success path.
 - the proof framework now includes executor/subject routing, source-prompt
   parity, Commitment Work Packet review, context synthesis, staged scheduler
   tool protocol, generic node evidence claims, completion review, and boundary
@@ -1106,7 +2783,7 @@ Completed active DB Work Queue item:
 
 Runtime/code evidence:
 
-- `ImplementationTaskPacket v2` is now the canonical scheduler-to-worker
+- `ImplementationTaskPacket v3` is now the canonical scheduler-to-worker
   implementation handoff for Kimi/non-Codex lanes.
 - production coding runner builds the packet from scheduler node metadata,
   context handoff refs, source-prompt excerpt refs, context-synthesis refs,
@@ -1849,9 +3526,9 @@ production gate for workflow execution/readback.
 - production workflow readiness requires scheduler-backed engine mode,
   Runtime Tool Kernel availability, executor coverage, workflow evidence
   profile, model-authored closeout, and accepted completion review.
-- `WorkflowQueuedRunner` records workflow definition resolution, then refuses
-  scheduler-backed or migration-needed workflows instead of completing from a
-  generic path.
+- the deleted generic workflow queued runner no longer participates in
+  workflow definition resolution; canonical workflow definitions/plugins and
+  the runtime graph engine own production workflow dispatch.
 - Work Queue readback now surfaces workflow definition, runtime workflow
   engine readiness, completion review, and completion-review gate state.
 - the runtime toolification registry marks
@@ -1917,8 +3594,9 @@ The first-principles workflow architecture is now explicit:
   not a workflow brain.
 - `DynamicAgentTeamGraphRunner` should be decomposed into the
   `agent_team.coding` workflow plugin.
-- `WorkflowQueuedRunner` should lose production completion behavior and
-  become a migration shim or test-only compatibility surface.
+- the old generic workflow queued runner should not exist as a migration shim
+  or test-only compatibility surface; production and replay evidence must
+  exercise the canonical workflow runtime.
 - graph nodes continue to be executed by individual agents, workers, tools,
   and human task adapters.
 - proof scripts should become black-box production observers rather than
@@ -2250,11 +3928,11 @@ Live dedicated-DB proof passed:
 - graph:
   `non-codex-file-edit-worker-1778895735946-graph`
 - source edits:
-  `extensions/execution-platform/src/codex-bridge/kimi-live-source-edit-proof.ts`
+  `extensions/execution-platform/src/codex-bridge/non-codex-tool-using-worker-loop.ts`
   and
-  `extensions/execution-platform/src/codex-bridge/kimi-live-source-edit-proof.test.ts`
+  `extensions/execution-platform/src/codex-bridge/non-codex-tool-using-worker-loop.test.ts`
 - validation:
-  `pnpm test:file extensions/execution-platform/src/codex-bridge/kimi-live-source-edit-proof.test.ts`
+  `pnpm test:file extensions/execution-platform/src/codex-bridge/non-codex-tool-using-worker-loop.test.ts`
 - DB Work Queue closeout:
   `openclaw-convergence.active-queue-21` closed from accepted runtime
   closeout evidence
@@ -2304,9 +3982,9 @@ Live OpenRouter/Kimi proof passed:
 - fresh proof field: `toolUsingWorkerTraceRefs46003efd`
 - worker phase events: 15
 - source edits:
-  `extensions/execution-platform/src/codex-bridge/kimi-live-source-edit-proof.ts`
+  `extensions/execution-platform/src/codex-bridge/non-codex-tool-using-worker-loop.ts`
   and
-  `extensions/execution-platform/src/codex-bridge/kimi-live-source-edit-proof.test.ts`
+  `extensions/execution-platform/src/codex-bridge/non-codex-tool-using-worker-loop.test.ts`
 - validation refs:
   `validation://non-codex-tool-using-worker/e95a54c58bd130b4` and
   `validation://non-codex-tool-using-worker/576a624d164aec4c`
@@ -2464,9 +4142,9 @@ Live dedicated-DB proof passed:
 - graph:
   `non-codex-worker-loop-v2-1778898154883-graph`
 - source edits:
-  `extensions/execution-platform/src/codex-bridge/kimi-live-source-edit-proof.ts`
+  `extensions/execution-platform/src/codex-bridge/non-codex-tool-using-worker-loop.ts`
   and
-  `extensions/execution-platform/src/codex-bridge/kimi-live-source-edit-proof.test.ts`
+  `extensions/execution-platform/src/codex-bridge/non-codex-tool-using-worker-loop.test.ts`
 - validation refs:
   `validation://non-codex-worker-loop-v2/e95a54c58bd130b4` and
   `validation://non-codex-worker-loop-v2/576a624d164aec4c`
@@ -2587,21 +4265,25 @@ Mission Ledger commitments, context scout handoff, and implementation workers.
 Completed source/test changes:
 
 - `CommitmentWorkPacket`, `ContextHandoffPacket`, and
-  `ImplementationTaskPacket v2` contracts.
+  `ImplementationTaskPacket v3` contracts.
 - scheduler passes commitment work packets to the orchestrator and traces the
   packet compile step.
 - Kimi/non-Codex implementation receives an implementation task packet with
   exact objective, target refs, context refs, validation refs, acceptance
   criteria, and commitment ids.
-- Kimi diagnostics now expose packet/target/criteria presence plus
-  diff/search-replace/context-request shape.
+- historical Kimi patch-JSON diagnostics exposed packet/target/criteria
+  presence plus diff/search-replace/context-request shape; that retired lane
+  has since been replaced by the model-agnostic non-Codex tool worker loop.
 - graph edge persistence rejects unknown node refs before DB write and records
   symbolic future milestones as metadata instead of invalid foreign keys.
 
 Validation:
 
 - `pnpm test:file extensions/execution-platform/src/workflows/mission-work-packets.test.ts`
-- `pnpm test:file extensions/execution-platform/src/codex-bridge/kimi-file-implementation-adapter.test.ts`
+- retired validation:
+  `pnpm test:file extensions/execution-platform/src/codex-bridge/kimi-file-implementation-adapter.test.ts`
+  applied to the deleted patch-JSON lane and is no longer a current production
+  gate.
 - `pnpm test:file extensions/execution-platform/src/workflows/runtime-work-graph-scheduler.test.ts`
 - `pnpm tsgo:full`
 
@@ -2698,3 +4380,98 @@ New DB Work Queue sequence:
 
 Items 1-3 should run before the next Product/Spec Planning proof. Product/Spec
 Planning remains the first live proof of the generic runtime spine.
+
+## 2026-05-22 Product/Spec Proof Pre-Implementation Fixes
+
+Latest Product/Spec checkpointed proof evidence:
+
+- runtime job: `native-exec-e2a754d03ba122a2`
+- result: `needs_review`
+- failure class: `worker_adapter_threw:artifact_metadata_limit`
+- no implementation edits landed.
+- scheduler accepted a 50-node / 52-edge graph and reached resource
+  materialization before failing.
+
+Production fixes before the next proof:
+
+- graph metadata resource summaries use schema-safe metric keys such as
+  `targetFileSnapshotCount` and `targetFileSnapshotMax`; body-like keys remain
+  rejected in graph metadata.
+- parallel frontier has a systemic failure guard that halts repeated sibling
+  branch exceptions and surfaces one root cause instead of churning through
+  equivalent branches.
+- scheduler conflict domains now distinguish implementation/write refs from
+  validation-command refs, so shared validation commands do not serialize
+  unrelated implementation tasks as file writes.
+- context scout defaults are locked to the qualified local-context model
+  policy (`qwen/qwen3-coder-next`) unless a future provider profile proves
+  another model suitable for that role.
+
+Next proof expectations:
+
+- resource materialization should not fail on graph metadata count summaries.
+- parallel frontier readback should show branch id, node id, blocker, schema
+  path, readiness ref, selected nodes, and typed conflict domains.
+- adapter failure must terminalize branch truth clearly instead of looking like
+  an indefinitely pending live job.
+
+Follow-up proof rerun:
+
+- runtime job: `native-exec-5a786db6b86b6c6d`
+- wall time: 306s
+- submit duration: 96.2s; front-door GPT-5.5 latency: 45.3s.
+- Mission Ledger succeeded.
+- commitment packet authoring stopped at 13/14 completed packets; no graph or
+  implementation work ran.
+- root cause was a task-policy mismatch: targeted packet normalization used
+  the semantic author's 8,000 token request against the
+  `schema_normalization` policy, causing a structured-adapter preflight block.
+- fix: targeted packet normalization now has its own 2,400 token / 30s
+  budget and runtime worker lifecycle treats packet fanout failure as a
+  terminal `needs_review` boundary, not an unclassified retry.
+
+Second proof rerun:
+
+- runtime job: `native-exec-560e1b96c47fae7a`
+- wall time: 1,346s; result: `needs_review`.
+- Mission Ledger passed, 12/12 commitment packets completed, and 13
+  context-scout role invocations executed.
+- graph reached 82 nodes / 86 edges and produced implementation context,
+  resource materialization, and implementation task packet artifacts.
+- no implementation edits landed.
+- terminal blocker:
+  `execution.generic_orchestration_runtime_result` metadata exceeded 65,536
+  bytes because it embedded the full scheduler result.
+- fix: generic orchestration runtime result metadata is now a bounded manifest
+  with capped refs/counts and scheduler summary only; full scheduler state
+  remains in graph/progress artifacts.
+
+## 2026-05-23 Execution Intent / Evidence Mode Dispatch
+
+Pre-proof dispatch hardening is implemented for the after-resource boundary.
+
+- Added canonical execution intent and evidence mode contracts.
+- Staged scheduler protocol now asks the model for `executionIntent`; runtime
+  derives evidence mode and rejects intent/capability conflicts.
+- Post-context implementation task packets, coding resource packets,
+  `NodeExecutionPacket`, and `NodeReadinessState` now carry execution intent
+  and evidence mode.
+- File-edit worker readiness requires `source_edit` plus
+  `changed_file_evidence`.
+- Product/Spec after-resource replay now reports stale persisted readiness
+  when recomputed readiness blocks a node.
+
+Validation:
+
+- `pnpm test:file extensions/execution-platform/src/workflows/mission-work-packets.test.ts extensions/execution-platform/src/workflows/node-resource-materialization.test.ts extensions/execution-platform/src/workflows/orchestrator-graph-decision.test.ts extensions/execution-platform/src/workflows/implementation-context-snapshot-compiler.test.ts extensions/execution-platform/src/workflows/context-broker.test.ts`
+- `pnpm tsgo:fast ...execution-intent/resource-materialization/scheduler changed files`
+- after-resource replay:
+  `native-exec-e968a6a61f5d5293` /
+  `product-spec-replay-b56cc1b6440c2443` returned `needs_review` with zero
+  executable edit-required nodes and explicit blockers for missing execution
+  intent / changed-file evidence.
+
+Work Queue:
+
+- `openclaw-convergence.execution-intent-evidence-mode-worker-dispatch` is
+  active immediately before `openclaw-convergence.active-queue-34`.

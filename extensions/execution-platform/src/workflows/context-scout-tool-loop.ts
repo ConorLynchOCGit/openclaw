@@ -53,6 +53,9 @@ export const CONTEXT_SCOUT_TOOL_LOOP_TOOL_IDS = [
   "context_scout.review_sufficiency",
   "context_scout.emit_handoff_packet",
   "context_scout.request_repair",
+  "context_scout.build_execution_packet",
+  "context_scout.request_repo_context",
+  "context_scout.classify_context_blocker",
   ...CODE_INTELLIGENCE_RUNTIME_TOOL_IDS,
 ] as const;
 
@@ -146,6 +149,24 @@ export const ContextScoutRejectedRefSchema = z
 
 export type ContextScoutRejectedRef = z.infer<typeof ContextScoutRejectedRefSchema>;
 
+export const ContextSufficiencyConsumerWaiverSchema = z
+  .object({
+    consumerNodeId: boundedString(180),
+    workUnitId: z.string().trim().max(180).nullable().default(null),
+    limitation: boundedString(700),
+    nonblockingRationale: boundedString(900),
+    evidenceRefs: stringList(12, 320).default([]),
+    rawPromptStored: z.literal(false),
+    rawResponseStored: z.literal(false),
+    rawProviderLogStored: z.literal(false),
+    rawToolLogStored: z.literal(false),
+  })
+  .strict();
+
+export type ContextSufficiencyConsumerWaiver = z.infer<
+  typeof ContextSufficiencyConsumerWaiverSchema
+>;
+
 export const ContextSufficiencyReviewSchema = z
   .object({
     reviewSource: z.enum(["model_authored_context_scout_output", "model_authored_repair_review"]),
@@ -179,6 +200,7 @@ export const ContextSufficiencyReviewSchema = z
     // "runtime_supplied". Triggers scheduler rejection of implementation
     // graph selection regardless of other flags.
     runtimeOnlyContextDetected: z.boolean().default(false),
+    consumerSpecificWaivers: z.array(ContextSufficiencyConsumerWaiverSchema).max(24).default([]),
     rawFileContentStored: z.literal(false),
     rawPromptStored: z.literal(false),
     rawResponseStored: z.literal(false),
@@ -239,6 +261,7 @@ const RUNTIME_VERIFIED_FALLBACK_LIMITATION =
 
 export function contextScoutSufficiencyAllowsImplementation(
   review: ContextSufficiencyReview,
+  input?: { consumerNodeId?: string | null; workUnitId?: string | null },
 ): boolean {
   if (!review.requiresSubstantiveContext) {
     return false;
@@ -249,19 +272,31 @@ export function contextScoutSufficiencyAllowsImplementation(
   if (review.status !== "accepted" && review.status !== "accepted_with_limitations") {
     return false;
   }
+  if (review.runtimeOnlyContextDetected || !review.hasNonRuntimeContextSource) {
+    return false;
+  }
   // Scheduler gating: implementation selection depends on substantive accepted context
   if (!review.sufficientForValidation) {
     return false;
   }
-  // Hard reject if any missingInformation indicates runtime-only context without model-authored evidencence
-  const hasRuntimeOnlyGap = review.missingInformation.some(
-    (info) => info.includes("runtime_supplied") || info.includes("no_model_authored_evidence"),
-  );
-  if (hasRuntimeOnlyGap) {
-    return false;
+  if (review.status === "accepted_with_limitations") {
+    const consumerNodeId = input?.consumerNodeId ?? null;
+    const workUnitId = input?.workUnitId ?? null;
+    const hasConsumerWaiver = review.consumerSpecificWaivers.some((waiver) => {
+      const consumerMatches =
+        waiver.consumerNodeId === "all" ||
+        (consumerNodeId !== null && waiver.consumerNodeId === consumerNodeId);
+      const workUnitMatches = !waiver.workUnitId || !workUnitId || waiver.workUnitId === workUnitId;
+      return consumerMatches && workUnitMatches && waiver.evidenceRefs.length > 0;
+    });
+    if (!hasConsumerWaiver) {
+      return false;
+    }
   }
-  // Hard reject if review source is not model_authored (e.g., fallback or hybrid)
-  if (review.reviewSource !== "model_authored_context_scout_output") {
+  if (
+    review.reviewSource !== "model_authored_context_scout_output" &&
+    review.reviewSource !== "model_authored_repair_review"
+  ) {
     return false;
   }
   return true;
@@ -281,26 +316,18 @@ export function inspectContextScoutModelAuthoredHandoffSubstance(input: {
   reasonCodes: string[];
 } {
   const recommendedEditPoints = input.recommendedEditPoints ?? [];
-  const modelAuthoredEditPoints = recommendedEditPoints.filter(
-    (point) => !point.includes("runtime_verified_context"),
-  ).length;
   const nonSummarySubstanceSignalCount = [
     (input.existingPatterns?.length ?? 0) > 0,
     (input.risks?.length ?? 0) > 0,
-    (input.validationSuggestions?.length ?? 0) >= 2,
-    modelAuthoredEditPoints >= 2,
+    (input.validationSuggestions?.length ?? 0) > 0,
+    recommendedEditPoints.length > 0,
   ].filter(Boolean).length;
   const summaryLength = (input.modelAuthoredSummary ?? "").trim().length;
-  const hasModelAuthoredHandoffSubstance =
-    (summaryLength >= 220 && nonSummarySubstanceSignalCount >= 1) ||
-    (summaryLength >= 140 && nonSummarySubstanceSignalCount >= 2);
+  const hasModelAuthoredHandoffSubstance = summaryLength > 0 && nonSummarySubstanceSignalCount > 0;
   const missingFieldPaths = [
-    ...(summaryLength < 140 ? ["handoffSummaryForImplementation"] : []),
+    ...(summaryLength === 0 ? ["handoffSummaryForImplementation"] : []),
     ...(nonSummarySubstanceSignalCount === 0
       ? ["existingPatterns", "risks", "validationSuggestions", "recommendedEditPoints"]
-      : []),
-    ...(summaryLength < 220 && nonSummarySubstanceSignalCount < 2
-      ? ["handoffSummaryForImplementation.detail"]
       : []),
   ].slice(0, 8);
   return {
@@ -723,6 +750,7 @@ export function buildContextScoutToolLoopRun(input: {
   codeIntelligenceImpactRefs?: string[];
   codeIntelligenceSemanticModes?: string[];
   codeIntelligenceLimitations?: string[];
+  consumerSpecificWaivers?: ContextSufficiencyConsumerWaiver[];
   contextHandoffPacketRef?: string | null;
   contextHandoffPacket?: ContextHandoffPacket | null;
   modelAuthoredSummary: string;
@@ -781,6 +809,14 @@ export function buildContextScoutToolLoopRun(input: {
     summaryLength > 0 &&
     coversExpectedRepoArea &&
     hasModelAuthoredHandoffSubstance;
+  const hasNonRuntimeContextSource = verifiedFileRefs.some(
+    (ref) => ref.acceptedContextSource !== "runtime_supplied" && !ref.runtimeSuppliedRefRejected,
+  );
+  const runtimeOnlyContextDetected =
+    verifiedFileRefs.length > 0 &&
+    verifiedFileRefs.every(
+      (ref) => ref.acceptedContextSource === "runtime_supplied" || ref.runtimeSuppliedRefRejected,
+    );
   const sufficiencyStatus: ContextSufficiencyReview["status"] = structurallyUsable
     ? usedRuntimeVerifiedFallback || usedStructuralCodeIntelligenceOnly
       ? "accepted_with_limitations"
@@ -871,6 +907,9 @@ export function buildContextScoutToolLoopRun(input: {
     substantiveContextVerified: verifiedFileRefs.some(
       (ref) => ref.acceptedContextSource !== "runtime_supplied" && !ref.runtimeSuppliedRefRejected,
     ),
+    hasNonRuntimeContextSource,
+    runtimeOnlyContextDetected,
+    consumerSpecificWaivers: input.consumerSpecificWaivers ?? [],
     stopIfMissingRefs: uniqueStrings(structurallyUsable ? [] : input.commitmentWorkPacketRefs, 8),
     rawFileContentStored: false,
     rawPromptStored: false,
@@ -960,16 +999,35 @@ export function buildContextScoutToolLoopRun(input: {
 
 export function validateContextScoutToolLoopForImplementation(
   run: ContextScoutToolLoopRun | null | undefined,
+  input?: { consumerNodeId?: string | null; workUnitId?: string | null },
 ): { valid: boolean; reasonCodes: string[] } {
   if (!run) {
     return { valid: false, reasonCodes: ["context_scout_tool_loop_missing"] };
   }
   const reasonCodes: string[] = [];
-  if (!contextScoutSufficiencyAllowsImplementation(run.sufficiencyReview)) {
+  if (!contextScoutSufficiencyAllowsImplementation(run.sufficiencyReview, input)) {
     reasonCodes.push("context_scout_sufficiency_not_accepted");
   }
   if (run.sufficiencyReview.status === "accepted_with_limitations") {
     reasonCodes.push("context_scout_accepted_with_limitations");
+    const consumerNodeId = input?.consumerNodeId ?? null;
+    const workUnitId = input?.workUnitId ?? null;
+    const hasConsumerWaiver = run.sufficiencyReview.consumerSpecificWaivers.some((waiver) => {
+      const consumerMatches =
+        waiver.consumerNodeId === "all" ||
+        (consumerNodeId !== null && waiver.consumerNodeId === consumerNodeId);
+      const workUnitMatches = !waiver.workUnitId || !workUnitId || waiver.workUnitId === workUnitId;
+      return consumerMatches && workUnitMatches && waiver.evidenceRefs.length > 0;
+    });
+    if (!hasConsumerWaiver) {
+      reasonCodes.push("context_scout_accepted_with_limitations_consumer_waiver_missing");
+    }
+  }
+  if (run.sufficiencyReview.runtimeOnlyContextDetected) {
+    reasonCodes.push("context_scout_runtime_only_context_detected");
+  }
+  if (!run.sufficiencyReview.hasNonRuntimeContextSource) {
+    reasonCodes.push("context_scout_non_runtime_context_source_missing");
   }
   if (run.sufficiencyReview.status === "needs_review_nonblocking") {
     reasonCodes.push("context_scout_needs_review_nonblocking");
@@ -1034,6 +1092,18 @@ export function summarizeContextScoutToolLoopRun(run: ContextScoutToolLoopRun): 
       .slice(0, 40),
     contextHandoffPacketRef: run.contextHandoffPacketRef,
     sufficiencyStatus: run.sufficiencyReview.status,
+    hasNonRuntimeContextSource: run.sufficiencyReview.hasNonRuntimeContextSource,
+    runtimeOnlyContextDetected: run.sufficiencyReview.runtimeOnlyContextDetected,
+    consumerSpecificWaivers: run.sufficiencyReview.consumerSpecificWaivers.map((waiver) => ({
+      consumerNodeId: waiver.consumerNodeId,
+      workUnitId: waiver.workUnitId,
+      limitation: waiver.limitation,
+      evidenceRefs: waiver.evidenceRefs,
+      rawPromptStored: false,
+      rawResponseStored: false,
+      rawProviderLogStored: false,
+      rawToolLogStored: false,
+    })),
     sufficiencySummary: run.sufficiencyReview.reviewerSummary,
     missingInformation: run.sufficiencyReview.missingInformation,
     repairInstructions: run.sufficiencyReview.repairInstructions,

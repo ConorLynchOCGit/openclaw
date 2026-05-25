@@ -4,6 +4,7 @@ import { buildAgentTeamCodingWorkflowPlugin } from "./agent-team-coding-plugin.t
 import {
   GenericOrchestrationRuntime,
   GENERIC_ORCHESTRATION_RUNTIME_ENGINE_ID,
+  genericOrchestrationRuntimeResultArtifactMetadata,
 } from "./generic-orchestration-runtime.ts";
 import type { RuntimeWorkGraphNodeExecutor } from "./runtime-work-graph-scheduler.ts";
 import { requireCanonicalWorkflowDefinition } from "./workflow-definition-registry.ts";
@@ -112,6 +113,47 @@ describe("GenericOrchestrationRuntime", () => {
     });
     expect(result.reasonCodes).toContain("generic_orchestration_runtime_scheduler_executed");
     expect(result.reasonCodes).toContain("generic_orchestration_runtime_graph_evidence_present");
+  });
+
+  it("stores generic runtime result as a bounded manifest instead of inline scheduler state", async () => {
+    const runtime = new GenericOrchestrationRuntime({
+      graphs: {} as never,
+      runtimeToolKernel: {} as never,
+    });
+    const result = await runtime.run({
+      runtimeJob,
+      workflowId: "agent_team.coding",
+      executors: codingExecutors(),
+      runScheduler: async () => ({
+        status: "needs_review",
+        graphId: "graph-large",
+        iterations: 24,
+        executedNodeIds: Array.from({ length: 150 }, (_, index) => `executed-${index}`),
+        addedNodeIds: Array.from({ length: 150 }, (_, index) => `added-${index}`),
+        decisionRefs: Array.from({ length: 150 }, (_, index) => `decision-${index}`),
+        reasonCodes: Array.from({ length: 150 }, (_, index) => `reason-${index}`),
+        missionLedger: null,
+        rawPromptStored: false,
+        rawResponseStored: false,
+        rawProviderLogStored: false,
+        workQueueLifecycleMutated: false,
+      }),
+    });
+
+    const metadata = genericOrchestrationRuntimeResultArtifactMetadata(result) as Record<
+      string,
+      unknown
+    >;
+
+    expect(metadata.schedulerResult).toBeUndefined();
+    expect(metadata.schedulerResultStoredInline).toBe(false);
+    expect((metadata.executedNodeIds as string[]).length).toBe(100);
+    expect(metadata.executedNodeCount).toBe(150);
+    expect((metadata.addedNodeIds as string[]).length).toBe(100);
+    expect(metadata.addedNodeCount).toBe(150);
+    expect((metadata.decisionRefs as string[]).length).toBe(100);
+    expect(metadata.decisionRefCount).toBe(150);
+    expect(Buffer.byteLength(JSON.stringify(metadata), "utf8")).toBeLessThan(65_536);
   });
 
   it("does not call the scheduler when readiness fails", async () => {

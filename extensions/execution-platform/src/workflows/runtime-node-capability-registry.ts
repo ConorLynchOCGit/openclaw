@@ -1,4 +1,5 @@
 import type { JsonValue } from "../runtime-job-repository.ts";
+import type { ExecutionIntent } from "./execution-intent.ts";
 import { TEAM_GRAPH_NODE_KINDS, type TeamGraphNodeKind } from "./runtime-work-graph.ts";
 
 export const RUNTIME_NODE_CAPABILITY_PHASES = [
@@ -43,6 +44,54 @@ export type RuntimeNodeCapability = {
   workflowId: string;
   supportedWorkflowIds: string[];
   supportedPhases: RuntimeNodeCapabilityPhase[];
+  supportedExecutionIntents: ExecutionIntent[];
+  defaultExecutionIntent: ExecutionIntent | null;
+  validLifecyclePhases: Array<
+    | "work_intent"
+    | "context_required"
+    | "context_in_progress"
+    | "context_ready"
+    | "resources_required"
+    | "resource_materialization_in_progress"
+    | "resources_ready"
+    | "executable"
+    | "running"
+    | "completed"
+    | "needs_repair"
+    | "needs_review"
+    | "failed"
+    | "canceled"
+  >;
+  requiresContext: boolean;
+  requiredContextKinds: string[];
+  requiredResourcePacketKind: string | null;
+  requiredNodeExecutionPacket: boolean;
+  requiredSnapshotKinds: string[];
+  requiredValidationKinds: string[];
+  requiredAuthorityScopes: string[];
+  requiredEvidenceClaimKinds: string[];
+  canRunAsWorkIntent: boolean;
+  canRunAsExecutable: boolean;
+  defaultRepairTransition:
+    | "request_context_repair"
+    | "compile_node_execution_packet"
+    | "compile_validation_plan"
+    | "repair_authority_scope"
+    | "repair_evidence_expectations"
+    | "split_work_unit"
+    | "ask_human"
+    | "needs_review";
+  defaultBlockedTransition:
+    | "request_context_repair"
+    | "compile_node_execution_packet"
+    | "compile_validation_plan"
+    | "repair_authority_scope"
+    | "repair_evidence_expectations"
+    | "split_work_unit"
+    | "ask_human"
+    | "needs_review";
+  budgetPolicyRef: string;
+  parallelismPolicyRef: string;
   displayName: string;
   modelPolicyRefs: string[];
   modelQualificationProfileIds: string[];
@@ -129,6 +178,23 @@ export type ProviderCapabilityProfile = {
   workflowId: string;
   supportedWorkflowIds: string[];
   supportedPhases: RuntimeNodeCapabilityPhase[];
+  supportedExecutionIntents: RuntimeNodeCapability["supportedExecutionIntents"];
+  defaultExecutionIntent: RuntimeNodeCapability["defaultExecutionIntent"];
+  validLifecyclePhases: RuntimeNodeCapability["validLifecyclePhases"];
+  requiresContext: boolean;
+  requiredContextKinds: string[];
+  requiredResourcePacketKind: string | null;
+  requiredNodeExecutionPacket: boolean;
+  requiredSnapshotKinds: string[];
+  requiredValidationKinds: string[];
+  requiredAuthorityScopes: string[];
+  requiredEvidenceClaimKinds: string[];
+  canRunAsWorkIntent: boolean;
+  canRunAsExecutable: boolean;
+  defaultRepairTransition: RuntimeNodeCapability["defaultRepairTransition"];
+  defaultBlockedTransition: RuntimeNodeCapability["defaultBlockedTransition"];
+  budgetPolicyRef: string;
+  parallelismPolicyRef: string;
   roleClass: RuntimeNodeCapability["roleClass"];
   roleId: string;
   displayName: string;
@@ -195,32 +261,49 @@ export type ProviderCapabilityProfileRegistry = {
   rawProviderLogStored: false;
 };
 
-function capability(
-  input: Omit<
-    RuntimeNodeCapability,
-    | "rawPromptStored"
-    | "rawResponseStored"
-    | "rawProviderLogStored"
-    | "idealTaskSize"
-    | "supportedWorkflowIds"
-    | "supportedPhases"
-    | "maxTaskSize"
-    | "contextCapacity"
-    | "expectedStrength"
-    | "expectedWeaknesses"
-    | "estimatedTokenCostClass"
-    | "expectedDollarCostClass"
-    | "parallelizable"
-    | "retryable"
-    | "repairable"
-    | "failureModes"
-    | "evidenceProducedKinds"
-    | "commitmentFitKinds"
-    | "defaultBudgetPolicy"
-    | "modelQualificationProfileIds"
-    | "productionSelectionRequiresQualification"
-  >,
-): RuntimeNodeCapability {
+type RuntimeNodeCapabilitySeed = Omit<
+  RuntimeNodeCapability,
+  | "rawPromptStored"
+  | "rawResponseStored"
+  | "rawProviderLogStored"
+  | "idealTaskSize"
+  | "supportedWorkflowIds"
+  | "supportedPhases"
+  | "supportedExecutionIntents"
+  | "defaultExecutionIntent"
+  | "maxTaskSize"
+  | "contextCapacity"
+  | "expectedStrength"
+  | "expectedWeaknesses"
+  | "estimatedTokenCostClass"
+  | "expectedDollarCostClass"
+  | "parallelizable"
+  | "retryable"
+  | "repairable"
+  | "failureModes"
+  | "evidenceProducedKinds"
+  | "commitmentFitKinds"
+  | "defaultBudgetPolicy"
+  | "modelQualificationProfileIds"
+  | "productionSelectionRequiresQualification"
+  | "validLifecyclePhases"
+  | "requiresContext"
+  | "requiredContextKinds"
+  | "requiredResourcePacketKind"
+  | "requiredNodeExecutionPacket"
+  | "requiredSnapshotKinds"
+  | "requiredValidationKinds"
+  | "requiredAuthorityScopes"
+  | "requiredEvidenceClaimKinds"
+  | "canRunAsWorkIntent"
+  | "canRunAsExecutable"
+  | "defaultRepairTransition"
+  | "defaultBlockedTransition"
+  | "budgetPolicyRef"
+  | "parallelismPolicyRef"
+>;
+
+function capability(input: RuntimeNodeCapabilitySeed): RuntimeNodeCapability {
   if (!TEAM_GRAPH_NODE_KINDS.includes(input.graphNodeKind)) {
     throw new Error(`capability_graph_node_kind_invalid:${input.capabilityId}`);
   }
@@ -228,6 +311,23 @@ function capability(
     ...input,
     supportedWorkflowIds: [input.workflowId],
     supportedPhases: inferSupportedPhases(input),
+    supportedExecutionIntents: inferSupportedExecutionIntents(input),
+    defaultExecutionIntent: inferDefaultExecutionIntent(input),
+    validLifecyclePhases: inferValidLifecyclePhases(input),
+    requiresContext: capabilityRequiresContext(input),
+    requiredContextKinds: inferRequiredContextKinds(input),
+    requiredResourcePacketKind: inferRequiredResourcePacketKind(input),
+    requiredNodeExecutionPacket: capabilityRequiresNodeExecutionPacket(input),
+    requiredSnapshotKinds: inferRequiredSnapshotKinds(input),
+    requiredValidationKinds: inferRequiredValidationKinds(input),
+    requiredAuthorityScopes: input.authorityBoundaries,
+    requiredEvidenceClaimKinds: inferEvidenceKinds(input),
+    canRunAsWorkIntent: input.roleClass !== "human",
+    canRunAsExecutable: !input.allowedAdapters.includes("contract_only"),
+    defaultRepairTransition: inferDefaultRepairTransition(input),
+    defaultBlockedTransition: inferDefaultBlockedTransition(input),
+    budgetPolicyRef: `runtime-task-budget://${input.workflowId}/${input.nodeType}/${input.costClass}`,
+    parallelismPolicyRef: `runtime-parallelism-policy://${input.workflowId}/${input.nodeType}/${input.roleClass}`,
     modelQualificationProfileIds: inferModelQualificationProfileIds(input),
     productionSelectionRequiresQualification:
       input.allowedAdapters.includes("model_agnostic_file_edit_worker") ||
@@ -329,6 +429,23 @@ export function providerCapabilityProfileForCapability(
     workflowId: capability.workflowId,
     supportedWorkflowIds: capability.supportedWorkflowIds,
     supportedPhases: capability.supportedPhases,
+    supportedExecutionIntents: capability.supportedExecutionIntents,
+    defaultExecutionIntent: capability.defaultExecutionIntent,
+    validLifecyclePhases: capability.validLifecyclePhases,
+    requiresContext: capability.requiresContext,
+    requiredContextKinds: capability.requiredContextKinds,
+    requiredResourcePacketKind: capability.requiredResourcePacketKind,
+    requiredNodeExecutionPacket: capability.requiredNodeExecutionPacket,
+    requiredSnapshotKinds: capability.requiredSnapshotKinds,
+    requiredValidationKinds: capability.requiredValidationKinds,
+    requiredAuthorityScopes: capability.requiredAuthorityScopes,
+    requiredEvidenceClaimKinds: capability.requiredEvidenceClaimKinds,
+    canRunAsWorkIntent: capability.canRunAsWorkIntent,
+    canRunAsExecutable: capability.canRunAsExecutable,
+    defaultRepairTransition: capability.defaultRepairTransition,
+    defaultBlockedTransition: capability.defaultBlockedTransition,
+    budgetPolicyRef: capability.budgetPolicyRef,
+    parallelismPolicyRef: capability.parallelismPolicyRef,
     roleClass: capability.roleClass,
     roleId: capability.roleId,
     displayName: capability.displayName,
@@ -400,32 +517,7 @@ export function buildProviderCapabilityProfileRegistry(
   };
 }
 
-function inferSupportedPhases(
-  input: Omit<
-    RuntimeNodeCapability,
-    | "rawPromptStored"
-    | "rawResponseStored"
-    | "rawProviderLogStored"
-    | "idealTaskSize"
-    | "supportedWorkflowIds"
-    | "supportedPhases"
-    | "maxTaskSize"
-    | "contextCapacity"
-    | "expectedStrength"
-    | "expectedWeaknesses"
-    | "estimatedTokenCostClass"
-    | "expectedDollarCostClass"
-    | "parallelizable"
-    | "retryable"
-    | "repairable"
-    | "failureModes"
-    | "evidenceProducedKinds"
-    | "commitmentFitKinds"
-    | "defaultBudgetPolicy"
-    | "modelQualificationProfileIds"
-    | "productionSelectionRequiresQualification"
-  >,
-): RuntimeNodeCapabilityPhase[] {
+function inferSupportedPhases(input: RuntimeNodeCapabilitySeed): RuntimeNodeCapabilityPhase[] {
   if (input.nodeType === "context_synthesis") {
     return ["context_synthesis", "execution"];
   }
@@ -457,32 +549,226 @@ function inferSupportedPhases(
   return ["execution"];
 }
 
-function inferModelQualificationProfileIds(
-  input: Omit<
-    RuntimeNodeCapability,
-    | "rawPromptStored"
-    | "rawResponseStored"
-    | "rawProviderLogStored"
-    | "idealTaskSize"
-    | "supportedWorkflowIds"
-    | "supportedPhases"
-    | "maxTaskSize"
-    | "contextCapacity"
-    | "expectedStrength"
-    | "expectedWeaknesses"
-    | "estimatedTokenCostClass"
-    | "expectedDollarCostClass"
-    | "parallelizable"
-    | "retryable"
-    | "repairable"
-    | "failureModes"
-    | "evidenceProducedKinds"
-    | "commitmentFitKinds"
-    | "defaultBudgetPolicy"
-    | "modelQualificationProfileIds"
-    | "productionSelectionRequiresQualification"
-  >,
-): string[] {
+function inferSupportedExecutionIntents(input: RuntimeNodeCapabilitySeed): ExecutionIntent[] {
+  const intents = new Set<ExecutionIntent>();
+  if (input.nodeType === "context_synthesis") {
+    intents.add("context_supply");
+    intents.add("resource_materialization");
+    return [...intents];
+  }
+  if (input.roleClass === "context") {
+    intents.add("source_grounding");
+    intents.add("context_supply");
+  }
+  if (input.roleClass === "implementation" || input.canEditSource || input.canWriteTests) {
+    intents.add("source_edit");
+  }
+  if (input.roleClass === "validation" || input.canRunValidation) {
+    intents.add("validation");
+  }
+  if (input.roleClass === "review" || input.canReviewSecurityPrivacy) {
+    intents.add("review");
+  }
+  if (input.roleClass === "docs") {
+    intents.add("docs");
+  }
+  if (input.roleClass === "observability") {
+    intents.add("readback");
+  }
+  if (input.roleClass === "closeout") {
+    intents.add("closeout");
+  }
+  if (input.roleClass === "human" || input.canRequestHumanInput) {
+    intents.add("human_decision");
+  }
+  if (input.roleClass === "research" || input.canDoWebResearch) {
+    intents.add("context_supply");
+    intents.add("docs");
+  }
+  if (
+    input.roleClass === "planning" ||
+    input.canCreatePlanningCapsules ||
+    input.canProposeChildActions
+  ) {
+    intents.add("context_supply");
+    intents.add("resource_materialization");
+    intents.add("docs");
+  }
+  if (input.roleClass === "orchestration") {
+    intents.add("source_grounding");
+    intents.add("resource_materialization");
+    intents.add("review");
+  }
+  return intents.size > 0 ? [...intents] : ["source_grounding"];
+}
+
+function inferDefaultExecutionIntent(input: RuntimeNodeCapabilitySeed): ExecutionIntent | null {
+  if (input.roleClass === "implementation") {
+    return "source_edit";
+  }
+  if (input.roleClass === "validation") {
+    return "validation";
+  }
+  if (input.roleClass === "review") {
+    return "review";
+  }
+  if (input.roleClass === "docs") {
+    return "docs";
+  }
+  if (input.roleClass === "observability") {
+    return "readback";
+  }
+  if (input.roleClass === "closeout") {
+    return "closeout";
+  }
+  if (input.roleClass === "human") {
+    return "human_decision";
+  }
+  if (input.canEditSource || input.canWriteTests || input.canRunValidation) {
+    return null;
+  }
+  if (input.nodeType === "context_synthesis") {
+    return "context_supply";
+  }
+  if (input.roleClass === "context" || input.canInspectRepo) {
+    return "context_supply";
+  }
+  return null;
+}
+
+function inferValidLifecyclePhases(
+  input: RuntimeNodeCapabilitySeed,
+): RuntimeNodeCapability["validLifecyclePhases"] {
+  if (input.roleClass === "human") {
+    return [
+      "work_intent",
+      "executable",
+      "running",
+      "completed",
+      "needs_review",
+      "failed",
+      "canceled",
+    ];
+  }
+  if (input.roleClass === "orchestration" || input.nodeType === "context_synthesis") {
+    return [
+      "work_intent",
+      "executable",
+      "running",
+      "completed",
+      "needs_repair",
+      "needs_review",
+      "failed",
+      "canceled",
+    ];
+  }
+  if (input.roleClass === "implementation" || input.roleClass === "docs") {
+    return [
+      "work_intent",
+      "context_required",
+      "context_in_progress",
+      "context_ready",
+      "resources_required",
+      "resource_materialization_in_progress",
+      "resources_ready",
+      "executable",
+      "running",
+      "completed",
+      "needs_repair",
+      "needs_review",
+      "failed",
+      "canceled",
+    ];
+  }
+  return [
+    "work_intent",
+    "context_required",
+    "context_in_progress",
+    "context_ready",
+    "executable",
+    "running",
+    "completed",
+    "needs_repair",
+    "needs_review",
+    "failed",
+    "canceled",
+  ];
+}
+
+function capabilityRequiresContext(input: RuntimeNodeCapabilitySeed): boolean {
+  return (
+    input.roleClass === "implementation" ||
+    input.roleClass === "validation" ||
+    input.roleClass === "review" ||
+    input.roleClass === "docs" ||
+    input.roleClass === "planning"
+  );
+}
+
+function inferRequiredContextKinds(input: RuntimeNodeCapabilitySeed): string[] {
+  if (!capabilityRequiresContext(input)) {
+    return [];
+  }
+  if (input.canEditSource || input.canWriteTests || input.canRunValidation) {
+    return ["commitment_work_packet", "context_handoff", "target_refs"];
+  }
+  return ["commitment_work_packet", "context_handoff"];
+}
+
+function capabilityRequiresNodeExecutionPacket(input: RuntimeNodeCapabilitySeed): boolean {
+  return input.canEditSource || input.canWriteTests || input.nodeType === "docs_update";
+}
+
+function inferRequiredResourcePacketKind(input: RuntimeNodeCapabilitySeed): string | null {
+  return capabilityRequiresNodeExecutionPacket(input)
+    ? input.canEditSource || input.canWriteTests
+      ? "coding_resource_packet"
+      : "domain_resource_packet"
+    : null;
+}
+
+function inferRequiredSnapshotKinds(input: RuntimeNodeCapabilitySeed): string[] {
+  if (input.canEditSource || input.canWriteTests) {
+    return ["target_file_snapshot", "context_snapshot"];
+  }
+  if (capabilityRequiresContext(input)) {
+    return ["context_snapshot"];
+  }
+  return [];
+}
+
+function inferRequiredValidationKinds(input: RuntimeNodeCapabilitySeed): string[] {
+  if (input.canRunValidation || input.canWriteTests || input.canEditSource) {
+    return ["validation_command_ref"];
+  }
+  return [];
+}
+
+function inferDefaultRepairTransition(
+  input: RuntimeNodeCapabilitySeed,
+): RuntimeNodeCapability["defaultRepairTransition"] {
+  if (capabilityRequiresNodeExecutionPacket(input)) {
+    return "compile_node_execution_packet";
+  }
+  if (capabilityRequiresContext(input)) {
+    return "request_context_repair";
+  }
+  if (input.roleClass === "validation") {
+    return "compile_validation_plan";
+  }
+  if (input.roleClass === "human") {
+    return "ask_human";
+  }
+  return "needs_review";
+}
+
+function inferDefaultBlockedTransition(
+  input: RuntimeNodeCapabilitySeed,
+): RuntimeNodeCapability["defaultBlockedTransition"] {
+  return inferDefaultRepairTransition(input);
+}
+
+function inferModelQualificationProfileIds(input: RuntimeNodeCapabilitySeed): string[] {
   const refs = new Set<string>();
   for (const ref of input.modelPolicyRefs) {
     if (ref.includes("qwen3-coder-next") || ref.includes("/qwen")) {
@@ -535,30 +821,7 @@ function inferModelQualificationProfileIds(
 }
 
 function inferEvidenceKinds(
-  input: Omit<
-    RuntimeNodeCapability,
-    | "rawPromptStored"
-    | "rawResponseStored"
-    | "rawProviderLogStored"
-    | "idealTaskSize"
-    | "supportedWorkflowIds"
-    | "supportedPhases"
-    | "maxTaskSize"
-    | "contextCapacity"
-    | "expectedStrength"
-    | "expectedWeaknesses"
-    | "estimatedTokenCostClass"
-    | "expectedDollarCostClass"
-    | "parallelizable"
-    | "retryable"
-    | "repairable"
-    | "failureModes"
-    | "evidenceProducedKinds"
-    | "commitmentFitKinds"
-    | "defaultBudgetPolicy"
-    | "modelQualificationProfileIds"
-    | "productionSelectionRequiresQualification"
-  >,
+  input: RuntimeNodeCapabilitySeed,
 ): RuntimeNodeCapability["evidenceProducedKinds"] {
   const kinds = new Set<RuntimeNodeCapability["evidenceProducedKinds"][number]>();
   if (input.canInspectRepo) {
@@ -600,32 +863,7 @@ function inferEvidenceKinds(
   return [...kinds];
 }
 
-function inferCommitmentFitKinds(
-  input: Omit<
-    RuntimeNodeCapability,
-    | "rawPromptStored"
-    | "rawResponseStored"
-    | "rawProviderLogStored"
-    | "idealTaskSize"
-    | "supportedWorkflowIds"
-    | "supportedPhases"
-    | "maxTaskSize"
-    | "contextCapacity"
-    | "expectedStrength"
-    | "expectedWeaknesses"
-    | "estimatedTokenCostClass"
-    | "expectedDollarCostClass"
-    | "parallelizable"
-    | "retryable"
-    | "repairable"
-    | "failureModes"
-    | "evidenceProducedKinds"
-    | "commitmentFitKinds"
-    | "defaultBudgetPolicy"
-    | "modelQualificationProfileIds"
-    | "productionSelectionRequiresQualification"
-  >,
-): string[] {
+function inferCommitmentFitKinds(input: RuntimeNodeCapabilitySeed): string[] {
   return [
     input.roleClass,
     ...input.validationResponsibilities,
@@ -2226,6 +2464,23 @@ export function runtimeNodeCapabilityManifestForModel(input?: {
         roleClass: capability.roleClass,
         supportedWorkflowIds: capability.supportedWorkflowIds,
         supportedPhases: capability.supportedPhases,
+        supportedExecutionIntents: capability.supportedExecutionIntents,
+        defaultExecutionIntent: capability.defaultExecutionIntent,
+        validLifecyclePhases: capability.validLifecyclePhases,
+        requiresContext: capability.requiresContext,
+        requiredContextKinds: capability.requiredContextKinds,
+        requiredResourcePacketKind: capability.requiredResourcePacketKind,
+        requiredNodeExecutionPacket: capability.requiredNodeExecutionPacket,
+        requiredSnapshotKinds: capability.requiredSnapshotKinds,
+        requiredValidationKinds: capability.requiredValidationKinds,
+        requiredAuthorityScopes: capability.requiredAuthorityScopes,
+        requiredEvidenceClaimKinds: capability.requiredEvidenceClaimKinds,
+        canRunAsWorkIntent: capability.canRunAsWorkIntent,
+        canRunAsExecutable: capability.canRunAsExecutable,
+        defaultRepairTransition: capability.defaultRepairTransition,
+        defaultBlockedTransition: capability.defaultBlockedTransition,
+        budgetPolicyRef: capability.budgetPolicyRef,
+        parallelismPolicyRef: capability.parallelismPolicyRef,
         writable: capability.writable,
         canInspectRepo: capability.canInspectRepo,
         canEditSource: capability.canEditSource,

@@ -87,13 +87,21 @@ describe("commitment packet review boundary replay", () => {
         jobType: "executor.agent_team",
         payload: { workflowId: "agent_team.coding", rawPromptStored: false },
       });
-      await runtimeJobs.attachArtifact({
+      const preReviewPacket = packet();
+      await runtimeJobs.attachRuntimeArtifactByContract({
         jobId: "job-packet-review",
         artifactType: "execution_platform.commitment_work_packet.pre_review",
-        storageKind: "metadata",
         uri: "runtime-job://job-packet-review/pre-review/commitment-1",
+        body: preReviewPacket,
+        boundedSummary: preReviewPacket.workerObjective,
+        targetCommitmentIds: [preReviewPacket.commitmentId],
+        resourcePacketKind: "commitment_work_packet",
+        readinessStatus: preReviewPacket.qualityStatus,
+        reasonCodes: ["commitment_work_packet_pre_review_test_fixture"],
         metadata: {
-          commitmentWorkPacket: packet(),
+          artifactKind: "execution_platform.commitment_work_packet.pre_review",
+          commitmentId: preReviewPacket.commitmentId,
+          packetRef: preReviewPacket.packetRef,
           rawPromptStored: false,
           rawResponseStored: false,
           rawProviderLogStored: false,
@@ -157,16 +165,24 @@ describe("commitment packet review boundary replay", () => {
         jobType: "executor.agent_team",
         payload: { workflowId: "agent_team.coding", rawPromptStored: false },
       });
-      await runtimeJobs.attachArtifact({
+      const preReviewPacket = packet({
+        contextScoutObjective: "Find context.",
+        requiredContextQuestions: ["What files matter?"],
+      });
+      await runtimeJobs.attachRuntimeArtifactByContract({
         jobId: "job-packet-review-repair",
         artifactType: "execution_platform.commitment_work_packet.pre_review",
-        storageKind: "metadata",
         uri: "runtime-job://job-packet-review-repair/pre-review/commitment-1",
+        body: preReviewPacket,
+        boundedSummary: preReviewPacket.workerObjective,
+        targetCommitmentIds: [preReviewPacket.commitmentId],
+        resourcePacketKind: "commitment_work_packet",
+        readinessStatus: preReviewPacket.qualityStatus,
+        reasonCodes: ["commitment_work_packet_pre_review_test_fixture"],
         metadata: {
-          commitmentWorkPacket: packet({
-            contextScoutObjective: "Find context.",
-            requiredContextQuestions: ["What files matter?"],
-          }),
+          artifactKind: "execution_platform.commitment_work_packet.pre_review",
+          commitmentId: preReviewPacket.commitmentId,
+          packetRef: preReviewPacket.packetRef,
           rawPromptStored: false,
           rawResponseStored: false,
           rawProviderLogStored: false,

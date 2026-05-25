@@ -53,8 +53,8 @@ The owner-visible queue may show whether a job used the canonical workflow
 engine, which workflow definition was loaded, which graph nodes were created,
 which agents/workers/tools executed those nodes, and which evidence claims
 closed Mission Ledger commitments. It must not treat
-`DynamicAgentTeamGraphRunner`, `WorkflowQueuedRunner`, or any proof script as
-the lifecycle truth source.
+`DynamicAgentTeamGraphRunner`, the deleted generic workflow queued runner, or
+any proof script as the lifecycle truth source.
 
 When the canonical workflow runtime refactor lands:
 

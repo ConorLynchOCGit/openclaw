@@ -3,6 +3,7 @@ import { applyExecutionPlatformMigrations } from "../db/migrations.ts";
 import { createExecutionPlatformPgMemTestDatabase } from "../db/pg-test.ts";
 import { RuntimeJobRepository } from "../runtime-job-repository.ts";
 import { WorkQueueRepository } from "../work-queue/work-queue-repository.ts";
+import { createContextSnapshotRef } from "./context-snapshot.ts";
 import { RuntimeWorkGraphRepository } from "./runtime-work-graph-repository.ts";
 
 async function withGraphRepository<T>(
@@ -164,6 +165,124 @@ describe("runtime work graph repository", () => {
           metadata: { rawPromptStored: true },
         }),
       ).rejects.toThrow(/raw storage field/u);
+    });
+  });
+
+  it("rejects graph node metadata that embeds resource bodies instead of bounded manifests", async () => {
+    await withGraphRepository(async ({ graphs }) => {
+      await graphs.createGraph({
+        graphId: "graph-manifest-only-node-metadata",
+        workflowId: "agent_team.coding",
+        orchestratorModelRef: "openai-codex/gpt-5.5",
+      });
+
+      await expect(
+        graphs.addNode({
+          graphId: "graph-manifest-only-node-metadata",
+          nodeId: "implementation-with-body",
+          nodeKind: "implementation",
+          assignedRole: "implementation_engineer",
+          metadata: {
+            nodeReadinessState: {
+              artifactKind: "node_readiness_state",
+              readinessStatus: "ready",
+            },
+            rawPromptStored: false,
+            rawResponseStored: false,
+          },
+        }),
+      ).rejects.toThrow(/metadata manifest violation/u);
+
+      const node = await graphs.addNode({
+        graphId: "graph-manifest-only-node-metadata",
+        nodeId: "implementation-with-manifest",
+        nodeKind: "implementation",
+        assignedRole: "implementation_engineer",
+        metadata: {
+          nodeReadinessStateRef:
+            "runtime-work-graph://node-readiness-state/implementation-with-manifest/abc",
+          nodeExecutionPacketRef:
+            "runtime-work-graph://node-execution-packet/implementation-with-manifest/abc",
+          resourcePacketRef:
+            "runtime-work-graph://coding-resource-packet/implementation-with-manifest/abc",
+          rawPromptStored: false,
+          rawResponseStored: false,
+        },
+      });
+
+      expect(node.metadata).toMatchObject({
+        nodeReadinessStateRef:
+          "runtime-work-graph://node-readiness-state/implementation-with-manifest/abc",
+      });
+
+      const summarized = await graphs.addNode({
+        graphId: "graph-manifest-only-node-metadata",
+        nodeId: "implementation-with-resource-summary",
+        nodeKind: "implementation",
+        assignedRole: "implementation_engineer",
+        metadata: {
+          implementationResourceMaterializationInputCounts: {
+            targetFileSnapshotCount: 2,
+            resolvedTargetFileRefCount: 2,
+            validationCommandRefCount: 1,
+          },
+          implementationResourceMaterializationOutputCounts: {
+            targetFileSnapshotCount: 2,
+            implementationTaskPacketCount: 1,
+          },
+          implementationResourceMaterializationMaxBounds: {
+            targetFileSnapshotMax: 120,
+            validationCommandRefMax: 40,
+          },
+          rawPromptStored: false,
+          rawResponseStored: false,
+        },
+      });
+
+      expect(summarized.metadata).toMatchObject({
+        implementationResourceMaterializationInputCounts: {
+          targetFileSnapshotCount: 2,
+        },
+      });
+    });
+  });
+
+  it("accepts large arrays of bounded context snapshot refs in graph metadata", async () => {
+    await withGraphRepository(async ({ graphs }) => {
+      await graphs.createGraph({
+        graphId: "graph-context-snapshot-ref-array",
+        workflowId: "agent_team.coding",
+        orchestratorModelRef: "openai-codex/gpt-5.5",
+      });
+
+      const node = await graphs.addNode({
+        graphId: "graph-context-snapshot-ref-array",
+        nodeId: "implementation-with-many-snapshot-refs",
+        nodeKind: "implementation",
+        assignedRole: "implementation_engineer",
+        metadata: {
+          providedContextSnapshotRefs: Array.from({ length: 24 }, (_, index) =>
+            createContextSnapshotRef({
+              sourceRef: `context-handoff://large-graph/${index}`,
+              sourceKind: "context_scout_handoff",
+              capturedAt: "2026-05-22T00:00:00.000Z",
+              graphId: "graph-context-snapshot-ref-array",
+              nodeId: "implementation-with-many-snapshot-refs",
+              targetRefs: [`extensions/execution-platform/src/fixture-${index}.ts`],
+              scopeSummary: "Bounded context snapshot ref, not embedded context body.",
+              freshnessStatus: "fresh",
+              refreshRequired: false,
+              refreshAction: "none",
+            }),
+          ),
+          rawPromptStored: false,
+          rawResponseStored: false,
+        },
+      });
+
+      expect(
+        Array.isArray((node.metadata as Record<string, unknown>).providedContextSnapshotRefs),
+      ).toBe(true);
     });
   });
 

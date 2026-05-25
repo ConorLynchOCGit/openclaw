@@ -1,6 +1,14 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import type { QueryResultRow } from "pg";
 import type { SqlClient } from "./db/sql-client.ts";
+import {
+  assertRuntimeArtifactContractStorage,
+  buildRuntimeArtifactContractPayloadInput,
+  findRuntimeArtifactLegacyBody,
+  getRuntimeArtifactContract,
+  type RuntimeArtifactContractAttachInput,
+  type RuntimeArtifactContractHydrationResult,
+} from "./runtime-artifact-contracts.ts";
 
 export const RUNTIME_JOB_STATES = [
   "pending",
@@ -75,6 +83,65 @@ export type RuntimeJobArtifact = {
   createdAt: Date;
 };
 
+export const RUNTIME_JOB_ARTIFACT_PAYLOAD_STORAGE_KIND = "runtime-artifact-payload";
+export const RUNTIME_JOB_ARTIFACT_PAYLOAD_MANIFEST_SCHEMA_VERSION =
+  "execution-platform.runtime-job-artifact-payload-manifest.v1";
+
+export type RuntimeJobArtifactPayload = {
+  payloadRef: string;
+  jobId: string;
+  artifactType: string;
+  contentType: string;
+  sizeBytes: number;
+  sha256: string;
+  body: JsonValue;
+  createdAt: Date;
+};
+
+export type RuntimeJobArtifactPayloadParts = {
+  root: RuntimeJobArtifactPayload;
+  parts: RuntimeJobArtifactPayload[];
+  partRefs: string[];
+  totalSizeBytes: number;
+  rawPromptStored: false;
+  rawResponseStored: false;
+  rawProviderLogStored: false;
+  rawToolLogStored: false;
+};
+
+export type RuntimeJobArtifactPayloadManifest = {
+  artifactKind: "runtime_job_artifact_payload_manifest";
+  schemaVersion: typeof RUNTIME_JOB_ARTIFACT_PAYLOAD_MANIFEST_SCHEMA_VERSION;
+  jobId: string;
+  artifactType: string;
+  artifactRef: string;
+  payloadRef: string;
+  storageKind: typeof RUNTIME_JOB_ARTIFACT_PAYLOAD_STORAGE_KIND;
+  contentType: string;
+  byteCount: number;
+  sha256: string;
+  partCount: 1;
+  partRefs: [];
+  boundedSummary: string | null;
+  targetCommitmentIds: string[];
+  targetNodeIds: string[];
+  resourcePacketKind: string | null;
+  readinessStatus: string | null;
+  reasonCodes: string[];
+  inputCounts: JsonValue;
+  outputCounts: JsonValue;
+  maxBounds: JsonValue;
+  hydrationToolId: "artifact.payload.get_json";
+  createdBy: string | null;
+  rawPromptStored: false;
+  rawResponseStored: false;
+  rawProviderLogStored: false;
+  rawToolLogStored: false;
+  rawCommandLogStored: false;
+  rawDbRowsStored: false;
+  secretsStored: false;
+};
+
 export type ClaimedRuntimeJob = {
   job: RuntimeJob;
   leaseId: string;
@@ -131,6 +198,43 @@ export type AttachRuntimeJobArtifactInput = {
   metadata?: JsonValue;
 };
 
+export type PutRuntimeJobJsonPayloadInput = {
+  payloadRef?: string;
+  jobId: string;
+  artifactType: string;
+  contentType?: string;
+  body: JsonValue;
+};
+
+export type PutRuntimeJobJsonPayloadPartsInput = {
+  rootPayloadRef?: string;
+  jobId: string;
+  artifactType: string;
+  contentType?: string;
+  parts: JsonValue[];
+  boundedSummary?: string | null;
+};
+
+export type AttachRuntimeJobJsonPayloadArtifactInput = {
+  artifactId?: string;
+  jobId: string;
+  artifactType: string;
+  uri: string;
+  contentType?: string;
+  body: JsonValue;
+  boundedSummary?: string | null;
+  targetCommitmentIds?: string[];
+  targetNodeIds?: string[];
+  resourcePacketKind?: string | null;
+  readinessStatus?: string | null;
+  reasonCodes?: string[];
+  inputCounts?: JsonValue;
+  outputCounts?: JsonValue;
+  maxBounds?: JsonValue;
+  createdBy?: string | null;
+  metadata?: Record<string, JsonValue>;
+};
+
 type RuntimeJobRow = QueryResultRow & {
   job_id: string;
   job_type: string;
@@ -185,6 +289,17 @@ type RuntimeJobArtifactRow = QueryResultRow & {
   created_at: Date | string;
 };
 
+type RuntimeJobArtifactPayloadRow = QueryResultRow & {
+  payload_ref: string;
+  job_id: string;
+  artifact_type: string;
+  content_type: string;
+  size_bytes: number | string;
+  sha256: string;
+  body: JsonValue;
+  created_at: Date | string;
+};
+
 const DEFAULT_QUEUE_NAME = "default";
 const DEFAULT_MAX_ATTEMPTS = 3;
 const DEFAULT_LEASE_TIMEOUT_MS = 30_000;
@@ -201,6 +316,45 @@ function nullableDate(value: Date | string | null): Date | null {
 
 function encodeJson(value: JsonValue | undefined): string {
   return JSON.stringify(value ?? {});
+}
+
+function jsonByteLength(value: JsonValue): number {
+  return Buffer.byteLength(JSON.stringify(value), "utf8");
+}
+
+function sha256Json(value: JsonValue): string {
+  return createHash("sha256").update(JSON.stringify(value)).digest("hex");
+}
+
+function boundedText(value: string | null | undefined, max: number): string | null {
+  const normalized = (value ?? "").trim().replace(/\s+/gu, " ");
+  if (!normalized) {
+    return null;
+  }
+  return normalized.length <= max
+    ? normalized
+    : `${normalized.slice(0, Math.max(0, max - 1)).trimEnd()}...`;
+}
+
+function boundedStringArray(
+  values: string[] | undefined,
+  maxItems: number,
+  maxChars: number,
+): string[] {
+  const seen = new Set<string>();
+  const output: string[] = [];
+  for (const value of values ?? []) {
+    const normalized = boundedText(value, maxChars);
+    if (!normalized || seen.has(normalized)) {
+      continue;
+    }
+    seen.add(normalized);
+    output.push(normalized);
+    if (output.length >= maxItems) {
+      break;
+    }
+  }
+  return output;
 }
 
 function decodeJob(row: RuntimeJobRow): RuntimeJob {
@@ -263,6 +417,34 @@ function decodeArtifact(row: RuntimeJobArtifactRow): RuntimeJobArtifact {
   };
 }
 
+function decodeArtifactPayload(row: RuntimeJobArtifactPayloadRow): RuntimeJobArtifactPayload {
+  return {
+    payloadRef: row.payload_ref,
+    jobId: row.job_id,
+    artifactType: row.artifact_type,
+    contentType: row.content_type,
+    sizeBytes: Number(row.size_bytes),
+    sha256: row.sha256,
+    body: row.body,
+    createdAt: toDate(row.created_at),
+  };
+}
+
+export function isRuntimeJobArtifactPayloadManifest(
+  value: JsonValue,
+): value is RuntimeJobArtifactPayloadManifest {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return false;
+  }
+  const record = value as Record<string, JsonValue>;
+  return (
+    record.artifactKind === "runtime_job_artifact_payload_manifest" &&
+    record.schemaVersion === RUNTIME_JOB_ARTIFACT_PAYLOAD_MANIFEST_SCHEMA_VERSION &&
+    record.storageKind === RUNTIME_JOB_ARTIFACT_PAYLOAD_STORAGE_KIND &&
+    typeof record.payloadRef === "string"
+  );
+}
+
 function addMilliseconds(date: Date, milliseconds: number): Date {
   return new Date(date.getTime() + milliseconds);
 }
@@ -277,6 +459,33 @@ function assertJsonByteLength(value: JsonValue, maxBytes: number, name: string):
   const bytes = Buffer.byteLength(JSON.stringify(value), "utf8");
   if (bytes > maxBytes) {
     throw new Error(`${name} exceeds ${maxBytes} bytes`);
+  }
+}
+
+const RAW_STORAGE_FLAG_NAMES = new Set([
+  "rawPromptStored",
+  "rawResponseStored",
+  "rawTranscriptStored",
+  "rawProviderLogStored",
+  "rawToolLogStored",
+  "rawCommandLogStored",
+  "rawDbRowsStored",
+  "secretsStored",
+]);
+
+function assertNoUnsafeRawStorageFlags(value: JsonValue, path = "payload"): void {
+  if (!value || typeof value !== "object") {
+    return;
+  }
+  if (Array.isArray(value)) {
+    value.forEach((entry, index) => assertNoUnsafeRawStorageFlags(entry, `${path}[${index}]`));
+    return;
+  }
+  for (const [key, entry] of Object.entries(value)) {
+    if (RAW_STORAGE_FLAG_NAMES.has(key) && entry !== false) {
+      throw new Error(`${path}.${key} must be false`);
+    }
+    assertNoUnsafeRawStorageFlags(entry, `${path}.${key}`);
   }
 }
 
@@ -992,6 +1201,405 @@ export class RuntimeJobRepository {
     return result.rows.map(decodeEvent).toReversed();
   }
 
+  async putJsonPayload(input: PutRuntimeJobJsonPayloadInput): Promise<RuntimeJobArtifactPayload> {
+    const body = input.body;
+    assertNoUnsafeRawStorageFlags(body, "artifact payload");
+    const sizeBytes = jsonByteLength(body);
+    if (sizeBytes > this.maxArtifactSizeBytes) {
+      throw new Error(`artifact payload sizeBytes exceeds ${this.maxArtifactSizeBytes}`);
+    }
+    const sha256 = sha256Json(body);
+    const contentType = input.contentType ?? "application/json";
+    const payloadRef =
+      input.payloadRef ??
+      `runtime-artifact-payload://${encodeURIComponent(input.jobId)}/${encodeURIComponent(
+        input.artifactType,
+      )}/${sha256}`;
+    const now = this.now();
+    const result = await this.sql.query<RuntimeJobArtifactPayloadRow>(
+      `
+        INSERT INTO execution_platform.runtime_job_artifact_payloads (
+          payload_ref,
+          job_id,
+          artifact_type,
+          content_type,
+          size_bytes,
+          sha256,
+          body,
+          created_at
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8::timestamptz)
+        ON CONFLICT (payload_ref) DO UPDATE
+          SET payload_ref = execution_platform.runtime_job_artifact_payloads.payload_ref
+        RETURNING *
+      `,
+      [
+        payloadRef,
+        input.jobId,
+        input.artifactType,
+        contentType,
+        sizeBytes,
+        sha256,
+        encodeJson(body),
+        now,
+      ],
+    );
+    if (!result.rows[0]) {
+      throw new Error("failed to store runtime job artifact payload");
+    }
+    const payload = decodeArtifactPayload(result.rows[0]);
+    if (payload.sha256 !== sha256 || payload.sizeBytes !== sizeBytes) {
+      throw new Error("artifact payload ref collision with different content");
+    }
+    await this.recordEvent({
+      jobId: input.jobId,
+      eventType: "job.artifact_payload_stored",
+      data: {
+        payloadRef,
+        artifactType: input.artifactType,
+        sizeBytes,
+        sha256,
+        rawPromptStored: false,
+        rawResponseStored: false,
+        rawProviderLogStored: false,
+        rawToolLogStored: false,
+      },
+    });
+    return payload;
+  }
+
+  async putJsonPayloadParts(
+    input: PutRuntimeJobJsonPayloadPartsInput,
+  ): Promise<RuntimeJobArtifactPayloadParts> {
+    if (input.parts.length === 0) {
+      throw new Error("artifact payload parts must include at least one part");
+    }
+    const parts: RuntimeJobArtifactPayload[] = [];
+    for (const [index, part] of input.parts.entries()) {
+      const partHash = sha256Json(part);
+      parts.push(
+        await this.putJsonPayload({
+          jobId: input.jobId,
+          artifactType: `${input.artifactType}.part`,
+          contentType: input.contentType ?? "application/json",
+          payloadRef: `runtime-artifact-payload://${encodeURIComponent(
+            input.jobId,
+          )}/${encodeURIComponent(input.artifactType)}/part/${index + 1}/${partHash}`,
+          body: part,
+        }),
+      );
+    }
+    const rootBody = {
+      artifactKind: "runtime_job_artifact_payload_parts_root",
+      schemaVersion: RUNTIME_JOB_ARTIFACT_PAYLOAD_MANIFEST_SCHEMA_VERSION,
+      jobId: input.jobId,
+      artifactType: input.artifactType,
+      boundedSummary: boundedText(input.boundedSummary, 1_200),
+      partCount: parts.length,
+      partRefs: parts.map((part) => part.payloadRef),
+      partHashes: parts.map((part) => part.sha256),
+      partByteCounts: parts.map((part) => part.sizeBytes),
+      totalSizeBytes: parts.reduce((total, part) => total + part.sizeBytes, 0),
+      rawPromptStored: false,
+      rawResponseStored: false,
+      rawProviderLogStored: false,
+      rawToolLogStored: false,
+      rawCommandLogStored: false,
+      rawDbRowsStored: false,
+      secretsStored: false,
+    } satisfies JsonValue;
+    const root = await this.putJsonPayload({
+      jobId: input.jobId,
+      artifactType: input.artifactType,
+      contentType: input.contentType ?? "application/json",
+      payloadRef: input.rootPayloadRef,
+      body: rootBody,
+    });
+    return {
+      root,
+      parts,
+      partRefs: parts.map((part) => part.payloadRef),
+      totalSizeBytes: parts.reduce((total, part) => total + part.sizeBytes, 0),
+      rawPromptStored: false,
+      rawResponseStored: false,
+      rawProviderLogStored: false,
+      rawToolLogStored: false,
+    };
+  }
+
+  async getJsonPayload(payloadRef: string): Promise<RuntimeJobArtifactPayload | null> {
+    const result = await this.sql.query<RuntimeJobArtifactPayloadRow>(
+      `
+        SELECT *
+        FROM execution_platform.runtime_job_artifact_payloads
+        WHERE payload_ref = $1
+        LIMIT 1
+      `,
+      [payloadRef],
+    );
+    return result.rows[0] ? decodeArtifactPayload(result.rows[0]) : null;
+  }
+
+  async hydrateJsonPayloadParts(
+    rootPayloadRef: string,
+  ): Promise<RuntimeJobArtifactPayloadParts | null> {
+    const root = await this.getJsonPayload(rootPayloadRef);
+    if (!root || !root.body || typeof root.body !== "object" || Array.isArray(root.body)) {
+      return null;
+    }
+    const rootBody = root.body as Record<string, JsonValue>;
+    if (rootBody.artifactKind !== "runtime_job_artifact_payload_parts_root") {
+      return null;
+    }
+    const partRefs = Array.isArray(rootBody.partRefs)
+      ? rootBody.partRefs.filter((ref): ref is string => typeof ref === "string")
+      : [];
+    const parts: RuntimeJobArtifactPayload[] = [];
+    for (const partRef of partRefs) {
+      const part = await this.getJsonPayload(partRef);
+      if (!part) {
+        throw new Error(`artifact payload part missing: ${partRef}`);
+      }
+      parts.push(part);
+    }
+    return {
+      root,
+      parts,
+      partRefs,
+      totalSizeBytes: parts.reduce((total, part) => total + part.sizeBytes, 0),
+      rawPromptStored: false,
+      rawResponseStored: false,
+      rawProviderLogStored: false,
+      rawToolLogStored: false,
+    };
+  }
+
+  async attachJsonPayloadArtifact(
+    input: AttachRuntimeJobJsonPayloadArtifactInput,
+  ): Promise<RuntimeJobArtifact> {
+    const contract = getRuntimeArtifactContract(input.artifactType);
+    const runtimeArtifactContract = input.metadata?.runtimeArtifactContract;
+    const runtimeArtifactContractId =
+      runtimeArtifactContract &&
+      typeof runtimeArtifactContract === "object" &&
+      !Array.isArray(runtimeArtifactContract) &&
+      typeof runtimeArtifactContract.contractId === "string"
+        ? runtimeArtifactContract.contractId
+        : null;
+    if (
+      contract?.storagePolicy === "payload_required" &&
+      runtimeArtifactContractId !== contract.contractId
+    ) {
+      throw new Error(
+        `runtime artifact contract attach API required for artifactType=${input.artifactType}; contractId=${contract.contractId}`,
+      );
+    }
+    assertNoUnsafeRawStorageFlags(input.metadata ?? {}, "artifact payload manifest extension");
+    const payload = await this.putJsonPayload({
+      jobId: input.jobId,
+      artifactType: input.artifactType,
+      contentType: input.contentType ?? "application/json",
+      body: input.body,
+    });
+    const manifest: RuntimeJobArtifactPayloadManifest = {
+      artifactKind: "runtime_job_artifact_payload_manifest",
+      schemaVersion: RUNTIME_JOB_ARTIFACT_PAYLOAD_MANIFEST_SCHEMA_VERSION,
+      jobId: input.jobId,
+      artifactType: input.artifactType,
+      artifactRef: input.uri,
+      payloadRef: payload.payloadRef,
+      storageKind: RUNTIME_JOB_ARTIFACT_PAYLOAD_STORAGE_KIND,
+      contentType: payload.contentType,
+      byteCount: payload.sizeBytes,
+      sha256: payload.sha256,
+      partCount: 1,
+      partRefs: [],
+      boundedSummary: boundedText(input.boundedSummary, 1_200),
+      targetCommitmentIds: boundedStringArray(input.targetCommitmentIds, 40, 180),
+      targetNodeIds: boundedStringArray(input.targetNodeIds, 40, 180),
+      resourcePacketKind: boundedText(input.resourcePacketKind, 160),
+      readinessStatus: boundedText(input.readinessStatus, 160),
+      reasonCodes: boundedStringArray(input.reasonCodes, 80, 200),
+      inputCounts: input.inputCounts ?? {},
+      outputCounts: input.outputCounts ?? {},
+      maxBounds: input.maxBounds ?? {},
+      hydrationToolId: "artifact.payload.get_json",
+      createdBy: boundedText(input.createdBy, 240),
+      rawPromptStored: false,
+      rawResponseStored: false,
+      rawProviderLogStored: false,
+      rawToolLogStored: false,
+      rawCommandLogStored: false,
+      rawDbRowsStored: false,
+      secretsStored: false,
+    };
+    const metadata = {
+      ...manifest,
+      extension: input.metadata ?? {},
+    } satisfies Record<string, JsonValue>;
+    return this.attachArtifact({
+      artifactId: input.artifactId,
+      jobId: input.jobId,
+      artifactType: input.artifactType,
+      storageKind: RUNTIME_JOB_ARTIFACT_PAYLOAD_STORAGE_KIND,
+      uri: input.uri,
+      contentType: input.contentType ?? "application/json",
+      sizeBytes: payload.sizeBytes,
+      sha256: payload.sha256,
+      metadata,
+    });
+  }
+
+  async hydrateJsonPayloadArtifact(
+    artifact: RuntimeJobArtifact,
+  ): Promise<RuntimeJobArtifactPayload | null> {
+    if (!isRuntimeJobArtifactPayloadManifest(artifact.metadata)) {
+      return null;
+    }
+    return this.getJsonPayload(artifact.metadata.payloadRef);
+  }
+
+  async attachRuntimeArtifactByContract(
+    input: RuntimeArtifactContractAttachInput,
+  ): Promise<RuntimeJobArtifact> {
+    const payloadInput = buildRuntimeArtifactContractPayloadInput(input);
+    const artifact = await this.attachJsonPayloadArtifact(payloadInput);
+    const contract = getRuntimeArtifactContract(input.artifactType);
+    await this.recordEvent({
+      jobId: input.jobId,
+      eventType: "job.artifact_contract_attached",
+      data: {
+        artifactId: artifact.artifactId,
+        artifactType: artifact.artifactType,
+        contractId: contract?.contractId ?? null,
+        storagePolicy: contract?.storagePolicy ?? null,
+        payloadRef: isRuntimeJobArtifactPayloadManifest(artifact.metadata)
+          ? artifact.metadata.payloadRef
+          : null,
+        byteCount: isRuntimeJobArtifactPayloadManifest(artifact.metadata)
+          ? artifact.metadata.byteCount
+          : artifact.sizeBytes,
+        manifestByteCount: Buffer.byteLength(JSON.stringify(artifact.metadata), "utf8"),
+        hydrateToolId: isRuntimeJobArtifactPayloadManifest(artifact.metadata)
+          ? artifact.metadata.hydrationToolId
+          : (contract?.hydrateToolId ?? null),
+        rawPromptStored: false,
+        rawResponseStored: false,
+        rawProviderLogStored: false,
+        rawToolLogStored: false,
+        rawCommandLogStored: false,
+        rawDbRowsStored: false,
+      },
+    });
+    return artifact;
+  }
+
+  async hydrateRuntimeArtifactByContract(
+    artifact: RuntimeJobArtifact,
+  ): Promise<RuntimeArtifactContractHydrationResult> {
+    const contract = getRuntimeArtifactContract(artifact.artifactType);
+    const base = {
+      artifact,
+      contract,
+      rawPromptStored: false,
+      rawResponseStored: false,
+      rawProviderLogStored: false,
+      rawToolLogStored: false,
+    } satisfies Omit<
+      RuntimeArtifactContractHydrationResult,
+      "status" | "body" | "payload" | "reasonCodes" | "legacyHydrated"
+    >;
+    if (!contract) {
+      return {
+        ...base,
+        status: "metadata_manifest_only",
+        body: artifact.metadata,
+        payload: null,
+        reasonCodes: ["runtime_artifact_contract_unregistered"],
+        legacyHydrated: false,
+      };
+    }
+    if (isRuntimeJobArtifactPayloadManifest(artifact.metadata)) {
+      const payload = await this.hydrateJsonPayloadArtifact(artifact);
+      if (!payload) {
+        return {
+          ...base,
+          status: "missing_payload",
+          body: null,
+          payload: null,
+          reasonCodes: [
+            "runtime_artifact_contract_payload_missing",
+            `runtime_artifact_contract:${contract.contractId}`,
+          ],
+          legacyHydrated: false,
+        };
+      }
+      if (payload.sha256 !== artifact.metadata.sha256) {
+        return {
+          ...base,
+          status: "invalid_contract_storage",
+          body: null,
+          payload,
+          reasonCodes: [
+            "runtime_artifact_contract_payload_hash_mismatch",
+            `runtime_artifact_contract:${contract.contractId}`,
+          ],
+          legacyHydrated: false,
+        };
+      }
+      return {
+        ...base,
+        status: "payload_hydrated",
+        body: payload.body,
+        payload,
+        reasonCodes: [
+          "runtime_artifact_contract_payload_hydrated",
+          `runtime_artifact_contract:${contract.contractId}`,
+        ],
+        legacyHydrated: false,
+      };
+    }
+    const legacyBody = findRuntimeArtifactLegacyBody(artifact);
+    if (legacyBody) {
+      return {
+        ...base,
+        status: "legacy_metadata_hydrated",
+        body: legacyBody.body,
+        payload: null,
+        reasonCodes: [
+          "runtime_artifact_contract_legacy_metadata_hydrated",
+          `runtime_artifact_contract:${contract.contractId}`,
+          `legacy_body_key:${legacyBody.bodyKey}`,
+        ],
+        legacyHydrated: true,
+      };
+    }
+    if (contract.storagePolicy === "metadata_manifest_only") {
+      return {
+        ...base,
+        status: "metadata_manifest_only",
+        body: artifact.metadata,
+        payload: null,
+        reasonCodes: [
+          "runtime_artifact_contract_metadata_manifest_only",
+          `runtime_artifact_contract:${contract.contractId}`,
+        ],
+        legacyHydrated: false,
+      };
+    }
+    return {
+      ...base,
+      status: "invalid_contract_storage",
+      body: null,
+      payload: null,
+      reasonCodes: [
+        "runtime_artifact_contract_invalid_storage",
+        `runtime_artifact_contract:${contract.contractId}`,
+      ],
+      legacyHydrated: false,
+    };
+  }
+
   async attachArtifact(input: AttachRuntimeJobArtifactInput): Promise<RuntimeJobArtifact> {
     if (input.uri.length > 2048) {
       throw new Error("artifact uri exceeds 2048 characters");
@@ -1005,6 +1613,7 @@ export class RuntimeJobRepository {
       }
     }
     const metadata = input.metadata ?? {};
+    assertRuntimeArtifactContractStorage({ ...input, metadata });
     try {
       assertJsonByteLength(metadata, this.maxArtifactMetadataBytes, "artifact metadata");
     } catch (error) {

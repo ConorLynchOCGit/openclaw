@@ -1,5 +1,6 @@
 export type RuntimeWorkGraphSchedulerSnapshotSummary = {
   workflowId: string;
+  rootRuntimeJobId?: string | null;
   graphStatus: string;
   nodeSummaries: Array<{
     nodeId: string;
@@ -12,6 +13,13 @@ export type RuntimeWorkGraphSchedulerSnapshotSummary = {
     commitmentIdsAdvanced?: string[];
     downstreamConsumer?: string | null;
     inputHandoffRefs?: string[];
+    targetRefs?: string[];
+    resourceRequirementKinds?: string[];
+    contextQuestions?: string[];
+    contextSnapshotRefs?: string[];
+    nodeReadinessContextStatus?: string | null;
+    nodeReadinessContextLimitationStatus?: string | null;
+    contextLimitationWaiverRefs?: string[];
     noContextNeededRationale?: string | null;
     outputArtifactRefs: string[];
     contextSynthesisRef?: string | null;

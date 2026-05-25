@@ -1,11 +1,15 @@
 import type { RuntimeToolKernel } from "../runtime-tool-call/runtime-tool-kernel.ts";
 import type { ImplementationTaskPacket } from "../workflows/mission-work-packets.ts";
+import type {
+  CodingResourcePacket,
+  NodeExecutionPacket,
+} from "../workflows/node-resource-materialization.ts";
 import type { EditTransactionRecord } from "./edit-transaction-engine.ts";
 import type {
-  KimiContextExpansionRequest,
-  KimiEditPlanStep,
-  KimiEvidenceClaim,
-} from "./kimi-file-implementation-adapter.ts";
+  FileEditContextExpansionRequest as KimiContextExpansionRequest,
+  FileEditEvidenceClaim as KimiEvidenceClaim,
+  FileEditPlanStep as KimiEditPlanStep,
+} from "./file-edit-worker-contracts.ts";
 import type { ProviderCapabilitySlotGate } from "./model-agnostic-worker-qualification.ts";
 import type {
   NonCodexWorkerModelSlotPolicy,
@@ -87,6 +91,8 @@ export type FileEditWorkerAdapterInput = {
   taskTitle: string;
   exactEditObjective: string;
   implementationTaskPacket?: ImplementationTaskPacket;
+  nodeExecutionPacket?: NodeExecutionPacket;
+  codingResourcePacket?: CodingResourcePacket;
   rationaleForCallingThisRole?: string;
   downstreamConsumer?: string;
   expectedOutput?: string;
@@ -351,6 +357,57 @@ export class ModelAgnosticFileEditWorkerAdapter implements FileEditWorkerExecuto
     const workerProfile = fileEditWorkerProfileFor(input.workerKind);
     if (input.workerKind === "kimi_standard_implementation") {
       if (this.options.toolUsingKimiWorkerLoop) {
+        if (!input.nodeExecutionPacket || !input.codingResourcePacket) {
+          return {
+            artifactKind: "file_edit_worker_adapter_result",
+            adapterSchemaVersion: "openclaw.file-edit-worker-adapter.v1",
+            workerKind: input.workerKind,
+            workerId: input.workerId,
+            roleId: input.roleId,
+            taskId: input.taskId,
+            status: "needs_review",
+            modelRef: workerProfile.modelRef,
+            providerPath: workerProfile.providerPath,
+            modelRunRef: null,
+            changedFileRefs: [],
+            diffHash: null,
+            validationRefs: [],
+            artifactRefs: [],
+            priorFailureRefs: uniqueStrings(input.priorFailureRefs ?? [], 12),
+            limitations: [
+              "Non-Codex implementation worker invocation requires a hydrated NodeExecutionPacket and CodingResourcePacket before any provider call.",
+            ],
+            contextExpansionRequests: [],
+            editPlanSteps: [],
+            evidenceClaims: [],
+            editTransactionRefs: [],
+            editTransactions: [],
+            workerPhaseRefs: [],
+            workerPhases: [],
+            toolResults: [],
+            reasonCodes: uniqueStrings(
+              [
+                "file_edit_worker_generic_adapter_used",
+                "file_edit_worker_node_execution_packet_required",
+                !input.nodeExecutionPacket ? "file_edit_worker_node_execution_packet_missing" : "",
+                !input.codingResourcePacket
+                  ? "file_edit_worker_coding_resource_packet_missing"
+                  : "",
+              ],
+              40,
+            ),
+            sourceAdapterKind: "non_codex_tool_worker_runtime",
+            workerProfile,
+            modelPolicySlots: workerProfile.modelPolicySlots ?? [],
+            providerCapabilitySlotGate: null,
+            runtimeToolInvocationRefs: [],
+            rawPromptStored: false,
+            rawResponseStored: false,
+            rawProviderLogStored: false,
+            rawCommandLogsStored: false,
+            workQueueLifecycleMutated: false,
+          };
+        }
         const result = await this.options.toolUsingKimiWorkerLoop.run({
           runtimeJobId: input.runtimeJobId,
           graphId: input.graphId,
@@ -361,6 +418,8 @@ export class ModelAgnosticFileEditWorkerAdapter implements FileEditWorkerExecuto
           taskId: input.taskId,
           taskTitle: input.taskTitle,
           implementationTaskPacket: input.implementationTaskPacket,
+          nodeExecutionPacket: input.nodeExecutionPacket,
+          codingResourcePacket: input.codingResourcePacket,
           exactEditObjective: [
             input.exactEditObjective,
             input.previousFailureSummary

@@ -14,6 +14,7 @@ export type WorkerSplitPhase =
   | "validation"
   | "validation_repair"
   | "evidence"
+  | "review"
   | "compound"
   | "escalation";
 
@@ -195,23 +196,44 @@ export function splitPhaseForTool(toolId: NonCodexToolUsingWorkerToolId): Worker
   ) {
     return "context";
   }
-  if (toolId === "worker.edit.plan") {
+  if (toolId === "worker.edit.plan" || toolId === "worker.edit.draft_from_snapshot") {
     return "author";
   }
-  if (toolId === "worker.edit.apply_patch") {
+  if (
+    toolId === "worker.edit.apply_patch" ||
+    toolId === "worker.edit.apply_from_plan" ||
+    toolId === "worker.patch.force_author_from_plan" ||
+    toolId === "worker.patch.author_edit" ||
+    toolId === "worker.repair.author_edit"
+  ) {
     return "applicator";
   }
-  if (toolId === "worker.validation.run") {
+  if (toolId === "worker.validation.run" || toolId === "worker.validation.run_structural_default") {
     return "validation";
   }
   if (
+    toolId === "worker.validation.get_failure_context" ||
     toolId === "worker.validation.explain_failure" ||
-    toolId === "worker.validation.classify_failure"
+    toolId === "worker.validation.classify_failure" ||
+    toolId === "worker.repair.mark_upstream_blocker" ||
+    toolId === "worker.repair.request_high_capability_escalation" ||
+    toolId === "worker.progress.mark_no_edit_blocker"
   ) {
     return "validation_repair";
   }
-  if (toolId === "worker.evidence.claim") {
+  if (
+    toolId === "worker.evidence.claim" ||
+    toolId === "worker.evidence.claim_commitment_progress" ||
+    toolId === "worker.evidence.claim_from_validation" ||
+    toolId === "worker.evidence.link_validation"
+  ) {
     return "evidence";
+  }
+  if (
+    toolId === "worker.review.add_issue" ||
+    toolId === "worker.review.approve_or_request_changes"
+  ) {
+    return "review";
   }
   return "escalation";
 }
@@ -237,6 +259,9 @@ export function splitPhaseAllowedForModelSlot(input: {
   }
   if (input.phase === "evidence") {
     return input.modelSlot === "evidence";
+  }
+  if (input.phase === "review") {
+    return input.modelSlot === "evidence" || input.modelSlot === "controller";
   }
   if (input.phase === "compound") {
     return (

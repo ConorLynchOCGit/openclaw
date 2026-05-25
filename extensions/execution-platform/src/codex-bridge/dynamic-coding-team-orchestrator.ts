@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import type { ModelTaskClass } from "../model-tasks/model-task-classification.ts";
 import type { JsonValue } from "../runtime-job-repository.ts";
 import type { WorkQueueActionKind, WorkQueueChildActionInput } from "../work-queue/action-graph.ts";
 import type { RuntimeWorkGraphRepository } from "../workflows/runtime-work-graph-repository.ts";
@@ -19,6 +20,12 @@ export type DynamicCodingTeamModelCallProgressEvent = {
   modelRef: string;
   providerPath: string;
   contractName: string;
+  taskClass?: ModelTaskClass | null;
+  modelPolicyRef?: string | null;
+  reasoningMode?: string | null;
+  parserMode?: string | null;
+  modelTaskClassification?: JsonValue | null;
+  modelTaskTelemetry?: JsonValue | null;
   objectiveSummary: string | null;
   inputHash: string;
   responseHash?: string | null;
@@ -46,6 +53,9 @@ export type DynamicCodingTeamModelClient = {
     userPayload: JsonValue;
     maxOutputTokens: number;
     timeoutMs: number;
+    reasoningEffort?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh";
+    taskClass?: ModelTaskClass;
+    modelTaskCallSite?: string;
     progress?: {
       spanId?: string;
       objectiveSummary?: string | null;
@@ -426,6 +436,8 @@ export class DynamicCodingTeamOrchestrator {
       },
       maxOutputTokens: this.policy.maxOutputTokens,
       timeoutMs: this.policy.timeoutMs,
+      taskClass: "global_reasoning",
+      modelTaskCallSite: "dynamic_coding_team.orchestrator.plan",
     });
     let parsed = parseJsonObject(response.responseText);
     let plan = normalizePlan(parsed, input);
@@ -460,6 +472,8 @@ export class DynamicCodingTeamOrchestrator {
         },
         maxOutputTokens: this.policy.maxOutputTokens,
         timeoutMs: this.policy.timeoutMs,
+        taskClass: "schema_normalization",
+        modelTaskCallSite: "dynamic_coding_team.orchestrator.plan_repair",
       });
       parsed = parseJsonObject(response.responseText);
       plan = normalizePlan(parsed, input);
@@ -601,6 +615,8 @@ export class DynamicCodingTeamOrchestrator {
       },
       maxOutputTokens: Math.min(3_000, this.policy.maxOutputTokens),
       timeoutMs: this.policy.timeoutMs,
+      taskClass: "validation_classification",
+      modelTaskCallSite: "dynamic_coding_team.orchestrator.delegation_review",
     });
     const review = normalizeOrchestratorDelegationReview({
       reviewedWorkOrderId: input.workOrder.workOrderId,

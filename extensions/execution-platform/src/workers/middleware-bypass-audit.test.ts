@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { evaluateMiddlewareBypassAudit } from "./middleware-bypass-audit.ts";
+import {
+  buildMiddlewareBypassCandidatesFromSourceFiles,
+  evaluateMiddlewareBypassAudit,
+} from "./middleware-bypass-audit.ts";
 
 describe("middleware bypass audit", () => {
   it("passes approved middleware and test-only direct paths", () => {
@@ -70,5 +73,62 @@ describe("middleware bypass audit", () => {
         "temporary_exception_missing_expiry:extensions/execution-platform/src/workflows/temporary-direct-db.ts",
       ]),
     });
+  });
+
+  it("extracts direct model/script/DB/work-queue bypass candidates from source shape", () => {
+    const candidates = buildMiddlewareBypassCandidatesFromSourceFiles([
+      {
+        path: "extensions/execution-platform/src/workflows/unsafe-direct-model.ts",
+        source: "const client = new OpenRouterAgentTeamModelClient({ apiKey });",
+      },
+      {
+        path: "extensions/execution-platform/src/workers/middleware-worker-adapters.ts",
+        source: "await sqlClient.query('select 1');",
+      },
+      {
+        path: "extensions/execution-platform/src/model-tasks/model-task-repository.test.ts",
+        source: "await execFile('node', ['--version']);",
+      },
+      {
+        path: "extensions/execution-platform/src/workflows/unsafe-lifecycle.ts",
+        source: "await workQueue.completeWorkQueueItemFromCloseout(input);",
+      },
+    ]);
+
+    expect(candidates).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          path: "extensions/execution-platform/src/workflows/unsafe-direct-model.ts",
+          kind: "model",
+          liveCapable: true,
+          approvedMiddlewarePath: false,
+        }),
+        expect.objectContaining({
+          path: "extensions/execution-platform/src/workers/middleware-worker-adapters.ts",
+          kind: "db",
+          approvedMiddlewarePath: true,
+        }),
+        expect.objectContaining({
+          path: "extensions/execution-platform/src/model-tasks/model-task-repository.test.ts",
+          kind: "script",
+          testOnly: true,
+        }),
+        expect.objectContaining({
+          path: "extensions/execution-platform/src/workflows/unsafe-lifecycle.ts",
+          kind: "work_queue_lifecycle",
+          liveCapable: true,
+        }),
+      ]),
+    );
+
+    const audit = evaluateMiddlewareBypassAudit(candidates);
+
+    expect(audit.status).toBe("blocked");
+    expect(audit.reasonCodes).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining("blocked_live_bypass:model"),
+        expect.stringContaining("blocked_live_bypass:work_queue_lifecycle"),
+      ]),
+    );
   });
 });

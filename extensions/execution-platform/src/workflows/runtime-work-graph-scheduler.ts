@@ -7,6 +7,7 @@ import {
 } from "../model-decision-contracts/index.ts";
 import type { JsonValue } from "../runtime-job-repository.ts";
 import type { RuntimeToolKernel } from "../runtime-tool-call/runtime-tool-kernel.ts";
+import { buildContextBrokerRequest, summarizeContextBrokerRequest } from "./context-broker.ts";
 import {
   createContextSnapshotRef,
   normalizeContextSnapshotRefs,
@@ -36,10 +37,19 @@ import {
   validateCommitmentWorkPacketsForScheduler,
   type CommitmentWorkPacket,
 } from "./mission-work-packets.ts";
+import {
+  NodeExecutionPacketSchema,
+  buildMissingNodeExecutionPacketReadinessState,
+  evaluateNodeExecutionPacketReadiness,
+  summarizeNodeExecutionPacketForReadback,
+  type NodeExecutionPacket,
+  type RuntimeNodeLifecycleState,
+} from "./node-resource-materialization.ts";
 import { validateNonCodexTaskDecompositionDecision } from "./non-codex-task-decomposition-policy.ts";
 import {
   compileOrchestratorGraphDecision,
   validateOrchestratorGraphDecision,
+  type OrchestratorGraphEdgeSpec,
   type OrchestratorGraphDecision,
   type OrchestratorGraphRejectedNodeDiagnostic,
   type OrchestratorGraphNodeSpec,
@@ -60,8 +70,8 @@ import {
   buildRuntimeNodeCapabilityManifest,
   findRuntimeNodeCapability,
   filterRuntimeNodeCapabilityManifestForExecutors,
-  providerCapabilityProfileForCapability,
   runtimeNodeCapabilityManifestForModel,
+  type RuntimeNodeCapability,
   type RuntimeNodeCapabilityManifest,
   type RuntimeNodeCapabilityPhase,
 } from "./runtime-node-capability-registry.ts";
@@ -71,11 +81,21 @@ import {
   summarizeRuntimeTaskBudgetPolicy,
   type RuntimeTaskBudgetPolicy,
 } from "./runtime-task-budget-policy.ts";
+import {
+  DEFAULT_EXPANSION_ADMISSION_POLICY,
+  evaluateRuntimeWorkGraphExpansionAdmission,
+  summarizeExpansionAdmissionDecision,
+  type RuntimeWorkGraphExpansionAdmissionPolicy,
+} from "./runtime-work-graph-expansion-controller.ts";
 import type {
   RuntimeWorkGraphRepository,
   RuntimeWorkGraphSnapshot,
 } from "./runtime-work-graph-repository.ts";
 import type { RuntimeWorkGraphSchedulerSnapshotSummary } from "./runtime-work-graph-scheduler-contracts.ts";
+import {
+  buildSuperstepBranchResult,
+  type SuperstepBranchResult,
+} from "./runtime-work-graph-superstep.ts";
 import {
   boundedRuntimeWorkGraphString,
   graphRef,
@@ -86,6 +106,7 @@ import {
   invokeSchedulerRuntimeTool,
   type SchedulerRuntimeToolId,
 } from "./scheduler-runtime-tools.ts";
+import { compileWorkIntent } from "./work-intent.ts";
 import type {
   CommitmentEvidenceClaim,
   RuntimeWorkGraphNodeExecutionResult,
@@ -94,7 +115,12 @@ import {
   genericWorkflowNodeResultFromRuntime,
   validateGenericWorkflowNodeResult,
 } from "./workflow-node-execution.ts";
-import type { WorkflowRoleClass } from "./workflow-orchestration-policy.ts";
+import type {
+  WorkflowEntryNodePolicy,
+  WorkflowRoleClass,
+} from "./workflow-orchestration-policy.ts";
+
+const MAX_CONTEXT_SCOUT_COMMITMENTS_PER_NODE = 3;
 
 export type { RuntimeWorkGraphSchedulerSnapshotSummary } from "./runtime-work-graph-scheduler-contracts.ts";
 export type {
@@ -159,6 +185,68 @@ type RuntimeWorkGraphLoopGuard = {
   seenEvidenceRefs: Set<string>;
   roleIdsSeen: Set<string>;
   repeatedNoProgressBySignature: Map<string, number>;
+};
+
+export type RuntimeWorkGraphSchedulerFrontierState = {
+  artifactKind: "runtime_work_graph_scheduler_frontier_state";
+  schemaVersion: "execution-platform.runtime-work-graph.scheduler-frontier.v1";
+  graphId: string;
+  currentSuperstep: number;
+  nodeCount: number;
+  edgeCount: number;
+  executableReadyNodeIds: string[];
+  selectedExecutableNodeIds: string[];
+  blockedFrontierNodeIds: string[];
+  aggregateBlockedNodeIds: string[];
+  nonRunnableNodeIds: string[];
+  dependencyBlockedNodeIds: string[];
+  contextBlockedNodeIds: string[];
+  resourceBlockedNodeIds: string[];
+  validationBlockedNodeIds: string[];
+  reviewBlockedNodeIds: string[];
+  closeoutBlockedNodeIds: string[];
+  branchIds: string[];
+  readinessRefs: string[];
+  resourceRefs: string[];
+  contextRefs: string[];
+  openCommitmentIds: string[];
+  lockConflictNodeIds: string[];
+  providerBudgetBlockedNodeIds: string[];
+  nextLegalTransition: string;
+  reasonCodes: string[];
+  rawPromptStored: false;
+  rawResponseStored: false;
+  rawProviderLogStored: false;
+  rawToolLogStored: false;
+};
+
+export type RuntimeWorkGraphNoProgressSignature = {
+  artifactKind: "runtime_work_graph_no_progress_signature";
+  schemaVersion: "execution-platform.runtime-work-graph.no-progress-signature.v1";
+  graphId: string;
+  iteration: number;
+  superstep: number;
+  nodeCount: number;
+  edgeCount: number;
+  executableFrontierNodeIds: string[];
+  blockedFrontierNodeIds: string[];
+  blockerReasonCodes: string[];
+  openCommitmentIds: string[];
+  newEvidenceRefs: string[];
+  newReadinessRefs: string[];
+  newWorkQueueRefs: string[];
+  createdNodeIds: string[];
+  reusedNodeIds: string[];
+  createdEdgeIds: string[];
+  reusedEdgeIds: string[];
+  selectedDecisionId: string | null;
+  selectedDecisionKind: string | null;
+  terminalBlockerCode: string | null;
+  signatureHash: string;
+  rawPromptStored: false;
+  rawResponseStored: false;
+  rawProviderLogStored: false;
+  rawToolLogStored: false;
 };
 
 function workflowRoleClassForNode(node: TeamGraphNode): WorkflowRoleClass {
@@ -347,13 +435,33 @@ export type RuntimeWorkGraphSchedulerOptions = {
     schedulerToolInvocationRefs?: string[];
     repairClassification?: JsonValue | null;
     parallelFrontier?: RuntimeWorkGraphParallelFrontierReadback | null;
+    schedulerFrontierState?: RuntimeWorkGraphSchedulerFrontierState | null;
+    noProgressSignature?: RuntimeWorkGraphNoProgressSignature | null;
+    noProgressRepeatCount?: number | null;
+    missionLedgerEvaluationThrottle?: JsonValue | null;
+    expansionAdmissionDecision?: JsonValue | null;
+    expansionAdmissionDecisionRef?: string | null;
+    expansionAdmissionPolicyRef?: string | null;
+    expansionAdmissionStatus?: string | null;
+    expansionAdmissionOriginalNodeCount?: number | null;
+    expansionAdmissionOriginalEdgeCount?: number | null;
+    expansionAdmissionAdmittedNodeCount?: number | null;
+    expansionAdmissionAdmittedEdgeCount?: number | null;
+    expansionAdmissionDeferredNodeCount?: number | null;
+    expansionAdmissionDeferredEdgeCount?: number | null;
+    expansionAdmissionReadyFrontierNodeIds?: string[];
+    expansionAdmissionAdmittedNodeIds?: string[];
+    expansionAdmissionDeferredNodeIds?: string[];
+    expansionAdmissionNextTransition?: string | null;
+    expansionAdmissionPrerequisiteCritical?: boolean | null;
+    expansionAdmissionReasonCodes?: string[];
     postSynthesisGraphQuality?: PostSynthesisGraphQualityReport | null;
     postSynthesisGraphQualityState?: string | null;
     postSynthesisMissingRoleObligations?: string[];
     postSynthesisPresentRoleObligations?: string[];
     postSynthesisBroadCodexShare?: number | null;
     postSynthesisPremiumShare?: number | null;
-    commitmentWorkPackets?: Array<{
+    commitmentWorkPacketSummaries?: Array<{
       packetRef?: string;
       commitmentId?: string;
       authoringSource?: string;
@@ -404,6 +512,43 @@ export type RuntimeWorkGraphSchedulerOptions = {
     contextSynthesisValidationLanes?: string[];
     contextSynthesisReviewLanes?: string[];
     contextSynthesisSemanticCodeIntelligenceRefs?: string[];
+    implementationContextPacketRef?: string | null;
+    implementationContextReadinessStatus?: string | null;
+    implementationTaskPacketRefs?: string[];
+    resolvedTargetFileRefs?: string[];
+    readableTargetFileRefs?: string[];
+    missingTargetRefs?: string[];
+    unreadableTargetRefs?: string[];
+    directoryOnlyTargetRefs?: string[];
+    candidateConcreteFileRefs?: string[];
+    targetFileSnapshotRefs?: string[];
+    targetFileSnapshotHashes?: string[];
+    implementationContextRepairAction?: string | null;
+    nodeExecutionPacketRef?: string | null;
+    nodeExecutionPacketStatus?: string | null;
+    resourcePacketKind?: string | null;
+    resourcePacketRef?: string | null;
+    resourceReadinessReasonCodes?: string[];
+    resourceBlockingLimitations?: string[];
+    resourceNonblockingLimitations?: string[];
+    nodeReadinessState?: JsonValue | null;
+    nodeReadinessStateRef?: string | null;
+    nodeReadinessPhase?: string | null;
+    nodeReadinessStatus?: string | null;
+    nodeReadinessRepairAction?: string | null;
+    nodeReadinessNextAllowedTransitions?: string[];
+    nodeReadinessFreshnessStatus?: string | null;
+    nodeReadinessSnapshotStatus?: string | null;
+    nodeReadinessContextStatus?: string | null;
+    contextBrokerRequestRefs?: string[];
+    contextBrokerStatuses?: string[];
+    contextBrokerDedupeKeys?: string[];
+    contextBrokerConsumerNodeIds?: string[];
+    contextBrokerReasonCodes?: string[];
+    contextBrokerNextTransition?: string | null;
+    nodeReadinessValidationStatus?: string | null;
+    nodeReadinessAuthorityStatus?: string | null;
+    nodeReadinessEvidenceStatus?: string | null;
   }) => Promise<void>;
   onNodeAdded?: (input: {
     graphId: string;
@@ -426,11 +571,15 @@ export type RuntimeWorkGraphSchedulerOptions = {
   requireEvidenceClaimsForMissionLedger?: boolean;
   requireModelAuthoredCommitmentWorkPacketsForComplexMission?: boolean;
   requireFreshContextSnapshotsForWorkerExecution?: boolean;
+  requireNodeExecutionPacketForWorkerExecution?: boolean;
   deferCloseoutUntilExecutableGraphComplete?: boolean;
   roleCoverageProfile?: RuntimeWorkGraphRoleCoverageProfile | null;
+  entryNodePolicy?: WorkflowEntryNodePolicy | null;
   maxIterations?: number;
   maxDecisionRepairAttempts?: number;
   maxParallelNodeExecutions?: number;
+  expansionAdmissionPolicy?: Partial<RuntimeWorkGraphExpansionAdmissionPolicy> | null;
+  preferExecutableFrontierBeforeOrchestrator?: boolean;
 };
 
 function summarizeSnapshot(
@@ -438,6 +587,7 @@ function summarizeSnapshot(
 ): RuntimeWorkGraphSchedulerSnapshotSummary {
   return {
     workflowId: snapshot.graph.workflowId,
+    rootRuntimeJobId: snapshot.graph.rootRuntimeJobId,
     graphStatus: snapshot.graph.graphStatus,
     nodeSummaries: snapshot.nodes.map((node) => ({
       nodeId: node.nodeId,
@@ -468,6 +618,31 @@ function summarizeSnapshot(
           ? (jsonRecord(node.metadata).noContextNeededRationale as string)
           : null,
       inputHandoffRefs: node.inputHandoffRefs.slice(0, 12),
+      targetRefs: nodeSchedulingTargetRefs(node).slice(0, 32),
+      resourceRequirementKinds: jsonStringArray(jsonRecord(node.metadata).resourceRequirementKinds),
+      contextQuestions: jsonStringArray(
+        jsonRecord(node.metadata).contextQuestions ??
+          jsonRecord(node.metadata).targetWorkContextQuestions,
+      ),
+      contextSnapshotRefs: [
+        ...jsonContextSnapshotArray(jsonRecord(node.metadata).contextSnapshotRefs).map(
+          (snapshotRef) => snapshotRef.snapshotRef,
+        ),
+        ...jsonContextSnapshotArray(jsonRecord(node.metadata).providedContextSnapshotRefs).map(
+          (snapshotRef) => snapshotRef.snapshotRef,
+        ),
+      ].slice(0, 40),
+      nodeReadinessContextStatus:
+        typeof jsonRecord(node.metadata).nodeReadinessContextStatus === "string"
+          ? (jsonRecord(node.metadata).nodeReadinessContextStatus as string)
+          : null,
+      nodeReadinessContextLimitationStatus:
+        typeof jsonRecord(node.metadata).nodeReadinessContextLimitationStatus === "string"
+          ? (jsonRecord(node.metadata).nodeReadinessContextLimitationStatus as string)
+          : null,
+      contextLimitationWaiverRefs: jsonStringArray(
+        jsonRecord(node.metadata).contextLimitationWaiverRefs,
+      ),
       outputArtifactRefs: node.outputArtifactRefs.slice(0, 8),
       contextSynthesisRef:
         typeof jsonRecord(node.metadata).contextSynthesisRef === "string"
@@ -656,6 +831,7 @@ export type RuntimeWorkGraphParallelFrontierReadback = {
     selectedNodeIds: string[];
     skippedNodeIds: string[];
   }>;
+  branchResults: SuperstepBranchResult[];
   joinReadyNodeIds: string[];
   contextSynthesisRefs: string[];
   implementationGroupCount: number | null;
@@ -668,6 +844,16 @@ export type RuntimeWorkGraphParallelFrontierReadback = {
 function nodeMetadataStringArray(node: TeamGraphNode, keys: string[]): string[] {
   const metadata = jsonRecord(node.metadata);
   return uniqueStrings(keys.flatMap((key) => jsonStringArray(metadata[key]))).slice(0, 24);
+}
+
+function nodeWritableSchedulingTargetRefs(node: TeamGraphNode): string[] {
+  const metadata = jsonRecord(node.metadata);
+  return uniqueStrings([
+    ...jsonStringArray(metadata.targetRefs),
+    ...jsonStringArray(metadata.repoScopeRefs),
+    ...jsonStringArray(metadata.likelyModifyRefs),
+    ...jsonStringArray(metadata.resolvedTargetFileRefs),
+  ]).slice(0, 16);
 }
 
 function metadataPositiveInteger(value: JsonValue | unknown | undefined): number | null {
@@ -721,7 +907,7 @@ function nodeExecutionConflictKeys(node: TeamGraphNode): string[] {
   if (writeScopeRefs.length > 0) {
     keys.push(...writeScopeRefs.map((ref) => `write:${ref}`));
   }
-  const targetRefs = nodeSchedulingTargetRefs(node);
+  const targetRefs = nodeWritableSchedulingTargetRefs(node);
   if (
     targetRefs.length > 0 &&
     ["implementation", "repair", "docs_update"].includes(node.nodeKind)
@@ -732,7 +918,9 @@ function nodeExecutionConflictKeys(node: TeamGraphNode): string[] {
     "validationCommandRefs",
     "validationScopeRefs",
   ]);
-  keys.push(...validationRefs.map((ref) => `validation:${ref}`));
+  if (node.nodeKind === "validation" || node.nodeKind === "test_review") {
+    keys.push(...validationRefs.map((ref) => `validation:${ref}`));
+  }
   keys.push(
     ...nodeMetadataStringArray(node, ["runtimeJobRefs"]).map((ref) => `runtime-job:${ref}`),
   );
@@ -881,6 +1069,7 @@ function buildParallelFrontierReadback(input: {
     selectedNodeIds: string[];
     skippedNodeIds: string[];
   }>;
+  branchResults?: RuntimeWorkGraphParallelFrontierReadback["branchResults"];
 }): RuntimeWorkGraphParallelFrontierReadback {
   const dependencyLayers = dependencyLayersForSnapshot(input.snapshot);
   const statusNodeIds = (status: TeamGraphNode["nodeStatus"]): string[] =>
@@ -947,6 +1136,33 @@ function buildParallelFrontierReadback(input: {
         selectedNodeIds: budget.selectedNodeIds.slice(0, 40),
         skippedNodeIds: budget.skippedNodeIds.slice(0, 40),
       })),
+    branchResults: (input.branchResults ?? []).slice(0, 40).map((branch) => ({
+      artifactKind: "runtime_work_graph_superstep_branch_result",
+      schemaVersion: "execution-platform.superstep-branch-result.v1",
+      superstepId: branch.superstepId,
+      branchId: branch.branchId,
+      nodeId: branch.nodeId,
+      nodeKind: branch.nodeKind,
+      capabilityId: branch.capabilityId,
+      targetCommitmentIds: branch.targetCommitmentIds.slice(0, 24),
+      status: branch.status,
+      failureClass: branch.failureClass,
+      errorPath: branch.errorPath,
+      errorSummary: branch.errorSummary ? branch.errorSummary.slice(0, 500) : null,
+      blockerSummary: branch.blockerSummary ? branch.blockerSummary.slice(0, 500) : null,
+      repairAction: branch.repairAction,
+      nextTransition: branch.nextTransition,
+      evidenceRefs: branch.evidenceRefs.slice(0, 40),
+      readinessStateRef: branch.readinessStateRef,
+      reasonCodes: branch.reasonCodes.slice(0, 40),
+      rawPromptStored: false,
+      rawResponseStored: false,
+      rawProviderLogStored: false,
+      rawToolLogStored: false,
+      rawCommandLogStored: false,
+      rawDbRowsStored: false,
+      secretsStored: false,
+    })),
     joinReadyNodeIds,
     contextSynthesisRefs: input.snapshot.nodes
       .filter((node) => node.nodeKind === "context_synthesis" && node.nodeStatus === "succeeded")
@@ -958,6 +1174,100 @@ function buildParallelFrontierReadback(input: {
     rawProviderLogStored: false,
     rawToolLogStored: false,
   };
+}
+
+function branchFailureSignature(input: {
+  failureClass: string | null;
+  errorPath: string | null;
+  errorSummary: string | null;
+}): string | null {
+  if (!input.failureClass) {
+    return null;
+  }
+  const summary = (input.errorSummary ?? "").replace(/\s+/gu, " ").trim().slice(0, 220);
+  return [input.failureClass, input.errorPath ?? "unknown_path", summary].join("|");
+}
+
+function systemicParallelFrontierFailure(input: {
+  snapshot: RuntimeWorkGraphSnapshot;
+  branchResults: RuntimeWorkGraphParallelFrontierReadback["branchResults"];
+}): {
+  signature: string;
+  signatureHash: string;
+  failureClass: string;
+  errorPath: string | null;
+  errorSummary: string | null;
+  nodeIds: string[];
+} | null {
+  const entries: Array<{
+    signature: string;
+    failureClass: string;
+    errorPath: string | null;
+    errorSummary: string | null;
+    nodeId: string;
+  }> = [];
+  for (const branch of input.branchResults) {
+    const signature = branchFailureSignature(branch);
+    if (!signature || branch.status !== "needs_review") {
+      continue;
+    }
+    entries.push({
+      signature,
+      failureClass: branch.failureClass ?? "unknown",
+      errorPath: branch.errorPath,
+      errorSummary: branch.errorSummary,
+      nodeId: branch.nodeId,
+    });
+  }
+  for (const node of input.snapshot.nodes) {
+    if (node.nodeStatus !== "needs_review") {
+      continue;
+    }
+    const metadata = jsonRecord(node.metadata);
+    const failureClass =
+      typeof metadata.parallelFrontierBranchFailureClass === "string"
+        ? metadata.parallelFrontierBranchFailureClass
+        : null;
+    const errorPath =
+      typeof metadata.parallelFrontierBranchErrorPath === "string"
+        ? metadata.parallelFrontierBranchErrorPath
+        : null;
+    const errorSummary =
+      typeof metadata.parallelFrontierBranchErrorSummary === "string"
+        ? metadata.parallelFrontierBranchErrorSummary
+        : null;
+    const signature = branchFailureSignature({ failureClass, errorPath, errorSummary });
+    if (!signature) {
+      continue;
+    }
+    entries.push({
+      signature,
+      failureClass: failureClass ?? "unknown",
+      errorPath,
+      errorSummary,
+      nodeId: node.nodeId,
+    });
+  }
+  const bySignature = new Map<string, typeof entries>();
+  for (const entry of entries) {
+    bySignature.set(entry.signature, [...(bySignature.get(entry.signature) ?? []), entry]);
+  }
+  for (const [signature, matches] of bySignature.entries()) {
+    const nodeIds = uniqueStrings(matches.map((match) => match.nodeId));
+    if (nodeIds.length < 2) {
+      continue;
+    }
+    const first = matches[0];
+    return {
+      signature,
+      signatureHash: createHash("sha256").update(signature).digest("hex").slice(0, 16),
+      failureClass: first.failureClass,
+      errorPath: first.errorPath,
+      errorSummary: first.errorSummary,
+      nodeIds: nodeIds.slice(0, 20),
+    };
+  }
+  return null;
 }
 
 function selectRunnableParallelFrontier(input: {
@@ -1075,6 +1385,261 @@ function selectRunnableParallelFrontier(input: {
       rawRunnableNodeIds: candidates.map((node) => node.nodeId),
       providerConcurrencyBudgets,
     }),
+  };
+}
+
+function schedulerFrontierStateRef(input: {
+  graphId: string;
+  nodeId: string;
+  suffix: string;
+}): string {
+  return `runtime-work-graph://node-transition-readiness/${input.graphId}/${input.nodeId}/${input.suffix}`;
+}
+
+function buildSchedulerFrontierState(input: {
+  graphId: string;
+  iteration: number;
+  snapshot: RuntimeWorkGraphSnapshot;
+  frontier: ReturnType<typeof selectRunnableParallelFrontier>;
+  executors: Record<string, RuntimeWorkGraphNodeExecutor>;
+  missionLedger: MissionContractLedger | null;
+  requireFreshContextSnapshotsForWorkerExecution: boolean;
+  requireNodeExecutionPacketForWorkerExecution: boolean;
+}): RuntimeWorkGraphSchedulerFrontierState {
+  const frontierReady = new Set(input.frontier.rawRunnableNodeIds);
+  const selected = new Set(input.frontier.selectedNodes.map((node) => node.nodeId));
+  const plannedNodes = input.snapshot.nodes.filter((node) => node.nodeStatus === "planned");
+  const readinessByNodeId = new Map(
+    plannedNodes.map((node) => [
+      node.nodeId,
+      evaluateRuntimeNodeTransitionReadiness({
+        snapshot: input.snapshot,
+        node,
+        executors: input.executors,
+        requireFreshContextSnapshotsForWorkerExecution:
+          input.requireFreshContextSnapshotsForWorkerExecution,
+        requireNodeExecutionPacketForWorkerExecution:
+          input.requireNodeExecutionPacketForWorkerExecution,
+      }),
+    ]),
+  );
+  const blocked = [...readinessByNodeId.entries()]
+    .filter(([nodeId, readiness]) => !frontierReady.has(nodeId) || !readiness.executable)
+    .map(([nodeId]) => nodeId)
+    .slice(0, 80);
+  const nodesById = new Map(input.snapshot.nodes.map((node) => [node.nodeId, node]));
+  const blockedBy = (predicate: (readiness: RuntimeNodeTransitionReadiness) => boolean): string[] =>
+    [...readinessByNodeId.entries()]
+      .filter(([, readiness]) => predicate(readiness))
+      .map(([nodeId]) => nodeId)
+      .slice(0, 80);
+  const skippedConflictNodeIds = input.frontier.skippedReasonCodes
+    .map((code) => code.match(/^parallel_frontier_conflict:([^:]+)/u)?.[1])
+    .filter((nodeId): nodeId is string => Boolean(nodeId))
+    .slice(0, 40);
+  const providerBudgetBlockedNodeIds = input.frontier.skippedReasonCodes
+    .map((code) => code.match(/^parallel_frontier_provider_budget_exhausted:([^:]+)/u)?.[1])
+    .filter((nodeId): nodeId is string => Boolean(nodeId))
+    .slice(0, 40);
+  const contextRefs = uniqueStrings(
+    plannedNodes.flatMap((node) => [
+      ...node.inputHandoffRefs.filter((ref) => /context|handoff|synthesis/iu.test(ref)),
+      ...jsonStringArray(jsonRecord(node.metadata).contextSnapshotRefs),
+      ...jsonStringArray(jsonRecord(node.metadata).providedContextSnapshotRefs),
+    ]),
+  ).slice(0, 60);
+  const resourceRefs = uniqueStrings(
+    plannedNodes.flatMap((node) => {
+      const metadata = jsonRecord(node.metadata);
+      return [
+        typeof metadata.nodeExecutionPacketRef === "string"
+          ? metadata.nodeExecutionPacketRef
+          : null,
+        typeof metadata.resourcePacketRef === "string" ? metadata.resourcePacketRef : null,
+        typeof metadata.implementationContextPacketRef === "string"
+          ? metadata.implementationContextPacketRef
+          : null,
+      ].filter((ref): ref is string => Boolean(ref));
+    }),
+  ).slice(0, 60);
+  const reasonCodes = uniqueStrings([
+    "scheduler_canonical_frontier_state_evaluated",
+    `scheduler_frontier_ready_count:${input.frontier.rawRunnableNodeIds.length}`,
+    `scheduler_frontier_selected_count:${input.frontier.selectedNodes.length}`,
+    `scheduler_frontier_blocked_count:${blocked.length}`,
+    ...input.frontier.skippedReasonCodes.slice(0, 20),
+    ...[...readinessByNodeId.values()].flatMap((readiness) => readiness.reasonCodes).slice(0, 40),
+  ]);
+  const nextLegalTransition =
+    input.frontier.selectedNodes.length > 0
+      ? "execute_frontier"
+      : providerBudgetBlockedNodeIds.length > 0 || skippedConflictNodeIds.length > 0
+        ? "wait_for_locks_or_provider_budget"
+        : blocked.length > 0
+          ? "repair_or_create_prerequisite"
+          : "request_orchestrator_decision";
+  return {
+    artifactKind: "runtime_work_graph_scheduler_frontier_state",
+    schemaVersion: "execution-platform.runtime-work-graph.scheduler-frontier.v1",
+    graphId: input.graphId,
+    currentSuperstep: input.iteration,
+    nodeCount: input.snapshot.nodes.length,
+    edgeCount: input.snapshot.edges.length,
+    executableReadyNodeIds: input.frontier.rawRunnableNodeIds.slice(0, 80),
+    selectedExecutableNodeIds: [...selected].slice(0, 80),
+    blockedFrontierNodeIds: blocked,
+    aggregateBlockedNodeIds: blocked
+      .filter((nodeId) => {
+        const node = nodesById.get(nodeId);
+        return node
+          ? nodeBlockingDependencies({ snapshot: input.snapshot, nodeId }).length > 1
+          : false;
+      })
+      .slice(0, 40),
+    nonRunnableNodeIds: blockedBy((readiness) => !readiness.executable),
+    dependencyBlockedNodeIds: blockedBy((readiness) => readiness.dependencyStatus === "blocked"),
+    contextBlockedNodeIds: blockedBy((readiness) =>
+      ["required_missing", "in_progress", "accepted_with_signal"].includes(readiness.contextStatus),
+    ),
+    resourceBlockedNodeIds: blockedBy((readiness) => readiness.resourceStatus === "missing"),
+    validationBlockedNodeIds: blockedBy(
+      (readiness) => !["ready", "not_required"].includes(readiness.validationStatus),
+    ),
+    reviewBlockedNodeIds: blocked.filter(
+      (nodeId) => nodesById.get(nodeId)?.nodeKind === "reviewer",
+    ),
+    closeoutBlockedNodeIds: blocked.filter(
+      (nodeId) => nodesById.get(nodeId)?.nodeKind === "closeout",
+    ),
+    branchIds: input.frontier.selectedNodes
+      .map((node, index) => `frontier:${input.iteration}:branch:${index + 1}:${node.nodeId}`)
+      .slice(0, 80),
+    readinessRefs: [...readinessByNodeId.keys()]
+      .map((nodeId) =>
+        schedulerFrontierStateRef({ graphId: input.graphId, nodeId, suffix: "frontier-state" }),
+      )
+      .slice(0, 80),
+    resourceRefs,
+    contextRefs,
+    openCommitmentIds: remainingOpenCommitmentIds(input.missionLedger).slice(0, 80),
+    lockConflictNodeIds: skippedConflictNodeIds,
+    providerBudgetBlockedNodeIds,
+    nextLegalTransition,
+    reasonCodes,
+    rawPromptStored: false,
+    rawResponseStored: false,
+    rawProviderLogStored: false,
+    rawToolLogStored: false,
+  };
+}
+
+function pendingContextBrokerRequestRefs(snapshot: RuntimeWorkGraphSnapshot): string[] {
+  return uniqueStrings(
+    snapshot.nodes.flatMap((node) => {
+      const metadata = jsonRecord(node.metadata ?? null);
+      return [
+        typeof metadata.contextBrokerRequestRef === "string"
+          ? metadata.contextBrokerRequestRef
+          : null,
+        ...jsonStringArray(metadata.contextBrokerRequestRefs),
+      ];
+    }),
+  ).slice(0, 120);
+}
+
+function activeImplementationOrResourceBranchNodeIds(snapshot: RuntimeWorkGraphSnapshot): string[] {
+  const implementationOrResourceKinds = new Set([
+    "implementation",
+    "implementation_scoped",
+    "repair",
+    "validation",
+    "test_review",
+    "test_authoring",
+  ]);
+  const resourceLifecycleStates = new Set([
+    "resources_required",
+    "resource_materialization_in_progress",
+    "ready",
+    "ready_with_limitations",
+  ]);
+  return uniqueStrings(
+    snapshot.nodes
+      .filter((node) => node.nodeStatus === "planned" || node.nodeStatus === "running")
+      .filter((node) => {
+        const metadata = jsonRecord(node.metadata ?? null);
+        return (
+          implementationOrResourceKinds.has(node.nodeKind) ||
+          resourceLifecycleStates.has(
+            typeof metadata.nodeLifecycleState === "string" ? metadata.nodeLifecycleState : "",
+          ) ||
+          typeof metadata.nodeExecutionPacketRef === "string" ||
+          typeof metadata.implementationContextPacketRef === "string"
+        );
+      })
+      .map((node) => node.nodeId),
+  ).slice(0, 120);
+}
+
+type RuntimeWorkGraphPersistenceOutcome = {
+  createdNodeIds: string[];
+  reusedNodeIds: string[];
+  createdEdgeIds: string[];
+  reusedEdgeIds: string[];
+};
+
+function buildNoProgressSignature(input: {
+  graphId: string;
+  iteration: number;
+  snapshot: RuntimeWorkGraphSnapshot;
+  frontierState: RuntimeWorkGraphSchedulerFrontierState;
+  decision: OrchestratorGraphDecision | null;
+  persistence: RuntimeWorkGraphPersistenceOutcome;
+  terminalBlockerCode?: string | null;
+}): RuntimeWorkGraphNoProgressSignature {
+  const blockerReasonCodes = input.frontierState.reasonCodes
+    .filter((code) => /blocked|missing|conflict|exhausted|not_satisfied|no_progress/iu.test(code))
+    .slice(0, 80);
+  const hashCore = {
+    graphId: input.graphId,
+    nodeCount: input.snapshot.nodes.length,
+    edgeCount: input.snapshot.edges.length,
+    executableFrontierNodeIds: input.frontierState.executableReadyNodeIds,
+    blockedFrontierNodeIds: input.frontierState.blockedFrontierNodeIds,
+    blockerReasonCodes,
+    openCommitmentIds: input.frontierState.openCommitmentIds,
+    reusedNodeIds: input.persistence.reusedNodeIds,
+    reusedEdgeIds: input.persistence.reusedEdgeIds,
+    selectedDecisionKind: input.decision?.decisionKind ?? null,
+    terminalBlockerCode: input.terminalBlockerCode ?? null,
+  };
+  const signatureHash = createHash("sha256").update(JSON.stringify(hashCore)).digest("hex");
+  return {
+    artifactKind: "runtime_work_graph_no_progress_signature",
+    schemaVersion: "execution-platform.runtime-work-graph.no-progress-signature.v1",
+    graphId: input.graphId,
+    iteration: input.iteration,
+    superstep: input.iteration,
+    nodeCount: input.snapshot.nodes.length,
+    edgeCount: input.snapshot.edges.length,
+    executableFrontierNodeIds: input.frontierState.executableReadyNodeIds.slice(0, 80),
+    blockedFrontierNodeIds: input.frontierState.blockedFrontierNodeIds.slice(0, 80),
+    blockerReasonCodes,
+    openCommitmentIds: input.frontierState.openCommitmentIds.slice(0, 80),
+    newEvidenceRefs: [],
+    newReadinessRefs: [],
+    newWorkQueueRefs: [],
+    createdNodeIds: input.persistence.createdNodeIds.slice(0, 80),
+    reusedNodeIds: input.persistence.reusedNodeIds.slice(0, 80),
+    createdEdgeIds: input.persistence.createdEdgeIds.slice(0, 80),
+    reusedEdgeIds: input.persistence.reusedEdgeIds.slice(0, 80),
+    selectedDecisionId: input.decision?.decisionId ?? null,
+    selectedDecisionKind: input.decision?.decisionKind ?? null,
+    terminalBlockerCode: input.terminalBlockerCode ?? null,
+    signatureHash,
+    rawPromptStored: false,
+    rawResponseStored: false,
+    rawProviderLogStored: false,
+    rawToolLogStored: false,
   };
 }
 
@@ -1369,12 +1934,16 @@ function schedulerToolPhase(toolId: SchedulerRuntimeToolId, metadata?: JsonValue
     toolId === "scheduler.select_capabilities_for_work_units" ||
     toolId === "scheduler.select_capabilities" ||
     toolId === "scheduler.shortlist_capabilities" ||
+    toolId === "scheduler.compile_work_intents" ||
+    toolId === "scheduler.validate_work_intent_capability" ||
     toolId === "scheduler.define_node_contract" ||
     toolId === "scheduler.define_node_contracts" ||
     toolId === "scheduler.define_edges_or_parallelism" ||
     toolId === "scheduler.compile_staged_runtime_graph" ||
     toolId === "scheduler.compile_runtime_graph" ||
     toolId === "scheduler.review_compiled_graph" ||
+    toolId === "scheduler.evaluate_expansion_admission" ||
+    toolId === "scheduler.accept_work_intent_graph" ||
     toolId === "scheduler.create_graph_node" ||
     toolId === "scheduler.create_graph_edge"
   ) {
@@ -1382,19 +1951,52 @@ function schedulerToolPhase(toolId: SchedulerRuntimeToolId, metadata?: JsonValue
   }
   if (
     toolId === "scheduler.accept_staged_graph" ||
-    toolId === "scheduler.context_synthesis.accept" ||
-    toolId === "scheduler.approve_and_run_first_node"
+    toolId === "scheduler.context_synthesis.accept"
   ) {
     return "decomposition_accepted";
   }
   if (
+    toolId === "scheduler.evaluate_frontier_readiness" ||
+    toolId === "scheduler.evaluate_canonical_frontier" ||
+    toolId === "scheduler.open_executable_frontier" ||
+    toolId === "scheduler.open_superstep_frontier" ||
+    toolId === "scheduler.record_node_transition" ||
+    toolId === "scheduler.create_prerequisite_node" ||
+    toolId === "scheduler.link_prerequisite_to_target" ||
+    toolId === "scheduler.block_node_for_precondition" ||
+    toolId === "scheduler.promote_work_intent_to_executable" ||
+    toolId === "scheduler.approve_and_run_first_node"
+  ) {
+    return "node_transition_readiness";
+  }
+  if (
+    toolId === "scheduler.request_transition_repair_intent" ||
+    toolId === "scheduler.accept_transition_repair" ||
+    toolId === "scheduler.reject_transition_repair"
+  ) {
+    return "transition_repair";
+  }
+  if (
     toolId === "scheduler.reject_staged_graph" ||
+    toolId === "scheduler.reject_work_intent_graph" ||
     toolId === "scheduler.context_synthesis.reject"
   ) {
     return "decomposition_repair_needed";
   }
   if (toolId === "scheduler.review_node_result") {
     return "node_result_review";
+  }
+  if (
+    toolId === "scheduler.record_superstep_branch_result" ||
+    toolId === "scheduler.join_superstep_frontier"
+  ) {
+    return "parallel_frontier_completed";
+  }
+  if (toolId === "scheduler.record_no_progress_signature") {
+    return "no_progress_evaluation";
+  }
+  if (toolId === "scheduler.mission_ledger_evaluation_throttle") {
+    return "mission_contract_evaluation_throttle";
   }
   if (toolId === "scheduler.classify_repair_or_escalation") {
     return "repair_or_escalation";
@@ -1431,6 +2033,18 @@ function jsonContextSnapshotArray(value: JsonValue | unknown | undefined): Conte
 
 function uniqueStrings(values: Array<string | null | undefined>): string[] {
   return [...new Set(values.filter((value): value is string => Boolean(value?.trim())))];
+}
+
+function chunkStrings(values: string[], maxChunkSize: number): string[][] {
+  if (values.length === 0) {
+    return [[]];
+  }
+  const chunkSize = Math.max(1, maxChunkSize);
+  const chunks: string[][] = [];
+  for (let index = 0; index < values.length; index += chunkSize) {
+    chunks.push(values.slice(index, index + chunkSize));
+  }
+  return chunks;
 }
 
 function runtimeDerivedEvidenceForNode(input: {
@@ -1594,6 +2208,94 @@ function nodeLoopSignature(node: TeamGraphNode): string {
   ].join("::");
 }
 
+function missionLedgerEvaluationThrottleDecision(input: {
+  node: TeamGraphNode;
+  result: RuntimeWorkGraphNodeExecutionResult;
+  evidenceClaimsAcceptedForEvaluation: boolean;
+  missionEvidenceReasonCodes: string[];
+  requireEvidenceClaimsForMissionLedger: boolean;
+}): {
+  shouldEvaluate: boolean;
+  eventClass: string;
+  reasonCodes: string[];
+  artifact: JsonValue;
+} {
+  const roleClass = workflowRoleClassForNode(input.node);
+  const hasEvidenceClaims = (input.result.evidenceClaims ?? []).length > 0;
+  const hasNonStrictArtifactEvidence =
+    !input.requireEvidenceClaimsForMissionLedger && input.result.outputArtifactRefs.length > 0;
+  const explicitEvaluationRequest = input.result.reasonCodes.some((code) =>
+    code.includes("mission_contract_evaluation_requested"),
+  );
+  const eventClass =
+    input.node.nodeKind === "context_scout" || input.node.nodeKind === "context_synthesis"
+      ? "context"
+      : input.node.nodeKind === "closeout"
+        ? "closeout"
+        : (roleClass ?? input.node.nodeKind);
+  const closureCapableEventClasses = new Set([
+    "implementation",
+    "qa",
+    "review",
+    "observability",
+    "docs",
+    "closeout",
+    "human",
+    "planning",
+    "planning_capsule",
+    "action_proposal_or_compile",
+  ]);
+  const reasonCodes: string[] = [
+    `mission_contract_evaluation_event_class:${eventClass}`,
+    hasEvidenceClaims
+      ? "mission_contract_evaluation_evidence_claims_present"
+      : hasNonStrictArtifactEvidence
+        ? "mission_contract_evaluation_non_strict_artifact_refs_present"
+        : "mission_contract_evaluation_evidence_claims_absent",
+  ];
+  const shouldEvaluate =
+    input.evidenceClaimsAcceptedForEvaluation &&
+    (hasEvidenceClaims || hasNonStrictArtifactEvidence) &&
+    (explicitEvaluationRequest || closureCapableEventClasses.has(eventClass));
+  if (!input.evidenceClaimsAcceptedForEvaluation) {
+    reasonCodes.push("mission_contract_evaluation_throttled_invalid_claims");
+  }
+  if (!hasEvidenceClaims && !hasNonStrictArtifactEvidence) {
+    reasonCodes.push("mission_contract_evaluation_throttled_no_closure_claims");
+  }
+  if (!closureCapableEventClasses.has(eventClass) && !explicitEvaluationRequest) {
+    reasonCodes.push("mission_contract_evaluation_throttled_non_closure_event_class");
+  }
+  if (shouldEvaluate) {
+    reasonCodes.push("mission_contract_evaluation_allowed_by_event_class_and_claims");
+  } else {
+    reasonCodes.push("mission_contract_evaluation_throttled");
+  }
+  return {
+    shouldEvaluate,
+    eventClass,
+    reasonCodes: uniqueStrings([...reasonCodes, ...input.missionEvidenceReasonCodes]).slice(0, 80),
+    artifact: {
+      artifactKind: "runtime_work_graph_mission_ledger_evaluation_throttle",
+      schemaVersion: "execution-platform.runtime-work-graph.mission-ledger-evaluation-throttle.v1",
+      nodeId: input.node.nodeId,
+      nodeKind: input.node.nodeKind,
+      roleClass,
+      eventClass,
+      shouldEvaluate,
+      evidenceClaimCount: input.result.evidenceClaims?.length ?? 0,
+      nonStrictArtifactEvidenceCount: hasNonStrictArtifactEvidence
+        ? input.result.outputArtifactRefs.length
+        : 0,
+      reasonCodes: uniqueStrings(reasonCodes).slice(0, 80),
+      rawPromptStored: false,
+      rawResponseStored: false,
+      rawProviderLogStored: false,
+      rawToolLogStored: false,
+    } satisfies JsonValue,
+  };
+}
+
 function missionLedgerProgressed(
   before: MissionContractLedger | null,
   after: MissionContractLedger | null,
@@ -1667,9 +2369,7 @@ function nodeRuntimeTaskBudgetPolicy(input: {
       ? summarizeMissionContractLedger(input.missionLedger).blockingCommitmentCount
       : null,
     expectedLongRunning:
-      metadataBudget.budgetClass === "long_running" ||
-      metadata.expectedLongRunning === true ||
-      input.workflowId === "agent_team.product_spec_planning",
+      metadataBudget.budgetClass === "long_running" || metadata.expectedLongRunning === true,
   });
   const timeoutMs =
     typeof metadataBudget.timeoutMs === "number" && Number.isFinite(metadataBudget.timeoutMs)
@@ -1784,42 +2484,213 @@ function runtimeScopedStagedDecisionNodeIds(input: {
   };
 }
 
+function deriveContextSynthesisJoinEdges(input: {
+  graphId: string;
+  nodes: OrchestratorGraphNodeSpec[];
+  edges: OrchestratorGraphEdgeSpec[];
+  snapshot: RuntimeWorkGraphSnapshot | null;
+}): OrchestratorGraphEdgeSpec[] {
+  const contextSynthesisNodeIds = new Set(
+    input.nodes.filter((node) => node.nodeKind === "context_synthesis").map((node) => node.nodeId),
+  );
+  if (contextSynthesisNodeIds.size === 0 || !input.snapshot) {
+    return input.edges;
+  }
+
+  const existingIncomingKeys = new Set(
+    [...input.snapshot.edges, ...input.edges].map(
+      (edge) => `${edge.fromNodeId ?? ""}->${edge.toNodeId ?? ""}:${edge.edgeKind}`,
+    ),
+  );
+  const acceptedContextSources = input.snapshot.nodes
+    .filter(
+      (node) =>
+        ["context_scout", "web_research"].includes(node.nodeKind) &&
+        node.nodeStatus === "succeeded" &&
+        node.outputArtifactRefs.length > 0,
+    )
+    .slice(0, 32);
+  if (acceptedContextSources.length === 0) {
+    return input.edges;
+  }
+
+  const derivedEdges: OrchestratorGraphEdgeSpec[] = [];
+  for (const toNodeId of contextSynthesisNodeIds) {
+    const alreadyHasContextInput = [...existingIncomingKeys].some((key) =>
+      key.endsWith(`->${toNodeId}:context_supplies`),
+    );
+    if (alreadyHasContextInput) {
+      continue;
+    }
+    for (const [sourceIndex, source] of acceptedContextSources.entries()) {
+      const edgeKey = `${source.nodeId}->${toNodeId}:context_supplies`;
+      if (existingIncomingKeys.has(edgeKey)) {
+        continue;
+      }
+      existingIncomingKeys.add(edgeKey);
+      derivedEdges.push({
+        edgeId: `context-synthesis-input-${sourceIndex + 1}-${source.nodeId}-to-${toNodeId}`.slice(
+          0,
+          96,
+        ),
+        fromNodeId: source.nodeId,
+        toNodeId,
+        edgeKind: "context_supplies",
+        reasonCodes: [
+          "runtime_derived_context_synthesis_join_edge",
+          "accepted_context_handoff_supplies_context_synthesis",
+        ],
+        artifactRefs: source.outputArtifactRefs.slice(0, 12),
+        metadata: {
+          runtimeDerivedContextSynthesisJoinEdge: true,
+          sourceNodeKind: source.nodeKind,
+          sourceNodeStatus: source.nodeStatus,
+          rawPromptStored: false,
+          rawResponseStored: false,
+          rawProviderLogStored: false,
+        } satisfies JsonValue,
+      });
+    }
+  }
+  return [...input.edges, ...derivedEdges];
+}
+
 function isBroadImplementationNode(node: TeamGraphNode | OrchestratorGraphNodeSpec): boolean {
   return node.nodeKind === "implementation" && nodeCapabilityId(node) === "implementation_complex";
 }
 
-function graphNodeSpecRoleClass(node: OrchestratorGraphNodeSpec): string {
-  const metadata = jsonRecord(node.metadata ?? {});
-  const joined = [
-    node.nodeKind,
-    node.assignedRole,
-    node.capabilityId ?? "",
-    typeof metadata.taskFamily === "string" ? metadata.taskFamily : "",
-  ]
-    .join(" ")
-    .toLowerCase();
-  if (joined.includes("context")) {
-    return "context";
-  }
-  if (joined.includes("research")) {
-    return "research";
-  }
-  if (joined.includes("planning") || joined.includes("orchestrator")) {
-    return "planning";
-  }
-  if (joined.includes("implementation") || joined.includes("repair")) {
-    return "implementation";
-  }
-  if (joined.includes("validation") || joined.includes("test") || joined.includes("qa")) {
-    return "validation";
-  }
-  if (joined.includes("review")) {
-    return "review";
-  }
-  return "other";
+type SchedulerNodeRoleClass = RuntimeNodeCapability["roleClass"] | "other";
+
+const WORKFLOW_ROLE_CLASS_VALUES = new Set<WorkflowRoleClass>([
+  "orchestrator",
+  "context",
+  "implementation",
+  "research",
+  "planning",
+  "docs",
+  "qa",
+  "architecture",
+  "design",
+  "marketing",
+  "human",
+  "review",
+  "observability",
+  "closeout",
+]);
+
+const RUNTIME_NODE_ROLE_CLASSES = new Set<RuntimeNodeCapability["roleClass"]>([
+  "orchestration",
+  "context",
+  "implementation",
+  "validation",
+  "review",
+  "research",
+  "planning",
+  "docs",
+  "human",
+  "closeout",
+  "observability",
+]);
+
+function explicitWorkflowRoleClass(value: unknown): WorkflowRoleClass | null {
+  return typeof value === "string" && WORKFLOW_ROLE_CLASS_VALUES.has(value as WorkflowRoleClass)
+    ? (value as WorkflowRoleClass)
+    : null;
 }
 
-function isProgressiveContextAcquisitionFirstMove(nodes: OrchestratorGraphNodeSpec[]): boolean {
+function workflowRoleClassForCapabilityRole(
+  roleClass: RuntimeNodeCapability["roleClass"],
+): WorkflowRoleClass | null {
+  if (roleClass === "orchestration") {
+    return "orchestrator";
+  }
+  if (roleClass === "validation") {
+    return "qa";
+  }
+  return explicitWorkflowRoleClass(roleClass);
+}
+
+function roleClassForKnownNodeKind(nodeKind: string): SchedulerNodeRoleClass {
+  switch (nodeKind) {
+    case "work_intent":
+      return "orchestration";
+    case "context_scout":
+      return "context";
+    case "implementation":
+      return "implementation";
+    case "validation":
+    case "test_review":
+    case "test_authoring":
+    case "repair":
+      return "validation";
+    case "reviewer":
+    case "security_review":
+      return "review";
+    case "orchestrator_plan":
+    case "context_synthesis":
+      return "planning";
+    case "web_research":
+      return "research";
+    case "docs_update":
+      return "docs";
+    case "human_task":
+      return "human";
+    case "closeout":
+      return "closeout";
+    case "observability_readback":
+      return "observability";
+    default:
+      return "other";
+  }
+}
+
+function capabilityForNodeRef(
+  node: Pick<TeamGraphNode | OrchestratorGraphNodeSpec, "metadata"> & {
+    capabilityId?: string | null;
+  },
+  capabilityManifest: RuntimeNodeCapabilityManifest,
+): RuntimeNodeCapability | null {
+  const capabilityId = nodeCapabilityId(node as TeamGraphNode | OrchestratorGraphNodeSpec);
+  return capabilityId ? findRuntimeNodeCapability(capabilityId, capabilityManifest) : null;
+}
+
+function graphNodeSpecRoleClass(
+  node: OrchestratorGraphNodeSpec,
+  capabilityManifest: RuntimeNodeCapabilityManifest,
+): SchedulerNodeRoleClass {
+  const capability = capabilityForNodeRef(node, capabilityManifest);
+  if (capability) {
+    return capability.roleClass;
+  }
+  const metadata = jsonRecord(node.metadata ?? {});
+  if (node.nodeKind === "work_intent" && typeof metadata.targetCapabilityRoleClass === "string") {
+    const roleClass = metadata.targetCapabilityRoleClass as RuntimeNodeCapability["roleClass"];
+    return RUNTIME_NODE_ROLE_CLASSES.has(roleClass) ? roleClass : "orchestration";
+  }
+  const explicitRoleClass = explicitWorkflowRoleClass(metadata.roleClass);
+  if (explicitRoleClass) {
+    return explicitRoleClass === "qa"
+      ? "validation"
+      : (explicitRoleClass as SchedulerNodeRoleClass);
+  }
+  return roleClassForKnownNodeKind(node.nodeKind);
+}
+
+function summaryNodeRoleClass(
+  node: RuntimeWorkGraphSchedulerSnapshotSummary["nodeSummaries"][number],
+  capabilityManifest: RuntimeNodeCapabilityManifest,
+): SchedulerNodeRoleClass {
+  const capabilityId = node.capabilityId ?? node.metadataCapabilityId ?? null;
+  const capability = capabilityId
+    ? findRuntimeNodeCapability(capabilityId, capabilityManifest)
+    : null;
+  return capability?.roleClass ?? roleClassForKnownNodeKind(node.nodeKind);
+}
+
+function isProgressiveContextAcquisitionFirstMove(
+  nodes: OrchestratorGraphNodeSpec[],
+  capabilityManifest: RuntimeNodeCapabilityManifest,
+): boolean {
   if (nodes.length !== 1) {
     return false;
   }
@@ -1827,39 +2698,37 @@ function isProgressiveContextAcquisitionFirstMove(nodes: OrchestratorGraphNodeSp
   if (!node) {
     return false;
   }
-  return ["context", "research", "planning"].includes(graphNodeSpecRoleClass(node));
+  return ["context", "research", "planning", "orchestration"].includes(
+    graphNodeSpecRoleClass(node, capabilityManifest),
+  );
 }
 
 function schedulerDecisionCapabilityPhase(input: {
   snapshotSummary: RuntimeWorkGraphSchedulerSnapshotSummary;
   missionLedger: MissionContractLedger | null;
+  capabilityManifest: RuntimeNodeCapabilityManifest;
 }): RuntimeNodeCapabilityPhase {
   if (input.snapshotSummary.nodeSummaries.length === 0) {
     return "decomposition";
   }
   if (
     missionIsComplex(input.missionLedger) &&
-    contextSupplyExists(input.snapshotSummary) &&
+    plannedContextSynthesisNode(input.snapshotSummary) &&
     !acceptedContextSynthesisExists(input.snapshotSummary)
   ) {
     return "context_synthesis";
   }
   if (missionIsComplex(input.missionLedger)) {
-    const contextSucceeded = input.snapshotSummary.nodeSummaries.some((node) => {
-      const values = [node.nodeKind, node.assignedRole, node.capabilityId ?? ""]
-        .join(" ")
-        .toLowerCase();
-      return values.includes("context") && node.nodeStatus === "succeeded";
-    });
-    const implementationStarted = input.snapshotSummary.nodeSummaries.some((node) => {
-      const values = [node.nodeKind, node.assignedRole, node.capabilityId ?? ""]
-        .join(" ")
-        .toLowerCase();
-      return (
-        values.includes("implementation") &&
-        ["running", "succeeded", "needs_review", "failed"].includes(node.nodeStatus)
-      );
-    });
+    const contextSucceeded = input.snapshotSummary.nodeSummaries.some(
+      (node) =>
+        summaryNodeRoleClass(node, input.capabilityManifest) === "context" &&
+        node.nodeStatus === "succeeded",
+    );
+    const implementationStarted = input.snapshotSummary.nodeSummaries.some(
+      (node) =>
+        summaryNodeRoleClass(node, input.capabilityManifest) === "implementation" &&
+        ["running", "succeeded", "needs_review", "failed"].includes(node.nodeStatus),
+    );
     if (!contextSucceeded && !implementationStarted) {
       return "decomposition";
     }
@@ -1874,24 +2743,6 @@ function schedulerDecisionCapabilityPhase(input: {
     }
   }
   return "execution";
-}
-
-function isProductSpecPlanningWorkflow(workflowId: string | null | undefined): boolean {
-  return workflowId === "agent_team.product_spec_planning";
-}
-
-function isPlanningOrchestratorNode(node: {
-  nodeId: string;
-  nodeKind: string;
-  assignedRole: string;
-  capabilityId?: string | null;
-  metadata?: JsonValue;
-}): boolean {
-  return (
-    node.assignedRole === "planning_orchestrator" ||
-    node.capabilityId === "planning_orchestrator" ||
-    nodeCapabilityId(node as OrchestratorGraphNodeSpec) === "planning_orchestrator"
-  );
 }
 
 function isContextSynthesisSummaryNode(node: {
@@ -2048,6 +2899,80 @@ function contextSupplyExists(summary: RuntimeWorkGraphSchedulerSnapshotSummary):
   );
 }
 
+function nodeScopedContextSupplyRequired(node: {
+  nodeId: string;
+  nodeKind: string;
+  assignedRole: string;
+  capabilityId?: string | null;
+  nodeStatus?: string;
+  noContextNeededRationale?: string | null;
+  contextSnapshotRefs?: string[];
+  resourceRequirementKinds?: string[];
+}): boolean {
+  if (node.nodeStatus !== "planned") {
+    return false;
+  }
+  if (node.noContextNeededRationale?.trim()) {
+    return false;
+  }
+  if ((node.contextSnapshotRefs ?? []).length > 0) {
+    return false;
+  }
+  if (node.nodeKind === "work_intent") {
+    return (node.resourceRequirementKinds ?? []).includes("context_handoff");
+  }
+  return [
+    "implementation",
+    "test_authoring",
+    "docs_update",
+    "architecture_spec",
+    "planning_capsule",
+    "action_graph_compile",
+    "compiler",
+  ].includes(node.nodeKind);
+}
+
+function isRepoTargetRef(ref: string): boolean {
+  return (
+    ref.startsWith("extensions/") ||
+    ref.startsWith("src/") ||
+    ref.startsWith("ui/") ||
+    ref.startsWith("scripts/") ||
+    ref.startsWith("docs/") ||
+    ref.startsWith("packages/")
+  );
+}
+
+function nodeHasUpstreamContextSupply(input: {
+  nodeId: string;
+  summary: RuntimeWorkGraphSchedulerSnapshotSummary;
+}): boolean {
+  return (input.summary.edgeSummaries ?? []).some(
+    (edge) =>
+      edge.toNodeId === input.nodeId &&
+      ["context_supplies", "repair_requested", "handoff"].includes(edge.edgeKind) &&
+      input.summary.nodeSummaries.some(
+        (node) =>
+          node.nodeId === edge.fromNodeId &&
+          ["context_scout", "web_research"].includes(node.nodeKind),
+      ),
+  );
+}
+
+function nodeScopedContextScoutNodeId(input: {
+  targetNodeId: string;
+  graphId: string;
+  index: number;
+}): string {
+  const digest = createHash("sha256").update(JSON.stringify(input)).digest("hex").slice(0, 10);
+  const slug = input.targetNodeId
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_.:-]+/g, "-")
+    .slice(0, 72);
+  return `context_scout-for-${slug || `node-${input.index + 1}`}-${digest}`.slice(0, 120);
+}
+
 function nodeMayRunBeforeContextSynthesis(node: {
   nodeKind: string;
   assignedRole: string;
@@ -2102,13 +3027,7 @@ function summaryNodeRequiresContextSynthesisInput(node: {
 }
 
 function nodeRequiresFreshContextSnapshot(node: TeamGraphNode): boolean {
-  if (
-    !summaryNodeRequiresContextSynthesisInput({
-      nodeKind: node.nodeKind,
-      assignedRole: node.assignedRole,
-      capabilityId: nodeCapabilityId(node),
-    })
-  ) {
+  if (!["implementation", "repair", "test_authoring", "docs_update"].includes(node.nodeKind)) {
     return false;
   }
   const metadata = jsonRecord(node.metadata);
@@ -2118,14 +3037,513 @@ function nodeRequiresFreshContextSnapshot(node: TeamGraphNode): boolean {
   );
 }
 
+function nodeRequiresExecutionPacket(node: TeamGraphNode): boolean {
+  const metadata = jsonRecord(node.metadata);
+  if (["implementation", "repair", "test_authoring", "docs_update"].includes(node.nodeKind)) {
+    return true;
+  }
+  if (metadata.nodeExecutionPacketRequired === true) {
+    return true;
+  }
+  if (metadata.nodeExecutionPacketRequired === false) {
+    return false;
+  }
+  return ["implementation", "repair", "test_authoring", "docs_update"].includes(node.nodeKind);
+}
+
+type RuntimeNodeTransitionReadiness = {
+  artifactKind: "runtime_node_transition_readiness";
+  schemaVersion: "execution-platform.runtime-node-transition-readiness.v1";
+  nodeId: string;
+  nodeKind: string;
+  nodeClass: "work_intent" | "prerequisite" | "barrier" | "executable";
+  lifecycleState: RuntimeNodeLifecycleState;
+  executable: boolean;
+  dependencyStatus: "not_applicable" | "blocked" | "ready";
+  contextStatus:
+    | "not_required"
+    | "required_missing"
+    | "in_progress"
+    | "accepted"
+    | "accepted_with_signal";
+  resourceStatus: "not_required" | "missing" | "ready";
+  validationStatus: "not_required" | "ready";
+  authorityStatus: "not_evaluated" | "ready";
+  storageStatus: "not_evaluated" | "ready";
+  capabilityId: string | null;
+  executorAvailable: boolean;
+  reasonCodes: string[];
+  blockerSummary: string | null;
+  nextAllowedTransitions: string[];
+  prerequisiteTransition: "node_scoped_context_supply" | null;
+  rawPromptStored: false;
+  rawResponseStored: false;
+  rawProviderLogStored: false;
+  rawToolLogStored: false;
+};
+
+function nodeHasContextInputSignal(input: {
+  snapshot: RuntimeWorkGraphSnapshot;
+  node: TeamGraphNode;
+}): boolean {
+  const metadata = jsonRecord(input.node.metadata);
+  if (
+    jsonContextSnapshotArray(metadata.contextSnapshotRefs).length > 0 ||
+    jsonContextSnapshotArray(metadata.providedContextSnapshotRefs).length > 0 ||
+    jsonContextSnapshotArray(metadata.requiredContextSnapshotRefs).length > 0
+  ) {
+    return true;
+  }
+  if (upstreamContextSupplySnapshotRefs(input).length > 0) {
+    return true;
+  }
+  return input.node.inputHandoffRefs.some((ref) =>
+    /context[-_:]?synthesis|context[-_:]?handoff|context[-_:]?snapshot|context[-_:]?scout/iu.test(
+      ref,
+    ),
+  );
+}
+
+function nodeTransitionClass(node: TeamGraphNode): RuntimeNodeTransitionReadiness["nodeClass"] {
+  if (node.nodeKind === "work_intent") {
+    return "work_intent";
+  }
+  if (node.nodeKind === "context_synthesis") {
+    return "barrier";
+  }
+  if (["context_scout", "web_research", "human_task"].includes(node.nodeKind)) {
+    return "prerequisite";
+  }
+  if (["running", "succeeded"].includes(node.nodeStatus)) {
+    return "executable";
+  }
+  return "work_intent";
+}
+
+function evaluateRuntimeNodeTransitionReadiness(input: {
+  snapshot: RuntimeWorkGraphSnapshot;
+  node: TeamGraphNode;
+  executors: Record<string, RuntimeWorkGraphNodeExecutor>;
+  requireFreshContextSnapshotsForWorkerExecution: boolean;
+  requireNodeExecutionPacketForWorkerExecution: boolean;
+}): RuntimeNodeTransitionReadiness {
+  const statusByNodeId = new Map(
+    input.snapshot.nodes.map((node) => [node.nodeId, node.nodeStatus]),
+  );
+  const dependencies = nodeBlockingDependencies({
+    snapshot: input.snapshot,
+    nodeId: input.node.nodeId,
+  });
+  const unsatisfiedDependencies = dependencies.filter((dependency) => {
+    const status = statusByNodeId.get(dependency.dependencyId);
+    return !(
+      status &&
+      dependencyStatusSatisfiesTarget({
+        targetNodeKind: input.node.nodeKind,
+        edgeKind: dependency.edgeKind,
+        dependencyStatus: status,
+      })
+    );
+  });
+  const metadata = jsonRecord(input.node.metadata);
+  const capabilityId = nodeCapabilityId(input.node);
+  const executorAvailable = nodeHasExecutableAdapter({
+    node: input.node,
+    executors: input.executors,
+  });
+  const upstreamContextEdges = input.snapshot.edges.filter(
+    (edge) =>
+      edge.toNodeId === input.node.nodeId &&
+      edge.edgeKind === "context_supplies" &&
+      edge.fromNodeId,
+  );
+  const upstreamContextAccepted =
+    upstreamContextEdges.length > 0 &&
+    upstreamContextEdges.every((edge) => statusByNodeId.get(edge.fromNodeId ?? "") === "succeeded");
+  const upstreamContextInProgress = upstreamContextEdges.some((edge) =>
+    ["planned", "running", "waiting_for_human", "needs_review"].includes(
+      statusByNodeId.get(edge.fromNodeId ?? "") ?? "",
+    ),
+  );
+  const upstreamContextSnapshotRefs = upstreamContextSupplySnapshotRefs({
+    snapshot: input.snapshot,
+    node: input.node,
+  });
+  const inlineRequiredContextRefs = jsonContextSnapshotArray(metadata.requiredContextSnapshotRefs);
+  const inlineProvidedContextRefs = jsonContextSnapshotArray(metadata.providedContextSnapshotRefs);
+  const inlineContextFreshness = validateContextSnapshotFreshness({
+    requiredRefs: inlineRequiredContextRefs,
+    providedRefs: [...inlineProvidedContextRefs, ...upstreamContextSnapshotRefs],
+  });
+  const inlineContextAccepted =
+    inlineContextFreshness.valid &&
+    (inlineRequiredContextRefs.length > 0 ||
+      inlineProvidedContextRefs.length > 0 ||
+      upstreamContextSnapshotRefs.length > 0);
+  const contextSignal = nodeHasContextInputSignal({ snapshot: input.snapshot, node: input.node });
+  if (input.node.nodeKind === "work_intent") {
+    const targetCapabilityId =
+      typeof metadata.workIntentSelectedCapabilityId === "string"
+        ? metadata.workIntentSelectedCapabilityId
+        : typeof metadata.selectedCapabilityId === "string"
+          ? metadata.selectedCapabilityId
+          : null;
+    const nextAllowedTransitions = jsonStringArray(metadata.nextLegalTransitions);
+    const resourceRequirementKinds = jsonStringArray(metadata.resourceRequirementKinds);
+    const workIntentNeedsContext = resourceRequirementKinds.includes("context_handoff");
+    const contextStatus: RuntimeNodeTransitionReadiness["contextStatus"] = !workIntentNeedsContext
+      ? "not_required"
+      : upstreamContextAccepted || inlineContextAccepted
+        ? "accepted"
+        : upstreamContextInProgress
+          ? "in_progress"
+          : contextSignal
+            ? "accepted_with_signal"
+            : "required_missing";
+    const missingContext =
+      contextStatus === "required_missing" || contextStatus === "accepted_with_signal";
+    const blockedInProgress = contextStatus === "in_progress";
+    const readinessTransitions = missingContext
+      ? ["request_context_repair", "needs_review"]
+      : blockedInProgress
+        ? ["wait_for_context_supply"]
+        : nextAllowedTransitions.length > 0
+          ? nextAllowedTransitions
+          : ["compile_node_execution_packet", "needs_review"];
+    return {
+      artifactKind: "runtime_node_transition_readiness",
+      schemaVersion: "execution-platform.runtime-node-transition-readiness.v1",
+      nodeId: input.node.nodeId,
+      nodeKind: input.node.nodeKind,
+      nodeClass: "work_intent",
+      lifecycleState: missingContext
+        ? "context_required"
+        : blockedInProgress
+          ? "context_in_progress"
+          : "work_intent",
+      executable: false,
+      dependencyStatus: "not_applicable",
+      contextStatus,
+      resourceStatus: "not_required",
+      validationStatus: "not_required",
+      authorityStatus: "ready",
+      storageStatus: "ready",
+      capabilityId: targetCapabilityId,
+      executorAvailable: false,
+      reasonCodes: uniqueStrings([
+        "work_intent_non_runnable",
+        ...(targetCapabilityId ? [`work_intent_selected_capability:${targetCapabilityId}`] : []),
+        ...(missingContext
+          ? [
+              "work_intent_context_supply_required_before_materialization",
+              "node_context_supply_required_before_execution",
+              "node_context_supply_missing",
+            ]
+          : []),
+        ...(blockedInProgress ? ["work_intent_context_supply_in_progress"] : []),
+      ]),
+      blockerSummary: missingContext
+        ? "WorkIntent needs node-scoped context before resource materialization can create an executable worker node."
+        : blockedInProgress
+          ? "WorkIntent is waiting on node-scoped context supply before resource materialization."
+          : "WorkIntent is a non-runnable control-plane node. Runtime must validate capability and materialize resources before creating an executable worker node.",
+      nextAllowedTransitions: readinessTransitions,
+      prerequisiteTransition: missingContext ? "node_scoped_context_supply" : null,
+      rawPromptStored: false,
+      rawResponseStored: false,
+      rawProviderLogStored: false,
+      rawToolLogStored: false,
+    };
+  }
+  const requiresContext =
+    input.requireFreshContextSnapshotsForWorkerExecution &&
+    nodeRequiresFreshContextSnapshot(input.node);
+  const contextStatus: RuntimeNodeTransitionReadiness["contextStatus"] = !requiresContext
+    ? "not_required"
+    : upstreamContextAccepted || inlineContextAccepted
+      ? "accepted"
+      : upstreamContextInProgress
+        ? "in_progress"
+        : contextSignal
+          ? "accepted_with_signal"
+          : "required_missing";
+  const nodeExecutionPacket = nodeExecutionPacketFromMetadata(input.node);
+  const nodeResourceReadiness = nodeExecutionPacket
+    ? evaluateNodeExecutionPacketReadiness({
+        packet: nodeExecutionPacket,
+        resourcePacket: jsonRecord(metadata.resourcePacket ?? null) as JsonValue,
+        implementationContextPacket: jsonRecord(metadata.implementationContextPacket ?? null),
+      })
+    : null;
+  const manifestResourceReadiness = nodeResourceReadinessFromManifestMetadata(input.node, {
+    requireFreshContextSnapshotsForWorkerExecution:
+      input.requireFreshContextSnapshotsForWorkerExecution,
+  });
+  const requiresResource =
+    input.requireNodeExecutionPacketForWorkerExecution && nodeRequiresExecutionPacket(input.node);
+  const resourceStatus: RuntimeNodeTransitionReadiness["resourceStatus"] = !requiresResource
+    ? "not_required"
+    : nodeResourceReadiness?.valid === true || manifestResourceReadiness?.valid === true
+      ? "ready"
+      : "missing";
+  const reasonCodes: string[] = [];
+  const nextAllowedTransitions: string[] = [];
+  let lifecycleState: RuntimeNodeLifecycleState = "executable";
+  let blockerSummary: string | null = null;
+  let prerequisiteTransition: RuntimeNodeTransitionReadiness["prerequisiteTransition"] = null;
+
+  if (!executorAvailable && input.node.nodeKind !== "human_task") {
+    reasonCodes.push("node_executor_missing");
+    nextAllowedTransitions.push("needs_review");
+    lifecycleState = "needs_review";
+    blockerSummary = "No executable adapter is registered for this node capability/kind/role.";
+  }
+  if (unsatisfiedDependencies.length > 0) {
+    reasonCodes.push(
+      "node_dependencies_not_satisfied",
+      ...unsatisfiedDependencies
+        .map(
+          (dependency) =>
+            `node_dependency_waiting:${dependency.dependencyId}:${dependency.edgeKind}:${statusByNodeId.get(dependency.dependencyId) ?? "missing"}`,
+        )
+        .slice(0, 12),
+    );
+    nextAllowedTransitions.push("wait_for_dependencies");
+    lifecycleState = upstreamContextInProgress ? "context_in_progress" : "work_intent";
+    blockerSummary = "Node dependencies are not terminal/accepted yet.";
+  }
+  if (contextStatus === "required_missing") {
+    reasonCodes.push(
+      "node_context_supply_required_before_execution",
+      "node_context_supply_missing",
+    );
+    nextAllowedTransitions.push("request_context_repair");
+    lifecycleState = "context_required";
+    prerequisiteTransition = "node_scoped_context_supply";
+    blockerSummary =
+      "Node is still a work-intent node: runtime must attach node-scoped context supply before implementation execution.";
+  } else if (contextStatus === "in_progress") {
+    reasonCodes.push("node_context_supply_in_progress");
+    nextAllowedTransitions.push("wait_for_context_supply");
+    lifecycleState = "context_in_progress";
+    blockerSummary =
+      "Node-scoped context supply exists but has not produced accepted handoff evidence.";
+  } else if (contextStatus === "accepted_with_signal") {
+    reasonCodes.push(
+      "node_context_signal_present_but_unaccepted",
+      "node_context_supply_required_before_execution",
+      "node_context_supply_missing",
+    );
+    nextAllowedTransitions.push("request_context_repair");
+    lifecycleState = "context_required";
+    prerequisiteTransition = "node_scoped_context_supply";
+    blockerSummary =
+      "Node has context-like refs, but runtime has not accepted node-scoped context handoff evidence for execution.";
+  }
+  if (
+    reasonCodes.length === 0 &&
+    resourceStatus === "missing" &&
+    input.node.nodeKind !== "context_scout"
+  ) {
+    reasonCodes.push("node_resources_required_before_worker_execution");
+    nextAllowedTransitions.push("compile_node_execution_packet");
+    lifecycleState = "resources_required";
+    blockerSummary =
+      "Runtime must materialize a NodeExecutionPacket and resource packet before worker invocation.";
+  }
+  const executable =
+    reasonCodes.length === 0 ||
+    (reasonCodes.every((code) => code === "node_resources_required_before_worker_execution") &&
+      resourceStatus === "missing");
+  if (executable && resourceStatus === "ready") {
+    lifecycleState = "executable";
+    nextAllowedTransitions.push("execute_node");
+  }
+  if (executable && resourceStatus === "not_required") {
+    lifecycleState = "executable";
+    nextAllowedTransitions.push("execute_node");
+  }
+  return {
+    artifactKind: "runtime_node_transition_readiness",
+    schemaVersion: "execution-platform.runtime-node-transition-readiness.v1",
+    nodeId: input.node.nodeId,
+    nodeKind: input.node.nodeKind,
+    nodeClass: executable ? "executable" : nodeTransitionClass(input.node),
+    lifecycleState,
+    executable,
+    dependencyStatus:
+      dependencies.length === 0
+        ? "not_applicable"
+        : unsatisfiedDependencies.length > 0
+          ? "blocked"
+          : "ready",
+    contextStatus,
+    resourceStatus,
+    validationStatus: "not_required",
+    authorityStatus: "ready",
+    storageStatus: "ready",
+    capabilityId,
+    executorAvailable,
+    reasonCodes: uniqueStrings(reasonCodes).slice(0, 80),
+    blockerSummary,
+    nextAllowedTransitions: uniqueStrings(nextAllowedTransitions).slice(0, 16),
+    prerequisiteTransition,
+    rawPromptStored: false,
+    rawResponseStored: false,
+    rawProviderLogStored: false,
+    rawToolLogStored: false,
+  };
+}
+
+function nodeExecutionPacketFromMetadata(node: TeamGraphNode): NodeExecutionPacket | null {
+  const metadata = jsonRecord(node.metadata);
+  const parsed = NodeExecutionPacketSchema.safeParse(metadata.nodeExecutionPacket);
+  return parsed.success ? parsed.data : null;
+}
+
+function nodeResourceReadinessFromManifestMetadata(
+  node: TeamGraphNode,
+  options: { requireFreshContextSnapshotsForWorkerExecution: boolean },
+): {
+  valid: boolean;
+  status: "ready" | "ready_with_limitations" | "blocked" | "not_evaluated";
+  reasonCodes: string[];
+  blockingLimitations: string[];
+  nodeExecutionPacketRef: string | null;
+  resourcePacketRef: string | null;
+  nodeReadinessStateRef: string | null;
+  contextStatus: string | null;
+} | null {
+  const metadata = jsonRecord(node.metadata);
+  const nodeExecutionPacketRef =
+    typeof metadata.nodeExecutionPacketRef === "string" && metadata.nodeExecutionPacketRef.trim()
+      ? metadata.nodeExecutionPacketRef.trim()
+      : null;
+  const resourcePacketRef =
+    typeof metadata.resourcePacketRef === "string" && metadata.resourcePacketRef.trim()
+      ? metadata.resourcePacketRef.trim()
+      : null;
+  const nodeReadinessStateRef =
+    typeof metadata.nodeReadinessStateRef === "string" && metadata.nodeReadinessStateRef.trim()
+      ? metadata.nodeReadinessStateRef.trim()
+      : null;
+  if (!nodeExecutionPacketRef || !resourcePacketRef || !nodeReadinessStateRef) {
+    return null;
+  }
+  const readinessStatus =
+    metadata.nodeReadinessStatus === "ready" ||
+    metadata.nodeReadinessStatus === "ready_with_limitations"
+      ? metadata.nodeReadinessStatus
+      : metadata.nodeReadinessStatus === "blocked"
+        ? "blocked"
+        : "not_evaluated";
+  const transitions = jsonStringArray(metadata.nodeReadinessNextAllowedTransitions);
+  const contextStatus =
+    typeof metadata.nodeReadinessContextStatus === "string"
+      ? metadata.nodeReadinessContextStatus
+      : null;
+  const contextLimitationWaiverRefs = jsonStringArray(metadata.contextLimitationWaiverRefs);
+  const acceptedWithLimitationsWithoutWaiver =
+    contextStatus === "accepted_with_limitations" && contextLimitationWaiverRefs.length === 0;
+  const contextReady =
+    !options.requireFreshContextSnapshotsForWorkerExecution ||
+    !nodeRequiresFreshContextSnapshot(node) ||
+    contextStatus === "accepted" ||
+    (contextStatus === "accepted_with_limitations" && !acceptedWithLimitationsWithoutWaiver) ||
+    contextStatus === "not_required";
+  const valid =
+    (readinessStatus === "ready" || readinessStatus === "ready_with_limitations") &&
+    transitions.includes("execute_node") &&
+    contextReady;
+  return {
+    valid,
+    status: readinessStatus,
+    reasonCodes: [
+      ...jsonStringArray(metadata.resourceReadinessReasonCodes),
+      ...(contextReady ? [] : ["node_readiness_context_status_not_execution_ready"]),
+      ...(acceptedWithLimitationsWithoutWaiver
+        ? ["node_readiness_context_limitation_waiver_missing"]
+        : []),
+    ],
+    blockingLimitations: [
+      ...jsonStringArray(metadata.resourceBlockingLimitations),
+      ...(acceptedWithLimitationsWithoutWaiver
+        ? [
+            "Accepted-with-limitations context cannot unlock implementation without a consumer-specific waiver ref.",
+          ]
+        : []),
+    ],
+    nodeExecutionPacketRef,
+    resourcePacketRef,
+    nodeReadinessStateRef,
+    contextStatus,
+  };
+}
+
 function validateNodeContextSnapshots(
   node: TeamGraphNode,
+  upstreamProvidedRefs: ContextSnapshotRef[] = [],
 ): ReturnType<typeof validateContextSnapshotFreshness> {
   const metadata = jsonRecord(node.metadata);
   return validateContextSnapshotFreshness({
     requiredRefs: jsonContextSnapshotArray(metadata.requiredContextSnapshotRefs),
-    providedRefs: jsonContextSnapshotArray(metadata.providedContextSnapshotRefs),
+    providedRefs: [
+      ...jsonContextSnapshotArray(metadata.providedContextSnapshotRefs),
+      ...upstreamProvidedRefs,
+    ],
   });
+}
+
+function upstreamContextSupplySnapshotRefs(input: {
+  snapshot: RuntimeWorkGraphSnapshot;
+  node: TeamGraphNode;
+}): ContextSnapshotRef[] {
+  const upstreamNodeIds = new Set(
+    input.snapshot.edges
+      .filter(
+        (edge) =>
+          edge.toNodeId === input.node.nodeId &&
+          ["context_supplies", "repair_requested", "handoff"].includes(edge.edgeKind) &&
+          edge.fromNodeId,
+      )
+      .map((edge) => edge.fromNodeId)
+      .filter((nodeId): nodeId is string => Boolean(nodeId)),
+  );
+  const nodeMetadata = jsonRecord(input.node.metadata);
+  const targetRefs = nodeSchedulingTargetRefs(input.node);
+  const commitmentIds = jsonStringArray(nodeMetadata.commitmentIdsAdvanced);
+  return input.snapshot.nodes
+    .filter(
+      (node) =>
+        upstreamNodeIds.has(node.nodeId) &&
+        ["context_scout", "web_research"].includes(node.nodeKind) &&
+        node.nodeStatus === "succeeded" &&
+        node.outputArtifactRefs.length > 0,
+    )
+    .flatMap((node) =>
+      node.outputArtifactRefs.slice(0, 8).map((sourceRef) =>
+        createContextSnapshotRef({
+          sourceRef,
+          sourceKind: "context_scout_handoff",
+          runtimeJobId: input.snapshot.graph.rootRuntimeJobId ?? null,
+          workflowId: input.snapshot.graph.workflowId,
+          graphId: input.snapshot.graph.graphId,
+          nodeId: node.nodeId,
+          commitmentIds,
+          targetRefs,
+          scopeSummary: `Accepted node-scoped context supply ${node.nodeId} for target work node ${input.node.nodeId}.`,
+          freshnessStatus: "fresh",
+          refreshRequired: false,
+          refreshAction: "none",
+          reasonCodes: [
+            "context_snapshot_from_node_scoped_context_supply",
+            `context_supply_node:${node.nodeId}`,
+            `target_work_node:${input.node.nodeId}`,
+          ],
+        }),
+      ),
+    )
+    .slice(0, 40);
 }
 
 function nodeHasNoContextNeededRationale(node: OrchestratorGraphNodeSpec): boolean {
@@ -2146,6 +3564,13 @@ function contextSynthesisPolicyReasonCodes(input: {
   }
   const reasonCodes: string[] = [];
   const synthesisAccepted = acceptedContextSynthesisExists(input.snapshotSummary);
+  const synthesisLifecycle = contextSynthesisLifecycle(input.snapshotSummary);
+  const synthesisIsExplicitBoundary = ["planned", "running", "repair_required"].includes(
+    synthesisLifecycle.state,
+  );
+  if (!synthesisAccepted && !synthesisIsExplicitBoundary) {
+    return [];
+  }
   if (!synthesisAccepted) {
     const proposedNodes = input.decision.newNodes ?? [];
     const blockedProposed = proposedNodes.filter((node) => !nodeMayRunBeforeContextSynthesis(node));
@@ -2196,99 +3621,25 @@ function contextSynthesisPolicyReasonCodes(input: {
   return [...new Set(reasonCodes)];
 }
 
-function contextSupplyNodes(
-  summary: RuntimeWorkGraphSchedulerSnapshotSummary,
-): RuntimeWorkGraphSchedulerSnapshotSummary["nodeSummaries"] {
-  return summary.nodeSummaries.filter(
-    (node) =>
-      ["context_scout", "web_research"].includes(node.nodeKind) &&
-      node.nodeStatus === "succeeded" &&
-      node.outputArtifactRefs.length > 0,
-  );
-}
-
-function contextSupplyNodeIsDedicatedToPacket(input: {
-  node: RuntimeWorkGraphSchedulerSnapshotSummary["nodeSummaries"][number];
-  packet: CommitmentWorkPacket;
-}): boolean {
-  return (
-    ["context_scout", "web_research"].includes(input.node.nodeKind) &&
-    (input.node.inputHandoffRefs ?? []).includes(input.packet.packetRef) &&
-    (input.node.commitmentIdsAdvanced ?? []).includes(input.packet.commitmentId) &&
-    (input.node.commitmentIdsAdvanced ?? []).length <= 1
-  );
-}
-
-function packetContextSupplyCoverage(input: {
+function incomingContextSupplyAccepted(input: {
+  nodeId: string;
   summary: RuntimeWorkGraphSchedulerSnapshotSummary;
-  commitmentWorkPackets: CommitmentWorkPacket[];
-}): {
-  required: boolean;
-  allDedicatedSupplyAccepted: boolean;
-  missingNodePackets: CommitmentWorkPacket[];
-  pendingPacketCount: number;
-  acceptedPacketCount: number;
-  reasonCodes: string[];
-} {
-  if (input.commitmentWorkPackets.length <= 1) {
-    return {
-      required: false,
-      allDedicatedSupplyAccepted: true,
-      missingNodePackets: [],
-      pendingPacketCount: 0,
-      acceptedPacketCount: 0,
-      reasonCodes: ["packet_context_supply_fanout_not_required"],
-    };
+}): boolean {
+  const incoming = (input.summary.edgeSummaries ?? []).filter(
+    (edge) => edge.toNodeId === input.nodeId && edge.edgeKind === "context_supplies",
+  );
+  if (incoming.length === 0) {
+    return true;
   }
-  const reasonCodes: string[] = [];
-  const missingNodePackets: CommitmentWorkPacket[] = [];
-  let pendingPacketCount = 0;
-  let acceptedPacketCount = 0;
-  for (const packet of input.commitmentWorkPackets) {
-    const matchingNodes = input.summary.nodeSummaries.filter((node) =>
-      contextSupplyNodeIsDedicatedToPacket({ node, packet }),
-    );
-    if (matchingNodes.length === 0) {
-      missingNodePackets.push(packet);
-      reasonCodes.push(`packet_context_supply_node_missing:${packet.commitmentId}`);
-      continue;
-    }
-    if (
-      matchingNodes.some(
-        (node) => node.nodeStatus === "succeeded" && node.outputArtifactRefs.length > 0,
-      )
-    ) {
-      acceptedPacketCount += 1;
-      continue;
-    }
-    pendingPacketCount += 1;
-    reasonCodes.push(`packet_context_supply_node_not_accepted:${packet.commitmentId}`);
-  }
-  return {
-    required: true,
-    allDedicatedSupplyAccepted:
-      acceptedPacketCount === input.commitmentWorkPackets.length && reasonCodes.length === 0,
-    missingNodePackets,
-    pendingPacketCount,
-    acceptedPacketCount,
-    reasonCodes,
-  };
+  const statusById = new Map(
+    input.summary.nodeSummaries.map((node) => [node.nodeId, node.nodeStatus]),
+  );
+  return incoming.every(
+    (edge) => edge.fromNodeId && statusById.get(edge.fromNodeId) === "succeeded",
+  );
 }
 
-function packetContextScoutNodeId(packet: CommitmentWorkPacket, index: number): string {
-  const digest = createHash("sha256")
-    .update(JSON.stringify({ packetRef: packet.packetRef, commitmentId: packet.commitmentId }))
-    .digest("hex")
-    .slice(0, 8);
-  const slug = packet.commitmentId
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9_.:-]+/g, "-")
-    .slice(0, 72);
-  return `context_scout-${slug || `packet-${index + 1}`}-${digest}`;
-}
-
-function deterministicPacketContextScoutFanoutDecision(input: {
+function deterministicNodeScopedContextSupplyDecision(input: {
   graphId: string;
   iteration: number;
   snapshotSummary: RuntimeWorkGraphSchedulerSnapshotSummary;
@@ -2296,302 +3647,279 @@ function deterministicPacketContextScoutFanoutDecision(input: {
   commitmentWorkPackets: CommitmentWorkPacket[];
   capabilityManifest: RuntimeNodeCapabilityManifest;
 }): OrchestratorGraphDecision | null {
-  if (!missionIsComplex(input.missionLedger) || input.commitmentWorkPackets.length <= 1) {
-    return null;
-  }
-  const coverage = packetContextSupplyCoverage({
-    summary: input.snapshotSummary,
-    commitmentWorkPackets: input.commitmentWorkPackets,
-  });
-  if (coverage.missingNodePackets.length === 0) {
+  if (!missionIsComplex(input.missionLedger) || input.commitmentWorkPackets.length === 0) {
     return null;
   }
   const capability = findRuntimeNodeCapability("context_scout", input.capabilityManifest);
   if (!capability) {
     return null;
   }
-  const synthesisCapability = findRuntimeNodeCapability(
-    "context_synthesis",
-    input.capabilityManifest,
+  const packetByCommitment = new Map(
+    input.commitmentWorkPackets.map((packet) => [packet.commitmentId, packet]),
   );
-  const commitmentIds = [
-    ...(input.missionLedger?.blockingCommitments ?? []),
-    ...(input.missionLedger?.nonBlockingCommitments ?? []),
-  ].map((commitment) => commitment.commitmentId);
-  const newNodes: OrchestratorGraphNodeSpec[] = coverage.missingNodePackets.map((packet, index) => {
-    const nodeId = packetContextScoutNodeId(packet, index);
-    const costAwareUtilityDecision: CostAwareCapabilityUtilityDecision = {
-      decisionId: `runtime-packet-context-scout-${input.iteration}-${index + 1}`,
-      consideredCapabilityIds: ["context_scout"],
-      selectedCapabilityId: capability.capabilityId,
-      selectedNodeKind: capability.graphNodeKind,
-      selectedExecutorKey: capability.executorKey,
-      targetCommitmentIds: [packet.commitmentId],
-      utilityRationale:
-        "Dedicated per-packet context scout is required before synthesis so downstream workers receive commitment-specific repo context instead of a broad generic handoff.",
-      costRationale:
-        "Context scout is the cheapest sufficient capability for locating repo context before implementation or validation work.",
-      whyCheaperOptionsWereInsufficient: null,
-      whyThisIsNotDuplicateWork:
-        "No accepted dedicated context supply node exists for this CommitmentWorkPacket.",
-      expectedEvidence: capability.evidenceProducedKinds,
-      expectedDownstreamConsumer: "context_synthesis",
-      budgetRef: `runtime-task-budget://scheduler/context-scout/${packet.commitmentId}`,
-      stopOrEscalationCondition:
-        "Return needs_review if the context scout cannot verify relevant repo files or produce a bounded handoff for this packet.",
-      rawPromptStored: false,
-      rawResponseStored: false,
-      rawProviderLogStored: false,
-    };
-    const expectedEvidence = runtimeDerivedEvidenceForNode({
-      node: {
-        nodeId,
-        nodeKind: capability.graphNodeKind,
-        capabilityId: capability.capabilityId,
-        assignedRole: capability.roleId,
-        executorKey: capability.executorKey,
-        workerRef: capability.workerRef,
-        requiredMetadataSchemaRef: capability.requiredMetadataSchemaRef,
-        modelOrWorkerRef: capability.workerRef,
-        inputHandoffRefs: [packet.packetRef],
-        expectedOutput: packet.expectedContextScoutOutput.join(" "),
-        acceptanceCriteria: packet.expectedContextScoutOutput,
-        downstreamConsumer: "context_synthesis",
-        commitmentIdsAdvanced: [packet.commitmentId],
-        whyThisRoleIsNeededNow:
-          "Context synthesis requires a dedicated accepted context handoff for this commitment packet before implementation graph planning.",
-        exactObjective: packet.contextScoutObjective,
-        evidenceExpectation:
-          "Bounded context handoff packet with verified file refs, edit points, risks, validation suggestions, and implementation handoff summary.",
-        targetRefs: packet.likelyRepoAreas,
-        metadata: null,
-      },
-      missionLedger: input.missionLedger,
-      capabilityManifest: input.capabilityManifest,
-    });
-    return {
-      nodeId,
-      nodeKind: capability.graphNodeKind,
-      capabilityId: capability.capabilityId,
-      executorKey: capability.executorKey,
-      workerRef: capability.workerRef,
-      requiredMetadataSchemaRef: capability.requiredMetadataSchemaRef,
-      assignedRole: capability.roleId,
-      modelOrWorkerRef: capability.workerRef,
-      inputHandoffRefs: [packet.packetRef],
-      expectedOutput: packet.expectedContextScoutOutput.join(" "),
-      acceptanceCriteria: packet.expectedContextScoutOutput,
-      downstreamConsumer: "context_synthesis",
-      commitmentIdsAdvanced: [packet.commitmentId],
-      whyThisRoleIsNeededNow:
-        "Context synthesis requires a dedicated accepted context handoff for this commitment packet before implementation graph planning.",
-      exactObjective: packet.contextScoutObjective,
-      evidenceExpectation:
-        "Bounded context handoff packet with verified file refs, edit points, risks, validation suggestions, and implementation handoff summary.",
-      targetRefs: packet.likelyRepoAreas,
-      metadata: {
-        capabilityId: capability.capabilityId,
-        graphNodeKind: capability.graphNodeKind,
-        executorKey: capability.executorKey,
-        workerRef: capability.workerRef,
-        requiredMetadataSchemaRef: capability.requiredMetadataSchemaRef,
-        stagedSchedulerProtocolCompiled: true,
-        runtimeOwnedPacketContextFanout: true,
-        packetRef: packet.packetRef,
-        expectedEvidence,
-        expectedEvidenceSource: "runtime_derived_from_capability_manifest_and_mission_ledger",
-        utilityDecision: costAwareUtilityDecision,
-        costAwareUtilityDecision,
-        consideredCapabilityIds: costAwareUtilityDecision.consideredCapabilityIds,
-        utilityRationale: costAwareUtilityDecision.utilityRationale,
-        costRationale: costAwareUtilityDecision.costRationale,
-        whyThisIsNotDuplicateWork: costAwareUtilityDecision.whyThisIsNotDuplicateWork,
-        stopOrEscalationCondition: costAwareUtilityDecision.stopOrEscalationCondition,
+  const targetNodes = input.snapshotSummary.nodeSummaries
+    .filter((node) => nodeScopedContextSupplyRequired(node))
+    .filter(
+      (node) =>
+        !nodeHasUpstreamContextSupply({
+          nodeId: node.nodeId,
+          summary: input.snapshotSummary,
+        }),
+    )
+    .slice(0, 16);
+  if (targetNodes.length === 0) {
+    return null;
+  }
+  const contextNodes: OrchestratorGraphNodeSpec[] = [];
+  const contextEdges: NonNullable<OrchestratorGraphDecision["newEdges"]> = [];
+  for (const [targetIndex, targetNode] of targetNodes.entries()) {
+    const targetCommitmentIds = uniqueStrings(
+      targetNode.commitmentIdsAdvanced && targetNode.commitmentIdsAdvanced.length > 0
+        ? targetNode.commitmentIdsAdvanced
+        : input.missionLedger
+          ? openBlockingMissionCommitments(input.missionLedger).map(
+              (commitment) => commitment.commitmentId,
+            )
+          : [],
+    );
+    const commitmentShards = chunkStrings(
+      targetCommitmentIds,
+      MAX_CONTEXT_SCOUT_COMMITMENTS_PER_NODE,
+    );
+    for (const [shardIndex, shardCommitmentIds] of commitmentShards.entries()) {
+      const packets = shardCommitmentIds
+        .map((commitmentId) => packetByCommitment.get(commitmentId))
+        .filter((packet): packet is CommitmentWorkPacket => Boolean(packet));
+      const packetRefs = packets.map((packet) => packet.packetRef);
+      const packetContextQuestions = uniqueStrings([
+        ...(targetNode.contextQuestions ?? []),
+        ...packets.flatMap((packet) => packet.requiredContextQuestions),
+      ]).slice(0, 16);
+      const targetRefs = uniqueStrings([
+        ...(targetNode.targetRefs ?? []),
+        ...(targetNode.inputHandoffRefs ?? []).filter(isRepoTargetRef),
+        ...packets.flatMap((packet) => packet.likelyRepoAreas),
+      ]).slice(0, 32);
+      const contextBrokerRequest = buildContextBrokerRequest({
+        runtimeJobId: input.snapshotSummary.rootRuntimeJobId ?? input.graphId,
+        workflowId: input.snapshotSummary.workflowId,
+        graphId: input.graphId,
+        requestingNodeId: targetNode.nodeId,
+        consumerNodeId: targetNode.nodeId,
+        targetCommitmentIds: shardCommitmentIds,
+        requiredResourceKind: "context_handoff",
+        neededByPhase: "context_supply",
+        semanticQuestion:
+          packetContextQuestions.length > 0
+            ? packetContextQuestions.slice(0, 4).join(" ")
+            : `Supply node-scoped context for ${targetNode.nodeId}.`,
+        candidateResourceRefs: targetRefs,
+        inheritedContextRefs: [],
+        knownContextRefs: [
+          ...(targetNode.inputHandoffRefs ?? []),
+          ...(targetNode.contextSnapshotRefs ?? []),
+        ],
+        missingContextReasonCodes: [
+          "node_context_supply_required_before_execution",
+          "node_context_supply_missing",
+        ],
+        blockingLimitations: ["Node-scoped context handoff is missing for this consumer."],
+        blockingIfMissing: true,
+        inheritedContextUsable: false,
+        budgetClass: "cheap",
+      });
+      const contextBrokerRequestSummary = summarizeContextBrokerRequest(contextBrokerRequest);
+      const nodeId = nodeScopedContextScoutNodeId({
+        targetNodeId:
+          commitmentShards.length > 1
+            ? `${targetNode.nodeId}-context-shard-${shardIndex + 1}`
+            : targetNode.nodeId,
+        graphId: input.graphId,
+        index: contextNodes.length,
+      });
+      const utilityDecision: CostAwareCapabilityUtilityDecision = {
+        decisionId: `runtime-node-context-scout-${input.iteration}-${targetIndex + 1}-${shardIndex + 1}`,
+        consideredCapabilityIds: ["context_scout"],
+        selectedCapabilityId: capability.capabilityId,
+        selectedNodeKind: capability.graphNodeKind,
+        selectedExecutorKey: capability.executorKey,
+        targetCommitmentIds: shardCommitmentIds,
+        utilityRationale:
+          "A draft implementation work node needs node-scoped repo context before worker execution; context scout is the cheapest sufficient capability to resolve target refs, snapshots, validation refs, and handoff details.",
+        costRationale:
+          "Run focused context scout for a bounded commitment shard instead of spending broad scheduler or implementation tokens on missing context.",
+        whyCheaperOptionsWereInsufficient: null,
+        whyThisIsNotDuplicateWork: `No upstream context-supply node is attached to draft work node ${targetNode.nodeId} for commitment shard ${shardIndex + 1}.`,
+        expectedEvidence: capability.evidenceProducedKinds,
+        expectedDownstreamConsumer: targetNode.nodeId,
+        budgetRef: `runtime-task-budget://scheduler/node-context-scout/${targetNode.nodeId}/shard-${shardIndex + 1}`,
+        stopOrEscalationCondition:
+          "Return needs_review if the scout cannot produce readable target refs, snapshots or explicit new-file intent, validation refs, and a downstream handoff for the target node.",
         rawPromptStored: false,
         rawResponseStored: false,
         rawProviderLogStored: false,
-      } satisfies JsonValue,
-    };
-  });
-  const contextSynthesisNodeId = "context_synthesis_global_barrier";
-  const synthesisAlreadyPlanned = input.snapshotSummary.nodeSummaries.some(
-    (node) => node.nodeId === contextSynthesisNodeId || isContextSynthesisSummaryNode(node),
-  );
-  const synthesisCostAwareUtilityDecision: CostAwareCapabilityUtilityDecision | null =
-    synthesisCapability && !synthesisAlreadyPlanned
-      ? {
-          decisionId: `runtime-context-synthesis-utility-${input.iteration}`,
-          consideredCapabilityIds: ["context_synthesis"],
-          selectedCapabilityId: synthesisCapability.capabilityId,
-          selectedNodeKind: synthesisCapability.graphNodeKind,
-          selectedExecutorKey: synthesisCapability.executorKey,
-          targetCommitmentIds: commitmentIds,
-          utilityRationale:
-            "A single global context synthesis node joins accepted per-packet context handoffs into one dependency-aware implementation map before downstream work runs.",
-          costRationale:
-            "The synthesis barrier is runtime-required for complex missions so the scheduler can avoid repeated broad premium implementation decisions and preserve worker-ready handoffs.",
-          whyCheaperOptionsWereInsufficient:
-            synthesisCapability.costClass === "premium"
-              ? "Cheaper implementation, validation, review, or scout capabilities cannot replace the cross-commitment synthesis barrier because they either execute downstream work or gather additional context rather than integrating accepted handoffs."
-              : null,
-          whyThisIsNotDuplicateWork:
-            "No context synthesis barrier exists in the current graph, so this records the intended join point up front.",
-          expectedEvidence: synthesisCapability.evidenceProducedKinds,
-          expectedDownstreamConsumer: "scheduler_dependency_aware_implementation_graph",
-          budgetRef: "runtime-task-budget://scheduler/context-synthesis-global-barrier",
-          stopOrEscalationCondition:
-            "Remain blocked until every dedicated context scout produces an accepted bounded handoff; then run synthesis or return needs_review with missing handoff details.",
+      };
+      const expectedEvidence = runtimeDerivedEvidenceForNode({
+        node: {
+          nodeId,
+          nodeKind: capability.graphNodeKind,
+          capabilityId: capability.capabilityId,
+          assignedRole: capability.roleId,
+          executorKey: capability.executorKey,
+          workerRef: capability.workerRef,
+          requiredMetadataSchemaRef: capability.requiredMetadataSchemaRef,
+          modelOrWorkerRef: capability.workerRef,
+          inputHandoffRefs: [
+            graphRef("node", targetNode.nodeId),
+            contextBrokerRequest.requestRef,
+            ...packetRefs,
+          ].slice(0, 24),
+          expectedOutput:
+            "Node-scoped context handoff with verified target refs, readable snapshots or explicit new-file intent, validation refs, risks, and implementation handoff summary.",
+          acceptanceCriteria: [
+            "Answers the target work node's context questions for this commitment shard.",
+            "Verifies concrete repo refs or explains explicit new-file intent.",
+            "Provides validation refs or a blocking reason.",
+            "Maps context evidence to the target work node and shard commitments.",
+          ],
+          downstreamConsumer: targetNode.nodeId,
+          commitmentIdsAdvanced: shardCommitmentIds,
+          whyThisRoleIsNeededNow:
+            "The scheduler already identified the work unit; this scout supplies the exact context needed to make that node executable.",
+          exactObjective: `Supply implementation-ready repo context for draft work node ${targetNode.nodeId}.`,
+          evidenceExpectation:
+            "Bounded node-scoped context handoff packet and evidence claims for the target work node.",
+          targetRefs,
+          metadata: null,
+        },
+        missionLedger: input.missionLedger,
+        capabilityManifest: input.capabilityManifest,
+      });
+      contextNodes.push({
+        nodeId,
+        nodeKind: capability.graphNodeKind,
+        capabilityId: capability.capabilityId,
+        executorKey: capability.executorKey,
+        workerRef: capability.workerRef,
+        requiredMetadataSchemaRef: capability.requiredMetadataSchemaRef,
+        assignedRole: capability.roleId,
+        modelOrWorkerRef: capability.workerRef,
+        inputHandoffRefs: [
+          graphRef("node", targetNode.nodeId),
+          contextBrokerRequest.requestRef,
+          ...packetRefs,
+        ].slice(0, 24),
+        expectedOutput:
+          "Node-scoped context handoff with verified target refs, readable snapshots or explicit new-file intent, validation refs, risks, and implementation handoff summary.",
+        acceptanceCriteria: [
+          "Answers the target work node's context questions for this commitment shard.",
+          "Verifies concrete repo refs or explains explicit new-file intent.",
+          "Provides validation refs or a blocking reason.",
+          "Maps context evidence to the target work node and shard commitments.",
+        ],
+        downstreamConsumer: targetNode.nodeId,
+        commitmentIdsAdvanced: shardCommitmentIds,
+        whyThisRoleIsNeededNow:
+          "The scheduler already identified the work unit; this scout supplies the exact context needed to make that node executable.",
+        exactObjective: `Supply implementation-ready repo context for draft work node ${targetNode.nodeId} commitment shard ${shardIndex + 1} of ${commitmentShards.length}. ${packetContextQuestions
+          .slice(0, 6)
+          .join(" ")}`,
+        evidenceExpectation:
+          "Bounded node-scoped context handoff packet and evidence claims for the target work node.",
+        targetRefs,
+        metadata: {
+          capabilityId: capability.capabilityId,
+          graphNodeKind: capability.graphNodeKind,
+          executorKey: capability.executorKey,
+          workerRef: capability.workerRef,
+          requiredMetadataSchemaRef: capability.requiredMetadataSchemaRef,
+          stagedSchedulerProtocolCompiled: true,
+          runtimeOwnedNodeScopedContextSupply: true,
+          runtimeOwnedContextSupplyShard: commitmentShards.length > 1,
+          commitmentIdsAdvanced: shardCommitmentIds,
+          contextSupplyShardIndex: shardIndex,
+          contextSupplyShardCount: commitmentShards.length,
+          targetNodeIds: [targetNode.nodeId],
+          targetWorkNodeId: targetNode.nodeId,
+          contextBrokerRequestRef: contextBrokerRequest.requestRef,
+          contextBrokerRequestStatus: contextBrokerRequest.status,
+          contextBrokerConsumerNodeId: contextBrokerRequest.consumerNodeId,
+          contextBrokerSemanticQuestion: contextBrokerRequest.semanticQuestion,
+          contextBrokerCandidateResourceRefs: contextBrokerRequest.candidateResourceRefs,
+          contextBrokerReasonCodes: contextBrokerRequest.reasonCodes,
+          contextBrokerDedupeKey: contextBrokerRequest.dedupeKey,
+          contextBrokerNextTransition: contextBrokerRequest.nextTransition,
+          contextBrokerRequestSummary,
+          targetWorkNodeKind: targetNode.nodeKind,
+          targetWorkCapabilityId:
+            targetNode.capabilityId ?? targetNode.metadataCapabilityId ?? null,
+          targetWorkInputHandoffRefs: (targetNode.inputHandoffRefs ?? []).slice(0, 24),
+          targetWorkContextQuestions: packetContextQuestions,
+          targetWorkAllCommitmentIds: targetCommitmentIds,
+          packetRefs,
+          expectedEvidence,
+          expectedEvidenceSource: "runtime_derived_from_capability_manifest_and_mission_ledger",
+          utilityDecision,
+          costAwareUtilityDecision: utilityDecision,
+          consideredCapabilityIds: utilityDecision.consideredCapabilityIds,
+          utilityRationale: utilityDecision.utilityRationale,
+          costRationale: utilityDecision.costRationale,
+          whyThisIsNotDuplicateWork: utilityDecision.whyThisIsNotDuplicateWork,
+          stopOrEscalationCondition: utilityDecision.stopOrEscalationCondition,
           rawPromptStored: false,
           rawResponseStored: false,
           rawProviderLogStored: false,
-        }
-      : null;
-  const synthesisExpectedEvidence =
-    synthesisCapability && synthesisCostAwareUtilityDecision
-      ? runtimeDerivedEvidenceForNode({
-          node: {
-            nodeId: contextSynthesisNodeId,
-            nodeKind: synthesisCapability.graphNodeKind,
-            capabilityId: synthesisCapability.capabilityId,
-            assignedRole: synthesisCapability.roleId,
-            executorKey: synthesisCapability.executorKey,
-            workerRef: synthesisCapability.workerRef,
-            requiredMetadataSchemaRef: synthesisCapability.requiredMetadataSchemaRef,
-            modelOrWorkerRef: synthesisCapability.workerRef,
-            inputHandoffRefs: input.commitmentWorkPackets
-              .map((packet) => packet.packetRef)
-              .slice(0, 80),
-            expectedOutput:
-              "One dependency-aware context synthesis artifact that covers all Mission Ledger commitments, groups implementation work, records dependencies/parallelism, and supplies downstream worker handoff refs.",
-            acceptanceCriteria: [
-              "Runs only after every dedicated per-packet context scout has produced an accepted bounded handoff.",
-              "Covers every blocking Mission Ledger commitment or records an explicit bounded limitation.",
-              "Produces worker-ready implementation groups with objectives, target refs, input handoff refs, success criteria, and downstream consumers.",
-              "Preserves bounded refs only and does not store raw prompts, responses, provider logs, tool logs, secrets, or unbounded transcripts.",
-            ],
-            downstreamConsumer: "implementation_scheduler",
-            commitmentIdsAdvanced: commitmentIds,
-            whyThisRoleIsNeededNow:
-              "The graph must expose the join point for parallel per-packet context scouts up front, while keeping synthesis blocked until accepted context handoffs exist.",
-            exactObjective:
-              "After all dedicated context scouts succeed, synthesize their handoffs and the commitment work packets into a worker-ready implementation, validation, review, and readback map.",
-            evidenceExpectation:
-              "Bounded context synthesis artifact with implementation readiness, commitment coverage, implementation groups, dependencies, risks, limitations, and evidence claim expectations.",
-            targetRefs: [],
-            metadata: null,
-          },
-          missionLedger: input.missionLedger,
-          capabilityManifest: input.capabilityManifest,
-        })
-      : [];
-  const synthesisNode: OrchestratorGraphNodeSpec | null =
-    synthesisCapability && synthesisCostAwareUtilityDecision
-      ? {
-          nodeId: contextSynthesisNodeId,
-          nodeKind: synthesisCapability.graphNodeKind,
-          capabilityId: synthesisCapability.capabilityId,
-          executorKey: synthesisCapability.executorKey,
-          workerRef: synthesisCapability.workerRef,
-          requiredMetadataSchemaRef: synthesisCapability.requiredMetadataSchemaRef,
-          assignedRole: synthesisCapability.roleId,
-          modelOrWorkerRef: synthesisCapability.workerRef,
-          inputHandoffRefs: input.commitmentWorkPackets
-            .map((packet) => packet.packetRef)
-            .slice(0, 80),
-          expectedOutput:
-            "One dependency-aware context synthesis artifact that covers all Mission Ledger commitments, groups implementation work, records dependencies/parallelism, and supplies downstream worker handoff refs.",
-          acceptanceCriteria: [
-            "Runs only after every dedicated per-packet context scout has produced an accepted bounded handoff.",
-            "Covers every blocking Mission Ledger commitment or records an explicit bounded limitation.",
-            "Produces worker-ready implementation groups with objectives, target refs, input handoff refs, success criteria, and downstream consumers.",
-            "Preserves bounded refs only and does not store raw prompts, responses, provider logs, tool logs, secrets, or unbounded transcripts.",
-          ],
-          downstreamConsumer: "implementation_scheduler",
-          commitmentIdsAdvanced: commitmentIds,
-          whyThisRoleIsNeededNow:
-            "The graph must expose the join point for parallel per-packet context scouts up front, while keeping synthesis blocked until accepted context handoffs exist.",
-          exactObjective:
-            "After all dedicated context scouts succeed, synthesize their handoffs and the commitment work packets into a worker-ready implementation, validation, review, and readback map.",
-          evidenceExpectation:
-            "Bounded context synthesis artifact with implementation readiness, commitment coverage, implementation groups, dependencies, risks, limitations, and evidence claim expectations.",
-          targetRefs: [],
-          metadata: {
-            capabilityId: synthesisCapability.capabilityId,
-            graphNodeKind: synthesisCapability.graphNodeKind,
-            executorKey: synthesisCapability.executorKey,
-            workerRef: synthesisCapability.workerRef,
-            requiredMetadataSchemaRef: synthesisCapability.requiredMetadataSchemaRef,
-            stagedSchedulerProtocolCompiled: true,
-            runtimeOwnedContextSynthesisBarrier: true,
-            runtimeOwnedContextSynthesisBarrierPlannedUpfront: true,
-            contextSupplyNodeIds: newNodes.map((node) => node.nodeId).slice(0, 80),
-            expectedEvidence: synthesisExpectedEvidence,
-            expectedEvidenceSource: "runtime_derived_from_capability_manifest_and_mission_ledger",
-            utilityDecision: synthesisCostAwareUtilityDecision,
-            costAwareUtilityDecision: synthesisCostAwareUtilityDecision,
-            consideredCapabilityIds: synthesisCostAwareUtilityDecision.consideredCapabilityIds,
-            utilityRationale: synthesisCostAwareUtilityDecision.utilityRationale,
-            costRationale: synthesisCostAwareUtilityDecision.costRationale,
-            whyCheaperOptionsWereInsufficient:
-              synthesisCostAwareUtilityDecision.whyCheaperOptionsWereInsufficient ?? null,
-            whyThisIsNotDuplicateWork: synthesisCostAwareUtilityDecision.whyThisIsNotDuplicateWork,
-            stopOrEscalationCondition: synthesisCostAwareUtilityDecision.stopOrEscalationCondition,
-            rawPromptStored: false,
-            rawResponseStored: false,
-            rawProviderLogStored: false,
-          } satisfies JsonValue,
-        }
-      : null;
-  const newEdges =
-    synthesisNode === null
-      ? []
-      : newNodes.map((node, index) => ({
-          edgeId: `context-supplies-${index + 1}-${node.nodeId}`.slice(0, 96),
-          fromNodeId: node.nodeId,
-          toNodeId: synthesisNode.nodeId,
-          edgeKind: "context_supplies" as const,
-          reasonCodes: ["runtime_policy_context_supply_to_global_synthesis"],
-          artifactRefs: [],
-          metadata: {
-            runtimeOwnedContextSynthesisBarrierEdge: true,
-            runtimeOwnedContextSynthesisBarrierPlannedUpfront: true,
-            rawPromptStored: false,
-            rawResponseStored: false,
-            rawProviderLogStored: false,
-          } satisfies JsonValue,
-        }));
-  const graphNodes = synthesisNode ? [...newNodes, synthesisNode] : newNodes;
+        } satisfies JsonValue,
+      });
+      contextEdges.push({
+        edgeId: `node-context-${nodeId}-to-${targetNode.nodeId}`.slice(0, 96),
+        fromNodeId: nodeId,
+        toNodeId: targetNode.nodeId,
+        edgeKind: "context_supplies",
+        reasonCodes: [
+          "runtime_policy_node_scoped_context_supply_edge",
+          ...(commitmentShards.length > 1
+            ? ["runtime_policy_node_scoped_context_supply_sharded_edge"]
+            : []),
+        ],
+        artifactRefs: [contextBrokerRequest.requestRef, ...packetRefs].slice(0, 12),
+        metadata: {
+          runtimeOwnedNodeScopedContextSupplyEdge: true,
+          runtimeOwnedContextSupplyShard: commitmentShards.length > 1,
+          contextSupplyShardIndex: shardIndex,
+          contextSupplyShardCount: commitmentShards.length,
+          targetWorkNodeId: targetNode.nodeId,
+          contextBrokerRequestRef: contextBrokerRequest.requestRef,
+          contextBrokerDedupeKey: contextBrokerRequest.dedupeKey,
+          rawPromptStored: false,
+          rawResponseStored: false,
+          rawProviderLogStored: false,
+        } satisfies JsonValue,
+      });
+    }
+  }
   return {
-    decisionId: `runtime-packet-context-fanout-${input.iteration}`,
+    decisionId: `runtime-node-scoped-context-supply-${input.iteration}`,
     decisionKind: "add_nodes",
     rationaleForDecision:
-      "Runtime policy created one dedicated context scout per accepted CommitmentWorkPacket plus the blocked global context synthesis join node.",
-    newNodes: graphNodes,
-    newEdges,
+      "Runtime policy created focused context scout nodes for scheduler-created draft work nodes before implementation execution.",
+    newNodes: contextNodes,
+    newEdges: contextEdges,
     runAfterAdd: false,
     commitmentIdsAdvanced: uniqueStrings(
-      graphNodes.flatMap((node) => node.commitmentIdsAdvanced ?? []),
+      contextNodes.flatMap((node) => node.commitmentIdsAdvanced ?? []),
     ),
     reasonCodes: [
-      "runtime_policy_packet_context_fanout_created",
-      `runtime_policy_packet_context_fanout_node_count:${newNodes.length}`,
-      ...(synthesisNode
-        ? [
-            "runtime_policy_context_synthesis_barrier_created",
-            "runtime_policy_context_synthesis_barrier_planned_upfront",
-            `runtime_policy_context_supply_edge_count:${newEdges.length}`,
-          ]
-        : []),
+      "runtime_policy_node_scoped_context_supply_created",
+      `runtime_policy_node_scoped_context_supply_node_count:${contextNodes.length}`,
+      `runtime_policy_node_scoped_context_supply_edge_count:${contextEdges.length}`,
     ],
     metadata: {
       stagedSchedulerProtocolCompiled: true,
-      runtimeOwnedPacketContextFanout: true,
-      runtimeOwnedContextSynthesisBarrierPlannedUpfront: synthesisNode !== null,
+      runtimeOwnedNodeScopedContextSupply: true,
+      targetWorkNodeIds: targetNodes.map((node) => node.nodeId),
       parallelIndependentNodesJustification:
-        "Each context scout is scoped to one accepted CommitmentWorkPacket and can run independently; each scout has a blocking context_supplies edge into the global synthesis barrier.",
-      packetCount: input.commitmentWorkPackets.length,
-      missingPacketCount: coverage.missingNodePackets.length,
-      synthesisNodeId: synthesisNode?.nodeId ?? null,
+        "Each context scout is scoped to one scheduler-created draft work node and can run independently unless the target work graph already declares dependencies.",
       rawPromptStored: false,
       rawResponseStored: false,
       rawProviderLogStored: false,
@@ -2646,11 +3974,12 @@ function deterministicContextSynthesisDecision(input: {
   }
   const plannedNode = plannedContextSynthesisNode(input.snapshotSummary);
   if (plannedNode) {
-    const packetCoverage = packetContextSupplyCoverage({
-      summary: input.snapshotSummary,
-      commitmentWorkPackets: input.commitmentWorkPackets,
-    });
-    if (packetCoverage.required && !packetCoverage.allDedicatedSupplyAccepted) {
+    if (
+      !incomingContextSupplyAccepted({
+        nodeId: plannedNode.nodeId,
+        summary: input.snapshotSummary,
+      })
+    ) {
       return null;
     }
     return {
@@ -2659,7 +3988,7 @@ function deterministicContextSynthesisDecision(input: {
       targetNodeId: plannedNode.nodeId,
       runNodeId: plannedNode.nodeId,
       rationaleForDecision:
-        "Runtime policy requires an accepted context synthesis barrier after parallel context supply and before downstream implementation, validation, review, or closeout.",
+        "An explicit context synthesis coordination node is already planned; runtime will run it only after its incoming context-supply handoffs are accepted.",
       reasonCodes: [
         "runtime_policy_context_synthesis_barrier_run",
         `runtime_policy_context_synthesis_target:${plannedNode.nodeId}`,
@@ -2670,170 +3999,209 @@ function deterministicContextSynthesisDecision(input: {
       workQueueLifecycleMutated: false,
     };
   }
-  const capability = findRuntimeNodeCapability("context_synthesis", input.capabilityManifest);
+  return null;
+}
+
+function deterministicImplementationContextRepairDecision(input: {
+  graphId: string;
+  iteration: number;
+  snapshotSummary: RuntimeWorkGraphSchedulerSnapshotSummary;
+  missionLedger: MissionContractLedger | null;
+  capabilityManifest: RuntimeNodeCapabilityManifest;
+}): OrchestratorGraphDecision | null {
+  const capability = findRuntimeNodeCapability("context_scout", input.capabilityManifest);
   if (!capability) {
     return null;
   }
-  const packetCoverage = packetContextSupplyCoverage({
-    summary: input.snapshotSummary,
-    commitmentWorkPackets: input.commitmentWorkPackets,
+  const failedImplementationNodes = input.snapshotSummary.nodeSummaries.filter((node) => {
+    if (node.nodeStatus !== "needs_review") {
+      return false;
+    }
+    if (summaryNodeRoleClass(node, input.capabilityManifest) !== "implementation") {
+      return false;
+    }
+    return (node.lastStatusReasonCodes ?? []).some((code) =>
+      /context|readiness|snapshot|target_refs|validation_refs|upstream_context/iu.test(code),
+    );
   });
-  if (packetCoverage.required && !packetCoverage.allDedicatedSupplyAccepted) {
+  if (failedImplementationNodes.length === 0) {
     return null;
   }
-  const commitmentIds = [
-    ...(input.missionLedger?.blockingCommitments ?? []),
-    ...(input.missionLedger?.nonBlockingCommitments ?? []),
-  ].map((commitment) => commitment.commitmentId);
-  const supplyNodes = contextSupplyNodes(input.snapshotSummary);
-  const contextHandoffRefs = uniqueStrings(
-    supplyNodes.flatMap((node) => node.outputArtifactRefs).slice(0, 24),
+  const existingRepairNodeIds = new Set(
+    input.snapshotSummary.nodeSummaries
+      .filter((node) => node.nodeKind === "context_scout")
+      .flatMap((node) => node.inputHandoffRefs),
   );
-  const contextSynthesisNodeId = "context_synthesis_global_barrier";
-  const costAwareUtilityDecision: CostAwareCapabilityUtilityDecision = {
-    decisionId: `runtime-context-synthesis-utility-${input.iteration}`,
-    consideredCapabilityIds: ["context_synthesis"],
-    selectedCapabilityId: capability.capabilityId,
-    selectedNodeKind: capability.graphNodeKind,
-    selectedExecutorKey: capability.executorKey,
-    targetCommitmentIds: commitmentIds,
-    utilityRationale:
-      "A single global context synthesis node turns accepted context handoffs into one dependency-aware implementation map before any downstream worker runs.",
-    costRationale:
-      "Context synthesis is a mandatory runtime barrier for complex missions after parallel context supply; running one synthesis node avoids repeated premium scheduler decisions and duplicated synthesis calls.",
-    whyCheaperOptionsWereInsufficient:
-      capability.costClass === "premium"
-        ? "Cheaper implementation, validation, review, or scout capabilities cannot replace the cross-commitment synthesis barrier because they either execute downstream work or gather additional context rather than integrating accepted handoffs."
-        : null,
-    whyThisIsNotDuplicateWork:
-      "No accepted context synthesis exists in the current graph, so this creates exactly one global barrier node.",
-    expectedEvidence: capability.evidenceProducedKinds,
-    expectedDownstreamConsumer: "scheduler_dependency_aware_implementation_graph",
-    budgetRef: "runtime-task-budget://scheduler/context-synthesis-global-barrier",
-    stopOrEscalationCondition:
-      "Return to the orchestrator with needs_review if the synthesis cannot cover all blocking commitments or produce worker-ready implementation groups.",
-    rawPromptStored: false,
-    rawResponseStored: false,
-    rawProviderLogStored: false,
-  };
-  const expectedEvidence = runtimeDerivedEvidenceForNode({
-    node: {
-      nodeId: contextSynthesisNodeId,
+  const repairNodes: OrchestratorGraphNodeSpec[] = [];
+  const repairEdges: NonNullable<OrchestratorGraphDecision["newEdges"]> = [];
+  for (const failedNode of failedImplementationNodes.slice(0, 8)) {
+    const repairRef = graphRef("node", failedNode.nodeId);
+    if (existingRepairNodeIds.has(repairRef)) {
+      continue;
+    }
+    const nodeId = `context_repair-${failedNode.nodeId}`.slice(0, 120);
+    const failedReasonCodes = failedNode.lastStatusReasonCodes ?? [];
+    const failedInputHandoffRefs = failedNode.inputHandoffRefs ?? [];
+    const failedOutputArtifactRefs = failedNode.outputArtifactRefs ?? [];
+    const failedCommitmentIds = failedNode.commitmentIdsAdvanced ?? [];
+    const targetCommitmentIds =
+      failedCommitmentIds.length > 0
+        ? failedCommitmentIds
+        : input.missionLedger
+          ? openBlockingMissionCommitments(input.missionLedger).map(
+              (commitment) => commitment.commitmentId,
+            )
+          : [];
+    const costAwareUtilityDecision: CostAwareCapabilityUtilityDecision = {
+      decisionId: `runtime-context-repair-${input.iteration}-${failedNode.nodeId}`.slice(0, 180),
+      consideredCapabilityIds: ["context_scout"],
+      selectedCapabilityId: capability.capabilityId,
+      selectedNodeKind: capability.graphNodeKind,
+      selectedExecutorKey: capability.executorKey,
+      targetCommitmentIds,
+      utilityRationale:
+        "A failed implementation node reported missing context/readiness evidence; runtime compiles a focused context repair node instead of asking the model to author graph envelopes.",
+      costRationale:
+        "Context scout is the cheapest sufficient repair capability for missing file snapshots, validation refs, or context handoff details.",
+      whyCheaperOptionsWereInsufficient: null,
+      whyThisIsNotDuplicateWork:
+        "No existing context repair node is attached to this failed implementation node.",
+      expectedEvidence: capability.evidenceProducedKinds,
+      expectedDownstreamConsumer: failedNode.nodeId,
+      budgetRef: `runtime-task-budget://scheduler/context-repair/${failedNode.nodeId}`,
+      stopOrEscalationCondition:
+        "Return needs_review if the context repair cannot produce readable target refs, validation refs, and a handoff summary for the failed implementation node.",
+      rawPromptStored: false,
+      rawResponseStored: false,
+      rawProviderLogStored: false,
+    };
+    const expectedEvidence = runtimeDerivedEvidenceForNode({
+      node: {
+        nodeId,
+        nodeKind: capability.graphNodeKind,
+        capabilityId: capability.capabilityId,
+        assignedRole: capability.roleId,
+        executorKey: capability.executorKey,
+        workerRef: capability.workerRef,
+        requiredMetadataSchemaRef: capability.requiredMetadataSchemaRef,
+        modelOrWorkerRef: capability.workerRef,
+        inputHandoffRefs: [repairRef, ...failedInputHandoffRefs].slice(0, 12),
+        expectedOutput:
+          "Focused context repair handoff with readable target refs, validation refs, context handoff summary, and explicit blockers for the failed implementation node.",
+        acceptanceCriteria: [
+          "Identify the concrete files or refs required for the failed implementation node.",
+          "Confirm whether each target ref exists and is readable before implementation retries.",
+          "Provide validation command refs or state a blocking reason if validation cannot be identified.",
+        ],
+        downstreamConsumer: failedNode.nodeId,
+        commitmentIdsAdvanced: targetCommitmentIds,
+        whyThisRoleIsNeededNow:
+          "Implementation readiness failed; context must be repaired before the worker is invoked again.",
+        exactObjective: `Repair missing context for implementation node ${failedNode.nodeId}: ${failedReasonCodes
+          .slice(0, 8)
+          .join(", ")}`,
+        evidenceExpectation:
+          "Bounded context repair handoff mapped to the failed implementation node and target commitments.",
+        targetRefs: failedOutputArtifactRefs,
+        metadata: null,
+      },
+      missionLedger: input.missionLedger,
+      capabilityManifest: input.capabilityManifest,
+    });
+    repairNodes.push({
+      nodeId,
       nodeKind: capability.graphNodeKind,
       capabilityId: capability.capabilityId,
+      executorKey: capability.executorKey,
+      workerRef: capability.workerRef,
+      requiredMetadataSchemaRef: capability.requiredMetadataSchemaRef,
       assignedRole: capability.roleId,
-      executorKey: capability.executorKey,
-      workerRef: capability.workerRef,
-      requiredMetadataSchemaRef: capability.requiredMetadataSchemaRef,
       modelOrWorkerRef: capability.workerRef,
-      inputHandoffRefs: contextHandoffRefs,
+      inputHandoffRefs: [repairRef, ...failedInputHandoffRefs].slice(0, 12),
       expectedOutput:
-        "One dependency-aware context synthesis artifact that covers all Mission Ledger commitments, groups implementation work, records dependencies/parallelism, and supplies downstream worker handoff refs.",
+        "Focused context repair handoff with readable target refs, validation refs, context handoff summary, and explicit blockers for the failed implementation node.",
       acceptanceCriteria: [
-        "Covers every blocking Mission Ledger commitment or records an explicit bounded limitation.",
-        "Produces worker-ready implementation groups with objectives, target refs, input handoff refs, success criteria, and downstream consumers.",
-        "Preserves bounded refs only and does not store raw prompts, responses, provider logs, tool logs, secrets, or unbounded transcripts.",
+        "Identify the concrete files or refs required for the failed implementation node.",
+        "Confirm whether each target ref exists and is readable before implementation retries.",
+        "Provide validation command refs or state a blocking reason if validation cannot be identified.",
       ],
-      downstreamConsumer: "implementation_scheduler",
-      commitmentIdsAdvanced: commitmentIds,
+      downstreamConsumer: failedNode.nodeId,
+      commitmentIdsAdvanced: targetCommitmentIds,
       whyThisRoleIsNeededNow:
-        "Accepted per-commitment context scouts need to be synthesized into a single dependency-aware implementation map before downstream execution can be selected safely.",
-      exactObjective:
-        "Synthesize all accepted context handoffs and commitment work packets into a single worker-ready implementation, validation, review, and readback map for the remaining Product/Spec Planning work.",
+        "Implementation readiness failed; context must be repaired before the worker is invoked again.",
+      exactObjective: `Repair missing context for implementation node ${failedNode.nodeId}: ${failedReasonCodes
+        .slice(0, 8)
+        .join(", ")}`,
       evidenceExpectation:
-        "Bounded context synthesis artifact with implementation readiness, commitment coverage, implementation groups, dependencies, risks, limitations, and evidence claim expectations.",
-      targetRefs: [],
-      metadata: null,
-    },
-    missionLedger: input.missionLedger,
-    capabilityManifest: input.capabilityManifest,
-  });
-  const newNode: OrchestratorGraphNodeSpec = {
-    nodeId: contextSynthesisNodeId,
-    nodeKind: capability.graphNodeKind,
-    capabilityId: capability.capabilityId,
-    executorKey: capability.executorKey,
-    workerRef: capability.workerRef,
-    requiredMetadataSchemaRef: capability.requiredMetadataSchemaRef,
-    assignedRole: capability.roleId,
-    modelOrWorkerRef: capability.workerRef,
-    inputHandoffRefs: contextHandoffRefs,
-    expectedOutput:
-      "One dependency-aware context synthesis artifact that covers all Mission Ledger commitments, groups implementation work, records dependencies/parallelism, and supplies downstream worker handoff refs.",
-    acceptanceCriteria: [
-      "Covers every blocking Mission Ledger commitment or records an explicit bounded limitation.",
-      "Produces worker-ready implementation groups with objectives, target refs, input handoff refs, success criteria, and downstream consumers.",
-      "Preserves bounded refs only and does not store raw prompts, responses, provider logs, tool logs, secrets, or unbounded transcripts.",
-    ],
-    downstreamConsumer: "implementation_scheduler",
-    commitmentIdsAdvanced: commitmentIds,
-    whyThisRoleIsNeededNow:
-      "Accepted per-commitment context scouts need to be synthesized into a single dependency-aware implementation map before downstream execution can be selected safely.",
-    exactObjective:
-      "Synthesize all accepted context handoffs and commitment work packets into a single worker-ready implementation, validation, review, and readback map for the remaining Product/Spec Planning work.",
-    evidenceExpectation:
-      "Bounded context synthesis artifact with implementation readiness, commitment coverage, implementation groups, dependencies, risks, limitations, and evidence claim expectations.",
-    targetRefs: [],
-    metadata: {
-      capabilityId: capability.capabilityId,
-      graphNodeKind: capability.graphNodeKind,
-      executorKey: capability.executorKey,
-      workerRef: capability.workerRef,
-      requiredMetadataSchemaRef: capability.requiredMetadataSchemaRef,
-      stagedSchedulerProtocolCompiled: true,
-      runtimeOwnedContextSynthesisBarrier: true,
-      contextSupplyNodeIds: supplyNodes.map((node) => node.nodeId).slice(0, 40),
-      expectedEvidence,
-      expectedEvidenceSource: "runtime_derived_from_capability_manifest_and_mission_ledger",
-      utilityDecision: costAwareUtilityDecision,
-      costAwareUtilityDecision,
-      consideredCapabilityIds: costAwareUtilityDecision.consideredCapabilityIds,
-      utilityRationale: costAwareUtilityDecision.utilityRationale,
-      costRationale: costAwareUtilityDecision.costRationale,
-      whyCheaperOptionsWereInsufficient:
-        costAwareUtilityDecision.whyCheaperOptionsWereInsufficient ?? null,
-      whyThisIsNotDuplicateWork: costAwareUtilityDecision.whyThisIsNotDuplicateWork,
-      stopOrEscalationCondition: costAwareUtilityDecision.stopOrEscalationCondition,
-      rawPromptStored: false,
-      rawResponseStored: false,
-      rawProviderLogStored: false,
-    } satisfies JsonValue,
-  };
-  const newEdges = supplyNodes.slice(0, 80).map((node, index) => ({
-    edgeId: `context-supplies-${index + 1}-${node.nodeId}`.slice(0, 96),
-    fromNodeId: node.nodeId,
-    toNodeId: contextSynthesisNodeId,
-    edgeKind: "context_supplies" as const,
-    reasonCodes: ["runtime_policy_context_supply_to_global_synthesis"],
-    artifactRefs: node.outputArtifactRefs.slice(0, 8),
-    metadata: {
-      runtimeOwnedContextSynthesisBarrierEdge: true,
-      rawPromptStored: false,
-      rawResponseStored: false,
-      rawProviderLogStored: false,
-    } satisfies JsonValue,
-  }));
+        "Bounded context repair handoff mapped to the failed implementation node and target commitments.",
+      targetRefs: failedOutputArtifactRefs,
+      metadata: {
+        capabilityId: capability.capabilityId,
+        graphNodeKind: capability.graphNodeKind,
+        executorKey: capability.executorKey,
+        workerRef: capability.workerRef,
+        requiredMetadataSchemaRef: capability.requiredMetadataSchemaRef,
+        stagedSchedulerProtocolCompiled: true,
+        runtimeOwnedContextRepairNode: true,
+        failedImplementationNodeId: failedNode.nodeId,
+        failedImplementationReasonCodes: failedReasonCodes.slice(0, 20),
+        expectedEvidence,
+        expectedEvidenceSource: "runtime_derived_from_capability_manifest_and_mission_ledger",
+        utilityDecision: costAwareUtilityDecision,
+        costAwareUtilityDecision,
+        consideredCapabilityIds: costAwareUtilityDecision.consideredCapabilityIds,
+        utilityRationale: costAwareUtilityDecision.utilityRationale,
+        costRationale: costAwareUtilityDecision.costRationale,
+        stopOrEscalationCondition: costAwareUtilityDecision.stopOrEscalationCondition,
+        rawPromptStored: false,
+        rawResponseStored: false,
+        rawProviderLogStored: false,
+      } satisfies JsonValue,
+    });
+    repairEdges.push({
+      edgeId: `context-repair-${nodeId}-to-${failedNode.nodeId}`.slice(0, 96),
+      fromNodeId: nodeId,
+      toNodeId: failedNode.nodeId,
+      edgeKind: "context_supplies",
+      reasonCodes: [
+        "runtime_policy_context_repair_before_implementation_retry",
+        "runtime_policy_context_repair_edge_supplies_failed_consumer",
+      ],
+      artifactRefs: failedOutputArtifactRefs.slice(0, 8),
+      metadata: {
+        runtimeOwnedContextRepairEdge: true,
+        contextRepairConsumerEdge: true,
+        failedImplementationNodeId: failedNode.nodeId,
+        rawPromptStored: false,
+        rawResponseStored: false,
+        rawProviderLogStored: false,
+      } satisfies JsonValue,
+    });
+  }
+  if (repairNodes.length === 0) {
+    return null;
+  }
   return {
-    decisionId: `runtime-context-synthesis-barrier-${input.iteration}`,
+    decisionId: `runtime-implementation-context-repair-${input.iteration}`,
     decisionKind: "add_nodes",
     rationaleForDecision:
-      "Runtime policy created one mandatory global context synthesis barrier after accepted parallel context supply and before downstream execution.",
-    newNodes: [newNode],
-    newEdges,
+      "Runtime compiled focused context repair nodes from failed implementation readiness evidence; the model is not asked to author executable repair graph envelopes.",
+    newNodes: repairNodes,
+    newEdges: repairEdges,
     runAfterAdd: true,
-    runNodeId: contextSynthesisNodeId,
-    targetNodeId: contextSynthesisNodeId,
-    commitmentIdsAdvanced: commitmentIds,
+    runNodeId: repairNodes[0]?.nodeId,
+    commitmentIdsAdvanced: uniqueStrings(
+      repairNodes.flatMap((node) => node.commitmentIdsAdvanced ?? []),
+    ),
     reasonCodes: [
-      "runtime_policy_context_synthesis_barrier_created",
-      "runtime_policy_context_synthesis_single_global_node",
-      `runtime_policy_context_supply_node_count:${supplyNodes.length}`,
+      "runtime_policy_implementation_context_repair_created",
+      "runtime_owned_semantic_repair_intent_compiled",
+      `runtime_policy_context_repair_node_count:${repairNodes.length}`,
     ],
     metadata: {
       stagedSchedulerProtocolCompiled: true,
-      runtimeOwnedContextSynthesisBarrier: true,
-      parallelIndependentNodesJustification:
-        "Context supply nodes already ran independently; the global context synthesis barrier depends on all accepted supply nodes before downstream execution.",
+      runtimeOwnedImplementationContextRepair: true,
+      failedImplementationNodeIds: failedImplementationNodes.map((node) => node.nodeId),
       rawPromptStored: false,
       rawResponseStored: false,
       rawProviderLogStored: false,
@@ -2887,30 +4255,6 @@ function postSynthesisDownstreamGraphExists(
   );
 }
 
-function slugForRuntimeNodeId(value: string, fallback: string): string {
-  const slug = value
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9_.:-]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 58);
-  return slug || fallback;
-}
-
-function runtimeCompiledPostSynthesisNodeId(input: {
-  prefix: string;
-  groupId?: string | null;
-  role: string;
-  index: number;
-}): string {
-  const digest = createHash("sha256").update(JSON.stringify(input)).digest("hex").slice(0, 10);
-  const groupSlug = slugForRuntimeNodeId(
-    input.groupId ?? input.role,
-    `${input.role}-${input.index + 1}`,
-  );
-  return `${input.prefix}-${input.role}-${groupSlug}-${digest}`.slice(0, 96);
-}
-
 function synthesisSummaryGroups(
   synthesis: Record<string, JsonValue>,
 ): Array<Record<string, JsonValue>> {
@@ -2923,205 +4267,19 @@ function synthesisSummaryGroups(
     : [];
 }
 
-function synthesisSummaryDependencies(
-  synthesis: Record<string, JsonValue>,
-): Array<Record<string, JsonValue>> {
-  return Array.isArray(synthesis.dependencyMap)
-    ? synthesis.dependencyMap
-        .filter((item): item is Record<string, JsonValue> =>
-          Boolean(item && typeof item === "object" && !Array.isArray(item)),
-        )
-        .slice(0, 60)
-    : [];
-}
-
 function stringFromJson(value: JsonValue | undefined, fallback = ""): string {
   return typeof value === "string" && value.trim().length > 0 ? value : fallback;
 }
 
-function capabilityAvailable(input: {
-  capabilityId: string;
-  capabilityManifest: RuntimeNodeCapabilityManifest;
-  executableExecutorKeys: string[];
-}): ReturnType<typeof findRuntimeNodeCapability> {
-  const capability = findRuntimeNodeCapability(input.capabilityId, input.capabilityManifest);
-  if (!capability) {
-    return null;
-  }
-  const executable = new Set(input.executableExecutorKeys);
-  if (
-    executable.has(capability.executorKey) ||
-    executable.has(`kind:${capability.graphNodeKind}`) ||
-    executable.has(`role:${capability.roleId}`) ||
-    executable.has(capability.graphNodeKind) ||
-    executable.has(capability.roleId)
-  ) {
-    return capability;
-  }
-  return null;
-}
-
-function selectRuntimeCompiledImplementationCapability(input: {
+function selectedCapabilityIdFromSynthesisGroup(input: {
   group: Record<string, JsonValue>;
-  capabilityManifest: RuntimeNodeCapabilityManifest;
-  executableExecutorKeys: string[];
-}): ReturnType<typeof findRuntimeNodeCapability> {
+}): string | null {
+  const explicit = stringFromJson(input.group.selectedCapabilityId);
+  if (explicit) {
+    return explicit;
+  }
   const recommended = jsonStringArray(input.group.recommendedCapabilityIds);
-  for (const capabilityId of recommended) {
-    const capability = capabilityAvailable({
-      capabilityId,
-      capabilityManifest: input.capabilityManifest,
-      executableExecutorKeys: input.executableExecutorKeys,
-    });
-    if (
-      capability &&
-      capability.roleClass === "implementation" &&
-      capability.capabilityId !== "implementation_complex" &&
-      capability.costClass !== "premium"
-    ) {
-      return capability;
-    }
-  }
-  return (
-    capabilityAvailable({
-      capabilityId: "implementation_microtask",
-      capabilityManifest: input.capabilityManifest,
-      executableExecutorKeys: input.executableExecutorKeys,
-    }) ??
-    capabilityAvailable({
-      capabilityId: "implementation_complex",
-      capabilityManifest: input.capabilityManifest,
-      executableExecutorKeys: input.executableExecutorKeys,
-    })
-  );
-}
-
-function costAwareUtilityDecisionForCompiledNode(input: {
-  decisionId: string;
-  capabilityId: string;
-  targetCommitmentIds: string[];
-  consideredCapabilityIds: string[];
-  utilityRationale: string;
-  costRationale: string;
-  whyCheaperOptionsWereInsufficient?: string | null;
-  whyThisIsNotDuplicateWork: string;
-  expectedDownstreamConsumer: string;
-  budgetRef: string;
-  stopOrEscalationCondition: string;
-  capabilityManifest: RuntimeNodeCapabilityManifest;
-}): CostAwareCapabilityUtilityDecision {
-  const capability = findRuntimeNodeCapability(input.capabilityId, input.capabilityManifest);
-  const profile = capability ? providerCapabilityProfileForCapability(capability) : null;
-  const selectedModelQualificationProfileId = capability?.productionSelectionRequiresQualification
-    ? capability.canEditSource
-      ? (capability.modelQualificationProfileIds.find((profileId) =>
-          profileId.includes("kimi-k2.6"),
-        ) ??
-        capability.modelQualificationProfileIds[0] ??
-        null)
-      : (capability.modelQualificationProfileIds[0] ?? null)
-    : null;
-  return {
-    decisionId: input.decisionId,
-    consideredCapabilityIds: uniqueStrings(input.consideredCapabilityIds),
-    selectedCapabilityId: input.capabilityId,
-    selectedProviderCapabilityProfileId: profile?.profileId ?? null,
-    selectedNodeKind: capability?.graphNodeKind ?? "implementation",
-    selectedExecutorKey: capability?.executorKey ?? `capability:${input.capabilityId}`,
-    targetCommitmentIds: input.targetCommitmentIds,
-    utilityRationale: input.utilityRationale,
-    costRationale: input.costRationale,
-    whyCheaperOptionsWereInsufficient: input.whyCheaperOptionsWereInsufficient ?? null,
-    whyThisIsNotDuplicateWork: input.whyThisIsNotDuplicateWork,
-    expectedEvidence: capability?.evidenceProducedKinds ?? ["artifact"],
-    selectedModelQualificationProfileId,
-    qualificationEvidenceRefs:
-      capability?.productionSelectionRequiresQualification && selectedModelQualificationProfileId
-        ? [`model-profile://${selectedModelQualificationProfileId}/runtime-capability`]
-        : [],
-    expectedDownstreamConsumer: input.expectedDownstreamConsumer,
-    budgetRef: input.budgetRef,
-    stopOrEscalationCondition: input.stopOrEscalationCondition,
-    rawPromptStored: false,
-    rawResponseStored: false,
-    rawProviderLogStored: false,
-  };
-}
-
-function compiledPostSynthesisNode(input: {
-  nodeId: string;
-  capabilityId: string;
-  inputHandoffRefs: string[];
-  targetRefs: string[];
-  commitmentIds: string[];
-  exactObjective: string;
-  whyThisRoleIsNeededNow: string;
-  expectedOutput: string;
-  acceptanceCriteria: string[];
-  downstreamConsumer: string;
-  evidenceExpectation: string;
-  utilityDecision: CostAwareCapabilityUtilityDecision;
-  missionLedger: MissionContractLedger | null;
-  capabilityManifest: RuntimeNodeCapabilityManifest;
-  metadata?: Record<string, JsonValue>;
-}): OrchestratorGraphNodeSpec | null {
-  const capability = findRuntimeNodeCapability(input.capabilityId, input.capabilityManifest);
-  if (!capability) {
-    return null;
-  }
-  const baseNode: OrchestratorGraphNodeSpec = {
-    nodeId: input.nodeId,
-    nodeKind: capability.graphNodeKind,
-    capabilityId: capability.capabilityId,
-    executorKey: capability.executorKey,
-    workerRef: capability.workerRef,
-    requiredMetadataSchemaRef: capability.requiredMetadataSchemaRef,
-    assignedRole: capability.roleId,
-    modelOrWorkerRef: capability.workerRef,
-    inputHandoffRefs: uniqueStrings(input.inputHandoffRefs).slice(0, 80),
-    targetRefs: uniqueStrings(input.targetRefs).slice(0, 80),
-    commitmentIdsAdvanced: uniqueStrings(input.commitmentIds).slice(0, 40),
-    exactObjective: input.exactObjective,
-    whyThisRoleIsNeededNow: input.whyThisRoleIsNeededNow,
-    expectedOutput: input.expectedOutput,
-    acceptanceCriteria: uniqueStrings(input.acceptanceCriteria).slice(0, 16),
-    downstreamConsumer: input.downstreamConsumer,
-    evidenceExpectation: input.evidenceExpectation,
-    metadata: null,
-  };
-  const expectedEvidence = runtimeDerivedEvidenceForNode({
-    node: baseNode,
-    missionLedger: input.missionLedger,
-    capabilityManifest: input.capabilityManifest,
-  });
-  return {
-    ...baseNode,
-    metadata: {
-      ...input.metadata,
-      capabilityId: capability.capabilityId,
-      graphNodeKind: capability.graphNodeKind,
-      executorKey: capability.executorKey,
-      workerRef: capability.workerRef,
-      requiredMetadataSchemaRef: capability.requiredMetadataSchemaRef,
-      stagedSchedulerProtocolCompiled: true,
-      runtimeCompiledFromContextSynthesis: true,
-      expectedEvidence,
-      expectedEvidenceSource:
-        "runtime_derived_from_capability_manifest_mission_ledger_and_context_synthesis",
-      utilityDecision: input.utilityDecision,
-      costAwareUtilityDecision: input.utilityDecision,
-      consideredCapabilityIds: input.utilityDecision.consideredCapabilityIds,
-      utilityRationale: input.utilityDecision.utilityRationale,
-      costRationale: input.utilityDecision.costRationale,
-      whyCheaperOptionsWereInsufficient:
-        input.utilityDecision.whyCheaperOptionsWereInsufficient ?? null,
-      whyThisIsNotDuplicateWork: input.utilityDecision.whyThisIsNotDuplicateWork,
-      stopOrEscalationCondition: input.utilityDecision.stopOrEscalationCondition,
-      rawPromptStored: false,
-      rawResponseStored: false,
-      rawProviderLogStored: false,
-    } satisfies JsonValue,
-  };
+  return recommended[0] ?? null;
 }
 
 function runtimeCompiledPostSynthesisGraphDecision(input: {
@@ -3130,7 +4288,6 @@ function runtimeCompiledPostSynthesisGraphDecision(input: {
   snapshotSummary: RuntimeWorkGraphSchedulerSnapshotSummary;
   missionLedger: MissionContractLedger | null;
   capabilityManifest: RuntimeNodeCapabilityManifest;
-  executableExecutorKeys: string[];
   recentNodeResultSummaries: RuntimeWorkGraphRecentNodeResultSummary[];
 }): OrchestratorGraphDecision | null {
   if (
@@ -3143,19 +4300,21 @@ function runtimeCompiledPostSynthesisGraphDecision(input: {
   const synthesis = latestAcceptedContextSynthesisSummary(input.recentNodeResultSummaries);
   if (!synthesis) {
     return {
-      decisionId: `runtime-post-synthesis-graph-missing-artifact-${input.iteration}`,
+      decisionId: "runtime-post-synthesis-workintent-missing-artifact-" + String(input.iteration),
       decisionKind: "mark_needs_review",
       rationaleForDecision:
-        "Accepted context synthesis exists, but the bounded synthesis artifact summary is not available to the runtime compiler; scheduler will not ask the model to invent a replacement graph.",
+        "Accepted context synthesis exists, but the bounded synthesis artifact summary is not available. The retired post-synthesis executable compiler will not invent implementation nodes from hidden synthesis state.",
       reasonCodes: [
-        "runtime_compiled_post_synthesis_graph_requires_synthesis_artifact_summary",
-        "post_synthesis_monolithic_orchestrator_graph_disabled",
+        "runtime_post_synthesis_workintent_requires_synthesis_artifact_summary",
+        "post_synthesis_executable_graph_compilation_retired",
       ],
       metadata: {
         runtimeCompiledFromContextSynthesis: true,
+        contextSynthesisCoordinationOnly: true,
         rawPromptStored: false,
         rawResponseStored: false,
         rawProviderLogStored: false,
+        rawToolLogStored: false,
       } satisfies JsonValue,
       rawPromptStored: false,
       rawResponseStored: false,
@@ -3180,22 +4339,24 @@ function runtimeCompiledPostSynthesisGraphDecision(input: {
       : expectedGroupCount === groups.length;
   if (groups.length === 0 || !synthesisRef) {
     return {
-      decisionId: `runtime-post-synthesis-graph-invalid-artifact-${input.iteration}`,
+      decisionId: "runtime-post-synthesis-workintent-invalid-artifact-" + String(input.iteration),
       decisionKind: "mark_needs_review",
       rationaleForDecision:
-        "Accepted context synthesis did not contain worker-ready implementation groups and a synthesis ref, so downstream graph compilation cannot proceed.",
+        "Accepted context synthesis did not contain a complete, bounded coordination artifact. The runtime will not convert synthesis directly into executable implementation nodes.",
       reasonCodes: [
         groups.length === 0
-          ? "runtime_compiled_post_synthesis_groups_missing"
-          : "runtime_compiled_post_synthesis_ref_missing",
-        "post_synthesis_monolithic_orchestrator_graph_disabled",
+          ? "runtime_post_synthesis_workintent_groups_missing"
+          : "runtime_post_synthesis_workintent_ref_missing",
+        "post_synthesis_executable_graph_compilation_retired",
       ],
       metadata: {
         runtimeCompiledFromContextSynthesis: true,
+        contextSynthesisCoordinationOnly: true,
         synthesisSummaryAvailable: true,
         rawPromptStored: false,
         rawResponseStored: false,
         rawProviderLogStored: false,
+        rawToolLogStored: false,
       } satisfies JsonValue,
       rawPromptStored: false,
       rawResponseStored: false,
@@ -3205,18 +4366,19 @@ function runtimeCompiledPostSynthesisGraphDecision(input: {
   }
   if (!compileHandoffComplete || groups.length < expectedGroupCount) {
     return {
-      decisionId: `runtime-post-synthesis-graph-incomplete-handoff-${input.iteration}`,
+      decisionId: "runtime-post-synthesis-workintent-incomplete-handoff-" + String(input.iteration),
       decisionKind: "mark_needs_review",
       rationaleForDecision:
-        "Accepted context synthesis reported more implementation groups than the graph compiler received; scheduler refuses to compile a partial downstream graph.",
+        "Accepted context synthesis reported more coordination groups than the compiler received. The scheduler refuses to compile a partial WorkIntent graph.",
       reasonCodes: [
-        "runtime_compiled_post_synthesis_compile_handoff_incomplete",
-        `runtime_compiled_post_synthesis_expected_group_count:${expectedGroupCount}`,
-        `runtime_compiled_post_synthesis_received_group_count:${groups.length}`,
-        "post_synthesis_monolithic_orchestrator_graph_disabled",
+        "runtime_post_synthesis_workintent_compile_handoff_incomplete",
+        "runtime_post_synthesis_workintent_expected_group_count:" + String(expectedGroupCount),
+        "runtime_post_synthesis_workintent_received_group_count:" + String(groups.length),
+        "post_synthesis_executable_graph_compilation_retired",
       ],
       metadata: {
         runtimeCompiledFromContextSynthesis: true,
+        contextSynthesisCoordinationOnly: true,
         synthesisSummaryAvailable: true,
         contextSynthesisRef: synthesisRef,
         expectedGroupCount,
@@ -3224,6 +4386,7 @@ function runtimeCompiledPostSynthesisGraphDecision(input: {
         rawPromptStored: false,
         rawResponseStored: false,
         rawProviderLogStored: false,
+        rawToolLogStored: false,
       } satisfies JsonValue,
       rawPromptStored: false,
       rawResponseStored: false,
@@ -3231,419 +4394,228 @@ function runtimeCompiledPostSynthesisGraphDecision(input: {
       workQueueLifecycleMutated: false,
     };
   }
-  const nodes: OrchestratorGraphNodeSpec[] = [];
-  const groupNodeIdByGroupId = new Map<string, string>();
+
   const allCommitmentIds = uniqueStrings(
     groups.flatMap((group) => jsonStringArray(group.commitmentIds)),
   );
-  const synthesisContextSnapshot = createContextSnapshotRef({
-    sourceRef: synthesisRef,
-    sourceKind: "context_synthesis",
-    graphId: input.graphId,
-    commitmentIds: allCommitmentIds,
-    scopeSummary:
-      "Accepted context synthesis barrier snapshot used to authorize downstream implementation graph execution.",
-    reasonCodes: ["context_snapshot_context_synthesis_accepted"],
-  });
-  const prefix = `g-${createHash("sha256").update(input.graphId).digest("hex").slice(0, 8)}`;
+  const nodes: OrchestratorGraphNodeSpec[] = [];
+  const groupNodeIdByGroupId = new Map<string, string>();
+  const groupIdByWorkUnitId = new Map<string, string>();
+  const rejectedDiagnostics: JsonValue[] = [];
+  const rejectedReasonCodes: string[] = [];
+
   for (const [index, group] of groups.entries()) {
-    const groupId = stringFromJson(group.groupId, `group-${index + 1}`);
-    const capability = selectRuntimeCompiledImplementationCapability({
-      group,
-      capabilityManifest: input.capabilityManifest,
-      executableExecutorKeys: input.executableExecutorKeys,
-    });
-    if (!capability) {
-      return {
-        decisionId: `runtime-post-synthesis-graph-missing-implementation-capability-${input.iteration}`,
-        decisionKind: "mark_needs_review",
-        rationaleForDecision:
-          "Context synthesis produced implementation groups, but no executable implementation capability is registered for this workflow.",
-        reasonCodes: [
-          "runtime_compiled_post_synthesis_implementation_capability_missing",
-          "post_synthesis_monolithic_orchestrator_graph_disabled",
-        ],
-        metadata: {
-          groupId,
-          rawPromptStored: false,
-          rawResponseStored: false,
-          rawProviderLogStored: false,
-        } satisfies JsonValue,
-        rawPromptStored: false,
-        rawResponseStored: false,
-        rawProviderLogStored: false,
-        workQueueLifecycleMutated: false,
-      };
-    }
+    const groupId = stringFromJson(group.groupId, "group-" + String(index + 1));
+    const workUnitId = stringFromJson(group.workUnitId, groupId);
+    const selectedCapabilityId = selectedCapabilityIdFromSynthesisGroup({ group }) ?? "";
+    const executionIntent =
+      stringFromJson(group.executionIntent) || stringFromJson(group.workIntentExecutionIntent);
     const commitmentIds = jsonStringArray(group.commitmentIds);
     const targetRefs = jsonStringArray(group.targetRefs);
-    const nodeId = runtimeCompiledPostSynthesisNodeId({
-      prefix,
-      groupId,
-      role: "implementation",
-      index,
-    });
-    groupNodeIdByGroupId.set(groupId, nodeId);
-    const considered = uniqueStrings([
-      ...jsonStringArray(group.recommendedCapabilityIds),
-      "implementation_microtask",
-      ...(capability.capabilityId === "implementation_complex" ? ["implementation_complex"] : []),
-      capability.capabilityId,
+    const inputRefs = uniqueStrings([
+      synthesisRef,
+      ...jsonStringArray(group.inputRefs),
+      ...jsonStringArray(group.inputHandoffRefs),
     ]);
-    const utilityDecision = costAwareUtilityDecisionForCompiledNode({
-      decisionId: `runtime-post-synthesis-${nodeId}-utility`,
-      capabilityId: capability.capabilityId,
-      targetCommitmentIds: commitmentIds.length > 0 ? commitmentIds : allCommitmentIds,
-      consideredCapabilityIds: considered,
-      utilityRationale:
-        stringFromJson(group.workerFitRationale) ||
-        "Accepted context synthesis identified this as a worker-ready implementation group.",
-      costRationale:
-        capability.costClass === "premium"
-          ? "Premium Codex implementation is used only for the synthesis group that could not be assigned to a cheaper scoped implementation capability."
-          : "Use the cheapest executable implementation capability for this synthesized worker-ready group before premium escalation.",
-      whyCheaperOptionsWereInsufficient:
-        capability.costClass === "premium"
-          ? "The accepted synthesis recommendations or runtime capability registry did not provide a cheaper executable implementation capability for this group."
-          : null,
-      whyThisIsNotDuplicateWork: `No implementation node exists yet for context synthesis group ${groupId}.`,
-      expectedDownstreamConsumer: "validation",
-      budgetRef: `runtime-task-budget://scheduler/post-synthesis/${groupId}/implementation`,
-      stopOrEscalationCondition:
-        "Return validation or adapter failure evidence to the scheduler; escalate only after scoped worker repair cannot satisfy the group.",
-      capabilityManifest: input.capabilityManifest,
-    });
-    const node = compiledPostSynthesisNode({
-      nodeId,
-      capabilityId: capability.capabilityId,
-      inputHandoffRefs: uniqueStrings([synthesisRef, ...jsonStringArray(group.inputHandoffRefs)]),
-      targetRefs,
+    const capabilityRationale =
+      stringFromJson(group.capabilityRationale) || stringFromJson(group.workerFitRationale);
+    const expectedOutput = stringFromJson(group.expectedOutput);
+    const successCriteria = jsonStringArray(group.successCriteria);
+    const compileResult = compileWorkIntent({
+      decisionId: "runtime-post-synthesis-workintent-" + String(input.iteration),
+      graphId: input.graphId,
+      workUnitId,
+      title: stringFromJson(group.title) || groupId,
+      objective: stringFromJson(group.objective),
       commitmentIds: commitmentIds.length > 0 ? commitmentIds : allCommitmentIds,
-      exactObjective:
-        stringFromJson(group.objective) || `Implement accepted context synthesis group ${groupId}.`,
-      whyThisRoleIsNeededNow:
-        "Accepted context synthesis converted commitment context into this bounded implementation group; source work can now run without a broad graph-planning call.",
-      expectedOutput:
-        "Source/test/docs change evidence refs, touched-file refs, validation hints, and commitment evidence claims for this implementation group.",
-      acceptanceCriteria:
-        jsonStringArray(group.successCriteria).length > 0
-          ? jsonStringArray(group.successCriteria)
-          : ["Emit bounded changed-file refs and evidence claims for every target commitment."],
-      downstreamConsumer: "validation",
-      evidenceExpectation:
-        "Changed-file refs and commitment evidence claims tied to the accepted synthesis group.",
-      utilityDecision,
-      missionLedger: input.missionLedger,
+      executionIntent,
+      selectedCapabilityId,
+      consideredCapabilityIds: uniqueStrings([
+        selectedCapabilityId,
+        ...jsonStringArray(group.recommendedCapabilityIds),
+      ]),
+      capabilityRationale,
+      costRationale: stringFromJson(group.costRationale) || null,
+      whyCheaperOptionsWereInsufficient:
+        stringFromJson(group.whyCheaperOptionsWereInsufficient) ||
+        stringFromJson(group.codexEscalationRationale) ||
+        null,
+      whyThisIsNotDuplicateWork: stringFromJson(group.whyThisIsNotDuplicateWork) || null,
+      expectedOutput,
+      successCriteria,
+      contextQuestions: jsonStringArray(group.contextQuestions),
+      targetRefs,
+      inputRefs,
+      validationNeeds: jsonStringArray(group.validationNeeds),
+      dependencyWorkUnitIds: jsonStringArray(group.dependencyWorkUnitIds),
+      downstreamConsumer: stringFromJson(group.downstreamConsumer),
+      stopIfMissing: jsonStringArray(group.stopIfMissing),
+      parallelismRationale: stringFromJson(group.parallelismRationale) || null,
+      rationale:
+        stringFromJson(group.rationale) || stringFromJson(group.workerFitRationale) || null,
       capabilityManifest: input.capabilityManifest,
+      sourceRecord: group,
+      sourcePath: "contextSynthesis.implementationGroups[" + String(index) + "]",
+    });
+    if (!compileResult.node || !compileResult.workIntent) {
+      rejectedReasonCodes.push(
+        ...compileResult.reasonCodes.map(
+          (code) => "runtime_post_synthesis_workintent:" + groupId + ":" + code,
+        ),
+      );
+      rejectedDiagnostics.push({
+        groupId,
+        workUnitId,
+        executionIntent: executionIntent || null,
+        selectedCapabilityId: selectedCapabilityId || null,
+        diagnostics: compileResult.diagnostics.slice(0, 12).map((diagnostic) => ({
+          path: diagnostic.path,
+          errorCode: diagnostic.errorCode,
+          message: boundedRuntimeWorkGraphString(diagnostic.message, 500),
+          validValues: diagnostic.validValues?.slice(0, 16) ?? null,
+          rawPromptStored: false,
+          rawResponseStored: false,
+          rawProviderLogStored: false,
+        })),
+        repairRequest: compileResult.repairRequest,
+        rawPromptStored: false,
+        rawResponseStored: false,
+        rawProviderLogStored: false,
+        rawToolLogStored: false,
+      } satisfies JsonValue);
+      continue;
+    }
+    const node: OrchestratorGraphNodeSpec = {
+      ...compileResult.node,
+      inputHandoffRefs: uniqueStrings([
+        synthesisRef,
+        ...(compileResult.node.inputHandoffRefs ?? []),
+      ]),
       metadata: {
+        ...jsonRecord(compileResult.node.metadata ?? null),
+        runtimeCompiledFromContextSynthesis: true,
+        contextSynthesisCoordinationOnly: true,
+        contextSynthesisRef: synthesisRef,
         contextSynthesisGroupId: groupId,
-        contextSynthesisRef: synthesisRef,
-        requiredContextSnapshotRefs: [synthesisContextSnapshot],
-        providedContextSnapshotRefs: [synthesisContextSnapshot],
-        contextSnapshotRefs: [synthesisContextSnapshot.snapshotRef],
-        contextFreshnessStatus: "fresh",
-        contextRefreshAction: "none",
-        workerFitRationale: stringFromJson(group.workerFitRationale) || null,
-        cheaperWorkerSuitability: stringFromJson(group.cheaperWorkerSuitability) || null,
-        codexEscalationRationale: stringFromJson(group.codexEscalationRationale) || null,
-        fileOwnershipRefs: jsonStringArray(group.fileOwnershipRefs),
-        groupExpectedOutput: stringFromJson(group.expectedOutput) || null,
-        groupEvidenceClaimExpectations: jsonStringArray(group.evidenceClaimExpectations),
-        groupValidationNeeds: jsonStringArray(group.validationNeeds),
-        groupReviewNeeds: jsonStringArray(group.reviewNeeds),
-        groupStopIfMissing: jsonStringArray(group.stopIfMissing),
-        groupRiskRefs: jsonStringArray(group.riskRefs),
-        groupIntegrationRequirements: jsonStringArray(group.integrationRequirements),
+        contextSynthesisWorkIntentOnly: true,
+        contextSynthesisDirectExecutableCompilationRetired: true,
+        compileHandoffComplete: true,
         rawPromptStored: false,
         rawResponseStored: false,
         rawProviderLogStored: false,
-      },
-    });
-    if (node) {
-      nodes.push(node);
-    }
+        rawToolLogStored: false,
+      } satisfies JsonValue,
+    };
+    nodes.push(node);
+    groupNodeIdByGroupId.set(groupId, node.nodeId);
+    groupIdByWorkUnitId.set(workUnitId, groupId);
   }
-  const requiredCapabilities = [
-    ["validation_run", "validation"] as const,
-    ["reviewer", "review"] as const,
-    ["observability_readback", "readback"] as const,
-    ["coding_closeout", "closeout"] as const,
-  ];
-  const supportNodes: OrchestratorGraphNodeSpec[] = [];
-  for (const [capabilityId, role] of requiredCapabilities) {
-    const capability = capabilityAvailable({
-      capabilityId,
-      capabilityManifest: input.capabilityManifest,
-      executableExecutorKeys: input.executableExecutorKeys,
-    });
-    if (!capability) {
-      return {
-        decisionId: `runtime-post-synthesis-graph-missing-${capabilityId}-${input.iteration}`,
-        decisionKind: "mark_needs_review",
-        rationaleForDecision:
-          "Context synthesis was accepted, but a required post-synthesis capability is not executable.",
-        reasonCodes: [
-          `runtime_compiled_post_synthesis_required_capability_missing:${capabilityId}`,
-          "post_synthesis_monolithic_orchestrator_graph_disabled",
-        ],
-        metadata: {
-          requiredCapabilityId: capabilityId,
-          rawPromptStored: false,
-          rawResponseStored: false,
-          rawProviderLogStored: false,
-        } satisfies JsonValue,
-        rawPromptStored: false,
-        rawResponseStored: false,
-        rawProviderLogStored: false,
-        workQueueLifecycleMutated: false,
-      };
-    }
-    const nodeId = runtimeCompiledPostSynthesisNodeId({
-      prefix,
-      groupId: role,
-      role,
-      index: supportNodes.length,
-    });
-    const downstream =
-      role === "validation"
-        ? "review"
-        : role === "review"
-          ? "owner_readback"
-          : role === "readback"
-            ? "closeout"
-            : "owner";
-    const utilityDecision = costAwareUtilityDecisionForCompiledNode({
-      decisionId: `runtime-post-synthesis-${nodeId}-utility`,
-      capabilityId,
-      targetCommitmentIds: allCommitmentIds,
-      consideredCapabilityIds: [capabilityId],
-      utilityRationale:
-        role === "validation"
-          ? "Validation must produce separate command/test evidence after implementation nodes complete."
-          : role === "review"
-            ? "Review must judge evidence sufficiency after implementation and validation."
-            : role === "readback"
-              ? "Owner-facing readback must expose graph state, files, validation, limitations, and next decision."
-              : "Closeout must be model-authored after accepted implementation, validation, review, and readback evidence.",
-      costRationale:
-        capability.costClass === "cheap"
-          ? "Use a cheap specialized capability instead of absorbing this role into broad Codex implementation."
-          : "Use the specialized capability for this role instead of broad implementation.",
-      whyThisIsNotDuplicateWork: `No post-synthesis ${role} node exists yet for the accepted synthesis graph.`,
-      expectedDownstreamConsumer: downstream,
-      budgetRef: `runtime-task-budget://scheduler/post-synthesis/${role}`,
-      stopOrEscalationCondition:
-        role === "closeout"
-          ? "Return needs_review if blocking commitments, validation, review, or closeout evidence remain missing."
-          : "Return needs_review with bounded evidence if this role cannot satisfy its post-synthesis obligation.",
-      capabilityManifest: input.capabilityManifest,
-    });
-    const node = compiledPostSynthesisNode({
-      nodeId,
-      capabilityId,
-      inputHandoffRefs: [synthesisRef],
-      targetRefs: [],
-      commitmentIds: allCommitmentIds,
-      exactObjective:
-        role === "validation"
-          ? "Run or coordinate focused validation for all post-synthesis implementation evidence and map results to Mission Ledger commitments."
-          : role === "review"
-            ? "Review post-synthesis implementation and validation evidence for sufficiency, storage bounds, limitations, and remaining blockers."
-            : role === "readback"
-              ? "Prepare owner-facing Work Queue readback showing graph nodes, worker choices, files, tests, limitations, open commitments, and next decision."
-              : "Generate model-authored closeout only after implementation, validation, review, and readback evidence are accepted.",
-      whyThisRoleIsNeededNow:
-        role === "validation"
-          ? "Post-synthesis implementation work needs a separate validation stage; validation must not be hidden inside implementation."
-          : role === "review"
-            ? "The workflow needs an independent review stage before closeout to prevent false success."
-            : role === "readback"
-              ? "The owner needs readable runtime evidence and progress before final closeout."
-              : "Closeout is a distinct finalization role and cannot be replaced by implementation or degraded diagnostics.",
-      expectedOutput:
-        role === "validation"
-          ? "Validation refs, command summaries, failure mapping, and evidence claims."
-          : role === "review"
-            ? "Review refs, sufficiency judgment, limitations, and repair recommendations if needed."
-            : role === "readback"
-              ? "Work Queue/readback refs with active graph, files, tests, workers, limitations, and ELI5."
-              : "Model-authored Closeout Capsule refs citing accepted runtime evidence.",
-      acceptanceCriteria:
-        role === "validation"
-          ? [
-              "Validation refs are bounded and mapped to commitments.",
-              "Failures route to repair rather than false closeout.",
-            ]
-          : role === "review"
-            ? [
-                "Review cites implementation and validation evidence.",
-                "Blocking findings are explicit.",
-              ]
-            : role === "readback"
-              ? [
-                  "Readback is owner-readable and cites runtime refs.",
-                  "Open commitments and limitations are visible.",
-                ]
-              : [
-                  "Closeout cites accepted evidence refs.",
-                  "No degraded/system closeout is treated as success.",
-                ],
-      downstreamConsumer: downstream,
-      evidenceExpectation:
-        role === "validation"
-          ? "Focused validation evidence and commitment evidence claims."
-          : role === "review"
-            ? "Model review evidence and sufficiency judgment."
-            : role === "readback"
-              ? "Owner-facing readback refs."
-              : "Model-authored closeout capsule refs.",
-      utilityDecision,
-      missionLedger: input.missionLedger,
-      capabilityManifest: input.capabilityManifest,
+
+  if (rejectedDiagnostics.length > 0 || nodes.length !== groups.length) {
+    return {
+      decisionId: "runtime-post-synthesis-workintent-compile-blocked-" + String(input.iteration),
+      decisionKind: "mark_needs_review",
+      rationaleForDecision:
+        "Accepted context synthesis can only advance through explicit WorkIntent contracts. One or more groups lacked model-authored execution intent, capability selection, or required semantic fields, so no executable graph was created.",
+      reasonCodes: uniqueStrings([
+        "runtime_post_synthesis_workintent_compile_blocked",
+        "post_synthesis_executable_graph_compilation_retired",
+        ...rejectedReasonCodes,
+      ]).slice(0, 120),
       metadata: {
+        runtimeCompiledFromContextSynthesis: true,
+        contextSynthesisCoordinationOnly: true,
         contextSynthesisRef: synthesisRef,
-        runtimeCompiledSupportRole: role,
-        contextSynthesisValidationStrategy: jsonStringArray(synthesis.validationStrategy),
-        contextSynthesisLikelyValidationLanes: jsonStringArray(synthesis.likelyValidationLanes),
-        contextSynthesisReviewLanes: jsonStringArray(synthesis.reviewLanes),
-        contextSynthesisIntegrationRequirements: jsonStringArray(synthesis.integrationRequirements),
-        contextSynthesisWorkerFitSummary: stringFromJson(synthesis.workerFitSummary) || null,
-        contextSynthesisGraphCompileInputSummary:
-          stringFromJson(jsonRecord(synthesis.schedulerHandoff).graphCompileInputSummary) || null,
-        requiredContextSnapshotRefs: [synthesisContextSnapshot],
-        providedContextSnapshotRefs: [synthesisContextSnapshot],
-        contextSnapshotRefs: [synthesisContextSnapshot.snapshotRef],
-        contextFreshnessStatus: "fresh",
-        contextRefreshAction: "none",
+        groupCount: groups.length,
+        compiledWorkIntentCount: nodes.length,
+        rejectedWorkIntentCount: rejectedDiagnostics.length,
+        rejectedWorkIntentDiagnostics: rejectedDiagnostics.slice(0, 24),
         rawPromptStored: false,
         rawResponseStored: false,
         rawProviderLogStored: false,
-      },
-    });
-    if (node) {
-      supportNodes.push(node);
-    }
+        rawToolLogStored: false,
+      } satisfies JsonValue,
+      rawPromptStored: false,
+      rawResponseStored: false,
+      rawProviderLogStored: false,
+      workQueueLifecycleMutated: false,
+    };
   }
-  nodes.push(...supportNodes);
+
   const edges: NonNullable<OrchestratorGraphDecision["newEdges"]> = [];
-  const contextSynthesisNode = input.snapshotSummary.nodeSummaries.find(
-    (node) => isContextSynthesisSummaryNode(node) && node.nodeStatus === "succeeded",
-  );
-  for (const node of nodes.filter((candidate) => candidate.nodeKind === "implementation")) {
-    if (contextSynthesisNode) {
-      edges.push({
-        edgeId: `synthesis-to-${node.nodeId}`.slice(0, 96),
-        fromNodeId: contextSynthesisNode.nodeId,
-        toNodeId: node.nodeId,
-        edgeKind: "synthesis_groups",
-        reasonCodes: ["runtime_compiled_context_synthesis_to_implementation_group"],
-        artifactRefs: [synthesisRef],
-        metadata: {
-          contextSynthesisRef: synthesisRef,
-          rawPromptStored: false,
-          rawResponseStored: false,
-          rawProviderLogStored: false,
-        } satisfies JsonValue,
-      });
-    }
-  }
-  for (const dependency of synthesisSummaryDependencies(synthesis)) {
-    const fromGroupId = stringFromJson(dependency.fromGroupId);
-    const toGroupId = stringFromJson(dependency.toGroupId);
+  const dependencyMap = Array.isArray(synthesis.dependencyMap)
+    ? synthesis.dependencyMap.filter((item): item is Record<string, JsonValue> =>
+        Boolean(item && typeof item === "object" && !Array.isArray(item)),
+      )
+    : [];
+  for (const dependency of dependencyMap.slice(0, 48)) {
+    const fromGroupIdRaw =
+      stringFromJson(dependency.fromGroupId) || stringFromJson(dependency.from);
+    const toGroupIdRaw = stringFromJson(dependency.toGroupId) || stringFromJson(dependency.to);
+    const fromGroupId = groupNodeIdByGroupId.has(fromGroupIdRaw)
+      ? fromGroupIdRaw
+      : (groupIdByWorkUnitId.get(fromGroupIdRaw) ?? fromGroupIdRaw);
+    const toGroupId = groupNodeIdByGroupId.has(toGroupIdRaw)
+      ? toGroupIdRaw
+      : (groupIdByWorkUnitId.get(toGroupIdRaw) ?? toGroupIdRaw);
     const fromNodeId = groupNodeIdByGroupId.get(fromGroupId);
     const toNodeId = groupNodeIdByGroupId.get(toGroupId);
     if (!fromNodeId || !toNodeId || fromNodeId === toNodeId) {
       continue;
     }
     edges.push({
-      edgeId: `group-${fromGroupId}-to-${toGroupId}`.slice(0, 96),
+      edgeId: ("workintent-" + fromGroupId + "-to-" + toGroupId).slice(0, 96),
       fromNodeId,
       toNodeId,
-      edgeKind: "implementation_depends_on",
-      reasonCodes: ["runtime_compiled_context_synthesis_group_dependency"],
+      edgeKind: "depends_on",
+      reasonCodes: ["runtime_compiled_context_synthesis_workintent_dependency"],
       artifactRefs: [synthesisRef],
       metadata: {
+        contextSynthesisRef: synthesisRef,
+        contextSynthesisCoordinationOnly: true,
         dependencyKind: stringFromJson(dependency.dependencyKind, "handoff"),
         rationale: stringFromJson(dependency.rationale) || null,
         rawPromptStored: false,
         rawResponseStored: false,
         rawProviderLogStored: false,
+        rawToolLogStored: false,
       } satisfies JsonValue,
     });
   }
-  const validationNode = supportNodes.find((node) => node.capabilityId === "validation_run");
-  const reviewNode = supportNodes.find((node) => node.capabilityId === "reviewer");
-  const readbackNode = supportNodes.find((node) => node.capabilityId === "observability_readback");
-  const closeoutNode = supportNodes.find((node) => node.capabilityId === "coding_closeout");
-  if (validationNode) {
-    for (const implementationNode of nodes.filter((node) => node.nodeKind === "implementation")) {
-      edges.push({
-        edgeId: `${implementationNode.nodeId}-to-${validationNode.nodeId}`.slice(0, 96),
-        fromNodeId: implementationNode.nodeId,
-        toNodeId: validationNode.nodeId,
-        edgeKind: "validation_depends_on",
-        reasonCodes: ["runtime_compiled_implementation_to_validation"],
-        artifactRefs: [],
-        metadata: {
-          rawPromptStored: false,
-          rawResponseStored: false,
-          rawProviderLogStored: false,
-        } satisfies JsonValue,
-      });
-    }
-  }
-  const chainEdges = [
-    [validationNode?.nodeId, reviewNode?.nodeId, "review_depends_on"] as const,
-    [reviewNode?.nodeId, readbackNode?.nodeId, "review_depends_on"] as const,
-    [readbackNode?.nodeId, closeoutNode?.nodeId, "closeout_depends_on"] as const,
-  ];
-  for (const [fromNodeId, toNodeId, edgeKind] of chainEdges) {
-    if (!fromNodeId || !toNodeId) {
-      continue;
-    }
-    edges.push({
-      edgeId: `${fromNodeId}-to-${toNodeId}`.slice(0, 96),
-      fromNodeId,
-      toNodeId,
-      edgeKind,
-      reasonCodes: ["runtime_compiled_post_synthesis_support_chain"],
-      artifactRefs: [],
-      metadata: {
-        rawPromptStored: false,
-        rawResponseStored: false,
-        rawProviderLogStored: false,
-      } satisfies JsonValue,
-    });
-  }
+
   return {
-    decisionId: `runtime-post-synthesis-compiled-graph-${input.iteration}`,
+    decisionId: "runtime-post-synthesis-workintent-graph-" + String(input.iteration),
     decisionKind: "add_nodes",
     rationaleForDecision:
-      "Runtime compiled the accepted context synthesis artifact into an executable post-synthesis graph with implementation groups, validation, review, readback, and closeout nodes.",
+      "Runtime converted accepted context synthesis coordination groups into WorkIntent nodes only. Executable implementation, validation, review, readback, and closeout nodes must be compiled later from capability requirements and resource materialization readiness.",
     newNodes: nodes,
     newEdges: edges,
     runAfterAdd: false,
     commitmentIdsAdvanced: uniqueStrings(nodes.flatMap((node) => node.commitmentIdsAdvanced ?? [])),
     reasonCodes: [
-      "runtime_compiled_post_synthesis_graph_created",
-      "post_synthesis_monolithic_orchestrator_graph_bypassed",
-      `runtime_compiled_post_synthesis_implementation_group_count:${groups.length}`,
-      `runtime_compiled_post_synthesis_node_count:${nodes.length}`,
-      `runtime_compiled_post_synthesis_edge_count:${edges.length}`,
+      "runtime_compiled_post_synthesis_workintent_graph_created",
+      "post_synthesis_executable_graph_compilation_retired",
+      "runtime_compiled_post_synthesis_workintent_group_count:" + String(groups.length),
+      "runtime_compiled_post_synthesis_workintent_node_count:" + String(nodes.length),
+      "runtime_compiled_post_synthesis_workintent_edge_count:" + String(edges.length),
     ],
     metadata: {
       stagedSchedulerProtocolCompiled: true,
       runtimeCompiledFromContextSynthesis: true,
+      contextSynthesisCoordinationOnly: true,
+      contextSynthesisDirectExecutableCompilationRetired: true,
       contextSynthesisRef: synthesisRef,
       implementationGroupCount: groups.length,
-      nodeCount: nodes.length,
+      workIntentNodeCount: nodes.length,
       edgeCount: edges.length,
       parallelIndependentNodesJustification:
         stringFromJson(synthesis.parallelismPlan) ||
-        "Implementation groups without explicit dependency edges are independent after accepted context synthesis; validation waits for all implementation groups.",
+        stringFromJson(schedulerHandoff.parallelismPlan) ||
+        null,
       rawPromptStored: false,
       rawResponseStored: false,
       rawProviderLogStored: false,
+      rawToolLogStored: false,
     } satisfies JsonValue,
     rawPromptStored: false,
     rawResponseStored: false,
@@ -3652,12 +4624,54 @@ function runtimeCompiledPostSynthesisGraphDecision(input: {
   };
 }
 
-function planningOrchestratorAlreadyStarted(
+function nodeSpecMatchesEntryNodePolicy(input: {
+  node: OrchestratorGraphNodeSpec;
+  policy: WorkflowEntryNodePolicy;
+  capabilityManifest: RuntimeNodeCapabilityManifest;
+}): boolean {
+  const capability = capabilityForNodeRef(input.node, input.capabilityManifest);
+  if (capability && input.policy.allowedInitialCapabilityIds.includes(capability.capabilityId)) {
+    return true;
+  }
+  const capabilityRoleClass = capability
+    ? workflowRoleClassForCapabilityRole(capability.roleClass)
+    : null;
+  const metadataRoleClass = explicitWorkflowRoleClass(
+    jsonRecord(input.node.metadata ?? {}).roleClass,
+  );
+  const directRoleClass = explicitWorkflowRoleClass(input.node.assignedRole);
+  const roleClass = capabilityRoleClass ?? metadataRoleClass ?? directRoleClass;
+  return Boolean(roleClass && input.policy.allowedInitialRoleClasses.includes(roleClass));
+}
+
+function summaryNodeMatchesEntryNodePolicy(input: {
+  node: RuntimeWorkGraphSchedulerSnapshotSummary["nodeSummaries"][number];
+  policy: WorkflowEntryNodePolicy;
+  capabilityManifest: RuntimeNodeCapabilityManifest;
+}): boolean {
+  const capabilityId = input.node.capabilityId ?? input.node.metadataCapabilityId ?? null;
+  const capability = capabilityId
+    ? findRuntimeNodeCapability(capabilityId, input.capabilityManifest)
+    : null;
+  if (capability && input.policy.allowedInitialCapabilityIds.includes(capability.capabilityId)) {
+    return true;
+  }
+  const capabilityRoleClass = capability
+    ? workflowRoleClassForCapabilityRole(capability.roleClass)
+    : null;
+  const directRoleClass = explicitWorkflowRoleClass(input.node.assignedRole);
+  const roleClass = capabilityRoleClass ?? directRoleClass;
+  return Boolean(roleClass && input.policy.allowedInitialRoleClasses.includes(roleClass));
+}
+
+function entryNodeAlreadyStarted(
   summary: RuntimeWorkGraphSchedulerSnapshotSummary,
+  policy: WorkflowEntryNodePolicy,
+  capabilityManifest: RuntimeNodeCapabilityManifest,
 ): boolean {
   return summary.nodeSummaries.some(
     (node) =>
-      isPlanningOrchestratorNode(node) &&
+      summaryNodeMatchesEntryNodePolicy({ node, policy, capabilityManifest }) &&
       ["running", "succeeded", "needs_review", "waiting_for_human"].includes(node.nodeStatus),
   );
 }
@@ -3729,51 +4743,9 @@ function validateEvidenceClaims(input: {
   return reasonCodes;
 }
 
-function looksLikeArtifactRef(value: string): boolean {
-  return (
-    value.includes("://") ||
-    value.startsWith(".artifacts/") ||
-    value.startsWith("artifact:") ||
-    value.startsWith("work-episode:")
-  );
-}
-
-function artifactRefForEvidenceKind(
-  evidenceKind: CommitmentEvidenceClaim["evidenceKind"],
-  outputArtifactRefs: string[],
-): string | null {
-  if (outputArtifactRefs.length === 0) {
-    return null;
-  }
-  const firstMatching = (patterns: string[]): string | null =>
-    outputArtifactRefs.find((ref) => {
-      const lower = ref.toLowerCase();
-      return patterns.some((pattern) => lower.includes(pattern));
-    }) ?? null;
-  if (evidenceKind === "test_validation") {
-    return firstMatching(["validation", "test"]) ?? null;
-  }
-  if (evidenceKind === "source_change") {
-    return firstMatching(["/diff/", "diff", "patch", "source", "change"]) ?? null;
-  }
-  if (evidenceKind === "review") {
-    return firstMatching(["/review", "review"]) ?? null;
-  }
-  if (evidenceKind === "closeout") {
-    return firstMatching(["closeout"]) ?? null;
-  }
-  if (evidenceKind === "readback") {
-    return firstMatching(["readback", "work-queue"]) ?? null;
-  }
-  if (evidenceKind === "docs") {
-    return firstMatching(["docs", "spec", "roadmap"]) ?? null;
-  }
-  return outputArtifactRefs.length === 1 ? outputArtifactRefs[0]! : null;
-}
-
 function normalizedEvidenceKindForClaim(
   claim: CommitmentEvidenceClaim,
-): CommitmentEvidenceClaim["evidenceKind"] {
+): CommitmentEvidenceClaim["evidenceKind"] | null {
   const rawEvidenceKind = (claim as { evidenceKind?: unknown }).evidenceKind;
   if (
     rawEvidenceKind === "source_change" ||
@@ -3792,45 +4764,25 @@ function normalizedEvidenceKindForClaim(
   ) {
     return rawEvidenceKind;
   }
-  const ref = claim.evidenceRef.toLowerCase();
-  const validationRefs = (claim as { validationRefs?: unknown }).validationRefs;
-  const changedFileRefs = (claim as { changedFileRefs?: unknown }).changedFileRefs;
-  if (ref.includes("validation") || (Array.isArray(validationRefs) && validationRefs.length > 0)) {
-    return "test_validation";
-  }
-  if (
-    ref.includes("source") ||
-    ref.includes("patch") ||
-    ref.includes("diff") ||
-    (Array.isArray(changedFileRefs) && changedFileRefs.length > 0)
-  ) {
-    return "source_change";
-  }
-  return "artifact";
+  return null;
 }
 
 function normalizeEvidenceClaims(input: {
   claims: CommitmentEvidenceClaim[];
   outputArtifactRefs: string[];
 }): { claims: CommitmentEvidenceClaim[]; reasonCodes: string[] } {
-  const knownEvidence = new Set(input.outputArtifactRefs);
   const reasonCodes: string[] = [];
   const claims = input.claims.map((claim) => {
-    const evidenceKind = normalizedEvidenceKindForClaim(claim);
+    const explicitEvidenceKind = normalizedEvidenceKindForClaim(claim);
+    const evidenceKind = explicitEvidenceKind ?? "artifact";
     const storageFlags = claim as unknown as Record<string, unknown>;
-    const artifactRef =
-      knownEvidence.has(claim.evidenceRef) || looksLikeArtifactRef(claim.evidenceRef)
-        ? claim.evidenceRef
-        : artifactRefForEvidenceKind(evidenceKind, input.outputArtifactRefs);
-    if (artifactRef && artifactRef !== claim.evidenceRef) {
-      reasonCodes.push(
-        `evidence_claim_ref_normalized_to_output_artifact:${claim.commitmentId}:${evidenceKind}`,
-      );
+    if (!explicitEvidenceKind) {
+      reasonCodes.push(`evidence_claim_kind_missing_or_invalid:${claim.commitmentId}`);
     }
     return {
       ...claim,
       evidenceKind,
-      evidenceRef: artifactRef ?? claim.evidenceRef,
+      evidenceRef: claim.evidenceRef,
       rawPromptStored: storageFlags.rawPromptStored === true ? (true as false) : false,
       rawResponseStored: storageFlags.rawResponseStored === true ? (true as false) : false,
       rawProviderLogStored: storageFlags.rawProviderLogStored === true ? (true as false) : false,
@@ -3890,6 +4842,7 @@ function policyReasonCodesForDecision(input: {
   snapshotSummary: RuntimeWorkGraphSchedulerSnapshotSummary;
   missionLedger: MissionContractLedger | null;
   capabilityManifest: RuntimeNodeCapabilityManifest;
+  entryNodePolicy?: WorkflowEntryNodePolicy | null;
 }): string[] {
   const reasonCodes: string[] = [];
   reasonCodes.push(
@@ -3927,12 +4880,20 @@ function policyReasonCodesForDecision(input: {
     input.snapshotSummary.nodeSummaries.length === 0 &&
     input.snapshotSummary.latestCheckpointKinds.length <= 2;
   if (
-    isProductSpecPlanningWorkflow(input.snapshotSummary.workflowId) &&
-    !planningOrchestratorAlreadyStarted(input.snapshotSummary)
+    input.entryNodePolicy?.requiredBeforeOtherExecution &&
+    !entryNodeAlreadyStarted(input.snapshotSummary, input.entryNodePolicy, input.capabilityManifest)
   ) {
     const newNodes = input.decision.newNodes ?? [];
     const planningNodeIds = new Set(
-      newNodes.filter(isPlanningOrchestratorNode).map((node) => node.nodeId),
+      newNodes
+        .filter((node) =>
+          nodeSpecMatchesEntryNodePolicy({
+            node,
+            policy: input.entryNodePolicy as WorkflowEntryNodePolicy,
+            capabilityManifest: input.capabilityManifest,
+          }),
+        )
+        .map((node) => node.nodeId),
     );
     const targetNodeId =
       input.decision.runNodeId ??
@@ -3945,18 +4906,25 @@ function policyReasonCodesForDecision(input: {
     );
     const targetIsPlanningOrchestrator =
       Boolean(targetNodeId && planningNodeIds.has(targetNodeId)) ||
-      Boolean(existingTargetNode && isPlanningOrchestratorNode(existingTargetNode));
+      Boolean(
+        existingTargetNode &&
+        summaryNodeMatchesEntryNodePolicy({
+          node: existingTargetNode,
+          policy: input.entryNodePolicy,
+          capabilityManifest: input.capabilityManifest,
+        }),
+      );
     if (firstGraphDecision && newNodes.length > 0 && planningNodeIds.size === 0) {
-      reasonCodes.push("product_spec_planning_first_node_must_be_planning_orchestrator");
+      reasonCodes.push("workflow_entry_node_policy_initial_node_missing");
     }
     if (
       ["run_node", "retry_node", "repair_from_validation"].includes(input.decision.decisionKind) &&
       !targetIsPlanningOrchestrator
     ) {
-      reasonCodes.push("product_spec_planning_planning_orchestrator_must_run_before_child_nodes");
+      reasonCodes.push(input.entryNodePolicy.blockedUntilStartedReasonCode);
     }
     if (input.decision.runAfterAdd && targetNodeId && !targetIsPlanningOrchestrator) {
-      reasonCodes.push("product_spec_planning_run_after_add_must_start_planning_orchestrator");
+      reasonCodes.push("workflow_entry_node_policy_run_after_add_target_invalid");
     }
   }
   if (complex && input.decision.newNodes?.length) {
@@ -3964,10 +4932,37 @@ function policyReasonCodesForDecision(input: {
       reasonCodes.push(...nodeContractReasonCodes({ node, knownCommitmentIds: knownCommitments }));
     }
   }
+  if (input.decision.newNodes?.length) {
+    const outgoingEdgesByNodeId = new Set(
+      (input.decision.newEdges ?? [])
+        .map((edge) => edge.fromNodeId)
+        .filter((nodeId): nodeId is string => Boolean(nodeId)),
+    );
+    for (const node of input.decision.newNodes) {
+      const nodeMetadata = jsonRecord(node.metadata ?? null);
+      const isContextRepairOrAcquisition =
+        nodeMetadata.runtimeOwnedContextRepairNode === true ||
+        nodeMetadata.runtimeOwnedNodeScopedContextSupply === true;
+      const diagnosticOnly =
+        nodeMetadata.diagnosticOnly === true ||
+        nodeMetadata.lifecycleState === "diagnostic_only" ||
+        nodeMetadata.contextNodeLifecycle === "diagnostic_only";
+      if (
+        isContextRepairOrAcquisition &&
+        !diagnosticOnly &&
+        !outgoingEdgesByNodeId.has(node.nodeId)
+      ) {
+        reasonCodes.push("context_repair_or_acquisition_node_consumer_edge_missing");
+      }
+    }
+  }
   if (complex && firstGraphDecision) {
     const newNodes = input.decision.newNodes ?? [];
     const metadata = jsonRecord(input.decision.metadata ?? {});
-    const progressiveContextFirst = isProgressiveContextAcquisitionFirstMove(newNodes);
+    const progressiveContextFirst = isProgressiveContextAcquisitionFirstMove(
+      newNodes,
+      input.capabilityManifest,
+    );
     if (newNodes.length > 0 && metadata.stagedSchedulerProtocolCompiled !== true) {
       reasonCodes.push("complex_mission_requires_staged_scheduler_protocol");
     }
@@ -4422,7 +5417,11 @@ function failedBoundaryKindForNode(
   if (node.nodeKind === "human_task") {
     return "supervisor";
   }
-  if (node.nodeKind.includes("implementation") || node.nodeKind.includes("worker")) {
+  if (
+    node.nodeKind === "implementation" ||
+    node.nodeKind === "test_authoring" ||
+    node.assignedRole === "implementation_engineer"
+  ) {
     return "worker_loop";
   }
   return "node_execution";
@@ -4727,6 +5726,7 @@ export class RuntimeWorkGraphScheduler {
   private readonly maxDecisionRepairAttempts: number;
   private readonly maxParallelNodeExecutions: number;
   private readonly capabilityManifest: RuntimeNodeCapabilityManifest;
+  private readonly expansionAdmissionPolicy: RuntimeWorkGraphExpansionAdmissionPolicy;
   private readonly recentNodeResultSummaries: RuntimeWorkGraphRecentNodeResultSummary[] = [];
 
   constructor(private readonly options: RuntimeWorkGraphSchedulerOptions) {
@@ -4737,6 +5737,10 @@ export class RuntimeWorkGraphScheduler {
       Math.min(16, options.maxParallelNodeExecutions ?? 1),
     );
     this.capabilityManifest = options.capabilityManifest ?? buildRuntimeNodeCapabilityManifest();
+    this.expansionAdmissionPolicy = {
+      ...DEFAULT_EXPANSION_ADMISSION_POLICY,
+      ...options.expansionAdmissionPolicy,
+    };
   }
 
   async run(graphId: string): Promise<RuntimeWorkGraphSchedulerResult> {
@@ -4822,6 +5826,7 @@ export class RuntimeWorkGraphScheduler {
         snapshot,
         missionLedger,
         executedNodeIds,
+        addedNodeIds,
         loopGuard,
       });
       if (parallelFrontier) {
@@ -4830,6 +5835,56 @@ export class RuntimeWorkGraphScheduler {
         if (parallelFrontier.status !== "continue") {
           return await this.result({
             status: parallelFrontier.status,
+            graphId,
+            iterations: iteration,
+            executedNodeIds,
+            addedNodeIds,
+            decisionRefs,
+            reasonCodes,
+            missionLedger: missionLedger ? summarizeMissionContractLedger(missionLedger) : null,
+          });
+        }
+        continue;
+      }
+      const snapshotSummary = summarizeSnapshot(snapshot);
+      const nodeScopedContextSupplyDecision = deterministicNodeScopedContextSupplyDecision({
+        graphId,
+        iteration,
+        snapshotSummary,
+        missionLedger,
+        commitmentWorkPackets: this.options.commitmentWorkPackets ?? [],
+        capabilityManifest: this.capabilityManifest,
+      });
+      if (nodeScopedContextSupplyDecision) {
+        const decisionRef = graphRef(
+          "orchestrator-decision",
+          nodeScopedContextSupplyDecision.decisionId,
+        );
+        await this.options.graphs.recordCheckpoint({
+          graphId,
+          checkpointKind: "runtime_policy_node_scoped_context_supply_created",
+          stateSummary: nodeScopedContextSupplyDecision.rationaleForDecision,
+          artifactRefs: [decisionRef],
+        });
+        decisionRefs.push(decisionRef);
+        reasonCodes.push(
+          ...nodeScopedContextSupplyDecision.reasonCodes,
+          "runtime_policy_node_scoped_context_supply_bypassed_orchestrator_decision",
+        );
+        const applied = await this.applyDecision({
+          graphId,
+          decision: nodeScopedContextSupplyDecision,
+          iteration,
+          missionLedger,
+          executedNodeIds,
+          addedNodeIds,
+          loopGuard,
+        });
+        missionLedger = applied.missionLedger ?? missionLedger;
+        reasonCodes.push(...applied.reasonCodes);
+        if (applied.status !== "continue") {
+          return await this.result({
+            status: applied.status,
             graphId,
             iterations: iteration,
             executedNodeIds,
@@ -5079,7 +6134,8 @@ export class RuntimeWorkGraphScheduler {
         packetCount: commitmentWorkPackets.length,
         packetValidationValid: packetValidation.valid,
         reasonCodes: packetValidation.reasonCodes,
-        commitmentWorkPackets: summarizeCommitmentWorkPacketsForProgress(commitmentWorkPackets),
+        commitmentWorkPacketSummaries:
+          summarizeCommitmentWorkPacketsForProgress(commitmentWorkPackets),
         schedulerPhase: "planning_in_progress",
         rawPromptStored: false,
         rawResponseStored: false,
@@ -5106,7 +6162,8 @@ export class RuntimeWorkGraphScheduler {
         metadata: {
           reasonCodes: packetValidation.reasonCodes,
           packetCount: commitmentWorkPackets.length,
-          commitmentWorkPackets: summarizeCommitmentWorkPacketsForProgress(commitmentWorkPackets),
+          commitmentWorkPacketSummaries:
+            summarizeCommitmentWorkPacketsForProgress(commitmentWorkPackets),
           rawPromptStored: false,
           rawResponseStored: false,
           rawProviderLogStored: false,
@@ -5129,7 +6186,7 @@ export class RuntimeWorkGraphScheduler {
           : "commitment_work_packets_available_but_not_scheduler_ready",
       );
     }
-    const packetContextScoutFanoutDecision = deterministicPacketContextScoutFanoutDecision({
+    const nodeScopedContextSupplyDecision = deterministicNodeScopedContextSupplyDecision({
       graphId: input.graphId,
       iteration: input.iteration,
       snapshotSummary: input.snapshotSummary,
@@ -5137,24 +6194,24 @@ export class RuntimeWorkGraphScheduler {
       commitmentWorkPackets,
       capabilityManifest: this.capabilityManifest,
     });
-    if (packetContextScoutFanoutDecision) {
+    if (nodeScopedContextSupplyDecision) {
       const decisionRef = graphRef(
         "orchestrator-decision",
-        packetContextScoutFanoutDecision.decisionId,
+        nodeScopedContextSupplyDecision.decisionId,
       );
       await this.options.graphs.recordCheckpoint({
         graphId: input.graphId,
-        checkpointKind: "runtime_policy_packet_context_fanout_created",
-        stateSummary: packetContextScoutFanoutDecision.rationaleForDecision,
+        checkpointKind: "runtime_policy_node_scoped_context_supply_created",
+        stateSummary: nodeScopedContextSupplyDecision.rationaleForDecision,
         artifactRefs: [decisionRef],
       });
       return {
-        decision: packetContextScoutFanoutDecision,
+        decision: nodeScopedContextSupplyDecision,
         decisionRefs: [...decisionRefs, decisionRef],
         reasonCodes: [
           ...reasonCodes,
-          ...packetContextScoutFanoutDecision.reasonCodes,
-          "runtime_policy_packet_context_fanout_bypassed_orchestrator_decision",
+          ...nodeScopedContextSupplyDecision.reasonCodes,
+          "runtime_policy_node_scoped_context_supply_bypassed_orchestrator_decision",
         ],
       };
     }
@@ -5187,13 +6244,40 @@ export class RuntimeWorkGraphScheduler {
         ],
       };
     }
+    const implementationContextRepairDecision = deterministicImplementationContextRepairDecision({
+      graphId: input.graphId,
+      iteration: input.iteration,
+      snapshotSummary: input.snapshotSummary,
+      missionLedger: input.missionLedger,
+      capabilityManifest: this.capabilityManifest,
+    });
+    if (implementationContextRepairDecision) {
+      const decisionRef = graphRef(
+        "orchestrator-decision",
+        implementationContextRepairDecision.decisionId,
+      );
+      await this.options.graphs.recordCheckpoint({
+        graphId: input.graphId,
+        checkpointKind: "runtime_policy_implementation_context_repair_created",
+        stateSummary: implementationContextRepairDecision.rationaleForDecision,
+        artifactRefs: [decisionRef],
+      });
+      return {
+        decision: implementationContextRepairDecision,
+        decisionRefs: [...decisionRefs, decisionRef],
+        reasonCodes: [
+          ...reasonCodes,
+          ...implementationContextRepairDecision.reasonCodes,
+          "runtime_policy_implementation_context_repair_bypassed_orchestrator_decision",
+        ],
+      };
+    }
     const postSynthesisCompiledDecision = runtimeCompiledPostSynthesisGraphDecision({
       graphId: input.graphId,
       iteration: input.iteration,
       snapshotSummary: input.snapshotSummary,
       missionLedger: input.missionLedger,
       capabilityManifest: this.capabilityManifest,
-      executableExecutorKeys: Object.keys(this.options.executors),
       recentNodeResultSummaries: this.recentNodeResultSummaries,
     });
     if (postSynthesisCompiledDecision) {
@@ -5205,8 +6289,8 @@ export class RuntimeWorkGraphScheduler {
         graphId: input.graphId,
         checkpointKind:
           postSynthesisCompiledDecision.decisionKind === "add_nodes"
-            ? "runtime_policy_post_synthesis_graph_compiled"
-            : "runtime_policy_post_synthesis_graph_compilation_blocked",
+            ? "runtime_policy_post_synthesis_workintent_graph_compiled"
+            : "runtime_policy_post_synthesis_workintent_graph_compilation_blocked",
         stateSummary: postSynthesisCompiledDecision.rationaleForDecision,
         artifactRefs: [decisionRef],
       });
@@ -5216,13 +6300,14 @@ export class RuntimeWorkGraphScheduler {
         reasonCodes: [
           ...reasonCodes,
           ...postSynthesisCompiledDecision.reasonCodes,
-          "runtime_policy_post_synthesis_graph_bypassed_orchestrator_decision",
+          "runtime_policy_post_synthesis_workintent_bypassed_orchestrator_decision",
         ],
       };
     }
     const decisionPhase = schedulerDecisionCapabilityPhase({
       snapshotSummary: input.snapshotSummary,
       missionLedger: input.missionLedger,
+      capabilityManifest: this.capabilityManifest,
     });
     const postSynthesisGraphPlanningActive =
       missionIsComplex(input.missionLedger) &&
@@ -5290,7 +6375,8 @@ export class RuntimeWorkGraphScheduler {
             "Runtime compiled Mission Ledger commitments into bounded work packets for child delegation.",
           metadata: {
             packetCount: commitmentWorkPackets.length,
-            commitmentWorkPackets: summarizeCommitmentWorkPacketsForProgress(commitmentWorkPackets),
+            commitmentWorkPacketSummaries:
+              summarizeCommitmentWorkPacketsForProgress(commitmentWorkPackets),
             rawPromptStored: false,
             rawResponseStored: false,
             rawProviderLogStored: false,
@@ -5363,6 +6449,7 @@ export class RuntimeWorkGraphScheduler {
             snapshotSummary: input.snapshotSummary,
             missionLedger: input.missionLedger,
             capabilityManifest: this.capabilityManifest,
+            entryNodePolicy: this.options.entryNodePolicy ?? null,
           })
         : [];
       const postSynthesisGraphValidation = validation.valid
@@ -5581,13 +6668,42 @@ export class RuntimeWorkGraphScheduler {
     const reasonCodes: string[] = [];
     const metadata = jsonRecord(decision.metadata ?? {});
     const addsNodes = (decision.newNodes ?? []).length > 0;
-    if (addsNodes && metadata.stagedSchedulerProtocolCompiled !== true) {
+    const decisionCompiledBySchedulerProtocol =
+      metadata.stagedSchedulerProtocolCompiled === true ||
+      metadata.genericSchedulerProtocolCompiled === true;
+    if (addsNodes && !decisionCompiledBySchedulerProtocol) {
       reasonCodes.push("generic_staged_scheduler_protocol_required_for_node_creation");
     }
     for (const node of decision.newNodes ?? []) {
       const nodeMetadata = jsonRecord(node.metadata ?? {});
-      if (nodeMetadata.stagedSchedulerProtocolCompiled !== true) {
+      const nodeCompiledBySchedulerProtocol =
+        nodeMetadata.stagedSchedulerProtocolCompiled === true ||
+        nodeMetadata.genericSchedulerProtocolCompiled === true;
+      if (!nodeCompiledBySchedulerProtocol) {
         reasonCodes.push(`generic_staged_scheduler_node_not_compiled:${node.nodeId}`);
+      }
+      if (node.nodeKind === "work_intent") {
+        if (nodeMetadata.workIntentCompiled !== true) {
+          reasonCodes.push(`generic_staged_scheduler_work_intent_not_compiled:${node.nodeId}`);
+        }
+        for (const [field, value] of Object.entries({
+          workIntentRef: nodeMetadata.workIntentRef,
+          selectedCapabilityId: nodeMetadata.workIntentSelectedCapabilityId,
+          executionIntent: nodeMetadata.executionIntent,
+          evidenceMode: nodeMetadata.evidenceMode,
+          resourceRequirementKinds: nodeMetadata.resourceRequirementKinds,
+          nextLegalTransitions: nodeMetadata.nextLegalTransitions,
+        })) {
+          if (
+            (Array.isArray(value) && value.length === 0) ||
+            (!Array.isArray(value) && (typeof value !== "string" || !value.trim()))
+          ) {
+            reasonCodes.push(
+              `generic_staged_scheduler_work_intent_field_missing:${node.nodeId}:${field}`,
+            );
+          }
+        }
+        continue;
       }
       if (!node.executorKey || !node.capabilityId || !node.requiredMetadataSchemaRef) {
         reasonCodes.push(
@@ -5619,7 +6735,7 @@ export class RuntimeWorkGraphScheduler {
       if (
         edgeCount === 0 &&
         !parallelJustification &&
-        !isProgressiveContextAcquisitionFirstMove(decision.newNodes ?? [])
+        !isProgressiveContextAcquisitionFirstMove(decision.newNodes ?? [], this.capabilityManifest)
       ) {
         reasonCodes.push("generic_staged_scheduler_edges_or_parallel_justification_required");
       }
@@ -5709,6 +6825,9 @@ export class RuntimeWorkGraphScheduler {
       const repairDiagnostics = jsonRecord(metadata.repairDiagnostics);
       const runtimeRepairClassification = jsonRecord(metadata.runtimeRepairClassification);
       const postSynthesisGraphQuality = jsonRecord(metadata.postSynthesisGraphQuality);
+      const schedulerFrontierState = jsonRecord(metadata.schedulerFrontierState);
+      const noProgressSignature = jsonRecord(metadata.noProgressSignature);
+      const missionLedgerEvaluationThrottle = jsonRecord(metadata.missionLedgerEvaluationThrottle);
       const postSynthesisMissingRoleObligations = Array.isArray(
         postSynthesisGraphQuality.missingRoleObligations,
       )
@@ -5730,8 +6849,8 @@ export class RuntimeWorkGraphScheduler {
             .filter((path): path is string => Boolean(path))
             .slice(0, 12)
         : [];
-      const commitmentWorkPackets = Array.isArray(metadata.commitmentWorkPackets)
-        ? metadata.commitmentWorkPackets
+      const commitmentWorkPacketSummaries = Array.isArray(metadata.commitmentWorkPacketSummaries)
+        ? metadata.commitmentWorkPacketSummaries
             .map((packet) => jsonRecord(packet as JsonValue))
             .filter((packet): packet is Record<string, JsonValue> => Boolean(packet))
             .map((packet) => ({
@@ -5880,6 +6999,23 @@ export class RuntimeWorkGraphScheduler {
         schedulerPhase,
         schedulerToolId: input.toolId,
         schedulerToolInvocationRefs: [invocation.invocationRef],
+        schedulerFrontierState:
+          schedulerFrontierState.artifactKind === "runtime_work_graph_scheduler_frontier_state"
+            ? (schedulerFrontierState as unknown as RuntimeWorkGraphSchedulerFrontierState)
+            : null,
+        noProgressSignature:
+          noProgressSignature.artifactKind === "runtime_work_graph_no_progress_signature"
+            ? (noProgressSignature as unknown as RuntimeWorkGraphNoProgressSignature)
+            : null,
+        noProgressRepeatCount:
+          typeof metadata.noProgressRepeatCount === "number"
+            ? metadata.noProgressRepeatCount
+            : null,
+        missionLedgerEvaluationThrottle:
+          missionLedgerEvaluationThrottle.artifactKind ===
+          "runtime_work_graph_mission_ledger_evaluation_throttle"
+            ? (missionLedgerEvaluationThrottle as JsonValue)
+            : null,
         repairClassification:
           runtimeRepairClassification.artifactKind === "runtime_repair_classification"
             ? runtimeRepairClassificationSummary(
@@ -5904,7 +7040,7 @@ export class RuntimeWorkGraphScheduler {
           typeof postSynthesisGraphQuality.premiumShare === "number"
             ? postSynthesisGraphQuality.premiumShare
             : null,
-        commitmentWorkPackets,
+        commitmentWorkPacketSummaries,
         budgetPolicyRef: schedulerBudget.budgetRef,
         budgetClass: "standard",
         budgetSummary: {
@@ -5955,19 +7091,55 @@ export class RuntimeWorkGraphScheduler {
     snapshot: RuntimeWorkGraphSnapshot;
     missionLedger: MissionContractLedger | null;
     executedNodeIds: string[];
+    addedNodeIds: string[];
     loopGuard: RuntimeWorkGraphLoopGuard;
   }): Promise<{
     status: "continue" | "succeeded" | "needs_review" | "failed" | "waiting_for_human";
     reasonCodes: string[];
     missionLedger?: MissionContractLedger | null;
   } | null> {
-    if (this.maxParallelNodeExecutions <= 1) {
+    if (
+      this.maxParallelNodeExecutions <= 1 &&
+      this.options.preferExecutableFrontierBeforeOrchestrator !== true
+    ) {
       return null;
     }
     const frontier = selectRunnableParallelFrontier({
       snapshot: input.snapshot,
       executors: this.options.executors,
       maxParallelNodeExecutions: this.maxParallelNodeExecutions,
+    });
+    const frontierState = buildSchedulerFrontierState({
+      graphId: input.graphId,
+      iteration: input.iteration,
+      snapshot: input.snapshot,
+      frontier,
+      executors: this.options.executors,
+      missionLedger: input.missionLedger,
+      requireFreshContextSnapshotsForWorkerExecution:
+        this.options.requireFreshContextSnapshotsForWorkerExecution === true,
+      requireNodeExecutionPacketForWorkerExecution:
+        this.options.requireNodeExecutionPacketForWorkerExecution === true,
+    });
+    const canonicalFrontierTool = await this.recordSchedulerTool({
+      graphId: input.graphId,
+      iteration: input.iteration,
+      toolId: "scheduler.evaluate_canonical_frontier",
+      idempotencyKey: `iteration:${input.iteration}:canonical-frontier`,
+      inputRef: graphRef("graph", `${input.graphId}/canonical-frontier/${input.iteration}`),
+      inputSummary:
+        "Evaluate canonical scheduler frontier before asking the orchestrator for graph expansion or prerequisite creation.",
+      metadata: {
+        schedulerFrontierState: frontierState as unknown as JsonValue,
+        selectedNodeIds: frontierState.selectedExecutableNodeIds,
+        blockedNodeIds: frontierState.blockedFrontierNodeIds,
+        nextLegalTransition: frontierState.nextLegalTransition,
+        reasonCodes: frontierState.reasonCodes.slice(0, 40),
+        schedulerPhase: "frontier_readiness",
+        rawPromptStored: false,
+        rawResponseStored: false,
+        rawProviderLogStored: false,
+      },
     });
     if (frontier.rawRunnableNodeIds.length > 0 || frontier.skippedReasonCodes.length > 0) {
       await this.options.onProgress?.({
@@ -5993,6 +7165,35 @@ export class RuntimeWorkGraphScheduler {
             : "OpenClaw checked the graph frontier, but no executable node is ready yet.",
         heartbeatState: "parallel_frontier_evaluated",
         parallelFrontier: frontier.readback,
+        schedulerFrontierState: frontierState,
+      });
+    } else {
+      await this.options.onProgress?.({
+        stage: "scheduler_canonical_frontier",
+        status: frontierState.blockedFrontierNodeIds.length > 0 ? "needs_review" : "completed",
+        reasonCodes: [...frontierState.reasonCodes, ...canonicalFrontierTool.reasonCodes].slice(
+          0,
+          80,
+        ),
+        currentPhase: "frontier_readiness",
+        schedulerPhase: "frontier_readiness",
+        schedulerToolId: "scheduler.evaluate_canonical_frontier",
+        schedulerToolInvocationRefs: canonicalFrontierTool.refs,
+        evidenceProducedRefs: canonicalFrontierTool.refs,
+        currentObjective:
+          "Evaluate whether any graph node is legally executable before expanding the graph.",
+        nextDecisionNeeded: frontierState.nextLegalTransition,
+        blockerSummary:
+          frontierState.blockedFrontierNodeIds.length > 0
+            ? `${frontierState.blockedFrontierNodeIds.length} frontier node(s) are blocked before execution.`
+            : null,
+        eli5Progress:
+          frontierState.blockedFrontierNodeIds.length > 0
+            ? "OpenClaw checked the graph frontier and found blocked nodes; it will repair the missing precondition instead of inventing unrelated work."
+            : "OpenClaw checked the graph frontier and found no ready node yet.",
+        heartbeatState: "canonical_frontier_evaluated",
+        parallelFrontier: frontier.readback,
+        schedulerFrontierState: frontierState,
       });
     }
     if (frontier.selectedNodes.length < 1) {
@@ -6018,6 +7219,25 @@ export class RuntimeWorkGraphScheduler {
         rawProviderLogStored: false,
       },
     });
+    const openSuperstepTool = await this.recordSchedulerTool({
+      graphId: input.graphId,
+      iteration: input.iteration,
+      toolId: "scheduler.open_superstep_frontier",
+      idempotencyKey: `iteration:${input.iteration}:superstep-open:${selectedNodeIds.join("|")}`,
+      inputRef: graphRef("graph", `${input.graphId}/superstep-frontier/${input.iteration}`),
+      inputSummary: `Open superstep frontier ${input.iteration} with ${selectedNodeIds.length} selected node(s).`,
+      metadata: {
+        selectedNodeIds,
+        rawRunnableNodeIds: frontier.rawRunnableNodeIds.slice(0, 24),
+        skippedReasonCodes: frontier.skippedReasonCodes.slice(0, 24),
+        maxParallelNodeExecutions: this.maxParallelNodeExecutions,
+        parallelFrontier: frontier.readback,
+        schedulerPhase: "parallel_frontier_selected",
+        rawPromptStored: false,
+        rawResponseStored: false,
+        rawProviderLogStored: false,
+      },
+    });
     await this.options.onProgress?.({
       stage: "scheduler_parallel_frontier",
       status: "started",
@@ -6026,12 +7246,13 @@ export class RuntimeWorkGraphScheduler {
         `parallel_frontier_node_count:${selectedNodeIds.length}`,
         ...frontier.skippedReasonCodes.slice(0, 12),
         ...selectTool.reasonCodes,
+        ...openSuperstepTool.reasonCodes,
       ],
       currentPhase: "parallel_frontier_selected",
       schedulerPhase: "execution_in_progress",
       schedulerToolId: "scheduler.select_next_node",
-      schedulerToolInvocationRefs: selectTool.refs,
-      evidenceProducedRefs: selectTool.refs,
+      schedulerToolInvocationRefs: [...selectTool.refs, ...openSuperstepTool.refs],
+      evidenceProducedRefs: [...selectTool.refs, ...openSuperstepTool.refs],
       currentObjective:
         selectedNodeIds.length > 1
           ? `Run ${selectedNodeIds.length} independent graph node(s) in parallel.`
@@ -6042,9 +7263,14 @@ export class RuntimeWorkGraphScheduler {
           : "OpenClaw found one ready child node whose dependencies are already satisfied, so it is running that node directly instead of spending another model call on obvious scheduling.",
       heartbeatState: "parallel_frontier_started",
       parallelFrontier: frontier.readback,
+      schedulerFrontierState: frontierState,
     });
-    const results = await Promise.all(
-      frontier.selectedNodes.map(async (node) => {
+    const superstepId = `parallel-frontier-${input.iteration}-${selectedNodeIds
+      .join("-")
+      .slice(0, 80)}`;
+    const settledResults = await Promise.allSettled(
+      frontier.selectedNodes.map(async (node, branchIndex) => {
+        const branchId = `${superstepId}:branch:${branchIndex + 1}:${node.nodeId}`;
         const decision: OrchestratorGraphDecision = {
           decisionId: `runtime-parallel-frontier-${input.iteration}-${node.nodeId}`,
           decisionKind: node.nodeStatus === "needs_review" ? "retry_node" : "run_node",
@@ -6068,29 +7294,232 @@ export class RuntimeWorkGraphScheduler {
           rawProviderLogStored: false,
           workQueueLifecycleMutated: false,
         };
-        const stop = await this.maybeStopBeforeNodeExecution({
-          graphId: input.graphId,
-          nodeId: node.nodeId,
-          iteration: input.iteration,
-          missionLedger: input.missionLedger,
-          decision,
-        });
-        if (stop) {
-          return stop;
+        try {
+          const prepared = await this.prepareNodeForExecution({
+            graphId: input.graphId,
+            nodeId: node.nodeId,
+            iteration: input.iteration,
+            missionLedger: input.missionLedger,
+            decision,
+            executedNodeIds: input.executedNodeIds,
+            addedNodeIds: input.addedNodeIds,
+            loopGuard: input.loopGuard,
+          });
+          decision.reasonCodes.push(...prepared.reasonCodes);
+          const result = !prepared.proceed
+            ? {
+                status: prepared.status ?? "continue",
+                reasonCodes: uniqueStrings([...decision.reasonCodes, ...prepared.reasonCodes]),
+                missionLedger: prepared.missionLedger ?? input.missionLedger,
+              }
+            : await this.executeNode({
+                graphId: input.graphId,
+                nodeId: node.nodeId,
+                iteration: input.iteration,
+                missionLedger: input.missionLedger,
+                decision,
+                executedNodeIds: input.executedNodeIds,
+                loopGuard: input.loopGuard,
+              });
+          const refreshedSnapshot = await this.options.graphs.readGraphSnapshot(input.graphId);
+          const refreshedNode = refreshedSnapshot?.nodes.find(
+            (candidate) => candidate.nodeId === node.nodeId,
+          );
+          const refreshedMetadata = jsonRecord(refreshedNode?.metadata ?? node.metadata);
+          const outputArtifactRefs =
+            "outputArtifactRefs" in result && Array.isArray(result.outputArtifactRefs)
+              ? result.outputArtifactRefs
+              : [];
+          const branch = buildSuperstepBranchResult({
+            superstepId,
+            branchId,
+            node,
+            capabilityId: nodeCapabilityId(node),
+            resultStatus: result.status,
+            refreshedNodeStatus: refreshedNode?.nodeStatus ?? null,
+            refreshedMetadata: refreshedMetadata as JsonValue,
+            reasonCodes: result.reasonCodes,
+            outputArtifactRefs,
+            unrecoverable:
+              "outputArtifactRefs" in result
+                ? nodeFailureIsExplicitlyUnrecoverable(
+                    result as RuntimeWorkGraphNodeExecutionResult,
+                  )
+                : false,
+          });
+          return {
+            ...result,
+            branch,
+          };
+        } catch (error) {
+          const errorSummary = error instanceof Error ? error.message : String(error);
+          const errorStack =
+            error instanceof Error ? (error.stack ?? error.message) : String(error);
+          const reasonCodes = [
+            ...decision.reasonCodes,
+            "parallel_frontier_branch_exception_isolated",
+            `parallel_frontier_branch_node:${node.nodeId}`,
+            `parallel_frontier_branch_error:${errorSummary.slice(0, 120)}`,
+          ];
+          await this.options.graphs.updateNodeStatus({
+            nodeId: node.nodeId,
+            nodeStatus: "needs_review",
+            metadataPatch: {
+              lastResultStatus: "needs_review",
+              lastStatusReasonCodes: reasonCodes.slice(0, 60),
+              parallelFrontierBranchFailureClass: "branch_exception",
+              parallelFrontierBranchErrorPath: "parallel_frontier.branch.execute",
+              parallelFrontierBranchErrorSummary: errorSummary.slice(0, 500),
+              parallelFrontierBranchId: branchId,
+              rawPromptStored: false,
+              rawResponseStored: false,
+              rawProviderLogStored: false,
+            },
+          });
+          await this.options.onNodeStatusChanged?.({
+            graphId: input.graphId,
+            node,
+            nodeStatus: "needs_review",
+            evidenceRefs: [],
+            reasonCodes,
+          });
+          return {
+            status: "needs_review" as const,
+            reasonCodes,
+            missionLedger: input.missionLedger,
+            branch: buildSuperstepBranchResult({
+              superstepId,
+              branchId,
+              node,
+              capabilityId: nodeCapabilityId(node),
+              resultStatus: "needs_review",
+              refreshedNodeStatus: "needs_review",
+              refreshedMetadata: {
+                ...jsonRecord(node.metadata ?? null),
+                parallelFrontierBranchFailureClass: "branch_exception",
+                parallelFrontierBranchErrorPath: "parallel_frontier.branch.execute",
+                parallelFrontierBranchErrorSummary: errorSummary.slice(0, 500),
+                nodeReadinessRepairAction: "needs_operator_review",
+              } as JsonValue,
+              reasonCodes: [
+                ...reasonCodes,
+                `parallel_frontier_branch_stack_hash:${createHash("sha256")
+                  .update(errorStack)
+                  .digest("hex")
+                  .slice(0, 16)}`,
+              ],
+              failureClass: "branch_exception",
+              errorPath: "parallel_frontier.branch.execute",
+              errorSummary: errorSummary.slice(0, 500),
+              repairAction: "needs_operator_review",
+            }),
+          };
         }
-        return await this.executeNode({
-          graphId: input.graphId,
-          nodeId: node.nodeId,
-          iteration: input.iteration,
-          missionLedger: input.missionLedger,
-          decision,
-          executedNodeIds: input.executedNodeIds,
-          loopGuard: input.loopGuard,
-        });
       }),
     );
+    const results = settledResults.map((settled, index) => {
+      if (settled.status === "fulfilled") {
+        return settled.value;
+      }
+      const node = frontier.selectedNodes[index];
+      const errorSummary =
+        settled.reason instanceof Error ? settled.reason.message : String(settled.reason);
+      const fallbackNode =
+        node ??
+        ({
+          nodeId: "unknown",
+          graphId: input.graphId,
+          nodeKind: "orchestrator_plan",
+          assignedRole: "scheduler",
+          modelOrWorkerRef: null,
+          runtimeJobId: null,
+          humanTaskId: null,
+          nodeStatus: "needs_review",
+          inputHandoffRefs: [],
+          outputArtifactRefs: [],
+          budgetUsage: null,
+          metadata: {
+            rawPromptStored: false,
+            rawResponseStored: false,
+            rawProviderLogStored: false,
+          },
+          rawPromptStored: false,
+          rawResponseStored: false,
+          rawLogsStored: false,
+          startedAt: null,
+          completedAt: null,
+          createdAt: new Date(0),
+          updatedAt: new Date(0),
+        } satisfies TeamGraphNode);
+      return {
+        status: "needs_review" as const,
+        reasonCodes: [
+          "parallel_frontier_branch_promise_rejection_isolated",
+          `parallel_frontier_branch_node:${node?.nodeId ?? "unknown"}`,
+          `parallel_frontier_branch_error:${errorSummary.slice(0, 120)}`,
+        ],
+        missionLedger: input.missionLedger,
+        branch: buildSuperstepBranchResult({
+          superstepId,
+          branchId: `${superstepId}:branch:${index + 1}:${node?.nodeId ?? "unknown"}`,
+          node: fallbackNode,
+          capabilityId: node ? nodeCapabilityId(node) : null,
+          resultStatus: "needs_review",
+          refreshedNodeStatus: "needs_review",
+          refreshedMetadata: {
+            ...jsonRecord(node?.metadata ?? null),
+            parallelFrontierBranchFailureClass: "branch_promise_rejection",
+            parallelFrontierBranchErrorPath: "parallel_frontier.branch.promise",
+            parallelFrontierBranchErrorSummary: errorSummary.slice(0, 500),
+            nodeReadinessRepairAction: "needs_operator_review",
+          } as JsonValue,
+          reasonCodes: ["parallel_frontier_branch_promise_rejection_isolated"],
+          failureClass: "branch_promise_rejection",
+          errorPath: "parallel_frontier.branch.promise",
+          errorSummary: errorSummary.slice(0, 500),
+          repairAction: "needs_operator_review",
+        }),
+      };
+    });
+    const branchResults = results.map((result) => result.branch);
+    const branchResultTool = await this.recordSchedulerTool({
+      graphId: input.graphId,
+      iteration: input.iteration,
+      toolId: "scheduler.record_superstep_branch_result",
+      idempotencyKey: `iteration:${input.iteration}:superstep-branch-results:${selectedNodeIds.join("|")}`,
+      inputRef: graphRef("graph", `${input.graphId}/superstep-branch-results/${input.iteration}`),
+      inputSummary: `Record ${branchResults.length} canonical superstep branch result(s).`,
+      metadata: {
+        selectedNodeIds,
+        branchResults,
+        schedulerPhase: "parallel_frontier_completed",
+        rawPromptStored: false,
+        rawResponseStored: false,
+        rawProviderLogStored: false,
+      },
+    });
+    const joinSuperstepTool = await this.recordSchedulerTool({
+      graphId: input.graphId,
+      iteration: input.iteration,
+      toolId: "scheduler.join_superstep_frontier",
+      idempotencyKey: `iteration:${input.iteration}:superstep-join:${selectedNodeIds.join("|")}`,
+      inputRef: graphRef("graph", `${input.graphId}/superstep-join/${input.iteration}`),
+      inputSummary: `Join superstep frontier ${input.iteration} after branch results were recorded.`,
+      metadata: {
+        selectedNodeIds,
+        branchResultStatuses: branchResults.map((branch) => branch.status).slice(0, 40),
+        branchResultNodeIds: branchResults.map((branch) => branch.nodeId).slice(0, 40),
+        schedulerPhase: "parallel_frontier_completed",
+        rawPromptStored: false,
+        rawResponseStored: false,
+        rawProviderLogStored: false,
+      },
+    });
     const reasonCodes = [
       ...selectTool.reasonCodes,
+      ...openSuperstepTool.reasonCodes,
+      ...branchResultTool.reasonCodes,
+      ...joinSuperstepTool.reasonCodes,
       "scheduler_parallel_frontier_executed",
       `parallel_frontier_node_count:${selectedNodeIds.length}`,
       ...results.flatMap((result) => result.reasonCodes),
@@ -6102,6 +7531,20 @@ export class RuntimeWorkGraphScheduler {
     if (mergedMissionLedger && mergedMissionLedger !== input.missionLedger) {
       await this.options.onMissionLedgerUpdated?.(mergedMissionLedger);
     }
+    const postFrontierSnapshot =
+      (await this.options.graphs.readGraphSnapshot(input.graphId)) ?? input.snapshot;
+    const systemicFailure = systemicParallelFrontierFailure({
+      snapshot: postFrontierSnapshot,
+      branchResults,
+    });
+    const systemicFailureReasonCodes = systemicFailure
+      ? [
+          "parallel_frontier_systemic_branch_failure_detected",
+          `parallel_frontier_systemic_failure_class:${systemicFailure.failureClass}`,
+          `parallel_frontier_systemic_failure_signature:${systemicFailure.signatureHash}`,
+          `parallel_frontier_systemic_failure_nodes:${systemicFailure.nodeIds.join(",")}`,
+        ]
+      : [];
     await this.options.onProgress?.({
       stage: "scheduler_parallel_frontier",
       status: results.some((result) => result.status === "failed")
@@ -6111,31 +7554,78 @@ export class RuntimeWorkGraphScheduler {
           : results.some((result) => result.status === "needs_review")
             ? "needs_review"
             : "completed",
-      reasonCodes,
+      reasonCodes: [...reasonCodes, ...systemicFailureReasonCodes],
       currentPhase: "parallel_frontier_completed",
       schedulerPhase: "execution_in_progress",
-      schedulerToolId: "scheduler.select_next_node",
-      schedulerToolInvocationRefs: selectTool.refs,
-      evidenceProducedRefs: selectTool.refs,
+      schedulerToolId: "scheduler.join_superstep_frontier",
+      schedulerToolInvocationRefs: [
+        ...selectTool.refs,
+        ...openSuperstepTool.refs,
+        ...branchResultTool.refs,
+        ...joinSuperstepTool.refs,
+      ],
+      evidenceProducedRefs: [
+        ...selectTool.refs,
+        ...openSuperstepTool.refs,
+        ...branchResultTool.refs,
+        ...joinSuperstepTool.refs,
+      ],
       currentObjective: `Completed parallel frontier for ${selectedNodeIds.length} graph node(s).`,
-      nextDecisionNeeded: "orchestrator_decision",
-      eli5Progress:
-        "OpenClaw finished the ready child-node frontier and will now let the scheduler/orchestrator evaluate the next graph step.",
+      nextDecisionNeeded: systemicFailure ? "operator_review" : "orchestrator_decision",
+      eli5Progress: systemicFailure
+        ? "Multiple sibling branches hit the same runtime failure, so OpenClaw stopped the frontier and surfaced one root cause instead of repeating the same failed work."
+        : "OpenClaw finished the ready child-node frontier and will now let the scheduler/orchestrator evaluate the next graph step.",
       heartbeatState: "parallel_frontier_completed",
       parallelFrontier: buildParallelFrontierReadback({
-        snapshot: (await this.options.graphs.readGraphSnapshot(input.graphId)) ?? input.snapshot,
+        snapshot: postFrontierSnapshot,
         currentSuperstep: input.iteration,
         maxParallelNodeExecutions: this.maxParallelNodeExecutions,
         selectedNodes: frontier.selectedNodes,
         skippedReasonCodes: frontier.skippedReasonCodes,
         rawRunnableNodeIds: frontier.rawRunnableNodeIds,
         providerConcurrencyBudgets: frontier.readback.providerConcurrencyBudgets,
+        branchResults,
       }),
+      schedulerFrontierState: buildSchedulerFrontierState({
+        graphId: input.graphId,
+        iteration: input.iteration,
+        snapshot: postFrontierSnapshot,
+        frontier: selectRunnableParallelFrontier({
+          snapshot: postFrontierSnapshot,
+          executors: this.options.executors,
+          maxParallelNodeExecutions: this.maxParallelNodeExecutions,
+        }),
+        executors: this.options.executors,
+        missionLedger: mergedMissionLedger,
+        requireFreshContextSnapshotsForWorkerExecution:
+          this.options.requireFreshContextSnapshotsForWorkerExecution === true,
+        requireNodeExecutionPacketForWorkerExecution:
+          this.options.requireNodeExecutionPacketForWorkerExecution === true,
+      }),
+      blockerSummary: systemicFailure
+        ? `Repeated parallel frontier branch failure across ${systemicFailure.nodeIds.length} sibling node(s): ${
+            systemicFailure.errorSummary ??
+            systemicFailure.errorPath ??
+            systemicFailure.failureClass
+          }`
+        : undefined,
     });
     if (results.some((result) => result.status === "waiting_for_human")) {
       return { status: "waiting_for_human", reasonCodes, missionLedger: mergedMissionLedger };
     }
     if (results.some((result) => result.status === "failed" || result.status === "needs_review")) {
+      if (systemicFailure) {
+        return {
+          status: "needs_review",
+          reasonCodes: [
+            ...reasonCodes,
+            ...systemicFailureReasonCodes,
+            "parallel_frontier_completed_siblings_preserved",
+            "parallel_frontier_systemic_failure_halted_for_root_cause",
+          ],
+          missionLedger: mergedMissionLedger,
+        };
+      }
       return {
         status: "continue",
         reasonCodes: [
@@ -6168,6 +7658,543 @@ export class RuntimeWorkGraphScheduler {
       };
     }
     return { status: "continue", reasonCodes, missionLedger: mergedMissionLedger };
+  }
+
+  private async recordTransitionReadiness(input: {
+    graphId: string;
+    iteration: number;
+    node: TeamGraphNode;
+    readiness: RuntimeNodeTransitionReadiness;
+    decisionId?: string | null;
+    idempotencySuffix: string;
+  }): Promise<{ refs: string[]; reasonCodes: string[] }> {
+    const tool = await this.recordSchedulerTool({
+      graphId: input.graphId,
+      iteration: input.iteration,
+      toolId: "scheduler.evaluate_frontier_readiness",
+      idempotencyKey: `iteration:${input.iteration}:node:${input.node.nodeId}:transition-readiness:${input.idempotencySuffix}`,
+      inputRef: graphRef("node", input.node.nodeId),
+      inputSummary: `Evaluate lifecycle/resource readiness for node ${input.node.nodeId} before opening the executable frontier.`,
+      nodeId: input.node.nodeId,
+      roleRef: input.node.assignedRole,
+      modelRef: input.node.modelOrWorkerRef,
+      metadata: {
+        decisionId: input.decisionId ?? null,
+        transitionReadiness: input.readiness as unknown as JsonValue,
+        nodeLifecycleState: input.readiness.lifecycleState,
+        nodeClass: input.readiness.nodeClass,
+        nodeExecutable: input.readiness.executable,
+        dependencyStatus: input.readiness.dependencyStatus,
+        contextStatus: input.readiness.contextStatus,
+        resourceStatus: input.readiness.resourceStatus,
+        validationStatus: input.readiness.validationStatus,
+        authorityStatus: input.readiness.authorityStatus,
+        storageStatus: input.readiness.storageStatus,
+        nextAllowedTransitions: input.readiness.nextAllowedTransitions,
+        blockerSummary: input.readiness.blockerSummary,
+        schedulerPhase: "node_transition_readiness",
+        rawPromptStored: false,
+        rawResponseStored: false,
+        rawProviderLogStored: false,
+      },
+    });
+    await this.options.onProgress?.({
+      stage: "scheduler_node_transition_readiness",
+      status: input.readiness.executable ? "completed" : "needs_review",
+      nodeId: input.node.nodeId,
+      roleId: input.node.assignedRole,
+      reasonCodes: [...input.readiness.reasonCodes, ...tool.reasonCodes],
+      currentObjective:
+        typeof jsonRecord(input.node.metadata).exactObjective === "string"
+          ? (jsonRecord(input.node.metadata).exactObjective as string)
+          : null,
+      activeNodeKind: input.node.nodeKind,
+      capabilityId: input.readiness.capabilityId,
+      modelRef: input.node.modelOrWorkerRef,
+      targetRefs: nodeSchedulingTargetRefs(input.node),
+      inputHandoffRefs: input.node.inputHandoffRefs,
+      currentPhase: input.readiness.lifecycleState,
+      validationState: input.readiness.executable
+        ? "node_transition_executable"
+        : "node_transition_blocked",
+      schedulerPhase: "node_transition_readiness",
+      schedulerToolId: "scheduler.evaluate_frontier_readiness",
+      schedulerToolInvocationRefs: tool.refs,
+      evidenceProducedRefs: tool.refs,
+      nextDecisionNeeded:
+        input.readiness.nextAllowedTransitions[0] ??
+        (input.readiness.executable ? "execute_node" : "needs_review"),
+      blockerSummary: input.readiness.blockerSummary,
+      eli5Progress: input.readiness.executable
+        ? "OpenClaw verified this graph node can enter the executable frontier."
+        : "OpenClaw stopped before worker execution because this graph node is still missing a dependency, context handoff, or resource packet.",
+      nodeReadinessState: input.readiness as unknown as JsonValue,
+      nodeReadinessStateRef: `runtime-work-graph://node-transition-readiness/${input.graphId}/${input.node.nodeId}/${input.idempotencySuffix}`,
+      nodeReadinessPhase: input.readiness.lifecycleState,
+      nodeReadinessStatus: input.readiness.executable ? "ready" : "blocked",
+      nodeReadinessRepairAction:
+        input.readiness.nextAllowedTransitions[0] ?? "needs_operator_review",
+      nodeReadinessNextAllowedTransitions: input.readiness.nextAllowedTransitions,
+      nodeReadinessContextStatus: input.readiness.contextStatus,
+      nodeReadinessValidationStatus: input.readiness.validationStatus,
+      nodeReadinessAuthorityStatus: input.readiness.authorityStatus,
+      nodeReadinessEvidenceStatus: input.readiness.resourceStatus,
+    });
+    return tool;
+  }
+
+  private async blockNodeForTransitionPrecondition(input: {
+    graphId: string;
+    iteration: number;
+    node: TeamGraphNode;
+    readiness: RuntimeNodeTransitionReadiness;
+    decisionId?: string | null;
+    terminalStatus?: "continue" | "needs_review";
+  }): Promise<{
+    status: "continue" | "needs_review";
+    reasonCodes: string[];
+    missionLedger?: MissionContractLedger | null;
+  }> {
+    const blockTool = await this.recordSchedulerTool({
+      graphId: input.graphId,
+      iteration: input.iteration,
+      toolId: "scheduler.block_node_for_precondition",
+      idempotencyKey: `iteration:${input.iteration}:node:${input.node.nodeId}:precondition-block:${input.readiness.lifecycleState}`,
+      inputRef: graphRef("node", input.node.nodeId),
+      inputSummary:
+        input.readiness.blockerSummary ??
+        `Block node ${input.node.nodeId} until transition preconditions are satisfied.`,
+      nodeId: input.node.nodeId,
+      roleRef: input.node.assignedRole,
+      modelRef: input.node.modelOrWorkerRef,
+      metadata: {
+        decisionId: input.decisionId ?? null,
+        transitionReadiness: input.readiness as unknown as JsonValue,
+        schedulerPhase: "node_transition_readiness",
+        rawPromptStored: false,
+        rawResponseStored: false,
+        rawProviderLogStored: false,
+      },
+    });
+    if (input.terminalStatus === "needs_review") {
+      await this.options.graphs.updateNodeStatus({
+        nodeId: input.node.nodeId,
+        nodeStatus: "needs_review",
+        metadataPatch: {
+          lastResultStatus: "needs_review",
+          lastStatusReasonCodes: [...input.readiness.reasonCodes, ...blockTool.reasonCodes].slice(
+            0,
+            60,
+          ),
+          nodeLifecycleState: input.readiness.lifecycleState,
+          nodeReadinessStateRef: `runtime-work-graph://node-transition-readiness/${input.graphId}/${input.node.nodeId}/precondition-block`,
+          nodeReadinessPhase: input.readiness.lifecycleState,
+          nodeReadinessStatus: "blocked",
+          nodeReadinessRepairAction:
+            input.readiness.nextAllowedTransitions[0] ?? "needs_operator_review",
+          nodeReadinessNextAllowedTransitions: input.readiness.nextAllowedTransitions,
+          rawPromptStored: false,
+          rawResponseStored: false,
+          rawProviderLogStored: false,
+        },
+      });
+    }
+    return {
+      status: input.terminalStatus ?? "continue",
+      reasonCodes: uniqueStrings([...input.readiness.reasonCodes, ...blockTool.reasonCodes]),
+    };
+  }
+
+  private async createTransitionPrerequisites(input: {
+    graphId: string;
+    iteration: number;
+    node: TeamGraphNode;
+    readiness: RuntimeNodeTransitionReadiness;
+    missionLedger: MissionContractLedger | null;
+    executedNodeIds: string[];
+    addedNodeIds: string[];
+    loopGuard: RuntimeWorkGraphLoopGuard;
+  }): Promise<{
+    status: "continue" | "succeeded" | "needs_review" | "failed" | "waiting_for_human";
+    reasonCodes: string[];
+    missionLedger?: MissionContractLedger | null;
+  } | null> {
+    if (input.readiness.prerequisiteTransition !== "node_scoped_context_supply") {
+      return null;
+    }
+    const snapshot = await this.options.graphs.readGraphSnapshot(input.graphId);
+    if (!snapshot) {
+      return {
+        status: "needs_review",
+        reasonCodes: ["runtime_work_graph_not_found_for_transition_prerequisite"],
+        missionLedger: input.missionLedger,
+      };
+    }
+    const decision = deterministicNodeScopedContextSupplyDecision({
+      graphId: input.graphId,
+      iteration: input.iteration,
+      snapshotSummary: summarizeSnapshot(snapshot),
+      missionLedger: input.missionLedger,
+      commitmentWorkPackets: this.options.commitmentWorkPackets ?? [],
+      capabilityManifest: this.capabilityManifest,
+    });
+    if (!decision) {
+      return await this.blockNodeForTransitionPrecondition({
+        graphId: input.graphId,
+        iteration: input.iteration,
+        node: input.node,
+        readiness: input.readiness,
+        terminalStatus: "needs_review",
+      });
+    }
+    const createTool = await this.recordSchedulerTool({
+      graphId: input.graphId,
+      iteration: input.iteration,
+      toolId: "scheduler.create_prerequisite_node",
+      idempotencyKey: `iteration:${input.iteration}:node:${input.node.nodeId}:create-prerequisite:${decision.decisionId}`,
+      inputRef: graphRef("node", input.node.nodeId),
+      inputSummary:
+        "Create runtime-owned prerequisite node(s) because a work-intent node lacks accepted context supply.",
+      nodeId: input.node.nodeId,
+      roleRef: input.node.assignedRole,
+      modelRef: input.node.modelOrWorkerRef,
+      metadata: {
+        targetNodeId: input.node.nodeId,
+        prerequisiteNodeIds: (decision.newNodes ?? []).map((node) => node.nodeId).slice(0, 16),
+        transitionReadiness: input.readiness as unknown as JsonValue,
+        schedulerPhase: "node_transition_readiness",
+        rawPromptStored: false,
+        rawResponseStored: false,
+        rawProviderLogStored: false,
+      },
+    });
+    const linkTool = await this.recordSchedulerTool({
+      graphId: input.graphId,
+      iteration: input.iteration,
+      toolId: "scheduler.link_prerequisite_to_target",
+      idempotencyKey: `iteration:${input.iteration}:node:${input.node.nodeId}:link-prerequisite:${decision.decisionId}`,
+      inputRef: graphRef("node", input.node.nodeId),
+      inputSummary:
+        "Link runtime-owned prerequisite context node(s) to the target work-intent node.",
+      nodeId: input.node.nodeId,
+      roleRef: input.node.assignedRole,
+      modelRef: input.node.modelOrWorkerRef,
+      metadata: {
+        targetNodeId: input.node.nodeId,
+        prerequisiteEdgeIds: (decision.newEdges ?? [])
+          .map((edge, index) => edge.edgeId ?? `edge-${index + 1}`)
+          .slice(0, 16),
+        transitionReadiness: input.readiness as unknown as JsonValue,
+        schedulerPhase: "node_transition_readiness",
+        rawPromptStored: false,
+        rawResponseStored: false,
+        rawProviderLogStored: false,
+      },
+    });
+    const brokerRequestRefs = uniqueStrings(
+      (decision.newNodes ?? []).flatMap((node) => {
+        const metadata = jsonRecord(node.metadata ?? null);
+        return typeof metadata.contextBrokerRequestRef === "string"
+          ? [metadata.contextBrokerRequestRef]
+          : [];
+      }),
+    ).slice(0, 16);
+    const brokerDispatchTool =
+      brokerRequestRefs.length > 0
+        ? await this.recordSchedulerTool({
+            graphId: input.graphId,
+            iteration: input.iteration,
+            toolId: "context_broker.dispatch_context_scout",
+            idempotencyKey: `iteration:${input.iteration}:node:${input.node.nodeId}:dispatch-context-scout:${decision.decisionId}`,
+            inputRef: brokerRequestRefs[0] ?? graphRef("node", input.node.nodeId),
+            inputSummary:
+              "Dispatch runtime-owned context scout prerequisite(s) for branch-local context broker request(s).",
+            nodeId: input.node.nodeId,
+            roleRef: input.node.assignedRole,
+            modelRef: input.node.modelOrWorkerRef,
+            metadata: {
+              targetNodeId: input.node.nodeId,
+              contextBrokerRequestRefs: brokerRequestRefs,
+              prerequisiteNodeIds: (decision.newNodes ?? [])
+                .map((node) => node.nodeId)
+                .slice(0, 16),
+              schedulerPhase: "node_transition_readiness",
+              rawPromptStored: false,
+              rawResponseStored: false,
+              rawProviderLogStored: false,
+              rawToolLogStored: false,
+            } satisfies JsonValue,
+          })
+        : null;
+    if (brokerDispatchTool) {
+      await this.options.onProgress?.({
+        stage: "context_broker",
+        status: "completed",
+        nodeId: input.node.nodeId,
+        roleId: input.node.assignedRole,
+        reasonCodes: brokerDispatchTool.reasonCodes,
+        currentObjective:
+          typeof jsonRecord(input.node.metadata).exactObjective === "string"
+            ? (jsonRecord(input.node.metadata).exactObjective as string)
+            : "Dispatch node-scoped context scout prerequisites.",
+        activeNodeKind: input.node.nodeKind,
+        capabilityId: nodeCapabilityId(input.node),
+        modelRef: input.node.modelOrWorkerRef,
+        targetRefs: nodeSchedulingTargetRefs(input.node),
+        inputHandoffRefs: input.node.inputHandoffRefs,
+        currentPhase: "context_broker_dispatch_context_scout",
+        validationState: "context_required",
+        evidenceProducedRefs: brokerRequestRefs,
+        commitmentIdsAdvanced: jsonStringArray(
+          jsonRecord(input.node.metadata).commitmentIdsAdvanced,
+        ),
+        nextDecisionNeeded: "run_context_scout_prerequisites",
+        blockerSummary:
+          "Node-scoped context is required before this consumer can be materialized or executed.",
+        schedulerPhase: "context_broker_dispatch",
+        schedulerToolId: "context_broker.dispatch_context_scout",
+        schedulerToolInvocationRefs: brokerDispatchTool.refs,
+        contextBrokerRequestRefs: brokerRequestRefs,
+        contextBrokerStatuses: ["context_scout_required"],
+        contextBrokerConsumerNodeIds: [input.node.nodeId],
+        contextBrokerNextTransition: "dispatch_context_scout",
+      });
+    }
+    const applied = await this.applyDecision({
+      graphId: input.graphId,
+      decision,
+      iteration: input.iteration,
+      missionLedger: input.missionLedger,
+      executedNodeIds: input.executedNodeIds,
+      addedNodeIds: input.addedNodeIds,
+      loopGuard: input.loopGuard,
+    });
+    return {
+      ...applied,
+      reasonCodes: uniqueStrings([
+        ...input.readiness.reasonCodes,
+        ...createTool.reasonCodes,
+        ...linkTool.reasonCodes,
+        ...(brokerDispatchTool?.reasonCodes ?? []),
+        ...applied.reasonCodes,
+        "runtime_node_transition_prerequisite_created_before_execution",
+      ]),
+    };
+  }
+
+  private async prepareNodeForExecution(input: {
+    graphId: string;
+    nodeId: string;
+    iteration: number;
+    missionLedger: MissionContractLedger | null;
+    decision: OrchestratorGraphDecision;
+    executedNodeIds: string[];
+    addedNodeIds: string[];
+    loopGuard: RuntimeWorkGraphLoopGuard;
+  }): Promise<{
+    proceed: boolean;
+    status?: "continue" | "succeeded" | "needs_review" | "failed" | "waiting_for_human";
+    reasonCodes: string[];
+    missionLedger?: MissionContractLedger | null;
+  }> {
+    const snapshot = await this.options.graphs.readGraphSnapshot(input.graphId);
+    const node = snapshot?.nodes.find((candidate) => candidate.nodeId === input.nodeId);
+    if (!snapshot || !node) {
+      return {
+        proceed: false,
+        status: "needs_review",
+        reasonCodes: ["scheduler_node_not_found"],
+        missionLedger: input.missionLedger,
+      };
+    }
+    const readiness = evaluateRuntimeNodeTransitionReadiness({
+      snapshot,
+      node,
+      executors: this.options.executors,
+      requireFreshContextSnapshotsForWorkerExecution:
+        this.options.requireFreshContextSnapshotsForWorkerExecution === true,
+      requireNodeExecutionPacketForWorkerExecution:
+        this.options.requireNodeExecutionPacketForWorkerExecution === true,
+    });
+    const readinessTool = await this.recordTransitionReadiness({
+      graphId: input.graphId,
+      iteration: input.iteration,
+      node,
+      readiness,
+      decisionId: input.decision.decisionId,
+      idempotencySuffix: "pre-open",
+    });
+    if (readiness.prerequisiteTransition) {
+      const prerequisite = await this.createTransitionPrerequisites({
+        graphId: input.graphId,
+        iteration: input.iteration,
+        node,
+        readiness,
+        missionLedger: input.missionLedger,
+        executedNodeIds: input.executedNodeIds,
+        addedNodeIds: input.addedNodeIds,
+        loopGuard: input.loopGuard,
+      });
+      if (prerequisite) {
+        return {
+          proceed: false,
+          status: prerequisite.status,
+          reasonCodes: uniqueStrings([...readinessTool.reasonCodes, ...prerequisite.reasonCodes]),
+          missionLedger: prerequisite.missionLedger ?? input.missionLedger,
+        };
+      }
+    }
+    if (
+      !readiness.executable &&
+      readiness.lifecycleState !== "resources_required" &&
+      readiness.lifecycleState !== "resource_materialization_in_progress"
+    ) {
+      const blocked = await this.blockNodeForTransitionPrecondition({
+        graphId: input.graphId,
+        iteration: input.iteration,
+        node,
+        readiness,
+        decisionId: input.decision.decisionId,
+        terminalStatus: readiness.lifecycleState === "needs_review" ? "needs_review" : "continue",
+      });
+      return {
+        proceed: false,
+        status: blocked.status,
+        reasonCodes: uniqueStrings([...readinessTool.reasonCodes, ...blocked.reasonCodes]),
+        missionLedger: blocked.missionLedger ?? input.missionLedger,
+      };
+    }
+    if (readiness.lifecycleState === "resources_required") {
+      const transitionTool = await this.recordSchedulerTool({
+        graphId: input.graphId,
+        iteration: input.iteration,
+        toolId: "scheduler.record_node_transition",
+        idempotencyKey: `iteration:${input.iteration}:node:${node.nodeId}:resource-materialization-start`,
+        inputRef: graphRef("node", node.nodeId),
+        inputSummary: `Transition node ${node.nodeId} from work intent to resource materialization before worker execution.`,
+        nodeId: node.nodeId,
+        roleRef: node.assignedRole,
+        modelRef: node.modelOrWorkerRef,
+        metadata: {
+          decisionId: input.decision.decisionId,
+          fromLifecycleState: readiness.lifecycleState,
+          toLifecycleState: "resource_materialization_in_progress",
+          transitionReadiness: readiness as unknown as JsonValue,
+          schedulerPhase: "node_transition_readiness",
+          rawPromptStored: false,
+          rawResponseStored: false,
+          rawProviderLogStored: false,
+        },
+      });
+      input.decision.reasonCodes.push(...transitionTool.reasonCodes);
+    }
+    const stopped = await this.maybeStopBeforeNodeExecution({
+      graphId: input.graphId,
+      nodeId: input.nodeId,
+      iteration: input.iteration,
+      missionLedger: input.missionLedger,
+      decision: input.decision,
+    });
+    if (stopped) {
+      return {
+        proceed: false,
+        status: stopped.status,
+        reasonCodes: uniqueStrings([...readinessTool.reasonCodes, ...stopped.reasonCodes]),
+        missionLedger: stopped.missionLedger ?? input.missionLedger,
+      };
+    }
+    const refreshed = await this.options.graphs.readGraphSnapshot(input.graphId);
+    const refreshedNode = refreshed?.nodes.find((candidate) => candidate.nodeId === input.nodeId);
+    const finalReadiness =
+      refreshed && refreshedNode
+        ? evaluateRuntimeNodeTransitionReadiness({
+            snapshot: refreshed,
+            node: refreshedNode,
+            executors: this.options.executors,
+            requireFreshContextSnapshotsForWorkerExecution:
+              this.options.requireFreshContextSnapshotsForWorkerExecution === true,
+            requireNodeExecutionPacketForWorkerExecution:
+              this.options.requireNodeExecutionPacketForWorkerExecution === true,
+          })
+        : readiness;
+    if (refreshedNode) {
+      await this.recordTransitionReadiness({
+        graphId: input.graphId,
+        iteration: input.iteration,
+        node: refreshedNode,
+        readiness: finalReadiness,
+        decisionId: input.decision.decisionId,
+        idempotencySuffix: "post-materialization",
+      });
+    }
+    if (
+      !finalReadiness.executable &&
+      finalReadiness.lifecycleState !== "resources_required" &&
+      refreshedNode
+    ) {
+      const blocked = await this.blockNodeForTransitionPrecondition({
+        graphId: input.graphId,
+        iteration: input.iteration,
+        node: refreshedNode,
+        readiness: finalReadiness,
+        decisionId: input.decision.decisionId,
+        terminalStatus: "needs_review",
+      });
+      return {
+        proceed: false,
+        status: blocked.status,
+        reasonCodes: uniqueStrings([...readinessTool.reasonCodes, ...blocked.reasonCodes]),
+        missionLedger: blocked.missionLedger ?? input.missionLedger,
+      };
+    }
+    const promoteTool = await this.recordSchedulerTool({
+      graphId: input.graphId,
+      iteration: input.iteration,
+      toolId: "scheduler.promote_work_intent_to_executable",
+      idempotencyKey: `iteration:${input.iteration}:node:${input.nodeId}:promote-executable`,
+      inputRef: graphRef("node", input.nodeId),
+      inputSummary: `Promote node ${input.nodeId} into the executable frontier after transition readiness checks.`,
+      nodeId: input.nodeId,
+      roleRef: refreshedNode?.assignedRole ?? node.assignedRole,
+      modelRef: refreshedNode?.modelOrWorkerRef ?? node.modelOrWorkerRef,
+      metadata: {
+        decisionId: input.decision.decisionId,
+        transitionReadiness: finalReadiness as unknown as JsonValue,
+        schedulerPhase: "node_transition_readiness",
+        rawPromptStored: false,
+        rawResponseStored: false,
+        rawProviderLogStored: false,
+      },
+    });
+    const openTool = await this.recordSchedulerTool({
+      graphId: input.graphId,
+      iteration: input.iteration,
+      toolId: "scheduler.open_executable_frontier",
+      idempotencyKey: `iteration:${input.iteration}:node:${input.nodeId}:open-executable-frontier`,
+      inputRef: graphRef("node", input.nodeId),
+      inputSummary: `Open executable frontier for node ${input.nodeId}.`,
+      nodeId: input.nodeId,
+      roleRef: refreshedNode?.assignedRole ?? node.assignedRole,
+      modelRef: refreshedNode?.modelOrWorkerRef ?? node.modelOrWorkerRef,
+      metadata: {
+        decisionId: input.decision.decisionId,
+        transitionReadiness: finalReadiness as unknown as JsonValue,
+        schedulerPhase: "node_transition_readiness",
+        rawPromptStored: false,
+        rawResponseStored: false,
+        rawProviderLogStored: false,
+      },
+    });
+    return {
+      proceed: true,
+      reasonCodes: uniqueStrings([
+        ...readinessTool.reasonCodes,
+        ...promoteTool.reasonCodes,
+        ...openTool.reasonCodes,
+        "runtime_node_transition_executable_frontier_opened",
+      ]),
+      missionLedger: input.missionLedger,
+    };
   }
 
   private async applyDecision(input: {
@@ -6313,6 +8340,187 @@ export class RuntimeWorkGraphScheduler {
       }
     }
     if (decision.newNodes?.length) {
+      const expansionSnapshot = await this.options.graphs.readGraphSnapshot(graphId);
+      const expansionSnapshotSummary = expansionSnapshot
+        ? summarizeSnapshot(expansionSnapshot)
+        : ({
+            workflowId: "unknown",
+            graphStatus: "missing",
+            nodeSummaries: [],
+            edgeSummaries: [],
+            edgeCount: 0,
+            humanTaskCount: 0,
+            latestCheckpointKinds: [],
+          } satisfies RuntimeWorkGraphSchedulerSnapshotSummary);
+      const expansionFrontier = expansionSnapshot
+        ? selectRunnableParallelFrontier({
+            snapshot: expansionSnapshot,
+            executors: this.options.executors,
+            maxParallelNodeExecutions: this.maxParallelNodeExecutions,
+          })
+        : null;
+      const expansionFrontierState =
+        expansionSnapshot && expansionFrontier
+          ? buildSchedulerFrontierState({
+              graphId,
+              iteration: input.iteration,
+              snapshot: expansionSnapshot,
+              frontier: expansionFrontier,
+              executors: this.options.executors,
+              missionLedger: input.missionLedger,
+              requireFreshContextSnapshotsForWorkerExecution:
+                this.options.requireFreshContextSnapshotsForWorkerExecution === true,
+              requireNodeExecutionPacketForWorkerExecution:
+                this.options.requireNodeExecutionPacketForWorkerExecution === true,
+            })
+          : null;
+      const expansionAdmission = evaluateRuntimeWorkGraphExpansionAdmission({
+        graphId,
+        iteration: input.iteration,
+        decision,
+        snapshotSummary: expansionSnapshotSummary,
+        readyFrontierNodeIds:
+          expansionFrontierState?.selectedExecutableNodeIds ??
+          expansionFrontier?.selectedNodes.map((node) => node.nodeId) ??
+          [],
+        pendingContextRequestRefs: expansionSnapshot
+          ? pendingContextBrokerRequestRefs(expansionSnapshot)
+          : [],
+        activeImplementationOrResourceNodeIds: expansionSnapshot
+          ? activeImplementationOrResourceBranchNodeIds(expansionSnapshot)
+          : [],
+        policy: this.expansionAdmissionPolicy,
+      });
+      const expansionAdmissionSummary = summarizeExpansionAdmissionDecision(
+        expansionAdmission.decision,
+      );
+      const expansionTool = await this.recordSchedulerTool({
+        graphId,
+        iteration: input.iteration,
+        toolId: "scheduler.evaluate_expansion_admission",
+        idempotencyKey: `iteration:${input.iteration}:decision:${decision.decisionId}:expansion-admission:${expansionAdmission.decision.decisionRef.split("/").at(-1)}`,
+        inputRef: graphRef("orchestrator-decision", decision.decisionId),
+        inputHash: createHash("sha256")
+          .update(JSON.stringify(expansionAdmissionSummary))
+          .digest("hex"),
+        inputSummary:
+          "Evaluate whether the proposed graph expansion should persist now, page into a bounded frontier, or defer because executable work is already ready.",
+        metadata: {
+          decisionId: decision.decisionId,
+          decisionKind: decision.decisionKind,
+          expansionAdmissionDecision: expansionAdmissionSummary,
+          schedulerFrontierState: expansionFrontierState as unknown as JsonValue,
+          schedulerPhase: "expansion_admission",
+          rawPromptStored: false,
+          rawResponseStored: false,
+          rawProviderLogStored: false,
+        },
+      });
+      decision.reasonCodes.push(
+        ...expansionAdmission.decision.reasonCodes,
+        ...expansionTool.reasonCodes,
+      );
+      await this.options.onProgress?.({
+        stage: "scheduler_expansion_admission",
+        status:
+          expansionAdmission.decision.status === "rejected_budget_exceeded" ||
+          expansionAdmission.decision.status === "needs_review" ||
+          expansionAdmission.decision.status === "halt_no_progress"
+            ? "needs_review"
+            : "completed",
+        reasonCodes: uniqueStrings([
+          ...expansionAdmission.decision.reasonCodes,
+          ...expansionTool.reasonCodes,
+        ]),
+        currentPhase: "expansion_admission_evaluated",
+        schedulerPhase: "expansion_admission",
+        schedulerToolId: "scheduler.evaluate_expansion_admission",
+        schedulerToolInvocationRefs: expansionTool.refs,
+        evidenceProducedRefs: expansionTool.refs,
+        nextDecisionNeeded: expansionAdmission.decision.nextTransition,
+        blockerSummary:
+          expansionAdmission.decision.status === "rejected_budget_exceeded" ||
+          expansionAdmission.decision.status === "needs_review"
+            ? "The proposed graph expansion exceeds runtime admission budgets and needs scheduler repair or owner review."
+            : expansionAdmission.decision.status === "deferred_due_to_ready_frontier"
+              ? "Executable frontier work is already ready, so runtime deferred this extra expansion instead of growing the graph first."
+              : null,
+        eli5Progress:
+          expansionAdmission.decision.status === "accepted_paged"
+            ? "OpenClaw accepted the graph expansion in a bounded page so the graph does not grow too much at once."
+            : expansionAdmission.decision.status === "deferred_due_to_ready_frontier"
+              ? "OpenClaw found work that is ready to run and delayed extra graph growth."
+              : expansionAdmission.decision.status === "accepted"
+                ? "OpenClaw checked the proposed graph growth and it fits the runtime limits."
+                : "OpenClaw stopped because the proposed graph growth is too large or unsafe to persist.",
+        heartbeatState: `expansion_admission_${expansionAdmission.decision.status}`,
+        schedulerFrontierState: expansionFrontierState,
+        expansionAdmissionDecision: expansionAdmissionSummary,
+        expansionAdmissionDecisionRef: expansionAdmission.decision.decisionRef,
+        expansionAdmissionPolicyRef: expansionAdmission.decision.policyRef,
+        expansionAdmissionStatus: expansionAdmission.decision.status,
+        expansionAdmissionOriginalNodeCount: expansionAdmission.decision.originalNodeCount,
+        expansionAdmissionOriginalEdgeCount: expansionAdmission.decision.originalEdgeCount,
+        expansionAdmissionAdmittedNodeCount: expansionAdmission.decision.admittedNodeCount,
+        expansionAdmissionAdmittedEdgeCount: expansionAdmission.decision.admittedEdgeCount,
+        expansionAdmissionDeferredNodeCount: expansionAdmission.decision.deferredNodeCount,
+        expansionAdmissionDeferredEdgeCount: expansionAdmission.decision.deferredEdgeCount,
+        expansionAdmissionReadyFrontierNodeIds: expansionAdmission.decision.readyFrontierNodeIds,
+        expansionAdmissionAdmittedNodeIds: expansionAdmission.decision.admittedNodeIds,
+        expansionAdmissionDeferredNodeIds: expansionAdmission.decision.deferredNodeIds,
+        expansionAdmissionNextTransition: expansionAdmission.decision.nextTransition,
+        expansionAdmissionPrerequisiteCritical: expansionAdmission.decision.prerequisiteCritical,
+        expansionAdmissionReasonCodes: expansionAdmission.decision.reasonCodes,
+      });
+      if (expansionAdmission.decision.status === "deferred_due_to_ready_frontier") {
+        await this.options.graphs.recordCheckpoint({
+          graphId,
+          checkpointKind: "scheduler_expansion_deferred_ready_frontier",
+          stateSummary:
+            "Scheduler deferred graph expansion because executable frontier work was already ready and the expansion was not structurally prerequisite-critical.",
+          artifactRefs: [
+            graphRef("orchestrator-decision", decision.decisionId),
+            ...expansionTool.refs,
+          ],
+        });
+        return {
+          status: "continue",
+          reasonCodes: uniqueStrings([
+            ...decision.reasonCodes,
+            "scheduler_expansion_deferred_ready_frontier",
+          ]),
+          missionLedger: input.missionLedger,
+        };
+      }
+      if (
+        expansionAdmission.decision.status === "rejected_budget_exceeded" ||
+        expansionAdmission.decision.status === "needs_review" ||
+        expansionAdmission.decision.status === "halt_no_progress"
+      ) {
+        await this.options.graphs.recordCheckpoint({
+          graphId,
+          checkpointKind: "scheduler_expansion_admission_needs_review",
+          stateSummary:
+            "Scheduler rejected graph expansion before persistence because runtime admission policy could not safely accept the proposed page.",
+          artifactRefs: [
+            graphRef("orchestrator-decision", decision.decisionId),
+            ...expansionTool.refs,
+          ],
+        });
+        return {
+          status: "needs_review",
+          reasonCodes: uniqueStrings([
+            ...decision.reasonCodes,
+            "scheduler_expansion_admission_needs_review",
+          ]),
+          missionLedger: input.missionLedger,
+        };
+      }
+      if (expansionAdmission.decision.status === "accepted_paged") {
+        decision.newNodes = expansionAdmission.admittedNodes;
+        decision.newEdges = expansionAdmission.admittedEdges;
+        decision.reasonCodes.push("scheduler_expansion_admitted_paged_before_persistence");
+      }
       const stagedTools: Array<{ toolId: SchedulerRuntimeToolId; summary: string }> = [
         {
           toolId: "scheduler.draft_work_breakdown",
@@ -6348,6 +8556,16 @@ export class RuntimeWorkGraphScheduler {
           summary: "Record scheduler capability selection rollup for owner readback.",
         },
         {
+          toolId: "scheduler.compile_work_intents",
+          summary:
+            "Compile model-authored semantic work units into non-runnable WorkIntent control-plane contracts.",
+        },
+        {
+          toolId: "scheduler.validate_work_intent_capability",
+          summary:
+            "Validate each WorkIntent execution intent against the runtime capability manifest before executable promotion.",
+        },
+        {
           toolId: "scheduler.define_node_contract",
           summary: "Record node objectives, expected outputs, and acceptance criteria.",
         },
@@ -6363,6 +8581,10 @@ export class RuntimeWorkGraphScheduler {
         {
           toolId: "scheduler.finalize_decomposition_graph",
           summary: "Finalize the accepted decomposition graph before execution.",
+        },
+        {
+          toolId: "scheduler.accept_work_intent_graph",
+          summary: "Accept the WorkIntent graph as canonical non-runnable control-plane state.",
         },
         {
           toolId: "scheduler.review_compiled_graph",
@@ -6394,13 +8616,129 @@ export class RuntimeWorkGraphScheduler {
         });
         decision.reasonCodes.push(...stageTool.reasonCodes);
       }
-      await this.addNodes({
+      const persistenceOutcome = await this.addNodes({
         graphId,
         nodes: decision.newNodes,
         edges: decision.newEdges ?? [],
         addedNodeIds: input.addedNodeIds,
         iteration: input.iteration,
       });
+      if (
+        persistenceOutcome.createdNodeIds.length === 0 &&
+        persistenceOutcome.createdEdgeIds.length === 0 &&
+        (persistenceOutcome.reusedNodeIds.length > 0 || persistenceOutcome.reusedEdgeIds.length > 0)
+      ) {
+        const refreshedSnapshot = await this.options.graphs.readGraphSnapshot(graphId);
+        if (refreshedSnapshot) {
+          const frontier = selectRunnableParallelFrontier({
+            snapshot: refreshedSnapshot,
+            executors: this.options.executors,
+            maxParallelNodeExecutions: this.maxParallelNodeExecutions,
+          });
+          const frontierState = buildSchedulerFrontierState({
+            graphId,
+            iteration: input.iteration,
+            snapshot: refreshedSnapshot,
+            frontier,
+            executors: this.options.executors,
+            missionLedger: input.missionLedger,
+            requireFreshContextSnapshotsForWorkerExecution:
+              this.options.requireFreshContextSnapshotsForWorkerExecution === true,
+            requireNodeExecutionPacketForWorkerExecution:
+              this.options.requireNodeExecutionPacketForWorkerExecution === true,
+          });
+          const signature = buildNoProgressSignature({
+            graphId,
+            iteration: input.iteration,
+            snapshot: refreshedSnapshot,
+            frontierState,
+            decision,
+            persistence: persistenceOutcome,
+            terminalBlockerCode: "graph_persistence_reused_only",
+          });
+          const repeatCount =
+            (input.loopGuard.repeatedNoProgressBySignature.get(signature.signatureHash) ?? 0) + 1;
+          input.loopGuard.repeatedNoProgressBySignature.set(signature.signatureHash, repeatCount);
+          const noProgressTool = await this.recordSchedulerTool({
+            graphId,
+            iteration: input.iteration,
+            toolId: "scheduler.record_no_progress_signature",
+            idempotencyKey: `iteration:${input.iteration}:decision:${decision.decisionId}:no-progress:${signature.signatureHash.slice(0, 16)}`,
+            inputRef: graphRef("orchestrator-decision", decision.decisionId),
+            inputHash: signature.signatureHash,
+            inputSummary:
+              "Record no-progress signature because graph persistence reused existing nodes/edges without producing a new executable frontier, evidence ref, readiness ref, or Work Queue child.",
+            metadata: {
+              decisionId: decision.decisionId,
+              decisionKind: decision.decisionKind,
+              noProgressSignature: signature as unknown as JsonValue,
+              noProgressRepeatCount: repeatCount,
+              schedulerFrontierState: frontierState as unknown as JsonValue,
+              schedulerPhase: "no_progress_evaluation",
+              reasonCodes: [
+                "scheduler_graph_persistence_reused_only_no_progress",
+                `scheduler_no_progress_repeat_count:${repeatCount}`,
+              ],
+              rawPromptStored: false,
+              rawResponseStored: false,
+              rawProviderLogStored: false,
+            },
+          });
+          await this.options.onProgress?.({
+            stage: "scheduler_no_progress",
+            status: repeatCount >= 2 ? "needs_review" : "completed",
+            reasonCodes: [
+              "scheduler_graph_persistence_reused_only_no_progress",
+              `scheduler_no_progress_signature:${signature.signatureHash.slice(0, 16)}`,
+              `scheduler_no_progress_repeat_count:${repeatCount}`,
+              ...noProgressTool.reasonCodes,
+            ],
+            currentPhase: "no_progress_evaluation",
+            schedulerPhase: "no_progress_evaluation",
+            schedulerToolId: "scheduler.record_no_progress_signature",
+            schedulerToolInvocationRefs: noProgressTool.refs,
+            evidenceProducedRefs: noProgressTool.refs,
+            nextDecisionNeeded:
+              repeatCount >= 2 ? "operator_review_root_cause" : frontierState.nextLegalTransition,
+            blockerSummary:
+              "The scheduler accepted a graph write decision, but runtime only reused existing nodes/edges and saw no new executable work or evidence.",
+            eli5Progress:
+              repeatCount >= 2
+                ? "OpenClaw saw the same no-progress graph state twice, so it stopped instead of looping."
+                : "OpenClaw saw a no-progress graph state and will allow one bounded repair decision.",
+            heartbeatState: repeatCount >= 2 ? "needs_review" : "no_progress_observed",
+            schedulerFrontierState: frontierState,
+            noProgressSignature: signature,
+            noProgressRepeatCount: repeatCount,
+          });
+          decision.reasonCodes.push(
+            "scheduler_graph_persistence_reused_only_no_progress",
+            `scheduler_no_progress_signature:${signature.signatureHash.slice(0, 16)}`,
+            ...noProgressTool.reasonCodes,
+          );
+          if (repeatCount >= 2) {
+            await this.options.graphs.recordCheckpoint({
+              graphId,
+              checkpointKind: "scheduler_repeated_no_progress_signature_halted",
+              stateSummary:
+                "Scheduler halted repeated no-progress graph expansion because the same reused-only signature recurred without new frontier, evidence, readiness, or Work Queue progress.",
+              artifactRefs: [
+                graphRef("orchestrator-decision", decision.decisionId),
+                ...noProgressTool.refs,
+              ],
+            });
+            return {
+              status: "needs_review",
+              reasonCodes: [
+                ...decision.reasonCodes,
+                "scheduler_repeated_no_progress_signature_halted",
+                "scheduler_no_progress_root_cause_surface_required",
+              ],
+              missionLedger: input.missionLedger,
+            };
+          }
+        }
+      }
       if (decision.newNodes.some((node) => node.nodeKind === "context_synthesis")) {
         const synthesisTool = await this.recordSchedulerTool({
           graphId,
@@ -6466,23 +8804,6 @@ export class RuntimeWorkGraphScheduler {
           null)
         : null;
       if (nodeId) {
-        const firstNodeTool = await this.recordSchedulerTool({
-          graphId,
-          iteration: input.iteration,
-          toolId: "scheduler.approve_and_run_first_node",
-          idempotencyKey: `iteration:${input.iteration}:decision:${decision.decisionId}:run-first:${nodeId}`,
-          inputRef: graphRef("orchestrator-decision", decision.decisionId),
-          inputSummary: `Approve scheduler-selected node ${nodeId} for execution after staged graph acceptance.`,
-          nodeId,
-          metadata: {
-            decisionId: decision.decisionId,
-            runNodeId: nodeId,
-            schedulerPhase: "decomposition_accepted",
-            rawPromptStored: false,
-            rawResponseStored: false,
-          },
-        });
-        decision.reasonCodes.push(...firstNodeTool.reasonCodes);
         const runSnapshot = await this.options.graphs.readGraphSnapshot(graphId);
         const runNode = runSnapshot?.nodes.find((node) => node.nodeId === nodeId) ?? null;
         if (runNode && ["running", "succeeded"].includes(runNode.nodeStatus)) {
@@ -6493,7 +8814,7 @@ export class RuntimeWorkGraphScheduler {
           const skipTool = await this.recordSchedulerTool({
             graphId,
             iteration: input.iteration,
-            toolId: "scheduler.approve_and_run_first_node",
+            toolId: "scheduler.record_node_transition",
             idempotencyKey: `iteration:${input.iteration}:decision:${decision.decisionId}:run-first:${nodeId}:idempotent-skip:${runNode.nodeStatus}`,
             inputRef: graphRef("node", nodeId),
             inputSummary: `Skip duplicate execution for ${nodeId}; node is already ${runNode.nodeStatus}.`,
@@ -6517,15 +8838,23 @@ export class RuntimeWorkGraphScheduler {
             ]),
           };
         }
-        const stop = await this.maybeStopBeforeNodeExecution({
+        const prepared = await this.prepareNodeForExecution({
           graphId,
           nodeId,
           iteration: input.iteration,
           missionLedger: input.missionLedger,
           decision,
+          executedNodeIds: input.executedNodeIds,
+          addedNodeIds: input.addedNodeIds,
+          loopGuard: input.loopGuard,
         });
-        if (stop) {
-          return stop;
+        decision.reasonCodes.push(...prepared.reasonCodes);
+        if (!prepared.proceed) {
+          return {
+            status: prepared.status ?? "continue",
+            reasonCodes: uniqueStrings([...decision.reasonCodes, ...prepared.reasonCodes]),
+            missionLedger: prepared.missionLedger ?? input.missionLedger,
+          };
         }
         const executed = await this.executeNode({
           graphId,
@@ -6709,15 +9038,23 @@ export class RuntimeWorkGraphScheduler {
         };
       }
       if (closeoutNodeId) {
-        const stop = await this.maybeStopBeforeNodeExecution({
+        const prepared = await this.prepareNodeForExecution({
           graphId,
           nodeId: closeoutNodeId,
           iteration: input.iteration,
           missionLedger: input.missionLedger,
           decision,
+          executedNodeIds: input.executedNodeIds,
+          addedNodeIds: input.addedNodeIds,
+          loopGuard: input.loopGuard,
         });
-        if (stop) {
-          return stop;
+        decision.reasonCodes.push(...prepared.reasonCodes);
+        if (!prepared.proceed) {
+          return {
+            status: prepared.status ?? "continue",
+            reasonCodes: uniqueStrings([...decision.reasonCodes, ...prepared.reasonCodes]),
+            missionLedger: prepared.missionLedger ?? input.missionLedger,
+          };
         }
         const executed = await this.executeNode({
           graphId,
@@ -6797,33 +9134,25 @@ export class RuntimeWorkGraphScheduler {
       });
       decision.reasonCodes.push(...selectTool.reasonCodes);
       if (input.executedNodeIds.length === 0) {
-        const firstNodeTool = await this.recordSchedulerTool({
-          graphId,
-          iteration: input.iteration,
-          toolId: "scheduler.approve_and_run_first_node",
-          idempotencyKey: `iteration:${input.iteration}:decision:${decision.decisionId}:run-first:${nodeId}`,
-          inputRef: graphRef("node", nodeId),
-          inputSummary: `Approve scheduler-selected node ${nodeId} as the first executable node.`,
-          nodeId,
-          metadata: {
-            decisionId: decision.decisionId,
-            runNodeId: nodeId,
-            schedulerPhase: "decomposition_accepted",
-            rawPromptStored: false,
-            rawResponseStored: false,
-          },
-        });
-        decision.reasonCodes.push(...firstNodeTool.reasonCodes);
+        decision.reasonCodes.push("first_node_execution_uses_executable_frontier");
       }
-      const stop = await this.maybeStopBeforeNodeExecution({
+      const prepared = await this.prepareNodeForExecution({
         graphId,
         nodeId,
         iteration: input.iteration,
         missionLedger: input.missionLedger,
         decision,
+        executedNodeIds: input.executedNodeIds,
+        addedNodeIds: input.addedNodeIds,
+        loopGuard: input.loopGuard,
       });
-      if (stop) {
-        return stop;
+      decision.reasonCodes.push(...prepared.reasonCodes);
+      if (!prepared.proceed) {
+        return {
+          status: prepared.status ?? "continue",
+          reasonCodes: uniqueStrings([...decision.reasonCodes, ...prepared.reasonCodes]),
+          missionLedger: prepared.missionLedger ?? input.missionLedger,
+        };
       }
       return this.executeNode({
         graphId,
@@ -6888,8 +9217,14 @@ export class RuntimeWorkGraphScheduler {
     edges: NonNullable<OrchestratorGraphDecision["newEdges"]>;
     addedNodeIds: string[];
     iteration: number;
-  }): Promise<void> {
+  }): Promise<RuntimeWorkGraphPersistenceOutcome> {
     const persistenceTimeoutMs = 60_000;
+    const outcome: RuntimeWorkGraphPersistenceOutcome = {
+      createdNodeIds: [],
+      reusedNodeIds: [],
+      createdEdgeIds: [],
+      reusedEdgeIds: [],
+    };
     await this.options.onProgress?.({
       stage: "scheduler_graph_node_persistence",
       status: "started",
@@ -7006,6 +9341,7 @@ export class RuntimeWorkGraphScheduler {
             rawResponseStored: false,
           },
         });
+        outcome.reusedNodeIds.push(node.nodeId);
         continue;
       }
       const utilityDecision = utilityDecisionFromNodeMetadata(node);
@@ -7146,6 +9482,7 @@ export class RuntimeWorkGraphScheduler {
             rawResponseStored: false,
           },
         });
+        outcome.reusedNodeIds.push(node.nodeId);
         continue;
       }
       await this.recordSchedulerTool({
@@ -7177,6 +9514,7 @@ export class RuntimeWorkGraphScheduler {
         },
       });
       input.addedNodeIds.push(node.nodeId);
+      outcome.createdNodeIds.push(node.nodeId);
       existingNodesById.set(node.nodeId, {
         nodeId: node.nodeId,
         graphId: input.graphId,
@@ -7214,13 +9552,41 @@ export class RuntimeWorkGraphScheduler {
         });
       }
     }
-    const knownNodeIds = new Set(existingNodesById.keys());
+    const knownNodeIds = new Set([
+      ...existingNodesById.keys(),
+      ...input.nodes.map((node) => node.nodeId),
+    ]);
+    const edgesToPersist = deriveContextSynthesisJoinEdges({
+      graphId: input.graphId,
+      nodes: input.nodes,
+      edges: input.edges,
+      snapshot,
+    });
+    const runtimeDerivedEdgeCount = edgesToPersist.length - input.edges.length;
+    if (runtimeDerivedEdgeCount > 0) {
+      await this.options.onProgress?.({
+        stage: "scheduler_graph_edge_persistence",
+        status: "completed",
+        reasonCodes: [
+          "runtime_derived_context_synthesis_join_edges",
+          `runtime_derived_edge_count:${runtimeDerivedEdgeCount}`,
+        ],
+        currentPhase: "graph_edge_runtime_derivation_completed",
+        schedulerPhase: "decomposition_accepted",
+        currentObjective:
+          "Derive structural context-supply edges from accepted context handoffs to the context synthesis node.",
+        runtimeToolTimeoutMs: persistenceTimeoutMs,
+        heartbeatState: "graph_edge_runtime_derivation_completed",
+        eli5Progress:
+          "OpenClaw connected accepted context scout handoffs to the context synthesis node so the graph shows the real dependency.",
+      });
+    }
     const existingEdgeKeys = new Set(
       (snapshot?.edges ?? []).map(
         (edge) => `${edge.fromNodeId ?? ""}->${edge.toNodeId ?? ""}:${edge.edgeKind}`,
       ),
     );
-    for (const [edgeIndex, edge] of input.edges.entries()) {
+    for (const [edgeIndex, edge] of edgesToPersist.entries()) {
       const metadata = jsonRecord(edge.metadata ?? null);
       const symbolicFutureEndpoint = (value: string | null | undefined): boolean =>
         Boolean(
@@ -7282,6 +9648,7 @@ export class RuntimeWorkGraphScheduler {
             rawResponseStored: false,
           },
         });
+        outcome.reusedEdgeIds.push(runtimeEdgeId);
         continue;
       }
       await withSchedulerOperationTimeout({
@@ -7327,6 +9694,7 @@ export class RuntimeWorkGraphScheduler {
           rawResponseStored: false,
         },
       });
+      outcome.createdEdgeIds.push(runtimeEdgeId);
     }
     await this.options.onProgress?.({
       stage: "scheduler_graph_node_persistence",
@@ -7334,7 +9702,10 @@ export class RuntimeWorkGraphScheduler {
       reasonCodes: [
         "scheduler_graph_node_persistence_completed",
         `node_count:${input.nodes.length}`,
-        `edge_count:${input.edges.length}`,
+        `edge_count:${edgesToPersist.length}`,
+        ...(runtimeDerivedEdgeCount > 0
+          ? [`runtime_derived_edge_count:${runtimeDerivedEdgeCount}`]
+          : []),
       ],
       currentPhase: "graph_node_persistence_completed",
       schedulerPhase: "decomposition_accepted",
@@ -7347,6 +9718,7 @@ export class RuntimeWorkGraphScheduler {
       heartbeatState: "graph_node_persistence_completed",
       eli5Progress: "OpenClaw wrote accepted scheduler nodes and edges into runtime state.",
     });
+    return outcome;
   }
 
   private async executeNode(input: {
@@ -7383,7 +9755,8 @@ export class RuntimeWorkGraphScheduler {
       return { status: "needs_review", reasonCodes: ["scheduler_node_executor_not_found"] };
     }
     const nodeMetadata = jsonRecord(node.metadata);
-    const nodeContextFreshness = validateNodeContextSnapshots(node);
+    const upstreamContextSnapshots = upstreamContextSupplySnapshotRefs({ snapshot, node });
+    const nodeContextFreshness = validateNodeContextSnapshots(node, upstreamContextSnapshots);
     if (
       this.options.requireFreshContextSnapshotsForWorkerExecution === true &&
       nodeRequiresFreshContextSnapshot(node) &&
@@ -7540,6 +9913,236 @@ export class RuntimeWorkGraphScheduler {
         missionLedger: input.missionLedger,
       };
     }
+    if (upstreamContextSnapshots.length > 0) {
+      const boundedProvidedContextSnapshotRefs = upstreamContextSnapshots.slice(0, 12);
+      await this.options.graphs.updateNodeStatus({
+        nodeId: node.nodeId,
+        nodeStatus: node.nodeStatus,
+        metadataPatch: {
+          providedContextSnapshotRefs: boundedProvidedContextSnapshotRefs,
+          providedContextSnapshotRefCount: upstreamContextSnapshots.length,
+          providedContextSnapshotRefsTruncated:
+            upstreamContextSnapshots.length > boundedProvidedContextSnapshotRefs.length,
+          contextSnapshotRefs: upstreamContextSnapshots.map((ref) => ref.snapshotRef).slice(0, 80),
+          contextFreshnessStatus: "fresh",
+          contextRefreshAction: "none",
+          nodeScopedContextSupplyAccepted: true,
+          rawPromptStored: false,
+          rawResponseStored: false,
+          rawProviderLogStored: false,
+        },
+      });
+      await this.options.onProgress?.({
+        stage: "scheduler_node_context_freshness",
+        status: "completed",
+        nodeId: node.nodeId,
+        roleId: node.assignedRole,
+        reasonCodes: [
+          "scheduler_node_context_freshness_satisfied_by_node_scoped_supply",
+          `node_scoped_context_snapshot_count:${upstreamContextSnapshots.length}`,
+        ],
+        currentObjective:
+          typeof nodeMetadata.exactObjective === "string" ? nodeMetadata.exactObjective : null,
+        activeNodeKind: node.nodeKind,
+        capabilityId: nodeCapabilityId(node),
+        modelRef: node.modelOrWorkerRef,
+        targetRefs: nodeSchedulingTargetRefs(node),
+        inputHandoffRefs: node.inputHandoffRefs,
+        currentPhase: "context_freshness_satisfied",
+        validationState: "context_ready",
+        evidenceProducedRefs: upstreamContextSnapshots.map((ref) => ref.snapshotRef).slice(0, 40),
+        commitmentIdsAdvanced: jsonStringArray(nodeMetadata.commitmentIdsAdvanced),
+        remainingOpenCommitmentIds: remainingOpenCommitmentIds(input.missionLedger),
+        nextDecisionNeeded: "execute_node",
+        blockerSummary: null,
+        eli5Progress:
+          "OpenClaw found accepted node-scoped context upstream, so this worker node can execute without a global synthesis barrier.",
+        schedulerPhase: "context_freshness_gate",
+        contextSnapshotRefs: upstreamContextSnapshots.map((ref) => ref.snapshotRef).slice(0, 40),
+        contextFreshnessStatus: "fresh",
+        contextRefreshAction: "none",
+        contextFreshnessSummary:
+          "Runtime derived fresh context snapshots from accepted node-scoped context supply.",
+      });
+    }
+    const nodeExecutionPacket = nodeExecutionPacketFromMetadata(node);
+    const nodeResourcePacket = jsonRecord(nodeMetadata.resourcePacket ?? null) as JsonValue;
+    const nodeResourceReadiness =
+      nodeExecutionPacket !== null
+        ? evaluateNodeExecutionPacketReadiness({
+            packet: nodeExecutionPacket,
+            resourcePacket: nodeResourcePacket,
+            implementationContextPacket: jsonRecord(
+              nodeMetadata.implementationContextPacket ?? null,
+            ),
+          })
+        : null;
+    const manifestResourceReadiness = nodeResourceReadinessFromManifestMetadata(node, {
+      requireFreshContextSnapshotsForWorkerExecution:
+        this.options.requireFreshContextSnapshotsForWorkerExecution === true,
+    });
+    const nodeReadinessState =
+      nodeResourceReadiness?.state ??
+      (nodeRequiresExecutionPacket(node)
+        ? buildMissingNodeExecutionPacketReadinessState({
+            nodeId: node.nodeId,
+            runtimeJobId:
+              typeof nodeMetadata.runtimeJobId === "string" ? nodeMetadata.runtimeJobId : null,
+            graphId: input.graphId,
+            workflowId: snapshot.graph.workflowId,
+          })
+        : null);
+    const nodeExecutionPacketRef =
+      nodeExecutionPacket?.packetRef ??
+      (typeof nodeMetadata.nodeExecutionPacketRef === "string"
+        ? nodeMetadata.nodeExecutionPacketRef
+        : null);
+    const resourcePacketRef =
+      nodeExecutionPacket?.resourcePacketRef ??
+      (typeof nodeMetadata.resourcePacketRef === "string" ? nodeMetadata.resourcePacketRef : null);
+    const resourcePacketKind =
+      nodeExecutionPacket?.resourcePacketKind ??
+      (typeof nodeMetadata.resourcePacketKind === "string"
+        ? nodeMetadata.resourcePacketKind
+        : null);
+    if (
+      this.options.requireNodeExecutionPacketForWorkerExecution === true &&
+      nodeRequiresExecutionPacket(node) &&
+      nodeResourceReadiness?.valid !== true &&
+      manifestResourceReadiness?.valid !== true
+    ) {
+      const reasonCodes = [
+        "node_execution_packet_required_before_worker_execution",
+        ...(nodeExecutionPacket || manifestResourceReadiness
+          ? []
+          : ["node_execution_packet_missing"]),
+        ...(nodeResourceReadiness?.reasonCodes ?? manifestResourceReadiness?.reasonCodes ?? []),
+      ].slice(0, 60);
+      const blockerSummary =
+        nodeResourceReadiness?.blockingLimitations.join("; ") ||
+        manifestResourceReadiness?.blockingLimitations.join("; ") ||
+        "Worker execution blocked before provider/model invocation because the runtime has not compiled a ready NodeExecutionPacket with materialized resources.";
+      const resourceTool = await this.recordSchedulerTool({
+        graphId: input.graphId,
+        iteration: input.iteration,
+        toolId: "node.record_readiness_blocker",
+        idempotencyKey: `iteration:${input.iteration}:node:${node.nodeId}:resource-readiness-blocker`,
+        inputRef: nodeExecutionPacketRef ?? graphRef("node", node.nodeId),
+        inputSummary: `Record resource readiness blocker for node ${node.nodeId}.`,
+        nodeId: node.nodeId,
+        roleRef: node.assignedRole,
+        modelRef: node.modelOrWorkerRef,
+        metadata: {
+          nodeId: node.nodeId,
+          nodeKind: node.nodeKind,
+          nodeExecutionPacketRef,
+          resourcePacketKind,
+          resourcePacketRef,
+          nodeExecutionPacket: (nodeExecutionPacket ?? null) as unknown as JsonValue,
+          readiness: (nodeResourceReadiness ?? null) as unknown as JsonValue,
+          nodeReadinessState: (nodeReadinessState ?? null) as unknown as JsonValue,
+          schedulerPhase: "resource_materialization_gate",
+          rawPromptStored: false,
+          rawResponseStored: false,
+        },
+      });
+      await this.options.graphs.updateNodeStatus({
+        nodeId: node.nodeId,
+        nodeStatus: "needs_review",
+        metadataPatch: {
+          lastResultStatus: "needs_review",
+          lastStatusReasonCodes: [...reasonCodes, ...resourceTool.reasonCodes].slice(0, 60),
+          nodeExecutionPacketRef,
+          resourcePacketKind,
+          resourcePacketRef,
+          resourceReadinessStatus: nodeResourceReadiness?.status ?? "blocked",
+          resourceReadinessReasonCodes: nodeResourceReadiness?.reasonCodes ??
+            manifestResourceReadiness?.reasonCodes ?? ["node_execution_packet_missing"],
+          resourceBlockingLimitations: nodeResourceReadiness?.blockingLimitations ??
+            manifestResourceReadiness?.blockingLimitations ?? ["NodeExecutionPacket is missing."],
+          nodeReadinessStateRef: nodeReadinessState?.stateRef ?? null,
+          nodeReadinessPhase: nodeReadinessState?.phase ?? "resource_materialization",
+          nodeReadinessStatus: nodeReadinessState?.readinessStatus ?? "blocked",
+          nodeReadinessRepairAction: nodeReadinessState?.repairAction ?? "compile_resource_packet",
+          nodeReadinessNextAllowedTransitions: nodeReadinessState?.nextAllowedTransitions ?? [
+            "compile_node_execution_packet",
+          ],
+          rawPromptStored: false,
+          rawResponseStored: false,
+          rawProviderLogStored: false,
+        },
+      });
+      await this.options.onNodeStatusChanged?.({
+        graphId: input.graphId,
+        node,
+        nodeStatus: "needs_review",
+        evidenceRefs: [nodeExecutionPacketRef, resourcePacketRef].filter((ref): ref is string =>
+          Boolean(ref),
+        ),
+        reasonCodes: [...reasonCodes, ...resourceTool.reasonCodes],
+      });
+      await this.options.onProgress?.({
+        stage: "node_resource_materialization",
+        status: "needs_review",
+        nodeId: node.nodeId,
+        roleId: node.assignedRole,
+        reasonCodes: [...reasonCodes, ...resourceTool.reasonCodes],
+        currentObjective:
+          typeof nodeMetadata.exactObjective === "string" ? nodeMetadata.exactObjective : null,
+        activeNodeKind: node.nodeKind,
+        capabilityId: nodeCapabilityId(node),
+        modelRef: node.modelOrWorkerRef,
+        targetRefs: nodeSchedulingTargetRefs(node),
+        inputHandoffRefs: node.inputHandoffRefs,
+        currentPhase: "node_resource_materialization_blocked",
+        validationState: "resource_materialization_blocked",
+        evidenceProducedRefs: [nodeExecutionPacketRef, resourcePacketRef].filter(
+          (ref): ref is string => Boolean(ref),
+        ),
+        commitmentIdsAdvanced: jsonStringArray(nodeMetadata.commitmentIdsAdvanced),
+        remainingOpenCommitmentIds: remainingOpenCommitmentIds(input.missionLedger),
+        nextDecisionNeeded: "compile_or_repair_node_execution_packet",
+        blockerSummary,
+        eli5Progress:
+          "OpenClaw stopped before calling the worker because the runtime has not materialized a ready execution packet for this node.",
+        schedulerPhase: "resource_materialization_gate",
+        schedulerToolId: "node.record_readiness_blocker",
+        schedulerToolInvocationRefs: resourceTool.refs,
+        nodeExecutionPacketRef,
+        nodeExecutionPacketStatus: nodeResourceReadiness?.status ?? "blocked",
+        resourcePacketKind,
+        resourcePacketRef,
+        resourceReadinessReasonCodes: nodeResourceReadiness?.reasonCodes ?? [
+          "node_execution_packet_missing",
+        ],
+        resourceBlockingLimitations: nodeResourceReadiness?.blockingLimitations ?? [
+          "NodeExecutionPacket is missing.",
+        ],
+        resourceNonblockingLimitations: nodeResourceReadiness?.nonblockingLimitations ?? [],
+        nodeReadinessState: (nodeReadinessState ?? null) as unknown as JsonValue,
+        nodeReadinessStateRef: nodeReadinessState?.stateRef ?? null,
+        nodeReadinessPhase: nodeReadinessState?.phase ?? "resource_materialization",
+        nodeReadinessStatus: nodeReadinessState?.readinessStatus ?? "blocked",
+        nodeReadinessRepairAction: nodeReadinessState?.repairAction ?? "compile_resource_packet",
+        nodeReadinessNextAllowedTransitions: nodeReadinessState?.nextAllowedTransitions ?? [
+          "compile_node_execution_packet",
+        ],
+        nodeReadinessFreshnessStatus: nodeReadinessState?.freshnessStatus ?? null,
+        nodeReadinessSnapshotStatus: nodeReadinessState?.snapshotStatus ?? null,
+        nodeReadinessContextStatus: nodeReadinessState?.contextStatus ?? null,
+        nodeReadinessValidationStatus: nodeReadinessState?.validationStatus ?? null,
+        nodeReadinessAuthorityStatus: nodeReadinessState?.authorityStatus ?? null,
+        nodeReadinessEvidenceStatus: nodeReadinessState?.evidenceStatus ?? null,
+      });
+      return {
+        status: "needs_review",
+        reasonCodes: [...reasonCodes, ...resourceTool.reasonCodes],
+        missionLedger: input.missionLedger,
+      };
+    }
+    const nodeExecutionReadback = nodeExecutionPacket
+      ? jsonRecord(summarizeNodeExecutionPacketForReadback(nodeExecutionPacket))
+      : {};
     const costAwareReadback = jsonRecord(nodeMetadata.costAwareReadback);
     const nodeCommitmentIds = jsonStringArray(nodeMetadata.commitmentIdsAdvanced);
     const nodeTargetRefs = jsonStringArray(nodeMetadata.targetRefs);
@@ -7630,6 +10233,28 @@ export class RuntimeWorkGraphScheduler {
       acceptanceCriteria: jsonStringArray(nodeMetadata.acceptanceCriteria),
       currentPhase: "node_started",
       validationState: node.nodeKind === "validation" ? "started" : null,
+      nodeExecutionPacketRef,
+      nodeExecutionPacketStatus:
+        typeof nodeExecutionReadback.nodeExecutionPacketStatus === "string"
+          ? nodeExecutionReadback.nodeExecutionPacketStatus
+          : (nodeResourceReadiness?.status ?? null),
+      resourcePacketKind,
+      resourcePacketRef,
+      resourceReadinessReasonCodes: nodeResourceReadiness?.reasonCodes ?? [],
+      resourceBlockingLimitations: nodeResourceReadiness?.blockingLimitations ?? [],
+      resourceNonblockingLimitations: nodeResourceReadiness?.nonblockingLimitations ?? [],
+      nodeReadinessState: (nodeReadinessState ?? null) as unknown as JsonValue,
+      nodeReadinessStateRef: nodeReadinessState?.stateRef ?? null,
+      nodeReadinessPhase: nodeReadinessState?.phase ?? null,
+      nodeReadinessStatus: nodeReadinessState?.readinessStatus ?? null,
+      nodeReadinessRepairAction: nodeReadinessState?.repairAction ?? null,
+      nodeReadinessNextAllowedTransitions: nodeReadinessState?.nextAllowedTransitions ?? [],
+      nodeReadinessFreshnessStatus: nodeReadinessState?.freshnessStatus ?? null,
+      nodeReadinessSnapshotStatus: nodeReadinessState?.snapshotStatus ?? null,
+      nodeReadinessContextStatus: nodeReadinessState?.contextStatus ?? null,
+      nodeReadinessValidationStatus: nodeReadinessState?.validationStatus ?? null,
+      nodeReadinessAuthorityStatus: nodeReadinessState?.authorityStatus ?? null,
+      nodeReadinessEvidenceStatus: nodeReadinessState?.evidenceStatus ?? null,
       commitmentIdsAdvanced: nodeCommitmentIds,
       remainingOpenCommitmentIds: remainingOpenCommitmentIds(input.missionLedger),
       nextDecisionNeeded: "node_result",
@@ -7674,6 +10299,25 @@ export class RuntimeWorkGraphScheduler {
         inputHandoffRefs: node.inputHandoffRefs,
         currentPhase: "worker_runtime_tool_call_started",
         validationState: node.nodeKind === "validation" ? "started" : null,
+        nodeExecutionPacketRef,
+        nodeExecutionPacketStatus: nodeResourceReadiness?.status ?? null,
+        resourcePacketKind,
+        resourcePacketRef,
+        resourceReadinessReasonCodes: nodeResourceReadiness?.reasonCodes ?? [],
+        resourceBlockingLimitations: nodeResourceReadiness?.blockingLimitations ?? [],
+        resourceNonblockingLimitations: nodeResourceReadiness?.nonblockingLimitations ?? [],
+        nodeReadinessState: (nodeReadinessState ?? null) as unknown as JsonValue,
+        nodeReadinessStateRef: nodeReadinessState?.stateRef ?? null,
+        nodeReadinessPhase: nodeReadinessState?.phase ?? null,
+        nodeReadinessStatus: nodeReadinessState?.readinessStatus ?? null,
+        nodeReadinessRepairAction: nodeReadinessState?.repairAction ?? null,
+        nodeReadinessNextAllowedTransitions: nodeReadinessState?.nextAllowedTransitions ?? [],
+        nodeReadinessFreshnessStatus: nodeReadinessState?.freshnessStatus ?? null,
+        nodeReadinessSnapshotStatus: nodeReadinessState?.snapshotStatus ?? null,
+        nodeReadinessContextStatus: nodeReadinessState?.contextStatus ?? null,
+        nodeReadinessValidationStatus: nodeReadinessState?.validationStatus ?? null,
+        nodeReadinessAuthorityStatus: nodeReadinessState?.authorityStatus ?? null,
+        nodeReadinessEvidenceStatus: nodeReadinessState?.evidenceStatus ?? null,
         commitmentIdsAdvanced: nodeCommitmentIds,
         remainingOpenCommitmentIds: remainingOpenCommitmentIds(input.missionLedger),
         nextDecisionNeeded: "worker_result",
@@ -7797,6 +10441,13 @@ export class RuntimeWorkGraphScheduler {
             ? "worker_runtime_tool_timeout"
             : "worker_runtime_tool_call_completed",
         validationState: node.nodeKind === "validation" ? traced.invocation.status : null,
+        nodeExecutionPacketRef,
+        nodeExecutionPacketStatus: nodeResourceReadiness?.status ?? null,
+        resourcePacketKind,
+        resourcePacketRef,
+        resourceReadinessReasonCodes: nodeResourceReadiness?.reasonCodes ?? [],
+        resourceBlockingLimitations: nodeResourceReadiness?.blockingLimitations ?? [],
+        resourceNonblockingLimitations: nodeResourceReadiness?.nonblockingLimitations ?? [],
         commitmentIdsAdvanced: nodeCommitmentIds,
         remainingOpenCommitmentIds: remainingOpenCommitmentIds(input.missionLedger),
         nextDecisionNeeded: "node_result_review",
@@ -7879,20 +10530,9 @@ export class RuntimeWorkGraphScheduler {
       typeof nodeMetadata.executorKey === "string" ? nodeMetadata.executorKey : null;
     const workerRef =
       typeof nodeMetadata.workerRef === "string" ? nodeMetadata.workerRef : node.modelOrWorkerRef;
-    const validationRefs = [
-      ...(result.validationRefs ?? []),
-      ...result.outputArtifactRefs.filter((ref) => ref.includes("validation")),
-    ];
-    const changedFileRefs = [
-      ...(result.changedFileRefs ?? []),
-      ...result.outputArtifactRefs.filter(
-        (ref) => ref.includes("source-change") || ref.includes("diff") || ref.includes("patch"),
-      ),
-    ];
-    const closeoutRefs = [
-      ...(result.closeoutRefs ?? []),
-      ...result.outputArtifactRefs.filter((ref) => ref.includes("closeout")),
-    ];
+    const validationRefs = result.validationRefs ?? [];
+    const changedFileRefs = result.changedFileRefs ?? [];
+    const closeoutRefs = result.closeoutRefs ?? [];
     const runtimeToolInvocationRefs = [
       ...(result.runtimeToolInvocationRefs ?? []),
       ...(workerToolInvocationRef ? [workerToolInvocationRef] : []),
@@ -8131,15 +10771,47 @@ export class RuntimeWorkGraphScheduler {
     const evidenceClaimsAcceptedForEvaluation =
       this.options.requireEvidenceClaimsForMissionLedger !== true ||
       missionEvidenceReasonCodes.length === 0;
+    const missionEvaluationThrottle = missionLedgerEvaluationThrottleDecision({
+      node,
+      result,
+      evidenceClaimsAcceptedForEvaluation,
+      missionEvidenceReasonCodes,
+      requireEvidenceClaimsForMissionLedger:
+        this.options.requireEvidenceClaimsForMissionLedger === true,
+    });
     if (
       missionLedger &&
       this.options.evaluateMissionLedger &&
-      evidenceClaimsAcceptedForEvaluation &&
-      !(
-        (node.nodeKind === "context_scout" || node.assignedRole === "context_scout") &&
-        snapshot.nodes.some((candidate) => candidate.nodeKind === "context_synthesis")
-      )
+      missionEvaluationThrottle.shouldEvaluate
     ) {
+      const throttleTool = await this.recordSchedulerTool({
+        graphId: input.graphId,
+        iteration: input.iteration,
+        toolId: "scheduler.mission_ledger_evaluation_throttle",
+        idempotencyKey: `iteration:${input.iteration}:node:${node.nodeId}:mission-ledger-evaluation-allowed`,
+        inputRef: result.evidenceClaims?.[0]?.evidenceRef ?? graphRef("node", node.nodeId),
+        inputSummary:
+          "Mission Ledger evaluation is allowed because this node produced accepted closure-capable evidence claims.",
+        nodeId: node.nodeId,
+        roleRef: node.assignedRole,
+        modelRef: node.modelOrWorkerRef,
+        metadata: {
+          missionLedgerEvaluationThrottle: missionEvaluationThrottle.artifact,
+          schedulerPhase: "mission_contract_evaluation_throttle",
+          reasonCodes: missionEvaluationThrottle.reasonCodes,
+          rawPromptStored: false,
+          rawResponseStored: false,
+          rawProviderLogStored: false,
+        },
+      });
+      result = {
+        ...result,
+        reasonCodes: [...result.reasonCodes, ...throttleTool.reasonCodes],
+        rawPromptStored: false,
+        rawResponseStored: false,
+        rawProviderLogStored: false,
+        workQueueLifecycleMutated: false,
+      };
       missionLedger = await this.options.evaluateMissionLedger({
         ledger: missionLedger,
         graphId: input.graphId,
@@ -8152,6 +10824,35 @@ export class RuntimeWorkGraphScheduler {
         snapshotSummary: summarizeSnapshot(snapshot),
       });
       await this.options.onMissionLedgerUpdated?.(missionLedger);
+    } else if (missionLedger && this.options.evaluateMissionLedger) {
+      const throttleTool = await this.recordSchedulerTool({
+        graphId: input.graphId,
+        iteration: input.iteration,
+        toolId: "scheduler.mission_ledger_evaluation_throttle",
+        idempotencyKey: `iteration:${input.iteration}:node:${node.nodeId}:mission-ledger-evaluation-throttled`,
+        inputRef: graphRef("node", node.nodeId),
+        inputSummary:
+          "Mission Ledger evaluation was skipped because this event does not carry accepted closure-capable evidence claims.",
+        nodeId: node.nodeId,
+        roleRef: node.assignedRole,
+        modelRef: node.modelOrWorkerRef,
+        metadata: {
+          missionLedgerEvaluationThrottle: missionEvaluationThrottle.artifact,
+          schedulerPhase: "mission_contract_evaluation_throttle",
+          reasonCodes: missionEvaluationThrottle.reasonCodes,
+          rawPromptStored: false,
+          rawResponseStored: false,
+          rawProviderLogStored: false,
+        },
+      });
+      result = {
+        ...result,
+        reasonCodes: [...result.reasonCodes, ...throttleTool.reasonCodes],
+        rawPromptStored: false,
+        rawResponseStored: false,
+        rawProviderLogStored: false,
+        workQueueLifecycleMutated: false,
+      };
     }
     const effectiveNodeStatus: TeamGraphNode["nodeStatus"] =
       result.status === "succeeded" && missionEvidenceReasonCodes.length > 0
@@ -8340,6 +11041,7 @@ export class RuntimeWorkGraphScheduler {
         ...(workerToolInvocationRef ? [workerToolInvocationRef] : []),
         ...repairClassificationToolRefs,
       ],
+      missionLedgerEvaluationThrottle: missionEvaluationThrottle.artifact,
       budgetPolicyRef: budgetPolicy.policyRef,
       budgetClass: budgetPolicy.budgetClass,
       budgetSummary,

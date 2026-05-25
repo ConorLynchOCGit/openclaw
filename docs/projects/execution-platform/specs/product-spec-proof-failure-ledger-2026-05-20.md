@@ -4,6 +4,182 @@ This ledger records the Product/Spec Planning proof failures that must survive
 context compaction and handoff. It is runtime-evidence oriented and should be
 updated before another expensive proof run.
 
+## Run Identity - 2026-05-24 Top-Of-Pipe Proof
+
+- Runtime job: `native-exec-a128a2cf543a12e1`
+- Work item: `product-spec-checkpointed-e7a702b7768f-jqim5u`
+- Prompt hash: `e7a702b7768f7862bcc31d7a4aabce233f121dccac4b505f84f7affeee4cfea0`
+- Prompt length: `19947`
+- Final proof status: `needs_review`
+- Process state: proof command exited; no product-spec proof process remains
+  running.
+- Summary artifact:
+  `.artifacts/execution-platform/product-spec-checkpointed-test-summary.json`
+- Latest state artifact:
+  `.artifacts/execution-platform/product-spec-checkpointed-test-latest.json`
+- Follow-up fix artifact:
+  `.artifacts/execution-platform/product-spec-proof-follow-up-fix-list.json`
+
+### Wall Time And Token Evidence
+
+- Proof wall clock recorded by harness: `698192ms`.
+- Submit accepted in `82715ms`.
+- Front-door router latency: `59124ms`.
+- Route: `agent_team.coding`, `executor.agent_team`. This is expected for an
+  implementation/proof prompt whose subject is Product/Spec Planning.
+- Qwen/OpenRouter known usage: `183678` total tokens across events with usage,
+  estimated cost `$0.06305728`.
+- Qwen usage remains incomplete: `48` events missing provider usage.
+- GPT-5.5/Codex app-server usage remains unavailable; the harness produced an
+  estimate range of `59047` to `98421` tokens.
+
+### Confirmed Successes
+
+- The prompt reached the runtime through the gateway-equivalent submit path as
+  a prompt-file ref; raw prompt/response/provider/tool logs were not stored.
+- Source prompt context indexing passed.
+- Mission Ledger created `14` blocking commitments and `1` nonblocking
+  commitment, with clear owner-objective summary and concrete commitment ids.
+- Commitment packet authoring completed `14/14` packets with:
+  - `0` failed packets.
+  - `0` fallback/GPT rescue packets.
+  - `0` provider-error packets.
+  - `5` long-latency packets.
+- Packet review was skipped as intended for the model-review path, then
+  nonblocking review notes were persisted.
+- The scheduler used staged scheduler/runtime tools and accepted an initial
+  context graph.
+- The runtime created graph and Work Queue child sync events:
+  - `3` `context_scout` nodes.
+  - `1` `context_synthesis` node.
+  - `3` `context_supplies` edges from scouts to synthesis.
+  - `3` role invocations.
+- Context scout outputs reached `accepted` sufficiency in the checkpoint
+  readback, with verified file refs and context handoff refs.
+
+### Confirmed Failures And Recurring Patterns
+
+1. The proof still failed before implementation.
+   - No implementation node ran.
+   - No source edits landed.
+   - No validation of Product/Spec implementation changes ran.
+   - All `14` blocking Mission Ledger commitments remained open.
+
+2. Context synthesis group expansion is now the blocking failure.
+   - GPT-5.5 core synthesis completed.
+   - The downstream Qwen group-expansion calls were blocked before provider
+     invocation by structured-adapter preflight.
+   - All `4/4` group expansion calls failed with
+     `structured_adapter_preflight_blocked`.
+   - Input sizes were `35638`, `45239`, `46421`, and `49620` bytes against a
+     `32000` byte profile bound.
+   - Requested timeout was `180000ms` against a `90000ms` profile bound.
+   - This is not a Qwen no-content/provider failure. It is a runtime contract
+     and payload-shaping failure. The `noContentReasonClass:
+preflight_blocked` label is misleading if read as a provider no-content
+     event.
+
+3. Context synthesis remains a major gate before implementation.
+   - The scheduler reintroduced a `context_synthesis` node after grouped
+     context scouts.
+   - In this run the synthesis node was model-authored/accepted by scheduler
+     tooling, not replay glue, but it still created a hard pre-implementation
+     dependency.
+   - If the intended architecture is demand-driven implementation with context
+     requests as needed, this run is still on the older "synthesis before any
+     implementation" path.
+
+4. Context scout grouping is broader than packet-scoped delegation.
+   - The Mission Ledger/packet layer produced `14` packets.
+   - The scheduler produced `3` grouped context scout nodes, not one scout per
+     packet or per implementation task.
+   - The grouped scouts were:
+     - specs and prompt grounding;
+     - runtime implementation grounding;
+     - proof and validation grounding.
+   - This may be a reasonable compression, but it should be explicit policy.
+     If packet-scoped or work-node-scoped context is required, the scheduler is
+     still drifting toward broad context groups.
+
+5. Commitment packets are accepted, but their summary readback still looks
+   broad.
+   - Sample packet fields show broad `likelyRepoAreas` such as `scripts/`,
+     `docs/projects/execution-platform/`,
+     `extensions/execution-platform/src/codex-bridge/`, and
+     `extensions/execution-platform/src/workflows/`.
+   - Sample context questions are generic:
+     "Which existing files, tests, and runtime surfaces constrain X?"
+   - This did not block this run, but it is a recurring handoff-quality risk
+     because broad packet guidance pushes later stages toward synthesis and
+     large context bundles.
+
+6. The generated follow-up fix list missed the actual hard blocker.
+   - `product-spec-proof-follow-up-fix-list.json` only recorded packet latency
+     as a P1 fix.
+   - It did not record the context-synthesis preflight-blocked failure as a
+     hard follow-up even though that terminalized the proof before
+     implementation.
+   - The harness therefore still under-reports the failure that matters most.
+
+7. Gate/readback semantics are still too soft.
+   - Gate summary shows several `review_available_nonblocking` statuses and no
+     `hardFailures`, even though the run terminalized `needs_review`.
+   - `firstOpenGate` is `null`.
+   - Owner-facing diagnosis must separate "nonblocking qualitative review
+     available" from "proof cannot proceed because synthesis expansion
+     preflight blocked every group".
+
+8. Front-door and scheduler latency remain recurring costs.
+   - Submit took `82.7s`; front-door routing alone took `59.1s`.
+   - Packet fanout took about `178.9s`; `5` packets exceeded expected latency.
+   - GPT-5.5 scheduler and context-synthesis phases still dominate wall clock,
+     and app-server token usage is still estimate-only.
+
+### Required Fixes Before Another Full Top-Of-Pipe Proof
+
+1. Fix context-synthesis group expansion payload construction.
+   - Group expansion inputs must be compiled from bounded resource refs,
+     summaries, and per-group context packets, not large repeated prompt,
+     packet, scout, and synthesis payloads.
+   - The compiler must fail before scheduling the model call if a group bundle
+     exceeds the selected model profile, and the failure must be surfaced as a
+     synthesis payload compiler bug, not a Qwen no-content event.
+
+2. Align model-task policy with call-site requests.
+   - The context-synthesis group-expansion call requested `180000ms`, but the
+     selected structured adapter profile allows `90000ms`.
+   - Either the call site must request the policy timeout, or the profile must
+     explicitly allow the higher timeout with evidence. The current mismatch is
+     deterministic and should not require another full proof to reproduce.
+
+3. Upgrade the failure-list compiler.
+   - Terminal synthesis failures must be emitted as P0/P1 follow-up items with
+     node id, stage, failed group ids, schema/preflight paths, input byte
+     counts, profile bounds, and recommended boundary to replay.
+   - Packet latency should not be the only recorded fix when the actual proof
+     terminalized later.
+
+4. Decide and enforce the context policy.
+   - If the desired architecture is packet/work-node-scoped demand-driven
+     context, the scheduler should not force a global synthesis barrier before
+     implementation.
+   - If synthesis is intentionally required, it must have first-class compact
+     inputs and group expansion lanes that are guaranteed inside model-task
+     profile bounds.
+
+5. Improve packet handoff specificity without returning to over-strict packet
+   review.
+   - Accepted packet summaries should expose concrete target surfaces and
+     context questions when possible.
+   - Generic broad questions should be allowed only if the downstream context
+     broker can immediately refine them against repo facts.
+
+6. Preserve this run as the next replay source.
+   - The next targeted lane should start at the context-synthesis expansion
+     boundary for runtime job `native-exec-a128a2cf543a12e1`.
+   - Do not rerun router, Mission Ledger, or packet authoring until the
+     context-synthesis payload/profile mismatch is fixed in isolation.
+
 ## Run Identity
 
 - Runtime job: `native-exec-9569a0124c8e3bc0`
@@ -235,3 +411,159 @@ Validation:
 - Replay from `after-parallel-context` accepted synthesis with 7 groups and
   compiled all 7 into implementation nodes plus validation, review, readback,
   and closeout support nodes.
+
+## 2026-05-21 Checkpointed Proof Failure - Parallel Frontier And Resource Packet Boundary
+
+Run identity:
+
+- Runtime job: `native-exec-68321aa82d7d6146`
+- Work item: `product-spec-checkpointed-64c74c8c5ece-fc8awb`
+- Prompt hash:
+  `64c74c8c5ecee1ac51099bccb895f3fe4f225778614692015ec2b4450d364922`
+- Prompt length: `17694`
+- Final proof status: `needs_review`
+- Proof process wall time: `926s`
+- Runtime run result: `failed`
+- Runtime job row after failure: `pending`, attempt `1`, retry scheduled.
+
+Important successes:
+
+- Prompt submit used the gateway UX submit route and produced an
+  `agent_team.coding` runtime job for the Product/Spec implementation subject.
+- Source prompt context index was resolved from the native submit file; raw
+  prompt was not stored.
+- Mission Ledger produced 13 blocking commitments and reached
+  `missionGate: clear_to_execute`.
+- Commitment packet fanout completed 13/13 packets with adaptive packet review
+  skipped as intended. The packet review artifact is nonblocking.
+- Scheduler accepted a concrete runtime graph with implementation, validation,
+  observability/readback, reviewer, closeout, and context scout nodes.
+- Work Queue child materialization happened for graph nodes.
+- Parallel frontier selection worked far enough to select three ready nodes and
+  run independent context-scout nodes in parallel.
+
+Measured wall-time and usage:
+
+- Submit accepted in `150.483s`.
+- Front-door router latency was `67.513s` using
+  `openai-codex/gpt-5.5`.
+- Runtime event wall time was about `769.346s`.
+- Qwen/OpenRouter known actual usage reached `165,685` tokens
+  (`115,657` input, `50,028` output), estimated cost `$0.06117807`.
+- GPT-5.5 app-server actual usage remained unavailable; latest-run-state
+  estimated a range of `73,139` to `121,920` tokens from bounded byte-size
+  evidence and labeled the usage as estimated.
+
+Confirmed failure chain:
+
+1. Qwen packet authoring remained flaky.
+   - Six Qwen packet calls hit `openrouter_no_content`.
+   - Most succeeded on the second Qwen attempt.
+   - `staged-scheduler-transition-readiness` exhausted both Qwen attempts and
+     required GPT-5.5 rescue.
+   - This did not block the run, but it remains a stability and latency defect.
+
+2. Context scout accepted weak handoffs as implementation-usable.
+   - Context scout tool loops returned `accepted_with_limitations`.
+   - Reason codes included `context_scout_runtime_verified_fallback_used` and
+     `context_scout_tool_first_verified_context_used`.
+   - Missing information explicitly said runtime-supplied verified refs were
+     used and could not count as clean scout success.
+   - Despite that, `sufficientForImplementation` remained true and the
+     scheduler treated the handoff as usable enough to evaluate the
+     implementation node.
+   - The existing structured fields
+     `hasNonRuntimeContextSource` and `runtimeOnlyContextDetected` exist on the
+     schema but were not populated or used as the canonical implementation gate.
+
+3. Context scout resource targeting was too broad and off-subject.
+   - Context-scout execution packets repeatedly surfaced generic toolification
+     files such as model-agnostic worker loops, model call runtime tools, and
+     intent-front-door tests.
+   - They did not reliably locate Product/Spec planning workflow definition,
+     plugin registration, evidence profile, closeout policy, completion review,
+     or readback implementation surfaces.
+   - This produced large verified/candidate ref sets that later fed the
+     implementation resource compiler.
+
+4. Post-repair context nodes were added without consumer edges.
+   - After an accepted context scout, the scheduler added two additional
+     context-scout nodes for Product/Spec workflow registry and readback/runtime
+     flow.
+   - The accepted add-nodes decision persisted two nodes and zero edges.
+   - Those context-acquisition nodes were not wired as blocking dependencies of
+     the implementation node or a context-synthesis/resource barrier.
+   - The next parallel frontier therefore selected the implementation node
+     alongside the new context-scout nodes.
+
+5. Implementation resource materialization threw instead of returning a
+   structured needs-review result.
+   - The implementation node reached `resources_required`.
+   - The implementation-context compiler produced more than the schema allows:
+     `resolvedTargetFileRefs` exceeded the schema max of 100.
+   - The compiler internally builds `resolvedTargetFileRefs` with a 120-item
+     cap, then parses it through a schema capped at 100.
+   - The resulting Zod `too_big` error escaped the executor path as an exception
+     instead of becoming a bounded `split_required`, `context_repair_required`,
+     or `needs_review` node result.
+
+6. Parallel frontier failure isolation was incomplete.
+   - The scheduler runs selected frontier nodes with `Promise.all`.
+   - A thrown exception in one branch rejected the whole frontier and surfaced
+     as `worker_adapter_threw:unclassified`.
+   - Sibling context-scout branches continued emitting events after the adapter
+     failure path had already started, which risks confusing Work Queue
+     lifecycle/readback and child item state.
+   - The runtime did not preserve the implementation branch failure as a
+     node-level repair classification while allowing completed siblings to
+     settle cleanly.
+
+Required general fixes before the next expensive proof:
+
+1. Make resource materialization safe and scheduler-owned.
+   - `compileImplementationContextSnapshotPacket` must never throw a schema
+     parse error for overlarge runtime-generated arrays.
+   - It must use one canonical bound policy for file refs, snapshots, task
+     packets, and readback summaries.
+   - Oversized target sets should become `split_required` with sharded
+     implementation task packets, or `context_repair_required` if targets are
+     ungrounded. They must not crash the worker adapter.
+
+2. Make accepted-with-limitations context semantically explicit.
+   - Runtime-owned context sufficiency must use structured reason/limitation
+     codes, not string matching against prose.
+   - Any `context_scout_runtime_verified_fallback_used`,
+     `context_scout_tool_first_verified_context_used`, runtime-only context, or
+     blocking limitation must prevent implementation execution unless a
+     separate model-authored nonblocking-limitation acceptance exists for the
+     exact downstream implementation group.
+
+3. Add consumer edges or a barrier for all context repair/acquisition nodes.
+   - If the scheduler adds context nodes after detecting a context gap, runtime
+     must wire them to their downstream consumer, a context-synthesis node, or a
+     resource-materialization barrier.
+   - A context node with zero edges is only valid if it is explicitly
+     diagnostic and cannot unlock implementation.
+
+4. Isolate parallel frontier branch failures.
+   - Replace uncaught `Promise.all` behavior with branch-level try/catch or
+     `Promise.allSettled`.
+   - Each branch must settle as a node result: succeeded, needs_review,
+     blocked, or failed with repair classification.
+   - Completed sibling branch evidence must be preserved and failed branch
+     diagnostics must be returned to the orchestrator without collapsing the
+     runtime job into an unclassified adapter throw.
+
+5. Upgrade failure telemetry.
+   - Adapter exceptions must include the full bounded schema path list and
+     affected node id in scheduler progress/readback.
+   - Latest-run-state should surface the exact failed branch, node id,
+     lifecycle state, and field path, not only `worker_adapter_threw`.
+
+6. Re-run from the nearest replay boundary.
+   - First run a targeted replay from the parallel-frontier/resource
+     materialization boundary using the captured job artifacts.
+   - Only rerun the full Product/Spec proof once the isolated replay proves
+     context limitations block correctly, resource packets split instead of
+     throwing, and parallel frontier branch failures are repairable node
+     outcomes.

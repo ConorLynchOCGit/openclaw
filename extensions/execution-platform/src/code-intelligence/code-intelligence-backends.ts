@@ -194,20 +194,15 @@ export class TypeScriptSemanticBackend implements CodeIntelligenceBackend {
 
   async health(): Promise<CodeIntelligenceBackendHealth> {
     const snapshot = await this.workspaceSnapshot();
-    return backendHealth({
-      backendId: this.backendId,
-      semanticMode: this.semanticMode,
-      state: this.service ? "ready" : "configured",
-      workspaceRootRef: snapshot.workspaceRootRef,
-      startupLatencyMs: this.startupLatencyMs,
-      lastSuccessfulRequestRef: this.lastSuccessfulRequestRef,
-      lastFailureClass: this.lastFailureClass,
-      limitations: this.knownLimitations,
-    });
+    return this.healthForSnapshot(snapshot);
   }
 
   async workspaceSnapshot(): Promise<CodeIntelligenceWorkspaceSnapshot> {
     await this.ensureService();
+    return this.snapshotForCurrentFiles();
+  }
+
+  private async snapshotForCurrentFiles(): Promise<CodeIntelligenceWorkspaceSnapshot> {
     if (this.cachedSnapshot) {
       return this.cachedSnapshot;
     }
@@ -244,14 +239,31 @@ export class TypeScriptSemanticBackend implements CodeIntelligenceBackend {
     return this.cachedSnapshot;
   }
 
+  private healthForSnapshot(
+    snapshot: CodeIntelligenceWorkspaceSnapshot,
+  ): CodeIntelligenceBackendHealth {
+    return backendHealth({
+      backendId: this.backendId,
+      semanticMode: this.semanticMode,
+      state: this.service ? "ready" : "configured",
+      workspaceRootRef: snapshot.workspaceRootRef,
+      startupLatencyMs: this.startupLatencyMs,
+      lastSuccessfulRequestRef: this.lastSuccessfulRequestRef,
+      lastFailureClass: this.lastFailureClass,
+      limitations: this.knownLimitations,
+    });
+  }
+
   async runTool(
     toolId: CodeIntelligenceRuntimeToolId,
     query: CodeIntelligenceQuery,
   ): Promise<CodeIntelligenceBackendToolResult> {
     const started = Date.now();
-    const snapshot = await this.workspaceSnapshot();
-    const health = await this.health();
     const normalized = normalizeQuery(query);
+    const requestedFilePaths = requestedCodeFilePaths(this.options.rootDir, normalized);
+    await this.ensureService(requestedFilePaths);
+    const snapshot = await this.snapshotForCurrentFiles();
+    const health = this.healthForSnapshot(snapshot);
     try {
       const result = await this.runSemanticTool(toolId, normalized);
       this.lastSuccessfulRequestRef = `code-intelligence-request://${toolId}/${hashString(
@@ -262,7 +274,7 @@ export class TypeScriptSemanticBackend implements CodeIntelligenceBackend {
         handled: true,
         semanticMode: this.semanticMode,
         backendId: this.backendId,
-        backendHealth: await this.health(),
+        backendHealth: this.healthForSnapshot(snapshot),
         workspaceSnapshot: snapshot,
         semanticConfidence: result.status === "succeeded" ? "high" : "medium",
         fallbackUsed: false,
@@ -345,13 +357,25 @@ export class TypeScriptSemanticBackend implements CodeIntelligenceBackend {
     throw new Error("unsupported_code_intelligence_tool");
   }
 
-  private async ensureService(): Promise<void> {
-    if (this.service && this.files) {
+  private async ensureService(requestedFilePaths: string[] = []): Promise<void> {
+    const requiredFilePaths = [...new Set(requestedFilePaths)].filter((filePath) => {
+      const absolute = path.join(this.options.rootDir, filePath);
+      return CODE_EXTENSIONS.has(path.extname(filePath)) && existsSync(absolute);
+    });
+    if (
+      this.service &&
+      this.files &&
+      requiredFilePaths.every((filePath) => this.files?.has(filePath))
+    ) {
       return;
     }
     const started = Date.now();
     const ts = await this.ensureTypeScript();
-    const filePaths = await listCodeFiles(this.options.rootDir, this.options.maxFiles);
+    const existingFiles = this.rootFiles.filter((filePath) => this.files?.has(filePath));
+    const filePaths =
+      requiredFilePaths.length > 0
+        ? [...new Set([...existingFiles, ...requiredFilePaths])].slice(0, this.options.maxFiles)
+        : await listCodeFiles(this.options.rootDir, this.options.maxFiles);
     const files = new Map<string, { version: number; content: string; fileHash: string }>();
     await Promise.all(
       filePaths.map(async (filePath) => {
@@ -369,6 +393,7 @@ export class TypeScriptSemanticBackend implements CodeIntelligenceBackend {
     );
     this.files = files;
     this.rootFiles = [...files.keys()];
+    this.cachedSnapshot = null;
     const compilerOptions = await readCompilerOptions(this.options.rootDir, ts);
     const host: ts.LanguageServiceHost = {
       getCompilationSettings: () => compilerOptions,
@@ -1119,6 +1144,33 @@ function normalizeQuery(query: CodeIntelligenceQuery): NormalizedCodeIntelligenc
     newName: query.newName ?? "",
     limit,
   };
+}
+
+function requestedCodeFilePaths(rootDir: string, query: NormalizedCodeIntelligenceQuery): string[] {
+  const resolvedRoot = path.resolve(rootDir);
+  return [
+    ...new Set(
+      [query.filePath, query.targetFilePath, ...query.filePaths]
+        .filter((filePath) => filePath.trim().length > 0)
+        .flatMap((filePath) => {
+          const absolute = path.resolve(resolvedRoot, filePath.replace(/^file:\/\//u, ""));
+          const withinRoot =
+            absolute === resolvedRoot || absolute.startsWith(`${resolvedRoot}${path.sep}`);
+          if (
+            !withinRoot ||
+            !CODE_EXTENSIONS.has(path.extname(absolute)) ||
+            !existsSync(absolute)
+          ) {
+            return [];
+          }
+          const relative = relativePath(resolvedRoot, absolute);
+          if (!relative || relative.startsWith("..")) {
+            return [];
+          }
+          return [relative];
+        }),
+    ),
+  ].slice(0, 80);
 }
 
 function symbolKind(kind: string): CodeIntelligenceSymbolKind {

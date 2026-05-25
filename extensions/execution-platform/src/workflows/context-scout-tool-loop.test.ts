@@ -14,16 +14,14 @@ import {
 } from "./scheduler-runtime-tools.ts";
 
 describe("context scout tool loop", () => {
-  it("distinguishes model-authored handoff substance from runtime supplied refs", () => {
+  it("validates context handoff structure without deterministic quality scoring", () => {
     expect(
       inspectContextScoutModelAuthoredHandoffSubstance({
-        modelAuthoredSummary: "Use the listed files.",
-        recommendedEditPoints: [
-          "extensions/execution-platform/src/workflows/context-scout-tool-loop.ts:runtime_verified_context - Runtime verified this file.",
-        ],
+        modelAuthoredSummary: "",
+        recommendedEditPoints: [],
         existingPatterns: [],
         risks: [],
-        validationSuggestions: ["Run one test."],
+        validationSuggestions: [],
       }),
     ).toMatchObject({
       hasModelAuthoredHandoffSubstance: false,
@@ -111,6 +109,21 @@ describe("context scout tool loop", () => {
       codeIntelligenceImpactRefs: handoff.codeIntelligenceImpactRefs,
       codeIntelligenceSemanticModes: handoff.codeIntelligenceSemanticModes,
       codeIntelligenceLimitations: handoff.codeIntelligenceLimitations,
+      consumerSpecificWaivers: [
+        {
+          consumerNodeId: "all",
+          workUnitId: null,
+          limitation:
+            "Code intelligence returned structural degraded mode only; semantic parity was unavailable and must be accepted as a limitation before implementation.",
+          nonblockingRationale:
+            "The handoff includes model-authored implementation substance and a verified source ref, so structural-mode code intelligence is nonblocking for this bounded test consumer.",
+          evidenceRefs: ["code-intelligence://code.get_document_symbols/abc123"],
+          rawPromptStored: false,
+          rawResponseStored: false,
+          rawProviderLogStored: false,
+          rawToolLogStored: false,
+        },
+      ],
       modelAuthoredSummary:
         "The verified workflow file and handoff packet are enough for implementation. Update the bounded tool-loop contract and tests together so downstream implementers can rely on the sufficiency status, verified refs, and model-authored handoff fields.",
     });
@@ -156,6 +169,7 @@ describe("context scout tool loop", () => {
       valid: false,
       reasonCodes: [
         "context_scout_sufficiency_not_accepted",
+        "context_scout_non_runtime_context_source_missing",
         "context_scout_not_sufficient_for_implementation",
         "context_scout_verified_file_refs_missing",
         "context_scout_handoff_packet_missing",
@@ -252,7 +266,7 @@ describe("context scout tool loop", () => {
     });
   });
 
-  it("marks runtime-supplied verified refs as accepted with limitations when model handoff has substance", () => {
+  it("does not unlock implementation from runtime-supplied verified refs even when model handoff has substance", () => {
     const fileRef = "extensions/execution-platform/src/workflows/product-spec-planning-workflow.ts";
     const handoff = buildContextHandoffPacket({
       sourceNodeId: "context-node-runtime-fallback",
@@ -298,8 +312,14 @@ describe("context scout tool loop", () => {
 
     expect(run.sufficiencyReview.status).toBe("accepted_with_limitations");
     expect(validateContextScoutToolLoopForImplementation(run)).toEqual({
-      valid: true,
-      reasonCodes: ["context_scout_accepted_with_limitations"],
+      valid: false,
+      reasonCodes: [
+        "context_scout_sufficiency_not_accepted",
+        "context_scout_accepted_with_limitations",
+        "context_scout_accepted_with_limitations_consumer_waiver_missing",
+        "context_scout_runtime_only_context_detected",
+        "context_scout_non_runtime_context_source_missing",
+      ],
     });
   });
 
@@ -340,14 +360,16 @@ describe("context scout tool loop", () => {
       groundingReasonCodes: ["context_scout_tool_first_verified_context_used"],
     });
 
-    expect(run.sufficiencyReview.status).toBe("needs_review_nonblocking");
-    expect(validateContextScoutToolLoopForImplementation(run)).toEqual({
+    expect(run.sufficiencyReview.status).toBe("accepted_with_limitations");
+    expect(validateContextScoutToolLoopForImplementation(run)).toMatchObject({
       valid: false,
-      reasonCodes: [
+      reasonCodes: expect.arrayContaining([
         "context_scout_sufficiency_not_accepted",
-        "context_scout_needs_review_nonblocking",
-        "context_scout_not_sufficient_for_implementation",
-      ],
+        "context_scout_accepted_with_limitations",
+        "context_scout_accepted_with_limitations_consumer_waiver_missing",
+        "context_scout_runtime_only_context_detected",
+        "context_scout_non_runtime_context_source_missing",
+      ]),
     });
   });
 

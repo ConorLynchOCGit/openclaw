@@ -34,9 +34,9 @@ export function defaultModelFallbackPolicies(): ModelFallbackRolePolicy[] {
   return [
     {
       roleId: "context_scout",
-      primaryModelId: "deepseek/deepseek-v4-flash",
-      fallbackModelIds: ["moonshotai/kimi-k2.6"],
-      fallbackAllowed: true,
+      primaryModelId: "qwen/qwen3-coder-next",
+      fallbackModelIds: [],
+      fallbackAllowed: false,
       maxAuthority: "observe",
     },
     {

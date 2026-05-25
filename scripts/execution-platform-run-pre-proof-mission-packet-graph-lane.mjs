@@ -171,7 +171,7 @@ function buildPacketInput(ledger) {
     "workflow-routing-and-registration": [
       "extensions/execution-platform/src/workflows/workflow-definition-registry.ts",
       "extensions/execution-platform/src/workflows/canonical-workflow-runtime-engine.ts",
-      "extensions/execution-platform/src/codex-bridge/workflow-queued-runner.ts",
+      "extensions/execution-platform/src/workflows/runtime-workflow-graph-engine.ts",
       "extensions/execution-platform/src/workflows/runtime-work-graph-scheduler.ts",
     ],
     "research-and-planning-artifacts": [
@@ -558,7 +558,7 @@ async function main() {
         "Work Queue child items are materialized from runtime graph nodes through DB sync.",
       ],
       risks: [
-        "Do not let generic WorkflowQueuedRunner claim Product/Spec Planning success.",
+        "Do not let generic deleted generic workflow runner claim Product/Spec Planning success.",
         "Do not run implementation if context scout readiness is not accepted.",
       ],
       validationSuggestions: [

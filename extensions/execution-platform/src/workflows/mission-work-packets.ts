@@ -7,6 +7,12 @@ import {
   validateContextSnapshotFreshness,
   type ContextSnapshotRef,
 } from "./context-snapshot.ts";
+import {
+  EvidenceModeSchema,
+  ExecutionIntentSchema,
+  type EvidenceMode,
+  type ExecutionIntent,
+} from "./execution-intent.ts";
 import type {
   MissionCommitment,
   MissionContractLedger,
@@ -49,6 +55,22 @@ function contextFreshnessFields(input: {
   const providedContextSnapshotRefs = mergeContextSnapshotRefs(
     input.providedContextSnapshotRefs ?? [],
   );
+  if (requiredContextSnapshotRefs.length === 0 && providedContextSnapshotRefs.length === 0) {
+    return {
+      requiredContextSnapshotRefs,
+      providedContextSnapshotRefs,
+      staleContextSnapshotRefs: [],
+      missingContextSnapshotRefs: [],
+      rejectedContextSnapshotRefs: [],
+      contextFreshnessStatus: "fresh" as const,
+      contextRefreshAction: "none" as const,
+      contextFreshnessSummary: bounded(
+        input.contextFreshnessSummary ??
+          "No explicit context snapshot contract was required for this packet boundary.",
+        900,
+      ),
+    };
+  }
   const validation = validateContextSnapshotFreshness({
     requiredRefs: requiredContextSnapshotRefs,
     providedRefs: providedContextSnapshotRefs,
@@ -69,6 +91,27 @@ function contextFreshnessFields(input: {
       900,
     ),
   };
+}
+
+function hasLegacyNoContextSnapshotContractSentinel(input: {
+  requiredContextSnapshotRefs: ContextSnapshotRef[];
+  providedContextSnapshotRefs: ContextSnapshotRef[];
+  missingContextSnapshotRefs: string[];
+  staleContextSnapshotRefs: string[];
+  rejectedContextSnapshotRefs: string[];
+  contextRefreshAction: string;
+  contextFreshnessStatus: string;
+}): boolean {
+  return (
+    input.requiredContextSnapshotRefs.length === 0 &&
+    input.providedContextSnapshotRefs.length === 0 &&
+    input.staleContextSnapshotRefs.length === 0 &&
+    input.rejectedContextSnapshotRefs.length === 0 &&
+    input.missingContextSnapshotRefs.length === 1 &&
+    input.missingContextSnapshotRefs[0] === "context-snapshot://missing/context" &&
+    input.contextRefreshAction === "block_implementation" &&
+    input.contextFreshnessStatus === "missing"
+  );
 }
 
 function packetRef(kind: string, id: string, body: unknown): string {
@@ -347,33 +390,111 @@ export const ContextHandoffPacketSchema = z
 
 export type ContextHandoffPacket = z.infer<typeof ContextHandoffPacketSchema>;
 
+export const ImplementationTaskFileSnapshotSchema = z
+  .object({
+    fileRef: boundedString(260),
+    snapshotRef: boundedString(260),
+    contentHash: boundedString(96),
+    byteCount: z.number().int().min(0).max(20_000_000),
+    sourceKind: z.enum(["repo_file", "generated_new_file_intent"]).default("repo_file"),
+    freshnessStatus: z.enum(["fresh", "stale", "missing", "unknown"]).default("fresh"),
+    rawContentStored: z.literal(false),
+  })
+  .strict();
+
+export type ImplementationTaskFileSnapshot = z.infer<typeof ImplementationTaskFileSnapshotSchema>;
+
+export const ImplementationTaskNewFileIntentSchema = z
+  .object({
+    fileRef: boundedString(260),
+    reason: boundedString(900),
+    expectedPurpose: boundedString(900),
+    validationExpectation: boundedString(700),
+  })
+  .strict();
+
+export type ImplementationTaskNewFileIntent = z.infer<typeof ImplementationTaskNewFileIntentSchema>;
+
+export const ImplementationTaskFileChangeIntentSchema = z
+  .object({
+    fileRef: boundedString(260),
+    symbolOrRegion: boundedString(260),
+    intendedChange: boundedString(900),
+    whyThisFile: boundedString(900),
+  })
+  .strict();
+
+export type ImplementationTaskFileChangeIntent = z.infer<
+  typeof ImplementationTaskFileChangeIntentSchema
+>;
+
 export const ImplementationTaskPacketSchema = z
   .object({
     packetKind: z.literal("implementation_task_packet"),
-    schemaVersion: z.literal("execution-platform.implementation-task-packet.v2"),
+    schemaVersion: z.literal("execution-platform.implementation-task-packet.v3"),
     packetId: boundedString(180),
     packetRef: boundedString(260),
+    runtimeJobId: boundedString(180).default("unknown-runtime-job"),
+    workflowId: boundedString(180).default("agent_team.coding"),
+    graphId: boundedString(180).default("unknown-graph"),
+    sourceGraphNodeId: boundedString(180).default("unknown-node"),
+    sourceWorkUnitId: boundedString(180).default("unknown-work-unit"),
     microtaskId: boundedString(180),
     microtaskTitle: boundedString(300),
+    executionIntent: ExecutionIntentSchema.default("unspecified"),
+    evidenceMode: z.array(EvidenceModeSchema).max(12).default([]),
     exactEditObjective: boundedString(1_200),
     taskSummary: boundedString(2_500),
     whyThisWorkerWasSelected: boundedString(1_200),
     expectedOutput: boundedString(1_200),
+    expectedPatchShape: z
+      .string()
+      .trim()
+      .max(1_200)
+      .default(
+        "Produce bounded source edits against the allowed refs, then return changed-file refs, validation refs, and commitment-linked evidence claims.",
+      ),
     targetCommitmentIds: stringList(16, 160),
     targetFileRefs: stringList(24, 260),
+    targetFileSnapshots: z.array(ImplementationTaskFileSnapshotSchema).max(80).default([]),
+    newFileIntents: z.array(ImplementationTaskNewFileIntentSchema).max(24).default([]),
+    fileChangeIntents: z.array(ImplementationTaskFileChangeIntentSchema).max(40).default([]),
     allowedFileRefs: stringList(80, 260),
+    allowedEditScope: stringList(80, 260).default([]),
+    mustReadRefs: stringList(80, 260).default([]),
+    likelyModifyRefs: stringList(80, 260).default([]),
     deniedFileRefs: stringList(40, 260),
     contextPacketRefs: stringList(24, 260),
+    sourceCommitmentPacketRefs: stringList(40, 260).default([]),
+    sourceContextHandoffRefs: stringList(40, 260).default([]),
     sourcePromptExcerptRefs: stringList(24, 260),
     contextSynthesisRefs: stringList(24, 260),
     priorNodeOutputRefs: stringList(24, 260),
     validationCommandRefs: stringList(16, 260),
+    validationDiscoveryPlan: stringList(12, 700).default([]),
     acceptanceCriteria: stringList(16, 700),
     expectedEvidenceClaimKinds: stringList(16, 120),
+    evidenceClaimExpectations: stringList(16, 700).default([]),
     stopIfMissingOrEscalate: stringList(12, 700),
     budgetPolicyRefs: stringList(12, 260),
+    capabilityFit: z
+      .string()
+      .trim()
+      .max(900)
+      .default("Capability fit was selected by scheduler policy."),
+    costAndEscalationPolicy: z
+      .string()
+      .trim()
+      .max(900)
+      .default(
+        "Use the cheapest sufficiently capable implementation lane and escalate only after bounded repair/context request.",
+      ),
     downstreamConsumer: boundedString(260),
     successEvidenceDescriptions: stringList(12, 700),
+    existingApisAndTypes: stringList(32, 700).default([]),
+    knownTests: stringList(32, 500).default([]),
+    dependencyNotes: stringList(24, 700).default([]),
+    riskAndBlastRadius: stringList(24, 700).default([]),
     repairHistoryRefs: stringList(12, 260),
     requiredContextSnapshotRefs: z.array(ContextSnapshotRefSchema).max(80).default([]),
     providedContextSnapshotRefs: z.array(ContextSnapshotRefSchema).max(80).default([]),
@@ -642,6 +763,238 @@ export function summarizeCommitmentWorkPacketsForArtifact(
   } as JsonValue;
 }
 
+export const COMMITMENT_PACKET_FANOUT_DIAGNOSTICS_ARTIFACT_TYPE =
+  "execution_platform.commitment_packet_fanout_diagnostics";
+
+export type CommitmentPacketFanoutLaneState = {
+  commitmentId: string;
+  objective?: string | null;
+  status: "pending" | "running" | "completed" | "needs_review" | "failed" | string;
+  modelRef?: string | null;
+  providerPath?: string | null;
+  profileRef?: string | null;
+  reasonCodes?: string[];
+  latestDiagnostics?: JsonValue | null;
+};
+
+function jsonRecord(value: unknown): Record<string, JsonValue> {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, JsonValue>)
+    : {};
+}
+
+function numberField(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function stringArrayField(value: unknown, maxItems = 20): string[] {
+  return Array.isArray(value)
+    ? value
+        .filter((item): item is string => typeof item === "string" && item.trim().length > 0)
+        .slice(0, maxItems)
+    : [];
+}
+
+function fanoutLaneFailureClasses(input: {
+  status: string;
+  reasonCodes: string[];
+  latestDiagnostics: Record<string, JsonValue>;
+}): string[] {
+  const latest = input.latestDiagnostics;
+  const providerDiagnostics = jsonRecord(latest.providerDiagnostics);
+  const retryEvidence = jsonRecord(latest.retryEvidence);
+  const noContentDiagnostic = jsonRecord(latest.noContentDiagnostic);
+  const retryReasonCodes = stringArrayField(retryEvidence.retryReasonCodes, 20);
+  const reasonCodes = [...input.reasonCodes, ...retryReasonCodes];
+  const classes: string[] = [];
+  if (input.status !== "completed") {
+    classes.push("packet_author_incomplete");
+  }
+  if (typeof latest.errorReasonCode === "string" && latest.errorReasonCode.trim()) {
+    classes.push("packet_author_provider_error");
+  }
+  if (reasonCodes.length > 0) {
+    classes.push("packet_author_retry_needed");
+  }
+  if (
+    typeof latest.fallbackReasonCode === "string" ||
+    typeof latest.fallbackFromModelRef === "string" ||
+    reasonCodes.some((code) => code.includes("rescue") || code.includes("fallback"))
+  ) {
+    classes.push("packet_author_rescue_or_fallback");
+  }
+  if (
+    latest.outputContentLength === 0 ||
+    latest.parsedContentLength === 0 ||
+    providerDiagnostics.contentLength === 0 ||
+    typeof latest.noContentReasonClass === "string" ||
+    typeof noContentDiagnostic.classifiedReason === "string" ||
+    reasonCodes.some((code) => code.includes("no_content") || code.includes("empty_content"))
+  ) {
+    classes.push("packet_author_no_content_or_empty_output");
+  }
+  const timeoutMs =
+    numberField(latest.timeoutMs) ??
+    numberField(jsonRecord(providerDiagnostics.requestProfileDiagnostics).timeoutMs);
+  const latencyMs = numberField(latest.latencyMs);
+  if (
+    latencyMs !== null &&
+    (latencyMs >= 90_000 || (timeoutMs !== null && latencyMs >= timeoutMs))
+  ) {
+    classes.push("packet_author_long_latency");
+  }
+  return [...new Set(classes)].slice(0, 12);
+}
+
+export function buildCommitmentPacketFanoutDiagnosticsArtifact(input: {
+  missionId: string;
+  runtimeJobId: string;
+  generatedAt: string;
+  states: CommitmentPacketFanoutLaneState[];
+  profile: JsonValue | null;
+  reasonCodes?: string[];
+}): JsonValue {
+  const packetDiagnostics = input.states.map((state) => {
+    const latestDiagnostics = jsonRecord(state.latestDiagnostics);
+    const reasonCodes = (state.reasonCodes ?? []).slice(0, 20);
+    const failureClasses = fanoutLaneFailureClasses({
+      status: state.status,
+      reasonCodes,
+      latestDiagnostics,
+    });
+    return {
+      commitmentId: bounded(state.commitmentId, 160),
+      status: bounded(state.status, 80),
+      objective: bounded(state.objective ?? "", 260),
+      modelRef: bounded(state.modelRef ?? "", 180),
+      providerPath: bounded(state.providerPath ?? "", 120),
+      profileRef: bounded(state.profileRef ?? "", 260),
+      reasonCodes,
+      failureClasses,
+      latestDiagnostics,
+      rawPromptStored: false,
+      rawResponseStored: false,
+      rawProviderLogStored: false,
+    };
+  });
+  const classCounts = new Map<string, number>();
+  for (const diagnostic of packetDiagnostics) {
+    for (const failureClass of diagnostic.failureClasses) {
+      classCounts.set(failureClass, (classCounts.get(failureClass) ?? 0) + 1);
+    }
+  }
+  return {
+    artifactKind: "commitment_packet_fanout_diagnostics",
+    schemaVersion: "execution-platform.commitment-packet-fanout-diagnostics.v1",
+    fanoutId: `commitment-packet-fanout-${hashPacket({
+      missionId: input.missionId,
+      runtimeJobId: input.runtimeJobId,
+      generatedAt: input.generatedAt,
+      states: input.states.map((state) => [state.commitmentId, state.status, state.reasonCodes]),
+    }).slice(0, 20)}`,
+    missionId: input.missionId,
+    runtimeJobId: input.runtimeJobId,
+    generatedAt: input.generatedAt,
+    totalCount: input.states.length,
+    pendingCount: input.states.filter((state) => state.status === "pending").length,
+    runningCount: input.states.filter((state) => state.status === "running").length,
+    completedCount: input.states.filter((state) => state.status === "completed").length,
+    needsReviewCount: input.states.filter((state) => state.status === "needs_review").length,
+    failedCount: input.states.filter((state) => state.status === "failed").length,
+    retryCount: packetDiagnostics.filter((packet) =>
+      packet.failureClasses.includes("packet_author_retry_needed"),
+    ).length,
+    fallbackCount: packetDiagnostics.filter((packet) =>
+      packet.failureClasses.includes("packet_author_rescue_or_fallback"),
+    ).length,
+    longLatencyCount: packetDiagnostics.filter((packet) =>
+      packet.failureClasses.includes("packet_author_long_latency"),
+    ).length,
+    providerErrorCount: packetDiagnostics.filter((packet) =>
+      packet.failureClasses.includes("packet_author_provider_error"),
+    ).length,
+    noContentCount: packetDiagnostics.filter((packet) =>
+      packet.failureClasses.includes("packet_author_no_content_or_empty_output"),
+    ).length,
+    failureClassCounts: Object.fromEntries(
+      [...classCounts.entries()].toSorted(([left], [right]) => left.localeCompare(right)),
+    ) as JsonValue,
+    packetDiagnostics,
+    profile: input.profile ?? null,
+    reasonCodes: uniqueStrings(input.reasonCodes ?? ["commitment_packet_fanout_diagnostics"], 30),
+    rawPromptStored: false,
+    rawResponseStored: false,
+    rawProviderLogStored: false,
+    rawToolLogStored: false,
+    rawCommandLogStored: false,
+    rawDbRowsStored: false,
+    secretsStored: false,
+  } as JsonValue;
+}
+
+export function summarizeCommitmentPacketFanoutForProgress(input: {
+  diagnostics: JsonValue;
+  diagnosticArtifactRef?: string | null;
+  diagnosticArtifactHash?: string | null;
+}): JsonValue {
+  const diagnostics = jsonRecord(input.diagnostics);
+  const packets = Array.isArray(diagnostics.packetDiagnostics)
+    ? diagnostics.packetDiagnostics.map(jsonRecord)
+    : [];
+  const affectedCommitmentIds = packets
+    .filter((packet) => stringField(packet.status) !== "completed")
+    .map((packet) => stringField(packet.commitmentId))
+    .filter(Boolean)
+    .slice(0, 20);
+  const runningCommitmentIds = packets
+    .filter((packet) => stringField(packet.status) === "running")
+    .map((packet) => stringField(packet.commitmentId))
+    .filter(Boolean)
+    .slice(0, 12);
+  const topBlockerSummaries = packets
+    .filter(
+      (packet) =>
+        stringField(packet.status) === "failed" || stringField(packet.status) === "needs_review",
+    )
+    .map((packet) => {
+      const latest = jsonRecord(packet.latestDiagnostics);
+      const reason =
+        stringField(latest.errorReasonCode) ||
+        stringField(latest.noContentReasonClass) ||
+        stringField(packet.status);
+      return `${stringField(packet.commitmentId, "unknown")}:${bounded(reason || "needs_review", 160)}`;
+    })
+    .slice(0, 3);
+  return {
+    artifactKind: "commitment_packet_fanout_progress_manifest",
+    schemaVersion: "execution-platform.commitment-packet-fanout-progress-manifest.v1",
+    totalCount: numberField(diagnostics.totalCount) ?? packets.length,
+    pendingCount: numberField(diagnostics.pendingCount) ?? 0,
+    runningCount: numberField(diagnostics.runningCount) ?? 0,
+    completedCount: numberField(diagnostics.completedCount) ?? 0,
+    needsReviewCount: numberField(diagnostics.needsReviewCount) ?? 0,
+    failedCount: numberField(diagnostics.failedCount) ?? 0,
+    retryCount: numberField(diagnostics.retryCount) ?? 0,
+    fallbackCount: numberField(diagnostics.fallbackCount) ?? 0,
+    longLatencyCount: numberField(diagnostics.longLatencyCount) ?? 0,
+    providerErrorCount: numberField(diagnostics.providerErrorCount) ?? 0,
+    noContentCount: numberField(diagnostics.noContentCount) ?? 0,
+    runningCommitmentIds,
+    affectedCommitmentIds,
+    topBlockerSummaries,
+    diagnosticArtifactRef: input.diagnosticArtifactRef ?? null,
+    diagnosticArtifactHash: input.diagnosticArtifactHash ?? null,
+    diagnosticHydrationToolId: input.diagnosticArtifactRef ? "artifact.payload.get_json" : null,
+    rawPromptStored: false,
+    rawResponseStored: false,
+    rawProviderLogStored: false,
+    rawToolLogStored: false,
+    rawCommandLogStored: false,
+    rawDbRowsStored: false,
+    secretsStored: false,
+  } as JsonValue;
+}
+
 export function summarizeCommitmentPacketQualityReviewForArtifact(
   review: CommitmentPacketQualityReview,
 ): JsonValue {
@@ -824,12 +1177,16 @@ export function normalizeModelAuthoredCommitmentWorkPackets(input: {
 }
 
 function arrayStrings(value: unknown, maxItems: number, maxChars: number): string[] {
-  return Array.isArray(value)
-    ? value
-        .filter((item): item is string => typeof item === "string" && item.trim().length > 0)
-        .map((item) => bounded(item, maxChars))
-        .slice(0, maxItems)
-    : [];
+  const source =
+    typeof value === "string" && value.trim().length > 0
+      ? [value]
+      : Array.isArray(value)
+        ? value
+        : [];
+  return source
+    .filter((item): item is string => typeof item === "string" && item.trim().length > 0)
+    .map((item) => bounded(item, maxChars))
+    .slice(0, maxItems);
 }
 
 function arrayContextSnapshotRefs(value: unknown): ContextSnapshotRef[] {
@@ -1170,27 +1527,51 @@ export function buildContextHandoffPacket(input: {
 }
 
 export function buildImplementationTaskPacket(input: {
+  runtimeJobId?: string;
+  workflowId?: string;
+  graphId?: string;
+  sourceGraphNodeId?: string;
+  sourceWorkUnitId?: string;
   microtaskId?: string;
   microtaskTitle?: string;
+  executionIntent?: ExecutionIntent;
+  evidenceMode?: EvidenceMode[];
   exactEditObjective: string;
   taskSummary: string;
   whyThisWorkerWasSelected?: string;
   expectedOutput?: string;
+  expectedPatchShape?: string;
   targetCommitmentIds?: string[];
   targetFileRefs?: string[];
+  targetFileSnapshots?: ImplementationTaskFileSnapshot[];
+  newFileIntents?: ImplementationTaskNewFileIntent[];
+  fileChangeIntents?: ImplementationTaskFileChangeIntent[];
   allowedFileRefs: string[];
+  allowedEditScope?: string[];
+  mustReadRefs?: string[];
+  likelyModifyRefs?: string[];
   deniedFileRefs?: string[];
   contextPacketRefs?: string[];
+  sourceCommitmentPacketRefs?: string[];
+  sourceContextHandoffRefs?: string[];
   sourcePromptExcerptRefs?: string[];
   contextSynthesisRefs?: string[];
   priorNodeOutputRefs?: string[];
   validationCommandRefs?: string[];
+  validationDiscoveryPlan?: string[];
   acceptanceCriteria?: string[];
   expectedEvidenceClaimKinds?: string[];
+  evidenceClaimExpectations?: string[];
   stopIfMissingOrEscalate?: string[];
   budgetPolicyRefs?: string[];
+  capabilityFit?: string;
+  costAndEscalationPolicy?: string;
   downstreamConsumer?: string;
   successEvidenceDescriptions?: string[];
+  existingApisAndTypes?: string[];
+  knownTests?: string[];
+  dependencyNotes?: string[];
+  riskAndBlastRadius?: string[];
   repairHistoryRefs?: string[];
   requiredContextSnapshotRefs?: ContextSnapshotRef[];
   providedContextSnapshotRefs?: ContextSnapshotRef[];
@@ -1202,11 +1583,24 @@ export function buildImplementationTaskPacket(input: {
   );
   const base = {
     packetKind: "implementation_task_packet" as const,
-    schemaVersion: "execution-platform.implementation-task-packet.v2" as const,
+    schemaVersion: "execution-platform.implementation-task-packet.v3" as const,
     packetId: microtaskId,
     packetRef: "pending",
+    runtimeJobId: bounded(input.runtimeJobId ?? "unknown-runtime-job", 180),
+    workflowId: bounded(input.workflowId ?? "agent_team.coding", 180),
+    graphId: bounded(input.graphId ?? "unknown-graph", 180),
+    sourceGraphNodeId: bounded(input.sourceGraphNodeId ?? "unknown-node", 180),
+    sourceWorkUnitId: bounded(input.sourceWorkUnitId ?? input.microtaskId ?? microtaskId, 180),
     microtaskId,
     microtaskTitle: bounded(input.microtaskTitle ?? "Scoped implementation task", 300),
+    executionIntent: input.executionIntent ?? "source_edit",
+    evidenceMode: uniqueStrings(
+      input.evidenceMode ??
+        (input.validationCommandRefs?.length
+          ? ["changed_file_evidence", "validation_evidence"]
+          : ["changed_file_evidence"]),
+      12,
+    ),
     exactEditObjective: bounded(input.exactEditObjective, 1_200),
     taskSummary: bounded(input.taskSummary, 2_500),
     whyThisWorkerWasSelected: bounded(
@@ -1219,21 +1613,41 @@ export function buildImplementationTaskPacket(input: {
         "Changed-file refs, validation refs, and commitment-linked evidence claims or a precise escalation/context request.",
       1_200,
     ),
+    expectedPatchShape: bounded(
+      input.expectedPatchShape ??
+        "Produce bounded source edits against the allowed refs, then return changed-file refs, validation refs, and commitment-linked evidence claims.",
+      1_200,
+    ),
     targetCommitmentIds: uniqueStrings(input.targetCommitmentIds ?? [], 16),
     targetFileRefs: uniqueStrings(input.targetFileRefs ?? [], 24),
+    targetFileSnapshots: input.targetFileSnapshots ?? [],
+    newFileIntents: input.newFileIntents ?? [],
+    fileChangeIntents: (input.fileChangeIntents ?? []).slice(0, 40),
     allowedFileRefs: uniqueStrings(input.allowedFileRefs, 80),
+    allowedEditScope: uniqueStrings(input.allowedEditScope ?? input.allowedFileRefs, 80),
+    mustReadRefs: uniqueStrings(input.mustReadRefs ?? input.targetFileRefs ?? [], 80),
+    likelyModifyRefs: uniqueStrings(input.likelyModifyRefs ?? input.targetFileRefs ?? [], 80),
     deniedFileRefs: uniqueStrings(input.deniedFileRefs ?? [], 40),
     contextPacketRefs: uniqueStrings(input.contextPacketRefs ?? [], 24),
+    sourceCommitmentPacketRefs: uniqueStrings(input.sourceCommitmentPacketRefs ?? [], 40),
+    sourceContextHandoffRefs: uniqueStrings(input.sourceContextHandoffRefs ?? [], 40),
     sourcePromptExcerptRefs: uniqueStrings(input.sourcePromptExcerptRefs ?? [], 24),
     contextSynthesisRefs: uniqueStrings(input.contextSynthesisRefs ?? [], 24),
     priorNodeOutputRefs: uniqueStrings(input.priorNodeOutputRefs ?? [], 24),
     validationCommandRefs: uniqueStrings(input.validationCommandRefs ?? [], 16),
+    validationDiscoveryPlan: uniqueStrings(input.validationDiscoveryPlan ?? [], 12),
     acceptanceCriteria: uniqueStrings(input.acceptanceCriteria ?? [input.exactEditObjective], 16),
     expectedEvidenceClaimKinds: uniqueStrings(
       input.expectedEvidenceClaimKinds ??
         (input.validationCommandRefs?.length
           ? ["source_change", "test_validation"]
           : ["source_change"]),
+      16,
+    ),
+    evidenceClaimExpectations: uniqueStrings(
+      input.evidenceClaimExpectations ??
+        input.successEvidenceDescriptions ??
+        input.acceptanceCriteria ?? [input.exactEditObjective],
       16,
     ),
     stopIfMissingOrEscalate: uniqueStrings(
@@ -1244,11 +1658,24 @@ export function buildImplementationTaskPacket(input: {
       12,
     ),
     budgetPolicyRefs: uniqueStrings(input.budgetPolicyRefs ?? [], 12),
+    capabilityFit: bounded(
+      input.capabilityFit ?? "Capability fit was selected by scheduler policy.",
+      900,
+    ),
+    costAndEscalationPolicy: bounded(
+      input.costAndEscalationPolicy ??
+        "Use the cheapest sufficiently capable implementation lane and escalate only after bounded repair/context request.",
+      900,
+    ),
     downstreamConsumer: bounded(input.downstreamConsumer ?? "validation_and_review", 260),
     successEvidenceDescriptions: uniqueStrings(
       input.successEvidenceDescriptions ?? input.acceptanceCriteria ?? [input.exactEditObjective],
       12,
     ),
+    existingApisAndTypes: uniqueStrings(input.existingApisAndTypes ?? [], 32),
+    knownTests: uniqueStrings(input.knownTests ?? [], 32),
+    dependencyNotes: uniqueStrings(input.dependencyNotes ?? [], 24),
+    riskAndBlastRadius: uniqueStrings(input.riskAndBlastRadius ?? [], 24),
     repairHistoryRefs: uniqueStrings(input.repairHistoryRefs ?? [], 12),
     ...contextFreshnessFields({
       requiredContextSnapshotRefs: input.requiredContextSnapshotRefs ?? [],
@@ -1271,14 +1698,75 @@ export function validateImplementationTaskPacketForWorker(
   packet: ImplementationTaskPacket,
 ): ImplementationTaskPacketValidation {
   const reasonCodes: string[] = [];
+  if (packet.executionIntent === "unspecified") {
+    reasonCodes.push("implementation_task_packet_execution_intent_missing");
+  }
+  if (packet.executionIntent !== "source_edit") {
+    reasonCodes.push("implementation_task_packet_execution_intent_not_source_edit");
+  }
+  if (!packet.evidenceMode.includes("changed_file_evidence")) {
+    reasonCodes.push("implementation_task_packet_changed_file_evidence_mode_missing");
+  }
   if (!packet.exactEditObjective.trim()) {
     reasonCodes.push("implementation_task_packet_objective_missing");
   }
   if (packet.targetFileRefs.length === 0 || packet.allowedFileRefs.length === 0) {
     reasonCodes.push("implementation_task_packet_target_scope_missing");
   }
+  const directoryOnlyTargetRefs = packet.targetFileRefs.filter((ref) => ref.trim().endsWith("/"));
+  if (directoryOnlyTargetRefs.length > 0) {
+    reasonCodes.push("implementation_task_packet_directory_only_target_ref");
+  }
+  const snapshotFileRefs = new Set(packet.targetFileSnapshots.map((snapshot) => snapshot.fileRef));
+  const newFileIntentRefs = new Set(packet.newFileIntents.map((intent) => intent.fileRef));
+  const missingSnapshotRefs = packet.targetFileRefs.filter(
+    (ref) => !ref.trim().endsWith("/") && !snapshotFileRefs.has(ref) && !newFileIntentRefs.has(ref),
+  );
+  if (packet.targetFileRefs.length > 0 && missingSnapshotRefs.length > 0) {
+    reasonCodes.push("implementation_task_packet_target_snapshot_missing");
+  }
+  if (packet.targetFileSnapshots.length === 0 && packet.newFileIntents.length === 0) {
+    reasonCodes.push("implementation_task_packet_target_snapshots_or_new_file_intent_missing");
+  }
+  const targetFileRefSet = new Set(packet.targetFileRefs);
+  const allowedFileRefSet = new Set(packet.allowedFileRefs);
+  const intentFileRefs = new Set(packet.fileChangeIntents.map((intent) => intent.fileRef));
+  const fileChangeIntentRefsOutOfScope = packet.fileChangeIntents.filter(
+    (intent) => !targetFileRefSet.has(intent.fileRef) && !allowedFileRefSet.has(intent.fileRef),
+  );
+  if (fileChangeIntentRefsOutOfScope.length > 0) {
+    reasonCodes.push("implementation_task_packet_file_change_intent_ref_out_of_scope");
+  }
+  const multiFileOrMultiCommitment =
+    packet.targetFileRefs.length > 1 || packet.targetCommitmentIds.length > 1;
+  if (multiFileOrMultiCommitment && packet.fileChangeIntents.length === 0) {
+    reasonCodes.push("implementation_task_packet_file_change_intents_missing");
+  }
+  if (multiFileOrMultiCommitment) {
+    const missingIntentCoverage = packet.targetFileRefs.filter(
+      (ref) => !intentFileRefs.has(ref) && !newFileIntentRefs.has(ref),
+    );
+    if (missingIntentCoverage.length > 0) {
+      reasonCodes.push("implementation_task_packet_file_change_intent_coverage_missing");
+    }
+  }
+  if (packet.allowedEditScope.length === 0 || packet.mustReadRefs.length === 0) {
+    reasonCodes.push("implementation_task_packet_edit_scope_or_must_read_refs_missing");
+  }
   if (packet.acceptanceCriteria.length === 0) {
     reasonCodes.push("implementation_task_packet_acceptance_criteria_missing");
+  }
+  if (packet.validationCommandRefs.length === 0 && packet.validationDiscoveryPlan.length === 0) {
+    reasonCodes.push("implementation_task_packet_validation_refs_missing");
+  }
+  if (packet.targetCommitmentIds.length === 0) {
+    reasonCodes.push("implementation_task_packet_commitment_mapping_missing");
+  }
+  if (
+    packet.expectedEvidenceClaimKinds.length === 0 ||
+    packet.evidenceClaimExpectations.length === 0
+  ) {
+    reasonCodes.push("implementation_task_packet_evidence_expectations_missing");
   }
   if (packet.rawPromptStored || packet.rawResponseStored || packet.rawProviderLogStored) {
     reasonCodes.push("implementation_task_packet_raw_storage_flag_invalid");
@@ -1298,6 +1786,33 @@ export function validateImplementationTaskPacketForWorker(
     requiredRefs: packet.requiredContextSnapshotRefs,
     providedRefs: packet.providedContextSnapshotRefs,
   });
+  const legacyNoContextSnapshotContractSentinel = hasLegacyNoContextSnapshotContractSentinel({
+    requiredContextSnapshotRefs: packet.requiredContextSnapshotRefs,
+    providedContextSnapshotRefs: packet.providedContextSnapshotRefs,
+    missingContextSnapshotRefs: packet.missingContextSnapshotRefs,
+    staleContextSnapshotRefs: packet.staleContextSnapshotRefs,
+    rejectedContextSnapshotRefs: packet.rejectedContextSnapshotRefs,
+    contextRefreshAction: packet.contextRefreshAction,
+    contextFreshnessStatus: packet.contextFreshnessStatus,
+  });
+  const effectiveMissingContextSnapshotRefs = legacyNoContextSnapshotContractSentinel
+    ? []
+    : packet.missingContextSnapshotRefs;
+  const effectiveRejectedContextSnapshotRefs = legacyNoContextSnapshotContractSentinel
+    ? []
+    : packet.rejectedContextSnapshotRefs;
+  const effectiveStaleContextSnapshotRefs = legacyNoContextSnapshotContractSentinel
+    ? []
+    : packet.staleContextSnapshotRefs;
+  const effectiveContextRefreshAction = legacyNoContextSnapshotContractSentinel
+    ? "none"
+    : packet.contextRefreshAction;
+  const effectiveContextFreshnessStatus = legacyNoContextSnapshotContractSentinel
+    ? "fresh"
+    : packet.contextFreshnessStatus;
+  if (legacyNoContextSnapshotContractSentinel) {
+    reasonCodes.push("implementation_task_packet_legacy_context_snapshot_no_contract_normalized");
+  }
   if (packet.requiredContextSnapshotRefs.length > 0 && !contextFreshness.valid) {
     reasonCodes.push(...contextFreshness.reasonCodes);
   }
@@ -1307,20 +1822,55 @@ export function validateImplementationTaskPacketForWorker(
   ) {
     reasonCodes.push("implementation_task_packet_required_context_snapshots_missing");
   }
+  if (effectiveMissingContextSnapshotRefs.length > 0) {
+    reasonCodes.push("implementation_task_packet_missing_context_snapshot_refs");
+  }
+  if (effectiveRejectedContextSnapshotRefs.length > 0) {
+    reasonCodes.push("implementation_task_packet_rejected_context_snapshot_refs");
+  }
+  if (effectiveStaleContextSnapshotRefs.length > 0) {
+    reasonCodes.push("implementation_task_packet_stale_context_snapshot_refs");
+  }
+  const contextRefreshBlocksImplementation =
+    effectiveContextRefreshAction === "block_implementation" &&
+    (effectiveMissingContextSnapshotRefs.length > 0 ||
+      effectiveRejectedContextSnapshotRefs.length > 0 ||
+      effectiveStaleContextSnapshotRefs.length > 0 ||
+      effectiveContextFreshnessStatus === "missing" ||
+      effectiveContextFreshnessStatus === "rejected" ||
+      effectiveContextFreshnessStatus === "stale");
+  if (contextRefreshBlocksImplementation) {
+    reasonCodes.push("implementation_task_packet_context_refresh_action_block_implementation");
+  }
   const hasContextSnapshotContract =
-    packet.requiredContextSnapshotRefs.length > 0 || packet.providedContextSnapshotRefs.length > 0;
+    packet.requiredContextSnapshotRefs.length > 0 ||
+    packet.providedContextSnapshotRefs.length > 0 ||
+    effectiveMissingContextSnapshotRefs.length > 0 ||
+    effectiveRejectedContextSnapshotRefs.length > 0 ||
+    effectiveStaleContextSnapshotRefs.length > 0 ||
+    contextRefreshBlocksImplementation;
   if (
     hasContextSnapshotContract &&
-    (packet.contextFreshnessStatus === "stale" ||
-      packet.contextFreshnessStatus === "missing" ||
-      packet.contextFreshnessStatus === "rejected" ||
-      packet.contextFreshnessStatus === "unknown")
+    (effectiveContextFreshnessStatus === "stale" ||
+      effectiveContextFreshnessStatus === "missing" ||
+      effectiveContextFreshnessStatus === "rejected" ||
+      effectiveContextFreshnessStatus === "unknown")
   ) {
-    reasonCodes.push(`implementation_task_packet_context_${packet.contextFreshnessStatus}`);
+    reasonCodes.push(`implementation_task_packet_context_${effectiveContextFreshnessStatus}`);
   }
   const invalid = reasonCodes.some(
     (code) =>
+      code !== "implementation_task_packet_legacy_context_snapshot_no_contract_normalized" &&
       code !== "implementation_task_packet_context_request_required" &&
+      code !== "implementation_task_packet_validation_refs_missing" &&
+      code !== "implementation_task_packet_commitment_mapping_missing" &&
+      code !== "implementation_task_packet_target_snapshot_missing" &&
+      code !== "implementation_task_packet_target_snapshots_or_new_file_intent_missing" &&
+      code !== "implementation_task_packet_file_change_intents_missing" &&
+      code !== "implementation_task_packet_file_change_intent_coverage_missing" &&
+      code !== "implementation_task_packet_missing_context_snapshot_refs" &&
+      code !== "implementation_task_packet_rejected_context_snapshot_refs" &&
+      code !== "implementation_task_packet_stale_context_snapshot_refs" &&
       !code.startsWith("context_snapshot_") &&
       !code.startsWith("implementation_task_packet_context_") &&
       code !== "implementation_task_packet_required_context_snapshots_missing",
@@ -1332,6 +1882,16 @@ export function validateImplementationTaskPacketForWorker(
       : reasonCodes.some(
             (code) =>
               code === "implementation_task_packet_context_request_required" ||
+              code === "implementation_task_packet_validation_refs_missing" ||
+              code === "implementation_task_packet_commitment_mapping_missing" ||
+              code === "implementation_task_packet_target_snapshot_missing" ||
+              code === "implementation_task_packet_target_snapshots_or_new_file_intent_missing" ||
+              code === "implementation_task_packet_file_change_intents_missing" ||
+              code === "implementation_task_packet_file_change_intent_coverage_missing" ||
+              code === "implementation_task_packet_missing_context_snapshot_refs" ||
+              code === "implementation_task_packet_rejected_context_snapshot_refs" ||
+              code === "implementation_task_packet_stale_context_snapshot_refs" ||
+              code === "implementation_task_packet_context_refresh_action_block_implementation" ||
               code.startsWith("context_snapshot_") ||
               code.startsWith("implementation_task_packet_context_") ||
               code === "implementation_task_packet_required_context_snapshots_missing",

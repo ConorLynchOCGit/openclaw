@@ -1,28 +1,4 @@
-import { createWorkflowPermissionReadback } from "../authority/workflow-permission-readback.ts";
-import {
-  AGENT_TEAM_ROLE_EVAL_FIXTURES,
-  createAgentTeamRoleComparison,
-  scoreAgentTeamRoleEvalOutput,
-  type AgentTeamRoleEvalScorecard,
-} from "../model-routing/agent-team-role-evals.ts";
-import {
-  OPERATOR_REQUESTED_AGENT_TEAM_MODEL_CANDIDATES,
-  type RequestedModelCandidate,
-} from "../model-routing/model-candidate-validation-plan.ts";
-import {
-  enforceModelRoster,
-  type ModelRosterEnforcementDecision,
-  type ModelRosterRequestedAuthority,
-  type ModelRosterRoleId,
-} from "../model-routing/model-roster-enforcement.ts";
-import {
-  createModelRunAccountingRecord,
-  recordModelRunAccounting,
-  recordModelRunAccountingSummary,
-  sha256Text,
-  summarizeModelRunAccounting,
-  type ModelRunAccountingRecord,
-} from "../model-routing/model-run-accounting.ts";
+import { sha256Text } from "../model-routing/model-run-accounting.ts";
 import {
   createOpenRouterRetryEvidence,
   DEFAULT_OPENROUTER_RETRY_POLICY,
@@ -33,43 +9,20 @@ import {
   type OpenRouterRetryPolicy,
   type OpenRouterRetryReasonCode,
 } from "../model-routing/openrouter-retry-policy.ts";
-import { summarizeProviderReliability } from "../model-routing/provider-reliability-summary.ts";
 import type { OpenRouterCatalogPricing } from "../model-routing/provider-usage-cost-normalizer.ts";
-import type { JsonValue, RuntimeJob, RuntimeJobRepository } from "../runtime-job-repository.ts";
 import {
-  createAgentTeamFailureRecoveryArtifact,
-  recordAgentTeamFailureRecoveryArtifact,
-  type AgentTeamFailureRecoveryArtifact,
-} from "./agent-team-failure-recovery.ts";
+  buildModelTaskTelemetryEnvelope,
+  classifyModelTaskCall,
+  type ModelTaskClass,
+} from "../model-tasks/model-task-classification.ts";
+import {
+  buildStructuredAdapterProviderProfile,
+  classifyStructuredAdapterOutcome,
+  structuredAdapterDiagnostics,
+  structuredAdapterPreflight,
+} from "../model-tasks/structured-tool-schema-adapter.ts";
+import type { JsonValue } from "../runtime-job-repository.ts";
 import type { AgentTeamRoleId } from "./agent-team-plan.ts";
-import {
-  buildAgentTeamResultReviewArtifact,
-  recordAgentTeamResultReviewArtifact,
-} from "./agent-team-result-review.ts";
-import {
-  AGENT_TEAM_JOB_TYPE,
-  createAgentTeamRuntimeEvidence,
-  recordAgentTeamRuntimeEvidence,
-  type AgentTeamRuntimeEvidence,
-} from "./agent-team-runtime-evidence.ts";
-import {
-  createAgentTeamStreamEvent,
-  recordAgentTeamStreamEvent,
-  recordAgentTeamStreamSummary,
-  summarizeAgentTeamStreamEvents,
-  type AgentTeamStreamEvidenceEvent,
-} from "./agent-team-stream-evidence.ts";
-import { createContextScoutArtifact, recordContextScoutArtifact } from "./context-scout-pilot.ts";
-import {
-  createDegradedSystemCloseoutCapsule,
-  type CloseoutCapsuleReporterInput,
-  type CloseoutCapsuleReporterResult,
-} from "./model-closeout-capsule-reporter.ts";
-import {
-  buildSecurityPrivacyReviewerArtifact,
-  recordSecurityPrivacyReviewerArtifact,
-} from "./security-privacy-reviewer.ts";
-import { resolveRuntimeObjective } from "./source-prompt-ref.ts";
 
 export type AgentTeamModelClientResult = {
   status: "succeeded" | "failed" | "needs_review";
@@ -99,6 +52,8 @@ export type AgentTeamModelClient = {
     maxTokens?: number;
     timeoutMs?: number;
     maxAttempts?: number;
+    taskClass?: ModelTaskClass;
+    modelTaskCallSite?: string;
   }): Promise<AgentTeamModelClientResult>;
 };
 
@@ -108,962 +63,8 @@ export type OpenRouterRoleModelRequestProfile = {
   maxTokens?: number;
 };
 
-export type LiveAgentTeamRunnerOptions = {
-  runtimeJobs: RuntimeJobRepository;
-  modelClient: AgentTeamModelClient;
-  workerId: string;
-  queueName?: string;
-  sourcePromptSessionRoots?: string[];
-  now?: () => Date;
-  maxV4ProEvalFixtures?: number;
-  v4ProRetryDelayMs?: number;
-  useV4ProForTestEngineer?: boolean;
-  closeoutReporter?: {
-    createCapsule(input: CloseoutCapsuleReporterInput): Promise<CloseoutCapsuleReporterResult>;
-  };
-};
-
-export type LiveAgentTeamRunResult = {
-  artifactKind: "live_agent_team_run_result";
-  workerId: string;
-  claimed: boolean;
-  completed: boolean;
-  failed: boolean;
-  runtimeJobId: string | null;
-  teamRunId: string | null;
-  runPath: "queued_supervisor_live_model_team";
-  modelRosterDecisions: ModelRosterEnforcementDecision[];
-  modelAccounting: ModelRunAccountingRecord[];
-  evidence: AgentTeamRuntimeEvidence | null;
-  v4ProScorecards: AgentTeamRoleEvalScorecard[];
-  v4ProRoleStatuses: Record<string, string>;
-  failureRecovery: AgentTeamFailureRecoveryArtifact | null;
-  providerCallMade: boolean;
-  rawPromptStored: false;
-  rawResponseStored: false;
-  workQueueLifecycleMutated: false;
-  codexCliInvoked: false;
-  acpSessionStarted: false;
-  deployPerformed: false;
-  externalOutboundSendPerformed: false;
-  productionModelPromotionPerformed: false;
-  failure: { stage: string; message: string } | null;
-};
-
-type TeamRoleSpec = {
-  roleId: ModelRosterRoleId;
-  modelId: string;
-  candidateId: string;
-  authority: ModelRosterRequestedAuthority;
-  roleQualificationStatus: "qualified" | "needs_review";
-};
-
-const DEFAULT_TEAM_ROLE_SEQUENCE: TeamRoleSpec[] = [
-  {
-    roleId: "orchestrator",
-    modelId: "local-codex-operator-session",
-    candidateId: "local-codex-operator",
-    authority: "orchestration",
-    roleQualificationStatus: "qualified",
-  },
-  {
-    roleId: "context_scout",
-    modelId: "deepseek/deepseek-v4-flash",
-    candidateId: "deepseek-v4-coding-candidate",
-    authority: "observe",
-    roleQualificationStatus: "qualified",
-  },
-  {
-    roleId: "implementation_engineer",
-    modelId: "moonshotai/kimi-k2.6",
-    candidateId: "kimi-2-6-coding-candidate",
-    authority: "implementation",
-    roleQualificationStatus: "qualified",
-  },
-  {
-    roleId: "test_engineer",
-    modelId: "deepseek/deepseek-v4-flash",
-    candidateId: "deepseek-v4-coding-candidate",
-    authority: "testing",
-    roleQualificationStatus: "qualified",
-  },
-  {
-    roleId: "security_privacy_reviewer",
-    modelId: "frontier-reviewer-lane",
-    candidateId: "local-codex-operator",
-    authority: "review",
-    roleQualificationStatus: "qualified",
-  },
-  {
-    roleId: "reviewer",
-    modelId: "local-codex-operator-session",
-    candidateId: "local-codex-operator",
-    authority: "review",
-    roleQualificationStatus: "qualified",
-  },
-  {
-    roleId: "observability_scribe",
-    modelId: "deepseek/deepseek-v4-flash",
-    candidateId: "deepseek-v4-coding-candidate",
-    authority: "observe",
-    roleQualificationStatus: "qualified",
-  },
-];
-
-function teamRoleSequence(input: { useV4ProForTestEngineer?: boolean }): TeamRoleSpec[] {
-  return DEFAULT_TEAM_ROLE_SEQUENCE.map((role) =>
-    input.useV4ProForTestEngineer && role.roleId === "test_engineer"
-      ? {
-          ...role,
-          modelId: "deepseek/deepseek-v4-pro",
-          candidateId: "deepseek-v4-pro-coding-candidate",
-          roleQualificationStatus: "qualified",
-        }
-      : role,
-  );
-}
-
-function asRecord(value: unknown): Record<string, unknown> {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : {};
-}
-
-function stringValue(value: unknown, fallback: string): string {
-  return typeof value === "string" && value.trim() ? value.trim() : fallback;
-}
-
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-function candidateById(candidateId: string): RequestedModelCandidate {
-  const candidate = OPERATOR_REQUESTED_AGENT_TEAM_MODEL_CANDIDATES.find(
-    (item) => item.candidateId === candidateId,
-  );
-  if (!candidate) {
-    throw new Error(`unknown model candidate: ${candidateId}`);
-  }
-  return candidate;
-}
-
-function boundedRolePrompt(input: {
-  roleId: ModelRosterRoleId;
-  objective: string;
-  scoutRef?: string | null;
-}): string {
-  return [
-    "Return only compact JSON. Do not include raw transcripts, raw prompts, secrets, or logs.",
-    `roleId: ${input.roleId}`,
-    `objective: ${input.objective}`,
-    input.scoutRef ? `contextScoutRef: ${input.scoutRef}` : "contextScoutRef: none",
-    "Required keys: summary, findings, evidenceRefs, risks, recommendedNextAction, notDeterministic.",
-    "Set notDeterministic true for review or qualitative judgment fields.",
-  ].join("\n");
-}
-
-function taskSpecificFilesForWorkflow(workflowId: string): string[] {
-  switch (workflowId) {
-    case "agent_team.architecture":
-      return [
-        "extensions/execution-platform/src/workflows/architecture-workflow.ts",
-        "extensions/execution-platform/src/workflows/architecture-spec-review-live-pilot.ts",
-        "extensions/execution-platform/src/workflows/workflow-contract.ts",
-      ];
-    case "agent_team.qa_test":
-      return [
-        "extensions/execution-platform/src/workflows/qa-test-workflow.ts",
-        "extensions/execution-platform/src/workflows/qa-test-review-live-pilot.ts",
-        "extensions/execution-platform/src/codex-bridge/agent-team-result-review.ts",
-      ];
-    case "agent_team.coding":
-      return [
-        "extensions/execution-platform/src/codex-bridge/live-agent-team-runner.ts",
-        "extensions/execution-platform/src/codex-bridge/agent-team-runtime-evidence.ts",
-        "extensions/execution-platform/src/work-queue/execution-read-model.ts",
-      ];
-    default:
-      return [
-        "extensions/execution-platform/src/codex-bridge/live-agent-team-runner.ts",
-        "extensions/execution-platform/src/work-queue/execution-read-model.ts",
-      ];
-  }
-}
-
-function streamEvent(input: {
-  runtimeJobId: string;
-  teamRunId: string;
-  roleId: ModelRosterRoleId | null;
-  modelCandidateId?: string | null;
-  eventKind: AgentTeamStreamEvidenceEvent["eventKind"];
-  occurredAt: string;
-  status: AgentTeamStreamEvidenceEvent["status"];
-  summary: string;
-  reasonCodes?: string[];
-  artifactRefs?: string[];
-}): AgentTeamStreamEvidenceEvent {
-  return createAgentTeamStreamEvent({
-    streamEventId: `${input.teamRunId}-${input.eventKind}-${input.roleId ?? "team"}-${input.occurredAt}`,
-    runtimeJobId: input.runtimeJobId,
-    teamRunId: input.teamRunId,
-    roleId: input.roleId,
-    modelCandidateId: input.modelCandidateId ?? null,
-    eventKind: input.eventKind,
-    occurredAt: input.occurredAt,
-    status: input.status,
-    summary: input.summary,
-    reasonCodes: input.reasonCodes ?? [],
-    artifactRefs: input.artifactRefs ?? [],
-  });
-}
-
-function runtimeEvidenceStatus(value: string | undefined): "allowed" | "needs_review" | "blocked" {
-  return value === "qualified" || value === "allowed"
-    ? "allowed"
-    : value === "blocked"
-      ? "blocked"
-      : "needs_review";
-}
-
-export class LiveAgentTeamRunner {
-  private readonly queueName: string;
-  private readonly now: () => Date;
-
-  constructor(private readonly options: LiveAgentTeamRunnerOptions) {
-    this.queueName = options.queueName ?? "agent-team-live";
-    this.now = options.now ?? (() => new Date());
-  }
-
-  async runOnce(): Promise<LiveAgentTeamRunResult> {
-    const claimed = await this.options.runtimeJobs.claimNextJob({
-      workerId: this.options.workerId,
-      queueName: this.queueName,
-      jobTypes: [AGENT_TEAM_JOB_TYPE],
-    });
-    if (!claimed) {
-      return this.empty({ claimed: false });
-    }
-    try {
-      const run = await this.runClaimedJob(claimed.job, claimed.leaseToken);
-      await this.renewLiveTeamLease(claimed.leaseToken);
-      const completed = await this.options.runtimeJobs.completeJob({
-        leaseToken: claimed.leaseToken,
-        result: {
-          teamRunId: run.evidence.teamRunId,
-          completedWorkPathSatisfied: run.evidence.validationState === "passed",
-          providerCallMade: run.modelAccounting.length > 0,
-          v4ProTestEngineerOnly: this.options.useV4ProForTestEngineer === true,
-        } as JsonValue,
-      });
-      if (!completed) {
-        return this.empty({
-          claimed: true,
-          failed: true,
-          runtimeJobId: claimed.job.jobId,
-          teamRunId: run.evidence.teamRunId,
-          failure: { stage: "complete_job", message: "lease expired before completion" },
-        });
-      }
-      return this.empty({
-        claimed: true,
-        completed: true,
-        runtimeJobId: claimed.job.jobId,
-        teamRunId: run.evidence.teamRunId,
-        modelRosterDecisions: run.modelRosterDecisions,
-        modelAccounting: run.modelAccounting,
-        evidence: run.evidence,
-        v4ProScorecards: run.v4ProScorecards,
-        v4ProRoleStatuses: run.v4ProRoleStatuses,
-        failureRecovery: run.failureRecovery,
-        providerCallMade: true,
-      });
-    } catch (error) {
-      await this.options.runtimeJobs.failJob({
-        leaseToken: claimed.leaseToken,
-        error: {
-          stage: "live_agent_team_run",
-          message: error instanceof Error ? error.message : "unknown live agent-team failure",
-        },
-      });
-      return this.empty({
-        claimed: true,
-        failed: true,
-        runtimeJobId: claimed.job.jobId,
-        failure: {
-          stage: "live_agent_team_run",
-          message: error instanceof Error ? error.message : "unknown live agent-team failure",
-        },
-      });
-    }
-  }
-
-  private async runClaimedJob(
-    job: RuntimeJob,
-    leaseToken: string,
-  ): Promise<{
-    evidence: AgentTeamRuntimeEvidence;
-    modelRosterDecisions: ModelRosterEnforcementDecision[];
-    modelAccounting: ModelRunAccountingRecord[];
-    v4ProScorecards: AgentTeamRoleEvalScorecard[];
-    v4ProRoleStatuses: Record<string, string>;
-    failureRecovery: AgentTeamFailureRecoveryArtifact;
-  }> {
-    const payload = asRecord(job.payload);
-    const teamRunId = stringValue(payload.teamRunId, `live-team-${job.jobId}`);
-    const workflowId = stringValue(payload.workflowId, "agent_team.coding");
-    const objectiveResolution = await resolveRuntimeObjective(payload, {
-      sessionSearchRoots: this.options.sourcePromptSessionRoots,
-    });
-    const objective = objectiveResolution.objectiveForEvidence;
-    const objectiveForModel = objectiveResolution.objectiveForModel;
-    const taskSpecificObjectivePresent = objectiveResolution.taskSpecificObjectivePresent;
-    const workQueueLink = job.workItemId ? { workItemId: job.workItemId } : null;
-    const useV4ProForTestEngineer =
-      this.options.useV4ProForTestEngineer === true ||
-      payload.useV4ProForTestEngineer === true ||
-      asRecord(payload.authority ?? null).v4ProTestEngineerApproved === true;
-    const roleSequence = teamRoleSequence({ useV4ProForTestEngineer });
-    const evidenceRefs = [
-      ".artifacts/execution-platform/openrouter-model-candidate-coding-eval-results.json",
-      ".artifacts/execution-platform/work-queue-model-readiness-v4-pro-rerun-proof.json",
-    ];
-    const modelRosterDecisions: ModelRosterEnforcementDecision[] = roleSequence.map((role) =>
-      role.candidateId === "local-codex-operator"
-        ? {
-            artifactKind: "model_roster_enforcement_decision",
-            roleId: role.roleId,
-            requestedModelId: role.modelId,
-            requestedAuthority: role.authority,
-            allowed: true,
-            status: "allowed",
-            reasonCodes: [],
-            candidateId: "local-codex-operator",
-            roleTargetId: null,
-            operatorOverrideApplied: false,
-            noGlobalWinner: true,
-            rawPromptStored: false,
-            rawResponseStored: false,
-            workQueueLifecycleMutated: false,
-          }
-        : enforceModelRoster({
-            roleId: role.roleId,
-            requestedModelId: role.modelId,
-            requestedAuthority: role.authority,
-            candidates: OPERATOR_REQUESTED_AGENT_TEAM_MODEL_CANDIDATES,
-            roleQualificationStatus: role.roleQualificationStatus,
-            evidenceRefs,
-          }),
-    );
-    for (const roleTargetId of [
-      "context_scout",
-      "security_privacy_reviewer_assist",
-      "reviewer_assist",
-      "observability_scribe",
-      "implementation_engineer_shadow",
-      "deeper_implementation_candidate",
-    ] as const) {
-      const roleId: ModelRosterRoleId =
-        roleTargetId === "context_scout"
-          ? "context_scout"
-          : roleTargetId === "observability_scribe"
-            ? "observability_scribe"
-            : roleTargetId.includes("implementation")
-              ? "implementation_engineer"
-              : "reviewer";
-      modelRosterDecisions.push(
-        enforceModelRoster({
-          roleId,
-          requestedModelId: "deepseek/deepseek-v4-pro",
-          requestedAuthority:
-            roleId === "context_scout" ||
-            roleId === "observability_scribe" ||
-            roleTargetId.includes("implementation")
-              ? "observe"
-              : "review",
-          candidates: OPERATOR_REQUESTED_AGENT_TEAM_MODEL_CANDIDATES,
-          roleTargetId,
-          roleQualificationStatus: roleTargetId.includes("implementation")
-            ? "shadow_only"
-            : "needs_review",
-          evidenceRefs,
-        }),
-      );
-    }
-    const blocked = modelRosterDecisions.filter(
-      (decision) => !decision.allowed && decision.status !== "needs_review",
-    );
-    if (blocked.length > 0) {
-      throw new Error(`model roster blocked live team run: ${blocked[0]?.reasonCodes.join(",")}`);
-    }
-
-    const streamEvents: AgentTeamStreamEvidenceEvent[] = [];
-    const accounting: ModelRunAccountingRecord[] = [];
-    let scoutRef: string | null = null;
-    const assignments: AgentTeamRuntimeEvidence["roleAssignments"] = [];
-
-    for (const role of roleSequence) {
-      await this.renewLiveTeamLease(leaseToken);
-      const startedAt = this.now().toISOString();
-      const startEvent = streamEvent({
-        runtimeJobId: job.jobId,
-        teamRunId,
-        roleId: role.roleId,
-        modelCandidateId: role.candidateId,
-        eventKind: "role_started",
-        occurredAt: startedAt,
-        status: "started",
-        summary: `${role.roleId} started`,
-      });
-      await recordAgentTeamStreamEvent({
-        runtimeJobs: this.options.runtimeJobs,
-        event: startEvent,
-      });
-      streamEvents.push(startEvent);
-
-      if (role.roleId === "implementation_engineer" && !scoutRef) {
-        throw new Error("context scout evidence is required before implementation");
-      }
-
-      const prompt = boundedRolePrompt({
-        roleId: role.roleId,
-        objective: objectiveForModel,
-        scoutRef,
-      });
-      const promptHash = sha256Text(prompt);
-      const modelStartedAt = this.now().toISOString();
-      await recordAgentTeamStreamEvent({
-        runtimeJobs: this.options.runtimeJobs,
-        event: streamEvent({
-          runtimeJobId: job.jobId,
-          teamRunId,
-          roleId: role.roleId,
-          modelCandidateId: role.candidateId,
-          eventKind: "model_call_started",
-          occurredAt: modelStartedAt,
-          status: "started",
-          summary: `${role.roleId} model call started`,
-        }),
-      });
-      const result =
-        role.candidateId === "local-codex-operator"
-          ? {
-              status: "succeeded" as const,
-              responseText: JSON.stringify({
-                summary: "local operator acceptance lane recorded bounded judgment",
-                findings: [],
-                evidenceRefs: [scoutRef ?? `runtime-job://${job.jobId}/agent-team`],
-                risks: [],
-                recommendedNextAction: "continue",
-                notDeterministic: true,
-              }),
-              responseHash: sha256Text("local-operator-bounded-judgment"),
-              usage: null,
-            }
-          : await this.options.modelClient.callRole({
-              roleId: role.roleId,
-              modelId: role.modelId,
-              modelCandidateId: role.candidateId,
-              prompt,
-              responseFormat: "json_object",
-              maxTokens: 700,
-            });
-      await this.renewLiveTeamLease(leaseToken);
-      const completedAt = this.now().toISOString();
-      const account = createModelRunAccountingRecord({
-        modelRunId: `${teamRunId}-${role.roleId}`,
-        runtimeJobId: job.jobId,
-        teamRunId,
-        roleId: role.roleId,
-        modelCandidateId: role.candidateId,
-        provider: role.candidateId === "local-codex-operator" ? "local" : "openrouter",
-        modelId: role.modelId,
-        startedAt: modelStartedAt,
-        completedAt,
-        promptHash,
-        responseHash: result.responseHash,
-        usage: result.usage,
-        catalogPricing: result.catalogPricing,
-        retryEvidence: result.retryEvidence,
-        providerCallSucceeded: result.status === "succeeded",
-        status: result.status,
-        errorReasonCode: result.errorReasonCode ?? null,
-      });
-      accounting.push(account);
-      await recordModelRunAccounting({ runtimeJobs: this.options.runtimeJobs, record: account });
-      const finishEvent = streamEvent({
-        runtimeJobId: job.jobId,
-        teamRunId,
-        roleId: role.roleId,
-        modelCandidateId: role.candidateId,
-        eventKind: "role_finished",
-        occurredAt: completedAt,
-        status: result.status === "succeeded" ? "succeeded" : "needs_review",
-        summary: `${role.roleId} finished with ${result.status}`,
-        reasonCodes: result.errorReasonCode ? [result.errorReasonCode] : [],
-      });
-      await recordAgentTeamStreamEvent({
-        runtimeJobs: this.options.runtimeJobs,
-        event: finishEvent,
-      });
-      streamEvents.push(finishEvent);
-      assignments.push({
-        roleId: role.roleId,
-        modelId: role.modelId,
-        assignedAt: startedAt,
-        status: result.status === "succeeded" ? "completed" : "needs_review",
-      });
-      if (role.roleId === "context_scout") {
-        const scout = createContextScoutArtifact({
-          scoutId: `${teamRunId}-live-context-scout`,
-          runtimeJobId: job.jobId,
-          teamRunId,
-          objective,
-          relevantFiles: [
-            "extensions/execution-platform/src/codex-bridge/live-agent-team-runner.ts",
-            "extensions/execution-platform/src/work-queue/execution-read-model.ts",
-          ],
-          existingPatterns: ["runtime artifacts feed Work Queue projection"],
-          knownConstraints: ["context scout must precede implementation"],
-          risks: ["provider response quality may require needs_review"],
-          suggestedImplementationPath: ["record stream/accounting before final evidence"],
-          unknowns: ["future broader parallel team scheduling"],
-          filesNotToTouch: ["pnpm-lock.yaml", "deployment config", "secrets"],
-        });
-        await recordContextScoutArtifact({
-          runtimeJobs: this.options.runtimeJobs,
-          artifact: scout,
-        });
-        scoutRef = `runtime-job://${job.jobId}/agent-team/context-scout/${scout.scoutId}`;
-      }
-    }
-
-    await this.renewLiveTeamLease(leaseToken);
-    const v4ProScorecards = await this.rerunV4ProStructuredEval({
-      runtimeJobId: job.jobId,
-      teamRunId,
-    });
-    await this.renewLiveTeamLease(leaseToken);
-    const v4ProComparison = createAgentTeamRoleComparison({
-      comparisonId: `${teamRunId}-v4-pro-reliable-rerun-comparison`,
-      candidates: OPERATOR_REQUESTED_AGENT_TEAM_MODEL_CANDIDATES,
-      scorecardsByCandidateId: {
-        "deepseek-v4-pro-coding-candidate": v4ProScorecards,
-      },
-      evidenceRefsByCandidateId: {
-        "deepseek-v4-pro-coding-candidate": [
-          `runtime-job://${job.jobId}/agent-team/v4-pro-reliable-rerun`,
-        ],
-      },
-    });
-    await this.options.runtimeJobs.attachArtifact({
-      jobId: job.jobId,
-      artifactType: "agent_team.v4_pro_reliable_rerun_comparison",
-      storageKind: "metadata",
-      uri: `runtime-job://${job.jobId}/agent-team/v4-pro-reliable-rerun-comparison/${teamRunId}`,
-      contentType: "application/json",
-      sizeBytes: Buffer.byteLength(JSON.stringify(v4ProComparison), "utf8"),
-      metadata: v4ProComparison as unknown as JsonValue,
-    });
-
-    const recovery = createAgentTeamFailureRecoveryArtifact({
-      recoveryId: `${teamRunId}-failure-recovery`,
-      runtimeJobId: job.jobId,
-      teamRunId,
-      failedRole: "test_engineer",
-      recoveryRole: "implementation_engineer",
-      failureKind: "invalid_validation_claim",
-      detectedAt: this.now().toISOString(),
-      failureSummary: "Injected test lane attempted to treat incomplete validation as success.",
-      repairAction: "Repair lane required explicit validation rerun evidence before completion.",
-      validationRerunRequired: true,
-      validationRerunStatus: "passed",
-      outcome: "repaired",
-    });
-    await recordAgentTeamFailureRecoveryArtifact({
-      runtimeJobs: this.options.runtimeJobs,
-      artifact: recovery,
-    });
-    await this.renewLiveTeamLease(leaseToken);
-
-    const security = buildSecurityPrivacyReviewerArtifact({
-      reviewId: `${teamRunId}-mandatory-security-review`,
-      reviewKind: "local_codex_review",
-      runtimeJobId: job.jobId,
-      teamRunId,
-      objective,
-      filesReviewed: taskSpecificFilesForWorkflow(workflowId),
-      evidenceRefs: [scoutRef ?? `runtime-job://${job.jobId}/agent-team/context-scout`],
-      findings: [],
-      exploitabilityNotes: ["no deploy, outbound send, model promotion, or Work Queue mutation"],
-      requiredFixes: [],
-      recommendedFixes: [],
-      residualRisk: ["future parallel team scheduling remains separate"],
-      judgmentMade: true,
-    });
-    await recordSecurityPrivacyReviewerArtifact({
-      runtimeJobs: this.options.runtimeJobs,
-      artifact: security,
-    });
-
-    const requiredRoleNeedsReviewBeforeReview = assignments.some(
-      (assignment) => assignment.status === "needs_review",
-    );
-    const capsuleInput: CloseoutCapsuleReporterInput = {
-      factualRefs: {
-        runtimeJobId: job.jobId,
-        teamRunId,
-        workflowId,
-        status:
-          requiredRoleNeedsReviewBeforeReview || !taskSpecificObjectivePresent
-            ? "needs_review"
-            : "completed",
-        roles: assignments.slice(0, 20).map((assignment) => ({
-          roleId: assignment.roleId,
-          agentId: assignment.roleId,
-          modelRef: assignment.modelId,
-          status: assignment.status,
-        })),
-        fileRefs: taskSpecificFilesForWorkflow(workflowId),
-        artifactRefs: [
-          scoutRef ?? `runtime-job://${job.jobId}/agent-team/context-scout`,
-          `runtime-job://${job.jobId}/agent-team/model-run-accounting`,
-          `runtime-job://${job.jobId}/agent-team/security-review`,
-        ],
-        validationRefs: [`runtime-job://${job.jobId}/agent-team/model-run-accounting`],
-        runtimeEventRefs: [`runtime-job://${job.jobId}/events`],
-      },
-      objectiveSummary: objective,
-      boundedRoleEvidence: assignments.slice(0, 20).map((assignment) => ({
-        roleId: assignment.roleId,
-        agentId: assignment.roleId,
-        modelRef: assignment.modelId,
-        askedToDo: objective,
-        evidenceSummary: `${assignment.roleId} returned ${assignment.status} through the live role-output proof path.`,
-        artifactRefs: [`runtime-job://${job.jobId}/agent-team/role/${assignment.roleId}`],
-        validationRefs: [`runtime-job://${job.jobId}/agent-team/model-run-accounting`],
-        limitations:
-          assignment.status === "needs_review"
-            ? ["role returned needs_review"]
-            : ["role-output proof does not by itself prove repo edits were made"],
-      })),
-      boundedResultEvidence: {
-        completed: !requiredRoleNeedsReviewBeforeReview && taskSpecificObjectivePresent,
-        needsReview: requiredRoleNeedsReviewBeforeReview || !taskSpecificObjectivePresent,
-        failed: false,
-        findings: taskSpecificObjectivePresent
-          ? []
-          : ["runtime job did not include objectiveSummary"],
-        requiredFixes: requiredRoleNeedsReviewBeforeReview
-          ? ["rerun with adjusted provider request shape or operator review"]
-          : !taskSpecificObjectivePresent
-            ? ["rerun with a bounded objectiveSummary before marking succeeded"]
-            : [],
-        limitations: requiredRoleNeedsReviewBeforeReview
-          ? ["one or more required model lanes returned needs-review output"]
-          : [
-              "live provider calls were role-output proof, not repo-edit authority",
-              ...(!taskSpecificObjectivePresent ? ["task-specific objective was missing"] : []),
-            ],
-      },
-    };
-    const capsuleResult = this.options.closeoutReporter
-      ? await this.options.closeoutReporter.createCapsule(capsuleInput)
-      : createDegradedSystemCloseoutCapsule({
-          ...capsuleInput,
-          reasonCodes: ["closeout_capsule_model_reporter_not_configured"],
-        });
-    const capsuleIsModelAuthored = capsuleResult.source === "model";
-    const resultReview = buildAgentTeamResultReviewArtifact({
-      reviewId: `${teamRunId}-live-result-review`,
-      teamRunId,
-      runtimeJobId: job.jobId,
-      objective,
-      validationEvidenceRefs: [`runtime-job://${job.jobId}/agent-team/model-run-accounting`],
-      closeoutRefs: [
-        `runtime-job://${job.jobId}/closeout-capsule/${capsuleResult.capsule.capsuleId}`,
-      ],
-      filesChanged: [],
-      reviewer: "local-codex-operator",
-      reviewKind: "local_codex_review",
-      judgmentMade: true,
-      notDeterministic: true,
-      goalSatisfaction:
-        requiredRoleNeedsReviewBeforeReview ||
-        !taskSpecificObjectivePresent ||
-        !capsuleIsModelAuthored
-          ? "needs_review"
-          : "satisfied",
-      findings: taskSpecificObjectivePresent
-        ? []
-        : ["runtime job did not include objectiveSummary"],
-      limitations: requiredRoleNeedsReviewBeforeReview
-        ? ["one or more required model lanes returned needs-review output"]
-        : [
-            "live provider calls were role-output proof, not repo-edit authority",
-            ...(!taskSpecificObjectivePresent ? ["task-specific objective was missing"] : []),
-          ],
-      requiredFixes: requiredRoleNeedsReviewBeforeReview
-        ? ["rerun with adjusted provider request shape or operator review"]
-        : !taskSpecificObjectivePresent
-          ? ["rerun with a bounded objectiveSummary before marking succeeded"]
-          : !capsuleIsModelAuthored
-            ? ["generate a model-authored Closeout Capsule before marking clean success"]
-            : [],
-      closeoutCapsule: capsuleResult.capsule,
-      humanCloseoutSummary: capsuleResult.legacyHumanSummary,
-      accepted:
-        !requiredRoleNeedsReviewBeforeReview &&
-        taskSpecificObjectivePresent &&
-        capsuleIsModelAuthored,
-      needsReview:
-        requiredRoleNeedsReviewBeforeReview ||
-        !taskSpecificObjectivePresent ||
-        !capsuleIsModelAuthored,
-      finalAcceptanceBy: "operator",
-    });
-    await recordAgentTeamResultReviewArtifact({
-      runtimeJobs: this.options.runtimeJobs,
-      artifact: resultReview,
-    });
-
-    const closeoutStarted = streamEvent({
-      runtimeJobId: job.jobId,
-      teamRunId,
-      roleId: "observability_scribe",
-      modelCandidateId: "deepseek-v4-coding-candidate",
-      eventKind: "closeout_started",
-      occurredAt: this.now().toISOString(),
-      status: "started",
-      summary: "closeout requirement started",
-    });
-    const closeoutFinished = streamEvent({
-      runtimeJobId: job.jobId,
-      teamRunId,
-      roleId: "observability_scribe",
-      modelCandidateId: "deepseek-v4-coding-candidate",
-      eventKind: "closeout_finished",
-      occurredAt: this.now().toISOString(),
-      status: "succeeded",
-      summary: "closeout requirement recorded",
-    });
-    for (const event of [closeoutStarted, closeoutFinished]) {
-      await recordAgentTeamStreamEvent({ runtimeJobs: this.options.runtimeJobs, event });
-      streamEvents.push(event);
-    }
-    const streamSummary = summarizeAgentTeamStreamEvents(streamEvents);
-    const streamSummaryArtifact = await recordAgentTeamStreamSummary({
-      runtimeJobs: this.options.runtimeJobs,
-      summary: streamSummary,
-    });
-    const accountingSummary = summarizeModelRunAccounting(accounting);
-    const accountingSummaryArtifact = await recordModelRunAccountingSummary({
-      runtimeJobs: this.options.runtimeJobs,
-      summary: accountingSummary,
-    });
-    const providerReliability = summarizeProviderReliability({
-      records: accounting,
-      readinessByModelId: {
-        "moonshotai/kimi-k2.6": "qualified",
-        "deepseek/deepseek-v4-flash": "qualified",
-        "deepseek/deepseek-v4-pro": useV4ProForTestEngineer ? "qualified" : "shadow_only",
-      },
-      sourceArtifactRefs: [accountingSummaryArtifact.uri],
-    });
-    const providerReliabilityArtifact = await this.options.runtimeJobs.attachArtifact({
-      jobId: job.jobId,
-      artifactType: "agent_team.provider_reliability_summary",
-      storageKind: "metadata",
-      uri: `runtime-job://${job.jobId}/agent-team/provider-reliability/${teamRunId}`,
-      contentType: "application/json",
-      sizeBytes: Buffer.byteLength(JSON.stringify(providerReliability), "utf8"),
-      metadata: providerReliability as unknown as JsonValue,
-    });
-    const v4ProRoleStatuses = Object.fromEntries(
-      v4ProComparison.roleDecisions.map((decision) => [
-        decision.roleTargetId,
-        decision.candidateDecisions.find(
-          (candidate) => candidate.candidateId === "deepseek-v4-pro-coding-candidate",
-        )?.status ?? "needs_review",
-      ]),
-    );
-    const requiredRoleNeedsReview = assignments.some(
-      (assignment) => assignment.status === "needs_review",
-    );
-    const evidence = createAgentTeamRuntimeEvidence({
-      teamRunId,
-      runtimeJobId: job.jobId,
-      workQueueLink,
-      objective,
-      roster: [
-        ...roleSequence.map((role) => ({
-          roleId: role.roleId,
-          modelId: role.modelId,
-          status: "allowed" as const,
-        })),
-        { roleId: "context_scout", modelId: "deepseek/deepseek-v4-pro", status: "needs_review" },
-        {
-          roleId: "implementation_engineer",
-          modelId: "deepseek/deepseek-v4-pro",
-          status: "needs_review",
-        },
-      ],
-      roleAssignments: assignments,
-      roleEligibility: {
-        "moonshotai/kimi-k2.6": "allowed",
-        "deepseek/deepseek-v4-flash": "allowed",
-        "deepseek/deepseek-v4-pro": useV4ProForTestEngineer
-          ? "allowed"
-          : runtimeEvidenceStatus(v4ProRoleStatuses.context_scout),
-      },
-      activeRole: "observability_scribe",
-      handoffHistory: [
-        {
-          handoffId: `${teamRunId}-scout-to-implementation`,
-          fromRole: "context_scout",
-          toRole: "implementation_engineer",
-          status: "completed",
-          recordedAt: this.now().toISOString(),
-          payloadSummary: "mandatory context scout artifact supplied before implementation",
-          evidenceRefs: [scoutRef ?? `runtime-job://${job.jobId}/agent-team/context-scout`],
-          rawTranscriptAllowed: false,
-          rawProviderPromptAllowed: false,
-        },
-      ],
-      reviewState: "reviewed",
-      validationState: requiredRoleNeedsReview ? "needs_review" : "passed",
-      closeoutState: "present",
-      authorityStatus: "allowed",
-      permissionEvidence: createWorkflowPermissionReadback({
-        workflowId,
-        authorityProfile: stringValue(payload.authorityProfile, "local_yolo"),
-      }),
-      modelRoutingEvidence: modelRosterDecisions as unknown as JsonValue,
-      sourcePromptResolution: objectiveResolution.sourcePromptResolution as unknown as JsonValue,
-      controlState: "none",
-      streamEvidenceRefs: [streamSummaryArtifact.uri],
-      artifactRefs: [
-        streamSummaryArtifact.uri,
-        accountingSummaryArtifact.uri,
-        providerReliabilityArtifact.uri,
-        `runtime-job://${job.jobId}/agent-team/security-review/${security.reviewId}`,
-        `runtime-job://${job.jobId}/agent-team/result-review/${resultReview.reviewId}`,
-        `runtime-job://${job.jobId}/agent-team/failure-recovery/${recovery.recoveryId}`,
-      ],
-    });
-    await recordAgentTeamRuntimeEvidence({ runtimeJobs: this.options.runtimeJobs, evidence });
-    if (resultReview.needsReview) {
-      throw new Error("task_specific_closeout_evidence_required_before_success");
-    }
-    await this.renewLiveTeamLease(leaseToken);
-    return {
-      evidence,
-      modelRosterDecisions,
-      modelAccounting: accounting,
-      v4ProScorecards,
-      v4ProRoleStatuses,
-      failureRecovery: recovery,
-    };
-  }
-
-  private async renewLiveTeamLease(leaseToken: string): Promise<void> {
-    await this.options.runtimeJobs.renewLease({
-      leaseToken,
-      workerId: this.options.workerId,
-      extendByMs: 10 * 60 * 1000,
-    });
-  }
-
-  private async rerunV4ProStructuredEval(input: {
-    runtimeJobId: string;
-    teamRunId: string;
-  }): Promise<AgentTeamRoleEvalScorecard[]> {
-    const candidate = candidateById("deepseek-v4-pro-coding-candidate");
-    const fixtures = AGENT_TEAM_ROLE_EVAL_FIXTURES.slice(0, this.options.maxV4ProEvalFixtures ?? 3);
-    const scorecards: AgentTeamRoleEvalScorecard[] = [];
-    for (const fixture of fixtures) {
-      const prompt = [
-        "Return compact JSON only. Do not include raw transcripts, raw prompts, logs, or secrets.",
-        `fixtureId: ${fixture.fixtureId}`,
-        `purpose: ${fixture.purpose}`,
-        `requiredFields: ${fixture.requiredFields.join(", ")}`,
-        "Include all required fields and notDeterministic:true.",
-      ].join("\n");
-      const promptHash = sha256Text(prompt);
-      let result = await this.options.modelClient.callRole({
-        roleId: "reviewer",
-        modelId: candidate.openRouterModelId,
-        modelCandidateId: candidate.candidateId,
-        prompt,
-        responseFormat: "json_object",
-        maxTokens: 700,
-      });
-      if (
-        result.errorReasonCode === "openrouter_http_429" &&
-        (this.options.v4ProRetryDelayMs ?? 0) > 0
-      ) {
-        await sleep(this.options.v4ProRetryDelayMs ?? 0);
-        result = await this.options.modelClient.callRole({
-          roleId: "reviewer",
-          modelId: candidate.openRouterModelId,
-          modelCandidateId: candidate.candidateId,
-          prompt,
-          responseFormat: "json_object",
-          maxTokens: 700,
-        });
-      }
-      scorecards.push(
-        scoreAgentTeamRoleEvalOutput({
-          candidate,
-          fixture,
-          evaluatedAt: this.now().toISOString(),
-          promptHash,
-          responseHash: result.responseHash,
-          responseText: result.responseText,
-          providerCallMade: true,
-        }),
-      );
-    }
-    await this.options.runtimeJobs.attachArtifact({
-      jobId: input.runtimeJobId,
-      artifactType: "agent_team.v4_pro_reliable_rerun_scorecards",
-      storageKind: "metadata",
-      uri: `runtime-job://${input.runtimeJobId}/agent-team/v4-pro-reliable-rerun/${input.teamRunId}`,
-      contentType: "application/json",
-      sizeBytes: Buffer.byteLength(JSON.stringify(scorecards), "utf8"),
-      metadata: scorecards as unknown as JsonValue,
-    });
-    return scorecards;
-  }
-
-  private empty(input: Partial<LiveAgentTeamRunResult>): LiveAgentTeamRunResult {
-    return {
-      artifactKind: "live_agent_team_run_result",
-      workerId: this.options.workerId,
-      claimed: false,
-      completed: false,
-      failed: false,
-      runtimeJobId: null,
-      teamRunId: null,
-      runPath: "queued_supervisor_live_model_team",
-      modelRosterDecisions: [],
-      modelAccounting: [],
-      evidence: null,
-      v4ProScorecards: [],
-      v4ProRoleStatuses: {},
-      failureRecovery: null,
-      providerCallMade: false,
-      rawPromptStored: false,
-      rawResponseStored: false,
-      workQueueLifecycleMutated: false,
-      codexCliInvoked: false,
-      acpSessionStarted: false,
-      deployPerformed: false,
-      externalOutboundSendPerformed: false,
-      productionModelPromotionPerformed: false,
-      failure: null,
-      ...input,
-    };
-  }
 }
 
 export class OpenRouterAgentTeamModelClient implements AgentTeamModelClient {
@@ -1089,6 +90,8 @@ export class OpenRouterAgentTeamModelClient implements AgentTeamModelClient {
     maxTokens?: number;
     timeoutMs?: number;
     maxAttempts?: number;
+    taskClass?: ModelTaskClass;
+    modelTaskCallSite?: string;
   }): Promise<AgentTeamModelClientResult> {
     const fetchImpl = this.options.fetchImpl ?? fetch;
     const policy = {
@@ -1103,16 +106,62 @@ export class OpenRouterAgentTeamModelClient implements AgentTeamModelClient {
     const responseFormatMode = requestProfile.responseFormatMode ?? "auto";
     const reasoningMode = requestProfile.reasoningMode ?? "exclude";
     const promptHash = sha256Text(input.prompt);
+    const classification = input.taskClass
+      ? classifyModelTaskCall({
+          taskClass: input.taskClass,
+          callSite: input.modelTaskCallSite ?? `openrouter.role.${input.roleId}`,
+          overrideModelRef: input.modelId,
+          overrideReasonCode: "openrouter_role_model_explicit_model",
+          overrideRationale:
+            "OpenRouter role call selected the role/capability model for this task.",
+        })
+      : null;
+    const adapterProfile = classification
+      ? buildStructuredAdapterProviderProfile(classification)
+      : null;
+    const promptByteLength = Buffer.byteLength(input.prompt, "utf8");
+    const preflight = adapterProfile
+      ? structuredAdapterPreflight({
+          profile: adapterProfile,
+          inputBytes: promptByteLength,
+          requestedMaxOutputTokens:
+            input.maxTokens ?? requestProfile.maxTokens ?? adapterProfile.maxOutputTokens,
+          requestedTimeoutMs: input.timeoutMs ?? adapterProfile.hardTimeoutMs,
+        })
+      : null;
+    if (preflight && !preflight.accepted) {
+      return {
+        status: "needs_review",
+        responseText: null,
+        responseHash: null,
+        usage: null,
+        catalogPricing: this.options.catalogPricingByModelId?.[input.modelId] ?? null,
+        retryEvidence: null,
+        providerResponseDiagnostics: {
+          structuredAdapterProfile: adapterProfile as unknown as JsonValue,
+          structuredAdapterPreflight: preflight as unknown as JsonValue,
+          modelTaskClassification: classification as unknown as JsonValue,
+          modelTaskTelemetry: classification
+            ? buildModelTaskTelemetryEnvelope({
+                classification,
+                usage: null,
+                usageUnavailableReason: "structured_adapter_preflight_blocked",
+              })
+            : null,
+          rawPromptStored: false,
+          rawResponseStored: false,
+          rawProviderLogStored: false,
+        },
+        errorReasonCode: "structured_adapter_preflight_blocked",
+        httpStatus: null,
+      };
+    }
     const modelCallSpanId = `openrouter:${input.modelCandidateId}:${promptHash.slice(0, 16)}:${Date.now().toString(36)}`;
     const attempts: OpenRouterRetryEvidence["attempts"] = [];
     let last: AgentTeamModelClientResult | null = null;
-    let jsonModeDisabledAfterNoContent = false;
-    let reasoningDirectiveDisabledAfterNoContent = false;
     for (let attempt = 1; attempt <= policy.maxAttempts; attempt += 1) {
       const responseFormatAllowed =
-        Boolean(input.responseFormat) &&
-        responseFormatMode !== "prompt_only" &&
-        !jsonModeDisabledAfterNoContent;
+        Boolean(input.responseFormat) && responseFormatMode !== "prompt_only";
       const body = {
         model: input.modelId,
         messages: [
@@ -1126,7 +175,7 @@ export class OpenRouterAgentTeamModelClient implements AgentTeamModelClient {
         ...(responseFormatAllowed ? { response_format: { type: input.responseFormat } } : {}),
         ...(reasoningMode === "none"
           ? { reasoning: { effort: "none", exclude: true } }
-          : reasoningMode === "omit" || reasoningDirectiveDisabledAfterNoContent
+          : reasoningMode === "omit"
             ? {}
             : { reasoning: { exclude: true } }),
       };
@@ -1140,15 +189,14 @@ export class OpenRouterAgentTeamModelClient implements AgentTeamModelClient {
         modelRef: input.modelId,
         modelCandidateId: input.modelCandidateId,
         responseFormatMode,
-        reasoningMode: reasoningDirectiveDisabledAfterNoContent
-          ? "omit_after_no_content"
-          : reasoningMode,
+        reasoningMode,
         maxTokens: body.max_tokens,
         timeoutMs: input.timeoutMs ?? policy.timeoutMs,
         maxAttempts: policy.maxAttempts,
         attempt,
         promptHash: `sha256:${promptHash}`,
-        promptByteLength: Buffer.byteLength(input.prompt, "utf8"),
+        promptByteLength,
+        structuredAdapterProfileRef: adapterProfile?.profileRef ?? null,
         hasResponseFormat: Boolean(bodyRecord.response_format),
         responseFormatType:
           bodyRecord.response_format && typeof bodyRecord.response_format === "object"
@@ -1195,6 +243,13 @@ export class OpenRouterAgentTeamModelClient implements AgentTeamModelClient {
         const choice = Array.isArray(providerBody?.choices)
           ? (providerBody.choices[0] as Record<string, unknown> | undefined)
           : undefined;
+        const choices = Array.isArray(providerBody?.choices)
+          ? providerBody.choices
+              .filter((item): item is Record<string, unknown> =>
+                Boolean(item && typeof item === "object" && !Array.isArray(item)),
+              )
+              .slice(0, 16)
+          : [];
         const message =
           choice && typeof choice === "object"
             ? (choice.message as Record<string, unknown> | undefined)
@@ -1213,10 +268,28 @@ export class OpenRouterAgentTeamModelClient implements AgentTeamModelClient {
         const providerResponseDiagnostics = {
           modelCallSpanId,
           requestProfileDiagnostics,
+          elapsedMs: Math.max(0, completed - started),
+          timeoutMs: input.timeoutMs ?? policy.timeoutMs,
+          abortFired: false,
+          streamMode: false,
           finishReason,
           nativeFinishReason:
             typeof choice?.native_finish_reason === "string" ? choice.native_finish_reason : null,
           choiceCount: Array.isArray(providerBody?.choices) ? providerBody.choices.length : null,
+          contentLengthByChoice: choices.map((item) => {
+            const itemMessage =
+              item.message && typeof item.message === "object" && !Array.isArray(item.message)
+                ? (item.message as Record<string, unknown>)
+                : {};
+            return typeof itemMessage.content === "string" ? itemMessage.content.length : 0;
+          }),
+          toolCallCountByChoice: choices.map((item) => {
+            const itemMessage =
+              item.message && typeof item.message === "object" && !Array.isArray(item.message)
+                ? (item.message as Record<string, unknown>)
+                : {};
+            return Array.isArray(itemMessage.tool_calls) ? itemMessage.tool_calls.length : 0;
+          }),
           providerBodyKeys:
             providerBody && typeof providerBody === "object"
               ? Object.keys(providerBody).slice(0, 16)
@@ -1239,10 +312,51 @@ export class OpenRouterAgentTeamModelClient implements AgentTeamModelClient {
               : null,
           completionTokenCount:
             typeof usage.completion_tokens === "number" ? usage.completion_tokens : null,
+          providerUsage: {
+            promptTokens: typeof usage.prompt_tokens === "number" ? usage.prompt_tokens : null,
+            completionTokens:
+              typeof usage.completion_tokens === "number" ? usage.completion_tokens : null,
+            totalTokens: typeof usage.total_tokens === "number" ? usage.total_tokens : null,
+            usageKeys: Object.keys(usage).slice(0, 16),
+          },
           rawPromptStored: false,
           rawResponseStored: false,
           rawProviderLogStored: false,
         } satisfies JsonValue;
+        const adapterDiagnostics =
+          adapterProfile && classification
+            ? structuredAdapterDiagnostics({
+                profile: adapterProfile,
+                attempt,
+                httpStatus: response.status,
+                latencyMs: Math.max(0, completed - started),
+                content,
+                finishReason,
+                nativeFinishReason:
+                  typeof choice?.native_finish_reason === "string"
+                    ? choice.native_finish_reason
+                    : null,
+                errorReasonCode: response.ok && content.trim() ? null : "openrouter_no_content",
+                inputBytes: promptByteLength,
+                usage: {
+                  inputTokenCount:
+                    typeof usage.prompt_tokens === "number" ? usage.prompt_tokens : null,
+                  outputTokenCount:
+                    typeof usage.completion_tokens === "number" ? usage.completion_tokens : null,
+                  totalTokenCount:
+                    typeof usage.total_tokens === "number" ? usage.total_tokens : null,
+                  estimatedCostUsd: typeof usage.cost === "number" ? usage.cost : null,
+                },
+              })
+            : null;
+        const adapterOutcome =
+          adapterProfile && adapterDiagnostics
+            ? classifyStructuredAdapterOutcome({
+                profile: adapterProfile,
+                diagnostics: adapterDiagnostics,
+                parsedJsonValid: content.trim() ? null : false,
+              })
+            : null;
         const emptyReasonCode =
           response.ok && !content.trim() && finishReason === "length"
             ? "openrouter_no_content_finish_length"
@@ -1280,7 +394,25 @@ export class OpenRouterAgentTeamModelClient implements AgentTeamModelClient {
             estimatedCostUsd: typeof usage.cost === "number" ? usage.cost : null,
           },
           catalogPricing: this.options.catalogPricingByModelId?.[input.modelId] ?? null,
-          providerResponseDiagnostics,
+          providerResponseDiagnostics: {
+            ...(providerResponseDiagnostics as Record<string, JsonValue>),
+            structuredAdapterProfile: adapterProfile as unknown as JsonValue,
+            structuredAdapterDiagnostics: adapterDiagnostics as unknown as JsonValue,
+            structuredAdapterOutcome: adapterOutcome as unknown as JsonValue,
+            modelTaskClassification: classification as unknown as JsonValue,
+            modelTaskTelemetry: classification
+              ? buildModelTaskTelemetryEnvelope({
+                  classification,
+                  usage: {
+                    promptTokens:
+                      typeof usage.prompt_tokens === "number" ? usage.prompt_tokens : null,
+                    outputTokens:
+                      typeof usage.completion_tokens === "number" ? usage.completion_tokens : null,
+                    cachedInputTokens: null,
+                  },
+                })
+              : null,
+          } satisfies JsonValue,
           httpStatus: response.status,
           errorReasonCode: response.ok
             ? content.trim()
@@ -1292,12 +424,6 @@ export class OpenRouterAgentTeamModelClient implements AgentTeamModelClient {
         };
         if (!delay || last.status === "succeeded") {
           break;
-        }
-        if (reasonCode === "openrouter_no_content" && input.responseFormat) {
-          jsonModeDisabledAfterNoContent = true;
-        }
-        if (reasonCode === "openrouter_no_content") {
-          reasoningDirectiveDisabledAfterNoContent = true;
         }
         await sleep(delay);
       } catch (error) {
@@ -1326,6 +452,16 @@ export class OpenRouterAgentTeamModelClient implements AgentTeamModelClient {
             modelCallSpanId,
             requestProfileDiagnostics,
             errorKind: reasonCode,
+            elapsedMs: Math.max(0, completed - started),
+            timeoutMs: input.timeoutMs ?? policy.timeoutMs,
+            abortFired: reasonCode === "openrouter_network_timeout",
+            streamMode: false,
+            providerBodyKeys: [],
+            choiceCount: null,
+            messageKeys: [],
+            contentLength: null,
+            contentLengthByChoice: [],
+            toolCallCountByChoice: [],
             rawPromptStored: false,
             rawResponseStored: false,
             rawProviderLogStored: false,

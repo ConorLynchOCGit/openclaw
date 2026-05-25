@@ -46,7 +46,7 @@ Kimi and future non-Codex coding workers.
 
 Inputs:
 
-- `ImplementationTaskPacket v2`
+- `ImplementationTaskPacket v3`
 - accepted Mission Ledger refs
 - commitment work packet refs
 - context scout/synthesis refs
@@ -205,6 +205,29 @@ For multi-commitment missions:
 - if the worker cannot proceed, it escalates with bounded reason codes and
   preserved partial evidence.
 
+Update, 2026-05-20: implementation readiness is enforced before the
+non-Codex worker is invoked. The production runner must prove all of the
+following are present for an implementation node:
+
+- readable target file snapshots within approved scope.
+- target commitment ids mapped to the node.
+- validation command refs or runtime-approved validation expectations.
+- an accepted context handoff summary or context packet/synthesis ref.
+
+If any of these are missing, the failure belongs to upstream context supply or
+scheduler repair, not to Kimi/Qwen implementation quality. The scheduler now
+compiles focused context-scout repair nodes and `repair_requested` edges from
+failed implementation readiness evidence. The model supplies semantic repair
+intent and context questions; runtime owns node ids, capability ids, executor
+keys, worker refs, evidence expectations, metadata, and graph refs.
+
+The worker loop still records missing validation refs and missing commitment
+mapping as readiness signals, but those signals are not a second terminal
+invalid gate inside the worker. This preserves worker-internal validation
+derivation, context requests, and repair classification while keeping the
+production scheduler responsible for blocking truly unready implementation
+nodes before provider invocation.
+
 ## Runtime Loop
 
 Production loop:
@@ -293,6 +316,42 @@ Work Queue readback surfaces the compound tool id and sub-event phases from
 worker-internal progress, so operators can see that the worker is inside a
 compound inspect/edit/validate/evidence operation rather than a silent model
 call.
+
+Update, 2026-05-25 small-verb patch-author boundary: the production worker
+loop now has a forced patch-author transition after an accepted edit plan.
+When runtime has enough scoped context, the next patch model turn is not
+allowed to choose from the broad worker tool surface. It receives the accepted
+plan step plus bounded current file snapshot windows and may only choose:
+
+- `worker.patch.author_edit` with a semantic edit body; or
+- `worker.repair.mark_upstream_blocker` with exact missing resource fields.
+
+Large files are handled through explicit multi-window materialization, not by
+sending more of the file. The plan step may carry `targetRegion` or
+`targetRegions`/`lineRanges`; runtime hydrates up to bounded, hashed
+`SnapshotWindow` entries for the same target file. Each window carries stable
+file ref, line range, content hash, total line count, truncation state, and
+line-numbered content. Runtime does not infer relevant windows from prose or
+keywords. If a required range is absent, the patch author must return an
+upstream blocker or request an exact bounded file range through the context
+lane before patching.
+
+The replay gate for
+`openclaw-convergence.control-plane-06-worker-small-verb-edit-smoke` passed
+against the Product/Spec-derived source-spec-intake node:
+
+- runtime job: `native-exec-272cf2d51fcba75b`;
+- graph: `product-spec-replay-f69b40c5defa3687`;
+- boundary: `after-resource-materialization`;
+- selected node:
+  `g-bdd8590b57-g-bdd8590b-implementation-g0-source-spec-intake-10d0edafe5:task:1`;
+- proof artifact:
+  `.artifacts/execution-platform/product-spec-replay-proof-resource-materialization/proof.json`;
+- result: worker received hydrated `NodeExecutionPacket`, applied one scoped
+  edit through `worker.patch.author_edit`, ran
+  `worker.validation.run_structural_default`, recorded
+  `worker.evidence.claim_from_validation`, and rolled back the reviewed file
+  under `rollback_after_review_artifact` persistence mode.
 
 ## Failure Semantics
 

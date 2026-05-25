@@ -29,6 +29,7 @@ export type WorkflowPluginSchedulerPolicy = {
   stagedGraphAcceptanceRequired: boolean;
   modelAuthoredWorkPacketsRequiredForComplexMission: boolean;
   freshContextSnapshotsRequiredForWorkerExecution: boolean;
+  nodeExecutionPacketRequiredForWorkerExecution?: boolean;
   runtimeDerivedNodeEnvelopeRequired: boolean;
   runtimeDerivedExpectedEvidenceRequired: boolean;
   modelAuthoredStructureReviewRequired: boolean;
@@ -49,10 +50,12 @@ export type WorkflowPluginSchedulerOptions = Pick<
   | "requireSchedulerToolKernel"
   | "requireGenericStagedSchedulerProtocol"
   | "requireFreshContextSnapshotsForWorkerExecution"
+  | "requireNodeExecutionPacketForWorkerExecution"
   | "deferCloseoutUntilExecutableGraphComplete"
   | "roleCoverageProfile"
   | "capabilityRegistrySummary"
   | "capabilityManifest"
+  | "entryNodePolicy"
   | "maxParallelNodeExecutions"
 >;
 
@@ -130,6 +133,7 @@ export type WorkflowPluginResolution = {
   stagedSchedulerProtocolRequired: boolean;
   stagedGraphAcceptanceRequired: boolean;
   freshContextSnapshotsRequiredForWorkerExecution: boolean;
+  nodeExecutionPacketRequiredForWorkerExecution: boolean;
   runtimeDerivedNodeEnvelopeRequired: boolean;
   runtimeDerivedExpectedEvidenceRequired: boolean;
   modelAuthoredStructureReviewRequired: boolean;
@@ -192,6 +196,12 @@ export function validateWorkflowPlugin(input: {
     !plugin.schedulerPolicy.freshContextSnapshotsRequiredForWorkerExecution
   ) {
     reasonCodes.push("workflow_plugin_fresh_context_snapshots_required");
+  }
+  if (
+    plugin.productionEnabled &&
+    plugin.schedulerPolicy.nodeExecutionPacketRequiredForWorkerExecution !== true
+  ) {
+    reasonCodes.push("workflow_plugin_node_execution_packet_required");
   }
   if (plugin.productionEnabled && !plugin.schedulerPolicy.runtimeDerivedNodeEnvelopeRequired) {
     reasonCodes.push("workflow_plugin_runtime_derived_node_envelope_required");
@@ -292,6 +302,8 @@ export function workflowPluginResolutionFor(input: {
     stagedGraphAcceptanceRequired: input.plugin.schedulerPolicy.stagedGraphAcceptanceRequired,
     freshContextSnapshotsRequiredForWorkerExecution:
       input.plugin.schedulerPolicy.freshContextSnapshotsRequiredForWorkerExecution,
+    nodeExecutionPacketRequiredForWorkerExecution:
+      input.plugin.schedulerPolicy.nodeExecutionPacketRequiredForWorkerExecution === true,
     runtimeDerivedNodeEnvelopeRequired:
       input.plugin.schedulerPolicy.runtimeDerivedNodeEnvelopeRequired,
     runtimeDerivedExpectedEvidenceRequired:

@@ -5,6 +5,7 @@ import type { JsonValue } from "../runtime-job-repository.ts";
 import {
   assertBoundedStringArray,
   assertJsonByteLimit,
+  assertRuntimeWorkGraphManifestOnlyMetadata,
   assertRuntimeWorkGraphNoRawStorage,
   boundedRuntimeWorkGraphString,
   graphRef,
@@ -493,7 +494,7 @@ export class RuntimeWorkGraphRepository {
     assertBoundedStringArray(input.inputHandoffRefs ?? [], "input handoff refs");
     assertBoundedStringArray(input.outputArtifactRefs ?? [], "output artifact refs");
     this.assertMetadata(input.budgetUsage, "node budget usage");
-    this.assertMetadata(input.metadata, "node metadata");
+    this.assertMetadata(input.metadata, "node metadata", { manifestOnly: true });
     const now = this.now();
     const row = await this.sql.query<NodeRow>(
       `
@@ -547,7 +548,7 @@ export class RuntimeWorkGraphRepository {
     metadataPatch?: JsonValue;
   }): Promise<TeamGraphNode> {
     assertBoundedStringArray(input.outputArtifactRefs ?? [], "output artifact refs");
-    this.assertMetadata(input.metadataPatch, "node status metadata patch");
+    this.assertMetadata(input.metadataPatch, "node status metadata patch", { manifestOnly: true });
     const now = this.now();
     if (input.metadataPatch !== undefined) {
       const existing = await this.sql.query<NodeRow>(
@@ -1108,8 +1109,15 @@ export class RuntimeWorkGraphRepository {
     };
   }
 
-  private assertMetadata(value: JsonValue | undefined, name: string): void {
+  private assertMetadata(
+    value: JsonValue | undefined,
+    name: string,
+    options: { manifestOnly?: boolean } = {},
+  ): void {
     assertRuntimeWorkGraphNoRawStorage(value, name);
+    if (options.manifestOnly) {
+      assertRuntimeWorkGraphManifestOnlyMetadata(value, name);
+    }
     assertJsonByteLimit(value ?? {}, name, this.maxJsonBytes);
   }
 }

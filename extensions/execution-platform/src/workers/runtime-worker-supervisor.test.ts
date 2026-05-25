@@ -281,7 +281,7 @@ describe("runtime worker supervisor", () => {
       await repository.enqueueJob({
         jobId: "job-supervisor-adapter-throws",
         jobType: "executor.agent_team",
-        maxAttempts: 1,
+        maxAttempts: 3,
       });
       const supervisor = new RuntimeWorkerSupervisor({
         repository,
@@ -302,14 +302,103 @@ describe("runtime worker supervisor", () => {
       });
 
       expect(result).toMatchObject({
-        status: "failed",
-        reasonCodes: ["worker_adapter_threw", "worker_adapter_threw:artifact_metadata_limit"],
+        status: "needs_review",
+        reasonCodes: [
+          "worker_adapter_threw",
+          "worker_adapter_threw:artifact_metadata_limit",
+          "worker_adapter_failure_terminalized_needs_review",
+        ],
       });
       await expect(repository.getJob("job-supervisor-adapter-throws")).resolves.toMatchObject({
         state: "failed",
         error: {
           code: "worker_adapter_threw",
           message: "artifact metadata exceeds 65536 bytes",
+        },
+        result: {
+          status: "needs_review",
+          retryScheduled: false,
+        },
+      });
+    });
+  });
+
+  it("classifies resource materialization split boundaries without unclassified adapter errors", async () => {
+    await withRepository(async (repository) => {
+      await repository.enqueueJob({
+        jobId: "job-supervisor-resource-boundary",
+        jobType: "executor.agent_team",
+        maxAttempts: 1,
+      });
+      const supervisor = new RuntimeWorkerSupervisor({
+        repository,
+        workerId: "worker-supervisor",
+        adapters: [
+          {
+            adapterId: "worker.acp-codex.coding",
+            jobTypes: ["executor.agent_team"],
+            execute: async () => {
+              throw new Error("resource_materialization split_required before worker execution");
+            },
+          },
+        ],
+      });
+
+      const result = await supervisor.runOnce({
+        runtimeJobId: "job-supervisor-resource-boundary",
+      });
+
+      expect(result).toMatchObject({
+        status: "needs_review",
+        reasonCodes: [
+          "worker_adapter_threw",
+          "worker_adapter_threw:resource_materialization_boundary",
+          "worker_adapter_failure_terminalized_needs_review",
+        ],
+      });
+      expect(result.reasonCodes).not.toContain("worker_adapter_threw:unclassified");
+    });
+  });
+
+  it("classifies commitment packet fanout boundaries without scheduling an ambiguous retry", async () => {
+    await withRepository(async (repository) => {
+      await repository.enqueueJob({
+        jobId: "job-supervisor-packet-boundary",
+        jobType: "executor.agent_team",
+        maxAttempts: 1,
+      });
+      const supervisor = new RuntimeWorkerSupervisor({
+        repository,
+        workerId: "worker-supervisor",
+        adapters: [
+          {
+            adapterId: "worker.acp-codex.coding",
+            jobTypes: ["executor.agent_team"],
+            execute: async () => {
+              throw new Error("commitment_packet_author_fanout_failed:commitment-002");
+            },
+          },
+        ],
+      });
+
+      const result = await supervisor.runOnce({
+        runtimeJobId: "job-supervisor-packet-boundary",
+      });
+
+      expect(result).toMatchObject({
+        status: "needs_review",
+        reasonCodes: [
+          "worker_adapter_threw",
+          "worker_adapter_threw:commitment_packet_authoring_boundary",
+          "worker_adapter_failure_terminalized_needs_review",
+        ],
+      });
+      expect(result.reasonCodes).not.toContain("worker_adapter_threw:unclassified");
+      await expect(repository.getJob("job-supervisor-packet-boundary")).resolves.toMatchObject({
+        state: "failed",
+        result: {
+          status: "needs_review",
+          retryScheduled: false,
         },
       });
     });

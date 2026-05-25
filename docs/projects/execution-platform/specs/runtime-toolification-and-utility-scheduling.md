@@ -598,7 +598,7 @@ The Product/Spec Planning proof is blocked until runtime evidence shows:
 The scheduler no longer relies on a lossy task summary as the only child
 worker input. Mission Ledger commitments compile into `CommitmentWorkPacket`
 records, context scout output can be passed as `ContextHandoffPacket`, and
-non-Codex file-edit workers receive `ImplementationTaskPacket v2`.
+non-Codex file-edit workers receive `ImplementationTaskPacket v3`.
 
 This is the runtime boundary for future Kimi and model-agnostic worker
 expansion:

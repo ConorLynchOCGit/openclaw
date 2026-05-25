@@ -75,6 +75,11 @@ function createRoleModelClient() {
         reasoningMode: "omit",
         maxTokens: 4_000,
       },
+      "qwen/qwen3-coder-next": {
+        responseFormatMode: "prompt_only",
+        reasoningMode: "none",
+        maxTokens: Number(process.env.OPENCLAW_CONTEXT_SCOUT_BOUNDARY_MAX_TOKENS ?? 6_000),
+      },
       "openai/gpt-5.5": {
         responseFormatMode: "native",
         reasoningMode: "omit",
@@ -142,10 +147,10 @@ async function main() {
     nodeId,
     repoRoot: process.cwd(),
     roleModelClient: createRoleModelClient(),
-    modelId: process.env.OPENCLAW_CONTEXT_SCOUT_BOUNDARY_MODEL_ID ?? "deepseek/deepseek-v4-pro",
+    modelId: process.env.OPENCLAW_CONTEXT_SCOUT_BOUNDARY_MODEL_ID ?? "qwen/qwen3-coder-next",
     modelCandidateId:
       process.env.OPENCLAW_CONTEXT_SCOUT_BOUNDARY_MODEL_CANDIDATE_ID ??
-      "deepseek-v4-pro-context-scout",
+      "qwen3-coder-next-context-scout",
     maxRuntimeMs,
   });
   const resultArtifact = await writeJson("context-scout-boundary-replay-result.json", {

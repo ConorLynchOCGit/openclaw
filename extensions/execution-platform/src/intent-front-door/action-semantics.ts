@@ -1,4 +1,8 @@
-import type { CanonicalActionCategory, CanonicalRouterAction } from "./router-schema.ts";
+import {
+  CANONICAL_ACTION_CATEGORIES,
+  type CanonicalActionCategory,
+  type CanonicalRouterAction,
+} from "./router-schema.ts";
 
 export const ACTION_SEMANTICS_VERSION = "intent-front-door.action-semantics.v1";
 
@@ -13,6 +17,7 @@ export type ActionSemanticsInput = {
   requestedActions?: CanonicalRouterAction[];
   negatedActions?: CanonicalRouterAction[];
   conditionalActions?: CanonicalRouterAction[];
+  routerReasonCodes?: string[];
   allowedRequestedActionCategories?: CanonicalActionCategory[];
   approvedHighRiskActionCategories?: CanonicalActionCategory[];
   conditionalPolicyByAction?: Partial<
@@ -81,6 +86,9 @@ export function enforceActionSemantics(input: ActionSemanticsInput): ActionSeman
   );
   const approvedHighRisk = new Set(input.approvedHighRiskActionCategories ?? []);
   const negated = new Set(negatedActions.map((action) => action.action));
+  const constraintScopedNegated = collectConstraintScopedNegatedActions(
+    input.routerReasonCodes ?? [],
+  );
   const reasonCodes: string[] = [];
   const allowedRequestedActions: CanonicalRouterAction[] = [];
   const allowedConditionalActions: CanonicalRouterAction[] = [];
@@ -88,9 +96,16 @@ export function enforceActionSemantics(input: ActionSemanticsInput): ActionSeman
 
   for (const action of requestedActions) {
     if (negated.has(action.action)) {
-      blockedActions.push(action);
-      reasonCodes.push(`requested_action_conflicts_with_negation:${action.action}`);
-      continue;
+      if (
+        constraintScopedNegated.has(action.action) &&
+        !SIDE_EFFECT_BOUNDARY_ACTIONS.has(action.action)
+      ) {
+        reasonCodes.push(`requested_action_negation_constraint_scoped:${action.action}`);
+      } else {
+        blockedActions.push(action);
+        reasonCodes.push(`requested_action_conflicts_with_negation:${action.action}`);
+        continue;
+      }
     }
     if (HIGH_RISK_ACTIONS.has(action.action) && !approvedHighRisk.has(action.action)) {
       blockedActions.push(action);
@@ -136,22 +151,15 @@ export function enforceActionSemantics(input: ActionSemanticsInput): ActionSeman
   }
 
   for (const action of negatedActions) {
-    reasonCodes.push(`negated_action_not_compilable:${action.action}`);
+    if (constraintScopedNegated.has(action.action)) {
+      reasonCodes.push(`negated_action_constraint_scoped:${action.action}`);
+    } else {
+      reasonCodes.push(`negated_action_not_compilable:${action.action}`);
+    }
   }
   for (const action of mentionedActions) {
     reasonCodes.push(`mentioned_action_display_only:${action.action}`);
   }
-  if (
-    allowedRequestedActions.length > 0 &&
-    blockedActions.some((action) => SIDE_EFFECT_BOUNDARY_ACTIONS.has(action.action)) &&
-    reasonCodes.some((reason) => reason.includes("conflicts_with_negation"))
-  ) {
-    blockedActions = blockedActions.filter(
-      (action) => !SIDE_EFFECT_BOUNDARY_ACTIONS.has(action.action),
-    );
-    reasonCodes.push("side_effect_boundary_conflict_suppressed_by_primary_work");
-  }
-
   const outcome = decideOutcome(reasonCodes, blockedActions, allowedRequestedActions);
   return {
     artifactKind: "intent_action_semantics_decision",
@@ -169,6 +177,20 @@ export function enforceActionSemantics(input: ActionSemanticsInput): ActionSeman
     rawPromptStored: false,
     rawResponseStored: false,
   };
+}
+
+function collectConstraintScopedNegatedActions(
+  reasonCodes: string[],
+): Set<CanonicalActionCategory> {
+  const scoped = new Set<CanonicalActionCategory>();
+  for (const reason of reasonCodes) {
+    for (const action of CANONICAL_ACTION_CATEGORIES) {
+      if (reason === `invalid_negated_action_repaired_to_constraint_scoped_${action}_action`) {
+        scoped.add(action);
+      }
+    }
+  }
+  return scoped;
 }
 
 function decideOutcome(

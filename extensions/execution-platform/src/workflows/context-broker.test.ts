@@ -1,0 +1,423 @@
+import { describe, expect, it } from "vitest";
+import {
+  buildContextBrokerDedupeKey,
+  buildContextBrokerRequestFromReadiness,
+  dedupeContextBrokerRequests,
+} from "./context-broker.ts";
+import {
+  buildNodeExecutionPacket,
+  type CodingResourcePacket,
+} from "./node-resource-materialization.ts";
+
+function readyResourcePacket(overrides: Partial<CodingResourcePacket> = {}): CodingResourcePacket {
+  return {
+    packetKind: "coding_resource_packet",
+    schemaVersion: "execution-platform.coding-resource-packet.v1",
+    packetId: "impl-1:resource",
+    packetRef: "runtime-work-graph://coding-resource-packet/impl-1",
+    implementationTaskPacketRef: "runtime-work-graph://implementation-task/impl-1",
+    targetFileRefs: ["extensions/execution-platform/src/workflows/context-broker.ts"],
+    targetFileSnapshotRefs: ["repo-snapshot://context-broker.ts#abc"],
+    targetFileSnapshotHashes: ["abc"],
+    allowedEditScope: ["extensions/execution-platform/src/workflows/context-broker.ts"],
+    mustReadRefs: ["extensions/execution-platform/src/workflows/context-broker.ts"],
+    likelyModifyRefs: ["extensions/execution-platform/src/workflows/context-broker.ts"],
+    deniedFileRefs: [],
+    newFileIntentRefs: [],
+    fileChangeIntentRefs: [
+      "file-change-intent://extensions/execution-platform/src/workflows/context-broker.ts",
+    ],
+    contextPacketRefs: ["context-handoff://impl-1"],
+    acceptedContextHandoffRefs: ["context-handoff://impl-1"],
+    validationRefs: ["validation://context-broker-test"],
+    validationDiscoveryPlan: [],
+    acceptanceCriteria: ["Broker request is payload-backed and branch-scoped."],
+    expectedPatchShape: "Runtime wiring only.",
+    stopIfMissingOrEscalate: ["Stop if context handoff is missing."],
+    targetCommitmentIds: ["C1"],
+    readableTargetSnapshotCount: 1,
+    rawPromptStored: false,
+    rawResponseStored: false,
+    rawProviderLogStored: false,
+    rawToolLogStored: false,
+    ...overrides,
+    executionIntent: overrides.executionIntent ?? "source_edit",
+    evidenceMode: overrides.evidenceMode ?? ["changed_file_evidence", "validation_evidence"],
+  };
+}
+
+describe("context broker", () => {
+  it("marks inherited accepted context as usable without spawning a scout", () => {
+    const resource = readyResourcePacket();
+    const packet = buildNodeExecutionPacket({
+      workflowId: "agent_team.coding",
+      runtimeJobId: "job-1",
+      graphId: "graph-1",
+      nodeId: "impl-1",
+      nodeKind: "implementation_scoped",
+      capabilityId: "implementation.qwen.scoped_patch",
+      executorKey: "kind:implementation",
+      workerRef: "qwen",
+      targetCommitmentIds: ["C1"],
+      sourceContextRefs: ["context-handoff://impl-1"],
+      resourcePacketKind: "coding_resource_packet",
+      resourcePacketRef: resource.packetRef,
+      validationRefs: ["validation://context-broker-test"],
+      evidenceClaimExpectations: ["source_change"],
+      authorityScope: ["extensions/execution-platform/src/workflows/context-broker.ts"],
+      resourcePacket: resource,
+    });
+    const request = buildContextBrokerRequestFromReadiness({
+      readinessState: {
+        artifactKind: "node_readiness_state",
+        schemaVersion: "execution-platform.node-readiness-state.v1",
+        stateRef: "runtime-work-graph://node-readiness-state/impl-1/ready",
+        nodeId: "impl-1",
+        runtimeJobId: "job-1",
+        graphId: "graph-1",
+        workflowId: "agent_team.coding",
+        executionIntent: "source_edit",
+        evidenceMode: ["changed_file_evidence", "validation_evidence"],
+        capabilityId: "implementation.qwen.scoped_patch",
+        roleClass: "implementation_scoped",
+        readinessStatus: "ready",
+        phase: "implementation_ready",
+        lifecycleState: "executable",
+        dependencyStatus: "accepted",
+        resourcePacketRef: resource.packetRef,
+        nodeExecutionPacketRef: packet.packetRef,
+        domainResourcePacketRef: resource.packetRef,
+        resourceStatus: "ready",
+        freshnessStatus: "fresh",
+        snapshotStatus: "ready",
+        contextStatus: "accepted",
+        contextSnapshotRefs: ["context-handoff://impl-1"],
+        contextLimitationStatus: "not_applicable",
+        contextLimitationWaiverRefs: [],
+        validationStatus: "ready",
+        authorityStatus: "ready",
+        evidenceStatus: "ready",
+        payloadRefs: [],
+        manifestRefs: [],
+        targetCommitmentIds: ["C1"],
+        evidenceClaimRefs: [],
+        validationPlanRefs: ["validation://context-broker-test"],
+        blockers: [],
+        blockingReasonCodes: ["node_readiness_state_evaluated"],
+        nonblockingReasonCodes: [],
+        blockingLimitations: [],
+        nonblockingLimitations: [],
+        repairAction: "none",
+        nextAllowedTransitions: ["execute_node"],
+        nextLegalTransitions: ["execute_node"],
+        replayBoundary: null,
+        createdAt: null,
+        updatedAt: null,
+        rawPromptStored: false,
+        rawResponseStored: false,
+        rawProviderLogStored: false,
+        rawToolLogStored: false,
+        rawCommandLogStored: false,
+        rawDbRowsStored: false,
+        secretsStored: false,
+      },
+      nodeExecutionPacket: packet,
+      resourcePacket: resource,
+    });
+
+    expect(request.status).toBe("satisfied_from_inherited_context");
+    expect(request.contextScoutRequired).toBe(false);
+    expect(request.outputContextRefs).toContain("context-handoff://impl-1");
+    expect(request.nextTransition).toBe("use_inherited_context");
+  });
+
+  it("creates a branch-local context scout request when readiness is context-blocked", () => {
+    const resource = readyResourcePacket({
+      contextPacketRefs: [],
+      acceptedContextHandoffRefs: [],
+    });
+    const packet = buildNodeExecutionPacket({
+      workflowId: "agent_team.coding",
+      runtimeJobId: "job-1",
+      graphId: "graph-1",
+      nodeId: "impl-2",
+      nodeKind: "implementation_scoped",
+      capabilityId: "implementation.qwen.scoped_patch",
+      executorKey: "kind:implementation",
+      workerRef: "qwen",
+      targetCommitmentIds: ["C2"],
+      sourceContextRefs: [],
+      resourcePacketKind: "coding_resource_packet",
+      resourcePacketRef: resource.packetRef,
+      validationRefs: ["validation://context-broker-test"],
+      evidenceClaimExpectations: ["source_change"],
+      authorityScope: ["extensions/execution-platform/src/workflows/context-broker.ts"],
+      resourcePacket: resource,
+      blockingLimitations: ["Accepted context handoff is missing for this implementation branch."],
+    });
+    const request = buildContextBrokerRequestFromReadiness({
+      readinessState: {
+        ...packet,
+        artifactKind: "node_readiness_state",
+        schemaVersion: "execution-platform.node-readiness-state.v1",
+        stateRef: "runtime-work-graph://node-readiness-state/impl-2/blocked",
+        roleClass: "implementation_scoped",
+        nodeExecutionPacketRef: packet.packetRef,
+        domainResourcePacketRef: resource.packetRef,
+        readinessStatus: "blocked",
+        phase: "context_supply",
+        lifecycleState: "context_required",
+        dependencyStatus: "accepted",
+        resourceStatus: "ready",
+        freshnessStatus: "missing",
+        snapshotStatus: "ready",
+        contextStatus: "missing",
+        contextSnapshotRefs: [],
+        contextLimitationStatus: "blocked",
+        contextLimitationWaiverRefs: [],
+        validationStatus: "ready",
+        authorityStatus: "ready",
+        evidenceStatus: "ready",
+        payloadRefs: [],
+        manifestRefs: [],
+        evidenceClaimRefs: [],
+        validationPlanRefs: ["validation://context-broker-test"],
+        blockers: ["Accepted context handoff is missing for this implementation branch."],
+        blockingReasonCodes: [
+          "node_readiness_state_evaluated",
+          "node_readiness_context_packet_refs_not_accepted_handoffs",
+        ],
+        nonblockingReasonCodes: [],
+        blockingLimitations: [
+          "Accepted context handoff is missing for this implementation branch.",
+        ],
+        nonblockingLimitations: [],
+        repairAction: "request_context_repair",
+        nextAllowedTransitions: ["request_context_repair", "needs_review"],
+        nextLegalTransitions: ["request_context_repair", "needs_review"],
+        replayBoundary: null,
+        createdAt: null,
+        updatedAt: null,
+        rawPromptStored: false,
+        rawResponseStored: false,
+        rawProviderLogStored: false,
+        rawToolLogStored: false,
+        rawCommandLogStored: false,
+        rawDbRowsStored: false,
+        secretsStored: false,
+      },
+      nodeExecutionPacket: packet,
+      resourcePacket: resource,
+    });
+
+    expect(request.status).toBe("context_scout_required");
+    expect(request.contextScoutRequired).toBe(true);
+    expect(request.consumerNodeId).toBe("impl-2");
+    expect(request.nextTransition).toBe("dispatch_context_scout");
+    expect(request.reasonCodes).toContain("context_broker_context_scout_required");
+  });
+
+  it("does not treat accepted-with-limitations context as inherited usable without a consumer waiver", () => {
+    const resource = readyResourcePacket();
+    const packet = buildNodeExecutionPacket({
+      workflowId: "agent_team.coding",
+      runtimeJobId: "job-1",
+      graphId: "graph-1",
+      nodeId: "impl-limited",
+      nodeKind: "implementation_scoped",
+      capabilityId: "implementation.qwen.scoped_patch",
+      executorKey: "kind:implementation",
+      workerRef: "qwen",
+      targetCommitmentIds: ["C1"],
+      sourceContextRefs: ["context-handoff://impl-limited"],
+      resourcePacketKind: "coding_resource_packet",
+      resourcePacketRef: resource.packetRef,
+      validationRefs: ["validation://context-broker-test"],
+      evidenceClaimExpectations: ["source_change"],
+      authorityScope: ["extensions/execution-platform/src/workflows/context-broker.ts"],
+      resourcePacket: resource,
+    });
+
+    const request = buildContextBrokerRequestFromReadiness({
+      readinessState: {
+        artifactKind: "node_readiness_state",
+        schemaVersion: "execution-platform.node-readiness-state.v1",
+        stateRef: "runtime-work-graph://node-readiness-state/impl-limited/limited",
+        nodeId: "impl-limited",
+        runtimeJobId: "job-1",
+        graphId: "graph-1",
+        workflowId: "agent_team.coding",
+        executionIntent: "source_edit",
+        evidenceMode: ["changed_file_evidence", "validation_evidence"],
+        capabilityId: "implementation.qwen.scoped_patch",
+        roleClass: "implementation_scoped",
+        readinessStatus: "ready_with_limitations",
+        phase: "implementation_ready",
+        lifecycleState: "executable",
+        dependencyStatus: "accepted",
+        resourcePacketRef: resource.packetRef,
+        nodeExecutionPacketRef: packet.packetRef,
+        domainResourcePacketRef: resource.packetRef,
+        resourceStatus: "ready",
+        freshnessStatus: "fresh",
+        snapshotStatus: "ready",
+        contextStatus: "accepted_with_limitations",
+        contextSnapshotRefs: ["context-handoff://impl-limited"],
+        contextLimitationStatus: "accepted_with_limitations",
+        contextLimitationWaiverRefs: [],
+        validationStatus: "ready",
+        authorityStatus: "ready",
+        evidenceStatus: "ready",
+        payloadRefs: [],
+        manifestRefs: [],
+        targetCommitmentIds: ["C1"],
+        evidenceClaimRefs: [],
+        validationPlanRefs: ["validation://context-broker-test"],
+        blockers: [],
+        blockingReasonCodes: ["node_readiness_state_evaluated"],
+        nonblockingReasonCodes: ["node_readiness_context_has_nonblocking_limitations"],
+        blockingLimitations: [],
+        nonblockingLimitations: ["Docs path may need follow-up."],
+        repairAction: "none",
+        nextAllowedTransitions: ["execute_node"],
+        nextLegalTransitions: ["execute_node"],
+        replayBoundary: null,
+        createdAt: null,
+        updatedAt: null,
+        rawPromptStored: false,
+        rawResponseStored: false,
+        rawProviderLogStored: false,
+        rawToolLogStored: false,
+        rawCommandLogStored: false,
+        rawDbRowsStored: false,
+        secretsStored: false,
+      },
+      nodeExecutionPacket: packet,
+      resourcePacket: resource,
+    });
+
+    expect(request.status).toBe("context_scout_required");
+    expect(request.inheritedContextUsable).toBe(false);
+    expect(request.reasonCodes).toContain(
+      "context_broker_accepted_with_limitations_consumer_waiver_required",
+    );
+    expect(request.blockingLimitations).toContain(
+      "Accepted-with-limitations context cannot unlock this consumer without a consumer-specific waiver ref.",
+    );
+  });
+
+  it("uses stable dedupe keys without collapsing different consumer needs", () => {
+    const left = buildContextBrokerDedupeKey({
+      workflowId: "agent_team.coding",
+      graphId: "graph-1",
+      requestingNodeId: "impl-1",
+      consumerNodeId: "impl-1",
+      targetCommitmentIds: ["C1"],
+      requiredResourceKind: "context_repair",
+      semanticQuestion: "Which target files must this branch read?",
+      missingContextReasonCodes: ["context_missing"],
+    });
+    const duplicate = buildContextBrokerDedupeKey({
+      workflowId: "agent_team.coding",
+      graphId: "graph-1",
+      requestingNodeId: "impl-1",
+      consumerNodeId: "impl-1",
+      targetCommitmentIds: ["C1"],
+      requiredResourceKind: "context_repair",
+      semanticQuestion: "Which target files must this branch read?",
+      missingContextReasonCodes: ["context_missing"],
+    });
+    const different = buildContextBrokerDedupeKey({
+      workflowId: "agent_team.coding",
+      graphId: "graph-1",
+      requestingNodeId: "impl-2",
+      consumerNodeId: "impl-2",
+      targetCommitmentIds: ["C2"],
+      requiredResourceKind: "context_repair",
+      semanticQuestion: "Which validation files must this branch read?",
+      missingContextReasonCodes: ["validation_plan_missing"],
+    });
+
+    expect(left).toBe(duplicate);
+    expect(left).not.toBe(different);
+
+    const resource = readyResourcePacket();
+    const packet = buildNodeExecutionPacket({
+      workflowId: "agent_team.coding",
+      runtimeJobId: "job-1",
+      graphId: "graph-1",
+      nodeId: "impl-1",
+      nodeKind: "implementation_scoped",
+      capabilityId: "implementation.qwen.scoped_patch",
+      executorKey: "kind:implementation",
+      workerRef: "qwen",
+      targetCommitmentIds: ["C1"],
+      sourceContextRefs: ["context-handoff://impl-1"],
+      resourcePacketKind: "coding_resource_packet",
+      resourcePacketRef: resource.packetRef,
+      validationRefs: ["validation://context-broker-test"],
+      evidenceClaimExpectations: ["source_change"],
+      authorityScope: ["extensions/execution-platform/src/workflows/context-broker.ts"],
+      resourcePacket: resource,
+    });
+    const readiness = {
+      artifactKind: "node_readiness_state" as const,
+      schemaVersion: "execution-platform.node-readiness-state.v1" as const,
+      stateRef: "runtime-work-graph://node-readiness-state/impl-1/ready",
+      nodeId: "impl-1",
+      runtimeJobId: "job-1",
+      graphId: "graph-1",
+      workflowId: "agent_team.coding",
+      executionIntent: "source_edit" as const,
+      evidenceMode: ["changed_file_evidence" as const, "validation_evidence" as const],
+      capabilityId: "implementation.qwen.scoped_patch",
+      roleClass: "implementation_scoped",
+      readinessStatus: "ready" as const,
+      phase: "implementation_ready" as const,
+      lifecycleState: "executable" as const,
+      dependencyStatus: "accepted" as const,
+      resourcePacketRef: resource.packetRef,
+      nodeExecutionPacketRef: packet.packetRef,
+      domainResourcePacketRef: resource.packetRef,
+      resourceStatus: "ready" as const,
+      freshnessStatus: "fresh" as const,
+      snapshotStatus: "ready" as const,
+      contextStatus: "accepted" as const,
+      contextSnapshotRefs: ["context-handoff://impl-1"],
+      contextLimitationStatus: "not_applicable" as const,
+      contextLimitationWaiverRefs: [],
+      validationStatus: "ready" as const,
+      authorityStatus: "ready" as const,
+      evidenceStatus: "ready" as const,
+      payloadRefs: [],
+      manifestRefs: [],
+      targetCommitmentIds: ["C1"],
+      evidenceClaimRefs: [],
+      validationPlanRefs: ["validation://context-broker-test"],
+      blockers: [],
+      blockingReasonCodes: ["node_readiness_state_evaluated"],
+      nonblockingReasonCodes: [],
+      blockingLimitations: [],
+      nonblockingLimitations: [],
+      repairAction: "none" as const,
+      nextAllowedTransitions: ["execute_node" as const],
+      nextLegalTransitions: ["execute_node" as const],
+      replayBoundary: null,
+      createdAt: null,
+      updatedAt: null,
+      rawPromptStored: false as const,
+      rawResponseStored: false as const,
+      rawProviderLogStored: false as const,
+      rawToolLogStored: false as const,
+      rawCommandLogStored: false as const,
+      rawDbRowsStored: false as const,
+      secretsStored: false as const,
+    };
+    const first = buildContextBrokerRequestFromReadiness({
+      readinessState: readiness,
+      nodeExecutionPacket: packet,
+      resourcePacket: resource,
+    });
+    expect(dedupeContextBrokerRequests([first, first])).toHaveLength(1);
+  });
+});

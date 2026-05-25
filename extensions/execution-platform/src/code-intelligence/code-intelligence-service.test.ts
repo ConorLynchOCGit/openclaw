@@ -112,6 +112,34 @@ describe("CodeIntelligenceService", () => {
     });
   });
 
+  it("uses target-scoped semantic files before falling back to workspace-wide warmup", async () => {
+    await withFixture(async (rootDir) => {
+      await writeFile(
+        path.join(rootDir, "z-target.ts"),
+        [
+          "export function targetScopedBoundaryReplaySymbol(): string {",
+          '  return "target-scoped";',
+          "}",
+        ].join("\n"),
+        "utf8",
+      );
+      const service = createCodeIntelligenceService({ rootDir, maxFiles: 1 });
+
+      const symbols = await service.runTool("code.search_symbols", {
+        query: "targetScopedBoundaryReplaySymbol",
+        filePaths: ["z-target.ts"],
+      });
+
+      expect(symbols.status).toBe("succeeded");
+      expect(symbols.semanticMode).toBe("typescript_semantic");
+      expect(symbols.backendId).toBe("typescript_language_service");
+      expect(symbols.symbolRefs).toEqual(
+        expect.arrayContaining(["code-symbol://z-target.ts:1:targetScopedBoundaryReplaySymbol"]),
+      );
+      expect(symbols.workspaceSnapshotRef).toMatch(/^code-intelligence-workspace:\/\//u);
+    });
+  });
+
   it("reports backend health through the same code tool surface", async () => {
     await withFixture(async (rootDir) => {
       const service = createCodeIntelligenceService({ rootDir });

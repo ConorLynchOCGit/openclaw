@@ -44,9 +44,9 @@ Current production code has four relevant surfaces:
 
 - `DynamicAgentTeamGraphRunner` is the production scheduler-backed coding-team
   path for `agent_team.coding`.
-- `WorkflowQueuedRunner` is a narrower generic workflow dispatcher for
-  workflows that are not yet scheduler-backed. It must not be used to prove
-  dynamic delegation.
+- the deleted generic workflow queued runner is not part of the target
+  architecture. Workflows that are not yet scheduler-backed must be modeled as
+  workflow definitions/plugins or fail closed.
 - `RuntimeWorkerSupervisor` is the job-claim, lease, heartbeat, timeout,
   adapter-invocation, and terminalization layer. It is infrastructure, not a
   workflow brain.
@@ -345,7 +345,8 @@ Acceptance:
 
 ### Step 4: Generic Runner Retirement
 
-Remove production completion behavior from `WorkflowQueuedRunner`.
+Keep the old generic workflow queued runner deleted; production completion and
+proof evidence must flow through the canonical workflow runtime.
 
 Acceptance:
 

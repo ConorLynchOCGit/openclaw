@@ -188,6 +188,45 @@ Maximum target:
 Runtime derives commitment ids, evidence class enums, raw-storage flags, and
 finalization gates.
 
+Update, 2026-05-20: CommitmentWorkPacket authoring is now a staged model/tool
+boundary rather than a deterministic wrapper or one giant packet JSON ask.
+The production pattern is:
+
+1. Qwen semantic-content pass.
+   - input: mission brief, one target commitment, bounded source-prompt index,
+     repo/context hints, and validation hints.
+   - output: semantic packet content only: commitment meaning, worker
+     objective, context questions, stop-if-missing rules, expected outputs,
+     acceptance criteria, evidence-claim descriptions, risks, and downstream
+     consumer.
+   - prohibited: node ids, graph node kinds, executor keys, worker refs,
+     evidence enums, storage refs, lifecycle fields, and authority decisions.
+2. Runtime substance check.
+   - runtime checks whether required semantic fields are present and
+     non-empty.
+   - runtime does not judge whether the plan is good; that remains model or
+     human review.
+3. Qwen targeted-normalization pass, only when needed.
+   - input: usable semantic draft plus exact missing fields.
+   - output: semantic patch for missing fields only.
+   - no full regeneration.
+4. Runtime packet compiler.
+   - runtime creates the canonical CommitmentWorkPacket envelope, refs,
+     raw-storage flags, bounded fields, scheduler validation shape, and packet
+     refs.
+5. Exceptional GPT-5.5 rescue.
+   - permitted only when the primary provider fails/no-contents or produces
+     unusable semantic content.
+   - clean proof expects rescue count zero unless explicitly accepted as a
+     provider incident.
+
+This preserves the core boundary: the model writes worker-usable semantic
+handoff substance; runtime owns schema, refs, lifecycle, and scheduler shape.
+The narrow real-model lane
+`scripts/execution-platform-run-commitment-packet-real-model-lane.mjs`
+proved Qwen can complete semantic content plus targeted normalization and
+compile into a scheduler-valid packet without raw prompt/response storage.
+
 Detailed solution:
 
 - `draft_mission_contract` extracts objective, explicit non-goals, blocking

@@ -143,33 +143,45 @@ function commitmentPacketsFromValue(value: unknown): CommitmentWorkPacket[] {
     .map((result) => result.data);
 }
 
-function loadCommitmentPackets(artifacts: RuntimeJobArtifact[]): {
+async function loadCommitmentPackets(input: {
+  runtimeJobs: RuntimeJobRepository;
+  artifacts: RuntimeJobArtifact[];
+}): Promise<{
   artifact: RuntimeJobArtifact | null;
   packets: CommitmentWorkPacket[];
-} {
-  const packetArtifact = latestArtifact(artifacts, "execution_platform.commitment_work_packets");
+}> {
+  const packetArtifact = latestArtifact(
+    input.artifacts,
+    "execution_platform.commitment_work_packets",
+  );
   const packetMetadata = asRecord(packetArtifact?.metadata);
   const directPackets = commitmentPacketsFromValue(packetMetadata.commitmentWorkPackets);
   if (directPackets.length > 0) {
     return { artifact: packetArtifact, packets: directPackets };
   }
-  const packetArtifacts = artifacts
-    .filter((artifact) => artifact.artifactType === "execution_platform.commitment_work_packet")
-    .map((artifact) => {
-      const metadata = asRecord(artifact.metadata);
-      const parsed = CommitmentWorkPacketSchema.safeParse(metadata.commitmentWorkPacket);
-      return parsed.success ? parsed.data : null;
-    })
+  const packetArtifactRows = input.artifacts.filter(
+    (artifact) => artifact.artifactType === "execution_platform.commitment_work_packet",
+  );
+  const packetArtifacts = (
+    await Promise.all(
+      packetArtifactRows.map(async (artifact) => {
+        const hydrated = await input.runtimeJobs.hydrateRuntimeArtifactByContract(artifact);
+        const parsed = CommitmentWorkPacketSchema.safeParse(hydrated.body);
+        return parsed.success ? parsed.data : null;
+      }),
+    )
+  )
     .filter((packet): packet is CommitmentWorkPacket => Boolean(packet))
     .toSorted((left, right) => left.commitmentId.localeCompare(right.commitmentId));
   if (packetArtifacts.length > 0) {
     return {
       artifact:
-        packetArtifact ?? latestArtifact(artifacts, "execution_platform.commitment_work_packet"),
+        packetArtifact ??
+        latestArtifact(input.artifacts, "execution_platform.commitment_work_packet"),
       packets: packetArtifacts,
     };
   }
-  const progressPackets = artifacts
+  const progressPackets = input.artifacts
     .filter((artifact) => artifact.artifactType === "agent_team.scheduler_progress")
     .flatMap((artifact) => {
       const metadata = asRecord(artifact.metadata);
@@ -200,6 +212,123 @@ function result(
     artifactKind: "context_scout_boundary_replay_result",
     ...input,
   };
+}
+
+function compactStringArray(value: string[], maxItems = 40): string[] {
+  return [...new Set(value.filter((item) => item.trim().length > 0))]
+    .map((item) => item.slice(0, 300))
+    .slice(0, maxItems);
+}
+
+function compactContextScoutExecutorResultForArtifact(
+  executorResult: ContextScoutNodeExecutorResult | null,
+): JsonValue | null {
+  if (!executorResult) {
+    return null;
+  }
+  const sufficiencyReview = asRecord(executorResult.contextScoutToolLoopRun?.sufficiencyReview);
+  return {
+    status: executorResult.status,
+    runtimeJobId: executorResult.runtimeJobId,
+    graphId: executorResult.graphId,
+    nodeId: executorResult.nodeId,
+    roleId: executorResult.roleId,
+    sourceRuntimeJobId: executorResult.sourceRuntimeJobId ?? null,
+    contextHandoffPacketRef: executorResult.contextHandoffPacketRef,
+    contextScoutToolLoopRef: executorResult.contextScoutToolLoopRef,
+    verifiedFileRefs: compactStringArray(executorResult.verifiedFileRefs),
+    rejectedRefs: compactStringArray(executorResult.rejectedRefs),
+    runtimeToolInvocationRefs: compactStringArray(executorResult.runtimeToolInvocationRefs, 80),
+    codeIntelligenceResultRefs: compactStringArray(executorResult.codeIntelligenceResultRefs, 80),
+    codeIntelligenceRuntimeToolInvocationRefs: compactStringArray(
+      executorResult.codeIntelligenceRuntimeToolInvocationRefs,
+      80,
+    ),
+    codeIntelligenceSymbolRefs: compactStringArray(executorResult.codeIntelligenceSymbolRefs, 80),
+    codeIntelligenceDiagnosticRefs: compactStringArray(
+      executorResult.codeIntelligenceDiagnosticRefs,
+      80,
+    ),
+    codeIntelligenceRelatedTestRefs: compactStringArray(
+      executorResult.codeIntelligenceRelatedTestRefs,
+      80,
+    ),
+    codeIntelligenceImpactRefs: compactStringArray(executorResult.codeIntelligenceImpactRefs, 80),
+    codeIntelligenceSemanticModes: compactStringArray(
+      executorResult.codeIntelligenceSemanticModes,
+      8,
+    ),
+    codeIntelligenceLimitations: compactStringArray(executorResult.codeIntelligenceLimitations, 16),
+    codeIntelligenceBackendIds: compactStringArray(executorResult.codeIntelligenceBackendIds, 8),
+    codeIntelligenceBackendHealthRefs: compactStringArray(
+      executorResult.codeIntelligenceBackendHealthRefs,
+      24,
+    ),
+    codeIntelligenceWorkspaceSnapshotRefs: compactStringArray(
+      executorResult.codeIntelligenceWorkspaceSnapshotRefs,
+      24,
+    ),
+    codeIntelligenceFallbackReasonCodes: compactStringArray(
+      executorResult.codeIntelligenceFallbackReasonCodes,
+      24,
+    ),
+    codeIntelligenceDiagnosticVersionRefs: compactStringArray(
+      executorResult.codeIntelligenceDiagnosticVersionRefs,
+      24,
+    ),
+    codeIntelligenceProjectConfigRefs: compactStringArray(
+      executorResult.codeIntelligenceProjectConfigRefs,
+      24,
+    ),
+    codeIntelligenceBackendLatencyMs: executorResult.codeIntelligenceBackendLatencyMs,
+    codeIntelligenceResultCounts: executorResult.codeIntelligenceResultCounts as JsonValue,
+    contextScoutSufficiencyReview: {
+      status: stringValue(sufficiencyReview.status),
+      reviewerSummary: stringValue(sufficiencyReview.reviewerSummary)?.slice(0, 1_200) ?? null,
+      missingInformation: compactStringArray(
+        stringArrayValue(sufficiencyReview.missingInformation),
+      ),
+      repairInstructions: compactStringArray(
+        stringArrayValue(sufficiencyReview.repairInstructions),
+      ),
+      sufficientForImplementation:
+        typeof sufficiencyReview.sufficientForImplementation === "boolean"
+          ? sufficiencyReview.sufficientForImplementation
+          : null,
+    },
+    artifactRefs: compactStringArray(executorResult.artifactRefs, 40),
+    reasonCodes: compactStringArray(executorResult.reasonCodes, 60),
+    implementationBlocked: executorResult.implementationBlocked,
+    rawPromptStored: false,
+    rawResponseStored: false,
+    rawProviderLogStored: false,
+    rawToolLogStored: false,
+    workQueueLifecycleMutated: false,
+    compactedForArtifactStorage: true,
+  } satisfies JsonValue;
+}
+
+function stringArrayValue(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === "string" && item.trim().length > 0)
+    : [];
+}
+
+function compactReplayResultForArtifact(replayResult: ContextScoutBoundaryReplayResult): JsonValue {
+  return {
+    ...replayResult,
+    contextScoutExecutorResult: compactContextScoutExecutorResultForArtifact(
+      replayResult.contextScoutExecutorResult,
+    ),
+    artifactRefs: compactStringArray(replayResult.artifactRefs, 60),
+    reasonCodes: compactStringArray(replayResult.reasonCodes, 60),
+    rawPromptStored: false,
+    rawResponseStored: false,
+    rawProviderLogStored: false,
+    rawToolLogStored: false,
+    rawDbRowsStored: false,
+    compactedForArtifactStorage: true,
+  } satisfies JsonValue;
 }
 
 export async function runContextScoutBoundaryReplay(
@@ -273,7 +402,10 @@ export async function runContextScoutBoundaryReplay(
     artifacts,
     "execution_platform.source_prompt_context_index",
   );
-  const packetLoad = loadCommitmentPackets(artifacts);
+  const packetLoad = await loadCommitmentPackets({
+    runtimeJobs: input.runtimeJobs,
+    artifacts,
+  });
   const sourcePromptIndex = coerceSourcePromptIndex(sourcePromptArtifact);
   if (!snapshot || !node) {
     const replayResult = result({
@@ -385,8 +517,31 @@ export async function runContextScoutBoundaryReplay(
     storageKind: "metadata",
     uri: replayRef,
     contentType: "application/json",
-    metadata: replayResult as unknown as JsonValue,
+    metadata: compactReplayResultForArtifact(replayResult),
   });
+  if (executorResult) {
+    await input.runtimeWorkGraphs.updateNodeStatus({
+      nodeId: node.nodeId,
+      nodeStatus:
+        executorResult.status === "succeeded"
+          ? "succeeded"
+          : executorResult.status === "needs_review"
+            ? "needs_review"
+            : "failed",
+      outputArtifactRefs: [...executorResult.artifactRefs, replayRef].slice(0, 80),
+      metadataPatch: {
+        lastResultStatus: executorResult.status,
+        lastStatusReasonCodes: replayResult.reasonCodes.slice(0, 60),
+        contextScoutBoundaryReplayRef: replayRef,
+        contextHandoffPacketRef: executorResult.contextHandoffPacketRef,
+        contextScoutToolLoopRef: executorResult.contextScoutToolLoopRef,
+        rawPromptStored: false,
+        rawResponseStored: false,
+        rawProviderLogStored: false,
+        rawToolLogStored: false,
+      },
+    });
+  }
   return {
     ...replayResult,
     artifactRefs: [...replayResult.artifactRefs, replayRef],

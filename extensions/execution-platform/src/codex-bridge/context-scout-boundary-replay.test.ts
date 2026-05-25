@@ -442,19 +442,27 @@ describe("context scout boundary replay", () => {
           rawProviderLogStored: false,
         },
       });
-      await runtimeJobs.attachArtifact({
+      const replayPacket = acceptedPacket({
+        packetId: "packet-1",
+        packetRef: "packet://commitment-1",
+        missionId: "mission-1",
+        commitmentId: "commitment-1",
+        fileRef,
+      });
+      await runtimeJobs.attachRuntimeArtifactByContract({
         jobId: job.jobId,
         artifactType: "execution_platform.commitment_work_packet",
-        storageKind: "metadata",
         uri: "runtime-job://job-context-boundary-chunked/commitment-work-packets/commitment-1",
+        body: replayPacket,
+        boundedSummary: replayPacket.workerObjective,
+        targetCommitmentIds: [replayPacket.commitmentId],
+        resourcePacketKind: "commitment_work_packet",
+        readinessStatus: replayPacket.qualityStatus,
+        reasonCodes: ["commitment_work_packet_context_replay_fixture"],
         metadata: {
-          commitmentWorkPacket: acceptedPacket({
-            packetId: "packet-1",
-            packetRef: "packet://commitment-1",
-            missionId: "mission-1",
-            commitmentId: "commitment-1",
-            fileRef,
-          }),
+          artifactKind: "execution_platform.commitment_work_packet",
+          commitmentId: replayPacket.commitmentId,
+          packetRef: replayPacket.packetRef,
           rawPromptStored: false,
           rawResponseStored: false,
           rawProviderLogStored: false,

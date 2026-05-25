@@ -99,6 +99,34 @@ describe("runtime node capability registry", () => {
     expect(testAuthoring?.authorityBoundaries).toContain("no_test_weakening_without_review");
   });
 
+  it("derives support-role execution intent from role class before repo-inspection ability", () => {
+    const manifest = buildRuntimeNodeCapabilityManifest();
+
+    expect(
+      manifest.capabilities.find((capability) => capability.capabilityId === "reviewer"),
+    ).toMatchObject({
+      roleClass: "review",
+      canInspectRepo: true,
+      defaultExecutionIntent: "review",
+    });
+    expect(
+      manifest.capabilities.find(
+        (capability) => capability.capabilityId === "observability_readback",
+      ),
+    ).toMatchObject({
+      roleClass: "observability",
+      canInspectRepo: true,
+      defaultExecutionIntent: "readback",
+    });
+    expect(
+      manifest.capabilities.find((capability) => capability.capabilityId === "coding_closeout"),
+    ).toMatchObject({
+      roleClass: "closeout",
+      canInspectRepo: true,
+      defaultExecutionIntent: "closeout",
+    });
+  });
+
   it("maps every capability to an executable graph node kind and executor metadata", () => {
     const manifest = buildRuntimeNodeCapabilityManifest();
     for (const capability of manifest.capabilities) {
@@ -286,6 +314,10 @@ describe("runtime node capability registry", () => {
     expect(manifest.capabilities.map((capability) => capability.capabilityId)).toEqual([
       "context_synthesis",
     ]);
+    expect(manifest.capabilities[0]?.supportedExecutionIntents).toEqual(
+      expect.arrayContaining(["context_supply", "resource_materialization"]),
+    );
+    expect(manifest.capabilities[0]?.defaultExecutionIntent).toBe("context_supply");
   });
 
   it("reports exact Product/Spec Planning executor coverage before live proof", () => {

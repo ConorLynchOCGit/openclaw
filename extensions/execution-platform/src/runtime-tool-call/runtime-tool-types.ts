@@ -15,6 +15,8 @@ export type RuntimeToolFamily =
   | "scheduler.select_next_node"
   | "scheduler.evaluate_node_result"
   | "scheduler.repair_decision"
+  | "node.resource_materialization"
+  | "artifact.payload"
   | "source_prompt.context"
   | "context_scout.tool_loop"
   | "code_intelligence.query"

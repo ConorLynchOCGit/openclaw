@@ -83,6 +83,17 @@ export type WorkflowSourcePromptPolicy = {
   rawResponseStored: false;
 };
 
+export type WorkflowEntryNodePolicy = {
+  policyId: string;
+  requiredBeforeOtherExecution: boolean;
+  allowedInitialCapabilityIds: string[];
+  allowedInitialRoleClasses: WorkflowRoleClass[];
+  blockedUntilStartedReasonCode: string;
+  rawPromptStored: false;
+  rawResponseStored: false;
+  rawLogsStored: false;
+};
+
 export type WorkflowOrchestrationPolicy = {
   policyId: string;
   workflowId: string;
@@ -96,6 +107,7 @@ export type WorkflowOrchestrationPolicy = {
   sourcePromptPolicy: WorkflowSourcePromptPolicy;
   capabilityPolicy: WorkflowCapabilityPolicy;
   humanDecisionPolicy: WorkflowHumanDecisionPolicy;
+  entryNodePolicy: WorkflowEntryNodePolicy | null;
   evidenceProfileId: string;
   evidenceClassesByPhase: Partial<Record<WorkflowPhase, WorkflowEvidenceClass[]>>;
   runtimeToolFamilies: RuntimeToolFamily[];
@@ -179,6 +191,27 @@ export function validateWorkflowOrchestrationPolicy(
       reasonCodes.push(`workflow_context_need_required_but_no_access:${need.contextNeedId}`);
     }
   }
+  if (policy.entryNodePolicy) {
+    const entryPolicy = policy.entryNodePolicy;
+    if (!entryPolicy.policyId.trim()) {
+      reasonCodes.push("workflow_entry_node_policy_id_missing");
+    }
+    if (entryPolicy.rawPromptStored || entryPolicy.rawResponseStored || entryPolicy.rawLogsStored) {
+      reasonCodes.push("workflow_entry_node_policy_raw_storage_rejected");
+    }
+    if (
+      entryPolicy.requiredBeforeOtherExecution &&
+      entryPolicy.allowedInitialCapabilityIds.length === 0 &&
+      entryPolicy.allowedInitialRoleClasses.length === 0
+    ) {
+      reasonCodes.push("workflow_entry_node_policy_allowed_entry_missing");
+    }
+    for (const capabilityId of entryPolicy.allowedInitialCapabilityIds) {
+      if (!policy.allowedCapabilityIds.includes(capabilityId)) {
+        reasonCodes.push(`workflow_entry_node_policy_capability_not_allowed:${capabilityId}`);
+      }
+    }
+  }
   return {
     artifactKind: "workflow_orchestration_policy_validation",
     policyId: policy.policyId || null,
@@ -217,6 +250,7 @@ export function workflowOrchestrationPolicySummary(policy: WorkflowOrchestration
     sourcePromptPolicy: policy.sourcePromptPolicy,
     capabilityPolicy: policy.capabilityPolicy,
     humanDecisionPolicy: policy.humanDecisionPolicy,
+    entryNodePolicy: policy.entryNodePolicy,
     evidenceProfileId: policy.evidenceProfileId,
     runtimeToolFamilies: policy.runtimeToolFamilies,
     closeoutPolicyRef: policy.closeoutPolicyRef,

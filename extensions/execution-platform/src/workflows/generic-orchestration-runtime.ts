@@ -1,6 +1,14 @@
 import type { JsonValue, RuntimeJob } from "../runtime-job-repository.ts";
 import type { RuntimeToolKernel } from "../runtime-tool-call/runtime-tool-kernel.ts";
 import type { RuntimeToolFamily } from "../runtime-tool-call/runtime-tool-types.ts";
+import {
+  GENERIC_RUNTIME_SPINE_ID,
+  GenericRuntimeSpine,
+  genericRuntimeSpineLifecycleArtifactMetadata,
+  genericRuntimeSpineReadinessArtifactMetadata,
+  type GenericRuntimeSpineLifecycleEvaluation,
+  type GenericRuntimeSpineReadiness,
+} from "./generic-runtime-spine.ts";
 import type { RuntimeWorkGraphRepository } from "./runtime-work-graph-repository.ts";
 import type {
   RuntimeWorkGraphNodeExecutor,
@@ -8,19 +16,9 @@ import type {
   RuntimeWorkGraphSchedulerResult,
 } from "./runtime-work-graph-scheduler.ts";
 import { RuntimeWorkGraphScheduler } from "./runtime-work-graph-scheduler.ts";
-import {
-  RuntimeWorkflowGraphEngine,
-  type RuntimeWorkflowGraphEngineReadiness,
-} from "./runtime-workflow-graph-engine.ts";
-import {
-  DEFAULT_WORKFLOW_DEFINITION_REGISTRY,
-  type WorkflowDefinitionRegistry,
-} from "./workflow-definition-registry.ts";
+import { type WorkflowDefinitionRegistry } from "./workflow-definition-registry.ts";
 import type { WorkflowDefinition } from "./workflow-definition.ts";
-import {
-  DEFAULT_WORKFLOW_PLUGIN_REGISTRY,
-  type WorkflowPluginRegistry,
-} from "./workflow-plugin-registry.ts";
+import { type WorkflowPluginRegistry } from "./workflow-plugin-registry.ts";
 import type { WorkflowPlugin } from "./workflow-plugin.ts";
 
 export const GENERIC_ORCHESTRATION_RUNTIME_ENGINE_ID = "generic-orchestration-runtime-engine.v1";
@@ -40,7 +38,8 @@ export type GenericOrchestrationRuntimeReadiness = {
   engineId: typeof GENERIC_ORCHESTRATION_RUNTIME_ENGINE_ID;
   workflowId: string;
   ready: boolean;
-  workflowEngineReadiness: RuntimeWorkflowGraphEngineReadiness;
+  genericRuntimeSpineReadiness: GenericRuntimeSpineReadiness;
+  workflowEngineReadiness: GenericRuntimeSpineReadiness["workflowEngineReadiness"];
   reasonCodes: string[];
   rawPromptStored: false;
   rawResponseStored: false;
@@ -88,6 +87,7 @@ export type GenericOrchestrationRuntimeResult = {
   decisionRefs: string[];
   reasonCodes: string[];
   readiness: GenericOrchestrationRuntimeReadiness;
+  genericRuntimeSpineLifecycle: GenericRuntimeSpineLifecycleEvaluation | null;
   schedulerResult: RuntimeWorkGraphSchedulerResult | null;
   rawPromptStored: false;
   rawResponseStored: false;
@@ -96,55 +96,6 @@ export type GenericOrchestrationRuntimeResult = {
   workQueueLifecycleMutated: false;
 };
 
-function schedulerPolicyReasonCodes(plugin: WorkflowPlugin | null): string[] {
-  if (!plugin?.productionEnabled) {
-    return [];
-  }
-  const reasonCodes: string[] = [];
-  if (!plugin.schedulerPolicy.stagedSchedulerProtocolRequired) {
-    reasonCodes.push("generic_orchestration_staged_scheduler_protocol_required");
-  }
-  if (!plugin.schedulerPolicy.stagedGraphAcceptanceRequired) {
-    reasonCodes.push("generic_orchestration_staged_graph_acceptance_required");
-  }
-  if (!plugin.schedulerPolicy.runtimeDerivedNodeEnvelopeRequired) {
-    reasonCodes.push("generic_orchestration_runtime_derived_node_envelope_required");
-  }
-  if (!plugin.schedulerPolicy.runtimeDerivedExpectedEvidenceRequired) {
-    reasonCodes.push("generic_orchestration_runtime_derived_expected_evidence_required");
-  }
-  if (!plugin.schedulerPolicy.modelAuthoredStructureReviewRequired) {
-    reasonCodes.push("generic_orchestration_model_authored_structure_review_required");
-  }
-  if (!plugin.schedulerPolicy.firstNodeApprovalRequired) {
-    reasonCodes.push("generic_orchestration_first_node_approval_required");
-  }
-  return reasonCodes;
-}
-
-function schedulerOptionsReasonCodes(input: {
-  plugin: WorkflowPlugin | null | undefined;
-  schedulerOptions: Omit<RuntimeWorkGraphSchedulerOptions, "graphs">;
-}): string[] {
-  if (!input.plugin?.productionEnabled) {
-    return [];
-  }
-  const reasonCodes: string[] = [];
-  if (
-    input.plugin.schedulerPolicy.stagedSchedulerProtocolRequired &&
-    input.schedulerOptions.requireGenericStagedSchedulerProtocol !== true
-  ) {
-    reasonCodes.push("generic_orchestration_scheduler_option_staged_protocol_missing");
-  }
-  if (
-    input.plugin.schedulerPolicy.modelAuthoredWorkPacketsRequiredForComplexMission &&
-    input.schedulerOptions.requireModelAuthoredCommitmentWorkPacketsForComplexMission !== true
-  ) {
-    reasonCodes.push("generic_orchestration_scheduler_option_work_packets_missing");
-  }
-  return reasonCodes;
-}
-
 export type GenericOrchestrationRuntimeOptions = {
   registry?: WorkflowDefinitionRegistry;
   pluginRegistry?: WorkflowPluginRegistry;
@@ -152,37 +103,13 @@ export type GenericOrchestrationRuntimeOptions = {
   runtimeToolKernel?: RuntimeToolKernel | null;
 };
 
-function hasAcceptedGraphEvidence(result: RuntimeWorkGraphSchedulerResult): boolean {
-  return (
-    result.graphId.trim().length > 0 &&
-    (result.executedNodeIds.length > 0 ||
-      result.addedNodeIds.length > 0 ||
-      result.decisionRefs.length > 0)
-  );
-}
-
-function statusFromSchedulerResult(
-  result: RuntimeWorkGraphSchedulerResult,
-): GenericOrchestrationRuntimeStatus {
-  if (result.status === "waiting_for_human") {
-    return "waiting_for_human";
-  }
-  if (result.status === "failed") {
-    return "failed";
-  }
-  if (result.status === "succeeded" && hasAcceptedGraphEvidence(result)) {
-    return "succeeded";
-  }
-  return "needs_review";
-}
-
 export class GenericOrchestrationRuntime {
-  private readonly workflowEngine: RuntimeWorkflowGraphEngine;
+  private readonly spine: GenericRuntimeSpine;
 
   constructor(private readonly options: GenericOrchestrationRuntimeOptions) {
-    this.workflowEngine = new RuntimeWorkflowGraphEngine({
-      registry: options.registry ?? DEFAULT_WORKFLOW_DEFINITION_REGISTRY,
-      pluginRegistry: options.pluginRegistry ?? DEFAULT_WORKFLOW_PLUGIN_REGISTRY,
+    this.spine = new GenericRuntimeSpine({
+      registry: options.registry,
+      pluginRegistry: options.pluginRegistry,
       graphs: options.graphs,
       runtimeToolKernel: options.runtimeToolKernel ?? null,
     });
@@ -194,19 +121,19 @@ export class GenericOrchestrationRuntime {
     plugin?: WorkflowPlugin | null;
     availableRuntimeToolFamilies?: RuntimeToolFamily[];
   }): GenericOrchestrationRuntimeReadiness {
-    const workflowEngineReadiness = this.workflowEngine.evaluateReadiness(input);
+    const genericRuntimeSpineReadiness = this.spine.evaluateReadiness(input);
+    const workflowEngineReadiness = genericRuntimeSpineReadiness.workflowEngineReadiness;
     const reasonCodes = [
       "generic_orchestration_runtime_readiness_evaluated",
-      ...workflowEngineReadiness.reasonCodes,
-      ...schedulerPolicyReasonCodes(input.plugin ?? null),
+      `generic_runtime_spine:${GENERIC_RUNTIME_SPINE_ID}`,
+      ...genericRuntimeSpineReadiness.reasonCodes,
     ];
     return {
       artifactKind: "generic_orchestration_runtime_readiness",
       engineId: GENERIC_ORCHESTRATION_RUNTIME_ENGINE_ID,
       workflowId: workflowEngineReadiness.workflowId,
-      ready:
-        workflowEngineReadiness.ready &&
-        schedulerPolicyReasonCodes(input.plugin ?? null).length === 0,
+      ready: genericRuntimeSpineReadiness.ready,
+      genericRuntimeSpineReadiness,
       workflowEngineReadiness,
       reasonCodes,
       rawPromptStored: false,
@@ -219,7 +146,7 @@ export class GenericOrchestrationRuntime {
   async run(
     input: GenericOrchestrationRuntimeRunInput,
   ): Promise<GenericOrchestrationRuntimeResult> {
-    const definition = this.workflowEngine.requireDefinition(input.workflowId);
+    const definition = this.spine.requireDefinition(input.workflowId);
     const readiness = this.evaluateReadiness({
       workflowId: input.workflowId,
       executors: input.executors,
@@ -243,6 +170,7 @@ export class GenericOrchestrationRuntime {
           60,
         ),
         readiness,
+        genericRuntimeSpineLifecycle: null,
         schedulerResult: null,
         rawPromptStored: false,
         rawResponseStored: false,
@@ -259,15 +187,14 @@ export class GenericOrchestrationRuntime {
       plugin: input.plugin ?? null,
       readiness,
     });
-    const graphEvidenceAccepted = hasAcceptedGraphEvidence(schedulerResult);
-    const status = statusFromSchedulerResult(schedulerResult);
+    const genericRuntimeSpineLifecycle = this.spine.evaluateSchedulerResult({
+      runtimeJob: input.runtimeJob,
+      workflowId: definition.workflowId,
+      schedulerResult,
+    });
     const reasonCodes = [
       "generic_orchestration_runtime_scheduler_executed",
-      ...schedulerResult.reasonCodes,
-      ...(graphEvidenceAccepted ? ["generic_orchestration_runtime_graph_evidence_present"] : []),
-      ...(schedulerResult.status === "succeeded" && !graphEvidenceAccepted
-        ? ["generic_orchestration_runtime_graph_evidence_missing"]
-        : []),
+      ...genericRuntimeSpineLifecycle.reasonCodes,
     ].slice(0, 80);
 
     return {
@@ -275,7 +202,7 @@ export class GenericOrchestrationRuntime {
       engineId: GENERIC_ORCHESTRATION_RUNTIME_ENGINE_ID,
       workflowId: definition.workflowId,
       runtimeJobId: input.runtimeJob.jobId,
-      status,
+      status: genericRuntimeSpineLifecycle.status,
       schedulerStatus: schedulerResult.status,
       graphId: schedulerResult.graphId,
       executedNodeIds: schedulerResult.executedNodeIds,
@@ -283,6 +210,7 @@ export class GenericOrchestrationRuntime {
       decisionRefs: schedulerResult.decisionRefs,
       reasonCodes,
       readiness,
+      genericRuntimeSpineLifecycle,
       schedulerResult,
       rawPromptStored: false,
       rawResponseStored: false,
@@ -295,11 +223,12 @@ export class GenericOrchestrationRuntime {
   async runSchedulerGraph(
     input: GenericOrchestrationRuntimeSchedulerGraphInput,
   ): Promise<GenericOrchestrationRuntimeResult> {
-    const schedulerOptionReasonCodes = schedulerOptionsReasonCodes({
+    const schedulerOptionReadiness = this.spine.evaluateSchedulerOptions({
+      workflowId: input.workflowId,
       plugin: input.plugin,
       schedulerOptions: input.schedulerOptions,
     });
-    if (schedulerOptionReasonCodes.length > 0) {
+    if (!schedulerOptionReadiness.ready) {
       const readiness = this.evaluateReadiness({
         workflowId: input.workflowId,
         executors: input.executors,
@@ -319,9 +248,10 @@ export class GenericOrchestrationRuntime {
         decisionRefs: [],
         reasonCodes: [
           "generic_orchestration_runtime_scheduler_options_not_ready",
-          ...schedulerOptionReasonCodes,
+          ...schedulerOptionReadiness.reasonCodes,
         ],
         readiness,
+        genericRuntimeSpineLifecycle: null,
         schedulerResult: null,
         rawPromptStored: false,
         rawResponseStored: false,
@@ -350,5 +280,82 @@ export class GenericOrchestrationRuntime {
 export function genericOrchestrationRuntimeResultArtifactMetadata(
   result: GenericOrchestrationRuntimeResult,
 ): JsonValue {
-  return result as unknown as JsonValue;
+  const schedulerResult = result.schedulerResult;
+  const readiness = result.readiness;
+  const workflowEngineReadiness = readiness.workflowEngineReadiness;
+  return {
+    artifactKind: "generic_orchestration_runtime_result",
+    engineId: result.engineId,
+    workflowId: result.workflowId,
+    runtimeJobId: result.runtimeJobId,
+    status: result.status,
+    schedulerStatus: result.schedulerStatus,
+    graphId: result.graphId,
+    executedNodeIds: result.executedNodeIds.slice(0, 100),
+    executedNodeCount: result.executedNodeIds.length,
+    addedNodeIds: result.addedNodeIds.slice(0, 100),
+    addedNodeCount: result.addedNodeIds.length,
+    decisionRefs: result.decisionRefs.slice(0, 100),
+    decisionRefCount: result.decisionRefs.length,
+    reasonCodes: result.reasonCodes.slice(0, 80),
+    readiness: {
+      artifactKind: readiness.artifactKind,
+      engineId: readiness.engineId,
+      workflowId: readiness.workflowId,
+      ready: readiness.ready,
+      reasonCodes: readiness.reasonCodes.slice(0, 80),
+      genericRuntimeSpineReadiness: genericRuntimeSpineReadinessArtifactMetadata(
+        readiness.genericRuntimeSpineReadiness,
+      ),
+      workflowEngineReadiness: {
+        artifactKind: workflowEngineReadiness.artifactKind,
+        engineId: workflowEngineReadiness.engineId,
+        workflowId: workflowEngineReadiness.workflowId,
+        definitionId: workflowEngineReadiness.definitionId,
+        pluginId: workflowEngineReadiness.pluginId,
+        pluginReady: workflowEngineReadiness.pluginReady,
+        ready: workflowEngineReadiness.ready,
+        reasonCodes: workflowEngineReadiness.reasonCodes.slice(0, 80),
+        missingExecutorKeys: workflowEngineReadiness.missingExecutorKeys.slice(0, 80),
+        missingPluginExecutorKeys: workflowEngineReadiness.missingPluginExecutorKeys.slice(0, 80),
+        missingRuntimeToolFamilies: workflowEngineReadiness.missingRuntimeToolFamilies.slice(0, 80),
+        rawPromptStored: false,
+        rawResponseStored: false,
+        rawLogsStored: false,
+        workQueueLifecycleMutated: false,
+      },
+      rawPromptStored: false,
+      rawResponseStored: false,
+      rawLogsStored: false,
+      workQueueLifecycleMutated: false,
+    },
+    schedulerResultSummary: schedulerResult
+      ? {
+          status: schedulerResult.status,
+          graphId: schedulerResult.graphId,
+          iterations: schedulerResult.iterations,
+          executedNodeCount: schedulerResult.executedNodeIds.length,
+          addedNodeCount: schedulerResult.addedNodeIds.length,
+          decisionRefCount: schedulerResult.decisionRefs.length,
+          reasonCodes: schedulerResult.reasonCodes.slice(0, 80),
+          missionLedgerStatus: schedulerResult.missionLedger?.ledgerStatus ?? null,
+          missionLedgerGate: schedulerResult.missionLedger?.missionGate ?? null,
+          rawPromptStored: false,
+          rawResponseStored: false,
+          rawProviderLogStored: false,
+          workQueueLifecycleMutated: false,
+        }
+      : null,
+    genericRuntimeSpineLifecycle: result.genericRuntimeSpineLifecycle
+      ? genericRuntimeSpineLifecycleArtifactMetadata(result.genericRuntimeSpineLifecycle)
+      : null,
+    schedulerResultStoredInline: false,
+    schedulerResultStoragePolicy:
+      "bounded_manifest_only_full_scheduler_state_lives_in_runtime_graph_and_progress_artifacts",
+    rawPromptStored: false,
+    rawResponseStored: false,
+    rawProviderLogStored: false,
+    rawLogsStored: false,
+    workQueueLifecycleMutated: false,
+  } satisfies JsonValue;
 }

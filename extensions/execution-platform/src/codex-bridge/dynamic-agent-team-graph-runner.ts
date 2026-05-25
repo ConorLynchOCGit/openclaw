@@ -8,6 +8,13 @@ import type { JsonModelExecutionRequest } from "../../../model-memory/src/model-
 import { createWorkflowPermissionReadback } from "../authority/workflow-permission-readback.ts";
 import type { ModelRosterEnforcementDecision } from "../model-routing/model-roster-enforcement.ts";
 import {
+  buildModelTaskTelemetryEnvelope,
+  classifyModelTaskCall,
+  modelTaskPolicyFor,
+  type ModelTaskClass,
+} from "../model-tasks/model-task-classification.ts";
+import { buildLatestRunState } from "../observability/latest-run-state.ts";
+import {
   RUNTIME_EXECUTION_SPAN_EVENT_TYPE,
   buildRuntimeExecutionSpan,
   type RuntimeExecutionSpanKind,
@@ -28,6 +35,21 @@ import {
   type BoundaryReplayCheckpointKind,
 } from "../workflows/boundary-replay-checkpoints.ts";
 import {
+  CONTEXT_BROKER_REQUEST_ARTIFACT_TYPE,
+  buildContextBrokerRequestFromReadiness,
+  summarizeContextBrokerRequest,
+  summarizeContextBrokerRequestArtifact,
+} from "../workflows/context-broker.ts";
+import {
+  CONTEXT_SCOUT_EXECUTION_PACKET_ARTIFACT_TYPE,
+  buildContextScoutPromptFromExecutionPacket,
+  compileContextScoutExecutionPacket,
+  contextScoutBrokerRequestSummaryFromMetadata,
+  contextScoutExecutionPacketMetadata,
+  deriveContextScoutProviderTimeoutMs,
+  type ContextScoutExecutionPacketCompileResult,
+} from "../workflows/context-scout-execution-packet.ts";
+import {
   CONTEXT_SCOUT_TOOL_LOOP_ARTIFACT_TYPE,
   buildContextScoutRepoAnalysisFindings,
   buildContextScoutToolLoopRun,
@@ -40,7 +62,6 @@ import {
 } from "../workflows/context-scout-tool-loop.ts";
 import {
   deriveContextSnapshotRefsFromArtifactRefs,
-  normalizeContextSnapshotRefs,
   type ContextSnapshotRef,
 } from "../workflows/context-snapshot.ts";
 import {
@@ -53,11 +74,14 @@ import {
   summarizeContextSynthesisArtifact,
   validateContextSynthesisArtifact,
 } from "../workflows/context-synthesis.ts";
+import { normalizeEvidenceModes, normalizeExecutionIntent } from "../workflows/execution-intent.ts";
+import { runAndPersistGenericSchedulerGraph } from "../workflows/generic-orchestration-runtime-execution.ts";
 import {
-  GENERIC_ORCHESTRATION_RUNTIME_RESULT_ARTIFACT_TYPE,
-  GenericOrchestrationRuntime,
-  genericOrchestrationRuntimeResultArtifactMetadata,
-} from "../workflows/generic-orchestration-runtime.ts";
+  compileImplementationContextSnapshotPacket,
+  summarizeImplementationContextPacketForReadback,
+  summarizeImplementationResourceMaterializationForReadback,
+  type ImplementationContextCompileResult,
+} from "../workflows/implementation-context-snapshot-compiler.ts";
 import {
   MISSION_CONTRACT_EVALUATION_ARTIFACT_TYPE,
   MISSION_CONTRACT_LEDGER_ARTIFACT_TYPE,
@@ -75,12 +99,14 @@ import {
 } from "../workflows/mission-contract-ledger.ts";
 import {
   applyCommitmentPacketQualityReview,
+  buildCommitmentPacketFanoutDiagnosticsArtifact,
   buildContextHandoffPacket,
-  buildImplementationTaskPacket,
+  COMMITMENT_PACKET_FANOUT_DIAGNOSTICS_ARTIFACT_TYPE,
   CommitmentWorkPacketSchema,
   normalizeCommitmentPacketQualityReview,
   normalizeModelAuthoredCommitmentWorkPackets,
   summarizeCommitmentPacketQualityReviewForArtifact,
+  summarizeCommitmentPacketFanoutForProgress,
   summarizeCommitmentWorkPacketsForArtifact,
   summarizeCommitmentWorkPackets,
   summarizeCommitmentWorkPacketsForProgress,
@@ -88,6 +114,19 @@ import {
   type CommitmentPacketQualityReview,
   type CommitmentWorkPacket,
 } from "../workflows/mission-work-packets.ts";
+import {
+  compileNodeExecutionPacketForImplementationTask,
+  evaluateWorkerInvocationReadinessGate,
+  summarizeNodeExecutionPacketForReadback,
+  type CodingResourcePacket,
+  type NodeExecutionPacket,
+} from "../workflows/node-resource-materialization.ts";
+import {
+  RUNTIME_GRAPH_PATCH_ARTIFACT_TYPE,
+  buildRuntimeGraphPatchBody,
+  compactSchedulerProgressForManifest,
+  summarizeRuntimeGraphPatchArtifact,
+} from "../workflows/runtime-graph-patch.ts";
 import { runtimeNodeCapabilityManifestForModel } from "../workflows/runtime-node-capability-registry.ts";
 import type { RuntimeWorkGraphRepository } from "../workflows/runtime-work-graph-repository.ts";
 import {
@@ -115,6 +154,26 @@ import {
   type SourcePromptExcerptDecision,
 } from "../workflows/source-prompt-context.ts";
 import {
+  STAGED_MISSION_LEDGER_CANONICAL_COMMITMENTS_ARTIFACT_TYPE,
+  STAGED_MISSION_LEDGER_ACCEPTANCE_ARTIFACT_TYPE,
+  STAGED_MISSION_LEDGER_COMPILED_CANDIDATE_SET_ARTIFACT_TYPE,
+  STAGED_MISSION_LEDGER_OBJECTIVE_CONSTRAINTS_ARTIFACT_TYPE,
+  STAGED_MISSION_LEDGER_OBLIGATION_CANDIDATE_SET_ARTIFACT_TYPE,
+  STAGED_MISSION_LEDGER_REVIEW_PLAN_ARTIFACT_TYPE,
+  STAGED_MISSION_LEDGER_STAGE_REPAIR_DIAGNOSTIC_ARTIFACT_TYPE,
+  ObligationCandidateSetSchema,
+  ObligationReviewPlanSchema,
+  StagedObjectiveConstraintsSchema,
+  buildStagedMissionLedgerAcceptance,
+  buildStagedMissionLedgerStageRepairDiagnostic,
+  buildFastModelNoContentDiagnostic,
+  compileCanonicalMissionCommitments,
+  compileObligationCandidateSet,
+  missionContractLedgerFromCanonicalCommitments,
+  sourcePromptStructuralAnchorsFromIndex,
+  summarizeCanonicalMissionCommitments,
+} from "../workflows/staged-mission-ledger-obligation-compiler.ts";
+import {
   buildValidationTaskPacket,
   buildValidationQaEvidencePacket,
   invokeValidationQaRuntimeTool,
@@ -138,13 +197,8 @@ import {
   WORKFLOW_EVIDENCE_PROFILE_EVALUATION_ARTIFACT_TYPE,
   workflowEvidenceProfileEvaluationArtifactMetadata,
 } from "../workflows/workflow-evidence-profile.ts";
-import {
-  WORKFLOW_PLUGIN_RESOLUTION_ARTIFACT_TYPE,
-  workflowPluginResolutionArtifactMetadata,
-  workflowPluginResolutionFor,
-} from "../workflows/workflow-plugin.ts";
 import type { AgentTeamRoleId } from "./agent-team-plan.ts";
-import { type AgentTeamRoleExecutionEvidence } from "./agent-team-quality-proof.ts";
+import type { AgentTeamRoleExecutionEvidence } from "./agent-team-role-execution-evidence.ts";
 import {
   createAgentTeamRuntimeEvidence,
   recordAgentTeamRuntimeEvidence,
@@ -170,6 +224,7 @@ import {
 } from "./closeout-finalization-runtime-tools.ts";
 import { closeoutGenerateMetadataFromResult } from "./closeout-generate-runtime-tool.ts";
 import { resolveCodingTeamObjectiveScope } from "./coding-team-objective-scope.ts";
+import { buildCodingTeamSchedulerExecutorMap } from "./coding-team-runtime-adapter.ts";
 import {
   buildBoundedContextScoutRepoContextIndex,
   discoverContextScoutRepoCandidateFileRefs,
@@ -286,6 +341,11 @@ type AgentTeamImplementationBridgeRunInput = {
   evidenceRefs: string[];
   validationRefs: string[];
   approvedRepoScopePaths?: string[];
+  nodeExecutionPacket?: NodeExecutionPacket;
+  codingResourcePacket?: CodingResourcePacket;
+  nodeReadinessStateRef?: string | null;
+  nodeExecutionPacketRef?: string | null;
+  resourcePacketRef?: string | null;
 };
 
 type AgentTeamImplementationBridgeRunResult = {
@@ -417,6 +477,14 @@ function summarizeModelProviderDiagnosticsForProgress(diagnostics: unknown): Jso
     reasoningTokenCount?: unknown;
     completionTokenCount?: unknown;
     messageKeys?: unknown;
+    elapsedMs?: unknown;
+    timeoutMs?: unknown;
+    abortFired?: unknown;
+    streamMode?: unknown;
+    contentLengthByChoice?: unknown;
+    toolCallCountByChoice?: unknown;
+    providerUsage?: unknown;
+    structuredAdapterPreflight?: unknown;
   };
   return {
     modelCallSpanId: typeof value.modelCallSpanId === "string" ? value.modelCallSpanId : null,
@@ -443,6 +511,28 @@ function summarizeModelProviderDiagnosticsForProgress(diagnostics: unknown): Jso
     messageKeys: Array.isArray(value.messageKeys)
       ? value.messageKeys.filter((key): key is string => typeof key === "string").slice(0, 12)
       : [],
+    elapsedMs: typeof value.elapsedMs === "number" ? value.elapsedMs : null,
+    timeoutMs: typeof value.timeoutMs === "number" ? value.timeoutMs : null,
+    abortFired: typeof value.abortFired === "boolean" ? value.abortFired : null,
+    streamMode: typeof value.streamMode === "boolean" ? value.streamMode : null,
+    contentLengthByChoice: Array.isArray(value.contentLengthByChoice)
+      ? value.contentLengthByChoice
+          .filter((length): length is number => typeof length === "number")
+          .slice(0, 16)
+      : [],
+    toolCallCountByChoice: Array.isArray(value.toolCallCountByChoice)
+      ? value.toolCallCountByChoice
+          .filter((count): count is number => typeof count === "number")
+          .slice(0, 16)
+      : [],
+    providerUsage:
+      value.providerUsage && typeof value.providerUsage === "object"
+        ? (value.providerUsage as JsonValue)
+        : null,
+    structuredAdapterPreflight:
+      value.structuredAdapterPreflight && typeof value.structuredAdapterPreflight === "object"
+        ? (value.structuredAdapterPreflight as JsonValue)
+        : null,
     rawPromptStored: false,
     rawResponseStored: false,
     rawProviderLogStored: false,
@@ -458,6 +548,15 @@ function summarizePacketAuthorModelCallDiagnostics(input: {
   inputByteLength: number;
   startedAtMs: number;
   completedAtMs: number;
+  maxOutputTokens?: number | null;
+  timeoutMs?: number | null;
+  authoringPhase?: string | null;
+  responseFormatSent?: string | null;
+  reasoningModeSent?: string | null;
+  inputBundleRef?: string | null;
+  inputBundleHash?: string | null;
+  concurrencySlot?: string | null;
+  retryNumber?: number | null;
   fallbackFromModelRef?: string | null;
   fallbackReasonCode?: string | null;
 }): JsonValue {
@@ -471,9 +570,80 @@ function summarizePacketAuthorModelCallDiagnostics(input: {
     providerDiagnostics && typeof providerDiagnostics === "object"
       ? (providerDiagnostics as Record<string, unknown>).finishReason
       : null;
+  const nativeFinishReasonValue =
+    providerDiagnostics && typeof providerDiagnostics === "object"
+      ? (providerDiagnostics as Record<string, unknown>).nativeFinishReason
+      : null;
+  const choiceCountValue =
+    providerDiagnostics && typeof providerDiagnostics === "object"
+      ? (providerDiagnostics as Record<string, unknown>).choiceCount
+      : null;
   const modelCallSpanId =
     providerDiagnostics && typeof providerDiagnostics === "object"
       ? (providerDiagnostics as Record<string, unknown>).modelCallSpanId
+      : null;
+  const providerRequestId =
+    providerDiagnostics && typeof providerDiagnostics === "object"
+      ? ((providerDiagnostics as Record<string, unknown>).providerRequestId ??
+        (providerDiagnostics as Record<string, unknown>).requestId ??
+        null)
+      : null;
+  const providerContentLength =
+    providerDiagnostics && typeof providerDiagnostics === "object"
+      ? (providerDiagnostics as Record<string, unknown>).contentLength
+      : null;
+  const providerContentLengthByChoice =
+    providerDiagnostics && typeof providerDiagnostics === "object"
+      ? (providerDiagnostics as Record<string, unknown>).contentLengthByChoice
+      : null;
+  const errorReasonCode = input.response.errorReasonCode ?? null;
+  const parsedContentLength = responseText.trim().length;
+  const contentLengthByChoice = Array.isArray(providerContentLengthByChoice)
+    ? providerContentLengthByChoice
+        .filter((length): length is number => typeof length === "number")
+        .slice(0, 16)
+    : typeof providerContentLength === "number"
+      ? [providerContentLength]
+      : parsedContentLength > 0
+        ? [parsedContentLength]
+        : [];
+  const timedOut =
+    typeof errorReasonCode === "string" ? errorReasonCode.includes("timeout") : false;
+  const noContentDiagnostic =
+    input.response.status !== "succeeded" || parsedContentLength === 0
+      ? buildFastModelNoContentDiagnostic({
+          taskClass:
+            input.authoringPhase === "targeted_normalization"
+              ? "schema_normalization"
+              : "local_semantic_extraction",
+          callSite: `commitment_packet.${input.authoringPhase ?? "semantic_content"}`,
+          modelRef: input.modelRef,
+          providerPath: input.providerPath,
+          modelCandidateId: input.modelCandidateId,
+          requestProfileRef: input.requestProfileRef,
+          providerRequestId: typeof providerRequestId === "string" ? providerRequestId : null,
+          reasoningModeSent: input.reasoningModeSent ?? null,
+          responseFormatSent: input.responseFormatSent ?? null,
+          inputByteLength: input.inputByteLength,
+          elapsedMs: Math.max(0, input.completedAtMs - input.startedAtMs),
+          maxOutputTokens: input.maxOutputTokens ?? null,
+          timeoutMs: input.timeoutMs ?? null,
+          timedOut,
+          nativeFinishReason:
+            typeof nativeFinishReasonValue === "string" ? nativeFinishReasonValue : null,
+          finishReason: typeof finishReasonValue === "string" ? finishReasonValue : null,
+          choiceCount: typeof choiceCountValue === "number" ? choiceCountValue : null,
+          contentLengthByChoice,
+          parsedContentLength,
+          retryNumber: input.retryNumber ?? 0,
+          concurrencySlot: input.concurrencySlot ?? null,
+          inputBundleRef: input.inputBundleRef ?? null,
+          inputBundleHash: input.inputBundleHash ?? null,
+          outputHash: input.response.responseHash ? `sha256:${input.response.responseHash}` : null,
+          errorReasonCode,
+          httpStatus: input.response.httpStatus ?? null,
+          expectedModelRef: input.fallbackFromModelRef ? null : input.modelRef,
+        })
       : null;
   return {
     modelRef: input.modelRef,
@@ -482,13 +652,32 @@ function summarizePacketAuthorModelCallDiagnostics(input: {
     requestProfileRef: input.requestProfileRef,
     status: input.response.status,
     httpStatus: input.response.httpStatus ?? null,
-    errorReasonCode: input.response.errorReasonCode ?? null,
+    errorReasonCode,
     latencyMs: Math.max(0, input.completedAtMs - input.startedAtMs),
     inputByteLength: input.inputByteLength,
+    maxOutputTokens: input.maxOutputTokens ?? null,
+    timeoutMs: input.timeoutMs ?? null,
+    authoringPhase: input.authoringPhase ?? null,
+    reasoningModeSent: input.reasoningModeSent ?? null,
+    responseFormatSent: input.responseFormatSent ?? null,
+    inputBundleRef: input.inputBundleRef ?? null,
+    inputBundleHash: input.inputBundleHash ?? null,
+    concurrencySlot: input.concurrencySlot ?? null,
+    retryNumber: input.retryNumber ?? 0,
     modelCallSpanId: typeof modelCallSpanId === "string" ? modelCallSpanId : null,
+    providerRequestId: typeof providerRequestId === "string" ? providerRequestId : null,
     outputContentLength: responseText.length,
     outputHash: input.response.responseHash ? `sha256:${input.response.responseHash}` : null,
     finishReason: typeof finishReasonValue === "string" ? finishReasonValue : null,
+    nativeFinishReason:
+      typeof nativeFinishReasonValue === "string" ? nativeFinishReasonValue : null,
+    choiceCount: typeof choiceCountValue === "number" ? choiceCountValue : null,
+    contentLengthByChoice,
+    parsedContentLength,
+    timedOut,
+    noContentDiagnostic,
+    noContentReasonClass: noContentDiagnostic?.classifiedReason ?? null,
+    retryEligibility: noContentDiagnostic?.retryEligibility ?? null,
     usage: input.response.usage ?? null,
     retryEvidence,
     providerDiagnostics,
@@ -549,6 +738,57 @@ async function mapWithConcurrency<T, R>(
     }),
   );
   return results as R[];
+}
+
+type ConcurrentSettledResult<T, R> =
+  | {
+      status: "fulfilled";
+      value: R;
+      input: T;
+      index: number;
+    }
+  | {
+      status: "rejected";
+      reason: unknown;
+      input: T;
+      index: number;
+    };
+
+async function mapWithConcurrencySettled<T, R>(
+  values: T[],
+  concurrency: number,
+  mapper: (value: T, index: number) => Promise<R>,
+): Promise<ConcurrentSettledResult<T, R>[]> {
+  const results = Array.from<ConcurrentSettledResult<T, R> | undefined>({
+    length: values.length,
+  });
+  let nextIndex = 0;
+  const workerCount = Math.min(Math.max(1, concurrency), values.length);
+  await Promise.all(
+    Array.from({ length: workerCount }, async () => {
+      while (nextIndex < values.length) {
+        const currentIndex = nextIndex;
+        nextIndex += 1;
+        const input = values[currentIndex]!;
+        try {
+          results[currentIndex] = {
+            status: "fulfilled",
+            value: await mapper(input, currentIndex),
+            input,
+            index: currentIndex,
+          };
+        } catch (error) {
+          results[currentIndex] = {
+            status: "rejected",
+            reason: error,
+            input,
+            index: currentIndex,
+          };
+        }
+      }
+    }),
+  );
+  return results as ConcurrentSettledResult<T, R>[];
 }
 
 function commitmentPacketReviewRiskSignalGroups(input: {
@@ -720,16 +960,6 @@ export function roleModelCandidatesFor(roleId: AgentTeamRoleId): RoleModelPolicy
         candidateId: "qwen3-coder-next-context-scout",
         maxTokens: 8_000,
       },
-      {
-        modelId: "deepseek/deepseek-v4-pro",
-        candidateId: "deepseek-v4-pro-context-candidate",
-        maxTokens: 8_000,
-      },
-      {
-        modelId: "moonshotai/kimi-k2.6",
-        candidateId: "kimi-2-6-coding-candidate",
-        maxTokens: 8_000,
-      },
     ];
   }
   if (roleId === "test_engineer" || roleId === "observability_scribe") {
@@ -812,6 +1042,9 @@ function rolePrompt(input: {
     requiredAction: string;
   } | null;
 }): string {
+  if (input.roleId === "context_scout") {
+    throw new Error("context_scout_role_prompt_retired_use_execution_packet");
+  }
   return [
     "Return strict compact JSON only for an OpenClaw role invocation.",
     "Do not include raw prompts, raw responses, transcripts, provider logs, command logs, tool logs, secrets, or hidden reasoning.",
@@ -842,51 +1075,8 @@ function rolePrompt(input: {
     input.contextScoutRepairDirective
       ? `contextScoutRepairDirective: ${bounded(JSON.stringify(input.contextScoutRepairDirective), 4_000)}`
       : null,
-    input.roleId === "context_scout"
-      ? [
-          "For context_scout, cite only repo file paths that are known existing files.",
-          "You have bounded source-code access through boundedRepoContextIndex. Treat those entries as runtime-verified repo files and use their fileRef values exactly.",
-          "Do not claim you lack source-code access when boundedRepoContextIndex is present. If the index is insufficient, request more bounded context or return needs_review with exact missing repo areas.",
-          "Use the supplied CommitmentWorkPackets as your primary handoff. Answer their requiredContextQuestions and produce the expectedContextScoutOutput where possible.",
-          "If the packet summary is not enough, request bounded original prompt context by returning sourcePromptExcerptRequests with requestId, commitmentId, sectionRef, reason, maxChars, downstreamConsumer, and raw flags false.",
-          "Use sourcePromptContextIndex section refs for excerpt requests. Do not request or store the full prompt.",
-          "After excerpts are provided, produce verified repo file refs and a handoffSummaryForImplementation. If context is still insufficient, say needs_review with a concrete blocker.",
-          "A valid handoff must contain model-authored implementation substance, not just runtime-provided file refs. Include a concrete handoffSummaryForImplementation plus substantive existingPatterns, risks, validationSuggestions, and non-generic recommendedEditPoints entries tied to the packet objective.",
-          "Do not return empty existingPatterns or risks unless you explicitly request more bounded context. Do not use runtime_verified_context as a symbol or region; name the likely file area or symbol from the bounded summaries.",
-          "For each relevant file, explain why it matters for this packet and which downstream worker should inspect it next.",
-          "If runtime-provided file refs are useful but you cannot add substantive implementation guidance, say so in limitations and identify the missing bounded context instead of returning a generic handoff.",
-          "Your JSON MUST include the context-scout handoff fields below. They are not optional for a usable scout result. Do not satisfy this role by returning only the generic role closeout fields.",
-          "Use at least 3 relevantFiles from boundedRepoContextIndex when available. Use at least 2 existingPatterns, 2 risks, 2 validationSuggestions, and 2 recommendedEditPoints unless you are explicitly returning needs_review with a concrete blocker.",
-          "The handoffSummaryForImplementation must explain what the next implementation worker should change or inspect, why these files matter, and what validation should prove. Do not write a generic 'use target refs' summary.",
-          input.repoCandidateFileRefs && input.repoCandidateFileRefs.length > 0
-            ? `Known existing candidate file refs: ${input.repoCandidateFileRefs.join(", ")}`
-            : "Known existing candidate file refs: none supplied; if you cannot verify a file exists, state that as a limitation instead of inventing a path.",
-          input.contextScoutRepairDirective
-            ? "This is a repair turn. Fix only the listed context handoff defects. Choose relevantFiles and recommendedEditPoints from known existing candidate file refs or boundedRepoContextIndex fileRef values exactly, and add model-authored handoff substance: existingPatterns, risks, concrete validationSuggestions, and a detailed handoffSummaryForImplementation. Preserve useful prior risks, patterns, validation suggestions, and limitations."
-            : null,
-          "Required context_scout handoff fields:",
-          '  "sourcePromptExcerptRequests": [{"requestId":"bounded","commitmentId":"ledger-id","sectionRef":"source-prompt://...","reason":"bounded","maxChars":1500,"downstreamConsumer":"implementation_worker","rawPromptStored":false,"rawResponseStored":false,"rawProviderLogStored":false}],',
-          '  "relevantFiles": [{"path":"relative/file.ts","whyRelevant":"bounded","keySymbolsOrFunctions":["symbol"]}],',
-          '  "existingPatterns": ["bounded"],',
-          '  "risks": ["bounded"],',
-          '  "recommendedEditPoints": [{"path":"relative/file.ts","symbolOrRegion":"bounded","reason":"bounded"}],',
-          '  "validationSuggestions": ["bounded validation ref"],',
-          '  "handoffSummaryForImplementation": "bounded handoff summary",',
-        ].join("\n")
-      : null,
     "Shape:",
     "{",
-    input.roleId === "context_scout"
-      ? [
-          '  "relevantFiles": [{"path":"relative/file.ts","whyRelevant":"why this exact existing file matters","keySymbolsOrFunctions":["symbol or area"]}],',
-          '  "existingPatterns": ["concrete pattern from boundedRepoContextIndex"],',
-          '  "risks": ["concrete implementation or validation risk"],',
-          '  "recommendedEditPoints": [{"path":"relative/file.ts","symbolOrRegion":"specific symbol or file area","reason":"why downstream worker should inspect or edit it"}],',
-          '  "validationSuggestions": ["specific test/build/readback command or check"],',
-          '  "handoffSummaryForImplementation": "detailed worker handoff grounded in the files above",',
-          '  "sourcePromptExcerptRequests": [],',
-        ].join("\n")
-      : null,
     '  "whatIActuallyDid": "bounded role-specific work and judgment",',
     '  "evidenceRefs": ["supplied bounded refs only"],',
     '  "filesOrArtifactsTouched": ["supplied file or artifact refs"],',
@@ -927,6 +1117,60 @@ function allowedRepoFileRef(fileRef: string, allowedFileRefs: string[]): boolean
     (allowedRef) =>
       fileRef === allowedRef || (allowedRef.endsWith("/") && fileRef.startsWith(allowedRef)),
   );
+}
+
+function repoRefLooksLikeDirectorySeed(fileRef: string): boolean {
+  return fileRef.endsWith("/") || !/\.[^/]+$/u.test(fileRef.split("/").at(-1) ?? "");
+}
+
+function repoRefWithinSeed(fileRef: string, seedRef: string): boolean {
+  const normalizedSeed = seedRef.endsWith("/") ? seedRef : `${seedRef}/`;
+  return fileRef === seedRef || fileRef.startsWith(normalizedSeed);
+}
+
+export function resolveImplementationMaterializationTargetRefs(input: {
+  metadataTargetRefs: string[];
+  verifiedContextFileRefs: string[];
+  fileChangeIntents: Array<{ fileRef: string }>;
+  repoRoot?: string;
+}): string[] {
+  const metadataTargetRefs = [
+    ...new Set(
+      input.metadataTargetRefs
+        .map((ref) => normalizedRepoFileRef(ref, input.repoRoot))
+        .filter((ref): ref is string => Boolean(ref)),
+    ),
+  ];
+  const concreteIntentRefs = [
+    ...new Set(
+      input.fileChangeIntents
+        .map((intent) => normalizedRepoFileRef(intent.fileRef, input.repoRoot))
+        .filter((ref): ref is string => Boolean(ref)),
+    ),
+  ];
+  const metadataHasBroadSeeds =
+    metadataTargetRefs.length === 0 ||
+    metadataTargetRefs.length > 8 ||
+    metadataTargetRefs.some(repoRefLooksLikeDirectorySeed);
+  const concreteIntentRefsWithinMetadata =
+    metadataTargetRefs.length === 0
+      ? concreteIntentRefs
+      : concreteIntentRefs.filter((ref) =>
+          metadataTargetRefs.some((seed) => repoRefWithinSeed(ref, seed)),
+        );
+  if (metadataHasBroadSeeds && concreteIntentRefsWithinMetadata.length > 0) {
+    return concreteIntentRefsWithinMetadata.slice(0, 40);
+  }
+  if (metadataTargetRefs.length > 0) {
+    return metadataTargetRefs.slice(0, 80);
+  }
+  return [
+    ...new Set(
+      input.verifiedContextFileRefs
+        .map((ref) => normalizedRepoFileRef(ref, input.repoRoot))
+        .filter((ref): ref is string => Boolean(ref)),
+    ),
+  ].slice(0, 8);
 }
 
 async function repoFileExists(
@@ -1115,7 +1359,9 @@ function applyRuntimeVerifiedContextToScoutOutput(input: {
     reasonCodes: [
       ...new Set([
         ...(input.groundedOutput?.reasonCodes ?? []),
-        "context_scout_tool_first_verified_context_used",
+        groundedVerifiedRefs.length === 0
+          ? "context_scout_tool_first_verified_context_used"
+          : "context_scout_runtime_context_enriched",
       ]),
     ].slice(0, 12),
   };
@@ -1198,12 +1444,156 @@ function bindSingleCommitmentPacketToTarget(
 }
 
 function stringArray(value: unknown, fallback: string[] = [], maxItems = 12): string[] {
-  const source = Array.isArray(value) ? value : fallback;
+  const source =
+    typeof value === "string" && value.trim().length > 0
+      ? [value]
+      : Array.isArray(value)
+        ? value
+        : fallback;
   const values = source
     .filter((item): item is string => typeof item === "string" && item.trim().length > 0)
     .map((item) => item.trim().slice(0, 260))
     .slice(0, maxItems);
   return values.length > 0 ? values : fallback.slice(0, maxItems);
+}
+
+function jsonByteLength(value: unknown): number {
+  return Buffer.byteLength(JSON.stringify(value), "utf8");
+}
+
+function boundedRoleCloseoutMetadata(closeout: CloseoutCapsuleRoleCloseout): JsonValue {
+  return {
+    roleId: closeout.roleId,
+    agentId: closeout.agentId,
+    modelRef: closeout.modelRef,
+    modelRunRef: closeout.modelRunRef,
+    source: closeout.source,
+    whatIWasAskedToDo: bounded(closeout.whatIWasAskedToDo ?? closeout.askedToDo ?? "", 1_000),
+    whatIActuallyDid: bounded(closeout.whatIActuallyDid ?? closeout.actuallyDid ?? "", 1_000),
+    evidenceRefs: (closeout.evidenceRefs ?? []).slice(0, 12),
+    filesOrArtifactsTouched: (closeout.filesOrArtifactsTouched ?? []).slice(0, 20),
+    validationIPerformed: bounded(closeout.validationIPerformed ?? "", 800),
+    worked: (closeout.worked ?? []).slice(0, 8).map((value) => bounded(value, 300)),
+    failedOrWeak: (closeout.failedOrWeak ?? []).slice(0, 8).map((value) => bounded(value, 300)),
+    recommendedNextStep: bounded(closeout.recommendedNextStep ?? "", 500),
+    confidence: closeout.confidence,
+    limitations: (closeout.limitations ?? []).slice(0, 8).map((value) => bounded(value, 300)),
+    rawPromptStored: false,
+    rawResponseStored: false,
+    rawTranscriptStored: false,
+    rawProviderLogStored: false,
+    rawToolLogStored: false,
+  } as JsonValue;
+}
+
+function boundedContextScoutOutputMetadata(
+  output: ReturnType<typeof parseContextScoutOutput> | null,
+): JsonValue | null {
+  if (!output) {
+    return null;
+  }
+  return {
+    relevantFileRefs: output.relevantFiles.map((file) => file.path).slice(0, 24),
+    relevantFiles: output.relevantFiles.slice(0, 10).map((file) => ({
+      path: file.path,
+      whyRelevant: bounded(file.whyRelevant, 500),
+      keySymbolsOrFunctions: file.keySymbolsOrFunctions.slice(0, 12),
+    })),
+    existingPatterns: output.existingPatterns.slice(0, 8).map((value) => bounded(value, 500)),
+    recommendedEditPoints: output.recommendedEditPoints.slice(0, 10).map((point) => ({
+      path: point.path,
+      symbolOrRegion: bounded(point.symbolOrRegion, 240),
+      reason: bounded(point.reason, 500),
+    })),
+    validationSuggestions: output.validationSuggestions
+      .slice(0, 8)
+      .map((value) => bounded(value, 500)),
+    risks: output.risks.slice(0, 8).map((value) => bounded(value, 500)),
+    limitations: output.limitations.slice(0, 8).map((value) => bounded(value, 500)),
+    handoffSummaryForImplementation: bounded(output.handoffSummaryForImplementation, 1_500),
+    rawPromptStored: false,
+    rawResponseStored: false,
+    rawProviderLogStored: false,
+  } as JsonValue;
+}
+
+export function boundedSchedulerRoleInvocationMetadata(input: {
+  roleId: AgentTeamRoleId;
+  nodeId: string;
+  graphId: string;
+  closeout: CloseoutCapsuleRoleCloseout;
+  contextScoutOutput: ReturnType<typeof parseContextScoutOutput> | null;
+  contextScoutShape: ReturnType<typeof validateContextScoutOutputShape> | null;
+  contextHandoffPacketRef: string | null;
+  contextScoutToolLoopRef: string | null;
+  contextScoutToolLoopRun: ContextScoutToolLoopRun | null;
+  contextScoutExecutionPacketRef: string | null;
+  contextScoutExecutionPacketSummary: JsonValue | null;
+  sourcePromptExcerptDecisionRefs: string[];
+  verifiedFileRefs: string[];
+  groundingReasonCodes: string[];
+  candidateFileRefCount: number;
+  responseHash: string | null;
+}): JsonValue {
+  const metadata = {
+    roleId: input.roleId,
+    nodeId: input.nodeId,
+    graphId: input.graphId,
+    responseHash: input.responseHash,
+    closeout: boundedRoleCloseoutMetadata(input.closeout),
+    contextScoutOutputSummary: boundedContextScoutOutputMetadata(input.contextScoutOutput),
+    contextScoutShapeSummary: input.contextScoutShape
+      ? {
+          valid: input.contextScoutShape.valid,
+          reasonCodes: input.contextScoutShape.reasonCodes.slice(0, 20),
+          rawPromptStored: false,
+          rawResponseStored: false,
+          rawProviderLogStored: false,
+        }
+      : null,
+    contextHandoffPacketRef: input.contextHandoffPacketRef,
+    contextScoutToolLoopRef: input.contextScoutToolLoopRef,
+    contextScoutToolLoopSummary: input.contextScoutToolLoopRun
+      ? summarizeContextScoutToolLoopRun(input.contextScoutToolLoopRun)
+      : null,
+    contextScoutExecutionPacketRef: input.contextScoutExecutionPacketRef,
+    contextScoutExecutionPacketSummary: input.contextScoutExecutionPacketSummary,
+    sourcePromptExcerptDecisionRefs: input.sourcePromptExcerptDecisionRefs.slice(-8),
+    contextScoutGrounding: {
+      verifiedFileRefs: input.verifiedFileRefs.slice(0, 40),
+      reasonCodes: input.groundingReasonCodes.slice(0, 20),
+      candidateFileRefCount: input.candidateFileRefCount,
+      rawPromptStored: false,
+      rawResponseStored: false,
+      rawProviderLogStored: false,
+    },
+    rawPromptStored: false,
+    rawResponseStored: false,
+    rawProviderLogStored: false,
+    metadataBoundedForRuntimeArtifact: true,
+  } as JsonValue;
+  if (jsonByteLength(metadata) <= 60_000) {
+    return metadata;
+  }
+  return {
+    roleId: input.roleId,
+    nodeId: input.nodeId,
+    graphId: input.graphId,
+    responseHash: input.responseHash,
+    closeout: boundedRoleCloseoutMetadata(input.closeout),
+    contextHandoffPacketRef: input.contextHandoffPacketRef,
+    contextScoutToolLoopRef: input.contextScoutToolLoopRef,
+    contextScoutExecutionPacketRef: input.contextScoutExecutionPacketRef,
+    verifiedFileRefs: input.verifiedFileRefs.slice(0, 24),
+    groundingReasonCodes: input.groundingReasonCodes.slice(0, 20),
+    sourcePromptExcerptDecisionRefs: input.sourcePromptExcerptDecisionRefs.slice(-8),
+    rawPromptStored: false,
+    rawResponseStored: false,
+    rawProviderLogStored: false,
+    metadataBoundedForRuntimeArtifact: true,
+    metadataTruncatedForRuntimeArtifact: true,
+    reasonCodes: ["scheduler_role_invocation_metadata_bounded"],
+  } as JsonValue;
 }
 
 function roleCloseout(input: {
@@ -1514,7 +1904,6 @@ export class CodexDynamicJsonClient implements DynamicCodingTeamModelClient {
     this.executor = new CodexAppServerJsonExecutor({
       cwd: repoRoot,
       requestTimeoutMs: 900_000,
-      reasoningEffort: "xhigh",
     });
   }
 
@@ -1523,12 +1912,36 @@ export class CodexDynamicJsonClient implements DynamicCodingTeamModelClient {
   }
 
   async runJson(input: Parameters<DynamicCodingTeamModelClient["runJson"]>[0]) {
+    const taskClass = input.taskClass ?? "global_reasoning";
+    const defaultTaskPolicy = modelTaskPolicyFor(taskClass);
+    const modelOverride =
+      input.modelRef !== defaultTaskPolicy.preferredModelRef ? input.modelRef : null;
+    const classification = classifyModelTaskCall({
+      taskClass,
+      callSite: input.modelTaskCallSite ?? "dynamic_coding_team.model_json",
+      overrideModelRef: modelOverride,
+      overrideReasonCode: modelOverride !== null ? "codex_dynamic_json_model_override" : null,
+      overrideRationale:
+        modelOverride !== null
+          ? "Dynamic coding-team model call used a model outside the canonical task policy."
+          : null,
+    });
+    const requestedReasoningMode =
+      input.reasoningEffort ?? classification.reasoningMode ?? undefined;
+    const telemetryClassification = {
+      ...classification,
+      reasoningMode: requestedReasoningMode ?? classification.reasoningMode,
+      timeoutMs: input.timeoutMs,
+      maxOutputTokens: input.maxOutputTokens,
+    };
     const inputHash = sha256Text(
       stringifyJson({
         systemPromptHash: sha256Text(input.systemPrompt),
         userPayload: input.userPayload,
         modelRef: input.modelRef,
         providerPath: input.providerPath,
+        taskClass: classification.taskClass,
+        modelPolicyRef: classification.modelPolicyRef,
       }),
     );
     const inputByteLength =
@@ -1546,7 +1959,8 @@ export class CodexDynamicJsonClient implements DynamicCodingTeamModelClient {
       responseFormat: "json",
       responseOptions: {
         transport: { type: "json_object" },
-        reasoningEffort: "xhigh",
+        reasoningEffort: requestedReasoningMode ?? undefined,
+        maxOutputTokens: input.maxOutputTokens,
       },
     };
     const started = Date.now();
@@ -1572,6 +1986,16 @@ export class CodexDynamicJsonClient implements DynamicCodingTeamModelClient {
         modelRef: input.modelRef,
         providerPath: input.providerPath,
         contractName: request.contract.contractName,
+        taskClass: telemetryClassification.taskClass,
+        modelPolicyRef: telemetryClassification.modelPolicyRef,
+        reasoningMode: telemetryClassification.reasoningMode,
+        parserMode: telemetryClassification.parserMode,
+        modelTaskClassification: telemetryClassification as unknown as JsonValue,
+        modelTaskTelemetry: buildModelTaskTelemetryEnvelope({
+          classification: telemetryClassification,
+          usage: null,
+          usageUnavailableReason: "codex_app_server_usage_not_returned_for_event",
+        }),
         objectiveSummary: input.progress?.objectiveSummary ?? null,
         inputHash: `sha256:${inputHash}`,
         timeoutMs: input.timeoutMs,
@@ -1756,6 +2180,88 @@ export class DynamicAgentTeamGraphRunner {
     this.now = options.now ?? (() => new Date());
   }
 
+  private async attachImplementationContextPayloadArtifacts(input: {
+    jobId: string;
+    nodeId: string;
+    targetCommitmentIds: string[];
+    compile: ImplementationContextCompileResult;
+  }): Promise<void> {
+    const contextSummary = summarizeImplementationContextPacketForReadback(input.compile.packet);
+    const materializationSummary = summarizeImplementationResourceMaterializationForReadback(
+      input.compile.resourceMaterialization,
+    );
+    await this.options.runtimeJobs.attachRuntimeArtifactByContract({
+      jobId: input.jobId,
+      artifactType: "execution_platform.implementation_context_packet",
+      uri: input.compile.packet.packetRef,
+      contentType: "application/json",
+      body: input.compile.packet as unknown as JsonValue,
+      boundedSummary: `Implementation context packet readiness: ${input.compile.packet.readinessStatus}.`,
+      targetCommitmentIds: input.targetCommitmentIds,
+      targetNodeIds: [input.nodeId],
+      resourcePacketKind: "implementation_context_packet",
+      readinessStatus: input.compile.packet.readinessStatus,
+      reasonCodes: input.compile.reasonCodes,
+      inputCounts: input.compile.resourceMaterialization.inputCounts as unknown as JsonValue,
+      outputCounts: input.compile.resourceMaterialization.outputCounts as unknown as JsonValue,
+      maxBounds: input.compile.resourceMaterialization.maxBounds as unknown as JsonValue,
+      createdBy: "dynamic-agent-team-graph-runner",
+      metadata:
+        contextSummary && typeof contextSummary === "object" && !Array.isArray(contextSummary)
+          ? (contextSummary as Record<string, JsonValue>)
+          : undefined,
+    });
+    await this.options.runtimeJobs.attachRuntimeArtifactByContract({
+      jobId: input.jobId,
+      artifactType: "execution_platform.implementation_resource_materialization_result",
+      uri: `runtime-job://${input.jobId}/implementation-resource-materialization/${input.nodeId}`,
+      contentType: "application/json",
+      body: input.compile.resourceMaterialization as unknown as JsonValue,
+      boundedSummary: `Implementation resource materialization status: ${input.compile.resourceMaterialization.status}.`,
+      targetCommitmentIds: input.targetCommitmentIds,
+      targetNodeIds: [input.nodeId],
+      resourcePacketKind: "implementation_resource_materialization_result",
+      readinessStatus: input.compile.resourceMaterialization.status,
+      reasonCodes: [
+        ...input.compile.resourceMaterialization.blockingReasonCodes,
+        ...input.compile.resourceMaterialization.nonblockingReasonCodes,
+      ],
+      inputCounts: input.compile.resourceMaterialization.inputCounts as unknown as JsonValue,
+      outputCounts: input.compile.resourceMaterialization.outputCounts as unknown as JsonValue,
+      maxBounds: input.compile.resourceMaterialization.maxBounds as unknown as JsonValue,
+      createdBy: "dynamic-agent-team-graph-runner",
+      metadata:
+        materializationSummary &&
+        typeof materializationSummary === "object" &&
+        !Array.isArray(materializationSummary)
+          ? (materializationSummary as Record<string, JsonValue>)
+          : undefined,
+    });
+    for (const packet of input.compile.implementationTaskPackets) {
+      await this.options.runtimeJobs.attachRuntimeArtifactByContract({
+        jobId: input.jobId,
+        artifactType: "execution_platform.implementation_task_packet",
+        uri: packet.packetRef,
+        contentType: "application/json",
+        body: packet as unknown as JsonValue,
+        boundedSummary: `Implementation task packet for ${packet.targetFileRefs.length} target file ref(s).`,
+        targetCommitmentIds: packet.targetCommitmentIds,
+        targetNodeIds: [input.nodeId],
+        resourcePacketKind: "implementation_task_packet",
+        readinessStatus: input.compile.packet.readinessStatus,
+        reasonCodes: input.compile.reasonCodes,
+        inputCounts: input.compile.resourceMaterialization.inputCounts as unknown as JsonValue,
+        outputCounts: {
+          targetFileRefCount: packet.targetFileRefs.length,
+          acceptanceCriteriaCount: packet.acceptanceCriteria.length,
+          validationCommandRefCount: packet.validationCommandRefs.length,
+        },
+        maxBounds: input.compile.resourceMaterialization.maxBounds as unknown as JsonValue,
+        createdBy: "dynamic-agent-team-graph-runner",
+      });
+    }
+  }
+
   private async runSchedulerBacked(job: RuntimeJob): Promise<AgentTeamClaimedJobExecutionResult> {
     const payload =
       job.payload && typeof job.payload === "object" && !Array.isArray(job.payload)
@@ -1793,7 +2299,7 @@ export class DynamicAgentTeamGraphRunner {
         "scripts/",
       ],
       fallbackValidationCommands: [
-        "pnpm test:file extensions/execution-platform/src/codex-bridge/agent-team-quality-proof.test.ts",
+        "pnpm test:file extensions/execution-platform/src/codex-bridge/coding-team-runtime-job-runner-dynamic-boundary.test.ts",
       ],
     });
     const permissionEvidence = createWorkflowPermissionReadback({
@@ -1842,6 +2348,12 @@ export class DynamicAgentTeamGraphRunner {
     const closeoutRefs: string[] = [];
     const missionLedgerRefs: string[] = [];
     const verifiedContextFileRefs: string[] = [];
+    const contextScoutFileChangeIntents: Array<{
+      fileRef: string;
+      symbolOrRegion: string;
+      intendedChange: string;
+      whyThisFile: string;
+    }> = [];
     const contextScoutToolLoopRefs: string[] = [];
     let latestAcceptedContextScoutToolLoop: ContextScoutToolLoopRun | null = null;
     let latestMissionLedger: MissionContractLedger | null = null;
@@ -1920,6 +2432,14 @@ export class DynamicAgentTeamGraphRunner {
             : "checkpoint_repair",
         eli5Progress: `OpenClaw recorded a replay checkpoint for ${recorded.checkpoint.checkpointKind}.`,
         schedulerPhase: "boundary_replay_checkpoint",
+        boundaryReplayCheckpointKind: recorded.checkpoint.checkpointKind,
+        boundaryReplayCheckpointRefs: [recorded.artifactRef],
+        boundaryReplayGraphCheckpointRefs: [recorded.graphCheckpointRef],
+        replayStartPolicy: recorded.checkpoint.replayStartPolicy,
+        replaySafetyStatus: recorded.checkpoint.replaySafetyStatus,
+        replayFreshnessStatus: recorded.checkpoint.replayFreshnessStatus,
+        replayContinuationMode: recorded.checkpoint.replayContinuationMode,
+        nextReplayBoundary: recorded.checkpoint.replayContinuationMode,
       });
       return recorded.artifactRef;
     };
@@ -1964,6 +2484,12 @@ export class DynamicAgentTeamGraphRunner {
       evidenceProducedRefs?: string[];
       evidenceClaimRefs?: string[];
       contextRequestRefs?: string[];
+      contextBrokerRequestRefs?: string[];
+      contextBrokerStatuses?: string[];
+      contextBrokerDedupeKeys?: string[];
+      contextBrokerConsumerNodeIds?: string[];
+      contextBrokerReasonCodes?: string[];
+      contextBrokerNextTransition?: string | null;
       editStepIds?: string[];
       editTransactionRefs?: string[];
       workerPhaseRefs?: string[];
@@ -1979,10 +2505,38 @@ export class DynamicAgentTeamGraphRunner {
       eli5Progress?: string | null;
       finalizationState?: string | null;
       latestToolEventKind?: string | null;
+      modelTaskClass?: string | null;
+      modelTaskPolicyRef?: string | null;
+      reasoningMode?: string | null;
+      parserMode?: string | null;
+      modelTaskRetryCount?: number | null;
+      modelTaskEscalationStatus?: string | null;
+      modelTaskClassification?: JsonValue | null;
+      modelTaskTelemetry?: JsonValue | null;
       schedulerPhase?: string | null;
       schedulerToolId?: string | null;
       schedulerToolInvocationRefs?: string[];
       parallelFrontier?: RuntimeWorkGraphParallelFrontierReadback | null;
+      schedulerFrontierState?: JsonValue | null;
+      noProgressSignature?: JsonValue | null;
+      noProgressRepeatCount?: number | null;
+      missionLedgerEvaluationThrottle?: JsonValue | null;
+      expansionAdmissionDecision?: JsonValue | null;
+      expansionAdmissionDecisionRef?: string | null;
+      expansionAdmissionPolicyRef?: string | null;
+      expansionAdmissionStatus?: string | null;
+      expansionAdmissionOriginalNodeCount?: number | null;
+      expansionAdmissionOriginalEdgeCount?: number | null;
+      expansionAdmissionAdmittedNodeCount?: number | null;
+      expansionAdmissionAdmittedEdgeCount?: number | null;
+      expansionAdmissionDeferredNodeCount?: number | null;
+      expansionAdmissionDeferredEdgeCount?: number | null;
+      expansionAdmissionReadyFrontierNodeIds?: string[];
+      expansionAdmissionAdmittedNodeIds?: string[];
+      expansionAdmissionDeferredNodeIds?: string[];
+      expansionAdmissionNextTransition?: string | null;
+      expansionAdmissionPrerequisiteCritical?: boolean | null;
+      expansionAdmissionReasonCodes?: string[];
       commitmentWorkPackets?: CommitmentWorkPacket[];
       sourcePromptHash?: string | null;
       sourcePromptLength?: number | null;
@@ -2002,6 +2556,12 @@ export class DynamicAgentTeamGraphRunner {
       worktreeFingerprint?: string | null;
       contextScoutToolLoopRefs?: string[];
       contextScoutRuntimeToolInvocationRefs?: string[];
+      contextScoutExecutionPacketRefs?: string[];
+      contextScoutExecutionPacketInputBytes?: number | null;
+      contextScoutExecutionPacketMaxInputBytes?: number | null;
+      contextScoutProviderTimeoutMs?: number | null;
+      contextScoutPacketCompileStatus?: string | null;
+      contextScoutPacketCompileReasonCodes?: string[];
       contextScoutRejectedRefs?: string[];
       contextScoutSufficiencySummary?: string | null;
       contextScoutSynthesisReadiness?: string | null;
@@ -2029,6 +2589,37 @@ export class DynamicAgentTeamGraphRunner {
       contextSynthesisValidationLanes?: string[];
       contextSynthesisReviewLanes?: string[];
       contextSynthesisSemanticCodeIntelligenceRefs?: string[];
+      implementationContextPacketRef?: string | null;
+      implementationContextReadinessStatus?: string | null;
+      implementationTaskPacketRefs?: string[];
+      resolvedTargetFileRefs?: string[];
+      readableTargetFileRefs?: string[];
+      missingTargetRefs?: string[];
+      unreadableTargetRefs?: string[];
+      directoryOnlyTargetRefs?: string[];
+      candidateConcreteFileRefs?: string[];
+      targetFileSnapshotRefs?: string[];
+      targetFileSnapshotHashes?: string[];
+      implementationContextRepairAction?: string | null;
+      nodeExecutionPacketRef?: string | null;
+      nodeExecutionPacketStatus?: string | null;
+      resourcePacketKind?: string | null;
+      resourcePacketRef?: string | null;
+      resourceReadinessReasonCodes?: string[];
+      resourceBlockingLimitations?: string[];
+      resourceNonblockingLimitations?: string[];
+      nodeReadinessState?: JsonValue | null;
+      nodeReadinessStateRef?: string | null;
+      nodeReadinessPhase?: string | null;
+      nodeReadinessStatus?: string | null;
+      nodeReadinessRepairAction?: string | null;
+      nodeReadinessNextAllowedTransitions?: string[];
+      nodeReadinessFreshnessStatus?: string | null;
+      nodeReadinessSnapshotStatus?: string | null;
+      nodeReadinessContextStatus?: string | null;
+      nodeReadinessValidationStatus?: string | null;
+      nodeReadinessAuthorityStatus?: string | null;
+      nodeReadinessEvidenceStatus?: string | null;
       workerInternalInputPacketRefs?: string[];
       workerInternalContextRefs?: string[];
       workerInternalContextSynthesisRefs?: string[];
@@ -2086,6 +2677,16 @@ export class DynamicAgentTeamGraphRunner {
       modelCallSpanResponseShapeSummary?: JsonValue | null;
       packetAuthorFanout?: JsonValue | null;
       packetAuthorProfile?: JsonValue | null;
+      missionLedgerCanonicalCommitments?: JsonValue | null;
+      missionLedgerMode?: "production_single_pass" | "staged_diagnostic" | null;
+      boundaryReplayCheckpointKind?: string | null;
+      boundaryReplayCheckpointRefs?: string[];
+      boundaryReplayGraphCheckpointRefs?: string[];
+      replayStartPolicy?: string | null;
+      replaySafetyStatus?: string | null;
+      replayFreshnessStatus?: string | null;
+      replayContinuationMode?: string | null;
+      nextReplayBoundary?: string | null;
     }): Promise<string> => {
       progressCounter += 1;
       const ref = `runtime-job://${job.jobId}/runtime-work-graph/scheduler-progress/${String(progressCounter).padStart(3, "0")}-${input.stage}`;
@@ -2102,6 +2703,12 @@ export class DynamicAgentTeamGraphRunner {
         phase: input.modelCallPhase ?? input.currentPhase ?? input.stage,
         status: schedulerProgressStatusToSpanStatus(input.status, input.modelCallPhase),
         roleId: input.roleId ?? null,
+        modelTaskClass: input.modelTaskClass ?? null,
+        modelTaskPolicyRef: input.modelTaskPolicyRef ?? null,
+        reasoningMode: input.reasoningMode ?? null,
+        parserMode: input.parserMode ?? null,
+        modelTaskRetryCount: input.modelTaskRetryCount ?? null,
+        modelTaskEscalationStatus: input.modelTaskEscalationStatus ?? null,
         modelRef: input.modelRef ?? null,
         providerPath: input.providerPath ?? null,
         toolId: input.currentValidationCommandRef ?? input.schedulerToolId ?? null,
@@ -2164,6 +2771,12 @@ export class DynamicAgentTeamGraphRunner {
         nodeId: input.nodeId ?? null,
         artifactRefs: (input.artifactRefs ?? []).slice(0, 12),
         reasonCodes: (input.reasonCodes ?? []).slice(0, 12),
+        modelTaskClass: input.modelTaskClass ?? null,
+        modelTaskPolicyRef: input.modelTaskPolicyRef ?? null,
+        reasoningMode: input.reasoningMode ?? null,
+        parserMode: input.parserMode ?? null,
+        modelTaskClassification: input.modelTaskClassification ?? null,
+        modelTaskTelemetry: input.modelTaskTelemetry ?? null,
         currentObjective: input.currentObjective ?? null,
         whyThisNodeWasChosen: input.whyThisNodeWasChosen ?? null,
         activeNodeKind: input.activeNodeKind ?? null,
@@ -2199,6 +2812,12 @@ export class DynamicAgentTeamGraphRunner {
         evidenceProducedRefs: (input.evidenceProducedRefs ?? []).slice(0, 12),
         evidenceClaimRefs: (input.evidenceClaimRefs ?? []).slice(0, 20),
         contextRequestRefs: (input.contextRequestRefs ?? []).slice(0, 20),
+        contextBrokerRequestRefs: (input.contextBrokerRequestRefs ?? []).slice(0, 20),
+        contextBrokerStatuses: (input.contextBrokerStatuses ?? []).slice(0, 20),
+        contextBrokerDedupeKeys: (input.contextBrokerDedupeKeys ?? []).slice(0, 20),
+        contextBrokerConsumerNodeIds: (input.contextBrokerConsumerNodeIds ?? []).slice(0, 20),
+        contextBrokerReasonCodes: (input.contextBrokerReasonCodes ?? []).slice(0, 40),
+        contextBrokerNextTransition: input.contextBrokerNextTransition ?? null,
         editStepIds: (input.editStepIds ?? []).slice(0, 20),
         editTransactionRefs: (input.editTransactionRefs ?? []).slice(0, 20),
         workerPhaseRefs: (input.workerPhaseRefs ?? []).slice(0, 30),
@@ -2218,9 +2837,42 @@ export class DynamicAgentTeamGraphRunner {
         schedulerToolId: input.schedulerToolId ?? null,
         schedulerToolInvocationRefs: (input.schedulerToolInvocationRefs ?? []).slice(0, 20),
         parallelFrontier: input.parallelFrontier ?? null,
-        commitmentWorkPackets: summarizeCommitmentWorkPacketsForProgress(
-          (input.commitmentWorkPackets ?? []) as CommitmentWorkPacket[],
+        schedulerFrontierState: input.schedulerFrontierState ?? null,
+        noProgressSignature: input.noProgressSignature ?? null,
+        noProgressRepeatCount: input.noProgressRepeatCount ?? null,
+        missionLedgerEvaluationThrottle: input.missionLedgerEvaluationThrottle ?? null,
+        expansionAdmissionDecision: input.expansionAdmissionDecision ?? null,
+        expansionAdmissionDecisionRef: input.expansionAdmissionDecisionRef ?? null,
+        expansionAdmissionPolicyRef: input.expansionAdmissionPolicyRef ?? null,
+        expansionAdmissionStatus: input.expansionAdmissionStatus ?? null,
+        expansionAdmissionOriginalNodeCount: input.expansionAdmissionOriginalNodeCount ?? null,
+        expansionAdmissionOriginalEdgeCount: input.expansionAdmissionOriginalEdgeCount ?? null,
+        expansionAdmissionAdmittedNodeCount: input.expansionAdmissionAdmittedNodeCount ?? null,
+        expansionAdmissionAdmittedEdgeCount: input.expansionAdmissionAdmittedEdgeCount ?? null,
+        expansionAdmissionDeferredNodeCount: input.expansionAdmissionDeferredNodeCount ?? null,
+        expansionAdmissionDeferredEdgeCount: input.expansionAdmissionDeferredEdgeCount ?? null,
+        expansionAdmissionReadyFrontierNodeIds: (
+          input.expansionAdmissionReadyFrontierNodeIds ?? []
+        ).slice(0, 40),
+        expansionAdmissionAdmittedNodeIds: (input.expansionAdmissionAdmittedNodeIds ?? []).slice(
+          0,
+          40,
         ),
+        expansionAdmissionDeferredNodeIds: (input.expansionAdmissionDeferredNodeIds ?? []).slice(
+          0,
+          40,
+        ),
+        expansionAdmissionNextTransition: input.expansionAdmissionNextTransition ?? null,
+        expansionAdmissionPrerequisiteCritical:
+          input.expansionAdmissionPrerequisiteCritical ?? null,
+        expansionAdmissionReasonCodes: (input.expansionAdmissionReasonCodes ?? []).slice(0, 40),
+        ...((input.commitmentWorkPackets ?? []).length > 0
+          ? {
+              commitmentWorkPacketSummaries: summarizeCommitmentWorkPacketsForProgress(
+                (input.commitmentWorkPackets ?? []) as CommitmentWorkPacket[],
+              ),
+            }
+          : {}),
         sourcePromptHash: input.sourcePromptHash ?? null,
         sourcePromptLength: input.sourcePromptLength ?? null,
         sourcePromptResolutionStatus: input.sourcePromptResolutionStatus ?? null,
@@ -2241,6 +2893,15 @@ export class DynamicAgentTeamGraphRunner {
         contextScoutRuntimeToolInvocationRefs: (
           input.contextScoutRuntimeToolInvocationRefs ?? []
         ).slice(0, 40),
+        contextScoutExecutionPacketRefs: (input.contextScoutExecutionPacketRefs ?? []).slice(0, 20),
+        contextScoutExecutionPacketInputBytes: input.contextScoutExecutionPacketInputBytes ?? null,
+        contextScoutExecutionPacketMaxInputBytes:
+          input.contextScoutExecutionPacketMaxInputBytes ?? null,
+        contextScoutProviderTimeoutMs: input.contextScoutProviderTimeoutMs ?? null,
+        contextScoutPacketCompileStatus: input.contextScoutPacketCompileStatus ?? null,
+        contextScoutPacketCompileReasonCodes: (
+          input.contextScoutPacketCompileReasonCodes ?? []
+        ).slice(0, 20),
         contextScoutRejectedRefs: (input.contextScoutRejectedRefs ?? []).slice(0, 20),
         contextScoutSufficiencySummary: input.contextScoutSufficiencySummary ?? null,
         contextScoutSynthesisReadiness: input.contextScoutSynthesisReadiness ?? null,
@@ -2275,6 +2936,46 @@ export class DynamicAgentTeamGraphRunner {
         contextSynthesisSemanticCodeIntelligenceRefs: (
           input.contextSynthesisSemanticCodeIntelligenceRefs ?? []
         ).slice(0, 40),
+        implementationContextPacketRef: input.implementationContextPacketRef ?? null,
+        implementationContextReadinessStatus: input.implementationContextReadinessStatus ?? null,
+        implementationTaskPacketRefs: (input.implementationTaskPacketRefs ?? []).slice(0, 40),
+        resolvedTargetFileRefs: (input.resolvedTargetFileRefs ?? []).slice(0, 40),
+        readableTargetFileRefs: (input.readableTargetFileRefs ?? []).slice(0, 40),
+        missingTargetRefs: (input.missingTargetRefs ?? []).slice(0, 40),
+        unreadableTargetRefs: (input.unreadableTargetRefs ?? []).slice(0, 40),
+        directoryOnlyTargetRefs: (input.directoryOnlyTargetRefs ?? []).slice(0, 30),
+        candidateConcreteFileRefs: (input.candidateConcreteFileRefs ?? []).slice(0, 50),
+        targetFileSnapshotRefs: (input.targetFileSnapshotRefs ?? []).slice(0, 40),
+        targetFileSnapshotHashes: (input.targetFileSnapshotHashes ?? []).slice(0, 40),
+        implementationContextRepairAction: input.implementationContextRepairAction ?? null,
+        nodeExecutionPacketRef: input.nodeExecutionPacketRef ?? null,
+        nodeExecutionPacketStatus: input.nodeExecutionPacketStatus ?? null,
+        resourcePacketKind: input.resourcePacketKind ?? null,
+        resourcePacketRef: input.resourcePacketRef ?? null,
+        resourceReadinessReasonCodes: (input.resourceReadinessReasonCodes ?? []).slice(0, 40),
+        resourceBlockingLimitations: (input.resourceBlockingLimitations ?? []).slice(0, 20),
+        resourceNonblockingLimitations: (input.resourceNonblockingLimitations ?? []).slice(0, 20),
+        nodeReadinessStateStoredInline: false,
+        nodeReadinessStateRef:
+          input.nodeReadinessStateRef ??
+          (input.nodeReadinessState &&
+          typeof input.nodeReadinessState === "object" &&
+          !Array.isArray(input.nodeReadinessState) &&
+          typeof (input.nodeReadinessState as { stateRef?: unknown }).stateRef === "string"
+            ? (input.nodeReadinessState as { stateRef: string }).stateRef
+            : null),
+        nodeReadinessPhase: input.nodeReadinessPhase ?? null,
+        nodeReadinessStatus: input.nodeReadinessStatus ?? null,
+        nodeReadinessRepairAction: input.nodeReadinessRepairAction ?? null,
+        nodeReadinessNextAllowedTransitions: (
+          input.nodeReadinessNextAllowedTransitions ?? []
+        ).slice(0, 16),
+        nodeReadinessFreshnessStatus: input.nodeReadinessFreshnessStatus ?? null,
+        nodeReadinessSnapshotStatus: input.nodeReadinessSnapshotStatus ?? null,
+        nodeReadinessContextStatus: input.nodeReadinessContextStatus ?? null,
+        nodeReadinessValidationStatus: input.nodeReadinessValidationStatus ?? null,
+        nodeReadinessAuthorityStatus: input.nodeReadinessAuthorityStatus ?? null,
+        nodeReadinessEvidenceStatus: input.nodeReadinessEvidenceStatus ?? null,
         workerInternalInputPacketRefs: (input.workerInternalInputPacketRefs ?? []).slice(0, 20),
         workerInternalContextRefs: (input.workerInternalContextRefs ?? []).slice(0, 30),
         workerInternalContextSynthesisRefs: (input.workerInternalContextSynthesisRefs ?? []).slice(
@@ -2346,6 +3047,19 @@ export class DynamicAgentTeamGraphRunner {
         modelCallSpanResponseShapeSummary: input.modelCallSpanResponseShapeSummary ?? null,
         packetAuthorFanout: input.packetAuthorFanout ?? null,
         packetAuthorProfile: input.packetAuthorProfile ?? null,
+        missionLedgerCanonicalCommitments: input.missionLedgerCanonicalCommitments ?? null,
+        missionLedgerMode: input.missionLedgerMode ?? null,
+        boundaryReplayCheckpointKind: input.boundaryReplayCheckpointKind ?? null,
+        boundaryReplayCheckpointRefs: (input.boundaryReplayCheckpointRefs ?? []).slice(0, 40),
+        boundaryReplayGraphCheckpointRefs: (input.boundaryReplayGraphCheckpointRefs ?? []).slice(
+          0,
+          40,
+        ),
+        replayStartPolicy: input.replayStartPolicy ?? null,
+        replaySafetyStatus: input.replaySafetyStatus ?? null,
+        replayFreshnessStatus: input.replayFreshnessStatus ?? null,
+        replayContinuationMode: input.replayContinuationMode ?? null,
+        nextReplayBoundary: input.nextReplayBoundary ?? null,
         recordedAt: this.now().toISOString(),
         rawPromptStored: false,
         rawResponseStored: false,
@@ -2353,18 +3067,92 @@ export class DynamicAgentTeamGraphRunner {
         rawCommandLogsStored: false,
         workQueueLifecycleMutated: false,
       };
+      const graphPatchBody = buildRuntimeGraphPatchBody({
+        patchId: `${job.jobId}:${graph.graphId}:${String(progressCounter).padStart(3, "0")}`,
+        runtimeJobId: job.jobId,
+        workflowId: job.parentWorkflowId ?? null,
+        graphId: graph.graphId,
+        schedulerIteration: progressCounter,
+        superstepId:
+          typeof metadata.parallelFrontier === "object" &&
+          metadata.parallelFrontier !== null &&
+          !Array.isArray(metadata.parallelFrontier) &&
+          typeof (metadata.parallelFrontier as { currentSuperstep?: unknown }).currentSuperstep ===
+            "number"
+            ? (
+                metadata.parallelFrontier as { currentSuperstep: number }
+              ).currentSuperstep.toString()
+            : null,
+        patchKind: input.schedulerToolId ?? input.schedulerPhase ?? input.stage,
+        stage: input.stage,
+        status: input.status,
+        nodeId: input.nodeId ?? null,
+        roleId: input.roleId ?? null,
+        progressMetadata: metadata as Record<string, JsonValue>,
+      });
+      const graphPatchRef = `runtime-job://${job.jobId}/runtime-work-graph/graph-patch/${String(progressCounter).padStart(3, "0")}-${input.stage}`;
+      const graphPatchArtifact = await this.options.runtimeJobs.attachRuntimeArtifactByContract({
+        jobId: job.jobId,
+        artifactType: RUNTIME_GRAPH_PATCH_ARTIFACT_TYPE,
+        uri: graphPatchRef,
+        contentType: "application/json",
+        body: graphPatchBody as unknown as JsonValue,
+        boundedSummary: `${graphPatchBody.patchKind} ${graphPatchBody.status} ${graphPatchBody.affectedNodeIds.length} nodes`,
+        targetNodeIds: graphPatchBody.affectedNodeIds.slice(0, 40),
+        targetCommitmentIds: graphPatchBody.reasonCodes
+          .filter((reason) => reason.startsWith("commitment:"))
+          .map((reason) => reason.slice("commitment:".length))
+          .slice(0, 40),
+        resourcePacketKind: "runtime_graph_patch",
+        readinessStatus: input.status,
+        reasonCodes: [
+          "runtime_graph_patch_payload_backed",
+          "scheduler_progress_manifest_only",
+          ...graphPatchBody.reasonCodes.slice(0, 20),
+        ],
+        inputCounts: {
+          affectedNodeCount: graphPatchBody.affectedNodeIds.length,
+          affectedBranchCount: graphPatchBody.affectedBranchIds.length,
+        } as unknown as JsonValue,
+        outputCounts: {
+          nodeAdds: graphPatchBody.nodeAdds.length,
+          edgeAdds: graphPatchBody.edgeAdds.length,
+          readinessUpdates: graphPatchBody.readinessUpdates.length,
+        } as unknown as JsonValue,
+        createdBy: "dynamic_agent_team_graph_runner.attachProgress",
+        metadata: {
+          graphId: graph.graphId,
+          stage: input.stage,
+          status: input.status,
+          rawPromptStored: false,
+          rawResponseStored: false,
+          rawProviderLogStored: false,
+          rawToolLogStored: false,
+          rawCommandLogStored: false,
+          rawDbRowsStored: false,
+        },
+      });
+      const graphPatchSummary = summarizeRuntimeGraphPatchArtifact({
+        artifact: graphPatchArtifact,
+        body: graphPatchBody,
+      });
+      const progressMetadata = compactSchedulerProgressForManifest(
+        metadata as Record<string, JsonValue>,
+        graphPatchSummary,
+      );
+
       await this.options.runtimeJobs.attachArtifact({
         jobId: job.jobId,
         artifactType: "agent_team.scheduler_progress",
         storageKind: "metadata",
         uri: ref,
         contentType: "application/json",
-        metadata: metadata as unknown as JsonValue,
+        metadata: progressMetadata as unknown as JsonValue,
       });
       await this.options.runtimeJobs.recordEvent({
         jobId: job.jobId,
         eventType: "agent_team.scheduler_progress",
-        data: metadata as unknown as JsonValue,
+        data: progressMetadata as unknown as JsonValue,
       });
       await this.options.runtimeJobs.recordEvent({
         jobId: job.jobId,
@@ -2381,6 +3169,76 @@ export class DynamicAgentTeamGraphRunner {
           rawDbRowsStored: false,
           secretsStored: false,
           workQueueLifecycleMutated: false,
+        } as unknown as JsonValue,
+      });
+      const latestRunState = buildLatestRunState({
+        runtimeJobId: job.jobId,
+        workItemId: job.workItemId,
+        promptHash: input.sourcePromptHash ?? null,
+        promptRef: input.sourcePromptHash
+          ? `source-prompt://${job.jobId}/${input.sourcePromptHash.slice(0, 24)}`
+          : null,
+        promptLength: input.sourcePromptLength ?? null,
+        processRunning: input.status === "started" || input.status === "waiting_for_human",
+        terminalStatus: input.finalizationState ?? null,
+        adapterTerminalStatus:
+          input.status === "failed" || input.status === "needs_review" ? input.status : null,
+        retryState:
+          input.nextDecisionNeeded === "retry" ||
+          input.nextDecisionNeeded === "scheduler_repair" ||
+          input.nextDecisionNeeded === "repair_node_execution_packet"
+            ? input.nextDecisionNeeded
+            : null,
+        runtimeJob: job as unknown as Record<string, unknown>,
+        graphId: graph.graphId,
+        latestProgress: progressMetadata,
+        latestReasonCodes: Array.isArray(progressMetadata.reasonCodes)
+          ? progressMetadata.reasonCodes.filter(
+              (reason): reason is string => typeof reason === "string",
+            )
+          : [],
+        latestArtifactRefs: Array.isArray(progressMetadata.artifactRefs)
+          ? progressMetadata.artifactRefs.filter((ref): ref is string => typeof ref === "string")
+          : [],
+        missingUsageEventCount:
+          input.workerInternalProviderUsage || input.modelProviderDiagnostics ? 0 : null,
+        usageUnavailableReasons: input.workerInternalUsageUnavailableReason
+          ? [{ reason: input.workerInternalUsageUnavailableReason }]
+          : [],
+        recommendedOperatorAction:
+          input.closeoutFinalizationRecommendedNextAction ??
+          input.nextDecisionNeeded ??
+          input.nodeReadinessRepairAction ??
+          null,
+        generatedAt: progressMetadata.recordedAt as string,
+      });
+      const latestRunStateRef = `runtime-job://${job.jobId}/latest-run-state/current`;
+      await this.options.runtimeJobs.attachArtifact({
+        jobId: job.jobId,
+        artifactType: "execution_platform.latest_run_state",
+        storageKind: "metadata",
+        uri: latestRunStateRef,
+        contentType: "application/json",
+        metadata: latestRunState as unknown as JsonValue,
+      });
+      await this.options.runtimeJobs.recordEvent({
+        jobId: job.jobId,
+        eventType: "execution.latest_run_state_updated",
+        data: {
+          latestRunStateRef,
+          sourceProgressRef: ref,
+          activeFrontier: latestRunState.activeFrontier,
+          boundaryReplay: latestRunState.boundaryReplay,
+          current: latestRunState.current,
+          process: latestRunState.process,
+          runtimeJobId: job.jobId,
+          graphId: graph.graphId,
+          rawPromptStored: false,
+          rawResponseStored: false,
+          rawProviderLogStored: false,
+          rawToolLogStored: false,
+          rawDbRowsStored: false,
+          secretsStored: false,
         } as unknown as JsonValue,
       });
       return ref;
@@ -2438,6 +3296,12 @@ export class DynamicAgentTeamGraphRunner {
         modelCallSpanHeartbeatCount: event.heartbeatCount,
         modelCallSpanResponseShapeSummary: event.responseShapeSummary as JsonValue,
         modelProviderDiagnostics: event.modelProviderDiagnostics ?? null,
+        modelTaskClass: event.taskClass ?? null,
+        modelTaskPolicyRef: event.modelPolicyRef ?? null,
+        reasoningMode: event.reasoningMode ?? null,
+        parserMode: event.parserMode ?? null,
+        modelTaskClassification: event.modelTaskClassification ?? null,
+        modelTaskTelemetry: event.modelTaskTelemetry ?? null,
         eli5Progress:
           event.phase === "completed"
             ? `${event.modelRef} returned bounded model output for ${input.stage}.`
@@ -2572,6 +3436,231 @@ export class DynamicAgentTeamGraphRunner {
       });
     };
 
+    const materializeSplitRequiredImplementationTaskNodes = async (input: {
+      graphId: string;
+      parentNode: TeamGraphNode;
+      metadata: Record<string, unknown>;
+      implementationContextCompile: ImplementationContextCompileResult;
+    }): Promise<{
+      applied: boolean;
+      childNodeIds: string[];
+      parentNode: TeamGraphNode | null;
+      outputArtifactRefs: string[];
+      reasonCodes: string[];
+    }> => {
+      const taskPackets = input.implementationContextCompile.implementationTaskPackets;
+      const resourceSplits =
+        input.implementationContextCompile.resourceMaterialization.suggestedSplits;
+      if (
+        input.implementationContextCompile.status !== "split_required" ||
+        (taskPackets.length <= 1 && resourceSplits.length <= 1)
+      ) {
+        return {
+          applied: false,
+          childNodeIds: [],
+          parentNode: null,
+          outputArtifactRefs: [],
+          reasonCodes: ["split_required_transition_not_applicable"],
+        };
+      }
+
+      const snapshot = await this.options.runtimeWorkGraphs.readGraphSnapshot(input.graphId);
+      const existingNodeIds = new Set(snapshot?.nodes.map((candidate) => candidate.nodeId) ?? []);
+      const splitPlans =
+        taskPackets.length > 1
+          ? taskPackets.map((taskPacket, index) => ({
+              index,
+              taskPacket,
+              targetFileRefs: taskPacket.targetFileRefs,
+              targetCommitmentIds: taskPacket.targetCommitmentIds,
+              artifactRefs: [taskPacket.packetRef],
+              requiresContextRepair: false,
+            }))
+          : resourceSplits.map((split, index) => ({
+              index,
+              taskPacket: null,
+              targetFileRefs: split.targetFileRefs,
+              targetCommitmentIds:
+                input.implementationContextCompile.resourceMaterialization.targetCommitmentIds,
+              artifactRefs: [],
+              requiresContextRepair: true,
+            }));
+      const childNodeIds: string[] = [];
+      for (const splitPlan of splitPlans) {
+        const splitNodeId = `${input.parentNode.nodeId}:task:${splitPlan.index + 1}`;
+        childNodeIds.push(splitNodeId);
+        const childMetadata = {
+          capabilityId:
+            typeof input.metadata.capabilityId === "string"
+              ? input.metadata.capabilityId
+              : "implementation_microtask",
+          selectedCapabilityId:
+            typeof input.metadata.selectedCapabilityId === "string"
+              ? input.metadata.selectedCapabilityId
+              : typeof input.metadata.capabilityId === "string"
+                ? input.metadata.capabilityId
+                : "implementation_microtask",
+          executorKey:
+            typeof input.metadata.executorKey === "string"
+              ? input.metadata.executorKey
+              : "kind:implementation",
+          workerRef:
+            typeof input.metadata.workerRef === "string"
+              ? input.metadata.workerRef
+              : (input.parentNode.modelOrWorkerRef ?? "implementation_microtask"),
+          targetRefs: splitPlan.targetFileRefs,
+          commitmentIdsAdvanced: splitPlan.targetCommitmentIds,
+          exactObjective: bounded(
+            splitPlan.taskPacket?.exactEditObjective ??
+              input.implementationContextCompile.packet.exactEditObjective,
+            1_200,
+          ),
+          expectedOutput: bounded(
+            splitPlan.taskPacket?.expectedOutput ??
+              "Compile localized context, source-change refs, validation refs, and commitment-linked evidence claims for this split child.",
+            1_200,
+          ),
+          acceptanceCriteria:
+            splitPlan.taskPacket?.acceptanceCriteria.slice(0, 12) ??
+            input.implementationContextCompile.packet.acceptanceCriteria.slice(0, 12),
+          validationCommandRefs:
+            splitPlan.taskPacket?.validationCommandRefs.slice(0, 12) ??
+            input.implementationContextCompile.packet.validationCommandRefs.slice(0, 12),
+          implementationContextPacketRef: input.implementationContextCompile.packet.packetRef,
+          ...(splitPlan.taskPacket
+            ? {
+                implementationTaskPacketRef: splitPlan.taskPacket.packetRef,
+                implementationTaskPacketTargetRefs: splitPlan.taskPacket.targetFileRefs,
+                implementationTaskPacketAcceptanceCriteria:
+                  splitPlan.taskPacket.acceptanceCriteria.slice(0, 12),
+              }
+            : {
+                resourceMaterializationSplitRequired: true,
+                resourceMaterializationSplitRequiresContextRepair: true,
+                resourceMaterializationSplitReasonCodes:
+                  input.implementationContextCompile.resourceMaterialization.nonblockingReasonCodes.slice(
+                    0,
+                    12,
+                  ),
+              }),
+          nodeExecutionPacketRequired: true,
+          sourceSplitFromNodeId: input.parentNode.nodeId,
+          sourceImplementationContextPacketRef: input.implementationContextCompile.packet.packetRef,
+          splitRequiredTransitionStatus: "child_materialized",
+          splitRequiredParentNodeId: input.parentNode.nodeId,
+          splitRequiredChildIndex: splitPlan.index + 1,
+          splitRequiredChildCount: splitPlans.length,
+          splitRequiredChildRequiresContextRepair: splitPlan.requiresContextRepair,
+          rawPromptStored: false,
+          rawResponseStored: false,
+          rawProviderLogStored: false,
+          rawToolLogStored: false,
+        };
+        if (!existingNodeIds.has(splitNodeId)) {
+          await this.options.runtimeWorkGraphs.addNode({
+            nodeId: splitNodeId,
+            graphId: input.graphId,
+            nodeKind: input.parentNode.nodeKind,
+            assignedRole: input.parentNode.assignedRole,
+            modelOrWorkerRef: input.parentNode.modelOrWorkerRef,
+            runtimeJobId: job.jobId,
+            inputHandoffRefs: [
+              input.implementationContextCompile.packet.packetRef,
+              ...splitPlan.artifactRefs,
+              ...input.parentNode.inputHandoffRefs,
+            ].slice(0, 40),
+            nodeStatus: "planned",
+            metadata: childMetadata as JsonValue,
+          });
+        }
+        await this.options.runtimeWorkGraphs.addEdge({
+          edgeId: `${input.parentNode.nodeId}:split:${splitPlan.index + 1}->${splitNodeId}`,
+          graphId: input.graphId,
+          fromNodeId: input.parentNode.nodeId,
+          toNodeId: splitNodeId,
+          edgeKind: "handoff",
+          reasonCodes: ["split_required_child_receives_parent_context"],
+          artifactRefs: [
+            input.implementationContextCompile.packet.packetRef,
+            ...splitPlan.artifactRefs,
+          ],
+          metadata: {
+            splitRequiredTransitionStatus: "edge_materialized",
+            ...(splitPlan.taskPacket ? { splitTaskPacketRef: splitPlan.taskPacket.packetRef } : {}),
+            sourceSplitFromNodeId: input.parentNode.nodeId,
+            splitRequiredChildRequiresContextRepair: splitPlan.requiresContextRepair,
+            rawPromptStored: false,
+            rawResponseStored: false,
+            rawLogsStored: false,
+          },
+        });
+      }
+
+      const outputArtifactRefs = [
+        input.implementationContextCompile.packet.packetRef,
+        ...taskPackets.map((packet) => packet.packetRef),
+      ].slice(0, 40);
+      const updatedParent = await this.options.runtimeWorkGraphs.updateNodeStatus({
+        nodeId: input.parentNode.nodeId,
+        nodeStatus: "succeeded",
+        outputArtifactRefs,
+        metadataPatch: {
+          splitRequiredTransitionStatus: "split_materialized",
+          splitRequiredParentLifecycle: "aggregate_non_runnable",
+          splitRequiredChildNodeIds: childNodeIds,
+          splitRequiredChildCount: childNodeIds.length,
+          implementationContextPacketRef: input.implementationContextCompile.packet.packetRef,
+          implementationTaskPacketRefs: taskPackets.map((packet) => packet.packetRef),
+          implementationResourceMaterializationStatus:
+            input.implementationContextCompile.resourceMaterialization.status,
+          implementationContextReadinessStatus:
+            input.implementationContextCompile.packet.readinessStatus,
+          nodeExecutionPacketRequired: false,
+          commitmentClosureEligible: false,
+          rawPromptStored: false,
+          rawResponseStored: false,
+          rawProviderLogStored: false,
+          rawToolLogStored: false,
+        },
+      });
+      await syncGraphNodeToWorkQueue({
+        node: updatedParent,
+        nodeStatus: "succeeded",
+        evidenceRefs: outputArtifactRefs,
+        reasonCodes: [
+          "split_required_parent_marked_aggregate_non_runnable",
+          "split_required_child_nodes_materialized",
+        ],
+      });
+      const refreshed = await this.options.runtimeWorkGraphs.readGraphSnapshot(input.graphId);
+      for (const childNodeId of childNodeIds) {
+        const childNode = refreshed?.nodes.find((candidate) => candidate.nodeId === childNodeId);
+        if (!childNode) {
+          continue;
+        }
+        await syncGraphNodeToWorkQueue({
+          node: childNode,
+          nodeStatus: childNode.nodeStatus,
+          evidenceRefs: childNode.inputHandoffRefs,
+          reasonCodes: [
+            "split_required_child_work_queue_materialized",
+            "split_required_child_ready_for_node_resource_materialization",
+          ],
+        });
+      }
+      return {
+        applied: true,
+        childNodeIds,
+        parentNode: updatedParent,
+        outputArtifactRefs,
+        reasonCodes: [
+          "split_required_transition_applied",
+          "split_required_parent_marked_aggregate_non_runnable",
+          `split_required_child_node_count:${childNodeIds.length}`,
+        ],
+      };
+    };
+
     const ledgerForGraphCompile = latestMissionLedger as MissionContractLedger | null;
     await recordBoundaryCheckpoint({
       checkpointKind: "router_payload",
@@ -2638,10 +3727,18 @@ export class DynamicAgentTeamGraphRunner {
       return ref;
     };
 
-    const createMissionLedger = async (): Promise<MissionContractLedger | null> => {
+    const stagedMissionLedgerDiagnosticAllowed =
+      process.env.OPENCLAW_ENABLE_STAGED_MISSION_LEDGER_DIAGNOSTIC === "true";
+    const stagedMissionLedgerDiagnosticRequested =
+      recordValue(job.payload).enableStagedMissionLedgerDiagnostic === true;
+    const stagedMissionLedgerDiagnosticEnabled =
+      stagedMissionLedgerDiagnosticAllowed && stagedMissionLedgerDiagnosticRequested;
+
+    const createProductionMissionLedger = async (): Promise<MissionContractLedger | null> => {
       if (!missionModelClient) {
         return null;
       }
+      const missionId = `${teamRunId}-mission-contract`;
       const response = await missionModelClient.runJson({
         modelRef: DEFAULT_DYNAMIC_ORCHESTRATOR_MODEL_REF,
         providerPath: DEFAULT_DYNAMIC_ORCHESTRATOR_PROVIDER_PATH,
@@ -2661,7 +3758,7 @@ export class DynamicAgentTeamGraphRunner {
           "Use false for rawPromptStored, rawResponseStored, rawProviderLogStored, and workQueueLifecycleMutated.",
         ].join("\n"),
         userPayload: {
-          missionId: `${teamRunId}-mission-contract`,
+          missionId,
           runtimeJobId: job.jobId,
           workItemId: job.workItemId ?? null,
           ownerObjectiveSummary: objective.slice(0, 8_000),
@@ -2669,8 +3766,10 @@ export class DynamicAgentTeamGraphRunner {
           ownerPromptHash: sha256Text(objectiveResolution.objectiveForModel),
           ownerPromptLength: objectiveResolution.objectiveForModel.length,
           sourcePromptResolution: objectiveResolution.sourcePromptResolution,
+          sourcePromptVersionRef: sourcePromptContextIndexRef,
           repoScopeRefs: objectiveScope.approvedRepoScopePaths,
           validationCommandRefs: objectiveScope.approvedValidationCommands,
+          missionLedgerMode: "production_single_pass",
           requestedShape: {
             blockingCommitments: [
               {
@@ -2721,10 +3820,16 @@ export class DynamicAgentTeamGraphRunner {
         },
         maxOutputTokens: 8_000,
         timeoutMs: 300_000,
+        taskClass: "global_reasoning",
+        reasoningEffort: "medium",
+        modelTaskCallSite: "mission_ledger.production_single_pass",
         progress: {
           spanId: `${job.jobId}:${graph.graphId}:mission-ledger`,
           objectiveSummary: "Create the Mission Contract Ledger from the full owner prompt.",
-          reasonCodes: ["mission_contract_model_call"],
+          reasonCodes: [
+            "mission_contract_model_call",
+            "mission_ledger_mode:production_single_pass",
+          ],
           onEvent: (event) =>
             attachModelCallProgress({
               event,
@@ -2739,18 +3844,25 @@ export class DynamicAgentTeamGraphRunner {
       });
       const ledger = normalizeMissionContractLedger({
         value: parseJsonObject(response.responseText),
-        missionId: `${teamRunId}-mission-contract`,
+        missionId,
         sourceRuntimeJobId: job.jobId,
         sourceWorkItemId: job.workItemId ?? null,
         ownerObjectiveSummary: objective,
       });
       latestMissionLedger = ledger;
-      await attachMissionLedger(ledger, ["mission_contract_ledger_created"]);
+      await attachMissionLedger(ledger, [
+        "mission_contract_ledger_created",
+        "mission_ledger_mode:production_single_pass",
+      ]);
       await attachProgress({
         stage: "mission_ledger",
         status: ledger.ledgerStatus === "blocked" ? "failed" : "completed",
         artifactRefs: missionLedgerRefs.slice(-1),
-        reasonCodes: ["mission_contract_ledger_created", `mission_gate:${ledger.missionGate}`],
+        reasonCodes: [
+          "mission_contract_ledger_created",
+          "mission_ledger_mode:production_single_pass",
+          `mission_gate:${ledger.missionGate}`,
+        ],
         currentPhase: "mission_ledger_created",
         currentObjective: ledger.ownerObjectiveSummary,
         evidenceProducedRefs: missionLedgerRefs.slice(-1),
@@ -2762,9 +3874,563 @@ export class DynamicAgentTeamGraphRunner {
           .slice(0, 30),
         eli5Progress: `Mission Ledger created with ${ledger.blockingCommitments.length} blocking commitment(s), gate ${ledger.missionGate}.`,
         schedulerPhase: "mission_ledger_ready",
+        missionLedgerMode: "production_single_pass",
       });
       return ledger;
     };
+
+    const createStagedDiagnosticMissionLedger = async (): Promise<MissionContractLedger | null> => {
+      if (!missionModelClient) {
+        return null;
+      }
+      const missionId = `${teamRunId}-mission-contract`;
+      const ownerPromptHash = sha256Text(objectiveResolution.objectiveForModel);
+      const sourcePromptStructuralAnchors = sourcePromptStructuralAnchorsFromIndex({
+        index: sourcePromptContextIndex,
+        maxAnchors: 60,
+      });
+      const missionStageRefs: string[] = [];
+      const promptIdentityPayload = {
+        missionId,
+        runtimeJobId: job.jobId,
+        workItemId: job.workItemId ?? null,
+        ownerObjectiveSummary: objective.slice(0, 4_000),
+        ownerPromptVolatileText: objectiveResolution.objectiveForModel.slice(0, 60_000),
+        ownerPromptHash,
+        ownerPromptLength: objectiveResolution.objectiveForModel.length,
+        sourcePromptResolution: objectiveResolution.sourcePromptResolution,
+        sourcePromptVersionRef: sourcePromptContextIndexRef,
+        repoScopeRefs: objectiveScope.approvedRepoScopePaths,
+        validationCommandRefs: objectiveScope.approvedValidationCommands,
+        rawPromptStored: false,
+        rawResponseStored: false,
+      } as const;
+      const stageModelCall = async (input: {
+        stage: string;
+        schedulerPhase: string;
+        objectiveSummary: string;
+        systemPrompt: string[];
+        userPayload: JsonValue;
+        maxOutputTokens: number;
+        timeoutMs: number;
+        modelTaskCallSite: string;
+        reasoningEffort?: "minimal" | "low" | "medium" | "high" | "xhigh";
+      }) =>
+        missionModelClient.runJson({
+          modelRef: DEFAULT_DYNAMIC_ORCHESTRATOR_MODEL_REF,
+          providerPath: DEFAULT_DYNAMIC_ORCHESTRATOR_PROVIDER_PATH,
+          systemPrompt: input.systemPrompt.join("\n"),
+          userPayload: input.userPayload,
+          maxOutputTokens: input.maxOutputTokens,
+          timeoutMs: input.timeoutMs,
+          taskClass: "global_reasoning",
+          reasoningEffort: input.reasoningEffort ?? "medium",
+          modelTaskCallSite: input.modelTaskCallSite,
+          progress: {
+            spanId: `${job.jobId}:${graph.graphId}:${input.stage}`,
+            objectiveSummary: input.objectiveSummary,
+            reasonCodes: [input.stage],
+            onEvent: (event) =>
+              attachModelCallProgress({
+                event,
+                stage: input.stage,
+                schedulerPhase: input.schedulerPhase,
+                currentObjective: input.objectiveSummary,
+                nextDecisionNeeded:
+                  event.phase === "completed" ? `${input.stage}:validate` : input.stage,
+              }),
+          },
+        });
+      const failMissionStage = async (input: {
+        failedStage:
+          | "objective_constraints"
+          | "obligation_candidate_extraction"
+          | "candidate_compilation"
+          | "candidate_review"
+          | "canonical_commitment_compilation"
+          | "mission_ledger_acceptance";
+        error: unknown;
+        artifactRefs?: string[];
+        validAlternatives?: string[];
+        failedPath?: string | null;
+        reasonCodes?: string[];
+      }): Promise<never> => {
+        const diagnostic = buildStagedMissionLedgerStageRepairDiagnostic({
+          missionId,
+          failedStage: input.failedStage,
+          error: input.error,
+          failedPath: input.failedPath ?? null,
+          validAlternatives: input.validAlternatives ?? [],
+          preservedFieldPaths: input.artifactRefs ?? [],
+          repairAttempted: false,
+          terminalAfterRepair: true,
+          reasonCodes: input.reasonCodes,
+        });
+        const diagnosticRef = `runtime-job://${job.jobId}/mission-ledger/${missionId}/stage-repair/${diagnostic.diagnosticId}`;
+        await this.options.runtimeJobs.attachRuntimeArtifactByContract({
+          jobId: job.jobId,
+          artifactType: STAGED_MISSION_LEDGER_STAGE_REPAIR_DIAGNOSTIC_ARTIFACT_TYPE,
+          uri: diagnosticRef,
+          contentType: "application/json",
+          body: diagnostic as unknown as JsonValue,
+          boundedSummary: `Mission Ledger ${input.failedStage} failed: ${diagnostic.issueSummary}`,
+          targetCommitmentIds: [],
+          resourcePacketKind: "staged_mission_ledger_stage_repair_diagnostic",
+          readinessStatus: "needs_review",
+          reasonCodes: diagnostic.reasonCodes,
+        });
+        await attachProgress({
+          stage: "mission_ledger",
+          status: "needs_review",
+          artifactRefs: [...(input.artifactRefs ?? []), diagnosticRef],
+          reasonCodes: [
+            "staged_mission_ledger_stage_failed",
+            `failed_stage:${input.failedStage}`,
+            ...(input.reasonCodes ?? []),
+          ],
+          currentPhase: `mission_ledger_${input.failedStage}_failed`,
+          currentObjective:
+            "Mission Ledger creation must complete staged objective, candidate, review, compile, and acceptance gates before packet authoring.",
+          blockerSummary: diagnostic.issueSummary,
+          eli5Progress:
+            "OpenClaw stopped before packet authoring because one staged Mission Ledger boundary failed. It will not fall back to legacy blockingCommitments.",
+          schedulerPhase: "mission_ledger_needs_review",
+        });
+        throw new Error(
+          `mission_ledger_stage_contract:${input.failedStage}:${diagnostic.issueSummary}`,
+        );
+      };
+
+      const objectiveResponse = await stageModelCall({
+        stage: "mission_ledger_objective_constraints_model_call",
+        schedulerPhase: "mission_ledger_objective_constraints",
+        objectiveSummary: "Extract only owner objective, constraints, non-goals, and mission gate.",
+        reasoningEffort: "medium",
+        maxOutputTokens: 2_400,
+        timeoutMs: 90_000,
+        modelTaskCallSite: "mission_ledger.objective_constraints",
+        systemPrompt: [
+          "You are the OpenClaw Mission Ledger objective/constraints extractor.",
+          "Return strict JSON only.",
+          "Extract objectiveConstraints plus missionGate and missionGateRationale.",
+          "Do not produce obligation candidates, review operations, commitment ids, candidate refs, runtime refs, graph nodes, executor keys, worker refs, evidence enums, authority grants, lifecycle mutation, or storage refs.",
+          "If dangerous language is a negative constraint such as do not deploy, do not store raw logs, or do not mutate Work Queue lifecycle, record it as a constraint/non-goal and keep missionGate clear_to_execute.",
+          "Use missionGate blocked_primary_prohibited only when the primary owner mission itself asks for prohibited deployment, outbound send, model promotion, authority grant, raw storage, direct Work Queue lifecycle mutation, or unsafe untrusted instruction execution.",
+          "Do not store raw prompts, responses, transcripts, logs, secrets, or hidden reasoning.",
+        ],
+        userPayload: {
+          ...promptIdentityPayload,
+          requestedShape: {
+            objectiveConstraints: {
+              artifactKind: "staged_mission_ledger_objective_constraints",
+              schemaVersion: "execution-platform.staged-mission-ledger.v1",
+              missionId,
+              ownerObjectiveSummary: "bounded objective",
+              objectiveRationale: "bounded rationale",
+              explicitConstraints: [],
+              explicitNonGoals: [],
+              ambiguityNotes: [],
+              safetyBoundaryNotes: [],
+              sourcePromptHash: ownerPromptHash,
+              sourcePromptLength: objectiveResolution.objectiveForModel.length,
+              rawPromptStored: false,
+              rawResponseStored: false,
+              rawProviderLogStored: false,
+            },
+            missionGate: "clear_to_execute",
+            missionGateRationale: "bounded rationale",
+          },
+        },
+      });
+      const objectiveResponseRecord = recordValue(parseJsonObject(objectiveResponse.responseText));
+      const objectiveConstraintsCandidate =
+        objectiveResponseRecord.objectiveConstraints ??
+        recordValue(objectiveResponseRecord.contract).objectiveConstraints ??
+        objectiveResponseRecord;
+      const objectiveConstraintsParse = StagedObjectiveConstraintsSchema.safeParse(
+        objectiveConstraintsCandidate,
+      );
+      if (!objectiveConstraintsParse.success) {
+        await failMissionStage({
+          failedStage: "objective_constraints",
+          error: objectiveConstraintsParse.error,
+          reasonCodes: ["mission_ledger_objective_constraints_invalid"],
+          validAlternatives: ["objectiveConstraints"],
+          failedPath: "objectiveConstraints",
+        });
+        throw new Error("mission_ledger_objective_constraints_unreachable");
+      }
+      const objectiveConstraints = objectiveConstraintsParse.data;
+      const missionGate =
+        objectiveResponseRecord.missionGate === "blocked_primary_prohibited" ||
+        objectiveResponseRecord.missionGate === "needs_review" ||
+        objectiveResponseRecord.missionGate === "clear_to_execute"
+          ? objectiveResponseRecord.missionGate
+          : undefined;
+      const missionGateRationale =
+        typeof objectiveResponseRecord.missionGateRationale === "string"
+          ? objectiveResponseRecord.missionGateRationale
+          : null;
+      const objectiveConstraintsRef = `runtime-job://${job.jobId}/mission-ledger/${missionId}/objective-constraints`;
+      await this.options.runtimeJobs.attachRuntimeArtifactByContract({
+        jobId: job.jobId,
+        artifactType: STAGED_MISSION_LEDGER_OBJECTIVE_CONSTRAINTS_ARTIFACT_TYPE,
+        uri: objectiveConstraintsRef,
+        contentType: "application/json",
+        body: objectiveConstraints as unknown as JsonValue,
+        boundedSummary: objectiveConstraints.ownerObjectiveSummary,
+        targetCommitmentIds: [],
+        resourcePacketKind: "staged_mission_ledger_objective_constraints",
+        readinessStatus: "accepted",
+        reasonCodes: ["staged_mission_ledger_objective_constraints_persisted"],
+      });
+      missionStageRefs.push(objectiveConstraintsRef);
+
+      const candidateResponse = await stageModelCall({
+        stage: "mission_ledger_obligation_candidates_model_call",
+        schedulerPhase: "mission_ledger_obligation_candidate_extraction",
+        objectiveSummary: "Extract source-anchored obligation candidates using local refs only.",
+        reasoningEffort: "medium",
+        maxOutputTokens: 5_000,
+        timeoutMs: 150_000,
+        modelTaskCallSite: "mission_ledger.obligation_candidates",
+        systemPrompt: [
+          "You are the OpenClaw Mission Ledger obligation candidate extractor.",
+          "Return strict JSON only with obligationCandidateSet.",
+          "Use only localCandidateRef for model-local candidate references.",
+          "Do not produce obligationReviewPlan, candidateRef, commitment ids, runtime refs, graph nodes, executor keys, worker refs, evidence enums, authority grants, lifecycle mutation, or storage refs.",
+          "Each candidate must copy one or more sourceAnchors from sourcePromptStructuralAnchors exactly.",
+          "Candidates are opaque owner obligations and expected evidence descriptions, not workflow-specific deterministic taxonomy labels.",
+          "Do not store raw prompts, responses, transcripts, logs, secrets, or hidden reasoning.",
+        ],
+        userPayload: {
+          ...promptIdentityPayload,
+          objectiveConstraints,
+          objectiveConstraintsRef,
+          sourcePromptStructuralAnchors,
+          requestedShape: {
+            obligationCandidateSet: {
+              artifactKind: "staged_mission_ledger_obligation_candidate_set",
+              schemaVersion: "execution-platform.staged-mission-ledger.v1",
+              missionId,
+              sourcePromptHash: ownerPromptHash,
+              sourcePromptVersionRef: sourcePromptContextIndexRef,
+              candidates: [
+                {
+                  localCandidateRef: "candidate-1",
+                  obligationText: "opaque model-authored owner mission requirement",
+                  whyItMatters: "bounded rationale",
+                  expectedEvidenceDescription: "bounded evidence expectation",
+                  sourceAnchors: [
+                    "copy exact source anchor object from sourcePromptStructuralAnchors",
+                  ],
+                  blockingProposal: "blocking",
+                  constraintRefs: [],
+                  nonGoalRefs: [],
+                  ambiguityNotes: [],
+                  modelMergeSplitNotes: [],
+                  rawPromptStored: false,
+                  rawResponseStored: false,
+                  rawProviderLogStored: false,
+                },
+              ],
+              omittedObligationNotes: [],
+              rawPromptStored: false,
+              rawResponseStored: false,
+              rawProviderLogStored: false,
+            },
+          },
+        } as unknown as JsonValue,
+      });
+      const candidateResponseRecord = recordValue(parseJsonObject(candidateResponse.responseText));
+      const candidateSetCandidate =
+        candidateResponseRecord.obligationCandidateSet ??
+        candidateResponseRecord.stagedObligationCandidateSet ??
+        candidateResponseRecord.candidateSet ??
+        candidateResponseRecord;
+      const candidateSetParse = ObligationCandidateSetSchema.safeParse(candidateSetCandidate);
+      if (!candidateSetParse.success) {
+        await failMissionStage({
+          failedStage: "obligation_candidate_extraction",
+          error: candidateSetParse.error,
+          artifactRefs: missionStageRefs,
+          reasonCodes: ["mission_ledger_obligation_candidate_set_invalid"],
+          validAlternatives: ["obligationCandidateSet"],
+          failedPath: "obligationCandidateSet",
+        });
+        throw new Error("mission_ledger_obligation_candidate_extraction_unreachable");
+      }
+      const candidateSet = candidateSetParse.data;
+      const candidateSetRef = `runtime-job://${job.jobId}/mission-ledger/${missionId}/candidate-set`;
+      await this.options.runtimeJobs.attachRuntimeArtifactByContract({
+        jobId: job.jobId,
+        artifactType: STAGED_MISSION_LEDGER_OBLIGATION_CANDIDATE_SET_ARTIFACT_TYPE,
+        uri: candidateSetRef,
+        contentType: "application/json",
+        body: candidateSet as unknown as JsonValue,
+        boundedSummary: `Extracted ${candidateSet.candidates.length} source-anchored Mission Ledger obligation candidate(s).`,
+        targetCommitmentIds: [],
+        resourcePacketKind: "staged_mission_ledger_obligation_candidate_set",
+        readinessStatus: "accepted",
+        reasonCodes: ["staged_mission_ledger_obligation_candidate_set_persisted"],
+      });
+      missionStageRefs.push(candidateSetRef);
+
+      let compiledCandidateSet: ReturnType<typeof compileObligationCandidateSet> | null = null;
+      try {
+        compiledCandidateSet = compileObligationCandidateSet({
+          candidateSet,
+          knownAnchors: sourcePromptStructuralAnchors,
+        });
+      } catch (error) {
+        await failMissionStage({
+          failedStage: "candidate_compilation",
+          error,
+          artifactRefs: missionStageRefs,
+          reasonCodes: ["mission_ledger_candidate_compilation_failed"],
+          validAlternatives: sourcePromptStructuralAnchors
+            .map((anchor) => anchor.excerptRef)
+            .slice(0, 40),
+          failedPath: "obligationCandidateSet.candidates[].sourceAnchors",
+        });
+      }
+      if (!compiledCandidateSet) {
+        throw new Error("mission_ledger_candidate_compilation_unreachable");
+      }
+      const compiledCandidateSetRef = `runtime-job://${job.jobId}/mission-ledger/${compiledCandidateSet.missionId}/compiled-candidate-set`;
+      await this.options.runtimeJobs.attachRuntimeArtifactByContract({
+        jobId: job.jobId,
+        artifactType: STAGED_MISSION_LEDGER_COMPILED_CANDIDATE_SET_ARTIFACT_TYPE,
+        uri: compiledCandidateSetRef,
+        contentType: "application/json",
+        body: compiledCandidateSet as unknown as JsonValue,
+        boundedSummary: `Compiled ${compiledCandidateSet.candidateCount} staged Mission Ledger obligation candidate(s).`,
+        targetCommitmentIds: [],
+        resourcePacketKind: "staged_mission_ledger_compiled_candidate_set",
+        readinessStatus: "accepted",
+        reasonCodes: compiledCandidateSet.reasonCodes,
+      });
+      missionStageRefs.push(compiledCandidateSetRef);
+
+      const reviewCandidates = compiledCandidateSet.candidates.map((candidate) => ({
+        candidateRef: candidate.candidateRef,
+        obligationText: candidate.obligationText,
+        whyItMatters: candidate.whyItMatters,
+        expectedEvidenceDescription: candidate.expectedEvidenceDescription,
+        blockingProposal: candidate.blockingProposal,
+        sourceAnchorRefs: candidate.sourceAnchors.map((anchor) => anchor.excerptRef).slice(0, 12),
+        ambiguityNotes: candidate.ambiguityNotes,
+        rawPromptStored: false,
+        rawResponseStored: false,
+        rawProviderLogStored: false,
+      }));
+      const reviewResponse = await stageModelCall({
+        stage: "mission_ledger_candidate_review_model_call",
+        schedulerPhase: "mission_ledger_candidate_review",
+        objectiveSummary: "Review compiled obligation candidates using runtime candidate refs.",
+        reasoningEffort: "medium",
+        maxOutputTokens: 5_000,
+        timeoutMs: 150_000,
+        modelTaskCallSite: "mission_ledger.candidate_review",
+        systemPrompt: [
+          "You are the OpenClaw Mission Ledger candidate reviewer.",
+          "Return strict JSON only with obligationReviewPlan.",
+          "Use only candidateRef values supplied in compiledCandidates.",
+          "Never use localCandidateRef, candidateLocalRefs, model-local refs, commitment ids, graph nodes, executor keys, worker refs, authority grants, lifecycle mutation, or storage refs.",
+          "You may accept, merge, split, discard as non-goal, add a missing source-anchored candidate, or mark candidate needs owner review.",
+          "Do not store raw prompts, responses, transcripts, logs, secrets, or hidden reasoning.",
+        ],
+        userPayload: {
+          missionId,
+          runtimeJobId: job.jobId,
+          workItemId: job.workItemId ?? null,
+          objectiveConstraints,
+          objectiveConstraintsRef,
+          compiledCandidateSetRef,
+          compiledCandidates: reviewCandidates,
+          allowedCandidateRefs: reviewCandidates.map((candidate) => candidate.candidateRef),
+          requestedShape: {
+            obligationReviewPlan: {
+              artifactKind: "staged_mission_ledger_obligation_review_plan",
+              schemaVersion: "execution-platform.staged-mission-ledger.v1",
+              missionId,
+              candidateSetRef: compiledCandidateSetRef,
+              operations: [
+                {
+                  operationId: "accept-candidate-1",
+                  operationKind: "accept_candidate",
+                  candidateRefs: reviewCandidates[0] ? [reviewCandidates[0].candidateRef] : [],
+                  resultingCommitmentText: null,
+                  expectedEvidenceDescription: null,
+                  blocking: null,
+                  rationale: "bounded rationale",
+                  rawPromptStored: false,
+                  rawResponseStored: false,
+                  rawProviderLogStored: false,
+                },
+              ],
+              reviewerSummary: "bounded review summary",
+              unresolvedOwnerQuestions: [],
+              rawPromptStored: false,
+              rawResponseStored: false,
+              rawProviderLogStored: false,
+            },
+          },
+          rawPromptStored: false,
+          rawResponseStored: false,
+        } as unknown as JsonValue,
+      });
+      const reviewResponseRecord = recordValue(parseJsonObject(reviewResponse.responseText));
+      const reviewPlanCandidate =
+        reviewResponseRecord.obligationReviewPlan ??
+        reviewResponseRecord.stagedObligationReviewPlan ??
+        reviewResponseRecord.reviewPlan ??
+        reviewResponseRecord;
+      const reviewPlanParse = ObligationReviewPlanSchema.safeParse(reviewPlanCandidate);
+      if (!reviewPlanParse.success) {
+        await failMissionStage({
+          failedStage: "candidate_review",
+          error: reviewPlanParse.error,
+          artifactRefs: missionStageRefs,
+          reasonCodes: ["mission_ledger_candidate_review_invalid"],
+          validAlternatives: reviewCandidates.map((candidate) => candidate.candidateRef),
+          failedPath: "obligationReviewPlan.operations[].candidateRefs",
+        });
+        throw new Error("mission_ledger_candidate_review_unreachable");
+      }
+      const reviewPlan = reviewPlanParse.data;
+      const reviewPlanRef = `runtime-job://${job.jobId}/mission-ledger/${compiledCandidateSet.missionId}/review-plan`;
+      await this.options.runtimeJobs.attachRuntimeArtifactByContract({
+        jobId: job.jobId,
+        artifactType: STAGED_MISSION_LEDGER_REVIEW_PLAN_ARTIFACT_TYPE,
+        uri: reviewPlanRef,
+        contentType: "application/json",
+        body: reviewPlan as JsonValue,
+        boundedSummary: "Model-authored staged Mission Ledger candidate review plan.",
+        targetCommitmentIds: [],
+        resourcePacketKind: "staged_mission_ledger_review_plan",
+        readinessStatus: "accepted",
+        reasonCodes: ["staged_mission_ledger_review_plan_persisted"],
+      });
+      missionStageRefs.push(reviewPlanRef);
+
+      let canonicalCommitments: ReturnType<typeof compileCanonicalMissionCommitments> | null = null;
+      try {
+        canonicalCommitments = compileCanonicalMissionCommitments({
+          compiledCandidateSet,
+          reviewPlan,
+        });
+      } catch (error) {
+        await failMissionStage({
+          failedStage: "canonical_commitment_compilation",
+          error,
+          artifactRefs: missionStageRefs,
+          reasonCodes: ["mission_ledger_canonical_commitment_compilation_failed"],
+          validAlternatives: reviewCandidates.map((candidate) => candidate.candidateRef),
+          failedPath: "obligationReviewPlan.operations[].candidateRefs",
+        });
+      }
+      if (!canonicalCommitments) {
+        throw new Error("mission_ledger_canonical_commitment_compilation_unreachable");
+      }
+      const canonicalCommitmentsRef = `runtime-job://${job.jobId}/mission-ledger/${compiledCandidateSet.missionId}/canonical-commitments`;
+      await this.options.runtimeJobs.attachRuntimeArtifactByContract({
+        jobId: job.jobId,
+        artifactType: STAGED_MISSION_LEDGER_CANONICAL_COMMITMENTS_ARTIFACT_TYPE,
+        uri: canonicalCommitmentsRef,
+        contentType: "application/json",
+        body: canonicalCommitments as unknown as JsonValue,
+        boundedSummary: `Compiled ${canonicalCommitments.commitments.length} canonical Mission Ledger commitment(s).`,
+        targetCommitmentIds: canonicalCommitments.commitments.map(
+          (commitment) => commitment.commitmentId,
+        ),
+        resourcePacketKind: "staged_mission_ledger_canonical_commitments",
+        readinessStatus:
+          canonicalCommitments.ownerReviewCandidateRefs.length > 0 ? "needs_review" : "accepted",
+        reasonCodes: canonicalCommitments.reasonCodes,
+      });
+      missionStageRefs.push(canonicalCommitmentsRef);
+      artifactRefs.push(...missionStageRefs);
+
+      const ledger = missionContractLedgerFromCanonicalCommitments({
+        canonicalCommitments,
+        ownerObjectiveSummary: objective,
+        sourceRuntimeJobId: job.jobId,
+        sourceWorkItemId: job.workItemId ?? null,
+        explicitNonGoals: objectiveConstraints.explicitNonGoals,
+        missionGate,
+        missionGateRationale,
+      });
+      latestMissionLedger = ledger;
+      const missionLedgerRef = await attachMissionLedger(ledger, [
+        "mission_contract_ledger_created",
+        "staged_mission_ledger_protocol_completed",
+      ]);
+      const acceptance = buildStagedMissionLedgerAcceptance({
+        missionId,
+        canonicalCommitments,
+        missionLedgerRef,
+        canonicalCommitmentsRef,
+        missionGate,
+      });
+      const acceptanceRef = `runtime-job://${job.jobId}/mission-ledger/${missionId}/acceptance`;
+      await this.options.runtimeJobs.attachRuntimeArtifactByContract({
+        jobId: job.jobId,
+        artifactType: STAGED_MISSION_LEDGER_ACCEPTANCE_ARTIFACT_TYPE,
+        uri: acceptanceRef,
+        contentType: "application/json",
+        body: acceptance as unknown as JsonValue,
+        boundedSummary: `Mission Ledger acceptance status: ${acceptance.status}.`,
+        targetCommitmentIds: canonicalCommitments.commitments.map(
+          (commitment) => commitment.commitmentId,
+        ),
+        resourcePacketKind: "staged_mission_ledger_acceptance",
+        readinessStatus: acceptance.status === "accepted" ? "accepted" : "needs_review",
+        reasonCodes: acceptance.reasonCodes,
+      });
+      missionStageRefs.push(acceptanceRef);
+      await attachProgress({
+        stage: "mission_ledger",
+        status: acceptance.status === "blocked" ? "failed" : "completed",
+        artifactRefs: [missionLedgerRef, ...missionStageRefs],
+        reasonCodes: [
+          "staged_mission_ledger_protocol_completed",
+          `candidate_count:${compiledCandidateSet.candidateCount}`,
+          `canonical_commitment_count:${canonicalCommitments.commitments.length}`,
+          `mission_gate:${ledger.missionGate}`,
+          `mission_ledger_acceptance:${acceptance.status}`,
+        ],
+        currentPhase: "mission_ledger_created",
+        currentObjective: ledger.ownerObjectiveSummary,
+        evidenceProducedRefs: [missionLedgerRef, ...missionStageRefs],
+        commitmentIdsAdvanced: ledger.blockingCommitments
+          .map((commitment) => commitment.commitmentId)
+          .slice(0, 30),
+        remainingOpenCommitmentIds: openBlockingMissionCommitments(ledger)
+          .map((commitment) => commitment.commitmentId)
+          .slice(0, 30),
+        eli5Progress: `Mission Ledger compiled through staged objective, candidate, review, and runtime commitment gates with ${ledger.blockingCommitments.length} blocking commitment(s).`,
+        schedulerPhase: "mission_ledger_ready",
+        missionLedgerMode: "staged_diagnostic",
+        missionLedgerCanonicalCommitments:
+          summarizeCanonicalMissionCommitments(canonicalCommitments),
+      });
+      if (acceptance.status !== "accepted" && acceptance.status !== "blocked") {
+        await failMissionStage({
+          failedStage: "mission_ledger_acceptance",
+          error: new Error(acceptance.reasonCodes.join(";")),
+          artifactRefs: [missionLedgerRef, ...missionStageRefs],
+          reasonCodes: acceptance.reasonCodes,
+          failedPath: "stagedMissionLedgerAcceptance.status",
+        });
+      }
+      return ledger;
+    };
+
+    const createMissionLedger = async (): Promise<MissionContractLedger | null> =>
+      stagedMissionLedgerDiagnosticEnabled
+        ? createStagedDiagnosticMissionLedger()
+        : createProductionMissionLedger();
 
     const authorCommitmentWorkPackets = async (
       ledger: MissionContractLedger | null,
@@ -2865,17 +4531,37 @@ export class DynamicAgentTeamGraphRunner {
       );
       const packetAuthorSoftTimeoutMs = readPositiveIntEnv(
         "OPENCLAW_COMMITMENT_PACKET_AUTHOR_SOFT_TIMEOUT_MS",
-        60_000,
-        { max: packetAuthorTimeoutMs },
+        90_000,
+        { max: Math.min(packetAuthorTimeoutMs, 180_000) },
+      );
+      const packetAuthorExtendedSemanticTimeoutMs = readPositiveIntEnv(
+        "OPENCLAW_COMMITMENT_PACKET_AUTHOR_EXTENDED_SEMANTIC_TIMEOUT_MS",
+        150_000,
+        { max: Math.min(packetAuthorTimeoutMs, 180_000) },
+      );
+      const packetAuthorExtendedSemanticInputBytes = readPositiveIntEnv(
+        "OPENCLAW_COMMITMENT_PACKET_AUTHOR_EXTENDED_SEMANTIC_INPUT_BYTES",
+        20_000,
+        { max: 100_000 },
       );
       const packetAuthorMaxTokens = readPositiveIntEnv(
         "OPENCLAW_COMMITMENT_PACKET_AUTHOR_MAX_TOKENS",
         8_000,
         { max: 12_000 },
       );
+      const packetAuthorTargetedNormalizationMaxTokens = readPositiveIntEnv(
+        "OPENCLAW_COMMITMENT_PACKET_TARGETED_NORMALIZATION_MAX_TOKENS",
+        2_400,
+        { max: 2_400 },
+      );
+      const packetAuthorTargetedNormalizationTimeoutMs = readPositiveIntEnv(
+        "OPENCLAW_COMMITMENT_PACKET_TARGETED_NORMALIZATION_TIMEOUT_MS",
+        30_000,
+        { max: 45_000 },
+      );
       const packetAuthorPrimaryMaxInputBytes = readPositiveIntEnv(
         "OPENCLAW_COMMITMENT_PACKET_AUTHOR_PRIMARY_MAX_INPUT_BYTES",
-        24_000,
+        32_000,
         { max: 100_000 },
       );
       const packetAuthorMaxAttempts = readPositiveIntEnv(
@@ -2895,6 +4581,8 @@ export class DynamicAgentTeamGraphRunner {
       );
       const packetAuthorOpenRouterFallbackEnabled =
         process.env.OPENCLAW_COMMITMENT_PACKET_AUTHOR_OPENROUTER_FALLBACK_ENABLED === "true";
+      const packetAuthorGptRescueEnabled =
+        process.env.OPENCLAW_COMMITMENT_PACKET_AUTHOR_GPT_RESCUE_ENABLED === "true";
       const packetAuthorRescueModelRef =
         process.env.OPENCLAW_COMMITMENT_PACKET_AUTHOR_RESCUE_MODEL_REF?.trim() ||
         DEFAULT_DYNAMIC_ORCHESTRATOR_MODEL_REF;
@@ -2923,49 +4611,67 @@ export class DynamicAgentTeamGraphRunner {
           },
         ]),
       );
+      let packetAuthorRescueCount = 0;
+      let latestPacketFanoutDiagnosticArtifactRef: string | null = null;
+      let latestPacketFanoutDiagnosticArtifactHash: string | null = null;
+      const packetAuthorFanoutDiagnosticsArtifact = (): JsonValue =>
+        buildCommitmentPacketFanoutDiagnosticsArtifact({
+          missionId: ledger.missionId,
+          runtimeJobId: job.jobId,
+          generatedAt: this.now().toISOString(),
+          states: [...packetAuthorStates.values()],
+          profile: packetAuthorProfileSummary(),
+          reasonCodes: ["commitment_packet_fanout_diagnostics_payload"],
+        });
+      const persistPacketAuthorFanoutDiagnostics = async (
+        phase: string,
+      ): Promise<{ artifactRef: string; artifactHash: string }> => {
+        const body = packetAuthorFanoutDiagnosticsArtifact();
+        const artifactHash = `sha256:${sha256Text(JSON.stringify(body))}`;
+        const artifactRef = `runtime-job://${job.jobId}/commitment-packet-fanout-diagnostics/${ledger.missionId}/${String(progressCounter + 1).padStart(3, "0")}-${phase}`;
+        await this.options.runtimeJobs.attachRuntimeArtifactByContract({
+          jobId: job.jobId,
+          artifactType: COMMITMENT_PACKET_FANOUT_DIAGNOSTICS_ARTIFACT_TYPE,
+          uri: artifactRef,
+          contentType: "application/json",
+          body,
+          boundedSummary: `Commitment packet fanout diagnostics for ${ledger.missionId}`,
+          targetCommitmentIds: ledger.blockingCommitments
+            .map((commitment) => commitment.commitmentId)
+            .slice(0, 40),
+          resourcePacketKind: "commitment_packet_fanout_diagnostics",
+          readinessStatus: [...packetAuthorStates.values()].some(
+            (state) => state.status === "failed",
+          )
+            ? "failed"
+            : [...packetAuthorStates.values()].some((state) => state.status === "needs_review")
+              ? "needs_review"
+              : "running",
+          reasonCodes: [
+            "commitment_packet_fanout_diagnostics_payload_persisted",
+            `packet_author_phase:${phase}`,
+          ],
+          metadata: {
+            artifactKind: "commitment_packet_fanout_diagnostics_manifest",
+            missionId: ledger.missionId,
+            packetAuthorPhase: phase,
+            diagnosticArtifactHash: artifactHash,
+            rawPromptStored: false,
+            rawResponseStored: false,
+            rawProviderLogStored: false,
+          } as Record<string, JsonValue>,
+        });
+        latestPacketFanoutDiagnosticArtifactRef = artifactRef;
+        latestPacketFanoutDiagnosticArtifactHash = artifactHash;
+        return { artifactRef, artifactHash };
+      };
       const packetAuthorFanoutSummary = (): JsonValue => {
-        const nowMs = this.now().getTime();
-        const states = [...packetAuthorStates.values()];
-        const byStatus = (status: PacketAuthorState["status"]) =>
-          states.filter((state) => state.status === status);
-        const running = byStatus("running");
-        const longestRunningAgeMs = running.reduce((maxAge, state) => {
-          const age = state.startedAtMs ? nowMs - state.startedAtMs : 0;
-          return Math.max(maxAge, age);
-        }, 0);
-        return {
-          totalCount: states.length,
-          pendingCount: byStatus("pending").length,
-          runningCount: running.length,
-          completedCount: byStatus("completed").length,
-          needsReviewCount: byStatus("needs_review").length,
-          failedCount: byStatus("failed").length,
-          longestRunningAgeMs,
-          runningCommitmentIds: running.map((state) => state.commitmentId).slice(0, 20),
-          completedCommitmentIds: byStatus("completed")
-            .map((state) => state.commitmentId)
-            .slice(0, 30),
-          needsReviewCommitmentIds: byStatus("needs_review")
-            .map((state) => state.commitmentId)
-            .slice(0, 20),
-          failedCommitmentIds: byStatus("failed")
-            .map((state) => state.commitmentId)
-            .slice(0, 20),
-          packetDiagnostics: states
-            .map((state) => ({
-              commitmentId: state.commitmentId,
-              status: state.status,
-              modelRef: state.modelRef,
-              providerPath: state.providerPath,
-              profileRef: state.profileRef,
-              reasonCodes: state.reasonCodes.slice(0, 6),
-              latestDiagnostics: state.latestDiagnostics,
-            }))
-            .slice(0, 30),
-          rawPromptStored: false,
-          rawResponseStored: false,
-          rawProviderLogStored: false,
-        };
+        const diagnostics = packetAuthorFanoutDiagnosticsArtifact();
+        return summarizeCommitmentPacketFanoutForProgress({
+          diagnostics,
+          diagnosticArtifactRef: latestPacketFanoutDiagnosticArtifactRef,
+          diagnosticArtifactHash: latestPacketFanoutDiagnosticArtifactHash,
+        });
       };
       const packetAuthorProfileSummary = (): JsonValue => ({
         modelRef: packetAuthorModelRef,
@@ -2974,8 +4680,12 @@ export class DynamicAgentTeamGraphRunner {
         responseFormatMode: packetAuthorResponseFormatMode,
         reasoningMode: "none",
         maxTokens: packetAuthorMaxTokens,
+        targetedNormalizationMaxTokens: packetAuthorTargetedNormalizationMaxTokens,
+        targetedNormalizationTimeoutMs: packetAuthorTargetedNormalizationTimeoutMs,
         primaryMaxInputBytes: packetAuthorPrimaryMaxInputBytes,
         primarySoftTimeoutMs: packetAuthorSoftTimeoutMs,
+        extendedSemanticTimeoutMs: packetAuthorExtendedSemanticTimeoutMs,
+        extendedSemanticInputBytes: packetAuthorExtendedSemanticInputBytes,
         timeoutMs: packetAuthorTimeoutMs,
         maxAttempts: packetAuthorMaxAttempts,
         retryBeforeRescue: packetAuthorMaxAttempts > 1,
@@ -2994,6 +4704,11 @@ export class DynamicAgentTeamGraphRunner {
         rescueModelRef: packetAuthorRescueModelRef,
         rescueProviderPath: packetAuthorRescueProviderPath,
         rescueTimeoutMs: packetAuthorRescueTimeoutMs,
+        gptRescueEnabled: packetAuthorGptRescueEnabled,
+        rescueCount: packetAuthorRescueCount,
+        cleanProofRequiresRescueCountZero: true,
+        packetAuthorProtocol:
+          "two_qwen_semantic_content_then_targeted_normalization_runtime_compiles_packet",
         rawPromptStored: false,
         rawResponseStored: false,
         rawProviderLogStored: false,
@@ -3025,6 +4740,9 @@ export class DynamicAgentTeamGraphRunner {
         if (input.status === "running" && !state.startedAtMs) {
           state.startedAtMs = nowMs;
         }
+        const fanoutDiagnostic = await persistPacketAuthorFanoutDiagnostics(
+          `lane-${input.status}-${input.commitmentId}`,
+        );
         await attachProgress({
           stage: "commitment_packet_fanout",
           status:
@@ -3051,6 +4769,7 @@ export class DynamicAgentTeamGraphRunner {
           modelProviderDiagnostics: input.providerDiagnostics ?? null,
           packetAuthorFanout: packetAuthorFanoutSummary(),
           packetAuthorProfile: packetAuthorProfileSummary(),
+          evidenceProducedRefs: [fanoutDiagnostic.artifactRef],
           blockerSummary: input.blockerSummary ?? null,
           eli5Progress:
             "OpenClaw is authoring worker handoff packets concurrently and tracking each packet lane separately.",
@@ -3062,6 +4781,8 @@ export class DynamicAgentTeamGraphRunner {
         prompt: string;
         rescuePayload: JsonValue;
         preferRescue?: boolean;
+        allowRescue?: boolean;
+        authoringPhase?: "semantic_content" | "targeted_normalization" | "rescue";
       }): Promise<{
         response: AgentTeamModelClientResult;
         diagnostics: JsonValue;
@@ -3071,8 +4792,25 @@ export class DynamicAgentTeamGraphRunner {
         modelCandidateId: string;
         requestProfileRef: string;
         fallbackUsed: boolean;
+        rescueUsed: boolean;
+        authoringPhase: "semantic_content" | "targeted_normalization" | "rescue";
       }> => {
         const inputByteLength = Buffer.byteLength(input.prompt, "utf8");
+        const authoringPhase = input.authoringPhase ?? "semantic_content";
+        const allowRescue = input.allowRescue !== false;
+        const inputHash = sha256Text(input.prompt);
+        const inputBundleHash = `sha256:${inputHash}`;
+        const inputBundleRef = `runtime-job://${job.jobId}/commitment-packet-input/${ledger.missionId}/${input.commitmentId}/${authoringPhase}/${inputHash.slice(0, 16)}`;
+        const callMaxTokens =
+          authoringPhase === "targeted_normalization"
+            ? packetAuthorTargetedNormalizationMaxTokens
+            : packetAuthorMaxTokens;
+        const callTimeoutMs =
+          authoringPhase === "targeted_normalization"
+            ? packetAuthorTargetedNormalizationTimeoutMs
+            : inputByteLength >= packetAuthorExtendedSemanticInputBytes
+              ? packetAuthorExtendedSemanticTimeoutMs
+              : packetAuthorSoftTimeoutMs;
         const runRescueAuthor = async (
           reasonCode: string,
         ): Promise<{
@@ -3084,10 +4822,13 @@ export class DynamicAgentTeamGraphRunner {
           modelCandidateId: string;
           requestProfileRef: string;
           fallbackUsed: boolean;
+          rescueUsed: boolean;
+          authoringPhase: "semantic_content" | "targeted_normalization" | "rescue";
         } | null> => {
-          if (!missionModelClient) {
+          if (!missionModelClient || !allowRescue || !packetAuthorGptRescueEnabled) {
             return null;
           }
+          packetAuthorRescueCount += 1;
           await markPacketAuthorState({
             commitmentId: input.commitmentId,
             status: "running",
@@ -3115,6 +4856,8 @@ export class DynamicAgentTeamGraphRunner {
               userPayload: input.rescuePayload,
               maxOutputTokens: packetAuthorMaxTokens,
               timeoutMs: packetAuthorRescueTimeoutMs,
+              taskClass: "local_semantic_extraction",
+              modelTaskCallSite: "commitment_packet.gpt_rescue_author",
               progress: {
                 spanId: `${job.jobId}:${graph.graphId}:commitment-packet-rescue:${input.commitmentId}`,
                 objectiveSummary: `Rescue-author a worker-ready handoff packet for ${input.commitmentId}.`,
@@ -3159,6 +4902,15 @@ export class DynamicAgentTeamGraphRunner {
               inputByteLength: Buffer.byteLength(stringifyJson(input.rescuePayload), "utf8"),
               startedAtMs: rescueStartedAtMs,
               completedAtMs: rescueCompletedAtMs,
+              maxOutputTokens: packetAuthorMaxTokens,
+              timeoutMs: packetAuthorRescueTimeoutMs,
+              authoringPhase: "rescue",
+              responseFormatSent: "codex_app_server_json",
+              reasoningModeSent: null,
+              inputBundleRef,
+              inputBundleHash,
+              concurrencySlot: input.commitmentId,
+              retryNumber: 0,
               fallbackFromModelRef: packetAuthorModelRef,
               fallbackReasonCode: reasonCode,
             });
@@ -3171,6 +4923,8 @@ export class DynamicAgentTeamGraphRunner {
               modelCandidateId: "codex-5-5-commitment-packet-rescue",
               requestProfileRef: `${packetAuthorRescueProviderPath}.${packetAuthorRescueModelRef}.commitment-packet-rescue`,
               fallbackUsed: true,
+              rescueUsed: true,
+              authoringPhase: "rescue",
             };
           } catch (error) {
             const rescueCompletedAtMs = this.now().getTime();
@@ -3193,6 +4947,15 @@ export class DynamicAgentTeamGraphRunner {
               inputByteLength: Buffer.byteLength(stringifyJson(input.rescuePayload), "utf8"),
               startedAtMs: rescueStartedAtMs,
               completedAtMs: rescueCompletedAtMs,
+              maxOutputTokens: packetAuthorMaxTokens,
+              timeoutMs: packetAuthorRescueTimeoutMs,
+              authoringPhase: "rescue",
+              responseFormatSent: "codex_app_server_json",
+              reasoningModeSent: null,
+              inputBundleRef,
+              inputBundleHash,
+              concurrencySlot: input.commitmentId,
+              retryNumber: 0,
               fallbackFromModelRef: packetAuthorModelRef,
               fallbackReasonCode: reasonCode,
             });
@@ -3205,10 +4968,12 @@ export class DynamicAgentTeamGraphRunner {
               modelCandidateId: "codex-5-5-commitment-packet-rescue",
               requestProfileRef: `${packetAuthorRescueProviderPath}.${packetAuthorRescueModelRef}.commitment-packet-rescue`,
               fallbackUsed: true,
+              rescueUsed: true,
+              authoringPhase: "rescue",
             };
           }
         };
-        if (input.preferRescue) {
+        if (input.preferRescue && allowRescue) {
           const rescue = await runRescueAuthor("prior_packet_author_provider_no_content");
           if (rescue) {
             return rescue;
@@ -3238,7 +5003,7 @@ export class DynamicAgentTeamGraphRunner {
               rawPromptStored: false,
               rawResponseStored: false,
               rawProviderLogStored: false,
-            } as JsonValue,
+            } as Record<string, JsonValue>,
             blockerSummary:
               "The packet author prompt exceeded the compact Qwen input budget before provider invocation.",
           });
@@ -3257,6 +5022,15 @@ export class DynamicAgentTeamGraphRunner {
             inputByteLength,
             startedAtMs: this.now().getTime(),
             completedAtMs: this.now().getTime(),
+            maxOutputTokens: callMaxTokens,
+            timeoutMs: callTimeoutMs,
+            authoringPhase,
+            responseFormatSent: packetAuthorResponseFormatMode,
+            reasoningModeSent: "none",
+            inputBundleRef,
+            inputBundleHash,
+            concurrencySlot: input.commitmentId,
+            retryNumber: 0,
           });
           return {
             response: oversizedResponse,
@@ -3267,6 +5041,8 @@ export class DynamicAgentTeamGraphRunner {
             modelCandidateId: packetAuthorCandidateId,
             requestProfileRef: `openrouter.${packetAuthorCandidateId}.prompt-only-json.commitment-packet-author`,
             fallbackUsed: false,
+            rescueUsed: false,
+            authoringPhase,
           };
         }
         const primaryStartedAtMs = this.now().getTime();
@@ -3278,11 +5054,16 @@ export class DynamicAgentTeamGraphRunner {
           requestProfileOverride: {
             responseFormatMode: packetAuthorResponseFormatMode,
             reasoningMode: "none",
-            maxTokens: packetAuthorMaxTokens,
+            maxTokens: callMaxTokens,
           },
-          maxTokens: packetAuthorMaxTokens,
-          timeoutMs: packetAuthorSoftTimeoutMs,
+          maxTokens: callMaxTokens,
+          timeoutMs: callTimeoutMs,
           maxAttempts: packetAuthorMaxAttempts,
+          taskClass:
+            authoringPhase === "targeted_normalization"
+              ? "schema_normalization"
+              : "local_semantic_extraction",
+          modelTaskCallSite: `commitment_packet.${authoringPhase}`,
         });
         const primaryCompletedAtMs = this.now().getTime();
         const primaryDiagnostics = summarizePacketAuthorModelCallDiagnostics({
@@ -3294,6 +5075,15 @@ export class DynamicAgentTeamGraphRunner {
           inputByteLength,
           startedAtMs: primaryStartedAtMs,
           completedAtMs: primaryCompletedAtMs,
+          maxOutputTokens: callMaxTokens,
+          timeoutMs: callTimeoutMs,
+          authoringPhase,
+          responseFormatSent: packetAuthorResponseFormatMode,
+          reasoningModeSent: "none",
+          inputBundleRef,
+          inputBundleHash,
+          concurrencySlot: input.commitmentId,
+          retryNumber: 0,
         });
         if (primaryResponse.status === "succeeded" && primaryResponse.responseText) {
           return {
@@ -3305,6 +5095,8 @@ export class DynamicAgentTeamGraphRunner {
             modelCandidateId: packetAuthorCandidateId,
             requestProfileRef: `openrouter.${packetAuthorCandidateId}.prompt-only-json.commitment-packet-author`,
             fallbackUsed: false,
+            rescueUsed: false,
+            authoringPhase,
           };
         }
         await markPacketAuthorState({
@@ -3312,13 +5104,17 @@ export class DynamicAgentTeamGraphRunner {
           status: "running",
           reasonCodes: [
             "commitment_packet_author_primary_not_succeeded",
-            "commitment_packet_author_fallback_started",
+            packetAuthorGptRescueEnabled || packetAuthorOpenRouterFallbackEnabled
+              ? "commitment_packet_author_fallback_or_rescue_considered"
+              : "commitment_packet_author_no_rescue_or_fallback_enabled",
             `primary_error:${primaryResponse.errorReasonCode ?? "unknown"}`,
           ],
           retryEvidence: summarizeModelRetryEvidenceForProgress(primaryResponse.retryEvidence),
           providerDiagnostics: primaryDiagnostics,
           blockerSummary:
-            "Primary packet author did not complete inside the soft packet budget; OpenClaw is escalating this packet to the fallback model.",
+            packetAuthorGptRescueEnabled || packetAuthorOpenRouterFallbackEnabled
+              ? "Primary packet author did not complete inside the packet budget; OpenClaw is applying the configured packet retry/escalation policy."
+              : "Primary packet author did not complete inside the packet budget; GPT rescue is disabled, so this lane will surface bounded diagnostics instead of silent rescue.",
         });
         const rescue = await runRescueAuthor(
           primaryResponse.errorReasonCode ?? primaryResponse.status,
@@ -3336,6 +5132,8 @@ export class DynamicAgentTeamGraphRunner {
             modelCandidateId: packetAuthorCandidateId,
             requestProfileRef: `openrouter.${packetAuthorCandidateId}.prompt-only-json.commitment-packet-author`,
             fallbackUsed: false,
+            rescueUsed: false,
+            authoringPhase,
           };
         }
         const fallbackStartedAtMs = this.now().getTime();
@@ -3347,11 +5145,19 @@ export class DynamicAgentTeamGraphRunner {
           requestProfileOverride: {
             responseFormatMode: packetAuthorResponseFormatMode,
             reasoningMode: "none",
-            maxTokens: packetAuthorMaxTokens,
+            maxTokens: callMaxTokens,
           },
-          maxTokens: packetAuthorMaxTokens,
-          timeoutMs: packetAuthorFallbackTimeoutMs,
+          maxTokens: callMaxTokens,
+          timeoutMs:
+            authoringPhase === "targeted_normalization"
+              ? packetAuthorTargetedNormalizationTimeoutMs
+              : packetAuthorFallbackTimeoutMs,
           maxAttempts: packetAuthorFallbackMaxAttempts,
+          taskClass:
+            authoringPhase === "targeted_normalization"
+              ? "schema_normalization"
+              : "local_semantic_extraction",
+          modelTaskCallSite: `commitment_packet.${authoringPhase}.fallback`,
         });
         const fallbackCompletedAtMs = this.now().getTime();
         const fallbackDiagnostics = summarizePacketAuthorModelCallDiagnostics({
@@ -3363,6 +5169,18 @@ export class DynamicAgentTeamGraphRunner {
           inputByteLength,
           startedAtMs: fallbackStartedAtMs,
           completedAtMs: fallbackCompletedAtMs,
+          maxOutputTokens: callMaxTokens,
+          timeoutMs:
+            authoringPhase === "targeted_normalization"
+              ? packetAuthorTargetedNormalizationTimeoutMs
+              : packetAuthorFallbackTimeoutMs,
+          authoringPhase,
+          responseFormatSent: packetAuthorResponseFormatMode,
+          reasoningModeSent: "none",
+          inputBundleRef,
+          inputBundleHash,
+          concurrencySlot: input.commitmentId,
+          retryNumber: 1,
           fallbackFromModelRef: packetAuthorModelRef,
           fallbackReasonCode: primaryResponse.errorReasonCode ?? primaryResponse.status,
         });
@@ -3375,6 +5193,8 @@ export class DynamicAgentTeamGraphRunner {
           modelCandidateId: packetAuthorFallbackCandidateId,
           requestProfileRef: `openrouter.${packetAuthorFallbackCandidateId}.prompt-only-json.commitment-packet-author-fallback`,
           fallbackUsed: true,
+          rescueUsed: false,
+          authoringPhase,
         };
       };
       const authorOnePacket = async (input: {
@@ -3891,64 +5711,139 @@ export class DynamicAgentTeamGraphRunner {
             ],
           };
         };
-        for (let structuralAttempt = 1; structuralAttempt <= 2 && !packet; structuralAttempt += 1) {
-          if (structuralAttempt > 1) {
-            await markPacketAuthorState({
-              commitmentId: input.commitment.commitmentId,
-              status: "running",
-              reasonCodes: [
-                "commitment_packet_author_retry_started",
-                `structural_attempt:${structuralAttempt}`,
-              ],
-              objective: bounded(input.commitment.commitmentText, 700),
-            });
+        const semanticDraftFromModelOutput = (
+          value: Record<string, unknown>,
+        ): Record<string, unknown> => {
+          const packetArrayDraft = jsonRecordArray(value.commitmentWorkPackets, 1)[0];
+          return recordValue(
+            value.packetSemanticContent ??
+              value.semanticPacketContent ??
+              value.packetBrief ??
+              value.packetDraft ??
+              value.semanticDraft ??
+              value.commitmentPacketDraft ??
+              value.packetBriefPatch ??
+              value.packetDraftPatch ??
+              value.semanticPatch ??
+              value.commitmentWorkPacket ??
+              value.packet ??
+              packetArrayDraft ??
+              value,
+          );
+        };
+        const mergeSemanticPacketDraft = (
+          base: Record<string, unknown>,
+          patch: Record<string, unknown>,
+        ): Record<string, unknown> => {
+          const next = { ...base };
+          for (const [field, value] of Object.entries(patch)) {
+            if (typeof value === "string" && value.trim().length === 0) {
+              continue;
+            }
+            if (Array.isArray(value) && stringArray(value, [], 12).length === 0) {
+              continue;
+            }
+            if (value === null || value === undefined) {
+              continue;
+            }
+            next[field] = value;
           }
-          const packetAuthorPrompt = [
-            [
-              "You are the OpenClaw Commitment Packet author for one commitment.",
-              "The Mission Contract Ledger is intentionally high-level. Your job is to create one Grade A worker-ready handoff brief for the provided commitment using the target commitment, bounded prompt brief, and source-prompt section index.",
-              "Do not create executable graph schema, node ids, node kinds, executor keys, worker refs, runtime-owned evidence enums, authority grants, or lifecycle changes.",
-              "Write enough operational detail for a context scout, implementation worker, validation worker, and reviewer to succeed without guessing.",
-              input.repairReview
-                ? "Return a packetBriefPatch only. Include only missing or corrected semantic fields identified by the review. Runtime will merge the patch with the prior packet and compile the final CommitmentWorkPacket schema."
-                : "Return a packetBrief only. The runtime will compile the final CommitmentWorkPacket schema, refs, raw-storage flags, and bounded envelope. Your brief must include concrete repo areas when inferable from the prompt, commitmentMeaning, specific context questions, allowed context request hints, stop-if-missing rules, worker objective, context scout objective, implementation objective, validation objective, review objective, acceptance criteria, likely risks, required evidence claim descriptions, expected outputs, and downstream consumer.",
-              input.repairReview
-                ? "This is a targeted repair. Preserve the target commitment semantics and repair only the weaknesses identified by the quality reviewer."
-                : "This is initial authoring. Optimize for concrete worker handoff quality, not compactness.",
-              structuralAttempt > 1
-                ? "Your previous response did not compile. Return exactly one JSON object with the requested packetBrief or packetBriefPatch object. Do not include commentary."
-                : null,
-              "Use model judgment for semantic quality. Do not use generic language like advance this commitment with bounded evidence unless the owner prompt truly provides no more detail.",
-              input.repairReview
-                ? "Return strict JSON only with packetBriefPatch for the provided commitment. Do not include raw prompt text, raw response text, transcripts, provider logs, tool logs, secrets, or hidden reasoning."
-                : "Return strict JSON only with packetBrief for the provided commitment. Do not include raw prompt text, raw response text, transcripts, provider logs, tool logs, secrets, or hidden reasoning.",
-              "Set rawPromptStored, rawResponseStored, and rawProviderLogStored false.",
-            ]
-              .filter((line): line is string => Boolean(line))
-              .join("\n"),
-            JSON.stringify(
-              packetAuthorPrimaryPayload({
-                structuralAttempt,
-                lastReason,
-              }),
-            ),
-          ].join("\n\n");
-          const packetAuthorRescuePayload = {
+          return next;
+        };
+        const compactSemanticDraftForFieldCompletion = (
+          draft: Record<string, unknown>,
+        ): JsonValue => {
+          const pickText = (field: string, max = 700): string | null =>
+            typeof draft[field] === "string" && draft[field].trim()
+              ? bounded(draft[field], max)
+              : null;
+          const pickList = (field: string, maxItems = 4): string[] =>
+            stringArray(draft[field], [], maxItems).map((item) => bounded(item, 260));
+          return {
+            commitmentMeaning: pickText("commitmentMeaning"),
+            ownerIntentSummary: pickText("ownerIntentSummary"),
+            whyItMatters: pickText("whyItMatters"),
+            workerObjective: pickText("workerObjective"),
+            contextScoutObjective: pickText("contextScoutObjective"),
+            implementationObjective: pickText("implementationObjective"),
+            validationObjective: pickText("validationObjective"),
+            reviewObjective: pickText("reviewObjective"),
+            acceptanceCriteria: pickList("acceptanceCriteria"),
+            requiredContextQuestions: pickList("requiredContextQuestions"),
+            expectedContextScoutOutput: pickList("expectedContextScoutOutput"),
+            expectedImplementationOutput: pickList("expectedImplementationOutput"),
+            expectedValidationOutput: pickList("expectedValidationOutput"),
+            requiredEvidenceClaimDescriptions: pickList("requiredEvidenceClaimDescriptions"),
+            stopIfMissing: pickList("stopIfMissing"),
+            rawPromptStored: false,
+            rawResponseStored: false,
+            rawProviderLogStored: false,
+          };
+        };
+        const missingSemanticPacketFields = (draft: Record<string, unknown>): string[] => {
+          // Only fields that require fresh model-authored semantic judgment are blocking.
+          // Runtime-owned or compiler-derivable fields such as downstreamConsumer,
+          // remainingWork, and expectedReviewReadbackOutput are compiled from the
+          // ledger plus the semantic objectives instead of causing a second model call.
+          const textFields = [
+            "commitmentMeaning",
+            "ownerIntentSummary",
+            "whyItMatters",
+            "workerObjective",
+            "contextScoutObjective",
+            "implementationObjective",
+            "validationObjective",
+            "reviewObjective",
+          ];
+          const listFields = [
+            "acceptanceCriteria",
+            "requiredContextQuestions",
+            "allowedContextRequestHints",
+            "expectedContextScoutOutput",
+            "expectedImplementationOutput",
+            "expectedValidationOutput",
+            "requiredEvidenceClaimDescriptions",
+            "stopIfMissing",
+          ];
+          const missing: string[] = [];
+          for (const field of textFields) {
+            if (!(typeof draft[field] === "string" && draft[field].trim().length >= 20)) {
+              missing.push(field);
+            }
+          }
+          for (const field of listFields) {
+            if (stringArray(draft[field], []).length === 0) {
+              missing.push(field);
+            }
+          }
+          return missing.slice(0, 20);
+        };
+        const buildPacketAuthorRescuePayload = (inputPhase: {
+          phase: "semantic_content" | "targeted_normalization";
+          failedReason?: string | null;
+          missingFields?: string[];
+          semanticDraft?: Record<string, unknown> | null;
+        }): JsonValue =>
+          ({
             missionLedger: summarizeMissionContractLedger(ledger),
             targetCommitment: input.commitment,
             priorPacket: input.priorPacket
               ? (summarizeCommitmentWorkPackets([input.priorPacket]) as JsonValue)
               : null,
             packetQualityReview: input.repairReview ?? null,
-            structuralRepair:
-              structuralAttempt > 1
-                ? {
-                    failedReason: lastReason,
-                    requiredTopLevelField: "commitmentWorkPackets",
-                    requiredPacketCount: 1,
-                    targetCommitmentId: input.commitment.commitmentId,
-                  }
-                : null,
+            packetAuthorPhase: inputPhase.phase,
+            structuralRepair: inputPhase.failedReason
+              ? {
+                  failedReason: inputPhase.failedReason,
+                  targetCommitmentId: input.commitment.commitmentId,
+                  missingFields: inputPhase.missingFields ?? [],
+                  repairInstruction:
+                    inputPhase.phase === "targeted_normalization"
+                      ? "Complete only the missing semantic fields; runtime will compile the canonical packet."
+                      : "Create one worker-ready semantic packet; runtime will compile the canonical packet.",
+                }
+              : null,
+            semanticDraft: (inputPhase.semanticDraft ?? null) as unknown as JsonValue,
             ownerPromptVolatileText: objectiveResolution.objectiveForModel.slice(0, 120_000),
             ownerPromptHash: sha256Text(objectiveResolution.objectiveForModel),
             ownerPromptLength: objectiveResolution.objectiveForModel.length,
@@ -3958,130 +5853,231 @@ export class DynamicAgentTeamGraphRunner {
             requestedShape: packetShape,
             rawPromptStored: false,
             rawResponseStored: false,
-          } satisfies JsonValue;
-          const packetAuthorCall = await callPacketAuthorModelWithFallback({
-            commitmentId: input.commitment.commitmentId,
-            prompt: packetAuthorPrompt,
-            rescuePayload: packetAuthorRescuePayload,
-            preferRescue:
-              structuralAttempt > 1 &&
-              /(?:openrouter_no_content|timeout|timed?_?out)/iu.test(lastReason),
-          });
-          lastPacketAuthorCall = packetAuthorCall;
-          const response = packetAuthorCall.response;
-          if (response.status !== "succeeded" || !response.responseText) {
-            lastReason = response.errorReasonCode ?? "commitment_packet_author_call_failed";
-            await markPacketAuthorState({
-              commitmentId: input.commitment.commitmentId,
-              status: structuralAttempt < 2 ? "needs_review" : "failed",
-              reasonCodes: [
-                lastReason,
-                `structural_attempt:${structuralAttempt}`,
-                ...(packetAuthorCall.fallbackUsed
-                  ? ["commitment_packet_author_fallback_used"]
-                  : []),
-              ],
-              objective: bounded(input.commitment.commitmentText, 700),
-              retryEvidence: packetAuthorCall.retryEvidence,
-              providerDiagnostics: packetAuthorCall.providerDiagnostics,
-              blockerSummary:
-                "The selected packet author model did not return a usable commitment packet for this commitment.",
-            });
-            await attachProgress({
-              stage: "commitment_packet_authoring",
-              status: structuralAttempt < 2 ? "needs_review" : "needs_review",
-              reasonCodes: [
-                input.repairReview
-                  ? "commitment_packet_repair_call_failed"
-                  : "commitment_packet_author_call_failed",
-                lastReason,
-                `commitment_id:${input.commitment.commitmentId}`,
-                `structural_attempt:${structuralAttempt}`,
-                `packet_author_model:${packetAuthorCall.modelRef}`,
-                ...(packetAuthorCall.fallbackUsed
-                  ? ["commitment_packet_author_fallback_used"]
-                  : []),
-              ],
-              currentPhase: input.repairReview
-                ? "commitment_packet_repair_model_call_failed"
-                : "commitment_packet_author_model_call_failed",
-              currentObjective: bounded(input.commitment.commitmentText, 700),
-              modelRef: packetAuthorCall.modelRef,
-              providerPath: "openrouter",
-              modelRetryEvidence: packetAuthorCall.retryEvidence,
-              modelProviderDiagnostics: packetAuthorCall.providerDiagnostics,
-              packetAuthorFanout: packetAuthorFanoutSummary(),
-              packetAuthorProfile: packetAuthorProfileSummary(),
-              commitmentIdsAdvanced: [input.commitment.commitmentId],
-              blockerSummary:
-                "The selected packet author model did not return a usable commitment packet for this commitment.",
-              eli5Progress:
-                structuralAttempt < 2
-                  ? "OpenClaw is retrying this packet with a narrower structural instruction."
-                  : "OpenClaw stopped this packet because the packet author model did not produce usable JSON.",
-              schedulerPhase: "commitment_packets_parallel_authoring",
-            });
-            continue;
-          }
-          const parsedResponseObject = parseJsonObject(response.responseText);
-          const parsedPacketOutput = bindSingleCommitmentPacketToTarget(
-            compileSemanticDraftToPacketOutput(parsedResponseObject),
-            input.commitment.commitmentId,
+          }) satisfies JsonValue;
+        const semanticPacketPrompt = [
+          [
+            "You are the OpenClaw Commitment Packet semantic-content author for one commitment.",
+            "The Mission Contract Ledger is intentionally high-level. Your job is to create one Grade A worker-ready handoff brief for the provided commitment using the target commitment, bounded prompt brief, and source-prompt section index.",
+            "Do not create executable graph schema, node ids, node kinds, executor keys, worker refs, runtime-owned evidence enums, authority grants, or lifecycle changes.",
+            "Write enough operational detail for a context scout, implementation worker, validation worker, and reviewer to succeed without guessing.",
+            input.repairReview
+              ? "Return packetSemanticContent containing only missing or corrected semantic fields identified by the review. Runtime will merge the content with the prior packet and compile the final CommitmentWorkPacket schema."
+              : "Return packetSemanticContent only. Runtime will compile the final CommitmentWorkPacket schema, refs, raw-storage flags, and bounded envelope. Your semantic content must include concrete repo areas when inferable from the prompt, commitmentMeaning, specific context questions, allowed context request hints, stop-if-missing rules, worker objective, context scout objective, implementation objective, validation objective, review objective, acceptance criteria, likely risks, required evidence claim descriptions, expected outputs, and downstream consumer.",
+            input.repairReview
+              ? "This is a targeted repair. Preserve the target commitment semantics and repair only the weaknesses identified by the quality reviewer."
+              : "This is initial authoring. Optimize for concrete worker handoff quality, not compactness.",
+            "Use model judgment for semantic quality. Do not use generic language like advance this commitment with bounded evidence unless the owner prompt truly provides no more detail.",
+            "Return strict JSON only with packetSemanticContent for the provided commitment. Do not include raw prompt text, raw response text, transcripts, provider logs, tool logs, secrets, or hidden reasoning.",
+            "Set rawPromptStored, rawResponseStored, and rawProviderLogStored false.",
+          ]
+            .filter((line): line is string => Boolean(line))
+            .join("\n"),
+          JSON.stringify(
+            packetAuthorPrimaryPayload({
+              structuralAttempt: 1,
+              lastReason,
+            }),
+          ),
+        ].join("\n\n");
+        const semanticCall = await callPacketAuthorModelWithFallback({
+          commitmentId: input.commitment.commitmentId,
+          prompt: semanticPacketPrompt,
+          rescuePayload: buildPacketAuthorRescuePayload({ phase: "semantic_content" }),
+          authoringPhase: "semantic_content",
+        });
+        lastPacketAuthorCall = semanticCall;
+        if (semanticCall.response.status !== "succeeded" || !semanticCall.response.responseText) {
+          lastReason =
+            semanticCall.response.errorReasonCode ?? "commitment_packet_semantic_content_failed";
+        } else {
+          let semanticDraft = semanticDraftFromModelOutput(
+            parseJsonObject(semanticCall.response.responseText),
           );
-          try {
-            packet =
-              normalizeModelAuthoredCommitmentWorkPackets({
-                value: parsedPacketOutput,
-                ledger,
-              }).find((candidate) => candidate.commitmentId === input.commitment.commitmentId) ??
-              null;
-          } catch (error) {
-            lastReason =
-              error instanceof Error ? bounded(error.message, 220) : "packet_parse_error";
-            packet = null;
-          }
-          if (!packet && structuralAttempt < 2) {
-            await markPacketAuthorState({
+          const semanticBriefRef = `runtime-job://${job.jobId}/commitment-packet-semantic-brief/${ledger.missionId}/${input.commitment.commitmentId}/${sha256Text(JSON.stringify(semanticDraft)).slice(0, 16)}`;
+          await this.options.runtimeJobs.attachRuntimeArtifactByContract({
+            jobId: job.jobId,
+            artifactType: "execution_platform.commitment_packet.semantic_brief",
+            uri: semanticBriefRef,
+            contentType: "application/json",
+            body: {
+              packetSemanticBrief: semanticDraft as unknown as JsonValue,
+              missionId: ledger.missionId,
               commitmentId: input.commitment.commitmentId,
-              status: "needs_review",
-              reasonCodes: [
-                "commitment_packet_structural_retry_selected",
-                `structural_attempt:${structuralAttempt}`,
-                ...(packetAuthorCall.fallbackUsed
-                  ? ["commitment_packet_author_fallback_used"]
-                  : []),
-              ],
-              objective: bounded(input.commitment.commitmentText, 700),
-              retryEvidence: packetAuthorCall.retryEvidence,
-              providerDiagnostics: packetAuthorCall.providerDiagnostics,
-              blockerSummary: lastReason,
-            });
+              modelRef: semanticCall.modelRef,
+              providerPath: "openrouter",
+              authoringPhase: semanticCall.authoringPhase,
+              inputBundleRef:
+                typeof recordValue(semanticCall.providerDiagnostics).inputBundleRef === "string"
+                  ? (recordValue(semanticCall.providerDiagnostics).inputBundleRef as string)
+                  : null,
+              rawPromptStored: false,
+              rawResponseStored: false,
+              rawProviderLogStored: false,
+            } as JsonValue,
+            boundedSummary: `Semantic packet brief for ${input.commitment.commitmentId}`,
+            targetCommitmentIds: [input.commitment.commitmentId],
+            resourcePacketKind: "packet_semantic_brief",
+            readinessStatus: "unreviewed",
+            reasonCodes: ["commitment_packet_semantic_brief_persisted"],
+            metadata: {
+              missionId: ledger.missionId,
+              commitmentId: input.commitment.commitmentId,
+              rawPromptStored: false,
+              rawResponseStored: false,
+              rawProviderLogStored: false,
+            } as Record<string, JsonValue>,
+          });
+          let missingFields = missingSemanticPacketFields(semanticDraft);
+          if (missingFields.length > 0 && !semanticCall.rescueUsed) {
             await attachProgress({
               stage: "commitment_packet_authoring",
               status: "needs_review",
               reasonCodes: [
-                "commitment_packet_structural_retry_selected",
+                "commitment_packet_semantic_content_needs_targeted_normalization",
                 `commitment_id:${input.commitment.commitmentId}`,
-                `structural_attempt:${structuralAttempt}`,
-                `packet_author_model:${packetAuthorCall.modelRef}`,
-                ...(packetAuthorCall.fallbackUsed
-                  ? ["commitment_packet_author_fallback_used"]
-                  : []),
+                ...missingFields.map((field) => `missing_field:${field}`).slice(0, 10),
               ],
-              currentPhase: "commitment_packet_structural_retry",
-              currentObjective: bounded(input.commitment.commitmentText, 700),
-              modelRef: packetAuthorCall.modelRef,
+              currentPhase: "commitment_packet_targeted_normalization_model_call",
+              currentObjective:
+                "Complete only missing semantic packet fields before runtime compilation.",
+              modelRef: packetAuthorModelRef,
               providerPath: "openrouter",
-              modelRetryEvidence: packetAuthorCall.retryEvidence,
-              modelProviderDiagnostics: packetAuthorCall.providerDiagnostics,
               packetAuthorFanout: packetAuthorFanoutSummary(),
               packetAuthorProfile: packetAuthorProfileSummary(),
               commitmentIdsAdvanced: [input.commitment.commitmentId],
-              blockerSummary: lastReason,
+              blockerSummary: `Semantic packet content is usable but incomplete: ${missingFields
+                .slice(0, 6)
+                .join(", ")}`,
               eli5Progress:
-                "OpenClaw is asking the packet author model to return the same packet in the exact required JSON envelope.",
-              schedulerPhase: "commitment_packets_parallel_authoring",
+                "Qwen wrote useful packet content, and OpenClaw is asking for only the missing fields instead of regenerating the whole packet.",
+              schedulerPhase: "commitment_packets_targeted_normalization",
             });
+            const normalizationPrompt = [
+              [
+                "You are the OpenClaw Commitment Packet targeted normalizer.",
+                "You receive usable semantic packet content plus exact missing fields.",
+                "Return only packetBriefPatch with the missing or corrected semantic fields. Do not regenerate the full packet.",
+                "Do not create graph schema, node ids, node kinds, executor keys, worker refs, runtime-owned evidence enums, authority grants, lifecycle changes, or storage refs.",
+                "Return strict JSON only. Do not include raw prompt text, raw response text, transcripts, provider logs, tool logs, secrets, or hidden reasoning.",
+              ].join("\n"),
+              JSON.stringify({
+                targetCommitment: {
+                  commitmentId: input.commitment.commitmentId,
+                  commitmentText: bounded(input.commitment.commitmentText, 1_200),
+                  whyItMatters: bounded(input.commitment.whyItMatters ?? "", 500),
+                  expectedEvidenceDescription: bounded(
+                    input.commitment.expectedEvidenceDescription,
+                    700,
+                  ),
+                },
+                semanticPacketContentSummary: compactSemanticDraftForFieldCompletion(semanticDraft),
+                missingSemanticFields: missingFields,
+                sourcePromptRefs: {
+                  promptHash: sourcePromptContextIndex.promptHash,
+                  selectedSectionRefs: (
+                    recordValue(packetAuthorContextPack()).selectedSectionRefs as unknown[]
+                  )
+                    .filter((ref): ref is string => typeof ref === "string")
+                    .slice(0, 6),
+                  rawPromptStored: false,
+                },
+                requestedShape: {
+                  packetBriefPatch: Object.fromEntries(
+                    missingFields.map((field) => [
+                      field,
+                      field.endsWith("Criteria") ||
+                      field.startsWith("expected") ||
+                      field === "remainingWork" ||
+                      field === "requiredContextQuestions" ||
+                      field === "stopIfMissing"
+                        ? ["specific bounded string"]
+                        : "specific bounded string",
+                    ]),
+                  ),
+                  rawPromptStored: false,
+                  rawResponseStored: false,
+                  rawProviderLogStored: false,
+                },
+                rawPromptStored: false,
+                rawResponseStored: false,
+              }),
+            ].join("\n\n");
+            const normalizationCall = await callPacketAuthorModelWithFallback({
+              commitmentId: input.commitment.commitmentId,
+              prompt: normalizationPrompt,
+              rescuePayload: buildPacketAuthorRescuePayload({
+                phase: "targeted_normalization",
+                missingFields,
+                semanticDraft,
+              }),
+              allowRescue: false,
+              authoringPhase: "targeted_normalization",
+            });
+            lastPacketAuthorCall = normalizationCall;
+            if (
+              normalizationCall.response.status === "succeeded" &&
+              normalizationCall.response.responseText
+            ) {
+              const fieldCompletionDraft = semanticDraftFromModelOutput(
+                parseJsonObject(normalizationCall.response.responseText),
+              );
+              const fieldCompletionRef = `runtime-job://${job.jobId}/commitment-packet-field-completion/${ledger.missionId}/${input.commitment.commitmentId}/${sha256Text(JSON.stringify(fieldCompletionDraft)).slice(0, 16)}`;
+              await this.options.runtimeJobs.attachRuntimeArtifactByContract({
+                jobId: job.jobId,
+                artifactType: "execution_platform.commitment_packet.field_completion",
+                uri: fieldCompletionRef,
+                contentType: "application/json",
+                body: {
+                  packetFieldCompletion: fieldCompletionDraft as unknown as JsonValue,
+                  missionId: ledger.missionId,
+                  commitmentId: input.commitment.commitmentId,
+                  missingSemanticFields: missingFields,
+                  modelRef: normalizationCall.modelRef,
+                  providerPath: "openrouter",
+                  rawPromptStored: false,
+                  rawResponseStored: false,
+                  rawProviderLogStored: false,
+                } as JsonValue,
+                boundedSummary: `Semantic packet field completion for ${input.commitment.commitmentId}`,
+                targetCommitmentIds: [input.commitment.commitmentId],
+                resourcePacketKind: "packet_field_completion",
+                readinessStatus: "unreviewed",
+                reasonCodes: ["commitment_packet_field_completion_persisted"],
+                metadata: {
+                  missionId: ledger.missionId,
+                  commitmentId: input.commitment.commitmentId,
+                  rawPromptStored: false,
+                  rawResponseStored: false,
+                  rawProviderLogStored: false,
+                } as Record<string, JsonValue>,
+              });
+              semanticDraft = mergeSemanticPacketDraft(semanticDraft, fieldCompletionDraft);
+              missingFields = missingSemanticPacketFields(semanticDraft);
+            } else {
+              lastReason =
+                normalizationCall.response.errorReasonCode ??
+                "commitment_packet_targeted_normalization_failed";
+            }
+          }
+          if (missingFields.length > 0) {
+            lastReason = `commitment_packet_semantic_fields_missing:${missingFields.join(",")}`;
+          } else {
+            const parsedPacketOutput = bindSingleCommitmentPacketToTarget(
+              compileSemanticDraftToPacketOutput({ packetSemanticContent: semanticDraft }),
+              input.commitment.commitmentId,
+            );
+            try {
+              packet =
+                normalizeModelAuthoredCommitmentWorkPackets({
+                  value: parsedPacketOutput,
+                  ledger,
+                }).find((candidate) => candidate.commitmentId === input.commitment.commitmentId) ??
+                null;
+            } catch (error) {
+              lastReason =
+                error instanceof Error ? bounded(error.message, 220) : "packet_parse_error";
+              packet = null;
+            }
           }
         }
         if (!packet) {
@@ -4093,8 +6089,13 @@ export class DynamicAgentTeamGraphRunner {
           status: "completed",
           reasonCodes: [
             "commitment_packet_author_call_completed",
+            "commitment_packet_two_qwen_protocol_completed",
+            `commitment_packet_author_phase:${finalPacketAuthorCall?.authoringPhase ?? "semantic_content"}`,
             ...(finalPacketAuthorCall?.fallbackUsed
               ? ["commitment_packet_author_fallback_used"]
+              : []),
+            ...(finalPacketAuthorCall?.rescueUsed
+              ? ["commitment_packet_author_gpt_rescue_used_provider_incident"]
               : []),
           ],
           objective: packet.workerObjective,
@@ -4113,8 +6114,12 @@ export class DynamicAgentTeamGraphRunner {
             `latency_ms:${Math.max(0, this.now().getTime() - startedAt.getTime())}`,
             "packet_author_response_format:prompt_only",
             `packet_author_model:${finalPacketAuthorCall?.modelRef ?? packetAuthorModelRef}`,
+            `packet_author_phase:${finalPacketAuthorCall?.authoringPhase ?? "semantic_content"}`,
             ...(finalPacketAuthorCall?.fallbackUsed
               ? ["commitment_packet_author_fallback_used"]
+              : []),
+            ...(finalPacketAuthorCall?.rescueUsed
+              ? ["commitment_packet_author_gpt_rescue_used_provider_incident"]
               : []),
           ],
           currentPhase: input.repairReview
@@ -4163,11 +6168,87 @@ export class DynamicAgentTeamGraphRunner {
           "OpenClaw is writing each worker handoff packet separately through OpenRouter so packet authoring can run concurrently.",
         schedulerPhase: "commitment_packets_parallel_authoring",
       });
-      let authoredPackets = await mapWithConcurrency(
+      const packetAuthorSettled = await mapWithConcurrencySettled(
         ledger.blockingCommitments,
         packetAuthorConcurrency,
         async (commitment) => authorOnePacket({ commitment }),
       );
+      const packetAuthorFailures = packetAuthorSettled.filter(
+        (result): result is Extract<(typeof packetAuthorSettled)[number], { status: "rejected" }> =>
+          result.status === "rejected",
+      );
+      for (const failure of packetAuthorFailures) {
+        const failureReason =
+          failure.reason instanceof Error
+            ? bounded(failure.reason.message, 260)
+            : bounded(String(failure.reason), 260);
+        const priorDiagnostics =
+          packetAuthorStates.get(failure.input.commitmentId)?.latestDiagnostics ?? null;
+        const providerDiagnostics: Record<string, JsonValue> =
+          priorDiagnostics &&
+          typeof priorDiagnostics === "object" &&
+          !Array.isArray(priorDiagnostics)
+            ? {
+                ...(priorDiagnostics as Record<string, JsonValue>),
+                status: "failed",
+                terminalLaneErrorReasonCode: failureReason,
+                rawPromptStored: false,
+                rawResponseStored: false,
+                rawProviderLogStored: false,
+              }
+            : {
+                status: "failed",
+                errorReasonCode: failureReason,
+                rawPromptStored: false,
+                rawResponseStored: false,
+                rawProviderLogStored: false,
+              };
+        await markPacketAuthorState({
+          commitmentId: failure.input.commitmentId,
+          status: "failed",
+          reasonCodes: [
+            "commitment_packet_author_lane_failed",
+            `commitment_id:${failure.input.commitmentId}`,
+            `failure:${failureReason}`,
+          ],
+          blockerSummary: `Commitment packet authoring failed for ${failure.input.commitmentId}: ${failureReason}`,
+          providerDiagnostics,
+        });
+      }
+      if (packetAuthorFailures.length > 0) {
+        await attachProgress({
+          stage: "commitment_packet_authoring",
+          status: "needs_review",
+          reasonCodes: [
+            "commitment_packet_author_fanout_failed",
+            `failed_count:${packetAuthorFailures.length}`,
+            ...packetAuthorFailures
+              .map((failure) => `failed_commitment:${failure.input.commitmentId}`)
+              .slice(0, 20),
+          ],
+          currentPhase: "commitment_packet_author_fanout_failed",
+          currentObjective:
+            "Commitment packet authoring must finish every packet lane before scheduler planning.",
+          packetAuthorFanout: packetAuthorFanoutSummary(),
+          packetAuthorProfile: packetAuthorProfileSummary(),
+          blockerSummary:
+            "One or more packet lanes failed after bounded provider retry/rescue; OpenClaw preserved all lane states instead of leaving ambiguous running packets.",
+          eli5Progress:
+            "OpenClaw finished the packet fanout accounting and found failed packet lanes that need review before continuing.",
+          schedulerPhase: "commitment_packets_parallel_authoring",
+        });
+        throw new Error(
+          `commitment_packet_author_fanout_failed:${packetAuthorFailures
+            .map((failure) => failure.input.commitmentId)
+            .join(",")}`,
+        );
+      }
+      let authoredPackets = packetAuthorSettled.map((result) => {
+        if (result.status !== "fulfilled") {
+          throw new Error("unreachable_packet_author_settled_rejected");
+        }
+        return result.value;
+      });
       const attachCommitmentPacketArtifacts = async (input: {
         packets: CommitmentWorkPacket[];
         phase: "pre_review" | "post_review" | "post_repair";
@@ -4176,15 +6257,20 @@ export class DynamicAgentTeamGraphRunner {
         const packetArtifactRefs: string[] = [];
         for (const packet of input.packets) {
           const packetArtifactRef = `${baseRef}/${packet.commitmentId}`;
-          const encodedPacket = JSON.stringify(packet);
-          await this.options.runtimeJobs.attachArtifact({
+          await this.options.runtimeJobs.attachRuntimeArtifactByContract({
             jobId: job.jobId,
             artifactType: `execution_platform.commitment_work_packet.${input.phase}`,
-            storageKind: "metadata",
             uri: packetArtifactRef,
             contentType: "application/json",
-            sizeBytes: Buffer.byteLength(encodedPacket, "utf8"),
-            sha256: sha256Text(encodedPacket),
+            body: packet as unknown as JsonValue,
+            boundedSummary: packet.workerObjective,
+            targetCommitmentIds: [packet.commitmentId],
+            resourcePacketKind: "commitment_work_packet",
+            readinessStatus: packet.qualityStatus,
+            reasonCodes: [
+              "commitment_work_packet_persisted_by_contract",
+              `commitment_packet_phase:${input.phase}`,
+            ],
             metadata: {
               artifactKind: `execution_platform.commitment_work_packet.${input.phase}`,
               missionId: ledger.missionId,
@@ -4192,11 +6278,10 @@ export class DynamicAgentTeamGraphRunner {
               packetRef: packet.packetRef,
               packetId: packet.packetId,
               commitmentId: packet.commitmentId,
-              commitmentWorkPacket: packet,
               rawPromptStored: false,
               rawResponseStored: false,
               rawProviderLogStored: false,
-            } as JsonValue,
+            } as Record<string, JsonValue>,
           });
           packetArtifactRefs.push(packetArtifactRef);
         }
@@ -4217,7 +6302,7 @@ export class DynamicAgentTeamGraphRunner {
             rawPromptStored: false,
             rawResponseStored: false,
             rawProviderLogStored: false,
-          } as JsonValue,
+          } as Record<string, JsonValue>,
         });
         return { manifestRef: baseRef, packetArtifactRefs };
       };
@@ -4301,6 +6386,8 @@ export class DynamicAgentTeamGraphRunner {
           },
           maxOutputTokens: 6_000,
           timeoutMs: 300_000,
+          taskClass: "validation_classification",
+          modelTaskCallSite: "commitment_packet.quality_review",
           progress: {
             spanId: `${job.jobId}:${graph.graphId}:commitment-packet-review:${sha256Text(
               packets.map((packet) => packet.packetRef).join("|"),
@@ -4473,7 +6560,7 @@ export class DynamicAgentTeamGraphRunner {
         const reviewByCommitmentId = new Map(
           review.packetReviews.map((packetReview) => [packetReview.commitmentId, packetReview]),
         );
-        const repairedPackets = await mapWithConcurrency(
+        const repairedPacketSettled = await mapWithConcurrencySettled(
           ledger.blockingCommitments.filter((commitment) =>
             repairCommitmentIds.includes(commitment.commitmentId),
           ),
@@ -4486,6 +6573,84 @@ export class DynamicAgentTeamGraphRunner {
                 (reviewByCommitmentId.get(commitment.commitmentId) as unknown as JsonValue) ?? null,
             }),
         );
+        const repairedPacketFailures = repairedPacketSettled.filter(
+          (
+            result,
+          ): result is Extract<(typeof repairedPacketSettled)[number], { status: "rejected" }> =>
+            result.status === "rejected",
+        );
+        for (const failure of repairedPacketFailures) {
+          const failureReason =
+            failure.reason instanceof Error
+              ? bounded(failure.reason.message, 260)
+              : bounded(String(failure.reason), 260);
+          const priorDiagnostics =
+            packetAuthorStates.get(failure.input.commitmentId)?.latestDiagnostics ?? null;
+          const providerDiagnostics: Record<string, JsonValue> =
+            priorDiagnostics &&
+            typeof priorDiagnostics === "object" &&
+            !Array.isArray(priorDiagnostics)
+              ? {
+                  ...(priorDiagnostics as Record<string, JsonValue>),
+                  status: "failed",
+                  terminalLaneErrorReasonCode: failureReason,
+                  rawPromptStored: false,
+                  rawResponseStored: false,
+                  rawProviderLogStored: false,
+                }
+              : {
+                  status: "failed",
+                  errorReasonCode: failureReason,
+                  rawPromptStored: false,
+                  rawResponseStored: false,
+                  rawProviderLogStored: false,
+                };
+          await markPacketAuthorState({
+            commitmentId: failure.input.commitmentId,
+            status: "failed",
+            reasonCodes: [
+              "commitment_packet_repair_lane_failed",
+              `commitment_id:${failure.input.commitmentId}`,
+              `failure:${failureReason}`,
+            ],
+            blockerSummary: `Commitment packet repair failed for ${failure.input.commitmentId}: ${failureReason}`,
+            providerDiagnostics,
+          });
+        }
+        if (repairedPacketFailures.length > 0) {
+          await attachProgress({
+            stage: "commitment_packet_authoring",
+            status: "needs_review",
+            reasonCodes: [
+              "commitment_packet_repair_fanout_failed",
+              `failed_count:${repairedPacketFailures.length}`,
+              ...repairedPacketFailures
+                .map((failure) => `failed_commitment:${failure.input.commitmentId}`)
+                .slice(0, 20),
+            ],
+            currentPhase: "commitment_packet_repair_fanout_failed",
+            currentObjective:
+              "Commitment packet repair must finish every repaired lane before scheduler planning.",
+            packetAuthorFanout: packetAuthorFanoutSummary(),
+            packetAuthorProfile: packetAuthorProfileSummary(),
+            blockerSummary:
+              "One or more packet repair lanes failed after bounded provider retry/rescue; OpenClaw preserved all lane states instead of leaving ambiguous running packets.",
+            eli5Progress:
+              "OpenClaw finished repair fanout accounting and found failed packet lanes that need review before continuing.",
+            schedulerPhase: "commitment_packets_repairing",
+          });
+          throw new Error(
+            `commitment_packet_repair_fanout_failed:${repairedPacketFailures
+              .map((failure) => failure.input.commitmentId)
+              .join(",")}`,
+          );
+        }
+        const repairedPackets = repairedPacketSettled.map((result) => {
+          if (result.status !== "fulfilled") {
+            throw new Error("unreachable_packet_repair_settled_rejected");
+          }
+          return result.value;
+        });
         const repairedByCommitmentId = new Map(
           repairedPackets.map((packet) => [packet.commitmentId, packet]),
         );
@@ -4523,26 +6688,27 @@ export class DynamicAgentTeamGraphRunner {
       const packetArtifactRefs: string[] = [];
       for (const packet of reviewedPackets) {
         const packetArtifactRef = `${packetRef}/${packet.commitmentId}`;
-        const encodedPacket = JSON.stringify(packet);
-        await this.options.runtimeJobs.attachArtifact({
+        await this.options.runtimeJobs.attachRuntimeArtifactByContract({
           jobId: job.jobId,
           artifactType: "execution_platform.commitment_work_packet",
-          storageKind: "metadata",
           uri: packetArtifactRef,
           contentType: "application/json",
-          sizeBytes: Buffer.byteLength(encodedPacket, "utf8"),
-          sha256: sha256Text(encodedPacket),
+          body: packet as unknown as JsonValue,
+          boundedSummary: packet.workerObjective,
+          targetCommitmentIds: [packet.commitmentId],
+          resourcePacketKind: "commitment_work_packet",
+          readinessStatus: packet.qualityStatus,
+          reasonCodes: ["commitment_work_packet_final_persisted_by_contract"],
           metadata: {
             artifactKind: "execution_platform.commitment_work_packet",
             missionId: ledger.missionId,
             packetRef: packet.packetRef,
             packetId: packet.packetId,
             commitmentId: packet.commitmentId,
-            commitmentWorkPacket: packet,
             rawPromptStored: false,
             rawResponseStored: false,
             rawProviderLogStored: false,
-          } as JsonValue,
+          } as Record<string, JsonValue>,
         });
         packetArtifactRefs.push(packetArtifactRef);
       }
@@ -4698,8 +6864,8 @@ export class DynamicAgentTeamGraphRunner {
         .toSorted((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
       const packetsByCommitmentId = new Map<string, CommitmentWorkPacket>();
       for (const artifact of packetArtifacts) {
-        const packetValue = recordValue(artifact.metadata).commitmentWorkPacket;
-        const parsed = CommitmentWorkPacketSchema.safeParse(packetValue);
+        const hydrated = await this.options.runtimeJobs.hydrateRuntimeArtifactByContract(artifact);
+        const parsed = CommitmentWorkPacketSchema.safeParse(hydrated.body);
         if (parsed.success) {
           packetsByCommitmentId.set(parsed.data.commitmentId, parsed.data);
         }
@@ -4743,27 +6909,31 @@ export class DynamicAgentTeamGraphRunner {
       const packetArtifactRefs: string[] = [];
       for (const packet of packets) {
         const packetArtifactRef = `${packetRef}/${packet.commitmentId}`;
-        const encodedPacket = JSON.stringify(packet);
-        await this.options.runtimeJobs.attachArtifact({
+        await this.options.runtimeJobs.attachRuntimeArtifactByContract({
           jobId: job.jobId,
-          artifactType: "execution_platform.commitment_work_packet",
-          storageKind: "metadata",
+          artifactType: "execution_platform.commitment_work_packet.replay",
           uri: packetArtifactRef,
           contentType: "application/json",
-          sizeBytes: Buffer.byteLength(encodedPacket, "utf8"),
-          sha256: sha256Text(encodedPacket),
+          body: packet as unknown as JsonValue,
+          boundedSummary: packet.workerObjective,
+          targetCommitmentIds: [packet.commitmentId],
+          resourcePacketKind: "commitment_work_packet",
+          readinessStatus: packet.qualityStatus,
+          reasonCodes: [
+            "commitment_work_packet_replay_persisted_by_contract",
+            `checkpoint_replay_source_runtime_job:${sourceRuntimeJobId}`,
+          ],
           metadata: {
-            artifactKind: "execution_platform.commitment_work_packet",
+            artifactKind: "execution_platform.commitment_work_packet.replay",
             missionId: ledger.missionId,
             packetRef: packet.packetRef,
             packetId: packet.packetId,
             commitmentId: packet.commitmentId,
-            commitmentWorkPacket: packet,
             replayedFromRuntimeJobId: sourceRuntimeJobId,
             rawPromptStored: false,
             rawResponseStored: false,
             rawProviderLogStored: false,
-          } as JsonValue,
+          } as Record<string, JsonValue>,
         });
         packetArtifactRefs.push(packetArtifactRef);
       }
@@ -4913,6 +7083,8 @@ export class DynamicAgentTeamGraphRunner {
           },
           maxOutputTokens: 8_000,
           timeoutMs: 300_000,
+          taskClass: "validation_classification",
+          modelTaskCallSite: "mission_ledger.evaluate_evidence_claims",
           progress: {
             spanId: `${job.jobId}:${graph.graphId}:mission-evaluation:${repair.attempt}`,
             objectiveSummary: "Evaluate explicit evidence claims against the Mission Ledger.",
@@ -5074,23 +7246,24 @@ export class DynamicAgentTeamGraphRunner {
             "Return strict JSON. The runtime compiler owns executable graph schema, node kinds, executor keys, worker refs, and evidence enums.",
             "Required top-level fields: decisionId, decisionKind, rationaleForDecision, reasonCodes, rawPromptStored, rawResponseStored, rawProviderLogStored, workQueueLifecycleMutated.",
             "Valid decisionKind values include add_nodes, run_node, split_node, retry_node, rerun_role, request_context, request_validation, request_review, request_human_decision, escalate_worker, repair_from_validation, create_closeout, mark_needs_review, mark_blocked.",
-            "For complex add_nodes decisions, provide one stagedScheduler object. The runtime will record each stage as scheduler tools: draft_work_breakdown, review_work_breakdown, shortlist_capabilities_for_work_units, select_capability_for_work_unit, define_node_contract, define_edges_or_parallelism, compile_staged_runtime_graph, review_compiled_graph, accept_staged_graph, approve_and_run_first_node.",
-            "stagedScheduler.workBreakdownUnits contain only model-owned intent: workUnitId, title, objective, commitmentIds, rationale, expectedOutcome, targetRefs.",
+            "For complex add_nodes decisions, provide one stagedScheduler object. The runtime will record each stage as scheduler tools: draft_work_breakdown, review_work_breakdown, shortlist_capabilities_for_work_units, select_capability_for_work_unit, define_node_contract, define_edges_or_parallelism, compile_staged_runtime_graph, review_compiled_graph, accept_staged_graph, evaluate_frontier_readiness, open_executable_frontier.",
+            "stagedScheduler.workBreakdownUnits contain only model-owned intent: workUnitId, title, objective, executionIntent, commitmentIds, rationale, expectedOutcome, targetRefs.",
             "stagedScheduler.capabilitySelectionsForWorkUnits contain only model-owned selection: workUnitId, selectedCapabilityId, consideredCapabilityIds, utilityRationale, costRationale, whyCheaperOptionsWereInsufficient when relevant, whyThisIsNotDuplicateWork, stopOrEscalationCondition, and qualification refs only when the manifest requires them.",
-            "stagedScheduler.nodeContractDrafts contain only worker-facing contract fields: workUnitId, roleRationale, objective, inputRefs, expectedOutput, successCriteria, downstreamConsumer, targetRefs.",
+            "stagedScheduler.nodeContractDrafts contain only worker-facing contract fields: workUnitId, executionIntent, roleRationale, objective, inputRefs, expectedOutput, successCriteria, downstreamConsumer, targetRefs.",
+            "Valid executionIntent values are source_grounding, context_supply, resource_materialization, source_edit, validation, review, docs, readback, closeout, and human_decision. Use source_edit only when changed-file evidence is required; use source_grounding for read-only source/spec inspection; the runtime derives evidenceMode and rejects capability/intent conflicts.",
             "stagedScheduler.edgeOrParallelismDraft must contain dependency/handoff edges using workUnitId refs, or parallelIndependentNodesJustification explaining why the units can run independently.",
             "Do not provide newNodes, selectedCapabilities, graphNodeKind, nodeKind, executorKey, workerRef, requiredMetadataSchemaRef, expectedEvidence, selectedNodeKind, selectedExecutorKey, low-level evidence enums, or canonical node ids for complex add_nodes. The runtime compiler derives those from selectedCapabilityId, Mission Ledger, capability manifest, and workflow evidence profile.",
             "For simple single-commitment jobs only, newNodes or selectedCapabilities are still accepted, but complex missions must use the staged protocol.",
             "For add_nodes, split_node, request_context, request_validation, request_review, request_human_decision, escalate_worker, and rerun_role, include staged work units or at least one concrete node intent.",
             "Set runAfterAdd true only when the node should run immediately after creation; otherwise the scheduler will request another orchestrator decision.",
             "For run_node, retry_node, and repair_from_validation, include runNodeId or targetNodeId.",
-            "Do not confuse a decomposition graph with a fully executable implementation graph. If verified context is required before implementation can be split safely, create a progressive context-acquisition graph first, run the context node, then decompose implementation after context evidence returns.",
-            "For complex missions with accepted CommitmentWorkPackets, the runtime owns per-packet context fanout: it creates one dedicated context_scout per packet and runs the ready frontier in parallel before synthesis. Do not collapse those packets into one broad context_scout. For simple missions without packet fanout, a single concrete context_scout or web_research first move is acceptable. Do not include implementation_complex in the first context-acquisition graph.",
-            "After accepted per-commitment context scouts exist for a complex mission, do not select implementation directly. Create and run a context_synthesis work unit first so the synthesis node maps context handoffs to downstream implementation groups, dependencies, worker fit, and readiness.",
-            "When recentNodeResultSummaries contains a context_synthesis result, treat its contextSynthesis metadata as the authoritative handoff for downstream graph planning. Use the implementationGroups, dependencyMap, parallelismPlan, recommendedCapabilityIds, targetRefs, successCriteria, workerFitRationale, risks, and limitations to build the next implementation/validation/review/readback/closeout graph. Do not ignore this handoff and collapse back to one broad implementation node unless the synthesis itself says the work is unsplittable and you explain why cheaper/scoped workers are insufficient.",
+            "Do not confuse a draft work-intent graph with a fully executable implementation graph. For complex missions with accepted CommitmentWorkPackets, first create draft work units from those packets. The runtime will then attach focused context_scout nodes to implementation-bearing draft nodes before any worker executes.",
+            "Do not create one context_scout per high-level commitment as the default. Commitments are outcome obligations, not always executable work units. Scope context scouts to the scheduler-created work nodes unless a workflow definition explicitly requires broad discovery first.",
+            "Do not make global context_synthesis mandatory. Add a context_synthesis node only when cross-node coordination is actually needed: overlapping file ownership, conflicting scout outputs, shared API/schema decisions, integration ordering, validation-plan conflicts, or evidence dependencies across nodes.",
+            "When recentNodeResultSummaries contains a context_synthesis result, treat it as coordination evidence only. It may inform explicit WorkIntent units, capability choices, dependencies, target refs, success criteria, risks, and limitations, but it must not be transformed directly into implementation/validation/review/readback/closeout executable nodes.",
             "If postSynthesisRoleObligationGuidance is present, every requiredRoleObligation with requiredInNextPostSynthesisGraph true must have one workBreakdownUnit, one capabilitySelectionsForWorkUnits entry using one of that obligation's preferredCapabilityIds when present, and one nodeContractDraft for the same workUnitId. Use validCapabilityIds only when no preferredCapabilityIds exist. Escalation-only capabilities are not first-pass post-synthesis graph choices.",
             "For docs_or_readback after synthesis, prefer observability_readback when it is listed as a valid capability. That obligation is separate from reviewer and closeout.",
-            "Any implementation, validation, review, docs, proof, or closeout node created after context_synthesis must include inputRefs citing the accepted context/synthesis handoff refs, unless you provide a bounded noContextNeededRationale in the node contract metadata.",
+            "Any implementation, validation, review, docs, proof, or closeout node must cite accepted node-scoped context or synthesis refs once those refs exist, unless you provide a bounded noContextNeededRationale in the node contract metadata.",
             "For a full implementation graph, include multiple work units with dependency/handoff edges or an explicit parallel-independent justification.",
             "Use booleans false for rawPromptStored, rawResponseStored, rawProviderLogStored, and workQueueLifecycleMutated.",
             "Do not inject generic proof-shaped nodes. If you cannot choose a concrete next action, mark_needs_review.",
@@ -5134,6 +7307,8 @@ export class DynamicAgentTeamGraphRunner {
           },
           maxOutputTokens: 12_000,
           timeoutMs: 900_000,
+          taskClass: "global_reasoning",
+          modelTaskCallSite: "scheduler.select_next_action",
           progress: {
             spanId: `${job.jobId}:${graph.graphId}:scheduler:${input.iteration}:${input.repairAttempt ?? 0}`,
             objectiveSummary: "Select the next Runtime Work Graph scheduler action.",
@@ -5238,31 +7413,175 @@ export class DynamicAgentTeamGraphRunner {
             }),
           );
         };
-        let prompt = rolePrompt({
-          roleId,
-          objective,
-          graphId: graph.graphId,
-          artifactRefs: artifactRefs.slice(0, 20),
-          changedFileRefs,
-          validationRefs,
-          assignment,
-          workOrder: null,
-          commitmentWorkPackets: nodeCommitmentPackets,
-          repoCandidateFileRefs,
-          boundedRepoContextIndex,
-          sourcePromptContextIndex: roleId === "context_scout" ? sourcePromptContextIndex : null,
-        });
+        let prompt =
+          roleId === "context_scout"
+            ? ""
+            : rolePrompt({
+                roleId,
+                objective,
+                graphId: graph.graphId,
+                artifactRefs: artifactRefs.slice(0, 20),
+                changedFileRefs,
+                validationRefs,
+                assignment,
+                workOrder: null,
+                commitmentWorkPackets: nodeCommitmentPackets,
+                repoCandidateFileRefs,
+                boundedRepoContextIndex,
+                sourcePromptContextIndex: null,
+              });
+        let contextScoutExecutionPacketResult: ContextScoutExecutionPacketCompileResult | null =
+          null;
         const roleModelAttemptReasonCodes: string[] = [];
         let response: AgentTeamModelClientResult | null = null;
         let selectedPolicy = policy;
+        if (roleId === "context_scout") {
+          contextScoutExecutionPacketResult = compileContextScoutExecutionPacket({
+            runtimeJobId: job.jobId,
+            workflowId: graph.workflowId,
+            graphId: graph.graphId,
+            nodeId: node.nodeId,
+            targetNodeIds: metadataStringArray(metadata, "targetNodeIds"),
+            targetCommitmentIds: nodeCommitmentIds,
+            objectiveSummary: objective,
+            nodeObjective:
+              typeof metadata.exactObjective === "string" ? metadata.exactObjective : assignment,
+            downstreamConsumer: "implementation_and_validation",
+            contextBrokerRequest: contextScoutBrokerRequestSummaryFromMetadata(metadata),
+            commitmentWorkPackets: nodeCommitmentPackets,
+            sourcePromptContextIndex,
+            boundedRepoContextIndex,
+            candidateFileRefs: repoCandidateFileRefs,
+            validationCommandRefs: objectiveScope.approvedValidationCommands,
+            nodeBudgetMs: ROLE_MODEL_CALL_TIMEOUT_MS,
+            requestedTimeoutMs: deriveContextScoutProviderTimeoutMs({
+              nodeBudgetMs: ROLE_MODEL_CALL_TIMEOUT_MS,
+            }).timeoutMs,
+          });
+          prompt = contextScoutExecutionPacketResult.prompt;
+          await this.options.runtimeJobs.attachRuntimeArtifactByContract({
+            jobId: job.jobId,
+            artifactType: CONTEXT_SCOUT_EXECUTION_PACKET_ARTIFACT_TYPE,
+            uri: contextScoutExecutionPacketResult.packet.packetRef,
+            contentType: "application/json",
+            body: contextScoutExecutionPacketResult.packet as unknown as JsonValue,
+            boundedSummary: contextScoutExecutionPacketResult.packet.nodeObjective,
+            targetCommitmentIds: contextScoutExecutionPacketResult.packet.targetCommitmentIds,
+            targetNodeIds: [contextScoutExecutionPacketResult.packet.nodeId],
+            resourcePacketKind: "context_scout_execution_packet",
+            readinessStatus: contextScoutExecutionPacketResult.packet.status,
+            reasonCodes: [
+              "context_scout_execution_packet_persisted_by_contract",
+              ...contextScoutExecutionPacketResult.reasonCodes.slice(0, 12),
+            ],
+            metadata: contextScoutExecutionPacketMetadata(
+              contextScoutExecutionPacketResult.packet,
+            ) as Record<string, JsonValue>,
+          });
+          artifactRefs.push(contextScoutExecutionPacketResult.packet.packetRef);
+          await invokeContextScoutTool({
+            toolId: "context_scout.build_execution_packet",
+            idempotencyKey: `${node.nodeId}:context-scout-build-execution-packet`,
+            inputRef: contextScoutExecutionPacketResult.packet.packetRef,
+            inputSummary: "Compile bounded context scout execution packet before model call.",
+            metadata: contextScoutExecutionPacketMetadata(contextScoutExecutionPacketResult.packet),
+          });
+          await invokeContextScoutTool({
+            toolId: "context_scout.request_repo_context",
+            idempotencyKey: `${node.nodeId}:context-scout-request-repo-context`,
+            inputRef: contextScoutExecutionPacketResult.packet.packetRef,
+            inputSummary: "Request bounded repo context refs for context scout execution.",
+            metadata: {
+              packetRef: contextScoutExecutionPacketResult.packet.packetRef,
+              candidateFileRefs: repoCandidateFileRefs.slice(0, 80),
+              boundedRepoContextRefs: boundedRepoContextIndex
+                .map((entry) => entry.fileRef)
+                .slice(0, 80),
+              status: contextScoutExecutionPacketResult.status,
+              reasonCodes: contextScoutExecutionPacketResult.reasonCodes,
+              rawPromptStored: false,
+              rawResponseStored: false,
+              rawProviderLogStored: false,
+            } as JsonValue,
+          });
+          if (contextScoutExecutionPacketResult.status === "blocked") {
+            await invokeContextScoutTool({
+              toolId: "context_scout.classify_context_blocker",
+              idempotencyKey: `${node.nodeId}:context-scout-execution-packet-blocked`,
+              inputRef: contextScoutExecutionPacketResult.packet.packetRef,
+              inputSummary: "Context scout execution packet exceeds bounded model-task policy.",
+              metadata: contextScoutExecutionPacketMetadata(
+                contextScoutExecutionPacketResult.packet,
+              ),
+            });
+            await attachProgress({
+              stage: "context_scout_execution_packet",
+              status: "needs_review",
+              roleId,
+              nodeId: node.nodeId,
+              artifactRefs: [contextScoutExecutionPacketResult.packet.packetRef],
+              reasonCodes: contextScoutExecutionPacketResult.reasonCodes,
+              currentPhase: "context_scout_execution_packet_blocked",
+              schedulerPhase: "context_supply",
+              currentObjective:
+                typeof metadata.exactObjective === "string" ? metadata.exactObjective : assignment,
+              activeNodeKind: node.nodeKind,
+              modelRef: selectedPolicy.modelId,
+              targetRefs: roleTargetRefs,
+              inputHandoffRefs: node.inputHandoffRefs,
+              evidenceProducedRefs: [contextScoutExecutionPacketResult.packet.packetRef],
+              contextScoutExecutionPacketRefs: [contextScoutExecutionPacketResult.packet.packetRef],
+              contextScoutExecutionPacketInputBytes:
+                contextScoutExecutionPacketResult.packet.estimatedPromptBytes,
+              contextScoutExecutionPacketMaxInputBytes:
+                contextScoutExecutionPacketResult.packet.maxInputBytes,
+              contextScoutProviderTimeoutMs:
+                contextScoutExecutionPacketResult.packet.providerTimeoutMs,
+              contextScoutPacketCompileStatus: contextScoutExecutionPacketResult.packet.status,
+              contextScoutPacketCompileReasonCodes:
+                contextScoutExecutionPacketResult.packet.reasonCodes,
+              nextDecisionNeeded: "scheduler_context_repair",
+              openContextBlockers: contextScoutExecutionPacketResult.reasonCodes,
+              blockerSummary:
+                "Context scout execution packet could not be compiled within model-task bounds.",
+              eli5Progress:
+                "OpenClaw did not call the context scout model because the bounded packet failed runtime policy first.",
+            });
+            return {
+              status: "needs_review",
+              outputArtifactRefs: [contextScoutExecutionPacketResult.packet.packetRef],
+              reasonCodes: contextScoutExecutionPacketResult.reasonCodes,
+              rawPromptStored: false,
+              rawResponseStored: false,
+              rawProviderLogStored: false,
+              workQueueLifecycleMutated: false,
+            };
+          }
+        }
         const roleModelCallWithProgress = async (input: {
           candidate: RoleModelPolicy;
           promptText: string;
           phase: string;
           attemptIndex: number;
+          timeoutMs?: number;
         }): Promise<AgentTeamModelClientResult> => {
           const startedMs = Date.now();
-          const timeoutMs = ROLE_MODEL_CALL_TIMEOUT_MS;
+          const taskClass: ModelTaskClass =
+            roleId === "implementation_engineer"
+              ? "implementation_patch"
+              : roleId === "test_engineer" || roleId === "reviewer"
+                ? "validation_classification"
+                : "local_semantic_extraction";
+          const taskPolicy = modelTaskPolicyFor(taskClass);
+          const timeoutMs = Math.max(
+            1,
+            Math.min(
+              input.timeoutMs ?? ROLE_MODEL_CALL_TIMEOUT_MS,
+              taskClass === "local_semantic_extraction"
+                ? taskPolicy.timeoutMs
+                : ROLE_MODEL_CALL_TIMEOUT_MS,
+            ),
+          );
           const roleModelSpanId = `${job.jobId}:${graph.graphId}:${node.nodeId}:${roleId}:${input.phase}:${input.attemptIndex}`;
           const roleModelInputHash = `sha256:${sha256Text(
             stringifyJson({
@@ -5296,6 +7615,30 @@ export class DynamicAgentTeamGraphRunner {
             contextScoutRuntimeToolInvocationRefs:
               roleId === "context_scout"
                 ? contextScoutRuntimeToolsForRole.map((tool) => tool.invocationRef)
+                : [],
+            contextScoutExecutionPacketRefs:
+              roleId === "context_scout" && contextScoutExecutionPacketResult
+                ? [contextScoutExecutionPacketResult.packet.packetRef]
+                : [],
+            contextScoutExecutionPacketInputBytes:
+              roleId === "context_scout" && contextScoutExecutionPacketResult
+                ? contextScoutExecutionPacketResult.packet.estimatedPromptBytes
+                : null,
+            contextScoutExecutionPacketMaxInputBytes:
+              roleId === "context_scout" && contextScoutExecutionPacketResult
+                ? contextScoutExecutionPacketResult.packet.maxInputBytes
+                : null,
+            contextScoutProviderTimeoutMs:
+              roleId === "context_scout" && contextScoutExecutionPacketResult
+                ? contextScoutExecutionPacketResult.packet.providerTimeoutMs
+                : null,
+            contextScoutPacketCompileStatus:
+              roleId === "context_scout" && contextScoutExecutionPacketResult
+                ? contextScoutExecutionPacketResult.packet.status
+                : null,
+            contextScoutPacketCompileReasonCodes:
+              roleId === "context_scout" && contextScoutExecutionPacketResult
+                ? contextScoutExecutionPacketResult.packet.reasonCodes
                 : [],
           };
           await attachProgress({
@@ -5358,6 +7701,8 @@ export class DynamicAgentTeamGraphRunner {
                 maxTokens: input.candidate.maxTokens,
                 timeoutMs,
                 maxAttempts: 1,
+                taskClass,
+                modelTaskCallSite: `dynamic_coding_team.role.${roleId}.${input.phase}`,
               }),
               timeoutResult,
             ]);
@@ -5507,25 +7852,52 @@ export class DynamicAgentTeamGraphRunner {
                 : "OpenClaw could not find verified repo files for this scout node, so implementation must stay blocked.",
           });
         }
-        for (const [candidateIndex, candidate] of modelCandidates.entries()) {
+        role_model_candidates: for (const [
+          candidateIndex,
+          candidate,
+        ] of modelCandidates.entries()) {
           selectedPolicy = candidate;
-          response = await roleModelCallWithProgress({
-            candidate,
-            promptText: prompt,
-            phase: "primary_role_output",
-            attemptIndex: candidateIndex,
-          });
-          if (response.status === "succeeded" && response.responseHash) {
-            if (candidateIndex > 0) {
-              roleModelAttemptReasonCodes.push("role_model_fallback_succeeded");
+          const sameCandidateAttemptLimit = roleId === "context_scout" ? 2 : 1;
+          for (
+            let sameCandidateAttemptIndex = 0;
+            sameCandidateAttemptIndex < sameCandidateAttemptLimit;
+            sameCandidateAttemptIndex += 1
+          ) {
+            response = await roleModelCallWithProgress({
+              candidate,
+              promptText: prompt,
+              phase: "primary_role_output",
+              attemptIndex: candidateIndex * 10 + sameCandidateAttemptIndex,
+              timeoutMs:
+                roleId === "context_scout" && contextScoutExecutionPacketResult
+                  ? contextScoutExecutionPacketResult.packet.providerTimeoutMs
+                  : undefined,
+            });
+            if (response.status === "succeeded" && response.responseHash) {
+              if (candidateIndex > 0) {
+                roleModelAttemptReasonCodes.push("role_model_fallback_succeeded");
+              }
+              if (sameCandidateAttemptIndex > 0) {
+                roleModelAttemptReasonCodes.push("role_model_same_candidate_retry_succeeded");
+              }
+              break role_model_candidates;
             }
-            break;
+            roleModelAttemptReasonCodes.push(
+              `role_model_attempt_failed:${candidate.candidateId}:attempt_${sameCandidateAttemptIndex + 1}:${response.errorReasonCode ?? "unknown"}`,
+            );
+            if (
+              !roleModelFailureIsRetryable(response) ||
+              sameCandidateAttemptIndex >= sameCandidateAttemptLimit - 1
+            ) {
+              break;
+            }
+            roleModelAttemptReasonCodes.push(
+              `role_model_same_candidate_retry_selected:${candidate.candidateId}:attempt_${sameCandidateAttemptIndex + 2}`,
+            );
           }
-          roleModelAttemptReasonCodes.push(
-            `role_model_attempt_failed:${candidate.candidateId}:${response.errorReasonCode ?? "unknown"}`,
-          );
           if (
             candidateIndex === modelCandidates.length - 1 ||
+            !response ||
             !roleModelFailureIsRetryable(response)
           ) {
             break;
@@ -5559,6 +7931,22 @@ export class DynamicAgentTeamGraphRunner {
               contextScoutCommitmentWorkPacketRefs: nodeCommitmentPackets
                 .map((packet) => packet.packetRef)
                 .slice(0, 24),
+              contextScoutExecutionPacketRef:
+                roleId === "context_scout" && contextScoutExecutionPacketResult
+                  ? contextScoutExecutionPacketResult.packet.packetRef
+                  : null,
+              contextScoutExecutionPacketInputBytes:
+                roleId === "context_scout" && contextScoutExecutionPacketResult
+                  ? contextScoutExecutionPacketResult.packet.estimatedPromptBytes
+                  : null,
+              contextScoutExecutionPacketMaxInputBytes:
+                roleId === "context_scout" && contextScoutExecutionPacketResult
+                  ? contextScoutExecutionPacketResult.packet.maxInputBytes
+                  : null,
+              contextScoutProviderTimeoutMs:
+                roleId === "context_scout" && contextScoutExecutionPacketResult
+                  ? contextScoutExecutionPacketResult.packet.providerTimeoutMs
+                  : null,
               rawPromptStored: false,
               rawResponseStored: false,
               rawProviderLogStored: false,
@@ -5593,6 +7981,22 @@ export class DynamicAgentTeamGraphRunner {
               roleId === "context_scout"
                 ? contextScoutRuntimeToolsForRole.map((tool) => tool.invocationRef)
                 : [],
+            contextScoutExecutionPacketRefs:
+              roleId === "context_scout" && contextScoutExecutionPacketResult
+                ? [contextScoutExecutionPacketResult.packet.packetRef]
+                : [],
+            contextScoutExecutionPacketInputBytes:
+              roleId === "context_scout" && contextScoutExecutionPacketResult
+                ? contextScoutExecutionPacketResult.packet.estimatedPromptBytes
+                : null,
+            contextScoutExecutionPacketMaxInputBytes:
+              roleId === "context_scout" && contextScoutExecutionPacketResult
+                ? contextScoutExecutionPacketResult.packet.maxInputBytes
+                : null,
+            contextScoutProviderTimeoutMs:
+              roleId === "context_scout" && contextScoutExecutionPacketResult
+                ? contextScoutExecutionPacketResult.packet.providerTimeoutMs
+                : null,
             openContextBlockers:
               roleId === "context_scout"
                 ? [response?.errorReasonCode ?? "unknown", ...roleModelAttemptReasonCodes]
@@ -5764,27 +8168,52 @@ export class DynamicAgentTeamGraphRunner {
               eli5Progress:
                 "Context scout requested specific prompt sections, and OpenClaw provided bounded excerpts without storing the raw prompt.",
             });
-            prompt = rolePrompt({
-              roleId,
-              objective,
+            contextScoutExecutionPacketResult = compileContextScoutExecutionPacket({
+              runtimeJobId: job.jobId,
+              workflowId: graph.workflowId,
               graphId: graph.graphId,
-              artifactRefs: artifactRefs.slice(0, 20),
-              changedFileRefs,
-              validationRefs,
-              assignment,
-              workOrder: null,
+              nodeId: node.nodeId,
+              targetNodeIds: metadataStringArray(metadata, "targetNodeIds"),
+              targetCommitmentIds: nodeCommitmentIds,
+              objectiveSummary: objective,
+              nodeObjective:
+                typeof metadata.exactObjective === "string" ? metadata.exactObjective : assignment,
+              downstreamConsumer: "implementation_and_validation",
+              contextBrokerRequest: contextScoutBrokerRequestSummaryFromMetadata(metadata),
               commitmentWorkPackets: nodeCommitmentPackets,
-              repoCandidateFileRefs,
-              boundedRepoContextIndex,
               sourcePromptContextIndex,
               sourcePromptExcerptDecisions: sourcePromptExcerptDecisionsForRole,
-              volatileSourcePromptExcerpts: volatileSourcePromptExcerptsForRole,
+              boundedRepoContextIndex,
+              candidateFileRefs: repoCandidateFileRefs,
+              validationCommandRefs: objectiveScope.approvedValidationCommands,
+              nodeBudgetMs: ROLE_MODEL_CALL_TIMEOUT_MS,
+            });
+            prompt = contextScoutExecutionPacketResult.prompt;
+            await this.options.runtimeJobs.attachRuntimeArtifactByContract({
+              jobId: job.jobId,
+              artifactType: CONTEXT_SCOUT_EXECUTION_PACKET_ARTIFACT_TYPE,
+              uri: contextScoutExecutionPacketResult.packet.packetRef,
+              contentType: "application/json",
+              body: contextScoutExecutionPacketResult.packet as unknown as JsonValue,
+              boundedSummary: contextScoutExecutionPacketResult.packet.nodeObjective,
+              targetCommitmentIds: contextScoutExecutionPacketResult.packet.targetCommitmentIds,
+              targetNodeIds: [contextScoutExecutionPacketResult.packet.nodeId],
+              resourcePacketKind: "context_scout_execution_packet",
+              readinessStatus: contextScoutExecutionPacketResult.packet.status,
+              reasonCodes: [
+                "context_scout_execution_packet_excerpt_turn_persisted_by_contract",
+                ...contextScoutExecutionPacketResult.reasonCodes.slice(0, 12),
+              ],
+              metadata: contextScoutExecutionPacketMetadata(
+                contextScoutExecutionPacketResult.packet,
+              ) as Record<string, JsonValue>,
             });
             const secondResponse = await roleModelCallWithProgress({
               candidate: selectedPolicy,
               promptText: prompt,
               phase: "context_scout_excerpt_second_turn",
               attemptIndex: 0,
+              timeoutMs: contextScoutExecutionPacketResult.packet.providerTimeoutMs,
             });
             if (secondResponse.status === "succeeded" && secondResponse.responseHash) {
               response = secondResponse;
@@ -5848,40 +8277,35 @@ export class DynamicAgentTeamGraphRunner {
           }) ||
             handoffSubstanceRepair.needsRepair)
         ) {
-          const repairPrompt = rolePrompt({
-            roleId,
-            objective,
-            graphId: graph.graphId,
-            artifactRefs: artifactRefs.slice(0, 20),
-            changedFileRefs,
-            validationRefs,
-            assignment,
-            workOrder: null,
-            commitmentWorkPackets: nodeCommitmentPackets,
-            repoCandidateFileRefs,
-            boundedRepoContextIndex,
-            sourcePromptContextIndex,
-            sourcePromptExcerptDecisions: sourcePromptExcerptDecisionsForRole,
-            volatileSourcePromptExcerpts: volatileSourcePromptExcerptsForRole,
-            contextScoutRepairDirective: {
-              failedReasonCodes: [
-                ...(groundedContextScout?.reasonCodes ?? []),
-                ...(contextScoutShape?.reasonCodes ?? []),
-                ...handoffSubstanceRepair.reasonCodes,
-              ].slice(0, 16),
-              missingFieldPaths: handoffSubstanceRepair.missingFieldPaths,
-              rejectedRefs: [
-                ...new Set([
-                  ...(groundedContextScout?.output.relevantFiles ?? []).map((file) => file.path),
-                  ...(groundedContextScout?.output.recommendedEditPoints ?? []).map(
-                    (point) => point.path,
-                  ),
-                ]),
-              ].slice(0, 24),
-              requiredAction:
-                "Return corrected context_scout JSON using exact boundedRepoContextIndex fileRef values for relevantFiles and recommendedEditPoints, and add concrete model-authored handoff substance in handoffSummaryForImplementation, existingPatterns, risks, validationSuggestions, and recommendedEditPoints. If you cannot, request exact bounded context instead of returning generic file refs.",
-            },
-          });
+          const repairDirective = {
+            failedReasonCodes: [
+              ...(groundedContextScout?.reasonCodes ?? []),
+              ...(contextScoutShape?.reasonCodes ?? []),
+              ...handoffSubstanceRepair.reasonCodes,
+            ].slice(0, 16),
+            missingFieldPaths: handoffSubstanceRepair.missingFieldPaths,
+            rejectedRefs: [
+              ...new Set([
+                ...(groundedContextScout?.output.relevantFiles ?? []).map((file) => file.path),
+                ...(groundedContextScout?.output.recommendedEditPoints ?? []).map(
+                  (point) => point.path,
+                ),
+              ]),
+            ].slice(0, 24),
+            requiredAction:
+              "Return corrected context_scout JSON using exact boundedRepoContextRefs fileRef values for relevantFiles and recommendedEditPoints, and add concrete model-authored handoff substance in handoffSummaryForImplementation, existingPatterns, risks, validationSuggestions, and recommendedEditPoints. If you cannot, request exact bounded context instead of returning generic file refs.",
+            rawPromptStored: false,
+            rawResponseStored: false,
+            rawProviderLogStored: false,
+          };
+          const repairPrompt = [
+            contextScoutExecutionPacketResult
+              ? buildContextScoutPromptFromExecutionPacket(contextScoutExecutionPacketResult.packet)
+              : prompt,
+            "REPAIR TURN: The prior context scout output failed bounded grounding or handoff-substance checks.",
+            "Fix only the listed fields. Do not rewrite the runtime packet. Return only the required context_scout JSON shape.",
+            JSON.stringify(repairDirective),
+          ].join("\n\n");
           await invokeContextScoutTool({
             toolId: "context_scout.request_repair",
             idempotencyKey: `${node.nodeId}:context-scout-grounding-repair-request`,
@@ -5909,6 +8333,7 @@ export class DynamicAgentTeamGraphRunner {
             promptText: repairPrompt,
             phase: "context_scout_grounding_repair",
             attemptIndex: 0,
+            timeoutMs: contextScoutExecutionPacketResult?.packet.providerTimeoutMs,
           });
           if (repairResponse.status === "succeeded" && repairResponse.responseHash) {
             const repairedOutput = parseContextScoutOutput({
@@ -6008,6 +8433,16 @@ export class DynamicAgentTeamGraphRunner {
         if (effectiveGroundedContextScout?.verifiedFileRefs.length) {
           verifiedContextFileRefs.push(...effectiveGroundedContextScout.verifiedFileRefs);
         }
+        if (roleId === "context_scout" && effectiveContextScoutOutput) {
+          contextScoutFileChangeIntents.push(
+            ...effectiveContextScoutOutput.recommendedEditPoints.map((point) => ({
+              fileRef: bounded(point.path, 260),
+              symbolOrRegion: bounded(point.symbolOrRegion, 260),
+              intendedChange: bounded(point.reason, 900),
+              whyThisFile: bounded(point.reason, 900),
+            })),
+          );
+        }
         const contextScoutSymbolRefs =
           roleId === "context_scout" && effectiveContextScoutOutput
             ? [
@@ -6084,13 +8519,37 @@ export class DynamicAgentTeamGraphRunner {
           ? `runtime-job://${job.jobId}/context-handoff/${contextHandoffPacket.packetId}`
           : null;
         if (contextHandoffPacket && contextHandoffPacketRef) {
-          await this.options.runtimeJobs.attachArtifact({
+          await this.options.runtimeJobs.attachRuntimeArtifactByContract({
             jobId: job.jobId,
             artifactType: "execution_platform.context_handoff_packet",
-            storageKind: "metadata",
             uri: contextHandoffPacketRef,
             contentType: "application/json",
-            metadata: contextHandoffPacket as unknown as JsonValue,
+            body: contextHandoffPacket as unknown as JsonValue,
+            boundedSummary: contextHandoffPacket.handoffSummaryForImplementation,
+            targetCommitmentIds: contextHandoffPacket.targetCommitmentIds,
+            targetNodeIds: [contextHandoffPacket.sourceNodeId],
+            resourcePacketKind: "context_handoff_packet",
+            readinessStatus: "accepted",
+            reasonCodes: ["context_handoff_packet_persisted_by_contract"],
+            metadata: {
+              artifactKind: "execution_platform.context_handoff_packet",
+              packetId: contextHandoffPacket.packetId,
+              packetRef: contextHandoffPacket.packetRef,
+              sourceNodeId: contextHandoffPacket.sourceNodeId,
+              nodeId: contextHandoffPacket.sourceNodeId,
+              commitmentWorkPacketRefs: contextHandoffPacket.commitmentWorkPacketRefs.slice(0, 40),
+              relevantFileRefs: contextHandoffPacket.relevantFileRefs.slice(0, 40),
+              recommendedEditPoints: contextHandoffPacket.recommendedEditPoints.slice(0, 24),
+              limitations: contextHandoffPacket.limitations.slice(0, 12),
+              handoffSummaryForImplementation: bounded(
+                contextHandoffPacket.handoffSummaryForImplementation,
+                1_200,
+              ),
+              targetCommitmentIds: contextHandoffPacket.targetCommitmentIds,
+              rawPromptStored: false,
+              rawResponseStored: false,
+              rawProviderLogStored: false,
+            },
           });
           contextHandoffPacketRefs.push(contextHandoffPacketRef);
           artifactRefs.push(contextHandoffPacketRef);
@@ -6554,7 +9013,7 @@ export class DynamicAgentTeamGraphRunner {
           storageKind: "metadata",
           uri: roleArtifactRef,
           contentType: "application/json",
-          metadata: {
+          metadata: boundedSchedulerRoleInvocationMetadata({
             roleId,
             nodeId: node.nodeId,
             graphId: graph.graphId,
@@ -6563,23 +9022,21 @@ export class DynamicAgentTeamGraphRunner {
             contextScoutShape: finalContextScoutShape,
             contextHandoffPacketRef,
             contextScoutToolLoopRef,
-            contextScoutToolLoopSummary: contextScoutToolLoopRun
-              ? summarizeContextScoutToolLoopRun(contextScoutToolLoopRun)
-              : null,
-            sourcePromptExcerptDecisionRefs: sourcePromptExcerptDecisionRefs.slice(-8),
-            contextScoutGrounding: effectiveGroundedContextScout
-              ? {
-                  verifiedFileRefs: effectiveGroundedContextScout.verifiedFileRefs,
-                  reasonCodes: effectiveGroundedContextScout.reasonCodes,
-                  candidateFileRefCount: repoCandidateFileRefs.length,
-                  rawPromptStored: false,
-                  rawResponseStored: false,
-                }
-              : null,
-            rawPromptStored: false,
-            rawResponseStored: false,
-            rawProviderLogStored: false,
-          } as unknown as JsonValue,
+            contextScoutToolLoopRun,
+            contextScoutExecutionPacketRef:
+              roleId === "context_scout" && contextScoutExecutionPacketResult
+                ? contextScoutExecutionPacketResult.packet.packetRef
+                : null,
+            contextScoutExecutionPacketSummary:
+              roleId === "context_scout" && contextScoutExecutionPacketResult
+                ? contextScoutExecutionPacketMetadata(contextScoutExecutionPacketResult.packet)
+                : null,
+            sourcePromptExcerptDecisionRefs,
+            verifiedFileRefs: effectiveGroundedContextScout?.verifiedFileRefs ?? [],
+            groundingReasonCodes: effectiveGroundedContextScout?.reasonCodes ?? [],
+            candidateFileRefCount: repoCandidateFileRefs.length,
+            responseHash: finalRoleResponseHash,
+          }),
         });
         const invocation = await this.options.runtimeWorkGraphs.recordRoleInvocation({
           graphId: graph.graphId,
@@ -6649,6 +9106,30 @@ export class DynamicAgentTeamGraphRunner {
           contextScoutRuntimeToolInvocationRefs: contextScoutRuntimeToolsForRole.map(
             (tool) => tool.invocationRef,
           ),
+          contextScoutExecutionPacketRefs:
+            roleId === "context_scout" && contextScoutExecutionPacketResult
+              ? [contextScoutExecutionPacketResult.packet.packetRef]
+              : [],
+          contextScoutExecutionPacketInputBytes:
+            roleId === "context_scout" && contextScoutExecutionPacketResult
+              ? contextScoutExecutionPacketResult.packet.estimatedPromptBytes
+              : null,
+          contextScoutExecutionPacketMaxInputBytes:
+            roleId === "context_scout" && contextScoutExecutionPacketResult
+              ? contextScoutExecutionPacketResult.packet.maxInputBytes
+              : null,
+          contextScoutProviderTimeoutMs:
+            roleId === "context_scout" && contextScoutExecutionPacketResult
+              ? contextScoutExecutionPacketResult.packet.providerTimeoutMs
+              : null,
+          contextScoutPacketCompileStatus:
+            roleId === "context_scout" && contextScoutExecutionPacketResult
+              ? contextScoutExecutionPacketResult.packet.status
+              : null,
+          contextScoutPacketCompileReasonCodes:
+            roleId === "context_scout" && contextScoutExecutionPacketResult
+              ? contextScoutExecutionPacketResult.packet.reasonCodes
+              : [],
           contextScoutRejectedRefs:
             contextScoutToolLoopRun?.rejectedRefs.map((ref) => ref.ref) ?? [],
           contextScoutSufficiencySummary:
@@ -6714,13 +9195,27 @@ export class DynamicAgentTeamGraphRunner {
         const commitmentIds = metadataStringArray(metadata, "commitmentIdsAdvanced");
         const contextScoutLoopValidation =
           roleId === "context_scout"
-            ? validateContextScoutToolLoopForImplementation(contextScoutToolLoopRun)
+            ? validateContextScoutToolLoopForImplementation(contextScoutToolLoopRun, {
+                consumerNodeId:
+                  typeof metadata.downstreamConsumerNodeId === "string"
+                    ? metadata.downstreamConsumerNodeId
+                    : undefined,
+                workUnitId:
+                  typeof metadata.workUnitId === "string"
+                    ? metadata.workUnitId
+                    : typeof metadata.sourceWorkUnitId === "string"
+                      ? metadata.sourceWorkUnitId
+                      : undefined,
+              })
             : { valid: true, reasonCodes: [] };
         const contextScoutGroundingFailed =
           roleId === "context_scout" && !contextScoutLoopValidation.valid;
         return {
           status: contextScoutGroundingFailed ? "needs_review" : "succeeded",
           outputArtifactRefs: [
+            ...(roleId === "context_scout" && contextScoutExecutionPacketResult
+              ? [contextScoutExecutionPacketResult.packet.packetRef]
+              : []),
             roleArtifactRef,
             graphRef("role-invocation", invocation.invocationId),
             ...(contextHandoffPacketRef ? [contextHandoffPacketRef] : []),
@@ -6775,7 +9270,7 @@ export class DynamicAgentTeamGraphRunner {
           roleId: "context_synthesis",
           nodeId: node.nodeId,
           currentObjective:
-            "Synthesize accepted per-commitment context handoffs into a dependency-aware implementation graph.",
+            "Synthesize accepted node-scoped context handoffs only when cross-node coordination is required.",
           activeNodeKind: "context_synthesis",
           inputHandoffRefs: node.inputHandoffRefs,
           commitmentIdsAdvanced: metadataStringArray(
@@ -6825,7 +9320,7 @@ export class DynamicAgentTeamGraphRunner {
           nodeId: node.nodeId,
           commitmentIds: sourceCommitmentIds,
           scopeSummary:
-            "Accepted per-commitment context handoff refs consumed by the context synthesis barrier.",
+            "Accepted context handoff refs consumed by the explicit context synthesis coordination node.",
         });
         const acceptedContextScoutNodeSummaries = snapshotSummary.nodeSummaries
           .filter((summary) => summary.nodeKind === "context_scout")
@@ -7011,6 +9506,8 @@ export class DynamicAgentTeamGraphRunner {
           } as JsonValue,
           maxOutputTokens: 4_000,
           timeoutMs: Math.min(ROLE_MODEL_CALL_TIMEOUT_MS, 300_000),
+          taskClass: "global_reasoning",
+          modelTaskCallSite: "context_synthesis.global_reasoning_core",
           progress: {
             spanId: `${job.jobId}:${graph.graphId}:${node.nodeId}:context-synthesis-core`,
             objectiveSummary:
@@ -7128,6 +9625,8 @@ export class DynamicAgentTeamGraphRunner {
               } as unknown as JsonValue,
               maxOutputTokens: 2_000,
               timeoutMs: Math.min(ROLE_MODEL_CALL_TIMEOUT_MS, 180_000),
+              taskClass: "schema_normalization",
+              modelTaskCallSite: "context_synthesis.group_guidance_field_repair",
               progress: {
                 spanId: `${job.jobId}:${graph.graphId}:${node.nodeId}:context-synthesis-group-guidance-repair`,
                 objectiveSummary:
@@ -7426,6 +9925,8 @@ export class DynamicAgentTeamGraphRunner {
                 maxTokens: 4_000,
                 timeoutMs: Math.min(ROLE_MODEL_CALL_TIMEOUT_MS, 180_000),
                 maxAttempts: 1,
+                taskClass: "local_semantic_extraction",
+                modelTaskCallSite: "context_synthesis.group_expansion",
               });
             } finally {
               clearInterval(heartbeat);
@@ -7440,6 +9941,15 @@ export class DynamicAgentTeamGraphRunner {
                   inputByteLength: Buffer.byteLength(expansionPrompt, "utf8"),
                   startedAtMs: expansionStartedMs,
                   completedAtMs: Date.now(),
+                  maxOutputTokens: 4_000,
+                  timeoutMs: Math.min(ROLE_MODEL_CALL_TIMEOUT_MS, 180_000),
+                  authoringPhase: "context_synthesis_group_expansion",
+                  responseFormatSent: "prompt_only",
+                  reasoningModeSent: "none",
+                  inputBundleRef: `runtime-job://${job.jobId}/context-synthesis-group-input/${node.nodeId}/${groupId}`,
+                  inputBundleHash: `sha256:${sha256Text(expansionPrompt)}`,
+                  concurrencySlot: String(groupIndex),
+                  retryNumber: 0,
                 })
               : ({
                   modelRef: expansionModelRef,
@@ -8352,6 +10862,9 @@ export class DynamicAgentTeamGraphRunner {
               metadata: {
                 capabilityId: "implementation_microtask",
                 selectedCapabilityId: "implementation_microtask",
+                executionIntent: "source_edit",
+                evidenceMode: ["changed_file_evidence", "validation_evidence"],
+                runtimeCompiledEvidenceMode: ["changed_file_evidence", "validation_evidence"],
                 validationRepair: true,
                 failedValidationNodeId: node.nodeId,
                 failedValidationRefs: failedRefs.slice(0, 20),
@@ -8601,13 +11114,54 @@ export class DynamicAgentTeamGraphRunner {
           nodeId: node.nodeId,
         });
         const metadata = recordValue(node.metadata);
+        const metadataFileChangeIntents = Array.isArray(metadata.fileChangeIntents)
+          ? metadata.fileChangeIntents
+              .filter((item): item is Record<string, unknown> =>
+                Boolean(item && typeof item === "object" && !Array.isArray(item)),
+              )
+              .map((item) => ({
+                fileRef:
+                  typeof item.fileRef === "string"
+                    ? item.fileRef
+                    : typeof item.path === "string"
+                      ? item.path
+                      : "",
+                symbolOrRegion:
+                  typeof item.symbolOrRegion === "string"
+                    ? item.symbolOrRegion
+                    : "model_authored_group_scope",
+                intendedChange:
+                  typeof item.intendedChange === "string"
+                    ? item.intendedChange
+                    : typeof item.changeIntent === "string"
+                      ? item.changeIntent
+                      : "",
+                whyThisFile:
+                  typeof item.whyThisFile === "string"
+                    ? item.whyThisFile
+                    : typeof item.rationale === "string"
+                      ? item.rationale
+                      : typeof item.intendedChange === "string"
+                        ? item.intendedChange
+                        : "",
+              }))
+              .filter(
+                (item) =>
+                  item.fileRef.trim() && item.intendedChange.trim() && item.whyThisFile.trim(),
+              )
+              .slice(0, 40)
+          : [];
+        const implementationFileChangeIntents = [
+          ...metadataFileChangeIntents,
+          ...contextScoutFileChangeIntents,
+        ].slice(0, 80);
         const targetFileRefs = metadataStringArray(metadata, "targetRefs");
-        const groundedTargetFileRefs =
-          targetFileRefs.length > 0
-            ? targetFileRefs
-            : verifiedContextFileRefs.length > 0
-              ? [...new Set(verifiedContextFileRefs)].slice(0, 8)
-              : [];
+        const groundedTargetFileRefs = resolveImplementationMaterializationTargetRefs({
+          metadataTargetRefs: targetFileRefs,
+          verifiedContextFileRefs,
+          fileChangeIntents: implementationFileChangeIntents,
+          repoRoot: defaultRepoRoot(),
+        });
         const implementationAllowedFileRefs = [
           ...new Set([...objectiveScope.approvedRepoScopePaths, ...groundedTargetFileRefs]),
         ].slice(0, 80);
@@ -8616,6 +11170,15 @@ export class DynamicAgentTeamGraphRunner {
           metadataStringArray(metadata, "commitmentIdsAdvanced").length > 0;
         const contextScoutGate = validateContextScoutToolLoopForImplementation(
           latestAcceptedContextScoutToolLoop,
+          {
+            consumerNodeId: node.nodeId,
+            workUnitId:
+              typeof metadata.workUnitId === "string"
+                ? metadata.workUnitId
+                : typeof metadata.sourceWorkUnitId === "string"
+                  ? metadata.sourceWorkUnitId
+                  : node.nodeId,
+          },
         );
         if (requiresContextHandoff && !contextScoutGate.valid) {
           await attachProgress({
@@ -8649,6 +11212,360 @@ export class DynamicAgentTeamGraphRunner {
             reasonCodes: [
               "implementation_context_scout_tool_loop_missing",
               ...contextScoutGate.reasonCodes,
+            ],
+            rawPromptStored: false,
+            rawResponseStored: false,
+            rawProviderLogStored: false,
+            workQueueLifecycleMutated: false,
+          };
+        }
+        const implementationValidationRefs = uniqueBoundedStrings(
+          [
+            ...metadataStringArray(metadata, "validationCommandRefs"),
+            ...metadataStringArray(metadata, "validationNeeds"),
+            ...metadataStringArray(metadata, "validationStrategy"),
+            ...metadataStringArray(metadata, "groupValidationNeeds"),
+            ...objectiveScope.approvedValidationCommands,
+          ],
+          16,
+          260,
+        ).slice(0, 4);
+        const targetCommitmentIds = metadataStringArray(metadata, "commitmentIdsAdvanced");
+        const executionIntent = normalizeExecutionIntent(metadata.executionIntent) ?? "unspecified";
+        const evidenceMode = normalizeEvidenceModes(
+          metadata.evidenceMode ?? metadata.runtimeCompiledEvidenceMode,
+        );
+        const contextHandoffSummary =
+          typeof metadata.contextScoutHandoff === "string" && metadata.contextScoutHandoff.trim()
+            ? metadata.contextScoutHandoff
+            : latestAcceptedContextScoutToolLoop?.contextHandoffPacketRef
+              ? `Accepted context handoff packet: ${latestAcceptedContextScoutToolLoop.contextHandoffPacketRef}`
+              : contextHandoffPacketRefs.length > 0
+                ? `Accepted context handoff refs: ${contextHandoffPacketRefs.slice(0, 4).join(", ")}`
+                : null;
+        const implementationContextCompile = await compileImplementationContextSnapshotPacket({
+          runtimeJobId: job.jobId,
+          workflowId: job.parentWorkflowId ?? "agent_team.coding",
+          graphId: graph.graphId,
+          nodeId: node.nodeId,
+          sourceWorkUnitId:
+            typeof metadata.workUnitId === "string"
+              ? metadata.workUnitId
+              : typeof metadata.sourceWorkUnitId === "string"
+                ? metadata.sourceWorkUnitId
+                : node.nodeId,
+          repoRoot: defaultRepoRoot(),
+          repoRevision: null,
+          worktreeFingerprint: null,
+          executionIntent,
+          evidenceMode,
+          exactEditObjective: bounded(
+            typeof metadata.exactObjective === "string"
+              ? metadata.exactObjective
+              : typeof metadata.exactEditObjective === "string"
+                ? metadata.exactEditObjective
+                : typeof metadata.expectedOutput === "string"
+                  ? metadata.expectedOutput
+                  : "Make the scheduler-selected scoped implementation edit.",
+            2_000,
+          ),
+          taskSummary: bounded(
+            [
+              typeof metadata.expectedOutput === "string" ? metadata.expectedOutput : "",
+              typeof metadata.contextScoutHandoff === "string"
+                ? `Context handoff: ${metadata.contextScoutHandoff}`
+                : contextHandoffSummary
+                  ? `Context handoff: ${contextHandoffSummary}`
+                  : "",
+              `Input handoff refs: ${node.inputHandoffRefs.join(", ")}`,
+            ]
+              .filter(Boolean)
+              .join("\n"),
+            2_500,
+          ),
+          targetRefs: groundedTargetFileRefs,
+          allowedFileRefs: implementationAllowedFileRefs,
+          deniedFileRefs: [],
+          expectedOutput:
+            typeof metadata.expectedOutput === "string"
+              ? metadata.expectedOutput
+              : "Source-change refs, validation refs, and commitment-linked evidence claims.",
+          expectedPatchShape:
+            typeof metadata.expectedPatchShape === "string" ? metadata.expectedPatchShape : null,
+          whyThisWorkerWasSelected:
+            typeof metadata.rationaleForCallingThisRole === "string"
+              ? metadata.rationaleForCallingThisRole
+              : "The scheduler selected a bounded implementation node after context handoff.",
+          targetCommitmentIds,
+          fileChangeIntents: implementationFileChangeIntents,
+          contextPacketRefs: contextHandoffPacketRefs.slice(0, 40),
+          sourceCommitmentPacketRefs: node.inputHandoffRefs
+            .filter((ref) => ref.includes("commitment-work-packet"))
+            .slice(0, 40),
+          sourceContextHandoffRefs: contextHandoffPacketRefs,
+          sourcePromptExcerptRefs: sourcePromptExcerptProvidedRefs.slice(0, 24),
+          contextSynthesisRefs: artifactRefs
+            .filter((ref) => ref.includes("context-synthesis"))
+            .slice(0, 24),
+          priorNodeOutputRefs: artifactRefs.slice(-24),
+          validationCommandRefs: implementationValidationRefs,
+          validationDiscoveryPlan: stringArray(metadata.validationDiscoveryPlan, [
+            "Run focused tests or typecheck/build commands relevant to the edited files.",
+          ]),
+          acceptanceCriteria: stringArray(metadata.acceptanceCriteria, [
+            "Changed-file refs and validation refs are recorded.",
+          ]),
+          expectedEvidenceClaimKinds: ["source_change", "test_validation"],
+          evidenceClaimExpectations: stringArray(metadata.acceptanceCriteria, [
+            "Changed-file refs and validation refs are recorded.",
+          ]),
+          stopIfMissingOrEscalate: [
+            "Request bounded context before editing if target snapshots or acceptance criteria are insufficient.",
+            "Escalate to Codex only after bounded non-Codex repair fails or the task exceeds Kimi file/diff scope.",
+          ],
+          budgetPolicyRefs: [
+            "runtime-task-budget://agent_team.coding/implementation_microtask/standard",
+          ],
+          capabilityFit:
+            typeof metadata.capabilityFit === "string"
+              ? metadata.capabilityFit
+              : typeof metadata.rationaleForCallingThisRole === "string"
+                ? metadata.rationaleForCallingThisRole
+                : null,
+          costAndEscalationPolicy:
+            typeof metadata.costRationale === "string"
+              ? metadata.costRationale
+              : typeof metadata.utilityRationale === "string"
+                ? metadata.utilityRationale
+                : null,
+          downstreamConsumer:
+            typeof metadata.downstreamConsumer === "string"
+              ? metadata.downstreamConsumer
+              : "validation_and_review",
+          successEvidenceDescriptions: stringArray(metadata.acceptanceCriteria, [
+            "Changed-file refs and validation refs are recorded.",
+          ]),
+          existingApisAndTypes: metadataStringArray(metadata, "existingApisAndTypes"),
+          knownTests: metadataStringArray(metadata, "knownTests"),
+          relatedTestRefs: metadataStringArray(metadata, "relatedTestRefs"),
+          dependencyNotes: metadataStringArray(metadata, "dependencyNotes"),
+          riskAndBlastRadius: metadataStringArray(metadata, "riskAndBlastRadius"),
+          contextLimitations:
+            latestAcceptedContextScoutToolLoop?.sufficiencyReview.status ===
+            "accepted_with_limitations"
+              ? latestAcceptedContextScoutToolLoop.sufficiencyReview.missingInformation.map(
+                  (limitation) => ({ limitation, blocking: false }),
+                )
+              : undefined,
+          contextLimitationWaivers:
+            latestAcceptedContextScoutToolLoop?.sufficiencyReview.status ===
+            "accepted_with_limitations"
+              ? latestAcceptedContextScoutToolLoop.sufficiencyReview.consumerSpecificWaivers.map(
+                  (waiver) => ({
+                    consumerNodeId: waiver.consumerNodeId,
+                    workUnitId: waiver.workUnitId ?? null,
+                    limitation: waiver.limitation,
+                    evidenceRefs: waiver.evidenceRefs,
+                  }),
+                )
+              : undefined,
+        });
+        await this.attachImplementationContextPayloadArtifacts({
+          jobId: job.jobId,
+          nodeId: node.nodeId,
+          targetCommitmentIds,
+          compile: implementationContextCompile,
+        });
+        const implementationReady =
+          implementationContextCompile.status === "ready_as_single_task" &&
+          implementationContextCompile.implementationTaskPackets.length === 1;
+        if (!implementationReady) {
+          const splitTransition = await materializeSplitRequiredImplementationTaskNodes({
+            graphId: graph.graphId,
+            parentNode: node,
+            metadata,
+            implementationContextCompile,
+          });
+          const splitTaskNodes = splitTransition.childNodeIds;
+          await attachProgress({
+            stage: "implementation_context_materialization",
+            status: splitTransition.applied ? "completed" : "needs_review",
+            roleId: "implementation_engineer",
+            nodeId: node.nodeId,
+            reasonCodes: splitTransition.applied
+              ? [...splitTransition.reasonCodes, ...implementationContextCompile.reasonCodes]
+              : [
+                  "implementation_context_materialization_blocked",
+                  "runtime_distinguished_upstream_context_failure_from_worker_failure",
+                  ...implementationContextCompile.reasonCodes,
+                ],
+            currentPhase: splitTransition.applied
+              ? "implementation_split_required_materialized"
+              : "implementation_readiness_blocked",
+            currentObjective:
+              typeof metadata.exactObjective === "string"
+                ? metadata.exactObjective
+                : "Prepare a worker-ready implementation packet before model invocation.",
+            inputHandoffRefs: node.inputHandoffRefs,
+            targetRefs: groundedTargetFileRefs,
+            contextHandoffPacketRefs,
+            workerInternalInputPacketRefs: [
+              implementationContextCompile.packet.packetRef,
+              ...implementationContextCompile.implementationTaskPackets.map(
+                (packet) => packet.packetRef,
+              ),
+            ],
+            evidenceProducedRefs: splitTransition.applied
+              ? [
+                  ...splitTaskNodes.map((nodeId) => `runtime-work-graph-node://${nodeId}`),
+                  ...splitTransition.outputArtifactRefs,
+                ]
+              : splitTaskNodes.map((nodeId) => `runtime-work-graph-node://${nodeId}`),
+            implementationContextPacketRef: implementationContextCompile.packet.packetRef,
+            implementationContextReadinessStatus:
+              implementationContextCompile.packet.readinessStatus,
+            implementationTaskPacketRefs:
+              implementationContextCompile.implementationTaskPackets.map(
+                (packet) => packet.packetRef,
+              ),
+            resolvedTargetFileRefs: implementationContextCompile.packet.resolvedTargetFileRefs,
+            readableTargetFileRefs: implementationContextCompile.packet.readableTargetFileRefs,
+            missingTargetRefs: implementationContextCompile.packet.missingTargetRefs,
+            unreadableTargetRefs: implementationContextCompile.packet.unreadableTargetRefs,
+            directoryOnlyTargetRefs: implementationContextCompile.packet.directoryOnlyTargetRefs,
+            candidateConcreteFileRefs:
+              implementationContextCompile.packet.candidateConcreteFileRefs,
+            targetFileSnapshotRefs: implementationContextCompile.packet.targetFileSnapshotRefs,
+            targetFileSnapshotHashes: implementationContextCompile.packet.targetFileSnapshotHashes,
+            implementationContextRepairAction: implementationContextCompile.repairAction,
+            ...recordValue(
+              summarizeImplementationResourceMaterializationForReadback(
+                implementationContextCompile.resourceMaterialization,
+              ),
+            ),
+            contextScoutToolLoopRefs,
+            verifiedContextFileRefs: [...new Set(verifiedContextFileRefs)].slice(0, 30),
+            missingContextSnapshotRefs: implementationContextCompile.packet.missingTargetRefs,
+            currentValidationCommandRef: implementationValidationRefs[0] ?? null,
+            blockerSummary: splitTransition.applied
+              ? null
+              : (implementationContextCompile.blockerSummary ??
+                "Implementation was blocked before worker invocation because the runtime could not build complete implementation context and task packets."),
+            eli5Progress: splitTransition.applied
+              ? "OpenClaw split a broad implementation node into smaller executable child nodes and will continue with those."
+              : "OpenClaw stopped before Kimi/Qwen because the child worker did not yet have real files and validation instructions.",
+            nextDecisionNeeded: splitTransition.applied
+              ? "execute_materialized_split_implementation_nodes"
+              : implementationContextCompile.status === "split_required"
+                ? "run_materialized_split_implementation_nodes"
+                : "runtime_compile_context_repair_node",
+            schedulerPhase: "implementation_readiness_gate",
+          });
+          if (splitTransition.applied) {
+            return {
+              status: "succeeded",
+              outputArtifactRefs: splitTransition.outputArtifactRefs,
+              reasonCodes: splitTransition.reasonCodes,
+              rawPromptStored: false,
+              rawResponseStored: false,
+              rawProviderLogStored: false,
+              workQueueLifecycleMutated: false,
+            };
+          }
+          return {
+            status: "needs_review",
+            outputArtifactRefs: [
+              ...contextHandoffPacketRefs.slice(0, 12),
+              implementationContextCompile.packet.packetRef,
+              ...implementationContextCompile.implementationTaskPackets
+                .map((packet) => packet.packetRef)
+                .slice(0, 12),
+              ...implementationContextCompile.packet.readableTargetFileRefs
+                .map((ref) => `repo://${ref}`)
+                .slice(0, 12),
+            ],
+            reasonCodes: [
+              "implementation_context_materialization_blocked",
+              "upstream_context_failure_not_worker_failure",
+              ...implementationContextCompile.reasonCodes,
+            ],
+            rawPromptStored: false,
+            rawResponseStored: false,
+            rawProviderLogStored: false,
+            workQueueLifecycleMutated: false,
+          };
+        }
+        const implementationTaskPacket = implementationContextCompile.implementationTaskPackets[0];
+        const capabilityId =
+          typeof metadata.capabilityId === "string"
+            ? metadata.capabilityId
+            : typeof metadata.selectedCapabilityId === "string"
+              ? metadata.selectedCapabilityId
+              : "implementation_microtask";
+        const executorKey =
+          typeof metadata.executorKey === "string" ? metadata.executorKey : "kind:implementation";
+        const workerRef =
+          typeof metadata.workerRef === "string"
+            ? metadata.workerRef
+            : (node.modelOrWorkerRef ?? capabilityId);
+        const materializedWorkerPacket = compileNodeExecutionPacketForImplementationTask({
+          runtimeJobId: job.jobId,
+          workflowId: job.parentWorkflowId ?? "agent_team.coding",
+          graphId: graph.graphId,
+          nodeId: node.nodeId,
+          nodeKind: node.nodeKind,
+          capabilityId,
+          executorKey,
+          workerRef,
+          implementationTaskPacket,
+        });
+        const workerInvocationGate = evaluateWorkerInvocationReadinessGate({
+          nodeExecutionPacket: materializedWorkerPacket.nodeExecutionPacket,
+          resourcePacket: materializedWorkerPacket.codingResourcePacket,
+          implementationContextPacket: implementationContextCompile.packet as unknown as JsonValue,
+          nodeExecutionPacketRequired: true,
+          nodeId: node.nodeId,
+          runtimeJobId: job.jobId,
+          graphId: graph.graphId,
+          workflowId: job.parentWorkflowId ?? "agent_team.coding",
+        });
+        if (!workerInvocationGate.allowed) {
+          await attachProgress({
+            stage: "node_resource_materialization",
+            status: "needs_review",
+            roleId: node.assignedRole as AgentTeamRoleId,
+            nodeId: node.nodeId,
+            reasonCodes: [
+              "worker_invocation_readiness_gate_blocked",
+              ...workerInvocationGate.reasonCodes,
+            ],
+            currentPhase: "worker_invocation_readiness_blocked",
+            currentObjective:
+              typeof metadata.exactObjective === "string"
+                ? metadata.exactObjective
+                : "Validate NodeExecutionPacket before worker invocation.",
+            nodeExecutionPacketRef: workerInvocationGate.nodeExecutionPacketRef,
+            resourcePacketKind: workerInvocationGate.resourcePacketKind,
+            resourcePacketRef: workerInvocationGate.resourcePacketRef,
+            resourceReadinessReasonCodes: workerInvocationGate.reasonCodes,
+            resourceBlockingLimitations: workerInvocationGate.blockingLimitations,
+            resourceNonblockingLimitations: workerInvocationGate.nonblockingLimitations,
+            nodeReadinessStateRef: workerInvocationGate.nodeReadinessState?.stateRef ?? null,
+            nodeReadinessStatus: workerInvocationGate.status,
+            blockerSummary: workerInvocationGate.blockingLimitations.join("; "),
+            nextDecisionNeeded: "repair_node_execution_packet",
+            schedulerPhase: "worker_invocation_readiness_gate",
+          });
+          return {
+            status: "needs_review",
+            outputArtifactRefs: [
+              materializedWorkerPacket.nodeExecutionPacket.packetRef,
+              materializedWorkerPacket.codingResourcePacket.packetRef,
+              workerInvocationGate.nodeReadinessState?.stateRef ?? "",
+            ].filter(Boolean),
+            reasonCodes: [
+              "worker_invocation_readiness_gate_blocked",
+              ...workerInvocationGate.reasonCodes,
             ],
             rawPromptStored: false,
             rawResponseStored: false,
@@ -8693,6 +11610,8 @@ export class DynamicAgentTeamGraphRunner {
                         maxTokens: Math.min(input.maxOutputTokens, 8_000),
                         timeoutMs: Math.min(input.timeoutMs, 480_000),
                         maxAttempts: Math.max(1, Math.min(input.maxAttempts ?? 1, 2)),
+                        taskClass: "implementation_patch",
+                        modelTaskCallSite: "non_codex_worker.tool_selection",
                       });
                       const responseHash =
                         response.responseHash ??
@@ -8826,88 +11745,9 @@ export class DynamicAgentTeamGraphRunner {
                   : "Make the scheduler-selected scoped implementation edit.",
               2_000,
             ),
-            implementationTaskPacket: buildImplementationTaskPacket({
-              microtaskId: `${teamRunId}-${node.nodeId}`,
-              microtaskTitle: bounded(
-                typeof metadata.title === "string"
-                  ? metadata.title
-                  : "Scheduler-selected Kimi edit",
-                220,
-              ),
-              exactEditObjective: bounded(
-                typeof metadata.exactEditObjective === "string"
-                  ? metadata.exactEditObjective
-                  : typeof metadata.expectedOutput === "string"
-                    ? metadata.expectedOutput
-                    : "Make the scheduler-selected scoped implementation edit.",
-                2_000,
-              ),
-              taskSummary: bounded(
-                [
-                  typeof metadata.expectedOutput === "string" ? metadata.expectedOutput : "",
-                  typeof metadata.contextScoutHandoff === "string"
-                    ? `Context handoff: ${metadata.contextScoutHandoff}`
-                    : "",
-                  `Input handoff refs: ${node.inputHandoffRefs.join(", ")}`,
-                ]
-                  .filter(Boolean)
-                  .join("\n"),
-                2_500,
-              ),
-              whyThisWorkerWasSelected:
-                typeof metadata.rationaleForCallingThisRole === "string"
-                  ? metadata.rationaleForCallingThisRole
-                  : "The scheduler selected Kimi for a bounded implementation node with approved target refs and validation expectations.",
-              expectedOutput:
-                typeof metadata.expectedOutput === "string"
-                  ? metadata.expectedOutput
-                  : "Source-change refs, validation refs, and commitment-linked evidence claims.",
-              targetCommitmentIds: metadataStringArray(metadata, "commitmentIdsAdvanced"),
-              targetFileRefs:
-                groundedTargetFileRefs.length > 0
-                  ? groundedTargetFileRefs
-                  : objectiveScope.approvedRepoScopePaths.slice(0, 2),
-              allowedFileRefs: implementationAllowedFileRefs,
-              deniedFileRefs: [],
-              contextPacketRefs: [...contextHandoffPacketRefs, ...node.inputHandoffRefs].slice(
-                0,
-                24,
-              ),
-              sourcePromptExcerptRefs: sourcePromptExcerptProvidedRefs.slice(0, 24),
-              contextSynthesisRefs: artifactRefs
-                .filter((ref) => ref.includes("context-synthesis"))
-                .slice(0, 24),
-              priorNodeOutputRefs: artifactRefs.slice(-24),
-              validationCommandRefs: objectiveScope.approvedValidationCommands.slice(0, 4),
-              acceptanceCriteria: stringArray(metadata.acceptanceCriteria, [
-                "Changed-file refs and validation refs are recorded.",
-              ]),
-              expectedEvidenceClaimKinds: ["source_change", "test_validation"],
-              stopIfMissingOrEscalate: [
-                "Request bounded context before editing if target snapshots or acceptance criteria are insufficient.",
-                "Escalate to Codex only after bounded non-Codex repair fails or the task exceeds Kimi file/diff scope.",
-              ],
-              budgetPolicyRefs: [
-                "runtime-task-budget://agent_team.coding/implementation_microtask/standard",
-              ],
-              downstreamConsumer:
-                typeof metadata.downstreamConsumer === "string"
-                  ? metadata.downstreamConsumer
-                  : "validation_and_review",
-              successEvidenceDescriptions: stringArray(metadata.acceptanceCriteria, [
-                "Changed-file refs and validation refs are recorded.",
-              ]),
-              requiredContextSnapshotRefs: normalizeContextSnapshotRefs(
-                metadata.requiredContextSnapshotRefs,
-              ),
-              providedContextSnapshotRefs: normalizeContextSnapshotRefs(
-                metadata.providedContextSnapshotRefs,
-              ),
-              contextFreshnessSummary:
-                typeof metadata.contextFreshnessSummary === "string"
-                  ? metadata.contextFreshnessSummary
-                  : "Scheduler-provided context snapshots are required before the implementation worker may edit.",
-            }),
+            implementationTaskPacket,
+            nodeExecutionPacket: materializedWorkerPacket.nodeExecutionPacket,
+            codingResourcePacket: materializedWorkerPacket.codingResourcePacket,
             rationaleForCallingThisRole:
               typeof metadata.rationaleForCallingThisRole === "string"
                 ? metadata.rationaleForCallingThisRole
@@ -8924,30 +11764,18 @@ export class DynamicAgentTeamGraphRunner {
                 : undefined,
             repoRoot: defaultRepoRoot(),
             allowedFileRefs: implementationAllowedFileRefs,
-            targetFileRefs:
-              groundedTargetFileRefs.length > 0
-                ? groundedTargetFileRefs
-                : objectiveScope.approvedRepoScopePaths.slice(0, 2),
+            targetFileRefs: implementationTaskPacket.targetFileRefs,
             deniedFileRefs: [],
-            contextPackRefs: [...contextHandoffPacketRefs, ...artifactRefs].slice(0, 20),
-            sourcePromptExcerptRefs: sourcePromptExcerptProvidedRefs.slice(0, 24),
-            contextSynthesisRefs: artifactRefs
-              .filter((ref) => ref.includes("context-synthesis"))
-              .slice(0, 24),
-            priorNodeOutputRefs: artifactRefs.slice(-24),
-            validationCommandRefs: objectiveScope.approvedValidationCommands.slice(0, 4),
-            targetCommitmentIds: metadataStringArray(metadata, "commitmentIdsAdvanced"),
-            acceptanceCriteria: stringArray(metadata.acceptanceCriteria, [
-              "Changed-file refs and validation refs are recorded.",
-            ]),
-            expectedEvidenceClaimKinds: ["source_change", "test_validation"],
-            stopIfMissingOrEscalate: [
-              "Request bounded context before editing if target snapshots or acceptance criteria are insufficient.",
-              "Escalate to Codex only after bounded non-Codex repair fails or the task exceeds Kimi file/diff scope.",
-            ],
-            budgetPolicyRefs: [
-              "runtime-task-budget://agent_team.coding/implementation_microtask/standard",
-            ],
+            contextPackRefs: implementationTaskPacket.contextPacketRefs,
+            sourcePromptExcerptRefs: implementationTaskPacket.sourcePromptExcerptRefs,
+            contextSynthesisRefs: implementationTaskPacket.contextSynthesisRefs,
+            priorNodeOutputRefs: implementationTaskPacket.priorNodeOutputRefs,
+            validationCommandRefs: implementationTaskPacket.validationCommandRefs,
+            targetCommitmentIds,
+            acceptanceCriteria: implementationTaskPacket.acceptanceCriteria,
+            expectedEvidenceClaimKinds: implementationTaskPacket.expectedEvidenceClaimKinds,
+            stopIfMissingOrEscalate: implementationTaskPacket.stopIfMissingOrEscalate,
+            budgetPolicyRefs: implementationTaskPacket.budgetPolicyRefs,
             budgetPolicy: {
               modelRef: "moonshotai/kimi-k2.6",
               providerPath: "openrouter",
@@ -9215,6 +12043,11 @@ export class DynamicAgentTeamGraphRunner {
             evidenceRefs: [...contextHandoffPacketRefs, ...artifactRefs].slice(0, 30),
             validationRefs: objectiveScope.approvedValidationCommands,
             approvedRepoScopePaths: objectiveScope.approvedRepoScopePaths,
+            nodeExecutionPacket: materializedWorkerPacket.nodeExecutionPacket,
+            codingResourcePacket: materializedWorkerPacket.codingResourcePacket,
+            nodeReadinessStateRef: materializedWorkerPacket.readiness.state.stateRef,
+            nodeExecutionPacketRef: materializedWorkerPacket.nodeExecutionPacket.packetRef,
+            resourcePacketRef: materializedWorkerPacket.codingResourcePacket.packetRef,
           });
         }
         const implementationArtifactRef = `runtime-job://${job.jobId}/runtime-work-graph/scheduler-implementation/${node.nodeId}`;
@@ -9572,83 +12405,29 @@ export class DynamicAgentTeamGraphRunner {
     latestMissionLedger = initialMissionLedger;
     approvedCommitmentWorkPackets =
       replayMissionAndPackets?.packets ?? (await authorCommitmentWorkPackets(initialMissionLedger));
-    const schedulerExecutors: Record<string, RuntimeWorkGraphNodeExecutor> = {
-      "role:context_scout": roleExecutor("context_scout"),
-      "role:test_engineer": roleExecutor("test_engineer"),
-      "role:reviewer": roleExecutor("reviewer"),
-      "role:observability_scribe": roleExecutor("observability_scribe"),
-      "role:context_synthesis": contextSynthesisExecutor,
-      "role:implementation_engineer": implementationExecutor,
-      "kind:context_scout": roleExecutor("context_scout"),
-      "kind:context_synthesis": contextSynthesisExecutor,
-      "kind:implementation": implementationExecutor,
-      "kind:test_authoring": implementationExecutor,
-      "kind:repair": repairExecutor,
-      "kind:validation": validationExecutor,
-      "kind:test_review": validationExecutor,
-      "kind:reviewer": roleExecutor("reviewer"),
-      "kind:observability_readback": roleExecutor("observability_scribe"),
-      "kind:human_task": humanExecutor,
-      "kind:closeout": closeoutExecutor,
-    };
+    const schedulerExecutors = buildCodingTeamSchedulerExecutorMap({
+      roleExecutor,
+      contextSynthesisExecutor,
+      implementationExecutor,
+      repairExecutor,
+      validationExecutor,
+      closeoutExecutor,
+      humanExecutor,
+    });
     const codingWorkflowPlugin = buildAgentTeamCodingWorkflowPlugin({
       definition: workflowDefinition,
       executors: schedulerExecutors,
       requireSchedulerToolKernel: this.options.requireSchedulerToolKernel === true,
     });
-    const workflowPluginRef = `runtime-job://${job.jobId}/execution/workflow-plugin/${workflowId}`;
-    await this.options.runtimeJobs.attachArtifact({
-      jobId: job.jobId,
-      artifactType: WORKFLOW_PLUGIN_RESOLUTION_ARTIFACT_TYPE,
-      storageKind: "metadata",
-      uri: workflowPluginRef,
-      contentType: "application/json",
-      metadata: workflowPluginResolutionArtifactMetadata(
-        workflowPluginResolutionFor({
-          plugin: codingWorkflowPlugin,
-          definition: workflowDefinition,
-        }),
-      ),
-    });
-    const orchestrationRuntime = new GenericOrchestrationRuntime({
-      registry: undefined,
-      graphs: this.options.runtimeWorkGraphs,
-      runtimeToolKernel: this.options.runtimeToolKernel ?? null,
-    });
-    const genericRuntimeReadiness = orchestrationRuntime.evaluateReadiness({
-      workflowId,
-      executors: codingWorkflowPlugin.executors,
-      plugin: codingWorkflowPlugin,
-    });
-    const genericRuntimeReadinessRef = `runtime-job://${job.jobId}/execution/generic-orchestration-runtime/readiness/${workflowId}`;
-    await this.options.runtimeJobs.attachArtifact({
-      jobId: job.jobId,
-      artifactType: "execution.generic_orchestration_runtime_readiness",
-      storageKind: "metadata",
-      uri: genericRuntimeReadinessRef,
-      contentType: "application/json",
-      metadata: genericRuntimeReadiness as unknown as JsonValue,
-    });
-    const workflowEngineReadiness = genericRuntimeReadiness.workflowEngineReadiness;
-    const workflowEngineReadinessRef = `runtime-job://${job.jobId}/execution/runtime-workflow-graph-engine/${workflowId}`;
-    await this.options.runtimeJobs.attachArtifact({
-      jobId: job.jobId,
-      artifactType: "execution.runtime_workflow_graph_engine_readiness",
-      storageKind: "metadata",
-      uri: workflowEngineReadinessRef,
-      contentType: "application/json",
-      metadata: workflowEngineReadiness as unknown as JsonValue,
-    });
-    if (!genericRuntimeReadiness.ready) {
-      throw new Error(
-        `generic_orchestration_runtime_not_ready:${genericRuntimeReadiness.reasonCodes.join(",")}`,
-      );
-    }
-    const genericRuntimeResult = await orchestrationRuntime.runSchedulerGraph({
+    const genericRuntimeExecution = await runAndPersistGenericSchedulerGraph({
+      runtimeJobs: this.options.runtimeJobs,
       runtimeJob: job,
       workflowId,
-      executors: codingWorkflowPlugin.executors,
+      definition: workflowDefinition,
       plugin: codingWorkflowPlugin,
+      executors: codingWorkflowPlugin.executors,
+      graphs: this.options.runtimeWorkGraphs,
+      runtimeToolKernel: this.options.runtimeToolKernel ?? null,
       graphId: graph.graphId,
       schedulerOptions: {
         runtimeToolKernel: this.options.runtimeToolKernel ?? null,
@@ -9667,9 +12446,713 @@ export class DynamicAgentTeamGraphRunner {
         requireEvidenceClaimsForMissionLedger:
           codingWorkflowPlugin.schedulerOptions.requireEvidenceClaimsForMissionLedger,
         requireModelAuthoredCommitmentWorkPacketsForComplexMission: true,
+        requireFreshContextSnapshotsForWorkerExecution:
+          codingWorkflowPlugin.schedulerOptions.requireFreshContextSnapshotsForWorkerExecution ===
+          true,
+        requireNodeExecutionPacketForWorkerExecution:
+          codingWorkflowPlugin.schedulerOptions.requireNodeExecutionPacketForWorkerExecution ===
+          true,
         roleCoverageProfile: codingWorkflowPlugin.schedulerOptions.roleCoverageProfile,
+        entryNodePolicy: codingWorkflowPlugin.schedulerOptions.entryNodePolicy ?? null,
         capabilityRegistrySummary: codingWorkflowPlugin.schedulerOptions.capabilityRegistrySummary,
         capabilityManifest: codingWorkflowPlugin.schedulerOptions.capabilityManifest,
+        beforeNodeExecution: async ({ node, graphId }) => {
+          if (!["implementation", "repair", "test_authoring"].includes(node.nodeKind)) {
+            return null;
+          }
+          const metadata = recordValue(node.metadata);
+          if (
+            recordValue(metadata.nodeExecutionPacket).packetKind === "node_execution_packet" ||
+            typeof metadata.nodeExecutionPacketRef === "string"
+          ) {
+            return null;
+          }
+          const targetFileRefs = metadataStringArray(metadata, "targetRefs");
+          const groundedTargetFileRefs = resolveImplementationMaterializationTargetRefs({
+            metadataTargetRefs: targetFileRefs,
+            verifiedContextFileRefs,
+            fileChangeIntents: contextScoutFileChangeIntents,
+            repoRoot: defaultRepoRoot(),
+          });
+          const implementationAllowedFileRefs = [
+            ...new Set([...objectiveScope.approvedRepoScopePaths, ...groundedTargetFileRefs]),
+          ].slice(0, 80);
+          const implementationValidationRefs = uniqueBoundedStrings(
+            [
+              ...metadataStringArray(metadata, "validationCommandRefs"),
+              ...metadataStringArray(metadata, "validationNeeds"),
+              ...metadataStringArray(metadata, "validationStrategy"),
+              ...metadataStringArray(metadata, "groupValidationNeeds"),
+              ...objectiveScope.approvedValidationCommands,
+            ],
+            16,
+            260,
+          ).slice(0, 4);
+          const targetCommitmentIds = metadataStringArray(metadata, "commitmentIdsAdvanced");
+          const executionIntent =
+            normalizeExecutionIntent(metadata.executionIntent) ?? "unspecified";
+          const evidenceMode = normalizeEvidenceModes(
+            metadata.evidenceMode ?? metadata.runtimeCompiledEvidenceMode,
+          );
+          const beforeResourceCheckpointRef = await recordBoundaryCheckpoint({
+            checkpointKind: "before_resource_materialization",
+            upstreamArtifactRefs: [
+              graphRef("node", node.nodeId),
+              ...node.inputHandoffRefs,
+              ...contextHandoffPacketRefs.slice(-8),
+            ],
+            acceptedArtifactRefs: [graphRef("node", node.nodeId), ...node.inputHandoffRefs].slice(
+              0,
+              20,
+            ),
+            currentNodeIds: [node.nodeId],
+            currentCommitmentIds: targetCommitmentIds,
+            openCommitmentIds: targetCommitmentIds,
+            replayContinuationMode: "continue_scheduler",
+            reasonCodes: [
+              "before_resource_materialization_checkpoint_recorded",
+              "node_execution_packet_not_yet_compiled",
+            ],
+          });
+          const contextHandoffSummary =
+            typeof metadata.contextScoutHandoff === "string" && metadata.contextScoutHandoff.trim()
+              ? metadata.contextScoutHandoff
+              : latestAcceptedContextScoutToolLoop?.contextHandoffPacketRef
+                ? `Accepted context handoff packet: ${latestAcceptedContextScoutToolLoop.contextHandoffPacketRef}`
+                : contextHandoffPacketRefs.length > 0
+                  ? `Accepted context handoff refs: ${contextHandoffPacketRefs.slice(0, 4).join(", ")}`
+                  : null;
+          const implementationContextCompile = await compileImplementationContextSnapshotPacket({
+            runtimeJobId: job.jobId,
+            workflowId: job.parentWorkflowId ?? "agent_team.coding",
+            graphId,
+            nodeId: node.nodeId,
+            sourceWorkUnitId:
+              typeof metadata.workUnitId === "string"
+                ? metadata.workUnitId
+                : typeof metadata.sourceWorkUnitId === "string"
+                  ? metadata.sourceWorkUnitId
+                  : node.nodeId,
+            repoRoot: defaultRepoRoot(),
+            repoRevision: null,
+            worktreeFingerprint: null,
+            executionIntent,
+            evidenceMode,
+            exactEditObjective: bounded(
+              typeof metadata.exactObjective === "string"
+                ? metadata.exactObjective
+                : typeof metadata.exactEditObjective === "string"
+                  ? metadata.exactEditObjective
+                  : typeof metadata.expectedOutput === "string"
+                    ? metadata.expectedOutput
+                    : "Make the scheduler-selected scoped implementation edit.",
+              2_000,
+            ),
+            taskSummary: bounded(
+              [
+                typeof metadata.expectedOutput === "string" ? metadata.expectedOutput : "",
+                typeof metadata.contextScoutHandoff === "string"
+                  ? `Context handoff: ${metadata.contextScoutHandoff}`
+                  : contextHandoffSummary
+                    ? `Context handoff: ${contextHandoffSummary}`
+                    : "",
+                `Input handoff refs: ${node.inputHandoffRefs.join(", ")}`,
+              ]
+                .filter(Boolean)
+                .join("\n"),
+              2_500,
+            ),
+            targetRefs: groundedTargetFileRefs,
+            allowedFileRefs: implementationAllowedFileRefs,
+            deniedFileRefs: [],
+            expectedOutput:
+              typeof metadata.expectedOutput === "string"
+                ? metadata.expectedOutput
+                : "Source-change refs, validation refs, and commitment-linked evidence claims.",
+            expectedPatchShape:
+              typeof metadata.expectedPatchShape === "string" ? metadata.expectedPatchShape : null,
+            whyThisWorkerWasSelected:
+              typeof metadata.rationaleForCallingThisRole === "string"
+                ? metadata.rationaleForCallingThisRole
+                : "The scheduler selected a bounded implementation node after context handoff.",
+            targetCommitmentIds,
+            fileChangeIntents: contextScoutFileChangeIntents,
+            contextPacketRefs: contextHandoffPacketRefs.slice(0, 40),
+            sourceCommitmentPacketRefs: node.inputHandoffRefs
+              .filter((ref) => ref.includes("commitment-work-packet"))
+              .slice(0, 40),
+            sourceContextHandoffRefs: contextHandoffPacketRefs,
+            sourcePromptExcerptRefs: sourcePromptExcerptProvidedRefs.slice(0, 24),
+            contextSynthesisRefs: artifactRefs
+              .filter((ref) => ref.includes("context-synthesis"))
+              .slice(0, 24),
+            priorNodeOutputRefs: artifactRefs.slice(-24),
+            validationCommandRefs: implementationValidationRefs,
+            validationDiscoveryPlan: stringArray(metadata.validationDiscoveryPlan, [
+              "Run focused tests or typecheck/build commands relevant to the edited files.",
+            ]),
+            acceptanceCriteria: stringArray(metadata.acceptanceCriteria, [
+              "Changed-file refs and validation refs are recorded.",
+            ]),
+            expectedEvidenceClaimKinds: ["source_change", "test_validation"],
+            evidenceClaimExpectations: stringArray(metadata.acceptanceCriteria, [
+              "Changed-file refs and validation refs are recorded.",
+            ]),
+            stopIfMissingOrEscalate: [
+              "Request bounded context before editing if target snapshots or acceptance criteria are insufficient.",
+              "Escalate to Codex only after bounded non-Codex repair fails or the task exceeds Kimi file/diff scope.",
+            ],
+            budgetPolicyRefs: [
+              "runtime-task-budget://agent_team.coding/implementation_microtask/standard",
+            ],
+            capabilityFit:
+              typeof metadata.capabilityFit === "string"
+                ? metadata.capabilityFit
+                : typeof metadata.rationaleForCallingThisRole === "string"
+                  ? metadata.rationaleForCallingThisRole
+                  : null,
+            costAndEscalationPolicy:
+              typeof metadata.costRationale === "string"
+                ? metadata.costRationale
+                : typeof metadata.utilityRationale === "string"
+                  ? metadata.utilityRationale
+                  : null,
+            downstreamConsumer:
+              typeof metadata.downstreamConsumer === "string"
+                ? metadata.downstreamConsumer
+                : "validation_and_review",
+            successEvidenceDescriptions: stringArray(metadata.acceptanceCriteria, [
+              "Changed-file refs and validation refs are recorded.",
+            ]),
+            existingApisAndTypes: metadataStringArray(metadata, "existingApisAndTypes"),
+            knownTests: metadataStringArray(metadata, "knownTests"),
+            relatedTestRefs: metadataStringArray(metadata, "relatedTestRefs"),
+            dependencyNotes: metadataStringArray(metadata, "dependencyNotes"),
+            riskAndBlastRadius: metadataStringArray(metadata, "riskAndBlastRadius"),
+            contextLimitations:
+              latestAcceptedContextScoutToolLoop?.sufficiencyReview.status ===
+              "accepted_with_limitations"
+                ? latestAcceptedContextScoutToolLoop.sufficiencyReview.missingInformation.map(
+                    (limitation) => ({ limitation, blocking: false }),
+                  )
+                : undefined,
+            contextLimitationWaivers:
+              latestAcceptedContextScoutToolLoop?.sufficiencyReview.status ===
+              "accepted_with_limitations"
+                ? latestAcceptedContextScoutToolLoop.sufficiencyReview.consumerSpecificWaivers.map(
+                    (waiver) => ({
+                      consumerNodeId: waiver.consumerNodeId,
+                      workUnitId: waiver.workUnitId ?? null,
+                      limitation: waiver.limitation,
+                      evidenceRefs: waiver.evidenceRefs,
+                    }),
+                  )
+                : undefined,
+          });
+          await this.attachImplementationContextPayloadArtifacts({
+            jobId: job.jobId,
+            nodeId: node.nodeId,
+            targetCommitmentIds,
+            compile: implementationContextCompile,
+          });
+          const implementationTaskPacket =
+            implementationContextCompile.implementationTaskPackets[0] ?? null;
+          if (
+            !implementationTaskPacket ||
+            implementationContextCompile.status !== "ready_as_single_task"
+          ) {
+            const splitTransition = await materializeSplitRequiredImplementationTaskNodes({
+              graphId,
+              parentNode: node,
+              metadata,
+              implementationContextCompile,
+            });
+            const splitTaskNodes = splitTransition.childNodeIds;
+            await attachProgress({
+              stage: "implementation_context_materialization",
+              status: splitTransition.applied ? "completed" : "needs_review",
+              roleId: node.assignedRole as AgentTeamRoleId,
+              nodeId: node.nodeId,
+              reasonCodes: splitTransition.applied
+                ? [...splitTransition.reasonCodes, ...implementationContextCompile.reasonCodes]
+                : [
+                    "implementation_context_materialization_blocked",
+                    ...implementationContextCompile.reasonCodes,
+                  ],
+              currentPhase: splitTransition.applied
+                ? "implementation_split_required_materialized"
+                : "implementation_context_materialization_blocked",
+              currentObjective:
+                typeof metadata.exactObjective === "string"
+                  ? metadata.exactObjective
+                  : "Compile a NodeExecutionPacket before implementation.",
+              targetRefs: groundedTargetFileRefs,
+              blockerSummary: splitTransition.applied
+                ? null
+                : (implementationContextCompile.blockerSummary ??
+                  "Runtime could not compile worker-ready implementation context and task packets."),
+              implementationContextPacketRef: implementationContextCompile.packet.packetRef,
+              implementationContextReadinessStatus:
+                implementationContextCompile.packet.readinessStatus,
+              implementationTaskPacketRefs:
+                implementationContextCompile.implementationTaskPackets.map(
+                  (packet) => packet.packetRef,
+                ),
+              evidenceProducedRefs: splitTransition.applied
+                ? [
+                    ...splitTaskNodes.map((nodeId) => `runtime-work-graph-node://${nodeId}`),
+                    ...splitTransition.outputArtifactRefs,
+                  ]
+                : splitTaskNodes.map((nodeId) => `runtime-work-graph-node://${nodeId}`),
+              resolvedTargetFileRefs: implementationContextCompile.packet.resolvedTargetFileRefs,
+              readableTargetFileRefs: implementationContextCompile.packet.readableTargetFileRefs,
+              missingTargetRefs: implementationContextCompile.packet.missingTargetRefs,
+              unreadableTargetRefs: implementationContextCompile.packet.unreadableTargetRefs,
+              directoryOnlyTargetRefs: implementationContextCompile.packet.directoryOnlyTargetRefs,
+              candidateConcreteFileRefs:
+                implementationContextCompile.packet.candidateConcreteFileRefs,
+              targetFileSnapshotRefs: implementationContextCompile.packet.targetFileSnapshotRefs,
+              targetFileSnapshotHashes:
+                implementationContextCompile.packet.targetFileSnapshotHashes,
+              implementationContextRepairAction: implementationContextCompile.repairAction,
+              ...recordValue(
+                summarizeImplementationResourceMaterializationForReadback(
+                  implementationContextCompile.resourceMaterialization,
+                ),
+              ),
+              nextDecisionNeeded: splitTransition.applied
+                ? "execute_materialized_split_implementation_nodes"
+                : implementationContextCompile.status === "split_required"
+                  ? "run_materialized_split_implementation_nodes"
+                  : "repair_context_or_target_snapshots",
+            });
+            await recordBoundaryCheckpoint({
+              checkpointKind: "after_resource_materialization",
+              upstreamArtifactRefs: [
+                beforeResourceCheckpointRef,
+                implementationContextCompile.packet.packetRef,
+                ...node.inputHandoffRefs,
+              ],
+              acceptedArtifactRefs: [
+                implementationContextCompile.packet.packetRef,
+                ...implementationContextCompile.implementationTaskPackets.map(
+                  (packet) => packet.packetRef,
+                ),
+                ...splitTransition.outputArtifactRefs,
+                ...splitTaskNodes.map((nodeId) => graphRef("node", nodeId)),
+              ],
+              currentNodeIds: [node.nodeId, ...splitTaskNodes].slice(0, 40),
+              currentCommitmentIds: targetCommitmentIds,
+              openCommitmentIds: targetCommitmentIds,
+              replayContinuationMode: splitTransition.applied
+                ? "continue_scheduler"
+                : "repair_boundary",
+              replayStartPolicy:
+                implementationContextCompile.packet.packetRef ||
+                implementationContextCompile.implementationTaskPackets.length > 0
+                  ? "allowed_from_checkpoint"
+                  : "blocked_until_repair",
+              replaySafetyStatus:
+                implementationContextCompile.packet.packetRef ||
+                implementationContextCompile.implementationTaskPackets.length > 0
+                  ? "safe_to_replay"
+                  : "needs_review",
+              reasonCodes: [
+                splitTransition.applied
+                  ? "after_resource_materialization_split_checkpoint_recorded"
+                  : "after_resource_materialization_blocked_checkpoint_recorded",
+                ...implementationContextCompile.reasonCodes.slice(0, 8),
+                ...splitTransition.reasonCodes.slice(0, 8),
+              ],
+            });
+            if (splitTransition.applied) {
+              return {
+                status: "continue",
+                selectedNodeId: node.nodeId,
+                reasonCodes: splitTransition.reasonCodes,
+                rawPromptStored: false,
+                rawResponseStored: false,
+                rawProviderLogStored: false,
+              };
+            }
+            return {
+              status: "needs_review",
+              reasonCodes: [
+                "implementation_context_materialization_blocked",
+                ...implementationContextCompile.reasonCodes,
+              ],
+              rawPromptStored: false,
+              rawResponseStored: false,
+              rawProviderLogStored: false,
+            };
+          }
+          const capabilityId =
+            typeof metadata.capabilityId === "string"
+              ? metadata.capabilityId
+              : typeof metadata.selectedCapabilityId === "string"
+                ? metadata.selectedCapabilityId
+                : "implementation_microtask";
+          const executorKey =
+            typeof metadata.executorKey === "string" ? metadata.executorKey : "kind:implementation";
+          const workerRef =
+            typeof metadata.workerRef === "string"
+              ? metadata.workerRef
+              : (node.modelOrWorkerRef ?? capabilityId);
+          const materialized = compileNodeExecutionPacketForImplementationTask({
+            runtimeJobId: job.jobId,
+            workflowId: job.parentWorkflowId ?? "agent_team.coding",
+            graphId,
+            nodeId: node.nodeId,
+            nodeKind: node.nodeKind,
+            capabilityId,
+            executorKey,
+            workerRef,
+            implementationTaskPacket,
+          });
+          const workerInvocationGate = evaluateWorkerInvocationReadinessGate({
+            nodeExecutionPacket: materialized.nodeExecutionPacket,
+            resourcePacket: materialized.codingResourcePacket,
+            implementationContextPacket:
+              implementationContextCompile.packet as unknown as JsonValue,
+            nodeExecutionPacketRequired: true,
+            nodeId: node.nodeId,
+            runtimeJobId: job.jobId,
+            graphId,
+            workflowId: job.parentWorkflowId ?? "agent_team.coding",
+          });
+          await this.options.runtimeJobs.attachRuntimeArtifactByContract({
+            jobId: job.jobId,
+            artifactType: "execution_platform.coding_resource_packet",
+            uri: materialized.codingResourcePacket.packetRef,
+            contentType: "application/json",
+            body: materialized.codingResourcePacket as unknown as JsonValue,
+            boundedSummary: `Coding resource packet readiness: ${materialized.readiness.status}.`,
+            targetCommitmentIds: materialized.codingResourcePacket.targetCommitmentIds,
+            targetNodeIds: [node.nodeId],
+            resourcePacketKind: "coding_resource_packet",
+            readinessStatus: materialized.readiness.status,
+            reasonCodes: materialized.readiness.reasonCodes,
+            createdBy: "dynamic-agent-team-graph-runner",
+          });
+          await this.options.runtimeJobs.attachRuntimeArtifactByContract({
+            jobId: job.jobId,
+            artifactType: "execution_platform.node_execution_packet",
+            uri: materialized.nodeExecutionPacket.packetRef,
+            contentType: "application/json",
+            body: materialized.nodeExecutionPacket as unknown as JsonValue,
+            boundedSummary: `Node execution packet readiness: ${materialized.nodeExecutionPacket.readinessStatus}.`,
+            targetCommitmentIds: materialized.nodeExecutionPacket.targetCommitmentIds,
+            targetNodeIds: [node.nodeId],
+            resourcePacketKind: "node_execution_packet",
+            readinessStatus: materialized.nodeExecutionPacket.readinessStatus,
+            reasonCodes: materialized.nodeExecutionPacket.readinessReasonCodes,
+            createdBy: "dynamic-agent-team-graph-runner",
+            metadata: {
+              ...recordValue(
+                summarizeNodeExecutionPacketForReadback(materialized.nodeExecutionPacket),
+              ),
+            } as Record<string, JsonValue>,
+          });
+          await this.options.runtimeJobs.attachRuntimeArtifactByContract({
+            jobId: job.jobId,
+            artifactType: "execution_platform.node_readiness_state",
+            uri: materialized.readiness.state.stateRef,
+            contentType: "application/json",
+            body: {
+              ...materialized.readiness.state,
+              updatedAt: this.now().toISOString(),
+            } as unknown as JsonValue,
+            boundedSummary: `Node readiness state: ${materialized.readiness.state.readinessStatus}.`,
+            targetCommitmentIds: materialized.nodeExecutionPacket.targetCommitmentIds,
+            targetNodeIds: [node.nodeId],
+            resourcePacketKind: "node_readiness_state",
+            readinessStatus: materialized.readiness.state.readinessStatus,
+            reasonCodes: materialized.readiness.reasonCodes,
+            createdBy: "dynamic-agent-team-graph-runner",
+            metadata: {
+              nodeReadinessStateRef: materialized.readiness.state.stateRef,
+              nodeExecutionPacketRef: materialized.nodeExecutionPacket.packetRef,
+              resourcePacketRef: materialized.codingResourcePacket.packetRef,
+              nodeReadinessPhase: materialized.readiness.state.phase,
+              nodeReadinessStatus: materialized.readiness.state.readinessStatus,
+              nodeReadinessRepairAction: materialized.readiness.state.repairAction,
+              nodeReadinessFreshnessStatus: materialized.readiness.state.freshnessStatus,
+              nodeReadinessSnapshotStatus: materialized.readiness.state.snapshotStatus,
+              nodeReadinessContextStatus: materialized.readiness.state.contextStatus,
+              nodeReadinessContextLimitationStatus:
+                materialized.readiness.state.contextLimitationStatus,
+              contextLimitationWaiverRefs: materialized.readiness.state.contextLimitationWaiverRefs,
+              nodeReadinessValidationStatus: materialized.readiness.state.validationStatus,
+              nodeReadinessAuthorityStatus: materialized.readiness.state.authorityStatus,
+              nodeReadinessEvidenceStatus: materialized.readiness.state.evidenceStatus,
+              rawPromptStored: false,
+              rawResponseStored: false,
+              rawProviderLogStored: false,
+            } as Record<string, JsonValue>,
+          });
+          const contextBrokerRequest =
+            materialized.readiness.state.repairAction === "request_context_repair"
+              ? buildContextBrokerRequestFromReadiness({
+                  readinessState: materialized.readiness.state,
+                  nodeExecutionPacket: materialized.nodeExecutionPacket,
+                  resourcePacket: materialized.codingResourcePacket,
+                  implementationContextPacket:
+                    implementationContextCompile.packet as unknown as JsonValue,
+                  requestingNodeId: node.nodeId,
+                  createdAt: this.now().toISOString(),
+                })
+              : null;
+          const contextBrokerRequestArtifact = contextBrokerRequest
+            ? await this.options.runtimeJobs.attachRuntimeArtifactByContract({
+                jobId: job.jobId,
+                artifactType: CONTEXT_BROKER_REQUEST_ARTIFACT_TYPE,
+                uri: contextBrokerRequest.requestRef,
+                contentType: "application/json",
+                body: contextBrokerRequest as unknown as JsonValue,
+                boundedSummary: `Context broker request ${contextBrokerRequest.status} for ${contextBrokerRequest.consumerNodeId}.`,
+                targetCommitmentIds: contextBrokerRequest.targetCommitmentIds,
+                targetNodeIds: [contextBrokerRequest.consumerNodeId],
+                resourcePacketKind: "context_broker_request",
+                readinessStatus: contextBrokerRequest.status,
+                reasonCodes: contextBrokerRequest.reasonCodes,
+                createdBy: "dynamic-agent-team-graph-runner",
+                metadata: {
+                  ...recordValue(summarizeContextBrokerRequest(contextBrokerRequest)),
+                  rawPromptStored: false,
+                  rawResponseStored: false,
+                  rawProviderLogStored: false,
+                } as Record<string, JsonValue>,
+              })
+            : null;
+          const contextBrokerRequestSummary =
+            contextBrokerRequest && contextBrokerRequestArtifact
+              ? summarizeContextBrokerRequestArtifact({
+                  artifact: contextBrokerRequestArtifact,
+                  body: contextBrokerRequest,
+                })
+              : null;
+          const contextBrokerSubmitInvocation =
+            contextBrokerRequestSummary && this.options.runtimeToolKernel
+              ? await invokeSchedulerRuntimeTool({
+                  kernel: this.options.runtimeToolKernel,
+                  toolId: "context_broker.submit_request",
+                  runtimeJobId: job.jobId,
+                  graphId,
+                  nodeId: node.nodeId,
+                  roleRef: node.assignedRole,
+                  idempotencyKey: `${graphId}:${node.nodeId}:${contextBrokerRequestSummary.dedupeKey}:submit`,
+                  inputRef: contextBrokerRequestSummary.requestRef,
+                  inputHash:
+                    contextBrokerRequestSummary.hash ?? contextBrokerRequestSummary.dedupeKey,
+                  inputSummary: `Submit branch-local context broker request ${contextBrokerRequestSummary.status} for ${node.nodeId}.`,
+                  metadata: {
+                    contextBrokerRequestRef: contextBrokerRequestSummary.requestRef,
+                    contextBrokerStatus: contextBrokerRequestSummary.status,
+                    contextBrokerDedupeKey: contextBrokerRequestSummary.dedupeKey,
+                    contextBrokerNextTransition: contextBrokerRequest?.nextTransition ?? null,
+                    rawPromptStored: false,
+                    rawResponseStored: false,
+                    rawProviderLogStored: false,
+                    rawToolLogStored: false,
+                  } as JsonValue,
+                })
+              : null;
+          await this.options.runtimeWorkGraphs.updateNodeStatus({
+            nodeId: node.nodeId,
+            nodeStatus: node.nodeStatus,
+            metadataPatch: {
+              implementationContextPacketRef: implementationContextCompile.packet.packetRef,
+              implementationTaskPacketRef: implementationTaskPacket.packetRef,
+              nodeExecutionPacketRef: materialized.nodeExecutionPacket.packetRef,
+              nodeReadinessStateRef: materialized.readiness.state.stateRef,
+              nodeReadinessPhase: materialized.readiness.state.phase,
+              nodeReadinessStatus: materialized.readiness.state.readinessStatus,
+              nodeReadinessRepairAction: materialized.readiness.state.repairAction,
+              nodeReadinessNextAllowedTransitions:
+                materialized.readiness.state.nextAllowedTransitions,
+              nodeReadinessFreshnessStatus: materialized.readiness.state.freshnessStatus,
+              nodeReadinessSnapshotStatus: materialized.readiness.state.snapshotStatus,
+              nodeReadinessContextStatus: materialized.readiness.state.contextStatus,
+              nodeReadinessContextLimitationStatus:
+                materialized.readiness.state.contextLimitationStatus,
+              contextLimitationWaiverRefs: materialized.readiness.state.contextLimitationWaiverRefs,
+              nodeReadinessValidationStatus: materialized.readiness.state.validationStatus,
+              nodeReadinessAuthorityStatus: materialized.readiness.state.authorityStatus,
+              nodeReadinessEvidenceStatus: materialized.readiness.state.evidenceStatus,
+              contextBrokerRequestRef: contextBrokerRequestSummary?.requestRef ?? null,
+              contextBrokerRequestStatus: contextBrokerRequestSummary?.status ?? null,
+              contextBrokerDedupeKey: contextBrokerRequestSummary?.dedupeKey ?? null,
+              contextBrokerNextTransition: contextBrokerRequest?.nextTransition ?? null,
+              resourcePacketRef: materialized.codingResourcePacket.packetRef,
+              ...recordValue(
+                summarizeImplementationContextPacketForReadback(
+                  implementationContextCompile.packet,
+                ),
+              ),
+              ...recordValue(
+                summarizeImplementationResourceMaterializationForReadback(
+                  implementationContextCompile.resourceMaterialization,
+                ),
+              ),
+              ...recordValue(
+                summarizeNodeExecutionPacketForReadback(materialized.nodeExecutionPacket),
+              ),
+              rawPromptStored: false,
+              rawResponseStored: false,
+              rawProviderLogStored: false,
+            },
+          });
+          await attachProgress({
+            stage: "node_resource_materialization",
+            status: workerInvocationGate.allowed ? "completed" : "needs_review",
+            roleId: node.assignedRole as AgentTeamRoleId,
+            nodeId: node.nodeId,
+            reasonCodes: [
+              "node_execution_packet_compiled_before_worker_execution",
+              ...workerInvocationGate.reasonCodes,
+            ],
+            currentPhase: workerInvocationGate.allowed
+              ? "node_resource_materialization_ready"
+              : "node_resource_materialization_blocked",
+            currentObjective:
+              typeof metadata.exactObjective === "string"
+                ? metadata.exactObjective
+                : "Compile a NodeExecutionPacket before implementation.",
+            targetRefs: materialized.codingResourcePacket.targetFileRefs,
+            workerInternalInputPacketRefs: [
+              implementationContextCompile.packet.packetRef,
+              implementationTaskPacket.packetRef,
+              materialized.nodeExecutionPacket.packetRef,
+              materialized.codingResourcePacket.packetRef,
+              ...(contextBrokerRequestSummary ? [contextBrokerRequestSummary.requestRef] : []),
+            ],
+            implementationContextPacketRef: implementationContextCompile.packet.packetRef,
+            implementationContextReadinessStatus:
+              implementationContextCompile.packet.readinessStatus,
+            implementationTaskPacketRefs: [implementationTaskPacket.packetRef],
+            resolvedTargetFileRefs: implementationContextCompile.packet.resolvedTargetFileRefs,
+            readableTargetFileRefs: implementationContextCompile.packet.readableTargetFileRefs,
+            missingTargetRefs: implementationContextCompile.packet.missingTargetRefs,
+            unreadableTargetRefs: implementationContextCompile.packet.unreadableTargetRefs,
+            directoryOnlyTargetRefs: implementationContextCompile.packet.directoryOnlyTargetRefs,
+            candidateConcreteFileRefs:
+              implementationContextCompile.packet.candidateConcreteFileRefs,
+            targetFileSnapshotRefs: implementationContextCompile.packet.targetFileSnapshotRefs,
+            targetFileSnapshotHashes: implementationContextCompile.packet.targetFileSnapshotHashes,
+            implementationContextRepairAction: implementationContextCompile.repairAction,
+            ...recordValue(
+              summarizeImplementationResourceMaterializationForReadback(
+                implementationContextCompile.resourceMaterialization,
+              ),
+            ),
+            nodeExecutionPacketRef: materialized.nodeExecutionPacket.packetRef,
+            nodeExecutionPacketStatus: materialized.nodeExecutionPacket.readinessStatus,
+            resourcePacketKind: materialized.nodeExecutionPacket.resourcePacketKind,
+            resourcePacketRef: materialized.nodeExecutionPacket.resourcePacketRef,
+            resourceReadinessReasonCodes: workerInvocationGate.reasonCodes,
+            resourceBlockingLimitations: workerInvocationGate.blockingLimitations,
+            resourceNonblockingLimitations: workerInvocationGate.nonblockingLimitations,
+            nodeReadinessStateRef: materialized.readiness.state.stateRef,
+            nodeReadinessPhase: materialized.readiness.state.phase,
+            nodeReadinessStatus: materialized.readiness.state.readinessStatus,
+            nodeReadinessRepairAction: materialized.readiness.state.repairAction,
+            nodeReadinessNextAllowedTransitions:
+              materialized.readiness.state.nextAllowedTransitions,
+            nodeReadinessFreshnessStatus: materialized.readiness.state.freshnessStatus,
+            nodeReadinessSnapshotStatus: materialized.readiness.state.snapshotStatus,
+            nodeReadinessContextStatus: materialized.readiness.state.contextStatus,
+            nodeReadinessValidationStatus: materialized.readiness.state.validationStatus,
+            nodeReadinessAuthorityStatus: materialized.readiness.state.authorityStatus,
+            nodeReadinessEvidenceStatus: materialized.readiness.state.evidenceStatus,
+            contextBrokerRequestRefs: contextBrokerRequestSummary
+              ? [contextBrokerRequestSummary.requestRef]
+              : [],
+            contextBrokerStatuses: contextBrokerRequestSummary
+              ? [contextBrokerRequestSummary.status]
+              : [],
+            contextBrokerDedupeKeys: contextBrokerRequestSummary
+              ? [contextBrokerRequestSummary.dedupeKey]
+              : [],
+            contextBrokerConsumerNodeIds: contextBrokerRequestSummary
+              ? [contextBrokerRequestSummary.consumerNodeId]
+              : [],
+            contextBrokerReasonCodes: contextBrokerRequestSummary
+              ? contextBrokerRequestSummary.reasonCodes
+              : [],
+            contextBrokerNextTransition: contextBrokerRequest?.nextTransition ?? null,
+            schedulerToolInvocationRefs: contextBrokerSubmitInvocation
+              ? [contextBrokerSubmitInvocation.invocationRef]
+              : [],
+            blockerSummary: workerInvocationGate.allowed
+              ? null
+              : workerInvocationGate.blockingLimitations.join("; "),
+            nextDecisionNeeded: workerInvocationGate.allowed
+              ? "execute_node"
+              : "repair_node_execution_packet",
+          });
+          await recordBoundaryCheckpoint({
+            checkpointKind: "after_resource_materialization",
+            upstreamArtifactRefs: [
+              beforeResourceCheckpointRef,
+              implementationContextCompile.packet.packetRef,
+              implementationTaskPacket.packetRef,
+              ...node.inputHandoffRefs,
+            ],
+            acceptedArtifactRefs: [
+              implementationContextCompile.packet.packetRef,
+              implementationTaskPacket.packetRef,
+              materialized.nodeExecutionPacket.packetRef,
+              materialized.codingResourcePacket.packetRef,
+              materialized.readiness.state.stateRef,
+              ...(contextBrokerRequestSummary ? [contextBrokerRequestSummary.requestRef] : []),
+            ],
+            currentNodeIds: [node.nodeId],
+            currentCommitmentIds: targetCommitmentIds,
+            openCommitmentIds: workerInvocationGate.allowed ? [] : targetCommitmentIds,
+            satisfiedCommitmentIds: workerInvocationGate.allowed ? targetCommitmentIds : [],
+            replayContinuationMode: workerInvocationGate.allowed ? "run_node" : "repair_boundary",
+            replayStartPolicy: "allowed_from_checkpoint",
+            replaySafetyStatus: "safe_to_replay",
+            reasonCodes: [
+              workerInvocationGate.allowed
+                ? "after_resource_materialization_ready_checkpoint_recorded"
+                : "after_resource_materialization_blocked_checkpoint_recorded",
+              ...workerInvocationGate.reasonCodes.slice(0, 8),
+            ],
+          });
+          if (workerInvocationGate.allowed) {
+            await recordBoundaryCheckpoint({
+              checkpointKind: "before_worker_invocation",
+              upstreamArtifactRefs: [
+                materialized.nodeExecutionPacket.packetRef,
+                materialized.codingResourcePacket.packetRef,
+                materialized.readiness.state.stateRef,
+              ],
+              acceptedArtifactRefs: [
+                materialized.nodeExecutionPacket.packetRef,
+                materialized.codingResourcePacket.packetRef,
+                materialized.readiness.state.stateRef,
+              ],
+              currentNodeIds: [node.nodeId],
+              currentCommitmentIds: targetCommitmentIds,
+              openCommitmentIds: targetCommitmentIds,
+              replayContinuationMode: "run_node",
+              reasonCodes: ["before_worker_invocation_checkpoint_recorded"],
+            });
+          }
+          return workerInvocationGate.allowed
+            ? null
+            : {
+                status: "needs_review",
+                reasonCodes: [
+                  "worker_invocation_readiness_gate_blocked",
+                  ...workerInvocationGate.reasonCodes,
+                ],
+                rawPromptStored: false,
+                rawResponseStored: false,
+                rawProviderLogStored: false,
+              };
+        },
         onNodeAdded: async ({ node, reasonCodes }) => {
           await syncGraphNodeToWorkQueue({ node, reasonCodes });
         },
@@ -9713,6 +13196,27 @@ export class DynamicAgentTeamGraphRunner {
             schedulerToolId: progress.schedulerToolId,
             schedulerToolInvocationRefs: progress.schedulerToolInvocationRefs,
             parallelFrontier: progress.parallelFrontier,
+            schedulerFrontierState: progress.schedulerFrontierState as JsonValue | null,
+            noProgressSignature: progress.noProgressSignature as JsonValue | null,
+            noProgressRepeatCount: progress.noProgressRepeatCount,
+            missionLedgerEvaluationThrottle:
+              progress.missionLedgerEvaluationThrottle as JsonValue | null,
+            expansionAdmissionDecision: progress.expansionAdmissionDecision as JsonValue | null,
+            expansionAdmissionDecisionRef: progress.expansionAdmissionDecisionRef,
+            expansionAdmissionPolicyRef: progress.expansionAdmissionPolicyRef,
+            expansionAdmissionStatus: progress.expansionAdmissionStatus,
+            expansionAdmissionOriginalNodeCount: progress.expansionAdmissionOriginalNodeCount,
+            expansionAdmissionOriginalEdgeCount: progress.expansionAdmissionOriginalEdgeCount,
+            expansionAdmissionAdmittedNodeCount: progress.expansionAdmissionAdmittedNodeCount,
+            expansionAdmissionAdmittedEdgeCount: progress.expansionAdmissionAdmittedEdgeCount,
+            expansionAdmissionDeferredNodeCount: progress.expansionAdmissionDeferredNodeCount,
+            expansionAdmissionDeferredEdgeCount: progress.expansionAdmissionDeferredEdgeCount,
+            expansionAdmissionReadyFrontierNodeIds: progress.expansionAdmissionReadyFrontierNodeIds,
+            expansionAdmissionAdmittedNodeIds: progress.expansionAdmissionAdmittedNodeIds,
+            expansionAdmissionDeferredNodeIds: progress.expansionAdmissionDeferredNodeIds,
+            expansionAdmissionNextTransition: progress.expansionAdmissionNextTransition,
+            expansionAdmissionPrerequisiteCritical: progress.expansionAdmissionPrerequisiteCritical,
+            expansionAdmissionReasonCodes: progress.expansionAdmissionReasonCodes,
             contextSnapshotRefs: progress.contextSnapshotRefs,
             staleContextSnapshotRefs: progress.staleContextSnapshotRefs,
             missingContextSnapshotRefs: progress.missingContextSnapshotRefs,
@@ -9720,6 +13224,25 @@ export class DynamicAgentTeamGraphRunner {
             contextFreshnessStatus: progress.contextFreshnessStatus,
             contextRefreshAction: progress.contextRefreshAction,
             contextFreshnessSummary: progress.contextFreshnessSummary,
+            implementationContextPacketRef: progress.implementationContextPacketRef,
+            implementationContextReadinessStatus: progress.implementationContextReadinessStatus,
+            implementationTaskPacketRefs: progress.implementationTaskPacketRefs,
+            resolvedTargetFileRefs: progress.resolvedTargetFileRefs,
+            readableTargetFileRefs: progress.readableTargetFileRefs,
+            missingTargetRefs: progress.missingTargetRefs,
+            unreadableTargetRefs: progress.unreadableTargetRefs,
+            directoryOnlyTargetRefs: progress.directoryOnlyTargetRefs,
+            candidateConcreteFileRefs: progress.candidateConcreteFileRefs,
+            targetFileSnapshotRefs: progress.targetFileSnapshotRefs,
+            targetFileSnapshotHashes: progress.targetFileSnapshotHashes,
+            implementationContextRepairAction: progress.implementationContextRepairAction,
+            nodeExecutionPacketRef: progress.nodeExecutionPacketRef,
+            nodeExecutionPacketStatus: progress.nodeExecutionPacketStatus,
+            resourcePacketKind: progress.resourcePacketKind,
+            resourcePacketRef: progress.resourcePacketRef,
+            resourceReadinessReasonCodes: progress.resourceReadinessReasonCodes,
+            resourceBlockingLimitations: progress.resourceBlockingLimitations,
+            resourceNonblockingLimitations: progress.resourceNonblockingLimitations,
           });
         },
         evaluateMissionLedger: initialMissionLedger
@@ -9746,20 +13269,23 @@ export class DynamicAgentTeamGraphRunner {
           typeof payload.schedulerMaxParallelNodeExecutions === "number"
             ? payload.schedulerMaxParallelNodeExecutions
             : codingWorkflowPlugin.schedulerOptions.maxParallelNodeExecutions,
+        preferExecutableFrontierBeforeOrchestrator: true,
       },
     });
-    const genericRuntimeResultRef = `runtime-job://${job.jobId}/execution/generic-orchestration-runtime/result/${workflowId}`;
-    await this.options.runtimeJobs.attachArtifact({
-      jobId: job.jobId,
-      artifactType: GENERIC_ORCHESTRATION_RUNTIME_RESULT_ARTIFACT_TYPE,
-      storageKind: "metadata",
-      uri: genericRuntimeResultRef,
-      contentType: "application/json",
-      metadata: genericOrchestrationRuntimeResultArtifactMetadata(genericRuntimeResult),
-    });
+    const genericRuntimeResult = genericRuntimeExecution.result;
+    const workflowPluginRef = genericRuntimeExecution.refs.workflowPluginRef;
+    const genericRuntimeReadinessRef = genericRuntimeExecution.refs.genericRuntimeReadinessRef;
+    const genericRuntimeSpineReadinessRef =
+      genericRuntimeExecution.refs.genericRuntimeSpineReadinessRef;
+    const workflowEngineReadinessRef = genericRuntimeExecution.refs.workflowEngineReadinessRef;
+    const genericRuntimeResultRef = genericRuntimeExecution.refs.genericRuntimeResultRef;
+    const genericRuntimeSpineLifecycleRef =
+      genericRuntimeExecution.refs.genericRuntimeSpineLifecycleRef;
+    artifactRefs.push(...genericRuntimeExecution.refs.artifactRefs);
     await recordBoundaryCheckpoint({
       checkpointKind: "graph_compile",
       upstreamArtifactRefs: [
+        genericRuntimeSpineReadinessRef,
         genericRuntimeReadinessRef,
         ...missionLedgerRefs.slice(-2),
         ...artifactRefs.filter((ref) => ref.includes("commitment-work-packets")).slice(-4),
@@ -9767,7 +13293,11 @@ export class DynamicAgentTeamGraphRunner {
       acceptedArtifactRefs:
         genericRuntimeResult.addedNodeIds.length > 0 ||
         genericRuntimeResult.executedNodeIds.length > 0
-          ? [genericRuntimeResultRef, graphRef("graph", graph.graphId)]
+          ? [
+              genericRuntimeResultRef,
+              ...(genericRuntimeSpineLifecycleRef ? [genericRuntimeSpineLifecycleRef] : []),
+              graphRef("graph", graph.graphId),
+            ]
           : [],
       rejectedArtifactRefs:
         genericRuntimeResult.status === "failed" ? [genericRuntimeResultRef] : [],

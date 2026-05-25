@@ -177,6 +177,50 @@ describe("mission contract ledger", () => {
     expect(missionLedgerRequiresReviewBeforeExecution(ledger)).toBe(false);
   });
 
+  it("bounds large model-authored safety and non-goal arrays before schema validation", () => {
+    const ledger = normalizeMissionContractLedger({
+      missionId: "mission-bounds",
+      ownerObjectiveSummary: "Implement workflow. Do not deploy or store raw logs.",
+      value: {
+        blockingCommitments: [
+          {
+            commitmentId: "implementation",
+            commitmentText: "Implement the requested workflow.",
+            whyItMatters: "Owner requested production work.",
+            expectedEvidenceDescription: "Changed file refs and validation refs.",
+            status: "pending",
+            blocking: true,
+          },
+        ],
+        explicitNonGoals: Array.from(
+          { length: 50 },
+          (_, index) => `Do not perform excluded action ${index + 1}.`,
+        ),
+        safetyConstraints: Array.from({ length: 50 }, (_, index) => ({
+          constraintId: `constraint-${index + 1}`,
+          constraintText: `Respect safety boundary ${index + 1}.`,
+          boundaryKind: "scope",
+          enforcementOwner: "runtime_policy",
+          evidenceRefs: [],
+        })),
+        prohibitedDirectiveCandidates: Array.from({ length: 50 }, (_, index) => ({
+          directiveId: `directive-${index + 1}`,
+          directiveText: `Do not perform prohibited side effect ${index + 1}.`,
+          classification: "constraint_not_primary",
+          rationale: "The directive is a negative safety constraint, not primary work.",
+          actionCategory: "side_effect",
+          evidenceRefs: [],
+        })),
+      },
+    });
+
+    expect(ledger.explicitNonGoals).toHaveLength(20);
+    expect(ledger.safetyConstraints).toHaveLength(30);
+    expect(ledger.prohibitedDirectiveCandidates).toHaveLength(20);
+    expect(ledger.blockingCommitments).toHaveLength(1);
+    expect(missionLedgerBlocksExecution(ledger)).toBe(false);
+  });
+
   it("blocks execution when the model-authored mission gate finds primary prohibited work", () => {
     const ledger = normalizeMissionContractLedger({
       missionId: "mission-blocked",

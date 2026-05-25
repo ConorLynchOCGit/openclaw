@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import type { JsonValue } from "../runtime-job-repository.ts";
 
 export const TEAM_GRAPH_NODE_KINDS = [
+  "work_intent",
   "orchestrator_plan",
   "context_scout",
   "context_synthesis",
@@ -250,6 +251,10 @@ const RAW_KEY_PATTERN =
   /(raw(prompt|response|transcript|provider|tool|command|db|log|logs)|secret|hiddenReasoning|rawContent)/iu;
 const DEFAULT_STRING_BOUND = 1_200;
 const DEFAULT_ARRAY_BOUND = 24;
+const GRAPH_METADATA_BODY_KEY_PATTERN =
+  /^(implementationContextPacket|implementationTaskPacket|codingResourcePacket|nodeExecutionPacket|nodeReadinessState|contextPacket|contextHandoffPacket|contextSynthesisArtifact|resourcePacket|targetFileSnapshots|fileSnapshots|splitTasks|taskPackets|packetBody|payloadBody|body)$/u;
+const GRAPH_METADATA_MANIFEST_ARRAY_MAX = 120;
+const GRAPH_METADATA_MANIFEST_OBJECT_ARRAY_MAX = 8;
 
 export function sha256RuntimeWorkGraphText(value: string): string {
   return createHash("sha256").update(value).digest("hex");
@@ -302,6 +307,126 @@ export function assertJsonByteLimit(value: JsonValue, name: string, maxBytes = 6
     throw new Error(`${name} exceeds ${maxBytes} bytes`);
   }
   assertRuntimeWorkGraphNoRawStorage(value, name);
+}
+
+function isManifestLikeObject(value: Record<string, unknown>): boolean {
+  return (
+    typeof value.payloadRef === "string" ||
+    typeof value.artifactRef === "string" ||
+    typeof value.packetRef === "string" ||
+    typeof value.stateRef === "string" ||
+    typeof value.contentHash === "string" ||
+    typeof value.sha256 === "string"
+  );
+}
+
+function isContextSnapshotRefObject(value: Record<string, unknown>): boolean {
+  return (
+    value.artifactKind === "context_snapshot_ref" &&
+    typeof value.snapshotRef === "string" &&
+    typeof value.sourceRef === "string" &&
+    typeof value.sourceKind === "string" &&
+    (value.rawPromptStored === false || value.rawPromptStored === undefined) &&
+    (value.rawResponseStored === false || value.rawResponseStored === undefined) &&
+    (value.rawProviderLogStored === false || value.rawProviderLogStored === undefined) &&
+    (value.rawToolLogStored === false || value.rawToolLogStored === undefined)
+  );
+}
+
+function isBoundedManifestOnlyObject(value: Record<string, unknown>): boolean {
+  const allowed = new Set([
+    "payloadRef",
+    "artifactRef",
+    "packetRef",
+    "stateRef",
+    "contentHash",
+    "sha256",
+    "byteCount",
+    "boundedSummary",
+    "readinessStatus",
+    "reasonCodes",
+    "rawPromptStored",
+    "rawResponseStored",
+    "rawProviderLogStored",
+    "rawToolLogStored",
+    "rawCommandLogStored",
+    "rawDbRowsStored",
+    "secretsStored",
+  ]);
+  return Object.keys(value).every((key) => allowed.has(key));
+}
+
+function isBoundedReferenceOnlyObject(value: Record<string, unknown>): boolean {
+  return (
+    (isManifestLikeObject(value) && isBoundedManifestOnlyObject(value)) ||
+    isContextSnapshotRefObject(value)
+  );
+}
+
+export function assertRuntimeWorkGraphManifestOnlyMetadata(
+  value: unknown,
+  path = "metadata",
+): void {
+  if (value === null || value === undefined) {
+    return;
+  }
+  if (typeof value !== "object") {
+    return;
+  }
+  if (Array.isArray(value)) {
+    if (value.length > GRAPH_METADATA_MANIFEST_ARRAY_MAX) {
+      throw new Error(
+        `runtime work graph metadata manifest violation at ${path}: array exceeds ${GRAPH_METADATA_MANIFEST_ARRAY_MAX} items`,
+      );
+    }
+    const objectItems = value.filter(
+      (item) => item && typeof item === "object" && !Array.isArray(item),
+    );
+    const allReferenceOnlyObjects = objectItems.every((item) =>
+      isBoundedReferenceOnlyObject(item as Record<string, unknown>),
+    );
+    if (objectItems.length > GRAPH_METADATA_MANIFEST_OBJECT_ARRAY_MAX && !allReferenceOnlyObjects) {
+      throw new Error(
+        `runtime work graph metadata manifest violation at ${path}: object array looks like an embedded body; store payload refs instead`,
+      );
+    }
+    value.forEach((item, index) =>
+      assertRuntimeWorkGraphManifestOnlyMetadata(item, `${path}[${index}]`),
+    );
+    return;
+  }
+  const record = value as Record<string, unknown>;
+  for (const [key, child] of Object.entries(record)) {
+    if (GRAPH_METADATA_BODY_KEY_PATTERN.test(key)) {
+      if (
+        child !== null &&
+        child !== undefined &&
+        !(typeof child === "string") &&
+        !(Array.isArray(child) && child.every((item) => typeof item === "string")) &&
+        !(
+          typeof child === "object" &&
+          !Array.isArray(child) &&
+          isBoundedReferenceOnlyObject(child as Record<string, unknown>)
+        )
+      ) {
+        throw new Error(
+          `runtime work graph metadata manifest violation at ${path}.${key}: graph metadata may contain bounded refs/manifests only`,
+        );
+      }
+    }
+    if (
+      child &&
+      typeof child === "object" &&
+      !Array.isArray(child) &&
+      GRAPH_METADATA_BODY_KEY_PATTERN.test(key) &&
+      !isBoundedReferenceOnlyObject(child as Record<string, unknown>)
+    ) {
+      throw new Error(
+        `runtime work graph metadata manifest violation at ${path}.${key}: embedded packet bodies must use payload storage`,
+      );
+    }
+    assertRuntimeWorkGraphManifestOnlyMetadata(child, `${path}.${key}`);
+  }
 }
 
 export function parseStringArray(value: unknown): string[] {

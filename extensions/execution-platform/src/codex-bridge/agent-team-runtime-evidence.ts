@@ -8,7 +8,7 @@ import type {
   RuntimeJobRepository,
 } from "../runtime-job-repository.ts";
 import type { AgentTeamRoleId } from "./agent-team-plan.ts";
-import type { AgentTeamRoleExecutionEvidence } from "./agent-team-quality-proof.ts";
+import type { AgentTeamRoleExecutionEvidence } from "./agent-team-role-execution-evidence.ts";
 
 export const AGENT_TEAM_JOB_TYPE = "executor.agent_team";
 

@@ -66,23 +66,7 @@ import {
   getWorkflowContract,
   type WorkflowRegistry,
 } from "../workflows/workflow-registry.ts";
-import {
-  intentValidationMetadata,
-  validateIntentForExecution,
-  type IntentValidationResult,
-  type IntentValidatorApprovalRef,
-} from "./intent-validator.ts";
-import {
-  HeuristicIntentRouterProvider,
-  ModelAssistedIntentRouter,
-  recordIntentRouterDecision,
-  type IntentRouterProvider,
-  type ModelAssistedIntentRouterDecision,
-} from "./model-assisted-intent-router.ts";
-import {
-  compileIntentToRuntimeJobRequest,
-  type CompiledExecutionRequest,
-} from "./request-compiler.ts";
+import { type IntentValidatorApprovalRef } from "./intent-validator.ts";
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   return value && typeof value === "object" && !Array.isArray(value)
@@ -125,9 +109,9 @@ export type NativeExecutionSubmitResult = {
   status: "accepted" | "rejected";
   statusCode: number;
   runtimeJobId: string | null;
-  routeDecision: ModelAssistedIntentRouterDecision | null;
-  validation: IntentValidationResult | null;
-  compiledRequest: CompiledExecutionRequest | null;
+  routeDecision: null;
+  validation: null;
+  compiledRequest: null;
   frontDoorRouterResult: StructuredModelIntentRouterResult | null;
   frontDoorEscalation: RouterEscalationDecision | null;
   frontDoorValidation: IntentValidationDecision | null;
@@ -153,7 +137,6 @@ export type NativeExecutionRpcDependencies = {
   structuredRouterProvider?: StructuredModelIntentRouterProvider;
   routingTelemetryStore?: RoutingTelemetryStore;
   workerAdapterRegistry?: WorkflowWorkerAdapterRegistry;
-  intentRouterProvider?: IntentRouterProvider;
   queueName?: string;
 };
 
@@ -330,7 +313,7 @@ function buildActionSeparationRepairRequest(input: {
     promptHash: input.originalRequest.promptHash,
     volatilePromptText: JSON.stringify({
       repairTask:
-        "Re-emit CanonicalRouterOutput with requestedActions, negatedActions, and conditionalActions separated by role. requestedActions are only the actions needed for the primary outcome. negatedActions and conditionalActions are constraints on that outcome and must not duplicate primary work. If the primary outcome itself remains contradictory after separation, return clarification_required.",
+        "Re-emit CanonicalRouterOutput with requestedActions, negatedActions, conditionalActions, and constraints separated by role. requestedActions are only the actions needed for the primary outcome. If the user wants an action under one scope but forbids it under another scope, keep the wanted action in requestedActions and move the forbidden scope into constraints; do not leave the same action category in negatedActions unless the primary outcome itself is truly contradictory. negatedActions and conditionalActions are constraints on that outcome and must not duplicate primary work. If the primary outcome itself remains contradictory after separation, return clarification_required.",
       originalPrompt: input.originalPrompt,
       currentRouterOutput: JSON.parse(currentRouterSummary),
       actionSemantics: JSON.parse(actionSemanticsSummary),
@@ -576,12 +559,10 @@ function memoryRouteKindForCanonicalRoute(
 
 export class NativeExecutionRpcService {
   private readonly registry: WorkflowRegistry;
-  private readonly provider: IntentRouterProvider;
   private readonly structuredRouterProvider: StructuredModelIntentRouterProvider | null;
 
   constructor(private readonly dependencies: NativeExecutionRpcDependencies) {
     this.registry = dependencies.registry ?? DEFAULT_EXECUTION_WORKFLOW_REGISTRY;
-    this.provider = dependencies.intentRouterProvider ?? new HeuristicIntentRouterProvider();
     this.structuredRouterProvider = dependencies.structuredRouterProvider ?? null;
   }
 
@@ -704,152 +685,13 @@ export class NativeExecutionRpcService {
     if (this.structuredRouterProvider) {
       return this.submitViaFrontDoor(request);
     }
-    if (!this.dependencies.intentRouterProvider) {
-      return this.submitResult({
-        statusCode: 503,
-        reasonCodes: [
-          "structured_model_intent_router_provider_not_configured",
-          "front_door_required_for_free_form_execution_submit",
-        ],
-      });
-    }
-    const router = new ModelAssistedIntentRouter(this.provider, this.registry);
-    const routeDecision = await router.route({ prompt: request.prompt });
-    const validation = validateIntentForExecution({
-      routeDecision: routeDecision.routeDecision,
-      registry: this.registry,
-      approvalRefs: request.approvalRefs,
-    });
-    if (!validation.accepted || !validation.workflow) {
-      return this.submitResult({
-        routeDecision,
-        validation,
-        workflowId: validation.workflow?.workflowId ?? routeDecision.routeDecision.workflowId,
-        jobType: validation.workflow?.jobType ?? routeDecision.routeDecision.jobType,
-        reasonCodes: validation.reasonCodes,
-      });
-    }
-    const workflow = getWorkflowContract(this.registry, validation.workflow.workflowId);
-    if (!workflow) {
-      return this.submitResult({
-        routeDecision,
-        validation,
-        reasonCodes: ["workflow_not_registered_after_validation"],
-      });
-    }
-    const idempotencyKey = shortHash(
-      `${routeDecision.promptHash}:${request.workItemId ?? request.auth.sessionId ?? request.auth.actorId}`,
-    );
-    const requestId = `native-exec-${idempotencyKey}`;
-    const compiled = compileIntentToRuntimeJobRequest({
-      requestId,
-      routerDecision: routeDecision,
-      validation,
-      workflow,
-      operator: { actorId: request.auth.actorId, sessionId: request.auth.sessionId },
-      workItemId: request.workItemId,
-      approvalRefs: request.approvalRefs?.map((approval) => approval.approvalId),
-      queueName: this.dependencies.queueName,
-      idempotencyKey,
-    });
-    const workerReadiness = this.evaluateWorkerReadiness({
-      workflowId: compiled.workflowId,
-      jobType: compiled.jobType,
-    });
-    if (workerReadiness && !workerReadiness.accepted) {
-      return this.submitResult({
-        statusCode: 409,
-        routeDecision,
-        validation,
-        compiledRequest: compiled,
-        workflowId: compiled.workflowId,
-        jobType: compiled.jobType,
-        workerContractState: workerReadiness.contractState,
-        workerAdapterId: workerReadiness.workerAdapterId,
-        reasonCodes: workerReadiness.reasonCodes,
-      });
-    }
-    const job = await this.dependencies.runtimeJobs.enqueueJob(compiled.runtimeJobCreateRequest);
-    if (this.dependencies.workQueue && request.workItemId?.trim()) {
-      const existingTruth = await this.dependencies.workQueue.readWorkItemTruth(request.workItemId);
-      if (!existingTruth) {
-        await this.dependencies.workQueue.createWorkItem({
-          workItemId: request.workItemId,
-          itemType: "execution_workflow",
-          title: compiled.objectiveSummary,
-          metadata: {
-            workflowId: compiled.workflowId,
-            jobType: compiled.jobType,
-            route: routeDecision.routeDecision.route,
-            promptHash: compiled.promptHash,
-            sourceRoute: request.sourceRoute ?? request.auth.sourceRoute ?? null,
-            rawPromptStored: false,
-            rawResponseStored: false,
-          },
-          actorId: request.auth.actorId,
-        });
-      }
-      await this.dependencies.workQueue.createWorkRun({
-        workItemId: request.workItemId,
-        executorKind: "runtime_job",
-        runtimeJobId: job.jobId,
-        runState: "running",
-        metadata: {
-          workflowId: compiled.workflowId,
-          jobType: compiled.jobType,
-          genericWorkflow: true,
-          nativeExecutionSubmit: true,
-          sourceRoute: request.sourceRoute ?? request.auth.sourceRoute ?? null,
-          workQueueLifecycleMutated: false,
-        },
-      });
-    }
-    await this.dependencies.runtimeJobs.attachArtifact({
-      jobId: job.jobId,
-      artifactType: "execution.workflow_request_compiled",
-      storageKind: "metadata",
-      uri: `runtime-job://${job.jobId}/execution/compiled-request/${compiled.requestId}`,
-      contentType: "application/json",
-      metadata: compiled as unknown as JsonValue,
-    });
-    if (workerReadiness) {
-      await this.attachWorkerReadinessArtifact(job.jobId, workerReadiness);
-    }
-    await recordIntentRouterDecision({
-      runtimeJobs: this.dependencies.runtimeJobs,
-      runtimeJobId: job.jobId,
-      decision: routeDecision,
-    });
-    await this.dependencies.runtimeJobs.attachArtifact({
-      jobId: job.jobId,
-      artifactType: "execution.intent_validation",
-      storageKind: "metadata",
-      uri: `runtime-job://${job.jobId}/execution/intent-validation`,
-      contentType: "application/json",
-      metadata: intentValidationMetadata(validation),
-    });
-    await this.dependencies.runtimeJobs.recordEvent({
-      jobId: job.jobId,
-      eventType: "execution.workflow_request_submitted",
-      data: {
-        workflowId: compiled.workflowId,
-        jobType: compiled.jobType,
-        promptHash: compiled.promptHash,
-        sourceRoute: request.sourceRoute ?? request.auth.sourceRoute ?? null,
-        rawPromptStored: false,
-      },
-    });
     return this.submitResult({
-      accepted: true,
-      statusCode: 202,
-      runtimeJobId: job.jobId,
-      routeDecision,
-      validation,
-      compiledRequest: compiled,
-      workflowId: compiled.workflowId,
-      jobType: compiled.jobType,
-      workerContractState: workerReadiness?.contractState ?? null,
-      workerAdapterId: workerReadiness?.workerAdapterId ?? null,
+      statusCode: 503,
+      reasonCodes: [
+        "structured_model_intent_router_provider_not_configured",
+        "front_door_required_for_free_form_execution_submit",
+        "legacy_semantic_intent_router_retired",
+      ],
     });
   }
 
@@ -1012,6 +854,7 @@ export class NativeExecutionRpcService {
         requestedActions: currentOutput.requestedActions,
         negatedActions: currentOutput.negatedActions,
         conditionalActions: currentOutput.conditionalActions,
+        routerReasonCodes: currentOutput.reasonCodes,
       });
       const currentClarification = runClarificationGate({
         routerOutput: currentOutput,
@@ -1154,6 +997,35 @@ export class NativeExecutionRpcService {
       validation,
       routed,
     });
+    if (actionSemantics.blockedActions.length > 0) {
+      await this.recordFrontDoorRoutingTelemetry({
+        record: buildFrontDoorRoutingTelemetryRecord({
+          routeDecisionId: `${requestId}:routing`,
+          promptHash,
+          promptSummary,
+          routed,
+          escalation,
+          validation,
+          clarification,
+          actionSemantics,
+          compiled: null,
+          contextVersion,
+          authoritySnapshotVersion,
+          authSessionVersion,
+        }),
+      });
+      return this.submitResult({
+        statusCode: 400,
+        workflowId: output.executorWorkflowId ?? output.workflowId,
+        jobType: output.jobType,
+        frontDoorRouterResult: routed,
+        frontDoorEscalation: escalation,
+        frontDoorValidation: validation,
+        frontDoorClarification: clarification,
+        frontDoorMemoryPolicy,
+        reasonCodes: [...validation.reasonCodes, ...actionSemantics.reasonCodes],
+      });
+    }
     const compiled = compileFrontDoorRequest({
       requestId,
       routerOutput: output,

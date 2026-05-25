@@ -2,13 +2,13 @@ import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import { promisify } from "node:util";
 import type { RuntimeJobRepository } from "../runtime-job-repository.ts";
+import { CodexParityRuntimeAdapter } from "./codex-parity-runtime-adapter.ts";
+import { createCodexParityValidationRecord } from "./codex-parity-validation-accounting.ts";
 import type {
   AgentTeamImplementationBridge,
   AgentTeamImplementationBridgeRunInput,
   AgentTeamImplementationBridgeRunResult,
-} from "./agent-team-queued-runner.ts";
-import { CodexParityRuntimeAdapter } from "./codex-parity-runtime-adapter.ts";
-import { createCodexParityValidationRecord } from "./codex-parity-validation-accounting.ts";
+} from "./coding-team-runtime-job-runner.ts";
 
 const execFileAsync = promisify(execFile);
 
@@ -26,6 +26,73 @@ function defaultRepoPath(): string {
 
 function validationCommandId(command: string): string {
   return sha256Text(command).slice(0, 16);
+}
+
+function bounded(value: string, max: number): string {
+  return value.trim().slice(0, max);
+}
+
+function nodeExecutionPacketPromptSummary(input: AgentTeamImplementationBridgeRunInput): string[] {
+  const packet = input.nodeExecutionPacket;
+  const resource = input.codingResourcePacket;
+  if (!packet) {
+    return [
+      "NodeExecutionPacket:",
+      "- not supplied; production implementation calls should be gated before worker invocation",
+    ];
+  }
+  return [
+    "NodeExecutionPacket:",
+    `- packetRef: ${packet.packetRef}`,
+    `- readiness: ${packet.readinessStatus}`,
+    `- resourcePacketRef: ${packet.resourcePacketRef}`,
+    `- nodeId: ${packet.nodeId}`,
+    `- capabilityId: ${packet.capabilityId}`,
+    `- executorKey: ${packet.executorKey}`,
+    `- executionIntent: ${packet.executionIntent}`,
+    `- evidenceModes: ${packet.evidenceMode.join(", ") || "none"}`,
+    `- targetCommitments: ${packet.targetCommitmentIds.slice(0, 12).join(", ") || "none"}`,
+    `- validationRefs: ${packet.validationRefs.slice(0, 8).join(", ") || "none"}`,
+    `- nodeReadinessStateRef: ${input.nodeReadinessStateRef ?? "not supplied"}`,
+    ...(resource
+      ? [
+          "CodingResourcePacket:",
+          `- packetRef: ${resource.packetRef}`,
+          `- targetFileRefs: ${resource.targetFileRefs.slice(0, 20).join(", ") || "none"}`,
+          `- targetFileSnapshotRefs: ${
+            resource.targetFileSnapshotRefs.slice(0, 20).join(", ") || "none"
+          }`,
+          `- allowedEditScope: ${resource.allowedEditScope.slice(0, 20).join(", ") || "none"}`,
+          `- mustReadRefs: ${resource.mustReadRefs.slice(0, 20).join(", ") || "none"}`,
+          `- acceptanceCriteria: ${resource.acceptanceCriteria.slice(0, 8).join(" | ") || "none"}`,
+          `- stopIfMissingOrEscalate: ${
+            resource.stopIfMissingOrEscalate.slice(0, 8).join(" | ") || "none"
+          }`,
+          `- expectedPatchShape: ${bounded(resource.expectedPatchShape, 400)}`,
+        ]
+      : [
+          "CodingResourcePacket:",
+          "- not supplied; stop with upstream_packet_insufficient if the resource body is unavailable",
+        ]),
+  ];
+}
+
+function bridgePacketPreflightFailure(input: AgentTeamImplementationBridgeRunInput): string[] {
+  const failures: string[] = [];
+  if (!input.nodeExecutionPacket) {
+    failures.push("codex_parity_node_execution_packet_missing");
+  }
+  if (!input.codingResourcePacket) {
+    failures.push("codex_parity_coding_resource_packet_missing");
+  }
+  if (
+    input.nodeExecutionPacket &&
+    input.codingResourcePacket &&
+    input.nodeExecutionPacket.resourcePacketRef !== input.codingResourcePacket.packetRef
+  ) {
+    failures.push("codex_parity_resource_packet_ref_mismatch");
+  }
+  return failures;
 }
 
 export type CodexParityImplementationBridgeOptions = {
@@ -54,7 +121,7 @@ export class CodexParityImplementationBridge implements AgentTeamImplementationB
       "scripts/",
     ];
     this.approvedValidationCommands = options.approvedValidationCommands ?? [
-      "pnpm test:file extensions/execution-platform/src/codex-bridge/agent-team-quality-proof.test.ts",
+      "pnpm test:file extensions/execution-platform/src/codex-bridge/coding-team-runtime-job-runner-dynamic-boundary.test.ts",
     ];
     this.adapter = options.adapter ?? null;
     this.runtimeJobs = options.runtimeJobs;
@@ -63,6 +130,34 @@ export class CodexParityImplementationBridge implements AgentTeamImplementationB
   async run(
     input: AgentTeamImplementationBridgeRunInput,
   ): Promise<AgentTeamImplementationBridgeRunResult> {
+    const packetPreflightFailures = bridgePacketPreflightFailure(input);
+    if (packetPreflightFailures.length > 0) {
+      const now = new Date().toISOString();
+      return {
+        status: "needs_review",
+        transportKind: "codex_parity_runtime_adapter",
+        modelRef: process.env.OPENCLAW_CODEX_PARITY_COMPLEX_MODEL_REF?.trim() || "codex-parity",
+        providerPath: "codex_parity_runtime_adapter",
+        modelRunRef: `codex-parity://blocked/${sha256Text(packetPreflightFailures.join(":")).slice(0, 16)}`,
+        responseHash: sha256Text(JSON.stringify(packetPreflightFailures)),
+        startedAt: now,
+        completedAt: now,
+        latencyMs: 0,
+        summary:
+          "Codex parity implementation bridge blocked before adapter invocation because the worker handoff packet was incomplete.",
+        changedFileRefs: [],
+        validationRefs: [],
+        artifactRefs: [],
+        reasonCodes: [
+          "codex_parity_worker_invocation_packet_preflight_blocked",
+          ...packetPreflightFailures,
+        ],
+        rawPromptStored: false,
+        rawResponseStored: false,
+        rawProviderLogStored: false,
+        workQueueLifecycleMutated: false,
+      };
+    }
     const validationCommands = (
       input.validationRefs.length > 0 ? input.validationRefs : this.approvedValidationCommands
     ).slice(0, 4);
@@ -119,6 +214,9 @@ export class CodexParityImplementationBridge implements AgentTeamImplementationB
       taskSummary: input.assignedTaskSummary,
       volatilePrompt: [
         input.objective,
+        "",
+        "Implementation handoff:",
+        ...nodeExecutionPacketPromptSummary(input),
         "",
         "OpenClaw evidence refs:",
         ...input.evidenceRefs.slice(0, 20).map((ref) => `- ${ref}`),

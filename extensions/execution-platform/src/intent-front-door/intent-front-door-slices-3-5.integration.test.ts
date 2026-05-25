@@ -1,21 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { applyExecutionPlatformMigrations } from "../db/migrations.ts";
 import { createExecutionPlatformPgMemTestDatabase } from "../db/pg-test.ts";
-import type { IntentRouterProvider } from "../intent-routing/model-assisted-intent-router.ts";
 import { NativeExecutionRpcService } from "../intent-routing/native-execution-rpc.ts";
 import { RuntimeJobRepository } from "../runtime-job-repository.ts";
 import { WorkQueueRepository } from "../work-queue/work-queue-repository.ts";
 import { resolveConversationRoutingContext } from "./conversation-state-resolver.ts";
 import { resolveConversationalReference } from "./conversational-reference-resolution.ts";
 import { listKnownProtocolSlashCommands, runProtocolPreGate } from "./protocol-pre-gate.ts";
-
-function throwingProvider(): IntentRouterProvider {
-  return {
-    async route() {
-      throw new Error("model router should not be called");
-    },
-  };
-}
 
 describe("Intent Front Door slices 3-5 integration", () => {
   it("keeps slash commands protocol-only and free-form text on the later routing path", async () => {
@@ -25,7 +16,6 @@ describe("Intent Front Door slices 3-5 integration", () => {
       const runtimeJobs = new RuntimeJobRepository(db.sql, { claimStrategy: "basic" });
       const rpc = new NativeExecutionRpcService({
         runtimeJobs,
-        intentRouterProvider: throwingProvider(),
       });
 
       for (const command of listKnownProtocolSlashCommands()) {

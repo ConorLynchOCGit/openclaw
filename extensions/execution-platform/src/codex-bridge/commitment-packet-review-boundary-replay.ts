@@ -41,30 +41,29 @@ export type CommitmentPacketReviewBoundaryReplayResult = {
   workQueueLifecycleMutated: false;
 };
 
-function asRecord(value: unknown): Record<string, unknown> {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : {};
-}
-
-function packetsFromArtifacts(artifacts: RuntimeJobArtifact[]): CommitmentWorkPacket[] {
-  const packets = artifacts
-    .filter((artifact) =>
-      [
-        "execution_platform.commitment_work_packet.pre_review",
-        "execution_platform.commitment_work_packet.post_repair",
-        "execution_platform.commitment_work_packet",
-      ].includes(artifact.artifactType),
-    )
-    .map((artifact) => {
-      const parsed = CommitmentWorkPacketSchema.safeParse(
-        asRecord(artifact.metadata).commitmentWorkPacket,
-      );
-      return parsed.success ? parsed.data : null;
-    })
-    .filter((packet): packet is CommitmentWorkPacket => Boolean(packet));
+async function packetsFromArtifacts(input: {
+  runtimeJobs: RuntimeJobRepository;
+  artifacts: RuntimeJobArtifact[];
+}): Promise<CommitmentWorkPacket[]> {
+  const packets = await Promise.all(
+    input.artifacts
+      .filter((artifact) =>
+        [
+          "execution_platform.commitment_work_packet.pre_review",
+          "execution_platform.commitment_work_packet.post_review",
+          "execution_platform.commitment_work_packet.post_repair",
+          "execution_platform.commitment_work_packet",
+        ].includes(artifact.artifactType),
+      )
+      .map(async (artifact) => {
+        const hydrated = await input.runtimeJobs.hydrateRuntimeArtifactByContract(artifact);
+        const parsed = CommitmentWorkPacketSchema.safeParse(hydrated.body);
+        return parsed.success ? parsed.data : null;
+      }),
+  );
+  const parsedPackets = packets.filter((packet): packet is CommitmentWorkPacket => Boolean(packet));
   const byCommitment = new Map<string, CommitmentWorkPacket>();
-  for (const packet of packets) {
+  for (const packet of parsedPackets) {
     if (!byCommitment.has(packet.commitmentId)) {
       byCommitment.set(packet.commitmentId, packet);
     }
@@ -112,7 +111,7 @@ export async function runCommitmentPacketReviewBoundaryReplay(input: {
     });
   }
   const artifacts = await input.runtimeJobs.listArtifacts(job.jobId);
-  const packets = packetsFromArtifacts(artifacts);
+  const packets = await packetsFromArtifacts({ runtimeJobs: input.runtimeJobs, artifacts });
   if (packets.length === 0) {
     return result({
       status: "needs_review",

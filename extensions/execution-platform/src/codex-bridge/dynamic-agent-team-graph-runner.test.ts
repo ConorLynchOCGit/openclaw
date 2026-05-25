@@ -12,20 +12,42 @@ import { createModelAuthoredCloseoutCapsuleFixture } from "../workers/test-close
 import { RuntimeWorkGraphRepository } from "../workflows/runtime-work-graph-repository.ts";
 import { registerSchedulerRuntimeTools } from "../workflows/scheduler-runtime-tools.ts";
 import { registerValidationQaRuntimeTools } from "../workflows/validation-qa-runtime-tools.ts";
-import { AgentTeamQueuedRunner } from "./agent-team-queued-runner.ts";
 import { AGENT_TEAM_JOB_TYPE } from "./agent-team-runtime-evidence.ts";
 import { closeoutCapsuleToLegacyHumanSummary } from "./closeout-capsule.ts";
 import { registerCloseoutFinalizationRuntimeTools } from "./closeout-finalization-runtime-tools.ts";
 import { registerCloseoutGenerateRuntimeTool } from "./closeout-generate-runtime-tool.ts";
+import { CodingTeamRuntimeJobRunner } from "./coding-team-runtime-job-runner.ts";
 import {
+  boundedSchedulerRoleInvocationMetadata,
   commitmentPacketReviewShouldTrigger,
   normalizedRepoFileRef,
+  resolveImplementationMaterializationTargetRefs,
   roleModelCandidatesFor,
   roleModelFailureIsRetryable,
 } from "./dynamic-agent-team-graph-runner.ts";
 import type { CloseoutCapsuleReporterInput } from "./model-closeout-capsule-reporter.ts";
 
 describe("dynamic agent-team graph production path", () => {
+  it("delegates generic runtime artifact lifecycle to the generic execution service", async () => {
+    const source = await readFile(
+      path.join(
+        process.cwd(),
+        "extensions/execution-platform/src/codex-bridge/dynamic-agent-team-graph-runner.ts",
+      ),
+      "utf8",
+    );
+
+    expect(source).toContain("runAndPersistGenericSchedulerGraph");
+    expect(source).toContain("../workflows/generic-orchestration-runtime-execution.ts");
+    expect(source).toContain("buildCodingTeamSchedulerExecutorMap");
+    expect(source).toContain("nodeExecutionPacket: materializedWorkerPacket.nodeExecutionPacket");
+    expect(source).toContain("codingResourcePacket: materializedWorkerPacket.codingResourcePacket");
+    expect(source).not.toContain("new GenericOrchestrationRuntime(");
+    expect(source).not.toContain("genericOrchestrationRuntimeResultArtifactMetadata");
+    expect(source).not.toContain("genericRuntimeSpineLifecycleArtifactMetadata");
+    expect(source).not.toContain("genericRuntimeSpineReadinessArtifactMetadata");
+  });
+
   it("uses a context-scout-suitable model policy and retries bounded finish-length provider failures", () => {
     const contextScoutCandidates = roleModelCandidatesFor("context_scout");
     expect(contextScoutCandidates[0]).toMatchObject({
@@ -33,9 +55,9 @@ describe("dynamic agent-team graph production path", () => {
       candidateId: "qwen3-coder-next-context-scout",
     });
     expect(contextScoutCandidates[0]?.maxTokens ?? 0).toBeGreaterThanOrEqual(8_000);
-    expect(contextScoutCandidates.map((candidate) => candidate.modelId)).toContain(
-      "moonshotai/kimi-k2.6",
-    );
+    expect(contextScoutCandidates.map((candidate) => candidate.modelId)).toEqual([
+      "qwen/qwen3-coder-next",
+    ]);
     expect(
       roleModelFailureIsRetryable({
         status: "failed",
@@ -61,6 +83,37 @@ describe("dynamic agent-team graph production path", () => {
     expect(normalizedRepoFileRef("../outside.ts", "/root/services/openclaw-roles/live")).toBeNull();
   });
 
+  it("materializes broad implementation directory seeds through concrete context edit points", () => {
+    const targetRefs = resolveImplementationMaterializationTargetRefs({
+      metadataTargetRefs: [
+        "extensions/execution-platform/src/workflows/",
+        "extensions/execution-platform/src/codex-bridge/",
+      ],
+      verifiedContextFileRefs: [
+        "extensions/execution-platform/src/workflows/workflow-definition-registry.ts",
+        "extensions/execution-platform/src/codex-bridge/dynamic-agent-team-graph-runner.ts",
+      ],
+      fileChangeIntents: [
+        {
+          fileRef: "extensions/execution-platform/src/workflows/product-spec-planning-plugin.ts",
+        },
+        {
+          fileRef:
+            "extensions/execution-platform/src/codex-bridge/dynamic-agent-team-graph-runner.ts",
+        },
+        {
+          fileRef: "docs/projects/execution-platform/specs/product-spec.md",
+        },
+      ],
+      repoRoot: process.cwd(),
+    });
+
+    expect(targetRefs).toEqual([
+      "extensions/execution-platform/src/workflows/product-spec-planning-plugin.ts",
+      "extensions/execution-platform/src/codex-bridge/dynamic-agent-team-graph-runner.ts",
+    ]);
+  });
+
   it("does not use shared context handoff aggregate tail as current-node handoff evidence", async () => {
     const source = await readFile(
       path.join(
@@ -71,6 +124,127 @@ describe("dynamic agent-team graph production path", () => {
     );
 
     expect(source).not.toContain("contextHandoffPacketRefs.at(-1)");
+  });
+
+  it("preserves useful packet semantic fields when targeted normalization returns an empty patch", async () => {
+    const source = await readFile(
+      path.join(
+        process.cwd(),
+        "extensions/execution-platform/src/codex-bridge/dynamic-agent-team-graph-runner.ts",
+      ),
+      "utf8",
+    );
+
+    expect(source).toContain("const mergeSemanticPacketDraft =");
+    expect(source).toContain(
+      "semanticDraft = mergeSemanticPacketDraft(semanticDraft, fieldCompletionDraft);",
+    );
+    expect(source).not.toContain("...semanticDraft,\n                ...fieldCompletionDraft");
+  });
+
+  it("keeps staged Mission Ledger diagnostic mode double-gated outside production default", async () => {
+    const source = await readFile(
+      path.join(
+        process.cwd(),
+        "extensions/execution-platform/src/codex-bridge/dynamic-agent-team-graph-runner.ts",
+      ),
+      "utf8",
+    );
+
+    expect(source).toContain("stagedMissionLedgerDiagnosticAllowed");
+    expect(source).toContain("stagedMissionLedgerDiagnosticRequested");
+    expect(source).toContain(
+      "stagedMissionLedgerDiagnosticAllowed && stagedMissionLedgerDiagnosticRequested",
+    );
+  });
+
+  it("bounds scheduler role invocation metadata so large context output cannot block node completion", () => {
+    const metadata = boundedSchedulerRoleInvocationMetadata({
+      roleId: "context_scout",
+      nodeId: "context-scout-large",
+      graphId: "graph-1",
+      responseHash: "sha256:test",
+      closeout: {
+        roleId: "context_scout",
+        agentId: "context_scout",
+        modelRef: "qwen/qwen3-coder-next",
+        modelRunRef: "run-1",
+        source: "model",
+        askedToDo: "Scout context.",
+        actuallyDid: "Returned context.",
+        whatIWasAskedToDo: "Scout context.",
+        whatIActuallyDid: "Returned context.",
+        evidenceRefs: Array.from(
+          { length: 80 },
+          (_, index) => `runtime-job://job/evidence/${index}`,
+        ),
+        filesOrArtifactsTouched: Array.from(
+          { length: 80 },
+          (_, index) => `extensions/execution-platform/src/file-${index}.ts`,
+        ),
+        validationIPerformed: "No validation.",
+        worked: ["Context produced."],
+        failedOrWeak: [],
+        wouldImproveNext: [],
+        recommendedNextStep: "Continue.",
+        skillOrProcessOpportunitySeeds: [],
+        opportunitySeeds: [],
+        confidence: "medium",
+        limitations: [],
+        rawPromptStored: false,
+        rawResponseStored: false,
+        rawTranscriptStored: false,
+        rawProviderLogStored: false,
+        rawToolLogStored: false,
+      },
+      contextScoutOutput: {
+        relevantFiles: Array.from({ length: 120 }, (_, index) => ({
+          path: `extensions/execution-platform/src/very-large-file-${index}.ts`,
+          whyRelevant: "x".repeat(2_000),
+          keySymbolsOrFunctions: Array.from(
+            { length: 40 },
+            (__, symbolIndex) => `symbol${symbolIndex}`,
+          ),
+        })),
+        existingPatterns: Array.from({ length: 80 }, () => "pattern ".repeat(500)),
+        recommendedEditPoints: Array.from({ length: 80 }, (_, index) => ({
+          path: `extensions/execution-platform/src/very-large-file-${index}.ts`,
+          symbolOrRegion: `region${index}`,
+          reason: "reason ".repeat(500),
+        })),
+        validationSuggestions: Array.from({ length: 80 }, () => "validate ".repeat(500)),
+        risks: Array.from({ length: 80 }, () => "risk ".repeat(500)),
+        limitations: Array.from({ length: 80 }, () => "limit ".repeat(500)),
+        handoffSummaryForImplementation: "summary ".repeat(10_000),
+        confidence: 0.8,
+        roleId: "context_scout",
+        rawPromptStored: false,
+        rawResponseStored: false,
+      },
+      contextScoutShape: {
+        valid: true,
+        reasonCodes: [],
+        semanticQualityJudgedByDeterministicCode: false,
+      },
+      contextHandoffPacketRef: "runtime-job://job/context-handoff/1",
+      contextScoutToolLoopRef: "runtime-job://job/context-scout/tool-loop/1",
+      contextScoutToolLoopRun: null,
+      contextScoutExecutionPacketRef: "runtime-job://job/context-scout/execution-packet/1",
+      contextScoutExecutionPacketSummary: null,
+      sourcePromptExcerptDecisionRefs: Array.from(
+        { length: 40 },
+        (_, index) => `runtime-job://job/source-prompt/excerpt/${index}`,
+      ),
+      verifiedFileRefs: Array.from(
+        { length: 120 },
+        (_, index) => `extensions/execution-platform/src/verified-${index}.ts`,
+      ),
+      groundingReasonCodes: Array.from({ length: 80 }, (_, index) => `reason_${index}`),
+      candidateFileRefCount: 120,
+    });
+
+    expect(Buffer.byteLength(JSON.stringify(metadata), "utf8")).toBeLessThan(65_536);
+    expect((metadata as Record<string, unknown>).metadataBoundedForRuntimeArtifact).toBe(true);
   });
 
   it("splits context synthesis into GPT core reasoning and Qwen artifact expansion", async () => {
@@ -199,9 +373,9 @@ describe("dynamic agent-team graph production path", () => {
     );
 
     expect(source).toContain("compileSemanticDraftToPacketOutput");
-    expect(source).toContain("Return a packetBrief only");
-    expect(source).toContain("Return a packetBriefPatch only");
-    expect(source).toContain("The runtime will compile the final CommitmentWorkPacket schema");
+    expect(source).toContain("packetSemanticContent");
+    expect(source).toContain("packetBriefPatch");
+    expect(source).toContain("Runtime will compile the final CommitmentWorkPacket schema");
   });
 
   it("keeps Qwen packet authoring on compact semantic inputs while preserving full-prompt rescue", async () => {
@@ -218,14 +392,37 @@ describe("dynamic agent-team graph production path", () => {
     expect(source).toContain("commitment_packet_author_primary_prompt_too_large");
     expect(source).toContain("OPENCLAW_COMMITMENT_PACKET_AUTHOR_PRIMARY_MAX_INPUT_BYTES");
     expect(source).toContain("OPENCLAW_COMMITMENT_PACKET_AUTHOR_MAX_ATTEMPTS");
+    expect(source).toContain("OPENCLAW_COMMITMENT_PACKET_TARGETED_NORMALIZATION_MAX_TOKENS");
+    expect(source).toContain("OPENCLAW_COMMITMENT_PACKET_TARGETED_NORMALIZATION_TIMEOUT_MS");
+    expect(source).toContain("packetAuthorTargetedNormalizationMaxTokens");
+    expect(source).toContain("packetAuthorTargetedNormalizationTimeoutMs");
+    expect(source).toContain("const callMaxTokens =");
+    expect(source).toContain("const callTimeoutMs =");
     expect(source).toContain("retryBeforeRescue");
     expect(source).toContain("packetAuthorContextPack");
     expect(source).toContain("commitment_packet_author_context_pack");
     expect(source).toContain("fullPromptProvidedToPrimaryModel: false");
+    expect(source).toContain("commitment_packet_two_qwen_protocol_completed");
+    expect(source).toContain("commitment_packet_targeted_normalization_model_call");
+    expect(source).toContain("compactSemanticDraftForFieldCompletion");
+    expect(source).toContain("semanticPacketContentSummary");
+    expect(source).toContain(
+      "Only fields that require fresh model-authored semantic judgment are blocking.",
+    );
     expect(source).toContain("packetBriefPatch");
+    expect(source).toContain("mapWithConcurrencySettled");
+    expect(source).toContain("commitment_packet_author_fanout_failed");
+    expect(source).toContain("commitment_packet_repair_fanout_failed");
+    expect(source).toContain(
+      '["remainingWork", "workUnits", "implementationSteps", "tasks", "workItems"]',
+    );
+    expect(source).toContain(
+      '["expectedEvidenceDescriptions", "evidenceNeeds", "evidenceDescriptions"]',
+    );
+    expect(source).toContain('"requiredEvidenceClaimDescriptions"');
     expect(source).toContain("objectiveResolution.objectiveForModel.slice(0, 120_000)");
-    expect(source.indexOf("ownerPromptBriefVolatileText")).toBeLessThan(
-      source.indexOf("packetAuthorRescuePayload"),
+    expect(source.indexOf("packetAuthorContextPack")).toBeLessThan(
+      source.indexOf("buildPacketAuthorRescuePayload"),
     );
   });
 
@@ -265,6 +462,7 @@ describe("dynamic agent-team graph production path", () => {
         responseFormat: unknown;
         responseFormatMode: unknown;
       }> = [];
+      const missionModelCallSites: Array<string | null> = [];
       await workQueue.createWorkItem({
         workItemId: "work-item-scheduler-backed-agent-team",
         itemType: "execution_workflow",
@@ -284,6 +482,7 @@ describe("dynamic agent-team graph production path", () => {
           rawResponseStored: false,
         },
       });
+      const schedulerCommitmentId = "commitment-c74c27a38bd33f11";
 
       const decisions = [
         {
@@ -296,7 +495,7 @@ describe("dynamic agent-team graph production path", () => {
               workUnitId: "context",
               title: "Context handoff",
               objective: "Inspect the runner and plugin surfaces and hand off bounded target refs.",
-              commitmentIdsAdvanced: ["scheduler-backed-work"],
+              commitmentIdsAdvanced: [schedulerCommitmentId],
               rationale:
                 "Context scout narrows the edit surface before any implementation worker runs.",
               expectedOutcome: "Relevant files, edit points, risks, and implementation handoff.",
@@ -306,7 +505,7 @@ describe("dynamic agent-team graph production path", () => {
               workUnitId: "implementation",
               title: "Scoped implementation",
               objective: "Apply the smallest scheduler-backed runner edit needed by this fixture.",
-              commitmentIdsAdvanced: ["scheduler-backed-work"],
+              commitmentIdsAdvanced: [schedulerCommitmentId],
               rationale:
                 "A scoped implementation node should make the bounded source change after context.",
               expectedOutcome:
@@ -317,7 +516,7 @@ describe("dynamic agent-team graph production path", () => {
               workUnitId: "validation",
               title: "Focused validation",
               objective: "Run the focused scheduler-backed runner validation command.",
-              commitmentIdsAdvanced: ["scheduler-backed-work"],
+              commitmentIdsAdvanced: [schedulerCommitmentId],
               rationale:
                 "Validation must verify implementation evidence before review or closeout.",
               expectedOutcome: "Validation refs and pass/fail state.",
@@ -327,7 +526,7 @@ describe("dynamic agent-team graph production path", () => {
               title: "Workflow review",
               objective:
                 "Review scheduler-backed runner evidence for task fit and false-success risks.",
-              commitmentIdsAdvanced: ["scheduler-backed-work"],
+              commitmentIdsAdvanced: [schedulerCommitmentId],
               rationale:
                 "Reviewer checks the accepted source and validation evidence before readback.",
               expectedOutcome: "Task-fit and validation-integrity review.",
@@ -336,7 +535,7 @@ describe("dynamic agent-team graph production path", () => {
               workUnitId: "readback",
               title: "Owner readback",
               objective: "Summarize graph nodes, roles, validation, limitations, and next state.",
-              commitmentIdsAdvanced: ["scheduler-backed-work"],
+              commitmentIdsAdvanced: [schedulerCommitmentId],
               rationale:
                 "Readback turns runtime evidence into owner-visible progress before closeout.",
               expectedOutcome: "Owner-readable graph summary, limitations, and ELI5 progress.",
@@ -346,7 +545,7 @@ describe("dynamic agent-team graph production path", () => {
               title: "Model-authored closeout",
               objective:
                 "Generate the final model-authored Closeout Capsule from accepted scheduler evidence.",
-              commitmentIdsAdvanced: ["scheduler-backed-work"],
+              commitmentIdsAdvanced: [schedulerCommitmentId],
               rationale:
                 "Final closeout is required after implementation, validation, review, and readback evidence.",
               expectedOutcome: "Model-authored Closeout Capsule.",
@@ -535,7 +734,7 @@ describe("dynamic agent-team graph production path", () => {
               selectedCapabilityId: "context_scout",
               selectedNodeKind: "context_scout",
               selectedExecutorKey: "role:context_scout",
-              targetCommitmentIds: ["scheduler-backed-work"],
+              targetCommitmentIds: [schedulerCommitmentId],
               utilityRationale: "Run the context node before implementation.",
               costRationale: "Context scout is cheap and read-only.",
               whyThisIsNotDuplicateWork:
@@ -559,7 +758,7 @@ describe("dynamic agent-team graph production path", () => {
               selectedCapabilityId: "implementation_microtask",
               selectedNodeKind: "implementation",
               selectedExecutorKey: "kind:implementation",
-              targetCommitmentIds: ["scheduler-backed-work"],
+              targetCommitmentIds: [schedulerCommitmentId],
               utilityRationale: "Run the scoped implementation node after context.",
               costRationale: "The scoped Kimi lane is cheaper than broad Codex implementation.",
               whyCheaperOptionsWereInsufficient: null,
@@ -587,7 +786,7 @@ describe("dynamic agent-team graph production path", () => {
               selectedCapabilityId: "validation_run",
               selectedNodeKind: "validation",
               selectedExecutorKey: "kind:validation",
-              targetCommitmentIds: ["scheduler-backed-work"],
+              targetCommitmentIds: [schedulerCommitmentId],
               utilityRationale: "Run focused validation after implementation evidence.",
               costRationale: "Validation is cheaper than asking implementation to self-attest.",
               whyThisIsNotDuplicateWork:
@@ -611,7 +810,7 @@ describe("dynamic agent-team graph production path", () => {
               selectedCapabilityId: "reviewer",
               selectedNodeKind: "reviewer",
               selectedExecutorKey: "kind:reviewer",
-              targetCommitmentIds: ["scheduler-backed-work"],
+              targetCommitmentIds: [schedulerCommitmentId],
               utilityRationale: "Run model-authored review before readback and closeout.",
               costRationale: "Standard reviewer lane is sufficient for bounded review.",
               whyThisIsNotDuplicateWork:
@@ -635,7 +834,7 @@ describe("dynamic agent-team graph production path", () => {
               selectedCapabilityId: "observability_readback",
               selectedNodeKind: "observability_readback",
               selectedExecutorKey: "kind:observability_readback",
-              targetCommitmentIds: ["scheduler-backed-work"],
+              targetCommitmentIds: [schedulerCommitmentId],
               utilityRationale: "Run readback to surface graph state before closeout.",
               costRationale: "Fast observability lane is sufficient for bounded readback.",
               whyThisIsNotDuplicateWork:
@@ -659,7 +858,7 @@ describe("dynamic agent-team graph production path", () => {
               selectedCapabilityId: "coding_closeout",
               selectedNodeKind: "closeout",
               selectedExecutorKey: "kind:closeout",
-              targetCommitmentIds: ["scheduler-backed-work"],
+              targetCommitmentIds: [schedulerCommitmentId],
               utilityRationale: "Run the model-authored closeout node for final evidence.",
               costRationale: "Closeout is required and has no cheaper production substitute.",
               whyThisIsNotDuplicateWork:
@@ -707,7 +906,7 @@ describe("dynamic agent-team graph production path", () => {
         traces: runtimeToolTraces,
       });
 
-      const result = await new AgentTeamQueuedRunner({
+      const result = await new CodingTeamRuntimeJobRunner({
         runtimeJobs,
         runtimeWorkGraphs,
         workQueue,
@@ -745,7 +944,7 @@ describe("dynamic agent-team graph production path", () => {
                     {
                       groupId: "scheduler-backed-implementation-group",
                       groupIntent: "Implement the bounded scheduler-backed fixture edit.",
-                      commitmentIds: ["scheduler-backed-work"],
+                      commitmentIds: [schedulerCommitmentId],
                       inputHandoffRefs: sourceContextHandoffRefs,
                       targetRefs: [targetRef],
                       dependencyNotes: ["Run after context scout handoff is accepted."],
@@ -790,6 +989,7 @@ describe("dynamic agent-team graph production path", () => {
         },
         missionContractModelClient: {
           async runJson(input) {
+            missionModelCallSites.push(input.modelTaskCallSite ?? null);
             const payload =
               input.userPayload &&
               typeof input.userPayload === "object" &&
@@ -805,87 +1005,233 @@ describe("dynamic agent-team graph production path", () => {
                   (ref): ref is string => typeof ref === "string" && ref.length > 0,
                 )
               : [];
+            const [sourceAnchorFromPayload] = Array.isArray(payload.sourcePromptStructuralAnchors)
+              ? payload.sourcePromptStructuralAnchors
+              : [];
+            const sourcePromptHash =
+              typeof payload.ownerPromptHash === "string"
+                ? payload.ownerPromptHash
+                : "fixture-prompt-hash";
+            const sourceAnchor =
+              sourceAnchorFromPayload ??
+              ({
+                promptHash: sourcePromptHash,
+                promptVersionRef:
+                  typeof payload.sourcePromptVersionRef === "string"
+                    ? payload.sourcePromptVersionRef
+                    : "runtime-job://scheduler-backed-agent-team-job/source-prompt/context-index/fixture",
+                sectionRef: "source-prompt://fixture/section-001/0-100",
+                blockOrdinal: 0,
+                charStart: 0,
+                charEnd: 100,
+                excerptRef: "source-prompt://fixture/section-001/0-100",
+                excerptHash: "fixture-excerpt-hash",
+                boundedSummary:
+                  "Improve scheduler-backed coding-team readback with bounded evidence.",
+                rawPromptStored: false,
+                rawResponseStored: false,
+                rawProviderLogStored: false,
+              } as const);
+            const compiledCandidates = Array.isArray(payload.compiledCandidates)
+              ? payload.compiledCandidates.filter(
+                  (candidate): candidate is Record<string, unknown> =>
+                    candidate !== null && typeof candidate === "object",
+                )
+              : [];
+            const runtimeCandidateRef =
+              typeof compiledCandidates[0]?.candidateRef === "string"
+                ? compiledCandidates[0].candidateRef
+                : "obligation-candidate-fixture-runtime";
+            const sourcePromptVersionRef =
+              typeof payload.sourcePromptVersionRef === "string"
+                ? payload.sourcePromptVersionRef
+                : "runtime-job://scheduler-backed-agent-team-job/source-prompt/context-index/fixture";
+            let responseBody: Record<string, unknown>;
+            if (missionLedger) {
+              responseBody = {
+                artifactKind: "mission_commitment_evaluation",
+                schemaVersion: "execution-platform.mission-contract-ledger.v1",
+                evaluationId: "fixture-evaluation",
+                missionId: "scheduler-backed-agent-team-mission-contract",
+                commitmentUpdates: [
+                  {
+                    commitmentId: schedulerCommitmentId,
+                    status: "satisfied",
+                    acceptedEvidenceRefs: candidateEvidenceRefs.slice(0, 4),
+                    rejectedEvidenceRefs: [],
+                    rationale:
+                      "The fixture accepted bounded scheduler graph evidence for this production-path test.",
+                    remainingWork: [],
+                  },
+                ],
+                revisionProposals: [],
+                rawPromptStored: false,
+                rawResponseStored: false,
+                rawProviderLogStored: false,
+                workQueueLifecycleMutated: false,
+              };
+            } else if (
+              input.modelTaskCallSite === "mission_ledger.production_single_pass" ||
+              input.modelTaskCallSite === undefined
+            ) {
+              responseBody = {
+                blockingCommitments: [
+                  {
+                    commitmentId: schedulerCommitmentId,
+                    commitmentText:
+                      "Run the scheduler-backed coding-team workflow and produce bounded implementation, validation, review, and closeout evidence.",
+                    whyItMatters: "The owner needs production-path graph execution evidence.",
+                    expectedEvidenceDescription:
+                      "Runtime graph node refs, changed-file refs, validation refs, review refs, and closeout refs.",
+                    acceptedEvidenceRefs: [],
+                    rejectedEvidenceRefs: [],
+                    status: "pending",
+                    rationale: null,
+                    remainingWork: [],
+                    blocking: true,
+                    rawPromptStored: false,
+                    rawResponseStored: false,
+                    rawProviderLogStored: false,
+                  },
+                ],
+                nonBlockingCommitments: [],
+                explicitNonGoals: [],
+                safetyConstraints: [],
+                prohibitedDirectiveCandidates: [],
+                authorityBoundary: {
+                  requestedAuthority: null,
+                  maximumAuthority: "workflow_default",
+                  requiresApproval: false,
+                  approvalRefs: [],
+                  authorityRefs: [],
+                  rawPromptStored: false,
+                  rawResponseStored: false,
+                },
+                storagePolicy: {
+                  rawPromptStorageAllowed: false,
+                  rawResponseStorageAllowed: false,
+                  rawTranscriptStorageAllowed: false,
+                  rawProviderLogStorageAllowed: false,
+                  rawToolLogStorageAllowed: false,
+                  rawDbRowStorageAllowed: false,
+                  secretsStorageAllowed: false,
+                  boundedRefsOnly: true,
+                },
+                lifecycleBoundary: {
+                  workQueueLifecycleMutationAllowed: false,
+                  authorityGrantAllowed: false,
+                  deployAllowed: false,
+                  outboundSendAllowed: false,
+                  modelPromotionAllowed: false,
+                  runtimeJobLifecycleOwner: "runtime_jobs",
+                },
+                missionGate: "clear_to_execute",
+                missionGateRationale: "The primary mission is local repo work.",
+                rawPromptStored: false,
+                rawResponseStored: false,
+                rawProviderLogStored: false,
+                workQueueLifecycleMutated: false,
+              };
+            } else if (input.modelTaskCallSite === "mission_ledger.objective_constraints") {
+              responseBody = {
+                objectiveConstraints: {
+                  artifactKind: "staged_mission_ledger_objective_constraints",
+                  schemaVersion: "execution-platform.staged-mission-ledger.v1",
+                  missionId: "scheduler-backed-agent-team-mission-contract",
+                  ownerObjectiveSummary:
+                    "Improve scheduler-backed coding-team readback with a bounded source edit and validation.",
+                  objectiveRationale: "The owner needs production-path graph execution evidence.",
+                  explicitConstraints: [],
+                  explicitNonGoals: [],
+                  ambiguityNotes: [],
+                  safetyBoundaryNotes: [],
+                  sourcePromptHash,
+                  sourcePromptLength:
+                    typeof payload.ownerPromptLength === "number" ? payload.ownerPromptLength : 1,
+                  rawPromptStored: false,
+                  rawResponseStored: false,
+                  rawProviderLogStored: false,
+                },
+                missionGate: "clear_to_execute",
+                missionGateRationale: "The primary mission is local repo work.",
+              };
+            } else if (input.modelTaskCallSite === "mission_ledger.obligation_candidates") {
+              responseBody = {
+                obligationCandidateSet: {
+                  artifactKind: "staged_mission_ledger_obligation_candidate_set",
+                  schemaVersion: "execution-platform.staged-mission-ledger.v1",
+                  missionId: "scheduler-backed-agent-team-mission-contract",
+                  sourcePromptHash,
+                  sourcePromptVersionRef,
+                  candidates: [
+                    {
+                      localCandidateRef: "scheduler-backed-work",
+                      obligationText:
+                        "Run the scheduler-backed coding-team workflow and produce bounded implementation, validation, review, and closeout evidence.",
+                      whyItMatters: "The owner needs production-path graph execution evidence.",
+                      expectedEvidenceDescription:
+                        "Runtime graph node refs, changed-file refs, validation refs, review refs, and closeout refs.",
+                      sourceAnchors: [sourceAnchor],
+                      blockingProposal: "blocking",
+                      constraintRefs: [],
+                      nonGoalRefs: [],
+                      ambiguityNotes: [],
+                      modelMergeSplitNotes: [],
+                      rawPromptStored: false,
+                      rawResponseStored: false,
+                      rawProviderLogStored: false,
+                    },
+                  ],
+                  omittedObligationNotes: [],
+                  rawPromptStored: false,
+                  rawResponseStored: false,
+                  rawProviderLogStored: false,
+                },
+              };
+            } else if (input.modelTaskCallSite === "mission_ledger.candidate_review") {
+              responseBody = {
+                obligationReviewPlan: {
+                  artifactKind: "staged_mission_ledger_obligation_review_plan",
+                  schemaVersion: "execution-platform.staged-mission-ledger.v1",
+                  missionId: "scheduler-backed-agent-team-mission-contract",
+                  candidateSetRef:
+                    typeof payload.compiledCandidateSetRef === "string"
+                      ? payload.compiledCandidateSetRef
+                      : "runtime-job://scheduler-backed-agent-team-job/mission-ledger/compiled-candidate-set",
+                  operations: [
+                    {
+                      operationId: "accept-scheduler-backed-work",
+                      operationKind: "accept_candidate",
+                      candidateRefs: [runtimeCandidateRef],
+                      resultingCommitmentText:
+                        "Run the scheduler-backed coding-team workflow and produce bounded implementation, validation, review, and closeout evidence.",
+                      expectedEvidenceDescription:
+                        "Runtime graph node refs, changed-file refs, validation refs, review refs, and closeout refs.",
+                      blocking: true,
+                      rationale:
+                        "The owner objective is one standalone blocking implementation proof commitment.",
+                      rawPromptStored: false,
+                      rawResponseStored: false,
+                      rawProviderLogStored: false,
+                    },
+                  ],
+                  reviewerSummary:
+                    "One source-anchored blocking commitment covers the fixture proof.",
+                  unresolvedOwnerQuestions: [],
+                  rawPromptStored: false,
+                  rawResponseStored: false,
+                  rawProviderLogStored: false,
+                },
+              };
+            } else {
+              responseBody = {
+                decisionId: "unexpected-mission-ledger-call",
+                reasonCodes: ["unexpected_mission_ledger_call_site"],
+              };
+            }
             return {
               modelRunRef: "codex-app-server://openai-codex/gpt-5.5/mission-contract-fixture",
-              responseText: JSON.stringify(
-                missionLedger
-                  ? {
-                      artifactKind: "mission_commitment_evaluation",
-                      schemaVersion: "execution-platform.mission-contract-ledger.v1",
-                      evaluationId: "fixture-evaluation",
-                      missionId: "scheduler-backed-agent-team-mission-contract",
-                      commitmentUpdates: [
-                        {
-                          commitmentId: "scheduler-backed-work",
-                          status: "satisfied",
-                          acceptedEvidenceRefs: candidateEvidenceRefs.slice(0, 4),
-                          rejectedEvidenceRefs: [],
-                          rationale:
-                            "The fixture accepted bounded scheduler graph evidence for this production-path test.",
-                          remainingWork: [],
-                        },
-                      ],
-                      revisionProposals: [],
-                      rawPromptStored: false,
-                      rawResponseStored: false,
-                      rawProviderLogStored: false,
-                      workQueueLifecycleMutated: false,
-                    }
-                  : {
-                      missionId: "scheduler-backed-agent-team-mission-contract",
-                      ownerObjectiveSummary:
-                        "Improve scheduler-backed coding-team readback with a bounded source edit and validation.",
-                      blockingCommitments: [
-                        {
-                          commitmentId: "scheduler-backed-work",
-                          commitmentText:
-                            "Run the scheduler-backed coding-team workflow and produce bounded implementation, validation, review, and closeout evidence.",
-                          whyItMatters: "The owner needs production-path graph execution evidence.",
-                          expectedEvidenceDescription:
-                            "Runtime graph node refs, changed-file refs, validation refs, review refs, and closeout refs.",
-                          status: "pending",
-                          blocking: true,
-                        },
-                      ],
-                      nonBlockingCommitments: [],
-                      explicitNonGoals: [],
-                      safetyConstraints: [],
-                      prohibitedDirectiveCandidates: [],
-                      authorityBoundary: {
-                        requestedAuthority: null,
-                        maximumAuthority: "workflow_default",
-                        requiresApproval: false,
-                        approvalRefs: [],
-                        authorityRefs: [],
-                        rawPromptStored: false,
-                        rawResponseStored: false,
-                      },
-                      storagePolicy: {
-                        rawPromptStorageAllowed: false,
-                        rawResponseStorageAllowed: false,
-                        rawTranscriptStorageAllowed: false,
-                        rawProviderLogStorageAllowed: false,
-                        rawToolLogStorageAllowed: false,
-                        rawDbRowStorageAllowed: false,
-                        secretsStorageAllowed: false,
-                        boundedRefsOnly: true,
-                      },
-                      lifecycleBoundary: {
-                        workQueueLifecycleMutationAllowed: false,
-                        authorityGrantAllowed: false,
-                        deployAllowed: false,
-                        outboundSendAllowed: false,
-                        modelPromotionAllowed: false,
-                        runtimeJobLifecycleOwner: "runtime_jobs",
-                      },
-                      missionGate: "clear_to_execute",
-                      missionGateRationale: "The primary mission is local repo work.",
-                      rawPromptStored: false,
-                      rawResponseStored: false,
-                      rawProviderLogStored: false,
-                      workQueueLifecycleMutated: false,
-                    },
-              ),
+              responseText: JSON.stringify(responseBody),
               responseHash: "sha256:mission-contract-fixture",
               latencyMs: 10,
               rawPromptStored: false,
@@ -1001,7 +1347,7 @@ describe("dynamic agent-team graph production path", () => {
                             objective: "Update the scheduler-backed fixture marker.",
                             targetFileRefs: [targetRef],
                             validationExpectation: "Focused validation ref is recorded.",
-                            commitmentIdsAdvanced: ["scheduler-backed-work"],
+                            commitmentIdsAdvanced: [schedulerCommitmentId],
                           },
                         ],
                       },
@@ -1039,7 +1385,7 @@ describe("dynamic agent-team graph production path", () => {
                       input: {
                         evidenceClaims: [
                           {
-                            commitmentId: "scheduler-backed-work",
+                            commitmentId: schedulerCommitmentId,
                             evidenceRef:
                               "runtime-job://scheduler-backed-agent-team-job/kimi/tool-worker-result",
                             claimSummary:
@@ -1076,7 +1422,7 @@ describe("dynamic agent-team graph production path", () => {
                   title: "Scheduler-backed implementation fixture",
                   objective:
                     "Make the bounded scheduler-backed source edit using the accepted context handoff.",
-                  commitmentIds: ["scheduler-backed-work"],
+                  commitmentIds: [schedulerCommitmentId],
                   inputHandoffRefs: [
                     "runtime-job://scheduler-backed-agent-team-job/context-handoff/g-60e644f507-context_scout-context:3c6d3293dfd8",
                   ],
@@ -1109,7 +1455,7 @@ describe("dynamic agent-team graph production path", () => {
                     "A scoped implementation lane is sufficient before validation/review.",
                   commitmentCoverage: [
                     {
-                      commitmentId: "scheduler-backed-work",
+                      commitmentId: schedulerCommitmentId,
                       covered: true,
                       contextHandoffRefs: [
                         "runtime-job://scheduler-backed-agent-team-job/context-handoff/g-60e644f507-context_scout-context:3c6d3293dfd8",
@@ -1125,7 +1471,7 @@ describe("dynamic agent-team graph production path", () => {
                     {
                       contextHandoffRef:
                         "runtime-job://scheduler-backed-agent-team-job/context-handoff/g-60e644f507-context_scout-context:3c6d3293dfd8",
-                      commitmentIds: ["scheduler-backed-work"],
+                      commitmentIds: [schedulerCommitmentId],
                     },
                   ],
                   validationStrategy: [
@@ -1237,6 +1583,10 @@ describe("dynamic agent-team graph production path", () => {
         schedulerBackedDynamicRunner: true,
         staticSingleJobSequenceUsed: false,
       });
+      expect(missionModelCallSites).toContain("mission_ledger.production_single_pass");
+      expect(missionModelCallSites).not.toContain("mission_ledger.objective_constraints");
+      expect(missionModelCallSites).not.toContain("mission_ledger.obligation_candidates");
+      expect(missionModelCallSites).not.toContain("mission_ledger.candidate_review");
       const artifacts = await runtimeJobs.listArtifacts("scheduler-backed-agent-team-job");
       expect(artifacts.map((artifact) => artifact.artifactType)).toEqual(
         expect.arrayContaining([
@@ -1244,16 +1594,32 @@ describe("dynamic agent-team graph production path", () => {
           "execution.generic_orchestration_runtime_result",
           "execution.runtime_workflow_graph_engine_readiness",
           "execution.workflow_completion_review_gate",
+          "execution_platform.runtime_graph_patch",
         ]),
       );
+      const graphPatchArtifacts = artifacts.filter(
+        (artifact) => artifact.artifactType === "execution_platform.runtime_graph_patch",
+      );
+      expect(graphPatchArtifacts.length).toBeGreaterThan(0);
+      expect(graphPatchArtifacts[0]?.metadata).toMatchObject({
+        artifactKind: "runtime_job_artifact_payload_manifest",
+        resourcePacketKind: "runtime_graph_patch",
+        rawPromptStored: false,
+        rawResponseStored: false,
+      });
       const genericRuntimeResult = artifacts.find(
         (artifact) => artifact.artifactType === "execution.generic_orchestration_runtime_result",
       );
       expect(genericRuntimeResult?.metadata).toMatchObject({
-        engineId: "generic-orchestration-runtime-engine.v1",
-        workflowId: "agent_team.coding",
-        status: "succeeded",
-        graphId: "scheduler-backed-agent-team-runtime-work-graph",
+        artifactKind: "runtime_job_artifact_payload_manifest",
+        storageKind: "runtime-artifact-payload",
+        resourcePacketKind: "generic_orchestration_runtime_result",
+        extension: {
+          engineId: "generic-orchestration-runtime-engine.v1",
+          workflowId: "agent_team.coding",
+          status: "succeeded",
+          graphId: "scheduler-backed-agent-team-runtime-work-graph",
+        },
       });
       const pluginResolution = artifacts.find(
         (artifact) => artifact.artifactType === "execution.workflow_plugin_resolution",
@@ -1297,7 +1663,7 @@ describe("dynamic agent-team graph production path", () => {
       );
       const progressEvents = await runtimeJobs.listRecentEvents(
         "scheduler-backed-agent-team-job",
-        500,
+        1_500,
       );
       expect(
         roleModelCalls
@@ -1370,7 +1736,7 @@ describe("dynamic agent-team graph production path", () => {
         },
       });
 
-      const result = await new AgentTeamQueuedRunner({
+      const result = await new CodingTeamRuntimeJobRunner({
         runtimeJobs,
         runtimeWorkGraphs,
         workerId: "dynamic-agent-team-retired-legacy-runner-worker",

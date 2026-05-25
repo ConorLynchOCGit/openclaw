@@ -39,6 +39,7 @@ describe("agent_team.coding workflow plugin", () => {
       stagedSchedulerProtocolRequired: true,
       stagedGraphAcceptanceRequired: true,
       modelAuthoredWorkPacketsRequiredForComplexMission: true,
+      nodeExecutionPacketRequiredForWorkerExecution: true,
       runtimeDerivedNodeEnvelopeRequired: true,
       runtimeDerivedExpectedEvidenceRequired: true,
       modelAuthoredStructureReviewRequired: true,

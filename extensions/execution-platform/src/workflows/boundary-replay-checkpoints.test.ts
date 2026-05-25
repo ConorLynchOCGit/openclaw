@@ -5,8 +5,15 @@ import { RuntimeJobRepository } from "../runtime-job-repository.ts";
 import {
   BOUNDARY_REPLAY_CHECKPOINT_ARTIFACT_TYPE,
   BOUNDARY_REPLAY_CHECKPOINT_KINDS,
+  BOUNDARY_REPLAY_REGISTRY_VERSION,
   BoundaryReplayService,
+  boundaryReplayBoundaryIsDiagnosticOnly,
+  boundaryReplayCheckpointKindForCliAlias,
+  boundaryReplayDefinitionFor,
+  boundaryReplayRegistrySummary,
   buildBoundaryReplayCheckpoint,
+  normalizeBoundaryReplayCheckpointArtifact,
+  requiredBoundaryReplayCheckpointKindsFor,
   validateBoundaryReplayCheckpoint,
 } from "./boundary-replay-checkpoints.ts";
 import { createContextSnapshotRef } from "./context-snapshot.ts";
@@ -43,6 +50,33 @@ async function withReplayRuntime<T>(
 }
 
 describe("boundary replay checkpoints", () => {
+  it("exposes a workflow-agnostic registry for every checkpoint kind", () => {
+    const summary = boundaryReplayRegistrySummary();
+    expect(summary).toMatchObject({
+      artifactKind: "boundary_replay_registry_summary",
+      registryVersion: BOUNDARY_REPLAY_REGISTRY_VERSION,
+      boundaryCount: BOUNDARY_REPLAY_CHECKPOINT_KINDS.length,
+      rawPromptStored: false,
+    });
+    for (const checkpointKind of BOUNDARY_REPLAY_CHECKPOINT_KINDS) {
+      const definition = boundaryReplayDefinitionFor(checkpointKind);
+      expect(definition.workflowApplicability).toBe("workflow_agnostic");
+      expect(definition.resumeCommand.runtimeEntryPoint).toBe(
+        "GenericOrchestrationRuntime.runSchedulerGraph",
+      );
+      expect(definition.resumeCommand.schedulerEntryPoint).toBe("RuntimeWorkGraphScheduler.run");
+      expect(definition.readbackProjectionFields).toContain("boundaryKind");
+      expect(definition.versionedNormalizers[0]?.normalizerId).toBe("metadata_checkpoint_v1");
+      expect(definition.rawPromptStored).toBe(false);
+    }
+    expect(boundaryReplayBoundaryIsDiagnosticOnly("after_context_synthesis")).toBe(true);
+    expect(boundaryReplayBoundaryIsDiagnosticOnly("after_context_handoff")).toBe(false);
+    expect(boundaryReplayCheckpointKindForCliAlias("after-context")).toBe("after_context_handoff");
+    expect(boundaryReplayCheckpointKindForCliAlias("after-context-synthesis")).toBe(
+      "after_context_synthesis",
+    );
+  });
+
   it("builds and validates bounded checkpoint objects", () => {
     const checkpoint = buildBoundaryReplayCheckpoint({
       checkpointKind: "context_synthesis",
@@ -62,6 +96,116 @@ describe("boundary replay checkpoints", () => {
     });
     expect(checkpoint.rawPromptStored).toBe(false);
     expect(checkpoint.workQueueLifecycleMutated).toBe(false);
+  });
+
+  it("uses explicit boundary dependencies for granular replay instead of enum slice order", () => {
+    expect(requiredBoundaryReplayCheckpointKindsFor("after_resource_materialization")).toEqual([
+      "router_payload",
+      "mission_ledger",
+      "commitment_packet_authoring",
+      "graph_compile",
+      "node_selection",
+      "before_resource_materialization",
+      "after_resource_materialization",
+    ]);
+    expect(
+      requiredBoundaryReplayCheckpointKindsFor("after_resource_materialization"),
+    ).not.toContain("worker_execution");
+    expect(requiredBoundaryReplayCheckpointKindsFor("before_graph_patch_write")).toEqual([
+      "router_payload",
+      "mission_ledger",
+      "commitment_packet_authoring",
+      "graph_compile",
+      "before_graph_patch_write",
+    ]);
+  });
+
+  it("keeps legacy after-context-synthesis replay diagnostic-only by registry policy", async () => {
+    await withReplayRuntime(async ({ runtimeJobs, graphs }) => {
+      const job = await runtimeJobs.getJob("job-boundary-replay");
+      const service = new BoundaryReplayService({ runtimeJobs, runtimeWorkGraphs: graphs });
+      for (const checkpointKind of requiredBoundaryReplayCheckpointKindsFor(
+        "after_context_synthesis",
+      )) {
+        await service.recordCheckpoint({
+          runtimeJob: job!,
+          checkpoint: buildBoundaryReplayCheckpoint({
+            checkpointKind,
+            workflowId: "agent_team.coding",
+            runtimeJobId: "job-boundary-replay",
+            graphId: "graph-boundary-replay",
+            sourcePromptHash: "sha256:prompt",
+            sourcePayloadHash: "sha256:payload",
+            acceptedArtifactRefs: [`runtime-job://job/${checkpointKind}`],
+          }),
+        });
+      }
+
+      const plan = await service.buildReplayPlan({
+        runtimeJobId: "job-boundary-replay",
+        graphId: "graph-boundary-replay",
+        workflowId: "agent_team.coding",
+        requestedStartBoundary: "after_context_synthesis",
+        sourcePromptHash: "sha256:prompt",
+        sourcePayloadHash: "sha256:payload",
+      });
+
+      expect(plan.status).toBe("needs_review");
+      expect(plan.diagnosticOnly).toBe(true);
+      expect(plan.allowedNextTransitions).toEqual(["diagnostic_only"]);
+      expect(plan.reasonCodes).toContain("boundary_replay_requested_boundary_diagnostic_only");
+      expect(plan.exactContinuationMode).toBeNull();
+    });
+  });
+
+  it("normalizes checkpoint artifacts through versioned structural normalizers", async () => {
+    await withReplayRuntime(async ({ runtimeJobs, graphs }) => {
+      const job = await runtimeJobs.getJob("job-boundary-replay");
+      const service = new BoundaryReplayService({ runtimeJobs, runtimeWorkGraphs: graphs });
+      const recorded = await service.recordCheckpoint({
+        runtimeJob: job!,
+        checkpoint: buildBoundaryReplayCheckpoint({
+          checkpointKind: "graph_compile",
+          workflowId: "agent_team.coding",
+          runtimeJobId: "job-boundary-replay",
+          graphId: "graph-boundary-replay",
+          acceptedArtifactRefs: ["runtime-job://job/graph"],
+        }),
+      });
+      const artifact = (await runtimeJobs.listArtifacts("job-boundary-replay")).find(
+        (candidate) => candidate.uri === recorded.artifactRef,
+      );
+      expect(artifact).toBeDefined();
+      const normalized = normalizeBoundaryReplayCheckpointArtifact(artifact!);
+      expect(normalized).toMatchObject({
+        status: "accepted",
+        registryVersion: BOUNDARY_REPLAY_REGISTRY_VERSION,
+        missingFieldPaths: [],
+        rawPromptStored: false,
+      });
+      expect(normalized.checkpoint?.checkpointKind).toBe("graph_compile");
+    });
+  });
+
+  it("records registry-aware runtime checkpoints without script-local checkpoint construction", async () => {
+    await withReplayRuntime(async ({ runtimeJobs, graphs }) => {
+      const job = await runtimeJobs.getJob("job-boundary-replay");
+      const service = new BoundaryReplayService({ runtimeJobs, runtimeWorkGraphs: graphs });
+      const recorded = await service.recordRuntimeCheckpoint({
+        runtimeJob: job!,
+        graphId: "graph-boundary-replay",
+        workflowId: "agent_team.coding",
+        checkpointKind: "after_resource_materialization",
+        acceptedArtifactRefs: ["runtime-job://job/resource-packet"],
+        currentNodeIds: ["implementation-node"],
+      });
+
+      expect(recorded.checkpoint.replayContinuationMode).toBe("run_node");
+      expect(recorded.checkpoint.reasonCodes).toContain(
+        "boundary_replay_runtime_checkpoint_production_replayable",
+      );
+      expect(recorded.artifactRef).toContain("/after_resource_materialization/");
+    });
   });
 
   it("rejects allowed replay checkpoints without accepted artifacts", () => {
@@ -189,6 +333,54 @@ describe("boundary replay checkpoints", () => {
         continuation,
       });
       expect(persistedContinuation.artifactRef).toContain("/boundary-replay-continuation/");
+    });
+  });
+
+  it("accepts resource materialization replay when the explicit structural prerequisites exist", async () => {
+    await withReplayRuntime(async ({ runtimeJobs, graphs }) => {
+      const job = await runtimeJobs.getJob("job-boundary-replay");
+      const service = new BoundaryReplayService({ runtimeJobs, runtimeWorkGraphs: graphs });
+      for (const checkpointKind of requiredBoundaryReplayCheckpointKindsFor(
+        "after_resource_materialization",
+      )) {
+        await service.recordCheckpoint({
+          runtimeJob: job!,
+          checkpoint: buildBoundaryReplayCheckpoint({
+            checkpointKind,
+            workflowId: "agent_team.coding",
+            runtimeJobId: "job-boundary-replay",
+            graphId: "graph-boundary-replay",
+            sourcePromptHash: "sha256:prompt",
+            sourcePayloadHash: "sha256:payload",
+            acceptedArtifactRefs: [`runtime-job://job/${checkpointKind}`],
+            currentNodeIds: ["implementation-node"],
+            currentCommitmentIds: ["commitment-1"],
+            replayContinuationMode:
+              checkpointKind === "after_resource_materialization"
+                ? "run_node"
+                : "continue_scheduler",
+          }),
+        });
+      }
+
+      const plan = await service.buildReplayPlan({
+        runtimeJobId: "job-boundary-replay",
+        graphId: "graph-boundary-replay",
+        workflowId: "agent_team.coding",
+        requestedStartBoundary: "after_resource_materialization",
+        sourcePromptHash: "sha256:prompt",
+        sourcePayloadHash: "sha256:payload",
+      });
+
+      expect(plan.status).toBe("accepted");
+      expect(plan.exactContinuationMode).toBe("run_node");
+      expect(plan.requiredUpstreamCheckpointKinds).toEqual(
+        requiredBoundaryReplayCheckpointKindsFor("after_resource_materialization"),
+      );
+      expect(plan.requiredUpstreamCheckpointKinds).not.toContain("validation_repair");
+      expect(plan.exactContinuationAction).toContain(
+        "run the recorded ready node(s): implementation-node",
+      );
     });
   });
 

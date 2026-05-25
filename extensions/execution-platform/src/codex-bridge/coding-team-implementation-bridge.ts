@@ -5,11 +5,6 @@ import path from "node:path";
 import { promisify } from "node:util";
 import type { JsonValue, RuntimeJobRepository } from "../runtime-job-repository.ts";
 import {
-  type AgentTeamImplementationBridge,
-  type AgentTeamImplementationBridgeRunInput,
-  type AgentTeamImplementationBridgeRunResult,
-} from "./agent-team-queued-runner.ts";
-import {
   CodeWritingPilotLiveEntrypointRepository,
   type CodeWritingPilotExecutionApproval,
   type CodeWritingPilotLiveResult,
@@ -24,6 +19,11 @@ import {
   resolveCodingTeamObjectiveScope,
   type CodingTeamObjectiveScope,
 } from "./coding-team-objective-scope.ts";
+import {
+  type AgentTeamImplementationBridge,
+  type AgentTeamImplementationBridgeRunInput,
+  type AgentTeamImplementationBridgeRunResult,
+} from "./coding-team-runtime-job-runner.ts";
 import { CODEX_BRIDGE_JOB_TYPE } from "./types.ts";
 
 const execFileAsync = promisify(execFile);
@@ -65,8 +65,71 @@ function defaultValidationCommands(input: AgentTeamImplementationBridgeRunInput)
   return supplied.length > 0
     ? supplied.slice(0, 2)
     : [
-        "pnpm test:file extensions/execution-platform/src/codex-bridge/agent-team-quality-proof.test.ts",
+        "pnpm test:file extensions/execution-platform/src/codex-bridge/coding-team-runtime-job-runner-dynamic-boundary.test.ts",
       ];
+}
+
+function nodeExecutionPacketPromptSummary(input: AgentTeamImplementationBridgeRunInput): string[] {
+  const packet = input.nodeExecutionPacket;
+  const resource = input.codingResourcePacket;
+  if (!packet) {
+    return [
+      "NodeExecutionPacket:",
+      "- not supplied; this bridge invocation is only valid for legacy diagnostic callers and must not be used as a production implementation worker handoff",
+    ];
+  }
+  return [
+    "NodeExecutionPacket:",
+    `- packetRef: ${packet.packetRef}`,
+    `- readiness: ${packet.readinessStatus}`,
+    `- resourcePacketRef: ${packet.resourcePacketRef}`,
+    `- nodeId: ${packet.nodeId}`,
+    `- capabilityId: ${packet.capabilityId}`,
+    `- executorKey: ${packet.executorKey}`,
+    `- executionIntent: ${packet.executionIntent}`,
+    `- evidenceModes: ${packet.evidenceMode.join(", ") || "none"}`,
+    `- targetCommitments: ${packet.targetCommitmentIds.slice(0, 12).join(", ") || "none"}`,
+    `- validationRefs: ${packet.validationRefs.slice(0, 8).join(", ") || "none"}`,
+    `- nodeReadinessStateRef: ${input.nodeReadinessStateRef ?? "not supplied"}`,
+    ...(resource
+      ? [
+          "CodingResourcePacket:",
+          `- packetRef: ${resource.packetRef}`,
+          `- targetFileRefs: ${resource.targetFileRefs.slice(0, 20).join(", ") || "none"}`,
+          `- targetFileSnapshotRefs: ${
+            resource.targetFileSnapshotRefs.slice(0, 20).join(", ") || "none"
+          }`,
+          `- allowedEditScope: ${resource.allowedEditScope.slice(0, 20).join(", ") || "none"}`,
+          `- mustReadRefs: ${resource.mustReadRefs.slice(0, 20).join(", ") || "none"}`,
+          `- acceptanceCriteria: ${resource.acceptanceCriteria.slice(0, 8).join(" | ") || "none"}`,
+          `- stopIfMissingOrEscalate: ${
+            resource.stopIfMissingOrEscalate.slice(0, 8).join(" | ") || "none"
+          }`,
+          `- expectedPatchShape: ${bound(resource.expectedPatchShape, 400)}`,
+        ]
+      : [
+          "CodingResourcePacket:",
+          "- not supplied; production implementation workers must receive the hydrated domain resource packet referenced by the NodeExecutionPacket",
+        ]),
+  ];
+}
+
+function bridgePacketPreflightFailure(input: AgentTeamImplementationBridgeRunInput): string[] {
+  const failures: string[] = [];
+  if (!input.nodeExecutionPacket) {
+    failures.push("codex_bridge_node_execution_packet_missing");
+  }
+  if (!input.codingResourcePacket) {
+    failures.push("codex_bridge_coding_resource_packet_missing");
+  }
+  if (
+    input.nodeExecutionPacket &&
+    input.codingResourcePacket &&
+    input.nodeExecutionPacket.resourcePacketRef !== input.codingResourcePacket.packetRef
+  ) {
+    failures.push("codex_bridge_resource_packet_ref_mismatch");
+  }
+  return failures;
 }
 
 function promptPackageObjective(input: {
@@ -89,7 +152,10 @@ function promptPackageObjective(input: {
     "- do not rebuild/reload gateway",
     "- do not deploy, send outbound messages, grant authority, mutate Work Queue lifecycle, or promote models",
     "- do not store raw prompts, raw responses, transcripts, provider logs, tool logs, DB rows, secrets, or hidden reasoning",
+    "- use the NodeExecutionPacket and CodingResourcePacket as the worker handoff contract; if snapshots, allowed scope, validation refs, or acceptance criteria are missing, stop with a precise upstream blocker instead of guessing",
     "- finish with a concise human-readable implementation closeout",
+    "",
+    ...nodeExecutionPacketPromptSummary(input.bridgeInput),
   ].join("\n");
 }
 
@@ -238,7 +304,16 @@ function buildLiveInput(input: {
     validationPlan: input.validationCommands,
     rollbackExpectations: ["bounded git rollback is sufficient"],
     closeoutRequirement: "Concise implementation closeout with changed files and tests.",
-    controlBridgeExpectations: ["runtime events only"],
+    controlBridgeExpectations: [
+      "runtime events only",
+      `nodeExecutionPacketRef=${
+        input.bridgeInput.nodeExecutionPacket?.packetRef ?? "not_supplied"
+      }`,
+      `codingResourcePacketRef=${
+        input.bridgeInput.codingResourcePacket?.packetRef ?? "not_supplied"
+      }`,
+      `nodeReadinessStateRef=${input.bridgeInput.nodeReadinessStateRef ?? "not_supplied"}`,
+    ],
     processCompletionIsTaskSuccess: false,
     rawTranscriptIncluded: false,
     hiddenReasoningRequested: false,
@@ -463,6 +538,34 @@ export class CodingTeamCodexFileEditingBridge implements AgentTeamImplementation
   async run(
     input: AgentTeamImplementationBridgeRunInput,
   ): Promise<AgentTeamImplementationBridgeRunResult> {
+    const packetPreflightFailures = bridgePacketPreflightFailure(input);
+    if (packetPreflightFailures.length > 0) {
+      const now = this.now().toISOString();
+      return {
+        status: "needs_review",
+        transportKind: "codex_app_server",
+        modelRef: "openai-codex/code-writing-bridge",
+        providerPath: "codex_app_server",
+        modelRunRef: `codex-bridge://blocked/${sha256Text(packetPreflightFailures.join(":")).slice(0, 16)}`,
+        responseHash: sha256Text(JSON.stringify(packetPreflightFailures)),
+        startedAt: now,
+        completedAt: now,
+        latencyMs: 0,
+        summary:
+          "Codex implementation bridge blocked before child job enqueue because the worker handoff packet was incomplete.",
+        changedFileRefs: [],
+        validationRefs: [],
+        artifactRefs: [],
+        reasonCodes: [
+          "codex_bridge_worker_invocation_packet_preflight_blocked",
+          ...packetPreflightFailures,
+        ],
+        rawPromptStored: false,
+        rawResponseStored: false,
+        rawProviderLogStored: false,
+        workQueueLifecycleMutated: false,
+      };
+    }
     const childJobId = `${input.runtimeJob.jobId}-implementation-codex-bridge`;
     const runId = `coding-team-implementation-${randomUUID()}`;
     const initialValidationCommands =

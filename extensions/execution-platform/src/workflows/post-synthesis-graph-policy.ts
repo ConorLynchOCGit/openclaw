@@ -125,7 +125,15 @@ function capabilityForNode(
   node: OrchestratorGraphNodeSpec,
   manifest: RuntimeNodeCapabilityManifest,
 ): RuntimeNodeCapability | null {
-  return node.capabilityId ? findRuntimeNodeCapability(node.capabilityId, manifest) : null;
+  const metadata = jsonRecord(node.metadata);
+  const capabilityId =
+    node.capabilityId ||
+    (typeof metadata.workIntentSelectedCapabilityId === "string"
+      ? metadata.workIntentSelectedCapabilityId
+      : typeof metadata.selectedCapabilityId === "string"
+        ? metadata.selectedCapabilityId
+        : null);
+  return capabilityId ? findRuntimeNodeCapability(capabilityId, manifest) : null;
 }
 
 function roleObligationsForCapability(
@@ -303,6 +311,9 @@ function consideredCapabilityIds(node: OrchestratorGraphNodeSpec): string[] {
       ...stringArray(metadata.consideredCapabilityIds),
       ...stringArray(utility.consideredCapabilityIds),
       ...(node.capabilityId ? [node.capabilityId] : []),
+      ...(typeof metadata.workIntentSelectedCapabilityId === "string"
+        ? [metadata.workIntentSelectedCapabilityId]
+        : []),
     ]),
   ].slice(0, 16);
 }
@@ -434,20 +445,26 @@ function postSynthesisPolicyApplies(input: {
     return false;
   }
   const nodes = input.decision.newNodes ?? [];
-  return nodes.some((node) =>
-    [
-      "implementation",
-      "validation",
-      "test_review",
-      "test_authoring",
-      "repair",
-      "reviewer",
-      "security_review",
-      "docs_update",
-      "observability_readback",
-      "closeout",
-    ].includes(node.nodeKind),
-  );
+  const executableKinds = new Set([
+    "implementation",
+    "validation",
+    "test_review",
+    "test_authoring",
+    "repair",
+    "reviewer",
+    "security_review",
+    "docs_update",
+    "observability_readback",
+    "closeout",
+  ]);
+  return nodes.some((node) => {
+    const metadata = jsonRecord(node.metadata);
+    const targetGraphNodeKind =
+      typeof metadata.targetCapabilityGraphNodeKind === "string"
+        ? metadata.targetCapabilityGraphNodeKind
+        : "";
+    return executableKinds.has(node.nodeKind) || executableKinds.has(targetGraphNodeKind);
+  });
 }
 
 export function validatePostSynthesisGraphDecision(input: {

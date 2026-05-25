@@ -405,9 +405,7 @@ export function buildRuntimeToolificationTruthRegistry(): RuntimeToolificationSu
         "extensions/execution-platform/src/intent-routing/native-execution-rpc.ts",
         "src/gateway/execution-platform-http.ts",
       ],
-      compatibilityEntryRefs: [
-        "extensions/execution-platform/src/intent-routing/model-assisted-intent-router.ts#test-only",
-      ],
+      compatibilityEntryRefs: [],
       currentBoundary:
         "Accepted front-door execution routing records staged router.front_door runtime tool traces and compiles router tool refs into runtime job payloads.",
       targetBoundary:
@@ -900,7 +898,6 @@ export function buildRuntimeToolificationTruthRegistry(): RuntimeToolificationSu
         "closeout.generate",
       ],
       productionEntryRefs: [
-        "extensions/execution-platform/src/codex-bridge/workflow-queued-runner.ts",
         "extensions/execution-platform/src/workflows/runtime-workflow-graph-engine.ts",
         "extensions/execution-platform/src/workflows/workflow-definition-registry.ts",
         "extensions/execution-platform/src/workflows/workflow-plugin-registry.ts",
@@ -908,7 +905,7 @@ export function buildRuntimeToolificationTruthRegistry(): RuntimeToolificationSu
       ],
       compatibilityEntryRefs: [],
       currentBoundary:
-        "WorkflowQueuedRunner is a migration shim only and cannot produce production workflow success; production workflows must run through the canonical workflow runtime engine.",
+        "WorkflowQueuedRunner has been deleted; production workflows run through the canonical workflow runtime engine and workflow definitions/plugins.",
       targetBoundary:
         "No production workflow path can complete without workflow definition/plugin readiness, runtime tool traces, evidence profile, completion review, and model-authored closeout.",
       nextQueueItemId: null,

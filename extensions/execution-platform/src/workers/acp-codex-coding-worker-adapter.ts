@@ -1,10 +1,4 @@
-import {
-  changedFileRefsFromResult,
-  evaluateSingleJobCodingTeamQualityProof,
-  readSingleJobQualityProofPayloadFlag,
-  validationRefsFromResult,
-  type AgentTeamRoleExecutionEvidence,
-} from "../codex-bridge/agent-team-quality-proof.ts";
+import type { AgentTeamRoleExecutionEvidence } from "../codex-bridge/agent-team-role-execution-evidence.ts";
 import type { AgentTeamRuntimeEvidence } from "../codex-bridge/agent-team-runtime-evidence.ts";
 import { AGENT_TEAM_JOB_TYPE } from "../codex-bridge/agent-team-runtime-evidence.ts";
 import type { CloseoutCapsule } from "../codex-bridge/closeout-capsule.ts";
@@ -173,52 +167,6 @@ export class AcpCodexCodingWorkerAdapter implements RuntimeWorkerSupervisorAdapt
         artifactRefs,
       });
     }
-    let qualityEvaluationRef: string | null = null;
-    if (readSingleJobQualityProofPayloadFlag(input.job.payload)) {
-      const payloadRecord =
-        input.job.payload &&
-        typeof input.job.payload === "object" &&
-        !Array.isArray(input.job.payload)
-          ? (input.job.payload as Record<string, unknown>)
-          : null;
-      qualityEvaluationRef = `runtime-job://${input.job.jobId}/agent-team/single-job-quality-evaluation`;
-      const qualityEvaluation = evaluateSingleJobCodingTeamQualityProof({
-        roleExecutionEvidence: run.roleExecutionEvidence ?? run.evidence?.roleExecutionEvidence,
-        closeoutCapsule: run.closeoutCapsule,
-        changedFileRefs: changedFileRefsFromResult(run.result),
-        validationRefs: [...validationRefsFromResult(run.result), ...run.validationRefs].slice(
-          0,
-          40,
-        ),
-        reviewAccepted: run.reviewRefs.length > 0,
-        securityAccepted:
-          run.reviewRefs.some((ref) => /security|privacy/iu.test(ref)) ||
-          run.artifactRefs.some((ref) => /security|privacy/iu.test(ref)),
-        objectiveSummary:
-          typeof payloadRecord?.objectiveSummary === "string"
-            ? payloadRecord.objectiveSummary
-            : null,
-        runtimeResult: run.result,
-        artifactRefs: run.artifactRefs,
-      });
-      await this.options.runtimeJobs.attachArtifact({
-        jobId: input.job.jobId,
-        artifactType: "agent_team.single_job_quality_evaluation",
-        storageKind: "metadata",
-        uri: qualityEvaluationRef,
-        contentType: "application/json",
-        metadata: qualityEvaluation as unknown as JsonValue,
-      });
-      if (!qualityEvaluation.accepted) {
-        return this.needsReview({
-          summary:
-            "Coding worker completion needs review because single-job coding-team quality proof gates did not pass.",
-          reasonCodes: qualityEvaluation.reasonCodes,
-          artifactRefs: boundedRefs(artifactRefs, [qualityEvaluationRef]),
-          completedWorkEvidenceRefs,
-        });
-      }
-    }
     const closeoutEvaluation = evaluateWorkerCloseoutCapsule({
       capsule: run.closeoutCapsule,
     });
@@ -227,7 +175,7 @@ export class AcpCodexCodingWorkerAdapter implements RuntimeWorkerSupervisorAdapt
         summary:
           "Coding worker completion needs review because model-authored closeout is missing or unsafe.",
         reasonCodes: closeoutEvaluation.reasonCodes,
-        artifactRefs: boundedRefs(artifactRefs, qualityEvaluationRef ? [qualityEvaluationRef] : []),
+        artifactRefs,
         completedWorkEvidenceRefs,
       });
     }
@@ -252,11 +200,9 @@ export class AcpCodexCodingWorkerAdapter implements RuntimeWorkerSupervisorAdapt
           rawLogsStored: false,
           workQueueLifecycleMutated: false,
         } satisfies JsonValue),
-      artifactRefs: boundedRefs(
-        artifactRefs,
-        [`runtime-job://${input.job.jobId}/runtime-worker/closeout-capsule-evaluation`],
-        qualityEvaluationRef ? [qualityEvaluationRef] : [],
-      ),
+      artifactRefs: boundedRefs(artifactRefs, [
+        `runtime-job://${input.job.jobId}/runtime-worker/closeout-capsule-evaluation`,
+      ]),
       completedWorkEvidenceRefs,
       reasonCodes: ["acp_codex_coding_worker_completed", ...run.reasonCodes].slice(0, 30),
       rawPromptStored: false,

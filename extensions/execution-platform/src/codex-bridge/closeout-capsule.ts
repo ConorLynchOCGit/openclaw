@@ -25,7 +25,7 @@ export const CloseoutCapsuleOpportunitySeedSchema = z
     title: boundedString(120),
     rationale: boundedString(600),
     recommendedNextStep: boundedString(500),
-    evidenceRefs: stringList(8, 220),
+    evidenceRefs: stringList(8, 260),
     confidence: z.enum(["low", "medium", "high"]),
   })
   .strict();

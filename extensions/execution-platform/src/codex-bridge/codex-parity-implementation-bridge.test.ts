@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type { RuntimeJob } from "../runtime-job-repository.ts";
+import {
+  buildImplementationTaskPacket,
+  type ImplementationTaskFileSnapshot,
+} from "../workflows/mission-work-packets.ts";
+import { compileNodeExecutionPacketForImplementationTask } from "../workflows/node-resource-materialization.ts";
 import { CodexParityImplementationBridge } from "./codex-parity-implementation-bridge.ts";
 import type { CodexParityRuntimeAdapterResult } from "./codex-parity-runtime-adapter.ts";
 
@@ -191,15 +196,62 @@ function adapterResult(): CodexParityRuntimeAdapterResult {
   };
 }
 
+function readyPackets() {
+  const snapshot: ImplementationTaskFileSnapshot = {
+    fileRef: "src/example.ts",
+    snapshotRef: "repo-snapshot://src/example.ts",
+    contentHash: "sha256:example",
+    byteCount: 128,
+    sourceKind: "repo_file",
+    freshnessStatus: "fresh",
+    rawContentStored: false,
+  };
+  const taskPacket = buildImplementationTaskPacket({
+    runtimeJobId: "runtime-job-1",
+    workflowId: "agent_team.coding",
+    graphId: "graph-1",
+    sourceGraphNodeId: "node-1",
+    microtaskId: "node-1:task-1",
+    exactEditObjective: "Implement the bounded example task.",
+    taskSummary: "Edit src/example.ts and validate the focused test.",
+    targetCommitmentIds: ["commitment-1"],
+    targetFileRefs: [snapshot.fileRef],
+    targetFileSnapshots: [snapshot],
+    allowedFileRefs: [snapshot.fileRef],
+    allowedEditScope: [snapshot.fileRef],
+    mustReadRefs: [snapshot.fileRef],
+    likelyModifyRefs: [snapshot.fileRef],
+    contextPacketRefs: ["context-handoff://node-1"],
+    sourceContextHandoffRefs: ["context-handoff://node-1"],
+    validationCommandRefs: ["pnpm test:file src/example.test.ts"],
+    acceptanceCriteria: ["The worker receives a hydrated packet handoff."],
+    evidenceClaimExpectations: ["Changed file and validation evidence close commitment-1."],
+  });
+  return compileNodeExecutionPacketForImplementationTask({
+    runtimeJobId: "runtime-job-1",
+    workflowId: "agent_team.coding",
+    graphId: "graph-1",
+    nodeId: "node-1",
+    nodeKind: "implementation",
+    capabilityId: "implementation_microtask",
+    executorKey: "kind:implementation",
+    workerRef: "codex-parity://worker",
+    implementationTaskPacket: taskPacket,
+  });
+}
+
 describe("Codex parity implementation bridge", () => {
   it("adapts CodexParityRuntimeAdapter into AgentTeamImplementationBridge", async () => {
     let receivedScopeRefs: string[] = [];
+    let receivedPrompt = "";
+    const packets = readyPackets();
     const bridge = new CodexParityImplementationBridge({
       repoPath: "/repo",
       approvedRepoScopePaths: ["src"],
       adapter: {
         async run(input) {
           receivedScopeRefs = input.approvedScopeRefs;
+          receivedPrompt = input.volatilePrompt;
           expect(input.volatilePrompt).toContain("owner objective");
           expect(input.validationCommands[0]?.required).toBe(true);
           expect("workspaceRoot" in input).toBe(false);
@@ -217,11 +269,52 @@ describe("Codex parity implementation bridge", () => {
       evidenceRefs: ["artifact://context"],
       validationRefs: ["pnpm test:file src/example.test.ts"],
       approvedRepoScopePaths: ["extensions/execution-platform/src/work-queue/"],
+      nodeExecutionPacket: packets.nodeExecutionPacket,
+      codingResourcePacket: packets.codingResourcePacket,
+      nodeReadinessStateRef: packets.readiness.state.stateRef,
     });
 
     expect(receivedScopeRefs).toEqual(["extensions/execution-platform/src/work-queue/"]);
+    expect(receivedPrompt).toContain(`packetRef: ${packets.nodeExecutionPacket.packetRef}`);
+    expect(receivedPrompt).toContain(`packetRef: ${packets.codingResourcePacket.packetRef}`);
+    expect(receivedPrompt).toContain("targetFileRefs: src/example.ts");
     expect(result.transportKind).toBe("codex_parity_runtime_adapter");
     expect(result.changedFileRefs).toEqual(["src/example.ts"]);
     expect(result.validationRefs).toEqual(["pnpm test:file src/example.test.ts"]);
+  });
+
+  it("blocks before Codex parity adapter invocation without hydrated worker packets", async () => {
+    let adapterCalled = false;
+    const bridge = new CodexParityImplementationBridge({
+      repoPath: "/repo",
+      approvedRepoScopePaths: ["src"],
+      adapter: {
+        async run() {
+          adapterCalled = true;
+          return adapterResult();
+        },
+      },
+    });
+
+    const result = await bridge.run({
+      runtimeJob: runtimeJob(),
+      teamRunId: "team-run-1",
+      objective: "owner objective",
+      roleId: "implementation_engineer",
+      assignedTaskSummary: "implement",
+      evidenceRefs: ["artifact://context"],
+      validationRefs: ["pnpm test:file src/example.test.ts"],
+      approvedRepoScopePaths: ["src"],
+    });
+
+    expect(adapterCalled).toBe(false);
+    expect(result.status).toBe("needs_review");
+    expect(result.reasonCodes).toEqual(
+      expect.arrayContaining([
+        "codex_parity_worker_invocation_packet_preflight_blocked",
+        "codex_parity_node_execution_packet_missing",
+        "codex_parity_coding_resource_packet_missing",
+      ]),
+    );
   });
 });

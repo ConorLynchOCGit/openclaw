@@ -66,14 +66,13 @@ function latestArtifact(artifacts, artifactType) {
   );
 }
 
-function sourcePackets(artifacts, limit) {
+async function sourcePackets(runtime, artifacts, limit) {
   const packetsByCommitment = new Map();
   for (const artifact of artifacts
     .filter((candidate) => candidate.artifactType === "execution_platform.commitment_work_packet")
     .toSorted((a, b) => a.createdAt.getTime() - b.createdAt.getTime())) {
-    const parsed = CommitmentWorkPacketSchema.safeParse(
-      record(artifact.metadata).commitmentWorkPacket,
-    );
+    const hydrated = await runtime.runtimeJobs.hydrateRuntimeArtifactByContract(artifact);
+    const parsed = CommitmentWorkPacketSchema.safeParse(hydrated.body);
     if (parsed.success) {
       packetsByCommitment.set(parsed.data.commitmentId, parsed.data);
     }
@@ -123,7 +122,7 @@ async function main() {
     throw new Error(`source_runtime_job_not_found:${sourceRuntimeJobId}`);
   }
   const artifacts = await runtime.runtimeJobs.listArtifacts(sourceRuntimeJobId);
-  const packets = sourcePackets(artifacts, limit);
+  const packets = await sourcePackets(runtime, artifacts, limit);
   if (packets.length === 0) {
     throw new Error(`source_commitment_packets_missing:${sourceRuntimeJobId}`);
   }
@@ -194,21 +193,22 @@ async function main() {
   }
   for (const packet of packets) {
     const packetRef = `runtime-job://${job.jobId}/comparison/commitment-work-packet/${packet.commitmentId}`;
-    const encoded = JSON.stringify(packet);
-    await runtime.runtimeJobs.attachArtifact({
+    await runtime.runtimeJobs.attachRuntimeArtifactByContract({
       jobId: job.jobId,
       artifactType: "execution_platform.commitment_work_packet",
-      storageKind: "metadata",
       uri: packetRef,
       contentType: "application/json",
-      sizeBytes: Buffer.byteLength(encoded, "utf8"),
-      sha256: sha256(encoded),
+      body: packet,
+      boundedSummary: packet.workerObjective,
+      targetCommitmentIds: [packet.commitmentId],
+      resourcePacketKind: "commitment_work_packet",
+      readinessStatus: packet.qualityStatus,
+      reasonCodes: ["context_scout_model_comparison_packet_persisted_by_contract"],
       metadata: {
         artifactKind: "execution_platform.commitment_work_packet",
         commitmentId: packet.commitmentId,
         packetRef: packet.packetRef,
         packetId: packet.packetId,
-        commitmentWorkPacket: packet,
         comparisonSourceRuntimeJobId: sourceRuntimeJobId,
         rawPromptStored: false,
         rawResponseStored: false,

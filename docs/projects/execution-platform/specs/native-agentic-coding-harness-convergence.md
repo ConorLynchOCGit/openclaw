@@ -238,7 +238,7 @@ Production requirements:
 - worker inputs use `ImplementationTaskPacket` plus context handoff refs,
   source prompt excerpt refs, validation refs, target refs, allowed scope,
   acceptance criteria, stop/escalation conditions, and budget policy.
-- `ImplementationTaskPacket v2` is the canonical non-Codex implementation
+- `ImplementationTaskPacket v3` is the canonical non-Codex implementation
   handoff. It includes worker-selection rationale, expected output, allowed
   and denied file refs, context packet refs, source-prompt excerpt refs,
   context-synthesis refs, prior node output refs, expected evidence claim
@@ -261,7 +261,7 @@ and Mission Ledger evidence-claim contract.
 
 Implementation status on 2026-05-18:
 
-- `ImplementationTaskPacket v2` was expanded and validated before non-Codex
+- `ImplementationTaskPacket v3` was expanded and validated before non-Codex
   worker/provider calls.
 - production `agent_team.coding` Kimi nodes build the packet from scheduler
   metadata, context handoffs, source-prompt excerpt refs, context-synthesis

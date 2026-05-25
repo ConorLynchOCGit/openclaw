@@ -5,6 +5,12 @@ import type { CodeIntelligenceRuntimeToolId } from "../code-intelligence/index.t
 import type { JsonValue, RuntimeJob, RuntimeJobRepository } from "../runtime-job-repository.ts";
 import type { RuntimeToolKernel } from "../runtime-tool-call/runtime-tool-kernel.ts";
 import {
+  compileContextScoutExecutionPacket,
+  contextScoutBrokerRequestSummaryFromMetadata,
+  contextScoutExecutionPacketMetadata,
+  CONTEXT_SCOUT_EXECUTION_PACKET_ARTIFACT_TYPE,
+} from "../workflows/context-scout-execution-packet.ts";
+import {
   buildContextScoutToolLoopRun,
   buildContextScoutRepoAnalysisFindings,
   buildContextScoutVerifiedFileRefs,
@@ -561,53 +567,12 @@ export function applyRuntimeVerifiedContextToScoutOutput(input: {
     reasonCodes: [
       ...new Set([
         ...(input.groundedOutput?.reasonCodes ?? []),
-        "context_scout_tool_first_verified_context_used",
+        ...(groundedVerifiedRefs.length === 0
+          ? ["context_scout_tool_first_verified_context_used"]
+          : ["context_scout_tool_first_verified_context_supplemented"]),
       ]),
     ].slice(0, 12),
   };
-}
-
-function contextScoutPrompt(input: {
-  objectiveSummary: string;
-  nodeObjective: string;
-  commitmentWorkPackets: CommitmentWorkPacket[];
-  sourcePromptContextIndex: SourcePromptContextIndex | null;
-  boundedRepoContextIndex: BoundedRepoContextIndexEntry[];
-  validationCommandRefs: string[];
-}): string {
-  return [
-    "You are the OpenClaw context_scout node.",
-    "Use only bounded runtime-provided evidence. Do not invent repo paths.",
-    "Return strict JSON with relevantFiles, existingPatterns, risks, recommendedEditPoints, validationSuggestions, handoffSummaryForImplementation, confidence, limitations.",
-    "These context handoff fields are required for a usable scout result. Do not satisfy this role by returning only generic role closeout fields.",
-    "A valid handoff must contain model-authored implementation substance, not just file refs. Include a concrete handoffSummaryForImplementation plus substantive existingPatterns, risks, validationSuggestions, and non-generic recommendedEditPoints entries tied to the packet objective.",
-    "Use at least 3 relevantFiles from boundedRepoContextIndex when available. Use at least 2 existingPatterns, 2 risks, 2 validationSuggestions, and 2 recommendedEditPoints unless you are explicitly returning needs_review with a concrete blocker.",
-    "The handoffSummaryForImplementation must explain what the next implementation worker should change or inspect, why these files matter, and what validation should prove. Do not write a generic 'use target refs' summary.",
-    "Do not return empty existingPatterns or risks unless you explicitly request more bounded context. Do not use runtime_verified_context as a symbol or region; name the likely file area or symbol from the bounded summaries.",
-    "For each relevant file, explain why it matters for this packet and which downstream worker should inspect it next.",
-    "If runtime-provided file refs are useful but you cannot add substantive implementation guidance, say so in limitations and identify the missing bounded context instead of returning a generic handoff.",
-    "If context is insufficient, return limitations and exact missing context. Do not store raw prompts, raw responses, provider logs, tool logs, or secrets.",
-    'Required JSON shape: {"relevantFiles":[{"path":"relative/file.ts","whyRelevant":"why this exact existing file matters","keySymbolsOrFunctions":["symbol or area"]}],"existingPatterns":["concrete pattern from boundedRepoContextIndex"],"risks":["concrete implementation or validation risk"],"recommendedEditPoints":[{"path":"relative/file.ts","symbolOrRegion":"specific symbol or file area","reason":"why downstream worker should inspect or edit it"}],"validationSuggestions":["specific test/build/readback command or check"],"handoffSummaryForImplementation":"detailed worker handoff grounded in the files above","confidence":0.8,"limitations":[]}',
-    `objectiveSummary: ${bounded(input.objectiveSummary, 2_000)}`,
-    `nodeObjective: ${bounded(input.nodeObjective, 1_500)}`,
-    `commitmentWorkPackets: ${bounded(
-      JSON.stringify(
-        input.commitmentWorkPackets.map((packet) => ({
-          packetRef: packet.packetRef,
-          commitmentId: packet.commitmentId,
-          contextScoutObjective: packet.contextScoutObjective,
-          requiredContextQuestions: packet.requiredContextQuestions,
-          expectedContextScoutOutput: packet.expectedContextScoutOutput,
-          likelyRepoAreas: packet.likelyRepoAreas,
-          stopIfMissing: packet.stopIfMissing,
-        })),
-      ),
-      8_000,
-    )}`,
-    `sourcePromptSections: ${bounded(JSON.stringify(input.sourcePromptContextIndex?.sections.slice(0, 24) ?? []), 6_000)}`,
-    `boundedRepoContextIndex: ${bounded(JSON.stringify(input.boundedRepoContextIndex), 12_000)}`,
-    `validationCommandRefs: ${input.validationCommandRefs.slice(0, 12).join(", ")}`,
-  ].join("\n");
 }
 
 async function callContextScoutModel(input: {
@@ -1005,6 +970,112 @@ export async function runContextScoutNodeExecutor(
     fileRefs: candidateFileRefs,
     maxFiles: 48,
   });
+  const executionPacketResult = compileContextScoutExecutionPacket({
+    runtimeJobId: input.runtimeJob.jobId,
+    workflowId: input.graph.workflowId,
+    graphId: input.graph.graphId,
+    nodeId: input.node.nodeId,
+    targetNodeIds: stringArray(metadata.targetNodeIds, 24),
+    targetCommitmentIds: commitmentIds,
+    objectiveSummary: input.objectiveSummary,
+    nodeObjective,
+    downstreamConsumer: "implementation_and_validation",
+    contextBrokerRequest: contextScoutBrokerRequestSummaryFromMetadata(metadata),
+    commitmentWorkPackets: input.commitmentWorkPackets,
+    sourcePromptContextIndex: input.sourcePromptContextIndex,
+    boundedRepoContextIndex,
+    candidateFileRefs,
+    validationCommandRefs: input.validationCommandRefs,
+    nodeBudgetMs: totalTimeoutMs,
+    requestedTimeoutMs: modelAttemptTimeoutMs,
+  });
+  await input.runtimeJobs.attachRuntimeArtifactByContract({
+    jobId: input.runtimeJob.jobId,
+    artifactType: CONTEXT_SCOUT_EXECUTION_PACKET_ARTIFACT_TYPE,
+    uri: executionPacketResult.packet.packetRef,
+    contentType: "application/json",
+    body: executionPacketResult.packet as unknown as JsonValue,
+    boundedSummary: executionPacketResult.packet.nodeObjective,
+    targetCommitmentIds: executionPacketResult.packet.targetCommitmentIds,
+    targetNodeIds: [executionPacketResult.packet.nodeId],
+    resourcePacketKind: "context_scout_execution_packet",
+    readinessStatus: executionPacketResult.packet.status,
+    reasonCodes: [
+      "context_scout_execution_packet_persisted_by_contract",
+      ...executionPacketResult.reasonCodes.slice(0, 12),
+    ],
+    metadata: contextScoutExecutionPacketMetadata(executionPacketResult.packet) as Record<
+      string,
+      JsonValue
+    >,
+  });
+  await invokeTool(
+    "context_scout.build_execution_packet",
+    `${input.node.nodeId}:build-execution-packet`,
+    "Compile bounded context scout execution packet before model call.",
+    contextScoutExecutionPacketMetadata(executionPacketResult.packet),
+  );
+  await invokeTool(
+    "context_scout.request_repo_context",
+    `${input.node.nodeId}:request-repo-context`,
+    "Request bounded repo context refs for the scout packet.",
+    {
+      packetRef: executionPacketResult.packet.packetRef,
+      candidateFileRefs: candidateFileRefs.slice(0, 80),
+      boundedRepoContextRefs: boundedRepoContextIndex.map((entry) => entry.fileRef).slice(0, 80),
+      status: executionPacketResult.status,
+      reasonCodes: executionPacketResult.reasonCodes,
+      rawPromptStored: false,
+      rawResponseStored: false,
+      rawProviderLogStored: false,
+    },
+  );
+  if (executionPacketResult.status === "blocked") {
+    await invokeTool(
+      "context_scout.classify_context_blocker",
+      `${input.node.nodeId}:execution-packet-blocked`,
+      "Context scout execution packet exceeded bounded model-task policy.",
+      contextScoutExecutionPacketMetadata(executionPacketResult.packet),
+    );
+    return {
+      status: "needs_review",
+      runtimeJobId: input.runtimeJob.jobId,
+      graphId: input.graph.graphId,
+      nodeId: input.node.nodeId,
+      roleId: "context_scout",
+      sourceRuntimeJobId: input.sourceRuntimeJobId ?? null,
+      contextHandoffPacketRef: null,
+      contextScoutToolLoopRef: null,
+      contextScoutToolLoopRun: null,
+      verifiedFileRefs: [],
+      rejectedRefs: [],
+      runtimeToolInvocationRefs,
+      codeIntelligenceResultRefs: [],
+      codeIntelligenceRuntimeToolInvocationRefs: [],
+      codeIntelligenceSymbolRefs: [],
+      codeIntelligenceDiagnosticRefs: [],
+      codeIntelligenceRelatedTestRefs: [],
+      codeIntelligenceImpactRefs: [],
+      codeIntelligenceSemanticModes: [],
+      codeIntelligenceLimitations: [],
+      codeIntelligenceBackendIds: [],
+      codeIntelligenceBackendHealthRefs: [],
+      codeIntelligenceWorkspaceSnapshotRefs: [],
+      codeIntelligenceFallbackReasonCodes: [],
+      codeIntelligenceDiagnosticVersionRefs: [],
+      codeIntelligenceProjectConfigRefs: [],
+      codeIntelligenceBackendLatencyMs: null,
+      codeIntelligenceResultCounts: {},
+      artifactRefs: [executionPacketResult.packet.packetRef],
+      reasonCodes: executionPacketResult.reasonCodes,
+      implementationBlocked: true,
+      rawPromptStored: false,
+      rawResponseStored: false,
+      rawProviderLogStored: false,
+      rawToolLogStored: false,
+      workQueueLifecycleMutated: false,
+    };
+  }
   await invokeTool(
     "repo.search",
     `${input.node.nodeId}:repo-search`,
@@ -1119,22 +1190,15 @@ export async function runContextScoutNodeExecutor(
   );
   const codeIntelligence = collectCodeIntelligence(toolSummaries);
 
-  const modelPrompt = contextScoutPrompt({
-    objectiveSummary: input.objectiveSummary,
-    nodeObjective,
-    commitmentWorkPackets: input.commitmentWorkPackets,
-    sourcePromptContextIndex: input.sourcePromptContextIndex,
-    boundedRepoContextIndex,
-    validationCommandRefs: input.validationCommandRefs,
-  });
+  const modelPrompt = executionPacketResult.prompt;
   let modelResult = await callContextScoutModel({
     modelClient: input.roleModelClient,
-    modelId: input.modelId ?? "deepseek/deepseek-v4-pro",
-    modelCandidateId: input.modelCandidateId ?? "deepseek-v4-pro-context-scout",
+    modelId: input.modelId ?? "qwen/qwen3-coder-next",
+    modelCandidateId: input.modelCandidateId ?? "qwen3-coder-next-context-scout",
     prompt: modelPrompt,
     maxTokens: input.maxModelTokens ?? 4_000,
     timeoutMs: totalTimeoutMs,
-    perAttemptTimeoutMs: modelAttemptTimeoutMs,
+    perAttemptTimeoutMs: executionPacketResult.packet.providerTimeoutMs,
     maxAttempts: modelMaxAttempts,
     nodeStartedAtMs,
     minimumUsefulTimeoutMs: 1_000,
@@ -1211,12 +1275,12 @@ export async function runContextScoutNodeExecutor(
     ].join("\n\n");
     const repairResult = await callContextScoutModel({
       modelClient: input.roleModelClient,
-      modelId: input.modelId ?? "deepseek/deepseek-v4-pro",
-      modelCandidateId: input.modelCandidateId ?? "deepseek-v4-pro-context-scout",
+      modelId: input.modelId ?? "qwen/qwen3-coder-next",
+      modelCandidateId: input.modelCandidateId ?? "qwen3-coder-next-context-scout",
       prompt: repairPrompt,
       maxTokens: input.maxModelTokens ?? 4_000,
       timeoutMs: totalTimeoutMs,
-      perAttemptTimeoutMs: modelAttemptTimeoutMs,
+      perAttemptTimeoutMs: executionPacketResult.packet.providerTimeoutMs,
       maxAttempts: modelMaxAttempts,
       nodeStartedAtMs,
       minimumUsefulTimeoutMs: 30_000,
@@ -1494,13 +1558,31 @@ export async function runContextScoutNodeExecutor(
       providedContextSnapshotRefs: [...sourcePromptSnapshotRefs, ...repoSnapshotRefs],
     });
     handoffRef = `runtime-job://${input.runtimeJob.jobId}/context-handoff/${handoff.packetId}`;
-    await input.runtimeJobs.attachArtifact({
+    await input.runtimeJobs.attachRuntimeArtifactByContract({
       jobId: input.runtimeJob.jobId,
       artifactType: "execution_platform.context_handoff_packet",
-      storageKind: "metadata",
       uri: handoffRef,
       contentType: "application/json",
-      metadata: handoff as unknown as JsonValue,
+      body: handoff as unknown as JsonValue,
+      boundedSummary: handoff.handoffSummaryForImplementation,
+      targetCommitmentIds: handoff.targetCommitmentIds,
+      targetNodeIds: [handoff.sourceNodeId],
+      resourcePacketKind: "context_handoff_packet",
+      readinessStatus: "accepted",
+      reasonCodes: ["context_handoff_packet_persisted_by_contract"],
+      metadata: {
+        artifactKind: "execution_platform.context_handoff_packet",
+        packetId: handoff.packetId,
+        packetRef: handoff.packetRef,
+        sourceNodeId: handoff.sourceNodeId,
+        nodeId: handoff.sourceNodeId,
+        commitmentWorkPacketRefs: handoff.commitmentWorkPacketRefs.slice(0, 40),
+        relevantFileRefs: handoff.relevantFileRefs.slice(0, 40),
+        targetCommitmentIds: handoff.targetCommitmentIds,
+        rawPromptStored: false,
+        rawResponseStored: false,
+        rawProviderLogStored: false,
+      },
     });
     await invokeTool(
       "context_scout.emit_handoff_packet",
@@ -1561,7 +1643,7 @@ export async function runContextScoutNodeExecutor(
     graphId: input.graph.graphId,
     nodeId: input.node.nodeId,
     roleId: "context_scout",
-    modelRef: input.modelId ?? "deepseek/deepseek-v4-pro",
+    modelRef: input.modelId ?? "qwen/qwen3-coder-next",
     targetCommitmentIds: commitmentIds,
     commitmentWorkPacketRefs: input.commitmentWorkPackets.map((packet) => packet.packetRef),
     requestedContextQuestions: input.commitmentWorkPackets.flatMap(
@@ -1642,7 +1724,11 @@ export async function runContextScoutNodeExecutor(
     }),
   });
   const validation = validateContextScoutToolLoopForImplementation(toolLoopRun);
-  const artifactRefs = [toolLoopRef, ...(handoffRef ? [handoffRef] : [])];
+  const artifactRefs = [
+    executionPacketResult.packet.packetRef,
+    toolLoopRef,
+    ...(handoffRef ? [handoffRef] : []),
+  ];
   return {
     status: validation.valid ? "succeeded" : "needs_review",
     runtimeJobId: input.runtimeJob.jobId,
@@ -1677,6 +1763,7 @@ export async function runContextScoutNodeExecutor(
       validation.valid
         ? "context_scout_boundary_replay_succeeded"
         : "context_scout_boundary_replay_needs_review",
+      "context_scout_execution_packet_used",
       ...validation.reasonCodes,
       ...(effectiveGroundedOutput?.reasonCodes ?? []),
       ...repairReasonCodes,

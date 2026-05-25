@@ -145,13 +145,29 @@ async function main() {
     const validation = validateContextScoutToolLoopForImplementation(loopRun);
     const loopRef = `runtime-job://${job.jobId}/context-scout/tool-loop/${loopRun.loopId}`;
     const handoffRef = `runtime-job://${job.jobId}/context-handoff/${handoff.packetId}`;
-    await runtimeJobs.attachArtifact({
+    await runtimeJobs.attachRuntimeArtifactByContract({
       jobId: job.jobId,
       artifactType: "execution_platform.context_handoff_packet",
-      storageKind: "metadata",
       uri: handoffRef,
       contentType: "application/json",
-      metadata: handoff,
+      body: handoff,
+      boundedSummary: handoff.handoffSummaryForImplementation,
+      targetCommitmentIds: handoff.targetCommitmentIds,
+      targetNodeIds: [handoff.sourceNodeId],
+      resourcePacketKind: "context_handoff_packet",
+      readinessStatus: validation.valid ? "accepted" : "needs_review",
+      reasonCodes: ["context_handoff_packet_tool_loop_proof_persisted_by_contract"],
+      metadata: {
+        artifactKind: "execution_platform.context_handoff_packet",
+        packetId: handoff.packetId,
+        packetRef: handoff.packetRef,
+        sourceNodeId: handoff.sourceNodeId,
+        targetCommitmentIds: handoff.targetCommitmentIds,
+        relevantFileRefs: handoff.relevantFileRefs,
+        rawPromptStored: false,
+        rawResponseStored: false,
+        rawProviderLogStored: false,
+      },
     });
     await runtimeJobs.attachArtifact({
       jobId: job.jobId,

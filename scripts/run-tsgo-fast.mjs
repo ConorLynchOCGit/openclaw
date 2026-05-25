@@ -2,8 +2,8 @@
 
 import { spawnSync } from "node:child_process";
 import { listChangedWorktreePaths } from "./lib/git-worktree-paths.mjs";
+import { buildFastTsgoArgs } from "./lib/tsgo-fast-target-config.mjs";
 
-const FAST_TSGO_BUILD_INFO_FILE = ".artifacts/tsgo-cache/root-fast.tsbuildinfo";
 const BROAD_CHANGE_PATTERNS = [
   /^package\.json$/u,
   /^pnpm-lock\.yaml$/u,
@@ -42,15 +42,16 @@ function main() {
     );
   }
 
-  const forwardedArgs = broadChange
-    ? process.argv.slice(2)
-    : [
-        "--incremental",
-        "--tsBuildInfoFile",
-        FAST_TSGO_BUILD_INFO_FILE,
-        ...targets,
-        ...process.argv.slice(2),
-      ];
+  const forwardedArgs = buildFastTsgoArgs({
+    broadChange: Boolean(broadChange),
+    targets,
+    userArgs: process.argv.slice(2),
+  });
+  if (!broadChange) {
+    console.error(
+      "[tsgo] fast mode generated a targeted tsconfig so TypeScript does not receive file args with --project.",
+    );
+  }
 
   const result = spawnSync(process.execPath, ["scripts/run-tsgo.mjs", ...forwardedArgs], {
     stdio: "inherit",

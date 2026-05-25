@@ -39,7 +39,7 @@ describe("coding-team objective scope", () => {
       objectiveForEvidence: "Complete active-queue-08.",
       fallbackRepoScopePaths: ["extensions/execution-platform/src/codex-bridge/"],
       fallbackValidationCommands: [
-        "pnpm test:file extensions/execution-platform/src/codex-bridge/agent-team-quality-proof.test.ts",
+        "pnpm test:file extensions/execution-platform/src/codex-bridge/coding-team-runtime-job-runner-dynamic-boundary.test.ts",
       ],
       activeQueueDefinitions: [
         {
@@ -73,7 +73,7 @@ describe("coding-team objective scope", () => {
       objectiveForEvidence: "Complete active-queue-08.",
       fallbackRepoScopePaths: ["extensions/execution-platform/src/codex-bridge/"],
       fallbackValidationCommands: [
-        "pnpm test:file extensions/execution-platform/src/codex-bridge/agent-team-quality-proof.test.ts",
+        "pnpm test:file extensions/execution-platform/src/codex-bridge/coding-team-runtime-job-runner-dynamic-boundary.test.ts",
       ],
       activeQueueDefinitions,
     });
@@ -110,7 +110,7 @@ describe("coding-team objective scope", () => {
       objectiveForEvidence: "Make a small bridge repair.",
       fallbackRepoScopePaths: ["extensions/execution-platform/src/codex-bridge/"],
       fallbackValidationCommands: [
-        "pnpm test:file extensions/execution-platform/src/codex-bridge/agent-team-quality-proof.test.ts",
+        "pnpm test:file extensions/execution-platform/src/codex-bridge/coding-team-runtime-job-runner-dynamic-boundary.test.ts",
       ],
       activeQueueDefinitions,
     });
@@ -135,7 +135,7 @@ describe("coding-team objective scope", () => {
         "Improve Work Queue owner readback in extensions/execution-platform/src/work-queue/ and ui/src/ui/.",
       fallbackRepoScopePaths: ["extensions/execution-platform/src/codex-bridge/"],
       fallbackValidationCommands: [
-        "pnpm test:file extensions/execution-platform/src/codex-bridge/agent-team-quality-proof.test.ts",
+        "pnpm test:file extensions/execution-platform/src/codex-bridge/coding-team-runtime-job-runner-dynamic-boundary.test.ts",
       ],
       activeQueueDefinitions,
     });
@@ -157,7 +157,7 @@ describe("coding-team objective scope", () => {
         "Implement Product/Spec Planning Production Upgrade with scripts and docs updates.",
       fallbackRepoScopePaths: ["extensions/execution-platform/src/codex-bridge/"],
       fallbackValidationCommands: [
-        "pnpm test:file extensions/execution-platform/src/codex-bridge/agent-team-quality-proof.test.ts",
+        "pnpm test:file extensions/execution-platform/src/codex-bridge/coding-team-runtime-job-runner-dynamic-boundary.test.ts",
       ],
       activeQueueDefinitions,
     });

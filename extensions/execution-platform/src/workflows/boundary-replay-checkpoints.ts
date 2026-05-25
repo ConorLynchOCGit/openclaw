@@ -6,33 +6,38 @@ import type {
   RuntimeJobRepository,
 } from "../runtime-job-repository.ts";
 import {
+  BOUNDARY_REPLAY_CHECKPOINT_KINDS,
+  BOUNDARY_REPLAY_REGISTRY_VERSION,
+  boundaryReplayDefinitionFor,
+  boundaryReplayRegistrySummary,
+  boundaryReplayCheckpointKindForCliAlias,
+  requiredBoundaryReplayCheckpointKindsFor,
+  type BoundaryReplayBoundaryDefinition,
+  type BoundaryReplayCheckpointKind,
+} from "./boundary-replay-registry.ts";
+import {
   ContextSnapshotRefSchema,
   validateContextSnapshotFreshness,
   type ContextSnapshotRef,
 } from "./context-snapshot.ts";
 import type { RuntimeWorkGraphRepository } from "./runtime-work-graph-repository.ts";
 
+export {
+  BOUNDARY_REPLAY_CHECKPOINT_KINDS,
+  BOUNDARY_REPLAY_REGISTRY_VERSION,
+  boundaryReplayDefinitionFor,
+  boundaryReplayDefinitions,
+  boundaryReplayBoundaryIsDiagnosticOnly,
+  boundaryReplayCheckpointKindForCliAlias,
+  boundaryReplayRegistrySummary,
+  requiredBoundaryReplayCheckpointKindsFor,
+  type BoundaryReplayBoundaryDefinition,
+  type BoundaryReplayCheckpointKind,
+} from "./boundary-replay-registry.ts";
+
 export const BOUNDARY_REPLAY_CHECKPOINT_ARTIFACT_TYPE = "execution.boundary_replay_checkpoint";
 
 export const BOUNDARY_REPLAY_PLAN_ARTIFACT_TYPE = "execution.boundary_replay_plan";
-
-export const BOUNDARY_REPLAY_CHECKPOINT_KINDS = [
-  "router_payload",
-  "mission_ledger",
-  "commitment_packet_authoring",
-  "commitment_packet_review",
-  "context_scout",
-  "context_synthesis",
-  "graph_compile",
-  "node_selection",
-  "worker_execution",
-  "validation_repair",
-  "review_qa",
-  "closeout_finalization",
-  "work_queue_readback",
-] as const;
-
-export type BoundaryReplayCheckpointKind = (typeof BOUNDARY_REPLAY_CHECKPOINT_KINDS)[number];
 
 export type BoundaryReplayCheckpoint = {
   artifactKind: "boundary_replay_checkpoint";
@@ -91,10 +96,18 @@ export type BoundaryReplayPlan = {
   workflowId: string;
   requestedStartBoundary: BoundaryReplayCheckpointKind;
   status: "accepted" | "needs_review" | "blocked";
+  registryVersion: typeof BOUNDARY_REPLAY_REGISTRY_VERSION;
+  boundaryDefinition: BoundaryReplayBoundaryDefinition;
+  registrySummary: JsonValue;
   requiredUpstreamCheckpointKinds: BoundaryReplayCheckpointKind[];
   latestAcceptedCheckpointRef: string | null;
   latestAcceptedCheckpointKind: BoundaryReplayCheckpointKind | null;
   exactContinuationMode: BoundaryReplayCheckpoint["replayContinuationMode"] | null;
+  allowedNextTransitions: BoundaryReplayBoundaryDefinition["allowedNextTransitions"];
+  terminalBlockerClasses: string[];
+  readbackProjectionFields: string[];
+  diagnosticOnly: boolean;
+  missingCheckpointKinds: BoundaryReplayCheckpointKind[];
   skippedUpstreamCheckpointKinds: BoundaryReplayCheckpointKind[];
   resumeFromArtifactRefs: string[];
   invalidReasonCodes: string[];
@@ -130,10 +143,14 @@ export type BoundaryReplayContinuation = {
   workflowId: string;
   requestedStartBoundary: BoundaryReplayCheckpointKind;
   status: "accepted" | "needs_review" | "blocked";
+  registryVersion: typeof BOUNDARY_REPLAY_REGISTRY_VERSION;
+  diagnosticOnly: boolean;
   runtimeEntryPoint: "GenericOrchestrationRuntime.runSchedulerGraph";
   schedulerEntryPoint: "RuntimeWorkGraphScheduler.run";
   continuationMode: BoundaryReplayCheckpoint["replayContinuationMode"] | null;
   exactContinuationAction: string;
+  allowedNextTransitions: BoundaryReplayBoundaryDefinition["allowedNextTransitions"];
+  terminalBlockerClasses: string[];
   skippedUpstreamCheckpointKinds: BoundaryReplayCheckpointKind[];
   resumeFromArtifactRefs: string[];
   acceptedCheckpointRefs: string[];
@@ -225,6 +242,23 @@ function contextSnapshotArray(value: unknown): ContextSnapshotRef[] {
     : [];
 }
 
+export type BoundaryReplayCheckpointNormalizationResult = {
+  artifactKind: "boundary_replay_checkpoint_normalization_result";
+  registryVersion: typeof BOUNDARY_REPLAY_REGISTRY_VERSION;
+  status: "accepted" | "needs_review";
+  checkpoint: BoundaryReplayCheckpoint | null;
+  missingFieldPaths: string[];
+  reasonCodes: string[];
+  rawPromptStored: false;
+  rawResponseStored: false;
+  rawProviderLogStored: false;
+  rawToolLogStored: false;
+  rawCommandLogsStored: false;
+  rawDbRowsStored: false;
+  authorityGranted: false;
+  workQueueLifecycleMutated: false;
+};
+
 function checkpointArtifactRef(input: {
   runtimeJobId: string;
   graphId: string;
@@ -262,6 +296,7 @@ export function buildBoundaryReplayCheckpoint(input: {
   replayContinuationMode?: BoundaryReplayCheckpoint["replayContinuationMode"];
   reasonCodes?: string[];
 }): BoundaryReplayCheckpoint {
+  const definition = boundaryReplayDefinitionFor(input.checkpointKind);
   const fingerprint = sha256(
     JSON.stringify({
       checkpointKind: input.checkpointKind,
@@ -345,8 +380,11 @@ export function buildBoundaryReplayCheckpoint(input: {
     currentCommitmentIds: unique(input.currentCommitmentIds ?? [], 60, 180),
     openCommitmentIds: unique(input.openCommitmentIds ?? [], 60, 180),
     satisfiedCommitmentIds: unique(input.satisfiedCommitmentIds ?? [], 60, 180),
-    replayStartPolicy: input.replayStartPolicy ?? "allowed_from_checkpoint",
-    replaySafetyStatus: input.replaySafetyStatus ?? "safe_to_replay",
+    replayStartPolicy:
+      input.replayStartPolicy ??
+      (definition.diagnosticOnly ? "diagnostic_only" : "allowed_from_checkpoint"),
+    replaySafetyStatus:
+      input.replaySafetyStatus ?? (definition.diagnosticOnly ? "needs_review" : "safe_to_replay"),
     replayFreshnessStatus:
       input.replayFreshnessStatus ??
       (originalContextSnapshotRefs.length === 0
@@ -356,10 +394,13 @@ export function buildBoundaryReplayCheckpoint(input: {
           : contextFreshness.freshnessStatus === "stale"
             ? "stale"
             : "unknown"),
-    replayContinuationMode: input.replayContinuationMode ?? "continue_scheduler",
+    replayContinuationMode:
+      input.replayContinuationMode ?? definition.resumeCommand.defaultContinuationMode,
     reasonCodes: unique(
       [
         ...(input.reasonCodes ?? ["boundary_replay_checkpoint_recorded"]),
+        `boundary_registry_version:${BOUNDARY_REPLAY_REGISTRY_VERSION}`,
+        ...(definition.diagnosticOnly ? ["boundary_replay_checkpoint_diagnostic_only"] : []),
         ...(originalContextSnapshotRefs.length > contextSnapshotRefs.length
           ? ["boundary_replay_context_snapshot_refs_compacted"]
           : []),
@@ -386,8 +427,20 @@ export function validateBoundaryReplayCheckpoint(checkpoint: BoundaryReplayCheck
   reasonCodes: string[];
 } {
   const reasonCodes: string[] = [];
+  const definition = BOUNDARY_REPLAY_CHECKPOINT_KINDS.includes(checkpoint.checkpointKind)
+    ? boundaryReplayDefinitionFor(checkpoint.checkpointKind)
+    : null;
   if (!BOUNDARY_REPLAY_CHECKPOINT_KINDS.includes(checkpoint.checkpointKind)) {
     reasonCodes.push("boundary_replay_checkpoint_kind_invalid");
+  }
+  if (definition?.diagnosticOnly && checkpoint.replayStartPolicy === "allowed_from_checkpoint") {
+    reasonCodes.push("boundary_replay_checkpoint_diagnostic_boundary_not_replayable");
+  }
+  if (
+    definition &&
+    !definition.allowedNextTransitions.includes(checkpoint.replayContinuationMode)
+  ) {
+    reasonCodes.push("boundary_replay_checkpoint_continuation_not_allowed_by_registry");
   }
   if (!checkpoint.runtimeJobId || !checkpoint.graphId || !checkpoint.workflowId) {
     reasonCodes.push("boundary_replay_checkpoint_identity_missing");
@@ -437,19 +490,58 @@ export function validateBoundaryReplayCheckpoint(checkpoint: BoundaryReplayCheck
   return { valid: reasonCodes.length === 0, reasonCodes };
 }
 
-function checkpointFromArtifact(artifact: RuntimeJobArtifact): BoundaryReplayCheckpoint | null {
+export function normalizeBoundaryReplayCheckpointArtifact(
+  artifact: RuntimeJobArtifact,
+): BoundaryReplayCheckpointNormalizationResult {
   const metadata = asRecord(artifact.metadata);
   if (metadata.artifactKind !== "boundary_replay_checkpoint") {
-    return null;
+    return {
+      artifactKind: "boundary_replay_checkpoint_normalization_result",
+      registryVersion: BOUNDARY_REPLAY_REGISTRY_VERSION,
+      status: "needs_review",
+      checkpoint: null,
+      missingFieldPaths: ["metadata.artifactKind"],
+      reasonCodes: ["boundary_replay_checkpoint_artifact_kind_invalid"],
+      rawPromptStored: false,
+      rawResponseStored: false,
+      rawProviderLogStored: false,
+      rawToolLogStored: false,
+      rawCommandLogsStored: false,
+      rawDbRowsStored: false,
+      authorityGranted: false,
+      workQueueLifecycleMutated: false,
+    };
   }
   const checkpointKind = stringValue(metadata.checkpointKind);
   if (
     !checkpointKind ||
     !BOUNDARY_REPLAY_CHECKPOINT_KINDS.includes(checkpointKind as BoundaryReplayCheckpointKind)
   ) {
-    return null;
+    return {
+      artifactKind: "boundary_replay_checkpoint_normalization_result",
+      registryVersion: BOUNDARY_REPLAY_REGISTRY_VERSION,
+      status: "needs_review",
+      checkpoint: null,
+      missingFieldPaths: ["metadata.checkpointKind"],
+      reasonCodes: ["boundary_replay_checkpoint_kind_invalid"],
+      rawPromptStored: false,
+      rawResponseStored: false,
+      rawProviderLogStored: false,
+      rawToolLogStored: false,
+      rawCommandLogsStored: false,
+      rawDbRowsStored: false,
+      authorityGranted: false,
+      workQueueLifecycleMutated: false,
+    };
   }
-  return {
+  const missingFieldPaths = [
+    stringValue(metadata.workflowId) ? null : "metadata.workflowId",
+    stringValue(metadata.graphId) ? null : "metadata.graphId",
+    stringValue(metadata.identityBindingHash) ? null : "metadata.identityBindingHash",
+    stringValue(metadata.boundaryInputHash) ? null : "metadata.boundaryInputHash",
+    stringValue(metadata.boundaryOutputHash) ? null : "metadata.boundaryOutputHash",
+  ].filter((value): value is string => Boolean(value));
+  const checkpoint: BoundaryReplayCheckpoint = {
     artifactKind: "boundary_replay_checkpoint",
     schemaVersion: "execution-platform.boundary-replay-checkpoint.v1",
     checkpointId: stringValue(metadata.checkpointId) ?? artifact.artifactId,
@@ -507,6 +599,32 @@ function checkpointFromArtifact(artifact: RuntimeJobArtifact): BoundaryReplayChe
     authorityGranted: false,
     workQueueLifecycleMutated: false,
   };
+  return {
+    artifactKind: "boundary_replay_checkpoint_normalization_result",
+    registryVersion: BOUNDARY_REPLAY_REGISTRY_VERSION,
+    status: missingFieldPaths.length > 0 ? "needs_review" : "accepted",
+    checkpoint,
+    missingFieldPaths,
+    reasonCodes:
+      missingFieldPaths.length > 0
+        ? [
+            "boundary_replay_checkpoint_normalization_missing_fields",
+            ...missingFieldPaths.map((path) => `missing:${path}`),
+          ]
+        : ["boundary_replay_checkpoint_normalized"],
+    rawPromptStored: false,
+    rawResponseStored: false,
+    rawProviderLogStored: false,
+    rawToolLogStored: false,
+    rawCommandLogsStored: false,
+    rawDbRowsStored: false,
+    authorityGranted: false,
+    workQueueLifecycleMutated: false,
+  };
+}
+
+function checkpointFromArtifact(artifact: RuntimeJobArtifact): BoundaryReplayCheckpoint | null {
+  return normalizeBoundaryReplayCheckpointArtifact(artifact).checkpoint;
 }
 
 function latestCheckpointByKind(
@@ -694,6 +812,10 @@ export class BoundaryReplayService {
         checkpointRef: artifactRef,
         graphCheckpointRef: `runtime-work-graph://checkpoint/${graphCheckpoint.checkpointId}`,
         checkpointKind: checkpoint.checkpointKind,
+        registryVersion: BOUNDARY_REPLAY_REGISTRY_VERSION,
+        boundaryDefinition: boundaryReplayDefinitionFor(
+          checkpoint.checkpointKind,
+        ) as unknown as JsonValue,
         replayStartPolicy: checkpoint.replayStartPolicy,
         replaySafetyStatus: checkpoint.replaySafetyStatus,
         replayFreshnessStatus: checkpoint.replayFreshnessStatus,
@@ -716,6 +838,73 @@ export class BoundaryReplayService {
       artifactRef,
       graphCheckpointRef: `runtime-work-graph://checkpoint/${graphCheckpoint.checkpointId}`,
     };
+  }
+
+  async recordRuntimeCheckpoint(input: {
+    runtimeJob: RuntimeJob;
+    graphId: string;
+    workflowId: string;
+    checkpointKind: BoundaryReplayCheckpointKind;
+    acceptedArtifactRefs?: string[];
+    upstreamArtifactRefs?: string[];
+    staleArtifactRefs?: string[];
+    rejectedArtifactRefs?: string[];
+    contextSnapshotRefs?: ContextSnapshotRef[];
+    currentNodeIds?: string[];
+    currentCommitmentIds?: string[];
+    openCommitmentIds?: string[];
+    satisfiedCommitmentIds?: string[];
+    replayContinuationMode?: BoundaryReplayCheckpoint["replayContinuationMode"];
+    replayStartPolicy?: BoundaryReplayCheckpoint["replayStartPolicy"];
+    replaySafetyStatus?: BoundaryReplayCheckpoint["replaySafetyStatus"];
+    replayFreshnessStatus?: BoundaryReplayCheckpoint["replayFreshnessStatus"];
+    reasonCodes?: string[];
+  }): Promise<{
+    checkpoint: BoundaryReplayCheckpoint;
+    artifactRef: string;
+    graphCheckpointRef: string;
+  }> {
+    const payload = asRecord(input.runtimeJob.payload);
+    const promptHash = stringValue(payload.promptHash);
+    const sourcePayloadHash = jsonHash(payload);
+    const definition = boundaryReplayDefinitionFor(input.checkpointKind);
+    return this.recordCheckpoint({
+      runtimeJob: input.runtimeJob,
+      checkpoint: buildBoundaryReplayCheckpoint({
+        checkpointKind: input.checkpointKind,
+        workflowId: input.workflowId,
+        runtimeJobId: input.runtimeJob.jobId,
+        graphId: input.graphId,
+        sourcePromptHash: promptHash,
+        sourcePayloadHash,
+        upstreamArtifactRefs: input.upstreamArtifactRefs,
+        acceptedArtifactRefs: input.acceptedArtifactRefs,
+        staleArtifactRefs: input.staleArtifactRefs,
+        rejectedArtifactRefs: input.rejectedArtifactRefs,
+        contextSnapshotRefs: input.contextSnapshotRefs,
+        currentNodeIds: input.currentNodeIds,
+        currentCommitmentIds: input.currentCommitmentIds,
+        openCommitmentIds: input.openCommitmentIds,
+        satisfiedCommitmentIds: input.satisfiedCommitmentIds,
+        replayContinuationMode:
+          input.replayContinuationMode ?? definition.resumeCommand.defaultContinuationMode,
+        replayStartPolicy:
+          input.replayStartPolicy ??
+          (definition.diagnosticOnly ? "diagnostic_only" : "allowed_from_checkpoint"),
+        replaySafetyStatus:
+          input.replaySafetyStatus ??
+          (definition.diagnosticOnly ? "needs_review" : "safe_to_replay"),
+        replayFreshnessStatus: input.replayFreshnessStatus,
+        reasonCodes: [
+          "boundary_replay_runtime_checkpoint_recorded",
+          `boundary_registry_version:${definition.registryVersion}`,
+          ...(definition.diagnosticOnly
+            ? ["boundary_replay_runtime_checkpoint_diagnostic_only"]
+            : ["boundary_replay_runtime_checkpoint_production_replayable"]),
+          ...(input.reasonCodes ?? []),
+        ],
+      }),
+    });
   }
 
   async listCheckpoints(input: {
@@ -749,15 +938,14 @@ export class BoundaryReplayService {
     contextSnapshotRefs?: ContextSnapshotRef[];
     allowedNodeExecutors?: string[];
     allowedToolKernelFamilies?: string[];
+    allowDiagnosticBoundaries?: boolean;
   }): Promise<BoundaryReplayPlan> {
+    const boundaryDefinition = boundaryReplayDefinitionFor(input.requestedStartBoundary);
     const checkpoints = await this.listCheckpoints({
       runtimeJobId: input.runtimeJobId,
       graphId: input.graphId,
     });
-    const requiredUpstreamCheckpointKinds = BOUNDARY_REPLAY_CHECKPOINT_KINDS.slice(
-      0,
-      BOUNDARY_REPLAY_CHECKPOINT_KINDS.indexOf(input.requestedStartBoundary) + 1,
-    );
+    const requiredUpstreamCheckpointKinds = boundaryDefinition.requiredUpstreamCheckpointKinds;
     const relevant = checkpoints.filter((item) =>
       requiredUpstreamCheckpointKinds.includes(item.checkpoint.checkpointKind),
     );
@@ -816,9 +1004,13 @@ export class BoundaryReplayService {
         ),
       ),
     ].slice(0, 60);
+    const diagnosticBoundaryBlocked =
+      boundaryDefinition.diagnosticOnly && input.allowDiagnosticBoundaries !== true;
     const status =
-      missingUpstreamKinds.length === 0 && requested
-        ? "accepted"
+      diagnosticBoundaryBlocked || (missingUpstreamKinds.length === 0 && requested)
+        ? diagnosticBoundaryBlocked
+          ? "needs_review"
+          : "accepted"
         : requested
           ? "needs_review"
           : "blocked";
@@ -833,6 +1025,7 @@ export class BoundaryReplayService {
         : status === "needs_review"
           ? "boundary_replay_requested_checkpoint_not_accepted"
           : "boundary_replay_requested_checkpoint_missing",
+      ...(diagnosticBoundaryBlocked ? ["boundary_replay_requested_boundary_diagnostic_only"] : []),
       ...missingUpstreamKinds.map((kind) => `boundary_replay_upstream_checkpoint_missing:${kind}`),
       ...invalidReasonCodes.slice(0, 12),
     ];
@@ -851,11 +1044,19 @@ export class BoundaryReplayService {
       workflowId: input.workflowId,
       requestedStartBoundary: input.requestedStartBoundary,
       status,
+      registryVersion: BOUNDARY_REPLAY_REGISTRY_VERSION,
+      boundaryDefinition,
+      registrySummary: boundaryReplayRegistrySummary() as JsonValue,
       requiredUpstreamCheckpointKinds,
       latestAcceptedCheckpointRef,
       latestAcceptedCheckpointKind:
         status === "accepted" && requested ? requested.checkpoint.checkpointKind : null,
       exactContinuationMode,
+      allowedNextTransitions: boundaryDefinition.allowedNextTransitions,
+      terminalBlockerClasses: boundaryDefinition.terminalBlockerClasses,
+      readbackProjectionFields: boundaryDefinition.readbackProjectionFields,
+      diagnosticOnly: boundaryDefinition.diagnosticOnly,
+      missingCheckpointKinds: missingUpstreamKinds,
       skippedUpstreamCheckpointKinds: status === "accepted" ? requiredUpstreamCheckpointKinds : [],
       resumeFromArtifactRefs:
         status === "accepted" && requested
@@ -893,6 +1094,9 @@ export class BoundaryReplayService {
             )
           : `Repair or regenerate accepted ${input.requestedStartBoundary} checkpoint before replay.`,
       stopConditions: [
+        ...boundaryDefinition.terminalBlockerClasses.map(
+          (blocker) => `Stop on terminal replay blocker: ${blocker}.`,
+        ),
         "Stop if runtime job id, graph id, workflow id, source prompt hash, or payload hash mismatch.",
         "Stop if checkpoint is stale, rejected, diagnostic-only, missing accepted artifact refs, or carries stale/missing/rejected context snapshots.",
         "Stop if continuation would bypass production scheduler/node executors.",
@@ -934,6 +1138,12 @@ export class BoundaryReplayService {
         planRef: artifactRef,
         requestedStartBoundary: input.plan.requestedStartBoundary,
         status: input.plan.status,
+        registryVersion: input.plan.registryVersion,
+        diagnosticOnly: input.plan.diagnosticOnly,
+        allowedNextTransitions: input.plan.allowedNextTransitions,
+        terminalBlockerClasses: input.plan.terminalBlockerClasses,
+        readbackProjectionFields: input.plan.readbackProjectionFields,
+        missingCheckpointKinds: input.plan.missingCheckpointKinds,
         acceptedCheckpointRefs: input.plan.acceptedCheckpointRefs.slice(0, 20),
         latestAcceptedCheckpointRef: input.plan.latestAcceptedCheckpointRef,
         exactContinuationMode: input.plan.exactContinuationMode,
@@ -967,10 +1177,14 @@ export class BoundaryReplayService {
       workflowId: input.plan.workflowId,
       requestedStartBoundary: input.plan.requestedStartBoundary,
       status: input.plan.status,
+      registryVersion: input.plan.registryVersion,
+      diagnosticOnly: input.plan.diagnosticOnly,
       runtimeEntryPoint: "GenericOrchestrationRuntime.runSchedulerGraph",
       schedulerEntryPoint: "RuntimeWorkGraphScheduler.run",
       continuationMode: input.plan.exactContinuationMode,
       exactContinuationAction: input.plan.exactContinuationAction,
+      allowedNextTransitions: input.plan.allowedNextTransitions,
+      terminalBlockerClasses: input.plan.terminalBlockerClasses,
       skippedUpstreamCheckpointKinds: input.plan.skippedUpstreamCheckpointKinds,
       resumeFromArtifactRefs: input.plan.resumeFromArtifactRefs,
       acceptedCheckpointRefs: input.plan.acceptedCheckpointRefs,
@@ -1018,10 +1232,14 @@ export class BoundaryReplayService {
         continuationRef: artifactRef,
         requestedStartBoundary: input.continuation.requestedStartBoundary,
         status: input.continuation.status,
+        registryVersion: input.continuation.registryVersion,
+        diagnosticOnly: input.continuation.diagnosticOnly,
         runtimeEntryPoint: input.continuation.runtimeEntryPoint,
         schedulerEntryPoint: input.continuation.schedulerEntryPoint,
         exactContinuationMode: input.continuation.continuationMode,
         exactContinuationAction: input.continuation.exactContinuationAction,
+        allowedNextTransitions: input.continuation.allowedNextTransitions,
+        terminalBlockerClasses: input.continuation.terminalBlockerClasses,
         skippedUpstreamCheckpointKinds: input.continuation.skippedUpstreamCheckpointKinds,
         resumeFromArtifactRefs: input.continuation.resumeFromArtifactRefs.slice(0, 20),
         acceptedCheckpointRefs: input.continuation.acceptedCheckpointRefs.slice(0, 20),

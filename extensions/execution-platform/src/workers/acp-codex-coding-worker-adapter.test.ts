@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-import { SINGLE_JOB_CODING_TEAM_QUALITY_GATE_ID } from "../codex-bridge/agent-team-quality-proof.ts";
 import type { CloseoutCapsule } from "../codex-bridge/closeout-capsule.ts";
 import { applyExecutionPlatformMigrations } from "../db/migrations.ts";
 import { createExecutionPlatformPgMemTestDatabase } from "../db/pg-test.ts";
@@ -202,7 +201,7 @@ describe("ACP/Codex coding worker adapter", () => {
     }
   });
 
-  it("blocks single-job quality proof when runner only returns injected-style completion evidence", async () => {
+  it("ignores unknown payload flags and relies only on production evidence and closeout gates", async () => {
     await withRepository(async (repository) => {
       await repository.enqueueJob({
         jobId: "job-coding-worker-quality-proof",
@@ -211,8 +210,8 @@ describe("ACP/Codex coding worker adapter", () => {
         maxAttempts: 1,
         payload: {
           workflowId: "agent_team.coding",
-          objectiveSummary: "Prove one real coding-team quality job.",
-          qualityGateId: SINGLE_JOB_CODING_TEAM_QUALITY_GATE_ID,
+          objectiveSummary: "Run a bounded coding job through production evidence gates.",
+          deprecatedProofFlag: true,
         },
       });
       const adapter = new AcpCodexCodingWorkerAdapter({
@@ -227,20 +226,17 @@ describe("ACP/Codex coding worker adapter", () => {
         adapters: [adapter],
       }).runOnce();
 
-      expect(result.status).toBe("needs_review");
-      expect(result.reasonCodes).toEqual(
-        expect.arrayContaining([
-          "role_execution_evidence_missing:orchestrator",
-          "role_closeout_missing:orchestrator",
-          "v4_pro_scoped_roles_not_completed",
-        ]),
-      );
+      expect(result.status).toBe("completed");
       await expect(repository.getJob("job-coding-worker-quality-proof")).resolves.toMatchObject({
-        state: "failed",
+        state: "succeeded",
       });
       const artifacts = await repository.listArtifacts("job-coding-worker-quality-proof");
-      expect(artifacts.map((artifact) => artifact.artifactType)).toContain(
-        "agent_team.single_job_quality_evaluation",
+      expect(artifacts.map((artifact) => artifact.artifactType)).toEqual(
+        expect.arrayContaining([
+          "runtime_worker.adapter_result",
+          "runtime_worker.closeout_capsule_evaluation",
+          "execution_platform.closeout_capsule",
+        ]),
       );
     });
   });

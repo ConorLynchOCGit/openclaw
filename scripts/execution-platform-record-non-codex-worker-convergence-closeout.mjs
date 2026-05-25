@@ -58,9 +58,9 @@ async function main() {
     artifactKind: "non_codex_worker_convergence_closeout",
     workItemId,
     summary:
-      "Kimi/non-Codex implementation nodes now receive canonical ImplementationTaskPacket v2 handoffs, validate worker readiness before provider calls, expose context-request/edit-step/evidence progress in Work Queue readback, and carry hardened Kimi provider profile constraints.",
+      "Kimi/non-Codex implementation nodes now receive canonical ImplementationTaskPacket v3 handoffs, validate worker readiness before provider calls, expose context-request/edit-step/evidence progress in Work Queue readback, and carry hardened Kimi provider profile constraints.",
     completedCapabilities: [
-      "implementation_task_packet_v2_worker_handoff",
+      "implementation_task_packet_v3_worker_handoff",
       "non_codex_packet_readiness_gate",
       "missing_context_explicit_request_path",
       "kimi_provider_profile_reasoning_budget_hardening",
@@ -92,7 +92,7 @@ async function main() {
     actorId: "codex:non-codex-worker-convergence-closeout",
     reasonCodes: [
       "non_codex_worker_convergence_completed",
-      "implementation_task_packet_v2_tested",
+      "implementation_task_packet_v3_tested",
       "non_codex_worker_loop_tested",
       "file_edit_worker_adapter_tested",
       "tsgo_fast_passed",

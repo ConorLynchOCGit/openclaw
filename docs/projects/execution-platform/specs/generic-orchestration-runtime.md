@@ -23,6 +23,41 @@ readback surfaces the generic runtime status, graph id, executed/added node
 ids, decision refs, and reason codes. This is not a separate proof runner; it
 is wired into the production scheduler-backed coding-team path.
 
+Status update on 2026-05-24:
+`openclaw-convergence.post-proof-01-generic-runtime-spine-extraction` is
+implemented as the generic runtime spine extraction layer. The new
+`GenericRuntimeSpine` owns:
+
+- workflow readiness composition over workflow definition, plugin,
+  scheduler policy, executor coverage, and Runtime Tool Kernel availability;
+- scheduler-option gate evaluation for staged protocol, model-authored work
+  packets, and NodeExecutionPacket requirements;
+- scheduler-result lifecycle evaluation, including downgrading claimed
+  scheduler success to `needs_review` when graph evidence is missing;
+- bounded spine readiness and lifecycle artifact metadata.
+
+`GenericOrchestrationRuntime` delegates those lifecycle decisions to the
+spine. The production coding runner persists
+`execution.generic_runtime_spine_readiness` and
+`execution.generic_runtime_spine_lifecycle` artifacts. A non-coding
+docs/skills readiness-negative lane uses the same spine path, proving this is
+not coding-only logic. Remaining large runner responsibilities are assigned
+to Dynamic Runner Plugin Thinning.
+
+Status update on 2026-05-24:
+`openclaw-convergence.post-proof-02-dynamic-runner-plugin-thinning` is
+implemented as the next production thinning slice. The generic runtime
+execution artifact lifecycle moved to
+`generic-orchestration-runtime-execution.ts`, so production callers can
+persist workflow plugin resolution, generic runtime readiness, generic
+runtime spine readiness/lifecycle, runtime workflow graph engine readiness,
+and generic orchestration runtime result artifacts through one
+workflow-agnostic service. `DynamicAgentTeamGraphRunner` now calls
+`runAndPersistGenericSchedulerGraph(...)` and no longer instantiates
+`GenericOrchestrationRuntime` or generic spine artifact metadata directly.
+Coding-specific scheduler executor registration moved to
+`coding-team-runtime-adapter.ts`.
+
 The lower-level `RuntimeWorkflowGraphEngine` remains as the readiness resolver
 inside the generic runtime. It is not a competing workflow brain.
 
@@ -57,6 +92,17 @@ Production success now requires explicit canonical evidence claims whenever
 the mission/workflow requires evidence. Generic artifact refs, role reports,
 process completion, degraded closeout, or fixture output cannot imply node,
 commitment, workflow, or closeout success.
+
+Status update on 2026-05-22:
+the latest Product/Spec proof shows the remaining gap between the current
+runtime and the first-principles target. The runtime can now block a broad
+implementation parent before worker invocation when resource materialization
+exceeds packet bounds, but `split_required` is not yet a first-class graph
+transition. The generic runtime must promote accepted split task packets into
+executable child nodes, mark the parent as an aggregate/non-runnable rollup,
+and keep the failure inside scheduler/readiness evidence instead of surfacing
+`worker_adapter_threw:unclassified`. The governing spec is
+`split-required-resource-materialization-transition.md`.
 
 ## Purpose
 
@@ -127,6 +173,10 @@ It owns:
 - Commitment Work Packet authoring.
 - source-prompt/context supply.
 - staged scheduler protocol.
+- node lifecycle transitions from work intent to executable frontier.
+- capability execution precondition enforcement.
+- prerequisite node creation for context, research, human decisions,
+  resource packets, validation plans, and closeout packets.
 - capability selection and cost policy enforcement.
 - node creation, graph edges, dependency readiness, and parallel branches.
 - node execution through registered executors.
@@ -137,6 +187,32 @@ It owns:
 - model-authored completion review.
 - Work Queue projection events.
 - loop guards and terminalization.
+
+For complex implementation workflows, the generic runtime uses a
+scheduler-first context-supply policy: Commitment Work Packets feed draft
+work-intent graph creation; context scouts then run per draft work node in
+parallel; implementation readiness promotes only nodes with resolved context
+to executable selection. Mandatory commitment-scoped scout fanout and global
+synthesis before scheduling are not production defaults.
+
+Status update on 2026-05-23: the scheduler-first policy is refined into a
+demand-driven frontier policy. The runtime should not block all execution on
+the completion of a giant context fanout. It should open ready branches,
+allow implementation-bearing nodes to request missing context/resources
+through a runtime-owned broker, and continue unrelated branches in parallel.
+Edits remain blocked until each node's `NodeReadinessState` is executable.
+Graph expansion and progress are persisted through payload-backed graph
+patches and compact latest-run-state refs, not full body-bearing metadata.
+The governing spec is
+`demand-driven-frontier-orchestration-and-context-broker.md`.
+
+Status update on 2026-05-21: the latest Product/Spec proof showed that this
+policy must be enforced by a generic transition engine, not only by
+pre-worker packet checks. Graph acceptance must not call a worker node
+directly. The generic runtime must evaluate the frontier, record node
+readiness, create missing prerequisites, compile resource packets, and open
+only executable nodes. The new governing spec is
+`runtime-node-readiness-transition-engine.md`.
 
 It must not hard-code coding-team, Product/Spec Planning, design, marketing,
 research, QA, memory, or docs semantics. Those semantics belong in workflow
@@ -338,6 +414,13 @@ Every node has:
 - budget.
 - stop/escalation condition.
 
+Before any node executes, resource materialization must prove the node is
+actually executable. If materialization returns `split_required`, the node is
+not a worker target. Runtime must transition the parent into aggregate rollup
+state and compile child executable nodes from payload-backed split packets.
+Retrying the parent without creating children is a scheduler error, not a
+worker failure.
+
 Every production node result compiles into
 `generic_workflow_node_execution_result` before it can advance the graph:
 
@@ -468,6 +551,13 @@ The generic orchestration runtime is complete only when:
 - `agent_team.product_spec_planning` can plug in as a workflow plugin.
 - graph creation uses staged tools instead of one-shot executable JSON.
 - runtime compiles canonical graph envelopes.
+- resource materialization can accept, block, repair, or split work through
+  first-class graph transitions.
+- aggregate work nodes cannot execute after the resource compiler proves they
+  must split.
+- split task packets promote into executable child nodes with dependency
+  edges, Work Queue child readback, `NodeReadinessState`, and payload-backed
+  `NodeExecutionPacket` refs.
 - node executors use generic input/output/evidence contracts.
 - validation failures repair inside the same runtime job when recoverable.
 - human tasks pause and resume through graph state.

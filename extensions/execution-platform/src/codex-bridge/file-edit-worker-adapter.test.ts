@@ -8,6 +8,11 @@ import { RuntimeJobRepository } from "../runtime-job-repository.ts";
 import { RuntimeToolKernel } from "../runtime-tool-call/runtime-tool-kernel.ts";
 import { RuntimeToolRegistry } from "../runtime-tool-call/runtime-tool-registry.ts";
 import { RuntimeToolTraceRepository } from "../runtime-tool-call/runtime-tool-trace-repository.ts";
+import {
+  buildImplementationTaskPacket,
+  type ImplementationTaskFileSnapshot,
+} from "../workflows/mission-work-packets.ts";
+import { compileNodeExecutionPacketForImplementationTask } from "../workflows/node-resource-materialization.ts";
 import { RuntimeWorkGraphRepository } from "../workflows/runtime-work-graph-repository.ts";
 import { registerSchedulerRuntimeTools } from "../workflows/scheduler-runtime-tools.ts";
 import {
@@ -31,6 +36,59 @@ describe("ModelAgnosticFileEditWorkerAdapter", () => {
     validationCommandRefs: ["pnpm test:file planning-lifecycle.test.ts"],
     acceptanceCriteria: ["changed-file evidence", "validation evidence"],
   };
+
+  function readyWorkerPackets(input: {
+    runtimeJobId: string;
+    graphId: string;
+    nodeId: string;
+    fileRef: string;
+    commitmentId: string;
+    validationCommandRef: string;
+  }) {
+    const snapshot: ImplementationTaskFileSnapshot = {
+      fileRef: input.fileRef,
+      snapshotRef: `repo-snapshot://${input.fileRef}`,
+      contentHash: "sha256:file-edit-worker-snapshot",
+      byteCount: 128,
+      sourceKind: "repo_file",
+      freshnessStatus: "fresh",
+      rawContentStored: false,
+    };
+    const taskPacket = buildImplementationTaskPacket({
+      runtimeJobId: input.runtimeJobId,
+      workflowId: "agent_team.coding",
+      graphId: input.graphId,
+      sourceGraphNodeId: input.nodeId,
+      microtaskId: `${input.nodeId}:task-1`,
+      exactEditObjective: "Make the bounded file edit requested by this worker task.",
+      taskSummary: "Use hydrated file snapshots and validation refs for this worker invocation.",
+      targetCommitmentIds: [input.commitmentId],
+      targetFileRefs: [input.fileRef],
+      targetFileSnapshots: [snapshot],
+      allowedFileRefs: [input.fileRef],
+      allowedEditScope: [input.fileRef],
+      mustReadRefs: [input.fileRef],
+      likelyModifyRefs: [input.fileRef],
+      contextPacketRefs: [`context-handoff://${input.nodeId}`],
+      sourceContextHandoffRefs: [`context-handoff://${input.nodeId}`],
+      validationCommandRefs: [input.validationCommandRef],
+      acceptanceCriteria: ["The worker applies a bounded edit and returns validation evidence."],
+      evidenceClaimExpectations: [
+        `Changed file and validation evidence close ${input.commitmentId}.`,
+      ],
+    });
+    return compileNodeExecutionPacketForImplementationTask({
+      runtimeJobId: input.runtimeJobId,
+      workflowId: "agent_team.coding",
+      graphId: input.graphId,
+      nodeId: input.nodeId,
+      nodeKind: "implementation",
+      capabilityId: "implementation_microtask",
+      executorKey: "kind:implementation",
+      workerRef: "worker.kimi.file-implementation",
+      implementationTaskPacket: taskPacket,
+    });
+  }
 
   it("retires the Kimi JSON patch proposal path from production success", async () => {
     const adapter = new ModelAgnosticFileEditWorkerAdapter({});
@@ -283,6 +341,14 @@ describe("ModelAgnosticFileEditWorkerAdapter", () => {
         runtimeJobId: "job-file-edit-worker-loop",
         graphId: "graph-file-edit-worker-loop",
         nodeId: "node-kimi-edit",
+        ...readyWorkerPackets({
+          runtimeJobId: "job-file-edit-worker-loop",
+          graphId: "graph-file-edit-worker-loop",
+          nodeId: "node-kimi-edit",
+          fileRef,
+          commitmentId: "commitment-source-edit",
+          validationCommandRef: "pnpm test:file planning-lifecycle.test.ts",
+        }),
         repoRoot,
         allowedFileRefs: ["extensions/execution-platform/src/work-queue/"],
         targetFileRefs: [fileRef],
@@ -314,7 +380,7 @@ describe("ModelAgnosticFileEditWorkerAdapter", () => {
           "worker.edit.plan",
           "worker.edit.apply_patch",
           "worker.validation.run",
-          "worker.evidence.claim",
+          "worker.evidence.claim_from_validation",
         ]),
       );
     } finally {
@@ -335,6 +401,30 @@ describe("ModelAgnosticFileEditWorkerAdapter", () => {
       registerSchedulerRuntimeTools({ registry, includeWorkerInvoke: true });
       const traces = new RuntimeToolTraceRepository(database.sql);
       const runtimeToolKernel = new RuntimeToolKernel({ registry, traces });
+      const runtimeJobs = new RuntimeJobRepository(database.sql, { claimStrategy: "basic" });
+      const graphs = new RuntimeWorkGraphRepository(database.sql);
+      await runtimeJobs.enqueueJob({
+        jobId: "job-file-edit-worker-strict-phase",
+        jobType: "executor.agent_team",
+        queueName: "agent-team",
+        payload: { workflowId: "agent_team.coding" },
+      });
+      await graphs.createGraph({
+        graphId: "graph-file-edit-worker-strict-phase",
+        rootRuntimeJobId: "job-file-edit-worker-strict-phase",
+        workflowId: "agent_team.coding",
+        orchestratorModelRef: "openai-codex/gpt-5.5",
+        graphStatus: "running",
+      });
+      await graphs.addNode({
+        graphId: "graph-file-edit-worker-strict-phase",
+        nodeId: "node-kimi-strict-phase",
+        nodeKind: "implementation",
+        assignedRole: "implementation_engineer",
+        modelOrWorkerRef: "worker.kimi.file-implementation",
+        nodeStatus: "running",
+      });
+      let controllerAttemptedDirectEdit = false;
       const adapter = new ModelAgnosticFileEditWorkerAdapter({
         runtimeToolKernel,
         toolUsingKimiWorkerLoop: new NonCodexToolUsingWorkerLoop({
@@ -406,6 +496,7 @@ describe("ModelAgnosticFileEditWorkerAdapter", () => {
                 };
               }
               if (input.modelSlot === "controller") {
+                controllerAttemptedDirectEdit = true;
                 return {
                   modelRunRef: "openrouter://qwen/strict-controller-bad-apply",
                   responseText: JSON.stringify({
@@ -458,7 +549,11 @@ describe("ModelAgnosticFileEditWorkerAdapter", () => {
           },
           validationRunner: {
             async run() {
-              throw new Error("validation_should_not_run_when_controller_applies");
+              return {
+                validationRef: "validation://strict-phase/passed",
+                status: "passed",
+                summary: "strict phase validation passed",
+              };
             },
           },
         }),
@@ -466,6 +561,17 @@ describe("ModelAgnosticFileEditWorkerAdapter", () => {
 
       const result = await adapter.run({
         ...baseInput,
+        runtimeJobId: "job-file-edit-worker-strict-phase",
+        graphId: "graph-file-edit-worker-strict-phase",
+        nodeId: "node-kimi-strict-phase",
+        ...readyWorkerPackets({
+          runtimeJobId: "job-file-edit-worker-strict-phase",
+          graphId: "graph-file-edit-worker-strict-phase",
+          nodeId: "node-kimi-strict-phase",
+          fileRef,
+          commitmentId: "commitment-strict-phase",
+          validationCommandRef: "pnpm test:file strict-phase.test.ts",
+        }),
         repoRoot,
         allowedFileRefs: ["extensions/execution-platform/src/work-queue/"],
         targetFileRefs: [fileRef],
@@ -473,20 +579,22 @@ describe("ModelAgnosticFileEditWorkerAdapter", () => {
         budgetPolicy: { maxTurns: 3 },
       });
 
-      expect(result.status).toBe("escalate");
+      expect(result.status).toBe("applied_change");
       expect(result.changedFileRefs).toEqual([fileRef]);
+      expect(result.validationRefs).toEqual(["validation://strict-phase/passed"]);
+      expect(controllerAttemptedDirectEdit).toBe(false);
       expect(result.reasonCodes).toEqual(
         expect.arrayContaining([
-          "worker_phase_authority_blocked:controller:applicator:worker.edit.apply_patch",
-          "non_codex_tool_worker_edit_transaction_not_accepted",
+          "non_codex_worker_post_patch_exit_to_runtime_validation",
+          "non_codex_worker_runtime_auto_validation_after_patch",
         ]),
       );
       expect(result.workerPhases).toEqual(
         expect.arrayContaining([
           expect.objectContaining({
-            phase: "applicator",
-            status: "blocked",
-            toolId: "worker.edit.apply_patch",
+            phase: "validation",
+            status: "succeeded",
+            toolId: "worker.validation.run",
           }),
         ]),
       );

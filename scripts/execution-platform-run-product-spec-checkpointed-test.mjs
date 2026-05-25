@@ -1,13 +1,63 @@
 #!/usr/bin/env node
+import { spawnSync } from "node:child_process";
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
-import { readExecutionPlatformDatabaseConfigLite } from "../extensions/execution-platform/src/db/runtime.ts";
-import { buildLatestRunState } from "../extensions/execution-platform/src/observability/latest-run-state.ts";
-import { loadConfig } from "../src/config/config.ts";
-import { runGatewayAgentTeamRuntimeJobOnce } from "../src/gateway/execution-platform-agent-team-runner.ts";
-import { getExecutionPlatformRuntime } from "../src/gateway/execution-platform-http.ts";
+import { fileURLToPath } from "node:url";
+
+function hasTsxImport() {
+  return process.execArgv.some((arg, index) => {
+    if (arg === "--import" && process.execArgv[index + 1] === "tsx") {
+      return true;
+    }
+    return arg === "--import=tsx";
+  });
+}
+
+if (!hasTsxImport()) {
+  const result = spawnSync(
+    process.execPath,
+    [
+      ...process.execArgv,
+      "--import",
+      "tsx",
+      fileURLToPath(import.meta.url),
+      ...process.argv.slice(2),
+    ],
+    {
+      stdio: "inherit",
+      env: {
+        ...process.env,
+        OPENCLAW_PRODUCT_SPEC_CHECKPOINT_TSX_REEXEC: "1",
+      },
+    },
+  );
+  if (result.error) {
+    throw result.error;
+  }
+  process.exit(result.status ?? 1);
+}
+
+let readExecutionPlatformDatabaseConfigLite;
+let buildLatestRunState;
+let loadConfig;
+let runGatewayAgentTeamRuntimeJobOnce;
+let getExecutionPlatformRuntime;
+
+async function loadRuntimeModules() {
+  if (readExecutionPlatformDatabaseConfigLite) {
+    return;
+  }
+  ({ readExecutionPlatformDatabaseConfigLite } =
+    await import("../extensions/execution-platform/src/db/runtime.ts"));
+  ({ buildLatestRunState } =
+    await import("../extensions/execution-platform/src/observability/latest-run-state.ts"));
+  ({ loadConfig } = await import("../src/config/config.ts"));
+  ({ runGatewayAgentTeamRuntimeJobOnce } =
+    await import("../src/gateway/execution-platform-agent-team-runner.ts"));
+  ({ getExecutionPlatformRuntime } = await import("../src/gateway/execution-platform-http.ts"));
+}
 
 const ARTIFACT_DIR = ".artifacts/execution-platform";
 const DEFAULT_PROMPT_FILE =
@@ -976,6 +1026,33 @@ function nodeCommitmentIds(node) {
   ];
 }
 
+function isImplementationContextTargetNode(node) {
+  return [
+    "implementation",
+    "test_authoring",
+    "docs_update",
+    "architecture_spec",
+    "planning_capsule",
+    "action_graph_compile",
+    "compiler",
+  ].includes(node.nodeKind);
+}
+
+function incomingAcceptedContextSupplyNodes(snapshot, nodeId) {
+  const incoming = snapshot.edges.filter(
+    (edge) => edge.toNodeId === nodeId && edge.edgeKind === "context_supplies",
+  );
+  return incoming
+    .map((edge) => snapshot.nodes.find((node) => node.nodeId === edge.fromNodeId))
+    .filter(
+      (node) =>
+        node &&
+        ["context_scout", "web_research"].includes(node.nodeKind) &&
+        node.nodeStatus === "succeeded" &&
+        arrayOfStrings(node.outputArtifactRefs).length > 0,
+    );
+}
+
 function packetContextSupplyCoverage(snapshot, packetSummary) {
   const packets = packetSummary?.packets ?? [];
   if (!snapshot || packets.length <= 1) {
@@ -994,6 +1071,73 @@ function packetContextSupplyCoverage(snapshot, packetSummary) {
         ? snapshot.nodes.filter((node) => ["context_scout", "web_research"].includes(node.nodeKind))
             .length
         : 0,
+      rawPromptStored: false,
+      rawResponseStored: false,
+    };
+  }
+  const targetNodes = snapshot.nodes.filter(isImplementationContextTargetNode);
+  if (targetNodes.length > 0) {
+    const acceptedTargetNodeIds = [];
+    const missingTargetNodeIds = [];
+    const pendingTargetNodeIds = [];
+    const acceptedCommitmentIds = new Set();
+    const pendingCommitmentIds = new Set();
+    const missingCommitmentIds = new Set();
+    const dedicatedContextNodeIds = new Set();
+    for (const node of targetNodes) {
+      const incomingAccepted = incomingAcceptedContextSupplyNodes(snapshot, node.nodeId);
+      const commitmentIds = nodeCommitmentIds(node);
+      if (incomingAccepted.length > 0) {
+        acceptedTargetNodeIds.push(node.nodeId);
+        for (const contextNode of incomingAccepted) {
+          dedicatedContextNodeIds.add(contextNode.nodeId);
+        }
+        for (const commitmentId of commitmentIds) {
+          acceptedCommitmentIds.add(commitmentId);
+        }
+        continue;
+      }
+      const hasIncomingContextEdge = snapshot.edges.some(
+        (edge) => edge.toNodeId === node.nodeId && edge.edgeKind === "context_supplies",
+      );
+      if (hasIncomingContextEdge) {
+        pendingTargetNodeIds.push(node.nodeId);
+        for (const commitmentId of commitmentIds) {
+          pendingCommitmentIds.add(commitmentId);
+        }
+      } else {
+        missingTargetNodeIds.push(node.nodeId);
+        for (const commitmentId of commitmentIds) {
+          missingCommitmentIds.add(commitmentId);
+        }
+      }
+    }
+    return {
+      required: true,
+      coverageMode: "node_scoped_context_supply",
+      packetCount: packets.length,
+      targetNodeCount: targetNodes.length,
+      acceptedTargetNodeCount: acceptedTargetNodeIds.length,
+      missingTargetNodeCount: missingTargetNodeIds.length,
+      pendingTargetNodeCount: pendingTargetNodeIds.length,
+      acceptedPacketCount: acceptedCommitmentIds.size,
+      missingPacketCount: missingCommitmentIds.size,
+      pendingPacketCount: pendingCommitmentIds.size,
+      allAccepted: acceptedTargetNodeIds.length === targetNodes.length,
+      missingCommitmentIds: [...missingCommitmentIds].toSorted((left, right) =>
+        left.localeCompare(right),
+      ),
+      pendingCommitmentIds: [...pendingCommitmentIds].toSorted((left, right) =>
+        left.localeCompare(right),
+      ),
+      acceptedCommitmentIds: [...acceptedCommitmentIds].toSorted((left, right) =>
+        left.localeCompare(right),
+      ),
+      acceptedTargetNodeIds,
+      missingTargetNodeIds,
+      pendingTargetNodeIds,
+      dedicatedContextNodeCount: dedicatedContextNodeIds.size,
+      broadContextNodeCount: 0,
       rawPromptStored: false,
       rawResponseStored: false,
     };
@@ -1071,6 +1215,31 @@ function latestSchedulerToolEvent(progress, schedulerToolId) {
     .at(0);
 }
 
+function schedulerToolCompleted(progress, schedulerToolId) {
+  const event = latestSchedulerToolEvent(progress, schedulerToolId);
+  return event?.status === "succeeded" || event?.status === "completed";
+}
+
+function contextSynthesisReadinessSatisfied(schedulerProgress) {
+  return schedulerProgress.some((event) => {
+    if (
+      event.stage !== "scheduler_node_context_freshness" ||
+      event.currentPhase !== "context_freshness_satisfied"
+    ) {
+      return false;
+    }
+    if (event.roleId !== "context_synthesis" && event.activeNodeKind !== "context_synthesis") {
+      return false;
+    }
+    return (event.reasonCodes ?? []).some(
+      (reasonCode) =>
+        reasonCode === "scheduler_node_context_freshness_satisfied_by_node_scoped_supply" ||
+        reasonCode === "context_freshness_satisfied" ||
+        String(reasonCode).startsWith("node_scoped_context_snapshot_count:"),
+    );
+  });
+}
+
 function graphPersistenceStatus(progress) {
   return (
     latestSchedulerProgressForStage(progress, "scheduler_graph_node_persistence")?.status ?? null
@@ -1111,6 +1280,38 @@ function isProgressiveContextFirstGraph({ graph, contextScout, schedulerProgress
   );
 }
 
+function isParallelContextScoutFrontierGraph({ graph, schedulerProgress }) {
+  if (!graph || graph.nodeCount < 2 || graph.edgeCount !== 0) {
+    return false;
+  }
+  const onlyContextScoutNodes =
+    graph.nodeKinds.length === 1 && graph.nodeKinds.includes("context_scout");
+  if (!onlyContextScoutNodes) {
+    return false;
+  }
+  const acceptedGraph =
+    schedulerToolCompleted(schedulerProgress, "scheduler.accept_staged_graph") ||
+    schedulerProgress.some((event) => event.currentPhase === "decomposition_accepted");
+  const parallelStructureDeclared =
+    schedulerToolCompleted(schedulerProgress, "scheduler.define_edges_or_parallelism") ||
+    schedulerProgress.some((event) =>
+      (event.reasonCodes ?? []).some((reasonCode) => String(reasonCode).includes("parallel")),
+    );
+  const contextFrontierOpened = schedulerProgress.some(
+    (event) =>
+      event.nodeId &&
+      event.roleId === "context_scout" &&
+      (event.currentPhase === "executable" ||
+        event.currentPhase === "node_started" ||
+        event.currentPhase === "worker_runtime_tool_call_started" ||
+        event.currentPhase === "primary_role_output" ||
+        event.currentPhase === "primary_role_output_in_progress" ||
+        event.currentPhase === "primary_role_output_completed" ||
+        event.currentPhase === "node_completed"),
+  );
+  return (acceptedGraph && parallelStructureDeclared) || contextFrontierOpened;
+}
+
 function evaluateSchedulerGraphGate({ graph, contextScout, schedulerProgress }) {
   const persistenceStatus = graphPersistenceStatus(schedulerProgress);
   const graphPersistenceInProgress = persistenceStatus === "started";
@@ -1128,6 +1329,9 @@ function evaluateSchedulerGraphGate({ graph, contextScout, schedulerProgress }) 
     return "review_available_nonblocking";
   }
   if (isProgressiveContextFirstGraph({ graph, contextScout, schedulerProgress })) {
+    return "review_available_nonblocking";
+  }
+  if (isParallelContextScoutFrontierGraph({ graph, schedulerProgress })) {
     return "review_available_nonblocking";
   }
   if (graph.nodeCount === 1 && graph.nodeKinds.includes("context_scout") && !contextScout) {
@@ -1269,6 +1473,7 @@ function evaluateCheckpoints({ submit, artifacts, snapshot }) {
       String(event.schedulerPhase ?? "").includes("context_synthesis")
     );
   });
+  const synthesisReadinessSatisfied = contextSynthesisReadinessSatisfied(schedulerProgress);
   const contextGate = {
     gateId: "context_supply",
     status:
@@ -1287,7 +1492,11 @@ function evaluateCheckpoints({ submit, artifacts, snapshot }) {
             : contextCoverage.required &&
                 (contextSynthesisExecutionStarted || implementationStarted) &&
                 !contextCoverage.allAccepted
-              ? "failed"
+              ? contextSynthesisExecutionStarted &&
+                synthesisReadinessSatisfied &&
+                !implementationStarted
+                ? "review_available_nonblocking"
+                : "failed"
               : !contextScout
                 ? implementationStarted
                   ? "failed"
@@ -1303,6 +1512,7 @@ function evaluateCheckpoints({ submit, artifacts, snapshot }) {
     evidence: {
       contextScout,
       packetContextSupplyCoverage: contextCoverage,
+      contextSynthesisReadinessSatisfied: synthesisReadinessSatisfied,
       rawPromptStored: false,
       rawResponseStored: false,
     },
@@ -1310,9 +1520,9 @@ function evaluateCheckpoints({ submit, artifacts, snapshot }) {
   if (contextGate.status === "failed") {
     hardFailures.push(
       contextCoverage.required && contextSynthesisExecutionStarted && !contextCoverage.allAccepted
-        ? "context_synthesis_started_without_packet_context_handoffs"
+        ? "context_synthesis_started_without_required_context_handoffs"
         : contextCoverage.required && implementationStarted && !contextCoverage.allAccepted
-          ? "implementation_started_without_packet_context_handoffs"
+          ? "implementation_started_without_node_scoped_context_handoffs"
           : implementationStarted && !contextScout
             ? "implementation_started_before_context_scout"
             : "context_scout_not_accepted",
@@ -1386,6 +1596,7 @@ function evaluateCheckpoints({ submit, artifacts, snapshot }) {
 }
 
 async function collectSnapshot(runtime, submit) {
+  const generatedAt = new Date().toISOString();
   const job = submit.runtimeJobId ? await runtime.runtimeJobs.getJob(submit.runtimeJobId) : null;
   const artifacts = submit.runtimeJobId
     ? await runtime.runtimeJobs.listArtifacts(submit.runtimeJobId)
@@ -1399,8 +1610,16 @@ async function collectSnapshot(runtime, submit) {
       .find(Boolean) ?? null;
   const snapshot = graphId ? await runtime.runtimeWorkGraphs.readGraphSnapshot(graphId) : null;
   const checkpoints = evaluateCheckpoints({ submit, artifacts, snapshot });
+  const packetFanout = await latestPacketAuthorFanoutFromArtifacts(runtime, artifacts);
+  const packetFailureDiagnostics = commitmentPacketFailureDiagnosticsForRun({
+    generatedAt,
+    runtimeJobId: submit.runtimeJobId,
+    workItemId: submit.workItemId,
+    fanout: packetFanout?.fanout ?? null,
+    sourceArtifactRef: packetFanout?.artifactRef ?? null,
+  });
   return {
-    generatedAt: new Date().toISOString(),
+    generatedAt,
     runtimeJobId: submit.runtimeJobId,
     workItemId: submit.workItemId,
     job: job
@@ -1415,6 +1634,7 @@ async function collectSnapshot(runtime, submit) {
       : null,
     artifactCounts: artifactCounts(artifacts),
     checkpoints,
+    packetFailureDiagnostics,
     telemetry: {
       schedulerProgressEventCount: artifacts.filter(
         (artifact) => artifact.artifactType === "agent_team.scheduler_progress",
@@ -1433,9 +1653,9 @@ async function collectSnapshot(runtime, submit) {
 
 function progressLine(snapshot) {
   const latest = snapshot.checkpoints.schedulerProgress.at(-1) ?? null;
-  const latestPacketFanout =
-    snapshot.checkpoints.schedulerProgress.findLast((progress) => progress.packetAuthorFanout)
-      ?.packetAuthorFanout ?? null;
+  const latestPacketFanout = latestPacketAuthorFanout(snapshot);
+  const packetDiagnostics =
+    snapshot.packetFailureDiagnostics ?? commitmentPacketFailureDiagnostics(snapshot);
   return {
     event: "product_spec_checkpoint_progress",
     at: snapshot.generatedAt,
@@ -1451,8 +1671,452 @@ function progressLine(snapshot) {
     latestPhase: latest?.currentPhase ?? latest?.schedulerPhase ?? null,
     latestObjective: latest?.objective ?? null,
     latestEli5: latest?.eli5Progress ?? null,
-    packetFanout: latestPacketFanout,
+    packetFanout: latestPacketFanout
+      ? {
+          totalCount:
+            typeof latestPacketFanout.totalCount === "number"
+              ? latestPacketFanout.totalCount
+              : null,
+          failedCount:
+            typeof latestPacketFanout.failedCount === "number"
+              ? latestPacketFanout.failedCount
+              : null,
+          pendingCount:
+            typeof latestPacketFanout.pendingCount === "number"
+              ? latestPacketFanout.pendingCount
+              : null,
+          runningCount:
+            typeof latestPacketFanout.runningCount === "number"
+              ? latestPacketFanout.runningCount
+              : null,
+          completedCount:
+            typeof latestPacketFanout.completedCount === "number"
+              ? latestPacketFanout.completedCount
+              : null,
+          needsReviewCount:
+            typeof latestPacketFanout.needsReviewCount === "number"
+              ? latestPacketFanout.needsReviewCount
+              : null,
+        }
+      : null,
+    commitmentPacketDiagnostics: packetDiagnostics
+      ? {
+          diagnosticPacketCount: packetDiagnostics.diagnosticPacketCount,
+          concerningPacketCount: packetDiagnostics.concerningPacketCount,
+          incompletePacketCount: packetDiagnostics.incompletePacketCount,
+          retryPacketCount: packetDiagnostics.retryPacketCount,
+          fallbackPacketCount: packetDiagnostics.fallbackPacketCount,
+          providerErrorPacketCount: packetDiagnostics.providerErrorPacketCount,
+          longLatencyPacketCount: packetDiagnostics.longLatencyPacketCount,
+          toFixCount: packetDiagnostics.toFixItems.length,
+        }
+      : null,
   };
+}
+
+function latestPacketAuthorFanout(snapshot) {
+  return (
+    snapshot.checkpoints.schedulerProgress.findLast((progress) => progress.packetAuthorFanout)
+      ?.packetAuthorFanout ?? null
+  );
+}
+
+async function latestPacketAuthorFanoutFromArtifacts(runtime, artifacts) {
+  const diagnosticArtifact =
+    artifacts
+      .filter(
+        (artifact) =>
+          artifact.artifactType === "execution_platform.commitment_packet_fanout_diagnostics",
+      )
+      .toSorted((left, right) => left.createdAt.getTime() - right.createdAt.getTime())
+      .at(-1) ?? null;
+  if (diagnosticArtifact) {
+    const hydrated = await runtime.runtimeJobs.hydrateRuntimeArtifactByContract(diagnosticArtifact);
+    if (hydrated.status === "payload_hydrated" && hydrated.body) {
+      return {
+        fanout: hydrated.body,
+        artifactRef: diagnosticArtifact.uri,
+        createdAt: diagnosticArtifact.createdAt.toISOString(),
+      };
+    }
+  }
+  return (
+    artifacts
+      .filter((artifact) => artifact.artifactType === "agent_team.scheduler_progress")
+      .map((artifact) => {
+        const metadata = metadataOf(artifact);
+        return metadata.packetAuthorFanout && typeof metadata.packetAuthorFanout === "object"
+          ? {
+              fanout: metadata.packetAuthorFanout,
+              artifactRef:
+                typeof metadata.packetAuthorFanout.diagnosticArtifactRef === "string"
+                  ? metadata.packetAuthorFanout.diagnosticArtifactRef
+                  : artifact.uri,
+              createdAt: artifact.createdAt.toISOString(),
+            }
+          : null;
+      })
+      .findLast((packetFanout) => packetFanout !== null) ?? null
+  );
+}
+
+function packetDiagnosticUsage(diagnostics) {
+  const usage = usageFromDiagnostics(diagnostics);
+  if (!usage) {
+    return null;
+  }
+  return {
+    inputTokens: usage.inputTokens,
+    outputTokens: usage.outputTokens,
+    totalTokens: usage.totalTokens,
+    estimatedCostUsd:
+      typeof usage.estimatedCostUsd === "number" ? Number(usage.estimatedCostUsd.toFixed(8)) : null,
+  };
+}
+
+function normalizeReasonCodes(value) {
+  return Array.isArray(value)
+    ? value.filter((item) => typeof item === "string" && item.trim()).slice(0, 80)
+    : [];
+}
+
+function packetFailureClasses(packet) {
+  const latest =
+    packet.latestDiagnostics && typeof packet.latestDiagnostics === "object"
+      ? packet.latestDiagnostics
+      : {};
+  const providerDiagnostics =
+    latest.providerDiagnostics && typeof latest.providerDiagnostics === "object"
+      ? latest.providerDiagnostics
+      : {};
+  const retryEvidence =
+    latest.retryEvidence && typeof latest.retryEvidence === "object" ? latest.retryEvidence : {};
+  const retryReasonCodes = normalizeReasonCodes(retryEvidence.retryReasonCodes);
+  const classes = [];
+  const preflightBlocked =
+    latest.noContentReasonClass === "preflight_blocked" ||
+    (typeof latest.errorReasonCode === "string" && latest.errorReasonCode.includes("preflight"));
+  if (packet.status !== "completed") {
+    classes.push("packet_author_incomplete");
+  }
+  if (preflightBlocked) {
+    classes.push("packet_author_preflight_blocked");
+  }
+  if (typeof latest.errorReasonCode === "string" && latest.errorReasonCode.trim()) {
+    classes.push("packet_author_provider_error");
+  }
+  if (retryReasonCodes.length > 0) {
+    classes.push("packet_author_retry_needed");
+  }
+  if (
+    typeof latest.fallbackReasonCode === "string" ||
+    typeof latest.fallbackFromModelRef === "string" ||
+    normalizeReasonCodes(packet.reasonCodes).some((code) => code.includes("rescue"))
+  ) {
+    classes.push("packet_author_rescue_or_fallback");
+  }
+  if (
+    !preflightBlocked &&
+    (latest.outputContentLength === 0 ||
+      providerDiagnostics.contentLength === 0 ||
+      retryReasonCodes.some((code) => code.includes("no_content")) ||
+      latest.errorReasonCode === "openrouter_no_content")
+  ) {
+    classes.push("packet_author_no_content_or_empty_output");
+  }
+  const timeoutMs =
+    providerDiagnostics.requestProfileDiagnostics &&
+    typeof providerDiagnostics.requestProfileDiagnostics === "object" &&
+    typeof providerDiagnostics.requestProfileDiagnostics.timeoutMs === "number"
+      ? providerDiagnostics.requestProfileDiagnostics.timeoutMs
+      : null;
+  if (
+    typeof latest.latencyMs === "number" &&
+    (latest.latencyMs >= 90_000 || (timeoutMs !== null && latest.latencyMs >= timeoutMs))
+  ) {
+    classes.push("packet_author_long_latency");
+  }
+  return [...new Set(classes)];
+}
+
+function summarizePacketDiagnostic(packet) {
+  const latest =
+    packet.latestDiagnostics && typeof packet.latestDiagnostics === "object"
+      ? packet.latestDiagnostics
+      : {};
+  const providerDiagnostics =
+    latest.providerDiagnostics && typeof latest.providerDiagnostics === "object"
+      ? latest.providerDiagnostics
+      : {};
+  const requestProfileDiagnostics =
+    providerDiagnostics.requestProfileDiagnostics &&
+    typeof providerDiagnostics.requestProfileDiagnostics === "object"
+      ? providerDiagnostics.requestProfileDiagnostics
+      : {};
+  const retryEvidence =
+    latest.retryEvidence && typeof latest.retryEvidence === "object" ? latest.retryEvidence : {};
+  const failureClasses = packetFailureClasses(packet);
+  return {
+    commitmentId: typeof packet.commitmentId === "string" ? packet.commitmentId : null,
+    status: typeof packet.status === "string" ? packet.status : null,
+    modelRef: typeof packet.modelRef === "string" ? packet.modelRef : null,
+    modelCandidateId: typeof latest.modelCandidateId === "string" ? latest.modelCandidateId : null,
+    providerPath:
+      typeof packet.providerPath === "string"
+        ? packet.providerPath
+        : typeof latest.providerPath === "string"
+          ? latest.providerPath
+          : null,
+    profileRef:
+      typeof packet.profileRef === "string"
+        ? packet.profileRef
+        : typeof latest.requestProfileRef === "string"
+          ? latest.requestProfileRef
+          : null,
+    reasonCodes: normalizeReasonCodes(packet.reasonCodes),
+    failureClasses,
+    concerning: failureClasses.length > 0,
+    errorReasonCode: typeof latest.errorReasonCode === "string" ? latest.errorReasonCode : null,
+    terminalLaneErrorReasonCode:
+      typeof latest.terminalLaneErrorReasonCode === "string"
+        ? latest.terminalLaneErrorReasonCode
+        : null,
+    noContentReasonClass:
+      typeof latest.noContentReasonClass === "string" ? latest.noContentReasonClass : null,
+    fallbackReasonCode:
+      typeof latest.fallbackReasonCode === "string" ? latest.fallbackReasonCode : null,
+    fallbackFromModelRef:
+      typeof latest.fallbackFromModelRef === "string" ? latest.fallbackFromModelRef : null,
+    retryReasonCodes: normalizeReasonCodes(retryEvidence.retryReasonCodes),
+    retryAttemptCount:
+      typeof retryEvidence.attemptCount === "number" ? retryEvidence.attemptCount : null,
+    retryAttempts: Array.isArray(retryEvidence.attempts)
+      ? retryEvidence.attempts
+          .filter((attempt) => attempt && typeof attempt === "object")
+          .map((attempt) => ({
+            attempt: typeof attempt.attempt === "number" ? attempt.attempt : null,
+            latencyMs: typeof attempt.latencyMs === "number" ? attempt.latencyMs : null,
+            httpStatus: typeof attempt.httpStatus === "number" ? attempt.httpStatus : null,
+            reasonCode: typeof attempt.reasonCode === "string" ? attempt.reasonCode : null,
+            cooldownMs: typeof attempt.cooldownMs === "number" ? attempt.cooldownMs : null,
+          }))
+          .slice(0, 8)
+      : [],
+    latencyMs: typeof latest.latencyMs === "number" ? latest.latencyMs : null,
+    inputByteLength:
+      typeof latest.inputByteLength === "number"
+        ? latest.inputByteLength
+        : typeof requestProfileDiagnostics.promptByteLength === "number"
+          ? requestProfileDiagnostics.promptByteLength
+          : null,
+    outputContentLength:
+      typeof latest.outputContentLength === "number"
+        ? latest.outputContentLength
+        : typeof providerDiagnostics.contentLength === "number"
+          ? providerDiagnostics.contentLength
+          : null,
+    finishReason:
+      typeof latest.finishReason === "string"
+        ? latest.finishReason
+        : typeof providerDiagnostics.finishReason === "string"
+          ? providerDiagnostics.finishReason
+          : null,
+    nativeFinishReason:
+      typeof providerDiagnostics.nativeFinishReason === "string"
+        ? providerDiagnostics.nativeFinishReason
+        : null,
+    responseFormatSent:
+      typeof latest.responseFormatSent === "string" ? latest.responseFormatSent : null,
+    reasoningModeSent:
+      typeof latest.reasoningModeSent === "string" ? latest.reasoningModeSent : null,
+    structuredAdapterPreflight:
+      providerDiagnostics.structuredAdapterPreflight &&
+      typeof providerDiagnostics.structuredAdapterPreflight === "object"
+        ? providerDiagnostics.structuredAdapterPreflight
+        : null,
+    reasoningMode:
+      typeof requestProfileDiagnostics.reasoningMode === "string"
+        ? requestProfileDiagnostics.reasoningMode
+        : null,
+    reasoningTokenCount:
+      typeof providerDiagnostics.reasoningTokenCount === "number"
+        ? providerDiagnostics.reasoningTokenCount
+        : null,
+    maxTokens:
+      typeof requestProfileDiagnostics.maxTokens === "number"
+        ? requestProfileDiagnostics.maxTokens
+        : null,
+    timeoutMs:
+      typeof requestProfileDiagnostics.timeoutMs === "number"
+        ? requestProfileDiagnostics.timeoutMs
+        : null,
+    promptHash:
+      typeof requestProfileDiagnostics.promptHash === "string"
+        ? requestProfileDiagnostics.promptHash
+        : null,
+    outputHash: typeof latest.outputHash === "string" ? latest.outputHash : null,
+    modelCallSpanId:
+      typeof latest.modelCallSpanId === "string"
+        ? latest.modelCallSpanId
+        : typeof providerDiagnostics.modelCallSpanId === "string"
+          ? providerDiagnostics.modelCallSpanId
+          : null,
+    usage: packetDiagnosticUsage(latest),
+    rawPromptStored: false,
+    rawResponseStored: false,
+    rawProviderLogStored: false,
+  };
+}
+
+function buildPacketToFixItems(packetDiagnostics) {
+  const toFixItems = [];
+  const byClass = new Map();
+  for (const packet of packetDiagnostics) {
+    for (const failureClass of packet.failureClasses) {
+      byClass.set(failureClass, (byClass.get(failureClass) ?? 0) + 1);
+    }
+  }
+  const add = (condition, item) => {
+    if (condition) {
+      toFixItems.push(item);
+    }
+  };
+  add(byClass.has("packet_author_incomplete"), {
+    area: "commitment_packet_authoring",
+    priority: "P0",
+    issue: "One or more packet-author calls did not reach a terminal completed packet state.",
+    recommendedFix:
+      "Make packet fanout terminal accounting explicit: completed, retrying, rescued, blocked, or needs_review must be persisted before the phase can advance.",
+    affectedCommitmentIds: packetDiagnostics
+      .filter((packet) => packet.failureClasses.includes("packet_author_incomplete"))
+      .map((packet) => packet.commitmentId)
+      .filter(Boolean),
+  });
+  add(byClass.has("packet_author_no_content_or_empty_output"), {
+    area: "commitment_packet_authoring",
+    priority: "P0",
+    issue:
+      "Qwen/OpenRouter packet authoring returned no content or empty output for at least one commitment packet.",
+    recommendedFix:
+      "Diagnose the exact packet prompt shape, provider finish/native finish reason, output limit, timeout, and retry behavior. Prefer bounded semantic-content calls plus targeted normalization over GPT rescue as a normal path.",
+    affectedCommitmentIds: packetDiagnostics
+      .filter((packet) =>
+        packet.failureClasses.includes("packet_author_no_content_or_empty_output"),
+      )
+      .map((packet) => packet.commitmentId)
+      .filter(Boolean),
+  });
+  add(byClass.has("packet_author_preflight_blocked"), {
+    area: "commitment_packet_authoring",
+    priority: "P0",
+    issue:
+      "Structured adapter preflight blocked one or more packet-author calls before provider invocation.",
+    recommendedFix:
+      "Align call-site model-task bounds, requested timeouts, output limits, and input bundle size before rerunning; this is a runtime policy mismatch, not a model no-content event.",
+    affectedCommitmentIds: packetDiagnostics
+      .filter((packet) => packet.failureClasses.includes("packet_author_preflight_blocked"))
+      .map((packet) => packet.commitmentId)
+      .filter(Boolean),
+  });
+  add(byClass.has("packet_author_rescue_or_fallback"), {
+    area: "commitment_packet_authoring",
+    priority: "P1",
+    issue: "Packet authoring used a rescue/fallback model.",
+    recommendedFix:
+      "Treat rescue as an incident unless explicitly accepted by operator policy. Compare rescued and primary packet inputs by hash/size/commitment class and improve the primary two-step packet path.",
+    affectedCommitmentIds: packetDiagnostics
+      .filter((packet) => packet.failureClasses.includes("packet_author_rescue_or_fallback"))
+      .map((packet) => packet.commitmentId)
+      .filter(Boolean),
+  });
+  add(byClass.has("packet_author_long_latency"), {
+    area: "commitment_packet_authoring",
+    priority: "P1",
+    issue: "Packet authoring exceeded the expected latency budget.",
+    recommendedFix:
+      "Split model-owned semantic authoring from runtime-owned compilation/normalization, keep prompt context packs bounded by source refs rather than repeated full ledgers, and preserve per-packet latency budgets.",
+    affectedCommitmentIds: packetDiagnostics
+      .filter((packet) => packet.failureClasses.includes("packet_author_long_latency"))
+      .map((packet) => packet.commitmentId)
+      .filter(Boolean),
+  });
+  add(byClass.has("packet_author_provider_error"), {
+    area: "commitment_packet_authoring",
+    priority: "P1",
+    issue: "Packet authoring surfaced provider-level errors.",
+    recommendedFix:
+      "Route provider failures through structured model-task degradation policy with exact provider status, retry evidence, and model/profile-specific cooldown instead of broad phase retries.",
+    affectedCommitmentIds: packetDiagnostics
+      .filter((packet) => packet.failureClasses.includes("packet_author_provider_error"))
+      .map((packet) => packet.commitmentId)
+      .filter(Boolean),
+  });
+  return toFixItems;
+}
+
+function commitmentPacketFailureDiagnosticsForRun({
+  generatedAt,
+  runtimeJobId,
+  workItemId,
+  fanout,
+  sourceArtifactRef = null,
+}) {
+  if (!fanout || !Array.isArray(fanout.packetDiagnostics)) {
+    return null;
+  }
+  const packetDiagnostics = fanout.packetDiagnostics
+    .filter((packet) => packet && typeof packet === "object")
+    .map(summarizePacketDiagnostic);
+  const concerning = packetDiagnostics.filter((packet) => packet.concerning);
+  return {
+    artifactKind: "product_spec_commitment_packet_failure_diagnostics",
+    generatedAt,
+    runtimeJobId,
+    workItemId,
+    sourceArtifactRef,
+    fanoutSummary: {
+      totalCount: typeof fanout.totalCount === "number" ? fanout.totalCount : null,
+      completedCount: typeof fanout.completedCount === "number" ? fanout.completedCount : null,
+      failedCount: typeof fanout.failedCount === "number" ? fanout.failedCount : null,
+      pendingCount: typeof fanout.pendingCount === "number" ? fanout.pendingCount : null,
+      runningCount: typeof fanout.runningCount === "number" ? fanout.runningCount : null,
+      needsReviewCount:
+        typeof fanout.needsReviewCount === "number" ? fanout.needsReviewCount : null,
+    },
+    diagnosticPacketCount: packetDiagnostics.length,
+    concerningPacketCount: concerning.length,
+    incompletePacketCount: concerning.filter((packet) =>
+      packet.failureClasses.includes("packet_author_incomplete"),
+    ).length,
+    retryPacketCount: concerning.filter((packet) =>
+      packet.failureClasses.includes("packet_author_retry_needed"),
+    ).length,
+    fallbackPacketCount: concerning.filter((packet) =>
+      packet.failureClasses.includes("packet_author_rescue_or_fallback"),
+    ).length,
+    providerErrorPacketCount: concerning.filter((packet) =>
+      packet.failureClasses.includes("packet_author_provider_error"),
+    ).length,
+    longLatencyPacketCount: concerning.filter((packet) =>
+      packet.failureClasses.includes("packet_author_long_latency"),
+    ).length,
+    packetDiagnostics,
+    concerningPackets: concerning,
+    toFixItems: buildPacketToFixItems(packetDiagnostics),
+    rawPromptStored: false,
+    rawResponseStored: false,
+    rawProviderLogStored: false,
+    rawToolLogStored: false,
+  };
+}
+
+function commitmentPacketFailureDiagnostics(snapshot) {
+  return commitmentPacketFailureDiagnosticsForRun({
+    generatedAt: snapshot.generatedAt,
+    runtimeJobId: snapshot.runtimeJobId,
+    workItemId: snapshot.workItemId,
+    fanout: latestPacketAuthorFanout(snapshot),
+  });
 }
 
 async function writeLatestRunStateForSnapshot({
@@ -1517,6 +2181,7 @@ async function writeLatestRunStateForSnapshot({
 }
 
 async function main() {
+  await loadRuntimeModules();
   const runtimeJobFlagIndex = process.argv.indexOf("--runtime-job-id");
   const runtimeJobIdArg =
     runtimeJobFlagIndex >= 0 ? process.argv[runtimeJobFlagIndex + 1]?.trim() : null;
@@ -1881,6 +2546,29 @@ async function main() {
         ? "Review source-grounded evidence before closure."
         : "Inspect latest blocker and replay from the nearest accepted boundary after patching.",
   });
+  const packetFailureDiagnostics =
+    finalSnapshot.packetFailureDiagnostics ?? commitmentPacketFailureDiagnostics(finalSnapshot);
+  if (packetFailureDiagnostics) {
+    await writeJson(
+      "product-spec-commitment-packet-failure-diagnostics.json",
+      packetFailureDiagnostics,
+    );
+    await writeJson("product-spec-proof-follow-up-fix-list.json", {
+      artifactKind: "product_spec_proof_follow_up_fix_list",
+      generatedAt: new Date().toISOString(),
+      runtimeJobId: finalSnapshot.runtimeJobId,
+      workItemId: finalSnapshot.workItemId,
+      sourceDiagnosticArtifact:
+        ".artifacts/execution-platform/product-spec-commitment-packet-failure-diagnostics.json",
+      commitmentPacketToFixItems: packetFailureDiagnostics.toFixItems,
+      otherHardFailures: finalSnapshot.checkpoints.hardFailures,
+      firstOpenGate: finalSnapshot.checkpoints.firstOpenGate,
+      rawPromptStored: false,
+      rawResponseStored: false,
+      rawProviderLogStored: false,
+      rawToolLogStored: false,
+    });
+  }
   const summary = {
     artifactKind: "product_spec_checkpointed_test_summary",
     generatedAt: new Date().toISOString(),
@@ -1907,6 +2595,18 @@ async function main() {
     finalSnapshot,
     phaseWallClock: summarizePhaseWallClock(finalSnapshot),
     modelTokenBurnByModel: summarizeModelTokenBurn(finalSnapshot),
+    commitmentPacketFailureDiagnostics: packetFailureDiagnostics
+      ? {
+          diagnosticPacketCount: packetFailureDiagnostics.diagnosticPacketCount,
+          concerningPacketCount: packetFailureDiagnostics.concerningPacketCount,
+          incompletePacketCount: packetFailureDiagnostics.incompletePacketCount,
+          retryPacketCount: packetFailureDiagnostics.retryPacketCount,
+          fallbackPacketCount: packetFailureDiagnostics.fallbackPacketCount,
+          providerErrorPacketCount: packetFailureDiagnostics.providerErrorPacketCount,
+          longLatencyPacketCount: packetFailureDiagnostics.longLatencyPacketCount,
+          toFixItems: packetFailureDiagnostics.toFixItems,
+        }
+      : null,
     proofWallClockMs: Date.now() - startedAt,
     stoppedEarly,
     modelCallsMade: true,

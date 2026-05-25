@@ -1,7 +1,4 @@
 import { describe, expect, it } from "vitest";
-import { AgentTeamQueuedRunner } from "../codex-bridge/agent-team-queued-runner.ts";
-import { closeoutCapsuleToLegacyHumanSummary } from "../codex-bridge/closeout-capsule.ts";
-import { WorkflowQueuedRunner } from "../codex-bridge/workflow-queued-runner.ts";
 import { applyExecutionPlatformMigrations } from "../db/migrations.ts";
 import { createExecutionPlatformPgMemTestDatabase } from "../db/pg-test.ts";
 import {
@@ -13,60 +10,11 @@ import {
 } from "../intent-front-door/index.ts";
 import { listKnownProtocolSlashCommands } from "../intent-front-door/protocol-pre-gate.ts";
 import { RuntimeJobRepository } from "../runtime-job-repository.ts";
-import { buildWorkQueueExecutionReadModel } from "../work-queue/execution-read-model.ts";
 import { WorkQueueRepository } from "../work-queue/work-queue-repository.ts";
 import { buildDefaultWorkflowWorkerAdapterRegistry } from "../workers/index.ts";
-import { createModelAuthoredCloseoutCapsuleFixture } from "../workers/test-closeout-capsule-fixture.ts";
-import {
-  HeuristicIntentRouterProvider,
-  type IntentRouterProvider,
-} from "./model-assisted-intent-router.ts";
 import { NativeExecutionRpcService } from "./native-execution-rpc.ts";
 
 describe("native execution rpc", () => {
-  function modelCloseoutReporterFixture() {
-    return {
-      async createCapsule(input: {
-        factualRefs: {
-          runtimeJobId: string;
-          teamRunId?: string | null;
-          workflowId?: string | null;
-        };
-      }) {
-        const capsule = createModelAuthoredCloseoutCapsuleFixture({
-          runtimeJobId: input.factualRefs.runtimeJobId,
-          teamRunId: input.factualRefs.teamRunId ?? null,
-          workflowId: input.factualRefs.workflowId ?? "agent_team.coding",
-        });
-        return {
-          source: "model" as const,
-          capsule,
-          legacyHumanSummary: closeoutCapsuleToLegacyHumanSummary(capsule),
-          reasonCodes: ["fixture_model_closeout_created"],
-          rawPromptStored: false as const,
-          rawResponseStored: false as const,
-          rawProviderLogStored: false as const,
-        };
-      },
-    };
-  }
-
-  function legacyTestFixtureProvider() {
-    return new HeuristicIntentRouterProvider({
-      enabled: true,
-      allowHighRiskOrControlRoutes: true,
-      fallbackLabel: "test-fixture-legacy-semantic-router",
-    });
-  }
-
-  function throwingProvider(): IntentRouterProvider {
-    return {
-      async route() {
-        throw new Error("router provider should not be called");
-      },
-    };
-  }
-
   function fixedFrontDoorProvider(
     output: CanonicalRouterOutput,
   ): StructuredModelIntentRouterProvider {
@@ -110,7 +58,6 @@ describe("native execution rpc", () => {
       const runtimeJobs = new RuntimeJobRepository(db.sql, { claimStrategy: "basic" });
       const rpc = new NativeExecutionRpcService({
         runtimeJobs,
-        intentRouterProvider: throwingProvider(),
       });
 
       const compact = await rpc.submit({
@@ -164,7 +111,6 @@ describe("native execution rpc", () => {
       const runtimeJobs = new RuntimeJobRepository(db.sql, { claimStrategy: "basic" });
       const rpc = new NativeExecutionRpcService({
         runtimeJobs,
-        intentRouterProvider: throwingProvider(),
       });
       const submit = await rpc.submit({
         prompt: "",
@@ -188,7 +134,6 @@ describe("native execution rpc", () => {
       const runtimeJobs = new RuntimeJobRepository(db.sql, { claimStrategy: "basic" });
       const rpc = new NativeExecutionRpcService({
         runtimeJobs,
-        intentRouterProvider: throwingProvider(),
       });
       for (const command of listKnownProtocolSlashCommands()) {
         const name = command.names[0] ?? command.key;
@@ -788,9 +733,9 @@ describe("native execution rpc", () => {
     });
 
     for (const [output, expected] of [
-      [blockedSend, "requested_and_negated_action_conflict"],
+      [blockedSend, "clarification_gate_required"],
       [deployHeld, "native_submit_front_door_job_enqueued"],
-      [deployBoundaryConflict, "side_effect_boundary_conflict_suppressed_by_primary_work"],
+      [deployBoundaryConflict, "requested_action_conflicts_with_negation:deploy"],
     ] as const) {
       const db = await createExecutionPlatformPgMemTestDatabase();
       try {
@@ -811,7 +756,7 @@ describe("native execution rpc", () => {
         });
 
         expect(submit.reasonCodes).toContain(expected);
-        if (output === blockedSend) {
+        if (output === blockedSend || output === deployBoundaryConflict) {
           expect(submit.accepted).toBe(false);
           expect(await runtimeJobs.listRecentJobs()).toHaveLength(0);
         } else {
@@ -822,6 +767,84 @@ describe("native execution rpc", () => {
       } finally {
         await db.close();
       }
+    }
+  });
+
+  it("front-door submit preserves executor-subject plan boundaries without blocking primary planning work", async () => {
+    const db = await createExecutionPlatformPgMemTestDatabase();
+    try {
+      await applyExecutionPlatformMigrations(db.sql);
+      const runtimeJobs = new RuntimeJobRepository(db.sql, { claimStrategy: "basic" });
+      const output = createBaseCanonicalRouterOutput({
+        route: "workflow_execution",
+        responseMode: "create_runtime_job",
+        executeNow: true,
+        workflowId: "agent_team.coding",
+        executorWorkflowId: "agent_team.coding",
+        jobType: "executor.agent_team",
+        confidence: 0.96,
+        objectiveSummary:
+          "Implement the Product/Spec Planning workflow through the coding executor.",
+        requestedActions: [
+          createCanonicalRouterAction(
+            "plan",
+            "Read source specs and plan implementation/proof work through the coding executor.",
+            0.95,
+          ),
+          createCanonicalRouterAction("code_edit", "Implement the workflow upgrade.", 0.95),
+          createCanonicalRouterAction("test", "Run focused validation.", 0.95),
+        ],
+        negatedActions: [
+          createCanonicalRouterAction(
+            "plan",
+            "Do not route the implementation prompt into the incomplete Product/Spec Planning workflow itself as executor.",
+            0.99,
+          ),
+        ],
+        constraints: [
+          {
+            constraintKind: "executor_subject_separation",
+            objectSummary:
+              "The coding executor implements Product/Spec Planning; the target workflow is subject metadata.",
+            confidence: 0.99,
+          },
+        ],
+        subjectWorkflowIds: ["agent_team.product_spec_planning"],
+        targetSubjectRefs: [
+          {
+            targetKind: "workflow",
+            targetRef: "agent_team.product_spec_planning",
+            confidence: 0.99,
+          },
+        ],
+        requestedAuthority: "local_yolo",
+        sideEffectClass: "code_edit",
+        reasonCodes: ["invalid_negated_action_repaired_to_constraint_scoped_plan_action"],
+      });
+      const rpc = new NativeExecutionRpcService({
+        runtimeJobs,
+        structuredRouterProvider: fixedFrontDoorProvider(output),
+      });
+
+      const submit = await rpc.submit({
+        prompt:
+          "Implement Product/Spec Planning through the coding team. Do not route this into Product/Spec Planning itself.",
+        auth: {
+          actorId: "operator",
+          authenticated: true,
+          role: "operator",
+          sessionId: "session-1",
+        },
+      });
+
+      expect(submit.accepted).toBe(true);
+      expect(submit.reasonCodes).toContain("native_submit_front_door_job_enqueued");
+      expect(
+        submit.frontDoorCompiledRequest?.compiledActions.map((action) => action.action),
+      ).toEqual(["plan", "code_edit", "test"]);
+      expect(await runtimeJobs.listRecentJobs()).toHaveLength(1);
+    } finally {
+      await db.close();
     }
   });
 
@@ -971,142 +994,6 @@ describe("native execution rpc", () => {
     }
   });
 
-  it("submits natural language through intent router and rejects legacy agent-team dispatch without dynamic scheduler dependencies", async () => {
-    const db = await createExecutionPlatformPgMemTestDatabase();
-    try {
-      await applyExecutionPlatformMigrations(db.sql);
-      const runtimeJobs = new RuntimeJobRepository(db.sql, { claimStrategy: "basic" });
-      const workQueue = new WorkQueueRepository(db.sql, runtimeJobs);
-      const workItem = await workQueue.createWorkItem({
-        workItemId: "work-item-native-exec",
-        itemType: "execution_workflow",
-        title: "Native execution workflow",
-      });
-      const rpc = new NativeExecutionRpcService({
-        runtimeJobs,
-        workQueue,
-        intentRouterProvider: legacyTestFixtureProvider(),
-      });
-      const submit = await rpc.submit({
-        prompt: "Have the coding team add a small regression test and close it out.",
-        auth: { actorId: "operator", authenticated: true, role: "operator" },
-        workItemId: workItem.workItemId,
-      });
-      expect(submit.accepted).toBe(true);
-      expect(submit.workflowId).toBe("agent_team.coding");
-      expect(submit.jobType).toBe("executor.agent_team");
-      expect(submit.runtimeJobId).toBeTruthy();
-      expect(submit.rawPromptStored).toBe(false);
-
-      const runner = new AgentTeamQueuedRunner({
-        runtimeJobs,
-        workerId: "agent-team-worker",
-        queueName: "agent-team",
-        closeoutReporter: modelCloseoutReporterFixture(),
-      });
-      const run = await runner.runOnce();
-      expect(run.completed).toBe(false);
-      expect(run.failed).toBe(true);
-      expect(run.failure?.message).toContain("dynamic_runtime_work_graph_required");
-
-      const readModel = await buildWorkQueueExecutionReadModel({
-        workQueue,
-        runtimeJobs,
-        workItemId: workItem.workItemId,
-      });
-      expect(readModel.runtimeJobs[0]?.workflow.workflowId).toBe("agent_team.coding");
-      expect(readModel.runtimeJobs[0]?.workflow.workQueueLifecycleMutationAllowed).toBe(false);
-      expect(readModel.runtimeJobs[0]?.runtimeJobState).not.toBe("succeeded");
-      const closeout = await rpc.readCloseout(submit.runtimeJobId ?? "");
-      expect(closeout).toMatchObject({
-        closeoutRefs: [],
-        closeoutCapsule: null,
-        humanCloseoutSummary: null,
-      });
-    } finally {
-      await db.close();
-    }
-  });
-
-  it("rejects unsafe prompts without runtime lifecycle mutation", async () => {
-    const db = await createExecutionPlatformPgMemTestDatabase();
-    try {
-      await applyExecutionPlatformMigrations(db.sql);
-      const runtimeJobs = new RuntimeJobRepository(db.sql, { claimStrategy: "basic" });
-      const rpc = new NativeExecutionRpcService({
-        runtimeJobs,
-        intentRouterProvider: legacyTestFixtureProvider(),
-      });
-      const submit = await rpc.submit({
-        prompt: "Deploy this to production.",
-        auth: { actorId: "operator", authenticated: true, role: "operator" },
-      });
-      expect(submit.accepted).toBe(false);
-      expect(submit.runtimeJobId).toBeNull();
-      expect(submit.reasonCodes).toContain("production_deploy_locked");
-      expect(submit.workQueueLifecycleMutated).toBe(false);
-    } finally {
-      await db.close();
-    }
-  });
-
-  it("submits web research but generic workflow runner cannot produce production success", async () => {
-    const db = await createExecutionPlatformPgMemTestDatabase();
-    try {
-      await applyExecutionPlatformMigrations(db.sql);
-      const runtimeJobs = new RuntimeJobRepository(db.sql, { claimStrategy: "basic" });
-      const workQueue = new WorkQueueRepository(db.sql, runtimeJobs);
-      const workItem = await workQueue.createWorkItem({
-        workItemId: "work-item-native-research",
-        itemType: "execution_workflow",
-        title: "Native research workflow",
-      });
-      const rpc = new NativeExecutionRpcService({
-        runtimeJobs,
-        workQueue,
-        intentRouterProvider: legacyTestFixtureProvider(),
-      });
-      const submit = await rpc.submit({
-        prompt: "Research current OpenAI structured output docs.",
-        auth: { actorId: "operator", authenticated: true, role: "operator" },
-        workItemId: workItem.workItemId,
-      });
-      expect(submit.accepted).toBe(true);
-      expect(submit.workflowId).toBe("single_agent.web_research");
-      expect(submit.runtimeJobId).toBeTruthy();
-      if (!submit.runtimeJobId) {
-        throw new Error("research runtime job id missing");
-      }
-      const control = await rpc.applyControl({
-        actionKind: "retry",
-        actionId: "native-research-retry",
-        workItemId: workItem.workItemId,
-        runtimeJobId: submit.runtimeJobId,
-        auth: { actorId: "operator", authenticated: true, role: "operator" },
-      });
-      expect(control.accepted).toBe(true);
-      const runner = new WorkflowQueuedRunner({
-        runtimeJobs,
-        workerId: "generic-workflow-worker",
-        queueName: "agent-team",
-        closeoutReporter: modelCloseoutReporterFixture(),
-      });
-      const run = await runner.runOnce();
-      expect(run.completed).toBe(false);
-      expect(run.failed).toBe(true);
-      expect(run.status).toBe("blocked_migration_required");
-      expect(run.workflowId).toBe("single_agent.web_research");
-      const projection = await rpc.readWorkQueueProjection(workItem.workItemId);
-      expect(JSON.stringify(projection)).toContain("single_agent.web_research");
-      const artifacts = await runtimeJobs.listArtifacts(submit.runtimeJobId);
-      expect(artifacts.map((artifact) => artifact.artifactType)).toContain(
-        "execution.generic_workflow_runner_retirement",
-      );
-    } finally {
-      await db.close();
-    }
-  });
-
   it("rejects runtime-backed controls when the linked runtime job is missing", async () => {
     const db = await createExecutionPlatformPgMemTestDatabase();
     try {
@@ -1121,7 +1008,6 @@ describe("native execution rpc", () => {
       const rpc = new NativeExecutionRpcService({
         runtimeJobs,
         workQueue,
-        intentRouterProvider: legacyTestFixtureProvider(),
       });
 
       const control = await rpc.applyControl({
@@ -1168,7 +1054,6 @@ describe("native execution rpc", () => {
       const rpc = new NativeExecutionRpcService({
         runtimeJobs,
         workQueue,
-        intentRouterProvider: legacyTestFixtureProvider(),
       });
 
       const control = await rpc.applyControl({

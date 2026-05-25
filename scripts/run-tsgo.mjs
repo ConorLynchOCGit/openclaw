@@ -39,10 +39,29 @@ function resolveTsgoMode(args, env) {
   return args.length === 0 ? "full" : "targeted";
 }
 
+function withTsgoNodeHeapBudget(env, hostResources) {
+  const nextEnv = { ...env };
+  const existingOptions = nextEnv.NODE_OPTIONS ?? "";
+  if (existingOptions.includes("--max-old-space-size")) {
+    return nextEnv;
+  }
+  const configured = Number.parseInt(nextEnv.OPENCLAW_TSGO_NODE_MAX_OLD_SPACE_MB ?? "", 10);
+  const memoryBasedDefault = Math.max(
+    4096,
+    Math.min(12288, Math.floor(hostResources.totalMemoryBytes / 1024 ** 2 / 2)),
+  );
+  const heapMb = Number.isFinite(configured) && configured > 0 ? configured : memoryBasedDefault;
+  nextEnv.NODE_OPTIONS = `${existingOptions} --max-old-space-size=${heapMb}`.trim();
+  nextEnv.OPENCLAW_TSGO_NODE_HEAP_MB = String(heapMb);
+  return nextEnv;
+}
+
 function main() {
   const rawArgs = process.argv.slice(2);
   const hostResources = resolveHostResources();
-  const { args: finalArgs, env } = applyLocalTsgoPolicy(rawArgs, process.env, hostResources);
+  const policy = applyLocalTsgoPolicy(rawArgs, process.env, hostResources);
+  const finalArgs = policy.args;
+  const env = withTsgoNodeHeapBudget(policy.env, hostResources);
 
   const tsgoPath = path.resolve("node_modules", ".bin", "tsgo");
   const tsBuildInfoFile = readFlagValue(finalArgs, "--tsBuildInfoFile");
@@ -84,6 +103,7 @@ function main() {
   console.error(
     `[tsgo] execution policy: ${finalArgs.includes("--singleThreaded") ? "single-threaded" : "multi-checker"} / checkers=${readFlagValue(finalArgs, "--checkers") ?? "default"}`,
   );
+  console.error(`[tsgo] node heap budget: ${env.OPENCLAW_TSGO_NODE_HEAP_MB ?? "existing"} MiB`);
 
   const releaseLock = shouldLock
     ? acquireLocalHeavyCheckLockSync({

@@ -54,6 +54,12 @@ export type RuntimeExecutionSpan = {
   phase: string | null;
   status: RuntimeExecutionSpanStatus;
   roleId: string | null;
+  modelTaskClass: string | null;
+  modelTaskPolicyRef: string | null;
+  reasoningMode: string | null;
+  parserMode: string | null;
+  modelTaskRetryCount: number | null;
+  modelTaskEscalationStatus: string | null;
   modelRef: string | null;
   providerPath: string | null;
   toolId: string | null;
@@ -127,6 +133,10 @@ export type RuntimeExecutionSpanReadback = {
   currentSpanKind: RuntimeExecutionSpanKind | null;
   currentPhase: string | null;
   currentStatus: RuntimeExecutionSpanStatus | null;
+  currentModelTaskClass: string | null;
+  currentModelTaskPolicyRef: string | null;
+  currentReasoningMode: string | null;
+  currentParserMode: string | null;
   currentModelRef: string | null;
   currentToolId: string | null;
   currentWorkerRef: string | null;
@@ -217,6 +227,12 @@ export function buildRuntimeExecutionSpan(input: RuntimeExecutionSpanInput): Run
     phase: boundedString(input.phase, 160),
     status: input.status,
     roleId: boundedString(input.roleId, 160),
+    modelTaskClass: boundedString(input.modelTaskClass, 160),
+    modelTaskPolicyRef: boundedString(input.modelTaskPolicyRef, 240),
+    reasoningMode: boundedString(input.reasoningMode, 80),
+    parserMode: boundedString(input.parserMode, 120),
+    modelTaskRetryCount: boundedNumber(input.modelTaskRetryCount),
+    modelTaskEscalationStatus: boundedString(input.modelTaskEscalationStatus, 120),
     modelRef: boundedString(input.modelRef, 240),
     providerPath: boundedString(input.providerPath, 240),
     toolId: boundedString(input.toolId, 240),
@@ -323,6 +339,12 @@ export function runtimeExecutionSpanFromEvent(event: RuntimeJobEvent): RuntimeEx
     phase: stringValue(spanRecord.phase),
     status: spanStatusValue(spanRecord.status),
     roleId: stringValue(spanRecord.roleId),
+    modelTaskClass: stringValue(spanRecord.modelTaskClass),
+    modelTaskPolicyRef: stringValue(spanRecord.modelTaskPolicyRef),
+    reasoningMode: stringValue(spanRecord.reasoningMode),
+    parserMode: stringValue(spanRecord.parserMode),
+    modelTaskRetryCount: numberValue(spanRecord.modelTaskRetryCount),
+    modelTaskEscalationStatus: stringValue(spanRecord.modelTaskEscalationStatus),
     modelRef: stringValue(spanRecord.modelRef),
     providerPath: stringValue(spanRecord.providerPath),
     toolId: stringValue(spanRecord.toolId),
@@ -400,6 +422,10 @@ export function runtimeExecutionSpanReadback(input: {
     currentSpanKind: activeSpan?.spanKind ?? null,
     currentPhase: activeSpan?.phase ?? null,
     currentStatus: activeSpan?.status ?? null,
+    currentModelTaskClass: activeSpan?.modelTaskClass ?? null,
+    currentModelTaskPolicyRef: activeSpan?.modelTaskPolicyRef ?? null,
+    currentReasoningMode: activeSpan?.reasoningMode ?? null,
+    currentParserMode: activeSpan?.parserMode ?? null,
     currentModelRef: activeSpan?.modelRef ?? null,
     currentToolId: activeSpan?.toolId ?? null,
     currentWorkerRef: activeSpan?.workerRef ?? null,

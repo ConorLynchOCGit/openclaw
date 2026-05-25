@@ -14,6 +14,7 @@ import {
 import { workflowEvidenceProfileForWorkflow } from "./workflow-evidence-profile.ts";
 import {
   type WorkflowContextNeed,
+  type WorkflowEntryNodePolicy,
   type WorkflowOrchestrationPolicy,
   type WorkflowPhase,
   type WorkflowRoleClass,
@@ -147,6 +148,7 @@ function orchestrationPolicy(input: {
   contextNeeds: WorkflowContextNeed[];
   runtimeToolFamilies: WorkflowDefinition["runtimeToolFamilies"];
   complexWorkflow: boolean;
+  entryNodePolicy?: WorkflowEntryNodePolicy | null;
 }): WorkflowOrchestrationPolicy {
   return {
     policyId: `${input.workflowId}.orchestration.v1`,
@@ -161,6 +163,7 @@ function orchestrationPolicy(input: {
     sourcePromptPolicy: sourcePromptPolicy(input.workflowId),
     capabilityPolicy: capabilityPolicy(input.workflowId),
     humanDecisionPolicy: humanDecisionPolicy(input.workflowId),
+    entryNodePolicy: input.entryNodePolicy ?? null,
     evidenceProfileId: input.evidenceProfileId,
     evidenceClassesByPhase: {
       mission_ledger: ["runtime_graph"],
@@ -202,6 +205,7 @@ function baseDefinition(input: {
   optionalRoleClasses?: WorkflowRoleClass[];
   allowedCapabilityIds?: string[];
   contextNeeds: WorkflowContextNeed[];
+  entryNodePolicy?: WorkflowEntryNodePolicy | null;
   liveProofRequirements?: string[];
 }): WorkflowDefinition {
   const evidenceProfile = workflowEvidenceProfileForWorkflow(input.workflowId);
@@ -225,6 +229,7 @@ function baseDefinition(input: {
     contextNeeds: input.contextNeeds,
     runtimeToolFamilies,
     complexWorkflow: input.schedulerBacked,
+    entryNodePolicy: input.entryNodePolicy ?? null,
   });
   return {
     definitionId: `workflow-definition.${input.workflowId}.v1`,
@@ -350,6 +355,7 @@ export function buildCanonicalWorkflowDefinitions(): WorkflowDefinition[] {
         "scheduler.select_next_node",
         "scheduler.evaluate_node_result",
         "scheduler.repair_decision",
+        "node.resource_materialization",
         "source_prompt.context",
         "context_scout.tool_loop",
         "code_intelligence.query",
@@ -414,6 +420,17 @@ export function buildCanonicalWorkflowDefinitions(): WorkflowDefinition[] {
           reasonCode: "planning_may_require_current_external_research",
         }),
       ],
+      entryNodePolicy: {
+        policyId: "agent_team.product_spec_planning.entry_node.v1",
+        requiredBeforeOtherExecution: true,
+        allowedInitialCapabilityIds: ["planning_orchestrator"],
+        allowedInitialRoleClasses: ["planning"],
+        blockedUntilStartedReasonCode:
+          "workflow_entry_node_policy_planning_orchestrator_required_before_child_nodes",
+        rawPromptStored: false,
+        rawResponseStored: false,
+        rawLogsStored: false,
+      },
       allowedNodeKinds: [
         "orchestrator_plan",
         "web_research",
@@ -440,6 +457,7 @@ export function buildCanonicalWorkflowDefinitions(): WorkflowDefinition[] {
         "scheduler.select_next_node",
         "scheduler.evaluate_node_result",
         "scheduler.repair_decision",
+        "node.resource_materialization",
         "worker.invoke",
         "model.call",
         "research.fetch",
@@ -548,6 +566,7 @@ export function buildCanonicalWorkflowDefinitions(): WorkflowDefinition[] {
         "scheduler.select_next_node",
         "scheduler.evaluate_node_result",
         "scheduler.repair_decision",
+        "node.resource_materialization",
         "worker.invoke",
         "model.call",
         "research.fetch",

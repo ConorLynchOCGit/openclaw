@@ -100,7 +100,51 @@ describe("Action semantics enforcement", () => {
     });
   });
 
-  it("suppresses conflicted side-effect boundaries when safe primary work remains", () => {
+  it("allows non-high-risk requested actions when the model classifies the negation as constraint-scoped", () => {
+    const requestedPlan = createCanonicalRouterAction(
+      "plan",
+      "plan implementation work through the coding executor",
+      0.95,
+    );
+    const negatedPlan = createCanonicalRouterAction(
+      "plan",
+      "do not route into the target planning workflow as executor",
+      0.99,
+    );
+    const decision = enforceActionSemantics({
+      requestedActions: [requestedPlan],
+      negatedActions: [negatedPlan],
+      routerReasonCodes: ["invalid_negated_action_repaired_to_constraint_scoped_plan_action"],
+    });
+
+    expect(decision).toMatchObject({
+      outcome: "actions_allowed",
+      allowedRequestedActions: [requestedPlan],
+      blockedActions: [],
+    });
+    expect(decision.reasonCodes).toContain("requested_action_negation_constraint_scoped:plan");
+    expect(decision.reasonCodes).toContain("negated_action_constraint_scoped:plan");
+    expect(decision.reasonCodes).not.toContain("requested_action_conflicts_with_negation:plan");
+  });
+
+  it("does not let scoped-negation reason codes bypass high-risk side-effect boundaries", () => {
+    const deploy = createCanonicalRouterAction("deploy", "deploy production", 0.9);
+    const decision = enforceActionSemantics({
+      requestedActions: [deploy],
+      negatedActions: [createCanonicalRouterAction("deploy", "do not deploy", 1)],
+      routerReasonCodes: ["invalid_negated_action_repaired_to_constraint_scoped_deploy_action"],
+      allowedRequestedActionCategories: ["deploy"],
+      approvedHighRiskActionCategories: ["deploy"],
+    });
+
+    expect(decision).toMatchObject({
+      blockedActions: [deploy],
+      outcome: "blocked",
+    });
+    expect(decision.reasonCodes).toContain("requested_action_conflicts_with_negation:deploy");
+  });
+
+  it("preserves conflicted side-effect boundaries when safe primary work remains", () => {
     const codeEdit = createCanonicalRouterAction("code_edit", "bounded implementation", 0.95);
     const deploy = createCanonicalRouterAction("deploy", "production release", 0.9);
     const decision = enforceActionSemantics({
@@ -112,11 +156,12 @@ describe("Action semantics enforcement", () => {
     expect(decision).toMatchObject({
       outcome: "actions_allowed",
       allowedRequestedActions: [codeEdit],
-      blockedActions: [],
+      blockedActions: [deploy],
     });
-    expect(decision.reasonCodes).toContain(
+    expect(decision.reasonCodes).not.toContain(
       "side_effect_boundary_conflict_suppressed_by_primary_work",
     );
+    expect(decision.reasonCodes).toContain("requested_action_conflicts_with_negation:deploy");
   });
 
   it("does not compile unmet or approval-required conditional actions", () => {

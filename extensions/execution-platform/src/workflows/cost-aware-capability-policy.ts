@@ -142,10 +142,13 @@ export function utilityDecisionFromNodeMetadata(
   const explicit = normalizeCostAwareCapabilityUtilityDecision(
     metadata.utilityDecision ?? metadata.costAwareUtilityDecision,
   );
-  if (!node.capabilityId) {
+  const selectedCapabilityId =
+    node.capabilityId ||
+    stringValue(metadata.workIntentSelectedCapabilityId ?? metadata.selectedCapabilityId);
+  if (!selectedCapabilityId) {
     return null;
   }
-  const capability = findRuntimeNodeCapability(node.capabilityId);
+  const capability = findRuntimeNodeCapability(selectedCapabilityId);
   const selectedModelQualificationProfileId =
     stringValue(
       metadata.selectedModelQualificationProfileId ??
@@ -162,13 +165,13 @@ export function utilityDecisionFromNodeMetadata(
   const derived: CostAwareCapabilityUtilityDecision = {
     decisionId: `${node.nodeId}:utility`,
     consideredCapabilityIds: stringArray(metadata.consideredCapabilityIds),
-    selectedCapabilityId: node.capabilityId,
+    selectedCapabilityId,
     selectedProviderCapabilityProfileId:
       stringValue(
         metadata.selectedProviderCapabilityProfileId ?? metadata.providerCapabilityProfileId,
       ) || null,
-    selectedNodeKind: node.nodeKind,
-    selectedExecutorKey: node.executorKey ?? "",
+    selectedNodeKind: stringValue(metadata.targetCapabilityGraphNodeKind) || node.nodeKind,
+    selectedExecutorKey: node.executorKey ?? stringValue(metadata.targetCapabilityExecutorKey),
     targetCommitmentIds: node.commitmentIdsAdvanced ?? [],
     utilityRationale: stringValue(metadata.utilityRationale ?? node.whyThisRoleIsNeededNow),
     costRationale: stringValue(metadata.costRationale),

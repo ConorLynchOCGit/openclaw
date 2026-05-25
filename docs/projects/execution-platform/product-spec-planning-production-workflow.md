@@ -23,22 +23,68 @@ It is a production workflow plugin on the canonical runtime spine:
    evidence expectations.
 4. Commitment Work Packet authoring turns broad ledger commitments into
    worker-ready planning packets with full-prompt volatile access.
-5. Context Supply Chain provides bounded source-prompt excerpts, repo/project
-   context, memory/context-pack refs when relevant, and research refs when
-   current external facts are needed.
-6. Staged Scheduler Protocol compiles the planning graph from model-authored
-   intent into runtime-owned node envelopes.
-7. Runtime node executors produce canonical node results and explicit
-   commitment evidence claims.
-8. Validation/compile readiness, Work Queue readback, closeout, and
-   completion review gate final success.
-9. Boundary Replay checkpoints allow restart from accepted boundaries without
-   rerunning the full funnel.
+5. WorkIntent compilation creates non-runnable semantic work contracts before
+   executable nodes exist. WorkIntent carries model-authored execution intent,
+   capability fit, expected output, resource needs, downstream consumers, and
+   evidence expectations.
+6. Node-scoped Context Supply Chain provides bounded source-prompt excerpts,
+   repo/project context, memory/context-pack refs when relevant, and research
+   refs when current external facts are needed. Context is requested for the
+   specific downstream WorkIntent/node, not as a giant global fanout.
+7. Staged Scheduler Protocol compiles accepted WorkIntent/resource readiness
+   into runtime-owned node envelopes.
+8. `NodeReadinessState` is the single readiness truth for scheduler frontier
+   selection, replay, Work Queue readback, and worker invocation.
+9. Runtime resource materialization hydrates `NodeExecutionPacket` plus the
+   matching domain resource packet before any worker/provider call can count
+   as execution.
+10. Runtime node executors produce canonical node results and explicit
+    commitment evidence claims.
+11. Validation/compile readiness, Work Queue readback, closeout, and
+    completion review gate final success.
+12. Boundary Replay checkpoints allow restart from accepted boundaries without
+    rerunning the full funnel.
 
-Product/Spec Planning must not be executed by `WorkflowQueuedRunner`, a
-proof-only script, or a Product/Spec-specific compatibility path. Generic
-queued workflow dispatch must reject it with
-`product_spec_planning_requires_scheduler_backed_runner`.
+Product/Spec Planning must not be executed by the deleted generic queued
+workflow runner, a proof-only script, or a Product/Spec-specific compatibility
+path. Generic queued workflow dispatch must not be reintroduced.
+
+Context synthesis is not default glue in the Product/Spec proof path. It may
+run only when the workflow definition, model-authored WorkIntent structure
+review, or an accepted coordination policy explicitly requires cross-node
+synthesis for shared dependency decisions, file ownership conflicts,
+integration sequencing, or validation-plan conflicts. Accepted synthesis
+artifacts are coordination evidence; they do not directly compile into
+implementation nodes.
+
+## 2026-05-25 Pre-Proof Status
+
+The current pre-proof queue has closed the WorkIntent/control-plane recovery
+items through `openclaw-convergence.control-plane-06-worker-small-verb-edit-smoke`.
+The remaining blocker before the full Product/Spec production proof is:
+
+- `openclaw-convergence.control-plane-07-readback-telemetry-proof`
+  - Owner Readback And Telemetry Proof.
+
+The full Product/Spec proof must not run until owner-facing readback shows the
+current WorkIntent/node, execution intent, evidence mode, readiness ref,
+active model/tool/phase, blocker or next legal transition, wall time, usage
+availability, and bounded artifact refs from compact runtime state.
+
+The worker-smoke evidence that the proof may rely on is:
+
+- runtime job: `native-exec-272cf2d51fcba75b`;
+- graph: `product-spec-replay-f69b40c5defa3687`;
+- boundary: `after-resource-materialization`;
+- proof artifact:
+  `.artifacts/execution-platform/product-spec-replay-proof-resource-materialization/proof.json`;
+- result: one Product/Spec-derived source-edit node received hydrated
+  execution/resource/context/task packet refs, ran through the small-verb
+  worker loop, applied a bounded edit, ran structural validation, recorded
+  commitment-linked evidence, and rolled back the changed file for review.
+
+The next proof also requires a working live gateway and clean validation/build
+evidence before submitting the OpenClaw run.
 
 ## Workflow Definition And Plugin
 
@@ -146,6 +192,176 @@ Product/Spec Planning inherits the generic orchestration phase ladder:
 Human decision is optional unless the Mission Ledger, Planning Capsule, or
 compile boundary identifies an owner-only decision.
 
+## Product/Spec Planning System Contract
+
+Product/Spec Planning is a planning workflow, not a code implementation
+workflow and not a child-job executor. Its job is to convert owner intent into
+decision-ready planning artifacts that can later be promoted through explicit
+authority boundaries.
+
+The system must produce these canonical planning outcomes:
+
+1. `PlanningIntentRecord`
+   - owner objective, target product/system area, planning horizon,
+     constraints, non-goals, authority limits, known uncertainties, and
+     stale-external-assumption warnings.
+2. `ResearchBrief`
+   - optional; selected only when current external facts materially affect
+     planning quality.
+3. `PlanningCapsule`
+   - the durable core planning artifact, revised until it is decision-ready
+     or explicitly limited.
+4. `HumanPlanningDecision`
+   - optional; required when owner preference, policy, tradeoff, or authority
+     cannot be inferred by the model/runtime.
+5. `ActionGraphProposal`
+   - proposed child work, dependencies, workflows, validations, risks, and
+     authority needs.
+6. `CompileRuntimePlanResult`
+   - compile-readiness evaluation for the proposal; proves child feasibility,
+     not child execution.
+7. `ProductSpecPlanningCloseout`
+   - model-authored finalization mapped to Mission Ledger commitments and
+     runtime evidence.
+
+Planning artifacts are commitment evidence only when attached through the
+generic evidence-claim contract. A pretty capsule, markdown report, or final
+assistant message does not close commitments by itself.
+
+## Canonical Product/Spec Node Shape
+
+The native Product/Spec planning graph is expected to contain this shape when
+the corresponding work is needed:
+
+1. `planning_orchestrator`
+   - first executable planning node;
+   - converts Mission Ledger and Commitment Work Packets into planning work
+     units, research decisions, capsule requirements, human decision needs,
+     and proposal expectations;
+   - may decide that research or human decision is not required, but must
+     record model-authored rationale.
+2. `web_research`
+   - optional node class;
+   - produces bounded ResearchBriefs with source refs, retrieval date,
+     confidence, limitations, and planning implications.
+3. `planning_capsule`
+   - produces draft and revision artifacts;
+   - maps every relevant commitment to capsule evidence, limitations, or
+     open decisions.
+4. `human_task`
+   - only when a bounded owner decision is required;
+   - cannot grant new runtime authority beyond workflow policy.
+5. `action_graph_compile`
+   - authors ActionGraphProposal and evaluates compile readiness;
+   - may propose child work but cannot create child runtime jobs.
+6. `reviewer`
+   - model/human review of planning sufficiency, stale assumptions, open
+     risks, and proposal feasibility when required by profile or risk.
+7. `closeout`
+   - model-authored finalization over accepted evidence, not degraded system
+     closeout.
+
+The graph may split nodes for parallel research, capsule sections, proposal
+branches, or review lanes when the scheduler can preserve commitment mapping,
+evidence expectations, and downstream consumers. Parallelism is a scheduler
+choice; runtime still owns node ids, lifecycle, refs, tool execution, and
+readback state.
+
+## Planning Artifact Contracts
+
+### PlanningIntentRecord
+
+Required fields:
+
+- owner objective;
+- target subject/system refs;
+- planning scope;
+- non-goals;
+- constraints and authority limits;
+- known facts and source refs;
+- uncertainty list;
+- research-needed decision;
+- human-decision-needed decision;
+- evidence expectations.
+
+### ResearchBrief
+
+Required fields:
+
+- research question;
+- source refs and retrieval dates;
+- bounded findings;
+- source quality and confidence;
+- limitations;
+- stale-assumption warnings;
+- planning implications;
+- commitment ids affected.
+
+ResearchBriefs cannot store raw pages, raw provider output, hidden reasoning,
+or unbounded copied source material.
+
+### PlanningCapsule
+
+The capsule is the primary owner-facing planning artifact. It must be useful
+to a product/engineering owner without requiring artifact spelunking.
+
+Required fields:
+
+- owner objective;
+- problem statement;
+- current system facts and source refs;
+- user/customer/product assumptions;
+- non-goals;
+- constraints and tradeoffs;
+- proposed product/spec shape;
+- data/workflow/runtime implications;
+- UI/readback implications where relevant;
+- validation and rollout plan;
+- risk register;
+- open decisions;
+- human decision refs;
+- research influence refs;
+- ActionGraphProposal refs;
+- compile-readiness state;
+- limitations;
+- ELI5 summary.
+
+### ActionGraphProposal
+
+Required fields:
+
+- proposed child actions;
+- target workflows or role/capability classes;
+- dependency graph;
+- authority requirements;
+- context/resource needs;
+- validation requirements;
+- evidence expectations;
+- risk and rollback notes;
+- proposed Work Queue child-item summaries.
+
+ActionGraphProposal is proposal authority only. It must not enqueue child
+runtime jobs, mutate child Work Queue lifecycle, mark child work complete, or
+claim implementation success.
+
+### CompileRuntimePlanResult
+
+Required fields:
+
+- proposal ref and hash;
+- schema validation status;
+- dependency validation status;
+- missing decision list;
+- authority readiness;
+- workflow/executor availability;
+- child feasibility;
+- Work Queue child-item materialization policy;
+- compile-readiness state;
+- limitations and required next owner/system action.
+
+Compile readiness means the proposal is structurally promotable through a
+later explicit authority boundary. It does not mean child execution happened.
+
 ## Staged Scheduler Contract
 
 Product/Spec Planning graph creation uses staged scheduler tools, not a
@@ -178,6 +394,26 @@ The runtime derives:
 
 Complex planning work cannot run node execution until the graph is compiled,
 structure-reviewed, accepted, and first-node approved.
+
+For coding-team proof prompts that target Product/Spec as a subject, the
+coding path must remain WorkIntent-first:
+
+```text
+prompt -> route -> Mission Ledger -> Commitment Work Packets -> WorkIntent
+-> node-scoped context/resource requirements -> NodeReadinessState
+-> NodeExecutionPacket + domain resource packet -> worker small-verb loop
+-> validation -> evidence -> review/readback/closeout
+```
+
+The forbidden production shortcut is:
+
+```text
+context_synthesis group -> implementation node
+```
+
+Runtime may normalize structured aliases and derive runtime-owned fields, but
+it must not classify semantic work type through deterministic substrings,
+Product/Spec keyword checks, or proof-only heuristics.
 
 ## Context Supply And Research
 

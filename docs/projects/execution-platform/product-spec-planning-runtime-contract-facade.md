@@ -23,10 +23,57 @@ Product/Spec Planning production execution must use:
 - completion review
 - Work Queue runtime readback
 
-`WorkflowQueuedRunner` and facade compatibility surfaces are not production
-success paths for Product/Spec Planning. They may exist only as migration or
-diagnostic context and must reject Product/Spec production execution with
-`product_spec_planning_requires_scheduler_backed_runner`.
+The deleted generic queued workflow runner and facade compatibility surfaces
+are not production, migration, or diagnostic success paths for Product/Spec
+Planning. Product/Spec production execution must enter through canonical
+workflow definitions/plugins and the runtime graph engine.
+
+## Current Product/Spec Planning System Contract
+
+This facade document is not the Product/Spec Planning system spec. The current
+system contract is defined in
+`product-spec-planning-production-workflow.md` and requires Product/Spec
+Planning to produce planning/proposal artifacts through the generic runtime
+spine:
+
+- `PlanningIntentRecord`
+- optional `ResearchBrief`
+- `PlanningCapsule`
+- optional `HumanPlanningDecision`
+- `ActionGraphProposal`
+- `CompileRuntimePlanResult`
+- `ProductSpecPlanningCloseout`
+
+The native Product/Spec graph shape is planning-first:
+
+1. `planning_orchestrator`
+2. optional `web_research`
+3. `planning_capsule`
+4. optional `human_task`
+5. `action_graph_compile`
+6. `reviewer`
+7. `closeout`
+
+Product/Spec Planning has proposal authority only. It can propose child work,
+dependencies, validations, authority needs, and Work Queue child summaries; it
+cannot execute child runtime jobs, mutate child lifecycle state, or claim child
+implementation success without a later explicit authority boundary.
+
+For coding-team prompts that target Product/Spec Planning as the subject, the
+coding control plane must remain WorkIntent-first:
+
+```text
+prompt -> route -> Mission Ledger -> Commitment Work Packets -> WorkIntent
+-> node-scoped context/resource requirements -> NodeReadinessState
+-> NodeExecutionPacket + domain resource packet -> worker small-verb loop
+-> validation -> evidence -> review/readback/closeout
+```
+
+The retired production shortcut remains forbidden:
+
+```text
+context_synthesis group -> implementation node
+```
 
 ## Still Valid Contract Boundaries
 

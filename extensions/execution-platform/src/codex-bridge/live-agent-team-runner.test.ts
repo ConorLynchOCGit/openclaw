@@ -2,20 +2,13 @@ import { describe, expect, it } from "vitest";
 import { applyExecutionPlatformMigrations } from "../db/migrations.ts";
 import { createExecutionPlatformPgMemTestDatabase } from "../db/pg-test.ts";
 import { RuntimeJobRepository } from "../runtime-job-repository.ts";
-import { buildWorkQueueExecutionReadModel } from "../work-queue/execution-read-model.ts";
 import { WorkQueueRepository } from "../work-queue/work-queue-repository.ts";
-import { createModelAuthoredCloseoutCapsuleFixture } from "../workers/test-closeout-capsule-fixture.ts";
 import {
   createAgentTeamFailureRecoveryArtifact,
   recordAgentTeamFailureRecoveryArtifact,
 } from "./agent-team-failure-recovery.ts";
 import { AGENT_TEAM_JOB_TYPE } from "./agent-team-runtime-evidence.ts";
-import { closeoutCapsuleToLegacyHumanSummary } from "./closeout-capsule.ts";
-import {
-  LiveAgentTeamRunner,
-  OpenRouterAgentTeamModelClient,
-  type AgentTeamModelClient,
-} from "./live-agent-team-runner.ts";
+import { OpenRouterAgentTeamModelClient } from "./live-agent-team-runner.ts";
 
 async function withRuntime<T>(
   work: (input: {
@@ -39,88 +32,7 @@ async function withRuntime<T>(
   }
 }
 
-function fakeClient(): AgentTeamModelClient {
-  return {
-    async callRole(input) {
-      const responseText = JSON.stringify({
-        summary: `${input.roleId} completed bounded role output`,
-        findings: [],
-        evidenceRefs: [`artifact://${input.roleId}`],
-        risks: [],
-        recommendedNextAction: "continue",
-        notDeterministic: true,
-        relevantFiles: ["extensions/execution-platform/src/codex-bridge/live-agent-team-runner.ts"],
-        existingPatterns: ["runtime job evidence"],
-        knownConstraints: ["no raw prompt storage"],
-        suggestedImplementationPath: ["persist evidence before projection"],
-        unknowns: [],
-        behaviorTestGaps: [],
-        brittleSchemaConcerns: [],
-        missingNegativeCases: [],
-        validationRepairExpectations: ["rerun focused tests"],
-        severity: "low",
-        exploitabilityNotes: [],
-        requiredFixes: [],
-        recommendedFixes: [],
-        residualRisk: [],
-        validationFailed: false,
-        diagnosis: "bounded",
-        repairPlan: [],
-        rerunPlan: [],
-        needsReviewIfUnresolved: true,
-        boundedPayloadFields: ["summary", "artifactRefs"],
-        rejectedContent: ["raw prompts"],
-        scopeBoundary: "agent-team runtime",
-        artifactRefs: [`artifact://${input.roleId}`],
-        workQueueLifecycleMutationAllowed: false,
-        validationResult: "passed",
-        qualitativeJudgment: "bounded assist only",
-        judgmentMade: true,
-        limitations: [],
-      });
-      return {
-        status: "succeeded",
-        responseText,
-        responseHash: `sha256:${input.roleId}`,
-        usage: {
-          inputTokenCount: 100,
-          outputTokenCount: 50,
-          totalTokenCount: 150,
-          estimatedCostUsd: 0.001,
-        },
-      } as const;
-    },
-  };
-}
-
-function modelCloseoutReporterFixture() {
-  return {
-    async createCapsule(input: {
-      factualRefs: {
-        runtimeJobId: string;
-        teamRunId?: string | null;
-        workflowId?: string | null;
-      };
-    }) {
-      const capsule = createModelAuthoredCloseoutCapsuleFixture({
-        runtimeJobId: input.factualRefs.runtimeJobId,
-        teamRunId: input.factualRefs.teamRunId ?? null,
-        workflowId: input.factualRefs.workflowId ?? "agent_team.coding",
-      });
-      return {
-        source: "model" as const,
-        capsule,
-        legacyHumanSummary: closeoutCapsuleToLegacyHumanSummary(capsule),
-        reasonCodes: ["fixture_model_closeout_created"],
-        rawPromptStored: false as const,
-        rawResponseStored: false as const,
-        rawProviderLogStored: false as const,
-      };
-    },
-  };
-}
-
-describe("live agent-team runner", () => {
+describe("OpenRouter agent-team model client", () => {
   it("supports a Kimi native JSON request profile without reasoning and honors call token budget", async () => {
     const bodies: unknown[] = [];
     const fetchImpl = (async (_url: string | URL | Request, init?: RequestInit) => {
@@ -312,8 +224,10 @@ describe("live agent-team runner", () => {
         maxTokens: 8_000,
       },
       maxTokens: 8_000,
-      timeoutMs: 120_000,
+      timeoutMs: 90_000,
       maxAttempts: 1,
+      taskClass: "local_semantic_extraction",
+      modelTaskCallSite: "test.packet_author.semantic_content",
     });
 
     expect(result.status).toBe("succeeded");
@@ -326,12 +240,25 @@ describe("live agent-team runner", () => {
     expect(result.providerResponseDiagnostics).toMatchObject({
       modelCallSpanId: expect.stringContaining("qwen3-coder-next-commitment-packet-author"),
       choiceCount: 1,
+      structuredAdapterProfile: {
+        taskClass: "local_semantic_extraction",
+        reasoningMode: "none",
+        responseFormatMode: "prompt_only_json",
+      },
+      structuredAdapterDiagnostics: {
+        contentLength: expect.any(Number),
+        finishReason: "stop",
+        rawResponseStored: false,
+      },
+      structuredAdapterOutcome: {
+        status: "succeeded",
+      },
       providerBodyKeys: expect.arrayContaining(["choices", "usage"]),
       requestProfileDiagnostics: {
         responseFormatMode: "prompt_only",
         reasoningMode: "none",
         maxTokens: 8_000,
-        timeoutMs: 120_000,
+        timeoutMs: 90_000,
         maxAttempts: 1,
         hasResponseFormat: false,
         hasReasoning: true,
@@ -342,87 +269,117 @@ describe("live agent-team runner", () => {
     });
   });
 
-  it("claims one team job, records live-shaped stream/accounting/review evidence, and projects to Work Queue", async () => {
-    await withRuntime(async ({ runtimeJobs, workQueue }) => {
-      const workItem = await workQueue.createWorkItem({
-        workItemId: "live-team-work-item",
-        itemType: "agent_team_task",
-        title: "Live team projection",
-      });
-      const runtimeJob = await runtimeJobs.enqueueJob({
-        jobId: "live-team-runtime-job",
-        jobType: AGENT_TEAM_JOB_TYPE,
-        queueName: "agent-team-live",
-        workItemId: workItem.workItemId,
-        payload: {
-          teamRunId: "live-team-run",
-          objective: "Improve live agent-team runtime projection with bounded role evidence.",
+  it("keeps the same bounded request shape across fast-model no-content retries", async () => {
+    const bodies: Array<Record<string, unknown>> = [];
+    const fetchImpl = (async (_url: string | URL | Request, init?: RequestInit) => {
+      const body = typeof init?.body === "string" ? init.body : "";
+      bodies.push(JSON.parse(body));
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          choices: [
+            {
+              finish_reason: "length",
+              native_finish_reason: "length",
+              message: { content: "" },
+            },
+          ],
+          usage: {
+            prompt_tokens: 100,
+            completion_tokens: 0,
+            total_tokens: 100,
+          },
+        }),
+      } as Response;
+    }) as typeof fetch;
+
+    const client = new OpenRouterAgentTeamModelClient({
+      apiKey: "test-key",
+      fetchImpl,
+      retryPolicy: {
+        baseDelayMs: 0,
+        maxDelayMs: 0,
+      },
+      requestProfilesByModelId: {
+        "qwen/qwen3-coder-next": {
+          responseFormatMode: "native",
+          reasoningMode: "omit",
+          maxTokens: 2_400,
         },
-      });
-      await workQueue.createWorkRun({
-        runId: "live-team-work-run",
-        workItemId: workItem.workItemId,
-        executorKind: "runtime_job",
-        runtimeJobId: runtimeJob.jobId,
-      });
+      },
+    });
 
-      const result = await new LiveAgentTeamRunner({
-        runtimeJobs,
-        workerId: "live-team-worker",
-        queueName: "agent-team-live",
-        modelClient: fakeClient(),
-        maxV4ProEvalFixtures: 2,
-        closeoutReporter: modelCloseoutReporterFixture(),
-      }).runOnce();
-      const artifacts = await runtimeJobs.listArtifacts(runtimeJob.jobId);
-      const events = await runtimeJobs.listEvents(runtimeJob.jobId);
-      const model = await buildWorkQueueExecutionReadModel({
-        workQueue,
-        runtimeJobs,
-        workItemId: workItem.workItemId,
-        now: new Date("2026-05-03T17:00:00.000Z"),
-      });
+    const result = await client.callRole({
+      roleId: "context_scout",
+      modelId: "qwen/qwen3-coder-next",
+      modelCandidateId: "qwen3-coder-next-retry",
+      prompt: "Return packet JSON.",
+      responseFormat: "json_object",
+      requestProfileOverride: {
+        responseFormatMode: "prompt_only",
+        reasoningMode: "none",
+        maxTokens: 1_200,
+      },
+      taskClass: "local_semantic_extraction",
+      modelTaskCallSite: "test.packet_author.retry",
+      maxTokens: 1_200,
+      timeoutMs: 90_000,
+      maxAttempts: 2,
+    });
 
-      expect(result).toMatchObject({
-        claimed: true,
-        completed: true,
-        providerCallMade: true,
-        rawPromptStored: false,
-        rawResponseStored: false,
-        workQueueLifecycleMutated: false,
-        codexCliInvoked: false,
-      });
-      expect(result.modelRosterDecisions).toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({
-            requestedModelId: "deepseek/deepseek-v4-pro",
-            allowed: false,
-            status: "needs_review",
-          }),
-        ]),
-      );
-      expect(events.map((event) => event.eventType)).toContain("agent_team.stream_event");
-      expect(artifacts.map((artifact) => artifact.artifactType)).toEqual(
-        expect.arrayContaining([
-          "agent_team.stream_summary",
-          "agent_team.model_run_accounting_summary",
-          "agent_team.failure_recovery",
-          "agent_team.security_privacy_review",
-          "agent_team.result_review",
-          "agent_team.runtime_evidence",
-        ]),
-      );
-      expect(model.runtimeJobs[0]?.agentTeam).toMatchObject({
-        agentTeamRunId: "live-team-run",
-        validationState: "passed",
-        reviewState: "reviewed",
-        closeoutState: "present",
-        securityReviewState: "local_codex_review",
-        failureRecoveryState: "repaired",
-      });
-      expect(model.runtimeJobs[0]?.agentTeam.teamStreamSummary.eventCount).toBeGreaterThan(0);
-      expect(model.runtimeJobs[0]?.agentTeam.modelAccountingSummary.runCount).toBeGreaterThan(0);
-      expect(model.runtimeJobs[0]?.agentTeam.needsReviewRoles).toContain("context_scout");
+    expect(result.status).toBe("needs_review");
+    expect(bodies).toHaveLength(2);
+    expect(bodies[0]).toEqual(bodies[1]);
+    expect(bodies[0]).toMatchObject({
+      model: "qwen/qwen3-coder-next",
+      max_tokens: 1_200,
+      reasoning: { effort: "none", exclude: true },
+    });
+    expect(bodies[0]).not.toHaveProperty("response_format");
+    expect(result.providerResponseDiagnostics).toMatchObject({
+      structuredAdapterOutcome: {
+        status: "escalate_with_structured_reason",
+        escalationModelRefs: ["openai-codex/gpt-5.5"],
+      },
+    });
+  });
+
+  it("blocks oversized structured adapter role calls before OpenRouter fetch", async () => {
+    let fetchCalls = 0;
+    const fetchImpl = (async () => {
+      fetchCalls += 1;
+      throw new Error("fetch should not be called");
+    }) as typeof fetch;
+    const client = new OpenRouterAgentTeamModelClient({
+      apiKey: "test-key",
+      fetchImpl,
+    });
+
+    const result = await client.callRole({
+      roleId: "context_scout",
+      modelId: "qwen/qwen3-coder-next",
+      modelCandidateId: "qwen3-coder-next-preflight",
+      prompt: "x".repeat(80_000),
+      taskClass: "local_semantic_extraction",
+      modelTaskCallSite: "test.packet_author.preflight",
+      maxTokens: 1_200,
+      timeoutMs: 90_000,
+      maxAttempts: 1,
+    });
+
+    expect(fetchCalls).toBe(0);
+    expect(result).toMatchObject({
+      status: "needs_review",
+      retryEvidence: null,
+      errorReasonCode: "structured_adapter_preflight_blocked",
+      providerResponseDiagnostics: {
+        structuredAdapterPreflight: {
+          accepted: false,
+          reasonCodes: expect.arrayContaining(["structured_adapter_input_exceeds_policy_bound"]),
+          rawPromptStored: false,
+        },
+      },
     });
   });
 

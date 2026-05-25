@@ -6,6 +6,7 @@ export type ModelAgnosticWorkerPhase =
   | "worker.model_call.failed"
   | "worker.phase_queue.deferred"
   | "worker.phase_queue.replayed"
+  | "worker.phase_queue.routed_subturn"
   | "worker.plan.started"
   | "worker.plan.completed"
   | "worker.explore.started"

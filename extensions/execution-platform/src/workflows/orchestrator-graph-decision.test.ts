@@ -209,6 +209,264 @@ describe("orchestrator graph decision contract", () => {
     expect(compiled.reasonCodes).toContain("escalate_worker_intent_compiled");
   });
 
+  it("compiles request_context semantic intent into runtime-owned context scout nodes and edges", () => {
+    const compiled = compileOrchestratorGraphDecision(
+      {
+        decisionId: "decision-request-context",
+        decisionKind: "request_context",
+        rationaleForDecision:
+          "The implementation node lacks verified target files; request focused context before retrying.",
+        requestContextIntent: {
+          failedNodeIds: ["implementation-product-spec-runtime"],
+          targetNodeIds: ["implementation-product-spec-runtime"],
+          targetCommitmentIds: ["c-product-spec-runtime"],
+          missingContextQuestions: [
+            "Which files register workflow definitions?",
+            "Which files wire scheduler node executors?",
+          ],
+          contextObjective:
+            "Find concrete repo files and handoff guidance for Product/Spec Planning workflow runtime integration.",
+          downstreamConsumer: "implementation-product-spec-runtime",
+          successCriteria: [
+            "Returns verified existing repo refs.",
+            "Explains edit points for workflow registration and executor wiring.",
+          ],
+          inputRefs: ["runtime-job://job/context-synthesis/synthesis-1"],
+          targetRefs: ["extensions/execution-platform/src/workflows/"],
+          selectedCapabilityId: "context_scout",
+          stopIfMissing: ["Block implementation if no existing workflow registry file is found."],
+          rationale: "Implementation cannot safely run without repo-grounded context.",
+        },
+        reasonCodes: ["context_missing_for_implementation"],
+        rawPromptStored: false,
+        rawResponseStored: false,
+        rawProviderLogStored: false,
+        workQueueLifecycleMutated: false,
+      },
+      { requireNodeCommitmentContracts: true, requireStagedProtocolForNodeCreation: true },
+    );
+
+    expect(compiled.validation.valid).toBe(true);
+    expect(compiled.decision?.requestContextIntent?.missingContextQuestions).toHaveLength(2);
+    expect(compiled.decision?.newNodes).toHaveLength(1);
+    expect(compiled.decision?.newNodes?.[0]).toMatchObject({
+      nodeKind: "context_scout",
+      capabilityId: "context_scout",
+      executorKey: "role:context_scout",
+      commitmentIdsAdvanced: ["c-product-spec-runtime"],
+      downstreamConsumer: "implementation-product-spec-runtime",
+    });
+    expect(compiled.decision?.newEdges?.[0]).toMatchObject({
+      fromNodeId: compiled.decision?.newNodes?.[0]?.nodeId,
+      toNodeId: "implementation-product-spec-runtime",
+      edgeKind: "context_supplies",
+    });
+    expect(compiled.reasonCodes).toContain("request_context_intent_compiled");
+    expect(compiled.acceptedAliasFields).toContain("requestContextIntent");
+    expect(compiled.semanticQualityJudgedByDeterministicCode).toBe(false);
+  });
+
+  it("ignores request_context model-authored runtime envelopes when semantic intent is valid", () => {
+    const compiled = compileOrchestratorGraphDecision(
+      {
+        decisionId: "decision-request-context-envelope",
+        decisionKind: "request_context",
+        rationaleForDecision: "Ask for more context.",
+        requestContextIntent: {
+          failedNodeIds: ["implementation-1"],
+          targetNodeIds: ["implementation-1"],
+          targetCommitmentIds: ["c1"],
+          missingContextQuestions: ["Which target files matter?"],
+          contextObjective: "Find target files.",
+          downstreamConsumer: "implementation-1",
+          successCriteria: ["Verified refs."],
+        },
+        newNodes: [
+          {
+            nodeId: "model-authored-context",
+            nodeKind: "context_scout",
+            assignedRole: "context_scout",
+            expectedOutput: "Context.",
+            acceptanceCriteria: ["Verified refs."],
+            downstreamConsumer: "implementation-1",
+            commitmentIds: ["c1"],
+            roleRationale: "Need context.",
+            objective: "Find files.",
+          },
+        ],
+        reasonCodes: ["bad_envelope"],
+        rawPromptStored: false,
+        rawResponseStored: false,
+        rawProviderLogStored: false,
+        workQueueLifecycleMutated: false,
+      },
+      { requireStagedProtocolForNodeCreation: true },
+    );
+
+    expect(compiled.validation.valid).toBe(true);
+    expect(compiled.reasonCodes).toContain(
+      "request_context_model_authored_runtime_envelope_ignored",
+    );
+    expect(compiled.decision?.newNodes).toHaveLength(1);
+    expect(compiled.decision?.newNodes?.[0]).toMatchObject({
+      capabilityId: "context_scout",
+      commitmentIdsAdvanced: ["c1"],
+      downstreamConsumer: "implementation-1",
+    });
+    expect(compiled.repairRequest.missingFields.some((field) => field.path === "decisionId")).toBe(
+      false,
+    );
+  });
+
+  it("compiles request_context rationale into bounded questions when model omits question array", () => {
+    const compiled = compileOrchestratorGraphDecision(
+      {
+        decisionId: "decision-request-context-rationale",
+        decisionKind: "request_context",
+        rationaleForDecision:
+          "The Product/Spec runtime wiring implementation is blocked because the prior context scout failed at artifact persistence. Request a narrower context handoff that identifies workflow registry files, plugin wiring, and focused validation commands.",
+        targetNodeId: "implementation-product-spec-runtime",
+        targetCommitmentIds: ["c-product-spec-runtime"],
+        downstreamConsumer: "implementation-product-spec-runtime",
+        reasonCodes: ["context_artifact_persistence_failed"],
+        rawPromptStored: false,
+        rawResponseStored: false,
+        rawProviderLogStored: false,
+        workQueueLifecycleMutated: false,
+      },
+      { requireStagedProtocolForNodeCreation: true, requireNodeCommitmentContracts: true },
+    );
+
+    expect(compiled.validation.valid).toBe(true);
+    expect(compiled.reasonCodes).toContain("request_context_intent_compiled");
+    expect(compiled.decision?.newNodes?.[0]).toMatchObject({
+      nodeKind: "context_scout",
+      capabilityId: "context_scout",
+      commitmentIdsAdvanced: ["c-product-spec-runtime"],
+      downstreamConsumer: "implementation-product-spec-runtime",
+    });
+    expect(compiled.decision?.requestContextIntent?.missingContextQuestions[0]).toContain(
+      "prior context scout failed",
+    );
+  });
+
+  it("compiles pre-implementation request_context intent without model-authored target node ids", () => {
+    const compiled = compileOrchestratorGraphDecision(
+      {
+        decisionId: "decision-request-context-before-implementation",
+        decisionKind: "request_context",
+        rationaleForDecision:
+          "Accepted context oriented the proof but implementation-critical Product/Spec registry files remain unknown.",
+        requestContextIntent: {
+          targetCommitmentIds: ["definition-plugin-gates", "product-spec-runtime-flow"],
+          missingContextQuestions: [
+            "Which existing files register workflow definitions and plugins?",
+            "Which files define Product/Spec planning runtime node capabilities?",
+          ],
+          contextObjective:
+            "Find Product/Spec Planning registry, workflow plugin, node capability, and proof command surfaces before implementation nodes are created.",
+          downstreamConsumer: "future_implementation_microtasks",
+          selectedCapabilityId: "context_scout",
+        },
+        reasonCodes: ["implementation_source_refs_unknown"],
+        rawPromptStored: false,
+        rawResponseStored: false,
+        rawProviderLogStored: false,
+        workQueueLifecycleMutated: false,
+      },
+      { requireStagedProtocolForNodeCreation: true, requireNodeCommitmentContracts: true },
+    );
+
+    expect(compiled.validation.valid).toBe(true);
+    expect(compiled.reasonCodes).toContain("request_context_intent_compiled");
+    expect(compiled.decision?.runAfterAdd).toBe(true);
+    expect(compiled.reasonCodes).not.toContain("request_context_target_node_missing");
+    expect(compiled.reasonCodes).not.toContain("decision_new_nodes_missing");
+    expect(compiled.decision?.newNodes).toHaveLength(1);
+    expect(compiled.decision?.newEdges).toHaveLength(0);
+    expect(compiled.decision?.newNodes?.[0]).toMatchObject({
+      nodeKind: "context_scout",
+      capabilityId: "context_scout",
+      commitmentIdsAdvanced: ["definition-plugin-gates", "product-spec-runtime-flow"],
+      downstreamConsumer: "future_implementation_microtasks",
+    });
+    expect(compiled.decision?.newNodes?.[0]?.metadata).toMatchObject({
+      genericSchedulerProtocolCompiled: true,
+      schedulerProtocolCompiler: "request_context_intent",
+      expectedEvidenceSource: "runtime_derived_from_capability_manifest",
+      requestContextRepairMode: "pre_implementation_commitment_context_refinement",
+      whyThisIsNotDuplicateWork: expect.stringContaining("definition-plugin-gates"),
+      costAwareUtilityDecision: {
+        selectedCapabilityId: "context_scout",
+        whyThisIsNotDuplicateWork: expect.stringContaining("definition-plugin-gates"),
+      },
+    });
+  });
+
+  it("accepts contextRequest as an explicit request_context semantic-intent alias", () => {
+    const compiled = compileOrchestratorGraphDecision(
+      {
+        decisionId: "decision-context-request-alias",
+        decisionKind: "request_context",
+        rationaleForDecision:
+          "The current context is missing Product/Spec registry and plugin source refs.",
+        contextRequest: {
+          targetCommitmentIds: ["definition-plugin-gates"],
+          missingContextQuestions: [
+            "Which files register Product/Spec workflow definitions and plugins?",
+          ],
+          contextObjective:
+            "Find Product/Spec workflow definition, plugin, registry, and proof command files.",
+          downstreamConsumer: "future_implementation_microtasks",
+          selectedCapabilityId: "context_scout",
+        },
+        reasonCodes: ["implementation_source_refs_unknown"],
+        rawPromptStored: false,
+        rawResponseStored: false,
+        rawProviderLogStored: false,
+        workQueueLifecycleMutated: false,
+      },
+      { requireStagedProtocolForNodeCreation: true, requireNodeCommitmentContracts: true },
+    );
+
+    expect(compiled.validation.valid).toBe(true);
+    expect(compiled.acceptedAliasFields).toContain("contextRequest");
+    expect(compiled.reasonCodes).toContain("request_context_intent_compiled");
+    expect(compiled.decision?.newNodes?.[0]).toMatchObject({
+      nodeKind: "context_scout",
+      capabilityId: "context_scout",
+      commitmentIdsAdvanced: ["definition-plugin-gates"],
+    });
+  });
+
+  it("rejects request_context intents that select a non-context capability", () => {
+    const compiled = compileOrchestratorGraphDecision({
+      decisionId: "decision-request-context-wrong-capability",
+      decisionKind: "request_context",
+      rationaleForDecision: "Need more context before implementation.",
+      requestContextIntent: {
+        failedNodeIds: ["implementation-1"],
+        targetNodeIds: ["implementation-1"],
+        targetCommitmentIds: ["c1"],
+        missingContextQuestions: ["Which files should be edited?"],
+        contextObjective: "Find target files.",
+        downstreamConsumer: "implementation-1",
+        selectedCapabilityId: "implementation_complex",
+      },
+      reasonCodes: [],
+      rawPromptStored: false,
+      rawResponseStored: false,
+      rawProviderLogStored: false,
+      workQueueLifecycleMutated: false,
+    });
+
+    expect(compiled.validation.valid).toBe(false);
+    expect(compiled.reasonCodes).toContain(
+      "request_context_capability_not_context_invalid:implementation_complex",
+    );
+    expect(compiled.decision?.newNodes).toHaveLength(0);
+  });
+
   it("rejects escalate_worker without a requested capability instead of injecting fallback work", () => {
     const compiled = compileOrchestratorGraphDecision({
       decisionId: "decision-escalate-missing-capability",
@@ -315,7 +573,7 @@ describe("orchestrator graph decision contract", () => {
     ]);
   });
 
-  it("compiles staged scheduler protocol fields into canonical executable graph envelopes", () => {
+  it("compiles staged scheduler protocol fields into canonical WorkIntent contracts", () => {
     const compiled = compileOrchestratorGraphDecision(
       {
         decisionId: "decision-staged",
@@ -327,6 +585,7 @@ describe("orchestrator graph decision contract", () => {
             workUnitId: "context-map",
             title: "Context map",
             objective: "Find the Product/Spec Planning files and contracts.",
+            executionIntent: "context_supply",
             commitmentIds: ["product-spec-planning-workflow"],
             rationale: "Implementation needs repo facts before editing.",
             expectedOutcome: "Bounded context handoff.",
@@ -336,6 +595,7 @@ describe("orchestrator graph decision contract", () => {
             workUnitId: "implementation-edit",
             title: "Implementation edit",
             objective: "Wire the product/spec planning workflow surface.",
+            executionIntent: "source_edit",
             commitmentIds: ["product-spec-planning-workflow"],
             rationale: "Source edits are needed after context handoff.",
             expectedOutcome: "Changed-file refs and validation refs.",
@@ -403,36 +663,30 @@ describe("orchestrator graph decision contract", () => {
     expect(compiled.acceptedAliasFields).toContain("stagedSchedulerProtocol");
     expect(compiled.reasonCodes).toContain("staged_scheduler_graph_compiled");
     expect(compiled.decision?.newNodes?.map((node) => node.nodeKind)).toEqual([
-      "context_scout",
-      "implementation",
+      "work_intent",
+      "work_intent",
     ]);
     expect(compiled.decision?.newNodes?.[1]).toMatchObject({
-      capabilityId: "implementation_microtask",
-      executorKey: "kind:implementation",
-      assignedRole: "implementation_engineer",
+      assignedRole: "work_intent",
       commitmentIdsAdvanced: ["product-spec-planning-workflow"],
       expectedOutput: "Patch refs and validation refs.",
       downstreamConsumer: "test_engineer",
     });
     expect(compiled.decision?.newNodes?.[1]?.metadata).toMatchObject({
+      workIntentCompiled: true,
       stagedSchedulerProtocolCompiled: true,
+      workIntentSelectedCapabilityId: "implementation_microtask",
       selectedCapabilityId: "implementation_microtask",
+      targetCapabilityGraphNodeKind: "implementation",
+      targetCapabilityExecutorKey: "kind:implementation",
+      executionIntent: "source_edit",
       expectedEvidenceSource: "runtime_derived_from_capability_manifest",
-      selectedModelQualificationProfileId: "openrouter.qwen.qwen3-coder-next",
     });
-    expect(compiled.decision?.newNodes?.[1]?.metadata).toEqual(
-      expect.objectContaining({
-        qualificationEvidenceRefs: expect.arrayContaining([
-          "model-profile://qwen/controller-worker-loop",
-          "model-profile://kimi/file-edit-worker-loop",
-        ]),
-      }),
-    );
     expect(compiled.decision?.newEdges).toEqual([
       expect.objectContaining({
         edgeId: expect.stringMatching(/^edge-[a-f0-9]{24}-1$/),
-        fromNodeId: "context_scout-context-map",
-        toNodeId: "implementation-implementation-edit",
+        fromNodeId: "work-intent-context-map",
+        toNodeId: "work-intent-implementation-edit",
         edgeKind: "handoff",
         reasonCodes: ["staged_scheduler_edge_compiled"],
       }),
@@ -441,6 +695,193 @@ describe("orchestrator graph decision contract", () => {
       runtimeCanonicalEdgeId: true,
     });
     expect(compiled.semanticQualityJudgedByDeterministicCode).toBe(false);
+  });
+
+  it("accepts context synthesis as a context-supply intent when the manifest capability supports it", () => {
+    const compiled = compileOrchestratorGraphDecision(
+      {
+        decisionId: "decision-context-synthesis-after-scouts",
+        decisionKind: "add_nodes",
+        rationaleForDecision:
+          "Two accepted context handoffs overlap, so consolidate them before opening implementation nodes.",
+        workBreakdownUnits: [
+          {
+            workUnitId: "context-synthesis-product-spec",
+            title: "Synthesize accepted context handoffs",
+            objective:
+              "Merge the accepted Product/Spec context handoffs into a worker-ready implementation graph handoff.",
+            executionIntent: "context_supply",
+            commitmentIds: ["product-spec-planning-workflow"],
+            rationale: "Implementation groups need one dependency-aware context packet.",
+            expectedOutcome:
+              "Context synthesis handoff with implementation groups and dependencies.",
+            inputRefs: [
+              "runtime-job://job-1/context-handoff/context-a",
+              "runtime-job://job-1/context-handoff/context-b",
+            ],
+          },
+        ],
+        capabilitySelectionsForWorkUnits: [
+          {
+            workUnitId: "context-synthesis-product-spec",
+            selectedCapabilityId: "context_synthesis",
+            consideredCapabilityIds: ["context_synthesis", "context_scout"],
+            utilityRationale:
+              "Synthesis reduces duplicate implementation planning after scout handoffs.",
+            costRationale: "One synthesis node is cheaper than opening duplicate edit nodes.",
+            whyThisIsNotDuplicateWork: "No synthesis result exists yet.",
+            stopOrEscalationCondition:
+              "Return to context scout if handoffs conflict or are insufficient.",
+          },
+        ],
+        nodeContractDrafts: [
+          {
+            workUnitId: "context-synthesis-product-spec",
+            objective: "Synthesize scout handoffs into worker-ready implementation groups.",
+            inputRefs: [
+              "runtime-job://job-1/context-handoff/context-a",
+              "runtime-job://job-1/context-handoff/context-b",
+            ],
+            expectedOutput: "Context synthesis artifact ref and graph compile handoff.",
+            successCriteria: ["Names implementation groups.", "Names dependency order."],
+            downstreamConsumer: "scheduler",
+          },
+        ],
+        edgeOrParallelismDraft: {
+          parallelIndependentNodesJustification:
+            "Single synthesis join node consumes existing context handoff refs.",
+        },
+        reasonCodes: ["context_synthesis_needed_after_context_scouts"],
+      },
+      { requireNodeCommitmentContracts: true },
+    );
+
+    expect(compiled.validation.valid).toBe(true);
+    expect(compiled.reasonCodes).not.toContain(
+      "staged_execution_intent_capability_conflict:context-synthesis-product-spec:execution_intent_requires_context_capability",
+    );
+    expect(compiled.decision?.newNodes?.[0]).toMatchObject({
+      nodeId: "work-intent-context-synthesis-product-spec",
+      nodeKind: "work_intent",
+    });
+    expect(compiled.decision?.newNodes?.[0]?.metadata).toMatchObject({
+      workIntentSelectedCapabilityId: "context_synthesis",
+      targetCapabilityGraphNodeKind: "context_synthesis",
+      executionIntent: "context_supply",
+      evidenceMode: expect.arrayContaining(["context_handoff_evidence"]),
+    });
+  });
+
+  it("rejects staged source-grounding intent with edit-capable implementation capability", () => {
+    const compiled = compileOrchestratorGraphDecision(
+      {
+        decisionId: "decision-staged-read-only-edit-conflict",
+        decisionKind: "add_nodes",
+        rationaleForDecision:
+          "The model must not dispatch read-only source grounding to the file-edit worker.",
+        workBreakdownUnits: [
+          {
+            workUnitId: "source-grounding",
+            title: "Read source specs",
+            objective: "Read workflow specs and source refs before any edits.",
+            executionIntent: "source_grounding",
+            commitmentIds: ["source-specs-read-first"],
+            rationale: "This is read-only evidence collection.",
+            expectedOutcome: "Bounded grounding notes.",
+            targetRefs: ["extensions/execution-platform/src/workflows/"],
+          },
+        ],
+        capabilitySelectionsForWorkUnits: [
+          {
+            workUnitId: "source-grounding",
+            selectedCapabilityId: "implementation_microtask",
+            consideredCapabilityIds: ["context_scout", "implementation_microtask"],
+            utilityRationale: "The selected capability is intentionally wrong for this test.",
+            costRationale: "Read-only work should not consume an edit-capable worker.",
+            whyThisIsNotDuplicateWork: "No grounding exists yet.",
+            stopOrEscalationCondition: "Select a read-only/context/review capability.",
+          },
+        ],
+        nodeContractDrafts: [
+          {
+            workUnitId: "source-grounding",
+            objective: "Inspect source refs and summarize constraints.",
+            expectedOutput: "Grounding notes with source refs.",
+            successCriteria: ["No source edits occur."],
+            downstreamConsumer: "orchestrator",
+          },
+        ],
+        edgeOrParallelismDraft: {
+          parallelIndependentNodesJustification: "Single read-only grounding node in a lane test.",
+        },
+      },
+      { requireNodeCommitmentContracts: true },
+    );
+
+    expect(compiled.validation.valid).toBe(false);
+    expect(compiled.decision?.newNodes).toEqual([]);
+    expect(compiled.reasonCodes).toContain(
+      "staged_work_intent:source-grounding:work_intent_execution_intent_capability_conflict:execution_intent_read_only_conflicts_with_edit_capability",
+    );
+    expect(compiled.rejectedNodeDiagnostics[0]).toMatchObject({
+      errorCode: "work_intent_execution_intent_capability_conflict",
+      workUnitId: "source-grounding",
+      selectedCapabilityId: "implementation_microtask",
+    });
+    expect(compiled.semanticQualityJudgedByDeterministicCode).toBe(false);
+  });
+
+  it("rejects staged implementation units that omit model-authored execution intent", () => {
+    const compiled = compileOrchestratorGraphDecision(
+      {
+        decisionId: "decision-staged-edit-intent-missing",
+        decisionKind: "add_nodes",
+        rationaleForDecision:
+          "Runtime must not derive source_edit intent from the selected implementation capability.",
+        workBreakdownUnits: [
+          {
+            workUnitId: "implementation-edit",
+            objective: "Patch a workflow file.",
+            commitmentIds: ["commitment-a"],
+            expectedOutcome: "Changed source refs and validation refs.",
+          },
+        ],
+        capabilitySelectionsForWorkUnits: [
+          {
+            workUnitId: "implementation-edit",
+            selectedCapabilityId: "implementation_microtask",
+            utilityRationale: "The worker is scoped.",
+            costRationale: "Cheaper than broad Codex.",
+            stopOrEscalationCondition: "Return to scheduler if the scoped edit cannot be bounded.",
+          },
+        ],
+        nodeContractDrafts: [
+          {
+            workUnitId: "implementation-edit",
+            objective: "Patch a workflow file.",
+            expectedOutput: "Patch refs.",
+            downstreamConsumer: "validation",
+          },
+        ],
+        edgeOrParallelismDraft: {
+          parallelIndependentNodesJustification: "Single node lane test.",
+        },
+      },
+      { requireNodeCommitmentContracts: true },
+    );
+
+    expect(compiled.validation.valid).toBe(false);
+    expect(compiled.decision?.newNodes).toEqual([]);
+    expect(compiled.reasonCodes).toContain(
+      "staged_work_intent:implementation-edit:work_intent_required_model_field_missing",
+    );
+    expect(compiled.repairRequest.missingFields).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          path: expect.stringContaining("workIntent[0].executionIntent"),
+        }),
+      ]),
+    );
   });
 
   it("maps work-unit criteria and repo input refs into canonical node contracts", () => {
@@ -454,6 +895,7 @@ describe("orchestrator graph decision contract", () => {
           {
             workUnitId: "implementation-edit",
             objective: "Patch the bounded workflow surface.",
+            executionIntent: "source_edit",
             commitmentIds: ["commitment-a"],
             rationale: "The source edit advances the commitment after context.",
             expectedOutcome: "Patch refs and validation refs.",
@@ -491,10 +933,16 @@ describe("orchestrator graph decision contract", () => {
 
     expect(compiled.validation.valid).toBe(true);
     expect(compiled.decision?.newNodes?.[0]).toMatchObject({
-      nodeId: "implementation-implementation-edit",
+      nodeId: "work-intent-implementation-edit",
+      nodeKind: "work_intent",
       acceptanceCriteria: ["Workflow surface is registered.", "Focused validation passes."],
       inputHandoffRefs: ["runtime-job://job-1/context-handoff/context-node"],
       targetRefs: ["extensions/execution-platform/src/workflows/"],
+    });
+    expect(compiled.decision?.newNodes?.[0]?.metadata).toMatchObject({
+      executionIntent: "source_edit",
+      targetCapabilityGraphNodeKind: "implementation",
+      targetCapabilityExecutorKey: "kind:implementation",
     });
   });
 
@@ -509,6 +957,7 @@ describe("orchestrator graph decision contract", () => {
           {
             workUnitId: "review-context",
             objective: "Review the context handoff for completeness.",
+            executionIntent: "review",
             commitmentIds: ["commitment-a"],
             expectedOutcome:
               "Reviewer records whether the handoff is sufficient for implementation.",
@@ -545,6 +994,135 @@ describe("orchestrator graph decision contract", () => {
     ]);
   });
 
+  it("rejects support-role work units without model-authored execution intents", () => {
+    const compiled = compileOrchestratorGraphDecision(
+      {
+        decisionId: "decision-staged-support-role-chain",
+        decisionKind: "add_nodes",
+        rationaleForDecision:
+          "Runtime should derive support-role intents from the capability manifest and compile work-unit edges to node ids.",
+        workBreakdownUnits: [
+          {
+            workUnitId: "validation",
+            objective: "Run focused validation.",
+            commitmentIds: ["commitment-a"],
+            expectedOutcome: "Validation refs.",
+          },
+          {
+            workUnitId: "review",
+            objective: "Review validation and implementation evidence.",
+            commitmentIds: ["commitment-a"],
+            expectedOutcome: "Review artifact.",
+          },
+          {
+            workUnitId: "readback",
+            objective: "Prepare owner-visible readback.",
+            commitmentIds: ["commitment-a"],
+            expectedOutcome: "Readback ref.",
+          },
+          {
+            workUnitId: "closeout",
+            objective: "Generate model-authored closeout.",
+            commitmentIds: ["commitment-a"],
+            expectedOutcome: "Closeout ref.",
+          },
+        ],
+        capabilitySelectionsForWorkUnits: [
+          {
+            workUnitId: "validation",
+            selectedCapabilityId: "validation_run",
+            utilityRationale: "Validation proves implementation evidence.",
+            costRationale: "Validation is cheaper than self-attestation.",
+            stopOrEscalationCondition: "Return failures to scheduler.",
+          },
+          {
+            workUnitId: "review",
+            selectedCapabilityId: "reviewer",
+            utilityRationale: "Review prevents false success.",
+            costRationale: "Reviewer lane is sufficient.",
+            stopOrEscalationCondition: "Escalate blocking findings.",
+          },
+          {
+            workUnitId: "readback",
+            selectedCapabilityId: "observability_readback",
+            utilityRationale: "Readback makes runtime state visible.",
+            costRationale: "Readback lane is cheap.",
+            stopOrEscalationCondition: "Needs review if refs are missing.",
+          },
+          {
+            workUnitId: "closeout",
+            selectedCapabilityId: "coding_closeout",
+            utilityRationale: "Closeout is mandatory final evidence.",
+            costRationale: "Closeout lane is required.",
+            stopOrEscalationCondition: "Needs review if capsule cannot be produced.",
+          },
+        ],
+        nodeContractDrafts: [
+          {
+            workUnitId: "validation",
+            objective: "Run focused validation.",
+            expectedOutput: "Validation refs.",
+            successCriteria: ["Validation ref is recorded."],
+            downstreamConsumer: "reviewer",
+          },
+          {
+            workUnitId: "review",
+            objective: "Review validation evidence.",
+            expectedOutput: "Review artifact ref.",
+            successCriteria: ["Review cites validation refs."],
+            downstreamConsumer: "observability_scribe",
+          },
+          {
+            workUnitId: "readback",
+            objective: "Write owner-facing readback.",
+            expectedOutput: "Readback ref.",
+            successCriteria: ["Readback cites graph refs."],
+            downstreamConsumer: "closeout",
+          },
+          {
+            workUnitId: "closeout",
+            objective: "Generate closeout.",
+            expectedOutput: "Closeout ref.",
+            successCriteria: ["Closeout cites accepted evidence."],
+            downstreamConsumer: "runtime_job_completion",
+          },
+        ],
+        edgeOrParallelismDraft: {
+          edges: [
+            {
+              fromWorkUnitId: "validation",
+              toWorkUnitId: "review",
+              edgeKind: "depends_on",
+            },
+            {
+              fromWorkUnitId: "review",
+              toWorkUnitId: "readback",
+              edgeKind: "handoff",
+            },
+            {
+              fromWorkUnitId: "readback",
+              toWorkUnitId: "closeout",
+              edgeKind: "handoff",
+            },
+          ],
+        },
+      },
+      { requireNodeCommitmentContracts: true, requireStagedProtocolForNodeCreation: true },
+    );
+
+    expect(compiled.validation.valid).toBe(false);
+    expect(compiled.decision?.newNodes).toEqual([]);
+    expect(compiled.reasonCodes).toEqual(
+      expect.arrayContaining([
+        "staged_work_intent:validation:work_intent_required_model_field_missing",
+        "staged_work_intent:review:work_intent_required_model_field_missing",
+        "staged_work_intent:readback:work_intent_required_model_field_missing",
+        "staged_work_intent:closeout:work_intent_required_model_field_missing",
+      ]),
+    );
+    expect(compiled.semanticQualityJudgedByDeterministicCode).toBe(false);
+  });
+
   it("accepts nested stagedScheduler intent and rejects model-authored runtime-owned fields", () => {
     const compiled = compileOrchestratorGraphDecision(
       {
@@ -557,6 +1135,7 @@ describe("orchestrator graph decision contract", () => {
             {
               workUnitId: "context-map",
               objective: "Find target files for the workflow edit.",
+              executionIntent: "context_supply",
               commitmentIds: ["workflow-registration"],
               rationale: "Implementation needs grounded repo context.",
               expectedOutcome: "Context refs.",
@@ -565,6 +1144,7 @@ describe("orchestrator graph decision contract", () => {
             {
               workUnitId: "implementation-edit",
               objective: "Make the bounded source edit after context.",
+              executionIntent: "source_edit",
               commitmentIds: ["workflow-registration"],
               rationale: "The owner requested implementation.",
               expectedOutcome: "Patch refs.",
@@ -626,9 +1206,13 @@ describe("orchestrator graph decision contract", () => {
     expect(compiled.reasonCodes).toContain(
       "staged_scheduler_runtime_owned_field_rejected:stagedScheduler.workBreakdownUnits[0].nodeKind",
     );
+    expect(compiled.decision?.newNodes).toHaveLength(2);
     expect(compiled.decision?.newNodes?.[0]).toMatchObject({
-      nodeKind: "context_scout",
-      executorKey: "role:context_scout",
+      nodeKind: "work_intent",
+    });
+    expect(compiled.decision?.newNodes?.[0]?.metadata).toMatchObject({
+      workIntentSelectedCapabilityId: "context_scout",
+      targetCapabilityExecutorKey: "role:context_scout",
     });
   });
 
@@ -643,11 +1227,13 @@ describe("orchestrator graph decision contract", () => {
           {
             workUnitId: "context-map",
             objective: "Find target files.",
+            executionIntent: "context_supply",
             commitmentIds: ["commitment-a"],
           },
           {
             workUnitId: "implementation-edit",
             objective: "Apply scoped edit.",
+            executionIntent: "source_edit",
             commitmentIds: ["commitment-a"],
           },
         ],
@@ -700,8 +1286,8 @@ describe("orchestrator graph decision contract", () => {
     expect(compiled.validation.valid).toBe(true);
     expect(compiled.decision?.newEdges?.[0]).toMatchObject({
       edgeId: expect.stringMatching(/^edge-[a-f0-9]{24}-1$/),
-      fromNodeId: "context_scout-context-map",
-      toNodeId: "implementation-implementation-edit",
+      fromNodeId: "work-intent-context-map",
+      toNodeId: "work-intent-implementation-edit",
     });
     expect(compiled.decision?.newEdges?.[0]?.edgeId).not.toBe("start-to-node-1");
     expect(compiled.decision?.newEdges?.[0]?.metadata).toMatchObject({

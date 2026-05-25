@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { summarizeParallelContextScoutResults } from "./parallel-context-scout-boundary-replay.ts";
 
@@ -101,5 +103,16 @@ describe("parallel context scout boundary replay", () => {
       rawToolLogStored: false,
     });
     expect(summary.reasonCodes).toContain("parallel_context_scout_boundary_replay_needs_review");
+  });
+
+  it("does not create a global context synthesis barrier as default replay glue", () => {
+    const source = readFileSync(
+      fileURLToPath(new URL("./parallel-context-scout-boundary-replay.ts", import.meta.url)),
+      "utf8",
+    );
+
+    expect(source).not.toContain('nodeKind: "context_synthesis"');
+    expect(source).not.toContain("runtimeOwnedContextSynthesisBarrier");
+    expect(source).not.toContain("context_synthesis_global_barrier");
   });
 });

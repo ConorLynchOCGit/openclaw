@@ -12,13 +12,9 @@ import {
   type AgentTeamRuntimeEvidence,
 } from "../codex-bridge/agent-team-runtime-evidence.ts";
 import { latestAgentTeamStreamSummary } from "../codex-bridge/agent-team-stream-evidence.ts";
-import { GENERIC_WORKFLOW_RUNNER_RETIREMENT_ARTIFACT_TYPE } from "../codex-bridge/workflow-queued-runner.ts";
 import { latestModelRunAccountingSummary } from "../model-routing/model-run-accounting.ts";
 import type { ProviderReliabilitySummary } from "../model-routing/provider-reliability-summary.ts";
-import {
-  runtimeExecutionSpanReadback,
-  type RuntimeExecutionSpanReadback,
-} from "../observability/runtime-execution-span.ts";
+import type { RuntimeExecutionSpanReadback } from "../observability/runtime-execution-span.ts";
 import type {
   JsonValue,
   RuntimeJob,
@@ -28,6 +24,7 @@ import type {
 } from "../runtime-job-repository.ts";
 import { ARCHITECTURE_RED_TEAM_GATE_ARTIFACT_TYPE } from "../workflows/architecture-red-team-gate.ts";
 import { GENERIC_ORCHESTRATION_RUNTIME_RESULT_ARTIFACT_TYPE } from "../workflows/generic-orchestration-runtime.ts";
+import { GENERIC_WORKFLOW_RUNNER_RETIREMENT_ARTIFACT_TYPE } from "../workflows/generic-workflow-runner-retirement-contract.ts";
 import { MISSION_CONTRACT_LEDGER_ARTIFACT_TYPE } from "../workflows/mission-contract-ledger.ts";
 import {
   latestWebResearchRuntimeEvidence,
@@ -45,6 +42,8 @@ import {
   validateProductSpecPlanningActionGraphProposal,
   validateProductSpecPlanningWorkerContract,
 } from "./product-spec-planning-worker-contract.ts";
+import { activeGraphProgressReadback } from "./projections/active-graph-progress.ts";
+import { runtimeArtifactPayloadManifestSummary } from "./projections/runtime-artifact-manifest.ts";
 import type { WorkItemTruth, WorkRun } from "./types.ts";
 import type { WorkQueueRepository } from "./work-queue-repository.ts";
 
@@ -370,6 +369,12 @@ export type WorkQueueExecutionReadModel = {
           handoffPacketRefs: string[];
           toolLoopRefs: string[];
           runtimeToolInvocationRefs: string[];
+          executionPacketRefs: string[];
+          executionPacketInputBytes: number | null;
+          executionPacketMaxInputBytes: number | null;
+          providerTimeoutMs: number | null;
+          packetCompileStatus: string | null;
+          packetCompileReasonCodes: string[];
           rejectedRefs: string[];
           sufficiencySummary: string | null;
           synthesisReadiness: string | null;
@@ -398,6 +403,56 @@ export type WorkQueueExecutionReadModel = {
           reviewLanes: string[];
           semanticCodeIntelligenceRefs: string[];
           contextSnapshotRefs: string[];
+          nextDecision: string | null;
+          eli5: string | null;
+          rawPromptStored: false;
+          rawResponseStored: false;
+          rawProviderLogStored: false;
+          rawToolLogStored: false;
+        };
+        resourceMaterialization: {
+          state: "missing" | "blocked" | "ready_with_limitations" | "ready";
+          materializationStatus: string | null;
+          materializationPacketRef: string | null;
+          materializationBlockingReasonCodes: string[];
+          materializationNonblockingReasonCodes: string[];
+          materializationSchemaDiagnostics: JsonValue | null;
+          materializationInputCounts: JsonValue | null;
+          materializationOutputCounts: JsonValue | null;
+          materializationMaxBounds: JsonValue | null;
+          materializationSuggestedSplitIds: string[];
+          materializationSuggestedSplitCount: number | null;
+          implementationContextPacketRef: string | null;
+          implementationContextReadinessStatus: string | null;
+          implementationTaskPacketRefs: string[];
+          resolvedTargetFileRefs: string[];
+          readableTargetFileRefs: string[];
+          missingTargetRefs: string[];
+          unreadableTargetRefs: string[];
+          directoryOnlyTargetRefs: string[];
+          candidateConcreteFileRefs: string[];
+          targetFileSnapshotRefs: string[];
+          targetFileSnapshotHashes: string[];
+          implementationContextRepairAction: string | null;
+          nodeExecutionPacketRef: string | null;
+          nodeExecutionPacketStatus: string | null;
+          resourcePacketKind: string | null;
+          resourcePacketRef: string | null;
+          nodeReadinessState: JsonValue | null;
+          nodeReadinessStateRef: string | null;
+          nodeReadinessPhase: string | null;
+          nodeReadinessStatus: string | null;
+          nodeReadinessRepairAction: string | null;
+          nodeReadinessNextAllowedTransitions: string[];
+          nodeReadinessFreshnessStatus: string | null;
+          nodeReadinessSnapshotStatus: string | null;
+          nodeReadinessContextStatus: string | null;
+          nodeReadinessValidationStatus: string | null;
+          nodeReadinessAuthorityStatus: string | null;
+          nodeReadinessEvidenceStatus: string | null;
+          readinessReasonCodes: string[];
+          blockingLimitations: string[];
+          nonblockingLimitations: string[];
           nextDecision: string | null;
           eli5: string | null;
           rawPromptStored: false;
@@ -450,6 +505,27 @@ export type WorkQueueExecutionReadModel = {
           requiredContextQuestions: string[];
           downstreamConsumer: string | null;
         }>;
+        commitmentPacketFanout: {
+          state: "present" | "missing";
+          totalCount: number | null;
+          completedCount: number | null;
+          failedCount: number | null;
+          runningCount: number | null;
+          retryCount: number | null;
+          fallbackCount: number | null;
+          longLatencyCount: number | null;
+          noContentCount: number | null;
+          runningCommitmentIds: string[];
+          affectedCommitmentIds: string[];
+          topBlockerSummaries: string[];
+          diagnosticArtifactRef: string | null;
+          diagnosticArtifactHash: string | null;
+          diagnosticHydrationToolId: string | null;
+          rawPromptStored: false;
+          rawResponseStored: false;
+          rawProviderLogStored: false;
+          rawToolLogStored: false;
+        };
         costAwareDecision: {
           selectedCapabilityId: string | null;
           selectedProviderCapabilityProfileId: string | null;
@@ -473,6 +549,56 @@ export type WorkQueueExecutionReadModel = {
           latestToolId: string | null;
           invocationRefs: string[];
         };
+        contextBroker: {
+          state: "present" | "missing";
+          requestRefs: string[];
+          statuses: string[];
+          dedupeKeys: string[];
+          consumerNodeIds: string[];
+          scoutRequiredCount: number;
+          inheritedSatisfiedCount: number;
+          blockedCount: number;
+          reasonCodes: string[];
+          nextTransition: string | null;
+          rawPromptStored: false;
+          rawResponseStored: false;
+          rawProviderLogStored: false;
+          rawToolLogStored: false;
+        };
+        expansionAdmission: {
+          state: "present" | "missing";
+          decisionRef: string | null;
+          policyRef: string | null;
+          status: string | null;
+          originalNodeCount: number | null;
+          originalEdgeCount: number | null;
+          admittedNodeCount: number | null;
+          admittedEdgeCount: number | null;
+          deferredNodeCount: number | null;
+          deferredEdgeCount: number | null;
+          readyFrontierNodeIds: string[];
+          admittedNodeIds: string[];
+          deferredNodeIds: string[];
+          nextTransition: string | null;
+          prerequisiteCritical: boolean | null;
+          reasonCodes: string[];
+          rawPromptStored: false;
+          rawResponseStored: false;
+          rawProviderLogStored: false;
+          rawToolLogStored: false;
+        };
+        graphPatch: {
+          state: "present" | "missing";
+          ref: string | null;
+          payloadRef: string | null;
+          kind: string | null;
+          byteCount: number | null;
+          nodeCount: number | null;
+          edgeCount: number | null;
+          affectedNodeIds: string[];
+          affectedBranchIds: string[];
+          reasonCodes: string[];
+        };
         parallelFrontier: {
           state: "present" | "missing";
           currentSuperstep: number | null;
@@ -495,9 +621,111 @@ export type WorkQueueExecutionReadModel = {
             selectedNodeIds: string[];
             skippedNodeIds: string[];
           }>;
+          branchResults: Array<{
+            superstepId: string | null;
+            branchId: string | null;
+            nodeId: string;
+            nodeKind: string | null;
+            capabilityId: string | null;
+            targetCommitmentIds: string[];
+            status: string | null;
+            failureClass: string | null;
+            errorPath: string | null;
+            blockerSummary: string | null;
+            repairAction: string | null;
+            nextTransition: string | null;
+            evidenceRefs: string[];
+            readinessStateRef: string | null;
+            reasonCodes: string[];
+          }>;
           joinReadyNodeIds: string[];
           contextSynthesisRefs: string[];
           implementationGroupCount: number | null;
+        };
+        schedulerFrontier: {
+          state: "present" | "missing";
+          currentSuperstep: number | null;
+          executableReadyNodeIds: string[];
+          selectedExecutableNodeIds: string[];
+          blockedFrontierNodeIds: string[];
+          aggregateBlockedNodeIds: string[];
+          dependencyBlockedNodeIds: string[];
+          contextBlockedNodeIds: string[];
+          resourceBlockedNodeIds: string[];
+          lockConflictNodeIds: string[];
+          providerBudgetBlockedNodeIds: string[];
+          readinessRefs: string[];
+          resourceRefs: string[];
+          contextRefs: string[];
+          openCommitmentIds: string[];
+          nextLegalTransition: string | null;
+          reasonCodes: string[];
+        };
+        latestRunState: {
+          state: "present" | "missing";
+          artifactRef: string | null;
+          generatedAt: string | null;
+          processStatus: string | null;
+          terminalStatus: string | null;
+          adapterTerminalStatus: string | null;
+          retryState: string | null;
+          currentPhase: string | null;
+          graphId: string | null;
+          activeFrontierStatus: string | null;
+          selectedNodeIds: string[];
+          runningNodeIds: string[];
+          blockedNodeIds: string[];
+          branchStates: Array<{
+            branchId: string | null;
+            nodeId: string;
+            status: string | null;
+            blockerSummary: string | null;
+            errorPath: string | null;
+            readinessStateRef: string | null;
+            reasonCodes: string[];
+          }>;
+          nextTransition: string | null;
+          schedulerNextLegalTransition: string | null;
+          noProgressRepeatCount: number | null;
+          terminalBlockerCode: string | null;
+          missionLedgerThrottleShouldEvaluate: boolean | null;
+          agreement: {
+            state: "present" | "missing";
+            graphIdMatches: boolean | null;
+            selectedNodeIdsMatch: boolean | null;
+            blockedNodeIdsMatch: boolean | null;
+            nextTransitionMatches: boolean | null;
+            reasonCodes: string[];
+          };
+          rawPromptStored: false;
+          rawResponseStored: false;
+          rawProviderLogStored: false;
+          rawToolLogStored: false;
+          rawDbRowsStored: false;
+          secretsStored: false;
+        };
+        noProgress: {
+          state: "present" | "missing";
+          signatureHash: string | null;
+          repeatCount: number | null;
+          selectedDecisionId: string | null;
+          selectedDecisionKind: string | null;
+          terminalBlockerCode: string | null;
+          executableFrontierNodeIds: string[];
+          blockedFrontierNodeIds: string[];
+          openCommitmentIds: string[];
+          reusedNodeIds: string[];
+          reusedEdgeIds: string[];
+          reasonCodes: string[];
+        };
+        missionLedgerEvaluationThrottle: {
+          state: "present" | "missing";
+          nodeId: string | null;
+          nodeKind: string | null;
+          eventClass: string | null;
+          shouldEvaluate: boolean | null;
+          evidenceClaimCount: number | null;
+          reasonCodes: string[];
         };
         modelCallProgress: {
           state: "present" | "missing";
@@ -505,6 +733,10 @@ export type WorkQueueExecutionReadModel = {
           phase: string | null;
           modelRef: string | null;
           providerPath: string | null;
+          modelTaskClass: string | null;
+          modelTaskPolicyRef: string | null;
+          reasoningMode: string | null;
+          parserMode: string | null;
           roleId: string | null;
           nodeId: string | null;
           objective: string | null;
@@ -515,6 +747,11 @@ export type WorkQueueExecutionReadModel = {
           heartbeatCount: number | null;
           responseShapeSummary: JsonValue | null;
           providerDiagnostics: JsonValue | null;
+          structuredAdapterProfile: JsonValue | null;
+          structuredAdapterDiagnostics: JsonValue | null;
+          structuredAdapterOutcome: JsonValue | null;
+          modelTaskClassification: JsonValue | null;
+          modelTaskTelemetry: JsonValue | null;
           providerUsage: JsonValue | null;
           usageUnavailableReason: string | null;
           reasonCodes: string[];
@@ -664,6 +901,8 @@ export type WorkQueueExecutionReadModel = {
         boundaryReplay: {
           state: "present" | "missing";
           latestCheckpointKind: string | null;
+          currentReplayBoundary: string | null;
+          nextReplayBoundary: string | null;
           checkpointRefs: string[];
           graphCheckpointRefs: string[];
           planRefs: string[];
@@ -673,7 +912,14 @@ export type WorkQueueExecutionReadModel = {
           replayContinuationMode: string | null;
           exactContinuationAction: string | null;
           exactContinuationMode: string | null;
+          registryVersion: string | null;
+          diagnosticOnly: boolean | null;
+          allowedNextTransitions: string[];
+          terminalBlockerClasses: string[];
+          readbackProjectionFields: string[];
           latestAcceptedCheckpointRef: string | null;
+          latestAcceptedCheckpointKind: string | null;
+          missingCheckpointKinds: string[];
           skippedUpstreamCheckpointKinds: string[];
           resumeFromArtifactRefs: string[];
           invalidReasonCodes: string[];
@@ -870,6 +1116,19 @@ export type WorkQueueExecutionReadModel = {
     needsReviewStatus: "needs_review" | "reviewed" | "not_required" | "unknown";
     humanCloseoutSummary: JsonValue | null;
     closeoutCapsule: JsonValue | null;
+    artifactPayloads: {
+      artifactKind: "work_queue_runtime_artifact_payload_manifest_summary";
+      manifestCount: number;
+      payloadRefs: string[];
+      artifactRefs: string[];
+      artifactTypes: string[];
+      totalPayloadBytes: number;
+      hydrationToolId: "artifact.payload.get_json";
+      rawPromptStored: false;
+      rawResponseStored: false;
+      rawProviderLogStored: false;
+      rawToolLogStored: false;
+    };
     artifactRefs: string[];
   }>;
   runtimeGraph: WorkQueueRuntimeGraphReadback | null;
@@ -1879,7 +2138,11 @@ function workflowProjection(
     artifacts,
     GENERIC_ORCHESTRATION_RUNTIME_RESULT_ARTIFACT_TYPE,
   );
-  const genericOrchestrationRuntimeRecord = asRecord(genericOrchestrationRuntime?.metadata);
+  const genericOrchestrationRuntimeMetadata = asRecord(genericOrchestrationRuntime?.metadata) ?? {};
+  const genericOrchestrationRuntimeRecord =
+    genericOrchestrationRuntimeMetadata.artifactKind === "runtime_job_artifact_payload_manifest"
+      ? (asRecord(genericOrchestrationRuntimeMetadata.extension) ?? {})
+      : genericOrchestrationRuntimeMetadata;
   const completionReview = latestArtifact(artifacts, WORKFLOW_COMPLETION_REVIEW_ARTIFACT_TYPE);
   const completionReviewRecord = asRecord(completionReview?.metadata);
   const completionReviewGate = latestArtifact(
@@ -3384,7 +3647,10 @@ function ownerProgressReadback(input: {
             ? "Attach changed-file evidence or mark the implementation task needs_review."
             : "Review the diagnostic reason codes and bounded runtime evidence.";
   const appServerProgress = appServerProgressReadback(input.events);
-  const activeGraphProgress = activeGraphProgressReadback(input.events);
+  const activeGraphProgress = activeGraphProgressReadback(
+    input.events,
+    input.artifacts,
+  ) as WorkQueueExecutionRuntimeJobReadModel["ownerProgressReadback"]["activeGraphProgress"];
   return {
     artifactKind: "work_queue_owner_progress_readback",
     state,
@@ -3502,919 +3768,6 @@ function appServerProgressReadback(
     commandRefs: collect("commandRefs", 20),
     abortOrInterruptState: abortOrInterrupt ? "requested" : null,
     latestEventAt: latest?.eventTime.toISOString() ?? null,
-    rawPromptStored: false,
-    rawResponseStored: false,
-    rawProviderLogStored: false,
-    rawToolLogStored: false,
-  };
-}
-
-function activeGraphProgressReadback(
-  events: RuntimeJobEvent[],
-): WorkQueueExecutionRuntimeJobReadModel["ownerProgressReadback"]["activeGraphProgress"] {
-  const progressEvents = events.filter(
-    (event) => event.eventType === "agent_team.scheduler_progress",
-  );
-  const terminal = progressEvents.findLast((event) => {
-    const eventData = eventDataRecord(event);
-    return Boolean(
-      stringValue(eventData.finalizationState) ??
-      (stringValue(eventData.currentPhase) === "scheduler_terminal" ? "scheduler_terminal" : null),
-    );
-  });
-  const latest = terminal ?? progressEvents.at(-1);
-  const data = eventDataRecord(latest);
-  const latestNodeProgress = progressEvents.findLast((event) => {
-    const record = eventDataRecord(event);
-    return Boolean(
-      stringValue(record.nodeId) &&
-      (stringValue(record.currentObjective) ||
-        stringValue(record.whyThisNodeWasChosen) ||
-        stringValue(record.activeNodeKind) ||
-        stringValue(record.modelRef) ||
-        stringArrayValue(record.targetRefs, 1).length > 0),
-    );
-  });
-  const nodeData = eventDataRecord(latestNodeProgress);
-  const collect = (key: string, maxItems: number): string[] =>
-    [
-      ...new Set(
-        progressEvents.flatMap((event) => {
-          const value = eventDataRecord(event)[key];
-          return [
-            ...(typeof value === "string" && value ? [value] : []),
-            ...stringArrayValue(value, maxItems),
-          ];
-        }),
-      ),
-    ].slice(0, maxItems);
-  const latestStringArray = (key: string, maxItems: number): string[] =>
-    stringArrayValue(data[key], maxItems);
-  const collectedString = (key: string): string | null => {
-    for (let index = progressEvents.length - 1; index >= 0; index -= 1) {
-      const value = stringValue(eventDataRecord(progressEvents[index]!)[key]);
-      if (value) {
-        return value;
-      }
-    }
-    return null;
-  };
-  const collectedNumber = (key: string): number | null => {
-    for (let index = progressEvents.length - 1; index >= 0; index -= 1) {
-      const value = numberValue(eventDataRecord(progressEvents[index]!)[key]);
-      if (value !== null) {
-        return value;
-      }
-    }
-    return null;
-  };
-  const collectedBoolean = (key: string): boolean | null => {
-    for (let index = progressEvents.length - 1; index >= 0; index -= 1) {
-      const value = booleanValue(eventDataRecord(progressEvents[index]!)[key]);
-      if (value !== null) {
-        return value;
-      }
-    }
-    return null;
-  };
-  const latestEvidenceClaims = Array.isArray(data.evidenceClaims)
-    ? data.evidenceClaims
-        .map((claim) => asRecord(claim))
-        .filter((claim): claim is Record<string, unknown> => Boolean(claim))
-        .map((claim) => ({
-          evidenceClaimId: stringValue(claim.evidenceClaimId) ?? "",
-          commitmentId: stringValue(claim.commitmentId) ?? "",
-          evidenceKind: stringValue(claim.evidenceKind) ?? "unknown",
-          evidenceRef: stringValue(claim.evidenceRef) ?? "",
-          claimSummary: stringValue(claim.claimSummary) ?? "",
-          producedByNodeId: stringValue(claim.producedByNodeId) ?? "",
-          producedByCapabilityId: stringValue(claim.producedByCapabilityId),
-          producedByExecutorKey: stringValue(claim.producedByExecutorKey),
-          validationRefs: stringArrayValue(claim.validationRefs, 8),
-          changedFileRefs: stringArrayValue(claim.changedFileRefs, 8),
-          limitations: stringArrayValue(claim.limitations, 8),
-        }))
-        .filter((claim) => claim.evidenceClaimId.length > 0 && claim.evidenceRef.length > 0)
-        .slice(0, 20)
-    : [];
-  const reasonCodes = collect("reasonCodes", 60);
-  const workerToolIds = [
-    ...new Set(
-      [
-        ...collect("workerToolIds", 40),
-        ...collect("toolIds", 40),
-        ...reasonCodes
-          .map((code) => code.match(/^scheduler_tool_invoked:(worker\.[a-z0-9_.:-]+)$/u)?.[1])
-          .filter((toolId): toolId is string => Boolean(toolId)),
-      ].filter((toolId) => toolId.startsWith("worker.")),
-    ),
-  ].slice(0, 20);
-  const latestWorkerToolId =
-    typeof data.schedulerToolId === "string" && data.schedulerToolId.startsWith("worker.")
-      ? data.schedulerToolId
-      : (workerToolIds.at(-1) ?? null);
-  const latestCommitmentPacketData = eventDataRecord(
-    progressEvents.findLast((event) => {
-      const record = eventDataRecord(event);
-      return (
-        stringValue(record.schedulerToolId) === "scheduler.draft_commitment_work_breakdown" &&
-        Array.isArray(record.commitmentWorkPackets)
-      );
-    }),
-  );
-  const commitmentWorkPackets = Array.isArray(latestCommitmentPacketData.commitmentWorkPackets)
-    ? latestCommitmentPacketData.commitmentWorkPackets
-        .map((packet) => asRecord(packet))
-        .filter((packet): packet is Record<string, unknown> => Boolean(packet))
-        .map((packet) => ({
-          packetRef: stringValue(packet.packetRef) ?? "",
-          commitmentId: stringValue(packet.commitmentId) ?? "unknown",
-          authoringSource: stringValue(packet.authoringSource) ?? "unknown",
-          qualityStatus: stringValue(packet.qualityStatus) ?? "unknown",
-          workerObjective: stringValue(packet.workerObjective),
-          contextScoutObjective: stringValue(packet.contextScoutObjective),
-          implementationObjective: stringValue(packet.implementationObjective),
-          acceptanceCriteriaCount: numberValue(packet.acceptanceCriteriaCount),
-          acceptanceCriteria: stringArrayValue(packet.acceptanceCriteria, 6),
-          expectedEvidenceKinds: stringArrayValue(packet.expectedEvidenceKinds, 8),
-          likelyRepoAreas: stringArrayValue(packet.likelyRepoAreas, 8),
-          requiredContextQuestions: stringArrayValue(packet.requiredContextQuestions, 6),
-          downstreamConsumer: stringValue(packet.downstreamConsumer),
-        }))
-        .filter((packet) => packet.packetRef.length > 0)
-        .slice(0, 30)
-    : [];
-  const latestValidationQaData = eventDataRecord(
-    progressEvents.findLast((event) => {
-      const record = eventDataRecord(event);
-      return (
-        stringArrayValue(record.validationQaToolInvocationRefs, 1).length > 0 ||
-        stringArrayValue(record.validationQaEvidencePacketRefs, 1).length > 0 ||
-        stringValue(record.currentValidationCommandRef) ||
-        stringArrayValue(record.validationCommandSummaries, 1).length > 0
-      );
-    }),
-  );
-  const latestValidationQaState = stringValue(latestValidationQaData.validationState);
-  const validationQaToolInvocationRefs = collect("validationQaToolInvocationRefs", 30);
-  const validationQaEvidencePacketRefs = collect("validationQaEvidencePacketRefs", 20);
-  const latestCloseoutFinalizationData = eventDataRecord(
-    progressEvents.findLast((event) => {
-      const record = eventDataRecord(event);
-      return (
-        stringValue(record.closeoutFinalizationState) ||
-        stringArrayValue(record.closeoutFinalizationEvidencePacketRefs, 1).length > 0 ||
-        stringArrayValue(record.closeoutFinalizationToolInvocationRefs, 1).length > 0
-      );
-    }),
-  );
-  const closeoutFinalizationEvidencePacketRefs = collect(
-    "closeoutFinalizationEvidencePacketRefs",
-    20,
-  );
-  const closeoutFinalizationToolInvocationRefs = collect(
-    "closeoutFinalizationToolInvocationRefs",
-    30,
-  );
-  const closeoutFinalizationState =
-    stringValue(latestCloseoutFinalizationData.closeoutFinalizationState) ??
-    stringValue(data.closeoutFinalizationState);
-  const boundaryCheckpointProgressEvents = progressEvents.filter((event) => {
-    const record = eventDataRecord(event);
-    return (
-      stringValue(record.stage) === "boundary_replay_checkpoint" ||
-      (stringValue(record.currentPhase) ?? "").startsWith("boundary_replay_")
-    );
-  });
-  const boundaryCheckpointEvents = events.filter(
-    (event) => event.eventType === "execution.boundary_replay_checkpoint",
-  );
-  const boundaryPlanEvents = events.filter(
-    (event) => event.eventType === "execution.boundary_replay_plan",
-  );
-  const latestBoundaryData = eventDataRecord(
-    boundaryCheckpointEvents.at(-1) ?? boundaryCheckpointProgressEvents.at(-1),
-  );
-  const latestBoundaryProgressData = eventDataRecord(boundaryCheckpointProgressEvents.at(-1));
-  const latestBoundaryPlanData = eventDataRecord(boundaryPlanEvents.at(-1));
-  const boundaryReplayCheckpointRefs = [
-    ...new Set(
-      [
-        ...boundaryCheckpointProgressEvents.flatMap((event) =>
-          stringArrayValue(eventDataRecord(event).artifactRefs, 20),
-        ),
-        ...boundaryCheckpointEvents
-          .map((event) => stringValue(eventDataRecord(event).checkpointRef))
-          .filter((ref): ref is string => Boolean(ref)),
-      ].filter((ref) => ref.includes("/boundary-replay/")),
-    ),
-  ].slice(0, 40);
-  const boundaryReplayGraphCheckpointRefs = [
-    ...new Set(
-      [
-        ...boundaryCheckpointProgressEvents.flatMap((event) =>
-          stringArrayValue(eventDataRecord(event).artifactRefs, 20),
-        ),
-        ...boundaryCheckpointEvents
-          .map((event) => stringValue(eventDataRecord(event).graphCheckpointRef))
-          .filter((ref): ref is string => Boolean(ref)),
-      ].filter((ref) => ref.startsWith("runtime-work-graph://checkpoint/")),
-    ),
-  ].slice(0, 40);
-  const boundaryReplayPlanRefs = [
-    ...new Set(
-      boundaryPlanEvents
-        .map((event) => stringValue(eventDataRecord(event).planRef))
-        .filter((ref): ref is string => Boolean(ref)),
-    ),
-  ].slice(0, 20);
-  const latestBoundaryCheckpointKind =
-    stringValue(latestBoundaryData.checkpointKind) ??
-    (stringValue(latestBoundaryProgressData.currentPhase)?.startsWith("boundary_replay_")
-      ? (stringValue(latestBoundaryProgressData.currentPhase)?.replace(/^boundary_replay_/u, "") ??
-        null)
-      : null);
-  const latestModelCallData = eventDataRecord(
-    progressEvents.findLast((event) => {
-      const record = eventDataRecord(event);
-      return Boolean(stringValue(record.modelCallSpanId));
-    }),
-  );
-  const latestWorkerInternalData = eventDataRecord(
-    progressEvents.findLast((event) => {
-      const record = eventDataRecord(event);
-      const phase = stringValue(record.currentPhase) ?? "";
-      return (
-        stringValue(record.stage) === "non_codex_worker_loop" ||
-        phase.startsWith("worker.") ||
-        stringArrayValue(record.workerPhaseRefs, 1).length > 0 ||
-        stringArrayValue(record.workerInternalInputPacketRefs, 1).length > 0 ||
-        stringValue(record.workerInternalToolStatus)
-      );
-    }),
-  );
-  const spanProgress = runtimeExecutionSpanReadback({
-    events,
-    maxRecentSpans: 16,
-  });
-  const latestRepairClassification = asRecord(
-    eventDataRecord(
-      progressEvents.findLast((event) => {
-        const classification = asRecord(eventDataRecord(event).repairClassification);
-        return Boolean(classification);
-      }),
-    ).repairClassification,
-  );
-  const latestParallelFrontierData = asRecord(
-    eventDataRecord(
-      progressEvents.findLast((event) => {
-        const frontier = asRecord(eventDataRecord(event).parallelFrontier);
-        return Boolean(frontier);
-      }),
-    ).parallelFrontier,
-  );
-  const frontierStringArray = (key: string, maxItems: number): string[] =>
-    latestParallelFrontierData ? stringArrayValue(latestParallelFrontierData[key], maxItems) : [];
-  const schedulerToolId = stringValue(data.schedulerToolId);
-  const codeIntelligenceToolIds = [
-    ...new Set(
-      [
-        ...collect("codeIntelligenceToolIds", 40),
-        ...collect("codeIntelligenceToolId", 40),
-        ...collect("toolIds", 40),
-        stringValue(data.codeIntelligenceToolId),
-        schedulerToolId?.startsWith("code.") ? schedulerToolId : null,
-        ...reasonCodes
-          .map((code) => code.match(/^scheduler_tool_invoked:(code\.[a-z0-9_.:-]+)$/u)?.[1])
-          .filter((toolId): toolId is string => Boolean(toolId)),
-      ].filter(
-        (toolId): toolId is string => typeof toolId === "string" && toolId.startsWith("code."),
-      ),
-    ),
-  ].slice(0, 20);
-  const codeIntelligenceResultRefs = collect("codeIntelligenceResultRefs", 40);
-  const codeIntelligenceDiagnosticRefs = collect("codeIntelligenceDiagnosticRefs", 40);
-  const codeIntelligenceState =
-    codeIntelligenceResultRefs.length > 0 ||
-    collect("codeIntelligenceSymbolRefs", 1).length > 0 ||
-    codeIntelligenceDiagnosticRefs.length > 0
-      ? collect("codeIntelligenceNeedsReviewRefs", 1).length > 0
-        ? "needs_review"
-        : "present"
-      : "missing";
-  const frontierConflictDomains = Array.isArray(latestParallelFrontierData?.conflictDomains)
-    ? latestParallelFrontierData.conflictDomains
-        .map((domain) => asRecord(domain))
-        .filter((domain): domain is Record<string, unknown> => Boolean(domain))
-        .map((domain) => ({
-          nodeId: stringValue(domain.nodeId) ?? "",
-          keys: stringArrayValue(domain.keys, 12),
-        }))
-        .filter((domain) => domain.nodeId.length > 0)
-        .slice(0, 30)
-    : [];
-  const frontierProviderConcurrencyBudgets = Array.isArray(
-    latestParallelFrontierData?.providerConcurrencyBudgets,
-  )
-    ? latestParallelFrontierData.providerConcurrencyBudgets
-        .map((budget) => asRecord(budget))
-        .filter((budget): budget is Record<string, unknown> => Boolean(budget))
-        .map((budget) => ({
-          key: stringValue(budget.key) ?? "",
-          limit: numberValue(budget.limit),
-          runnableNodeIds: stringArrayValue(budget.runnableNodeIds, 40),
-          selectedNodeIds: stringArrayValue(budget.selectedNodeIds, 40),
-          skippedNodeIds: stringArrayValue(budget.skippedNodeIds, 40),
-        }))
-        .filter((budget) => budget.key.length > 0)
-        .slice(0, 20)
-    : [];
-  return {
-    state: latest ? "present" : "missing",
-    graphId: stringValue(data.graphId) ?? stringValue(nodeData.graphId),
-    activeNodeId: stringValue(nodeData.nodeId) ?? stringValue(data.nodeId),
-    activeNodeKind: stringValue(nodeData.activeNodeKind) ?? stringValue(data.activeNodeKind),
-    roleId: stringValue(nodeData.roleId) ?? stringValue(data.roleId),
-    modelRef: stringValue(nodeData.modelRef) ?? stringValue(data.modelRef),
-    objective: stringValue(nodeData.currentObjective) ?? stringValue(data.currentObjective),
-    whySelected:
-      stringValue(nodeData.whyThisNodeWasChosen) ?? stringValue(data.whyThisNodeWasChosen),
-    targetRefs: collect("targetRefs", 12),
-    inputHandoffRefs: collect("inputHandoffRefs", 12),
-    expectedOutput: stringValue(nodeData.expectedOutput) ?? stringValue(data.expectedOutput),
-    currentPhase: stringValue(data.currentPhase) ?? stringValue(data.stage),
-    validationState: stringValue(data.validationState),
-    evidenceProducedRefs: collect("evidenceProducedRefs", 12),
-    evidenceClaimRefs: collect("evidenceClaimRefs", 20),
-    genericNodeExecutionResultRefs: collect("genericNodeExecutionResultRefs", 20),
-    evidenceClaims: latestEvidenceClaims,
-    acceptedCommitmentIds: latestStringArray("acceptedCommitmentIds", 12),
-    rejectedCommitmentIds: latestStringArray("rejectedCommitmentIds", 12),
-    openCommitmentIds: latestStringArray("remainingOpenCommitmentIds", 12),
-    nextDecisionNeeded: stringValue(data.nextDecisionNeeded),
-    blockerSummary: stringValue(data.blockerSummary),
-    finalizationState: stringValue(data.finalizationState),
-    latestToolEventKind: stringValue(data.latestToolEventKind),
-    eli5Progress: stringValue(data.eli5Progress),
-    budget: {
-      policyRef: stringValue(data.budgetPolicyRef) ?? stringValue(nodeData.budgetPolicyRef),
-      budgetClass: stringValue(data.budgetClass) ?? stringValue(nodeData.budgetClass),
-      runtimeToolTimeoutMs:
-        numberValue(data.runtimeToolTimeoutMs) ?? numberValue(nodeData.runtimeToolTimeoutMs),
-      modelCallTimeoutMs:
-        numberValue(data.modelCallTimeoutMs) ?? numberValue(nodeData.modelCallTimeoutMs),
-      workerLoopTurnTimeoutMs:
-        numberValue(data.workerLoopTurnTimeoutMs) ?? numberValue(nodeData.workerLoopTurnTimeoutMs),
-      validationCommandTimeoutMs:
-        numberValue(data.validationCommandTimeoutMs) ??
-        numberValue(nodeData.validationCommandTimeoutMs),
-      progressEmissionIntervalMs:
-        numberValue(data.progressEmissionIntervalMs) ??
-        numberValue(nodeData.progressEmissionIntervalMs),
-      staleProgressAfterMs:
-        numberValue(data.staleProgressAfterMs) ?? numberValue(nodeData.staleProgressAfterMs),
-      leaseTimeoutMs: numberValue(data.leaseTimeoutMs) ?? numberValue(nodeData.leaseTimeoutMs),
-      leaseHeartbeatMs:
-        numberValue(data.leaseHeartbeatMs) ?? numberValue(nodeData.leaseHeartbeatMs),
-      elapsedMs: numberValue(data.elapsedMs) ?? numberValue(nodeData.elapsedMs),
-      budgetRemainingMs:
-        numberValue(data.budgetRemainingMs) ?? numberValue(nodeData.budgetRemainingMs),
-      heartbeatState: stringValue(data.heartbeatState) ?? stringValue(nodeData.heartbeatState),
-    },
-    sourcePrompt: {
-      promptHash: stringValue(data.sourcePromptHash),
-      promptLength: numberValue(data.sourcePromptLength),
-      resolutionStatus: stringValue(data.sourcePromptResolutionStatus),
-      sectionRefs: collect("sourcePromptSectionRefs", 20),
-      excerptRequestRefs: collect("sourcePromptExcerptRequestRefs", 20),
-      excerptProvidedRefs: collect("sourcePromptExcerptProvidedRefs", 20),
-      excerptDeniedRefs: collect("sourcePromptExcerptDeniedRefs", 20),
-    },
-    contextFreshness: {
-      state:
-        stringValue(data.contextFreshnessStatus) === "fresh" ||
-        stringValue(data.contextFreshnessStatus) === "stale" ||
-        stringValue(data.contextFreshnessStatus) === "missing" ||
-        stringValue(data.contextFreshnessStatus) === "rejected" ||
-        stringValue(data.contextFreshnessStatus) === "unknown"
-          ? (stringValue(data.contextFreshnessStatus) as
-              | "fresh"
-              | "stale"
-              | "missing"
-              | "rejected"
-              | "unknown")
-          : collect("missingContextSnapshotRefs", 1).length > 0
-            ? "missing"
-            : collect("staleContextSnapshotRefs", 1).length > 0
-              ? "stale"
-              : collect("rejectedContextSnapshotRefs", 1).length > 0
-                ? "rejected"
-                : collect("contextSnapshotRefs", 1).length > 0
-                  ? "fresh"
-                  : "unknown",
-      refreshAction: stringValue(data.contextRefreshAction),
-      contextSnapshotRefs: collect("contextSnapshotRefs", 40),
-      staleContextSnapshotRefs: collect("staleContextSnapshotRefs", 40),
-      missingContextSnapshotRefs: collect("missingContextSnapshotRefs", 40),
-      rejectedContextSnapshotRefs: collect("rejectedContextSnapshotRefs", 40),
-      sourcePromptHash: stringValue(data.sourcePromptHash),
-      repoRevision: stringValue(data.repoRevision),
-      worktreeFingerprint: stringValue(data.worktreeFingerprint),
-      freshnessSummary: stringValue(data.contextFreshnessSummary),
-      blockingContextReason:
-        stringValue(data.currentPhase) === "context_freshness_blocked"
-          ? stringValue(data.blockerSummary)
-          : null,
-    },
-    contextScout: {
-      qualityState: stringValue(data.contextQualityState),
-      verifiedFileRefs: collect("verifiedContextFileRefs", 30),
-      handoffPacketRefs: collect("contextHandoffPacketRefs", 20),
-      toolLoopRefs: collect("contextScoutToolLoopRefs", 20),
-      runtimeToolInvocationRefs: collect("contextScoutRuntimeToolInvocationRefs", 40),
-      rejectedRefs: collect("contextScoutRejectedRefs", 20),
-      sufficiencySummary: stringValue(data.contextScoutSufficiencySummary),
-      synthesisReadiness: stringValue(data.contextScoutSynthesisReadiness),
-      synthesisBlockers: collect("contextScoutSynthesisBlockers", 20),
-      repoAnalysisFindingCount: numberValue(data.contextScoutRepoAnalysisFindingCount),
-      symbolRefs: collect("contextScoutSymbolRefs", 40),
-      testRefs: collect("contextScoutTestRefs", 32),
-      handoffSummaryForSynthesis: stringValue(data.contextScoutHandoffSummaryForSynthesis),
-      openBlockers: collect("openContextBlockers", 12),
-    },
-    contextSynthesis: {
-      state:
-        collect("contextSynthesisRef", 1).length > 0 ||
-        collect("contextSynthesisImplementationGroupIds", 1).length > 0
-          ? collectedString("contextSynthesisStatus") === "accepted"
-            ? "accepted"
-            : collectedString("contextSynthesisStatus") === "needs_review"
-              ? "needs_review"
-              : "present"
-          : "missing",
-      synthesisRef: collectedString("contextSynthesisRef"),
-      status: collectedString("contextSynthesisStatus"),
-      implementationGroupCount: collectedNumber("contextSynthesisImplementationGroupCount"),
-      dependencyCount: collectedNumber("contextSynthesisDependencyCount"),
-      parallelGroupCount: collectedNumber("contextSynthesisParallelGroupCount"),
-      blockerCount: collectedNumber("contextSynthesisBlockerCount"),
-      validationLaneCount: collectedNumber("contextSynthesisValidationLaneCount"),
-      reviewLaneCount: collectedNumber("contextSynthesisReviewLaneCount"),
-      workerFitSummary: collectedString("contextSynthesisWorkerFitSummary"),
-      graphCompileInputSummary: collectedString("contextSynthesisGraphCompileInputSummary"),
-      implementationGroupIds: collect("contextSynthesisImplementationGroupIds", 40),
-      targetRefs: collect("contextSynthesisTargetRefs", 40),
-      validationLanes: collect("contextSynthesisValidationLanes", 20),
-      reviewLanes: collect("contextSynthesisReviewLanes", 20),
-      semanticCodeIntelligenceRefs: collect("contextSynthesisSemanticCodeIntelligenceRefs", 40),
-      contextSnapshotRefs: collect("contextSnapshotRefs", 40),
-      nextDecision:
-        collectedString("contextSynthesisStatus") === "accepted"
-          ? "compile_post_synthesis_graph"
-          : collectedString("contextSynthesisStatus") === "needs_review"
-            ? "repair_context_synthesis"
-            : stringValue(data.nextDecisionNeeded),
-      eli5:
-        collectedString("contextSynthesisStatus") === "accepted"
-          ? "Context synthesis accepted the scout handoffs and produced worker-ready implementation groups for scheduler graph compile."
-          : collectedString("contextSynthesisStatus") === "needs_review"
-            ? "Context synthesis needs repair before implementation can start."
-            : null,
-      rawPromptStored: false,
-      rawResponseStored: false,
-      rawProviderLogStored: false,
-      rawToolLogStored: false,
-    },
-    codeIntelligence: {
-      state: codeIntelligenceState,
-      semanticMode: collectedString("codeIntelligenceSemanticMode"),
-      backendId: collectedString("codeIntelligenceBackendId"),
-      backendState: collectedString("codeIntelligenceBackendState"),
-      backendHealthRef: collectedString("codeIntelligenceBackendHealthRef"),
-      workspaceSnapshotRef: collectedString("codeIntelligenceWorkspaceSnapshotRef"),
-      semanticConfidence: collectedString("codeIntelligenceSemanticConfidence"),
-      fallbackUsed: collectedBoolean("codeIntelligenceFallbackUsed"),
-      fallbackReasonCodes: collect("codeIntelligenceFallbackReasonCodes", 20),
-      diagnosticVersionRef: collectedString("codeIntelligenceDiagnosticVersionRef"),
-      projectConfigRefs: collect("codeIntelligenceProjectConfigRefs", 20),
-      limitations: collect("codeIntelligenceLimitations", 20),
-      backendLatencyMs: collectedNumber("codeIntelligenceBackendLatencyMs"),
-      resultCounts: {
-        symbols: collectedNumber("codeIntelligenceSymbolCount"),
-        locations: collectedNumber("codeIntelligenceLocationCount"),
-        diagnostics: collectedNumber("codeIntelligenceDiagnosticCount"),
-        importEdges: collectedNumber("codeIntelligenceImportEdgeCount"),
-        relatedTests: collectedNumber("codeIntelligenceRelatedTestCount"),
-        codeActions: collectedNumber("codeIntelligenceCodeActionCount"),
-      },
-      activeToolId: codeIntelligenceToolIds.at(-1) ?? null,
-      runtimeToolInvocationRefs: collect("codeIntelligenceRuntimeToolInvocationRefs", 40),
-      resultRefs: codeIntelligenceResultRefs,
-      symbolRefs: collect("codeIntelligenceSymbolRefs", 40),
-      diagnosticRefs: codeIntelligenceDiagnosticRefs,
-      relatedTestRefs: collect("codeIntelligenceRelatedTestRefs", 40),
-      impactRefs: collect("codeIntelligenceImpactRefs", 40),
-      staleRefBlockers: collect("codeIntelligenceStaleRefBlockers", 20),
-      latestSummary: collectedString("codeIntelligenceSummary"),
-      reasonCodes: collect("codeIntelligenceReasonCodes", 20),
-      rawPromptStored: false,
-      rawResponseStored: false,
-      rawProviderLogStored: false,
-      rawToolLogStored: false,
-    },
-    commitmentWorkPackets,
-    costAwareDecision: {
-      selectedCapabilityId:
-        stringValue(nodeData.selectedCapabilityId) ?? stringValue(data.selectedCapabilityId),
-      selectedProviderCapabilityProfileId:
-        stringValue(nodeData.selectedProviderCapabilityProfileId) ??
-        stringValue(data.selectedProviderCapabilityProfileId),
-      workerRef: stringValue(nodeData.workerRef) ?? stringValue(data.workerRef),
-      roleClass: stringValue(nodeData.capabilityRoleClass) ?? stringValue(data.capabilityRoleClass),
-      costClass: stringValue(nodeData.capabilityCostClass) ?? stringValue(data.capabilityCostClass),
-      latencyClass:
-        stringValue(nodeData.capabilityLatencyClass) ?? stringValue(data.capabilityLatencyClass),
-      contextCapacity:
-        stringValue(nodeData.capabilityContextCapacity) ??
-        stringValue(data.capabilityContextCapacity),
-      productionSelectable:
-        booleanValue(nodeData.providerProfileProductionSelectable) ??
-        booleanValue(data.providerProfileProductionSelectable),
-      productionSelectionRequiresQualification:
-        booleanValue(nodeData.providerProfileRequiresQualification) ??
-        booleanValue(data.providerProfileRequiresQualification),
-      selectedModelQualificationProfileId:
-        stringValue(nodeData.selectedModelQualificationProfileId) ??
-        stringValue(data.selectedModelQualificationProfileId),
-      qualificationEvidenceRefs: collect("qualificationEvidenceRefs", 12),
-      utilityRationale:
-        stringValue(nodeData.capabilityUtilityRationale) ??
-        stringValue(data.capabilityUtilityRationale),
-      costRationale:
-        stringValue(nodeData.capabilityCostRationale) ?? stringValue(data.capabilityCostRationale),
-      whyCheaperOptionsWereInsufficient: stringValue(data.whyCheaperOptionsWereInsufficient),
-      consideredCapabilityIds: collect("consideredCapabilityIds", 12),
-      consideredProviderCapabilityProfileIds: collect("consideredProviderCapabilityProfileIds", 12),
-    },
-    schedulerToolTrace: {
-      schedulerPhase: stringValue(data.schedulerPhase),
-      latestToolId: stringValue(data.schedulerToolId),
-      invocationRefs: collect("schedulerToolInvocationRefs", 20),
-    },
-    parallelFrontier: {
-      state: latestParallelFrontierData ? "present" : "missing",
-      currentSuperstep: latestParallelFrontierData
-        ? numberValue(latestParallelFrontierData.currentSuperstep)
-        : null,
-      maxParallelNodeExecutions: latestParallelFrontierData
-        ? numberValue(latestParallelFrontierData.maxParallelNodeExecutions)
-        : null,
-      dependencyLayerCount: latestParallelFrontierData
-        ? numberValue(latestParallelFrontierData.dependencyLayerCount)
-        : null,
-      readyNodeIds: frontierStringArray("readyNodeIds", 40),
-      selectedNodeIds: frontierStringArray("selectedNodeIds", 40),
-      runningNodeIds: frontierStringArray("runningNodeIds", 40),
-      completedNodeIds: frontierStringArray("completedNodeIds", 40),
-      blockedNodeIds: frontierStringArray("blockedNodeIds", 40),
-      failedNodeIds: frontierStringArray("failedNodeIds", 40),
-      needsReviewNodeIds: frontierStringArray("needsReviewNodeIds", 40),
-      waitingForHumanNodeIds: frontierStringArray("waitingForHumanNodeIds", 40),
-      skippedReasonCodes: frontierStringArray("skippedReasonCodes", 60),
-      conflictDomains: frontierConflictDomains,
-      providerConcurrencyBudgets: frontierProviderConcurrencyBudgets,
-      joinReadyNodeIds: frontierStringArray("joinReadyNodeIds", 30),
-      contextSynthesisRefs: frontierStringArray("contextSynthesisRefs", 12),
-      implementationGroupCount: latestParallelFrontierData
-        ? numberValue(latestParallelFrontierData.implementationGroupCount)
-        : null,
-    },
-    modelCallProgress: {
-      state: stringValue(latestModelCallData.modelCallSpanId) ? "present" : "missing",
-      spanId: stringValue(latestModelCallData.modelCallSpanId),
-      phase: stringValue(latestModelCallData.modelCallPhase),
-      modelRef: stringValue(latestModelCallData.modelRef),
-      providerPath: stringValue(latestModelCallData.providerPath),
-      roleId: stringValue(latestModelCallData.roleId),
-      nodeId: stringValue(latestModelCallData.nodeId),
-      objective: stringValue(latestModelCallData.currentObjective),
-      inputHash: stringValue(latestModelCallData.modelCallSpanInputHash),
-      responseHash: stringValue(latestModelCallData.modelCallSpanResponseHash),
-      elapsedMs: numberValue(latestModelCallData.modelCallSpanElapsedMs),
-      timeoutMs: numberValue(latestModelCallData.modelCallSpanTimeoutMs),
-      heartbeatCount: numberValue(latestModelCallData.modelCallSpanHeartbeatCount),
-      responseShapeSummary:
-        (asRecord(latestModelCallData.modelCallSpanResponseShapeSummary) as JsonValue | null) ??
-        null,
-      providerDiagnostics:
-        (asRecord(latestModelCallData.modelProviderDiagnostics) as JsonValue | null) ?? null,
-      providerUsage:
-        (asRecord(
-          asRecord(latestModelCallData.modelProviderDiagnostics)?.usage,
-        ) as JsonValue | null) ??
-        (asRecord(
-          asRecord(latestModelCallData.modelProviderDiagnostics)?.providerUsage,
-        ) as JsonValue | null) ??
-        null,
-      usageUnavailableReason: stringValue(
-        asRecord(latestModelCallData.modelProviderDiagnostics)?.usageUnavailableReason,
-      ),
-      reasonCodes: stringArrayValue(latestModelCallData.reasonCodes, 12),
-      rawPromptStored: false,
-      rawResponseStored: false,
-      rawProviderLogStored: false,
-    },
-    spanProgress,
-    repairClassification: {
-      state: latestRepairClassification ? "present" : "missing",
-      classificationRef: stringValue(latestRepairClassification?.classificationRef),
-      failureClass: stringValue(latestRepairClassification?.failureClass),
-      failedBoundaryKind: stringValue(latestRepairClassification?.failedBoundaryKind),
-      repairStrategy: stringValue(latestRepairClassification?.repairStrategy),
-      selectedRepairBoundary: stringValue(latestRepairClassification?.selectedRepairBoundary),
-      failedSpanRefs: latestRepairClassification
-        ? stringArrayValue(latestRepairClassification.failedSpanRefs, 12)
-        : [],
-      failedRuntimeToolInvocationRefs: latestRepairClassification
-        ? stringArrayValue(latestRepairClassification.failedRuntimeToolInvocationRefs, 12)
-        : [],
-      failedCommitmentIds: latestRepairClassification
-        ? stringArrayValue(latestRepairClassification.failedCommitmentIds, 20)
-        : [],
-      failedFieldPaths: latestRepairClassification
-        ? stringArrayValue(latestRepairClassification.failedFieldPaths, 20)
-        : [],
-      reasonCodes: latestRepairClassification
-        ? stringArrayValue(latestRepairClassification.reasonCodes, 20)
-        : [],
-      expectedNextAction: stringValue(latestRepairClassification?.expectedNextAction),
-      semanticReviewRequired:
-        typeof latestRepairClassification?.semanticReviewRequired === "boolean"
-          ? latestRepairClassification.semanticReviewRequired
-          : null,
-      rawPromptStored: false,
-      rawResponseStored: false,
-      rawProviderLogStored: false,
-      rawToolLogStored: false,
-      rawCommandLogStored: false,
-      rawDbRowsStored: false,
-      secretsStored: false,
-      workQueueLifecycleMutated: false,
-    },
-    postSynthesisGraphQuality: {
-      state: stringValue(data.postSynthesisGraphQualityState),
-      presentRoleObligations: collect("postSynthesisPresentRoleObligations", 12),
-      missingRoleObligations: collect("postSynthesisMissingRoleObligations", 12),
-      broadCodexShare: numberValue(data.postSynthesisBroadCodexShare),
-      premiumShare: numberValue(data.postSynthesisPremiumShare),
-    },
-    workerToolTrace: {
-      latestWorkerToolId,
-      workerToolIds,
-      invocationRefs: [
-        ...new Set([
-          ...collect("schedulerToolInvocationRefs", 20),
-          ...collect("artifactRefs", 20).filter((ref) => ref.startsWith("runtime-tool://")),
-          ...collect("evidenceProducedRefs", 20).filter((ref) => ref.startsWith("runtime-tool://")),
-        ]),
-      ].slice(0, 20),
-      changedFileRefs: collect("changedFileRefs", 20),
-      validationRefs: collect("validationRefs", 20),
-      contextRequestRefs: collect("contextRequestRefs", 20),
-      editStepIds: collect("editStepIds", 20),
-      evidenceClaimRefs: collect("evidenceClaimRefs", 20),
-      editTransactionRefs: collect("editTransactionRefs", 20),
-      workerPhaseRefs: collect("workerPhaseRefs", 30),
-      editTransactionPhase: stringValue(data.editTransactionPhase),
-      editTransactionStatus: stringValue(data.editTransactionStatus),
-      editTransactionRepairCount: numberValue(data.editTransactionRepairCount),
-    },
-    workerInternal: {
-      state:
-        stringValue(latestWorkerInternalData.currentPhase) ||
-        stringValue(latestWorkerInternalData.workerInternalToolStatus) ||
-        stringArrayValue(latestWorkerInternalData.workerPhaseRefs, 1).length > 0
-          ? stringValue(latestWorkerInternalData.status) === "needs_review" ||
-            stringValue(latestWorkerInternalData.currentPhase)?.includes("needs_review")
-            ? "needs_review"
-            : "present"
-          : "missing",
-      phase: stringValue(latestWorkerInternalData.currentPhase),
-      phaseStatus: stringValue(latestWorkerInternalData.status),
-      objective: stringValue(latestWorkerInternalData.currentObjective),
-      whySelected: stringValue(latestWorkerInternalData.whyThisNodeWasChosen),
-      roleId: stringValue(latestWorkerInternalData.roleId),
-      modelRef: stringValue(latestWorkerInternalData.modelRef),
-      providerPath: stringValue(latestWorkerInternalData.providerPath),
-      workerRef: stringValue(latestWorkerInternalData.workerRef),
-      capabilityId:
-        stringValue(latestWorkerInternalData.capabilityId) ??
-        stringValue(latestWorkerInternalData.selectedCapabilityId),
-      selectedToolId:
-        stringValue(latestWorkerInternalData.schedulerToolId) ??
-        stringValue(latestWorkerInternalData.latestToolEventKind) ??
-        latestWorkerToolId,
-      toolStatus: stringValue(latestWorkerInternalData.workerInternalToolStatus),
-      compoundToolId: stringValue(latestWorkerInternalData.workerInternalCompoundToolId),
-      compoundSubEventCount: numberValue(
-        latestWorkerInternalData.workerInternalCompoundSubEventCount,
-      ),
-      compoundSubEventPhases: stringArrayValue(
-        latestWorkerInternalData.workerInternalCompoundSubEventPhases,
-        20,
-      ),
-      toolInvocationRefs: [
-        ...new Set([
-          ...stringArrayValue(latestWorkerInternalData.schedulerToolInvocationRefs, 20),
-          ...stringArrayValue(latestWorkerInternalData.artifactRefs, 20).filter((ref) =>
-            ref.startsWith("runtime-tool://"),
-          ),
-          ...stringArrayValue(latestWorkerInternalData.evidenceProducedRefs, 20).filter((ref) =>
-            ref.startsWith("runtime-tool://"),
-          ),
-        ]),
-      ].slice(0, 20),
-      targetRefs: stringArrayValue(latestWorkerInternalData.targetRefs, 30),
-      inputPacketRefs: stringArrayValue(latestWorkerInternalData.workerInternalInputPacketRefs, 20),
-      contextRefs: [
-        ...new Set([
-          ...stringArrayValue(latestWorkerInternalData.workerInternalContextRefs, 30),
-          ...stringArrayValue(latestWorkerInternalData.inputHandoffRefs, 30),
-        ]),
-      ].slice(0, 30),
-      contextSynthesisRefs: stringArrayValue(
-        latestWorkerInternalData.workerInternalContextSynthesisRefs,
-        20,
-      ),
-      codeIntelligenceRefs: stringArrayValue(
-        latestWorkerInternalData.workerInternalCodeIntelligenceRefs,
-        20,
-      ),
-      currentValidationCommandRef: stringValue(
-        latestWorkerInternalData.currentValidationCommandRef,
-      ),
-      currentValidationCommandSummary: stringValue(
-        latestWorkerInternalData.currentValidationCommandSummary,
-      ),
-      currentValidationCommandStatus: stringValue(
-        latestWorkerInternalData.currentValidationCommandStatus,
-      ),
-      editTransactionRefs: stringArrayValue(latestWorkerInternalData.editTransactionRefs, 20),
-      editTransactionPhase: stringValue(latestWorkerInternalData.editTransactionPhase),
-      editTransactionStatus: stringValue(latestWorkerInternalData.editTransactionStatus),
-      editTransactionRepairCount: numberValue(latestWorkerInternalData.editTransactionRepairCount),
-      changedFileRefs: stringArrayValue(latestWorkerInternalData.changedFileRefs, 20),
-      validationRefs: stringArrayValue(latestWorkerInternalData.validationRefs, 20),
-      evidenceRefs: stringArrayValue(latestWorkerInternalData.evidenceProducedRefs, 20),
-      evidenceClaimRefs: stringArrayValue(latestWorkerInternalData.evidenceClaimRefs, 20),
-      outputHash:
-        stringValue(latestWorkerInternalData.workerInternalOutputHash) ??
-        stringValue(latestWorkerInternalData.modelCallSpanResponseHash),
-      outputContentLength: numberValue(latestWorkerInternalData.workerInternalOutputContentLength),
-      providerLatencyMs:
-        numberValue(latestWorkerInternalData.workerInternalProviderLatencyMs) ??
-        numberValue(latestWorkerInternalData.modelCallSpanElapsedMs),
-      providerTimeoutMs:
-        numberValue(latestWorkerInternalData.workerInternalProviderTimeoutMs) ??
-        numberValue(latestWorkerInternalData.modelCallSpanTimeoutMs),
-      providerFinishReason: stringValue(
-        latestWorkerInternalData.workerInternalProviderFinishReason,
-      ),
-      providerTokenCount: numberValue(latestWorkerInternalData.workerInternalProviderTokenCount),
-      providerUsage:
-        (asRecord(latestWorkerInternalData.workerInternalProviderUsage) as JsonValue | null) ??
-        (asRecord(
-          asRecord(latestWorkerInternalData.modelProviderDiagnostics)?.usage,
-        ) as JsonValue | null) ??
-        null,
-      usageUnavailableReason:
-        stringValue(latestWorkerInternalData.workerInternalUsageUnavailableReason) ??
-        stringValue(
-          asRecord(latestWorkerInternalData.modelProviderDiagnostics)?.usageUnavailableReason,
-        ),
-      providerDiagnostics:
-        (asRecord(latestWorkerInternalData.modelProviderDiagnostics) as JsonValue | null) ?? null,
-      repairClassificationRef: stringValue(
-        asRecord(latestWorkerInternalData.repairClassification)?.classificationRef,
-      ),
-      repairFailureClass: stringValue(
-        asRecord(latestWorkerInternalData.repairClassification)?.failureClass,
-      ),
-      blockerSummary: stringValue(latestWorkerInternalData.blockerSummary),
-      nextDecision: stringValue(latestWorkerInternalData.nextDecisionNeeded),
-      eli5: stringValue(latestWorkerInternalData.eli5Progress),
-      reasonCodes: stringArrayValue(latestWorkerInternalData.reasonCodes, 30),
-      rawPromptStored: false,
-      rawResponseStored: false,
-      rawProviderLogStored: false,
-      rawToolLogStored: false,
-      rawCommandLogStored: false,
-      rawDbRowsStored: false,
-    },
-    validationQa: {
-      state:
-        validationQaToolInvocationRefs.length > 0 || validationQaEvidencePacketRefs.length > 0
-          ? latestValidationQaState === "needs_review" ||
-            latestValidationQaState === "failed" ||
-            latestValidationQaState === "not_run"
-            ? "needs_review"
-            : "present"
-          : "missing",
-      taskPacketRefs: collect("validationTaskPacketRefs", 20),
-      planRefs: collect("validationPlanRefs", 20),
-      commandRefs: collect("validationCommandRefs", 20),
-      commandSummaries: collect("validationCommandSummaries", 20),
-      currentCommandRef: stringValue(latestValidationQaData.currentValidationCommandRef),
-      currentCommandSummary: stringValue(latestValidationQaData.currentValidationCommandSummary),
-      currentCommandStatus: stringValue(latestValidationQaData.currentValidationCommandStatus),
-      resultRefs: collect("validationResultRefs", 20),
-      failureRefs: collect("validationFailureRefs", 20),
-      repairPlanRefs: collect("validationRepairPlanRefs", 20),
-      repairNodeRefs: collect("validationRepairNodeRefs", 20),
-      repairHandoffRefs: collect("validationRepairHandoffRefs", 20),
-      coverageReviewRefs: collect("validationCoverageReviewRefs", 20),
-      qaReviewRefs: collect("validationQaReviewRefs", 20),
-      evidencePacketRefs: validationQaEvidencePacketRefs,
-      toolInvocationRefs: validationQaToolInvocationRefs,
-      blockingCommitmentIds: collect("validationBlockingCommitmentIds", 20),
-      latestSummary:
-        stringValue(latestValidationQaData.validationQaLatestSummary) ??
-        stringValue(data.validationQaLatestSummary),
-      rawCommandLogsStored: false,
-    },
-    closeoutFinalization: {
-      state:
-        closeoutFinalizationState === "accepted"
-          ? "accepted"
-          : closeoutFinalizationEvidencePacketRefs.length > 0 ||
-              closeoutFinalizationToolInvocationRefs.length > 0
-            ? "needs_review"
-            : "missing",
-      evidencePacketRefs: closeoutFinalizationEvidencePacketRefs,
-      handoffRefs: collect("closeoutFinalizationHandoffRefs", 20),
-      toolInvocationRefs: closeoutFinalizationToolInvocationRefs,
-      acceptRefs: collect("closeoutFinalizationAcceptRefs", 20),
-      rejectRefs: collect("closeoutFinalizationRejectRefs", 20),
-      missingReasonCodes: collect("closeoutFinalizationMissingReasonCodes", 30),
-      maximalitySummary:
-        stringValue(latestCloseoutFinalizationData.closeoutFinalizationMaximalitySummary) ??
-        stringValue(data.closeoutFinalizationMaximalitySummary),
-      limitationsSummary:
-        stringValue(latestCloseoutFinalizationData.closeoutFinalizationLimitationsSummary) ??
-        stringValue(data.closeoutFinalizationLimitationsSummary),
-      eli5:
-        stringValue(latestCloseoutFinalizationData.closeoutFinalizationEli5) ??
-        stringValue(data.closeoutFinalizationEli5),
-      recommendedNextAction:
-        stringValue(latestCloseoutFinalizationData.closeoutFinalizationRecommendedNextAction) ??
-        stringValue(data.closeoutFinalizationRecommendedNextAction),
-      rawPromptStored: false,
-      rawResponseStored: false,
-      rawLogsStored: false,
-    },
-    boundaryReplay: {
-      state:
-        boundaryReplayCheckpointRefs.length > 0 || boundaryReplayPlanRefs.length > 0
-          ? "present"
-          : "missing",
-      latestCheckpointKind: latestBoundaryCheckpointKind,
-      checkpointRefs: boundaryReplayCheckpointRefs,
-      graphCheckpointRefs: boundaryReplayGraphCheckpointRefs,
-      planRefs: boundaryReplayPlanRefs,
-      replayStartPolicy: stringValue(latestBoundaryData.replayStartPolicy),
-      replaySafetyStatus: stringValue(latestBoundaryData.replaySafetyStatus),
-      replayFreshnessStatus: stringValue(latestBoundaryData.replayFreshnessStatus),
-      replayContinuationMode: stringValue(latestBoundaryData.replayContinuationMode),
-      exactContinuationAction: stringValue(latestBoundaryPlanData.exactContinuationAction),
-      exactContinuationMode: stringValue(latestBoundaryPlanData.exactContinuationMode),
-      latestAcceptedCheckpointRef: stringValue(latestBoundaryPlanData.latestAcceptedCheckpointRef),
-      skippedUpstreamCheckpointKinds: stringArrayValue(
-        latestBoundaryPlanData.skippedUpstreamCheckpointKinds,
-        20,
-      ),
-      resumeFromArtifactRefs: stringArrayValue(latestBoundaryPlanData.resumeFromArtifactRefs, 20),
-      invalidReasonCodes: stringArrayValue(latestBoundaryPlanData.invalidReasonCodes, 40),
-      acceptedCheckpointRefs: stringArrayValue(latestBoundaryPlanData.acceptedCheckpointRefs, 40),
-      staleCheckpointRefs: stringArrayValue(latestBoundaryPlanData.staleCheckpointRefs, 40),
-      rejectedCheckpointRefs: stringArrayValue(latestBoundaryPlanData.rejectedCheckpointRefs, 40),
-      latestSummary:
-        stringValue(latestBoundaryData.operatorReadbackSummary) ??
-        stringValue(latestBoundaryProgressData.eli5Progress),
-      reasonCodes: [
-        ...new Set([
-          ...stringArrayValue(latestBoundaryData.reasonCodes, 20),
-          ...stringArrayValue(latestBoundaryProgressData.reasonCodes, 20),
-          ...stringArrayValue(latestBoundaryPlanData.reasonCodes, 20),
-        ]),
-      ].slice(0, 40),
-      rawPromptStored: false,
-      rawResponseStored: false,
-      rawProviderLogStored: false,
-      rawToolLogStored: false,
-    },
-    latestProgressEventRefs: progressEvents
-      .slice(-6)
-      .map((event) => `runtime-event://${event.eventId}`),
     rawPromptStored: false,
     rawResponseStored: false,
     rawProviderLogStored: false,
@@ -5922,6 +5275,7 @@ export async function buildWorkQueueExecutionReadModel(input: {
         workflowHumanCloseout?.metadata ??
         null,
       closeoutCapsule: closeoutCapsuleArtifact?.metadata ?? null,
+      artifactPayloads: runtimeArtifactPayloadManifestSummary(artifacts),
       artifactRefs: artifacts.map((artifact) => artifact.uri).slice(0, 30),
     });
   }

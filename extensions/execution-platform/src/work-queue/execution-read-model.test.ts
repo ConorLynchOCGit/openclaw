@@ -54,7 +54,6 @@ import "./product-spec-planning-worker-contract.test.ts";
 import "./product-spec-planning-mission-readback.test.ts";
 import "./product-spec-planning-proof-review.test.ts";
 import "./product-spec-planning-commitment-review.test.ts";
-import "../codex-bridge/workflow-queued-runner.test.ts";
 import "../workflows/product-spec-planning-plugin.test.ts";
 import "../workflows/runtime-node-capability-registry.test.ts";
 import "../workflows/runtime-work-graph-scheduler.test.ts";
@@ -77,6 +76,332 @@ async function withRuntime<T>(
 }
 
 describe("Work Queue front-door routing projection", () => {
+  it("surfaces runtime artifact payload manifests without hydrating large bodies", async () => {
+    await withRuntime(async ({ runtimeJobs, workQueue }) => {
+      const workItem = await workQueue.createWorkItem({
+        workItemId: "payload-manifest-readback-item",
+        itemType: "execution_workflow",
+        title: "Payload manifest readback",
+      });
+      const runtimeJob = await runtimeJobs.enqueueJob({
+        jobId: "payload-manifest-readback-job",
+        jobType: "executor.agent_team",
+        queueName: "agent-team",
+        workItemId: workItem.workItemId,
+        payload: { workflowId: "agent_team.coding" },
+      });
+      await workQueue.createWorkRun({
+        runId: "payload-manifest-readback-run",
+        workItemId: workItem.workItemId,
+        executorKind: "runtime_job",
+        runtimeJobId: runtimeJob.jobId,
+        runState: "running",
+      });
+      await runtimeJobs.attachRuntimeArtifactByContract({
+        jobId: runtimeJob.jobId,
+        artifactType: "execution_platform.node_execution_packet",
+        uri: "runtime-job://payload-manifest-readback-job/node-execution-packet/node-1",
+        body: {
+          packetKind: "node_execution_packet",
+          content: "large worker body ".repeat(1_000),
+          rawPromptStored: false,
+          rawResponseStored: false,
+        },
+        boundedSummary: "Node execution packet manifest only.",
+        targetCommitmentIds: ["c-001"],
+        targetNodeIds: ["node-1"],
+        resourcePacketKind: "node_execution_packet",
+        readinessStatus: "ready",
+      });
+
+      const readback = await buildWorkQueueExecutionReadModel({
+        runtimeJobs,
+        workQueue,
+        workItemId: workItem.workItemId,
+      });
+
+      const summary = readback.runtimeJobs[0]?.artifactPayloads;
+      expect(summary).toMatchObject({
+        artifactKind: "work_queue_runtime_artifact_payload_manifest_summary",
+        manifestCount: 1,
+        artifactRefs: ["runtime-job://payload-manifest-readback-job/node-execution-packet/node-1"],
+        artifactTypes: ["execution_platform.node_execution_packet"],
+        hydrationToolId: "artifact.payload.get_json",
+        rawPromptStored: false,
+        rawResponseStored: false,
+      });
+      expect(summary?.payloadRefs[0]).toContain("runtime-artifact-payload://");
+      expect(JSON.stringify(summary)).not.toContain("large worker body");
+    });
+  });
+
+  it("surfaces demand-driven context broker progress from scheduler events", async () => {
+    await withRuntime(async ({ runtimeJobs, workQueue }) => {
+      const workItem = await workQueue.createWorkItem({
+        workItemId: "context-broker-readback-item",
+        itemType: "execution_workflow",
+        title: "Context broker readback",
+      });
+      const runtimeJob = await runtimeJobs.enqueueJob({
+        jobId: "context-broker-readback-job",
+        jobType: "executor.agent_team",
+        queueName: "agent-team",
+        workItemId: workItem.workItemId,
+        payload: { workflowId: "agent_team.coding" },
+      });
+      await workQueue.createWorkRun({
+        runId: "context-broker-readback-run",
+        workItemId: workItem.workItemId,
+        executorKind: "runtime_job",
+        runtimeJobId: runtimeJob.jobId,
+        runState: "running",
+      });
+      await runtimeJobs.recordEvent({
+        jobId: runtimeJob.jobId,
+        eventType: "agent_team.scheduler_progress",
+        data: {
+          artifactKind: "agent_team_scheduler_progress",
+          runtimeJobId: runtimeJob.jobId,
+          graphId: "graph-1",
+          stage: "node_resource_materialization",
+          status: "needs_review",
+          nodeId: "impl-1",
+          currentPhase: "node_resource_materialization_blocked",
+          contextBrokerRequestRefs: [
+            "runtime-job://context-broker-readback-job/context-broker/graph-1/impl-1/context-broker:abc",
+          ],
+          contextBrokerStatuses: ["context_scout_required"],
+          contextBrokerDedupeKeys: ["context-broker:abc"],
+          contextBrokerConsumerNodeIds: ["impl-1"],
+          contextBrokerReasonCodes: [
+            "context_broker_request_compiled",
+            "context_broker_context_scout_required",
+          ],
+          contextBrokerNextTransition: "dispatch_context_scout",
+          expansionAdmissionDecisionRef:
+            "runtime-work-graph://expansion-admission/graph-1/1/admission",
+          expansionAdmissionPolicyRef: "runtime-work-graph.expansion-admission.v1",
+          expansionAdmissionStatus: "accepted_paged",
+          expansionAdmissionOriginalNodeCount: 14,
+          expansionAdmissionOriginalEdgeCount: 22,
+          expansionAdmissionAdmittedNodeCount: 4,
+          expansionAdmissionAdmittedEdgeCount: 6,
+          expansionAdmissionDeferredNodeCount: 10,
+          expansionAdmissionDeferredEdgeCount: 16,
+          expansionAdmissionReadyFrontierNodeIds: ["impl-ready-1"],
+          expansionAdmissionAdmittedNodeIds: ["context-1", "context-2"],
+          expansionAdmissionDeferredNodeIds: ["context-3"],
+          expansionAdmissionNextTransition: "persist_admitted_page",
+          expansionAdmissionPrerequisiteCritical: false,
+          expansionAdmissionReasonCodes: ["expansion_accepted_paged"],
+          contextRequestRefs: ["legacy-context-request://impl-1"],
+          reasonCodes: ["node_readiness_context_packet_refs_not_accepted_handoffs"],
+          rawPromptStored: false,
+          rawResponseStored: false,
+          rawProviderLogStored: false,
+          rawToolLogStored: false,
+        },
+      });
+
+      const model = await buildWorkQueueExecutionReadModel({
+        runtimeJobs,
+        workQueue,
+        workItemId: workItem.workItemId,
+      });
+
+      expect(
+        model.runtimeJobs[0]?.ownerProgressReadback.activeGraphProgress.contextBroker,
+      ).toMatchObject({
+        state: "present",
+        requestRefs: [
+          "runtime-job://context-broker-readback-job/context-broker/graph-1/impl-1/context-broker:abc",
+        ],
+        statuses: ["context_scout_required"],
+        dedupeKeys: ["context-broker:abc"],
+        consumerNodeIds: ["impl-1"],
+        scoutRequiredCount: 1,
+        nextTransition: "dispatch_context_scout",
+        rawPromptStored: false,
+      });
+      expect(
+        model.runtimeJobs[0]?.ownerProgressReadback.activeGraphProgress.expansionAdmission,
+      ).toMatchObject({
+        state: "present",
+        status: "accepted_paged",
+        originalNodeCount: 14,
+        admittedNodeCount: 4,
+        deferredNodeCount: 10,
+        readyFrontierNodeIds: ["impl-ready-1"],
+        admittedNodeIds: ["context-1", "context-2"],
+        deferredNodeIds: ["context-3"],
+        nextTransition: "persist_admitted_page",
+        prerequisiteCritical: false,
+      });
+    });
+  });
+
+  it("surfaces canonical superstep branch results from scheduler progress", async () => {
+    await withRuntime(async ({ runtimeJobs, workQueue }) => {
+      const workItem = await workQueue.createWorkItem({
+        workItemId: "superstep-branch-readback-item",
+        itemType: "execution_workflow",
+        title: "Superstep branch readback",
+      });
+      const runtimeJob = await runtimeJobs.enqueueJob({
+        jobId: "superstep-branch-readback-job",
+        jobType: "executor.agent_team",
+        queueName: "agent-team",
+        workItemId: workItem.workItemId,
+        payload: { workflowId: "agent_team.coding" },
+      });
+      await workQueue.createWorkRun({
+        runId: "superstep-branch-readback-run",
+        workItemId: workItem.workItemId,
+        executorKind: "runtime_job",
+        runtimeJobId: runtimeJob.jobId,
+        runState: "running",
+      });
+      await runtimeJobs.recordEvent({
+        jobId: runtimeJob.jobId,
+        eventType: "agent_team.scheduler_progress",
+        data: {
+          artifactKind: "agent_team_scheduler_progress",
+          runtimeJobId: runtimeJob.jobId,
+          graphId: "graph-1",
+          stage: "scheduler_parallel_frontier",
+          status: "needs_review",
+          currentPhase: "parallel_frontier_completed",
+          schedulerPhase: "execution_in_progress",
+          schedulerToolId: "scheduler.join_superstep_frontier",
+          schedulerToolInvocationRefs: [
+            "runtime-tool://superstep/open",
+            "runtime-tool://superstep/branch-results",
+            "runtime-tool://superstep/join",
+          ],
+          parallelFrontier: {
+            artifactKind: "runtime_work_graph_parallel_frontier_readback",
+            schemaVersion: "execution-platform.runtime-work-graph.parallel-frontier.v1",
+            currentSuperstep: 3,
+            maxParallelNodeExecutions: 4,
+            dependencyLayers: [],
+            dependencyLayerCount: 0,
+            readyNodeIds: ["impl-a", "impl-b"],
+            rawRunnableNodeIds: ["impl-a", "impl-b"],
+            selectedNodeIds: ["impl-a", "impl-b"],
+            runningNodeIds: [],
+            completedNodeIds: ["impl-a"],
+            blockedNodeIds: ["impl-b"],
+            failedNodeIds: [],
+            needsReviewNodeIds: ["impl-b"],
+            waitingForHumanNodeIds: [],
+            skippedReasonCodes: [],
+            conflictDomains: [],
+            providerConcurrencyBudgets: [],
+            branchResults: [
+              {
+                artifactKind: "runtime_work_graph_superstep_branch_result",
+                schemaVersion: "execution-platform.superstep-branch-result.v1",
+                superstepId: "parallel-frontier-3",
+                branchId: "parallel-frontier-3:branch:1:impl-a",
+                nodeId: "impl-a",
+                nodeKind: "implementation",
+                capabilityId: "implementation_microtask",
+                targetCommitmentIds: ["C1"],
+                status: "succeeded",
+                failureClass: null,
+                errorPath: null,
+                errorSummary: null,
+                blockerSummary: null,
+                repairAction: null,
+                nextTransition: "evaluate_downstream",
+                evidenceRefs: ["artifact://impl-a/evidence"],
+                readinessStateRef: "readiness://impl-a",
+                reasonCodes: ["impl_a_completed"],
+                rawPromptStored: false,
+                rawResponseStored: false,
+                rawProviderLogStored: false,
+                rawToolLogStored: false,
+                rawCommandLogStored: false,
+                rawDbRowsStored: false,
+                secretsStored: false,
+              },
+              {
+                artifactKind: "runtime_work_graph_superstep_branch_result",
+                schemaVersion: "execution-platform.superstep-branch-result.v1",
+                superstepId: "parallel-frontier-3",
+                branchId: "parallel-frontier-3:branch:2:impl-b",
+                nodeId: "impl-b",
+                nodeKind: "implementation",
+                capabilityId: "implementation_microtask",
+                targetCommitmentIds: ["C2"],
+                status: "blocked_context",
+                failureClass: "context_supply",
+                errorPath: "nodeReadiness.contextStatus",
+                errorSummary: "Accepted context handoff missing.",
+                blockerSummary: "Accepted context handoff missing.",
+                repairAction: "request_context_repair",
+                nextTransition: "request_context_or_reuse_context",
+                evidenceRefs: [],
+                readinessStateRef: "readiness://impl-b",
+                reasonCodes: ["context_handoff_missing"],
+                rawPromptStored: false,
+                rawResponseStored: false,
+                rawProviderLogStored: false,
+                rawToolLogStored: false,
+                rawCommandLogStored: false,
+                rawDbRowsStored: false,
+                secretsStored: false,
+              },
+            ],
+            joinReadyNodeIds: [],
+            contextSynthesisRefs: [],
+            implementationGroupCount: 2,
+            rawPromptStored: false,
+            rawResponseStored: false,
+            rawProviderLogStored: false,
+            rawToolLogStored: false,
+          },
+          reasonCodes: ["scheduler_parallel_frontier_executed"],
+          rawPromptStored: false,
+          rawResponseStored: false,
+          rawProviderLogStored: false,
+          rawToolLogStored: false,
+        },
+      });
+
+      const model = await buildWorkQueueExecutionReadModel({
+        runtimeJobs,
+        workQueue,
+        workItemId: workItem.workItemId,
+      });
+
+      expect(
+        model.runtimeJobs[0]?.ownerProgressReadback.activeGraphProgress.parallelFrontier,
+      ).toMatchObject({
+        state: "present",
+        currentSuperstep: 3,
+        selectedNodeIds: ["impl-a", "impl-b"],
+        branchResults: [
+          {
+            branchId: "parallel-frontier-3:branch:1:impl-a",
+            nodeId: "impl-a",
+            status: "succeeded",
+            nextTransition: "evaluate_downstream",
+            evidenceRefs: ["artifact://impl-a/evidence"],
+          },
+          {
+            branchId: "parallel-frontier-3:branch:2:impl-b",
+            nodeId: "impl-b",
+            status: "blocked_context",
+            blockerSummary: "Accepted context handoff missing.",
+            nextTransition: "request_context_or_reuse_context",
+            readinessStateRef: "readiness://impl-b",
+          },
+        ],
+      });
+    });
+  });
+
   it("surfaces canonical workflow definition, runtime engine, and completion review state", async () => {
     await withRuntime(async ({ runtimeJobs, workQueue }) => {
       const workItem = await workQueue.createWorkItem({
@@ -206,30 +531,36 @@ describe("Work Queue front-door routing projection", () => {
           workQueueLifecycleMutated: false,
         },
       });
-      await runtimeJobs.attachArtifact({
+      const genericRuntimeResult = {
+        artifactKind: "generic_orchestration_runtime_result",
+        engineId: "generic-orchestration-runtime-engine.v1",
+        workflowId: definition.workflowId,
+        runtimeJobId: runtimeJob.jobId,
+        status: "succeeded",
+        schedulerStatus: "succeeded",
+        graphId: "graph-1",
+        executedNodeIds: ["node-context", "node-implementation", "node-closeout"],
+        addedNodeIds: ["node-context", "node-implementation", "node-closeout"],
+        decisionRefs: ["runtime-tool://scheduler/decision-1"],
+        reasonCodes: ["generic_orchestration_runtime_scheduler_executed"],
+        rawPromptStored: false,
+        rawResponseStored: false,
+        rawProviderLogStored: false,
+        rawLogsStored: false,
+        workQueueLifecycleMutated: false,
+      };
+      await runtimeJobs.attachRuntimeArtifactByContract({
         jobId: runtimeJob.jobId,
         artifactType: "execution.generic_orchestration_runtime_result",
-        storageKind: "metadata",
         uri: "runtime-job://workflow-definition-readback-job/execution/generic-orchestration-runtime/result/agent_team.coding",
         contentType: "application/json",
-        metadata: {
-          artifactKind: "generic_orchestration_runtime_result",
-          engineId: "generic-orchestration-runtime-engine.v1",
-          workflowId: definition.workflowId,
-          runtimeJobId: runtimeJob.jobId,
-          status: "succeeded",
-          schedulerStatus: "succeeded",
-          graphId: "graph-1",
-          executedNodeIds: ["node-context", "node-implementation", "node-closeout"],
-          addedNodeIds: ["node-context", "node-implementation", "node-closeout"],
-          decisionRefs: ["runtime-tool://scheduler/decision-1"],
-          reasonCodes: ["generic_orchestration_runtime_scheduler_executed"],
-          rawPromptStored: false,
-          rawResponseStored: false,
-          rawProviderLogStored: false,
-          rawLogsStored: false,
-          workQueueLifecycleMutated: false,
-        },
+        body: genericRuntimeResult,
+        boundedSummary: "Generic orchestration runtime succeeded for readback.",
+        targetNodeIds: ["node-context", "node-implementation", "node-closeout"],
+        resourcePacketKind: "generic_orchestration_runtime_result",
+        readinessStatus: "succeeded",
+        reasonCodes: ["generic_orchestration_runtime_scheduler_executed"],
+        metadata: genericRuntimeResult,
       });
       await runtimeJobs.attachArtifact({
         jobId: runtimeJob.jobId,
@@ -2884,7 +3215,6 @@ it("surfaces bounded Codex app-server progress in owner progress readback", asyn
         rawProviderLogStored: false,
       },
     });
-
     const model = await buildWorkQueueExecutionReadModel({
       workQueue,
       runtimeJobs,
@@ -3004,6 +3334,41 @@ it("surfaces active scheduler graph progress in owner progress readback", async 
         modelCallSpanTimeoutMs: 900_000,
         modelCallSpanHeartbeatCount: 2,
         modelCallSpanResponseShapeSummary: null,
+        modelProviderDiagnostics: {
+          structuredAdapterProfile: {
+            artifactKind: "structured_adapter_provider_profile",
+            profileRef: "structured-adapter-profile://local_semantic_extraction/test",
+            taskClass: "local_semantic_extraction",
+            reasoningMode: "none",
+            rawPromptStored: false,
+            rawResponseStored: false,
+            rawProviderLogStored: false,
+          },
+          structuredAdapterDiagnostics: {
+            artifactKind: "structured_adapter_provider_diagnostics",
+            profileRef: "structured-adapter-profile://local_semantic_extraction/test",
+            contentLength: 1234,
+            inputBytes: 9000,
+            finishReason: "stop",
+            rawPromptStored: false,
+            rawResponseStored: false,
+            rawProviderLogStored: false,
+          },
+          structuredAdapterOutcome: {
+            artifactKind: "structured_adapter_outcome",
+            profileRef: "structured-adapter-profile://local_semantic_extraction/test",
+            status: "succeeded",
+            retryAllowed: false,
+            schemaRepairRequired: false,
+            rawPromptStored: false,
+            rawResponseStored: false,
+            rawProviderLogStored: false,
+          },
+          usage: { inputTokenCount: 100, outputTokenCount: 50, totalTokenCount: 150 },
+          rawPromptStored: false,
+          rawResponseStored: false,
+          rawProviderLogStored: false,
+        },
         sourcePromptHash: "prompt-hash-1",
         sourcePromptLength: 12345,
         sourcePromptResolutionStatus: "resolved",
@@ -3136,6 +3501,18 @@ it("surfaces active scheduler graph progress in owner progress readback", async 
         timeoutMs: 900_000,
         heartbeatCount: 2,
         responseShapeSummary: null,
+        structuredAdapterProfile: {
+          artifactKind: "structured_adapter_provider_profile",
+          profileRef: "structured-adapter-profile://local_semantic_extraction/test",
+        },
+        structuredAdapterDiagnostics: {
+          artifactKind: "structured_adapter_provider_diagnostics",
+          contentLength: 1234,
+        },
+        structuredAdapterOutcome: {
+          artifactKind: "structured_adapter_outcome",
+          status: "succeeded",
+        },
         rawPromptStored: false,
         rawResponseStored: false,
         rawProviderLogStored: false,
@@ -3263,6 +3640,7 @@ it("surfaces boundary replay checkpoints and plans in owner graph progress readb
           "runtime-job://boundary-replay-readback-job/boundary-replay/graph/context_scout/checkpoint-1",
         graphCheckpointRef: "runtime-work-graph://checkpoint/boundary-replay-checkpoint-1",
         checkpointKind: "context_scout",
+        registryVersion: "execution-platform.boundary-replay-registry.v1",
         replayStartPolicy: "allowed_from_checkpoint",
         replaySafetyStatus: "safe_to_replay",
         replayFreshnessStatus: "fresh",
@@ -3281,6 +3659,13 @@ it("surfaces boundary replay checkpoints and plans in owner graph progress readb
           "runtime-job://boundary-replay-readback-job/boundary-replay-plan/graph/context_scout/plan-1",
         requestedStartBoundary: "context_scout",
         status: "accepted",
+        registryVersion: "execution-platform.boundary-replay-registry.v1",
+        diagnosticOnly: false,
+        allowedNextTransitions: ["continue_scheduler", "repair_boundary"],
+        terminalBlockerClasses: ["identity_mismatch", "stale_checkpoint"],
+        readbackProjectionFields: ["boundaryKind", "checkpointRefs", "nextLegalTransition"],
+        latestAcceptedCheckpointKind: "context_scout",
+        missingCheckpointKinds: [],
         latestAcceptedCheckpointRef:
           "runtime-job://boundary-replay-readback-job/boundary-replay/graph/context_scout/checkpoint-1",
         exactContinuationMode: "continue_scheduler",
@@ -3306,7 +3691,6 @@ it("surfaces boundary replay checkpoints and plans in owner graph progress readb
         rawProviderLogStored: false,
       },
     });
-
     const model = await buildWorkQueueExecutionReadModel({
       workQueue,
       runtimeJobs,
@@ -3318,6 +3702,7 @@ it("surfaces boundary replay checkpoints and plans in owner graph progress readb
     ).toMatchObject({
       state: "present",
       latestCheckpointKind: "context_scout",
+      currentReplayBoundary: "context_scout",
       checkpointRefs: [
         "runtime-job://boundary-replay-readback-job/boundary-replay/graph/context_scout/checkpoint-1",
       ],
@@ -3332,8 +3717,15 @@ it("surfaces boundary replay checkpoints and plans in owner graph progress readb
       exactContinuationMode: "continue_scheduler",
       exactContinuationAction:
         "Continue production scheduler from context_scout through GenericOrchestrationRuntime.",
+      registryVersion: "execution-platform.boundary-replay-registry.v1",
+      diagnosticOnly: false,
+      allowedNextTransitions: ["continue_scheduler", "repair_boundary"],
+      terminalBlockerClasses: ["identity_mismatch", "stale_checkpoint"],
+      readbackProjectionFields: ["boundaryKind", "checkpointRefs", "nextLegalTransition"],
       latestAcceptedCheckpointRef:
         "runtime-job://boundary-replay-readback-job/boundary-replay/graph/context_scout/checkpoint-1",
+      latestAcceptedCheckpointKind: "context_scout",
+      missingCheckpointKinds: [],
       skippedUpstreamCheckpointKinds: [
         "router_payload",
         "mission_ledger",
@@ -3347,6 +3739,98 @@ it("surfaces boundary replay checkpoints and plans in owner graph progress readb
       rawResponseStored: false,
       rawProviderLogStored: false,
       rawToolLogStored: false,
+    });
+  });
+});
+
+it("projects boundary replay from compact latest-run-state when events are unavailable", async () => {
+  await withRuntime(async ({ runtimeJobs, workQueue }) => {
+    const workItemId = "boundary-replay-latest-state-work-item";
+    const job = await runtimeJobs.enqueueJob({
+      jobId: "boundary-replay-latest-state-job",
+      jobType: "executor.agent_team",
+      queueName: "agent-team",
+      workItemId,
+      payload: { workflowId: "agent_team.coding", objectiveSummary: "Replay after resources." },
+    });
+    await workQueue.createWorkItem({
+      workItemId,
+      itemType: "execution_workflow",
+      title: "Boundary replay latest-run-state readback",
+    });
+    await workQueue.createWorkRun({
+      workItemId,
+      executorKind: "runtime_job",
+      runtimeJobId: job.jobId,
+      runState: "running",
+      metadata: { workQueueLifecycleMutated: false },
+    });
+    await runtimeJobs.attachArtifact({
+      jobId: job.jobId,
+      artifactType: "execution_platform.latest_run_state",
+      storageKind: "metadata",
+      uri: "runtime-job://boundary-replay-latest-state-job/latest-run-state/current",
+      contentType: "application/json",
+      metadata: {
+        artifactKind: "execution_platform_latest_run_state",
+        schemaVersion: "execution-platform.latest-run-state.v1",
+        generatedAt: new Date().toISOString(),
+        runtimeJobId: job.jobId,
+        current: {
+          phase: "boundary_replay_after_resource_materialization",
+          graphId: "graph-latest",
+        },
+        boundaryReplay: {
+          state: "present",
+          latestCheckpointKind: "after_resource_materialization",
+          currentReplayBoundary: "after_resource_materialization",
+          nextReplayBoundary: "before_worker_invocation",
+          checkpointRefs: [
+            "runtime-job://boundary-replay-latest-state-job/boundary-replay/graph/after_resource_materialization/checkpoint-1",
+          ],
+          graphCheckpointRefs: ["runtime-work-graph://checkpoint/boundary-replay-after-resource"],
+          planRefs: [
+            "runtime-job://boundary-replay-latest-state-job/boundary-replay-plan/graph/after_resource_materialization/plan-1",
+          ],
+          replayStartPolicy: "allowed_from_checkpoint",
+          replaySafetyStatus: "safe_to_replay",
+          replayFreshnessStatus: "fresh",
+          replayContinuationMode: "run_node",
+          exactContinuationMode: "run_node",
+          exactContinuationAction:
+            "Resume production scheduler at after_resource_materialization and run the recorded ready node(s): implementation-node.",
+          latestAcceptedCheckpointRef:
+            "runtime-job://boundary-replay-latest-state-job/boundary-replay/graph/after_resource_materialization/checkpoint-1",
+          resumeFromArtifactRefs: ["runtime-job://boundary-replay-latest-state-job/node-packet"],
+          invalidReasonCodes: [],
+          reasonCodes: ["boundary_replay_requested_checkpoint_accepted"],
+        },
+        rawPromptStored: false,
+        rawResponseStored: false,
+        rawProviderLogStored: false,
+        rawToolLogStored: false,
+        rawDbRowsStored: false,
+      },
+    });
+
+    const model = await buildWorkQueueExecutionReadModel({
+      workQueue,
+      runtimeJobs,
+      workItemId,
+    });
+
+    expect(
+      model.runtimeJobs[0]?.ownerProgressReadback.activeGraphProgress.boundaryReplay,
+    ).toMatchObject({
+      state: "present",
+      latestCheckpointKind: "after_resource_materialization",
+      currentReplayBoundary: "after_resource_materialization",
+      nextReplayBoundary: "before_worker_invocation",
+      replayContinuationMode: "run_node",
+      exactContinuationMode: "run_node",
+      latestAcceptedCheckpointRef:
+        "runtime-job://boundary-replay-latest-state-job/boundary-replay/graph/after_resource_materialization/checkpoint-1",
+      resumeFromArtifactRefs: ["runtime-job://boundary-replay-latest-state-job/node-packet"],
     });
   });
 });
@@ -3436,7 +3920,6 @@ it("uses terminal graph progress for open commitments instead of stale historica
         rawProviderLogStored: false,
       },
     });
-
     const model = await buildWorkQueueExecutionReadModel({
       workQueue,
       runtimeJobs,
@@ -3606,7 +4089,7 @@ it("keeps active node detail visible when child sync events are newer", async ()
         graphId: "child-sync-runtime-graph",
         schedulerToolId: "scheduler.draft_commitment_work_breakdown",
         currentPhase: "work_breakdown_compiled",
-        commitmentWorkPackets: [
+        commitmentWorkPacketSummaries: [
           {
             packetRef: "runtime-work-graph://commitment-work-packet/planning-workflow/abc123",
             commitmentId: "planning-workflow",
@@ -3759,6 +4242,24 @@ it("keeps active node detail visible when child sync events are newer", async ()
               skippedNodeIds: ["implementation-c"],
             },
           ],
+          branchResults: [
+            {
+              superstepId: "parallel-frontier-2-implementation-a-implementation-b",
+              branchId:
+                "parallel-frontier-2-implementation-a-implementation-b:branch:1:implementation-a",
+              nodeId: "implementation-a",
+              nodeKind: "implementation",
+              capabilityId: "implementation_microtask",
+              targetCommitmentIds: ["planning-workflow"],
+              status: "needs_review",
+              failureClass: "resource_materialization",
+              errorPath: "nodeExecutionPacket.targetFileSnapshots",
+              repairAction: "split_into_file_resolved_tasks",
+              evidenceRefs: ["runtime-work-graph://implementation-context-packet/a"],
+              readinessStateRef: "node-readiness://implementation-a",
+              reasonCodes: ["implementation_context_resource_packet_bounds_exceeded"],
+            },
+          ],
           joinReadyNodeIds: [],
           contextSynthesisRefs: [
             "runtime-work-graph://child-sync-runtime-graph/context-synthesis/accepted",
@@ -3769,9 +4270,175 @@ it("keeps active node detail visible when child sync events are newer", async ()
           rawProviderLogStored: false,
           rawToolLogStored: false,
         },
+        schedulerFrontierState: {
+          artifactKind: "runtime_work_graph_scheduler_frontier_state",
+          schemaVersion: "execution-platform.runtime-work-graph.scheduler-frontier.v1",
+          graphId: "child-sync-runtime-graph",
+          currentSuperstep: 2,
+          nodeCount: 4,
+          edgeCount: 3,
+          executableReadyNodeIds: ["implementation-a", "implementation-b"],
+          selectedExecutableNodeIds: ["implementation-a", "implementation-b"],
+          blockedFrontierNodeIds: ["implementation-c"],
+          aggregateBlockedNodeIds: [],
+          nonRunnableNodeIds: ["implementation-c"],
+          dependencyBlockedNodeIds: [],
+          contextBlockedNodeIds: [],
+          resourceBlockedNodeIds: ["implementation-c"],
+          validationBlockedNodeIds: [],
+          reviewBlockedNodeIds: [],
+          closeoutBlockedNodeIds: [],
+          branchIds: ["frontier:2:branch:1:implementation-a"],
+          readinessRefs: ["node-readiness://implementation-a"],
+          resourceRefs: ["runtime-work-graph://implementation-context-packet/a"],
+          contextRefs: ["runtime-work-graph://child-sync-runtime-graph/context-synthesis/accepted"],
+          openCommitmentIds: ["planning-workflow"],
+          lockConflictNodeIds: [],
+          providerBudgetBlockedNodeIds: ["implementation-c"],
+          nextLegalTransition: "execute_frontier",
+          reasonCodes: ["scheduler_canonical_frontier_state_evaluated"],
+          rawPromptStored: false,
+          rawResponseStored: false,
+          rawProviderLogStored: false,
+          rawToolLogStored: false,
+        },
+        noProgressSignature: {
+          artifactKind: "runtime_work_graph_no_progress_signature",
+          schemaVersion: "execution-platform.runtime-work-graph.no-progress-signature.v1",
+          graphId: "child-sync-runtime-graph",
+          iteration: 2,
+          superstep: 2,
+          nodeCount: 4,
+          edgeCount: 3,
+          executableFrontierNodeIds: [],
+          blockedFrontierNodeIds: ["implementation-c"],
+          blockerReasonCodes: ["node_resources_required_before_worker_execution"],
+          openCommitmentIds: ["planning-workflow"],
+          newEvidenceRefs: [],
+          newReadinessRefs: [],
+          newWorkQueueRefs: [],
+          createdNodeIds: [],
+          reusedNodeIds: ["implementation-c"],
+          createdEdgeIds: [],
+          reusedEdgeIds: [],
+          selectedDecisionId: "reuse-implementation-c",
+          selectedDecisionKind: "add_nodes",
+          terminalBlockerCode: "graph_persistence_reused_only",
+          signatureHash: "abc123-no-progress",
+          rawPromptStored: false,
+          rawResponseStored: false,
+          rawProviderLogStored: false,
+          rawToolLogStored: false,
+        },
+        noProgressRepeatCount: 2,
+        missionLedgerEvaluationThrottle: {
+          artifactKind: "runtime_work_graph_mission_ledger_evaluation_throttle",
+          schemaVersion:
+            "execution-platform.runtime-work-graph.mission-ledger-evaluation-throttle.v1",
+          nodeId: "context-1",
+          nodeKind: "context_scout",
+          eventClass: "context",
+          shouldEvaluate: false,
+          evidenceClaimCount: 0,
+          reasonCodes: ["mission_contract_evaluation_throttled_no_closure_claims"],
+          rawPromptStored: false,
+          rawResponseStored: false,
+          rawProviderLogStored: false,
+          rawToolLogStored: false,
+        },
         rawPromptStored: false,
         rawResponseStored: false,
         rawProviderLogStored: false,
+      },
+    });
+    await runtimeJobs.attachArtifact({
+      jobId: job.jobId,
+      artifactType: "execution_platform.latest_run_state",
+      storageKind: "metadata",
+      uri: "runtime-job://child-sync-runtime-job/latest-run-state/current",
+      contentType: "application/json",
+      metadata: {
+        artifactKind: "execution_platform_latest_run_state",
+        schemaVersion: "execution-platform.latest-run-state.v1",
+        generatedAt: "2026-05-20T00:00:00.000Z",
+        runtimeJobId: job.jobId,
+        workItemId,
+        process: {
+          isRunning: true,
+          terminalStatus: null,
+          adapterTerminalStatus: null,
+          retryState: null,
+        },
+        runtimeJob: { state: "running" },
+        current: {
+          phase: "parallel_frontier_evaluated",
+          graphId: "child-sync-runtime-graph",
+          nodeId: "context-1",
+        },
+        activeFrontier: {
+          state: "present",
+          status: "needs_review",
+          graphId: "child-sync-runtime-graph",
+          currentSuperstep: 2,
+          selectedNodeIds: ["implementation-a", "implementation-b"],
+          runningNodeIds: [],
+          completedNodeIds: ["context-1"],
+          blockedNodeIds: ["implementation-c"],
+          failedNodeIds: [],
+          needsReviewNodeIds: [],
+          waitingForHumanNodeIds: [],
+          openCommitmentIds: ["planning-workflow"],
+          nextTransition: "run_frontier",
+          schedulerNextLegalTransition: "execute_frontier",
+          noProgress: {
+            state: "present",
+            signatureHash: "abc123-no-progress",
+            repeatCount: 2,
+            terminalBlockerCode: "graph_persistence_reused_only",
+            reasonCodes: ["node_resources_required_before_worker_execution"],
+          },
+          missionLedgerEvaluationThrottle: {
+            state: "present",
+            nodeId: "context-1",
+            shouldEvaluate: false,
+            reasonCodes: ["mission_contract_evaluation_throttled_no_closure_claims"],
+          },
+          counts: {
+            selected: 2,
+            running: 0,
+            completed: 1,
+            blocked: 1,
+            failed: 0,
+            needsReview: 0,
+            waitingForHuman: 0,
+            branchStates: 1,
+            truncated: false,
+          },
+          branchStates: [
+            {
+              branchId:
+                "parallel-frontier-2-implementation-a-implementation-b:branch:1:implementation-a",
+              nodeId: "implementation-a",
+              status: "needs_review",
+              blockerSummary: "Resource packet exceeded bounds.",
+              errorPath: "nodeExecutionPacket.targetFileSnapshots",
+              readinessStateRef: "node-readiness://implementation-a",
+              reasonCodes: ["implementation_context_resource_packet_bounds_exceeded"],
+            },
+          ],
+          rawPromptStored: false,
+          rawResponseStored: false,
+          rawProviderLogStored: false,
+          rawToolLogStored: false,
+          rawDbRowsStored: false,
+          secretsStored: false,
+        },
+        rawPromptStored: false,
+        rawResponseStored: false,
+        rawProviderLogStored: false,
+        rawToolLogStored: false,
+        rawDbRowsStored: false,
+        secretsStored: false,
       },
     });
 
@@ -3867,10 +4534,84 @@ it("keeps active node detail visible when child sync events are newer", async ()
             skippedNodeIds: ["implementation-c"],
           },
         ],
+        branchResults: [
+          {
+            superstepId: "parallel-frontier-2-implementation-a-implementation-b",
+            branchId:
+              "parallel-frontier-2-implementation-a-implementation-b:branch:1:implementation-a",
+            nodeId: "implementation-a",
+            nodeKind: "implementation",
+            capabilityId: "implementation_microtask",
+            targetCommitmentIds: ["planning-workflow"],
+            status: "needs_review",
+            failureClass: "resource_materialization",
+            errorPath: "nodeExecutionPacket.targetFileSnapshots",
+            repairAction: "split_into_file_resolved_tasks",
+            evidenceRefs: ["runtime-work-graph://implementation-context-packet/a"],
+            readinessStateRef: "node-readiness://implementation-a",
+            reasonCodes: ["implementation_context_resource_packet_bounds_exceeded"],
+          },
+        ],
         contextSynthesisRefs: [
           "runtime-work-graph://child-sync-runtime-graph/context-synthesis/accepted",
         ],
         implementationGroupCount: 16,
+      },
+      schedulerFrontier: {
+        state: "present",
+        currentSuperstep: 2,
+        executableReadyNodeIds: ["implementation-a", "implementation-b"],
+        selectedExecutableNodeIds: ["implementation-a", "implementation-b"],
+        blockedFrontierNodeIds: ["implementation-c"],
+        resourceBlockedNodeIds: ["implementation-c"],
+        providerBudgetBlockedNodeIds: ["implementation-c"],
+        nextLegalTransition: "execute_frontier",
+      },
+      latestRunState: {
+        state: "present",
+        artifactRef: "runtime-job://child-sync-runtime-job/latest-run-state/current",
+        currentPhase: "parallel_frontier_evaluated",
+        graphId: "child-sync-runtime-graph",
+        activeFrontierStatus: "needs_review",
+        selectedNodeIds: ["implementation-a", "implementation-b"],
+        blockedNodeIds: ["implementation-c"],
+        nextTransition: "run_frontier",
+        schedulerNextLegalTransition: "execute_frontier",
+        noProgressRepeatCount: 2,
+        terminalBlockerCode: "graph_persistence_reused_only",
+        missionLedgerThrottleShouldEvaluate: false,
+        branchStates: [
+          {
+            nodeId: "implementation-a",
+            status: "needs_review",
+            errorPath: "nodeExecutionPacket.targetFileSnapshots",
+            readinessStateRef: "node-readiness://implementation-a",
+          },
+        ],
+        agreement: {
+          state: "present",
+          graphIdMatches: true,
+          selectedNodeIdsMatch: true,
+          blockedNodeIdsMatch: true,
+          nextTransitionMatches: true,
+          reasonCodes: [],
+        },
+      },
+      noProgress: {
+        state: "present",
+        signatureHash: "abc123-no-progress",
+        repeatCount: 2,
+        selectedDecisionId: "reuse-implementation-c",
+        terminalBlockerCode: "graph_persistence_reused_only",
+        blockedFrontierNodeIds: ["implementation-c"],
+        reusedNodeIds: ["implementation-c"],
+      },
+      missionLedgerEvaluationThrottle: {
+        state: "present",
+        nodeId: "context-1",
+        eventClass: "context",
+        shouldEvaluate: false,
+        evidenceClaimCount: 0,
       },
     });
   });

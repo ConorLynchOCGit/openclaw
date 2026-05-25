@@ -790,30 +790,26 @@ This item should also include a bounded high-impact refactor pass. The
 diagnosis found several places where recently hardened systems are still
 surrounded by old surfaces or duplicate contracts:
 
-- `AgentTeamQueuedRunner` is still the gateway-facing class for
-  `executor.agent_team` and still contains static single-job quality proof
-  branches, legacy context scout artifacts, fallback repo/validation scope
-  defaults, and degraded closeout construction. The pass should collapse this
-  class into a thin production adapter over the scheduler-backed
-  `agent_team.coding` runtime, or move legacy proof behavior into explicit
-  test/proof fixtures that production cannot instantiate.
-- `WorkflowQueuedRunner` is correctly retired as a migration shim, but
-  production chat/native routes still construct it for non-agent-team workflow
-  jobs. The pass should replace production construction with canonical
-  workflow-runtime dispatch or fail-closed diagnostic evidence; it must not
-  claim jobs and then look like a workflow runner.
+- `AgentTeamQueuedRunner` has been removed. The gateway-facing agent-team
+  runtime class is `CodingTeamRuntimeJobRunner`, and it rejects static
+  single-job proof requests instead of attempting a retired role sequence.
+  The old context-scout pilot, coding-team live pilot, owner-work-batch proof,
+  final/native pathway proofs, autonomy passes, low-level Kimi patch-JSON
+  adapter, and Kimi microtask executor have been deleted.
+- `WorkflowQueuedRunner` has been deleted along with its retirement proof and
+  tests. Production chat/native routes must use canonical workflow-runtime
+  dispatch; future tests must exercise the runtime graph engine rather than a
+  queued-runner shim.
 - `src/gateway/server-methods/chat.ts`,
   `src/gateway/execution-platform-agent-team-runner.ts`, and
   `extensions/execution-platform/src/codex-bridge/host-routes.ts` still expose
   both canonical and retired runner construction paths. Introduce one
   production workflow execution gateway/factory and route all production
   execution through it.
-- `extensions/execution-platform/src/codex-bridge/index.ts` publicly exports
-  retired or compatibility-era surfaces, including queued runners, legacy
-  context scout pilot helpers, Kimi patch-JSON adapter classes, and proof
-  pilots. Public runtime exports should expose canonical production adapters
-  only; retired/proof fixtures should move behind test-only imports or an
-  explicit diagnostic namespace.
+- `extensions/execution-platform/src/codex-bridge/index.ts` no longer exports
+  retired or compatibility-era surfaces. Public runtime exports expose
+  canonical production adapters only; deleted legacy proof surfaces must not be
+  reintroduced through compatibility shims.
 - Degraded/system closeout still exists as a broadly importable helper and is
   referenced by old runners. The pass should make degraded closeout a
   diagnostic-only artifact producer, not a production closeout source, and add
@@ -853,9 +849,9 @@ Single-pass refactor targets:
    canonical engines for production jobs and returns fail-closed diagnostics
    for retired paths.
 2. Queued-runner collapse:
-   reduce `AgentTeamQueuedRunner` and `WorkflowQueuedRunner` to migration/test
-   shims or replace live imports with canonical runtime classes. No production
-   path may enter a static single-job role sequence.
+   keep both old queued-runner classes deleted. No production, migration,
+   diagnostic, or test path may enter a static single-job role sequence or a
+   generic queued workflow shim.
 3. Public export hygiene:
    remove retired/proof adapters from the main runtime API barrel or move them
    under explicit diagnostic/test-only exports.

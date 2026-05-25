@@ -24,8 +24,9 @@ Workflow-specific policy belongs in a `WorkflowDefinition` plugin:
 - Work Queue projection policy.
 
 `DynamicAgentTeamGraphRunner` should be decomposed into the
-`agent_team.coding` workflow plugin. `WorkflowQueuedRunner` should not remain
-a production completion path for workflows that lack graph execution.
+`agent_team.coding` workflow plugin. The deleted generic workflow queued
+runner must not return as a production, migration, or proof completion path
+for workflows that lack graph execution.
 
 See `canonical-workflow-runtime-architecture.md`.
 
@@ -217,6 +218,124 @@ Product/Spec Planning graph policy:
   first execution, and action graph compile-readiness validation so those
   production commitments can be reviewed without raw runtime logs.
 
+## Scheduler-First Context Supply
+
+Runtime Work Graph distinguishes between work-intent nodes and executable
+worker nodes for complex coding-team missions.
+
+The scheduler may create high-level implementation groups from accepted
+Commitment Work Packets, but those groups are not executable implementation
+nodes until context supply has produced accepted implementation task packets.
+Post-context compilation owns the transition:
+
+1. draft work-intent node.
+2. node-scoped context scout.
+3. `ImplementationTaskPacket` compilation.
+4. executable implementation/test/docs/readback node creation.
+5. validation, review, closeout.
+
+Runtime must block provider invocation when an implementation-bearing node has
+only directory-level target refs, missing file snapshots, missing explicit
+new-file intent, missing validation refs, or missing evidence expectations.
+The block is upstream context/task-compilation evidence, not a worker failure.
+
+See `scheduler-first-node-scoped-context-supply.md` and
+`post-context-implementation-task-compiler.md`.
+
+For complex implementation workflows, Runtime Work Graph now treats
+Commitment Work Packets as the input to draft work graph creation, not as the
+input to mandatory context-scout fanout. The scheduler first compiles
+work-intent nodes from accepted packets. Runtime then creates context-scout
+requests for those draft nodes and runs them in parallel.
+
+This prevents high-level commitments from being mistaken for executable work
+units. Context scout receives the concrete draft node objective, mapped packet
+refs, context questions, expected output, downstream consumer, and readiness
+requirements. Implementation stays blocked until the node-scoped scout
+produces resolved target refs, snapshots or explicit new-file intent,
+validation refs or discovery plan, and a bounded handoff summary.
+
+Global context synthesis is optional. It is triggered only when scout outputs
+need cross-node coordination, such as overlapping file ownership, conflicting
+recommendations, shared API/schema dependencies, integration ordering, or
+validation-plan conflicts. Runtime may perform deterministic ref merge/dedupe
+before asking the model for semantic synthesis.
+
+## Runtime Node Readiness And Transition Engine
+
+Runtime Work Graph must now treat graph acceptance, dependency readiness,
+context readiness, resource readiness, and worker executability as separate
+runtime states.
+
+The latest Product/Spec proof showed that the scheduler can still accept a
+work graph and immediately approve an `implementation` node while the
+`context_supply` gate is waiting. That is invalid for every workflow, not only
+Product/Spec Planning. Graph acceptance proves that the planned work shape is
+valid; it does not prove that any worker can execute a node.
+
+Production graph execution therefore requires a generic transition engine:
+
+1. accept graph.
+2. evaluate dependency-ready frontier.
+3. evaluate each node's lifecycle/readiness state.
+4. validate capability execution preconditions.
+5. create prerequisite context/research/human/resource/validation nodes when
+   required.
+6. compile `NodeExecutionPacket` and domain resource packets.
+7. open an executable frontier only for nodes whose preconditions are ready.
+8. run executable nodes through registered executors.
+9. update Mission Ledger evidence and node readiness.
+
+`scheduler.approve_and_run_first_node` must not be a production bypass around
+this transition engine. It may survive only as a compatibility alias for
+`scheduler.open_executable_frontier`, and must fail closed when the requested
+node is not executable.
+
+The transition engine is defined in
+`runtime-node-readiness-transition-engine.md`. It extends the existing
+resource-materialization contract by making it impossible for scheduler graph
+acceptance or context freshness to skip the `NodeExecutionPacket` and
+capability-precondition gates.
+
+The old mandatory path
+`commitment packets -> context scout per commitment -> global synthesis -> scheduler graph`
+is retired from production defaults. It may remain only as an explicitly
+labeled diagnostic or workflow-definition-specific exception.
+
+See `scheduler-first-node-scoped-context-supply.md`.
+
+## Demand-Driven Frontier Context
+
+The current target is no longer "finish all context before execution." That
+shape creates large upfront fanout, all-or-nothing context phases, and
+artifact/progress bloat before a worker can produce useful evidence.
+
+Runtime Work Graph should run a ready frontier while acquiring missing
+context/resources lazily per branch:
+
+1. accept a coarse work-intent graph.
+2. evaluate `NodeReadinessState` for each candidate frontier node.
+3. open nodes whose dependencies, resources, authority, and context are ready.
+4. let non-ready implementation nodes request context/resources through a
+   runtime-owned context broker.
+5. continue executing unrelated ready siblings in parallel.
+6. block edits and other side effects until the requesting node becomes
+   executable.
+
+Implementation-bearing nodes may inspect their task packet, request missing
+context, produce an edit plan, and classify readiness gaps. They may not make
+file edits or claim success until target refs, file snapshots or explicit
+new-file intent, validation refs, authority bounds, and context limitations
+are resolved for that exact node.
+
+Large graph mutations are persisted as payload-backed graph patches. Scheduler
+progress metadata carries graph-patch refs, counts, hashes, bounded samples,
+and latest-run-state pointers only. Full node arrays, edge arrays, task
+packets, context packets, file snapshots, validation bodies, and worker
+outputs must stay in payload artifacts.
+
+See `demand-driven-frontier-orchestration-and-context-broker.md`.
+
 ## Commitment Work Packets And Child Handoff Contracts
 
 Mission Ledger commitments are now compiled into bounded
@@ -233,10 +352,13 @@ Child worker handoffs use typed packets:
 - `ContextHandoffPacket`: context-scout output for downstream implementation,
   including relevant file refs, recommended edit points, risks, validation
   suggestions, and limitations.
-- `ImplementationTaskPacket v2`: implementation-worker input for Kimi or any
-  non-Codex file-edit worker, including exact edit objective, target files,
-  allowed scope, context packet refs, validation refs, acceptance criteria,
-  and commitment ids.
+- `ImplementationTaskPacket v3`: post-context implementation-worker input
+  for Kimi, Qwen, Codex escalation, docs, test, or other file-edit workers.
+  It is compiled from work-intent node plus accepted node-scoped context and
+  includes exact edit objective, concrete target files or explicit new-file
+  intent, file snapshots, allowed scope, context packet refs, validation refs,
+  expected patch shape, evidence expectations, acceptance criteria, and
+  commitment ids.
 
 Runtime code validates packet shape, refs, bounds, and storage flags. The
 model still judges which work matters, whether context is useful, and whether
@@ -247,6 +369,64 @@ recorded as edge metadata with null DB node foreign keys; unknown accidental
 node ids are rejected before DB write and before a successful
 `scheduler.create_graph_edge` trace is recorded. This prevents false-positive
 tool traces when graph structure has not actually persisted.
+
+## Parallel Frontier And Resource Boundary Invariants
+
+Scheduler supersteps may execute multiple independent frontier nodes, but the
+frontier is not a single all-or-nothing worker call. Each branch must produce
+a branch-level result with node id, capability id, target commitments,
+readiness state, evidence refs, and failure classification. One branch
+failure must not hide sibling evidence or collapse the adapter into an
+unclassified worker failure.
+
+Resource materialization is part of scheduler readiness, not worker
+execution. Domain packet compilers must safe-return structured outcomes such
+as `accepted`, `split_required`, `context_repair_required`, or
+`needs_review`. Packet schema/bounds errors must carry exact paths and bound
+values into Work Queue readback; they must not throw into provider/model
+adapters.
+
+Context repair and acquisition nodes created after a blocker must have
+consumer edges or diagnostic-only lifecycle. A zero-consumer context node
+cannot unlock implementation readiness.
+
+Context handoffs marked `accepted_with_limitations` are executable only when
+the limitation is explicitly nonblocking for the exact downstream consumer.
+Runtime-supplied verified refs are limitation evidence, not clean success.
+
+The detailed pre-proof blocker is
+`parallel-frontier-resource-boundary-hardening.md`.
+
+## Split-Required Resource Materialization
+
+Runtime Work Graph must treat `split_required` as a graph transition, not a
+blocked worker result.
+
+When resource materialization proves that a work-intent or implementation
+parent node is too broad for one bounded `NodeExecutionPacket`, the scheduler
+must:
+
+1. store split task packets as payload-backed artifacts;
+2. mark the parent node as aggregate/non-runnable;
+3. compile child executable nodes from the split packets;
+4. create dependency/handoff edges from parent/context to children and from
+   children to rollup/validation/review consumers;
+5. materialize generated Work Queue children for the new graph nodes;
+6. evaluate `NodeReadinessState` for each child;
+7. open only ready children into the executable frontier.
+
+The parent cannot be retried as the same runnable implementation node after a
+successful split-required result. Repeated
+`resources_required -> materialization_blocked` loops on the same parent with
+no child creation are classified as
+`split_required_transition_not_applied`.
+
+This transition is generic. Coding implementation is the immediate
+Product/Spec proof case, but the same graph behavior applies to any future
+workflow where a planned node expands into multiple executable resource
+packets.
+
+See `split-required-resource-materialization-transition.md`.
 
 ## Pre-Proof Progress Readback Requirements
 

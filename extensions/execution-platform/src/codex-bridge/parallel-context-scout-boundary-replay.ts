@@ -251,16 +251,6 @@ function contextScoutNodeId(packet: CommitmentWorkPacket, index: number): string
     .slice(0, 72)}-${digest({ packetRef: packet.packetRef, index }).slice(0, 8)}`;
 }
 
-function contextSynthesisBarrierNodeId(input: {
-  graphId: string;
-  packets: CommitmentWorkPacket[];
-}): string {
-  return `context_synthesis_global_barrier-${digest({
-    graphId: input.graphId,
-    packetRefs: input.packets.map((packet) => packet.packetRef),
-  }).slice(0, 12)}`;
-}
-
 async function getOrCreateContextScoutNode(input: {
   graphs: RuntimeWorkGraphRepository;
   graph: TeamRunGraph;
@@ -299,119 +289,6 @@ async function getOrCreateContextScoutNode(input: {
       rawToolLogStored: false,
     },
   });
-}
-
-async function ensureContextSynthesisBarrier(input: {
-  graphs: RuntimeWorkGraphRepository;
-  graph: TeamRunGraph;
-  runtimeJobId: string;
-  packets: CommitmentWorkPacket[];
-  commitmentResults: ParallelContextScoutCommitmentResult[];
-}): Promise<{
-  synthesisBarrierNodeId: string;
-  contextSupplyEdgeRefs: string[];
-  synthesisReady: boolean;
-  synthesisBlockedReasonCodes: string[];
-}> {
-  const barrierNodeId = contextSynthesisBarrierNodeId({
-    graphId: input.graph.graphId,
-    packets: input.packets,
-  });
-  const synthesisReady = input.commitmentResults.every(
-    (result) => result.status === "succeeded" && !result.implementationBlocked,
-  );
-  const synthesisBlockedReasonCodes = synthesisReady
-    ? []
-    : [
-        ...new Set(
-          input.commitmentResults
-            .filter((result) => result.status !== "succeeded" || result.implementationBlocked)
-            .flatMap((result) => [
-              `context_supply_not_ready:${result.commitmentId}`,
-              ...result.reasonCodes.slice(0, 4),
-            ]),
-        ),
-      ].slice(0, 40);
-  const handoffRefs = input.commitmentResults
-    .map((result) => result.contextHandoffPacketRef)
-    .filter((ref): ref is string => Boolean(ref));
-  await input.graphs.addNode({
-    nodeId: barrierNodeId,
-    graphId: input.graph.graphId,
-    nodeKind: "context_synthesis",
-    assignedRole: "context_synthesis",
-    modelOrWorkerRef: "worker.context-synthesis",
-    runtimeJobId: input.runtimeJobId,
-    inputHandoffRefs:
-      handoffRefs.length > 0 ? handoffRefs : input.packets.map((packet) => packet.packetRef),
-    nodeStatus: synthesisReady ? "planned" : "needs_review",
-    metadata: {
-      capabilityId: "context_synthesis",
-      commitmentIdsAdvanced: input.packets.map((packet) => packet.commitmentId),
-      exactObjective:
-        "Synthesize accepted per-commitment context scout handoffs into one implementation-ready context packet.",
-      expectedOutput:
-        "A bounded context synthesis artifact grouping files, implementation areas, risks, validation needs, dependencies, and limitations.",
-      acceptanceCriteria: [
-        "All per-commitment context scout handoffs are accepted or explicitly accepted with nonblocking limitations.",
-        "Synthesis includes implementation groupings, dependency notes, validation strategy, and unresolved blockers.",
-      ],
-      downstreamConsumer: "post_synthesis_scheduler_graph",
-      contextScoutNodeIds: input.commitmentResults.map((result) => result.nodeId),
-      contextHandoffPacketRefs: handoffRefs,
-      synthesisReady,
-      synthesisBlockedReasonCodes,
-      parallelContextScoutBoundaryReplay: true,
-      runtimeOwnedContextSynthesisBarrier: true,
-      rawPromptStored: false,
-      rawResponseStored: false,
-      rawProviderLogStored: false,
-      rawToolLogStored: false,
-    },
-  });
-  const contextSupplyEdgeRefs: string[] = [];
-  for (const result of input.commitmentResults) {
-    const edgeId = `context_supply-${digest({
-      graphId: input.graph.graphId,
-      fromNodeId: result.nodeId,
-      toNodeId: barrierNodeId,
-      packetRef: result.packetRef,
-    }).slice(0, 16)}`;
-    const edge = await input.graphs.addEdge({
-      edgeId,
-      graphId: input.graph.graphId,
-      fromNodeId: result.nodeId,
-      toNodeId: barrierNodeId,
-      edgeKind: "context_supplies",
-      reasonCodes: [
-        "parallel_context_scout_handoff_to_synthesis",
-        result.status === "succeeded"
-          ? "context_supply_accepted"
-          : "context_supply_requires_review",
-      ],
-      artifactRefs: [
-        ...(result.contextHandoffPacketRef ? [result.contextHandoffPacketRef] : []),
-        ...(result.contextScoutToolLoopRef ? [result.contextScoutToolLoopRef] : []),
-      ],
-      metadata: {
-        commitmentId: result.commitmentId,
-        packetRef: result.packetRef,
-        synthesisBarrierNodeId: barrierNodeId,
-        implementationBlocked: result.implementationBlocked,
-        rawPromptStored: false,
-        rawResponseStored: false,
-        rawProviderLogStored: false,
-        rawToolLogStored: false,
-      },
-    });
-    contextSupplyEdgeRefs.push(`runtime-work-graph://edge/${edge.edgeId}`);
-  }
-  return {
-    synthesisBarrierNodeId: barrierNodeId,
-    contextSupplyEdgeRefs,
-    synthesisReady,
-    synthesisBlockedReasonCodes,
-  };
 }
 
 async function mapWithConcurrency<T, R>(
@@ -706,22 +583,11 @@ export async function runParallelContextScoutBoundaryReplay(
     },
   );
 
-  const synthesisBarrier = await ensureContextSynthesisBarrier({
-    graphs: input.runtimeWorkGraphs,
-    graph: snapshot.graph,
-    runtimeJobId: job.jobId,
-    packets,
-    commitmentResults,
-  });
   const aggregate = summarizeParallelContextScoutResults({
     runtimeJobId: job.jobId,
     graphId,
     concurrency,
     commitmentResults,
-    synthesisBarrierNodeId: synthesisBarrier.synthesisBarrierNodeId,
-    contextSupplyEdgeRefs: synthesisBarrier.contextSupplyEdgeRefs,
-    synthesisReady: synthesisBarrier.synthesisReady,
-    synthesisBlockedReasonCodes: synthesisBarrier.synthesisBlockedReasonCodes,
   });
   const aggregateRef = `runtime-job://${job.jobId}/parallel-context-scout-boundary-replay/${digest({
     graphId,
@@ -740,10 +606,12 @@ export async function runParallelContextScoutBoundaryReplay(
     metadata: {
       ...aggregate,
       aggregateContextSupplyRef: aggregateRef,
-      synthesisBarrierNodeId: synthesisBarrier.synthesisBarrierNodeId,
-      contextSupplyEdgeRefs: synthesisBarrier.contextSupplyEdgeRefs,
-      synthesisReady: synthesisBarrier.synthesisReady,
-      synthesisBlockedReasonCodes: synthesisBarrier.synthesisBlockedReasonCodes,
+      synthesisBarrierNodeId: null,
+      contextSupplyEdgeRefs: [],
+      synthesisReady: false,
+      synthesisBlockedReasonCodes: [],
+      schedulerFirstContextSupply: true,
+      contextSynthesisDefaultDisabled: true,
     } as unknown as JsonValue,
   });
   return {

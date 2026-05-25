@@ -107,7 +107,7 @@ const MODEL_AUTHORED_CLOSEOUT_JSON_SCHEMA = {
           title: { type: "string", maxLength: 120 },
           rationale: { type: "string", maxLength: 600 },
           recommendedNextStep: { type: "string", maxLength: 500 },
-          evidenceRefs: { type: "array", items: { type: "string", maxLength: 220 }, maxItems: 8 },
+          evidenceRefs: { type: "array", items: { type: "string", maxLength: 260 }, maxItems: 8 },
           confidence: { type: "string", maxLength: 40 },
         },
       },
@@ -148,7 +148,7 @@ const OPPORTUNITY_SEED_REPAIR_JSON_SCHEMA = {
           title: { type: "string", minLength: 1, maxLength: 120 },
           rationale: { type: "string", minLength: 1, maxLength: 600 },
           recommendedNextStep: { type: "string", minLength: 1, maxLength: 500 },
-          evidenceRefs: { type: "array", items: { type: "string", maxLength: 220 }, maxItems: 8 },
+          evidenceRefs: { type: "array", items: { type: "string", maxLength: 260 }, maxItems: 8 },
           confidence: { enum: ["low", "medium", "high"] },
         },
       },
@@ -185,7 +185,7 @@ const RepairedOpportunitySeedsSchema = z
             title: z.string().trim().min(1).max(120),
             rationale: z.string().trim().min(1).max(600),
             recommendedNextStep: z.string().trim().min(1).max(500),
-            evidenceRefs: z.array(z.string().trim().min(1).max(220)).max(8),
+            evidenceRefs: z.array(z.string().trim().min(1).max(260)).max(8),
             confidence: z.enum(["low", "medium", "high"]),
           })
           .strict(),
@@ -446,7 +446,9 @@ export class ModelCloseoutCapsuleReporter {
         seedId: `${input.input.factualRefs.runtimeJobId}-seed-${index + 1}`,
         ...seed,
         evidenceRefs:
-          seed.evidenceRefs.length > 0 ? seed.evidenceRefs : input.evidenceRefs.slice(0, 3),
+          seed.evidenceRefs.length > 0
+            ? boundedStringArray(seed.evidenceRefs, 8, 260, [])
+            : boundedStringArray(input.evidenceRefs, 3, 260, []),
       }));
       return repairedSeeds.length > 0
         ? repairedSeeds
@@ -606,7 +608,7 @@ function normalizeOpportunitySeedCandidates(
         title,
         rationale,
         recommendedNextStep,
-        evidenceRefs: boundedStringArray(record.evidenceRefs, 8, 220, fallbackEvidenceRefs),
+        evidenceRefs: boundedStringArray(record.evidenceRefs, 8, 260, fallbackEvidenceRefs),
         confidence: normalizeConfidence(record.confidence),
       };
     })
@@ -624,7 +626,7 @@ function createNoOpOpportunitySeed(
     title: "No proactive follow-up identified",
     rationale: "The model-authored closeout did not identify a bounded actionable follow-up.",
     recommendedNextStep: "Review the human closeout report for context.",
-    evidenceRefs: evidenceRefs.slice(0, 3),
+    evidenceRefs: boundedStringArray(evidenceRefs, 3, 260, []),
     confidence: "medium",
   };
 }
@@ -694,7 +696,7 @@ export function createDegradedSystemCloseoutCapsule(
     rationale:
       "The workflow completed without a model-authored Closeout Capsule, so the owner-facing report is degraded.",
     recommendedNextStep: "Rerun closeout generation with the approved closeout model path.",
-    evidenceRefs: input.factualRefs.artifactRefs.slice(0, 8),
+    evidenceRefs: boundedStringArray(input.factualRefs.artifactRefs, 8, 260, []),
     confidence: "high" as const,
   };
   const capsule = parseCloseoutCapsule({
