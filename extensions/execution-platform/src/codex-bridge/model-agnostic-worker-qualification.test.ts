@@ -114,7 +114,7 @@ describe("model-agnostic worker qualification matrix", () => {
       providerPath: "openrouter",
       taskFamilies: [
         buildQualificationTaskFamilyResult({
-          taskFamily: "repo_context_scout",
+          taskFamily: "repo_resource_scout",
           status: "production_qualified",
           evidenceRefs: ["artifact://deepseek/context-scout-quality"],
           modelRunRefs: ["openrouter://deepseek/context-run"],
@@ -135,8 +135,8 @@ describe("model-agnostic worker qualification matrix", () => {
 
     expect(
       selectModelAgnosticWorkerCandidate({
-        taskFamily: "repo_context_scout",
-        specializationId: "non_codex_context_scout",
+        taskFamily: "repo_resource_scout",
+        specializationId: "non_codex_resource_scout",
         matrix,
       }).profile?.candidateId,
     ).toBe("openrouter.deepseek.deepseek-v4-flash");
@@ -171,10 +171,10 @@ describe("model-agnostic worker qualification matrix", () => {
     );
 
     const passed = evaluateModelPolicyStagePromotionGate({
-      stage: "context_scout",
+      stage: "resource_scout",
       candidateId: "openrouter.qwen.qwen3-coder-next",
       observations: Array.from({ length: 8 }, (_, index) => ({
-        stage: "context_scout" as const,
+        stage: "resource_scout" as const,
         candidateId: "openrouter.qwen.qwen3-coder-next",
         validOutput: true,
         latencyMs: 3_000 + index,

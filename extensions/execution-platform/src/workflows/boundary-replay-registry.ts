@@ -3,25 +3,19 @@ export const BOUNDARY_REPLAY_REGISTRY_VERSION = "execution-platform.boundary-rep
 export const BOUNDARY_REPLAY_CHECKPOINT_KINDS = [
   "router_payload",
   "mission_ledger",
-  "commitment_packet_authoring",
-  "commitment_packet_review",
+  "obligation_graph",
   "work_intent_graph",
-  "before_context_request",
-  "after_context_request",
-  "context_scout",
-  "before_context_handoff",
-  "after_context_handoff",
-  "before_context_synthesis",
-  "context_synthesis",
-  "after_context_synthesis",
+  "before_resource_requirement_compile",
+  "after_resource_requirement_compile",
+  "resource_specialist_subturn",
+  "before_resource_handoff",
+  "after_resource_handoff",
   "before_expansion_admission",
   "after_expansion_admission",
   "before_graph_patch_write",
   "after_graph_patch_write",
   "graph_compile",
   "node_selection",
-  "before_resource_materialization",
-  "after_resource_materialization",
   "before_worker_invocation",
   "worker_execution",
   "after_worker_edit",
@@ -36,15 +30,40 @@ export const BOUNDARY_REPLAY_CHECKPOINT_KINDS = [
 
 export type BoundaryReplayCheckpointKind = (typeof BOUNDARY_REPLAY_CHECKPOINT_KINDS)[number];
 
+export const BOUNDARY_REPLAY_PRODUCTION_PROOF_BOUNDARY_IDS = [
+  "after_obligation_graph",
+  "after_work_intent_acceptance",
+  "before_resource_requirement_compile",
+  "after_resource_handoff",
+  "before_worker_execution",
+  "after_worker_edit_before_persistence",
+] as const;
+
+export type BoundaryReplayProductionProofBoundaryId =
+  (typeof BOUNDARY_REPLAY_PRODUCTION_PROOF_BOUNDARY_IDS)[number];
+
+const PRODUCTION_PROOF_BOUNDARY_TO_CHECKPOINT_KIND: Record<
+  BoundaryReplayProductionProofBoundaryId,
+  BoundaryReplayCheckpointKind
+> = {
+  after_obligation_graph: "obligation_graph",
+  after_work_intent_acceptance: "work_intent_graph",
+  before_resource_requirement_compile: "before_resource_requirement_compile",
+  after_resource_handoff: "after_resource_handoff",
+  before_worker_execution: "before_worker_invocation",
+  after_worker_edit_before_persistence: "after_worker_edit",
+};
+
 export const BOUNDARY_REPLAY_CLI_BOUNDARY_ALIASES = [
-  "after-context",
-  "after-parallel-context",
-  "after-context-synthesis",
   "after-graph-selection",
-  "before-resource-materialization",
-  "after-resource-materialization",
-  "before-split-required-materialization",
-  "after-split-required-materialization",
+  "after-obligation-graph",
+  "after-work-intent-acceptance",
+  "before-resource-requirement-compile",
+  "after-resource-requirement-compile",
+  "resource-specialist-subturn",
+  "after-resource-handoff",
+  "before-worker-execution",
+  "after-worker-edit-before-persistence",
 ] as const;
 
 export type BoundaryReplayCliBoundaryAlias = (typeof BOUNDARY_REPLAY_CLI_BOUNDARY_ALIASES)[number];
@@ -53,14 +72,15 @@ const BOUNDARY_REPLAY_CLI_ALIAS_TO_CHECKPOINT_KIND: Record<
   BoundaryReplayCliBoundaryAlias,
   BoundaryReplayCheckpointKind
 > = {
-  "after-context": "after_context_handoff",
-  "after-parallel-context": "after_context_handoff",
-  "after-context-synthesis": "after_context_synthesis",
   "after-graph-selection": "node_selection",
-  "before-resource-materialization": "before_resource_materialization",
-  "after-resource-materialization": "after_resource_materialization",
-  "before-split-required-materialization": "before_resource_materialization",
-  "after-split-required-materialization": "after_resource_materialization",
+  "after-obligation-graph": "obligation_graph",
+  "after-work-intent-acceptance": "work_intent_graph",
+  "before-resource-requirement-compile": "before_resource_requirement_compile",
+  "after-resource-requirement-compile": "after_resource_requirement_compile",
+  "resource-specialist-subturn": "resource_specialist_subturn",
+  "after-resource-handoff": "after_resource_handoff",
+  "before-worker-execution": "before_worker_invocation",
+  "after-worker-edit-before-persistence": "after_worker_edit",
 };
 
 export function boundaryReplayCheckpointKindForCliAlias(
@@ -72,11 +92,41 @@ export function boundaryReplayCheckpointKindForCliAlias(
     : null;
 }
 
+export function boundaryReplayCheckpointKindForProofBoundaryId(
+  boundaryId: string | null | undefined,
+): BoundaryReplayCheckpointKind | null {
+  const normalized = (boundaryId ?? "").trim();
+  return BOUNDARY_REPLAY_PRODUCTION_PROOF_BOUNDARY_IDS.includes(
+    normalized as BoundaryReplayProductionProofBoundaryId,
+  )
+    ? PRODUCTION_PROOF_BOUNDARY_TO_CHECKPOINT_KIND[
+        normalized as BoundaryReplayProductionProofBoundaryId
+      ]
+    : null;
+}
+
+export function boundaryReplayProofBoundaryIdForCheckpointKind(
+  checkpointKind: BoundaryReplayCheckpointKind,
+): BoundaryReplayProductionProofBoundaryId | null {
+  for (const [boundaryId, kind] of Object.entries(PRODUCTION_PROOF_BOUNDARY_TO_CHECKPOINT_KIND)) {
+    if (kind === checkpointKind) {
+      return boundaryId as BoundaryReplayProductionProofBoundaryId;
+    }
+  }
+  return null;
+}
+
 export type BoundaryReplayBoundaryDefinition = {
   artifactKind: "boundary_replay_boundary_definition";
   registryVersion: typeof BOUNDARY_REPLAY_REGISTRY_VERSION;
   checkpointKind: BoundaryReplayCheckpointKind;
+  productionProofBoundaryId: BoundaryReplayProductionProofBoundaryId | null;
+  productionProofSequenceIndex: number | null;
   workflowApplicability: "workflow_agnostic";
+  productionPathEquivalence: "production_equivalent" | "diagnostic_only";
+  sourceCheckpointVersion: "execution-platform.boundary-replay-checkpoint.v1";
+  allowedSyntheticArtifacts: string[];
+  forbiddenSyntheticArtifacts: string[];
   requiredUpstreamCheckpointKinds: BoundaryReplayCheckpointKind[];
   versionedNormalizers: Array<{
     normalizerId: string;
@@ -101,6 +151,14 @@ export type BoundaryReplayBoundaryDefinition = {
   readbackProjectionFields: string[];
   diagnosticOnly: boolean;
   diagnosticFlagRefs: string[];
+  terminalLifecyclePolicy: {
+    closeDbPools: true;
+    closeProviderClients: true;
+    stopTimersAndHeartbeats: true;
+    waitForRuntimeEventFlush: true;
+    emitTerminalJsonOnce: true;
+    exposeHangingHandles: true;
+  };
   reasonCodes: string[];
   rawPromptStored: false;
   rawResponseStored: false;
@@ -115,144 +173,119 @@ export type BoundaryReplayBoundaryDefinition = {
 const CORE_PREFIX: BoundaryReplayCheckpointKind[] = [
   "router_payload",
   "mission_ledger",
-  "commitment_packet_authoring",
+  "obligation_graph",
+];
+
+const WORK_INTENT_PREFIX: BoundaryReplayCheckpointKind[] = [...CORE_PREFIX, "work_intent_graph"];
+
+const RESOURCE_REQUIREMENT_PREFIX: BoundaryReplayCheckpointKind[] = [
+  ...WORK_INTENT_PREFIX,
+  "before_resource_requirement_compile",
+  "after_resource_requirement_compile",
+];
+
+const RESOURCE_HANDOFF_PREFIX: BoundaryReplayCheckpointKind[] = [
+  ...RESOURCE_REQUIREMENT_PREFIX,
+  "resource_specialist_subturn",
+  "before_resource_handoff",
+  "after_resource_handoff",
+];
+
+const EXECUTABLE_GRAPH_PREFIX: BoundaryReplayCheckpointKind[] = [
+  ...RESOURCE_HANDOFF_PREFIX,
+  "graph_compile",
+  "node_selection",
 ];
 
 const DEPENDENCIES: Record<BoundaryReplayCheckpointKind, BoundaryReplayCheckpointKind[]> = {
   router_payload: ["router_payload"],
   mission_ledger: ["router_payload", "mission_ledger"],
-  commitment_packet_authoring: [...CORE_PREFIX],
-  commitment_packet_review: [...CORE_PREFIX, "commitment_packet_review"],
-  work_intent_graph: [...CORE_PREFIX, "work_intent_graph"],
-  before_context_request: [...CORE_PREFIX, "before_context_request"],
-  after_context_request: [...CORE_PREFIX, "before_context_request", "after_context_request"],
-  context_scout: [...CORE_PREFIX, "context_scout"],
-  before_context_handoff: [...CORE_PREFIX, "context_scout", "before_context_handoff"],
-  after_context_handoff: [
-    ...CORE_PREFIX,
-    "context_scout",
-    "before_context_handoff",
-    "after_context_handoff",
-  ],
-  before_context_synthesis: [...CORE_PREFIX, "context_scout", "before_context_synthesis"],
-  context_synthesis: [...CORE_PREFIX, "context_scout", "context_synthesis"],
-  after_context_synthesis: [
-    ...CORE_PREFIX,
-    "context_scout",
-    "context_synthesis",
-    "after_context_synthesis",
-  ],
-  before_expansion_admission: [...CORE_PREFIX, "graph_compile", "before_expansion_admission"],
+  obligation_graph: [...CORE_PREFIX],
+  work_intent_graph: [...WORK_INTENT_PREFIX],
+  before_resource_requirement_compile: [...WORK_INTENT_PREFIX, "before_resource_requirement_compile"],
+  after_resource_requirement_compile: [...RESOURCE_REQUIREMENT_PREFIX],
+  resource_specialist_subturn: [...RESOURCE_REQUIREMENT_PREFIX, "resource_specialist_subturn"],
+  before_resource_handoff: [...RESOURCE_REQUIREMENT_PREFIX, "resource_specialist_subturn", "before_resource_handoff"],
+  after_resource_handoff: [...RESOURCE_HANDOFF_PREFIX],
+  before_expansion_admission: [...RESOURCE_HANDOFF_PREFIX, "graph_compile", "before_expansion_admission"],
   after_expansion_admission: [
-    ...CORE_PREFIX,
+    ...RESOURCE_HANDOFF_PREFIX,
     "graph_compile",
     "before_expansion_admission",
     "after_expansion_admission",
   ],
-  before_graph_patch_write: [...CORE_PREFIX, "graph_compile", "before_graph_patch_write"],
+  before_graph_patch_write: [...RESOURCE_HANDOFF_PREFIX, "graph_compile", "before_graph_patch_write"],
   after_graph_patch_write: [
-    ...CORE_PREFIX,
+    ...RESOURCE_HANDOFF_PREFIX,
     "graph_compile",
     "before_graph_patch_write",
     "after_graph_patch_write",
   ],
-  graph_compile: [...CORE_PREFIX, "graph_compile"],
-  node_selection: [...CORE_PREFIX, "graph_compile", "node_selection"],
-  before_resource_materialization: [
-    ...CORE_PREFIX,
-    "graph_compile",
-    "node_selection",
-    "before_resource_materialization",
-  ],
-  after_resource_materialization: [
-    ...CORE_PREFIX,
-    "graph_compile",
-    "node_selection",
-    "before_resource_materialization",
-    "after_resource_materialization",
-  ],
-  before_worker_invocation: [
-    ...CORE_PREFIX,
-    "graph_compile",
-    "node_selection",
-    "after_resource_materialization",
-    "before_worker_invocation",
-  ],
-  worker_execution: [...CORE_PREFIX, "graph_compile", "node_selection", "worker_execution"],
+  graph_compile: [...RESOURCE_HANDOFF_PREFIX, "graph_compile"],
+  node_selection: [...EXECUTABLE_GRAPH_PREFIX],
+  before_worker_invocation: [...EXECUTABLE_GRAPH_PREFIX, "before_worker_invocation"],
+  worker_execution: [...EXECUTABLE_GRAPH_PREFIX, "before_worker_invocation", "worker_execution"],
   after_worker_edit: [
-    ...CORE_PREFIX,
-    "graph_compile",
-    "node_selection",
+    ...EXECUTABLE_GRAPH_PREFIX,
+    "before_worker_invocation",
     "worker_execution",
     "after_worker_edit",
   ],
   before_validation: [
-    ...CORE_PREFIX,
-    "graph_compile",
-    "node_selection",
+    ...EXECUTABLE_GRAPH_PREFIX,
+    "before_worker_invocation",
     "worker_execution",
     "before_validation",
   ],
   validation_repair: [
-    ...CORE_PREFIX,
-    "graph_compile",
-    "node_selection",
+    ...EXECUTABLE_GRAPH_PREFIX,
+    "before_worker_invocation",
     "worker_execution",
     "validation_repair",
   ],
   after_validation: [
-    ...CORE_PREFIX,
-    "graph_compile",
-    "node_selection",
+    ...EXECUTABLE_GRAPH_PREFIX,
+    "before_worker_invocation",
     "worker_execution",
     "validation_repair",
     "after_validation",
   ],
   review_qa: [
-    ...CORE_PREFIX,
-    "graph_compile",
-    "node_selection",
+    ...EXECUTABLE_GRAPH_PREFIX,
+    "before_worker_invocation",
     "worker_execution",
     "validation_repair",
     "review_qa",
   ],
   before_closeout: [
-    ...CORE_PREFIX,
-    "graph_compile",
-    "node_selection",
+    ...EXECUTABLE_GRAPH_PREFIX,
+    "before_worker_invocation",
     "worker_execution",
     "validation_repair",
     "review_qa",
     "before_closeout",
   ],
   closeout_finalization: [
-    ...CORE_PREFIX,
-    "graph_compile",
-    "node_selection",
+    ...EXECUTABLE_GRAPH_PREFIX,
+    "before_worker_invocation",
     "worker_execution",
     "validation_repair",
     "review_qa",
     "closeout_finalization",
   ],
-  work_queue_readback: [...CORE_PREFIX, "graph_compile", "node_selection", "work_queue_readback"],
+  work_queue_readback: [...EXECUTABLE_GRAPH_PREFIX, "work_queue_readback"],
 };
 
 function defaultContinuationModeFor(
   checkpointKind: BoundaryReplayCheckpointKind,
 ): BoundaryReplayBoundaryDefinition["resumeCommand"]["defaultContinuationMode"] {
-  if (checkpointKind === "after_context_synthesis") {
-    return "diagnostic_only";
-  }
-  if (
-    checkpointKind === "after_resource_materialization" ||
-    checkpointKind === "before_worker_invocation"
-  ) {
+  if (checkpointKind === "before_worker_invocation") {
     return "run_node";
   }
   if (
     checkpointKind === "validation_repair" ||
-    checkpointKind === "after_context_handoff" ||
-    checkpointKind === "after_context_request"
+    checkpointKind === "after_resource_handoff" ||
+    checkpointKind === "after_resource_requirement_compile"
   ) {
     return "repair_boundary";
   }
@@ -266,12 +299,6 @@ function allowedNextTransitionsFor(
   checkpointKind: BoundaryReplayCheckpointKind,
 ): BoundaryReplayBoundaryDefinition["allowedNextTransitions"] {
   const defaultMode = defaultContinuationModeFor(checkpointKind);
-  if (checkpointKind === "after_context_synthesis") {
-    return ["diagnostic_only"];
-  }
-  if (checkpointKind === "after_resource_materialization") {
-    return ["run_node", "repair_boundary"];
-  }
   if (checkpointKind === "closeout_finalization") {
     return ["finalize_closeout", "repair_boundary"];
   }
@@ -291,8 +318,8 @@ function blockerClassesFor(checkpointKind: BoundaryReplayCheckpointKind): string
     "rejected_checkpoint",
     "raw_storage_or_authority_violation",
   ];
-  if (checkpointKind.includes("context")) {
-    return [...common, "context_snapshot_missing", "context_snapshot_stale"];
+  if (checkpointKind.includes("resource_requirement") || checkpointKind.includes("resource_handoff")) {
+    return [...common, "resource_snapshot_missing", "resource_snapshot_stale"];
   }
   if (checkpointKind.includes("resource") || checkpointKind.includes("worker")) {
     return [...common, "node_readiness_missing", "resource_packet_missing"];
@@ -308,6 +335,12 @@ function blockerClassesFor(checkpointKind: BoundaryReplayCheckpointKind): string
 
 const READBACK_FIELDS = [
   "boundaryKind",
+  "productionPathEquivalence",
+  "diagnosticOnly",
+  "boundaryEpoch",
+  "currentChildEpoch",
+  "supersededChildCount",
+  "proofClosureAllowed",
   "checkpointRefs",
   "graphCheckpointRefs",
   "latestAcceptedCheckpointRef",
@@ -328,12 +361,28 @@ const READBACK_FIELDS = [
 function definitionFor(
   checkpointKind: BoundaryReplayCheckpointKind,
 ): BoundaryReplayBoundaryDefinition {
-  const diagnosticOnly = checkpointKind === "after_context_synthesis";
+  const diagnosticOnly = false;
+  const productionProofBoundaryId = boundaryReplayProofBoundaryIdForCheckpointKind(checkpointKind);
   return {
     artifactKind: "boundary_replay_boundary_definition",
     registryVersion: BOUNDARY_REPLAY_REGISTRY_VERSION,
     checkpointKind,
+    productionProofBoundaryId,
+    productionProofSequenceIndex: productionProofBoundaryId
+      ? BOUNDARY_REPLAY_PRODUCTION_PROOF_BOUNDARY_IDS.indexOf(productionProofBoundaryId)
+      : null,
     workflowApplicability: "workflow_agnostic",
+    productionPathEquivalence: diagnosticOnly ? "diagnostic_only" : "production_equivalent",
+    sourceCheckpointVersion: "execution-platform.boundary-replay-checkpoint.v1",
+    allowedSyntheticArtifacts: diagnosticOnly ? ["diagnostic_fixture_ref"] : [],
+    forbiddenSyntheticArtifacts: diagnosticOnly
+      ? ["production_proof_closure"]
+      : [
+          "default_context_synthesis",
+          "synthetic_executable_node",
+          "synthetic_resource_packet",
+          "proof_only_topology",
+        ],
     requiredUpstreamCheckpointKinds: [...new Set(DEPENDENCIES[checkpointKind])],
     versionedNormalizers: [
       {
@@ -357,13 +406,15 @@ function definitionFor(
     terminalBlockerClasses: blockerClassesFor(checkpointKind),
     readbackProjectionFields: READBACK_FIELDS,
     diagnosticOnly,
-    diagnosticFlagRefs: diagnosticOnly
-      ? [
-          "--allow-legacy-diagnostic-boundary",
-          "--allow-legacy-context-synthesis-boundary",
-          "OPENCLAW_ALLOW_LEGACY_CONTEXT_SYNTHESIS_REPLAY",
-        ]
-      : [],
+    diagnosticFlagRefs: [],
+    terminalLifecyclePolicy: {
+      closeDbPools: true,
+      closeProviderClients: true,
+      stopTimersAndHeartbeats: true,
+      waitForRuntimeEventFlush: true,
+      emitTerminalJsonOnce: true,
+      exposeHangingHandles: true,
+    },
     reasonCodes: [
       "boundary_replay_registry_definition_loaded",
       diagnosticOnly
@@ -428,6 +479,10 @@ export function boundaryReplayRegistrySummary(): Record<string, unknown> {
     artifactKind: "boundary_replay_registry_summary",
     registryVersion: BOUNDARY_REPLAY_REGISTRY_VERSION,
     boundaryCount: BOUNDARY_REPLAY_CHECKPOINT_KINDS.length,
+    productionProofBoundaryIds: [...BOUNDARY_REPLAY_PRODUCTION_PROOF_BOUNDARY_IDS],
+    productionProofBoundaryKinds: BOUNDARY_REPLAY_PRODUCTION_PROOF_BOUNDARY_IDS.map(
+      (boundaryId) => PRODUCTION_PROOF_BOUNDARY_TO_CHECKPOINT_KIND[boundaryId],
+    ),
     diagnosticOnlyBoundaryKinds: boundaryReplayDefinitions()
       .filter((definition) => definition.diagnosticOnly)
       .map((definition) => definition.checkpointKind),

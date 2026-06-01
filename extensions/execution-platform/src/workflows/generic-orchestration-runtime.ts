@@ -4,8 +4,6 @@ import type { RuntimeToolFamily } from "../runtime-tool-call/runtime-tool-types.
 import {
   GENERIC_RUNTIME_SPINE_ID,
   GenericRuntimeSpine,
-  genericRuntimeSpineLifecycleArtifactMetadata,
-  genericRuntimeSpineReadinessArtifactMetadata,
   type GenericRuntimeSpineLifecycleEvaluation,
   type GenericRuntimeSpineReadiness,
 } from "./generic-runtime-spine.ts";
@@ -25,6 +23,9 @@ export const GENERIC_ORCHESTRATION_RUNTIME_ENGINE_ID = "generic-orchestration-ru
 
 export const GENERIC_ORCHESTRATION_RUNTIME_RESULT_ARTIFACT_TYPE =
   "execution.generic_orchestration_runtime_result";
+
+const GENERIC_RUNTIME_RESULT_MANIFEST_REF_LIMIT = 30;
+const GENERIC_RUNTIME_RESULT_MANIFEST_REASON_LIMIT = 40;
 
 export type GenericOrchestrationRuntimeStatus =
   | "succeeded"
@@ -283,6 +284,9 @@ export function genericOrchestrationRuntimeResultArtifactMetadata(
   const schedulerResult = result.schedulerResult;
   const readiness = result.readiness;
   const workflowEngineReadiness = readiness.workflowEngineReadiness;
+  const genericRuntimeSpineLifecycle = result.genericRuntimeSpineLifecycle;
+  const genericRuntimeSpineReadiness = readiness.genericRuntimeSpineReadiness;
+  const workflowReadiness = genericRuntimeSpineReadiness.workflowEngineReadiness;
   return {
     artifactKind: "generic_orchestration_runtime_result",
     engineId: result.engineId,
@@ -291,21 +295,23 @@ export function genericOrchestrationRuntimeResultArtifactMetadata(
     status: result.status,
     schedulerStatus: result.schedulerStatus,
     graphId: result.graphId,
-    executedNodeIds: result.executedNodeIds.slice(0, 100),
+    executedNodeIds: result.executedNodeIds.slice(0, GENERIC_RUNTIME_RESULT_MANIFEST_REF_LIMIT),
     executedNodeCount: result.executedNodeIds.length,
-    addedNodeIds: result.addedNodeIds.slice(0, 100),
+    addedNodeIds: result.addedNodeIds.slice(0, GENERIC_RUNTIME_RESULT_MANIFEST_REF_LIMIT),
     addedNodeCount: result.addedNodeIds.length,
-    decisionRefs: result.decisionRefs.slice(0, 100),
+    decisionRefs: result.decisionRefs.slice(0, GENERIC_RUNTIME_RESULT_MANIFEST_REF_LIMIT),
     decisionRefCount: result.decisionRefs.length,
-    reasonCodes: result.reasonCodes.slice(0, 80),
-    readiness: {
+    reasonCodes: result.reasonCodes.slice(0, GENERIC_RUNTIME_RESULT_MANIFEST_REASON_LIMIT),
+    readinessSummary: {
       artifactKind: readiness.artifactKind,
       engineId: readiness.engineId,
       workflowId: readiness.workflowId,
       ready: readiness.ready,
-      reasonCodes: readiness.reasonCodes.slice(0, 80),
-      genericRuntimeSpineReadiness: genericRuntimeSpineReadinessArtifactMetadata(
-        readiness.genericRuntimeSpineReadiness,
+      reasonCodes: readiness.reasonCodes.slice(0, GENERIC_RUNTIME_RESULT_MANIFEST_REASON_LIMIT),
+      genericRuntimeSpineReady: genericRuntimeSpineReadiness.ready,
+      genericRuntimeSpineReasonCodes: genericRuntimeSpineReadiness.reasonCodes.slice(
+        0,
+        GENERIC_RUNTIME_RESULT_MANIFEST_REASON_LIMIT,
       ),
       workflowEngineReadiness: {
         artifactKind: workflowEngineReadiness.artifactKind,
@@ -315,15 +321,31 @@ export function genericOrchestrationRuntimeResultArtifactMetadata(
         pluginId: workflowEngineReadiness.pluginId,
         pluginReady: workflowEngineReadiness.pluginReady,
         ready: workflowEngineReadiness.ready,
-        reasonCodes: workflowEngineReadiness.reasonCodes.slice(0, 80),
-        missingExecutorKeys: workflowEngineReadiness.missingExecutorKeys.slice(0, 80),
-        missingPluginExecutorKeys: workflowEngineReadiness.missingPluginExecutorKeys.slice(0, 80),
-        missingRuntimeToolFamilies: workflowEngineReadiness.missingRuntimeToolFamilies.slice(0, 80),
+        reasonCodes: workflowEngineReadiness.reasonCodes.slice(
+          0,
+          GENERIC_RUNTIME_RESULT_MANIFEST_REASON_LIMIT,
+        ),
+        missingExecutorKeyCount: workflowEngineReadiness.missingExecutorKeys.length,
+        missingExecutorKeys: workflowEngineReadiness.missingExecutorKeys.slice(
+          0,
+          GENERIC_RUNTIME_RESULT_MANIFEST_REF_LIMIT,
+        ),
+        missingPluginExecutorKeyCount: workflowEngineReadiness.missingPluginExecutorKeys.length,
+        missingPluginExecutorKeys: workflowEngineReadiness.missingPluginExecutorKeys.slice(
+          0,
+          GENERIC_RUNTIME_RESULT_MANIFEST_REF_LIMIT,
+        ),
+        missingRuntimeToolFamilyCount: workflowEngineReadiness.missingRuntimeToolFamilies.length,
+        missingRuntimeToolFamilies: workflowEngineReadiness.missingRuntimeToolFamilies.slice(
+          0,
+          GENERIC_RUNTIME_RESULT_MANIFEST_REF_LIMIT,
+        ),
         rawPromptStored: false,
         rawResponseStored: false,
         rawLogsStored: false,
         workQueueLifecycleMutated: false,
       },
+      workflowReadinessReasonCodeCount: workflowReadiness.reasonCodes.length,
       rawPromptStored: false,
       rawResponseStored: false,
       rawLogsStored: false,
@@ -337,7 +359,10 @@ export function genericOrchestrationRuntimeResultArtifactMetadata(
           executedNodeCount: schedulerResult.executedNodeIds.length,
           addedNodeCount: schedulerResult.addedNodeIds.length,
           decisionRefCount: schedulerResult.decisionRefs.length,
-          reasonCodes: schedulerResult.reasonCodes.slice(0, 80),
+          reasonCodes: schedulerResult.reasonCodes.slice(
+            0,
+            GENERIC_RUNTIME_RESULT_MANIFEST_REASON_LIMIT,
+          ),
           missionLedgerStatus: schedulerResult.missionLedger?.ledgerStatus ?? null,
           missionLedgerGate: schedulerResult.missionLedger?.missionGate ?? null,
           rawPromptStored: false,
@@ -346,12 +371,27 @@ export function genericOrchestrationRuntimeResultArtifactMetadata(
           workQueueLifecycleMutated: false,
         }
       : null,
-    genericRuntimeSpineLifecycle: result.genericRuntimeSpineLifecycle
-      ? genericRuntimeSpineLifecycleArtifactMetadata(result.genericRuntimeSpineLifecycle)
+    genericRuntimeSpineLifecycleSummary: genericRuntimeSpineLifecycle
+      ? {
+          status: genericRuntimeSpineLifecycle.status,
+          schedulerStatus: genericRuntimeSpineLifecycle.schedulerStatus,
+          graphEvidenceAccepted: genericRuntimeSpineLifecycle.graphEvidenceAccepted,
+          executedNodeCount: genericRuntimeSpineLifecycle.executedNodeIds.length,
+          addedNodeCount: genericRuntimeSpineLifecycle.addedNodeIds.length,
+          decisionRefCount: genericRuntimeSpineLifecycle.decisionRefs.length,
+          reasonCodes: genericRuntimeSpineLifecycle.reasonCodes.slice(
+            0,
+            GENERIC_RUNTIME_RESULT_MANIFEST_REASON_LIMIT,
+          ),
+          rawPromptStored: false,
+          rawResponseStored: false,
+          rawProviderLogStored: false,
+          workQueueLifecycleMutated: false,
+        }
       : null,
     schedulerResultStoredInline: false,
     schedulerResultStoragePolicy:
-      "bounded_manifest_only_full_scheduler_state_lives_in_runtime_graph_and_progress_artifacts",
+      "bounded_manifest_only_full_runtime_result_lives_in_payload_runtime_graph_and_progress_artifacts",
     rawPromptStored: false,
     rawResponseStored: false,
     rawProviderLogStored: false,

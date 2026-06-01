@@ -78,10 +78,11 @@ artifact indicates the work can be split without shared write conflicts.
 - Add file-scope and validation-scope locks.
 - Add per-provider/model concurrency policy and backoff.
 - Add a model-policy audit for GPT-5.5 usage across Mission Ledger, packet
-  authoring/review, context synthesis, scheduler graph selection, and repair,
+  authoring, context synthesis, scheduler graph selection, and repair,
   including downgrade criteria, escalation criteria, and quality gates.
-- Make packet authoring and packet review parallel by default for independent
-  commitments.
+- Keep packet authoring parallel by default for independent commitments.
+  Packet model review is retired from the production path; packet diagnostics
+  and structural readiness replace the prior review gate.
 - Make context scout fan out per commitment packet and join through exactly one
   context synthesis barrier.
 - Let post-synthesis graph optimizer produce parallel groups, not only a linear
@@ -89,8 +90,8 @@ artifact indicates the work can be split without shared write conflicts.
 - Surface parallel group state in Work Queue readback: active nodes, blocked
   locks, provider waits, join readiness, failed branches, and retry/repair
   state.
-- Add boundary replay checkpoints at packet authoring, packet review, context
-  scout, context synthesis, post-synthesis graph compile, node selection,
+- Add boundary replay checkpoints at packet authoring, context scout, context
+  synthesis, post-synthesis graph compile, node selection,
   validation, review, readback, and closeout.
 
 ## Non-Goals

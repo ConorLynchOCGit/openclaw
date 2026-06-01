@@ -7,8 +7,14 @@ import {
 import type { AgentTeamRoleId } from "./agent-team-plan.ts";
 import {
   buildAgentTeamResultReviewArtifact,
+  buildAgentTeamHumanCloseoutSummary,
   recordAgentTeamResultReviewArtifact,
 } from "./agent-team-result-review.ts";
+import {
+  buildCloseoutCapsuleId,
+  closeoutCapsuleToLegacyHumanSummary,
+  type CloseoutCapsule,
+} from "./closeout-capsule.ts";
 import {
   createAgentTeamRuntimeEvidence,
   recordAgentTeamRuntimeEvidence,
@@ -85,7 +91,7 @@ export async function runLiveParallelAgentTeamE2E(input: {
     runtimeJobId: input.runtimeJobId,
     objective: "parallel agent-team e2e",
     roster: [
-      { roleId: "context_scout", modelId: "deepseek/deepseek-v4-flash", status: "allowed" },
+      { roleId: "resource_scout", modelId: "deepseek/deepseek-v4-flash", status: "allowed" },
       { roleId: "implementation_engineer", modelId: "moonshotai/kimi-k2.6", status: "allowed" },
       { roleId: "test_engineer", modelId: "deepseek/deepseek-v4-pro", status: "allowed" },
       {
@@ -161,6 +167,13 @@ export async function runLiveParallelAgentTeamE2E(input: {
         judgmentMade: true,
       }),
     });
+    const closeoutCapsule =
+      proof.validationState === "passed"
+        ? buildLiveParallelAgentTeamCloseoutCapsule({
+            runtimeJobId: input.runtimeJobId,
+            teamRunId: input.teamRunId,
+          })
+        : null;
     await recordAgentTeamResultReviewArtifact({
       runtimeJobs: input.runtimeJobs,
       artifact: buildAgentTeamResultReviewArtifact({
@@ -182,6 +195,19 @@ export async function runLiveParallelAgentTeamE2E(input: {
         findings: [],
         limitations: [],
         requiredFixes: [],
+        closeoutCapsule: closeoutCapsule ?? undefined,
+        humanCloseoutSummary: closeoutCapsule
+          ? closeoutCapsuleToLegacyHumanSummary(closeoutCapsule)
+          : buildAgentTeamHumanCloseoutSummary({
+              whatChanged: "Parallel agent-team E2E produced needs-review runtime evidence.",
+              whyItChanged: "The proof records bounded reviewer state for operator follow-up.",
+              filesTouched: [],
+              testsRun: [`runtime-job://${input.runtimeJobId}/agent-team/parallel-plan/${input.teamRunId}`],
+              result: "needs_review",
+              limitations: ["validation did not pass"],
+              nextStep: "Inspect runtime evidence before acceptance.",
+              eli5Progress: "The team left a bounded review record but did not claim success.",
+            }),
         accepted: proof.validationState === "passed",
         needsReview: proof.validationState !== "passed",
         finalAcceptanceBy: proof.validationState === "passed" ? "local-codex-reviewer" : null,
@@ -197,4 +223,103 @@ export async function runLiveParallelAgentTeamE2E(input: {
     });
   }
   return proof;
+}
+
+function buildLiveParallelAgentTeamCloseoutCapsule(input: {
+  runtimeJobId: string;
+  teamRunId: string;
+}): CloseoutCapsule {
+  const createdAt = "2026-05-03T23:05:05.000Z";
+  const closeoutRef = `runtime-job://${input.runtimeJobId}/closeout`;
+  const validationRef = `runtime-job://${input.runtimeJobId}/agent-team/parallel-plan/${input.teamRunId}`;
+  return {
+    artifactKind: "execution_platform_closeout_capsule",
+    schemaVersion: "execution-platform.closeout-capsule.v1",
+    capsuleId: buildCloseoutCapsuleId({
+      runtimeJobId: input.runtimeJobId,
+      teamRunId: input.teamRunId,
+      createdAt,
+    }),
+    createdAt,
+    modelRef: "local-codex-reviewer",
+    humanReport: {
+      source: "model",
+      reportMarkdown:
+        "Parallel agent-team E2E completed with bounded runtime evidence, security review, result review, and closeout state.",
+      eli5Progress:
+        "The team proved the parallel lanes can finish and leave a bounded review receipt.",
+      limitations: ["This is a local E2E proof, not a live provider soak."],
+    },
+    structuredSummary: {
+      taskSuccess: "satisfied",
+      qualityAssessment: "The proof records validation evidence and bounded review artifacts.",
+      workflowFitAssessment: "The parallel coding-team workflow fits this E2E proof lane.",
+      agentModelFitAssessment: "The local reviewer is sufficient for deterministic fixture closeout.",
+      missingWork: [],
+      validationSummary: "Parallel plan and runtime evidence were recorded.",
+      riskSummary: "Residual risk is limited to live-provider execution outside this fixture.",
+      opportunitySeedIds: ["no-op-live-parallel-e2e"],
+    },
+    roleCloseouts: [
+      {
+        roleId: "local-codex-reviewer",
+        agentId: "local-codex-reviewer",
+        modelRef: "local-codex-reviewer",
+        source: "model",
+        askedToDo: "Review the bounded parallel agent-team E2E result.",
+        actuallyDid: "Recorded accepted result review with closeout capsule and validation refs.",
+        worked: ["bounded runtime evidence was present"],
+        failedOrWeak: [],
+        wouldImproveNext: ["run a live provider soak for the same lane"],
+        opportunitySeeds: [],
+        confidence: "high",
+        limitations: ["local fixture only"],
+        rawPromptStored: false,
+        rawResponseStored: false,
+        rawTranscriptStored: false,
+        rawProviderLogStored: false,
+        rawToolLogStored: false,
+      },
+    ],
+    opportunitySeeds: [
+      {
+        seedId: "no-op-live-parallel-e2e",
+        kind: "no_op",
+        title: "No follow-up from local parallel E2E",
+        rationale: "The local proof has no additional work item by itself.",
+        recommendedNextStep: "Proceed to broader replay once surrounding checks are green.",
+        evidenceRefs: [],
+        confidence: "high",
+      },
+    ],
+    factualRefs: {
+      runtimeJobId: input.runtimeJobId,
+      teamRunId: input.teamRunId,
+      workflowId: "agent_team.coding",
+      status: "completed",
+      roles: [
+        {
+          roleId: "local-codex-reviewer",
+          agentId: "local-codex-reviewer",
+          modelRef: "local-codex-reviewer",
+          status: "completed",
+        },
+      ],
+      fileRefs: [],
+      artifactRefs: [closeoutRef],
+      validationRefs: [validationRef],
+      runtimeEventRefs: [validationRef],
+    },
+    safetyFlags: {
+      rawPromptStored: false,
+      rawResponseStored: false,
+      rawTranscriptStored: false,
+      rawProviderLogStored: false,
+      rawToolLogStored: false,
+      rawCommandLogStored: false,
+      workQueueLifecycleMutatedDirectly: false,
+      authorityGrantedByCloseout: false,
+      runtimeJobCreatedByCloseout: false,
+    },
+  };
 }

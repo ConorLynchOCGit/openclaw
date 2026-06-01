@@ -5,6 +5,10 @@ import {
   validateActionGraphProposal,
   validateCompileReadinessValidation,
   validateHumanPlanningDecision,
+  validatePlanningCapsuleRevision,
+  validatePlanningFrameworkContractRecord,
+  validatePlanningIntentRecord,
+  validateProductSpecPlanningCloseout,
   validateResearchBrief,
   validateWorkflowPlanningCapsuleEvidence,
   workflowEvidenceProfileForWorkflow,
@@ -114,9 +118,47 @@ describe("workflow evidence profiles", () => {
       workflowEvidenceProfileForWorkflow("single_agent.web_research").cleanSuccessAllowed,
     ).toBe(true);
     expect(workflowEvidenceProfileForWorkflow("unknown.workflow").cleanSuccessAllowed).toBe(false);
+    expect(
+      workflowEvidenceProfileForWorkflow("agent_team.product_spec_planning").requiredEvidenceClasses,
+    ).toEqual(
+      expect.arrayContaining([
+        "planning_intent",
+        "planning_capsule",
+        "action_graph_proposal",
+        "compile_readiness",
+      ]),
+    );
+    expect(
+      workflowEvidenceProfileForWorkflow("agent_team.product_spec_planning").optionalEvidenceClasses,
+    ).toContain("planning_framework_contract");
   });
 
   it("validates product/spec planning artifact contracts without raw storage", () => {
+    expect(
+      validatePlanningIntentRecord({
+        artifactKind: "planning_intent_record",
+        intentId: "intent-1",
+        workflowId: "agent_team.product_spec_planning",
+        runtimeJobId: "job-1",
+        authority: "model",
+        lifecycle: "accepted",
+        validationState: "valid",
+        objectiveRef: "planning-intent://intent-1/objective",
+        targetSubjectRefs: ["workflow://agent_team.product_spec_planning"],
+        scopeRef: "planning-intent://intent-1/scope",
+        constraintRefs: ["planning-intent://intent-1/constraint/no-auto-exec"],
+        nonGoalRefs: [],
+        authorityLimitRefs: ["policy://product-spec/proposal-only"],
+        uncertaintyRefs: ["planning-intent://intent-1/uncertainty/current-facts"],
+        evidenceExpectationRefs: ["evidence://planning-capsule"],
+        researchNeeded: false,
+        humanDecisionNeeded: false,
+        revisionRef: null,
+        supersededByIntentId: null,
+        ...safety,
+      }),
+    ).toMatchObject({ valid: true });
+
     expect(
       validateResearchBrief({
         artifactKind: "research_brief",
@@ -136,6 +178,31 @@ describe("workflow evidence profiles", () => {
     ).toMatchObject({ valid: true });
 
     expect(
+      validatePlanningFrameworkContractRecord({
+        artifactKind: "planning_framework_contract",
+        contractId: "framework-contract-1",
+        workflowId: "agent_team.product_spec_planning",
+        runtimeJobId: "job-1",
+        authority: "model",
+        lifecycle: "accepted",
+        validationState: "valid",
+        targetSubjectRefs: ["workflow://agent_team.product_spec_planning"],
+        lifecyclePhaseRefs: ["lifecycle://resource-focus", "lifecycle://domain-action-gate"],
+        resourceContractRefs: ["resource-contract://planning-domain"],
+        actionGateRefs: ["domain-action-gate://planning-framework-contract"],
+        evidenceExpectationRefs: ["evidence://planning-framework-contract"],
+        implementationSliceRefs: [
+          "repo://extensions/execution-platform/src/workflows/workflow-evidence-profile.ts",
+        ],
+        compatibilityFallbackAllowed: false,
+        runtimeSemanticJudgmentAllowed: false,
+        revisionRef: null,
+        supersededByContractId: null,
+        ...safety,
+      }),
+    ).toMatchObject({ valid: true });
+
+    expect(
       validateWorkflowPlanningCapsuleEvidence({
         artifactKind: "planning_capsule",
         capsuleId: "capsule-1",
@@ -149,6 +216,28 @@ describe("workflow evidence profiles", () => {
         limitationRefs: [],
         revisionRef: null,
         supersededByCapsuleId: null,
+        ...safety,
+      }),
+    ).toMatchObject({ valid: true });
+
+    expect(
+      validatePlanningCapsuleRevision({
+        artifactKind: "planning_capsule_revision",
+        revisionId: "revision-1",
+        workflowId: "agent_team.product_spec_planning",
+        runtimeJobId: "job-1",
+        authority: "model",
+        lifecycle: "submitted",
+        validationState: "pending",
+        capsuleRef: "planning-capsule://capsule-1",
+        previousCapsuleRef: "planning-capsule://capsule-0",
+        changeSummaryRef: "planning-capsule://capsule-1/revision-summary",
+        changedSectionRefs: ["planning-capsule://capsule-1/risks"],
+        limitationRefs: [],
+        humanDecisionRefs: [],
+        researchInfluenceRefs: [],
+        revisionRef: "planning-capsule-revision://revision-1",
+        supersededByRevisionId: null,
         ...safety,
       }),
     ).toMatchObject({ valid: true });
@@ -214,6 +303,32 @@ describe("workflow evidence profiles", () => {
         ...safety,
       }),
     ).toMatchObject({ valid: true });
+
+    expect(
+      validateProductSpecPlanningCloseout({
+        artifactKind: "product_spec_planning_closeout",
+        closeoutId: "closeout-1",
+        workflowId: "agent_team.product_spec_planning",
+        runtimeJobId: "job-1",
+        authority: "model",
+        lifecycle: "accepted",
+        validationState: "valid",
+        missionLedgerRef: "mission-ledger://job-1",
+        planningIntentRef: "planning-intent://intent-1",
+        planningCapsuleRefs: ["planning-capsule://capsule-1"],
+        actionGraphProposalRefs: ["action-graph-proposal://proposal-1"],
+        compileReadinessRefs: ["compile-readiness://compile-1"],
+        humanDecisionRefs: [],
+        researchBriefRefs: [],
+        commitmentEvidenceRefs: ["evidence-claim://commitment-1"],
+        limitationRefs: [],
+        eli5SummaryRef: "closeout://closeout-1/eli5",
+        childExecutionStarted: false,
+        revisionRef: null,
+        supersededByCloseoutId: null,
+        ...safety,
+      }),
+    ).toMatchObject({ valid: true });
   });
 
   it("rejects raw storage, unsafe human decision storage, and auto-start action proposals", () => {
@@ -238,6 +353,67 @@ describe("workflow evidence profiles", () => {
     ).toMatchObject({
       valid: false,
       reasonCodes: expect.arrayContaining(["research_brief_raw_prompt_storage_forbidden"]),
+    });
+
+    expect(
+      validatePlanningIntentRecord({
+        artifactKind: "planning_intent_record",
+        intentId: "intent-1",
+        workflowId: "agent_team.product_spec_planning",
+        runtimeJobId: "job-1",
+        authority: "model",
+        lifecycle: "accepted",
+        validationState: "valid",
+        objectiveRef: "planning-intent://intent-1/objective",
+        targetSubjectRefs: [],
+        scopeRef: "planning-intent://intent-1/scope",
+        constraintRefs: [],
+        nonGoalRefs: [],
+        authorityLimitRefs: [],
+        uncertaintyRefs: [],
+        evidenceExpectationRefs: [],
+        researchNeeded: false,
+        humanDecisionNeeded: false,
+        revisionRef: null,
+        supersededByIntentId: null,
+        ...safety,
+      }),
+    ).toMatchObject({
+      valid: false,
+      reasonCodes: expect.arrayContaining([
+        "planning_intent_record_target_subject_refs_missing",
+        "planning_intent_record_evidence_expectation_refs_missing",
+      ]),
+    });
+
+    expect(
+      validatePlanningFrameworkContractRecord({
+        artifactKind: "planning_framework_contract",
+        contractId: "framework-contract-unsafe",
+        workflowId: "agent_team.product_spec_planning",
+        runtimeJobId: "job-1",
+        authority: "model",
+        lifecycle: "accepted",
+        validationState: "valid",
+        targetSubjectRefs: ["workflow://agent_team.product_spec_planning"],
+        lifecyclePhaseRefs: [],
+        resourceContractRefs: ["resource-contract://planning-domain"],
+        actionGateRefs: ["domain-action-gate://planning-framework-contract"],
+        evidenceExpectationRefs: ["evidence://planning-framework-contract"],
+        implementationSliceRefs: ["repo://example"],
+        compatibilityFallbackAllowed: true,
+        runtimeSemanticJudgmentAllowed: true,
+        revisionRef: null,
+        supersededByContractId: null,
+        ...safety,
+      }),
+    ).toMatchObject({
+      valid: false,
+      reasonCodes: expect.arrayContaining([
+        "planning_framework_contract_lifecycle_phase_refs_missing",
+        "planning_framework_contract_compatibility_fallback_must_be_false",
+        "planning_framework_contract_runtime_semantic_judgment_must_be_false",
+      ]),
     });
 
     expect(
@@ -288,6 +464,38 @@ describe("workflow evidence profiles", () => {
       valid: false,
       reasonCodes: expect.arrayContaining([
         "action_graph_proposal_child_execution_auto_start_must_be_false",
+      ]),
+    });
+
+    expect(
+      validateProductSpecPlanningCloseout({
+        artifactKind: "product_spec_planning_closeout",
+        closeoutId: "closeout-1",
+        workflowId: "agent_team.product_spec_planning",
+        runtimeJobId: "job-1",
+        authority: "model",
+        lifecycle: "submitted",
+        validationState: "pending",
+        missionLedgerRef: "mission-ledger://job-1",
+        planningIntentRef: "planning-intent://intent-1",
+        planningCapsuleRefs: [],
+        actionGraphProposalRefs: ["action-graph-proposal://proposal-1"],
+        compileReadinessRefs: ["compile-readiness://compile-1"],
+        humanDecisionRefs: [],
+        researchBriefRefs: [],
+        commitmentEvidenceRefs: ["evidence-claim://commitment-1"],
+        limitationRefs: [],
+        eli5SummaryRef: "closeout://closeout-1/eli5",
+        childExecutionStarted: true,
+        revisionRef: null,
+        supersededByCloseoutId: null,
+        ...safety,
+      }),
+    ).toMatchObject({
+      valid: false,
+      reasonCodes: expect.arrayContaining([
+        "product_spec_planning_closeout_capsule_refs_missing",
+        "product_spec_planning_closeout_child_execution_started_must_be_false",
       ]),
     });
   });

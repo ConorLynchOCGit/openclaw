@@ -187,7 +187,7 @@ substrate. Runtime now writes payload-backed
 broker state into latest-run-state and Work Queue readback. Expansion
 admission and superstep branch execution remain separate queued items.
 
-2026-05-24 implementation update: WorkIntent context-handoff requirements now
+2026-05-24 implementation update: WorkIntent resource-handoff requirements now
 use this broker substrate in the production scheduler. Missing or signal-only
 context dispatches consumer-scoped scout prerequisites; accepted-with-
 limitations context cannot unlock implementation without a consumer waiver;

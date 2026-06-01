@@ -14,6 +14,7 @@ import {
 import { latestAgentTeamStreamSummary } from "../codex-bridge/agent-team-stream-evidence.ts";
 import { latestModelRunAccountingSummary } from "../model-routing/model-run-accounting.ts";
 import type { ProviderReliabilitySummary } from "../model-routing/provider-reliability-summary.ts";
+import type { CanonicalReadbackGate } from "../observability/canonical-readback-gate.ts";
 import type { RuntimeExecutionSpanReadback } from "../observability/runtime-execution-span.ts";
 import type {
   JsonValue,
@@ -46,6 +47,9 @@ import { activeGraphProgressReadback } from "./projections/active-graph-progress
 import { runtimeArtifactPayloadManifestSummary } from "./projections/runtime-artifact-manifest.ts";
 import type { WorkItemTruth, WorkRun } from "./types.ts";
 import type { WorkQueueRepository } from "./work-queue-repository.ts";
+
+const WORK_QUEUE_READBACK_ARTIFACT_EDGE_LIMIT = 250;
+const WORK_QUEUE_READBACK_EVENT_EDGE_LIMIT = 120;
 
 export type WorkQueueExecutionReadModel = {
   artifactKind: "work_queue_execution_read_model";
@@ -291,6 +295,11 @@ export type WorkQueueExecutionReadModel = {
       activeGraphProgress: {
         state: "present" | "missing";
         graphId: string | null;
+        canonicalReadbackGate: CanonicalReadbackGate;
+        firstOpenGate: CanonicalReadbackGate;
+        firstOpenGateKind: string | null;
+        firstOpenGateStatus: string | null;
+        firstOpenGateReasonCodes: string[];
         activeNodeId: string | null;
         activeNodeKind: string | null;
         roleId: string | null;
@@ -316,6 +325,9 @@ export type WorkQueueExecutionReadModel = {
           producedByExecutorKey: string | null;
           validationRefs: string[];
           changedFileRefs: string[];
+          validationPhase: string | null;
+          validationPhaseCompatibility: string | null;
+          validationPhaseReasonCodes: string[];
           limitations: string[];
         }>;
         acceptedCommitmentIds: string[];
@@ -326,6 +338,76 @@ export type WorkQueueExecutionReadModel = {
         finalizationState: string | null;
         latestToolEventKind: string | null;
         eli5Progress: string | null;
+        ownerTelemetry: {
+          state: "present" | "missing";
+          workIntent: {
+            workIntentId: string | null;
+            title: string | null;
+            executionIntent: string | null;
+            evidenceMode: string[];
+            targetCommitmentIds: string[];
+          };
+          capability: {
+            capabilityId: string | null;
+            executorKey: string | null;
+            workerRef: string | null;
+            roleId: string | null;
+            modelRef: string | null;
+            providerPath: string | null;
+          };
+          runtime: {
+            runtimeJobId: string | null;
+            graphId: string | null;
+            branchId: string | null;
+            superstepId: string | null;
+            currentSuperstep: number | null;
+            nodeId: string | null;
+            nodeKind: string | null;
+            currentPhase: string | null;
+            currentToolId: string | null;
+            nextLegalTransition: string | null;
+          };
+          readiness: {
+            status: string | null;
+            ref: string | null;
+            phase: string | null;
+            blockerSummary: string | null;
+            schemaPath: string | null;
+            policyPath: string | null;
+            nextAllowedTransitions: string[];
+            reasonCodes: string[];
+          };
+          refs: {
+            payloadRefs: string[];
+            artifactRefs: string[];
+            inputHandoffRefs: string[];
+            contextRefs: string[];
+            changedFileRefs: string[];
+            validationRefs: string[];
+            evidenceRefs: string[];
+            evidenceClaimRefs: string[];
+          };
+          lifecycle: {
+            rollbackState: string | null;
+            reviewState: string | null;
+            validationState: string | null;
+            closeoutState: string | null;
+          };
+          telemetry: {
+            wallTimeByPhase: JsonValue;
+            modelUsageByModel: JsonValue;
+            modelUsageByPhase: JsonValue;
+            measuredTokenUsageAvailable: boolean;
+            estimatedTokenUsageAvailable: boolean;
+            usageUnavailableReasons: string[];
+          };
+          rawPromptStored: false;
+          rawResponseStored: false;
+          rawProviderLogStored: false;
+          rawToolLogStored: false;
+          rawDbRowsStored: false;
+          secretsStored: false;
+        };
         budget: {
           policyRef: string | null;
           budgetClass: string | null;
@@ -377,38 +459,10 @@ export type WorkQueueExecutionReadModel = {
           packetCompileReasonCodes: string[];
           rejectedRefs: string[];
           sufficiencySummary: string | null;
-          synthesisReadiness: string | null;
-          synthesisBlockers: string[];
           repoAnalysisFindingCount: number | null;
           symbolRefs: string[];
           testRefs: string[];
-          handoffSummaryForSynthesis: string | null;
           openBlockers: string[];
-        };
-        contextSynthesis: {
-          state: "present" | "missing" | "needs_review" | "accepted";
-          synthesisRef: string | null;
-          status: string | null;
-          implementationGroupCount: number | null;
-          dependencyCount: number | null;
-          parallelGroupCount: number | null;
-          blockerCount: number | null;
-          validationLaneCount: number | null;
-          reviewLaneCount: number | null;
-          workerFitSummary: string | null;
-          graphCompileInputSummary: string | null;
-          implementationGroupIds: string[];
-          targetRefs: string[];
-          validationLanes: string[];
-          reviewLanes: string[];
-          semanticCodeIntelligenceRefs: string[];
-          contextSnapshotRefs: string[];
-          nextDecision: string | null;
-          eli5: string | null;
-          rawPromptStored: false;
-          rawResponseStored: false;
-          rawProviderLogStored: false;
-          rawToolLogStored: false;
         };
         resourceMaterialization: {
           state: "missing" | "blocked" | "ready_with_limitations" | "ready";
@@ -434,6 +488,9 @@ export type WorkQueueExecutionReadModel = {
           targetFileSnapshotRefs: string[];
           targetFileSnapshotHashes: string[];
           implementationContextRepairAction: string | null;
+          nodeExecutionContractRef: string | null;
+          nodeExecutionContractVersion: string | null;
+          nodeExecutionContractHash: string | null;
           nodeExecutionPacketRef: string | null;
           nodeExecutionPacketStatus: string | null;
           resourcePacketKind: string | null;
@@ -490,42 +547,7 @@ export type WorkQueueExecutionReadModel = {
           rawProviderLogStored: false;
           rawToolLogStored: false;
         };
-        commitmentWorkPackets: Array<{
-          packetRef: string;
-          commitmentId: string;
-          authoringSource: string;
-          qualityStatus: string;
-          workerObjective: string | null;
-          contextScoutObjective: string | null;
-          implementationObjective: string | null;
-          acceptanceCriteriaCount: number | null;
-          acceptanceCriteria: string[];
-          expectedEvidenceKinds: string[];
-          likelyRepoAreas: string[];
-          requiredContextQuestions: string[];
-          downstreamConsumer: string | null;
-        }>;
-        commitmentPacketFanout: {
-          state: "present" | "missing";
-          totalCount: number | null;
-          completedCount: number | null;
-          failedCount: number | null;
-          runningCount: number | null;
-          retryCount: number | null;
-          fallbackCount: number | null;
-          longLatencyCount: number | null;
-          noContentCount: number | null;
-          runningCommitmentIds: string[];
-          affectedCommitmentIds: string[];
-          topBlockerSummaries: string[];
-          diagnosticArtifactRef: string | null;
-          diagnosticArtifactHash: string | null;
-          diagnosticHydrationToolId: string | null;
-          rawPromptStored: false;
-          rawResponseStored: false;
-          rawProviderLogStored: false;
-          rawToolLogStored: false;
-        };
+
         costAwareDecision: {
           selectedCapabilityId: string | null;
           selectedProviderCapabilityProfileId: string | null;
@@ -551,6 +573,9 @@ export type WorkQueueExecutionReadModel = {
         };
         contextBroker: {
           state: "present" | "missing";
+          requirementRefs: string[];
+          requirementStatuses: string[];
+          requirementReasonCodes: string[];
           requestRefs: string[];
           statuses: string[];
           dedupeKeys: string[];
@@ -621,6 +646,41 @@ export type WorkQueueExecutionReadModel = {
             selectedNodeIds: string[];
             skippedNodeIds: string[];
           }>;
+          branchScopedFrontierStates: Array<{
+            branchId: string | null;
+            parentBranchId: string | null;
+            nodeId: string;
+            nodeKind: string | null;
+            workIntentRef: string | null;
+            contractRef: string | null;
+            readinessRef: string | null;
+            resourceRequirementRefs: string[];
+            domainResourcePacketRef: string | null;
+            resourcePacketRef: string | null;
+            status: string | null;
+            blockerCode: string | null;
+            blockerSummary: string | null;
+            blockerSchemaPath: string | null;
+            blockerPolicyPath: string | null;
+            blockerSignature: string | null;
+            consumerRefs: string[];
+            dependentConsumers: string[];
+            siblingBranchIds: string[];
+            successfulEvidenceRefs: string[];
+            failedEvidenceRefs: string[];
+            repairNodeRefs: string[];
+            diagnosticOnlyNodeRefs: string[];
+            nextLegalTransitions: string[];
+            capabilityId: string | null;
+            executorKey: string | null;
+            modelRef: string | null;
+            workerRef: string | null;
+            phase: string | null;
+            currentToolId: string | null;
+            rootCauseRef: string | null;
+            rootCauseSystemic: boolean | null;
+            reasonCodes: string[];
+          }>;
           branchResults: Array<{
             superstepId: string | null;
             branchId: string | null;
@@ -639,7 +699,6 @@ export type WorkQueueExecutionReadModel = {
             reasonCodes: string[];
           }>;
           joinReadyNodeIds: string[];
-          contextSynthesisRefs: string[];
           implementationGroupCount: number | null;
         };
         schedulerFrontier: {
@@ -657,6 +716,15 @@ export type WorkQueueExecutionReadModel = {
           readinessRefs: string[];
           resourceRefs: string[];
           contextRefs: string[];
+          branchScopedFrontierStates: Array<{
+            branchId: string | null;
+            nodeId: string;
+            status: string | null;
+            contractRef: string | null;
+            readinessRef: string | null;
+            blockerSummary: string | null;
+            nextLegalTransitions: string[];
+          }>;
           openCommitmentIds: string[];
           nextLegalTransition: string | null;
           reasonCodes: string[];
@@ -682,6 +750,19 @@ export type WorkQueueExecutionReadModel = {
             blockerSummary: string | null;
             errorPath: string | null;
             readinessStateRef: string | null;
+            contractRef: string | null;
+            resourceRequirementRefs: string[];
+            domainResourcePacketRef: string | null;
+            resourcePacketRef: string | null;
+            consumerRefs: string[];
+            dependentConsumers: string[];
+            siblingBranchIds: string[];
+            successfulEvidenceRefs: string[];
+            failedEvidenceRefs: string[];
+            repairNodeRefs: string[];
+            diagnosticOnlyNodeRefs: string[];
+            rootCauseRef: string | null;
+            rootCauseSystemic: boolean | null;
             reasonCodes: string[];
           }>;
           nextTransition: string | null;
@@ -689,12 +770,30 @@ export type WorkQueueExecutionReadModel = {
           noProgressRepeatCount: number | null;
           terminalBlockerCode: string | null;
           missionLedgerThrottleShouldEvaluate: boolean | null;
+          canonicalReadbackGate: {
+            gateKind: string | null;
+            gateStatus: string | null;
+            sourceKind: string | null;
+            nodeId: string | null;
+            branchId: string | null;
+            contractRef: string | null;
+            readinessStateRef: string | null;
+            schemaPath: string | null;
+            nextLegalTransition: string | null;
+            reasonCodes: string[];
+            rawPromptStored: false;
+            rawResponseStored: false;
+            rawProviderLogStored: false;
+            rawToolLogStored: false;
+            rawDbRowsStored: false;
+          } | null;
           agreement: {
             state: "present" | "missing";
             graphIdMatches: boolean | null;
             selectedNodeIdsMatch: boolean | null;
             blockedNodeIdsMatch: boolean | null;
             nextTransitionMatches: boolean | null;
+            canonicalGateMatches: boolean | null;
             reasonCodes: string[];
           };
           rawPromptStored: false;
@@ -758,6 +857,73 @@ export type WorkQueueExecutionReadModel = {
           rawPromptStored: false;
           rawResponseStored: false;
           rawProviderLogStored: false;
+        };
+        schedulerModelCallEnvelope: {
+          state: "present" | "missing";
+          envelopeRef: string | null;
+          envelopeId: string | null;
+          phase: string | null;
+          decisionSlot: string | null;
+          schedulerPhase: string | null;
+          modelRef: string | null;
+          providerPath: string | null;
+          providerProfileId: string | null;
+          modelTaskClass: string | null;
+          modelPolicyRef: string | null;
+          contractBoundaryId: string | null;
+          modelPolicyBindingRef: string | null;
+          reasoningMode: string | null;
+          parserMode: string | null;
+          allowedToolFamily: string | null;
+          allowedOutputContractId: string | null;
+          allowedOutputContractVersion: string | null;
+          proofCleanlinessState: string | null;
+          proofCleanlinessReasonCodes: string[];
+          policyMismatchFields: Array<{
+            fieldPath: string;
+            reasonCode: string;
+          }>;
+          inputByteCount: number | null;
+          outputByteCount: number | null;
+          graphNodeCount: number | null;
+          graphEdgeCount: number | null;
+          commitmentCount: number | null;
+          workIntentCount: number | null;
+          activeFrontierCounts: {
+            ready: number | null;
+            selected: number | null;
+            blocked: number | null;
+            running: number | null;
+            completed: number | null;
+            failed: number | null;
+            needsReview: number | null;
+            waitingForHuman: number | null;
+            branches: number | null;
+          };
+          elapsedMs: number | null;
+          timeoutMs: number | null;
+          heartbeatCount: number | null;
+          heartbeatAgeMs: number | null;
+          finishReason: string | null;
+          nativeFinishReason: string | null;
+          providerResponseShape: JsonValue | null;
+          acceptedToolCallSummary: JsonValue | null;
+          rejectedToolCallSummary: JsonValue | null;
+          schemaErrorPath: string | null;
+          policyErrorPath: string | null;
+          repairFieldHints: string[];
+          missingFields: string[];
+          rejectedDecisionRef: string | null;
+          rejectedDecisionId: string | null;
+          rejectedDecisionKind: string | null;
+          reasonCodes: string[];
+          rawPromptStored: false;
+          rawResponseStored: false;
+          rawProviderLogStored: false;
+          rawToolLogStored: false;
+          rawCommandLogStored: false;
+          rawDbRowsStored: false;
+          secretsStored: false;
         };
         spanProgress: RuntimeExecutionSpanReadback;
         repairClassification: {
@@ -825,7 +991,6 @@ export type WorkQueueExecutionReadModel = {
           targetRefs: string[];
           inputPacketRefs: string[];
           contextRefs: string[];
-          contextSynthesisRefs: string[];
           codeIntelligenceRefs: string[];
           currentValidationCommandRef: string | null;
           currentValidationCommandSummary: string | null;
@@ -1023,6 +1188,7 @@ export type WorkQueueExecutionReadModel = {
           modelRunRef: string | null;
           changedFileRefs: string[];
           validationRefs: string[];
+          reviewArtifactRefs: string[];
           editTransactionRefs: string[];
           editTransactions: Array<{
             transactionRef: string;
@@ -4102,6 +4268,16 @@ function latestKimiImplementationReadback(
     modelRunRef: stringValue(metadata?.modelRunRef),
     changedFileRefs: stringArrayValue(metadata?.changedFileRefs, 20),
     validationRefs: stringArrayValue(metadata?.validationRefs, 20),
+    reviewArtifactRefs: boundedUniqueStringValues(
+      [
+        ...stringArrayValue(metadata?.reviewArtifactRefs, 20),
+        ...stringArrayValue(sourceResult?.reviewArtifactRefs, 20),
+        ...stringArrayValue(metadata?.artifactRefs, 30).filter((ref) =>
+          ref.startsWith("worker-edit-review://"),
+        ),
+      ],
+      20,
+    ),
     editTransactionRefs: stringArrayValue(sourceResult?.editTransactionRefs, 20),
     editTransactions,
     repairClassificationRefs: stringArrayValue(sourceResult?.repairClassificationRefs, 30),
@@ -4679,7 +4855,7 @@ function roleContributionSummary(roleId: string, status: string): string {
       return `Test engineer ${suffix}: checked focused validation evidence.`;
     case "reviewer":
       return `Reviewer ${suffix}: reviewed result evidence and limitations.`;
-    case "context_scout":
+    case "resource_scout":
       return `Context scout ${suffix}: identified bounded files, patterns, risks, and constraints.`;
     case "observability_scribe":
       return `Observability scribe ${suffix}: recorded closeout and readback evidence.`;
@@ -5152,9 +5328,29 @@ export async function buildWorkQueueExecutionReadModel(input: {
     if (!job) {
       continue;
     }
-    const artifacts = await input.runtimeJobs.listArtifacts(runtimeJobId);
-    const earlyEvents = await input.runtimeJobs.listEvents(runtimeJobId, 250);
-    const recentEvents = await input.runtimeJobs.listRecentEvents(runtimeJobId, 250);
+    const earlyArtifacts = await input.runtimeJobs.listArtifacts(runtimeJobId, {
+      limit: WORK_QUEUE_READBACK_ARTIFACT_EDGE_LIMIT,
+    });
+    const recentArtifacts = await input.runtimeJobs.listArtifacts(runtimeJobId, {
+      limit: WORK_QUEUE_READBACK_ARTIFACT_EDGE_LIMIT,
+      order: "desc",
+    });
+    const seenArtifactIds = new Set<string>();
+    const artifacts = [...earlyArtifacts, ...recentArtifacts].filter((artifact) => {
+      if (seenArtifactIds.has(artifact.artifactId)) {
+        return false;
+      }
+      seenArtifactIds.add(artifact.artifactId);
+      return true;
+    });
+    const earlyEvents = await input.runtimeJobs.listEvents(
+      runtimeJobId,
+      WORK_QUEUE_READBACK_EVENT_EDGE_LIMIT,
+    );
+    const recentEvents = await input.runtimeJobs.listRecentEvents(
+      runtimeJobId,
+      WORK_QUEUE_READBACK_EVENT_EDGE_LIMIT,
+    );
     const seenEventIds = new Set<string>();
     const events = [...earlyEvents, ...recentEvents].filter((event) => {
       if (seenEventIds.has(event.eventId)) {

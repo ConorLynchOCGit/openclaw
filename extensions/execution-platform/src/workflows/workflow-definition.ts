@@ -5,7 +5,7 @@ import {
   validateWorkflowOrchestrationPolicy,
   workflowOrchestrationPolicySummary,
   type WorkflowCapabilityPolicy,
-  type WorkflowContextNeed,
+  type WorkflowResourceNeed,
   type WorkflowHumanDecisionPolicy,
   type WorkflowOrchestrationPolicy,
   type WorkflowPhase,
@@ -73,7 +73,7 @@ export type WorkflowDefinition = {
   allowedCapabilityIds: string[];
   requiredRoleClasses: WorkflowRoleClass[];
   optionalRoleClasses: WorkflowRoleClass[];
-  contextNeeds: WorkflowContextNeed[];
+  resourceNeeds: WorkflowResourceNeed[];
   sourcePromptPolicy: WorkflowSourcePromptPolicy;
   capabilityPolicy: WorkflowCapabilityPolicy;
   humanDecisionPolicy: WorkflowHumanDecisionPolicy;
@@ -113,7 +113,7 @@ export type WorkflowDefinitionResolution = {
   orchestrationPolicyRef: string;
   requiredPhases: WorkflowPhase[];
   requiredRoleClasses: WorkflowRoleClass[];
-  contextNeedCount: number;
+  resourceNeedCount: number;
   completionReviewRequired: boolean;
   engineMode: "runtime_workflow_graph_engine";
   reasonCodes: string[];
@@ -168,7 +168,7 @@ export function validateWorkflowDefinition(
   if (definition.productionEnabled && definition.allowedCapabilityIds.length === 0) {
     reasonCodes.push("workflow_definition_allowed_capabilities_missing");
   }
-  if (definition.productionEnabled && definition.contextNeeds.some((need) => need.required)) {
+  if (definition.productionEnabled && definition.resourceNeeds.some((need) => need.required)) {
     if (!definition.sourcePromptPolicy.sourcePromptIndexRequired) {
       reasonCodes.push("workflow_definition_context_requires_source_prompt_index");
     }
@@ -232,7 +232,7 @@ export function workflowDefinitionResolutionFor(
     orchestrationPolicyRef: `workflow-orchestration-policy://${definition.orchestrationPolicy.policyId}`,
     requiredPhases: definition.requiredPhases,
     requiredRoleClasses: definition.requiredRoleClasses,
-    contextNeedCount: definition.contextNeeds.length,
+    resourceNeedCount: definition.resourceNeeds.length,
     completionReviewRequired: definition.completionReviewPolicy.required,
     engineMode: "runtime_workflow_graph_engine",
     reasonCodes: [

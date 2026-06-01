@@ -2198,7 +2198,10 @@ async function findLatestWaitingHumanDecision(input: {
     if (stringField(operator ?? {}, "sessionId", input.sessionKey) !== input.sessionKey) {
       continue;
     }
-    const artifacts = await input.runtime.runtimeJobs.listArtifacts(job.jobId);
+    const artifacts = await input.runtime.runtimeJobs.listArtifacts(job.jobId, {
+      limit: 500,
+      order: "desc",
+    });
     const humanDecision = artifacts
       .filter((artifact) => artifact.artifactType === "agent_team.human_scope_decision")
       .map((artifact) => asChatRecord(artifact.metadata))
@@ -2221,7 +2224,10 @@ async function readWaitingHumanDecisionMetadata(input: {
   runtimeJobs: Awaited<ReturnType<typeof getExecutionPlatformRuntime>>["runtimeJobs"];
   runtimeJobId: string;
 }): Promise<Record<string, unknown> | null> {
-  const artifacts = await input.runtimeJobs.listArtifacts(input.runtimeJobId);
+  const artifacts = await input.runtimeJobs.listArtifacts(input.runtimeJobId, {
+    limit: 500,
+    order: "desc",
+  });
   return (
     artifacts
       .filter((artifact) => artifact.artifactType === "agent_team.human_scope_decision")

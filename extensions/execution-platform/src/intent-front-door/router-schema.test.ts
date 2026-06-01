@@ -120,15 +120,6 @@ describe("CanonicalRouterSchema", () => {
           route: "chat_response",
           responseMode: "answer_in_chat",
         }),
-        objectiveSummary: "x".repeat(1_001),
-      }).valid,
-    ).toBe(false);
-    expect(
-      parseCanonicalRouterOutput({
-        ...createBaseCanonicalRouterOutput({
-          route: "chat_response",
-          responseMode: "answer_in_chat",
-        }),
         reasonCodes: Array.from({ length: 31 }, (_, index) => `reason_${index}`),
       }).valid,
     ).toBe(false);
@@ -230,6 +221,28 @@ describe("CanonicalRouterSchema", () => {
     expect(parsed.reasonCodes).toContain("canonical_router_output_bounds_repaired");
     expect(parsed.output?.requestedActions[0]?.objectSummary.length).toBeLessThanOrEqual(300);
     expect(parsed.output?.constraints[0]?.objectSummary.length).toBeLessThanOrEqual(300);
+  });
+
+  it("bounds model-authored router rationale fields instead of blocking routing", () => {
+    const parsed = parseCanonicalRouterOutput({
+      ...createBaseCanonicalRouterOutput({
+        route: "workflow_execution",
+        responseMode: "create_runtime_job",
+        executeNow: true,
+        workflowId: "agent_team.coding",
+        jobType: "executor.agent_team",
+        sideEffectClass: "code_edit",
+      }),
+      selectedExecutionReason: "selected ".repeat(120),
+      targetSubjectReason: "target ".repeat(120),
+      objectiveSummary: "objective ".repeat(140),
+    });
+
+    expect(parsed.valid).toBe(true);
+    expect(parsed.reasonCodes).toContain("canonical_router_output_bounds_repaired");
+    expect(parsed.output?.selectedExecutionReason.length).toBeLessThanOrEqual(500);
+    expect(parsed.output?.targetSubjectReason.length).toBeLessThanOrEqual(500);
+    expect(parsed.output?.objectiveSummary.length).toBeLessThanOrEqual(1_000);
   });
 
   it("separates executor workflow from target workflow subjects", () => {

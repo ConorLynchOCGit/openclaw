@@ -69,20 +69,20 @@ describe("runtime work graph repository", () => {
       await graphs.recordCheckpoint({
         graphId: graph.graphId,
         checkpointId: "boundary-replay-context-scout",
-        checkpointKind: "boundary_replay_context_scout",
-        stateSummary: "Initial context scout checkpoint.",
+        checkpointKind: "boundary_replay_resource_scout",
+        stateSummary: "Initial resource scout checkpoint.",
         artifactRefs: ["runtime-job://job/context-scout/a"],
       });
       const second = await graphs.recordCheckpoint({
         graphId: graph.graphId,
         checkpointId: "boundary-replay-context-scout",
-        checkpointKind: "boundary_replay_context_scout",
-        stateSummary: "Updated context scout checkpoint.",
+        checkpointKind: "boundary_replay_resource_scout",
+        stateSummary: "Updated resource scout checkpoint.",
         artifactRefs: ["runtime-job://job/context-scout/b"],
       });
       const snapshot = await graphs.readGraphSnapshot(graph.graphId);
 
-      expect(second.stateSummary).toBe("Updated context scout checkpoint.");
+      expect(second.stateSummary).toBe("Updated resource scout checkpoint.");
       expect(snapshot?.checkpoints).toHaveLength(1);
       expect(
         snapshot?.graph.checkpointRefs.filter(
@@ -102,24 +102,24 @@ describe("runtime work graph repository", () => {
       });
       const first = await graphs.addNode({
         graphId: "graph-repeat",
-        nodeId: "context-1",
-        nodeKind: "context_scout",
-        assignedRole: "context_scout",
+        nodeId: "work-intent-1",
+        nodeKind: "work_intent",
+        assignedRole: "planning_orchestrator",
         nodeStatus: "succeeded",
       });
       const second = await graphs.addNode({
         graphId: "graph-repeat",
-        nodeId: "context-2",
-        nodeKind: "context_scout",
-        assignedRole: "context_scout",
+        nodeId: "implementation-1",
+        nodeKind: "implementation",
+        assignedRole: "implementation_engineer",
         nodeStatus: "succeeded",
-        inputHandoffRefs: ["runtime-work-graph://node/context-1"],
+        inputHandoffRefs: ["runtime-work-graph://node/work-intent-1"],
       });
       await graphs.recordRoleInvocation({
         graphId: "graph-repeat",
         nodeId: first.nodeId,
         invocationId: "invoke-context-1",
-        roleId: "context_scout",
+        roleId: "planning_orchestrator",
         modelRef: "deepseek/deepseek-v4-flash",
         providerPath: "openrouter",
         transportKind: "live_model",
@@ -130,7 +130,7 @@ describe("runtime work graph repository", () => {
         graphId: "graph-repeat",
         nodeId: second.nodeId,
         invocationId: "invoke-context-2",
-        roleId: "context_scout",
+        roleId: "implementation_engineer",
         modelRef: "deepseek/deepseek-v4-flash",
         providerPath: "openrouter",
         transportKind: "live_model",
@@ -193,6 +193,44 @@ describe("runtime work graph repository", () => {
         }),
       ).rejects.toThrow(/metadata manifest violation/u);
 
+      await expect(
+        graphs.addNode({
+          graphId: "graph-manifest-only-node-metadata",
+          nodeId: "implementation-with-contract-body",
+          nodeKind: "implementation",
+          assignedRole: "implementation_engineer",
+          metadata: {
+            nodeExecutionContract: {
+              contractKind: "node_execution_contract",
+              schemaVersion: "execution-platform.node-execution-contract.v1",
+              executionIntent: "source_edit",
+              capabilityId: "implementation_microtask",
+            },
+            rawPromptStored: false,
+            rawResponseStored: false,
+          },
+        }),
+      ).rejects.toThrow(/metadata manifest violation/u);
+
+      await expect(
+        graphs.addNode({
+          graphId: "graph-manifest-only-node-metadata",
+          nodeId: "work-intent-with-requirement-body",
+          nodeKind: "work_intent",
+          assignedRole: "planning_orchestrator",
+          metadata: {
+            resourceRequirementPacket: {
+              artifactKind: "resource_requirement_packet",
+              resourceRequirementRef:
+                "runtime-job://job/runtime-work-graph/graph/resource-requirement/node/abc",
+              semanticQuestions: ["Which files should this consumer inspect?"],
+            },
+            rawPromptStored: false,
+            rawResponseStored: false,
+          },
+        }),
+      ).rejects.toThrow(/metadata manifest violation/u);
+
       const node = await graphs.addNode({
         graphId: "graph-manifest-only-node-metadata",
         nodeId: "implementation-with-manifest",
@@ -201,10 +239,66 @@ describe("runtime work graph repository", () => {
         metadata: {
           nodeReadinessStateRef:
             "runtime-work-graph://node-readiness-state/implementation-with-manifest/abc",
+          nodeExecutionContractRef:
+            "runtime-work-graph://node-execution-contract/implementation-with-manifest/abc",
+          nodeExecutionContract: {
+            contractRef:
+              "runtime-work-graph://node-execution-contract/implementation-with-manifest/abc",
+            contractVersion: "execution-platform.node-execution-contract.v1",
+            contractHash: "sha256:contract",
+            byteCount: 2048,
+            boundedSummary: "source_edit implementation_microtask contract manifest",
+            executionIntent: "source_edit",
+            capabilityId: "implementation_microtask",
+            executorKey: "kind:implementation",
+            workerRef: "openrouter://moonshotai/kimi-k2.6",
+            evidenceMode: ["changed_file_evidence"],
+            domainResourcePacketKind: "coding_resource_packet",
+            nodeExecutionPacketRequired: true,
+            rawPromptStored: false,
+            rawResponseStored: false,
+            rawProviderLogStored: false,
+            rawToolLogStored: false,
+            rawCommandLogStored: false,
+            rawDbRowsStored: false,
+            secretsStored: false,
+          },
           nodeExecutionPacketRef:
             "runtime-work-graph://node-execution-packet/implementation-with-manifest/abc",
           resourcePacketRef:
             "runtime-work-graph://coding-resource-packet/implementation-with-manifest/abc",
+          resourceRequirement: {
+            resourceRequirementRef:
+              "runtime-job://job/runtime-work-graph/graph/resource-requirement/node/abc",
+            resourceRequirementId: "abc",
+            resourceRequirementHash: "sha256:req",
+            schemaVersion: "execution-platform.resource-requirement-packet.v1",
+            runtimeJobId: "job",
+            workflowId: "agent_team.coding",
+            graphId: "graph-manifest-only-node-metadata",
+            consumerBranchId: "implementation-with-manifest",
+            consumerNodeId: "implementation-with-manifest",
+            workIntentRef: "runtime-work-graph://node/implementation-with-manifest",
+            sourceCommitmentIds: ["C-1"],
+            contextPurpose: "consumer_scoped_resource_handoff",
+            semanticQuestionCount: 1,
+            semanticQuestionSample: ["Which files should this consumer inspect?"],
+            requiredResourceKinds: ["resource_handoff"],
+            downstreamCapabilityId: "implementation_microtask",
+            downstreamExecutionIntent: "source_edit",
+            downstreamEvidenceMode: ["changed_file_evidence"],
+            candidateRepoAreaRefCount: 1,
+            knownTargetRefCount: 1,
+            knownValidationNeedRefCount: 1,
+            sourceContextBrokerRequestRef:
+              "runtime-job://job/runtime-work-graph/graph/context-broker/request/abc",
+            byteCount: 1024,
+            reasonCodes: ["resource_requirement_packet_compiled"],
+            rawPromptStored: false,
+            rawResponseStored: false,
+            rawProviderLogStored: false,
+            rawToolLogStored: false,
+          },
           rawPromptStored: false,
           rawResponseStored: false,
         },
@@ -263,8 +357,8 @@ describe("runtime work graph repository", () => {
         metadata: {
           providedContextSnapshotRefs: Array.from({ length: 24 }, (_, index) =>
             createContextSnapshotRef({
-              sourceRef: `context-handoff://large-graph/${index}`,
-              sourceKind: "context_scout_handoff",
+              sourceRef: `resource-handoff://large-graph/${index}`,
+              sourceKind: "resource_scout_handoff",
               capturedAt: "2026-05-22T00:00:00.000Z",
               graphId: "graph-context-snapshot-ref-array",
               nodeId: "implementation-with-many-snapshot-refs",

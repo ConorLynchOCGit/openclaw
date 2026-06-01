@@ -20,7 +20,7 @@ describe("WorkIntent contract compiler", () => {
       expectedOutput: "Changed-file refs and validation refs.",
       successCriteria: ["Edits approved files.", "Runs focused validation."],
       downstreamConsumer: "validation",
-      targetRefs: ["extensions/execution-platform/src/workflows/runtime-work-graph.ts"],
+      resourceRefs: ["extensions/execution-platform/src/workflows/runtime-work-graph.ts"],
       capabilityManifest,
     });
 
@@ -36,6 +36,7 @@ describe("WorkIntent contract compiler", () => {
       stagedSchedulerProtocolCompiled: true,
       genericSchedulerProtocolCompiled: true,
       executionIntent: "source_edit",
+      resourceRefs: ["extensions/execution-platform/src/workflows/runtime-work-graph.ts"],
       selectedCapabilityId: "implementation_microtask",
       targetCapabilityGraphNodeKind: "implementation",
       targetCapabilityExecutorKey: "kind:implementation",
@@ -46,9 +47,9 @@ describe("WorkIntent contract compiler", () => {
       compiled.workIntent?.resourceRequirements.map((requirement) => requirement.requirementKind),
     ).toEqual(
       expect.arrayContaining([
-        "context_handoff",
-        "target_refs",
-        "file_snapshots",
+        "resource_handoff",
+        "candidate_resource_refs",
+        "resource_snapshots",
         "validation_refs",
       ]),
     );
@@ -95,7 +96,12 @@ describe("WorkIntent contract compiler", () => {
     expect(compiled.reasonCodes).toContain(
       "work_intent_execution_intent_capability_conflict:execution_intent_read_only_conflicts_with_edit_capability",
     );
-    expect(compiled.diagnostics[0]).toMatchObject({
+    expect(
+      compiled.diagnostics.find(
+        (diagnostic) =>
+          diagnostic.errorCode === "work_intent_execution_intent_capability_conflict",
+      ),
+    ).toMatchObject({
       errorCode: "work_intent_execution_intent_capability_conflict",
       path: "workIntent.executionIntent",
     });
@@ -107,16 +113,16 @@ describe("WorkIntent contract compiler", () => {
       workUnitId: "context-map",
       objective: "Find target files.",
       commitmentIds: ["workflow-registration"],
-      executionIntent: "context_supply",
-      selectedCapabilityId: "context_scout",
+      executionIntent: "resource_demand",
+      selectedCapabilityId: "orchestrator_decision",
       capabilityRationale: "Context should be gathered before implementation.",
       expectedOutput: "Context handoff refs.",
       successCriteria: ["Names target refs."],
       downstreamConsumer: "implementation",
       capabilityManifest,
       sourceRecord: {
-        workUnit: { workUnitId: "context-map", nodeKind: "context_scout" },
-        capabilitySelection: { workUnitId: "context-map", executorKey: "role:context_scout" },
+        workUnit: { workUnitId: "context-map", nodeKind: "orchestrator_plan" },
+        capabilitySelection: { workUnitId: "context-map", executorKey: "role:orchestrator" },
       },
     });
 

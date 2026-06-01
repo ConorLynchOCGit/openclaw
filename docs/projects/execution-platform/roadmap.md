@@ -9,6 +9,273 @@ on the Model Memory fallback boundary. Runtime jobs remain lifecycle truth.
 
 ## Runtime Toolification Queue
 
+### Node Lifecycle Transition Runner Before Product/Spec Proof
+
+2026-05-28 update: the next Product/Spec proof is blocked by the lack of one
+authoritative node lifecycle transition runner. Node-local contracts exist,
+but scheduler-local helper branches can be bypassed and global graph repair
+can still run while local lifecycle transitions are pending.
+
+Current governing spec:
+
+- `specs/node-lifecycle-transition-runner.md`
+
+DB-backed pre-proof queue:
+
+1. `openclaw-convergence.node-lifecycle-transition-runner-spine`
+   - `NodeLifecycleTransitionRunner`;
+   - compact `NodeLifecycleProjection`;
+   - scheduler wiring before `requestValidDecision()`;
+   - no `nodeStatus === "planned"` eligibility shortcut;
+   - readback projection from lifecycle artifacts;
+   - capability transition profile fields;
+   - regression and Product/Spec middle-lane replay proof.
+2. `openclaw-convergence.product-spec-proof-substrate-scrub-run-scoped-closure`
+3. `openclaw-convergence.gateway-submit-oom-diagnostics-memory-guard`
+4. `openclaw-convergence.blocker-closure-06-replay-and-full-proof-gates`
+5. `openclaw-convergence.active-queue-34`
+
+The lifecycle runner is a general orchestration primitive. Coding is the
+proof domain; future domains supply capability transition profiles and
+domain resource kinds rather than new scheduler brains.
+
+### Code-Verified Product/Spec Blocker Closure Before Product/Spec Proof
+
+2026-05-26 update: the next Product/Spec proof is blocked by the complete
+twelve-blocker closure tranche, not by the narrower context-frontier shard
+execution item alone.
+
+Current governing spec:
+
+- `specs/code-verified-product-spec-blocker-closure-plan.md`
+
+DB-backed pre-proof queue:
+
+1. `openclaw-convergence.blocker-closure-01-context-frontier-shard-tools`
+   - context shard execution, model-authored shard handoffs, handoff review,
+     merge packets, consumer context acceptance, and limitation preservation.
+2. `openclaw-convergence.blocker-closure-02-scope-revision-repair-payloads`
+   - model-authored single-unit scope revision and field-specific repair
+     payloads that cannot reattach full scout prompts.
+3. `openclaw-convergence.blocker-closure-03-workintent-context-target-selection`
+   - shard handoff refs in WorkIntent context resolution, target selection,
+     file-change intent, and consumer waiver semantics.
+4. `openclaw-convergence.blocker-closure-04-worker-readiness-edit-evidence`
+   - worker packet/snapshot/plan readiness, forced patch author path,
+     structural validation fallback, and evidence-from-validation.
+5. `openclaw-convergence.blocker-closure-05-readback-rootcause-provider-diagnostics`
+   - canonical first-open-gate projection, root-cause collapse, and bounded
+     Qwen/Kimi provider diagnostics.
+6. `openclaw-convergence.blocker-closure-06-replay-and-full-proof-gates`
+   - Product/Spec-class middle-lane model tests, replay from real boundaries,
+     and full proof only after the closure gates pass.
+7. `openclaw-convergence.active-queue-34`
+   - full Product/Spec Planning Workflow Plugin Production Proof.
+
+The previous context-frontier manifest and shard-execution queue rows are
+superseded as active execution rows by this tranche. Runtime owns structure,
+refs, budgets, payloads, lifecycle, authority, validation, and readback.
+Models or humans own semantic scope, relevance, sufficiency, waiver rationale,
+target selection, file-change intent, patch semantics, and closeout judgment.
+
+### Superseded Context Frontier Shard Execution Before Product/Spec Proof
+
+2026-05-26 update: the first context-frontier pass removed the worst graph
+fanout failure. Replay `product-spec-replay-mpmz6z7v` stayed at `17` nodes /
+`21` edges and persisted frontier requests, shard manifests, merge packets,
+and single-unit blockers. The replay still failed because shard manifests
+could not advance through shard execution, model-authored shard handoffs,
+merge review, canonical WorkIntent context satisfaction, and promotion.
+
+Superseded foundation specs:
+
+- `specs/context-frontier-shard-execution-and-merge-lifecycle.md`
+- `specs/context-frontier-lifecycle-and-shard-manifests.md`
+
+Superseded DB-backed pre-proof queue insertion:
+
+1. `openclaw-convergence.context-frontier-shard-execution-merge-lifecycle`
+   - execute payload-backed context shard packets;
+   - collect model-authored `ContextShardHandoff` artifacts;
+   - review and merge shard handoffs;
+   - accept canonical WorkIntent context state;
+   - promote context-satisfied WorkIntents to resource materialization;
+   - repeat the completed-packets replay that just failed.
+2. `openclaw-convergence.context-frontier-lifecycle-shard-manifests`
+   - parent/foundation item for context frontier requests, shard manifests,
+     single-unit blockers, manifest-only graph refs, and precise readback.
+3. `openclaw-convergence.active-queue-34`
+   - full Product/Spec Planning Workflow Plugin Production Proof.
+
+This item is no longer the next queue head by itself. It is covered by the
+code-verified blocker closure tranche because the latest replay also verified
+scope revision, WorkIntent context resolution, target selection, worker
+readiness, readback, provider diagnostics, and root-cause collapse blockers.
+
+### Control-Plane Executable Spine Recovery Before Product/Spec Proof
+
+2026-05-26 update: the next Product/Spec proof is no longer the immediate
+queue head. The proof failures show a generic control-plane spine problem:
+the platform still lets graph nodes, context scouts, resource packets, replay
+fixtures, and worker adapters reinterpret one another before a single
+canonical executable contract path has been proven.
+
+Current governing spec:
+
+- `specs/control-plane-executable-spine-recovery.md`
+
+DB-backed pre-proof queue:
+
+1. `openclaw-convergence.scheduler-workintent-graph-demand-context-gate`
+   - WorkIntent acceptance, capability binding, graph edge invariants, and
+     demand-context gate.
+2. `openclaw-convergence.executable-spine-02-resource-requirement-reshard`
+   - ResourceRequirement compiler and exact-preflight structural resharding.
+3. `openclaw-convergence.executable-spine-03-node-packet-hydration-gate`
+   - NodeExecutionPacket/domain resource hydration and readiness gate.
+4. `openclaw-convergence.executable-spine-04-worker-one-edit-canary`
+   - worker small-verb edit canary with validation and evidence.
+5. `openclaw-convergence.executable-spine-05-readiness-readback-collapse`
+   - branch-scoped readiness, repeated-blocker collapse, and owner readback.
+6. `openclaw-convergence.executable-spine-06-replay-proof-gate`
+   - production-faithful replay proof before the full proof.
+7. `openclaw-convergence.active-queue-34`
+   - full Product/Spec Planning Workflow Plugin Production Proof.
+
+This tranche is aggressive about toolification where it reduces model/schema
+choke: WorkIntent acceptance, capability validation, context requirements,
+structural reshard, packet hydration, worker patch authoring, validation,
+evidence, frontier collapse, and readback must all be represented as small
+verbs. Runtime owns the envelope; models own semantic judgment.
+
+### Packet Source Selection And Execution Intent Before Product/Spec Proof
+
+2026-05-26 update: the completed-Mission-Ledger replay
+`product-spec-replay-mplzlt47` failed before scheduler planning at Commitment
+Work Packet fanout. The next proof must not repeat the full Product/Spec run
+until the packet boundary is corrected.
+
+Current governing spec:
+
+- `specs/commitment-packet-source-selection-and-execution-intent.md`
+
+Canonical implementation prompt:
+
+- `prompts/commitment-packet-source-selection-execution-intent-codex.md`
+
+Required pre-proof queue insertion:
+
+1. `openclaw-convergence.packet-source-selection-execution-intent`
+   - model-authored source-ref selection from the prompt context index;
+   - payload-backed `PacketSourceBundle` compilation with no semantic
+     truncation;
+   - model-authored packet execution intent;
+   - intent-specific packet required fields;
+   - full diagnostics for targeted normalization;
+   - Mission-Ledger replay through clean packet fanout.
+
+Only after this gate passes should the full Product/Spec proof advance into
+scheduler planning and test the already intended scheduler-first,
+demand-driven context path.
+
+### Execution Contract Spine Before Product/Spec Proof
+
+2026-05-25 update: the next Product/Spec proof is gated by
+`specs/execution-contract-spine-resource-requirements-and-frontier-state.md`.
+The latest replay failure was not a narrow worker issue. It showed the
+runtime still lets executable semantics leak through graph nodes, split
+children, context handoffs, materialization blockers, validation labels, and
+readback gates. The fix is a generic contract spine:
+
+```text
+WorkIntent
+  -> ResourceRequirementPacket
+  -> ContextScoutExecutionPacket
+  -> ResourceRequirementPacket
+  -> NodeExecutionContract
+  -> NodeExecutionPacket
+  -> domain resource packet
+  -> worker/tool execution
+  -> validation phase result
+  -> evidence claim
+  -> branch-scoped frontier/readback
+```
+
+Pre-proof order now recorded in the DB Work Queue:
+
+1. `openclaw-convergence.contract-spine-01-node-execution-contract` -
+   Canonical NodeExecutionContract And Split-Child Inheritance. **Closed.**
+2. `openclaw-convergence.contract-spine-02-resource-requirement-compiler` -
+   ResourceRequirementPacket Compiler And Scout Execution Packet. **Closed.**
+3. `openclaw-convergence.contract-spine-03-demand-driven-context-tools` -
+   Demand-Driven Context Tool Path And Synthesis Retirement Audit. **Closed.**
+4. `openclaw-convergence.contract-spine-04-frontier-root-cause-collapse` -
+   Frontier Root-Cause Collapse. **Closed.**
+5. `openclaw-convergence.contract-spine-05-branch-scoped-frontier-state` -
+   Branch-Scoped Frontier State And Readback. **Closed.**
+6. `openclaw-convergence.contract-spine-06-scheduler-observability-envelope` -
+   Scheduler Model-Call Observability Envelope. **Closed.**
+7. `openclaw-convergence.contract-spine-07-validation-phase-semantics` -
+   Validation Phase Semantics. **Closed.**
+8. `openclaw-convergence.contract-spine-08-canonical-readback-gate` -
+   Canonical Readback Gate From Readiness/Frontier State. **Closed.**
+9. `openclaw-convergence.contract-spine-09-model-policy-bindings` -
+   Model Policy Contract Bindings. **Closed.**
+10. `openclaw-convergence.contract-spine-10-replay-proof` -
+    Contract-Spine Replay Proof From Completed Packets And Resource Boundary.
+    **Superseded by the decomposed proof-hardening tranche.**
+11. `openclaw-convergence.proof-hardening-01-replay-production-fidelity-epochs` -
+    Replay Production Fidelity And Boundary Epochs. **Closed.**
+12. `openclaw-convergence.proof-hardening-02-target-selection-router-budget` -
+    Resource/Target Selection Model-Task Router And Payload Budget. **Closed.**
+13. `openclaw-convergence.proof-hardening-03-context-repair-requirements` -
+    Context Repair Requirement Compiler. **Closed.**
+14. `openclaw-convergence.proof-hardening-04-readiness-child-upsert` -
+    Readiness Recompute, Stale-Child Upsert, And Frontier Eligibility.
+    **Closed.**
+15. `openclaw-convergence.proof-hardening-05-reviewable-patch-artifacts` -
+    Reviewable Action/Patch Artifact Spine. **Closed.**
+16. `openclaw-convergence.proof-hardening-06-worker-smoke-matrix` -
+    Multi-Child Worker Smoke Matrix. **Closed.**
+17. `openclaw-convergence.proof-hardening-07-adversarial-entry-suite` -
+    Adversarial Proof Entry Suite. **Closed.**
+18. `openclaw-convergence.active-queue-34` -
+    Product/Spec Planning Workflow Plugin Production Proof. **Current DB-ranked
+    proof item.**
+
+This block must not reintroduce deterministic semantic substring classifiers,
+Product/Spec-specific scheduler checks, proof-only topology, context synthesis
+as default glue, body-in-metadata storage, or validation evidence that fakes
+implementation success.
+
+The seven proof-hardening items also carry a semantic-guardrail layer:
+Authority Surface Retirement Gate, Generality Sentinel, and Capability
+Manifest Conformance where executable nodes are involved. These are structural
+checks over refs, hashes, epochs, schema versions, provider eligibility,
+payload bounds, consumer edges, lifecycle, authority, validation phase, and
+manifest compatibility. They are not deterministic semantic scoring systems;
+runtime must not judge file relevance, context sufficiency, edit quality,
+Product/Spec meaning, qualitative complexity, or model rationale
+persuasiveness.
+
+The detailed proof-entry tranche is documented in
+`specs/product-spec-proof-hardening-worker-boundary-suite.md`. It exists
+because the first successful contract-hydrated non-Codex worker smoke proved
+worker viability but also exposed remaining proof/control-plane risks:
+production/replay drift, stale split children, target-selection provider
+routing, target-selection input budgets, context repair requirements,
+reviewable rollback patch artifacts, and adversarial safe-failure gates.
+
+DB reconciliation evidence:
+
+- `scripts/execution-platform-record-product-spec-proof-hardening-queue.mjs`
+  superseded the broad replay-proof parent and inserted the seven proof
+  hardening items ahead of Product/Spec.
+- queue update artifact:
+  `.artifacts/execution-platform/product-spec-proof-hardening-queue-update.json`
+- latest proof-hardening closeout:
+  `.artifacts/execution-platform/proof-hardening-07-adversarial-entry-suite-closeout.json`
+
 ### Product/Spec System Spec And Proof Readiness
 
 2026-05-25 update: the Product/Spec Planning production workflow spec is now
@@ -54,9 +321,10 @@ Pre-proof order:
 6. `openclaw-convergence.control-plane-06-worker-small-verb-edit-smoke` -
    Worker Small-Verb Edit Smoke Proof. **Closed.**
 7. `openclaw-convergence.control-plane-07-readback-telemetry-proof` -
-   Owner Readback And Telemetry Proof. **Next.**
+   Owner Readback And Telemetry Proof. **Closed.**
 8. `openclaw-convergence.active-queue-34` - Product/Spec Planning Workflow
-   Plugin Production Proof.
+   Plugin Production Proof. **Superseded as immediate next by the
+   Execution Contract Spine block above.**
 
 Immediate post-proof order:
 
@@ -116,8 +384,8 @@ Pre-proof order after Work Queue reconciliation:
 6. Semantic Microtask Refinement And Worker Packet Quality. **Complete.**
 7. Product/Spec replay from the failed graph/resource boundary. **Complete.**
 8. Execution Intent, Evidence Mode, And Worker Dispatch. **Complete.**
-9. Product/Spec Planning Workflow Plugin Production Proof. **Next active
-   queue item.**
+9. Product/Spec Planning Workflow Plugin Production Proof. **Superseded as
+   immediate next by the Execution Contract Spine block above.**
 10. Runtime Artifact Retention And Pruning Policy. **Immediate post-proof.**
 11. Scheduler Phase Budget Governor. **Immediate post-proof.**
 12. Work Queue Frontier Delta Stream And Branch Controls. **Immediate
@@ -128,9 +396,12 @@ Mission Ledger lifecycle reconciliation:
 - `openclaw-convergence.mission-ledger-stability-diagnostics` is **closed**.
   Its remaining purpose is diagnostic evidence, not active production work.
 - `openclaw-convergence.staged-mission-ledger-obligation-candidate-compiler`
-  is **superseded / diagnostic-only**. Production coding-team Mission Ledger
-  creation uses the prior single-pass path; staged Mission Ledger can only run
-  behind explicit diagnostic flags.
+  is **retired and deleted**. It is not diagnostic-only infrastructure and
+  cannot be reactivated through flags.
+- `openclaw-convergence.intake-stage-runner-obligation-graph-scheduler-intake`
+  is the active pre-scheduler ownership item: `IntakeStageRunner` owns
+  Mission Ledger creation/replay, ObligationGraph small-verb authoring/repair,
+  accepted graph persistence, and scheduler-ready intake.
 - `openclaw-convergence.runtime-artifact-retention-pruning-policy`,
   `openclaw-convergence.scheduler-phase-budget-governor`, and
   `openclaw-convergence.work-queue-frontier-delta-stream` remain active but
@@ -154,7 +425,7 @@ prose heuristics.
 The next Product/Spec Planning production proof is now gated by the
 resource-materialization and model-task classification block documented in
 `specs/model-task-classification-and-resource-materialization.md`. This block
-absorbs the older scheduler-first context and post-context compiler blockers
+absorbs the older scheduler-first context and post-resource compiler blockers
 into one ordered pre-proof queue.
 
 Pre-proof order:
@@ -207,9 +478,9 @@ Immediate Product/Spec proof gate:
    Large Graph Storage And Scheduler Lane. **Complete.**
 5. `openclaw-convergence.mission-ledger-stability-diagnostics` - Mission
    Ledger Stability Diagnostics. **Closed.**
-6. `openclaw-convergence.staged-mission-ledger-obligation-candidate-compiler` -
-   Staged Mission Ledger Obligation Candidate Compiler. **Superseded /
-   diagnostic-only.**
+6. `openclaw-convergence.intake-stage-runner-obligation-graph-scheduler-intake` -
+   IntakeStageRunner ObligationGraph Scheduler Intake. **Active pre-proof
+   intake ownership item.**
 7. `openclaw-convergence.active-queue-34` - Product/Spec Planning Workflow
    Plugin Production Proof. **Next active proof target.**
 
@@ -308,8 +579,8 @@ New generic orchestration runtime block:
 33. `openclaw-convergence.native-harness-04-validation-executor-repair` - Validation Executor And Repair Loop Convergence. **Complete.**
 34. `openclaw-convergence.native-harness-05-boundary-replay-checkpoints` - Boundary Replay Checkpoint Completion. **Complete.**
 35. `openclaw-convergence.non-codex-tool-worker-runtime` - Non-Codex Tool Worker Runtime And Patch-JSON Retirement. **Complete.**
-36. `openclaw-convergence.scheduler-first-node-scoped-context-supply` - Scheduler-First Node-Scoped Context Supply. **Absorbed by resource-materialization block.**
-37. `openclaw-convergence.post-context-implementation-task-compiler` - Post-Context Implementation Task Compiler. **Absorbed by resource-materialization block.**
+36. `openclaw-convergence.scheduler-first-node-scoped-resource-fulfillment` - Scheduler-First Node-Scoped Context Supply. **Absorbed by resource-materialization block.**
+37. `openclaw-convergence.post-resource-implementation-task-compiler` - Post-Context Implementation Task Compiler. **Absorbed by resource-materialization block.**
 38. `openclaw-convergence.model-task-classification-utility-router-v2` - Model Task Classification And Utility Router v2. **Complete.**
 39. `openclaw-convergence.generic-node-resource-materialization-layer` - Generic Node Resource Materialization Layer. **Complete.**
 40. `openclaw-convergence.implementation-context-snapshot-compiler` - Implementation Context Snapshot Compiler. **Complete.**
@@ -327,7 +598,7 @@ New generic orchestration runtime block:
 52. `openclaw-convergence.operator-frontier-readback-latest-run-state` - Operator Frontier Readback And Latest Run State. **Next pre-proof blocker.**
 53. `openclaw-convergence.product-spec-large-graph-storage-scheduler-lane` - Large Graph Storage And Scheduler Lane. **New pre-proof blocker.**
 54. `openclaw-convergence.mission-ledger-stability-diagnostics` - Mission Ledger Stability Diagnostics. **Implemented; commitment-count drift is diagnostic-only unless packet coverage/evidence is missing.**
-55. `openclaw-convergence.staged-mission-ledger-obligation-candidate-compiler` - Staged Mission Ledger Obligation Candidate Compiler. **Diagnostic-only after rollback; not a Product/Spec production gate.**
+55. `openclaw-convergence.intake-stage-runner-obligation-graph-scheduler-intake` - IntakeStageRunner ObligationGraph Scheduler Intake. **Canonical pre-scheduler owner; staged Mission Ledger experiment deleted.**
 56. `openclaw-convergence.active-queue-34` - Product/Spec Planning Workflow Plugin Production Proof. **After stabilization lanes.**
 57. `openclaw-convergence.native-harness-06-context-pack-supply-chain` - Native Harness Context Pack Supply Chain.
 58. `openclaw-convergence.native-harness-07-work-queue-event-push-control` - Work Queue Event Push And Control UX.
@@ -339,7 +610,7 @@ New generic orchestration runtime block:
 Post-proof platform items now documented for concurrency and contract cleanup:
 
 51. `openclaw-convergence.toolification-13-compatibility-retirement-bypass-audit` - Compatibility Retirement And Middleware Bypass Audit.
-52. `openclaw-convergence.toolification-15-mission-ledger-staged-tools` - Mission Ledger Staged Tools And Evidence Compiler. **Superseded by `openclaw-convergence.staged-mission-ledger-obligation-candidate-compiler`, which is the sharper P0 pre-proof implementation item.**
+52. `openclaw-convergence.toolification-15-mission-ledger-staged-tools` - Mission Ledger Staged Tools And Evidence Compiler. **Retired; pre-scheduler ownership is consolidated under `IntakeStageRunner` and ObligationGraph small verbs.**
 53. `openclaw-convergence.toolification-16-capability-policy-compiler-hardening` - Capability Policy Compiler Hardening. **Superseded by model-task classification for pre-proof policy; retain only if residual post-proof scope remains.**
 54. `openclaw-convergence.toolification-17-worker-file-edit-adapter-expansion` - Worker And File-Edit Adapter Tool Loop Expansion.
 55. `openclaw-convergence.toolification-20-work-queue-human-task-tools` - Work Queue And Human Task Toolification.
@@ -378,8 +649,8 @@ source-of-truth specs are
 `specs/context-scout-execution-packet-and-request-context-repair.md`,
 `specs/runtime-node-readiness-transition-engine.md`,
 `specs/model-task-classification-and-resource-materialization.md`,
-`specs/scheduler-first-node-scoped-context-supply.md`, and
-`specs/post-context-implementation-task-compiler.md`. The pre-proof work must
+`specs/scheduler-first-node-scoped-resource-fulfillment.md`, and
+`specs/post-resource-implementation-task-compiler.md`. The pre-proof work must
 reuse OpenClaw's native Runtime Work Graph, Runtime Tool-Call Kernel,
 RuntimeWorkerSupervisor, Work Queue event/readback/control, Context Engine,
 provider stream wrappers, validation/QA tools, and closeout finalization
@@ -777,7 +1048,7 @@ Product/Spec Planning run.
   volatile input for one follow-up turn.
 - CommitmentWorkPackets now include commitment meaning, context request hints,
   required evidence-claim descriptions, stop-if-missing rules, and review refs.
-- context scout output compiles into ContextHandoffPackets with verified file
+- context scout output compiles into ResourceHandoffPackets with verified file
   refs and implementation handoff summaries.
 - implementation nodes that require upstream context stop before editing if
   no context handoff packet exists.
@@ -785,7 +1056,7 @@ Product/Spec Planning run.
   verified context files, context handoff refs, and blockers.
 
 Next proof gate: inspect Mission Ledger, CommitmentWorkPacket,
-source-prompt-context, and ContextHandoffPacket quality before allowing
+source-prompt-context, and ResourceHandoffPacket quality before allowing
 Product/Spec Planning implementation nodes to run.
 
 ## Script And DB Operation Toolification

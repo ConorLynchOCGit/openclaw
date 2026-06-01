@@ -41,7 +41,7 @@ await sql.query(
       sourceSpecRef: specRef,
       completionArtifactRefs: [proofRef, replayResultRef, ...unitTestRefs],
       completionSummary:
-        "Split-Required Resource Materialization Transition is implemented and the latest Product/Spec resource-boundary replay passed. Production scheduler hooks treat split_required/resource materialization as a graph transition, broad parent nodes no longer invoke workers directly, context-handoff artifacts can be reconstructed from payload-backed refs, concrete model-authored edit points narrow broad directory/repo seeds, and the failed Product/Spec graph replay materialized two ready NodeExecutionPacket refs without rerunning router, Mission Ledger, packet authoring, graph selection, or context scout.",
+        "Split-Required Resource Materialization Transition is implemented and the latest Product/Spec resource-boundary replay passed. Production scheduler hooks treat split_required/resource materialization as a graph transition, broad parent nodes no longer invoke workers directly, resource-handoff artifacts can be reconstructed from payload-backed refs, concrete model-authored edit points narrow broad directory/repo seeds, and the failed Product/Spec graph replay materialized two ready NodeExecutionPacket refs without rerunning router, Mission Ledger, packet authoring, graph selection, or context scout.",
       proofStatus: "succeeded",
       nextProofItemId: nextItemId,
       rawPromptStored: false,

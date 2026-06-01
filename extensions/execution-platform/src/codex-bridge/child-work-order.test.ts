@@ -23,13 +23,13 @@ describe("child work order contract", () => {
           actionId: "context",
           actionKind: "coding",
           title: "Inspect exact readback files",
-          assignedRole: "context_scout",
+          assignedRole: "resource_scout",
           assignedWorkflow: "agent_team.coding",
           metadata: {
             objective:
               "Find exact files and code patterns needed for the owner readback implementation.",
             rationaleForCallingThisRole:
-              "Context scout is needed before implementation so the edit worker receives concrete target evidence.",
+              "resource scout is needed before implementation so the edit worker receives concrete target evidence.",
             expectedOutput:
               "Relevant files, existing patterns, risks, recommended edit points, and implementation handoff summary.",
             acceptanceCriteria: ["Names concrete files.", "Provides handoff to implementation."],
@@ -63,7 +63,7 @@ describe("child work order contract", () => {
 
     expect(orders).toHaveLength(2);
     expect(orders[0]).toMatchObject({
-      roleId: "context_scout",
+      roleId: "resource_scout",
       parentGraphId: "graph-1",
       rawPromptStored: false,
       rawResponseStored: false,
@@ -114,7 +114,7 @@ describe("child work order contract", () => {
     expect(validation.semanticQualityJudgedByDeterministicCode).toBe(false);
   });
 
-  it("parses context scout output into useful implementation handoff evidence", () => {
+  it("parses resource scout output into useful implementation handoff evidence", () => {
     const output = parseContextScoutOutput({
       responseText: JSON.stringify({
         relevantFiles: [
@@ -151,7 +151,7 @@ describe("child work order contract", () => {
     });
   });
 
-  it("does not invent directory target refs when context scout omits concrete files", () => {
+  it("does not invent directory target refs when resource scout omits concrete files", () => {
     const output = parseContextScoutOutput({
       responseText: JSON.stringify({
         existingPatterns: ["scheduler-backed plugins live under workflows"],
@@ -165,7 +165,7 @@ describe("child work order contract", () => {
     expect(output.relevantFiles).toEqual([]);
     expect(validateContextScoutOutputShape(output)).toMatchObject({
       valid: false,
-      reasonCodes: ["context_scout_required_relevant_files_missing"],
+      reasonCodes: ["context_specialist_required_relevant_files_missing"],
       semanticQualityJudgedByDeterministicCode: false,
     });
   });
@@ -225,7 +225,7 @@ describe("child work order contract", () => {
   it("normalizes orchestrator delegation review while keeping judgment model-authored", () => {
     const review = normalizeOrchestratorDelegationReview({
       reviewedWorkOrderId: "child-work-order-context",
-      reviewedRoleId: "context_scout",
+      reviewedRoleId: "resource_scout",
       modelRef: "openai-codex/gpt-5.5",
       providerPath: "codex_app_server",
       modelRunRef: "codex-app-server://review",
@@ -243,7 +243,7 @@ describe("child work order contract", () => {
           objective: "Add child work-order summaries to Work Queue readback.",
           targetRefs: ["extensions/execution-platform/src/work-queue/execution-read-model.ts"],
         },
-        reasonCodes: ["context_scout_output_accepted_by_orchestrator"],
+        reasonCodes: ["resource_scout_output_accepted_by_orchestrator"],
       }),
     });
 
@@ -261,7 +261,7 @@ describe("child work order contract", () => {
   it("flags missing delegation review shape without judging child output quality", () => {
     const review = normalizeOrchestratorDelegationReview({
       reviewedWorkOrderId: "child-work-order-context",
-      reviewedRoleId: "context_scout",
+      reviewedRoleId: "resource_scout",
       modelRef: "openai-codex/gpt-5.5",
       providerPath: "codex_app_server",
       modelRunRef: "codex-app-server://review",

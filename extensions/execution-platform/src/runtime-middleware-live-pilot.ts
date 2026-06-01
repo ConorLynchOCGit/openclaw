@@ -1202,7 +1202,10 @@ async function middlewareResult(input: {
   boundedInputSummary: string;
   boundedOutputSummary: string;
 }): Promise<RuntimeMiddlewarePilotResult> {
-  const artifacts = await input.runtimeJobs.listArtifacts(input.runtimeJobId);
+  const artifacts = await input.runtimeJobs.listArtifacts(input.runtimeJobId, {
+    limit: 500,
+    order: "desc",
+  });
   const workQueueReadback =
     input.workItemId && input.workQueue
       ? await buildWorkQueueExecutionReadModel({

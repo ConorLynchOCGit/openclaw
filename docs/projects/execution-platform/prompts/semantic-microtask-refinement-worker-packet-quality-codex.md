@@ -45,7 +45,7 @@ Implement this from first principles, without Product/Spec shortcuts:
   reconstruction.
 - Feed recommended edit points into implementation context/resource
   compilation as model-authored file-change intents.
-- Update the post-context implementation task compiler so broad directory or
+- Update the post-resource implementation task compiler so broad directory or
   multi-file work blocks as context/microtask repair unless concrete
   file-change intent covers the executable target refs.
 - Keep new-file intent support first-class: do not require existing-file
@@ -65,7 +65,7 @@ Run focused tests:
 ```bash
 pnpm test:file extensions/execution-platform/src/workflows/implementation-context-snapshot-compiler.test.ts extensions/execution-platform/src/workflows/node-resource-materialization.test.ts extensions/execution-platform/src/workflows/mission-work-packets.test.ts extensions/execution-platform/src/codex-bridge/non-codex-tool-using-worker-loop.test.ts
 pnpm test:file extensions/execution-platform/src/codex-bridge/dynamic-agent-team-graph-runner.test.ts extensions/execution-platform/src/workflows/context-broker.test.ts extensions/execution-platform/src/workflows/runtime-work-graph-scheduler.test.ts
-pnpm tsgo:fast extensions/execution-platform/src/workflows/mission-work-packets.ts extensions/execution-platform/src/workflows/node-resource-materialization.ts extensions/execution-platform/src/workflows/post-context-implementation-task-compiler.ts extensions/execution-platform/src/workflows/implementation-context-snapshot-compiler.ts extensions/execution-platform/src/workflows/context-broker.test.ts extensions/execution-platform/src/codex-bridge/non-codex-tool-using-worker-loop.ts extensions/execution-platform/src/codex-bridge/dynamic-agent-team-graph-runner.ts
+pnpm tsgo:fast extensions/execution-platform/src/workflows/mission-work-packets.ts extensions/execution-platform/src/workflows/node-resource-materialization.ts extensions/execution-platform/src/workflows/post-resource-implementation-task-compiler.ts extensions/execution-platform/src/workflows/implementation-context-snapshot-compiler.ts extensions/execution-platform/src/workflows/context-broker.test.ts extensions/execution-platform/src/codex-bridge/non-codex-tool-using-worker-loop.ts extensions/execution-platform/src/codex-bridge/dynamic-agent-team-graph-runner.ts
 node --check scripts/execution-platform-run-product-spec-boundary-replay.mjs
 ```
 

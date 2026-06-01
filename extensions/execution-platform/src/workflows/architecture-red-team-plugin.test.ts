@@ -43,6 +43,8 @@ describe("architecture red-team workflow plugin", () => {
       workflowId: "agent_team.architecture_red_team",
       productionEnabled: true,
       stagedSchedulerProtocolRequired: true,
+      resourceReadinessPolicy: "domain_resource_manifest",
+      domainResourceManifestRequiredForWorkerExecution: true,
       runtimeDerivedNodeEnvelopeRequired: true,
       degradedCloseoutSuccessAllowed: false,
     });

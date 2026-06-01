@@ -10,14 +10,35 @@ import type {
   RuntimeToolArtifactInput,
   RuntimeToolExecutorResult,
 } from "../runtime-tool-call/runtime-tool-types.ts";
+import { buildWorkerEditReviewArtifact } from "../workflows/action-review-artifacts.ts";
 import {
-  buildImplementationTaskPacket,
   validateImplementationTaskPacketForWorker,
   type ImplementationTaskPacket,
-} from "../workflows/mission-work-packets.ts";
+} from "../workflows/worker-execution-packets.ts";
 import {
-  evaluateWorkerInvocationReadinessGate,
+  buildResourceObjectiveFocusLegalRefUniverse,
+  compileResourceObjectiveFocus,
+  type ResourceObjectiveFocus,
+  type ResourceObjectiveFocusLegalRefUniverse,
+} from "../workflows/resource-objective-focus.ts";
+import { runResourceSpecialistNarrowingLoop } from "../workflows/resource-specialist-narrowing-loop.ts";
+import {
+  compileWorkerContextRequestDemand,
+  type NodeResourceDemandCompileResult,
+  type NodeResourceDemandSessionManifest,
+} from "../workflows/node-resource-demand-session.ts";
+import {
+  appendNodeResourceDemandFulfillmentToLedger,
+  openNodeResourceLedger,
+  type NodeResourceLedgerAppendResult,
+  type NodeResourceLedgerEntryManifest,
+  type NodeResourceLedgerManifest,
+} from "../workflows/node-resource-ledger.ts";
+import {
+  validateWorkerInvocationPacketHydration,
+  projectProgressiveNodeExecutionPacketReadiness,
   type CodingResourcePacket,
+  type NodeExecutionContract,
   type NodeExecutionPacket,
 } from "../workflows/node-resource-materialization.ts";
 import {
@@ -84,6 +105,10 @@ const WORKER_TOOL_SELECTION_TIMEOUT_MS = 4 * 60_000;
 const WORKER_PATCH_AFTER_PLAN_TIMEOUT_MS = 90_000;
 const WORKER_PATCH_REPAIR_AFTER_PLAN_TIMEOUT_MS = 60_000;
 const WORKER_TOOL_SELECTION_PROGRESS_INTERVAL_MS = 15_000;
+const WORKER_REPO_READ_DEFAULT_MAX_LINES = 240;
+const WORKER_REPO_READ_HARD_MAX_LINES = 800;
+const WORKER_FORCED_PATCH_SNAPSHOT_MAX_CHARS = 36_000;
+const WORKER_FORCED_PATCH_CONTEXT_EXPANSION_MAX = 3;
 const DEFAULT_NON_CODEX_CONTROLLER_MODEL_REF = "qwen/qwen3-coder-next";
 const DEFAULT_NON_CODEX_PATCH_MODEL_REF = "moonshotai/kimi-k2.6";
 
@@ -228,17 +253,18 @@ export type NonCodexToolUsingWorkerLoopInput = {
   taskTitle: string;
   exactEditObjective: string;
   implementationTaskPacket?: ImplementationTaskPacket;
+  nodeExecutionContract?: NodeExecutionContract;
   nodeExecutionPacket?: NodeExecutionPacket;
   codingResourcePacket?: CodingResourcePacket;
   whyThisWorkerWasSelected?: string;
   expectedOutput?: string;
   repoRoot: string;
   allowedFileRefs: string[];
+  domainResourceSelectionRefs?: string[];
   targetFileRefs: string[];
   deniedFileRefs?: string[];
   contextPackRefs: string[];
   sourcePromptExcerptRefs?: string[];
-  contextSynthesisRefs?: string[];
   priorNodeOutputRefs?: string[];
   validationCommandRefs: string[];
   acceptanceCriteria: string[];
@@ -271,6 +297,7 @@ export type NonCodexToolUsingWorkerLoopResult = {
   diffHash: string | null;
   validationRefs: string[];
   artifactRefs: string[];
+  reviewArtifactRefs: string[];
   limitations: string[];
   toolCalls: NonCodexToolCall[];
   toolResults: NonCodexToolResult[];
@@ -309,6 +336,144 @@ type RuntimeFileEdit = {
   endLine: number | null;
   rationale: string;
 };
+
+type WorkerLifecycleToolSurface = {
+  phase:
+    | "context"
+    | "edit_plan"
+    | "patch_author"
+    | "worker_post_edit_validation"
+    | "validation_repair"
+    | "evidence";
+  allowedToolIds: NonCodexToolUsingWorkerToolId[];
+  deniedToolIds: NonCodexToolUsingWorkerToolId[];
+  reasonCodes: string[];
+};
+
+const CONTEXT_MODEL_FACING_TOOL_IDS: NonCodexToolUsingWorkerToolId[] = [
+  "worker.context.request_more",
+  "worker.context.propose_searches",
+  "worker.context.search",
+  "worker.context.search_symbols",
+  "worker.context.find_callers",
+  "worker.context.find_tests",
+  "worker.context.open_ref",
+  "worker.context.open_around_match",
+  "worker.context.open_window",
+  "worker.context.expand_window",
+  "worker.context.contract_window",
+  "worker.context.accept_window",
+  "worker.context.open_adjacent",
+  "worker.context.report_pattern",
+  "worker.context.report_risk",
+  "worker.context.report_edit_point",
+  "worker.context.finish_context_turn",
+  "worker.context.mark_unanswerable",
+  "worker.repair.mark_upstream_blocker",
+  "worker.progress.mark_no_edit_blocker",
+  "worker.escalate",
+];
+
+const CONTEXT_SEARCH_MODEL_FACING_TOOL_IDS: NonCodexToolUsingWorkerToolId[] = [
+  "worker.context.request_more",
+  "worker.context.propose_searches",
+  "worker.context.search",
+  "worker.context.search_symbols",
+  "worker.context.find_callers",
+  "worker.context.find_tests",
+  "worker.context.open_adjacent",
+  "worker.repair.mark_upstream_blocker",
+  "worker.progress.mark_no_edit_blocker",
+  "worker.escalate",
+];
+
+const CONTEXT_OPEN_MODEL_FACING_TOOL_IDS: NonCodexToolUsingWorkerToolId[] = [
+  "worker.context.open_ref",
+  "worker.context.open_around_match",
+  "worker.context.open_window",
+  "worker.context.open_adjacent",
+  "worker.context.search",
+  "worker.context.find_callers",
+  "worker.context.find_tests",
+  "worker.repair.mark_upstream_blocker",
+  "worker.progress.mark_no_edit_blocker",
+  "worker.escalate",
+];
+
+const CONTEXT_REFINE_MODEL_FACING_TOOL_IDS: NonCodexToolUsingWorkerToolId[] = [
+  "worker.context.expand_window",
+  "worker.context.contract_window",
+  "worker.repair.mark_upstream_blocker",
+  "worker.progress.mark_no_edit_blocker",
+  "worker.escalate",
+];
+
+const CONTEXT_ACCEPT_MODEL_FACING_TOOL_IDS: NonCodexToolUsingWorkerToolId[] = [
+  "worker.context.accept_window",
+  "worker.context.report_pattern",
+  "worker.context.report_risk",
+  "worker.context.report_edit_point",
+  "worker.repair.mark_upstream_blocker",
+  "worker.progress.mark_no_edit_blocker",
+  "worker.escalate",
+];
+
+const EDIT_PLAN_MODEL_FACING_TOOL_IDS: NonCodexToolUsingWorkerToolId[] = [
+  "worker.edit.plan",
+  "worker.repair.mark_upstream_blocker",
+  "worker.progress.mark_no_edit_blocker",
+  "worker.escalate",
+];
+
+const PATCH_AUTHOR_MODEL_FACING_TOOL_IDS: NonCodexToolUsingWorkerToolId[] = [
+  "worker.patch.author_edit",
+  "worker.repair.mark_upstream_blocker",
+  "worker.escalate",
+];
+
+const POST_EDIT_VALIDATION_MODEL_FACING_TOOL_IDS: NonCodexToolUsingWorkerToolId[] = [
+  "worker.validation.run",
+  "worker.validation.run_structural_default",
+  "worker.repair.mark_upstream_blocker",
+  "worker.escalate",
+];
+
+const VALIDATION_REPAIR_MODEL_FACING_TOOL_IDS: NonCodexToolUsingWorkerToolId[] = [
+  ...CONTEXT_MODEL_FACING_TOOL_IDS,
+  "worker.validation.get_failure_context",
+  "worker.validation.explain_failure",
+  "worker.validation.classify_failure",
+  "worker.repair.author_edit",
+  "worker.edit.apply_patch",
+  "worker.validation.run",
+  "worker.context.request_more",
+  "worker.repair.mark_upstream_blocker",
+  "worker.repair.request_high_capability_escalation",
+  "worker.escalate",
+];
+
+const VALIDATION_REPAIR_AUTHOR_MODEL_FACING_TOOL_IDS: NonCodexToolUsingWorkerToolId[] = [
+  "worker.repair.author_edit",
+  "worker.repair.mark_upstream_blocker",
+  "worker.repair.request_high_capability_escalation",
+  "worker.escalate",
+];
+
+const EVIDENCE_MODEL_FACING_TOOL_IDS: NonCodexToolUsingWorkerToolId[] = [
+  ...CONTEXT_MODEL_FACING_TOOL_IDS,
+  "worker.evidence.claim_from_validation",
+  "worker.evidence.claim",
+  "worker.evidence.claim_commitment_progress",
+  "worker.evidence.link_validation",
+  "worker.repair.mark_upstream_blocker",
+  "worker.escalate",
+];
+
+const MODEL_FACING_SAFETY_TOOL_IDS: NonCodexToolUsingWorkerToolId[] = [
+  "worker.repair.mark_upstream_blocker",
+  "worker.progress.mark_no_edit_blocker",
+  "worker.escalate",
+];
 
 function hash(value: string): string {
   return createHash("sha256").update(value).digest("hex");
@@ -509,13 +674,12 @@ async function raceWorkerModelCallTimeout(input: {
 }
 
 function selectModelSlotForWorkerTurn(input: {
+  workerInput?: NonCodexToolUsingWorkerLoopInput;
   toolResults: NonCodexToolResult[];
   turn: number;
 }): NonCodexWorkerModelSlot {
   const lastResult = input.toolResults.at(-1);
-  const hasReadContext = input.toolResults.some(
-    (result) => result.toolId === "worker.repo.read_files" && result.status === "succeeded",
-  );
+  const hasReadContext = input.toolResults.some(hasUsableBoundedContextSnapshotResult);
   const hasContextDiscovery = input.toolResults.some(
     (result) =>
       (result.toolId === "worker.repo.search" ||
@@ -530,9 +694,40 @@ function selectModelSlotForWorkerTurn(input: {
   const hasSuccessfulValidation = input.toolResults.some(
     (result) => isValidationRunToolId(result.toolId) && result.status === "succeeded",
   );
+  const hasAcceptedExactContext = input.toolResults.some(hasUsableBoundedContextSnapshotResult);
+  const hasContextSearchDiscovery = input.toolResults.some(hasContextSearchDiscoveryResult);
+  const hasOpenedUnacceptedContextWindow = input.toolResults.some(
+    hasOpenedUnacceptedContextWindowResult,
+  );
+  const hasRefinedUnacceptedContextWindow = input.toolResults.some(
+    hasRefinedUnacceptedContextWindowResult,
+  );
+  const hasAcceptedValidationRepairContext = hasAcceptedContextAfterLatestFailedValidation(
+    input.toolResults,
+  );
+  const hasValidationRepairSearchDiscovery = hasContextSearchAfterLatestFailedValidation(
+    input.toolResults,
+  );
+  const hasOpenedValidationRepairContext = hasOpenedUnacceptedContextAfterLatestFailedValidation(
+    input.toolResults,
+  );
+  const hasRefinedValidationRepairContext =
+    hasRefinedUnacceptedContextAfterLatestFailedValidation(input.toolResults);
   const hasEvidenceClaim = input.toolResults.some(
     (result) => isEvidenceClaimToolId(result.toolId) && result.status === "succeeded",
   );
+  const hasAcceptedEditPlan = input.toolResults.some(
+    (result) => result.toolId === "worker.edit.plan" && result.status === "succeeded",
+  );
+  const packetReadiness = input.workerInput?.nodeExecutionPacket
+    ? projectProgressiveNodeExecutionPacketReadiness({
+        packet: input.workerInput.nodeExecutionPacket,
+        resourcePacket: input.workerInput.codingResourcePacket ?? null,
+      })
+    : null;
+  const packetStartsAtWorkerEditReady =
+    packetReadiness?.progressiveState === "worker_action_ready" ||
+    packetReadiness?.actionGateStatus === "ready";
   const lastValidationRun = [...input.toolResults]
     .toReversed()
     .find((result) => isValidationRunToolId(result.toolId));
@@ -555,8 +750,14 @@ function selectModelSlotForWorkerTurn(input: {
   if (hasAppliedPatch && !hasValidationRun) {
     return "controller";
   }
-  if (hasReadContext || hasContextDiscovery) {
+  if (requiresPatchProgress(input.toolResults)) {
     return "patch";
+  }
+  if (
+    (hasReadContext || hasContextDiscovery || packetStartsAtWorkerEditReady) &&
+    !hasAcceptedEditPlan
+  ) {
+    return "controller";
   }
   if (input.turn === 1) {
     return "context_decision";
@@ -640,10 +841,154 @@ function providerDiagnosticsWithUsage(input: {
   };
 }
 
+function invalidImplementationTaskPacketAllowedForPartialContext(reasonCodes: string[]): boolean {
+  if (reasonCodes.length === 0) {
+    return false;
+  }
+  const allowedMissingTargetReasonCodes = new Set([
+    "implementation_task_packet_target_scope_missing",
+    "implementation_task_packet_target_snapshot_missing",
+    "implementation_task_packet_target_snapshots_or_new_file_intent_missing",
+    "implementation_task_packet_file_change_intents_missing",
+    "implementation_task_packet_file_change_intent_coverage_missing",
+    "implementation_task_packet_context_request_required",
+    "implementation_task_packet_domain_resource_selection_refs_missing",
+    "implementation_task_packet_edit_scope_or_must_read_refs_missing",
+    "implementation_task_packet_validation_refs_missing",
+  ]);
+  return reasonCodes.every((reasonCode) => allowedMissingTargetReasonCodes.has(reasonCode));
+}
+
 function jsonObject(value: unknown): Record<string, JsonValue> {
   return value && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, JsonValue>)
     : {};
+}
+
+function nodeResourceDemandMetadataValue(
+  result: NodeResourceDemandCompileResult,
+  key: string,
+): JsonValue | null {
+  return jsonObject(result.metadata)[key] ?? null;
+}
+
+function nodeResourceDemandManifest(
+  result: NodeResourceDemandCompileResult,
+): NodeResourceDemandSessionManifest | null {
+  const manifest = nodeResourceDemandMetadataValue(result, "nodeResourceDemandSessionManifest");
+  return manifest && typeof manifest === "object" && !Array.isArray(manifest)
+    ? (manifest as unknown as NodeResourceDemandSessionManifest)
+    : null;
+}
+
+function resourceLedgerMetadataValue(
+  result: NodeResourceLedgerAppendResult | null,
+  key: string,
+): JsonValue | null {
+  if (!result) {
+    return null;
+  }
+  return jsonObject(result.metadata)[key] ?? null;
+}
+
+function resourceLedgerManifest(
+  result: NodeResourceLedgerAppendResult | null,
+): NodeResourceLedgerManifest | null {
+  const manifest = resourceLedgerMetadataValue(result, "nodeResourceLedgerManifest");
+  return manifest && typeof manifest === "object" && !Array.isArray(manifest)
+    ? (manifest as unknown as NodeResourceLedgerManifest)
+    : null;
+}
+
+function resourceLedgerEntryManifest(
+  result: NodeResourceLedgerAppendResult | null,
+): NodeResourceLedgerEntryManifest | null {
+  const manifest = resourceLedgerMetadataValue(result, "nodeResourceLedgerEntryManifest");
+  return manifest && typeof manifest === "object" && !Array.isArray(manifest)
+    ? (manifest as unknown as NodeResourceLedgerEntryManifest)
+    : null;
+}
+
+function compileContextFocusForWorkerRequest(input: {
+  workerInput: NonCodexToolUsingWorkerLoopInput;
+  requestedFileRefs: string[];
+  reason: string;
+  expectedUse: string;
+  forceSpecialistScout?: boolean;
+}): {
+  resourceObjectiveFocus: ResourceObjectiveFocus | null;
+  legalRefUniverse: ResourceObjectiveFocusLegalRefUniverse | null;
+} {
+  if (input.requestedFileRefs.length === 0) {
+    return { resourceObjectiveFocus: null, legalRefUniverse: null };
+  }
+  const runtimeJobId = input.workerInput.runtimeJobId ?? input.workerInput.taskId;
+  const graphId = input.workerInput.graphId ?? input.workerInput.taskId;
+  const consumerNodeId = input.workerInput.nodeId ?? input.workerInput.taskId;
+  const workIntentRef =
+    input.workerInput.nodeExecutionContract?.workIntentRef ??
+    `work-intent://worker-context-request/${input.workerInput.taskId}`;
+  const nodeExecutionContractRef =
+    input.workerInput.nodeExecutionContract?.contractRef ?? null;
+  const legalRefUniverse = buildResourceObjectiveFocusLegalRefUniverse({
+    runtimeJobId,
+    workflowId: "agent_team.coding",
+    graphId,
+    consumerNodeId,
+    workIntentRef,
+    nodeExecutionContractRef,
+    refs: input.requestedFileRefs.map((ref) => ({
+      ref,
+      kind:
+        input.forceSpecialistScout && !parseWorkerFileWindowRef(ref)
+          ? "repo_area"
+          : "bounded_file_window",
+      boundedLabel: `Worker-requested bounded context for ${ref}`,
+      authorityScopeRefs: input.workerInput.allowedFileRefs,
+    })),
+    maxSelectableHandles: Math.min(Math.max(input.requestedFileRefs.length, 1), 8),
+    maxSemanticQuestions: 2,
+    reasonCodes: ["worker_context_request_focus_universe_compiled"],
+  });
+  const resourceObjectiveFocus = compileResourceObjectiveFocus({
+    runtimeJobId,
+    workflowId: "agent_team.coding",
+    graphId,
+    consumerNodeId,
+    workIntentRef,
+    nodeExecutionContractRef,
+    currentObjectiveSlot: "worker_context_request_more",
+    resourceUseKind: "edit_planning",
+    nextUnknown: input.reason,
+    expectedUse: input.expectedUse,
+    legalRefUniverse,
+    selectedRefHandles: legalRefUniverse.handles.map((handle) => handle.handle),
+    selectedSemanticQuestions: [input.reason],
+    stopWhenAnswered: input.expectedUse,
+    nextLegalTransitions: ["resource.demand.open", "resource.scout.submit_exact_handles"],
+    reasonCodes: ["worker_context_request_more_model_authored_focus_compiled"],
+  });
+  return { resourceObjectiveFocus, legalRefUniverse };
+}
+
+function parseWorkerFileWindowRef(ref: string): {
+  fileRef: string;
+  startLine: number;
+  endLine: number;
+} | null {
+  const normalized = ref.startsWith("file-window://") ? ref.slice("file-window://".length) : ref;
+  const match = /^(?<fileRef>.+)#L(?<startLine>[1-9]\d*)-L(?<endLine>[1-9]\d*)(?::.+)?$/u.exec(
+    normalized,
+  );
+  if (!match?.groups) {
+    return null;
+  }
+  const startLine = Number.parseInt(match.groups.startLine, 10);
+  const endLine = Number.parseInt(match.groups.endLine, 10);
+  if (!Number.isFinite(startLine) || !Number.isFinite(endLine) || endLine < startLine) {
+    return null;
+  }
+  return { fileRef: match.groups.fileRef, startLine, endLine };
 }
 
 function parseModelToolCalls(responseText: string | null): {
@@ -754,6 +1099,23 @@ function isNonCodexToolId(value: unknown): value is NonCodexToolUsingWorkerToolI
     value === "coding.fix_type_errors" ||
     value === "coding.apply_small_patch_with_evidence" ||
     value === "worker.context.request_more" ||
+    value === "worker.context.propose_searches" ||
+    value === "worker.context.search" ||
+    value === "worker.context.open_ref" ||
+    value === "worker.context.open_around_match" ||
+    value === "worker.context.open_window" ||
+    value === "worker.context.expand_window" ||
+    value === "worker.context.contract_window" ||
+    value === "worker.context.accept_window" ||
+    value === "worker.context.search_symbols" ||
+    value === "worker.context.find_callers" ||
+    value === "worker.context.find_tests" ||
+    value === "worker.context.open_adjacent" ||
+    value === "worker.context.report_pattern" ||
+    value === "worker.context.report_risk" ||
+    value === "worker.context.report_edit_point" ||
+    value === "worker.context.finish_context_turn" ||
+    value === "worker.context.mark_unanswerable" ||
     value === "worker.context.provide_bounded_snapshot" ||
     value === "worker.context.deny_request" ||
     value === "worker.repo.search" ||
@@ -784,8 +1146,434 @@ function isNonCodexToolId(value: unknown): value is NonCodexToolUsingWorkerToolI
   );
 }
 
+function progressiveWorkerToolGate(input: {
+  nodeExecutionPacket?: NodeExecutionPacket | null;
+  codingResourcePacket?: CodingResourcePacket | null;
+  toolResults?: NonCodexToolResult[];
+  toolId: NonCodexToolUsingWorkerToolId;
+}):
+  | {
+      allowed: true;
+      progressiveState: string;
+      actionGateStatus: string;
+      allowedWorkerToolIds: string[];
+      deniedWorkerToolIds: string[];
+    }
+  | {
+      allowed: false;
+      progressiveState: string;
+      actionGateStatus: string;
+      allowedWorkerToolIds: string[];
+      deniedWorkerToolIds: string[];
+      reasonCodes: string[];
+    } {
+  if (!input.nodeExecutionPacket) {
+    return {
+      allowed: true,
+      progressiveState: "unknown",
+      actionGateStatus: "unknown",
+      allowedWorkerToolIds: [],
+      deniedWorkerToolIds: [],
+    };
+  }
+  const progressive = projectProgressiveNodeExecutionPacketReadiness({
+    packet: input.nodeExecutionPacket,
+    resourcePacket: input.codingResourcePacket ?? null,
+  });
+  const acceptedExactContextUnlocksEditPlan =
+    input.toolId === "worker.edit.plan" &&
+    (input.toolResults ?? []).some(hasUsableBoundedContextSnapshotResult);
+  const acceptedPlanUnlocksPatchAuthor =
+    (input.toolId === "worker.patch.force_author_from_plan" ||
+      input.toolId === "worker.patch.author_edit" ||
+      input.toolId === "worker.repair.author_edit") &&
+    (input.toolResults ?? []).some(
+      (result) => result.toolId === "worker.edit.plan" && result.status === "succeeded",
+    );
+  const patchProgressUnlocksValidation =
+    (input.toolId === "worker.validation.run" ||
+      input.toolId === "worker.validation.run_structural_default") &&
+    (input.toolResults ?? []).some(
+      (result) => isActualPatchApplicatorToolId(result.toolId) && result.status === "succeeded",
+    );
+  const failedValidationUnlocksRepair =
+    (input.toolId === "worker.validation.get_failure_context" ||
+      input.toolId === "worker.validation.explain_failure" ||
+      input.toolId === "worker.validation.classify_failure" ||
+      input.toolId === "worker.context.search" ||
+      input.toolId === "worker.context.search_symbols" ||
+      input.toolId === "worker.context.find_callers" ||
+      input.toolId === "worker.context.find_tests" ||
+      input.toolId === "worker.context.open_around_match" ||
+      input.toolId === "worker.context.expand_window" ||
+      input.toolId === "worker.context.contract_window" ||
+      input.toolId === "worker.context.accept_window" ||
+      input.toolId === "worker.context.open_adjacent" ||
+      input.toolId === "worker.context.report_pattern" ||
+      input.toolId === "worker.context.report_risk" ||
+      input.toolId === "worker.context.report_edit_point" ||
+      input.toolId === "worker.repair.author_edit" ||
+      input.toolId === "worker.repair.request_high_capability_escalation" ||
+      input.toolId === "worker.repair.mark_upstream_blocker") &&
+    (input.toolResults ?? []).some(
+      (result) => isValidationRunToolId(result.toolId) && result.status !== "succeeded",
+    );
+  const validationProgressUnlocksEvidence =
+    (input.toolId === "worker.evidence.claim" ||
+      input.toolId === "worker.evidence.claim_commitment_progress" ||
+      input.toolId === "worker.evidence.claim_from_validation" ||
+      input.toolId === "worker.evidence.link_validation") &&
+    (input.toolResults ?? []).some(
+      (result) => isValidationRunToolId(result.toolId) && result.status === "succeeded",
+    );
+  const allowed =
+    progressive.allowedWorkerToolIds.includes(input.toolId) ||
+    acceptedExactContextUnlocksEditPlan ||
+    acceptedPlanUnlocksPatchAuthor ||
+    patchProgressUnlocksValidation ||
+    failedValidationUnlocksRepair ||
+    validationProgressUnlocksEvidence;
+  return allowed
+    ? {
+        allowed: true,
+        progressiveState: progressive.progressiveState,
+        actionGateStatus: progressive.actionGateStatus,
+        allowedWorkerToolIds: progressive.allowedWorkerToolIds,
+        deniedWorkerToolIds: progressive.deniedWorkerToolIds,
+      }
+    : {
+        allowed: false,
+        progressiveState: progressive.progressiveState,
+        actionGateStatus: progressive.actionGateStatus,
+        allowedWorkerToolIds: progressive.allowedWorkerToolIds,
+        deniedWorkerToolIds: progressive.deniedWorkerToolIds,
+        reasonCodes: [
+          "worker_tool_blocked_by_node_execution_packet_action_gate",
+          `node_execution_packet_progressive_state:${progressive.progressiveState}`,
+          `node_execution_packet_action_gate:${progressive.actionGateStatus}`,
+        ],
+      };
+}
+
+function progressiveWorkerToolGuidance(
+  input: NonCodexToolUsingWorkerLoopInput,
+  surface?: WorkerLifecycleToolSurface,
+): string[] {
+  if (!input.nodeExecutionPacket) {
+    return [];
+  }
+  const progressive = projectProgressiveNodeExecutionPacketReadiness({
+    packet: input.nodeExecutionPacket,
+    resourcePacket: input.codingResourcePacket ?? null,
+  });
+  return [
+    `NodeExecutionPacket progressive state: ${progressive.progressiveState}.`,
+    `Write gate: ${progressive.actionGateStatus}.`,
+    `Current lifecycle-visible worker tools: ${(surface?.allowedToolIds ?? progressive.allowedWorkerToolIds).slice(0, 40).join(", ") || "none"}.`,
+    (surface?.deniedToolIds ?? progressive.deniedWorkerToolIds).length > 0
+      ? `Hidden/denied worker tool count for this phase: ${(surface?.deniedToolIds ?? progressive.deniedWorkerToolIds).length}.`
+      : "No write/evidence tools are currently denied by the packet write gate.",
+    progressive.actionGateMissingFields.length > 0
+      ? `Write gate missing fields: ${progressive.actionGateMissingFields.join(", ")}.`
+      : "Write gate has no missing structural fields.",
+  ];
+}
+
+function uniqueToolIds(
+  values: Array<NonCodexToolUsingWorkerToolId | string | null | undefined>,
+): NonCodexToolUsingWorkerToolId[] {
+  const toolIds: NonCodexToolUsingWorkerToolId[] = [];
+  for (const value of values) {
+    if (!isNonCodexToolId(value) || toolIds.includes(value)) {
+      continue;
+    }
+    toolIds.push(value);
+  }
+  return toolIds;
+}
+
+function nodeExecutionPacketLegalToolIds(
+  input: NonCodexToolUsingWorkerLoopInput,
+): NonCodexToolUsingWorkerToolId[] | null {
+  if (!input.nodeExecutionPacket) {
+    return null;
+  }
+  const progressive = projectProgressiveNodeExecutionPacketReadiness({
+    packet: input.nodeExecutionPacket,
+    resourcePacket: input.codingResourcePacket ?? null,
+  });
+  return uniqueToolIds([
+    ...input.nodeExecutionPacket.nextLegalWorkerToolIds,
+    ...progressive.allowedWorkerToolIds,
+    ...MODEL_FACING_SAFETY_TOOL_IDS,
+  ]);
+}
+
+function constrainByNodeLegalToolIds(input: {
+  candidateToolIds: NonCodexToolUsingWorkerToolId[];
+  nodeLegalToolIds: NonCodexToolUsingWorkerToolId[] | null;
+}): NonCodexToolUsingWorkerToolId[] {
+  if (!input.nodeLegalToolIds) {
+    return uniqueToolIds(input.candidateToolIds);
+  }
+  const legal = new Set(input.nodeLegalToolIds);
+  return uniqueToolIds(
+    input.candidateToolIds.filter(
+      (toolId) => legal.has(toolId) || MODEL_FACING_SAFETY_TOOL_IDS.includes(toolId),
+    ),
+  );
+}
+
+function deriveWorkerLifecycleToolSurface(input: {
+  workerInput: NonCodexToolUsingWorkerLoopInput;
+  toolResults: NonCodexToolResult[];
+  modelSlot: NonCodexWorkerModelSlot;
+}): WorkerLifecycleToolSurface {
+  const strictLifecycleSurface =
+    input.workerInput.budgetPolicy.phaseAuthorityMode === "strict" ||
+    Boolean(input.workerInput.nodeExecutionPacket);
+  if (!strictLifecycleSurface) {
+    return {
+      phase:
+        input.modelSlot === "evidence"
+          ? "evidence"
+          : input.modelSlot === "validation_repair"
+            ? "validation_repair"
+          : input.modelSlot === "patch"
+            ? "patch_author"
+            : "context",
+      allowedToolIds: MODEL_FACING_SAFETY_TOOL_IDS,
+      deniedToolIds: [],
+      reasonCodes: [
+        "worker_lifecycle_tool_surface_derived",
+        "worker_lifecycle_tool_surface_node_execution_packet_required",
+      ],
+    };
+  }
+  const nodeLegalToolIds = nodeExecutionPacketLegalToolIds(input.workerInput);
+  const hasAppliedPatch = input.toolResults.some(
+    (result) => isActualPatchApplicatorToolId(result.toolId) && result.status === "succeeded",
+  );
+  const hasSuccessfulValidation = input.toolResults.some(
+    (result) => isValidationRunToolId(result.toolId) && result.status === "succeeded",
+  );
+  const hasEvidenceClaim = input.toolResults.some(
+    (result) => isEvidenceClaimToolId(result.toolId) && result.status === "succeeded",
+  );
+  const hasAcceptedExactContext = input.toolResults.some(hasUsableBoundedContextSnapshotResult);
+  const hasContextSearchDiscovery = input.toolResults.some(hasContextSearchDiscoveryResult);
+  const hasOpenedUnacceptedContextWindow = input.toolResults.some(
+    hasOpenedUnacceptedContextWindowResult,
+  );
+  const hasRefinedUnacceptedContextWindow = input.toolResults.some(
+    hasRefinedUnacceptedContextWindowResult,
+  );
+  const hasAcceptedValidationRepairContext = hasAcceptedContextAfterLatestFailedValidation(
+    input.toolResults,
+  );
+  const hasValidationRepairSearchDiscovery = hasContextSearchAfterLatestFailedValidation(
+    input.toolResults,
+  );
+  const hasOpenedValidationRepairContext = hasOpenedUnacceptedContextAfterLatestFailedValidation(
+    input.toolResults,
+  );
+  const hasRefinedValidationRepairContext =
+    hasRefinedUnacceptedContextAfterLatestFailedValidation(input.toolResults);
+  const latestValidation = [...input.toolResults]
+    .toReversed()
+    .find((result) => isValidationRunToolId(result.toolId));
+  const progressive = input.workerInput.nodeExecutionPacket
+    ? projectProgressiveNodeExecutionPacketReadiness({
+        packet: input.workerInput.nodeExecutionPacket,
+        resourcePacket: input.workerInput.codingResourcePacket ?? null,
+      })
+    : null;
+  const packetStartsAtWorkerEditReady =
+    progressive?.progressiveState === "worker_action_ready" ||
+    progressive?.actionGateStatus === "ready";
+  const packetRequiresContextTools =
+    progressive !== null &&
+    progressive.actionGateStatus !== "ready" &&
+    [
+      "partial_context_allowed",
+      "resource_window_required",
+      "resource_demand_open",
+    ].includes(progressive.progressiveState);
+
+  let phase: WorkerLifecycleToolSurface["phase"];
+  let candidateToolIds: NonCodexToolUsingWorkerToolId[];
+  if (
+    hasAcceptedExactContext &&
+    !input.toolResults.some(
+      (result) => result.toolId === "worker.edit.plan" && result.status === "succeeded",
+    )
+  ) {
+    phase = "edit_plan";
+    candidateToolIds = EDIT_PLAN_MODEL_FACING_TOOL_IDS;
+  } else if (input.modelSlot === "validation_repair" || latestValidation?.status === "needs_review") {
+    phase = "validation_repair";
+    candidateToolIds = hasAcceptedValidationRepairContext
+      ? VALIDATION_REPAIR_AUTHOR_MODEL_FACING_TOOL_IDS
+      : hasRefinedValidationRepairContext
+        ? CONTEXT_ACCEPT_MODEL_FACING_TOOL_IDS
+      : hasOpenedValidationRepairContext
+        ? CONTEXT_REFINE_MODEL_FACING_TOOL_IDS
+        : hasValidationRepairSearchDiscovery
+          ? CONTEXT_OPEN_MODEL_FACING_TOOL_IDS
+          : VALIDATION_REPAIR_MODEL_FACING_TOOL_IDS;
+  } else if (packetRequiresContextTools) {
+    phase = "context";
+    candidateToolIds = hasRefinedUnacceptedContextWindow
+      ? CONTEXT_ACCEPT_MODEL_FACING_TOOL_IDS
+      : hasOpenedUnacceptedContextWindow
+        ? CONTEXT_REFINE_MODEL_FACING_TOOL_IDS
+      : hasContextSearchDiscovery
+        ? CONTEXT_OPEN_MODEL_FACING_TOOL_IDS
+        : CONTEXT_SEARCH_MODEL_FACING_TOOL_IDS;
+  } else if (hasSuccessfulValidation && !hasEvidenceClaim) {
+    phase = "evidence";
+    candidateToolIds = EVIDENCE_MODEL_FACING_TOOL_IDS;
+  } else if (hasAppliedPatch) {
+    phase = "worker_post_edit_validation";
+    candidateToolIds = POST_EDIT_VALIDATION_MODEL_FACING_TOOL_IDS;
+  } else if (requiresPatchProgress(input.toolResults)) {
+    phase = "patch_author";
+    candidateToolIds = PATCH_AUTHOR_MODEL_FACING_TOOL_IDS;
+  } else if (requiresEditPlanningAfterRead(input.toolResults) || packetStartsAtWorkerEditReady) {
+    phase = "edit_plan";
+    candidateToolIds = EDIT_PLAN_MODEL_FACING_TOOL_IDS;
+  } else {
+    phase = "context";
+    candidateToolIds = hasRefinedUnacceptedContextWindow
+      ? CONTEXT_ACCEPT_MODEL_FACING_TOOL_IDS
+      : hasOpenedUnacceptedContextWindow
+        ? CONTEXT_REFINE_MODEL_FACING_TOOL_IDS
+      : hasContextSearchDiscovery
+        ? CONTEXT_OPEN_MODEL_FACING_TOOL_IDS
+        : CONTEXT_SEARCH_MODEL_FACING_TOOL_IDS;
+  }
+
+  const workerSessionPhaseOwnsToolSurface =
+    phase === "validation_repair" ||
+    phase === "evidence" ||
+    phase === "worker_post_edit_validation" ||
+    phase === "patch_author" ||
+    (phase === "edit_plan" && hasAcceptedExactContext);
+  const allowedToolIds = uniqueToolIds([
+    ...(workerSessionPhaseOwnsToolSurface
+      ? candidateToolIds
+      : constrainByNodeLegalToolIds({
+          candidateToolIds,
+          nodeLegalToolIds,
+        })),
+  ]);
+  const deniedToolIds = uniqueToolIds(
+    [
+      ...(nodeLegalToolIds
+        ? candidateToolIds.filter((toolId) => !allowedToolIds.includes(toolId))
+        : []),
+      ...(phase !== "patch_author"
+        ? ([
+            "worker.patch.author_edit",
+            "worker.edit.apply_from_plan",
+            "worker.edit.apply_patch",
+            "worker.repair.author_edit",
+          ] satisfies NonCodexToolUsingWorkerToolId[])
+        : []),
+      ...(phase !== "worker_post_edit_validation"
+        ? ([
+            "worker.validation.run",
+            "worker.validation.run_structural_default",
+          ] satisfies NonCodexToolUsingWorkerToolId[])
+        : []),
+      ...(phase !== "evidence"
+        ? ([
+            "worker.evidence.claim",
+            "worker.evidence.claim_commitment_progress",
+            "worker.evidence.claim_from_validation",
+            "worker.evidence.link_validation",
+          ] satisfies NonCodexToolUsingWorkerToolId[])
+        : []),
+    ],
+  );
+  return {
+    phase,
+    allowedToolIds,
+    deniedToolIds,
+    reasonCodes: [
+      "worker_lifecycle_tool_surface_derived",
+      `worker_lifecycle_tool_surface_phase:${phase}`,
+      `worker_lifecycle_tool_surface_allowed_count:${allowedToolIds.length}`,
+      ...(nodeLegalToolIds
+        ? ["worker_lifecycle_tool_surface_consumed_node_execution_packet_legal_tools"]
+        : ["worker_lifecycle_tool_surface_no_node_execution_packet_legacy_input"]),
+    ],
+  };
+}
+
+function workerLifecycleToolSurfaceGuidance(surface: WorkerLifecycleToolSurface): string[] {
+  return [
+    `Worker lifecycle phase: ${surface.phase}.`,
+    `Visible model-facing tools: ${surface.allowedToolIds.join(", ") || "none"}.`,
+    surface.deniedToolIds.length > 0
+      ? `Hidden/denied tool count for this lifecycle phase: ${surface.deniedToolIds.length}.`
+      : "No lifecycle-denied tools for this phase.",
+  ];
+}
+
+function filterToolCallsByLifecycleSurface(input: {
+  toolCalls: NonCodexToolCall[];
+  surface: WorkerLifecycleToolSurface;
+}): {
+  acceptedToolCalls: NonCodexToolCall[];
+  blockedToolCalls: NonCodexToolCall[];
+  reasonCodes: string[];
+  repairNotes: string[];
+} {
+  const allowed = new Set(input.surface.allowedToolIds);
+  const acceptedToolCalls = input.toolCalls.filter((call) => allowed.has(call.toolId));
+  const blockedToolCalls = input.toolCalls.filter((call) => !allowed.has(call.toolId));
+  return {
+    acceptedToolCalls,
+    blockedToolCalls,
+    reasonCodes:
+      blockedToolCalls.length > 0
+        ? [
+            "worker_lifecycle_tool_surface_blocked_out_of_phase_tool",
+            `worker_lifecycle_tool_surface_phase:${input.surface.phase}`,
+            ...blockedToolCalls.map(
+              (call) => `worker_lifecycle_tool_surface_blocked:${call.toolId}`,
+            ),
+          ]
+        : ["worker_lifecycle_tool_surface_accepted_all_tools"],
+    repairNotes:
+      blockedToolCalls.length > 0
+        ? [
+            `The current worker lifecycle phase is ${input.surface.phase}. Legal tools are: ${input.surface.allowedToolIds.join(", ") || "none"}. Blocked out-of-phase tools: ${blockedToolCalls.map((call) => call.toolId).join(", ")}.`,
+          ]
+        : [],
+  };
+}
+
 const MODEL_FACING_WORKER_TOOL_ALIASES: Record<string, NonCodexToolUsingWorkerToolId> = {
   "context.request_more": "worker.context.request_more",
+  "context.propose_searches": "worker.context.propose_searches",
+  "context.search": "worker.context.search",
+  "context.open_ref": "worker.context.open_ref",
+  "context.open_around_match": "worker.context.open_around_match",
+  "context.open_window": "worker.context.open_window",
+  "context.expand_window": "worker.context.expand_window",
+  "context.contract_window": "worker.context.contract_window",
+  "context.accept_window": "worker.context.accept_window",
+  "context.search_symbols": "worker.context.search_symbols",
+  "context.find_callers": "worker.context.find_callers",
+  "context.find_tests": "worker.context.find_tests",
+  "context.open_adjacent": "worker.context.open_adjacent",
+  "context.report_pattern": "worker.context.report_pattern",
+  "context.report_risk": "worker.context.report_risk",
+  "context.report_edit_point": "worker.context.report_edit_point",
+  "context.finish_context_turn": "worker.context.finish_context_turn",
+  "context.mark_unanswerable": "worker.context.mark_unanswerable",
   "repo.search": "worker.repo.search",
   "repo.find_files": "worker.repo.search",
   "repo.open_file": "worker.repo.read_files",
@@ -1023,7 +1811,10 @@ async function readBoundedFile(input: {
   const content = await readFile(fullPath, "utf8");
   const allLines = content.split("\n");
   const totalLineCount = allLines.length;
-  const maxLines = Math.max(1, Math.min(input.maxLines ?? 240, 400));
+  const maxLines = Math.max(
+    1,
+    Math.min(input.maxLines ?? WORKER_REPO_READ_DEFAULT_MAX_LINES, WORKER_REPO_READ_HARD_MAX_LINES),
+  );
   const requestedStartLine =
     typeof input.startLine === "number" && Number.isFinite(input.startLine)
       ? Math.max(1, Math.floor(input.startLine))
@@ -1097,6 +1888,122 @@ function lineNumberedContent(content: string, firstLine = 1): string {
     .split("\n")
     .map((line, index) => `${String(firstLine + index).padStart(4, " ")}| ${line}`)
     .join("\n");
+}
+
+function boundedSnapshotManifest(snapshot: Awaited<ReturnType<typeof readBoundedFile>>): JsonValue {
+  return {
+    artifactKind: "bounded_file_snapshot_manifest",
+    fileRef: snapshot.fileRef,
+    snapshotRef: `file-window://${snapshot.fileRef}#L${snapshot.startLine}-L${snapshot.endLine}:${snapshot.contentHash}`,
+    contentHash: snapshot.contentHash,
+    startLine: snapshot.startLine,
+    endLine: snapshot.endLine,
+    totalLineCount: snapshot.totalLineCount,
+    truncated: snapshot.truncated,
+    rangeRequested: snapshot.rangeRequested,
+    byteCount: Buffer.byteLength(snapshot.boundedContent, "utf8"),
+    lineNumberedPreview: snapshot.lineNumberedContent.slice(0, 2_400),
+    rawPromptStored: false,
+    rawResponseStored: false,
+    rawProviderLogStored: false,
+    rawToolLogStored: false,
+  };
+}
+
+function hasUsableBoundedContextSnapshotResult(result: NonCodexToolResult): boolean {
+  if (result.status !== "succeeded") {
+    return false;
+  }
+  if (result.toolId === "worker.context.request_more") {
+    const metadata = jsonObject(result.metadata);
+    const exactContextRefs = stringList(metadata.exactContextRefs, 1);
+    const snapshotManifests = Array.isArray(metadata.snapshotManifests)
+      ? metadata.snapshotManifests
+      : [];
+    return (
+      exactContextRefs.length > 0 &&
+      snapshotManifests.length > 0 &&
+      result.reasonCodes.some(
+        (code) =>
+          code === "worker_context_request_more_fulfilled" ||
+          code === "worker_context_request_more_specialist_subturn_completed",
+      )
+    );
+  }
+  if (
+    result.toolId === "worker.context.accept_window" ||
+    result.toolId === "worker.context.report_pattern" ||
+    result.toolId === "worker.context.report_risk" ||
+    result.toolId === "worker.context.report_edit_point" ||
+    result.toolId === "worker.context.finish_context_turn"
+  ) {
+    return stringList(jsonObject(result.metadata).acceptedWindowRefs, 1).length > 0;
+  }
+  if (
+    result.toolId !== "worker.repo.read_files" &&
+    result.toolId !== "worker.context.open_ref" &&
+    result.toolId !== "worker.context.open_around_match" &&
+    result.toolId !== "worker.context.open_window" &&
+      result.toolId !== "worker.context.expand_window" &&
+      result.toolId !== "worker.context.contract_window" &&
+      result.toolId !== "worker.context.open_adjacent" &&
+      result.toolId !== "worker.context.provide_bounded_snapshot"
+  ) {
+    return false;
+  }
+  const metadata = jsonObject(result.metadata);
+  const snapshotManifests = Array.isArray(metadata.snapshotManifests)
+    ? metadata.snapshotManifests
+    : Array.isArray(metadata.snapshots)
+      ? metadata.snapshots
+      : [];
+  if (snapshotManifests.length === 0) {
+    return false;
+  }
+  return result.reasonCodes.some(
+    (code) =>
+      code === "worker_context_exact_window_accepted" ||
+      code === "worker_context_model_authored_ledger_entry_recorded",
+  );
+}
+
+function hasContextSearchDiscoveryResult(result: NonCodexToolResult): boolean {
+  return (
+    result.status === "succeeded" &&
+    [
+      "worker.context.search",
+      "worker.context.search_symbols",
+      "worker.context.find_callers",
+      "worker.context.find_tests",
+      "worker.context.open_adjacent",
+      "worker.repo.search",
+      "worker.repo.inspect_tests",
+    ].includes(result.toolId)
+  );
+}
+
+function hasOpenedUnacceptedContextWindowResult(result: NonCodexToolResult): boolean {
+  return (
+    result.status === "succeeded" &&
+    [
+      "worker.context.open_ref",
+      "worker.context.open_around_match",
+      "worker.context.open_window",
+      "worker.context.expand_window",
+      "worker.context.contract_window",
+      "worker.context.open_adjacent",
+      "worker.repo.read_files",
+    ].includes(result.toolId) &&
+    !hasUsableBoundedContextSnapshotResult(result)
+  );
+}
+
+function hasRefinedUnacceptedContextWindowResult(result: NonCodexToolResult): boolean {
+  return (
+    result.status === "succeeded" &&
+    ["worker.context.expand_window", "worker.context.contract_window"].includes(result.toolId) &&
+    !hasUsableBoundedContextSnapshotResult(result)
+  );
 }
 
 async function listFilesUnder(root: string, maxFiles = 200): Promise<string[]> {
@@ -1185,6 +2092,10 @@ function buildEditReviewArtifact(input: {
   changedFileRefs: string[];
   validationRefs: string[];
   diffHash: string | null;
+  beforeAfterHashes?: string[];
+  evidenceClaimRefs?: string[];
+  rollbackResultRefs?: string[];
+  actionStatus?: "applied" | "rolled_back" | "rejected_by_policy" | "failed_validation" | "failed_stale_patch" | "needs_review" | "blocked";
   reasonCodes: string[];
 }): RuntimeToolArtifactInput {
   const operations = input.edits.slice(0, 8).map((edit, index) => ({
@@ -1209,17 +2120,80 @@ function buildEditReviewArtifact(input: {
     unifiedDiffPreview: boundedEditSnippet(edit.unifiedDiff, 720),
     contextBeforePreview: boundedEditSnippet(edit.contextBefore, 220),
     contextAfterPreview: boundedEditSnippet(edit.contextAfter, 220),
-    rawPromptStored: false,
-    rawResponseStored: false,
-    rawProviderLogStored: false,
-    rawToolLogStored: false,
+    rawPromptStored: false as const,
+    rawResponseStored: false as const,
+    rawProviderLogStored: false as const,
+    rawToolLogStored: false as const,
   }));
+  const reviewArtifact = buildWorkerEditReviewArtifact({
+    runtimeJobId: input.runtimeJobId,
+    workflowId: null,
+    graphId: input.graphId,
+    branchId: null,
+    nodeId: input.nodeId,
+    workerId: "worker.kimi.file-implementation",
+    roleId: "implementation_engineer",
+    capabilityId: null,
+    taskId: null,
+    actionStatus:
+      input.actionStatus ??
+      (input.validationRefs.length > 0
+        ? "applied"
+        : input.changedFileRefs.length > 0
+          ? "needs_review"
+          : "blocked"),
+    reviewState: "pending_model_or_human_review",
+    authorityScopeRefs: [],
+    nodeExecutionContractRef: null,
+    nodeExecutionContractHash: null,
+    nodeExecutionPacketRef: null,
+    nodeExecutionPacketHash: null,
+    domainResourcePacketRef: null,
+    domainResourcePacketHash: null,
+    domainResourceSelectionPacketRef: null,
+    domainResourceSelectionPacketHash: null,
+    validationRefs: uniqueStrings(input.validationRefs, 40),
+    evidenceClaimRefs: uniqueStrings(input.evidenceClaimRefs ?? [], 40),
+    rollbackMode:
+      (input.rollbackResultRefs ?? []).length > 0
+        ? "rolled_back"
+        : input.changedFileRefs.length > 0
+          ? "rollback_available"
+          : "none",
+    rollbackResultRefs: uniqueStrings(input.rollbackResultRefs ?? [], 20),
+    reviewDecisionRefs: [],
+    payloadRefs: [input.transactionRef],
+    payloadHashes: [],
+    payloadCounts: {
+      changedFileRefCount: input.changedFileRefs.length,
+      validationRefCount: input.validationRefs.length,
+      operationCount: input.edits.length,
+    },
+    boundedSummary: `Reviewable worker edit artifact for ${input.changedFileRefs.length} changed file(s), ${operations.length} operation(s).`,
+    reasonCodes: input.reasonCodes,
+    changedFileRefs: uniqueStrings(input.changedFileRefs, 40),
+    beforeSnapshotRefs: [],
+    afterSnapshotRefs: [],
+    beforeAfterHashes: uniqueStrings(input.beforeAfterHashes ?? [], 40),
+    diffHash: input.diffHash,
+    boundedUnifiedDiffExcerpt: null,
+    boundedDiffPayloadRef: null,
+    diffPartPayloadRefs: [],
+    editTransactionRefs: [input.transactionRef],
+    rejectedOperationRefs: [],
+    rejectedOperationReasonCodes: [],
+    operations,
+  });
   const manifest = {
-    artifactKind: "non_codex_worker_edit_review_patch",
-    schemaVersion: "execution-platform.non-codex-worker-edit-review.v1",
+    artifactKind: "worker_edit_review_artifact_manifest",
+    schemaVersion: "execution-platform.worker-edit-review-artifact-manifest.v1",
+    canonicalArtifactKind: reviewArtifact.artifactKind,
+    canonicalSchemaVersion: reviewArtifact.schemaVersion,
     runtimeJobId: input.runtimeJobId,
     graphId: input.graphId,
     nodeId: input.nodeId,
+    artifactRef: reviewArtifact.artifactRef,
+    artifactHash: reviewArtifact.artifactHash,
     transactionRef: input.transactionRef,
     toolId: input.toolId,
     changedFileRefs: uniqueStrings(input.changedFileRefs, 40),
@@ -1227,9 +2201,12 @@ function buildEditReviewArtifact(input: {
     diffHash: input.diffHash,
     operationCount: input.edits.length,
     storedOperationCount: operations.length,
+    operationRefs: operations.map((operation) => operation.operationId),
     operations,
+    boundedDiffPayloadRef: reviewArtifact.boundedDiffPayloadRef,
     reasonCodes: input.reasonCodes.slice(0, 40),
-    boundedSourceSnippetsStored: true,
+    boundedSourceSnippetsStored: false,
+    payloadBackedCanonicalArtifactRequired: true,
     rawPromptStored: false,
     rawResponseStored: false,
     rawProviderLogStored: false,
@@ -1240,12 +2217,12 @@ function buildEditReviewArtifact(input: {
   } satisfies JsonValue;
   const manifestHash = hash(JSON.stringify(manifest));
   return {
-    invocationId: "pending:non-codex-worker-edit-review",
-    artifactType: "execution_platform.non_codex_worker_edit_review_patch",
-    storageKind: "metadata",
-    artifactRef: `edit-review://${manifestHash.slice(0, 16)}`,
+    invocationId: "pending:worker-edit-review-artifact-manifest",
+    artifactType: "execution_platform.worker_edit_review_artifact",
+    storageKind: "artifact",
+    artifactRef: reviewArtifact.artifactRef,
     contentHash: `sha256:${manifestHash}`,
-    boundedSummary: `Bounded edit review manifest for ${input.changedFileRefs.length} changed file(s), ${operations.length} operation(s).`,
+    boundedSummary: `Reviewable worker edit artifact manifest for ${input.changedFileRefs.length} changed file(s), ${operations.length} operation(s).`,
     metadata: manifest,
     rawContentStored: false,
     rawPromptStored: false,
@@ -1352,10 +2329,23 @@ function compileRepoSearch(input: { query: string; allowedFileRefs: string[] }):
   };
 }
 
+function workerLoopRunKey(
+  input: Pick<NonCodexToolUsingWorkerLoopInput, "runtimeJobId" | "graphId" | "nodeId" | "taskId">,
+): string {
+  return [
+    input.runtimeJobId || "runtime-unknown",
+    input.graphId || "graph-unknown",
+    input.nodeId || "node-unknown",
+    input.taskId || "task-unknown",
+  ].join("::");
+}
+
 export class NonCodexToolUsingWorkerLoop {
-  private activeRunSnapshots: Map<string, { fullPath: string; beforeContent: string }> | null =
-    null;
-  private activeEditTransaction: EditTransactionEngine | null = null;
+  private readonly activeRunSnapshotsByRun = new Map<
+    string,
+    Map<string, { fullPath: string; beforeContent: string }>
+  >();
+  private readonly activeEditTransactionsByRun = new Map<string, EditTransactionEngine>();
 
   constructor(
     private readonly options: {
@@ -1366,12 +2356,24 @@ export class NonCodexToolUsingWorkerLoop {
     },
   ) {}
 
+  private activeEditTransactionFor(
+    input: Pick<NonCodexToolUsingWorkerLoopInput, "runtimeJobId" | "graphId" | "nodeId" | "taskId">,
+  ): EditTransactionEngine | null {
+    return this.activeEditTransactionsByRun.get(workerLoopRunKey(input)) ?? null;
+  }
+
+  private activeRunSnapshotsFor(
+    input: Pick<NonCodexToolUsingWorkerLoopInput, "runtimeJobId" | "graphId" | "nodeId" | "taskId">,
+  ): Map<string, { fullPath: string; beforeContent: string }> | null {
+    return this.activeRunSnapshotsByRun.get(workerLoopRunKey(input)) ?? null;
+  }
+
   async run(input: NonCodexToolUsingWorkerLoopInput): Promise<NonCodexToolUsingWorkerLoopResult> {
-    this.activeRunSnapshots = new Map();
+    this.activeRunSnapshotsByRun.set(workerLoopRunKey(input), new Map());
     const modelPolicy = resolveNonCodexWorkerModelPolicy(input.budgetPolicy.modelPolicy);
     const primaryModelRef = input.budgetPolicy.modelRef ?? modelPolicy.patch.modelRef;
     const primaryProviderPath = input.budgetPolicy.providerPath ?? modelPolicy.patch.providerPath;
-    const maxTurns = Math.max(1, Math.min(8, input.budgetPolicy.maxTurns ?? 2));
+    const maxTurns = Math.max(1, Math.min(12, input.budgetPolicy.maxTurns ?? 2));
     const maxSameBoundaryPatchRepairs = Math.max(
       0,
       Math.min(3, input.budgetPolicy.maxAttempts ?? 2),
@@ -1433,37 +2435,20 @@ export class NonCodexToolUsingWorkerLoop {
         }),
       );
     };
-    const implementationTaskPacket =
-      input.implementationTaskPacket ??
-      buildImplementationTaskPacket({
-        microtaskId: input.taskId,
-        microtaskTitle: input.taskTitle,
-        exactEditObjective: input.exactEditObjective,
-        taskSummary: buildPatchTaskSummary(input, []),
-        whyThisWorkerWasSelected: input.whyThisWorkerWasSelected,
-        expectedOutput: input.expectedOutput,
-        targetCommitmentIds: input.targetCommitmentIds ?? [],
-        targetFileRefs: input.targetFileRefs,
-        allowedFileRefs: input.allowedFileRefs,
-        deniedFileRefs: input.deniedFileRefs,
-        contextPacketRefs: input.contextPackRefs,
-        sourcePromptExcerptRefs: input.sourcePromptExcerptRefs,
-        contextSynthesisRefs: input.contextSynthesisRefs,
-        priorNodeOutputRefs: input.priorNodeOutputRefs,
-        validationCommandRefs: input.validationCommandRefs,
-        acceptanceCriteria: input.acceptanceCriteria,
-        expectedEvidenceClaimKinds: input.expectedEvidenceClaimKinds,
-        stopIfMissingOrEscalate: input.stopIfMissingOrEscalate,
-        budgetPolicyRefs: input.budgetPolicyRefs,
-        downstreamConsumer: "validation_and_review",
-        successEvidenceDescriptions: input.acceptanceCriteria,
-      });
-    const packetValidation = validateImplementationTaskPacketForWorker(implementationTaskPacket);
+    const implementationTaskPacket = input.implementationTaskPacket ?? null;
+    const packetValidation = implementationTaskPacket
+      ? validateImplementationTaskPacketForWorker(implementationTaskPacket)
+      : {
+          status: "invalid" as const,
+          reasonCodes: ["implementation_task_packet_missing"],
+        };
     const workerInvocationGate = input.nodeExecutionPacket
-      ? evaluateWorkerInvocationReadinessGate({
+      ? validateWorkerInvocationPacketHydration({
           nodeExecutionPacket: input.nodeExecutionPacket,
+          nodeExecutionContract: input.nodeExecutionContract ?? null,
           resourcePacket: input.codingResourcePacket ?? null,
           nodeExecutionPacketRequired: true,
+          allowPartialContextInvocation: true,
           nodeId: input.nodeId ?? input.taskId,
           runtimeJobId: input.runtimeJobId ?? null,
           graphId: input.graphId ?? "graph-unknown",
@@ -1473,7 +2458,6 @@ export class NonCodexToolUsingWorkerLoop {
     const modelRunRefs: string[] = [];
     const toolCalls: NonCodexToolCall[] = [];
     const toolResults: NonCodexToolResult[] = [];
-    const deferredToolCalls: NonCodexToolCall[] = [];
     const repairClassifications: RuntimeRepairClassification[] = [];
     const limitations: string[] = [];
     const modelResponseRepairNotes: string[] = [];
@@ -1497,25 +2481,30 @@ export class NonCodexToolUsingWorkerLoop {
         `non_codex_worker_repair_strategy:${classification.repairStrategy}`,
       );
     };
-    if (workerInvocationGate && !workerInvocationGate.allowed) {
+    if (!input.nodeExecutionPacket) {
+      reasonCodes.push(
+        "non_codex_worker_node_execution_packet_required",
+        "non_codex_worker_no_packet_model_tool_surface_deleted",
+      );
       recordRepairClassification(
         buildWorkerLoopRepairClassification({
           workerInput: input,
-          classificationIdSuffix: "node-execution-packet-not-worker-ready",
+          classificationIdSuffix: "node-execution-packet-required",
           failedBoundaryKind: "worker_loop",
           failureClass: "upstream_packet_insufficient",
           repairStrategy: "upstream_boundary_repair",
           selectedRepairBoundary: "node_execution",
-          failedFieldPaths: workerInvocationGate.reasonCodes.map(
-            (code) => `nodeExecutionPacket.${code}`,
-          ),
-          reasonCodes: workerInvocationGate.reasonCodes,
+          failedFieldPaths: ["nodeExecutionPacket"],
+          reasonCodes: [
+            "non_codex_worker_node_execution_packet_required",
+            "non_codex_worker_no_packet_model_tool_surface_deleted",
+          ],
           runtimeExplanation:
-            "Runtime blocked non-Codex worker invocation because the hydrated NodeExecutionPacket and domain resource packet were not worker-ready.",
+            "Runtime blocked non-Codex worker invocation before provider calls because the canonical worker loop requires a hydrated NodeExecutionPacket.",
           expectedNextAction:
-            "Repair resource materialization or context supply before invoking the file-edit worker.",
+            "Compile the WorkIntent, context ledger, target selection, resource packet, and NodeExecutionPacket before invoking the worker loop.",
           stopOrEscalationCondition:
-            "Do not call a patch model when target snapshots, validation refs, authority, or evidence expectations are missing.",
+            "Do not expose worker edit, patch, validation, or evidence tools without a NodeExecutionPacket-derived legal tool surface.",
         }),
       );
       const result = this.needsReview({
@@ -1526,27 +2515,59 @@ export class NonCodexToolUsingWorkerLoop {
         toolCalls,
         toolResults,
         limitations: [
-          "NodeExecutionPacket is not worker-ready; scheduler must repair resource materialization before invoking the non-Codex implementation lane.",
-          ...workerInvocationGate.blockingLimitations.slice(0, 8),
+          "NodeExecutionPacket is required before non-Codex worker model tool selection.",
         ],
         reasonCodes,
         workerPhases,
         repairClassifications,
       });
-      await this.emitPhase(input, {
-        phase: "worker.loop.needs_review",
+      await this.emitTerminalPhase(input, result);
+      return result;
+    }
+    if (!implementationTaskPacket) {
+      reasonCodes.push(
+        "non_codex_worker_implementation_task_packet_required",
+        "non_codex_worker_no_task_packet_construction_fallback_deleted",
+      );
+      recordRepairClassification(
+        buildWorkerLoopRepairClassification({
+          workerInput: input,
+          classificationIdSuffix: "implementation-task-packet-required",
+          failedBoundaryKind: "worker_loop",
+          failureClass: "upstream_packet_insufficient",
+          repairStrategy: "upstream_boundary_repair",
+          selectedRepairBoundary: "node_execution",
+          failedFieldPaths: ["implementationTaskPacket"],
+          reasonCodes: [
+            "non_codex_worker_implementation_task_packet_required",
+            "non_codex_worker_no_task_packet_construction_fallback_deleted",
+          ],
+          runtimeExplanation:
+            "Runtime blocked non-Codex worker invocation before provider calls because the canonical worker loop requires a payload-backed ImplementationTaskPacket.",
+          expectedNextAction:
+            "Let the NodeLifecycleTransitionRunner compile or hydrate the task packet before invoking worker execution.",
+          stopOrEscalationCondition:
+            "Do not let the worker adapter construct task packets from legacy flat inputs.",
+        }),
+      );
+      const result = this.needsReview({
+        input,
         modelRef: primaryModelRef,
         providerPath: primaryProviderPath,
-        blockerSummary: workerInvocationGate.blockingLimitations.join("; "),
-        nextAction: "repair_node_execution_packet",
-        eli5Progress:
-          "The non-Codex worker stopped before any model call because its NodeExecutionPacket was not hydrated and worker-ready.",
-        reasonCodes: workerInvocationGate.reasonCodes,
+        modelRunRefs,
+        toolCalls,
+        toolResults,
+        limitations: [
+          "ImplementationTaskPacket is required before non-Codex worker model tool selection.",
+        ],
+        reasonCodes,
+        workerPhases,
+        repairClassifications,
       });
       await this.emitTerminalPhase(input, result);
       return result;
     }
-    this.activeEditTransaction = new EditTransactionEngine({
+    const editTransaction = new EditTransactionEngine({
       runtimeJobId: input.runtimeJobId,
       workflowId: "agent_team.coding",
       graphId: input.graphId,
@@ -1564,7 +2585,8 @@ export class NonCodexToolUsingWorkerLoop {
         (slot) => `${slot.slot}:${slot.modelRef}`,
       ),
     });
-    this.activeEditTransaction.start();
+    this.activeEditTransactionsByRun.set(workerLoopRunKey(input), editTransaction);
+    editTransaction.start();
     reasonCodes.push("non_codex_worker_edit_transaction_started");
     recordWorkerPhase({
       phase: "controller",
@@ -1574,7 +2596,7 @@ export class NonCodexToolUsingWorkerLoop {
       providerPath: modelPolicy.controller.providerPath,
       toolId: null,
       toolInvocationRef: null,
-      transactionRef: this.activeEditTransaction.transactionRef,
+          transactionRef: editTransaction.transactionRef,
       summary:
         "Worker controller/author/applicator split started with a runtime-owned edit transaction.",
       blockerSummary: null,
@@ -1644,15 +2666,23 @@ export class NonCodexToolUsingWorkerLoop {
       await this.emitTerminalPhase(input, result);
       return result;
     }
-    if (packetValidation.status === "invalid") {
+    const partialContextInvocationAllowed =
+      workerInvocationGate?.invocationMode === "partial_context" &&
+      workerInvocationGate.reasonCodes.includes(
+        "worker_invocation_partial_context_packet_allowed",
+      );
+    const invalidPacketAllowedForPartialContext =
+      partialContextInvocationAllowed &&
+      invalidImplementationTaskPacketAllowedForPartialContext(packetValidation.reasonCodes);
+    if (packetValidation.status === "invalid" && !invalidPacketAllowedForPartialContext) {
       recordRepairClassification(
         buildWorkerLoopRepairClassification({
           workerInput: input,
           classificationIdSuffix: "implementation-task-packet-invalid",
-          failedBoundaryKind: "commitment_packet_authoring",
+          failedBoundaryKind: "execution_contract",
           failureClass: "upstream_packet_insufficient",
           repairStrategy: "upstream_boundary_repair",
-          selectedRepairBoundary: "commitment_packet_authoring",
+          selectedRepairBoundary: "execution_contract",
           failedFieldPaths: packetValidation.reasonCodes.map(
             (code) => `implementationTaskPacket.${code}`,
           ),
@@ -1692,12 +2722,17 @@ export class NonCodexToolUsingWorkerLoop {
       await this.emitTerminalPhase(input, result);
       return result;
     }
-    if (packetValidation.status === "needs_context") {
+    if (invalidPacketAllowedForPartialContext) {
+      reasonCodes.push("non_codex_worker_partial_context_allowed_despite_target_readiness_gap");
+    }
+    if (packetValidation.status === "needs_context" || invalidPacketAllowedForPartialContext) {
       await this.emitPhase(input, {
         phase: "worker.context.insufficient",
         modelRef: primaryModelRef,
         providerPath: primaryProviderPath,
-        blockerSummary: "No bounded context refs were present in the implementation packet.",
+        blockerSummary: invalidPacketAllowedForPartialContext
+          ? "Target selection/snapshots are intentionally missing until node-local node resource demand resolves them."
+          : "No bounded context refs were present in the implementation packet.",
         nextAction: "request_or_read_bounded_context",
         eli5Progress:
           "The worker needs bounded context before editing and will use runtime tools to request or inspect it.",
@@ -1720,10 +2755,39 @@ export class NonCodexToolUsingWorkerLoop {
         ? "controller"
         : forcePatchToolSelectionTurn
           ? "patch"
-          : selectModelSlotForWorkerTurn({ toolResults, turn });
+          : selectModelSlotForWorkerTurn({ workerInput: input, toolResults, turn });
       forceControllerToolSelectionTurn = false;
       forcePatchToolSelectionTurn = false;
       const turnModelPolicy = modelPolicy[turnModelSlot];
+      const turnToolSurface = deriveWorkerLifecycleToolSurface({
+        workerInput: input,
+        toolResults,
+        modelSlot: turnModelSlot,
+      });
+      reasonCodes.push(...turnToolSurface.reasonCodes);
+      if (turnToolSurface.phase === "patch_author") {
+        const forced = await this.runForcedPatchAuthorFromPlan({
+          input,
+          implementationTaskPacket,
+          modelPolicy,
+          toolCalls,
+          toolResults,
+          turn,
+        });
+        if (forced.modelRunRef) {
+          modelRunRefs.push(forced.modelRunRef);
+        }
+        reasonCodes.push(
+          forced.handled
+            ? "worker_patch_force_author_from_plan_runner_invoked_before_model_selection"
+            : "worker_patch_force_author_from_plan_runner_deferred_missing_prerequisite",
+        );
+        if (forced.handled) {
+          break;
+        }
+        forceControllerToolSelectionTurn = true;
+        continue;
+      }
       await this.emitPhase(input, {
         phase: turn === 1 ? "worker.plan.completed" : "worker.explore.started",
         modelRef: turnModelPolicy.modelRef,
@@ -1739,77 +2803,73 @@ export class NonCodexToolUsingWorkerLoop {
           `non_codex_worker_reasoning_mode:${turnModelPolicy.reasoningMode}`,
         ],
       });
-      const queuedForCurrentSlot = deferredToolCalls.filter((call) =>
-        splitPhaseAllowedForModelSlot({
-          phase: splitPhaseForTool(call.toolId),
-          modelSlot: turnModelSlot,
-        }),
-      );
       let parsed: ReturnType<typeof parseModelToolCalls> = {
         toolCalls: [],
         reasonCodes: [],
         limitations: [],
       };
-      const isReplayingQueuedToolCalls = queuedForCurrentSlot.length > 0;
-      if (isReplayingQueuedToolCalls) {
-        parsed = {
-          toolCalls: queuedForCurrentSlot,
-          reasonCodes: [
-            "non_codex_worker_phase_queue_replayed",
-            `non_codex_worker_phase_queue_slot:${turnModelSlot}`,
-          ],
-          limitations: [],
-        };
-        for (const call of queuedForCurrentSlot) {
-          const index = deferredToolCalls.findIndex(
-            (deferred) => deferred.callId === call.callId && deferred.toolId === call.toolId,
-          );
-          if (index >= 0) {
-            deferredToolCalls.splice(index, 1);
-          }
-        }
-        modelRunRefs.push(
-          `phase-queue://${hash(`${input.taskId}:${turnModelSlot}:${queuedForCurrentSlot.map((call) => call.callId).join(":")}`).slice(0, 16)}`,
-        );
-        await this.emitPhase(input, {
-          phase: "worker.phase_queue.replayed",
-          modelRef: turnModelPolicy.modelRef,
-          providerPath: turnModelPolicy.providerPath,
-          eli5Progress:
-            "Runtime replayed model-authored future-phase tool calls when their owning worker phase became active.",
-          nextAction: "run_worker_tool",
-          reasonCodes: parsed.reasonCodes,
-        });
-      } else {
-        const response = await this.nextToolSelectionTurn({
-          input,
-          implementationTaskPacket,
-          modelPolicy,
-          modelSlot: turnModelSlot,
-          toolResults,
-          modelResponseRepairNotes,
-          turn,
-        });
-        modelRunRefs.push(response.modelRunRef);
-        if (response.repairClassification) {
-          recordRepairClassification(response.repairClassification);
-        }
-        if (response.timedOut) {
-          reasonCodes.push(
-            "non_codex_worker_model_call_timeout_escalated",
-            `non_codex_worker_model_call_timeout_slot:${turnModelSlot}`,
-          );
-          limitations.push(
-            `${turnModelSlot} model call exceeded its bounded worker-loop timeout and was converted into a worker escalation.`,
-          );
-        }
-        const freshParsed = parseModelToolCalls(response.responseText);
-        parsed.toolCalls = freshParsed.toolCalls;
-        parsed.reasonCodes = freshParsed.reasonCodes;
-        parsed.limitations = freshParsed.limitations;
+      const response = await this.nextToolSelectionTurn({
+        input,
+        implementationTaskPacket,
+        modelPolicy,
+        modelSlot: turnModelSlot,
+        toolSurface: turnToolSurface,
+        toolResults,
+        modelResponseRepairNotes,
+        turn,
+      });
+      modelRunRefs.push(response.modelRunRef);
+      if (response.repairClassification) {
+        recordRepairClassification(response.repairClassification);
       }
+      if (response.timedOut) {
+        reasonCodes.push(
+          "non_codex_worker_model_call_timeout_escalated",
+          `non_codex_worker_model_call_timeout_slot:${turnModelSlot}`,
+        );
+        limitations.push(
+          `${turnModelSlot} model call exceeded its bounded worker-loop timeout and was converted into a worker escalation.`,
+        );
+      }
+      const freshParsed = parseModelToolCalls(response.responseText);
+      parsed.toolCalls = freshParsed.toolCalls;
+      parsed.reasonCodes = freshParsed.reasonCodes;
+      parsed.limitations = freshParsed.limitations;
       reasonCodes.push(...parsed.reasonCodes);
       limitations.push(...parsed.limitations);
+      const lifecycleSurfaceFilter = filterToolCallsByLifecycleSurface({
+        toolCalls: parsed.toolCalls,
+        surface: turnToolSurface,
+      });
+      if (lifecycleSurfaceFilter.blockedToolCalls.length > 0) {
+        reasonCodes.push(...lifecycleSurfaceFilter.reasonCodes);
+        modelResponseRepairNotes.push(...lifecycleSurfaceFilter.repairNotes);
+        for (const blockedCall of lifecycleSurfaceFilter.blockedToolCalls) {
+          recordWorkerPhase({
+            phase: splitPhaseForTool(blockedCall.toolId),
+            status: "blocked",
+            modelSlot: turnModelSlot,
+            modelRef: turnModelPolicy.modelRef,
+            providerPath: turnModelPolicy.providerPath,
+            toolId: blockedCall.toolId,
+            toolInvocationRef: null,
+            transactionRef: this.activeEditTransactionFor(input)?.transactionRef ?? null,
+            summary: `Blocked ${blockedCall.toolId} because it is not legal for worker lifecycle phase ${turnToolSurface.phase}.`,
+            blockerSummary: lifecycleSurfaceFilter.repairNotes.at(-1) ?? null,
+            nextAction: "repair_with_lifecycle_legal_tool",
+            reasonCodes: lifecycleSurfaceFilter.reasonCodes,
+          });
+        }
+        parsed = {
+          ...parsed,
+          toolCalls: lifecycleSurfaceFilter.acceptedToolCalls,
+          reasonCodes: [...parsed.reasonCodes, ...lifecycleSurfaceFilter.reasonCodes],
+          limitations: [
+            ...parsed.limitations,
+            ...lifecycleSurfaceFilter.repairNotes,
+          ],
+        };
+      }
       const controllerDecision = buildControllerDecision({
         toolCall: parsed.toolCalls[0] ?? null,
         modelSlot: turnModelSlot,
@@ -1824,7 +2884,7 @@ export class NonCodexToolUsingWorkerLoop {
         providerPath: turnModelPolicy.providerPath,
         toolId: parsed.toolCalls[0]?.toolId ?? null,
         toolInvocationRef: null,
-        transactionRef: this.activeEditTransaction?.transactionRef ?? null,
+        transactionRef: this.activeEditTransactionFor(input)?.transactionRef ?? null,
         summary: controllerDecision.rationale,
         blockerSummary: parsed.toolCalls.length > 0 ? null : parsed.limitations.join("; "),
         nextAction: controllerDecision.nextAction,
@@ -1931,7 +2991,21 @@ export class NonCodexToolUsingWorkerLoop {
         phaseAuthority.acceptedToolCalls.length === 0 &&
         phaseAuthority.blockedToolCalls.length > 0 &&
         phaseAuthority.blockedToolCalls.every(isContextToolCall) &&
-        !contextExpansionBeforeEditPlanAlreadyUsed(toolResults);
+        (!contextExpansionBeforeEditPlanAlreadyUsed(toolResults) ||
+          shouldRouteAdditionalPrePlanContextViaWorkerScout({
+            blockedToolCalls: phaseAuthority.blockedToolCalls,
+            toolResults,
+          }));
+      const stalePatchFreshnessRefs = stalePatchFailureRefsNeedingFreshSnapshot(toolResults);
+      const routeStalePatchFreshnessReadAsRuntimeSubturn =
+        phaseAuthorityMode === "strict" &&
+        turnModelSlot === "patch" &&
+        phaseAuthority.acceptedToolCalls.length === 0 &&
+        phaseAuthority.blockedToolCalls.length > 0 &&
+        phaseAuthority.blockedToolCalls.every(isContextToolCall) &&
+        stalePatchFreshnessRefs.length > 0;
+      const routeContextAsRuntimeSubturn =
+        routePatchContextAsRuntimeSubturn || routeStalePatchFreshnessReadAsRuntimeSubturn;
       reasonCodes.push(
         ...phaseAuthority.reasonCodes.filter((code) => {
           if (phaseAuthorityMode !== "strict" || turnModelSlot !== "patch") {
@@ -1947,11 +3021,15 @@ export class NonCodexToolUsingWorkerLoop {
         phaseAuthority.blockedToolCalls.length > 0 &&
         phaseAuthority.blockedToolCalls.every(isContextToolCall) &&
         requiresEditPlanningAfterRead(toolResults) &&
-        contextExpansionBeforeEditPlanAlreadyUsed(toolResults)
+        contextExpansionBeforeEditPlanAlreadyUsed(toolResults) &&
+        !shouldRouteAdditionalPrePlanContextViaWorkerScout({
+          blockedToolCalls: phaseAuthority.blockedToolCalls,
+          toolResults,
+        })
       ) {
         const repairNote = [
           `Turn ${turn} selected only context/read tools after a targeted pre-edit context expansion was already fulfilled.`,
-          "The next patch-lane turn must call worker.edit.plan, worker.edit.apply_patch, a compound coding tool, or worker.escalate with the exact missing context that still blocks editing.",
+          "The next patch-lane turn must use only the lifecycle-visible transition tools from NodeLifecycleProjection. Before an accepted edit plan, patch-author tools are not legal; after an accepted plan, runtime opens worker.patch.force_author_from_plan.",
           "Runtime will not replay more pre-edit context tools because repeated context reads can consume the implementation budget without advancing the commitment.",
         ].join(" ");
         modelResponseRepairNotes.push(repairNote);
@@ -1975,48 +3053,40 @@ export class NonCodexToolUsingWorkerLoop {
       modelResponseRepairNotes.push(...phaseAuthority.repairNotes);
       for (const blockedCall of phaseAuthority.blockedToolCalls) {
         const blockedPhase = splitPhaseForTool(blockedCall.toolId);
-        const alreadyDeferred = deferredToolCalls.some(
-          (call) => call.callId === blockedCall.callId && call.toolId === blockedCall.toolId,
-        );
-        if (
-          !alreadyDeferred &&
-          phaseAuthorityMode === "strict" &&
-          !routePatchContextAsRuntimeSubturn
-        ) {
-          deferredToolCalls.push(blockedCall);
-        }
         recordWorkerPhase({
           phase: blockedPhase,
-          status: routePatchContextAsRuntimeSubturn
+          status: routeContextAsRuntimeSubturn
             ? "selected"
             : phaseAuthorityMode === "strict"
-              ? "planned"
+              ? "blocked"
               : "blocked",
           modelSlot: turnModelSlot,
           modelRef: turnModelPolicy.modelRef,
           providerPath: turnModelPolicy.providerPath,
           toolId: blockedCall.toolId,
           toolInvocationRef: null,
-          transactionRef: this.activeEditTransaction?.transactionRef ?? null,
-          summary: routePatchContextAsRuntimeSubturn
+          transactionRef: this.activeEditTransactionFor(input)?.transactionRef ?? null,
+          summary: routeContextAsRuntimeSubturn
             ? `Runtime routed ${blockedCall.toolId} through context authority without another model-selection turn.`
             : phaseAuthorityMode === "strict"
-              ? `Deferred ${blockedCall.toolId} until the ${blockedPhase} phase owns execution.`
+              ? `Rejected ${blockedCall.toolId} because it belongs to future phase ${blockedPhase}.`
               : `Blocked ${blockedCall.toolId} because ${turnModelSlot} cannot execute ${blockedPhase} phase tools in production strict mode.`,
           blockerSummary:
-            routePatchContextAsRuntimeSubturn || phaseAuthorityMode === "strict"
+            routeContextAsRuntimeSubturn || phaseAuthorityMode === "strict"
               ? null
               : (phaseAuthority.repairNotes.at(-1) ?? "Phase authority mismatch."),
-          nextAction: routePatchContextAsRuntimeSubturn
+          nextAction: routeContextAsRuntimeSubturn
             ? "run_routed_context_subturn"
             : phaseAuthorityMode === "strict"
-              ? "replay_when_phase_slot_is_active"
+              ? "retry_with_current_lifecycle_legal_tool"
               : "repair_with_correct_worker_phase",
           reasonCodes: [
-            routePatchContextAsRuntimeSubturn
-              ? `worker_phase_authority_routed_subturn:${turnModelSlot}:${blockedPhase}:${blockedCall.toolId}`
+            routeContextAsRuntimeSubturn
+              ? routeStalePatchFreshnessReadAsRuntimeSubturn
+                ? `worker_phase_authority_routed_stale_patch_freshness:${turnModelSlot}:${blockedPhase}:${blockedCall.toolId}`
+                : `worker_phase_authority_routed_subturn:${turnModelSlot}:${blockedPhase}:${blockedCall.toolId}`
               : phaseAuthorityMode === "strict"
-                ? `worker_phase_queue_deferred:${turnModelSlot}:${blockedPhase}:${blockedCall.toolId}`
+                ? `worker_future_phase_tool_rejected:${turnModelSlot}:${blockedPhase}:${blockedCall.toolId}`
                 : `worker_phase_authority_blocked:${turnModelSlot}:${blockedPhase}:${blockedCall.toolId}`,
           ],
         });
@@ -2024,65 +3094,46 @@ export class NonCodexToolUsingWorkerLoop {
       if (
         phaseAuthority.blockedToolCalls.length > 0 &&
         phaseAuthorityMode === "strict" &&
-        !routePatchContextAsRuntimeSubturn
+        !routeContextAsRuntimeSubturn
       ) {
         reasonCodes.push(
-          "non_codex_worker_phase_queue_deferred_future_phase_calls",
-          `non_codex_worker_phase_queue_pending:${deferredToolCalls.length}`,
+          "non_codex_worker_future_phase_tool_rejected",
+          "non_codex_worker_phase_queue_disabled_in_production",
         );
         if (deferredContextToolCount > 0 && turnModelSlot === "patch") {
           forceControllerToolSelectionTurn = true;
           reasonCodes.push(
             "non_codex_worker_patch_context_request_routed_to_controller",
-            `non_codex_worker_phase_queue_context_pending:${deferredContextToolCount}`,
+            `non_codex_worker_rejected_context_tool_count:${deferredContextToolCount}`,
           );
           modelResponseRepairNotes.push(
-            "Patch slot requested context/read tools. Runtime preserved the request, routed it through the controller/context phase, and will resume patch planning after bounded context is supplied.",
+            "Patch slot requested context/read tools. Runtime rejected the future-phase call and will ask the controller/context phase for a legal context request instead of queuing production lifecycle state.",
           );
         }
         if (phaseAuthority.acceptedToolCalls.length > 0) {
           await this.emitPhase(input, {
-            phase: "worker.phase_queue.deferred",
+            phase: "worker.phase_boundary.rejected_future_tool",
             modelRef: turnModelPolicy.modelRef,
             providerPath: turnModelPolicy.providerPath,
             blockerSummary: null,
-            nextAction: "run_current_phase_then_replay_deferred_calls",
+            nextAction: "run_current_phase_only",
             eli5Progress:
-              "Runtime kept the model-authored plan but queued future-phase tool calls until their worker phase becomes active.",
+              "Runtime kept only lifecycle-legal tool calls and rejected future-phase calls instead of queuing them.",
             reasonCodes: [
-              "non_codex_worker_phase_queue_deferred_future_phase_calls",
-              `non_codex_worker_phase_queue_pending:${deferredToolCalls.length}`,
+              "non_codex_worker_future_phase_tool_rejected",
+              "non_codex_worker_phase_queue_disabled_in_production",
               ...(deferredContextToolCount > 0
                 ? ["non_codex_worker_patch_context_request_routed_to_controller"]
                 : []),
             ],
           });
-        } else if (deferredToolCalls.length > 0 && turn < effectiveMaxTurns) {
-          await this.emitPhase(input, {
-            phase: "worker.phase_queue.deferred",
-            modelRef: turnModelPolicy.modelRef,
-            providerPath: turnModelPolicy.providerPath,
-            blockerSummary:
-              "This turn only produced future-phase tool calls; runtime queued them and will request/execute the correct phase next.",
-            nextAction: "advance_to_phase_owner_or_repair",
-            eli5Progress:
-              "The worker proposed useful tools for another phase, so OpenClaw queued them instead of discarding the plan.",
-            reasonCodes: [
-              "non_codex_worker_phase_queue_deferred_future_phase_calls",
-              `non_codex_worker_phase_queue_pending:${deferredToolCalls.length}`,
-              ...(deferredContextToolCount > 0
-                ? ["non_codex_worker_patch_context_request_routed_to_controller"]
-                : []),
-            ],
-          });
-          continue;
         }
       }
       if (
         phaseAuthority.blockedToolCalls.length > 0 &&
         phaseAuthorityMode === "strict" &&
         phaseAuthority.acceptedToolCalls.length === 0 &&
-        !routePatchContextAsRuntimeSubturn
+        !routeContextAsRuntimeSubturn
       ) {
         await this.emitPhase(input, {
           phase: "worker.loop.needs_review",
@@ -2101,41 +3152,61 @@ export class NonCodexToolUsingWorkerLoop {
         }
         break;
       }
-      if (routePatchContextAsRuntimeSubturn) {
+      if (routeContextAsRuntimeSubturn) {
         reasonCodes.push(
-          "non_codex_worker_patch_context_request_routed_to_runtime_subturn",
+          routeStalePatchFreshnessReadAsRuntimeSubturn
+            ? "non_codex_worker_patch_stale_context_request_routed_to_freshness_read"
+            : "non_codex_worker_patch_context_request_routed_to_runtime_subturn",
           "non_codex_worker_patch_context_subturn_no_extra_model_turn",
         );
         forcePatchToolSelectionTurn = true;
         await this.emitPhase(input, {
-          phase: "worker.phase_queue.routed_subturn",
+          phase: "worker.phase_boundary.routed_context_subturn",
           modelRef: turnModelPolicy.modelRef,
           providerPath: turnModelPolicy.providerPath,
           blockerSummary: null,
           nextAction: "run_routed_context_subturn",
           eli5Progress:
-            "Runtime routed a patch-lane context request through context tool authority without spending another model-selection turn.",
+            routeStalePatchFreshnessReadAsRuntimeSubturn
+              ? "Runtime converted a patch-lane context request into an exact stale-patch freshness read without broadening context authority."
+              : "Runtime routed a patch-lane context request through context tool authority without spending another model-selection turn.",
           reasonCodes: [
-            "non_codex_worker_patch_context_request_routed_to_runtime_subturn",
+            routeStalePatchFreshnessReadAsRuntimeSubturn
+              ? "non_codex_worker_patch_stale_context_request_routed_to_freshness_read"
+              : "non_codex_worker_patch_context_request_routed_to_runtime_subturn",
             "non_codex_worker_patch_context_subturn_no_extra_model_turn",
           ],
         });
       }
-      const acceptedToolCalls = routePatchContextAsRuntimeSubturn
-        ? phaseAuthority.blockedToolCalls.slice(0, 1)
-        : phaseAuthority.acceptedToolCalls;
-      if (routePatchContextAsRuntimeSubturn && phaseAuthority.blockedToolCalls.length > 1) {
+      const acceptedToolCalls = routeStalePatchFreshnessReadAsRuntimeSubturn
+        ? [
+            buildPatchFreshnessReadCall({
+              callId: `runtime-stale-patch-freshness-read-${turn}`,
+              stalePatchFailureRefs: stalePatchFreshnessRefs,
+              originalToolId: "worker.edit.apply_patch",
+            }),
+          ]
+        : routePatchContextAsRuntimeSubturn
+          ? contextExpansionBeforeEditPlanAlreadyUsed(toolResults)
+            ? [
+                workerScoutContextRequestFromContextCall({
+                  call: phaseAuthority.blockedToolCalls[0]!,
+                  turn,
+                }),
+              ]
+            : phaseAuthority.blockedToolCalls.slice(0, 1)
+          : phaseAuthority.acceptedToolCalls;
+      if (routeContextAsRuntimeSubturn && phaseAuthority.blockedToolCalls.length > 1) {
         reasonCodes.push("non_codex_worker_patch_context_subturn_limited_to_one_tool");
       }
       if (
-        !routePatchContextAsRuntimeSubturn &&
-        !isReplayingQueuedToolCalls &&
+        !routeContextAsRuntimeSubturn &&
         requiresEditPlanningAfterRead(toolResults) &&
         !hasEditPlanningProgressCall(acceptedToolCalls)
       ) {
         const repairNote = [
           `Turn ${turn} selected generic repo/context tools after bounded file snapshots already existed but before an edit plan.`,
-          "The next turn must call worker.edit.plan, worker.edit.apply_patch, worker.context.request_more for exact missing file refs, or worker.escalate with a concrete blocker.",
+          "The next turn must use the current lifecycle-visible edit-plan, exact-context-request, or typed-blocker transition. Patch-authoring is hidden until an edit plan is accepted.",
           "Do not repeat worker.repo.search or worker.repo.read_files after successful snapshots unless the request names exact new file refs that are required for the edit.",
         ].join(" ");
         modelResponseRepairNotes.push(repairNote);
@@ -2165,17 +3236,16 @@ export class NonCodexToolUsingWorkerLoop {
         break;
       }
       if (
-        !routePatchContextAsRuntimeSubturn &&
-        !isReplayingQueuedToolCalls &&
+        !routeContextAsRuntimeSubturn &&
         requiresPatchProgress(toolResults) &&
         !hasPatchProgressCall(acceptedToolCalls, toolResults)
       ) {
         const repairNote = [
           `Turn ${turn} selected only non-edit tools after bounded snapshots and edit plans already existed.`,
           contextRequestCountAfterEditPlan(toolResults) > 0
-            ? "A targeted post-plan context expansion was already fulfilled. The next turn must call worker.edit.apply_patch with a precise replace_text/replace_range edit or worker.escalate with a concrete blocker."
-            : "The next turn must call worker.edit.apply_patch with a precise replace_text/replace_range edit, worker.escalate with a concrete blocker, or one targeted worker.context.request_more for exact missing files.",
-          "Do not repeat worker.edit.plan, generic worker.repo.read_files, or repeated context expansion without an apply_patch or escalation.",
+            ? "A targeted post-plan context expansion was already fulfilled. Runtime must open worker.patch.force_author_from_plan, exposing only patch authoring or a typed blocker."
+            : "Runtime must open worker.patch.force_author_from_plan after the accepted plan, or route one exact missing-context request before that boundary if the lifecycle projection still allows it.",
+          "Do not repeat worker.edit.plan, generic worker.repo.read_files, or repeated context expansion without entering the runner-owned forced patch-author or typed-blocker transition.",
         ].join(" ");
         modelResponseRepairNotes.push(repairNote);
         reasonCodes.push("non_codex_worker_progress_guard_blocked_non_edit_turn");
@@ -2218,14 +3288,26 @@ export class NonCodexToolUsingWorkerLoop {
         }
         break;
       }
-      const selectedCallsForTurn = acceptedToolCalls.slice(
+      const rawSelectedCallsForTurn = acceptedToolCalls.slice(
         0,
         Math.max(1, Math.min(12, input.budgetPolicy.maxToolCalls ?? 8)) - toolCalls.length,
       );
+      const turnIncludesNewEditPlan = rawSelectedCallsForTurn.some(
+        (call) => call.toolId === "worker.edit.plan",
+      );
+      const selectedCallsForTurn = turnIncludesNewEditPlan
+        ? rawSelectedCallsForTurn.filter((call) => !isActualPatchApplicatorToolId(call.toolId))
+        : rawSelectedCallsForTurn;
       let forcedPatchAuthorHandledThisTurn = false;
       const selectedTurnAlreadyIncludesPatch = selectedCallsForTurn.some((call) =>
         isActualPatchApplicatorToolId(call.toolId),
       );
+      if (
+        turnIncludesNewEditPlan &&
+        selectedCallsForTurn.length < rawSelectedCallsForTurn.length
+      ) {
+        reasonCodes.push("worker_patch_same_turn_author_edit_ignored_for_forced_boundary");
+      }
       for (const selectedCall of selectedCallsForTurn) {
         const call = withPatchFreshnessReadBeforeStaleApply({
           call: withRuntimeGroundedReadFileFallbacks({
@@ -2239,15 +3321,146 @@ export class NonCodexToolUsingWorkerLoop {
           `worker_split_phase:${splitPhase}`,
           `worker_split_phase_model_slot:${turnModelSlot}`,
         ];
-        if (call.toolId === "worker.edit.plan" && this.activeEditTransaction) {
+        const prePlanPatchPlanCall = compilePrePlanPatchApplicatorToEditPlanCall({
+          call,
+          loopInput: input,
+          toolResults,
+          turn,
+        });
+        if (prePlanPatchPlanCall) {
+          const planSplitPhase = splitPhaseForTool(prePlanPatchPlanCall.toolId);
+          const planPhaseReasonCodes = [
+            `worker_split_phase:${planSplitPhase}`,
+            `worker_split_phase_model_slot:${turnModelSlot}`,
+            "worker_patch_author_pre_plan_compiled_to_edit_plan",
+          ];
+          reasonCodes.push(
+            "worker_patch_author_pre_plan_compiled_to_edit_plan",
+            `worker_patch_author_pre_plan_source_tool:${call.toolId}`,
+          );
+          toolCalls.push(prePlanPatchPlanCall);
+          recordWorkerPhase({
+            phase: planSplitPhase,
+            status: "selected",
+            modelSlot: turnModelSlot,
+            modelRef: turnModelPolicy.modelRef,
+            providerPath: turnModelPolicy.providerPath,
+            toolId: prePlanPatchPlanCall.toolId,
+            toolInvocationRef: null,
+            transactionRef: this.activeEditTransactionFor(input)?.transactionRef ?? null,
+            summary: prePlanPatchPlanCall.reason,
+            blockerSummary: null,
+            nextAction: "run_worker_tool",
+            reasonCodes: planPhaseReasonCodes,
+          });
+          await this.emitPhase(input, {
+            phase: "worker.tool.selected",
+            modelRef: turnModelPolicy.modelRef,
+            providerPath: turnModelPolicy.providerPath,
+            toolId: prePlanPatchPlanCall.toolId,
+            eli5Progress:
+              "Runtime required an edit plan before executing a patch-author body and converted the model-authored patch target into a bounded plan.",
+            nextAction: "run_worker_tool",
+            reasonCodes: [
+              `non_codex_worker_model_slot:${turnModelSlot}`,
+              `non_codex_worker_model_ref:${turnModelPolicy.modelRef}`,
+              ...planPhaseReasonCodes,
+            ],
+          });
+          await this.emitPhase(input, {
+            phase: "worker.tool.started",
+            modelRef: turnModelPolicy.modelRef,
+            providerPath: turnModelPolicy.providerPath,
+            toolId: prePlanPatchPlanCall.toolId,
+            eli5Progress: `The worker is running ${prePlanPatchPlanCall.toolId}.`,
+          });
+          const planResult = await this.executeToolCall(
+            input,
+            prePlanPatchPlanCall,
+            turnModelPolicy.modelRef,
+            turnModelPolicy.providerPath,
+            toolResults,
+          );
+          toolResults.push(planResult);
+          const planMetadata = jsonObject(planResult.metadata);
+          const planTransactionRef =
+            typeof planMetadata.editTransactionRef === "string"
+              ? planMetadata.editTransactionRef
+              : (this.activeEditTransactionFor(input)?.transactionRef ?? null);
+          recordWorkerPhase({
+            phase: planSplitPhase,
+            status:
+              planResult.status === "succeeded"
+                ? "succeeded"
+                : planResult.status === "needs_review"
+                  ? "needs_review"
+                  : "failed",
+            modelSlot: turnModelSlot,
+            modelRef: turnModelPolicy.modelRef,
+            providerPath: turnModelPolicy.providerPath,
+            toolId: prePlanPatchPlanCall.toolId,
+            toolInvocationRef: planResult.invocationRef,
+            transactionRef: planTransactionRef,
+            summary: planResult.summary,
+            blockerSummary: planResult.status === "succeeded" ? null : planResult.summary,
+            nextAction:
+              planResult.status === "succeeded" ? "force_patch_author" : "repair_or_escalate",
+            reasonCodes: [
+              ...planResult.reasonCodes,
+              `worker_split_phase:${planSplitPhase}`,
+              `worker_split_phase_status:${planResult.status}`,
+              "worker_patch_author_pre_plan_source_not_executed",
+            ],
+          });
+          await this.emitPhase(input, {
+            phase: "worker.tool.completed",
+            modelRef: turnModelPolicy.modelRef,
+            providerPath: turnModelPolicy.providerPath,
+            toolId: prePlanPatchPlanCall.toolId,
+            toolInvocationRef: planResult.invocationRef,
+            toolStatus: planResult.status,
+            changedFileRefs: changedFileRefsFromToolResults(toolResults),
+            validationRefs: validationRefsFromToolResults(toolResults),
+            outputHash: hash(JSON.stringify(planResult.outputRefs)),
+            outputContentLength: planResult.summary.length,
+            eli5Progress: planResult.summary,
+            blockerSummary: planResult.status === "succeeded" ? null : planResult.summary,
+            reasonCodes: [
+              ...planResult.reasonCodes,
+              "worker_patch_author_pre_plan_source_not_executed",
+            ],
+          });
+          if (planResult.status === "succeeded" && requiresPatchProgress(toolResults)) {
+            const forced = await this.runForcedPatchAuthorFromPlan({
+              input,
+              implementationTaskPacket,
+              modelPolicy,
+              toolCalls,
+              toolResults,
+              turn: turn + 1,
+            });
+            if (forced.modelRunRef) {
+              modelRunRefs.push(forced.modelRunRef);
+            }
+            if (forced.handled) {
+              forcedPatchAuthorHandledThisTurn = true;
+              reasonCodes.push(
+                "worker_patch_force_author_from_plan_invoked_after_runtime_compiled_plan",
+              );
+              break;
+            }
+          }
+          continue;
+        }
+        const activeEditTransaction = this.activeEditTransactionFor(input);
+        if (call.toolId === "worker.edit.plan" && activeEditTransaction) {
           const authorRequest = buildEditAuthorRequest({
-            transactionRef: this.activeEditTransaction.transactionRef,
+            transactionRef: activeEditTransaction.transactionRef,
             targetFileRefs: input.targetFileRefs,
             targetCommitmentIds: input.targetCommitmentIds ?? [],
             contextRefs: [
               ...input.contextPackRefs,
               ...(input.sourcePromptExcerptRefs ?? []),
-              ...(input.contextSynthesisRefs ?? []),
               ...(input.priorNodeOutputRefs ?? []),
             ],
             validationCommandRefs: input.validationCommandRefs,
@@ -2267,7 +3480,7 @@ export class NonCodexToolUsingWorkerLoop {
           providerPath: turnModelPolicy.providerPath,
           toolId: call.toolId,
           toolInvocationRef: null,
-          transactionRef: this.activeEditTransaction?.transactionRef ?? null,
+          transactionRef: this.activeEditTransactionFor(input)?.transactionRef ?? null,
           summary: call.reason,
           blockerSummary: null,
           nextAction: "run_worker_tool",
@@ -2303,11 +3516,25 @@ export class NonCodexToolUsingWorkerLoop {
           toolResults,
         );
         toolResults.push(toolResult);
+        if (
+          call.toolId === "worker.context.request_more" &&
+          toolResult.status === "succeeded" &&
+          toolResult.reasonCodes.includes("worker_context_request_more_specialist_subturn_completed") &&
+          requiresEditPlanningAfterRead(toolResults) &&
+          turn >= effectiveMaxTurns &&
+          effectiveMaxTurns < maxTurns + 3
+        ) {
+          effectiveMaxTurns += 1;
+          reasonCodes.push(
+            "non_codex_worker_successful_context_scout_extended_edit_plan_turn_budget",
+            `non_codex_worker_effective_max_turns:${effectiveMaxTurns}`,
+          );
+        }
         const toolMetadata = jsonObject(toolResult.metadata);
         const transactionRef =
           typeof toolMetadata.editTransactionRef === "string"
             ? toolMetadata.editTransactionRef
-            : (this.activeEditTransaction?.transactionRef ?? null);
+            : (this.activeEditTransactionFor(input)?.transactionRef ?? null);
         const completedReasonCodes = [
           ...toolResult.reasonCodes,
           `worker_split_phase:${splitPhase}`,
@@ -2493,7 +3720,7 @@ export class NonCodexToolUsingWorkerLoop {
         providerPath: primaryProviderPath,
         toolId: validationCall.toolId,
         toolInvocationRef: null,
-        transactionRef: this.activeEditTransaction?.transactionRef ?? null,
+        transactionRef: this.activeEditTransactionFor(input)?.transactionRef ?? null,
         summary: validationCall.reason,
         blockerSummary: null,
         nextAction: "run_worker_tool",
@@ -2521,6 +3748,7 @@ export class NonCodexToolUsingWorkerLoop {
         validationCall,
         primaryModelRef,
         primaryProviderPath,
+        toolResults,
       );
       toolResults.push(validationResult);
       recordWorkerPhase({
@@ -2536,7 +3764,7 @@ export class NonCodexToolUsingWorkerLoop {
         providerPath: primaryProviderPath,
         toolId: validationCall.toolId,
         toolInvocationRef: validationResult.invocationRef,
-        transactionRef: this.activeEditTransaction?.transactionRef ?? null,
+        transactionRef: this.activeEditTransactionFor(input)?.transactionRef ?? null,
         summary: validationResult.summary,
         blockerSummary: validationResult.status === "succeeded" ? null : validationResult.summary,
         nextAction:
@@ -2654,7 +3882,16 @@ export class NonCodexToolUsingWorkerLoop {
           reasonCodes: validationFailureContextResult.reasonCodes,
         });
         reasonCodes.push("non_codex_worker_validation_failure_context_auto_prepared");
-        for (let repairTurn = 1; repairTurn <= 2 && validationRefs.length === 0; repairTurn += 1) {
+        const maxValidationRepairTurns = Math.max(
+          6,
+          Math.min(14, maxSameBoundaryPatchRepairs + 11),
+        );
+        const validationRepairToolIdsUsed = new Set<string>();
+        for (
+          let repairTurn = 1;
+          repairTurn <= maxValidationRepairTurns && validationRefs.length === 0;
+          repairTurn += 1
+        ) {
           const retryGate = evaluateRuntimeRepairRetryGate({
             retryBoundaryKind: "validation",
             priorClassification: validationFailureClassification,
@@ -2683,7 +3920,12 @@ export class NonCodexToolUsingWorkerLoop {
             });
             break;
           }
-          const repairModelPolicy = modelPolicy.validation_repair;
+          const repairModelPolicy = hasAcceptedContextAfterLatestFailedValidation(toolResults)
+            ? {
+                ...modelPolicy.patch,
+                slot: "validation_repair" as const,
+              }
+            : modelPolicy.validation_repair;
           const currentFailedValidationRuns = toolResults.filter(
             (result) => isValidationRunToolId(result.toolId) && result.status !== "succeeded",
           );
@@ -2775,6 +4017,11 @@ export class NonCodexToolUsingWorkerLoop {
             implementationTaskPacket,
             modelPolicy,
             modelSlot: "validation_repair",
+            toolSurface: deriveWorkerLifecycleToolSurface({
+              workerInput: input,
+              toolResults,
+              modelSlot: "validation_repair",
+            }),
             toolResults,
             modelResponseRepairNotes,
             turn: repairTurnNumber,
@@ -2795,6 +4042,18 @@ export class NonCodexToolUsingWorkerLoop {
               "worker.repair.author_edit",
               "worker.validation.run",
               "worker.context.request_more",
+              "worker.context.search",
+              "worker.context.search_symbols",
+              "worker.context.find_callers",
+              "worker.context.find_tests",
+              "worker.context.open_around_match",
+              "worker.context.expand_window",
+              "worker.context.contract_window",
+              "worker.context.accept_window",
+              "worker.context.open_adjacent",
+              "worker.context.report_pattern",
+              "worker.context.report_risk",
+              "worker.context.report_edit_point",
               "worker.repair.mark_upstream_blocker",
               "worker.repair.request_high_capability_escalation",
               "worker.escalate",
@@ -2806,6 +4065,18 @@ export class NonCodexToolUsingWorkerLoop {
               "worker.repair.author_edit",
               "worker.validation.run",
               "worker.context.request_more",
+              "worker.context.search",
+              "worker.context.search_symbols",
+              "worker.context.find_callers",
+              "worker.context.find_tests",
+              "worker.context.open_around_match",
+              "worker.context.expand_window",
+              "worker.context.contract_window",
+              "worker.context.accept_window",
+              "worker.context.open_adjacent",
+              "worker.context.report_pattern",
+              "worker.context.report_risk",
+              "worker.context.report_edit_point",
               "worker.repair.mark_upstream_blocker",
               "worker.repair.request_high_capability_escalation",
               "worker.escalate",
@@ -2870,6 +4141,7 @@ export class NonCodexToolUsingWorkerLoop {
               isActualPatchApplicatorToolId(result.toolId) && result.status === "succeeded",
           ).length;
           for (const selectedCall of allowedRepairCalls.slice(0, 4)) {
+            validationRepairToolIdsUsed.add(selectedCall.toolId);
             const call = withPatchFreshnessReadBeforeStaleApply({
               call: withRuntimeGroundedReadFileFallbacks({
                 call: selectedCall,
@@ -2941,7 +4213,7 @@ export class NonCodexToolUsingWorkerLoop {
               failedBoundaryKind: "edit_transaction",
               failureClass: "stale_context",
               repairStrategy: "request_context",
-              selectedRepairBoundary: "context_scout",
+              selectedRepairBoundary: "resource_scout",
               failedRefPaths: stalePatchRefs,
               reasonCodes: [
                 "non_codex_worker_patch_freshness_refresh_after_stale_patch",
@@ -3050,6 +4322,7 @@ export class NonCodexToolUsingWorkerLoop {
                 repairValidationCall,
                 repairModelPolicy.modelRef,
                 repairModelPolicy.providerPath,
+                toolResults,
               );
               toolResults.push(repairValidationResult);
               validationRefs = validationRefsFromToolResults(toolResults);
@@ -3075,19 +4348,34 @@ export class NonCodexToolUsingWorkerLoop {
               });
             }
           } else if (validationRefs.length === 0 && !repairTurnAppliedEdit) {
+            const repeatedNonMutatingTools = allowedRepairCalls
+              .map((call) => call.toolId)
+              .filter(
+                (toolId) =>
+                  validationRepairToolIdsUsed.has(toolId) &&
+                  ![
+                    "worker.edit.apply_patch",
+                    "worker.repair.author_edit",
+                    "worker.validation.run",
+                    "worker.validation.run_structural_default",
+                  ].includes(toolId),
+              );
             const repairWithoutEditClassification = buildWorkerLoopRepairClassification({
               workerInput: input,
               classificationIdSuffix: `validation-repair-without-edit-${repairTurn}`,
               failedBoundaryKind: "worker_loop",
               failureClass: "model_contract_choke",
-              repairStrategy: repairTurn < 2 ? "same_boundary_repair" : "terminal_needs_review",
+              repairStrategy:
+                repairTurn < maxValidationRepairTurns
+                  ? "same_boundary_repair"
+                  : "terminal_needs_review",
               selectedRepairBoundary: "worker_loop",
               failedFieldPaths: ["toolCalls.worker.repair.author_edit"],
               reasonCodes: ["non_codex_worker_validation_repair_without_edit"],
               runtimeExplanation:
                 "Runtime classified validation repair that produced diagnostics without a repair edit or passing validation before allowing further retry.",
               expectedNextAction:
-                repairTurn < 2
+                repairTurn < maxValidationRepairTurns
                   ? "Select a bounded repair edit, rerun validation only for transient failures, or escalate with exact blocker evidence."
                   : "Stop needs_review because validation repair did not produce source changes or passing validation.",
               stopOrEscalationCondition:
@@ -3098,6 +4386,9 @@ export class NonCodexToolUsingWorkerLoop {
               [
                 `Validation repair turn ${repairTurn} did not apply a repair edit or produce passing validation.`,
                 "Explain/classify is useful diagnostic evidence, but it does not repair validation by itself.",
+                repeatedNonMutatingTools.length > 0
+                  ? `The same non-mutating repair tools already failed to advance this boundary: ${repeatedNonMutatingTools.join(", ")}. Choose a different search/open/accept action that adds new context, or author the bounded repair edit.`
+                  : "",
                 "Next repair turn should use worker.repair.author_edit with a bounded fix based on the current file snapshot and validation failure details, run validation only for an explicitly transient/runtime failure, or use worker.repair.mark_upstream_blocker with exact blocker evidence.",
                 "Raw worker.edit.apply_patch remains valid only when the model already has fileEdits prepared; worker.repair.author_edit is preferred because runtime owns the patch envelope and the model only authors the semantic edit body.",
               ].join(" "),
@@ -3110,7 +4401,10 @@ export class NonCodexToolUsingWorkerLoop {
               validationRefs,
               blockerSummary:
                 "Validation repair produced diagnostics but no repair edit or passing validation.",
-              nextAction: repairTurn < 2 ? "validation_failure_repair" : "orchestrator_review",
+              nextAction:
+                repairTurn < maxValidationRepairTurns
+                  ? "validation_failure_repair"
+                  : "orchestrator_review",
               eli5Progress:
                 "The worker explained the validation failure but has not changed code to fix it yet.",
               reasonCodes: ["non_codex_worker_validation_repair_without_edit"],
@@ -3163,6 +4457,7 @@ export class NonCodexToolUsingWorkerLoop {
           validationCall,
           primaryModelRef,
           primaryProviderPath,
+          toolResults,
         );
         toolResults.push(validationResult);
         validationRefs = validationRefsFromToolResults(toolResults);
@@ -3216,7 +4511,7 @@ export class NonCodexToolUsingWorkerLoop {
         providerPath: primaryProviderPath,
         toolId: evidenceCall.toolId,
         toolInvocationRef: null,
-        transactionRef: this.activeEditTransaction?.transactionRef ?? null,
+        transactionRef: this.activeEditTransactionFor(input)?.transactionRef ?? null,
         summary: evidenceCall.reason,
         blockerSummary: null,
         nextAction: "run_worker_tool",
@@ -3260,7 +4555,7 @@ export class NonCodexToolUsingWorkerLoop {
         providerPath: primaryProviderPath,
         toolId: evidenceCall.toolId,
         toolInvocationRef: evidenceResult.invocationRef,
-        transactionRef: this.activeEditTransaction?.transactionRef ?? null,
+        transactionRef: this.activeEditTransactionFor(input)?.transactionRef ?? null,
         summary: evidenceResult.summary,
         blockerSummary: evidenceResult.status === "succeeded" ? null : evidenceResult.summary,
         nextAction:
@@ -3286,6 +4581,7 @@ export class NonCodexToolUsingWorkerLoop {
     const contextExpansionRequests = contextRequestsFromToolResults(toolResults);
     const editTransactionRefs = editTransactionRefsFromToolResults(toolResults);
     const editTransactions = editTransactionsFromToolResults(toolResults);
+    const reviewArtifactRefs = reviewArtifactRefsFromToolResults(toolResults);
     const hasEscalation = toolResults.some(
       (result) =>
         result.toolId === "worker.escalate" ||
@@ -3304,7 +4600,7 @@ export class NonCodexToolUsingWorkerLoop {
       nonCodexTargetRefsRequireHighCapabilityAfterStructuralFailure(changedFileRefs) &&
       validationFailureLooksStructural(failedValidationRuns);
     if (shouldRollbackFailedSchemaEdit && changedFileRefs.length > 0) {
-      const rollback = await this.rollbackActiveSnapshots(changedFileRefs);
+      const rollback = await this.rollbackActiveSnapshots(input, changedFileRefs);
       reasonCodes.push(
         "non_codex_worker_schema_contract_validation_failure_rollback",
         "non_codex_worker_schema_contract_edit_requires_high_capability_escalation",
@@ -3365,7 +4661,7 @@ export class NonCodexToolUsingWorkerLoop {
         "The non-Codex tool worker edited and validated but did not emit commitment evidence claims.",
       );
     }
-    const finalEditTransaction = this.activeEditTransaction?.snapshotRecord() ?? null;
+    const finalEditTransaction = this.activeEditTransactionFor(input)?.snapshotRecord() ?? null;
     const finalEditTransactions = uniqueEditTransactions([
       ...editTransactions,
       ...(finalEditTransaction ? [finalEditTransaction] : []),
@@ -3409,6 +4705,7 @@ export class NonCodexToolUsingWorkerLoop {
         toolResults.flatMap((r) => [r.invocationRef, ...r.outputRefs]),
         50,
       ),
+      reviewArtifactRefs,
       limitations: uniqueStrings(limitations, 20),
       toolCalls,
       toolResults,
@@ -3460,6 +4757,7 @@ export class NonCodexToolUsingWorkerLoop {
     implementationTaskPacket: ImplementationTaskPacket;
     modelPolicy: NonCodexWorkerModelPolicy;
     modelSlot: NonCodexWorkerModelSlot;
+    toolSurface: WorkerLifecycleToolSurface;
     toolResults: NonCodexToolResult[];
     modelResponseRepairNotes: string[];
     turn: number;
@@ -3551,6 +4849,7 @@ export class NonCodexToolUsingWorkerLoop {
             input.toolResults,
             input.modelResponseRepairNotes,
             input.modelSlot,
+            input.toolSurface,
           ),
           allowedFileRefs: input.input.allowedFileRefs,
           targetFileRefs: input.input.targetFileRefs,
@@ -3727,18 +5026,83 @@ export class NonCodexToolUsingWorkerLoop {
     toolResults: NonCodexToolResult[];
     turn: number;
   }): Promise<{ handled: boolean; modelRunRef: string | null }> {
-    if (
-      input.toolResults.some(
-        (result) =>
-          result.toolId === "worker.patch.force_author_from_plan" && result.status === "succeeded",
-      )
-    ) {
+    if (!canRunForcedPatchAuthorFromCurrentWorkerContext(input.toolResults)) {
       return { handled: false, modelRunRef: null };
     }
     const planStep = forcedPatchPlanStep(input.toolResults, input.input);
     const snapshot = planStep
       ? await forcedPatchSnapshotForPlan(input.input, input.toolResults, planStep)
       : null;
+    if (planStep && !snapshot) {
+      const contextCall: NonCodexToolCall = {
+        callId: `runtime-force-author-context-before-patch-${input.turn}`,
+        toolId: "worker.context.request_more",
+        reason:
+          "Runtime could not hydrate an exact bounded snapshot for the accepted edit plan; open a worker-owned specialist scout before patch authoring.",
+        input: {
+          requestedFileRefs: uniqueStrings(
+            [...planStep.targetFileRefs, ...input.input.targetFileRefs],
+            12,
+          ),
+          reason: planStep.objective,
+          expectedUse:
+            "Select exact file-window refs that hydrate the accepted edit plan target before runtime opens the forced patch-author boundary.",
+          commitmentIds: planStep.commitmentIdsAdvanced,
+          sourceToolId: "worker.patch.force_author_from_plan",
+          runtimeUseSpecialistScout: true,
+          runtimeContextRequestSignature: hash(
+            JSON.stringify({
+              planStepId: planStep.stepId,
+              targetFileRefs: planStep.targetFileRefs,
+              objective: bounded(planStep.objective, 320),
+            }),
+          ).slice(0, 16),
+          rawPromptStored: false,
+          rawResponseStored: false,
+          rawProviderLogStored: false,
+          rawToolLogStored: false,
+        },
+      };
+      input.toolCalls.push(contextCall);
+      await this.emitPhase(input.input, {
+        phase: "worker.tool.selected",
+        modelRef: input.modelPolicy.context_decision.modelRef,
+        providerPath: input.modelPolicy.context_decision.providerPath,
+        toolId: contextCall.toolId,
+        eli5Progress:
+          "Runtime blocked forced patch authoring until the worker context scout hydrates exact windows for the accepted edit plan.",
+        nextAction: "run_worker_context_scout_subturn",
+        reasonCodes: [
+          "worker_patch_author_required_missing_snapshot",
+          "worker_context_request_more_specialist_subturn_required",
+        ],
+      });
+      const contextResult = await this.executeToolCall(
+        input.input,
+        contextCall,
+        input.modelPolicy.context_decision.modelRef,
+        input.modelPolicy.context_decision.providerPath,
+        input.toolResults,
+      );
+      input.toolResults.push(contextResult);
+      await this.emitPhase(input.input, {
+        phase: "worker.tool.completed",
+        modelRef: input.modelPolicy.context_decision.modelRef,
+        providerPath: input.modelPolicy.context_decision.providerPath,
+        toolId: contextCall.toolId,
+        toolInvocationRef: contextResult.invocationRef,
+        toolStatus: contextResult.status,
+        outputHash: hash(JSON.stringify(contextResult.outputRefs)),
+        outputContentLength: contextResult.summary.length,
+        eli5Progress: contextResult.summary,
+        blockerSummary: contextResult.status === "succeeded" ? null : contextResult.summary,
+        reasonCodes: [
+          "worker_patch_author_required_missing_snapshot",
+          ...contextResult.reasonCodes,
+        ],
+      });
+      return { handled: false, modelRunRef: null };
+    }
     const forceCall: NonCodexToolCall = {
       callId: `runtime-force-author-from-plan-${input.turn}`,
       toolId: "worker.patch.force_author_from_plan",
@@ -3947,7 +5311,7 @@ export class NonCodexToolUsingWorkerLoop {
         call.toolId === "worker.patch.author_edit" ||
         call.toolId === "worker.repair.mark_upstream_blocker",
     );
-    const callToExecute =
+      const callToExecute =
       selectedCall ??
       noEditBlockerToolCall({
         input: input.input,
@@ -3956,7 +5320,11 @@ export class NonCodexToolUsingWorkerLoop {
         planStep,
         repeatedToolClass:
           parsed.toolCalls[0]?.toolId ??
-          (modelResult.timedOut ? "provider_timeout" : "invalid_or_missing_tool_call"),
+          (modelResult.timedOut
+            ? "provider_timeout_at_forced_patch_author"
+            : modelResult.responseText?.trim()
+              ? "invalid_or_missing_tool_call"
+              : "provider_no_content_at_forced_patch_author"),
         missingField:
           parsed.toolCalls.length > 0
             ? "allowedForcedPatchAuthorTool"
@@ -3964,6 +5332,23 @@ export class NonCodexToolUsingWorkerLoop {
               ? "providerResponse"
               : "toolCalls",
         nextLegalTransition: "worker.patch.author_edit_or_worker.repair.mark_upstream_blocker_only",
+        failureClass:
+          modelResult.timedOut || !modelResult.responseText?.trim()
+            ? modelResult.timedOut
+              ? "provider_timeout"
+              : "provider_no_content"
+            : "model_contract_choke",
+        reasonCodes:
+          modelResult.timedOut || !modelResult.responseText?.trim()
+            ? [
+                modelResult.timedOut
+                  ? "provider_timeout_at_forced_patch_author"
+                  : "provider_no_content_at_forced_patch_author",
+                modelResult.timedOut
+                  ? "worker_patch_force_author_from_plan_model_timeout"
+                  : "worker_patch_force_author_from_plan_model_empty_response",
+              ]
+            : undefined,
       });
     const groundedCall =
       callToExecute.toolId === "worker.patch.author_edit"
@@ -4013,6 +5398,57 @@ export class NonCodexToolUsingWorkerLoop {
       blockerSummary: result.status === "succeeded" ? null : result.summary,
       reasonCodes: result.reasonCodes,
     });
+    if (
+      groundedCall.toolId === "worker.repair.mark_upstream_blocker" &&
+      result.status === "needs_review"
+    ) {
+      const contextCall = workerScoutContextRequestFromForcedPatchBlocker({
+        blockerCall: groundedCall,
+        blockerResult: result,
+        input: input.input,
+        planStep,
+        turn: input.turn,
+        toolResults: input.toolResults,
+      });
+      if (contextCall) {
+        input.toolCalls.push(contextCall);
+        await this.emitPhase(input.input, {
+          phase: "worker.tool.selected",
+          modelRef: slotPolicy.modelRef,
+          providerPath: slotPolicy.providerPath,
+          toolId: contextCall.toolId,
+          eli5Progress:
+            "The patch-author blocker says the current window is insufficient, so runtime is opening a worker-owned specialist scout subturn instead of terminalizing the node.",
+          nextAction: "run_worker_context_scout_subturn",
+          reasonCodes: [
+            "worker_patch_upstream_blocker_routed_to_worker_context_scout",
+            "worker_context_request_more_specialist_subturn_required",
+          ],
+        });
+        const contextResult = await this.executeToolCall(
+          input.input,
+          contextCall,
+          slotPolicy.modelRef,
+          slotPolicy.providerPath,
+          input.toolResults,
+        );
+        input.toolResults.push(contextResult);
+        await this.emitPhase(input.input, {
+          phase: "worker.tool.completed",
+          modelRef: slotPolicy.modelRef,
+          providerPath: slotPolicy.providerPath,
+          toolId: contextCall.toolId,
+          toolInvocationRef: contextResult.invocationRef,
+          toolStatus: contextResult.status,
+          outputHash: hash(JSON.stringify(contextResult.outputRefs)),
+          outputContentLength: contextResult.summary.length,
+          eli5Progress: contextResult.summary,
+          blockerSummary: contextResult.status === "succeeded" ? null : contextResult.summary,
+          reasonCodes: contextResult.reasonCodes,
+        });
+        return { handled: false, modelRunRef: modelResult.modelRunRef };
+      }
+    }
     return { handled: true, modelRunRef: modelResult.modelRunRef };
   }
 
@@ -4079,10 +5515,8 @@ export class NonCodexToolUsingWorkerLoop {
         contextRefs: [
           ...input.contextPackRefs,
           ...(input.sourcePromptExcerptRefs ?? []),
-          ...(input.contextSynthesisRefs ?? []),
           ...(input.priorNodeOutputRefs ?? []),
         ],
-        contextSynthesisRefs: input.contextSynthesisRefs,
         codeIntelligenceRefs: input.contextPackRefs.filter(
           (ref) => ref.includes("code-intelligence") || ref.includes("code_intelligence"),
         ),
@@ -4096,13 +5530,13 @@ export class NonCodexToolUsingWorkerLoop {
         validationRefs: event.validationRefs,
         currentValidationCommandRef: event.currentValidationCommandRef,
         currentValidationCommandSummary: event.currentValidationCommandSummary,
-        editTransactionRefs: this.activeEditTransaction
-          ? [this.activeEditTransaction.transactionRef]
+        editTransactionRefs: this.activeEditTransactionFor(input)
+          ? [this.activeEditTransactionFor(input)!.transactionRef]
           : [],
-        editTransactionPhase: this.activeEditTransaction?.snapshotRecord().phase ?? null,
-        editTransactionStatus: this.activeEditTransaction?.snapshotRecord().status ?? null,
+        editTransactionPhase: this.activeEditTransactionFor(input)?.snapshotRecord().phase ?? null,
+        editTransactionStatus: this.activeEditTransactionFor(input)?.snapshotRecord().status ?? null,
         editTransactionRepairCount:
-          this.activeEditTransaction?.snapshotRecord().repairAttemptCount ?? null,
+          this.activeEditTransactionFor(input)?.snapshotRecord().repairAttemptCount ?? null,
         outputHash: event.outputHash,
         outputContentLength: event.outputContentLength,
         providerLatencyMs: event.providerLatencyMs,
@@ -4225,27 +5659,524 @@ export class NonCodexToolUsingWorkerLoop {
     call: NonCodexToolCall,
     toolResults: NonCodexToolResult[] = [],
   ): Promise<RuntimeToolExecutorResult> {
+    const toolGate = progressiveWorkerToolGate({
+      nodeExecutionPacket: input.nodeExecutionPacket ?? null,
+      codingResourcePacket: input.codingResourcePacket ?? null,
+      toolResults,
+      toolId: call.toolId,
+    });
+    if (!toolGate.allowed) {
+      return outputResult({
+        status: "needs_review",
+        outputRef: `worker-tool-gate://${input.taskId}/${call.toolId}/${hash(JSON.stringify(toolGate)).slice(0, 16)}`,
+        outputSummary: `${call.toolId} is not legal while NodeExecutionPacket state is ${toolGate.progressiveState}.`,
+        reasonCodes: toolGate.reasonCodes,
+        metadata: {
+          blockedToolId: call.toolId,
+          progressiveState: toolGate.progressiveState,
+          actionGateStatus: toolGate.actionGateStatus,
+          allowedWorkerToolIds: toolGate.allowedWorkerToolIds.slice(0, 40),
+          deniedWorkerToolIds: toolGate.deniedWorkerToolIds.slice(0, 40),
+          rawPromptStored: false,
+          rawResponseStored: false,
+          rawToolLogStored: false,
+        },
+      });
+    }
+    if (call.toolId === "worker.context.propose_searches") {
+      const searchTerms = uniqueStrings(
+        stringList(
+          call.input.searchTerms ??
+            call.input.search_terms ??
+            call.input.queries ??
+            call.input.query ??
+            call.input.patterns ??
+            call.input.pattern,
+          12,
+        ),
+        12,
+      );
+      return outputResult({
+        status: searchTerms.length > 0 ? "succeeded" : "needs_review",
+        outputRef: `context-search-plan://${hash(`${input.taskId}:${searchTerms.join(":")}`).slice(0, 16)}`,
+        outputSummary:
+          searchTerms.length > 0
+            ? `Worker proposed ${searchTerms.length} model-authored context search term(s).`
+            : "Worker context search proposal did not include search terms.",
+        reasonCodes:
+          searchTerms.length > 0
+            ? ["worker_context_model_authored_search_terms_recorded"]
+            : ["worker_context_search_terms_missing"],
+        metadata: {
+          searchTerms,
+          reason:
+            typeof call.input.reason === "string"
+              ? bounded(call.input.reason, 800)
+              : call.reason,
+          expectedUse:
+            typeof call.input.expectedUse === "string"
+              ? bounded(call.input.expectedUse, 800)
+              : null,
+          rawPromptStored: false,
+          rawResponseStored: false,
+          rawToolLogStored: false,
+        },
+      });
+    }
+    if (
+      call.toolId === "worker.context.open_ref" ||
+      call.toolId === "worker.context.open_window" ||
+      call.toolId === "worker.context.open_around_match" ||
+      call.toolId === "worker.context.expand_window" ||
+      call.toolId === "worker.context.contract_window"
+    ) {
+      const windowRef =
+        typeof call.input.windowRef === "string"
+          ? call.input.windowRef
+          : typeof call.input.ref === "string"
+            ? call.input.ref
+            : typeof call.input.matchRef === "string"
+              ? call.input.matchRef
+              : null;
+      const parsedWindow = windowRef ? parseWorkerFileWindowRef(windowRef) : null;
+      const matchLine =
+        !parsedWindow && typeof call.input.match === "string"
+          ? /^([^:]+):([1-9]\d*):/u.exec(call.input.match.trim())
+          : null;
+      const baseFileRef =
+        parsedWindow?.fileRef ??
+        (matchLine ? matchLine[1] : null) ??
+        (typeof call.input.fileRef === "string"
+          ? call.input.fileRef
+          : typeof call.input.path === "string"
+            ? call.input.path
+            : null);
+      const matchLineNumber = matchLine ? Number.parseInt(matchLine[2] ?? "1", 10) : null;
+      if (!baseFileRef) {
+        return outputResult({
+          status: "needs_review",
+          outputRef: `context-window://${call.callId}/missing-ref`,
+          outputSummary: `${call.toolId} requires a file ref, match ref, or file-window ref.`,
+          reasonCodes: ["worker_context_window_ref_missing"],
+        });
+      }
+      const requestedStart =
+        integerFromToolInput(call.input.startLine ?? call.input.start_line) ??
+        (call.toolId === "worker.context.expand_window" && parsedWindow
+          ? Math.max(
+              1,
+              parsedWindow.startLine -
+                (integerFromToolInput(call.input.beforeLines ?? call.input.before_lines) ?? 80),
+            )
+          : call.toolId === "worker.context.contract_window" && parsedWindow
+            ? parsedWindow.startLine
+            : parsedWindow?.startLine ??
+              (matchLineNumber !== null ? Math.max(1, matchLineNumber - 40) : null));
+      const requestedEnd =
+        integerFromToolInput(call.input.endLine ?? call.input.end_line) ??
+        (call.toolId === "worker.context.expand_window" && parsedWindow
+          ? parsedWindow.endLine +
+            (integerFromToolInput(call.input.afterLines ?? call.input.after_lines) ?? 80)
+          : call.toolId === "worker.context.contract_window" && parsedWindow
+            ? parsedWindow.endLine
+            : parsedWindow?.endLine ??
+              (matchLineNumber !== null ? matchLineNumber + 80 : null));
+      const maxLines =
+        call.toolId === "worker.context.open_ref"
+          ? WORKER_REPO_READ_DEFAULT_MAX_LINES
+          : Math.min(
+              WORKER_REPO_READ_HARD_MAX_LINES,
+              Math.max(
+                1,
+                (requestedEnd ?? 0) > 0 && (requestedStart ?? 0) > 0
+                  ? (requestedEnd ?? requestedStart ?? 1) - (requestedStart ?? 1) + 1
+                  : WORKER_REPO_READ_DEFAULT_MAX_LINES,
+              ),
+            );
+      const snapshot = await readBoundedFile({
+        repoRoot: input.repoRoot,
+        fileRef: baseFileRef,
+        allowedFileRefs: input.allowedFileRefs,
+        startLine: requestedStart,
+        endLine: requestedEnd,
+        maxLines,
+      }).catch(() => null);
+      if (!snapshot) {
+        return outputResult({
+          status: "needs_review",
+          outputRef: `context-window://${hash(`${call.callId}:${baseFileRef}:denied`).slice(0, 16)}`,
+          outputSummary: `${call.toolId} could not hydrate the requested bounded context window.`,
+          reasonCodes: ["worker_context_window_denied_or_unreadable"],
+          metadata: {
+            requestedFileRef: baseFileRef,
+            requestedWindowRef: windowRef,
+            rawPromptStored: false,
+            rawResponseStored: false,
+            rawToolLogStored: false,
+          },
+        });
+      }
+      const actionReasonCode =
+        call.toolId === "worker.context.expand_window"
+          ? "worker_context_window_expanded_by_model"
+          : call.toolId === "worker.context.contract_window"
+            ? "worker_context_window_contracted_by_model"
+            : call.toolId === "worker.context.open_around_match"
+              ? "worker_context_window_opened_around_model_selected_match"
+              : call.toolId === "worker.context.open_window"
+                ? "worker_context_exact_window_opened"
+                : "worker_context_ref_opened";
+      return outputResult({
+        status: "succeeded",
+        outputRef: `context-window://${hash(`${snapshot.fileRef}:${snapshot.startLine}:${snapshot.endLine}:${snapshot.contentHash}`).slice(0, 16)}`,
+        outputSummary: `${call.toolId} hydrated ${snapshot.fileRef} lines ${snapshot.startLine}-${snapshot.endLine}.`,
+        reasonCodes: [
+          actionReasonCode,
+          "worker_context_hydrated_window_payload_backed_manifest",
+        ],
+        metadata: {
+          requestedFileRef: baseFileRef,
+          requestedWindowRef: windowRef,
+          snapshotManifests: [boundedSnapshotManifest(snapshot)],
+          providedContextRefs: [snapshot.fileRef],
+          exactContextRefs: [
+            `file-window://${snapshot.fileRef}#L${snapshot.startLine}-L${snapshot.endLine}:${snapshot.contentHash}`,
+          ],
+          reason:
+            typeof call.input.reason === "string"
+              ? bounded(call.input.reason, 800)
+              : call.reason,
+          expectedUse:
+            typeof call.input.expectedUse === "string"
+              ? bounded(call.input.expectedUse, 800)
+              : null,
+          rawPromptStored: false,
+          rawResponseStored: false,
+          rawToolLogStored: false,
+        },
+      });
+    }
+    if (
+      call.toolId === "worker.context.accept_window" ||
+      call.toolId === "worker.context.report_pattern" ||
+      call.toolId === "worker.context.report_risk" ||
+      call.toolId === "worker.context.report_edit_point" ||
+      call.toolId === "worker.context.finish_context_turn" ||
+      call.toolId === "worker.context.mark_unanswerable"
+    ) {
+      const refs = uniqueStrings(
+        stringList(
+          call.input.windowRefs ??
+            call.input.windowRef ??
+            call.input.refs ??
+            call.input.ref ??
+            call.input.exactContextRefs,
+          24,
+        ),
+        24,
+      );
+      const status = call.toolId === "worker.context.mark_unanswerable" ? "needs_review" : "succeeded";
+      return outputResult({
+        status,
+        outputRef: `context-ledger://${hash(`${input.taskId}:${call.toolId}:${refs.join(":")}:${call.reason}`).slice(0, 16)}`,
+        outputSummary:
+          call.toolId === "worker.context.mark_unanswerable"
+            ? "Worker marked context as unanswerable for the current bounded turn."
+            : `${call.toolId} recorded model-authored context substance for ${refs.length} ref(s).`,
+        reasonCodes: [
+          call.toolId === "worker.context.mark_unanswerable"
+            ? "worker_context_marked_unanswerable_by_model"
+            : "worker_context_model_authored_ledger_entry_recorded",
+          `worker_context_ledger_tool:${call.toolId}`,
+        ],
+        metadata: {
+          acceptedWindowRefs: refs,
+          summary:
+            typeof call.input.summary === "string"
+              ? bounded(call.input.summary, 1_200)
+              : typeof call.input.handoffSummary === "string"
+                ? bounded(call.input.handoffSummary, 1_200)
+                : null,
+          expectedUse:
+            typeof call.input.expectedUse === "string"
+              ? bounded(call.input.expectedUse, 800)
+              : null,
+          pattern:
+            typeof call.input.pattern === "string" ? bounded(call.input.pattern, 1_200) : null,
+          risk:
+            typeof call.input.risk === "string"
+              ? bounded(call.input.risk, 1_200)
+              : typeof call.input.riskSummary === "string"
+                ? bounded(call.input.riskSummary, 1_200)
+                : null,
+          editPoint:
+            typeof call.input.editPoint === "string"
+              ? bounded(call.input.editPoint, 1_200)
+              : null,
+          blockerSummary:
+            typeof call.input.blockerSummary === "string"
+              ? bounded(call.input.blockerSummary, 1_200)
+              : null,
+          rawPromptStored: false,
+          rawResponseStored: false,
+          rawToolLogStored: false,
+        },
+      });
+    }
     if (call.toolId === "worker.context.request_more") {
       const requestedFileRefs = requestedContextFileRefsFromCall(call);
       const reason =
         typeof call.input.reason === "string"
           ? bounded(call.input.reason, 800)
           : "Worker requested additional bounded context.";
-      const snapshots = [];
+      const expectedUse =
+        typeof call.input.expectedUse === "string"
+          ? bounded(call.input.expectedUse, 800)
+          : "Use these bounded snapshots to decide the next legal worker action.";
+      const forceSpecialistScout =
+        call.input.runtimeUseSpecialistScout === true ||
+        requestedFileRefs.some((ref) => !parseWorkerFileWindowRef(ref));
+      const workerContextSpecialistRequestSignature =
+        typeof call.input.runtimeContextRequestSignature === "string"
+          ? bounded(call.input.runtimeContextRequestSignature, 64)
+          : contextRequestSignatureFromCall(call);
+      const snapshots: Array<Awaited<ReturnType<typeof readBoundedFile>>> = [];
       const deniedFileRefs: string[] = [];
-      for (const fileRef of requestedFileRefs) {
-        try {
-          snapshots.push(
-            await readBoundedFile({
-              repoRoot: input.repoRoot,
-              fileRef,
+      const requestFocus = compileContextFocusForWorkerRequest({
+        workerInput: input,
+        requestedFileRefs,
+        reason,
+        expectedUse,
+        forceSpecialistScout,
+      });
+      const compileDemand = (providedRefs: string[], boundedSnapshotRefs: string[]) =>
+        compileWorkerContextRequestDemand({
+          runtimeJobId: input.runtimeJobId ?? null,
+          workflowId:
+            input.nodeExecutionPacket?.workflowId ??
+            input.nodeExecutionContract?.workflowId ??
+            input.graphId ??
+            input.taskId ??
+            null,
+          graphId: input.graphId ?? null,
+          consumerNodeId: input.nodeId ?? input.taskId,
+          workIntentRef: input.nodeExecutionContract?.workIntentRef ?? null,
+          nodeExecutionContractRef: input.nodeExecutionContract?.contractRef ?? null,
+          nodeExecutionPacketRef: input.nodeExecutionPacket?.packetRef ?? null,
+          capabilityId:
+            input.nodeExecutionPacket?.capabilityId ??
+            input.nodeExecutionContract?.capabilityId ??
+            "implementation_worker",
+          evidenceMode:
+            input.nodeExecutionPacket?.evidenceMode ??
+            input.nodeExecutionContract?.evidenceMode ??
+            input.codingResourcePacket?.evidenceMode ??
+            ["changed_file_evidence"],
+          targetCommitmentIds:
+            stringList(call.input.commitmentIds, 12).length > 0
+              ? stringList(call.input.commitmentIds, 12)
+              : input.nodeExecutionPacket?.targetCommitmentIds ??
+                input.codingResourcePacket?.targetCommitmentIds ??
+                [],
+          authorityScope: input.allowedFileRefs,
+          demandReason: reason,
+          expectedUse,
+          resourceObjectiveFocus: requestFocus.resourceObjectiveFocus,
+          legalRefUniverse: requestFocus.legalRefUniverse,
+          requestedFileRefs,
+          providedRefs,
+          boundedSnapshotRefs,
+        });
+      let nodeResourceDemand = compileDemand([], []);
+      let specialistResult: Awaited<ReturnType<typeof runResourceSpecialistNarrowingLoop>> | null =
+        null;
+      if (forceSpecialistScout && nodeResourceDemand.session && requestFocus.resourceObjectiveFocus && requestFocus.legalRefUniverse) {
+        const contextPolicy =
+          resolveNonCodexWorkerModelPolicy(input.budgetPolicy.modelPolicy).context_decision;
+        specialistResult = await runResourceSpecialistNarrowingLoop({
+          repoRoot: input.repoRoot,
+          modelRef: contextPolicy.modelRef,
+          providerPath: contextPolicy.providerPath,
+          maxTurns: 4,
+          selectionInput: {
+            graphId: input.graphId ?? input.taskId,
+            iteration: toolResults.length + 1,
+            nodeId: input.nodeId ?? input.taskId,
+            nodeKind: input.nodeExecutionPacket?.nodeKind ?? "implementation",
+            assignedRole: input.roleId,
+            capabilityId:
+              input.nodeExecutionPacket?.capabilityId ??
+              input.nodeExecutionContract?.capabilityId ??
+              "implementation_worker",
+            workIntentRef: input.nodeExecutionContract?.workIntentRef ?? null,
+            nodeExecutionContractRef: input.nodeExecutionContract?.contractRef ?? null,
+            nodeResourceDemandSessionRef: nodeResourceDemand.session.sessionRef,
+            resourceObjectiveFocusRef: requestFocus.resourceObjectiveFocus.focusRef,
+            legalRefUniverseRef: requestFocus.legalRefUniverse.legalRefUniverseRef,
+            resourceSpecialistSpecialistRequestRef: `${nodeResourceDemand.session.sessionRef}/worker-specialist-request`,
+            nodeResourceLedgerRef: `${nodeResourceDemand.session.sessionRef}/worker-specialist-ledger`,
+            selectedFocusRefs: requestedFileRefs,
+            candidateRefs: uniqueStrings([...requestedFileRefs, ...input.targetFileRefs], 24),
+            authorityScopeRefs: input.allowedFileRefs,
+            expectedUse,
+            scoutReason: reason,
+            allowedToolIds: [
+              "resource.scout.open_ref",
+              "resource.scout.search_within_ref",
+              "resource.scout.open_window",
+              "resource.scout.choose_window_from_matches",
+              "resource.scout.report_relevant_window",
+              "resource.scout.report_existing_pattern",
+              "resource.scout.report_constraint",
+              "resource.scout.report_edit_point",
+              "resource.scout.submit_exact_handles",
+              "resource.scout.mark_narrowing_blocked",
+            ],
+            requiredFields: ["exactContextRefs", "handoffSummary", "expectedUse"],
+            exactRefRequirements: {
+              exactContextRefs: "file-window refs selected by the specialist after inspection",
+              rawPromptStored: false,
+              rawResponseStored: false,
+            },
+            repairReasonCodes: ["worker_context_request_more_specialist_subturn_required"],
+          },
+          callModel: async (modelCall) => {
+            const response = await this.options.modelClient.nextTurn({
+              modelSlot: "context_decision",
+              modelRef: contextPolicy.modelRef,
+              providerPath: contextPolicy.providerPath,
+              reasoningMode: contextPolicy.reasoningMode,
+              responseFormatMode: contextPolicy.responseFormatMode,
+              maxAttempts: contextPolicy.maxAttempts ?? 1,
+              taskSummary: [
+                modelCall.systemPrompt,
+                "Specialist payload:",
+                JSON.stringify(modelCall.userPayload, null, 2),
+              ].join("\n"),
               allowedFileRefs: input.allowedFileRefs,
-            }),
-          );
-        } catch {
-          deniedFileRefs.push(fileRef);
+              targetFileRefs: input.targetFileRefs,
+              validationCommandRefs: input.validationCommandRefs,
+              toolResultSummaries: toolResults.map((result) => summarizeToolResultForModel(result)).slice(-8),
+              turn: toolResults.length + 1,
+              maxOutputTokens: Math.min(
+                input.budgetPolicy.maxOutputTokens,
+                contextPolicy.maxOutputTokens ?? input.budgetPolicy.maxOutputTokens,
+              ),
+              timeoutMs: Math.min(
+                modelCall.timeoutMs,
+                contextPolicy.timeoutMs ?? input.budgetPolicy.timeoutMs,
+              ),
+            });
+            return {
+              status: response.timedOut ? "blocked" : "ok",
+              responseText: response.responseText,
+              responseHash: response.responseHash,
+              latencyMs: response.latencyMs,
+              reasonCodes: response.timedOut ? ["worker_context_specialist_model_timeout"] : [],
+            };
+          },
+        });
+        if (specialistResult.toolId === "resource.scout.submit_exact_handles") {
+          for (const ref of stringList(specialistResult.input.exactContextRefs, 12)) {
+            const parsedWindow = parseWorkerFileWindowRef(ref);
+            if (!parsedWindow) {
+              deniedFileRefs.push(ref);
+              continue;
+            }
+            try {
+              snapshots.push(
+                await readBoundedFile({
+                  repoRoot: input.repoRoot,
+                  fileRef: parsedWindow.fileRef,
+                  allowedFileRefs: input.allowedFileRefs,
+                  startLine: parsedWindow.startLine,
+                  endLine: parsedWindow.endLine,
+                  maxLines: Math.min(
+                    WORKER_REPO_READ_HARD_MAX_LINES,
+                    parsedWindow.endLine - parsedWindow.startLine + 1,
+                  ),
+                }),
+              );
+            } catch {
+              deniedFileRefs.push(ref);
+            }
+          }
+        }
+      } else {
+        for (const fileRef of requestedFileRefs) {
+          const parsedWindow = parseWorkerFileWindowRef(fileRef);
+          try {
+            snapshots.push(
+              await readBoundedFile({
+                repoRoot: input.repoRoot,
+                fileRef: parsedWindow?.fileRef ?? fileRef,
+                allowedFileRefs: input.allowedFileRefs,
+                startLine: parsedWindow?.startLine ?? null,
+                endLine: parsedWindow?.endLine ?? null,
+              }),
+            );
+          } catch {
+            deniedFileRefs.push(fileRef);
+          }
         }
       }
+      const snapshotRefs = snapshots.map(
+        (snapshot) =>
+          `file-window://${snapshot.fileRef}#L${snapshot.startLine}-L${snapshot.endLine}:${snapshot.contentHash}`,
+      );
+      if (snapshots.length > 0) {
+        nodeResourceDemand = compileDemand(
+          snapshots.map((snapshot) => snapshot.fileRef),
+          snapshotRefs,
+        );
+      }
+      const resourceLedger = (() => {
+        if (!nodeResourceDemand.session || !nodeResourceDemand.fulfillment) {
+          return null;
+        }
+        const openedLedger = openNodeResourceLedger({
+          runtimeJobId: input.runtimeJobId ?? null,
+          workflowId:
+            input.nodeExecutionPacket?.workflowId ??
+            input.nodeExecutionContract?.workflowId ??
+            input.graphId ??
+            input.taskId ??
+            null,
+          graphId: input.graphId ?? null,
+          consumerNodeId: input.nodeId ?? input.taskId,
+          workIntentRef: input.nodeExecutionContract?.workIntentRef ?? null,
+          nodeExecutionContractRef: input.nodeExecutionContract?.contractRef ?? null,
+          nodeExecutionPacketRef: input.nodeExecutionPacket?.packetRef ?? null,
+          nodeResourceDemandSessionRef: nodeResourceDemand.session.sessionRef,
+          capabilityId:
+            input.nodeExecutionPacket?.capabilityId ??
+            input.nodeExecutionContract?.capabilityId ??
+            "implementation_worker",
+          evidenceMode:
+            input.nodeExecutionPacket?.evidenceMode ??
+            input.nodeExecutionContract?.evidenceMode ??
+            input.codingResourcePacket?.evidenceMode ??
+            ["changed_file_evidence"],
+          targetCommitmentIds:
+            stringList(call.input.commitmentIds, 12).length > 0
+              ? stringList(call.input.commitmentIds, 12)
+              : input.nodeExecutionPacket?.targetCommitmentIds ??
+                input.codingResourcePacket?.targetCommitmentIds ??
+                [],
+          authorityScope: input.allowedFileRefs,
+        });
+        if (!openedLedger.ledger) {
+          return openedLedger;
+        }
+        return appendNodeResourceDemandFulfillmentToLedger({
+          ledger: openedLedger.ledger,
+          session: nodeResourceDemand.session,
+          request: nodeResourceDemand.request,
+          fulfillment: nodeResourceDemand.fulfillment,
+          summary: `Worker node resource demand fulfilled ${snapshots.length} bounded snapshot ref(s).`,
+          expectedUse,
+        });
+      })();
       return outputResult({
         status: snapshots.length > 0 ? "succeeded" : "needs_review",
         outputRef: `context-request://${hash(`${input.taskId}:${requestedFileRefs.join(":")}:${reason}:${snapshots.map((s) => s.contentHash).join(":")}`).slice(0, 16)}`,
@@ -4255,10 +6186,15 @@ export class NonCodexToolUsingWorkerLoop {
             : `Worker requested ${requestedFileRefs.length} additional context refs with no bounded snapshots provided.`,
         reasonCodes: [
           snapshots.length > 0
-            ? "worker_context_request_more_fulfilled"
-            : requestedFileRefs.length > 0
+            ? forceSpecialistScout
+              ? "worker_context_request_more_specialist_subturn_completed"
+              : "worker_context_request_more_fulfilled"
+            : forceSpecialistScout
+              ? "worker_context_request_unfulfilled_missing_exact_hydrated_windows"
+              : requestedFileRefs.length > 0
               ? "worker_context_request_more_unfulfilled"
               : "worker_context_request_more_empty",
+          ...(specialistResult?.reasonCodes ?? []),
         ],
         metadata: {
           requestId:
@@ -4270,10 +6206,55 @@ export class NonCodexToolUsingWorkerLoop {
           commitmentIds: stringList(call.input.commitmentIds, 12),
           status: snapshots.length > 0 ? "provided" : "requested",
           providedContextRefs: snapshots.map((snapshot) => snapshot.fileRef),
+          exactContextRefs: snapshotRefs,
           deniedFileRefs,
           deniedReasonCode:
             deniedFileRefs.length > 0 ? "requested_context_ref_not_allowed_or_unreadable" : null,
-          snapshots,
+          snapshotManifests: snapshots.map(boundedSnapshotManifest),
+          workerContextSpecialistNarrowing:
+            specialistResult === null
+              ? null
+              : {
+                  toolId: specialistResult.toolId,
+                  turnCount: specialistResult.turnCount,
+                  openedRefCount: specialistResult.openedRefCount,
+                  searchResultCount: specialistResult.searchResultCount,
+                  selectedWindowCount: specialistResult.selectedWindowCount,
+                  exactContextRefs: stringList(specialistResult.input.exactContextRefs, 12),
+                  responseHash: specialistResult.responseHash,
+                  latencyMs: specialistResult.latencyMs,
+                  rawPromptStored: false,
+                  rawResponseStored: false,
+                  rawProviderLogStored: false,
+                },
+          workerContextSpecialistRequestSignature:
+            specialistResult === null ? null : workerContextSpecialistRequestSignature,
+          nodeResourceDemandSessionManifest: nodeResourceDemandManifest(nodeResourceDemand),
+          resourceObjectiveFocusRef: requestFocus.resourceObjectiveFocus?.focusRef ?? null,
+          resourceObjectiveFocusStatus: requestFocus.resourceObjectiveFocus?.status ?? null,
+          resourceObjectiveFocusLegalRefUniverseRef:
+            requestFocus.legalRefUniverse?.legalRefUniverseRef ?? null,
+          nodeResourceDemandRequestManifest: nodeResourceDemandMetadataValue(
+            nodeResourceDemand,
+            "nodeResourceDemandRequestManifest",
+          ),
+          nodeResourceDemandFulfillmentManifest: nodeResourceDemandMetadataValue(
+            nodeResourceDemand,
+            "nodeResourceDemandFulfillmentManifest",
+          ),
+          nodeResourceDemandBlockerManifest: nodeResourceDemandMetadataValue(
+            nodeResourceDemand,
+            "nodeResourceDemandBlockerManifest",
+          ),
+          nodeResourceDemandRef: nodeResourceDemand.session?.sessionRef ?? null,
+          nodeResourceDemandOutputRef: nodeResourceDemand.outputRef,
+          nodeResourceDemandReasonCodes: nodeResourceDemand.reasonCodes,
+          nodeResourceLedgerManifest: resourceLedgerManifest(resourceLedger),
+          nodeResourceLedgerEntryManifest: resourceLedgerEntryManifest(resourceLedger),
+          nodeResourceLedgerRef: resourceLedger?.ledger?.ledgerRef ?? null,
+          nodeResourceLedgerEntryRef: resourceLedger?.entry?.entryRef ?? null,
+          nodeResourceLedgerOutputRef: resourceLedger?.outputRef ?? null,
+          nodeResourceLedgerReasonCodes: resourceLedger?.reasonCodes ?? [],
         },
       });
     }
@@ -4305,9 +6286,94 @@ export class NonCodexToolUsingWorkerLoop {
         },
       });
     }
-    if (call.toolId === "worker.repo.search") {
+    if (call.toolId === "worker.context.open_adjacent") {
+      const adjacentFileRef =
+        stringFromUnknown(call.input.adjacentFileRef) ??
+        stringFromUnknown(call.input.adjacent_file_ref) ??
+        stringFromUnknown(call.input.fileRef) ??
+        stringFromUnknown(call.input.file_ref) ??
+        stringFromUnknown(call.input.path) ??
+        stringFromUnknown(call.input.ref);
+      if (!adjacentFileRef) {
+        return outputResult({
+          status: "needs_review",
+          outputRef: `context-adjacent://${call.callId}/missing-ref`,
+          outputSummary: "worker.context.open_adjacent requires a model-selected adjacent file ref.",
+          reasonCodes: ["worker_context_open_adjacent_ref_missing"],
+        });
+      }
+      const snapshot = await readBoundedFile({
+        repoRoot: input.repoRoot,
+        fileRef: adjacentFileRef,
+        allowedFileRefs: input.allowedFileRefs,
+        startLine: integerFromToolInput(call.input.startLine ?? call.input.start_line),
+        endLine: integerFromToolInput(call.input.endLine ?? call.input.end_line),
+        maxLines: WORKER_REPO_READ_DEFAULT_MAX_LINES,
+      }).catch(() => null);
+      if (!snapshot) {
+        return outputResult({
+          status: "needs_review",
+          outputRef: `context-adjacent://${hash(`${call.callId}:${adjacentFileRef}:denied`).slice(0, 16)}`,
+          outputSummary: "worker.context.open_adjacent could not hydrate the selected adjacent file.",
+          reasonCodes: ["worker_context_open_adjacent_denied_or_unreadable"],
+          metadata: {
+            requestedFileRef: adjacentFileRef,
+            rawPromptStored: false,
+            rawResponseStored: false,
+            rawToolLogStored: false,
+          },
+        });
+      }
+      return outputResult({
+        status: "succeeded",
+        outputRef: `context-adjacent://${hash(`${snapshot.fileRef}:${snapshot.startLine}:${snapshot.endLine}:${snapshot.contentHash}`).slice(0, 16)}`,
+        outputSummary: `worker.context.open_adjacent hydrated ${snapshot.fileRef} lines ${snapshot.startLine}-${snapshot.endLine}.`,
+        reasonCodes: [
+          "worker_context_open_adjacent_model_selected_ref_hydrated",
+          "worker_context_hydrated_window_payload_backed_manifest",
+        ],
+        metadata: {
+          requestedFileRef: adjacentFileRef,
+          snapshotManifests: [boundedSnapshotManifest(snapshot)],
+          providedContextRefs: [snapshot.fileRef],
+          exactContextRefs: [
+            `file-window://${snapshot.fileRef}#L${snapshot.startLine}-L${snapshot.endLine}:${snapshot.contentHash}`,
+          ],
+          rawPromptStored: false,
+          rawResponseStored: false,
+          rawToolLogStored: false,
+        },
+      });
+    }
+    if (
+      call.toolId === "worker.repo.search" ||
+      call.toolId === "worker.context.search" ||
+      call.toolId === "worker.context.search_symbols" ||
+      call.toolId === "worker.context.find_callers" ||
+      call.toolId === "worker.context.find_tests"
+    ) {
       const query = typeof call.input.query === "string" ? call.input.query.trim() : "";
-      if (!query) {
+      const symbolQuery =
+        query ||
+        stringFromUnknown(call.input.symbol) ||
+        stringFromUnknown(call.input.symbolName) ||
+        stringFromUnknown(call.input.symbol_name) ||
+        stringFromUnknown(call.input.functionName) ||
+        stringFromUnknown(call.input.function_name) ||
+        stringFromUnknown(call.input.subject) ||
+        "";
+      const sourceFileRef =
+        stringFromUnknown(call.input.fileRef) ??
+        stringFromUnknown(call.input.file_ref) ??
+        stringFromUnknown(call.input.path) ??
+        null;
+      const effectiveQuery =
+        call.toolId === "worker.context.find_tests" && sourceFileRef
+          ? [symbolQuery, path.basename(sourceFileRef).replace(/\.[cm]?[jt]sx?$/u, "")]
+              .filter(Boolean)
+              .join(" OR ")
+          : symbolQuery;
+      if (!effectiveQuery) {
         return outputResult({
           status: "needs_review",
           outputRef: `tool-output://${call.callId}/repo-search`,
@@ -4315,7 +6381,7 @@ export class NonCodexToolUsingWorkerLoop {
           reasonCodes: ["worker_repo_search_query_missing"],
         });
       }
-      const compiled = compileRepoSearch({ query, allowedFileRefs: input.allowedFileRefs });
+      const compiled = compileRepoSearch({ query: effectiveQuery, allowedFileRefs: input.allowedFileRefs });
       const collected: string[] = [];
       for (const term of compiled.terms.slice(0, 6)) {
         const searchArgs = [
@@ -4347,16 +6413,73 @@ export class NonCodexToolUsingWorkerLoop {
         }
       }
       const matches = [...new Set(collected)].slice(0, 20);
+      const siblingTests =
+        call.toolId === "worker.context.find_tests" && sourceFileRef
+          ? (
+              await Promise.all(
+                siblingTestFileRefs(sourceFileRef).map(async (candidate) => {
+                  try {
+                    const absolute = assertAllowedFile(input.repoRoot, candidate, input.allowedFileRefs);
+                    await stat(absolute);
+                    return candidate;
+                  } catch {
+                    return null;
+                  }
+                }),
+              )
+            ).filter((candidate): candidate is string => Boolean(candidate))
+          : [];
+      const visibleMatches =
+        call.toolId === "worker.context.find_tests"
+          ? matches.filter((line) => isTestFileRef(line.split(":")[0] ?? ""))
+          : matches;
+      const searchMatchWindows = matches
+        .map((line) => {
+          const match = /^([^:]+):([1-9]\d*):/u.exec(line);
+          if (!match) {
+            return null;
+          }
+          const lineNumber = Number.parseInt(match[2] ?? "1", 10);
+          return {
+            fileRef: match[1],
+            line: lineNumber,
+            ref: `file-window://${match[1]}#L${Math.max(1, lineNumber - 40)}-L${lineNumber + 80}`,
+            preview: line.slice(0, 300),
+          };
+        })
+        .filter((item): item is { fileRef: string; line: number; ref: string; preview: string } =>
+          Boolean(item),
+        );
       return outputResult({
         status: "succeeded",
-        outputRef: `repo-search://${hash(`${query}:${matches.join("\n")}`).slice(0, 16)}`,
-        outputSummary: `Repo search for "${bounded(query, 80)}" returned ${matches.length} bounded matches.`,
-        reasonCodes: ["worker_repo_search_completed", ...compiled.reasonCodes],
+        outputRef: `${call.toolId.startsWith("worker.context.") ? "context-search" : "repo-search"}://${hash(`${call.toolId}:${effectiveQuery}:${matches.join("\n")}:${siblingTests.join("\n")}`).slice(0, 16)}`,
+        outputSummary: `${call.toolId} for "${bounded(effectiveQuery, 80)}" returned ${visibleMatches.length || matches.length} bounded match(es).`,
+        reasonCodes: [
+          call.toolId === "worker.context.search"
+            ? "worker_context_model_authored_search_completed"
+            : call.toolId === "worker.context.search_symbols"
+              ? "worker_context_model_authored_symbol_search_completed"
+              : call.toolId === "worker.context.find_callers"
+                ? "worker_context_model_authored_caller_search_completed"
+                : call.toolId === "worker.context.find_tests"
+                  ? "worker_context_model_authored_test_search_completed"
+            : "worker_repo_search_completed",
+          ...compiled.reasonCodes,
+        ],
         metadata: {
-          query,
+          query: effectiveQuery,
           compiledTerms: compiled.terms,
           compiledScopes: compiled.scopes,
-          matchRefs: matches.map((line) => line.slice(0, 300)),
+          matchRefs: (visibleMatches.length > 0 ? visibleMatches : matches).map((line) => line.slice(0, 300)),
+          searchMatchWindows:
+            call.toolId === "worker.context.find_tests" && visibleMatches.length > 0
+              ? searchMatchWindows.filter((window) => isTestFileRef(window.fileRef))
+              : searchMatchWindows,
+          candidateTestRefs: siblingTests,
+          sourceFileRef,
+          rawPromptStored: false,
+          rawResponseStored: false,
+          rawToolLogStored: false,
         },
       });
     }
@@ -4409,7 +6532,7 @@ export class NonCodexToolUsingWorkerLoop {
           deniedFileRefs,
           deniedReasonCode:
             deniedFileRefs.length > 0 ? "requested_repo_read_ref_not_allowed_or_unreadable" : null,
-          snapshots,
+          snapshotManifests: snapshots.map(boundedSnapshotManifest),
         },
       });
     }
@@ -4462,7 +6585,7 @@ export class NonCodexToolUsingWorkerLoop {
       const scopeValidation = validateEditPlanStepScope(editPlanSteps, input);
       const planAccepted = editPlanSteps.length > 0 && scopeValidation.violations.length === 0;
       const transactionRecord = planAccepted
-        ? this.activeEditTransaction?.recordPlan(
+        ? this.activeEditTransactionFor(input)?.recordPlan(
             editPlanSteps.flatMap((step, index) =>
               step.targetFileRefs.map((fileRef, targetIndex) => ({
                 operationId: `edit-plan-${index + 1}-${targetIndex + 1}`,
@@ -4650,16 +6773,19 @@ export class NonCodexToolUsingWorkerLoop {
       for (const commandRef of refsToRun) {
         validationResults.push(await this.options.validationRunner.run(commandRef));
       }
-      const validationRefs = validationResults
-        .map((result) => result.validationRef)
-        .filter(Boolean);
-      const validationStatuses = validationResults.map((result) => result.status).filter(Boolean);
+              const validationRefs = validationResults
+                .map((result) => result.validationRef)
+                .filter(Boolean);
+              const changedFileRefs = changedFileRefsFromToolResults(toolResults);
+              const validationPhase =
+                changedFileRefs.length > 0 ? "worker_post_edit_validation" : "diagnostic_validation";
+              const validationStatuses = validationResults.map((result) => result.status).filter(Boolean);
       const passed =
         validationResults.length > 0 &&
         validationResults.every((result) => result.status === "passed");
       const failed = validationResults.some((result) => result.status === "failed");
       const notRun = validationResults.some((result) => result.status === "not_run");
-      const transactionValidation = this.activeEditTransaction?.recordValidation(
+      const transactionValidation = this.activeEditTransactionFor(input)?.recordValidation(
         validationRefs,
         passed,
       );
@@ -4696,14 +6822,16 @@ export class NonCodexToolUsingWorkerLoop {
           validationResults: validationResults.map((result) =>
             sanitizeToolInput(result as Record<string, JsonValue>),
           ),
-          validationRefs,
-          validationStatuses,
+                  validationRefs,
+                  changedFileRefs,
+                  validationPhase,
+                  validationStatuses,
           editTransactionRef: transactionValidation?.transactionRef ?? null,
           editTransactionValidation: transactionValidation
             ? (transactionValidation as unknown as JsonValue)
             : null,
-          editTransaction: this.activeEditTransaction
-            ? editTransactionRecordForMetadata(this.activeEditTransaction.snapshotRecord())
+          editTransaction: this.activeEditTransactionFor(input)
+            ? editTransactionRecordForMetadata(this.activeEditTransactionFor(input)!.snapshotRecord())
             : null,
         },
       });
@@ -4756,18 +6884,29 @@ export class NonCodexToolUsingWorkerLoop {
         typeof call.input.nextLegalTransition === "string"
           ? bounded(call.input.nextLegalTransition, 260)
           : "worker.patch.author_edit_or_worker.repair.mark_upstream_blocker_only";
+      const failureClass =
+        call.input.failureClass === "provider_no_content" ||
+        call.input.failureClass === "provider_timeout" ||
+        call.input.failureClass === "model_contract_choke"
+          ? call.input.failureClass
+          : "model_contract_choke";
+      const blockerReasonCodes = stringList(call.input.reasonCodes, 12).length > 0
+        ? stringList(call.input.reasonCodes, 12)
+        : ["worker_progress_no_edit_blocker_marked"];
       const classification = buildWorkerLoopRepairClassification({
         workerInput: input,
         classificationIdSuffix: `no-edit-blocker-${call.callId}`,
         failedBoundaryKind: "worker_loop",
-        failureClass: "model_contract_choke",
+        failureClass,
         repairStrategy: "same_boundary_repair",
         selectedRepairBoundary: "worker_loop",
         failedFieldPaths: [missingField],
         failedRefPaths: stringList(call.input.targetFileRefs, 20),
-        reasonCodes: ["worker_progress_no_edit_blocker_marked"],
+        reasonCodes: blockerReasonCodes,
         runtimeExplanation:
-          "Runtime captured that the worker had bounded snapshots and an accepted edit plan but did not produce an edit or legal upstream blocker.",
+          failureClass === "provider_no_content" || failureClass === "provider_timeout"
+            ? "Runtime captured a typed provider failure at the forced patch-author boundary without reclassifying it as context insufficiency."
+            : "Runtime captured that the worker had bounded snapshots and an accepted edit plan but did not produce an edit or legal upstream blocker.",
         expectedNextAction: nextLegalTransition,
         stopOrEscalationCondition:
           "Do not continue broad context/planning turns until the patch-author boundary produces an edit or a precise upstream blocker.",
@@ -4775,15 +6914,22 @@ export class NonCodexToolUsingWorkerLoop {
       return outputResult({
         status: "needs_review",
         outputRef: `worker-no-edit-blocker://${hash(JSON.stringify(call.input)).slice(0, 16)}`,
-        outputSummary: `No edit was produced after accepted context and edit plan; repeated tool class ${repeatedToolClass}; missing ${missingField}.`,
-        reasonCodes: ["worker_progress_no_edit_blocker_marked"],
+        outputSummary:
+          failureClass === "provider_no_content" || failureClass === "provider_timeout"
+            ? `Forced patch-author provider failure: ${repeatedToolClass}; missing ${missingField}.`
+            : `No edit was produced after accepted context and edit plan; repeated tool class ${repeatedToolClass}; missing ${missingField}.`,
+        reasonCodes: blockerReasonCodes,
         metadata: {
-          blockerKind: "no_edit_after_plan",
+          blockerKind:
+            failureClass === "provider_no_content" || failureClass === "provider_timeout"
+              ? "forced_patch_author_provider_failure"
+              : "no_edit_after_plan",
           modelSlot: typeof call.input.modelSlot === "string" ? call.input.modelSlot : "patch",
           lastAcceptedPlan,
           repeatedToolClass,
           missingField,
           nextLegalTransition,
+          failureClass,
           targetFileRefs: stringList(call.input.targetFileRefs, 20),
           targetCommitmentIds: stringList(call.input.targetCommitmentIds, 20),
           changedFileRefs: changedFileRefsFromToolResults(toolResults),
@@ -4816,7 +6962,7 @@ export class NonCodexToolUsingWorkerLoop {
         failedBoundaryKind: "worker_loop",
         failureClass: "missing_context",
         repairStrategy: "upstream_boundary_repair",
-        selectedRepairBoundary: "context_scout",
+        selectedRepairBoundary: "resource_scout",
         failedRefPaths: stringList(call.input.missingRefs ?? call.input.failedRefPaths, 20),
         failedFieldPaths: stringList(call.input.missingFields ?? call.input.failedFieldPaths, 20),
         reasonCodes: ["worker_repair_upstream_blocker_marked"],
@@ -4924,9 +7070,9 @@ export class NonCodexToolUsingWorkerLoop {
         ...claim,
         rawToolLogStored: false as const,
       }));
-      const transactionRecord = this.activeEditTransaction?.emitEvidence(transactionClaims);
-      const closeResult = this.activeEditTransaction?.close();
-      const closedRecord = this.activeEditTransaction?.snapshotRecord();
+      const transactionRecord = this.activeEditTransactionFor(input)?.emitEvidence(transactionClaims);
+      const closeResult = this.activeEditTransactionFor(input)?.close();
+      const closedRecord = this.activeEditTransactionFor(input)?.snapshotRecord();
       return outputResult({
         status:
           evidenceClaims.length > 0 && closeResult?.status === "closed"
@@ -5097,7 +7243,7 @@ export class NonCodexToolUsingWorkerLoop {
     call: NonCodexToolCall,
   ): Promise<RuntimeToolExecutorResult> {
     const edits = fileEditsFromToolInput(call.input);
-    const transaction = this.activeEditTransaction;
+    const transaction = this.activeEditTransactionFor(input);
     if (!transaction) {
       return outputResult({
         status: "needs_review",
@@ -5137,6 +7283,7 @@ export class NonCodexToolUsingWorkerLoop {
             changedFileRefs: uniqueChanged,
             validationRefs: [],
             diffHash: applyResult.diffHash,
+            beforeAfterHashes: applyResult.beforeAfterHashes,
             reasonCodes: applyResult.reasonCodes,
           })
         : null;
@@ -5171,7 +7318,7 @@ export class NonCodexToolUsingWorkerLoop {
     input: NonCodexToolUsingWorkerLoopInput,
     call: NonCodexToolCall,
   ): Promise<RuntimeToolExecutorResult> {
-    const transaction = this.activeEditTransaction;
+    const transaction = this.activeEditTransactionFor(input);
     const compoundToolId = call.toolId;
     const subEvents: Array<Record<string, JsonValue>> = [];
     const reasonCodes = [
@@ -5181,7 +7328,6 @@ export class NonCodexToolUsingWorkerLoop {
     const contextRefs = uniqueStrings(
       [
         ...input.contextPackRefs,
-        ...(input.contextSynthesisRefs ?? []),
         ...(input.sourcePromptExcerptRefs ?? []),
         ...(input.priorNodeOutputRefs ?? []),
         ...stringList(call.input.contextRefs, 20),
@@ -5406,6 +7552,7 @@ export class NonCodexToolUsingWorkerLoop {
               changedFileRefs: applyResult.changedFileRefs,
               validationRefs: [],
               diffHash: applyResult.diffHash,
+              beforeAfterHashes: applyResult.beforeAfterHashes,
               reasonCodes: [...applyResult.reasonCodes, "coding_compound_apply_patch_needs_review"],
             })
           : null;
@@ -5492,6 +7639,7 @@ export class NonCodexToolUsingWorkerLoop {
       changedFileRefs: applyResult.changedFileRefs,
       validationRefs,
       diffHash: applyResult.diffHash,
+      beforeAfterHashes: applyResult.beforeAfterHashes,
       reasonCodes: applyResult.reasonCodes,
     });
     subEvents.push({
@@ -5574,26 +7722,28 @@ export class NonCodexToolUsingWorkerLoop {
         evidenceClaims:
           Array.isArray(call.input.evidenceClaims) || Array.isArray(call.input.evidence_claims)
             ? (call.input.evidenceClaims ?? call.input.evidence_claims)
-            : (input.targetCommitmentIds ?? []).map((commitmentId) => ({
-                commitmentId,
-                claimSummary: `${compoundToolId} produced source edits, validation refs, and transaction evidence for this commitment.`,
-                changedFileRefs: applyResult.changedFileRefs,
-                validationRefs,
-                confidence: "medium",
-                rawPromptStored: false,
-                rawResponseStored: false,
-              })),
+                    : (input.targetCommitmentIds ?? []).map((commitmentId) => ({
+                        commitmentId,
+                        claimSummary: `${compoundToolId} produced source edits, validation refs, and transaction evidence for this commitment.`,
+                        changedFileRefs: applyResult.changedFileRefs,
+                        validationRefs,
+                        validationPhase: "worker_post_edit_validation",
+                        confidence: "medium",
+                        rawPromptStored: false,
+                        rawResponseStored: false,
+                      })),
       },
       input,
-    ).map((claim) => ({
-      ...claim,
-      evidenceRef: `worker-evidence://${hash(`${input.taskId}:${compoundToolId}:${claim.commitmentId}:${applyResult.diffHash}:${validationRefs.join(":")}`).slice(0, 16)}`,
-      changedFileRefs: uniqueStrings(applyResult.changedFileRefs, 20),
-      validationRefs: uniqueStrings(validationRefs, 20),
-      rawPromptStored: false as const,
-      rawResponseStored: false as const,
-      rawProviderLogStored: false as const,
-    }));
+            ).map((claim) => ({
+              ...claim,
+              evidenceRef: `worker-evidence://${hash(`${input.taskId}:${compoundToolId}:${claim.commitmentId}:${applyResult.diffHash}:${validationRefs.join(":")}`).slice(0, 16)}`,
+              changedFileRefs: uniqueStrings(applyResult.changedFileRefs, 20),
+              validationRefs: uniqueStrings(validationRefs, 20),
+              validationPhase: "worker_post_edit_validation" as const,
+              rawPromptStored: false as const,
+              rawResponseStored: false as const,
+              rawProviderLogStored: false as const,
+            }));
     const evidenceRecord = transaction.emitEvidence(
       evidenceClaims.map((claim) => ({
         ...claim,
@@ -5658,26 +7808,35 @@ export class NonCodexToolUsingWorkerLoop {
     });
   }
 
-  private recordActiveSnapshot(fileRef: string, fullPath: string, beforeContent: string): void {
-    const snapshots = this.activeRunSnapshots;
+  private recordActiveSnapshot(
+    input: Pick<NonCodexToolUsingWorkerLoopInput, "runtimeJobId" | "graphId" | "nodeId" | "taskId">,
+    fileRef: string,
+    fullPath: string,
+    beforeContent: string,
+  ): void {
+    const snapshots = this.activeRunSnapshotsFor(input);
     if (!snapshots || snapshots.has(fileRef)) {
       return;
     }
     snapshots.set(fileRef, { fullPath, beforeContent });
   }
 
-  private async rollbackActiveSnapshots(fileRefs: string[]): Promise<{
+  private async rollbackActiveSnapshots(
+    input: Pick<NonCodexToolUsingWorkerLoopInput, "runtimeJobId" | "graphId" | "nodeId" | "taskId">,
+    fileRefs: string[],
+  ): Promise<{
     restoredFileRefs: string[];
     failedFileRefs: string[];
   }> {
-    if (this.activeEditTransaction) {
-      const rollback = await this.activeEditTransaction.rollback(fileRefs);
+    const transaction = this.activeEditTransactionFor(input);
+    if (transaction) {
+      const rollback = await transaction.rollback(fileRefs);
       return {
         restoredFileRefs: rollback.restoredFileRefs,
         failedFileRefs: rollback.failedFileRefs,
       };
     }
-    const snapshots = this.activeRunSnapshots;
+    const snapshots = this.activeRunSnapshotsFor(input);
     if (!snapshots) {
       return { restoredFileRefs: [], failedFileRefs: fileRefs };
     }
@@ -5726,6 +7885,7 @@ export class NonCodexToolUsingWorkerLoop {
       diffHash: null,
       validationRefs: [],
       artifactRefs: input.toolResults.map((result) => result.invocationRef),
+      reviewArtifactRefs: reviewArtifactRefsFromToolResults(input.toolResults),
       limitations: uniqueStrings(input.limitations, 20),
       toolCalls: input.toolCalls,
       toolResults: input.toolResults,
@@ -5796,6 +7956,10 @@ function nodeExecutionPacketSummaryForModel(input: NonCodexToolUsingWorkerLoopIn
     return [];
   }
   return [
+    "NodeExecutionContract handoff:",
+    `- NodeExecutionContract ref: ${input.nodeExecutionContract?.contractRef ?? "not supplied"}`,
+    `- Contract intent: ${input.nodeExecutionContract?.executionIntent ?? "not supplied"}`,
+    `- Contract capability: ${input.nodeExecutionContract?.capabilityId ?? "not supplied"}`,
     "NodeExecutionPacket handoff:",
     `- NodeExecutionPacket ref: ${input.nodeExecutionPacket.packetRef}`,
     `- Resource packet ref: ${input.nodeExecutionPacket.resourcePacketRef}`,
@@ -6259,11 +8423,29 @@ function compilePatchAuthorEdits(input: {
   reasonCodes: string[];
   limitations: string[];
 } {
+  const planSteps = editPlanStepsFromToolResults(input.toolResults);
+  const plannedTargetRefs = uniqueStrings(
+    planSteps.flatMap((step) => step.targetFileRefs).filter(Boolean),
+    8,
+  );
   const directEdits = fileEditsFromToolInput(input.call.input);
   if (directEdits.length > 0) {
+    const shouldGroundForcedPatchPath =
+      input.call.toolId === "worker.patch.author_edit" && plannedTargetRefs.length === 1;
+    const groundedDirectEdits = shouldGroundForcedPatchPath
+      ? directEdits.map((edit) => ({
+          ...edit,
+          path: plannedTargetRefs[0]!,
+        }))
+      : directEdits;
     return {
-      edits: directEdits,
-      reasonCodes: ["worker_patch_author_direct_edits_compiled"],
+      edits: groundedDirectEdits,
+      reasonCodes: [
+        "worker_patch_author_direct_edits_compiled",
+        ...(shouldGroundForcedPatchPath
+          ? ["worker_patch_author_path_grounded_to_accepted_plan"]
+          : []),
+      ],
       limitations: [],
     };
   }
@@ -6275,11 +8457,6 @@ function compilePatchAuthorEdits(input: {
       limitations: [],
     };
   }
-  const planSteps = editPlanStepsFromToolResults(input.toolResults);
-  const plannedTargetRefs = uniqueStrings(
-    planSteps.flatMap((step) => step.targetFileRefs).filter(Boolean),
-    8,
-  );
   const targetRefs =
     plannedTargetRefs.length > 0 ? plannedTargetRefs : input.loopInput.targetFileRefs.slice(0, 8);
   const replacement =
@@ -6404,6 +8581,22 @@ function editTransactionsFromToolResults(results: NonCodexToolResult[]): EditTra
         return [transaction, ...transactions];
       })
       .filter(isEditTransactionRecord),
+  );
+}
+
+function reviewArtifactRefsFromToolResults(results: NonCodexToolResult[]): string[] {
+  return uniqueStrings(
+    results.flatMap((result) => {
+      const metadata = jsonObject(result.metadata);
+      return [
+        ...result.outputRefs.filter((ref) => ref.startsWith("worker-edit-review://")),
+        ...stringList(metadata.editReviewArtifactRef, 1),
+        ...stringList(metadata.workerEditReviewArtifactRef, 1),
+        ...stringList(metadata.actionReviewArtifactRef, 1),
+        ...stringList(metadata.reviewArtifactRefs, 20),
+      ];
+    }),
+    30,
   );
 }
 
@@ -6764,9 +8957,6 @@ function requiresPatchProgress(results: NonCodexToolResult[]): boolean {
   ) {
     return false;
   }
-  const successfulReadCount = results.filter(
-    (result) => result.toolId === "worker.repo.read_files" && result.status === "succeeded",
-  ).length;
   const editPlanCount = results.filter(
     (result) => result.toolId === "worker.edit.plan" && result.status === "succeeded",
   ).length;
@@ -6778,7 +8968,7 @@ function requiresPatchProgress(results: NonCodexToolResult[]): boolean {
       result.toolId === "worker.repair.author_edit" ||
       result.toolId.startsWith("coding."),
   );
-  return successfulReadCount > 0 && editPlanCount > 0 && !hasPatchAttempt;
+  return editPlanCount > 0 && !hasPatchAttempt;
 }
 
 function shouldValidateExistingTargetRefs(results: NonCodexToolResult[]): boolean {
@@ -6827,9 +9017,7 @@ function repoFileRefsForEvidence(refs: string[]): string[] {
 }
 
 function requiresEditPlanningAfterRead(results: NonCodexToolResult[]): boolean {
-  const successfulReadCount = results.filter(
-    (result) => result.toolId === "worker.repo.read_files" && result.status === "succeeded",
-  ).length;
+  const successfulReadCount = results.filter(hasUsableBoundedContextSnapshotResult).length;
   const editPlanCount = results.filter(
     (result) => result.toolId === "worker.edit.plan" && result.status === "succeeded",
   ).length;
@@ -6859,6 +9047,173 @@ function contextExpansionBeforeEditPlanAlreadyUsed(results: NonCodexToolResult[]
         result.status === "succeeded" &&
         result.reasonCodes.includes("worker_repo_read_files_line_ranges_completed")),
   );
+}
+
+function hasAcceptedContextAfterLatestFailedValidation(results: NonCodexToolResult[]): boolean {
+  const latestFailedValidationIndex = results.findLastIndex(
+    (result) => isValidationRunToolId(result.toolId) && result.status !== "succeeded",
+  );
+  if (latestFailedValidationIndex < 0) {
+    return false;
+  }
+  return results.slice(latestFailedValidationIndex + 1).some(hasUsableBoundedContextSnapshotResult);
+}
+
+function hasContextSearchAfterLatestFailedValidation(results: NonCodexToolResult[]): boolean {
+  const latestFailedValidationIndex = results.findLastIndex(
+    (result) => isValidationRunToolId(result.toolId) && result.status !== "succeeded",
+  );
+  if (latestFailedValidationIndex < 0) {
+    return false;
+  }
+  return results.slice(latestFailedValidationIndex + 1).some(hasContextSearchDiscoveryResult);
+}
+
+function hasOpenedUnacceptedContextAfterLatestFailedValidation(
+  results: NonCodexToolResult[],
+): boolean {
+  const latestFailedValidationIndex = results.findLastIndex(
+    (result) => isValidationRunToolId(result.toolId) && result.status !== "succeeded",
+  );
+  if (latestFailedValidationIndex < 0) {
+    return false;
+  }
+  return results
+    .slice(latestFailedValidationIndex + 1)
+    .some(hasOpenedUnacceptedContextWindowResult);
+}
+
+function hasRefinedUnacceptedContextAfterLatestFailedValidation(
+  results: NonCodexToolResult[],
+): boolean {
+  const latestFailedValidationIndex = results.findLastIndex(
+    (result) => isValidationRunToolId(result.toolId) && result.status !== "succeeded",
+  );
+  if (latestFailedValidationIndex < 0) {
+    return false;
+  }
+  return results
+    .slice(latestFailedValidationIndex + 1)
+    .some(hasRefinedUnacceptedContextWindowResult);
+}
+
+function workerContextSpecialistSignaturesBeforeEditPlan(results: NonCodexToolResult[]): string[] {
+  const firstEditPlanIndex = results.findIndex(
+    (result) => result.toolId === "worker.edit.plan" && result.status === "succeeded",
+  );
+  const prePlanResults = firstEditPlanIndex >= 0 ? results.slice(0, firstEditPlanIndex) : results;
+  return uniqueStrings(
+    prePlanResults
+      .filter((result) =>
+        result.reasonCodes.includes("worker_context_request_more_specialist_subturn_completed"),
+      )
+      .map((result) => jsonObject(result.metadata).workerContextSpecialistRequestSignature)
+      .filter((signature): signature is string => typeof signature === "string"),
+    12,
+  );
+}
+
+function contextToolCallCanOpenWorkerScoutSubturn(call: NonCodexToolCall): boolean {
+  if (call.toolId !== "worker.context.request_more" && call.toolId !== "worker.repo.read_files") {
+    return false;
+  }
+  return requestedContextFileRefsFromCall(call).length > 0 || readFileSpecsFromCall(call).length > 0;
+}
+
+function contextRequestSignatureFromCall(call: NonCodexToolCall): string {
+  const refs = uniqueStrings(
+    [
+      ...requestedContextFileRefsFromCall(call),
+      ...readFileSpecsFromCall(call).map((spec) =>
+        spec.startLine !== null || spec.endLine !== null
+          ? `${spec.fileRef}#L${spec.startLine ?? 1}-L${spec.endLine ?? "?"}`
+          : spec.fileRef,
+      ),
+    ],
+    16,
+  );
+  return hash(
+    JSON.stringify({
+      toolClass: "worker_context",
+      refs,
+      reason: bounded(call.reason, 320),
+      expectedUse: typeof call.input.expectedUse === "string" ? bounded(call.input.expectedUse, 320) : "",
+    }),
+  ).slice(0, 16);
+}
+
+function shouldRouteAdditionalPrePlanContextViaWorkerScout(input: {
+  blockedToolCalls: NonCodexToolCall[];
+  toolResults: NonCodexToolResult[];
+}): boolean {
+  if (!contextExpansionBeforeEditPlanAlreadyUsed(input.toolResults)) {
+    return false;
+  }
+  const usedSignatures = workerContextSpecialistSignaturesBeforeEditPlan(input.toolResults);
+  if (usedSignatures.length >= 3) {
+    return false;
+  }
+  return input.blockedToolCalls.some(
+    (call) =>
+      contextToolCallCanOpenWorkerScoutSubturn(call) &&
+      !usedSignatures.includes(contextRequestSignatureFromCall(call)),
+  );
+}
+
+function workerScoutContextRequestFromContextCall(input: {
+  call: NonCodexToolCall;
+  turn: number;
+}): NonCodexToolCall {
+  if (input.call.toolId === "worker.context.request_more") {
+    return {
+      ...input.call,
+    input: {
+      ...input.call.input,
+      runtimeUseSpecialistScout: true,
+      runtimeContextRequestSignature: contextRequestSignatureFromCall(input.call),
+      rawPromptStored: false,
+      rawResponseStored: false,
+      rawProviderLogStored: false,
+        rawToolLogStored: false,
+      },
+    };
+  }
+  const fileWindowRefs = readFileSpecsFromCall(input.call)
+    .filter((spec) => spec.startLine !== null || spec.endLine !== null)
+    .map((spec) => {
+      const startLine = Math.max(1, spec.startLine ?? 1);
+      const endLine = Math.max(startLine, spec.endLine ?? startLine + WORKER_REPO_READ_DEFAULT_MAX_LINES - 1);
+      return `file-window://${spec.fileRef}#L${startLine}-L${endLine}`;
+    });
+  const requestedFileRefs = uniqueStrings(
+    [
+      ...fileWindowRefs,
+      ...requestedContextFileRefsFromCall(input.call),
+      ...readFileSpecsFromCall(input.call).map((spec) => spec.fileRef),
+    ],
+    12,
+  );
+  return {
+    callId: `${input.call.callId || "context"}-worker-scout-${input.turn}`,
+    toolId: "worker.context.request_more",
+    reason:
+      "Runtime converted an additional pre-plan context read into a worker-owned specialist scout subturn so the model can narrow exact windows instead of repeating broad reads.",
+    input: {
+      requestedFileRefs,
+      reason: input.call.reason || "Worker requested additional context before edit planning.",
+      expectedUse:
+        typeof input.call.input.expectedUse === "string"
+          ? input.call.input.expectedUse
+          : "Use the scout-selected exact windows to decide the bounded edit plan.",
+      sourceToolId: input.call.toolId,
+      runtimeUseSpecialistScout: true,
+      runtimeContextRequestSignature: contextRequestSignatureFromCall(input.call),
+      rawPromptStored: false,
+      rawResponseStored: false,
+      rawProviderLogStored: false,
+      rawToolLogStored: false,
+    },
+  };
 }
 
 function isContextToolCall(call: NonCodexToolCall): boolean {
@@ -6918,6 +9273,86 @@ function contextRequestCountAfterEditPlan(results: NonCodexToolResult[]): number
     .filter(
       (result) => result.toolId === "worker.context.request_more" && result.status === "succeeded",
     ).length;
+}
+
+function canRunForcedPatchAuthorFromCurrentWorkerContext(results: NonCodexToolResult[]): boolean {
+  const latestForceAuthorIndex = results.findLastIndex(
+    (result) =>
+      result.toolId === "worker.patch.force_author_from_plan" && result.status === "succeeded",
+  );
+  if (latestForceAuthorIndex < 0) {
+    return true;
+  }
+  return results
+    .slice(latestForceAuthorIndex + 1)
+    .some(
+      (result) =>
+        result.toolId === "worker.context.request_more" &&
+        result.status === "succeeded" &&
+        result.reasonCodes.includes("worker_context_request_more_specialist_subturn_completed"),
+    );
+}
+
+function workerScoutContextRequestFromForcedPatchBlocker(input: {
+  blockerCall: NonCodexToolCall;
+  blockerResult: NonCodexToolResult;
+  input: NonCodexToolUsingWorkerLoopInput;
+  planStep: KimiEditPlanStep;
+  turn: number;
+  toolResults: NonCodexToolResult[];
+}): NonCodexToolCall | null {
+  if (
+    contextRequestCountAfterEditPlan(input.toolResults) >= WORKER_FORCED_PATCH_CONTEXT_EXPANSION_MAX
+  ) {
+    return null;
+  }
+  const metadata = jsonObject(input.blockerResult.metadata);
+  const requestedFileRefs = uniqueStrings(
+    [
+      ...stringList(input.blockerCall.input.missingRefs, 12),
+      ...stringList(input.blockerCall.input.failedRefPaths, 12),
+      ...stringList(metadata.missingRefs, 12),
+      ...input.planStep.targetFileRefs,
+      ...input.input.targetFileRefs,
+    ],
+    12,
+  );
+  if (requestedFileRefs.length === 0) {
+    return null;
+  }
+  const blockerSummary =
+    typeof input.blockerCall.input.blockerSummary === "string"
+      ? bounded(input.blockerCall.input.blockerSummary, 800)
+      : typeof metadata.blockerSummary === "string"
+        ? bounded(metadata.blockerSummary, 800)
+        : bounded(input.blockerResult.summary, 800);
+  const contextSeedCall: NonCodexToolCall = {
+    callId: `forced-patch-blocker-context-${input.turn}`,
+    toolId: "worker.context.request_more",
+    reason:
+      "Patch-author reported that the current bounded snapshot is insufficient; open a worker-owned specialist scout subturn to select exact windows for the accepted edit plan.",
+    input: {
+      requestedFileRefs,
+      reason: blockerSummary,
+      expectedUse:
+        "Select exact file-window refs that let the worker complete the already accepted edit plan and author the patch safely.",
+      commitmentIds: input.planStep.commitmentIdsAdvanced,
+      sourceToolId: input.blockerCall.toolId,
+      sourceToolInvocationRef: input.blockerResult.invocationRef,
+      runtimeUseSpecialistScout: true,
+      rawPromptStored: false,
+      rawResponseStored: false,
+      rawProviderLogStored: false,
+      rawToolLogStored: false,
+    },
+  };
+  return {
+    ...contextSeedCall,
+    input: {
+      ...contextSeedCall.input,
+      runtimeContextRequestSignature: contextRequestSignatureFromCall(contextSeedCall),
+    },
+  };
 }
 
 function hasPatchProgressCall(calls: NonCodexToolCall[], results: NonCodexToolResult[]): boolean {
@@ -6996,7 +9431,10 @@ async function forcedPatchSnapshotForPlan(
     return await forcedPatchSnapshotWindowsForPlan(input, targetFileRef, targetRegions);
   }
   for (const result of results.toReversed()) {
-    const snapshots = jsonObject(result.metadata).snapshots;
+    const metadata = jsonObject(result.metadata);
+    const snapshots = Array.isArray(metadata.snapshotManifests)
+      ? metadata.snapshotManifests
+      : metadata.snapshots;
     if (!Array.isArray(snapshots)) {
       continue;
     }
@@ -7009,16 +9447,55 @@ async function forcedPatchSnapshotForPlan(
     if (snapshot && typeof snapshot === "object" && !Array.isArray(snapshot)) {
       const record = snapshot as Record<string, JsonValue>;
       const lineNumbered =
-        typeof record.lineNumberedContent === "string" ? record.lineNumberedContent : null;
+        typeof record.lineNumberedContent === "string"
+          ? record.lineNumberedContent
+          : typeof record.lineNumberedPreview === "string"
+            ? record.lineNumberedPreview
+            : null;
       const contentHash = typeof record.contentHash === "string" ? record.contentHash : null;
+      const snapshotStartLine = typeof record.startLine === "number" ? record.startLine : 1;
+      const snapshotEndLine =
+        typeof record.endLine === "number" ? record.endLine : snapshotStartLine;
+      const snapshotIsExactWindow =
+        record.rangeRequested === true ||
+        (typeof record.snapshotRef === "string" && record.snapshotRef.startsWith("file-window://"));
+      if (contentHash && snapshotIsExactWindow) {
+        const hydrated = await readBoundedFile({
+          repoRoot: input.repoRoot,
+          fileRef: targetFileRef,
+          allowedFileRefs: input.allowedFileRefs,
+          startLine: snapshotStartLine,
+          endLine: snapshotEndLine,
+          maxLines: Math.min(
+            WORKER_REPO_READ_HARD_MAX_LINES,
+            Math.max(1, snapshotEndLine - snapshotStartLine + 1),
+          ),
+          maxChars: WORKER_FORCED_PATCH_SNAPSHOT_MAX_CHARS,
+        }).catch(() => null);
+        if (hydrated) {
+          return {
+            fileRef: hydrated.fileRef,
+            sourceKind: "repo_file",
+            contentHash: hydrated.contentHash,
+            lineNumberedContent: hydrated.lineNumberedContent.slice(
+              0,
+              WORKER_FORCED_PATCH_SNAPSHOT_MAX_CHARS,
+            ),
+            startLine: hydrated.startLine,
+            endLine: hydrated.endLine,
+            totalLineCount: hydrated.totalLineCount,
+            truncated: hydrated.truncated,
+          };
+        }
+      }
       if (lineNumbered && contentHash && record.truncated !== true) {
         return {
           fileRef: targetFileRef,
           sourceKind: "repo_file",
           contentHash,
-          lineNumberedContent: bounded(lineNumbered, 14_000),
-          startLine: typeof record.startLine === "number" ? record.startLine : 1,
-          endLine: typeof record.endLine === "number" ? record.endLine : 1,
+          lineNumberedContent: lineNumbered.slice(0, WORKER_FORCED_PATCH_SNAPSHOT_MAX_CHARS),
+          startLine: snapshotStartLine,
+          endLine: snapshotEndLine,
           totalLineCount: typeof record.totalLineCount === "number" ? record.totalLineCount : 1,
           truncated: false,
         };
@@ -7042,7 +9519,10 @@ async function forcedPatchSnapshotForPlan(
       fileRef: snapshot.fileRef,
       sourceKind: "repo_file",
       contentHash: snapshot.contentHash,
-      lineNumberedContent: bounded(snapshot.lineNumberedContent, 16_000),
+      lineNumberedContent: snapshot.lineNumberedContent.slice(
+        0,
+        WORKER_FORCED_PATCH_SNAPSHOT_MAX_CHARS,
+      ),
       startLine: snapshot.startLine,
       endLine: snapshot.endLine,
       totalLineCount: snapshot.totalLineCount,
@@ -7157,6 +9637,8 @@ function noEditBlockerToolCall(input: {
   repeatedToolClass: string;
   missingField: string;
   nextLegalTransition: string;
+  failureClass?: RuntimeRepairFailureClass;
+  reasonCodes?: string[];
 }): NonCodexToolCall {
   return {
     callId: `runtime-no-edit-blocker-${input.turn}`,
@@ -7169,6 +9651,8 @@ function noEditBlockerToolCall(input: {
       repeatedToolClass: input.repeatedToolClass,
       missingField: input.missingField,
       nextLegalTransition: input.nextLegalTransition,
+      failureClass: input.failureClass ?? null,
+      reasonCodes: input.reasonCodes ?? [],
       targetFileRefs: input.input.targetFileRefs.slice(0, 12),
       targetCommitmentIds: (input.input.targetCommitmentIds ?? []).slice(0, 12),
       rawPromptStored: false,
@@ -7179,7 +9663,16 @@ function noEditBlockerToolCall(input: {
 
 function requestedContextFileRefsFromCall(call: NonCodexToolCall): string[] {
   return stringList(
-    call.input.requestedFileRefs ?? call.input.fileRefs ?? call.input.file_refs,
+    call.input.requestedFileRefs ??
+      call.input.requested_file_refs ??
+      call.input.fileRefs ??
+      call.input.file_refs ??
+      call.input.targetFileRefs ??
+      call.input.target_file_refs ??
+      call.input.paths ??
+      call.input.path ??
+      call.input.fileRef ??
+      call.input.file_ref,
     12,
   );
 }
@@ -7337,6 +9830,43 @@ function withPatchFreshnessReadBeforeStaleApply(input: {
   });
 }
 
+function compilePrePlanPatchApplicatorToEditPlanCall(input: {
+  call: NonCodexToolCall;
+  loopInput: NonCodexToolUsingWorkerLoopInput;
+  toolResults: NonCodexToolResult[];
+  turn: number;
+}): NonCodexToolCall | null {
+  if (
+    input.call.toolId !== "worker.edit.apply_from_plan" &&
+    input.call.toolId !== "worker.patch.author_edit"
+  ) {
+    return null;
+  }
+  if (editPlanStepsFromToolResults(input.toolResults).length > 0) {
+    return null;
+  }
+  const normalization = editPlanStepsFromToolInputWithDiagnostics(
+    input.call.input,
+    input.loopInput,
+  );
+  return {
+    callId: `${input.call.callId || "patch-author"}-runtime-edit-plan-${input.turn}`,
+    toolId: "worker.edit.plan",
+    reason:
+      "Runtime requires an accepted edit plan before any patch applicator; this plan was compiled from the model-authored patch body without executing that patch body directly.",
+    input: {
+      editPlanSteps: normalization.steps as unknown as JsonValue,
+      sourceToolId: input.call.toolId,
+      sourceCallId: input.call.callId,
+      runtimeCompiledFromPrePlanPatchAuthor: true,
+      normalizationReasonCodes: normalization.reasonCodes,
+      rawPromptStored: false,
+      rawResponseStored: false,
+      rawToolLogStored: false,
+    },
+  };
+}
+
 function buildPatchFreshnessReadCall(input: {
   callId: string;
   stalePatchFailureRefs: string[];
@@ -7396,7 +9926,10 @@ function hasFreshSnapshotAfter(
     ) {
       return false;
     }
-    const snapshots = jsonObject(result.metadata).snapshots;
+    const metadata = jsonObject(result.metadata);
+    const snapshots = Array.isArray(metadata.snapshotManifests)
+      ? metadata.snapshotManifests
+      : metadata.snapshots;
     if (!Array.isArray(snapshots)) {
       return false;
     }
@@ -7513,6 +10046,7 @@ function evidenceClaimsFromToolInput(
 ): KimiEvidenceClaim[] {
   const changedFileRefs = stringList(input.changedFileRefs, 20);
   const validationRefs = stringList(input.validationRefs, 20);
+  const defaultEvidenceKind = evidenceKindForLoopInput(loopInput);
   const claims = Array.isArray(input.evidenceClaims)
     ? input.evidenceClaims
     : Array.isArray(input.claims)
@@ -7538,6 +10072,7 @@ function evidenceClaimsFromToolInput(
           typeof claim.evidenceRef === "string"
             ? claim.evidenceRef
             : `worker-evidence://${hash(`${loopInput.taskId}:${commitmentId}`).slice(0, 16)}`,
+        evidenceKind: evidenceKindFromValue(claim.evidenceKind) ?? defaultEvidenceKind,
         claimSummary:
           typeof claim.claimSummary === "string"
             ? claim.claimSummary
@@ -7546,6 +10081,15 @@ function evidenceClaimsFromToolInput(
               : "Non-Codex worker emitted commitment evidence.",
         changedFileRefs: stringList(claim.changedFileRefs, 20),
         validationRefs: stringList(claim.validationRefs, 20),
+        validationPhase:
+          claim.validationPhase === "worker_post_edit_validation" ||
+          claim.validationPhase === "pre_execution_validation" ||
+          claim.validationPhase === "review_validation" ||
+          claim.validationPhase === "closeout_validation" ||
+          claim.validationPhase === "pre_proof_validation" ||
+          claim.validationPhase === "diagnostic_validation"
+            ? claim.validationPhase
+            : "worker_post_edit_validation",
         limitations: stringList(claim.limitations, 8),
         confidence:
           claim.confidence === "high" || claim.confidence === "low" || claim.confidence === "medium"
@@ -7564,12 +10108,14 @@ function evidenceClaimsFromToolInput(
     (commitmentId): KimiEvidenceClaim => ({
       commitmentId,
       evidenceRef: `worker-evidence://${hash(`${loopInput.taskId}:${commitmentId}`).slice(0, 16)}`,
+      evidenceKind: defaultEvidenceKind,
       claimSummary:
         typeof input.claimSummary === "string"
           ? input.claimSummary
           : "Non-Codex worker emitted changed-file and validation evidence.",
       changedFileRefs,
       validationRefs,
+      validationPhase: "worker_post_edit_validation",
       limitations: stringList(input.limitations, 8),
       confidence: "medium",
       rawPromptStored: false,
@@ -7615,19 +10161,70 @@ function evidenceClaimsFromValidationToolResults(
   if (changedFileRefs.length === 0 || validationRefs.length === 0) {
     return [];
   }
+  const evidenceKind = evidenceKindForLoopInput(loopInput);
   return commitmentIds.slice(0, 8).map((commitmentId) => ({
     evidenceRef: `worker-evidence://${hash(`${loopInput.taskId}:${commitmentId}:${changedFileRefs.join(":")}:${validationRefs.join(":")}`).slice(0, 16)}`,
     commitmentId,
+    evidenceKind,
     claimSummary:
       "Runtime observed changed-file refs and passed validation refs for this worker node; downstream model review must judge semantic sufficiency.",
     changedFileRefs,
     validationRefs,
+    validationPhase: "worker_post_edit_validation" as const,
     limitations: [],
     confidence: "medium",
     rawPromptStored: false,
     rawResponseStored: false,
     rawProviderLogStored: false,
   }));
+}
+
+function evidenceKindForLoopInput(
+  loopInput: NonCodexToolUsingWorkerLoopInput,
+): KimiEvidenceClaim["evidenceKind"] {
+  for (const candidate of loopInput.expectedEvidenceClaimKinds ?? []) {
+    const evidenceKind = evidenceKindFromValue(candidate);
+    if (evidenceKind) {
+      return evidenceKind;
+    }
+  }
+  const packetKinds = [
+    ...(loopInput.nodeExecutionPacket?.evidenceMode ?? []),
+    ...(loopInput.nodeExecutionContract?.evidenceMode ?? []),
+  ];
+  if (packetKinds.includes("validation_evidence")) {
+    return "test_validation";
+  }
+  if (packetKinds.includes("changed_file_evidence")) {
+    return "source_change";
+  }
+  if (
+    loopInput.roleId.toLowerCase().includes("test") ||
+    loopInput.taskId.toLowerCase().includes("test") ||
+    loopInput.nodeExecutionPacket?.nodeKind === "test_authoring" ||
+    loopInput.nodeExecutionContract?.nodeKind === "test_authoring"
+  ) {
+    return "test_validation";
+  }
+  return "source_change";
+}
+
+function evidenceKindFromValue(value: unknown): KimiEvidenceClaim["evidenceKind"] | null {
+  return value === "source_change" ||
+    value === "test_validation" ||
+    value === "review" ||
+    value === "docs" ||
+    value === "readback" ||
+    value === "artifact" ||
+    value === "human_decision" ||
+    value === "closeout" ||
+    value === "research_brief" ||
+    value === "planning_capsule" ||
+    value === "action_graph_proposal" ||
+    value === "compile_readiness" ||
+    value === "other"
+    ? value
+    : null;
 }
 
 function contextRequestsFromToolResults(
@@ -7793,8 +10390,219 @@ function buildForcedPatchAuthorFromPlanPrompt(input: {
     '{"toolCalls":[{"callId":"author-edit","toolId":"worker.patch.author_edit","reason":"...","input":{"path":"relative/path.ts","operation":"replace_range","targetRegion":{"startLine":10,"endLine":14},"replacement":"replacement lines","rationale":"..."}}]}',
     '{"toolCalls":[{"callId":"author-text-edit","toolId":"worker.patch.author_edit","reason":"...","input":{"path":"relative/path.ts","operation":"replace_text","targetText":"exact current text from snapshot","replacement":"replacement text","occurrenceIndex":0,"rationale":"..."}}]}',
     '{"toolCalls":[{"callId":"author-create-file","toolId":"worker.patch.author_edit","reason":"...","input":{"path":"relative/path.ts","operation":"create_file","content":"complete file content","rationale":"..."}}]}',
-    '{"toolCalls":[{"callId":"upstream-blocker","toolId":"worker.repair.mark_upstream_blocker","reason":"Cannot edit safely from the accepted snapshot.","input":{"blockerSummary":"...","requestedUpstreamAction":"repair_context_handoff","missingRefs":["relative/path.ts"],"missingFields":["..."]}}]}',
+    '{"toolCalls":[{"callId":"upstream-blocker","toolId":"worker.repair.mark_upstream_blocker","reason":"Cannot edit safely from the accepted snapshot.","input":{"blockerSummary":"...","requestedUpstreamAction":"repair_resource_handoff","missingRefs":["relative/path.ts"],"missingFields":["..."]}}]}',
   ].join("\n");
+}
+
+function surfaceAllows(
+  surface: WorkerLifecycleToolSurface,
+  toolId: NonCodexToolUsingWorkerToolId,
+): boolean {
+  return surface.allowedToolIds.includes(toolId);
+}
+
+function workerToolGuidanceForSurface(surface: WorkerLifecycleToolSurface): string[] {
+  const lines: string[] = [];
+  if (surfaceAllows(surface, "worker.context.request_more")) {
+    lines.push(
+      "For worker.context.request_more, include exact repo-relative refs in input.requestedFileRefs. Use refs copied from Allowed file refs or Target file refs. Include input.reason and input.expectedUse. Empty context requests are rejected. Returned snapshots are only raw reading material; they do not unlock edit planning until a later worker.context.accept_window/report_* tool accepts exact file-window refs.",
+    );
+  }
+  if (surfaceAllows(surface, "worker.context.search")) {
+    lines.push(
+      "For worker.context.search, author the search query yourself from the objective, commitments, restrictions, and prior context. Runtime searches only approved refs and returns match/window handles; it does not choose semantic targets.",
+    );
+  }
+  if (surfaceAllows(surface, "worker.context.open_around_match")) {
+    lines.push(
+      "For worker.context.open_around_match, select one exact match/window handle from a previous context search result. Runtime opens a bounded mechanical window around it; after reading you may expand_window, contract_window, accept_window, or search again.",
+    );
+  }
+  if (surfaceAllows(surface, "worker.context.expand_window")) {
+    lines.push(
+      "For worker.context.expand_window, cite an existing file-window ref and choose beforeLines/afterLines or exact startLine/endLine. The model chooses expansion bounds; runtime only validates and hydrates.",
+    );
+  }
+  if (surfaceAllows(surface, "worker.context.contract_window")) {
+    lines.push(
+      "For worker.context.contract_window, cite an existing file-window ref and exact startLine/endLine after reading. Use this when the initial mechanical window is too broad.",
+    );
+  }
+  if (surfaceAllows(surface, "worker.context.accept_window")) {
+    lines.push(
+      "For worker.context.accept_window, cite exact hydrated file-window refs and state expectedUse. A window does not count as useful context until the model accepts or reports it into the node ledger. If bounds are wrong, use expand_window or contract_window before accepting.",
+    );
+  }
+  if (surfaceAllows(surface, "worker.context.search_symbols")) {
+    lines.push(
+      "For worker.context.search_symbols, author a symbol or behavior query after reading current context. Runtime mechanically searches approved refs and returns bounded match handles; it does not decide semantic relevance.",
+    );
+  }
+  if (surfaceAllows(surface, "worker.context.find_callers")) {
+    lines.push(
+      "For worker.context.find_callers, name the function, export, type, route, or behavior whose call sites matter. Runtime searches mechanically; you choose which returned handle to open.",
+    );
+  }
+  if (surfaceAllows(surface, "worker.context.find_tests")) {
+    lines.push(
+      "For worker.context.find_tests, provide the source file or symbol to locate related tests. Runtime returns sibling/candidate test refs and bounded match handles only.",
+    );
+  }
+  if (surfaceAllows(surface, "worker.context.open_adjacent")) {
+    lines.push(
+      "For worker.context.open_adjacent, select a concrete adjacent file ref discovered from search, tests, imports, or prior context. Runtime hydrates a bounded window and validates authority only.",
+    );
+  }
+  if (surfaceAllows(surface, "worker.repo.read_files")) {
+    lines.push(
+      'For worker.repo.read_files, request only exact allowed repo-relative refs. If an earlier snapshot was truncated, request a bounded window with input.fileRanges [{"fileRef":"relative/path.ts","startLine":120,"endLine":260}] instead of requesting a full file again or inventing shorthand refs like CURRENT_SLICE.',
+    );
+  }
+  if (surfaceAllows(surface, "worker.edit.plan")) {
+    lines.push(
+      "For worker.edit.plan, submit only the next bounded edit plan. Do not include an edit body in the same lifecycle phase; runtime will open the forced patch-author boundary after the plan is accepted.",
+    );
+    lines.push(
+      "Scope rule: worker.edit.plan target refs must be allowed file refs or descendants of allowed directory refs. If the needed output file is outside scope, use worker.repair.mark_upstream_blocker.",
+    );
+  }
+  if (surface.phase === "patch_author") {
+    lines.push(
+      "An accepted edit plan exists. Runtime owns the forced patch-author subturn; do not select worker.patch.force_author_from_plan or any broader planning, validation, evidence, or generic edit tool.",
+    );
+  }
+  if (surface.phase === "validation_repair") {
+    lines.push(
+      "For validation repair, use the same Codex-like search/read/refine loop when the failure reveals missing context: search symbols, callers, tests, open a bounded window, expand or contract it, accept useful context, then author a narrow repair edit. worker.validation.explain_failure is diagnostic-only and must be paired with context discovery, an actionable repair, validation rerun for explicitly transient failures, upstream blocker, or escalation.",
+    );
+  }
+  if (surface.phase === "worker_post_edit_validation") {
+    lines.push(
+      "Source edits already exist. The only normal next step is worker.validation.run or worker.validation.run_structural_default from approved validation refs/defaults.",
+    );
+  }
+  if (surface.phase === "evidence") {
+    lines.push(
+      "Validation already passed. Claim commitment-linked evidence from changed-file refs and validation refs already produced by runtime tools. If an evidence gap remains, use context search/read tools to inspect only the bounded refs needed to map the claim; do not reopen implementation planning.",
+    );
+  }
+  return lines;
+}
+
+function workerToolJsonShapesForSurface(surface: WorkerLifecycleToolSurface): string[] {
+  const shapes: string[] = [];
+  if (surfaceAllows(surface, "worker.context.request_more")) {
+    shapes.push(
+      '{"toolCalls":[{"callId":"request-context","toolId":"worker.context.request_more","reason":"Need the implementation surface before target selection.","input":{"requestedFileRefs":["relative/path.ts"],"reason":"Inspect this file to identify the next legal target selection.","expectedUse":"Use the bounded snapshot to select targets and avoid broad context."}}]}',
+    );
+  }
+  if (surfaceAllows(surface, "worker.context.propose_searches")) {
+    shapes.push(
+      '{"toolCalls":[{"callId":"propose-searches","toolId":"worker.context.propose_searches","reason":"Derive model-authored context searches from the objective.","input":{"searchTerms":["specific symbol or behavior"],"reason":"...","expectedUse":"Find exact windows for edit planning."}}]}',
+    );
+  }
+  if (surfaceAllows(surface, "worker.context.search")) {
+    shapes.push(
+      '{"toolCalls":[{"callId":"context-search","toolId":"worker.context.search","reason":"Search for the relevant implementation surface.","input":{"query":"specific symbol or behavior","expectedUse":"Find exact windows for edit planning."}}]}',
+    );
+  }
+  if (surfaceAllows(surface, "worker.context.open_around_match")) {
+    shapes.push(
+      '{"toolCalls":[{"callId":"open-match","toolId":"worker.context.open_around_match","reason":"Open the most relevant match before deciding whether to expand or contract.","input":{"matchRef":"file-window://relative/path.ts#L100-L180","expectedUse":"Inspect implementation pattern."}}]}',
+    );
+  }
+  if (surfaceAllows(surface, "worker.context.expand_window")) {
+    shapes.push(
+      '{"toolCalls":[{"callId":"expand-window","toolId":"worker.context.expand_window","reason":"Need surrounding setup/imports or downstream call sites.","input":{"windowRef":"file-window://relative/path.ts#L100-L180","beforeLines":80,"afterLines":120,"expectedUse":"Read surrounding implementation context."}}]}',
+    );
+  }
+  if (surfaceAllows(surface, "worker.context.contract_window")) {
+    shapes.push(
+      '{"toolCalls":[{"callId":"contract-window","toolId":"worker.context.contract_window","reason":"Narrow to exact edit-relevant range after reading.","input":{"windowRef":"file-window://relative/path.ts#L100-L220","startLine":135,"endLine":175,"expectedUse":"Use exact lines for edit planning."}}]}',
+    );
+  }
+  if (surfaceAllows(surface, "worker.context.accept_window")) {
+    shapes.push(
+      '{"toolCalls":[{"callId":"accept-window","toolId":"worker.context.accept_window","reason":"This hydrated window is useful for the current edit plan.","input":{"windowRefs":["file-window://relative/path.ts#L135-L175"],"summary":"...","expectedUse":"Target/resource selection and edit planning."}}]}',
+    );
+  }
+  if (surfaceAllows(surface, "worker.context.search_symbols")) {
+    shapes.push(
+      '{"toolCalls":[{"callId":"search-symbol","toolId":"worker.context.search_symbols","reason":"Find the symbol or behavior revealed by the current failure/context.","input":{"symbol":"specificSymbolOrBehavior","expectedUse":"Find exact windows for edit or validation repair."}}]}',
+    );
+  }
+  if (surfaceAllows(surface, "worker.context.find_callers")) {
+    shapes.push(
+      '{"toolCalls":[{"callId":"find-callers","toolId":"worker.context.find_callers","reason":"Inspect callers before editing or repairing validation.","input":{"symbol":"exportedFunctionName","expectedUse":"Find caller windows that constrain the change."}}]}',
+    );
+  }
+  if (surfaceAllows(surface, "worker.context.find_tests")) {
+    shapes.push(
+      '{"toolCalls":[{"callId":"find-tests","toolId":"worker.context.find_tests","reason":"Find related tests for validation repair.","input":{"fileRef":"relative/path.ts","symbol":"specificSymbolOrBehavior","expectedUse":"Open the failing or adjacent test window."}}]}',
+    );
+  }
+  if (surfaceAllows(surface, "worker.context.open_adjacent")) {
+    shapes.push(
+      '{"toolCalls":[{"callId":"open-adjacent","toolId":"worker.context.open_adjacent","reason":"Open the model-selected adjacent caller/test/import file.","input":{"adjacentFileRef":"relative/path.test.ts","startLine":1,"endLine":180,"expectedUse":"Read adjacent constraints before the next edit."}}]}',
+    );
+  }
+  if (surfaceAllows(surface, "worker.repo.search")) {
+    shapes.push(
+      '{"toolCalls":[{"callId":"search-target","toolId":"worker.repo.search","reason":"Find relevant implementation files.","input":{"query":"symbol or behavior to inspect"}}]}',
+    );
+  }
+  if (surfaceAllows(surface, "worker.repo.read_files")) {
+    shapes.push(
+      '{"toolCalls":[{"callId":"read-target","toolId":"worker.repo.read_files","reason":"Read the target snapshot.","input":{"fileRefs":["relative/path.ts"]}}]}',
+    );
+    shapes.push(
+      '{"toolCalls":[{"callId":"read-range","toolId":"worker.repo.read_files","reason":"Read a bounded line window from a truncated target snapshot.","input":{"fileRanges":[{"fileRef":"relative/path.ts","startLine":120,"endLine":260}]}}]}',
+    );
+  }
+  if (surfaceAllows(surface, "worker.edit.plan")) {
+    shapes.push(
+      '{"toolCalls":[{"callId":"plan-edit","toolId":"worker.edit.plan","reason":"Plan the scoped edit before runtime opens patch authoring.","input":{"editPlanSteps":[{"stepId":"step-1","objective":"...","targetFileRefs":["relative/path.ts"],"validationExpectation":"...","commitmentIdsAdvanced":["..."]}]}}]}',
+    );
+  }
+  if (surfaceAllows(surface, "worker.validation.run")) {
+    shapes.push(
+      '{"toolCalls":[{"callId":"run-validation","toolId":"worker.validation.run","reason":"Run approved validation after source edits.","input":{"commandRefs":["pnpm test:file example.test.ts"]}}]}',
+    );
+  }
+  if (surfaceAllows(surface, "worker.validation.run_structural_default")) {
+    shapes.push(
+      '{"toolCalls":[{"callId":"run-structural-validation","toolId":"worker.validation.run_structural_default","reason":"Run runtime-owned structural validation for changed files.","input":{}}]}',
+    );
+  }
+  if (surfaceAllows(surface, "worker.repair.author_edit")) {
+    shapes.push(
+      '{"toolCalls":[{"callId":"repair-validation","toolId":"worker.repair.author_edit","reason":"Repair validation failure using bounded failure context.","input":{"path":"relative/path.ts","operation":"replace_range","targetRegion":{"startLine":10,"endLine":14},"replacement":"replacement lines","rationale":"..."}}]}',
+    );
+  }
+  if (surfaceAllows(surface, "worker.evidence.claim_from_validation")) {
+    shapes.push(
+      '{"toolCalls":[{"callId":"claim-evidence","toolId":"worker.evidence.claim_from_validation","reason":"Runtime validation passed and changed-file refs are available.","input":{"changedFileRefs":["relative/path.ts"],"validationRefs":["validation://..."],"targetCommitmentIds":["..."]}}]}',
+    );
+  } else if (surfaceAllows(surface, "worker.evidence.claim")) {
+    shapes.push(
+      '{"toolCalls":[{"callId":"claim-evidence","toolId":"worker.evidence.claim","reason":"Claim commitment evidence from existing changed-file and validation refs.","input":{"evidenceClaims":[{"commitmentId":"...","claimSummary":"...","changedFileRefs":["relative/path.ts"],"validationRefs":["validation://..."],"confidence":"high","rawPromptStored":false,"rawResponseStored":false}]}}]}',
+    );
+  }
+  if (surfaceAllows(surface, "worker.repair.mark_upstream_blocker")) {
+    shapes.push(
+      '{"toolCalls":[{"callId":"upstream-blocker","toolId":"worker.repair.mark_upstream_blocker","reason":"The current handoff lacks the refs needed to continue safely.","input":{"blockerSummary":"...","requestedUpstreamAction":"repair_resource_handoff","missingRefs":["relative/path.ts"]}}]}',
+    );
+  }
+  if (surfaceAllows(surface, "worker.escalate")) {
+    shapes.push(
+      '{"toolCalls":[{"callId":"escalate","toolId":"worker.escalate","reason":"The current worker lane cannot complete this bounded task safely.","input":{"reason":"...","partialEvidenceRefs":[]}}]}',
+    );
+  }
+  return shapes.length > 0
+    ? shapes
+    : [
+        '{"toolCalls":[{"callId":"upstream-blocker","toolId":"worker.repair.mark_upstream_blocker","reason":"No lifecycle-legal model-facing tool is available.","input":{"blockerSummary":"No legal worker tool is available for the current lifecycle gate.","requestedUpstreamAction":"repair_node_lifecycle_projection","missingFields":["nextLegalTransitions"]}}]}',
+      ];
 }
 
 function buildToolSelectionPrompt(
@@ -7803,11 +10611,16 @@ function buildToolSelectionPrompt(
   toolResults: NonCodexToolResult[],
   modelResponseRepairNotes: string[] = [],
   modelSlot: NonCodexWorkerModelSlot = "controller",
+  toolSurface: WorkerLifecycleToolSurface = deriveWorkerLifecycleToolSurface({
+    workerInput: input,
+    toolResults,
+    modelSlot,
+  }),
 ): string {
   const hasReadContext = toolResults.some(
     (result) =>
-      (result.toolId === "worker.repo.read_files" || result.toolId.startsWith("coding.")) &&
-      result.status === "succeeded",
+      hasUsableBoundedContextSnapshotResult(result) ||
+      (result.toolId.startsWith("coding.") && result.status === "succeeded"),
   );
   const hasAppliedPatch = toolResults.some(
     (result) =>
@@ -7827,16 +10640,16 @@ function buildToolSelectionPrompt(
   const validationFailed = lastValidationRun?.status === "needs_review";
   const patchProgressRequired = requiresPatchProgress(toolResults);
   const nextToolGuidance = hasValidation
-    ? "Runtime can use worker.evidence.claim_from_validation from changed-file and validation refs; use worker.escalate only if those refs are not semantically sufficient."
+    ? "Runtime can record evidence from changed-file and validation refs; use only the lifecycle-visible evidence or blocker tools."
     : validationFailed
-      ? "A validation run needs review. Runtime will provide worker.validation.get_failure_context. If the failure is from source/test/type/schema output, use worker.repair.author_edit for one bounded repair before rerunning validation. worker.validation.explain_failure is diagnostic-only and must be paired with worker.repair.author_edit, worker.validation.run for an explicitly transient failure, worker.repair.mark_upstream_blocker for upstream context/task-packet defects, or worker.repair.request_high_capability_escalation for schema/contract failures that exceed this worker lane."
+      ? "A validation run needs review. Use only lifecycle-visible validation-repair tools; diagnostics alone do not count as repair progress."
       : hasAppliedPatch
-        ? "Use worker.validation.run with approved validation refs. If validation fails, use worker.validation.explain_failure and then worker.edit.apply_patch for a bounded repair."
+        ? "A source edit already exists. Use only lifecycle-visible validation tools."
         : patchProgressRequired
-          ? "You already have bounded file snapshots and an edit plan. The next action must be worker.patch.author_edit or worker.edit.apply_from_plan with a narrow model-authored edit body, worker.context.request_more for exact missing file refs, or worker.escalate with a concrete blocker. Do not repeat planning or generic file reads."
+          ? "An edit plan and bounded snapshots already exist. Runtime will open the forced patch-author boundary; do not repeat planning or generic file reads."
           : hasReadContext
-            ? "Use worker.edit.plan, worker.edit.apply_patch, worker.validation.run, and worker.evidence.claim as needed. Do not return a giant patch-proposal object; request one tool action or a small ordered toolCalls list."
-            : "Use repo/context tools first: worker.repo.search, worker.repo.read_files, worker.repo.inspect_tests, or worker.context.request_more.";
+        ? "Use a lifecycle-visible edit-plan, exact context request, blocker, or escalation. Do not return an edit body before the plan is accepted."
+        : "Use worker context tools first: search or symbol/caller/test discovery, then open/refine/accept exact windows before planning.";
   const list = (values: string[], maxItems: number, maxChars: number) =>
     values
       .slice(0, maxItems)
@@ -7850,6 +10663,7 @@ function buildToolSelectionPrompt(
       nextToolGuidance,
       modelResponseRepairNotes,
       modelSlot,
+      toolSurface,
     });
   }
   return [
@@ -7859,15 +10673,11 @@ function buildToolSelectionPrompt(
       ? "This turn is for cheap context/tool selection. Prefer repo search/read/test-inspection or a precise context request. Do not attempt source edits until context is read."
       : "This turn is for cheap controller reasoning. Select the smallest bounded runtime tool sequence that advances the task.",
     "Return exactly one JSON object with a toolCalls array. No markdown.",
-    "Choose the smallest useful next tool actions. Runtime owns file reads, patch application, validation, evidence refs, and storage.",
-    "Available atomic tools: worker.context.request_more, worker.repo.search, worker.repo.read_files, worker.repo.inspect_tests, worker.edit.plan, worker.edit.draft_from_snapshot, worker.patch.author_edit, worker.edit.apply_from_plan, worker.edit.apply_patch, worker.validation.run, worker.validation.run_structural_default, worker.validation.get_failure_context, worker.validation.explain_failure, worker.repair.author_edit, worker.repair.mark_upstream_blocker, worker.repair.request_high_capability_escalation, worker.progress.mark_no_edit_blocker, worker.evidence.claim, worker.evidence.claim_commitment_progress, worker.evidence.claim_from_validation, worker.evidence.link_validation, worker.review.add_issue, worker.review.approve_or_request_changes, worker.escalate.",
-    "Available compound tools for scoped tasks with enough context: coding.inspect_edit_validate, coding.add_test_and_validate, coding.update_docs_and_cross_refs, coding.refactor_symbol_with_lsp, coding.fix_type_errors, coding.apply_small_patch_with_evidence. Compound tools still require bounded fileEdits, target refs, validation refs, and commitment evidence; runtime owns edit transactions and validation.",
+    "Choose the smallest useful next tool actions from the visible model-facing tools only. Runtime owns file reads, patch application, validation, evidence refs, and storage.",
+    ...workerLifecycleToolSurfaceGuidance(toolSurface),
+    ...progressiveWorkerToolGuidance(input, toolSurface),
     nextToolGuidance,
-    'For worker.repo.read_files, request only exact allowed repo-relative refs. If an earlier snapshot was truncated, request a bounded window with input.fileRanges [{"fileRef":"relative/path.ts","startLine":120,"endLine":260}] instead of requesting a full file again or inventing shorthand refs like CURRENT_SLICE.',
-    "Scope rule: worker.edit.plan, worker.patch.author_edit, worker.edit.apply_from_plan, worker.edit.apply_patch, and compound coding tools must target only allowed file refs or descendants of allowed directory refs. If the needed output file is outside scope, use worker.repair.mark_upstream_blocker instead of inventing a new artifact path.",
-    "For the patch lane after an edit plan, prefer worker.patch.author_edit with a small body: input.path or input.fileRef, operation, targetText/oldText or targetRegion startLine/endLine, replacement/content, and rationale. Runtime converts this into worker.edit.apply_patch. Use worker.edit.apply_from_plan only when the accepted plan has one unambiguous target file. Use raw worker.edit.apply_patch only when you already have fileEdits ready.",
-    "For validation repair, prefer worker.repair.author_edit with the same narrow edit body as worker.patch.author_edit; runtime wraps it into the applicator contract. Use worker.repair.mark_upstream_blocker when the failure is caused by missing snapshots, bad context, or an impossible task packet. Use worker.repair.request_high_capability_escalation when a schema/contract parse/type failure should leave the cheap lane.",
-    "For worker.evidence.claim or worker.evidence.claim_commitment_progress, provide commitment-linked evidence claims with changedFileRefs and validationRefs. Runtime may use worker.evidence.claim_from_validation after validation passes. Use worker.evidence.link_validation only to connect existing validation refs to existing claims.",
+    ...workerToolGuidanceForSurface(toolSurface),
     "ImplementationTaskPacket v3 summary:",
     `- Packet ref: ${implementationTaskPacket.packetRef}`,
     `- Why this worker: ${bounded(implementationTaskPacket.whyThisWorkerWasSelected, 800)}`,
@@ -7889,7 +10699,6 @@ function buildToolSelectionPrompt(
     }`,
     `Context refs: ${list(implementationTaskPacket.contextPacketRefs, 24, 220) || "none"}`,
     `Source prompt excerpt refs: ${list(implementationTaskPacket.sourcePromptExcerptRefs, 24, 220) || "none"}`,
-    `Context synthesis refs: ${list(implementationTaskPacket.contextSynthesisRefs, 24, 220) || "none"}`,
     `Prior node output refs: ${list(implementationTaskPacket.priorNodeOutputRefs, 24, 220) || "none"}`,
     `Validation refs: ${list(input.validationCommandRefs, 16, 260)}`,
     ...nodeExecutionPacketSummaryForModel(input),
@@ -7913,12 +10722,7 @@ function buildToolSelectionPrompt(
         ]
       : []),
     "JSON shapes:",
-    '{"toolCalls":[{"callId":"search-target","toolId":"worker.repo.search","reason":"...","input":{"query":"..."}},{"callId":"read-target","toolId":"worker.repo.read_files","reason":"...","input":{"fileRefs":["relative/path.ts"]}}]}',
-    '{"toolCalls":[{"callId":"read-range","toolId":"worker.repo.read_files","reason":"Read a bounded line window from a truncated target snapshot.","input":{"fileRanges":[{"fileRef":"relative/path.ts","startLine":120,"endLine":260}]}}]}',
-    '{"toolCalls":[{"callId":"plan-edit","toolId":"worker.edit.plan","reason":"...","input":{"editPlanSteps":[{"stepId":"step-1","objective":"...","targetFileRefs":["relative/path.ts"],"validationExpectation":"...","commitmentIdsAdvanced":["..."]}]}},{"callId":"apply-edit","toolId":"worker.edit.apply_patch","reason":"...","input":{"fileEdits":[{"path":"relative/path.ts","operation":"replace_text","oldText":"...","newText":"...","occurrenceIndex":0,"rationale":"..."}]}}]}',
-    '{"toolCalls":[{"callId":"compound-edit","toolId":"coding.inspect_edit_validate","reason":"Scoped implementation can be inspected, edited, validated, and evidenced through one traced compound tool.","input":{"targetFileRefs":["relative/path.ts"],"contextRefs":["context-synthesis://..."],"validationCommandRefs":["pnpm test:file example.test.ts"],"fileEdits":[{"path":"relative/path.ts","operation":"replace_text","oldText":"...","newText":"...","occurrenceIndex":0,"rationale":"..."}],"evidenceClaims":[{"commitmentId":"...","claimSummary":"...","changedFileRefs":["relative/path.ts"],"validationRefs":["validation://..."],"confidence":"medium","rawPromptStored":false,"rawResponseStored":false}]}}]}',
-    '{"toolCalls":[{"callId":"run-validation","toolId":"worker.validation.run","reason":"...","input":{"commandRefs":["pnpm test:file example.test.ts"]}},{"callId":"claim-evidence","toolId":"worker.evidence.claim","reason":"...","input":{"evidenceClaims":[{"commitmentId":"...","claimSummary":"...","changedFileRefs":["relative/path.ts"],"validationRefs":["validation://..."],"confidence":"high"}]}}]}',
-    '{"toolCalls":[{"callId":"repair-edit","toolId":"worker.repair.author_edit","reason":"Repair failed validation using bounded failure context.","input":{"path":"relative/path.ts","operation":"replace_range","targetRegion":{"startLine":10,"endLine":14},"replacement":"replacement lines","rationale":"..."}}]}',
+    ...workerToolJsonShapesForSurface(toolSurface),
   ].join("\n");
 }
 
@@ -7929,12 +10733,13 @@ function buildEditStagePrompt(input: {
   nextToolGuidance: string;
   modelResponseRepairNotes: string[];
   modelSlot: NonCodexWorkerModelSlot;
+  toolSurface: WorkerLifecycleToolSurface;
 }): string {
   const patchContextBudgetSpent =
     input.modelSlot === "patch" && contextExpansionBeforeEditPlanAlreadyUsed(input.toolResults);
   const patchToolSurface = patchContextBudgetSpent
-    ? "Patch-lane context budget is spent. The only acceptable next patch-lane tools are worker.edit.plan, worker.patch.author_edit, worker.edit.apply_from_plan, a compound coding tool, or worker.escalate with exact missing-context evidence."
-    : "Patch-lane may request one exact bounded context expansion only if the current snapshots are insufficient; otherwise plan and author a narrow patch body or escalate.";
+    ? `Patch-lane context budget is spent. The only acceptable lifecycle-visible tools are ${input.toolSurface.allowedToolIds.join(", ") || "none"}.`
+    : `Select only lifecycle-visible tools: ${input.toolSurface.allowedToolIds.join(", ") || "none"}.`;
   const list = (values: string[], maxItems: number, maxChars: number) =>
     values
       .slice(0, maxItems)
@@ -7943,8 +10748,12 @@ function buildEditStagePrompt(input: {
   return [
     "You are a non-Codex implementation worker using structured runtime tools.",
     `Current model slot: ${input.modelSlot}.`,
-    input.modelSlot === "patch"
-      ? "This turn is the patch lane. Produce a concrete worker.edit.plan and then worker.patch.author_edit or worker.edit.apply_from_plan when the bounded snapshots are sufficient. If they are not sufficient, request exact missing context instead of guessing."
+    input.toolSurface.phase === "edit_plan"
+      ? "This turn is the edit-plan lane. Produce one concrete plan, request exact missing context, or return a typed blocker. Do not author an edit body in this phase."
+      : input.toolSurface.phase === "patch_author"
+        ? "This turn is waiting for runtime-forced patch authoring from an accepted plan. Use only the lifecycle-visible tool or a typed blocker."
+      : input.modelSlot === "patch"
+        ? "This turn is the patch lane, but lifecycle state still controls the visible tools. Do not select hidden future-phase tools."
       : input.modelSlot === "validation_repair"
         ? "This turn is the validation repair lane. Do not return worker.validation.explain_failure by itself. For source, test, type, or schema failures, select worker.repair.author_edit with a bounded fix and then validation. Use validation rerun only for explicitly transient/runtime failures, worker.repair.mark_upstream_blocker for upstream handoff/resource defects, or worker.repair.request_high_capability_escalation when the bounded failure context shows this schema/contract repair exceeds the current worker lane."
         : input.modelSlot === "evidence"
@@ -7952,14 +10761,14 @@ function buildEditStagePrompt(input: {
           : "This turn is controller reasoning. Select the next bounded runtime tool action.",
     "Return exactly one JSON object with a toolCalls array. No markdown.",
     "Runtime owns patch application, validation, evidence refs, and storage. You decide the semantic edit.",
-    'Preferred narrow patch-author contract: use worker.patch.author_edit with input {"path":"relative/path.ts","operation":"replace_range"|"replace_text","targetRegion":{"startLine":10,"endLine":14},"targetText":"optional exact old text","replacement":"model-authored replacement","rationale":"why"}. Runtime wraps this into the applicator contract.',
-    "Preferred validation-repair contract: use worker.repair.author_edit with the same narrow fields when repairing a failed validation result. Runtime already provided worker.validation.get_failure_context with failed refs, bounded output excerpts, current changed-file snippets, and recent edit attempts; do not rebuild the validation failure JSON yourself.",
-    "When a scoped task has enough context, prefer a compound coding tool over a long chain of atomic tools: coding.inspect_edit_validate, coding.add_test_and_validate, coding.update_docs_and_cross_refs, coding.refactor_symbol_with_lsp, coding.fix_type_errors, or coding.apply_small_patch_with_evidence. Compound tools still need bounded fileEdits and validation refs; runtime owns transaction ids, validation execution, and evidence refs.",
+    ...workerLifecycleToolSurfaceGuidance(input.toolSurface),
+    ...progressiveWorkerToolGuidance(input.workerInput, input.toolSurface),
+    ...workerToolGuidanceForSurface(input.toolSurface),
     patchToolSurface,
     "Patch precision requirement: replace_text oldText must be unique. If a prior patch failed with replace_text_ambiguous_occurrences, retry with zero-based occurrenceIndex, contextBefore/contextAfter from the snapshot, or replace_range using startLine/endLine from line-numbered content. Do not repeat the same ambiguous patch.",
     "Freshness requirement: if a prior patch failed with replace_text_occurrence_count_0, the target text is stale. Read the current target file or use the latest line-numbered snapshot, then repair with replace_range or exact current oldText. Do not rerun validation for a stale no-op patch.",
     "Truncated snapshot requirement: if you need lines outside a bounded snapshot, call worker.repo.read_files with input.fileRanges and exact allowed repo-relative refs. Do not request full files repeatedly and do not invent shorthand refs like CURRENT_SLICE or STATUS unless they are listed as allowed refs.",
-    "Scope rule: plan and patch target refs must be allowed file refs or descendants of allowed directory refs. Do not create summary artifacts or new files outside the worker scope; use worker.repair.mark_upstream_blocker if the task requires an out-of-scope path.",
+    "Scope rule: lifecycle-visible target refs must be allowed file refs or descendants of allowed directory refs. Do not create summary artifacts or new files outside the worker scope; use worker.repair.mark_upstream_blocker if the task requires an out-of-scope path.",
     input.nextToolGuidance,
     `Objective: ${bounded(input.workerInput.exactEditObjective, 1_500)}`,
     `Target commitments: ${input.workerInput.targetCommitmentIds?.join(", ") || "none"}`,
@@ -7993,21 +10802,7 @@ function buildEditStagePrompt(input: {
         ]
       : []),
     "Use these shapes only:",
-    ...(patchContextBudgetSpent
-      ? []
-      : [
-          '{"toolCalls":[{"callId":"read-range","toolId":"worker.repo.read_files","reason":"Read missing bounded lines from a truncated snapshot.","input":{"fileRanges":[{"fileRef":"relative/path.ts","startLine":120,"endLine":260}]}}]}',
-        ]),
-    '{"toolCalls":[{"callId":"plan-edit","toolId":"worker.edit.plan","reason":"...","input":{"editPlanSteps":[{"stepId":"step-1","objective":"...","targetFileRefs":["relative/path.ts"],"validationExpectation":"...","commitmentIdsAdvanced":["..."]}]}},{"callId":"author-edit","toolId":"worker.patch.author_edit","reason":"...","input":{"path":"relative/path.ts","operation":"replace_text","targetText":"exact text from snapshot","replacement":"replacement text","occurrenceIndex":0,"rationale":"..."}}]}',
-    '{"toolCalls":[{"callId":"author-range-edit","toolId":"worker.patch.author_edit","reason":"...","input":{"path":"relative/path.ts","operation":"replace_range","targetRegion":{"startLine":10,"endLine":14},"replacement":"replacement lines from line 10 through 14","rationale":"..."}}]}',
-    '{"toolCalls":[{"callId":"apply-from-plan","toolId":"worker.edit.apply_from_plan","reason":"Accepted edit plan has one target file; runtime can compile this semantic patch body.","input":{"operation":"replace_range","targetRegion":{"startLine":10,"endLine":14},"replacement":"replacement lines","rationale":"..."}}]}',
-    '{"toolCalls":[{"callId":"compound-small-edit","toolId":"coding.apply_small_patch_with_evidence","reason":"Use a traced compound edit because context, target, validation, and commitment refs are already known.","input":{"targetFileRefs":["relative/path.ts"],"validationCommandRefs":["pnpm test:file example.test.ts"],"fileEdits":[{"path":"relative/path.ts","operation":"replace_range","startLine":10,"endLine":14,"content":"replacement lines","rationale":"..."}],"evidenceClaims":[{"commitmentId":"...","claimSummary":"...","changedFileRefs":["relative/path.ts"],"validationRefs":["validation://..."],"confidence":"medium","rawPromptStored":false,"rawResponseStored":false}]}}]}',
-    '{"toolCalls":[{"callId":"run-validation","toolId":"worker.validation.run","reason":"...","input":{"commandRefs":["pnpm test:file example.test.ts"]}}]}',
-    '{"toolCalls":[{"callId":"repair-validation","toolId":"worker.repair.author_edit","reason":"Repair validation failure using the bounded failure context.","input":{"path":"relative/path.ts","operation":"replace_range","targetRegion":{"startLine":10,"endLine":14},"replacement":"replacement lines","rationale":"..."}}]}',
-    '{"toolCalls":[{"callId":"explain-validation","toolId":"worker.validation.explain_failure","reason":"...","input":{"summary":"...","commitmentIds":["..."]}},{"callId":"repair-validation","toolId":"worker.repair.author_edit","reason":"...","input":{"path":"relative/path.ts","operation":"replace_text","targetText":"exact current text","replacement":"replacement text","rationale":"..."}}]}',
-    '{"toolCalls":[{"callId":"upstream-blocker","toolId":"worker.repair.mark_upstream_blocker","reason":"The current handoff lacks the file snapshot needed to repair safely.","input":{"blockerSummary":"...","requestedUpstreamAction":"repair_context_handoff","missingRefs":["relative/path.ts"]}}]}',
-    '{"toolCalls":[{"callId":"schema-escalation","toolId":"worker.repair.request_high_capability_escalation","reason":"The bounded validation failure is a schema/contract parse failure after a cheap repair attempt.","input":{"failureClass":"schema_boundary_failure","rationale":"...","requiredCapability":"high_capability_schema_contract_editor","failedValidationRefs":["runtime-tool://..."],"changedFileRefs":["relative/path.ts"]}}]}',
-    '{"toolCalls":[{"callId":"claim-evidence","toolId":"worker.evidence.claim","reason":"...","input":{"evidenceClaims":[{"commitmentId":"...","claimSummary":"...","changedFileRefs":["relative/path.ts"],"validationRefs":["validation://..."],"confidence":"high","rawPromptStored":false,"rawResponseStored":false}]}}]}',
+    ...workerToolJsonShapesForSurface(input.toolSurface),
   ].join("\n");
 }
 
@@ -8017,22 +10812,39 @@ function summarizeToolResultForModel(result: NonCodexToolResult, maxChars = 2_50
     `${result.toolId}:${result.status}:${bounded(result.summary, 800)}`,
     `refs=${result.outputRefs.slice(0, 8).join(", ") || "none"}`,
   ];
-  if (result.toolId === "worker.repo.read_files" && Array.isArray(metadata.snapshots)) {
-    for (const snapshot of metadata.snapshots.slice(0, 4)) {
+  const snapshotManifests = Array.isArray(metadata.snapshotManifests)
+    ? metadata.snapshotManifests
+    : Array.isArray(metadata.snapshots)
+      ? metadata.snapshots
+      : [];
+  if (
+    (result.toolId === "worker.repo.read_files" ||
+      result.toolId === "worker.context.open_ref" ||
+      result.toolId === "worker.context.open_around_match" ||
+      result.toolId === "worker.context.open_window" ||
+      result.toolId === "worker.context.expand_window" ||
+      result.toolId === "worker.context.contract_window" ||
+      result.toolId === "worker.context.open_adjacent" ||
+      result.toolId === "worker.context.provide_bounded_snapshot") &&
+    snapshotManifests.length > 0
+  ) {
+    for (const snapshot of snapshotManifests.slice(0, 4)) {
       if (!snapshot || typeof snapshot !== "object" || Array.isArray(snapshot)) {
         continue;
       }
       const item = snapshot as Record<string, JsonValue>;
       const fileRef = typeof item.fileRef === "string" ? item.fileRef : "unknown";
       const content =
-        typeof item.lineNumberedContent === "string"
-          ? item.lineNumberedContent
+        typeof item.lineNumberedPreview === "string"
+          ? item.lineNumberedPreview
+          : typeof item.lineNumberedContent === "string"
+            ? item.lineNumberedContent
           : typeof item.boundedContent === "string"
             ? item.boundedContent
             : "";
       lines.push(
         [
-          `--- ${bounded(fileRef, 260)} ---`,
+          `--- ${result.toolId === "worker.context.provide_bounded_snapshot" ? "preloaded " : ""}${bounded(fileRef, 260)} ---`,
           content.slice(0, Math.max(500, Math.min(maxChars, 6_000))),
         ].join("\n"),
       );
@@ -8045,16 +10857,21 @@ function summarizeToolResultForModel(result: NonCodexToolResult, maxChars = 2_50
     lines.push(
       `providedContextRefs=${stringList(metadata.providedContextRefs, 12).join(", ") || "none"}`,
     );
-    if (Array.isArray(metadata.snapshots)) {
-      for (const snapshot of metadata.snapshots.slice(0, 4)) {
+    lines.push(
+      `exactContextRefs=${stringList(metadata.exactContextRefs, 12).join(", ") || "none"}`,
+    );
+    if (snapshotManifests.length > 0) {
+      for (const snapshot of snapshotManifests.slice(0, 4)) {
         if (!snapshot || typeof snapshot !== "object" || Array.isArray(snapshot)) {
           continue;
         }
         const item = snapshot as Record<string, JsonValue>;
         const fileRef = typeof item.fileRef === "string" ? item.fileRef : "unknown";
         const content =
-          typeof item.lineNumberedContent === "string"
-            ? item.lineNumberedContent
+          typeof item.lineNumberedPreview === "string"
+            ? item.lineNumberedPreview
+            : typeof item.lineNumberedContent === "string"
+              ? item.lineNumberedContent
             : typeof item.boundedContent === "string"
               ? item.boundedContent
               : "";
@@ -8063,6 +10880,49 @@ function summarizeToolResultForModel(result: NonCodexToolResult, maxChars = 2_50
         );
       }
     }
+  }
+  if (result.toolId === "worker.context.search") {
+    const searchMatchWindows = Array.isArray(metadata.searchMatchWindows)
+      ? metadata.searchMatchWindows
+      : [];
+    lines.push(
+      `searchMatchWindows=${searchMatchWindows
+        .slice(0, 12)
+        .map((item) => jsonObject(item).ref)
+        .filter((ref): ref is string => typeof ref === "string")
+        .join(", ") || "none"}`,
+    );
+  }
+  if (
+    result.toolId === "worker.context.search_symbols" ||
+    result.toolId === "worker.context.find_callers" ||
+    result.toolId === "worker.context.find_tests"
+  ) {
+    const searchMatchWindows = Array.isArray(metadata.searchMatchWindows)
+      ? metadata.searchMatchWindows
+      : [];
+    lines.push(
+      `contextDiscoveryWindows=${searchMatchWindows
+        .slice(0, 12)
+        .map((item) => jsonObject(item).ref)
+        .filter((ref): ref is string => typeof ref === "string")
+        .join(", ") || "none"}`,
+    );
+    const candidateTestRefs = stringList(metadata.candidateTestRefs, 12);
+    if (candidateTestRefs.length > 0) {
+      lines.push(`candidateTestRefs=${candidateTestRefs.join(", ")}`);
+    }
+  }
+  if (
+    result.toolId === "worker.context.accept_window" ||
+    result.toolId === "worker.context.report_pattern" ||
+    result.toolId === "worker.context.report_risk" ||
+    result.toolId === "worker.context.report_edit_point" ||
+    result.toolId === "worker.context.finish_context_turn"
+  ) {
+    lines.push(
+      `acceptedWindowRefs=${stringList(metadata.acceptedWindowRefs, 12).join(", ") || "none"}`,
+    );
   }
   if (isActualPatchApplicatorToolId(result.toolId) && !result.toolId.startsWith("coding.")) {
     lines.push(`changedFileRefs=${stringList(metadata.changedFileRefs, 20).join(", ") || "none"}`);

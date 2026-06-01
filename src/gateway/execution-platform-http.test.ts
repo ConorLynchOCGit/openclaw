@@ -7,6 +7,7 @@ import { createExecutionPlatformPgMemTestDatabase } from "../../extensions/execu
 import {
   createBaseCanonicalRouterOutput,
   createCanonicalRouterAction,
+  TwoLaneStructuredModelIntentRouterProvider,
   type CanonicalRouterOutput,
   type StructuredModelIntentRouterProvider,
 } from "../../extensions/execution-platform/src/intent-front-door/index.ts";
@@ -24,6 +25,7 @@ import type { OpenClawConfig } from "../config/types.openclaw.js";
 import {
   createGatewayStructuredRouterProvider,
   handleExecutionPlatformHttpRequest,
+  resolveGatewayCodexAppServerCwd,
   shouldHandleExecutionPlatformPath,
 } from "./execution-platform-http.js";
 import {
@@ -171,6 +173,31 @@ describe("execution platform gateway HTTP routes", () => {
     expect(provider).not.toBeNull();
   });
 
+  it("resolves the Codex app-server cwd from runtime cwd unless explicitly configured", () => {
+    expect(
+      resolveGatewayCodexAppServerCwd(
+        {
+          env: {
+            vars: {},
+          },
+        } as OpenClawConfig,
+        "/app",
+      ),
+    ).toBe("/app");
+    expect(
+      resolveGatewayCodexAppServerCwd(
+        {
+          env: {
+            vars: {
+              OPENCLAW_INTENT_FRONT_DOOR_CODEX_APP_SERVER_CWD: "/workspace/runtime",
+            },
+          },
+        } as OpenClawConfig,
+        "/app",
+      ),
+    ).toBe("/workspace/runtime");
+  });
+
   it("does not register the live router provider when advanced-router model policy is stale", () => {
     const provider = createGatewayStructuredRouterProvider({
       env: {
@@ -190,6 +217,27 @@ describe("execution platform gateway HTTP routes", () => {
     } as OpenClawConfig);
 
     expect(provider).toBeNull();
+  });
+
+  it("registers the Codex advanced two-lane router without a second opt-in flag", () => {
+    const provider = createGatewayStructuredRouterProvider({
+      env: {
+        vars: {
+          OPENCLAW_INTENT_FRONT_DOOR_LIVE_ROUTER_ENABLED: "1",
+          OPENCLAW_TWO_LANE_ROUTER_OWNER_CANARY_ENABLED: "1",
+          OPENCLAW_NATIVE_EXECUTION_SUBMIT_FRONT_DOOR_ENABLED: "1",
+          OPENCLAW_INTENT_FRONT_DOOR_ROUTER_PROVIDER_PROFILE:
+            "provider-profile://intent-front-door/router/openrouter",
+          OPENCLAW_INTENT_FRONT_DOOR_ROUTER_MODEL_REF: "deepseek/deepseek-v4-flash",
+          OPENCLAW_INTENT_FRONT_DOOR_ROUTER_POLICY_REF:
+            "router-policy://intent-front-door/live-router/default",
+          OPENCLAW_INTENT_FRONT_DOOR_ADVANCED_ROUTER_MODEL_REF: "openai-codex/gpt-5.5",
+          OPENROUTER_API_KEY: "fixture-key",
+        },
+      },
+    } as OpenClawConfig);
+
+    expect(provider).toBeInstanceOf(TwoLaneStructuredModelIntentRouterProvider);
   });
 
   it("does not register the live router provider until owner and native submit gates are enabled", () => {

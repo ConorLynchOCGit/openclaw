@@ -172,7 +172,7 @@ describe("model routing policy", () => {
       const status = await modelTasks.readModelTaskStatus(job.jobId);
 
       expect(status.task?.routeEvidence).toMatchObject({
-        selected: { model: "gpt-mini-structured-json" },
+        selected: { model: "deepseek/deepseek-v4-flash" },
         providerCallMade: false,
         policyVersion: "execution-platform.model-routing.v1",
       });

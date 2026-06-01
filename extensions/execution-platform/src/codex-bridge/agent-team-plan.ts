@@ -16,7 +16,8 @@ import {
 
 export type AgentTeamRoleId =
   | "orchestrator"
-  | "context_scout"
+  | "resource_scout"
+  | "resource_specialist_subturn"
   | "architect_spec_writer"
   | "implementation_engineer"
   | "test_engineer"
@@ -281,7 +282,7 @@ function createRolePlans(): AgentTeamRolePlan[] {
         "/root/.openclaw/workspace/docs/projects/execution-platform/roles/orchestrator.md",
     },
     {
-      roleId: "context_scout",
+      roleId: "resource_scout",
       purpose: "Find relevant code, contracts, tests, docs, and hidden dependencies before edits.",
       responsibilities: [
         "search the repo with read-only tools",
@@ -293,7 +294,7 @@ function createRolePlans(): AgentTeamRolePlan[] {
       mayAcceptWork: false,
       stopConditions: ["scope cannot be bounded", "source of truth is ambiguous"],
       localSpecRef:
-        "/root/.openclaw/workspace/docs/projects/execution-platform/roles/context_scout.md",
+        "/root/.openclaw/workspace/docs/projects/execution-platform/roles/resource.scout.md",
     },
     {
       roleId: "architect_spec_writer",
@@ -483,7 +484,7 @@ function createModelAssignments(input: {
   const kimi = findCandidate(input.candidates, "kimi-2-6-coding-candidate");
   const deepseek = findCandidate(input.candidates, "deepseek-v4-coding-candidate");
   const deepseekPro = findCandidate(input.candidates, "deepseek-v4-pro-coding-candidate");
-  const v4ProContextStatus = input.v4ProRoleStatuses?.context_scout ?? "needs_review";
+  const v4ProContextStatus = input.v4ProRoleStatuses?.resource_scout ?? "needs_review";
   const v4ProSecurityStatus =
     input.v4ProRoleStatuses?.security_privacy_reviewer_assist ?? "needs_review";
   return [
@@ -500,7 +501,7 @@ function createModelAssignments(input: {
       evidenceRefs: input.evidenceRefs,
     },
     {
-      roleId: "context_scout",
+      roleId: "resource_scout",
       provider: "openrouter",
       modelId: deepseekPro.openRouterModelId,
       modelLabel: deepseekPro.modelLabel,
@@ -510,7 +511,7 @@ function createModelAssignments(input: {
       liveAuthorityGrantedNow: false,
       requiresAcceptanceBy: "orchestrator",
       evidenceRefs: input.evidenceRefs,
-      roleTargetId: "context_scout",
+      roleTargetId: "resource_scout",
       roleQualificationStatus: v4ProContextStatus,
     },
     {
@@ -802,7 +803,7 @@ export function createFirstAgentTeamImplementationPlan(
     },
     successCriteria: [
       "orchestrator emits bounded delegation plan before worker execution",
-      "context scout reports relevant files and unknowns before implementation edits",
+      "resource scout reports relevant files and unknowns before implementation edits",
       "implementation and test agents receive only scoped handoff packages",
       "Kimi 2.6, DeepSeek V4 Flash, and DeepSeek V4 Pro are used only through validated OpenRouter model routes",
       "security/privacy reviewer assist cannot issue final acceptance or high-risk verdicts without local Codex/operator review",
@@ -851,7 +852,7 @@ export function validateAgentTeamImplementationPlan(
   const warnings: string[] = [];
   const requiredRoles: AgentTeamRoleId[] = [
     "orchestrator",
-    "context_scout",
+    "resource_scout",
     "implementation_engineer",
     "test_engineer",
     "reviewer",

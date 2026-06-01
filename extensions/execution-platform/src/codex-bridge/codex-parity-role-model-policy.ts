@@ -1,6 +1,6 @@
 export type CodexParityRoleId =
   | "orchestrator"
-  | "context_scout"
+  | "resource_scout"
   | "implementation_standard"
   | "implementation_complex"
   | "test_engineer"
@@ -104,7 +104,7 @@ export function selectCodexParityRoleModel(
     });
   }
 
-  if (roleId === "context_scout") {
+  if (roleId === "resource_scout") {
     const available = kimiAvailable(input) || deepseekAvailable(input);
     const modelRef = kimiAvailable(input) ? KIMI : DEEPSEEK_PRO;
     return selection({
@@ -117,10 +117,10 @@ export function selectCodexParityRoleModel(
       maxOutputTokens: 12_000,
       timeoutMs: 600_000,
       codexNativeSubagentsAllowed: false,
-      missingConfigBlocker: available ? null : "context_scout_model_not_configured",
+      missingConfigBlocker: available ? null : "resource_scout_model_not_configured",
       reasonCodes: available
         ? ["cheap_large_context_role_selected", "openclaw_role_evidence_required"]
-        : ["context_scout_model_missing"],
+        : ["resource_scout_model_missing"],
     });
   }
 
@@ -222,7 +222,7 @@ export function buildCodexParityRoleModelPolicy(
 ): CodexParityRoleModelSelection[] {
   return [
     "orchestrator",
-    "context_scout",
+    "resource_scout",
     "implementation_standard",
     "implementation_complex",
     "test_engineer",

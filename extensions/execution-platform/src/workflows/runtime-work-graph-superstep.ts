@@ -38,6 +38,19 @@ export const SuperstepBranchResultSchema = z
     blockerSummary: z.string().trim().max(700).nullable(),
     repairAction: z.string().trim().max(360).nullable(),
     nextTransition: z.string().trim().max(260).nullable(),
+    branchClosureState: z
+      .enum([
+        "not_applicable",
+        "commitment_evaluation_required",
+        "validation_repair_plan_required",
+        "validation_repair_patch_required",
+        "validation_terminal_blocker",
+        "escalation_required",
+        "blocked_terminal",
+        "closed_succeeded",
+      ])
+      .default("not_applicable"),
+    branchLocalTransitionPending: z.boolean().default(false),
     evidenceRefs: stringList(80, 700),
     readinessStateRef: z.string().trim().max(700).nullable(),
     reasonCodes: stringList(80, 260),
@@ -81,9 +94,27 @@ function stringArray(value: unknown, max = 80): string[] {
     : [];
 }
 
-function includesAny(values: string[], markers: string[]): boolean {
-  const joined = values.join(" ").toLowerCase();
-  return markers.some((marker) => joined.includes(marker));
+function boundedStringArray(value: unknown, max = 80, maxChars = 260): string[] {
+  return stringArray(value, max)
+    .map((item) => item.slice(0, maxChars))
+    .filter((item) => item.length > 0)
+    .slice(0, max);
+}
+
+const CONTEXT_LIFECYCLE_STATES = new Set(["resource_required", "resource_in_progress"]);
+const RESOURCE_LIFECYCLE_STATES = new Set(["resources_required", "resource_materialization_in_progress"]);
+const DEPENDENCY_REASON_CODES = new Set(["node_dependencies_not_satisfied"]);
+const AUTHORITY_REASON_CODES = new Set([
+  "authority_denied",
+  "authority_policy_blocked",
+  "raw_storage_policy_violation",
+  "path_scope_violation",
+]);
+const RESOURCE_FAILURE_CLASSES = new Set(["resource_materialization"]);
+const CONTEXT_FAILURE_CLASSES = new Set(["resource_requirement", "resource_demand"]);
+const AUTHORITY_FAILURE_CLASSES = new Set(["authority", "policy"]);
+function hasExact(values: string[], allowed: Set<string>): boolean {
+  return values.some((value) => allowed.has(value));
 }
 
 function statusFromStructuredSignals(input: {
@@ -100,54 +131,34 @@ function statusFromStructuredSignals(input: {
     return "blocked_human_decision";
   }
   const lifecycleState = bounded(input.metadata.nodeLifecycleState, 120);
-  const readinessStatus = bounded(input.metadata.nodeReadinessStatus, 120);
-  const repairAction = bounded(input.metadata.nodeReadinessRepairAction, 220);
+  const projectionGate = bounded(input.metadata.nodeLifecycleProjectionGate, 120);
   const failureClass = bounded(
     input.metadata.lastRepairFailureClass ?? input.metadata.parallelFrontierBranchFailureClass,
     220,
   );
-  const structuredSignals = [
-    lifecycleState,
-    readinessStatus,
-    repairAction,
-    failureClass,
-    ...input.reasonCodes,
-  ].filter((value): value is string => Boolean(value));
   if (
-    includesAny(structuredSignals, [
-      "context",
-      "handoff",
-      "snapshot_stale",
-      "context_packet",
-      "request_context",
-    ])
+    projectionGate === "resource_demand_open" ||
+    projectionGate === "resource_demand_blocked" ||
+    projectionGate === "resource_narrowing_required" ||
+    CONTEXT_LIFECYCLE_STATES.has(lifecycleState ?? "") ||
+    CONTEXT_FAILURE_CLASSES.has(failureClass ?? "")
   ) {
     return "blocked_context";
   }
   if (
-    includesAny(structuredSignals, [
-      "resource",
-      "materialization",
-      "target_snapshot",
-      "target_ref",
-      "file_snapshot",
-      "node_execution_packet",
-    ])
+    projectionGate === "resource_ledger_ready" ||
+    projectionGate === "domain_resource_selection_required" ||
+    projectionGate === "domain_resource_selection_blocked" ||
+    projectionGate === "domain_action_gate_blocked" ||
+    RESOURCE_LIFECYCLE_STATES.has(lifecycleState ?? "") ||
+    RESOURCE_FAILURE_CLASSES.has(failureClass ?? "")
   ) {
     return "blocked_resource";
   }
-  if (includesAny(structuredSignals, ["dependency", "not_satisfied", "upstream"])) {
+  if (hasExact(input.reasonCodes, DEPENDENCY_REASON_CODES)) {
     return "blocked_dependency";
   }
-  if (
-    includesAny(structuredSignals, [
-      "authority",
-      "prohibited",
-      "raw_storage",
-      "storage_policy",
-      "permission",
-    ])
-  ) {
+  if (AUTHORITY_FAILURE_CLASSES.has(failureClass ?? "") || hasExact(input.reasonCodes, AUTHORITY_REASON_CODES)) {
     return "blocked_authority";
   }
   if (input.unrecoverable) {
@@ -164,7 +175,7 @@ function nextTransitionForStatus(status: SuperstepBranchResultStatus): string {
     case "succeeded":
       return "evaluate_downstream";
     case "blocked_context":
-      return "request_context_or_reuse_context";
+      return "open_node_resource_demand";
     case "blocked_resource":
       return "materialize_resources_or_split_task";
     case "blocked_dependency":
@@ -181,6 +192,94 @@ function nextTransitionForStatus(status: SuperstepBranchResultStatus): string {
       return "operator_or_orchestrator_review";
   }
   return "operator_or_orchestrator_review";
+}
+
+function branchClosureFromSignals(input: {
+  status: SuperstepBranchResultStatus;
+  evidenceRefs: string[];
+  metadata: Record<string, unknown>;
+  failureClass: string | null;
+  unrecoverable: boolean;
+}): {
+  failureClass: string | null;
+  repairAction: string | null;
+  nextTransition: string;
+  branchClosureState: z.infer<typeof SuperstepBranchResultSchema>["branchClosureState"];
+  branchLocalTransitionPending: boolean;
+} {
+  const projectionGate = bounded(input.metadata.nodeLifecycleProjectionGate, 120);
+  const evidenceClosureStatus = bounded(input.metadata.evidenceClosureStatus, 120);
+  const missionEvidenceStatus = bounded(input.metadata.missionLedgerEvidenceStatus, 120);
+  const validationStatus = bounded(input.metadata.validationLifecycleStatus, 120);
+  const escalationStatus = bounded(input.metadata.highCapabilityEscalationStatus, 120);
+  const typedEvidenceClaimRefs = [
+    ...stringArray(input.metadata.evidenceClaimRefs, 40),
+    ...stringArray(input.metadata.acceptedEvidenceClaimRefs, 40),
+    ...stringArray(input.metadata.missionLedgerEvidenceClaimRefs, 40),
+  ];
+  if (input.status === "succeeded") {
+    const hasClosureEvidence =
+      typedEvidenceClaimRefs.length > 0 ||
+      evidenceClosureStatus === "accepted" ||
+      missionEvidenceStatus === "pending_application" ||
+      projectionGate === "evidence_closure";
+    return {
+      failureClass: null,
+      repairAction: hasClosureEvidence ? "evaluate_mission_ledger" : null,
+      nextTransition: hasClosureEvidence ? "evaluate_mission_ledger" : "evaluate_downstream",
+      branchClosureState: hasClosureEvidence
+        ? "commitment_evaluation_required"
+        : "closed_succeeded",
+      branchLocalTransitionPending: hasClosureEvidence,
+    };
+  }
+  if (
+    input.failureClass === "worker_capability_insufficient" ||
+    projectionGate === "high_capability_escalation_required" ||
+    escalationStatus === "requested"
+  ) {
+    return {
+      failureClass: "worker_capability_insufficient",
+      repairAction: "worker.escalation.execute_high_capability",
+      nextTransition: "high_capability_escalation_required",
+      branchClosureState: "escalation_required",
+      branchLocalTransitionPending: true,
+    };
+  }
+  if (
+    input.failureClass === "validation_failure_repairable" ||
+    input.failureClass === "validation_failure_unrecoverable" ||
+    projectionGate === "validation_repair_plan_required" ||
+    projectionGate === "validation_repair_patch_required" ||
+    projectionGate === "validation_terminal_blocker" ||
+    validationStatus === "repair_required" ||
+    validationStatus === "unrecoverable"
+  ) {
+    const validationUnrecoverable =
+      input.unrecoverable ||
+      input.failureClass === "validation_failure_unrecoverable" ||
+      validationStatus === "unrecoverable";
+    return {
+      failureClass: validationUnrecoverable
+        ? "validation_failure_unrecoverable"
+        : "validation_failure_repairable",
+      repairAction: validationUnrecoverable
+        ? "worker.validation.record_blocker"
+        : "worker.validation.request_repair",
+      nextTransition: validationUnrecoverable
+        ? "validation_terminal_blocker"
+        : "validation_repair_plan_required",
+      branchClosureState: validationUnrecoverable ? "validation_terminal_blocker" : "validation_repair_plan_required",
+      branchLocalTransitionPending: !validationUnrecoverable,
+    };
+  }
+  return {
+    failureClass: null,
+    repairAction: null,
+    nextTransition: nextTransitionForStatus(input.status),
+    branchClosureState: input.status === "failed_unrecoverable" ? "blocked_terminal" : "not_applicable",
+    branchLocalTransitionPending: false,
+  };
 }
 
 export function buildSuperstepBranchResult(input: {
@@ -202,7 +301,7 @@ export function buildSuperstepBranchResult(input: {
 }): SuperstepBranchResult {
   const metadata = asRecord(input.refreshedMetadata ?? input.node.metadata ?? null);
   const targetCommitmentIds = stringArray(metadata.commitmentIdsAdvanced, 40);
-  const reasonCodes = [...new Set(input.reasonCodes)].slice(0, 80);
+  const reasonCodes = boundedStringArray(input.reasonCodes, 80, 260);
   const status = statusFromStructuredSignals({
     resultStatus: input.resultStatus,
     nodeStatus: input.refreshedNodeStatus ?? null,
@@ -233,6 +332,15 @@ export function buildSuperstepBranchResult(input: {
     ...stringArray(metadata.contextSnapshotRefs, 40),
     ...stringArray(metadata.evidenceRefs, 40),
   ];
+  const boundedEvidenceRefs = boundedStringArray(evidenceRefs, 80, 700);
+  const typedFailureClass = failureClass ?? null;
+  const branchClosure = branchClosureFromSignals({
+    status,
+    evidenceRefs: boundedEvidenceRefs,
+    metadata,
+    failureClass: typedFailureClass,
+    unrecoverable: input.unrecoverable === true,
+  });
   return SuperstepBranchResultSchema.parse({
     artifactKind: "runtime_work_graph_superstep_branch_result",
     schemaVersion: "execution-platform.superstep-branch-result.v1",
@@ -243,7 +351,7 @@ export function buildSuperstepBranchResult(input: {
     capabilityId: input.capabilityId,
     targetCommitmentIds,
     status,
-    failureClass: status === "succeeded" ? null : failureClass,
+    failureClass: status === "succeeded" ? null : (branchClosure.failureClass ?? failureClass),
     errorPath: status === "succeeded" ? null : errorPath,
     errorSummary: status === "succeeded" ? null : errorSummary,
     blockerSummary:
@@ -252,11 +360,13 @@ export function buildSuperstepBranchResult(input: {
         : (errorSummary ??
           bounded(metadata.blockerSummary, 700) ??
           bounded(metadata.nodeReadinessBlockerSummary, 700) ??
-          reasonCodes.find((code) => code.includes("blocked") || code.includes("missing")) ??
+          reasonCodes[0] ??
           null),
-    repairAction: status === "succeeded" ? null : repairAction,
-    nextTransition: nextTransitionForStatus(status),
-    evidenceRefs: [...new Set(evidenceRefs)].slice(0, 80),
+    repairAction: status === "succeeded" ? branchClosure.repairAction : (branchClosure.repairAction ?? repairAction),
+    nextTransition: branchClosure.nextTransition,
+    branchClosureState: branchClosure.branchClosureState,
+    branchLocalTransitionPending: branchClosure.branchLocalTransitionPending,
+    evidenceRefs: boundedEvidenceRefs,
     readinessStateRef,
     reasonCodes,
     rawPromptStored: false,

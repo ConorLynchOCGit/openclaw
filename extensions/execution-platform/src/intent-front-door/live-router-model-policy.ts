@@ -9,6 +9,14 @@ import {
 
 export const LIVE_ROUTER_MODEL_POLICY_KIND = "intent_front_door_live_router_model_policy";
 
+export type LiveRouterReasoningEffort =
+  | "none"
+  | "minimal"
+  | "low"
+  | "medium"
+  | "high"
+  | "xhigh";
+
 export type LiveRouterProviderProfile = {
   providerRef: string;
   providerKind: "openrouter" | "approved_model_routing_client";
@@ -16,7 +24,7 @@ export type LiveRouterProviderProfile = {
   timeoutMs: number;
   maxAttempts: number;
   maxTokens: number;
-  reasoningEffort: "low" | "medium" | "high" | null;
+  reasoningEffort: LiveRouterReasoningEffort | null;
   speedPreference: "throughput" | "latency" | null;
 };
 

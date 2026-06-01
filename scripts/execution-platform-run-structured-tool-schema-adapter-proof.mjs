@@ -18,7 +18,7 @@ const artifactPath = path.join(artifactDir, "proof.json");
 
 const semanticClassification = classifyModelTaskCall({
   taskClass: "local_semantic_extraction",
-  callSite: "proof.commitment_packet.semantic_content",
+  callSite: "proof.obligation.semantic_content",
 });
 const semanticProfile = buildStructuredAdapterProviderProfile(semanticClassification);
 const semanticPreflight = structuredAdapterPreflight({

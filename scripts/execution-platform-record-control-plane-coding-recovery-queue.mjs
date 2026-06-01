@@ -78,7 +78,7 @@ const preProofItems = [
     priorityClass: "P0",
     specSectionRef: `${sourceSpecRef}#task-dag-first-scheduler`,
     scope: [
-      "workintent_context_requirements",
+      "workintent_resource_requirements",
       "context_broker_requests",
       "consumer_scoped_limitations",
       "node_readiness_state",
@@ -181,9 +181,7 @@ const postProofItems = [
   },
 ];
 
-const diagnosticOnlyIds = [
-  "openclaw-convergence.staged-mission-ledger-obligation-candidate-compiler",
-];
+const diagnosticOnlyIds = [];
 
 const supersededQueueItems = [
   {

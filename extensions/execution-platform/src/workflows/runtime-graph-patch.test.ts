@@ -41,7 +41,51 @@ describe("runtime graph patch progress compaction", () => {
           status: index % 2 === 0 ? "blocked_resource" : "ready",
           blockerSummary: "Missing resource packet ".repeat(50),
         })),
+        branchScopedFrontierStates: Array.from({ length: 55 }, (_, index) => ({
+          branchId: `nested-branch-${index}`,
+          nodeId: `nested-node-${index}`,
+          nodeKind: "resource_scout",
+          status: index % 2 === 0 ? "blocked_context" : "ready",
+          blockerSummary: "Nested branch-scoped frontier details ".repeat(90),
+          resourceRequirementRefs: Array.from(
+            { length: 20 },
+            (_, refIndex) => `resource-requirement://nested-node-${index}/${refIndex}`,
+          ),
+          successfulEvidenceRefs: Array.from(
+            { length: 30 },
+            (_, refIndex) => `artifact://nested-context/success/${index}/${refIndex}`,
+          ),
+          reasonCodes: Array.from({ length: 40 }, (_, reasonIndex) =>
+            `nested_resource_requirement_reason_${reasonIndex}`,
+          ),
+        })),
       },
+      branchScopedFrontierStates: Array.from({ length: 60 }, (_, index) => ({
+        branchId: `branch-${index}`,
+        nodeId: `node-${index}`,
+        nodeKind: "resource_scout",
+        capabilityId: "resource_scout",
+        status: index % 2 === 0 ? "blocked_context" : "ready",
+        blockerSummary: "Consumer-bound resource requirement details ".repeat(80),
+          nextLegalTransition: "dispatch_context_specialist_subturn",
+        resourceRequirementRefs: Array.from(
+          { length: 20 },
+          (_, refIndex) => `resource-requirement://node-${index}/${refIndex}`,
+        ),
+        consumerNodeIds: Array.from({ length: 20 }, (_, refIndex) => `consumer-${refIndex}`),
+        successfulEvidenceRefs: Array.from(
+          { length: 30 },
+          (_, refIndex) => `artifact://context/success/${index}/${refIndex}`,
+        ),
+        failedEvidenceRefs: Array.from(
+          { length: 30 },
+          (_, refIndex) => `artifact://context/failed/${index}/${refIndex}`,
+        ),
+        missingFields: ["acceptedContextSnapshotRefs", "resourceRequirementRefs"],
+        reasonCodes: Array.from({ length: 40 }, (_, reasonIndex) =>
+          `resource_requirement_reason_${reasonIndex}`,
+        ),
+      })),
       reasonCodes: ["resource_packet_bounds"],
       rawPromptStored: false,
       rawResponseStored: false,
@@ -88,6 +132,119 @@ describe("runtime graph patch progress compaction", () => {
     expect(compact.graphPatchRef).toBe(artifact.uri);
     expect(JSON.stringify(compact)).not.toContain("graphNodes");
     expect(JSON.stringify(compact)).not.toContain("graphEdges");
+    expect(compact.branchScopedFrontierStates).toMatchObject({
+      count: 60,
+      truncated: true,
+      compactedForManifest: true,
+    });
     expect(JSON.stringify(compact).length).toBeLessThan(64 * 1024);
+  });
+
+  it("keeps scheduler progress metadata bounded when branch frontier details balloon", () => {
+    const heavyBranchStates = Array.from({ length: 80 }, (_, index) => ({
+      branchId: `branch-${index}`,
+      nodeId: `context-scout-node-with-long-id-${index}`,
+      nodeKind: "resource_scout",
+      capabilityId: "resource_scout",
+      status: "completed",
+      blockerSummary: "No blocker; long diagnostic context ".repeat(200),
+      nextLegalTransition: "orchestrator_decision",
+      readinessRef: `runtime-job://job-2/readiness/${index}`,
+      resourcePacketRef: `runtime-job://job-2/resource/${index}`,
+      resourceRequirementRefs: Array.from(
+        { length: 30 },
+        (_, refIndex) => `runtime-job://job-2/resource-requirement/${index}/${refIndex}`,
+      ),
+      successfulEvidenceRefs: Array.from(
+        { length: 40 },
+        (_, refIndex) => `runtime-job://job-2/context-evidence/${index}/${refIndex}`,
+      ),
+      reasonCodes: Array.from({ length: 60 }, (_, reasonIndex) =>
+        `branch_scoped_frontier_state_reason_${index}_${reasonIndex}`,
+      ),
+    }));
+    const progressMetadata = {
+      artifactKind: "agent_team_scheduler_progress",
+      runtimeJobId: "job-2",
+      graphId: "graph-2",
+      stage: "scheduler_parallel_frontier",
+      status: "completed",
+      nodeId: "context-scout-node-with-long-id-79",
+      roleId: "resource_scout",
+      currentObjective: "Supply implementation-ready repo context. ".repeat(500),
+      parallelFrontier: {
+        currentSuperstep: 9,
+        selectedNodeIds: heavyBranchStates.map((state) => state.nodeId),
+        branchScopedFrontierStates: heavyBranchStates,
+        branchResults: heavyBranchStates,
+      },
+      schedulerFrontierState: {
+        currentSuperstep: 9,
+        nextLegalTransition: "orchestrator_decision",
+        selectedExecutableNodeIds: heavyBranchStates.map((state) => state.nodeId),
+        blockedFrontierNodeIds: [],
+        graphNodes: Array.from({ length: 110 }, (_, index) => ({
+          nodeId: `node-${index}`,
+          objective: "Large objective ".repeat(120),
+        })),
+        graphEdges: Array.from({ length: 119 }, (_, index) => ({
+          edgeId: `edge-${index}`,
+          fromNodeId: `node-${index}`,
+          toNodeId: `node-${index + 1}`,
+        })),
+        reasonCodes: Array.from({ length: 80 }, (_, index) => `frontier_reason_${index}`),
+      },
+      branchScopedFrontierStates: heavyBranchStates,
+      reasonCodes: [
+        "scheduler_tool_invoked:scheduler.record_branch_scoped_frontier_state",
+        "scheduler_record_branch_scoped_frontier_state_recorded",
+        "branch_scoped_frontier_state_recorded_after_superstep",
+        "branch_scoped_frontier_state_count:80",
+      ],
+      rawPromptStored: false,
+      rawResponseStored: false,
+      rawProviderLogStored: false,
+      rawToolLogStored: false,
+      rawCommandLogStored: false,
+      rawDbRowsStored: false,
+    };
+    const body = buildRuntimeGraphPatchBody({
+      patchId: "patch-2",
+      runtimeJobId: "job-2",
+      graphId: "graph-2",
+      schedulerIteration: 80,
+      patchKind: "scheduler.join_superstep_frontier",
+      stage: "scheduler_parallel_frontier",
+      status: "completed",
+      nodeId: "context-scout-node-with-long-id-79",
+      roleId: "resource_scout",
+      progressMetadata,
+    });
+    const artifact = {
+      uri: "runtime-job://job-2/runtime-work-graph/graph-patch/080",
+      sha256: "def456",
+      sizeBytes: 500_000,
+      metadata: {
+        payloadRef:
+          "runtime-artifact-payload://job-2/execution_platform.runtime_graph_patch/def456",
+        byteCount: 500_000,
+        sha256: "def456",
+      },
+    } as unknown as RuntimeJobArtifact;
+
+    const compact = compactSchedulerProgressForManifest(
+      progressMetadata,
+      summarizeRuntimeGraphPatchArtifact({ artifact, body }),
+    );
+
+    expect(JSON.stringify(compact).length).toBeLessThan(64 * 1024);
+    expect(compact.graphPatchPayloadRef).toBe(
+      "runtime-artifact-payload://job-2/execution_platform.runtime_graph_patch/def456",
+    );
+    expect(compact.branchScopedFrontierStates).toMatchObject({
+      count: 80,
+      truncated: true,
+      compactedForManifest: true,
+    });
   });
 });

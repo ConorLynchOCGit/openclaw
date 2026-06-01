@@ -66,6 +66,12 @@ import {
   getWorkflowContract,
   type WorkflowRegistry,
 } from "../workflows/workflow-registry.ts";
+import {
+  GatewaySubmitDiagnosticsCollector,
+  type GatewaySubmitDiagnosticsManifest,
+  type GatewaySubmitDiagnosticsPhase,
+  type GatewaySubmitDiagnosticsSink,
+} from "./gateway-submit-diagnostics.ts";
 import { type IntentValidatorApprovalRef } from "./intent-validator.ts";
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -119,6 +125,9 @@ export type NativeExecutionSubmitResult = {
   frontDoorCompiledRequest: FrontDoorCompileResult | null;
   frontDoorMultiIntentPlan: MultiIntentPlanCompileDecision | null;
   frontDoorMemoryPolicy: PromptRouterMemoryPolicyDecision | null;
+  frontDoorSubmitDiagnostics: FrontDoorSubmitMemoryDiagnostic[] | null;
+  frontDoorSubmitDiagnosticsManifest: GatewaySubmitDiagnosticsManifest | null;
+  frontDoorSubmitDiagnosticsArtifactRef: string | null;
   workflowId: string | null;
   jobType: string | null;
   workerContractState: WorkflowWorkerExecutionReadiness["contractState"] | null;
@@ -129,6 +138,8 @@ export type NativeExecutionSubmitResult = {
   workQueueLifecycleMutated: false;
 };
 
+export type FrontDoorSubmitMemoryDiagnostic = GatewaySubmitDiagnosticsPhase;
+
 export type NativeExecutionRpcDependencies = {
   runtimeJobs: RuntimeJobRepository;
   runtimeToolKernel?: RuntimeToolKernel;
@@ -137,6 +148,7 @@ export type NativeExecutionRpcDependencies = {
   structuredRouterProvider?: StructuredModelIntentRouterProvider;
   routingTelemetryStore?: RoutingTelemetryStore;
   workerAdapterRegistry?: WorkflowWorkerAdapterRegistry;
+  submitDiagnosticsSink?: GatewaySubmitDiagnosticsSink;
   queueName?: string;
 };
 
@@ -150,6 +162,14 @@ function hashPrompt(value: string): string {
 
 function summarizePrompt(value: string): string {
   return value.replace(/\s+/gu, " ").trim().slice(0, 600);
+}
+
+function jsonBytes(value: unknown): number | null {
+  try {
+    return Buffer.byteLength(JSON.stringify(value), "utf8");
+  } catch {
+    return null;
+  }
 }
 
 function summarizeBlockedRouterOutput(result: StructuredModelIntentRouterResult): string {
@@ -621,6 +641,26 @@ export class NativeExecutionRpcService {
   }
 
   async submit(request: NativeExecutionSubmitRequest): Promise<NativeExecutionSubmitResult> {
+    const submitStartedAt = Date.now();
+    const promptHash = hashPrompt(request.prompt);
+    const promptSummary = summarizePrompt(request.prompt);
+    const submitId = `native-submit-${shortHash(
+      `${promptHash}:${request.workItemId ?? request.auth.sessionId ?? request.auth.actorId}`,
+    )}`;
+    const submitDiagnostics = new GatewaySubmitDiagnosticsCollector(
+      {
+        submitId,
+        promptHash,
+        promptLength: request.prompt.length,
+        promptByteLength: Buffer.byteLength(request.prompt, "utf8"),
+        promptSummary,
+        startedAt: submitStartedAt,
+      },
+      this.dependencies.submitDiagnosticsSink ?? null,
+    );
+    await submitDiagnostics.record("submit_started", {
+      reasonCodes: ["front_door_submit_started"],
+    });
     const preGate = runProtocolPreGate({
       text: request.prompt,
       sourceRoute: request.sourceRoute ?? request.auth.sourceRoute ?? "api",
@@ -637,69 +677,146 @@ export class NativeExecutionRpcService {
         inputByteLength: Buffer.byteLength(request.prompt, "utf8"),
       },
     });
+    await submitDiagnostics.record("protocol_pregate_completed", {
+      reasonCodes: preGate.reasonCodes,
+    });
     if (preGate.kind === "reject") {
-      const promptHash = hashPrompt(request.prompt);
+      const diagnostics = await submitDiagnostics.finalize({
+        status: "rejected",
+        reasonCodes: preGate.reasonCodes,
+      });
       return this.submitResult({
         frontDoorMemoryPolicy: decidePromptRouterMemoryPolicy({
           routeKind: "protocol",
           promptHash,
-          boundedPromptSummary: summarizePrompt(request.prompt),
+          boundedPromptSummary: promptSummary,
           contextBudgetRemainingTokens: 0,
         }),
+        frontDoorSubmitDiagnostics: diagnostics.body.phases,
+        frontDoorSubmitDiagnosticsManifest: diagnostics.manifest,
+        frontDoorSubmitDiagnosticsArtifactRef: diagnostics.manifest.manifestArtifactRef,
         reasonCodes: preGate.reasonCodes,
         statusCode: preGate.statusCode,
       });
     }
     if (preGate.kind === "protocol_command") {
-      const promptHash = hashPrompt(request.prompt);
+      const reasonCodes = [
+        "protocol_command_bypassed_execution_submit",
+        `protocol_command_${preGate.command}`,
+        ...preGate.reasonCodes,
+      ];
+      const diagnostics = await submitDiagnostics.finalize({
+        status: "rejected",
+        reasonCodes,
+      });
       return this.submitResult({
         frontDoorMemoryPolicy: decidePromptRouterMemoryPolicy({
           routeKind: "protocol",
           promptHash,
-          boundedPromptSummary: summarizePrompt(request.prompt),
+          boundedPromptSummary: promptSummary,
           contextBudgetRemainingTokens: 0,
         }),
-        reasonCodes: [
-          "protocol_command_bypassed_execution_submit",
-          `protocol_command_${preGate.command}`,
-          ...preGate.reasonCodes,
-        ],
+        frontDoorSubmitDiagnostics: diagnostics.body.phases,
+        frontDoorSubmitDiagnosticsManifest: diagnostics.manifest,
+        frontDoorSubmitDiagnosticsArtifactRef: diagnostics.manifest.manifestArtifactRef,
+        reasonCodes,
       });
     }
     if (preGate.kind === "ui_control") {
-      const promptHash = hashPrompt(request.prompt);
+      const reasonCodes = [
+        "ui_control_bypassed_execution_submit",
+        `ui_control_${preGate.control}`,
+        ...preGate.reasonCodes,
+      ];
+      const diagnostics = await submitDiagnostics.finalize({
+        status: "rejected",
+        reasonCodes,
+      });
       return this.submitResult({
         frontDoorMemoryPolicy: decidePromptRouterMemoryPolicy({
           routeKind: "protocol",
           promptHash,
-          boundedPromptSummary: summarizePrompt(request.prompt),
+          boundedPromptSummary: promptSummary,
           contextBudgetRemainingTokens: 0,
         }),
-        reasonCodes: [
-          "ui_control_bypassed_execution_submit",
-          `ui_control_${preGate.control}`,
-          ...preGate.reasonCodes,
-        ],
+        frontDoorSubmitDiagnostics: diagnostics.body.phases,
+        frontDoorSubmitDiagnosticsManifest: diagnostics.manifest,
+        frontDoorSubmitDiagnosticsArtifactRef: diagnostics.manifest.manifestArtifactRef,
+        reasonCodes,
       });
     }
     if (this.structuredRouterProvider) {
-      return this.submitViaFrontDoor(request);
+      return this.submitViaFrontDoor(request, submitDiagnostics);
     }
+    const reasonCodes = [
+      "structured_model_intent_router_provider_not_configured",
+      "front_door_required_for_free_form_execution_submit",
+      "legacy_semantic_intent_router_retired",
+    ];
+    const diagnostics = await submitDiagnostics.finalize({
+      status: "rejected",
+      reasonCodes,
+    });
     return this.submitResult({
       statusCode: 503,
-      reasonCodes: [
-        "structured_model_intent_router_provider_not_configured",
-        "front_door_required_for_free_form_execution_submit",
-        "legacy_semantic_intent_router_retired",
-      ],
+      frontDoorSubmitDiagnostics: diagnostics.body.phases,
+      frontDoorSubmitDiagnosticsManifest: diagnostics.manifest,
+      frontDoorSubmitDiagnosticsArtifactRef: diagnostics.manifest.manifestArtifactRef,
+      reasonCodes,
     });
   }
 
   private async submitViaFrontDoor(
     request: NativeExecutionSubmitRequest,
+    submitDiagnostics: GatewaySubmitDiagnosticsCollector,
   ): Promise<NativeExecutionSubmitResult> {
-    const promptHash = hashPrompt(request.prompt);
-    const promptSummary = summarizePrompt(request.prompt);
+    const promptHash = submitDiagnostics.promptHash;
+    const promptSummary = submitDiagnostics.promptSummary;
+    const recordSubmitDiagnostic = async (
+      phase: string,
+      extra: Partial<
+        Pick<
+          FrontDoorSubmitMemoryDiagnostic,
+          | "workflowSummaryCount"
+          | "workflowSummaryBytes"
+          | "conversationContextBytes"
+          | "routerPayloadBytes"
+          | "candidateCount"
+          | "selectedModelRef"
+          | "providerRef"
+          | "reasonCodes"
+        >
+      > = {},
+    ) => {
+      await submitDiagnostics.record(phase, {
+        workflowSummaryCount: extra.workflowSummaryCount ?? null,
+        workflowSummaryBytes: extra.workflowSummaryBytes ?? null,
+        conversationContextBytes: extra.conversationContextBytes ?? null,
+        routerPayloadBytes: extra.routerPayloadBytes ?? null,
+        candidateCount: extra.candidateCount ?? null,
+        selectedModelRef: extra.selectedModelRef ?? null,
+        providerRef: extra.providerRef ?? null,
+        reasonCodes: extra.reasonCodes ?? [],
+      });
+    };
+    const submitResultWithDiagnostics = async (
+      input: Partial<NativeExecutionSubmitResult> = {},
+    ): Promise<NativeExecutionSubmitResult> => {
+      await submitDiagnostics.record("submit_result_returned", {
+        reasonCodes: input.reasonCodes ?? [],
+      });
+      const diagnostics = await submitDiagnostics.finalize({
+        status: input.accepted ? "accepted" : "rejected",
+        runtimeJobId: input.runtimeJobId ?? null,
+        reasonCodes: input.reasonCodes ?? [],
+      });
+      return this.submitResult({
+        ...input,
+        frontDoorSubmitDiagnostics: diagnostics.body.phases,
+        frontDoorSubmitDiagnosticsManifest: diagnostics.manifest,
+        frontDoorSubmitDiagnosticsArtifactRef: diagnostics.manifest.manifestArtifactRef,
+      });
+    };
     const sourcePromptRef =
       request.sourcePromptRef ??
       ({
@@ -711,6 +828,11 @@ export class NativeExecutionRpcService {
         rawPromptStored: false,
       } satisfies Omit<FrontDoorSourcePromptRef, "promptHash" | "promptLength">);
     const workflowSummaryIndex = buildWorkflowSummaryIndex(this.registry);
+    await recordSubmitDiagnostic("workflow_summary_index_built", {
+      workflowSummaryCount: workflowSummaryIndex.summaries.length,
+      workflowSummaryBytes: jsonBytes(workflowSummaryIndex),
+      reasonCodes: ["workflow_summary_index_built"],
+    });
     const context = buildConversationRoutingContext({
       actorId: request.auth.actorId,
       sessionId: request.auth.sessionId ?? request.auth.actorId,
@@ -729,12 +851,18 @@ export class NativeExecutionRpcService {
       ],
       reasonCodes: ["native_submit_front_door_context_built"],
     });
+    await recordSubmitDiagnostic("conversation_context_built", {
+      workflowSummaryCount: workflowSummaryIndex.summaries.length,
+      workflowSummaryBytes: jsonBytes(workflowSummaryIndex),
+      conversationContextBytes: jsonBytes(context),
+      reasonCodes: ["conversation_context_built"],
+    });
     const fastPath = runCheapDeterministicFastPath({
       conversationContext: context,
       promptSummary,
     });
     if (fastPath.finalRouteDecisionMade) {
-      return this.submitResult({
+      return submitResultWithDiagnostics({
         statusCode: 200,
         reasonCodes: fastPath.reasonCodes,
       });
@@ -744,6 +872,13 @@ export class NativeExecutionRpcService {
       index: workflowSummaryIndex,
       context,
       maxCandidates: 8,
+    });
+    await recordSubmitDiagnostic("workflow_candidates_selected", {
+      workflowSummaryCount: workflowSummaryIndex.summaries.length,
+      workflowSummaryBytes: jsonBytes(workflowSummaryIndex),
+      conversationContextBytes: jsonBytes(context),
+      candidateCount: candidates.candidates.length,
+      reasonCodes: ["workflow_candidates_selected"],
     });
     const router = new StructuredModelIntentRouter(this.structuredRouterProvider!);
     const requestId = `native-exec-${shortHash(`${promptHash}:${request.workItemId ?? request.auth.sessionId ?? request.auth.actorId}`)}`;
@@ -767,14 +902,52 @@ export class NativeExecutionRpcService {
       sessionId: request.auth.sessionId ?? request.auth.actorId,
       reasonCodes: ["native_submit_front_door_router_request"],
     });
+    await recordSubmitDiagnostic("before_router_model_call", {
+      workflowSummaryCount: workflowSummaryIndex.summaries.length,
+      workflowSummaryBytes: jsonBytes(workflowSummaryIndex),
+      conversationContextBytes: jsonBytes(context),
+      routerPayloadBytes: jsonBytes(routerRequest),
+      candidateCount: candidates.candidates.length,
+      reasonCodes: ["before_router_model_call"],
+    });
     let routed = await router.route(routerRequest);
+    await recordSubmitDiagnostic("after_router_model_call", {
+      workflowSummaryCount: workflowSummaryIndex.summaries.length,
+      workflowSummaryBytes: jsonBytes(workflowSummaryIndex),
+      conversationContextBytes: jsonBytes(context),
+      routerPayloadBytes: jsonBytes(routerRequest),
+      candidateCount: candidates.candidates.length,
+      selectedModelRef: routed.metadata.modelCandidateId,
+      providerRef: routed.metadata.providerRef ?? null,
+      reasonCodes: routed.metadata.reasonCodes,
+    });
     if (routed.valid && routed.output?.route === "blocked") {
       const repairRequest = buildBlockedRouteRepairRequest({
         originalRequest: routerRequest,
         originalPrompt: request.prompt,
         firstResult: routed,
       });
+      await recordSubmitDiagnostic("before_blocked_route_repair_model_call", {
+        workflowSummaryCount: workflowSummaryIndex.summaries.length,
+        workflowSummaryBytes: jsonBytes(workflowSummaryIndex),
+        conversationContextBytes: jsonBytes(context),
+        routerPayloadBytes: jsonBytes(repairRequest),
+        candidateCount: candidates.candidates.length,
+        selectedModelRef: routed.metadata.modelCandidateId,
+        providerRef: routed.metadata.providerRef ?? null,
+        reasonCodes: ["before_blocked_route_repair_model_call"],
+      });
       const repaired = await router.route(repairRequest);
+      await recordSubmitDiagnostic("after_blocked_route_repair_model_call", {
+        workflowSummaryCount: workflowSummaryIndex.summaries.length,
+        workflowSummaryBytes: jsonBytes(workflowSummaryIndex),
+        conversationContextBytes: jsonBytes(context),
+        routerPayloadBytes: jsonBytes(repairRequest),
+        candidateCount: candidates.candidates.length,
+        selectedModelRef: repaired.metadata.modelCandidateId,
+        providerRef: repaired.metadata.providerRef ?? null,
+        reasonCodes: repaired.metadata.reasonCodes,
+      });
       if (repaired.valid && repaired.output) {
         routed = repaired;
       }
@@ -803,7 +976,7 @@ export class NativeExecutionRpcService {
           authSessionVersion,
         }),
       });
-      return this.submitResult({
+      return submitResultWithDiagnostics({
         statusCode: 400,
         frontDoorRouterResult: routed,
         frontDoorMemoryPolicy: invalidRouteMemoryPolicy,
@@ -885,7 +1058,27 @@ export class NativeExecutionRpcService {
         currentResult: routed,
         actionSemantics: stages.actionSemantics,
       });
+      await recordSubmitDiagnostic("before_action_semantics_repair_model_call", {
+        workflowSummaryCount: workflowSummaryIndex.summaries.length,
+        workflowSummaryBytes: jsonBytes(workflowSummaryIndex),
+        conversationContextBytes: jsonBytes(context),
+        routerPayloadBytes: jsonBytes(repairRequest),
+        candidateCount: candidates.candidates.length,
+        selectedModelRef: routed.metadata.modelCandidateId,
+        providerRef: routed.metadata.providerRef ?? null,
+        reasonCodes: ["before_action_semantics_repair_model_call"],
+      });
       const repaired = await router.route(repairRequest);
+      await recordSubmitDiagnostic("after_action_semantics_repair_model_call", {
+        workflowSummaryCount: workflowSummaryIndex.summaries.length,
+        workflowSummaryBytes: jsonBytes(workflowSummaryIndex),
+        conversationContextBytes: jsonBytes(context),
+        routerPayloadBytes: jsonBytes(repairRequest),
+        candidateCount: candidates.candidates.length,
+        selectedModelRef: repaired.metadata.modelCandidateId,
+        providerRef: repaired.metadata.providerRef ?? null,
+        reasonCodes: repaired.metadata.reasonCodes,
+      });
       if (repaired.valid && repaired.output) {
         routed = repaired;
         stages = computeFrontDoorStages(routed);
@@ -898,7 +1091,27 @@ export class NativeExecutionRpcService {
         currentResult: routed,
         validation: stages.validation,
       });
+      await recordSubmitDiagnostic("before_executor_capability_repair_model_call", {
+        workflowSummaryCount: workflowSummaryIndex.summaries.length,
+        workflowSummaryBytes: jsonBytes(workflowSummaryIndex),
+        conversationContextBytes: jsonBytes(context),
+        routerPayloadBytes: jsonBytes(repairRequest),
+        candidateCount: candidates.candidates.length,
+        selectedModelRef: routed.metadata.modelCandidateId,
+        providerRef: routed.metadata.providerRef ?? null,
+        reasonCodes: ["before_executor_capability_repair_model_call"],
+      });
       const repaired = await router.route(repairRequest);
+      await recordSubmitDiagnostic("after_executor_capability_repair_model_call", {
+        workflowSummaryCount: workflowSummaryIndex.summaries.length,
+        workflowSummaryBytes: jsonBytes(workflowSummaryIndex),
+        conversationContextBytes: jsonBytes(context),
+        routerPayloadBytes: jsonBytes(repairRequest),
+        candidateCount: candidates.candidates.length,
+        selectedModelRef: repaired.metadata.modelCandidateId,
+        providerRef: repaired.metadata.providerRef ?? null,
+        reasonCodes: repaired.metadata.reasonCodes,
+      });
       if (repaired.valid && repaired.output) {
         routed = repaired;
         stages = computeFrontDoorStages(routed);
@@ -929,7 +1142,7 @@ export class NativeExecutionRpcService {
           authSessionVersion,
         }),
       });
-      return this.submitResult({
+      return submitResultWithDiagnostics({
         statusCode: 200,
         workflowId: output.workflowId,
         jobType: output.jobType,
@@ -966,7 +1179,7 @@ export class NativeExecutionRpcService {
           authSessionVersion,
         }),
       });
-      return this.submitResult({
+      return submitResultWithDiagnostics({
         statusCode: output.route === "work_queue_control" ? 202 : 400,
         workflowId: output.executorWorkflowId ?? output.workflowId,
         jobType: output.jobType,
@@ -1014,7 +1227,7 @@ export class NativeExecutionRpcService {
           authSessionVersion,
         }),
       });
-      return this.submitResult({
+      return submitResultWithDiagnostics({
         statusCode: 400,
         workflowId: output.executorWorkflowId ?? output.workflowId,
         jobType: output.jobType,
@@ -1047,6 +1260,16 @@ export class NativeExecutionRpcService {
       idempotencyKey: requestId,
       routerToolProtocol,
     });
+    await recordSubmitDiagnostic("front_door_request_compiled", {
+      workflowSummaryCount: workflowSummaryIndex.summaries.length,
+      workflowSummaryBytes: jsonBytes(workflowSummaryIndex),
+      conversationContextBytes: jsonBytes(context),
+      routerPayloadBytes: jsonBytes(routerRequest),
+      candidateCount: candidates.candidates.length,
+      selectedModelRef: routed.metadata.modelCandidateId,
+      providerRef: routed.metadata.providerRef ?? null,
+      reasonCodes: [`front_door_request_compiled:${compiled.artifactKind}`],
+    });
     if (compiled.artifactKind === "front_door_compiled_plan_only") {
       await this.recordFrontDoorRoutingTelemetry({
         record: buildFrontDoorRoutingTelemetryRecord({
@@ -1064,7 +1287,7 @@ export class NativeExecutionRpcService {
           authSessionVersion,
         }),
       });
-      return this.submitResult({
+      return submitResultWithDiagnostics({
         statusCode: 200,
         workflowId: output.workflowId,
         jobType: output.jobType,
@@ -1111,6 +1334,16 @@ export class NativeExecutionRpcService {
       workflowId: compiled.workflowId,
       jobType: compiled.jobType,
     });
+    await recordSubmitDiagnostic("worker_readiness_checked", {
+      workflowSummaryCount: workflowSummaryIndex.summaries.length,
+      workflowSummaryBytes: jsonBytes(workflowSummaryIndex),
+      conversationContextBytes: jsonBytes(context),
+      routerPayloadBytes: jsonBytes(routerRequest),
+      candidateCount: candidates.candidates.length,
+      selectedModelRef: routed.metadata.modelCandidateId,
+      providerRef: routed.metadata.providerRef ?? null,
+      reasonCodes: workerReadiness?.reasonCodes ?? ["worker_readiness_not_required"],
+    });
     if (workerReadiness && !workerReadiness.accepted) {
       await this.recordFrontDoorRoutingTelemetry({
         record: buildFrontDoorRoutingTelemetryRecord({
@@ -1129,7 +1362,7 @@ export class NativeExecutionRpcService {
           artifactRefs: ["worker_adapter_registry://execution-readiness"],
         }),
       });
-      return this.submitResult({
+      return submitResultWithDiagnostics({
         statusCode: 409,
         workflowId: compiled.workflowId,
         jobType: compiled.jobType,
@@ -1145,7 +1378,27 @@ export class NativeExecutionRpcService {
         reasonCodes: workerReadiness.reasonCodes,
       });
     }
+    await recordSubmitDiagnostic("before_runtime_job_enqueue", {
+      workflowSummaryCount: workflowSummaryIndex.summaries.length,
+      workflowSummaryBytes: jsonBytes(workflowSummaryIndex),
+      conversationContextBytes: jsonBytes(context),
+      routerPayloadBytes: jsonBytes(routerRequest),
+      candidateCount: candidates.candidates.length,
+      selectedModelRef: routed.metadata.modelCandidateId,
+      providerRef: routed.metadata.providerRef ?? null,
+      reasonCodes: ["before_runtime_job_enqueue"],
+    });
     const job = await this.dependencies.runtimeJobs.enqueueJob(compiled.runtimeJobCreateRequest);
+    await recordSubmitDiagnostic("after_runtime_job_enqueue", {
+      workflowSummaryCount: workflowSummaryIndex.summaries.length,
+      workflowSummaryBytes: jsonBytes(workflowSummaryIndex),
+      conversationContextBytes: jsonBytes(context),
+      routerPayloadBytes: jsonBytes(routerRequest),
+      candidateCount: candidates.candidates.length,
+      selectedModelRef: routed.metadata.modelCandidateId,
+      providerRef: routed.metadata.providerRef ?? null,
+      reasonCodes: ["after_runtime_job_enqueue"],
+    });
     if (this.dependencies.workQueue && request.workItemId?.trim()) {
       const existingTruth = await this.dependencies.workQueue.readWorkItemTruth(request.workItemId);
       if (!existingTruth) {
@@ -1187,6 +1440,16 @@ export class NativeExecutionRpcService {
         },
       });
     }
+    await recordSubmitDiagnostic("before_front_door_artifact_attachment", {
+      workflowSummaryCount: workflowSummaryIndex.summaries.length,
+      workflowSummaryBytes: jsonBytes(workflowSummaryIndex),
+      conversationContextBytes: jsonBytes(context),
+      routerPayloadBytes: jsonBytes(routerRequest),
+      candidateCount: candidates.candidates.length,
+      selectedModelRef: routed.metadata.modelCandidateId,
+      providerRef: routed.metadata.providerRef ?? null,
+      reasonCodes: ["before_front_door_artifact_attachment"],
+    });
     await this.attachFrontDoorArtifacts({
       runtimeJobId: job.jobId,
       routed,
@@ -1198,6 +1461,60 @@ export class NativeExecutionRpcService {
       multiIntentPlan,
       childHandoffs,
       memoryPolicy: frontDoorMemoryPolicy,
+    });
+    await recordSubmitDiagnostic("after_front_door_artifact_attachment", {
+      workflowSummaryCount: workflowSummaryIndex.summaries.length,
+      workflowSummaryBytes: jsonBytes(workflowSummaryIndex),
+      conversationContextBytes: jsonBytes(context),
+      routerPayloadBytes: jsonBytes(routerRequest),
+      candidateCount: candidates.candidates.length,
+      selectedModelRef: routed.metadata.modelCandidateId,
+      providerRef: routed.metadata.providerRef ?? null,
+      reasonCodes: ["after_front_door_artifact_attachment"],
+    });
+    const finalReasonCodes = [
+      "native_submit_front_door_job_enqueued",
+      ...validation.reasonCodes,
+      ...actionSemantics.reasonCodes,
+    ];
+    const diagnostics = await submitDiagnostics.finalize({
+      status: "accepted",
+      runtimeJobId: job.jobId,
+      reasonCodes: finalReasonCodes,
+    });
+    const diagnosticsArtifact = await this.dependencies.runtimeJobs.attachJsonPayloadArtifact({
+      jobId: job.jobId,
+      artifactType: "execution.front_door.submit_heap_diagnostics",
+      uri: `runtime-job://${job.jobId}/execution/front-door/submit-heap-diagnostics`,
+      contentType: "application/json",
+      body: diagnostics.body as unknown as JsonValue,
+      boundedSummary: `Front-door submit diagnostics for ${diagnostics.manifest.phaseCount} phases.`,
+      reasonCodes: diagnostics.manifest.reasonCodes,
+      inputCounts: {
+        phaseCount: diagnostics.manifest.phaseCount,
+        promptByteLength: diagnostics.manifest.promptByteLength,
+        workflowSummaryBytes: diagnostics.manifest.maxWorkflowSummaryBytes,
+        conversationContextBytes: diagnostics.manifest.maxConversationContextBytes,
+        routerPayloadBytes: diagnostics.manifest.maxRouterPayloadBytes,
+      },
+      outputCounts: {
+        bodyByteCount: diagnostics.manifest.bodyByteCount,
+        manifestJsonByteCount: diagnostics.manifest.manifestJsonByteCount,
+      },
+      maxBounds: {
+        manifestMaxBytes: 16 * 1024,
+      },
+      createdBy: "native_execution_rpc.submit",
+      metadata: {
+        submitDiagnosticsManifest: diagnostics.manifest as unknown as JsonValue,
+        rawPromptStored: false,
+        rawResponseStored: false,
+        rawProviderLogStored: false,
+        rawToolLogStored: false,
+        rawCommandLogStored: false,
+        rawDbRowsStored: false,
+        secretsStored: false,
+      },
     });
     if (workerReadiness) {
       await this.attachWorkerReadinessArtifact(job.jobId, workerReadiness);
@@ -1258,11 +1575,14 @@ export class NativeExecutionRpcService {
       frontDoorCompiledRequest: compiled,
       frontDoorMultiIntentPlan: multiIntentPlan,
       frontDoorMemoryPolicy,
-      reasonCodes: [
-        "native_submit_front_door_job_enqueued",
-        ...validation.reasonCodes,
-        ...actionSemantics.reasonCodes,
-      ],
+      frontDoorSubmitDiagnostics: diagnostics.body.phases,
+      frontDoorSubmitDiagnosticsManifest: {
+        ...diagnostics.manifest,
+        bodyArtifactRef: diagnosticsArtifact.uri,
+        manifestArtifactRef: diagnosticsArtifact.uri,
+      },
+      frontDoorSubmitDiagnosticsArtifactRef: diagnosticsArtifact.uri,
+      reasonCodes: finalReasonCodes,
     });
   }
 
@@ -1455,7 +1775,10 @@ export class NativeExecutionRpcService {
   }
 
   async readCloseout(runtimeJobId: string): Promise<JsonValue> {
-    const artifacts = await this.dependencies.runtimeJobs.listArtifacts(runtimeJobId);
+    const artifacts = await this.dependencies.runtimeJobs.listArtifacts(runtimeJobId, {
+      limit: 500,
+      order: "desc",
+    });
     const events = await this.dependencies.runtimeJobs.listEvents(runtimeJobId, 80);
     const job = await this.dependencies.runtimeJobs.getJob(runtimeJobId);
     const closeoutRefs = artifacts
@@ -1604,6 +1927,9 @@ export class NativeExecutionRpcService {
       frontDoorCompiledRequest: null,
       frontDoorMultiIntentPlan: null,
       frontDoorMemoryPolicy: null,
+      frontDoorSubmitDiagnostics: null,
+      frontDoorSubmitDiagnosticsManifest: null,
+      frontDoorSubmitDiagnosticsArtifactRef: null,
       workflowId: null,
       jobType: null,
       workerContractState: null,

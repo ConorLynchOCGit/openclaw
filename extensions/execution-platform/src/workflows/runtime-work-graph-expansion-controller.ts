@@ -178,12 +178,16 @@ function mergePolicy(
 }
 
 function decisionIsPrerequisiteCritical(decision: OrchestratorGraphDecision): boolean {
-  if (decision.decisionKind === "request_context") {
+  if (
+    [
+      "request_review",
+    ].includes(decision.decisionKind)
+  ) {
     return true;
   }
   if (
     (decision.newEdges ?? []).some((edge) =>
-      ["context_supplies", "repair_requested", "validation_failed"].includes(edge.edgeKind),
+      ["repair_requested", "validation_failed"].includes(edge.edgeKind),
     )
   ) {
     return true;
@@ -192,21 +196,13 @@ function decisionIsPrerequisiteCritical(decision: OrchestratorGraphDecision): bo
   if (
     metadata.prerequisiteCritical === true ||
     metadata.runtimePrerequisiteCritical === true ||
+    metadata.runtimeOwnedLifecycleTransition === true ||
+    metadata.lifecycleTransitionOwner === "NodeLifecycleTransitionRunner" ||
     metadata.expansionRequiredByReadyFrontier === true
   ) {
     return true;
   }
-  const nodes = decision.newNodes ?? [];
-  return nodes.some((node) => {
-    const nodeMetadata = asRecord(node.metadata);
-    return (
-      node.nodeKind === "context_scout" &&
-      (nodeMetadata.targetNodeId ||
-        nodeMetadata.consumerNodeId ||
-        stringArray(nodeMetadata.targetNodeIds, 4).length > 0 ||
-        stringArray(nodeMetadata.consumerNodeIds, 4).length > 0)
-    );
-  });
+  return false;
 }
 
 function edgeId(
@@ -363,6 +359,9 @@ export function evaluateRuntimeWorkGraphExpansionAdmission(input: {
 
   if (status === "accepted") {
     reasonCodes.push("expansion_accepted_within_budget");
+    if (prerequisiteCritical) {
+      reasonCodes.push("expansion_prerequisite_critical_not_deferred");
+    }
   }
 
   const decision = ExpansionAdmissionDecisionSchema.parse({

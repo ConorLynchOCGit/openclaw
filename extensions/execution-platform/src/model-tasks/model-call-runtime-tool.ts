@@ -1,16 +1,5 @@
 import { createHash } from "node:crypto";
 import type { JsonValue } from "../runtime-job-repository.ts";
-// HARDENED: Scheduler selection is gated on synthesis quality.
-// The scheduler MUST NOT select an implementation graph unless the
-// commitment work packet has:
-//   synthesisQualityReviewed === true
-//   synthesisQualityGatePassed === true
-//   synthesisValidationStrategy.length > 0
-//   synthesisImplementationGroups.length > 0
-//   AND at least one context source is not runtime_supplied with
-//   runtimeSuppliedRefRejected === false.
-// This ensures implementation graph selection depends on substantive
-// accepted context, not merely runtime-supplied refs.
 import {
   buildRuntimeToolDefinition,
   type RuntimeToolRegistry,
@@ -94,6 +83,11 @@ export type ModelCallRuntimeToolMetadata = {
   structuredAdapterProfileRef: string;
   structuredAdapterPreflight: StructuredAdapterPreflight;
   structuredAdapterOutcome?: StructuredAdapterOutcome;
+  contractBoundaryId: string | null;
+  modelPolicyBindingRef: string | null;
+  allowedToolFamily: string | null;
+  allowedOutputContractId: string | null;
+  allowedOutputContractVersion: string | null;
   rawPromptStored: false;
   rawResponseStored: false;
   rawProviderLogStored: false;
@@ -284,6 +278,11 @@ export function createModelCallRuntimeToolExecutor(
         structuredOutputStored: false,
         structuredAdapterProfileRef: adapterProfile.profileRef,
         structuredAdapterPreflight: preflight,
+        contractBoundaryId: classification.contractBoundaryId,
+        modelPolicyBindingRef: classification.modelPolicyBindingRef,
+        allowedToolFamily: classification.allowedToolFamily,
+        allowedOutputContractId: classification.allowedOutputContractId,
+        allowedOutputContractVersion: classification.allowedOutputContractVersion,
         rawPromptStored: false,
         rawResponseStored: false,
         rawProviderLogStored: false,
@@ -300,6 +299,11 @@ export function createModelCallRuntimeToolExecutor(
           latencyMs,
           taskClass: classification.taskClass,
           modelPolicyRef: classification.modelPolicyRef,
+          contractBoundaryId: classification.contractBoundaryId,
+          modelPolicyBindingRef: classification.modelPolicyBindingRef,
+          allowedToolFamily: classification.allowedToolFamily,
+          allowedOutputContractId: classification.allowedOutputContractId,
+          allowedOutputContractVersion: classification.allowedOutputContractVersion,
           reasoningMode: classification.reasoningMode,
           parserMode: classification.parserMode,
           rawPromptStored: false,

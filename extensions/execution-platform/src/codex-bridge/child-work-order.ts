@@ -42,7 +42,7 @@ export type ChildWorkOrderValidation = {
 };
 
 export type ContextScoutOutput = {
-  roleId: "context_scout";
+  roleId: "resource_scout";
   relevantFiles: Array<{
     path: string;
     whyRelevant: string;
@@ -87,7 +87,7 @@ export type OrchestratorDelegationReview = {
       | "split_task"
       | "rerun_same_role"
       | "retry_same_worker"
-      | "call_context_scout"
+      | "call_resource_scout"
       | "call_test_engineer"
       | "call_reviewer"
       | "repair_from_validation"
@@ -175,7 +175,7 @@ function normalizeContextFileItems(value: unknown[]): Array<{
         firstStringField(item, ["path", "fileRef", "file", "targetFileRef", "repoFileRef"]) ?? "",
       whyRelevant:
         firstStringField(item, ["whyRelevant", "reason", "rationale", "summary"]) ??
-        "Model-authored context scout file reference.",
+        "Model-authored resource scout file reference.",
       keySymbolsOrFunctions: compactStrings(
         item.keySymbolsOrFunctions ?? item.symbols ?? item.keySymbols ?? item.functions,
         8,
@@ -210,7 +210,7 @@ function normalizeContextEditPointItems(
         "nearest matching implementation/test region",
       reason:
         firstStringField(item, ["reason", "whyRelevant", "rationale", "summary"]) ??
-        "Model-authored context scout edit point.",
+        "Model-authored resource scout edit point.",
     }))
     .filter((item) => item.path.length > 0)
     .slice(0, 10);
@@ -221,7 +221,7 @@ function defaultObjectiveForRole(input: {
   taskTitle: string;
   parentObjectiveSummary: string;
 }): string {
-  if (input.roleId === "context_scout") {
+  if (input.roleId === "resource_scout") {
     return `Find exact files, symbols, existing patterns, risks, and edit points needed for: ${input.parentObjectiveSummary}`;
   }
   if (input.roleId === "implementation_engineer") {
@@ -240,7 +240,7 @@ function defaultObjectiveForRole(input: {
 }
 
 function defaultExpectedOutput(roleId: string): string {
-  if (roleId === "context_scout") {
+  if (roleId === "resource_scout") {
     return "Concrete relevant files, symbols/functions, existing patterns, risks, recommended edit points, validation suggestions, and implementation handoff summary.";
   }
   if (roleId === "implementation_engineer") {
@@ -263,7 +263,7 @@ function defaultAcceptanceCriteria(roleId: string, validationCommandRefs: string
     "Output cites bounded evidence refs and does not store raw prompts, responses, provider logs, command logs, or secrets.",
     "Output is consumed by a downstream graph node or closeout evidence.",
   ];
-  if (roleId === "context_scout") {
+  if (roleId === "resource_scout") {
     return [
       "Names concrete files or records why target refs are unavailable.",
       "Identifies existing patterns or risks relevant to the objective.",
@@ -357,7 +357,7 @@ export function createChildWorkOrder(input: {
         roleId === "implementation_engineer" ? "codex_complex_implementation" : undefined,
     },
     splitPolicy: {
-      allowed: roleId === "implementation_engineer" || roleId === "context_scout",
+      allowed: roleId === "implementation_engineer" || roleId === "resource_scout",
       maxChildPackets: roleId === "implementation_engineer" ? 5 : 3,
     },
     escalationPolicy: {
@@ -502,7 +502,7 @@ export function parseContextScoutOutput(input: {
     ]),
   );
   return {
-    roleId: "context_scout",
+    roleId: "resource_scout",
     relevantFiles,
     existingPatterns: compactStrings(parsed.existingPatterns, 10, 260),
     risks: compactStrings(parsed.risks, 10, 260),
@@ -538,13 +538,13 @@ export function validateContextScoutOutputShape(
 ): ContextScoutOutputShapeValidation {
   const reasonCodes: string[] = [];
   if (output.relevantFiles.length === 0) {
-    reasonCodes.push("context_scout_required_relevant_files_missing");
+    reasonCodes.push("context_specialist_required_relevant_files_missing");
   }
   if (!output.handoffSummaryForImplementation.trim()) {
-    reasonCodes.push("context_scout_required_handoff_summary_missing");
+    reasonCodes.push("context_specialist_required_handoff_summary_missing");
   }
   if (output.confidence < 0 || output.confidence > 1) {
-    reasonCodes.push("context_scout_confidence_out_of_bounds");
+    reasonCodes.push("resource_scout_confidence_out_of_bounds");
   }
   return {
     valid: reasonCodes.length === 0,
@@ -560,7 +560,7 @@ function nextAction(value: unknown): OrchestratorDelegationReview["assessment"][
     value === "split_task" ||
     value === "rerun_same_role" ||
     value === "retry_same_worker" ||
-    value === "call_context_scout" ||
+    value === "call_resource_scout" ||
     value === "call_test_engineer" ||
     value === "call_reviewer" ||
     value === "repair_from_validation" ||

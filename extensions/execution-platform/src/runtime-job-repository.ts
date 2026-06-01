@@ -186,6 +186,11 @@ export type ListRecentRuntimeJobsInput = {
   limit?: number;
 };
 
+export type ListRuntimeJobArtifactsInput = {
+  limit?: number;
+  order?: "asc" | "desc";
+};
+
 export type AttachRuntimeJobArtifactInput = {
   artifactId?: string;
   jobId: string;
@@ -220,6 +225,7 @@ export type AttachRuntimeJobJsonPayloadArtifactInput = {
   jobId: string;
   artifactType: string;
   uri: string;
+  payloadRef?: string;
   contentType?: string;
   body: JsonValue;
   boundedSummary?: string | null;
@@ -1399,6 +1405,7 @@ export class RuntimeJobRepository {
       jobId: input.jobId,
       artifactType: input.artifactType,
       contentType: input.contentType ?? "application/json",
+      payloadRef: input.payloadRef,
       body: input.body,
     });
     const manifest: RuntimeJobArtifactPayloadManifest = {
@@ -1667,17 +1674,29 @@ export class RuntimeJobRepository {
     return decodeArtifact(result.rows[0]);
   }
 
-  async listArtifacts(jobId: string): Promise<RuntimeJobArtifact[]> {
+  async listArtifacts(
+    jobId: string,
+    input: ListRuntimeJobArtifactsInput = {},
+  ): Promise<RuntimeJobArtifact[]> {
+    const limit =
+      typeof input.limit === "number" && Number.isFinite(input.limit)
+        ? Math.max(1, Math.min(Math.trunc(input.limit), 1_000))
+        : null;
+    const order = input.order === "desc" ? "DESC" : "ASC";
+    const limitClause = limit === null ? "" : "LIMIT $2";
+    const queryParams = limit === null ? [jobId] : [jobId, limit];
     const result = await this.sql.query<RuntimeJobArtifactRow>(
       `
         SELECT *
         FROM execution_platform.runtime_job_artifacts
         WHERE job_id = $1
-        ORDER BY created_at ASC, artifact_id ASC
+        ORDER BY created_at ${order}, artifact_id ${order}
+        ${limitClause}
       `,
-      [jobId],
+      queryParams,
     );
-    return result.rows.map(decodeArtifact);
+    const artifacts = result.rows.map(decodeArtifact);
+    return input.order === "desc" ? artifacts.toReversed() : artifacts;
   }
 
   private async loadActiveLeaseJob(

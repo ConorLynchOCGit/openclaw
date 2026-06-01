@@ -8,7 +8,7 @@ Read these specs before editing:
 
 - `docs/projects/execution-platform/specs/execution-intent-evidence-mode-and-worker-dispatch.md`
 - `docs/projects/execution-platform/specs/demand-driven-frontier-orchestration-and-context-broker.md`
-- `docs/projects/execution-platform/specs/post-context-implementation-task-compiler.md`
+- `docs/projects/execution-platform/specs/post-resource-implementation-task-compiler.md`
 - `docs/projects/execution-platform/specs/resource-materialization-boundary-replay-and-canonical-node-readiness.md`
 - `docs/projects/execution-platform/specs/non-codex-tool-worker-runtime.md`
 - `docs/projects/execution-platform/CURRENT_SLICE.md`
@@ -61,9 +61,9 @@ Implementation requirements:
    - Preserve rejected node diagnostics, including work unit id, selected
      capability id, execution intent, and compatibility reason.
 
-3. Wire post-context implementation task compilation.
+3. Wire post-resource implementation task compilation.
    - `ImplementationTaskPacket` must carry execution intent and evidence mode.
-   - The post-context compiler must require explicit `source_edit` intent and
+   - The post-resource compiler must require explicit `source_edit` intent and
      `changed_file_evidence` before creating executable file-edit packets.
    - Missing intent, read-only intent, or missing changed-file evidence must
      return context/resource repair evidence, not a worker invocation.

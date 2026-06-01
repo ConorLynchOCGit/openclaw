@@ -100,7 +100,7 @@ export type ValidationTaskPacket = {
   workflowId: string;
   targetCommitmentIds: string[];
   missionLedgerRefs: string[];
-  commitmentWorkPacketRefs: string[];
+  sourceContractRefs: string[];
   contextSnapshotRefs: string[];
   exactValidationObjective: string;
   whyValidationIsNeededNow: string;
@@ -324,7 +324,7 @@ export function buildValidationTaskPacket(input: {
   workflowId?: string;
   targetCommitmentIds: string[];
   missionLedgerRefs?: string[];
-  commitmentWorkPacketRefs?: string[];
+  sourceContractRefs?: string[];
   contextSnapshotRefs?: string[];
   exactValidationObjective: string;
   whyValidationIsNeededNow?: string;
@@ -371,7 +371,7 @@ export function buildValidationTaskPacket(input: {
     workflowId: bounded(input.workflowId ?? "agent_team.coding", 180),
     targetCommitmentIds: unique(input.targetCommitmentIds, 20, 160),
     missionLedgerRefs: unique(input.missionLedgerRefs ?? [], 20, 260),
-    commitmentWorkPacketRefs: unique(input.commitmentWorkPacketRefs ?? [], 40, 260),
+    sourceContractRefs: unique(input.sourceContractRefs ?? [], 40, 260),
     contextSnapshotRefs: unique(input.contextSnapshotRefs ?? [], 40, 260),
     exactValidationObjective: bounded(input.exactValidationObjective, 1_500),
     whyValidationIsNeededNow: bounded(

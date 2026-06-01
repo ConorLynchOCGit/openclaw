@@ -133,16 +133,15 @@ export function genericRuntimeSpineSchedulerOptionsReasonCodes(input: {
     reasonCodes.push("generic_orchestration_scheduler_option_staged_protocol_missing");
   }
   if (
-    input.plugin.schedulerPolicy.modelAuthoredWorkPacketsRequiredForComplexMission &&
-    input.schedulerOptions.requireModelAuthoredCommitmentWorkPacketsForComplexMission !== true
-  ) {
-    reasonCodes.push("generic_orchestration_scheduler_option_work_packets_missing");
-  }
-  if (
     input.plugin.schedulerPolicy.nodeExecutionPacketRequiredForWorkerExecution === true &&
     input.schedulerOptions.requireNodeExecutionPacketForWorkerExecution !== true
   ) {
     reasonCodes.push("generic_orchestration_scheduler_option_node_execution_packet_missing");
+  }  if (
+    input.plugin.schedulerPolicy.nodeExecutionPacketRequiredForWorkerExecution === true &&
+    !input.schedulerOptions.domainResourceSelectionSelector
+  ) {
+    reasonCodes.push("generic_orchestration_scheduler_option_domain_resource_selection_selector_missing");
   }
   return reasonCodes;
 }

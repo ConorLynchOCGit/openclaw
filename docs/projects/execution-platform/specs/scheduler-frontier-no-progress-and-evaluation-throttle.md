@@ -194,7 +194,7 @@ readiness transitions.
 
 Required tests:
 
-1. Ready frontier runs before deterministic context-supply expansion.
+1. Ready frontier runs before deterministic resource-fulfillment expansion.
 2. A missing readiness blocker creates only the smallest prerequisite work.
 3. Reused-only node/edge decisions do not count as progress.
 4. Repeated no-progress signatures halt with a root-cause diagnostic.

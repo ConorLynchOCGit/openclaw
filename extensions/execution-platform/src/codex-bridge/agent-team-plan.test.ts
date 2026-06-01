@@ -47,10 +47,10 @@ describe("agent-team implementation planning", () => {
           liveAuthorityGrantedNow: false,
         }),
         expect.objectContaining({
-          roleId: "context_scout",
+          roleId: "resource_scout",
           provider: "openrouter",
           modelId: "deepseek/deepseek-v4-pro",
-          roleTargetId: "context_scout",
+          roleTargetId: "resource_scout",
           roleQualificationStatus: "needs_review",
           liveAuthorityGrantedNow: false,
         }),
@@ -69,7 +69,7 @@ describe("agent-team implementation planning", () => {
     expect(roleIds).toEqual(
       expect.arrayContaining([
         "orchestrator",
-        "context_scout",
+        "resource_scout",
         "implementation_engineer",
         "test_engineer",
         "reviewer",

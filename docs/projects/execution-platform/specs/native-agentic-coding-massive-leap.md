@@ -331,7 +331,7 @@ Implementation requirements now satisfied:
   in addition to the sufficiency/review boundary, with bounded file refs,
   bounded symbol/test refs, handoff summaries, limitations, evidence refs, and
   raw-storage false flags.
-- `ContextHandoffPacket` now carries commitment packet refs, source-prompt
+- `ResourceHandoffPacket` now carries commitment packet refs, source-prompt
   excerpt refs, symbol refs, test refs, synthesis handoff summary, and context
   evidence refs so context synthesis and implementation workers do not have to
   infer repo intent from generic artifacts.

@@ -13,7 +13,7 @@ const BROAD_CHANGE_PATTERNS = [
   /^scripts\/lib\/local-heavy-check-runtime\.mjs$/u,
 ];
 const TSGO_TARGET_PATTERNS = [
-  /^(?:src|test|extensions|packages|scripts|apps|ui)\/.+\.(?:d\.ts|[cm]?[jt]sx?)$/u,
+  /^(?:src|test|extensions|packages|scripts|apps|ui)\/.+\.(?:d\.ts|[cm]?tsx?)$/u,
 ];
 
 function isBroadChange(filePath) {

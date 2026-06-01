@@ -42,7 +42,7 @@ Validation and lane proof:
   `native-exec-78e1b33861780884` completes without rerunning upstream phases,
   identifies existing ready materialized frontier nodes, and preserves the
   exact `bc-015` blocker:
-  `context_supply_handoff_artifact_missing`.
+  `resource_fulfillment_handoff_artifact_missing`.
 - `after-resource-materialization` replay against the same graph completes
   with 4 inspected implementation nodes, 4 executable nodes, and 0 blocked
   nodes.
@@ -126,7 +126,7 @@ It returned:
     "accepted_context_synthesis_or_node_scoped_context_required_before_after_graph_selection_replay"
   ],
   "acceptedContextSynthesis": false,
-  "acceptedNodeScopedContextSupply": false,
+  "acceptedNodeScopedResourceFulfillment": false,
   "plannedExecutableNodeCount": 3
 }
 ```

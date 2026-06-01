@@ -1,5 +1,11 @@
 import type { JsonValue } from "../runtime-job-repository.ts";
 import type { WorkflowEvidenceClass } from "./workflow-evidence-profile.ts";
+import {
+  evaluateEvidenceClaimValidationPhase,
+  normalizeRuntimeValidationPhase,
+  type RuntimeValidationPhase,
+  type ValidationPhaseCompatibilityStatus,
+} from "./validation-phase.ts";
 import type {
   CommitmentEvidenceClaim,
   RuntimeWorkGraphNodeExecutionResult,
@@ -21,6 +27,9 @@ export type GenericWorkflowEvidenceClaim = CommitmentEvidenceClaim & {
   producedByExecutorKey: string | null;
   validationRefs: string[];
   changedFileRefs: string[];
+  validationPhase: RuntimeValidationPhase;
+  validationPhaseCompatibility: ValidationPhaseCompatibilityStatus;
+  validationPhaseReasonCodes: string[];
   artifactRefs: string[];
   sufficiencyJudgmentRef: string | null;
   rawToolLogStored: boolean;
@@ -52,7 +61,7 @@ export type GenericWorkflowNodeExecutionResult = {
   producedOutputRefs: string[];
   evidenceClaims: GenericWorkflowEvidenceClaim[];
   evidenceClassesProduced: WorkflowEvidenceClass[];
-  contextHandoffRefs: string[];
+  resourceHandoffRefs: string[];
   validationRefs: string[];
   validationSummaryRefs: string[];
   changedFileRefs: string[];
@@ -141,7 +150,7 @@ export function genericWorkflowNodeResultFromRuntime(input: {
   runtimeToolInvocationRefs?: string[];
   scriptJobRefs?: string[];
   dbOperationRefs?: string[];
-  contextHandoffRefs?: string[];
+  resourceHandoffRefs?: string[];
   validationRefs?: string[];
   validationSummaryRefs?: string[];
   changedFileRefs?: string[];
@@ -168,31 +177,53 @@ export function genericWorkflowNodeResultFromRuntime(input: {
     ...(input.result.producedOutputRefs ?? []),
   ]);
   const artifactRefs = unique([...outputArtifactRefs, ...(input.result.artifactRefs ?? [])]);
-  const evidenceClaims = (input.result.evidenceClaims ?? []).map((claim, index) => ({
-    ...claim,
-    evidenceClaimId: evidenceClaimId({
-      graphId: input.graphId,
-      nodeId: input.nodeId,
-      commitmentId: claim.commitmentId,
-      evidenceRef: claim.evidenceRef,
-      index,
-    }),
-    producedByNodeId: input.nodeId,
-    producedByCapabilityId: input.capabilityId ?? null,
-    producedByExecutorKey: input.executorKey ?? null,
-    validationRefs,
-    changedFileRefs,
-    artifactRefs,
-    sufficiencyJudgmentRef: input.result.sufficiencyJudgmentRef ?? null,
-    rawPromptStored: claim.rawPromptStored,
-    rawResponseStored: claim.rawResponseStored,
-    rawProviderLogStored: claim.rawProviderLogStored,
-    rawToolLogStored: (claim as { rawToolLogStored?: boolean }).rawToolLogStored === true,
-    rawDbRowsStored: (claim as { rawDbRowsStored?: boolean }).rawDbRowsStored === true,
-    authorityGranted: (claim as { authorityGranted?: boolean }).authorityGranted === true,
-    workQueueLifecycleMutated:
-      (claim as { workQueueLifecycleMutated?: boolean }).workQueueLifecycleMutated === true,
-  }));
+  const evidenceClaims = (input.result.evidenceClaims ?? []).map((claim, index) => {
+    const explicitValidationPhase = normalizeRuntimeValidationPhase(claim.validationPhase);
+    const validationPhase = explicitValidationPhase ?? "diagnostic_validation";
+    const claimValidationRefs = unique([...(claim.validationRefs ?? []), ...validationRefs]);
+    const claimChangedFileRefs = unique([...(claim.changedFileRefs ?? []), ...changedFileRefs]);
+    const compatibility = evaluateEvidenceClaimValidationPhase({
+      evidenceKind: claim.evidenceKind,
+      validationPhase,
+      validationRefs: claimValidationRefs,
+      changedFileRefs: claimChangedFileRefs,
+      nodeKind: input.nodeKind,
+    });
+    const missingPhaseReasonCodes = explicitValidationPhase
+      ? []
+      : ["generic_node_result_evidence_claim_validation_phase_missing"];
+    return {
+      ...claim,
+      evidenceClaimId: evidenceClaimId({
+        graphId: input.graphId,
+        nodeId: input.nodeId,
+        commitmentId: claim.commitmentId,
+        evidenceRef: claim.evidenceRef,
+        index,
+      }),
+      producedByNodeId: input.nodeId,
+      producedByCapabilityId: input.capabilityId ?? null,
+      producedByExecutorKey: input.executorKey ?? null,
+      validationRefs: claimValidationRefs,
+      changedFileRefs: claimChangedFileRefs,
+      validationPhase,
+      validationPhaseCompatibility: compatibility.status,
+      validationPhaseReasonCodes: unique(
+        [...(claim.validationPhaseReasonCodes ?? []), ...missingPhaseReasonCodes, ...compatibility.reasonCodes],
+        20,
+      ),
+      artifactRefs,
+      sufficiencyJudgmentRef: input.result.sufficiencyJudgmentRef ?? null,
+      rawPromptStored: claim.rawPromptStored,
+      rawResponseStored: claim.rawResponseStored,
+      rawProviderLogStored: claim.rawProviderLogStored,
+      rawToolLogStored: (claim as { rawToolLogStored?: boolean }).rawToolLogStored === true,
+      rawDbRowsStored: (claim as { rawDbRowsStored?: boolean }).rawDbRowsStored === true,
+      authorityGranted: (claim as { authorityGranted?: boolean }).authorityGranted === true,
+      workQueueLifecycleMutated:
+        (claim as { workQueueLifecycleMutated?: boolean }).workQueueLifecycleMutated === true,
+    };
+  });
   return {
     artifactKind: "generic_workflow_node_execution_result",
     schemaVersion: "execution-platform.generic-workflow-node-result.v1",
@@ -225,10 +256,11 @@ export function genericWorkflowNodeResultFromRuntime(input: {
     evidenceClaims,
     evidenceClassesProduced: unique(
       evidenceClaims
+        .filter((claim) => claim.validationPhaseCompatibility === "compatible")
         .map((claim) => EVIDENCE_CLASS_BY_KIND[claim.evidenceKind])
         .filter((value): value is WorkflowEvidenceClass => Boolean(value)),
     ) as WorkflowEvidenceClass[],
-    contextHandoffRefs: unique(input.contextHandoffRefs ?? []),
+    resourceHandoffRefs: unique(input.resourceHandoffRefs ?? []),
     validationRefs,
     validationSummaryRefs: unique([
       ...(input.validationSummaryRefs ?? []),
@@ -335,6 +367,12 @@ export function validateGenericWorkflowNodeResult(input: {
     if (claim.authorityGranted || claim.workQueueLifecycleMutated) {
       reasonCodes.push("generic_node_result_evidence_claim_authority_or_lifecycle_rejected");
     }
+    if (claim.validationPhaseCompatibility === "incompatible") {
+      reasonCodes.push(
+        `generic_node_result_evidence_claim_validation_phase_incompatible:${claim.evidenceClaimId}`,
+      );
+      reasonCodes.push(...claim.validationPhaseReasonCodes);
+    }
   }
   return {
     artifactKind: "generic_workflow_node_execution_validation",
@@ -361,6 +399,9 @@ export function workflowEvidenceClassRefsFromNodeResults(
   };
   for (const result of results) {
     for (const claim of result.evidenceClaims) {
+      if (claim.validationPhaseCompatibility !== "compatible") {
+        continue;
+      }
       const evidenceClass = EVIDENCE_CLASS_BY_KIND[claim.evidenceKind];
       if (evidenceClass) {
         add(evidenceClass, [claim.evidenceRef]);

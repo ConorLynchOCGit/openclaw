@@ -43,7 +43,7 @@ const implementationTaskPacket = buildImplementationTaskPacket({
   allowedEditScope: [snapshot.fileRef],
   mustReadRefs: [snapshot.fileRef],
   likelyModifyRefs: [snapshot.fileRef],
-  contextPacketRefs: ["context-handoff://resource-materialization-proof"],
+  contextPacketRefs: ["resource-handoff://resource-materialization-proof"],
   sourcePromptExcerptRefs: ["source-prompt://resource-materialization-proof/excerpt"],
   validationCommandRefs: ["pnpm test:file node-resource-materialization.test.ts"],
   acceptanceCriteria: ["NodeExecutionPacket is ready before worker invocation."],

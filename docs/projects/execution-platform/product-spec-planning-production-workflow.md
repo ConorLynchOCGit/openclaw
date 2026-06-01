@@ -10,6 +10,86 @@ ActionGraphProposal artifacts, compile-readiness state, and owner-readable
 closeout. It proposes executable work; it does not execute child actions
 without a later authority/compile boundary.
 
+## 2026-05-28 Canonical Resource-Lifecycle Alignment
+
+Product/Spec Planning now inherits the shared domain-resource lifecycle
+defined in
+[Shared Domain Resource Lifecycle And Product/Spec Alignment](/projects/execution-platform/specs/shared-domain-resource-lifecycle-and-product-spec-alignment).
+It must not define a parallel planning-only runner, planning-only lifecycle,
+or planning-only scheduler repair path.
+
+The shared rule is:
+
+```text
+one lifecycle spine
+  many workflow domain profiles
+  coding is one specialization
+  Product/Spec Planning is another specialization
+```
+
+The generic runtime vocabulary is resource/action based:
+
+```text
+WorkIntentGraph
+  -> NodeExecutionContract
+  -> ResourceObjectiveFocus
+  -> NodeResourceDemandSession
+  -> NodeResourceLedger
+  -> DomainResourceSelection
+  -> ProgressiveNodeExecutionPacket
+  -> DomainActionGate
+  -> worker small-verb loop
+  -> validation
+  -> evidence
+  -> review/readback/closeout
+```
+
+Coding maps those shared concepts to file windows, target files, write gates,
+patch authoring, validation commands, and changed-file evidence. Product/Spec
+Planning maps them to source prompt sections, owner constraints, project
+facts, research briefs, planning capsules, action graph proposals, compile
+readiness, human decision refs, and planning evidence.
+
+The source-level binding for that mapping is
+`SharedDomainResourceLifecycleProfile` plus `RuntimeNodeCapability`
+domain-profile fields. Product/Spec Planning capabilities must advertise the
+`product_spec_planning` profile, planning resource kinds, planning action gate
+kinds, and planning worker action tools such as `planning.capsule.draft`,
+`planning.action_graph.propose`, and
+`planning.compile_readiness.evaluate`. They must not inherit coding file
+snapshot requirements, `worker.edit.plan`, or patch-author tools.
+
+2026-05-29 source re-spec status: Product/Spec Planning is now explicitly
+resource-manifest based at the workflow plugin boundary. Its scheduler policy
+uses `resourceReadinessPolicy: domain_resource_manifest`,
+`freshContextSnapshotsRequiredForWorkerExecution: false`, and
+`domainResourceManifestRequiredForWorkerExecution: true`. Its runtime tool
+families include `resource.focus`, `resource.demand`, `resource.ledger`,
+`resource.selection`, `domain.action_gate`, and `artifact.payload`; they do
+not include `node.resource_materialization` as Product/Spec executor
+readiness.
+
+The evidence profile now requires `planning_intent` before Product/Spec
+Planning can claim clean workflow success. Planning intent, capsule revision,
+and Product/Spec closeout have source validators that reject raw prompt,
+raw response, raw logs, child execution auto-start, missing authority refs,
+and unbounded body-shaped metadata.
+
+The Product/Spec domain-profile re-spec proof records this as runtime
+evidence at
+`.artifacts/execution-platform/product-spec-domain-profile-real-model-proof/manifest.json`.
+That proof used real model calls for planning-domain resource focus and
+planning intent authoring, then validated the Product/Spec planning artifacts
+and evidence profile without exposing coding write tools or storing raw
+provider payloads.
+
+Historical terms such as `resource_fulfillment`, graph-level `context_scout`
+fanout, `context_synthesis` glue, `target_selection` as a generic concept,
+and `write_gate` as a generic concept are not canonical Product/Spec Planning
+architecture. They may appear only as historical references or coding-domain
+mappings. They must not be production success paths for Product/Spec
+Planning.
+
 ## Current Architecture
 
 Product/Spec Planning is no longer specified as a bespoke planning runner.
@@ -22,54 +102,81 @@ It is a production workflow plugin on the canonical runtime spine:
 3. Mission Ledger records owner objective, constraints, commitments, and
    evidence expectations.
 4. Commitment Work Packet authoring turns broad ledger commitments into
-   worker-ready planning packets with full-prompt volatile access.
+   worker-ready planning packets through model-authored source-ref selection
+   and model-authored packet execution intent through
+   `packet.semantic.set_execution_intent` after source bundle selection.
+   Packet authors do not receive the full prompt by default; they receive a
+   validated `PacketSourceBundle` compiled from refs the model selected from
+   the source prompt context index. Runtime validates refs and byte budgets
+   but does not choose semantically "important" prompt content.
 5. WorkIntent compilation creates non-runnable semantic work contracts before
    executable nodes exist. WorkIntent carries model-authored execution intent,
    capability fit, expected output, resource needs, downstream consumers, and
    evidence expectations.
-6. Node-scoped Context Supply Chain provides bounded source-prompt excerpts,
-   repo/project context, memory/context-pack refs when relevant, and research
-   refs when current external facts are needed. Context is requested for the
-   specific downstream WorkIntent/node, not as a giant global fanout.
-7. Staged Scheduler Protocol compiles accepted WorkIntent/resource readiness
-   into runtime-owned node envelopes.
-8. `NodeReadinessState` is the single readiness truth for scheduler frontier
-   selection, replay, Work Queue readback, and worker invocation.
-9. Runtime resource materialization hydrates `NodeExecutionPacket` plus the
-   matching domain resource packet before any worker/provider call can count
-   as execution.
-10. Runtime node executors produce canonical node results and explicit
+6. `ResourceObjectiveFocus` asks the model or human to choose the exact
+   resource focus from a legal resource universe. Runtime compiles the legal
+   universe from authority, refs, manifests, and prior artifacts; runtime does
+   not decide semantic relevance.
+7. `NodeResourceDemandSession` opens for a specific consumer node when the
+   focus identifies needed resources. Exact selected handles can be fulfilled
+   directly. Broad handles require a consumer-bound specialist subturn or
+   model-authored narrowing.
+8. `NodeResourceLedger` stores payload-backed resource observations,
+   patterns, risks, edit/action points, validation recommendations,
+   limitations, and provider diagnostics as compact manifests plus payload
+   refs.
+9. `DomainResourceSelection` chooses the meaningful resources to act on from
+   ledger evidence. For coding this is target files and file-change intent.
+   For Product/Spec Planning this is planning inputs, capsule inputs, research
+   inputs, action graph proposal inputs, or compile-readiness inputs.
+10. `ProgressiveNodeExecutionPacket` plus the domain resource packet carries
+   the node's executable contract. Read/resource phases may start with partial
+   packets. Mutating/action tools remain blocked until the domain action gate
+   proves required resources, authority, validation, and evidence paths.
+11. `NodeLifecycleTransitionRunner` is the single local lifecycle authority
+   for current gate, next legal local transition, and permission to call the
+   global scheduler/orchestrator.
+12. Runtime node executors produce canonical node results and explicit
     commitment evidence claims.
-11. Validation/compile readiness, Work Queue readback, closeout, and
+13. Validation/compile readiness, Work Queue readback, closeout, and
     completion review gate final success.
-12. Boundary Replay checkpoints allow restart from accepted boundaries without
+14. Boundary Replay checkpoints allow restart from accepted boundaries without
     rerunning the full funnel.
 
 Product/Spec Planning must not be executed by the deleted generic queued
 workflow runner, a proof-only script, or a Product/Spec-specific compatibility
 path. Generic queued workflow dispatch must not be reintroduced.
 
-Context synthesis is not default glue in the Product/Spec proof path. It may
-run only when the workflow definition, model-authored WorkIntent structure
-review, or an accepted coordination policy explicitly requires cross-node
-synthesis for shared dependency decisions, file ownership conflicts,
-integration sequencing, or validation-plan conflicts. Accepted synthesis
-artifacts are coordination evidence; they do not directly compile into
-implementation nodes.
+Context synthesis is not default glue in the Product/Spec path. Future
+cross-node coordination must be an explicit workflow-defined coordination
+capability on the shared resource lifecycle. Retired `context_synthesis`
+glue, after-context-synthesis replay boundaries, and graph-level context
+scout fanout cannot satisfy Product/Spec proof gates.
 
 ## 2026-05-25 Pre-Proof Status
 
-The current pre-proof queue has closed the WorkIntent/control-plane recovery
-items through `openclaw-convergence.control-plane-06-worker-small-verb-edit-smoke`.
-The remaining blocker before the full Product/Spec production proof is:
+The WorkIntent/control-plane recovery items are closed through worker smoke
+and owner readback evidence, but the full Product/Spec production proof is
+now blocked by the generic contract-spine gap documented in
+`specs/execution-contract-spine-resource-requirements-and-frontier-state.md`.
 
-- `openclaw-convergence.control-plane-07-readback-telemetry-proof`
-  - Owner Readback And Telemetry Proof.
+The proof must not run until the runtime proves:
 
-The full Product/Spec proof must not run until owner-facing readback shows the
-current WorkIntent/node, execution intent, evidence mode, readiness ref,
-active model/tool/phase, blocker or next legal transition, wall time, usage
-availability, and bounded artifact refs from compact runtime state.
+- graph nodes remain scheduling envelopes with manifest-only metadata;
+- executable semantics live in payload-backed `NodeExecutionContract`s and
+  `NodeExecutionPacket`s;
+- split children inherit parent execution intent, evidence mode, capability,
+  context requirements, validation requirements, and evidence requirements;
+- WorkIntent compiles through `ResourceRequirementPacket` before context scout;
+- context scouts are consumer-scoped and demand-driven;
+- context synthesis is explicit coordination only, not default glue;
+- repeated sibling materialization blockers collapse into one root-cause
+  artifact;
+- branch-scoped frontier/readiness readback preserves successful sibling
+  evidence and shows failed-branch blockers;
+- scheduler calls expose bounded model-call observability envelopes;
+- validation evidence is phase-scoped and cannot fake implementation success;
+- `firstOpenGate` comes from canonical readiness/frontier state.
 
 The worker-smoke evidence that the proof may rely on is:
 
@@ -85,6 +192,93 @@ The worker-smoke evidence that the proof may rely on is:
 
 The next proof also requires a working live gateway and clean validation/build
 evidence before submitting the OpenClaw run.
+
+## 2026-05-26 Code-Verified Blocker Closure Before Next Proof
+
+The current execution proof blocker is no longer a single context-scout or
+worker-loop bug. The proof is blocked by the full code-verified tranche in
+[Code-Verified Product/Spec Blocker Closure Plan](/projects/execution-platform/specs/code-verified-product-spec-blocker-closure-plan).
+
+The workflow contract for Product/Spec must therefore be read with these
+additional constraints:
+
+- accepted Commitment Work Packets feed `WorkIntentGraph` planning before
+  context execution;
+- context is demand-driven by consumer WorkIntent/context requirements;
+- context shard lifecycle is payload-backed resource execution, not default
+  graph fanout;
+- shard handoffs must contain model-authored substance and accepted handoff
+  refs before they can satisfy WorkIntent context;
+- accepted-with-limitations context cannot unlock implementation unless the
+  consumer has an explicit waiver;
+- target selection and `FileChangeIntent` run after accepted context and
+  before `NodeExecutionPacket` hydration;
+- directory-level or broad scheduler refs are not executable source-edit
+  authority;
+- worker execution starts only from hydrated packets, snapshots, target
+  selection, validation refs or structural validation fallback, and
+  commitment/evidence mapping;
+- owner readback must project the actual current gate and root cause from
+  canonical readiness/frontier state.
+
+These constraints are generic orchestration-runtime requirements. They apply
+to future planning, research, QA, human-task, and coding workflows with their
+own domain resource packets; they are not Product/Spec-specific semantic
+shortcuts.
+
+## Commitment Packet Source Selection And Execution Intent
+
+The latest Mission-Ledger replay (`product-spec-replay-mplzlt47`) failed
+before scheduler planning because Commitment Work Packet authoring remained
+too broad and too implementation-shaped:
+
+- two Qwen packet-author lanes returned no content twice at the 150s timeout
+  boundary;
+- one proof-run commitment failed because the packet contract still required
+  `expectedImplementationOutput`;
+- successful packet calls still carried roughly 27-30KB input and produced
+  large semantic outputs.
+
+The Product/Spec proof must therefore pass the packet boundary defined in
+[Commitment Packet Source Selection And Execution Intent](/projects/execution-platform/specs/commitment-packet-source-selection-and-execution-intent)
+before it proceeds to scheduler planning.
+
+Required Product/Spec packet behavior:
+
+- every commitment packet selects source refs from the prompt context index
+  with a model-authored `packet.source_refs.select` or windowed source-ref
+  equivalent;
+- runtime compiles a payload-backed `PacketSourceBundle` and rejects invalid
+  or over-budget refs without choosing replacement semantic content;
+- every packet declares model-authored canonical execution intent through
+  `packet.semantic.set_execution_intent` or an explicitly accepted diagnostic
+  preauthor intent;
+- `source_edit` packets require concrete implementation expected output;
+- proof, validation, review, closeout, artifact-lifecycle, and
+  source-grounding packets use canonical execution intents plus
+  intent-specific output fields and must not be forced through
+  `expectedImplementationOutput`;
+- targeted normalization repairs only exact missing intent-specific semantic
+  fields and emits primary-call-grade provider diagnostics;
+- packet fanout cannot advance with ambiguous running lanes, opaque field
+  failures, GPT rescue hidden as success, or missing selected source bundle
+  refs.
+
+This preserves the intended Product/Spec architecture:
+
+```text
+Mission Ledger
+  -> Commitment Work Packets with source bundles and execution intent
+  -> WorkIntent DAG
+  -> capability validation
+  -> demand-driven node-scoped context
+  -> NodeExecutionPacket / domain resource packet
+  -> worker or planning executor
+```
+
+It does not reintroduce broad context synthesis, full-prompt packet flooding,
+deterministic source relevance heuristics, or runtime-authored semantic
+content.
 
 ## Workflow Definition And Plugin
 
@@ -171,26 +365,37 @@ Ledger and compile boundaries rather than regex/semantic routing blockers.
 
 ## Required Runtime Phases
 
-Product/Spec Planning inherits the generic orchestration phase ladder:
+Product/Spec Planning inherits the shared resource/action lifecycle. The
+owner-facing phase names may be planning-specific, but runtime state must
+project from `NodeLifecycleProjection` and the shared lifecycle gates.
 
 1. `mission_ledger`
 2. `commitment_packet_authoring`
-3. `context_supply`
-4. `work_breakdown`
-5. `capability_selection`
-6. `graph_compile`
-7. `structure_review`
-8. `graph_acceptance`
-9. `node_execution`
-10. `node_result_review`
-11. `repair_or_escalation`
-12. `validation`
-13. `readback`
-14. `closeout`
-15. `completion_review`
+3. `work_intent_graph`
+4. `capability_selection`
+5. `graph_compile`
+6. `structure_review`
+7. `graph_acceptance`
+8. `resource_focus`
+9. `resource_demand`
+10. `resource_ledger`
+11. `domain_resource_selection`
+12. `domain_action_gate`
+13. `node_execution`
+14. `node_result_review`
+15. `repair_or_escalation`
+16. `validation`
+17. `readback`
+18. `closeout`
+19. `completion_review`
 
 Human decision is optional unless the Mission Ledger, Planning Capsule, or
 compile boundary identifies an owner-only decision.
+
+`resource_fulfillment` is not a canonical runtime phase for Product/Spec Planning.
+If historical artifacts or readback surfaces still report `resource_fulfillment`,
+they must be treated as stale projection or coding-domain compatibility
+language, not as Product/Spec planning truth.
 
 ## Product/Spec Planning System Contract
 
@@ -400,8 +605,9 @@ coding path must remain WorkIntent-first:
 
 ```text
 prompt -> route -> Mission Ledger -> Commitment Work Packets -> WorkIntent
--> node-scoped context/resource requirements -> NodeReadinessState
--> NodeExecutionPacket + domain resource packet -> worker small-verb loop
+-> ResourceObjectiveFocus -> NodeResourceDemandSession -> NodeResourceLedger
+-> DomainResourceSelection -> ProgressiveNodeExecutionPacket
+-> DomainActionGate -> worker small-verb loop
 -> validation -> evidence -> review/readback/closeout
 ```
 
@@ -412,16 +618,17 @@ context_synthesis group -> implementation node
 ```
 
 Runtime may normalize structured aliases and derive runtime-owned fields, but
-it must not classify semantic work type through deterministic substrings,
-Product/Spec keyword checks, or proof-only heuristics.
+it must not classify semantic work type, resource relevance, target/action
+selection, or sufficiency through deterministic substrings, Product/Spec
+keyword checks, or proof-only heuristics.
 
-## Context Supply And Research
+## Resource Demand, Planning Context, And Research
 
 Product/Spec Planning receives the full original prompt only as volatile
 runtime input. Persisted references are bounded hashes, source-prompt index
 refs, excerpt refs, artifact refs, and context-pack refs.
 
-Planning context must include:
+Planning resource demand can include:
 
 - owner objective and constraints from Mission Ledger.
 - worker-ready Commitment Work Packets.
@@ -430,6 +637,18 @@ Planning context must include:
 - ResearchBrief refs when current external assumptions can affect the plan.
 - stop-if-missing rules.
 - downstream consumer and evidence-claim expectations.
+
+The model or human authors `ResourceObjectiveFocus` for each node. Runtime
+compiles the legal resource universe and validates selected handles, authority,
+budgets, storage, and lifecycle. Runtime does not choose the meaningful
+prompt section, project fact, research question, planning artifact, action
+graph input, or compile-readiness input.
+
+When selected resource handles are too broad to fulfill exactly, Product/Spec
+Planning must use the same shared specialist-narrowing lifecycle as coding:
+a consumer-bound specialist subturn selects exact legal resource handles or
+returns a typed blocker. Runtime must not silently truncate prompt sections,
+rank research facts, or pick planning inputs.
 
 Web research is selected by the orchestrator when current external facts,
 market/product assumptions, platform capabilities, compliance expectations,
@@ -583,9 +802,17 @@ Clean Product/Spec Planning success requires:
 - Runtime Tool-Call Kernel availability.
 - valid Mission Ledger.
 - accepted Commitment Work Packets.
-- accepted context supply for context-dependent nodes.
 - staged graph compile, structure review, graph acceptance, and first-node
   approval.
+- accepted `ResourceObjectiveFocus` for resource-dependent nodes.
+- node-local `NodeResourceDemandSession` and `NodeResourceLedger` evidence
+  when resources are needed.
+- model-authored `DomainResourceSelection` before any planning action gate or
+  coding write gate can unlock.
+- `NodeLifecycleTransitionRunner` projection as the owner of current gate,
+  next legal local transitions, and global-scheduler permission.
+- domain action gate readiness for planning capsule, research, human
+  decision, action graph proposal, compile readiness, or closeout nodes.
 - node execution through registered executors.
 - commitment-mapped evidence claims.
 - validation/compile-readiness refs.
@@ -595,14 +822,47 @@ Clean Product/Spec Planning success requires:
 - accepted completion review.
 - no degraded/system closeout.
 - no raw-storage, authority, or lifecycle violations.
+- no `resource_fulfillment`, graph-level `context_scout`, or `context_synthesis`
+  positive proof path.
+
+## Coding-System Product/Spec Framework Implementation Proof
+
+Before the final full Product/Spec Planning workflow proof, the OpenClaw
+coding system must implement a real Product/Spec framework slice with
+`agent_team.coding` as executor and `agent_team.product_spec_planning` as
+target subject. This is the proof that the new coding vertical can do
+meaningful framework work rather than Codex directly patching every missing
+piece.
+
+This proof runs after shared resource lifecycle contracts, Product/Spec
+domain profile updates, small-verb tool surface definition, capability
+manifest upgrades, and proof-framework split. It runs before the final source
+inventory gate and before the full Product/Spec Planning workflow proof.
+
+The implementation proof must include:
+
+- a real framework source change, not a toy edit;
+- at least one Product/Spec Planning domain resource/action contract or
+  tool-surface update;
+- capability/readback/proof wiring for that domain resource or action;
+- node-local resource focus, resource demand, resource ledger, domain
+  resource selection, domain action gate, worker action, validation, and
+  evidence;
+- changed-file evidence, validation evidence, and commitment evidence claims;
+- run-scoped proof manifests and artifact-backed bodies;
+- explicit negative evidence that broad context/scout/synthesis paths did not
+  count as success.
+
+The final source inventory gate must run after this proof so it can detect any
+legacy terms or compatibility paths introduced by the coding system.
 
 ## Production Status
 
 The workflow definition, workflow plugin, capability manifest entries,
 evidence profile, readback projection, and scheduler policy are registered in
 source. Product/Spec Planning remains the next live proof target after the
-native-harness convergence work because the proof must validate the generic
-runtime spine, not a Product/Spec-specific runner.
+shared resource-lifecycle alignment work because the proof must validate the
+generic runtime spine, not a Product/Spec-specific runner.
 
 Focused validation currently lives in:
 
@@ -614,6 +874,7 @@ Focused validation currently lives in:
 - `execution-read-model.test.ts`
 
 The next proof should run Product/Spec Planning through the same production
-route, Mission Ledger, Commitment Work Packet authoring, Context Supply Chain,
-staged scheduler, node executors, validation/compile readiness, closeout, and
-Work Queue readback used by other scheduler-backed workflows.
+route, Mission Ledger, Commitment Work Packet authoring, WorkIntentGraph,
+resource focus, node-local resource demand, resource ledger, domain resource
+selection, staged scheduler, node executors, validation/compile readiness,
+closeout, and Work Queue readback used by other scheduler-backed workflows.

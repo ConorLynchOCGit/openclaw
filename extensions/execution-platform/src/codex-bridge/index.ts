@@ -2,6 +2,7 @@ export * from "./codex-bridge-repository.ts";
 export * from "./acp-endpoint-setup.ts";
 export * from "./acp-runtime-config.ts";
 export * from "./acp-transport.ts";
+export * from "./adversarial-proof-entry-suite.ts";
 export * from "./agent-team-parallel-runner.ts";
 export * from "./agent-team-handoff-controls.ts";
 export * from "./agent-team-failure-recovery.ts";

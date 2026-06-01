@@ -11,7 +11,7 @@ Execute this queue item in the local Codex session, not through OpenClaw proof s
 - `docs/projects/execution-platform/specs/demand-driven-frontier-orchestration-and-context-broker.md`
 - `docs/projects/execution-platform/specs/runtime-work-graph.md`
 - `docs/projects/execution-platform/specs/generic-orchestration-runtime.md`
-- `docs/projects/execution-platform/specs/scheduler-first-node-scoped-context-supply.md`
+- `docs/projects/execution-platform/specs/scheduler-first-node-scoped-resource-fulfillment.md`
 - `docs/projects/execution-platform/specs/runtime-artifact-contract-registry-and-payload-boundary.md`
 - `docs/projects/execution-platform/specs/operator-frontier-readback-and-latest-run-state.md`
 

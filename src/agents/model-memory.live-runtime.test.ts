@@ -401,6 +401,19 @@ describe("live retrieval context helpers", () => {
         }),
       }),
     ).toBe(false);
+    expect(
+      shouldAttemptLiveRetrievalContext({
+        status: enabledStatus,
+        currentTurnText: "Run the workflow.",
+        memoryPolicyDecision: decidePromptRouterMemoryPolicy({
+          routeKind: "workflow_execution",
+          promptHash: "hash",
+          boundedPromptSummary: "workflow execution with runtime state",
+          contextBudgetRemainingTokens: 2_000,
+          runtimeStatePresent: true,
+        }),
+      }),
+    ).toBe(false);
   });
 
   it("builds a live-context retrieval envelope without persisting root file proof as scope", () => {

@@ -220,7 +220,7 @@ async function proveRepeatedNoProgressHalts() {
           exactObjective: "Find bounded context.",
           targetRefs: ["src/reused.ts"],
           metadata: {
-            expectedEvidence: ["context_handoff"],
+            expectedEvidence: ["resource_handoff"],
             expectedEvidenceSource: "runtime_derived_from_capability_manifest",
             rawPromptStored: false,
             rawResponseStored: false,

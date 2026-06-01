@@ -14,7 +14,7 @@ const sourceSpecRef =
 const workIntentSpecRef =
   "docs/projects/execution-platform/specs/work-intent-control-plane-contract.md";
 const nodeScopedContextSpecRef =
-  "docs/projects/execution-platform/specs/scheduler-first-node-scoped-context-supply.md";
+  "docs/projects/execution-platform/specs/scheduler-first-node-scoped-resource-fulfillment.md";
 const contextBrokerSpecRef =
   "docs/projects/execution-platform/specs/demand-driven-frontier-orchestration-and-context-broker.md";
 const contextScoutPacketSpecRef =
@@ -112,7 +112,7 @@ async function main() {
       contextScoutPacketSpecRef,
     ],
     implementedSurfaces: [
-      "workintent_context_handoff_readiness_block",
+      "workintent_resource_handoff_readiness_block",
       "accepted_with_limitations_consumer_waiver_gate",
       "context_broker_request_from_node_readiness",
       "broker_backed_context_scout_prerequisite_compile",
@@ -124,7 +124,7 @@ async function main() {
       "product_spec_replay_topology_regression",
     ],
     forbiddenPathsRetired: [
-      "work_intent_with_context_handoff_materializes_without_context",
+      "work_intent_with_resource_handoff_materializes_without_context",
       "accepted_with_limitations_unlocks_implementation_without_consumer_waiver",
       "context_scout_runs_without_consumer_request_ref_when_broker_dispatched",
       "runtime_semantic_guessing_from_context_status_prose",
@@ -170,7 +170,7 @@ async function main() {
       ...commonMetadata,
       lifecycleMutationKind: "node_scoped_context_readiness_closeout",
       completionSummary:
-        "Node-scoped context broker and readiness enforcement implemented. WorkIntent context-handoff requirements now block at consumer-scoped context supply; accepted-with-limitations context requires a consumer waiver before implementation; broker-backed context scout prerequisites carry request refs, target nodes, semantic questions, reason codes, and readback fields.",
+        "Node-scoped context broker and readiness enforcement implemented. WorkIntent resource-handoff requirements now block at consumer-scoped context supply; accepted-with-limitations context requires a consumer waiver before implementation; broker-backed context scout prerequisites carry request refs, target nodes, semantic questions, reason codes, and readback fields.",
     },
     now,
   );

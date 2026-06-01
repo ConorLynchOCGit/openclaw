@@ -7,6 +7,7 @@ import {
   validateProviderCapabilityProfileRegistry,
   validateRuntimeCapabilityExecutorCoverage,
 } from "./runtime-node-capability-registry.ts";
+import { NODE_LIFECYCLE_DESCRIPTOR_TOOL_IDS } from "./node-lifecycle-transition-runner.ts";
 import { TEAM_GRAPH_NODE_KINDS } from "./runtime-work-graph.ts";
 
 describe("runtime node capability registry", () => {
@@ -23,7 +24,6 @@ describe("runtime node capability registry", () => {
         "orchestrator_decision",
         "implementation_microtask",
         "implementation_complex",
-        "context_scout",
         "test_authoring",
         "human_decision",
       ]),
@@ -72,6 +72,45 @@ describe("runtime node capability registry", () => {
     );
     expect(kimi?.validationResponsibilities).toContain("execute_ordered_edit_steps");
     expect(kimi?.validationResponsibilities).toContain("emit_commitment_evidence_claims");
+    expect(kimi?.lifecycleTransitionProfileRef).toBe(
+      "lifecycle-profile://agent_team.coding/implementation_microtask.v1",
+    );
+    expect(kimi?.allowedLifecycleTransitions).toEqual(
+      expect.arrayContaining([
+        "resource.scout.submit_exact_handles",
+        "worker.context.request_more",
+        "worker.context.search",
+        "worker.context.open_around_match",
+        "worker.context.accept_window",
+        "resource.selection.propose",
+        "node.execution_packet.promote_worker_action_ready",
+        "worker.edit.plan",
+        "worker.validation.run_structural_default",
+      ]),
+    );
+    expect(kimi?.requiredLifecycleTools).toEqual(
+      expect.arrayContaining([
+        "node.execution_packet.promote_worker_action_ready",
+        "worker.context.request_more",
+        "worker.context.search",
+        "worker.context.open_around_match",
+        "worker.context.accept_window",
+      ]),
+    );
+    expect(kimi).toMatchObject({
+      domainProfileId: "coding",
+      resourceSelectionProfileRef:
+        "resource-selection-profile://agent_team.coding/implementation_microtask/coding.v1",
+      domainActionGateProfileRef:
+        "domain-action-gate-profile://agent_team.coding/implementation_microtask/coding.v1",
+    });
+    expect(kimi?.domainResourceKinds).toEqual(
+      expect.arrayContaining(["repo_file", "bounded_file_window", "target_snapshot", "diff"]),
+    );
+    expect(kimi?.domainWorkerActionToolIds).toEqual(
+      expect.arrayContaining(["worker.edit.plan", "worker.validation.run_structural_default"]),
+    );
+    expect(kimi?.domainWorkerActionToolIds).not.toContain("worker.patch.force_author_from_plan");
     expect(codex).toMatchObject({
       roleId: "implementation_engineer",
       writable: true,
@@ -177,7 +216,7 @@ describe("runtime node capability registry", () => {
       ]),
     );
     expect(implementation?.qualifiedEvidenceKinds).toEqual(
-      expect.arrayContaining(["source_change", "test_validation", "context_handoff"]),
+      expect.arrayContaining(["source_change", "test_validation", "resource_handoff"]),
     );
 
     const contractOnly = findProviderCapabilityProfile("non_codex_frontend_editor", registry);
@@ -212,11 +251,60 @@ describe("runtime node capability registry", () => {
     expect(compileRuntimePlan?.authorityBoundaries).toContain(
       "no_runtime_job_creation_without_later_authority",
     );
+    const planningCapsule = manifest.capabilities.find(
+      (capability) => capability.capabilityId === "planning_capsule_draft",
+    );
+    expect(planningCapsule).toMatchObject({
+      domainProfileId: "product_spec_planning",
+      requiredResourcePacketKind: "planning_domain_resource_packet",
+    });
+    expect(planningCapsule?.domainResourceKinds).toEqual(
+      expect.arrayContaining([
+        "source_prompt_section",
+        "owner_constraint",
+        "planning_framework_contract",
+        "planning_capsule",
+        "action_graph_candidate",
+      ]),
+    );
+    expect(planningCapsule?.domainActionGateKinds).toEqual(
+      expect.arrayContaining([
+        "planning_framework_contract_gate",
+        "planning_capsule_gate",
+        "action_graph_proposal_gate",
+      ]),
+    );
+    expect(planningCapsule?.domainWorkerActionToolIds).toEqual(
+      expect.arrayContaining([
+        "planning.framework_contract.record",
+        "planning.capsule.draft",
+        "planning.action_graph.propose",
+      ]),
+    );
+    expect(planningCapsule?.requiredSnapshotKinds).not.toContain("target_file_snapshot");
+    expect(planningCapsule?.domainWorkerActionToolIds).not.toContain("worker.edit.plan");
+    for (const capability of manifest.capabilities.filter(
+      (entry) => entry.workflowId === "agent_team.product_spec_planning",
+    )) {
+      if (capability.requiresResources) {
+        expect(capability.supportedExecutionIntents).toContain("resource_demand");
+      }
+      expect(capability.supportedExecutionIntents).not.toContain("resource_fulfillment");
+      expect(capability.supportedExecutionIntents).not.toContain("source_edit");
+      expect(capability.supportedExecutionIntents).not.toContain("resource_materialization");
+      expect(capability.domainProfileId).toBe("product_spec_planning");
+      expect(capability.allowedLifecycleTransitions).not.toContain("worker.edit.plan");
+      expect(capability.allowedLifecycleTransitions).not.toContain("worker.patch.author_edit");
+      expect(capability.allowedLifecycleTransitions).not.toContain(
+        "worker.patch.force_author_from_plan",
+      );
+      expect(capability.domainWorkerActionToolIds).not.toContain("worker.edit.plan");
+    }
   });
 
   it("can filter the model-visible manifest to only executable scheduler capabilities", () => {
     const manifest = runtimeNodeCapabilityManifestForModel({
-      executableExecutorKeys: ["kind:implementation", "role:context_scout"],
+      executableExecutorKeys: ["kind:implementation", "role:orchestrator"],
       workflowId: "agent_team.coding",
       phase: "execution",
     }) as ReturnType<typeof buildRuntimeNodeCapabilityManifest>;
@@ -225,7 +313,6 @@ describe("runtime node capability registry", () => {
       expect.arrayContaining([
         "implementation_microtask",
         "implementation_complex",
-        "context_scout",
       ]),
     );
     expect(manifest.capabilities.map((capability) => capability.capabilityId)).not.toContain(
@@ -240,13 +327,13 @@ describe("runtime node capability registry", () => {
 
   it("does not expose capabilities whose exact executor is not registered", () => {
     const manifest = runtimeNodeCapabilityManifestForModel({
-      executableExecutorKeys: ["kind:implementation", "role:context_scout"],
+      executableExecutorKeys: ["kind:implementation", "role:orchestrator"],
       workflowId: "agent_team.coding",
       phase: "execution",
     }) as ReturnType<typeof buildRuntimeNodeCapabilityManifest>;
 
     expect(manifest.capabilities.map((capability) => capability.capabilityId)).not.toContain(
-      "non_codex_context_scout",
+      "non_codex_resource_scout",
     );
     expect(manifest.capabilities.map((capability) => capability.capabilityId)).not.toContain(
       "non_codex_test_writer",
@@ -257,7 +344,7 @@ describe("runtime node capability registry", () => {
     const manifest = runtimeNodeCapabilityManifestForModel({
       executableExecutorKeys: [
         "kind:implementation",
-        "role:context_scout",
+        "role:orchestrator",
         "kind:validation",
         "kind:reviewer",
       ],
@@ -267,7 +354,7 @@ describe("runtime node capability registry", () => {
     const capabilityIds = manifest.capabilities.map((capability) => capability.capabilityId);
 
     expect(capabilityIds).toEqual(
-      expect.arrayContaining(["context_scout", "implementation_microtask", "validation_run"]),
+      expect.arrayContaining(["orchestrator_decision", "implementation_microtask", "validation_run"]),
     );
     expect(capabilityIds).not.toContain("implementation_complex");
   });
@@ -298,26 +385,23 @@ describe("runtime node capability registry", () => {
     expect(capabilityIds).not.toContain("implementation_complex");
   });
 
-  it("exposes only context synthesis immediately after accepted context supply", () => {
+  it("does not expose retired context synthesis as a selectable capability", () => {
     const manifest = runtimeNodeCapabilityManifestForModel({
       executableExecutorKeys: [
-        "kind:context_synthesis",
         "kind:implementation",
-        "role:context_scout",
+        "role:orchestrator",
         "kind:validation",
         "kind:reviewer",
       ],
       workflowId: "agent_team.coding",
-      phase: "context_synthesis",
+      phase: "capability_selection",
     }) as ReturnType<typeof buildRuntimeNodeCapabilityManifest>;
 
-    expect(manifest.capabilities.map((capability) => capability.capabilityId)).toEqual([
-      "context_synthesis",
-    ]);
-    expect(manifest.capabilities[0]?.supportedExecutionIntents).toEqual(
-      expect.arrayContaining(["context_supply", "resource_materialization"]),
+    const capabilityIds = manifest.capabilities.map((capability) => capability.capabilityId);
+    expect(capabilityIds).not.toContain("context_synthesis");
+    expect(manifest.capabilities.map((capability) => capability.executorKey)).not.toContain(
+      "kind:context_synthesis",
     );
-    expect(manifest.capabilities[0]?.defaultExecutionIntent).toBe("context_supply");
   });
 
   it("reports exact Product/Spec Planning executor coverage before live proof", () => {
@@ -362,5 +446,45 @@ describe("runtime node capability registry", () => {
     expect(complete.missingCapabilityIds).toEqual([]);
     expect(complete.missingExecutorKeys).toEqual([]);
     expect(complete.reasonCodes).toEqual(["runtime_capability_executor_coverage_complete"]);
+  });
+
+  it("derives lifecycle profile tools from the runner descriptor registry", () => {
+    const descriptorToolIds = new Set(NODE_LIFECYCLE_DESCRIPTOR_TOOL_IDS);
+    const allowedNonLifecycleTools = new Set([
+      "artifact.create",
+      "approval.request",
+      "review.add_issue",
+      "review.approve",
+    ]);
+    const manifest = buildRuntimeNodeCapabilityManifest();
+
+    for (const capability of manifest.capabilities) {
+      for (const toolId of capability.allowedLifecycleTransitions) {
+        expect(
+          descriptorToolIds.has(toolId) || allowedNonLifecycleTools.has(toolId),
+        ).toBe(true);
+      }
+      for (const toolId of capability.requiredLifecycleTools) {
+        expect(descriptorToolIds.has(toolId)).toBe(true);
+      }
+    }
+
+    const implementation = manifest.capabilities.find(
+      (capability) => capability.capabilityId === "implementation_microtask",
+    );
+    expect(implementation?.allowedLifecycleTransitions).toEqual(
+      expect.arrayContaining([
+        "resource.scout.submit_exact_handles",
+        "worker.context.request_more",
+        "worker.context.search",
+        "worker.context.open_around_match",
+        "worker.context.accept_window",
+        "resource.selection.propose",
+        "node.execution_packet.promote_worker_action_ready",
+        "worker.edit.plan",
+        "worker.validation.run_structural_default",
+        "worker.evidence.claim_from_validation",
+      ]),
+    );
   });
 });

@@ -329,6 +329,73 @@ function boundObjectSummaryArray(value: unknown): { value: unknown; changed: boo
   return { value: next, changed };
 }
 
+function boundStringField(
+  candidate: Record<string, unknown>,
+  key: string,
+  maxChars: number,
+  reasonCodes: string[],
+): void {
+  const bounded = boundRouterText(candidate[key], maxChars);
+  if (bounded.changed) {
+    candidate[key] = bounded.value;
+    reasonCodes.push(`canonical_router_${key}_bounded`);
+  }
+}
+
+function boundStringArray(
+  value: unknown,
+  maxItems: number,
+  maxChars: number,
+): { value: unknown; changed: boolean } {
+  if (!Array.isArray(value)) {
+    return { value, changed: false };
+  }
+  let changed = value.length > maxItems;
+  const next = value.slice(0, maxItems).map((entry) => {
+    const bounded = boundRouterText(entry, maxChars);
+    if (bounded.changed) {
+      changed = true;
+    }
+    return bounded.value;
+  });
+  return { value: next, changed };
+}
+
+function boundNestedStringField(
+  value: unknown,
+  key: string,
+  maxChars: number,
+): { value: unknown; changed: boolean } {
+  if (!isRecord(value)) {
+    return { value, changed: false };
+  }
+  const bounded = boundRouterText(value[key], maxChars);
+  if (!bounded.changed) {
+    return { value, changed: false };
+  }
+  return { value: { ...value, [key]: bounded.value }, changed: true };
+}
+
+function boundTargetRefArray(value: unknown): { value: unknown; changed: boolean } {
+  if (!Array.isArray(value)) {
+    return { value, changed: false };
+  }
+  let changed = value.length > 20;
+  const next = value.slice(0, 20).map((entry) => {
+    if (!isRecord(entry)) {
+      return entry;
+    }
+    const targetKind = boundRouterText(entry.targetKind, 80);
+    const targetRef = boundRouterText(entry.targetRef, 240);
+    if (targetKind.changed || targetRef.changed) {
+      changed = true;
+      return { ...entry, targetKind: targetKind.value, targetRef: targetRef.value };
+    }
+    return entry;
+  });
+  return { value: next, changed };
+}
+
 function normalizeModelAuthoredRouterBounds(value: unknown): {
   value: unknown;
   reasonCodes: string[];
@@ -338,6 +405,10 @@ function normalizeModelAuthoredRouterBounds(value: unknown): {
   }
   const candidate: Record<string, unknown> = { ...value };
   const reasonCodes: string[] = [];
+  boundStringField(candidate, "selectedExecutionReason", 500, reasonCodes);
+  boundStringField(candidate, "targetSubjectReason", 500, reasonCodes);
+  boundStringField(candidate, "objectiveSummary", ROUTER_OBJECTIVE_SUMMARY_MAX_CHARS, reasonCodes);
+
   for (const key of [
     "mentionedActions",
     "requestedActions",
@@ -349,6 +420,72 @@ function normalizeModelAuthoredRouterBounds(value: unknown): {
     if (bounded.changed) {
       candidate[key] = bounded.value;
       reasonCodes.push(`canonical_router_${key}_object_summary_bounded`);
+    }
+  }
+  for (const key of ["targetRefs", "targetSubjectRefs"]) {
+    const bounded = boundTargetRefArray(candidate[key]);
+    if (bounded.changed) {
+      candidate[key] = bounded.value;
+      reasonCodes.push(`canonical_router_${key}_bounded`);
+    }
+  }
+  if (isRecord(candidate.ambiguity)) {
+    let ambiguity = candidate.ambiguity;
+    const question = boundNestedStringField(ambiguity, "clarificationQuestion", 500);
+    if (question.changed && isRecord(question.value)) {
+      ambiguity = question.value;
+      reasonCodes.push("canonical_router_ambiguity_clarificationQuestion_bounded");
+    }
+    const missingInputs = boundStringArray(ambiguity.missingInputs, 20, 120);
+    if (missingInputs.changed) {
+      ambiguity = { ...ambiguity, missingInputs: missingInputs.value };
+      reasonCodes.push("canonical_router_ambiguity_missingInputs_bounded");
+    }
+    const conflicting = boundStringArray(ambiguity.conflictingInstructions, 20, 180);
+    if (conflicting.changed) {
+      ambiguity = { ...ambiguity, conflictingInstructions: conflicting.value };
+      reasonCodes.push("canonical_router_ambiguity_conflictingInstructions_bounded");
+    }
+    candidate.ambiguity = ambiguity;
+  }
+  if (Array.isArray(candidate.childWorkflowRequests)) {
+    let changed = candidate.childWorkflowRequests.length > ROUTER_CHILD_WORKFLOW_MAX_COUNT;
+    const next = candidate.childWorkflowRequests
+      .slice(0, ROUTER_CHILD_WORKFLOW_MAX_COUNT)
+      .map((entry) => {
+        if (!isRecord(entry)) {
+          return entry;
+        }
+        const summary = boundRouterText(entry.boundedInputSummary, 600);
+        if (summary.changed) {
+          changed = true;
+          return { ...entry, boundedInputSummary: summary.value };
+        }
+        return entry;
+      });
+    if (changed) {
+      candidate.childWorkflowRequests = next;
+      reasonCodes.push("canonical_router_childWorkflowRequests_bounded");
+    }
+  }
+  if (Array.isArray(candidate.multiIntentPlan)) {
+    let changed = candidate.multiIntentPlan.length > ROUTER_MULTI_INTENT_STEP_MAX_COUNT;
+    const next = candidate.multiIntentPlan
+      .slice(0, ROUTER_MULTI_INTENT_STEP_MAX_COUNT)
+      .map((entry) => {
+        if (!isRecord(entry)) {
+          return entry;
+        }
+        const summary = boundRouterText(entry.objectiveSummary, 600);
+        if (summary.changed) {
+          changed = true;
+          return { ...entry, objectiveSummary: summary.value };
+        }
+        return entry;
+      });
+    if (changed) {
+      candidate.multiIntentPlan = next;
+      reasonCodes.push("canonical_router_multiIntentPlan_bounded");
     }
   }
   return { value: candidate, reasonCodes };

@@ -12,7 +12,7 @@ import {
 import type { RuntimeWorkGraphSchedulerSnapshotSummary } from "./runtime-work-graph-scheduler-contracts.ts";
 
 export type NonCodexTaskFamily =
-  | "repo_context_scout"
+  | "repo_resource_scout"
   | "small_source_edit"
   | "test_writing_edit"
   | "docs_spec_edit"

@@ -1879,7 +1879,7 @@ export class WorkQueueRepository {
   }
 
   async listDbWorkQueue(input: DbWorkQueueListInput = {}): Promise<DbWorkQueueListResult> {
-    if (input.reconcileTerminalProjections !== false) {
+    if (input.reconcileTerminalProjections === true) {
       await this.reconcileTerminalRuntimeProjections();
     }
     const limit = clampWorkQueueLimit(input.limit);

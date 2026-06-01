@@ -52,20 +52,22 @@ const missionLedgerSummary = {
 };
 
 describe("cost-aware capability policy", () => {
-  it("accepts a cheap sufficiently capable context decision", () => {
+  it("accepts a cheap sufficiently capable implementation decision", () => {
     const decision = normalizeCostAwareCapabilityUtilityDecision({
-      decisionId: "choose-context",
-      consideredCapabilityIds: ["context_scout", "implementation_complex"],
-      selectedCapabilityId: "context_scout",
-      selectedNodeKind: "context_scout",
-      selectedExecutorKey: "role:context_scout",
-      targetCommitmentIds: ["context"],
-      utilityRationale: "Context uncertainty is the next blocker.",
-      costRationale: "Context scout is cheaper than Codex and sufficient for read-only discovery.",
-      whyThisIsNotDuplicateWork: "No context node has run yet.",
-      expectedEvidence: ["context_handoff"],
-      expectedDownstreamConsumer: "orchestrator",
-      stopOrEscalationCondition: "Escalate if no target refs are found.",
+      decisionId: "choose-implementation",
+      consideredCapabilityIds: ["implementation_microtask", "implementation_complex"],
+      selectedCapabilityId: "implementation_microtask",
+      selectedNodeKind: "implementation",
+      selectedExecutorKey: "kind:implementation",
+      selectedModelQualificationProfileId: "openrouter.moonshotai.kimi-k2.6",
+      qualificationEvidenceRefs: ["model-profile://openrouter.moonshotai.kimi-k2.6/runtime-capability"],
+      targetCommitmentIds: ["implementation"],
+      utilityRationale: "The scoped implementation is the next blocker.",
+      costRationale: "The cheap qualified implementation lane is sufficient before Codex.",
+      whyThisIsNotDuplicateWork: "No implementation node has run yet.",
+      expectedEvidence: ["source_change", "test_validation"],
+      expectedDownstreamConsumer: "validation_run",
+      stopOrEscalationCondition: "Escalate if validation repair fails.",
     });
 
     const validation = validateCostAwareCapabilityUtilityDecision({
@@ -76,7 +78,7 @@ describe("cost-aware capability policy", () => {
     });
 
     expect(validation.valid).toBe(true);
-    expect(validation.selectedCapability?.capabilityId).toBe("context_scout");
+    expect(validation.selectedCapability?.capabilityId).toBe("implementation_microtask");
     expect(validation.expensiveCapabilitySelected).toBe(false);
     expect(validation.semanticQualityJudgedByDeterministicCode).toBe(false);
   });
@@ -112,17 +114,19 @@ describe("cost-aware capability policy", () => {
 
   it("derives expected evidence from capability and Mission Ledger instead of requiring model enums", () => {
     const decision = normalizeCostAwareCapabilityUtilityDecision({
-      decisionId: "choose-context-derived-evidence",
-      consideredCapabilityIds: ["context_scout", "implementation_complex"],
-      selectedCapabilityId: "context_scout",
-      selectedNodeKind: "context_scout",
-      selectedExecutorKey: "role:context_scout",
-      targetCommitmentIds: ["context"],
-      utilityRationale: "Context uncertainty is the next blocker.",
-      costRationale: "Context scout is the cheapest sufficient read-only role.",
-      whyThisIsNotDuplicateWork: "No context node has run yet.",
-      expectedDownstreamConsumer: "implementation_engineer",
-      stopOrEscalationCondition: "Escalate if target refs cannot be found.",
+      decisionId: "choose-implementation-derived-evidence",
+      consideredCapabilityIds: ["implementation_microtask", "implementation_complex"],
+      selectedCapabilityId: "implementation_microtask",
+      selectedNodeKind: "implementation",
+      selectedExecutorKey: "kind:implementation",
+      selectedModelQualificationProfileId: "openrouter.moonshotai.kimi-k2.6",
+      qualificationEvidenceRefs: ["model-profile://openrouter.moonshotai.kimi-k2.6/runtime-capability"],
+      targetCommitmentIds: ["implementation"],
+      utilityRationale: "A scoped implementation is ready for the cheap qualified lane.",
+      costRationale: "The cheap implementation lane is sufficient before Codex.",
+      whyThisIsNotDuplicateWork: "No implementation node has run yet.",
+      expectedDownstreamConsumer: "validation_run",
+      stopOrEscalationCondition: "Escalate if validation repair fails.",
     });
 
     const validation = validateCostAwareCapabilityUtilityDecision({
@@ -200,23 +204,25 @@ describe("cost-aware capability policy", () => {
 
   it("hydrates nested node utility decisions from the compiled node envelope", () => {
     const node: OrchestratorGraphNodeSpec = {
-      nodeId: "context-product-spec-planning-surface-001",
-      nodeKind: "context_scout",
-      capabilityId: "context_scout",
-      executorKey: "role:context_scout",
-      assignedRole: "context_scout",
-      expectedOutput: "Bounded context handoff with Product/Spec Planning edit points.",
-      acceptanceCriteria: ["Cites target files", "Identifies scheduler and readback risks"],
-      downstreamConsumer: "orchestrator",
+      nodeId: "implementation-product-spec-planning-surface-001",
+      nodeKind: "implementation",
+      capabilityId: "implementation_microtask",
+      executorKey: "kind:implementation",
+      assignedRole: "implementation_engineer",
+      expectedOutput: "Scoped source edit with validation refs.",
+      acceptanceCriteria: ["Edits target files", "Runs focused validation"],
+      downstreamConsumer: "validation_run",
       commitmentIdsAdvanced: ["context", "repo-scope-discipline"],
       whyThisRoleIsNeededNow:
-        "A scout should inspect the existing Product/Spec Planning surface before edits.",
-      exactObjective: "Find Product/Spec Planning registration and scheduler integration points.",
+        "The work is scoped enough for the qualified implementation lane.",
+      exactObjective: "Implement Product/Spec Planning registration and scheduler integration edits.",
       metadata: {
         costAwareUtilityDecision: {
-          selectedCapabilityId: "context_scout",
-          utilityRationale: "Read-only context reduces uncertainty before implementation.",
-          costRationale: "Context scout is cheaper than broad Codex implementation.",
+          selectedCapabilityId: "implementation_microtask",
+          selectedModelQualificationProfileId: "openrouter.moonshotai.kimi-k2.6",
+          qualificationEvidenceRefs: ["model-profile://openrouter.moonshotai.kimi-k2.6/runtime-capability"],
+          utilityRationale: "The implementation is scoped and ready after node-local resource demand.",
+          costRationale: "The cheap qualified implementation lane is cheaper than broad Codex implementation.",
         },
         rawPromptStored: false,
         rawResponseStored: false,
@@ -227,10 +233,10 @@ describe("cost-aware capability policy", () => {
     const decision = utilityDecisionFromNodeMetadata(node);
 
     expect(decision?.decisionId).toBe(`${node.nodeId}:utility`);
-    expect(decision?.selectedNodeKind).toBe("context_scout");
-    expect(decision?.selectedExecutorKey).toBe("role:context_scout");
+    expect(decision?.selectedNodeKind).toBe("implementation");
+    expect(decision?.selectedExecutorKey).toBe("kind:implementation");
     expect(decision?.targetCommitmentIds).toEqual(["context", "repo-scope-discipline"]);
-    expect(decision?.expectedDownstreamConsumer).toBe("orchestrator");
+    expect(decision?.expectedDownstreamConsumer).toBe("validation_run");
     expect(decision?.stopOrEscalationCondition).toContain(node.nodeId);
 
     const validation = validateCostAwareCapabilityUtilityDecision({
@@ -250,15 +256,17 @@ describe("cost-aware capability policy", () => {
 
   it("rejects target mappings only when no selected target is an open blocking commitment", () => {
     const decision = normalizeCostAwareCapabilityUtilityDecision({
-      decisionId: "choose-context-nonblocking-only",
-      selectedCapabilityId: "context_scout",
-      selectedNodeKind: "context_scout",
-      selectedExecutorKey: "role:context_scout",
+      decisionId: "choose-implementation-nonblocking-only",
+      selectedCapabilityId: "implementation_microtask",
+      selectedNodeKind: "implementation",
+      selectedExecutorKey: "kind:implementation",
+      selectedModelQualificationProfileId: "openrouter.moonshotai.kimi-k2.6",
+      qualificationEvidenceRefs: ["model-profile://openrouter.moonshotai.kimi-k2.6/runtime-capability"],
       targetCommitmentIds: ["repo-scope-discipline"],
       utilityRationale: "Scope discipline is useful but not the blocking mission work.",
-      costRationale: "Context scout is cheap.",
-      whyThisIsNotDuplicateWork: "No scout has run.",
-      expectedDownstreamConsumer: "orchestrator",
+      costRationale: "The cheap implementation lane is sufficient.",
+      whyThisIsNotDuplicateWork: "No implementation has run.",
+      expectedDownstreamConsumer: "validation_run",
       stopOrEscalationCondition: "Return to orchestrator if no target refs are found.",
     });
 

@@ -227,6 +227,40 @@ The narrow real-model lane
 proved Qwen can complete semantic content plus targeted normalization and
 compile into a scheduler-valid packet without raw prompt/response storage.
 
+Update, 2026-05-26: the staged packet boundary must be extended with
+source-ref selection and execution intent. The completed-Mission-Ledger replay
+`product-spec-replay-mplzlt47` showed that two-step packet authoring is still
+too broad when each Qwen lane receives a repeated 27-30KB prompt bundle and
+is still too implementation-shaped when proof-run or artifact-lifecycle
+commitments are required to fill `expectedImplementationOutput`.
+
+The corrected maximum-toolification sequence is:
+
+1. `packet.source_refs.select`
+   - model chooses source refs or windows from the source prompt context
+     index for the target commitment.
+   - runtime validates refs, byte budgets, hashes, and storage policy.
+   - runtime does not choose semantically important source content or
+     truncate the prompt to fit.
+2. `packet.intent.set`
+   - model declares execution intent: `source_edit`, `docs_edit`,
+     `source_grounding`, `proof_run`, `validation_only`, `review_only`,
+     `closeout`, `planning_artifact`, `research`, or `artifact_lifecycle`.
+   - runtime validates enum/capability compatibility only.
+3. Intent-specific semantic packet small verbs.
+   - source-edit commitments still require implementation expected output.
+   - proof, validation, review, closeout, artifact-lifecycle, research, and
+     source-grounding commitments use their own required fields.
+4. Targeted normalization.
+   - only missing intent-specific semantic fields can be repaired.
+   - diagnostics must match primary provider calls.
+5. Runtime packet compiler.
+   - runtime compiles canonical `CommitmentWorkPacket` refs, ids, envelopes,
+     storage flags, evidence profile links, and lifecycle state.
+
+The detailed packet-boundary contract is documented in
+`commitment-packet-source-selection-and-execution-intent.md`.
+
 Detailed solution:
 
 - `draft_mission_contract` extracts objective, explicit non-goals, blocking

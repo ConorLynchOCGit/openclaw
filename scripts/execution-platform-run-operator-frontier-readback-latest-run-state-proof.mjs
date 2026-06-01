@@ -135,7 +135,7 @@ function schedulerProgress() {
       providerBudgetBlockedNodeIds: [],
       readinessRefs: ["node-readiness://implementation-a", "node-readiness://implementation-c"],
       resourceRefs: ["node-execution-packet://implementation-a"],
-      contextRefs: ["context-handoff://implementation-a"],
+      contextRefs: ["resource-handoff://implementation-a"],
       openCommitmentIds: ["C1", "C2", "C3"],
       nextLegalTransition: "execute_frontier",
       reasonCodes: ["scheduler_canonical_frontier_state_evaluated"],

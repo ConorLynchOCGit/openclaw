@@ -158,10 +158,36 @@ const CONTRACT_ROUTE_REQUIREMENTS: Record<
     timeoutMs: 60_000,
     maxAttempts: 2,
   },
+  "model_memory.capture_interpretation": {
+    requiredCapabilities: ["structured_json", "json_schema", "large_context"],
+    priority: [
+      "openai-codex/gpt-5.4",
+      "minimax-structured-json",
+      "openai-codex-policy-candidate",
+    ],
+    timeoutMs: 120_000,
+    maxAttempts: 2,
+  },
   "retrieval.structured_json": {
     requiredCapabilities: ["structured_json", "json_schema", "low_cost"],
     priority: ["gpt-mini-structured-json", "openrouter-structured-json", "qwen-structured-json"],
     timeoutMs: 45_000,
+    maxAttempts: 2,
+  },
+  "retrieval.request_interpretation": {
+    requiredCapabilities: ["structured_json", "json_schema", "low_cost"],
+    priority: [
+      "deepseek/deepseek-v4-flash",
+      "gpt-mini-structured-json",
+      "openrouter-structured-json",
+    ],
+    timeoutMs: 45_000,
+    maxAttempts: 2,
+  },
+  "retrieval.final_inclusion_review": {
+    requiredCapabilities: ["structured_json", "json_schema", "reasoning"],
+    priority: ["deepseek/deepseek-v4-pro", "deepseek-structured-json", "qwen-structured-json"],
+    timeoutMs: 90_000,
     maxAttempts: 2,
   },
   "proactivity.structured_json": {
@@ -170,10 +196,28 @@ const CONTRACT_ROUTE_REQUIREMENTS: Record<
     timeoutMs: 60_000,
     maxAttempts: 2,
   },
+  "proactivity.opportunity_extraction": {
+    requiredCapabilities: ["structured_json", "json_schema", "reasoning"],
+    priority: ["openai-codex/gpt-5.4", "deepseek/deepseek-v4-pro", "deepseek-structured-json"],
+    timeoutMs: 120_000,
+    maxAttempts: 2,
+  },
+  "proactivity.merge_adjudication": {
+    requiredCapabilities: ["structured_json", "json_schema", "reasoning"],
+    priority: ["openai-codex/gpt-5.4", "deepseek/deepseek-v4-pro", "deepseek-structured-json"],
+    timeoutMs: 120_000,
+    maxAttempts: 2,
+  },
   "skillifier.structured_json": {
     requiredCapabilities: ["structured_json", "json_schema", "reasoning"],
     priority: ["qwen-structured-json", "deepseek-structured-json", "openai-codex-policy-candidate"],
     timeoutMs: 60_000,
+    maxAttempts: 2,
+  },
+  "closeout.opportunity_seed_extraction": {
+    requiredCapabilities: ["structured_json", "json_schema", "reasoning"],
+    priority: ["openai-codex/gpt-5.4", "deepseek/deepseek-v4-pro", "deepseek-structured-json"],
+    timeoutMs: 120_000,
     maxAttempts: 2,
   },
   "outcome_pack_review.structured_json": {

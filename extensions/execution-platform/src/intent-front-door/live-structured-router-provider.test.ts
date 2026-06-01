@@ -344,6 +344,66 @@ describe("LiveStructuredModelIntentRouterProvider", () => {
     expect(repairRequest.schemaRepair?.allowedEnumValues?.actions).toContain("code_edit");
   });
 
+  it("compiles workflow execution aliases from the workflow manifest before schema repair", async () => {
+    const modelOutput = {
+      ...createBaseCanonicalRouterOutput({
+        route: "plan_only",
+        responseMode: "create_plan_only",
+      }),
+      route: "workflow_execution",
+      executeNow: true,
+      executorWorkflowId: "agent_team.coding",
+      workflowId: null,
+      jobType: null,
+      responseMode: "create_runtime_job",
+      requestedActions: [{ action: "code_edit", objectSummary: "implement", confidence: 0.9 }],
+      sideEffectClass: "code_edit",
+      selectedExecutionReason: "route implementation ".repeat(80),
+    };
+    const route = vi.fn<IntentFrontDoorRouterModelClient["route"]>(async () => ({
+      status: "succeeded",
+      output: modelOutput,
+      providerRef: "provider-profile://fixture",
+      modelRef: "model://fixture",
+      latencyMs: 10,
+      estimatedCostUsd: 0.001,
+      retryCount: 0,
+      responseHash: "sha256:response",
+      reasonCodes: ["fixture_client_called"],
+      rawPromptStored: false,
+      rawResponseStored: false,
+      rawProviderLogStored: false,
+    }));
+    const client: IntentFrontDoorRouterModelClient = { route };
+    const router = new StructuredModelIntentRouter(
+      new LiveStructuredModelIntentRouterProvider({
+        policyDecision: policyDecision(),
+        client,
+      }),
+    );
+
+    const result = await router.route({
+      ...routerRequest(),
+      workflowSummaries: [
+        {
+          workflowId: "agent_team.coding",
+          jobType: "executor.agent_team",
+        } as never,
+      ],
+    });
+
+    expect(result.valid).toBe(true);
+    expect(route).toHaveBeenCalledTimes(1);
+    expect(result.output?.workflowId).toBe("agent_team.coding");
+    expect(result.output?.jobType).toBe("executor.agent_team");
+    expect(result.output?.selectedExecutionReason.length).toBeLessThanOrEqual(500);
+    expect(result.metadata.reasonCodes).toContain("router_execution_alias_workflow_id_filled");
+    expect(result.metadata.reasonCodes).toContain(
+      "router_execution_alias_job_type_filled_from_workflow_manifest",
+    );
+    expect(result.metadata.reasonCodes).not.toContain("router_schema_repair_invoked");
+  });
+
   it("rejects invalid canonical router enum output when bounded repair also fails", async () => {
     const base = createBaseCanonicalRouterOutput({
       route: "workflow_execution",
@@ -742,6 +802,54 @@ describe("OpenRouterIntentFrontDoorRouterClient", () => {
     expect(response.output).toBeNull();
     expect(response.reasonCodes).toContain("router_provider_json_parse_failed");
     expect(response.reasonCodes).toContain("codex_app_server_router_no_parseable_output");
+  });
+
+  it("classifies Codex app-server cwd failures instead of returning only generic failure", async () => {
+    const execute = vi
+      .fn<JsonModelExecutor["execute"]>()
+      .mockRejectedValue(new Error("spawn failed: cwd /missing/repo ENOENT"));
+    const client = new CodexAppServerIntentFrontDoorRouterClient({
+      executor: { execute },
+      requestTimeoutMs: 1_000,
+    });
+
+    const response = await client.route(
+      buildLiveRouterModelClientRequest({
+        policyDecision: policyDecision(),
+        routerRequest: routerRequest(),
+      }),
+    );
+
+    expect(response.status).toBe("failed");
+    expect(response.reasonCodes).toContain("codex_app_server_router_failed");
+    expect(response.reasonCodes).toContain("codex_app_server_router_invalid_cwd");
+    expect(response.reasonCodes).not.toContain("codex_app_server_router_unclassified_failure");
+  });
+
+  it("does not throw when owned Codex app-server failure cleanup is synchronous", async () => {
+    const execute = vi
+      .fn<JsonModelExecutor["execute"]>()
+      .mockRejectedValue(new Error("spawn failed: cwd /missing/repo ENOENT"));
+    class SyncCloseExecutor implements JsonModelExecutor {
+      execute = execute;
+      close(): void {
+        // CodexAppServerJsonExecutor.close is synchronous in production.
+      }
+    }
+    const client = new CodexAppServerIntentFrontDoorRouterClient({
+      executor: new SyncCloseExecutor(),
+      requestTimeoutMs: 1_000,
+    });
+
+    const response = await client.route(
+      buildLiveRouterModelClientRequest({
+        policyDecision: policyDecision(),
+        routerRequest: routerRequest(),
+      }),
+    );
+
+    expect(response.status).toBe("failed");
+    expect(response.reasonCodes).toContain("codex_app_server_router_invalid_cwd");
   });
 
   it("retries 429 and 503 once", async () => {

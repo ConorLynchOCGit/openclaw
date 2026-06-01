@@ -1,4 +1,5 @@
 import { runtimeExecutionSpanReadback } from "../../observability/runtime-execution-span.ts";
+import { buildCanonicalReadbackGate } from "../../observability/canonical-readback-gate.ts";
 import type {
   JsonValue,
   RuntimeJobArtifact,
@@ -77,6 +78,13 @@ export function activeGraphProgressReadback(
     }
     return null;
   };
+  const numberArray = (value: unknown, maxItems: number): number[] =>
+    Array.isArray(value)
+      ? value
+          .filter((item): item is number => typeof item === "number" && Number.isFinite(item))
+          .map((item) => Math.trunc(item))
+          .slice(0, maxItems)
+      : [];
   const collectedBoolean = (key: string): boolean | null => {
     for (let index = progressEvents.length - 1; index >= 0; index -= 1) {
       const value = booleanValue(eventDataRecord(progressEvents[index]!)[key]);
@@ -101,6 +109,9 @@ export function activeGraphProgressReadback(
           producedByExecutorKey: stringValue(claim.producedByExecutorKey),
           validationRefs: stringArrayValue(claim.validationRefs, 8),
           changedFileRefs: stringArrayValue(claim.changedFileRefs, 8),
+          validationPhase: stringValue(claim.validationPhase),
+          validationPhaseCompatibility: stringValue(claim.validationPhaseCompatibility),
+          validationPhaseReasonCodes: stringArrayValue(claim.validationPhaseReasonCodes, 8),
           limitations: stringArrayValue(claim.limitations, 8),
         }))
         .filter((claim) => claim.evidenceClaimId.length > 0 && claim.evidenceRef.length > 0)
@@ -122,39 +133,17 @@ export function activeGraphProgressReadback(
     typeof data.schedulerToolId === "string" && data.schedulerToolId.startsWith("worker.")
       ? data.schedulerToolId
       : (workerToolIds.at(-1) ?? null);
-  const latestCommitmentPacketData = eventDataRecord(
-    progressEvents.findLast((event) => {
-      const record = eventDataRecord(event);
-      return (
-        stringValue(record.schedulerToolId) === "scheduler.draft_commitment_work_breakdown" &&
-        Array.isArray(record.commitmentWorkPacketSummaries)
-      );
-    }),
-  );
-  const commitmentWorkPackets = Array.isArray(
-    latestCommitmentPacketData.commitmentWorkPacketSummaries,
-  )
-    ? latestCommitmentPacketData.commitmentWorkPacketSummaries
-        .map((packet) => asRecord(packet))
-        .filter((packet): packet is Record<string, unknown> => Boolean(packet))
-        .map((packet) => ({
-          packetRef: stringValue(packet.packetRef) ?? "",
-          commitmentId: stringValue(packet.commitmentId) ?? "unknown",
-          authoringSource: stringValue(packet.authoringSource) ?? "unknown",
-          qualityStatus: stringValue(packet.qualityStatus) ?? "unknown",
-          workerObjective: stringValue(packet.workerObjective),
-          contextScoutObjective: stringValue(packet.contextScoutObjective),
-          implementationObjective: stringValue(packet.implementationObjective),
-          acceptanceCriteriaCount: numberValue(packet.acceptanceCriteriaCount),
-          acceptanceCriteria: stringArrayValue(packet.acceptanceCriteria, 6),
-          expectedEvidenceKinds: stringArrayValue(packet.expectedEvidenceKinds, 8),
-          likelyRepoAreas: stringArrayValue(packet.likelyRepoAreas, 8),
-          requiredContextQuestions: stringArrayValue(packet.requiredContextQuestions, 6),
-          downstreamConsumer: stringValue(packet.downstreamConsumer),
-        }))
-        .filter((packet) => packet.packetRef.length > 0)
-        .slice(0, 30)
-    : [];
+  const reviewArtifactRefs = [
+    ...new Set([
+      ...collect("reviewArtifactRefs", 40),
+      ...collect("artifactRefs", 40).filter(
+        (ref) =>
+          ref.startsWith("worker-edit-review://") ||
+          ref.startsWith("action-review://") ||
+          ref.includes("worker_edit_review_artifact"),
+      ),
+    ]),
+  ].slice(0, 40);
   const latestValidationQaData = eventDataRecord(
     progressEvents.findLast((event) => {
       const record = eventDataRecord(event);
@@ -195,6 +184,9 @@ export function activeGraphProgressReadback(
   const latestRunCurrent = asRecord(latestRunStateMetadata?.current);
   const latestRunProcess = asRecord(latestRunStateMetadata?.process);
   const latestRunFrontier = asRecord(latestRunStateMetadata?.activeFrontier);
+  const latestRunCanonicalReadbackGate = asRecord(
+    latestRunStateMetadata?.canonicalReadbackGate,
+  );
   const latestRunGraphPatch = asRecord(latestRunStateMetadata?.graphPatch);
   const latestRunBoundaryReplay = asRecord(latestRunStateMetadata?.boundaryReplay);
   const boundaryCheckpointProgressEvents = progressEvents.filter((event) => {
@@ -262,6 +254,18 @@ export function activeGraphProgressReadback(
       return Boolean(stringValue(record.modelCallSpanId));
     }),
   );
+  const latestSchedulerModelCallEnvelopeData =
+    asRecord(
+      eventDataRecord(
+        progressEvents.findLast((event) => {
+          const record = eventDataRecord(event);
+          return Boolean(asRecord(record.schedulerModelCallEnvelope));
+        }),
+      ).schedulerModelCallEnvelope,
+    ) ?? asRecord(latestRunStateMetadata?.schedulerModelCallEnvelope);
+  const latestSchedulerModelCallFrontierCounts = asRecord(
+    latestSchedulerModelCallEnvelopeData?.activeFrontierCounts,
+  );
   const latestWorkerInternalData = eventDataRecord(
     progressEvents.findLast((event) => {
       const record = eventDataRecord(event);
@@ -317,6 +321,14 @@ export function activeGraphProgressReadback(
   );
   const noProgressStringArray = (key: string, maxItems: number): string[] =>
     latestNoProgressData ? stringArrayValue(latestNoProgressData[key], maxItems) : [];
+  const latestRootCauseData = asRecord(
+    eventDataRecord(
+      progressEvents.findLast((event) => {
+        const rootCause = asRecord(eventDataRecord(event).frontierRootCauseArtifact);
+        return Boolean(rootCause);
+      }),
+    ).frontierRootCauseArtifact,
+  );
   const latestMissionLedgerThrottleData = asRecord(
     eventDataRecord(
       progressEvents.findLast((event) => {
@@ -403,7 +415,72 @@ export function activeGraphProgressReadback(
         .filter((branch) => branch.nodeId.length > 0)
         .slice(0, 40)
     : [];
+  const latestBranchScopedData = Array.isArray(data.branchScopedFrontierStates)
+    ? data.branchScopedFrontierStates
+    : Array.isArray(latestParallelFrontierData?.branchScopedFrontierStates)
+      ? latestParallelFrontierData.branchScopedFrontierStates
+      : [];
+  const branchScopedFrontierStates = latestBranchScopedData
+    .map((branch) => asRecord(branch))
+    .filter((branch): branch is Record<string, unknown> => Boolean(branch))
+    .map((branch) => {
+      const blocker = asRecord(branch.blocker);
+      return {
+        branchId: stringValue(branch.branchId),
+        parentBranchId: stringValue(branch.parentBranchId),
+        nodeId: stringValue(branch.nodeId) ?? "",
+        nodeKind: stringValue(branch.nodeKind),
+        workIntentRef: stringValue(branch.workIntentRef),
+        contractRef: stringValue(branch.contractRef),
+        readinessRef: stringValue(branch.readinessRef),
+        resourceRequirementRefs: stringArrayValue(branch.resourceRequirementRefs, 20),
+        nodeResourceDemandSessionRefs: stringArrayValue(branch.nodeResourceDemandSessionRefs, 20),
+        nodeResourceDemandStatus: stringValue(branch.nodeResourceDemandStatus),
+        nodeResourceLedgerManifestRefs: stringArrayValue(
+          branch.nodeResourceLedgerManifestRefs,
+          20,
+        ),
+        nodeResourceLedgerStatus: stringValue(branch.nodeResourceLedgerStatus),
+        domainResourceSelectionRefs: stringArrayValue(branch.domainResourceSelectionRefs, 20),
+        domainResourceSelectionStatus: stringValue(branch.domainResourceSelectionStatus),
+        actionGateStatus: stringValue(branch.actionGateStatus),
+        actionGateMissingFields: stringArrayValue(branch.actionGateMissingFields, 20),
+        providerDiagnosticRefs: stringArrayValue(branch.providerDiagnosticRefs, 20),
+        providerDiagnosticStatus: stringValue(branch.providerDiagnosticStatus),
+        domainResourcePacketRef: stringValue(branch.domainResourcePacketRef),
+        resourcePacketRef: stringValue(branch.resourcePacketRef),
+        status: stringValue(branch.status),
+        blockerCode: stringValue(blocker?.code ?? branch.blockerCode),
+        blockerSummary: stringValue(blocker?.summary ?? branch.blockerSummary),
+        blockerSchemaPath: stringValue(blocker?.schemaPath ?? branch.blockerSchemaPath),
+        blockerPolicyPath: stringValue(blocker?.policyPath ?? branch.blockerPolicyPath),
+        blockerSignature: stringValue(branch.blockerSignature),
+        consumerRefs: stringArrayValue(branch.consumerRefs, 20),
+        dependentConsumers: stringArrayValue(branch.dependentConsumers, 20),
+        siblingBranchIds: stringArrayValue(branch.siblingBranchIds, 20),
+        successfulEvidenceRefs: stringArrayValue(branch.successfulEvidenceRefs, 20),
+        failedEvidenceRefs: stringArrayValue(branch.failedEvidenceRefs, 20),
+        repairNodeRefs: stringArrayValue(branch.repairNodeRefs, 20),
+        diagnosticOnlyNodeRefs: stringArrayValue(branch.diagnosticOnlyNodeRefs, 20),
+        nextLegalTransitions: stringArrayValue(branch.nextLegalTransitions, 20),
+        capabilityId: stringValue(branch.capabilityId),
+        executorKey: stringValue(branch.executorKey),
+        modelRef: stringValue(branch.modelRef),
+        workerRef: stringValue(branch.workerRef),
+        phase: stringValue(branch.phase),
+        currentToolId: stringValue(branch.currentToolId),
+        rootCauseRef: stringValue(branch.rootCauseRef),
+        rootCauseSystemic: booleanValue(branch.rootCauseSystemic),
+        reasonCodes: stringArrayValue(blocker?.reasonCodes ?? branch.reasonCodes, 40),
+      };
+    })
+    .filter((branch) => branch.nodeId.length > 0)
+    .slice(0, 80);
   const latestRunNoProgress = asRecord(latestRunFrontier?.noProgress);
+  const latestRunRootCause = asRecord(latestRunFrontier?.rootCause);
+  const projectedRootCauseData = latestRootCauseData ?? latestRunRootCause;
+  const projectedRootCauseStringArray = (key: string, maxItems: number): string[] =>
+    projectedRootCauseData ? stringArrayValue(projectedRootCauseData[key], maxItems) : [];
   const latestRunThrottle = asRecord(latestRunFrontier?.missionLedgerEvaluationThrottle);
   const latestRunBranchStates = Array.isArray(latestRunFrontier?.branchStates)
     ? latestRunFrontier.branchStates
@@ -412,10 +489,41 @@ export function activeGraphProgressReadback(
         .map((branch) => ({
           branchId: stringValue(branch.branchId),
           nodeId: stringValue(branch.nodeId) ?? "",
+          nodeKind: stringValue(branch.nodeKind),
+          capabilityId: stringValue(branch.capabilityId),
+          contractRef: stringValue(branch.contractRef),
+          readinessRef: stringValue(branch.readinessStateRef ?? branch.readinessRef),
+          resourceRequirementRefs: stringArrayValue(branch.resourceRequirementRefs, 20),
+          nodeResourceDemandSessionRefs: stringArrayValue(branch.nodeResourceDemandSessionRefs, 20),
+          nodeResourceDemandStatus: stringValue(branch.nodeResourceDemandStatus),
+          nodeResourceLedgerManifestRefs: stringArrayValue(
+            branch.nodeResourceLedgerManifestRefs,
+            20,
+          ),
+          nodeResourceLedgerStatus: stringValue(branch.nodeResourceLedgerStatus),
+          domainResourceSelectionRefs: stringArrayValue(branch.domainResourceSelectionRefs, 20),
+          domainResourceSelectionStatus: stringValue(branch.domainResourceSelectionStatus),
+          actionGateStatus: stringValue(branch.actionGateStatus),
+          actionGateMissingFields: stringArrayValue(branch.actionGateMissingFields, 20),
+          providerDiagnosticRefs: stringArrayValue(branch.providerDiagnosticRefs, 20),
+          providerDiagnosticStatus: stringValue(branch.providerDiagnosticStatus),
+          domainResourcePacketRef: stringValue(branch.domainResourcePacketRef),
+          resourcePacketRef: stringValue(branch.resourcePacketRef),
+          consumerRefs: stringArrayValue(branch.consumerRefs, 20),
+          dependentConsumers: stringArrayValue(branch.dependentConsumers, 20),
+          siblingBranchIds: stringArrayValue(branch.siblingBranchIds, 20),
+          successfulEvidenceRefs: stringArrayValue(branch.successfulEvidenceRefs, 20),
+          failedEvidenceRefs: stringArrayValue(branch.failedEvidenceRefs, 20),
+          repairNodeRefs: stringArrayValue(branch.repairNodeRefs, 20),
+          diagnosticOnlyNodeRefs: stringArrayValue(branch.diagnosticOnlyNodeRefs, 20),
+          rootCauseRef: stringValue(branch.rootCauseRef),
+          rootCauseSystemic: booleanValue(branch.rootCauseSystemic),
+          targetCommitmentIds: stringArrayValue(branch.targetCommitmentIds, 24),
           status: stringValue(branch.status),
           blockerSummary: stringValue(branch.blockerSummary),
           errorPath: stringValue(branch.errorPath),
           readinessStateRef: stringValue(branch.readinessStateRef),
+          evidenceRefs: stringArrayValue(branch.evidenceRefs, 20),
           reasonCodes: stringArrayValue(branch.reasonCodes, 20),
         }))
         .filter((branch) => branch.nodeId.length > 0)
@@ -444,10 +552,10 @@ export function activeGraphProgressReadback(
   const schedulerNextTransition = latestSchedulerFrontierData
     ? stringValue(latestSchedulerFrontierData.nextLegalTransition)
     : null;
-  const latestPacketAuthorFanout = asRecord(data.packetAuthorFanout) ?? {};
-  const latestPacketAuthorFanoutPresent = Object.keys(latestPacketAuthorFanout).length > 0;
   const normalizeTransition = (value: string | null): string | null =>
     value === "execute_frontier" ? "run_frontier" : value;
+  const resourceRequirementRefs = collect("resourceRequirementRefs", 40);
+  const resourceRequirementStatuses = collect("resourceRequirementStatuses", 40);
   const contextBrokerRequestRefs = collect("contextBrokerRequestRefs", 40);
   const contextBrokerStatuses = collect("contextBrokerStatuses", 40);
   const latestRunAgreementReasonCodes = [
@@ -479,9 +587,114 @@ export function activeGraphProgressReadback(
       ? ["latest_run_state_next_transition_mismatch"]
       : []),
   ];
+  const latestRunWallTime = asRecord(latestRunStateMetadata?.wallTime);
+  const latestRunModelUsage = asRecord(latestRunStateMetadata?.modelUsage);
+  const latestRunProofEnvironment = asRecord(latestRunStateMetadata?.proofEnvironment);
+  const artifactPayloadRefs = [
+    ...new Set(
+      artifacts
+        .map((artifact) => stringValue(asRecord(artifact.metadata)?.payloadRef))
+        .filter((ref): ref is string => Boolean(ref)),
+    ),
+  ].slice(0, 30);
+  const artifactManifestRefs = artifacts
+    .filter((artifact) => stringValue(asRecord(artifact.metadata)?.payloadRef))
+    .map((artifact) => artifact.uri)
+    .slice(0, 30);
+  const latestOwnerBranch =
+    branchScopedFrontierStates.at(0) ??
+    frontierBranchResults.at(0) ??
+    latestRunBranchStates.at(0) ??
+    null;
+  const latestOwnerBranchRecord = asRecord(latestOwnerBranch);
+  const latestOwnerReadinessRef =
+    stringValue(data.nodeReadinessStateRef) ??
+    stringValue(latestOwnerBranchRecord?.readinessRef) ??
+    stringValue(latestOwnerBranchRecord?.readinessStateRef) ??
+    stringValue(latestRunCurrent?.readinessStateRef);
+  const latestOwnerReadinessStatus =
+    stringValue(data.nodeReadinessStatus) ?? stringValue(latestRunCurrent?.readinessStatus);
+  const ownerExecutionIntent =
+    collectedString("executionIntent") ?? stringValue(latestRunCurrent?.executionIntent);
+  const ownerEvidenceMode = [
+    ...new Set([
+      ...collect("evidenceMode", 12),
+      ...stringArrayValue(latestRunCurrent?.evidenceMode, 12),
+    ]),
+  ].slice(0, 12);
+  const latestRunUsageUnavailableReasonRecords = Array.isArray(
+    latestRunModelUsage?.usageUnavailableReasons,
+  )
+    ? latestRunModelUsage.usageUnavailableReasons
+    : [];
+  const ownerUsageUnavailableReasons = [
+    ...stringArrayValue(latestRunModelUsage?.usageUnavailableReasons, 20),
+    ...latestRunUsageUnavailableReasonRecords
+      .map((entry) => stringValue(asRecord(entry)?.reason))
+      .filter((reason): reason is string => Boolean(reason)),
+    stringValue(asRecord(latestModelCallData.modelProviderDiagnostics)?.usageUnavailableReason),
+    stringValue(latestWorkerInternalData.workerInternalUsageUnavailableReason),
+  ]
+    .filter((reason): reason is string => Boolean(reason))
+    .slice(0, 30);
+  const providerUsage =
+    asRecord(asRecord(latestModelCallData.modelProviderDiagnostics)?.usage) ??
+    asRecord(latestWorkerInternalData.workerInternalProviderUsage);
+  const estimatedTokenRange = asRecord(
+    asRecord(latestModelCallData.modelProviderDiagnostics)?.estimatedTokenRange,
+  );
+  const latestProviderDiagnosticData =
+    asRecord(latestModelCallData.modelProviderDiagnostics) ??
+    asRecord(latestWorkerInternalData.providerDiagnostics) ??
+    asRecord(data.providerDiagnostics);
+  const latestProviderDiagnosticShape =
+    asRecord(latestProviderDiagnosticData?.providerResponseShape) ??
+    asRecord(latestProviderDiagnosticData?.responseShape);
+  const latestProviderDiagnosticProfile =
+    asRecord(latestProviderDiagnosticData?.requestProfileDiagnostics) ??
+    asRecord(latestProviderDiagnosticData?.modelTaskClassification);
+  const latestProviderDiagnosticPreflight = asRecord(
+    latestProviderDiagnosticData?.structuredAdapterPreflight,
+  );
+  const latestProviderDiagnosticUsage =
+    asRecord(latestProviderDiagnosticData?.usage) ??
+    asRecord(latestProviderDiagnosticData?.providerUsage) ??
+    providerUsage;
+  const latestProviderDiagnosticRefs = [
+    ...new Set([
+      ...collect("providerDiagnosticRefs", 20),
+      ...collect("providerDiagnosticsRefs", 20),
+      stringValue(latestProviderDiagnosticData?.diagnosticRef),
+      stringValue(latestProviderDiagnosticData?.providerDiagnosticRef),
+    ]),
+  ]
+    .filter((ref): ref is string => Boolean(ref))
+    .slice(0, 20);
+  const canonicalReadbackGate = buildCanonicalReadbackGate({
+    graphId: graphId ?? latestRunGraphId,
+    progress: data,
+    latestRunState: latestRunStateMetadata,
+    schedulerFrontier: latestSchedulerFrontierData,
+    parallelFrontier: latestParallelFrontierData,
+    rootCause: projectedRootCauseData,
+    noProgress: latestNoProgressData ?? latestRunNoProgress,
+    schedulerModelCallEnvelope: latestSchedulerModelCallEnvelopeData,
+    checkpointKind: latestBoundaryCheckpointKind,
+    terminalStatus:
+      stringValue(latestRunProcess?.terminalStatus) ?? stringValue(data.finalizationState),
+    adapterTerminalStatus: stringValue(latestRunProcess?.adapterTerminalStatus),
+  });
+  const nodeResourceDemandStatus = collectedString("nodeResourceDemandStatus");
+  const nodeResourceDemandBlockerRefs =
+    nodeResourceDemandStatus === "fulfilled" ? [] : collect("nodeResourceDemandBlockerRefs", 20);
   return {
     state: latest || latestRunArtifact ? "present" : "missing",
     graphId,
+    canonicalReadbackGate,
+    firstOpenGate: canonicalReadbackGate,
+    firstOpenGateKind: canonicalReadbackGate.gateKind,
+    firstOpenGateStatus: canonicalReadbackGate.gateStatus,
+    firstOpenGateReasonCodes: canonicalReadbackGate.reasonCodes,
     activeNodeId: stringValue(nodeData.nodeId) ?? stringValue(data.nodeId),
     activeNodeKind: stringValue(nodeData.activeNodeKind) ?? stringValue(data.activeNodeKind),
     roleId: stringValue(nodeData.roleId) ?? stringValue(data.roleId),
@@ -498,6 +711,52 @@ export function activeGraphProgressReadback(
     evidenceClaimRefs: collect("evidenceClaimRefs", 20),
     genericNodeExecutionResultRefs: collect("genericNodeExecutionResultRefs", 20),
     evidenceClaims: latestEvidenceClaims,
+    nodeLocalLifecycle: {
+      state:
+        collect("nodeResourceDemandSessionRefs", 1).length > 0 ||
+        collect("nodeResourceLedgerManifestRefs", 1).length > 0 ||
+        collect("domainResourceSelectionRefs", 1).length > 0 ||
+        collectedString("actionGateStatus")
+          ? "present"
+          : "missing",
+      nodeResourceDemand: {
+        status: nodeResourceDemandStatus,
+        sessionRefs: collect("nodeResourceDemandSessionRefs", 30),
+        blockerRefs: nodeResourceDemandBlockerRefs,
+        missingRefs: collect("nodeResourceDemandMissingRefs", 20),
+        nextTransition: collectedString("nodeResourceDemandNextTransition"),
+      },
+      ledger: {
+        status: collectedString("nodeResourceLedgerStatus"),
+        manifestRefs: collect("nodeResourceLedgerManifestRefs", 30),
+        entryCount: collectedNumber("nodeResourceLedgerEntryCount"),
+        bodyRefs: collect("nodeResourceLedgerBodyRefs", 20),
+      },
+      domainResourceSelection: {
+        status: collectedString("domainResourceSelectionStatus"),
+        refs: collect("domainResourceSelectionRefs", 30),
+        selectedTargetRefs: collect("selectedTargetRefs", 30),
+        missingRefs: collect("domainResourceSelectionMissingRefs", 20),
+        reasonCodes: collect("domainResourceSelectionReasonCodes", 30),
+      },
+      actionGate: {
+        status: collectedString("actionGateStatus"),
+        refs: collect("actionGateRefs", 20),
+        missingFields: collect("actionGateMissingFields", 20),
+        nextTransition: collectedString("actionGateNextTransition"),
+      },
+      evidenceClosure: {
+        status: collectedString("evidenceClosureStatus"),
+        evidenceClaimRefs: collect("evidenceClaimRefs", 30),
+        validationRefs: collect("validationRefs", 30),
+        reasonCodes: collect("evidenceClosureReasonCodes", 30),
+      },
+      providerDiagnosticRefs: latestProviderDiagnosticRefs,
+      rawPromptStored: false,
+      rawResponseStored: false,
+      rawProviderLogStored: false,
+      rawToolLogStored: false,
+    },
     acceptedCommitmentIds: latestStringArray("acceptedCommitmentIds", 12),
     rejectedCommitmentIds: latestStringArray("rejectedCommitmentIds", 12),
     openCommitmentIds: latestStringArray("remainingOpenCommitmentIds", 12),
@@ -506,6 +765,347 @@ export function activeGraphProgressReadback(
     finalizationState: stringValue(data.finalizationState),
     latestToolEventKind: stringValue(data.latestToolEventKind),
     eli5Progress: stringValue(data.eli5Progress),
+    ownerTelemetry: {
+      state: latest || latestRunArtifact ? "present" : "missing",
+      workIntent: {
+        workIntentId:
+          collectedString("workIntentId") ??
+          collectedString("workUnitId") ??
+          stringValue(latestRunCurrent?.workIntentId),
+        title:
+          collectedString("workIntentTitle") ??
+          collectedString("workUnitTitle") ??
+          stringValue(latestRunCurrent?.workIntentTitle) ??
+          stringValue(nodeData.currentObjective) ??
+          stringValue(data.currentObjective),
+        executionIntent: ownerExecutionIntent,
+        evidenceMode: ownerEvidenceMode,
+        targetCommitmentIds: [
+          ...new Set([
+            ...collect("commitmentIdsAdvanced", 40),
+            ...collect("targetCommitmentIds", 40),
+            ...stringArrayValue(latestOwnerBranchRecord?.targetCommitmentIds, 40),
+          ]),
+        ].slice(0, 40),
+      },
+      capability: {
+        capabilityId:
+          stringValue(nodeData.capabilityId) ??
+          stringValue(nodeData.selectedCapabilityId) ??
+          stringValue(data.capabilityId) ??
+          stringValue(data.selectedCapabilityId) ??
+          stringValue(latestOwnerBranchRecord?.capabilityId) ??
+          stringValue(latestRunCurrent?.capabilityId),
+        executorKey:
+          collectedString("executorKey") ??
+          collectedString("selectedExecutorKey") ??
+          stringValue(latestRunCurrent?.executorKey),
+        workerRef:
+          stringValue(nodeData.workerRef) ??
+          stringValue(data.workerRef) ??
+          stringValue(latestRunCurrent?.workerRef),
+        roleId: stringValue(nodeData.roleId) ?? stringValue(data.roleId),
+        modelRef: stringValue(nodeData.modelRef) ?? stringValue(data.modelRef),
+        providerPath: collectedString("providerPath"),
+      },
+      runtime: {
+        runtimeJobId:
+          stringValue(latestRunStateMetadata?.runtimeJobId) ??
+          latestRunArtifact?.jobId ??
+          stringValue(data.runtimeJobId),
+        graphId: graphId ?? latestRunGraphId,
+        branchId: stringValue(latestOwnerBranchRecord?.branchId),
+        superstepId: stringValue(latestOwnerBranchRecord?.superstepId),
+        currentSuperstep:
+          numberValue(latestParallelFrontierData?.currentSuperstep) ??
+          numberValue(latestSchedulerFrontierData?.currentSuperstep) ??
+          numberValue(latestRunFrontier?.currentSuperstep),
+        nodeId:
+          stringValue(nodeData.nodeId) ??
+          stringValue(data.nodeId) ??
+          stringValue(latestOwnerBranchRecord?.nodeId) ??
+          stringValue(latestRunCurrent?.nodeId),
+        nodeKind:
+          stringValue(nodeData.activeNodeKind) ??
+          stringValue(data.activeNodeKind) ??
+          stringValue(latestOwnerBranchRecord?.nodeKind) ??
+          stringValue(latestRunCurrent?.nodeKind),
+        currentPhase:
+          stringValue(data.currentPhase) ??
+          stringValue(data.stage) ??
+          stringValue(latestRunCurrent?.phase),
+        currentToolId:
+          stringValue(data.schedulerToolId) ??
+          latestWorkerToolId ??
+          stringValue(latestRunCurrent?.activeToolId),
+        nextLegalTransition:
+          stringValue(latestSchedulerFrontierData?.nextLegalTransition) ??
+          stringValue(latestRunFrontier?.schedulerNextLegalTransition) ??
+          stringValue(latestRunFrontier?.nextTransition),
+      },
+      readiness: {
+        status: latestOwnerReadinessStatus,
+        ref: latestOwnerReadinessRef,
+        phase: collectedString("nodeReadinessPhase"),
+        projectionStatus: collectedString("readinessProjectionStatus"),
+        projectionDriftReasonCodes: collect("readinessProjectionDriftReasonCodes", 40),
+        projectionMissingFields: collect("readinessProjectionMissingFields", 40),
+        stale: booleanValue(data.nodeReadinessStale),
+        blockerSummary:
+          stringValue(data.blockerSummary) ??
+          stringValue(latestOwnerBranchRecord?.blockerSummary) ??
+          stringValue(latestRunCurrent?.blockerSummary),
+        schemaPath:
+          stringValue(data.schemaPath) ??
+          stringValue(latestOwnerBranchRecord?.blockerSchemaPath) ??
+          stringValue(latestOwnerBranchRecord?.errorPath) ??
+          stringValue(latestRunCurrent?.schemaPath),
+        policyPath:
+          stringValue(data.policyPath) ??
+          stringValue(latestOwnerBranchRecord?.blockerPolicyPath) ??
+          stringValue(latestRunCurrent?.policyPath),
+        nextAllowedTransitions: collect("nodeReadinessNextAllowedTransitions", 16),
+        reasonCodes: [
+          ...new Set([
+            ...collect("resourceReadinessReasonCodes", 40),
+            ...stringArrayValue(latestOwnerBranchRecord?.reasonCodes, 40),
+          ]),
+        ].slice(0, 40),
+      },
+      refs: {
+        payloadRefs: artifactPayloadRefs,
+        artifactRefs: [
+          ...new Set(
+            [
+              ...artifactManifestRefs,
+              ...collect("artifactRefs", 40),
+              stringValue(data.graphPatchRef),
+              stringValue(data.graphPatchPayloadRef),
+            ].filter((ref): ref is string => Boolean(ref)),
+          ),
+        ].slice(0, 40),
+        inputHandoffRefs: collect("inputHandoffRefs", 30),
+        contextRefs: [
+          ...new Set([
+            ...collect("contextRefs", 30),
+            ...collect("contextSnapshotRefs", 30),
+            ...collect("contextBrokerRequestRefs", 30),
+            ...collect("nodeResourceDemandSessionRefs", 30),
+            ...collect("nodeResourceLedgerManifestRefs", 30),
+            ...stringArrayValue(latestOwnerBranchRecord?.resourceRequirementRefs, 30),
+          ]),
+        ].slice(0, 30),
+        changedFileRefs: collect("changedFileRefs", 30),
+        validationRefs: collect("validationRefs", 30),
+        reviewArtifactRefs,
+        evidenceRefs: [
+          ...new Set([
+            ...collect("evidenceProducedRefs", 30),
+            ...stringArrayValue(latestOwnerBranchRecord?.evidenceRefs, 30),
+            ...stringArrayValue(latestOwnerBranchRecord?.successfulEvidenceRefs, 30),
+            ...stringArrayValue(latestOwnerBranchRecord?.failedEvidenceRefs, 30),
+          ]),
+        ].slice(0, 30),
+        evidenceClaimRefs: collect("evidenceClaimRefs", 30),
+      },
+      lifecycle: {
+        rollbackState: collectedString("rollbackState") ?? collectedString("editTransactionStatus"),
+        reviewState: collectedString("reviewState"),
+        validationState: stringValue(data.validationState),
+        closeoutState:
+          stringValue(latestCloseoutFinalizationData.closeoutFinalizationState) ??
+          stringValue(data.closeoutFinalizationState),
+      },
+      telemetry: {
+        wallTimeByPhase: (latestRunWallTime?.byPhase as JsonValue | undefined) ?? [],
+        modelUsageByModel: (latestRunModelUsage?.byModel as JsonValue | undefined) ?? [],
+        modelUsageByPhase: (latestRunModelUsage?.byPhase as JsonValue | undefined) ?? [],
+        measuredTokenUsageAvailable: Boolean(providerUsage),
+        estimatedTokenUsageAvailable: Boolean(estimatedTokenRange),
+        usageUnavailableReasons: ownerUsageUnavailableReasons,
+      },
+      rawPromptStored: false,
+      rawResponseStored: false,
+      rawProviderLogStored: false,
+      rawToolLogStored: false,
+      rawDbRowsStored: false,
+      secretsStored: false,
+    },
+    providerDiagnostics: {
+      state:
+        latestProviderDiagnosticData || latestProviderDiagnosticRefs.length > 0
+          ? "present"
+          : "missing",
+      diagnosticRefs: latestProviderDiagnosticRefs,
+      modelRef:
+        stringValue(latestProviderDiagnosticData?.modelRef) ??
+        stringValue(latestModelCallData.modelRef) ??
+        stringValue(latestWorkerInternalData.modelRef) ??
+        stringValue(data.modelRef),
+      providerPath:
+        stringValue(latestProviderDiagnosticData?.providerPath) ??
+        stringValue(latestProviderDiagnosticData?.providerId) ??
+        stringValue(latestModelCallData.providerPath) ??
+        stringValue(latestWorkerInternalData.providerPath) ??
+        stringValue(data.providerPath),
+      modelTaskClass:
+        stringValue(latestProviderDiagnosticData?.modelTaskClass) ??
+        stringValue(latestProviderDiagnosticData?.taskClass) ??
+        stringValue(latestProviderDiagnosticProfile?.taskClass),
+      providerRequestId: stringValue(latestProviderDiagnosticData?.providerRequestId),
+      profileRef:
+        stringValue(latestProviderDiagnosticData?.profileRef) ??
+        stringValue(latestProviderDiagnosticProfile?.profileRef),
+      reasoningModeSent:
+        stringValue(latestProviderDiagnosticData?.reasoningModeSent) ??
+        stringValue(latestProviderDiagnosticProfile?.reasoningMode),
+      responseFormatSent:
+        stringValue(latestProviderDiagnosticData?.responseFormatSent) ??
+        stringValue(latestProviderDiagnosticProfile?.responseFormatMode),
+      parserMode:
+        stringValue(latestProviderDiagnosticData?.parserMode) ??
+        stringValue(latestProviderDiagnosticProfile?.parserMode),
+      requestByteCount:
+        numberValue(latestProviderDiagnosticData?.requestByteCount) ??
+        numberValue(latestProviderDiagnosticData?.inputByteLength) ??
+        numberValue(latestProviderDiagnosticData?.inputByteCount),
+      maxInputBytes:
+        numberValue(latestProviderDiagnosticProfile?.maxInputBytes) ??
+        numberValue(latestProviderDiagnosticData?.maxInputBytes),
+      requestedMaxOutputTokens:
+        numberValue(latestProviderDiagnosticData?.maxOutputTokens) ??
+        numberValue(latestProviderDiagnosticProfile?.maxOutputTokens),
+      requestedTimeoutMs:
+        numberValue(latestProviderDiagnosticData?.timeoutMs) ??
+        numberValue(latestProviderDiagnosticProfile?.timeoutMs),
+      profileTimeoutMs: numberValue(latestProviderDiagnosticProfile?.timeoutMs),
+      providerStarted:
+        booleanValue(latestProviderDiagnosticData?.providerStarted) ??
+        (latestProviderDiagnosticPreflight ? false : latestProviderDiagnosticData ? true : null),
+      preflightStatus:
+        stringValue(latestProviderDiagnosticPreflight?.status) ??
+        stringValue(latestProviderDiagnosticData?.preflightStatus),
+      preflightBlockingReason:
+        stringValue(latestProviderDiagnosticData?.preflightBlockingReason) ??
+        stringValue(latestProviderDiagnosticPreflight?.blockingReason),
+      preflightReasonCodes: [
+        ...new Set([
+          ...stringArrayValue(latestProviderDiagnosticPreflight?.reasonCodes, 20),
+          ...stringArrayValue(latestProviderDiagnosticData?.preflightReasonCodes, 20),
+        ]),
+      ].slice(0, 20),
+      timeoutState: stringValue(latestProviderDiagnosticData?.timeoutState),
+      elapsedMs:
+        numberValue(latestProviderDiagnosticData?.elapsedMs) ??
+        numberValue(latestProviderDiagnosticData?.latencyMs) ??
+        numberValue(latestModelCallData.modelCallSpanElapsedMs) ??
+        numberValue(latestWorkerInternalData.workerInternalProviderLatencyMs),
+      finishReason: stringValue(latestProviderDiagnosticData?.finishReason),
+      nativeFinishReason: stringValue(latestProviderDiagnosticData?.nativeFinishReason),
+      choiceCount:
+        numberValue(latestProviderDiagnosticData?.choiceCount) ??
+        numberValue(latestProviderDiagnosticShape?.choicesLength),
+      contentLengthByChoice: [
+        ...new Set([
+          ...numberArray(latestProviderDiagnosticData?.contentLengthByChoice, 12),
+          ...numberArray(latestProviderDiagnosticData?.contentLengths, 12),
+          ...numberArray(latestProviderDiagnosticShape?.contentLengths, 12),
+        ]),
+      ].slice(0, 12),
+      parsedContentLength: numberValue(latestProviderDiagnosticData?.parsedContentLength),
+      usage: (latestProviderDiagnosticUsage as JsonValue | null) ?? null,
+      usageUnavailableReason:
+        stringValue(latestProviderDiagnosticData?.usageUnavailableReason) ??
+        ownerUsageUnavailableReasons[0] ??
+        null,
+      retryNumber:
+        numberValue(latestProviderDiagnosticData?.retryNumber) ??
+        numberValue(latestProviderDiagnosticData?.attemptNumber),
+      concurrencySlot: stringValue(latestProviderDiagnosticData?.concurrencySlot),
+      inputBundleRef: stringValue(latestProviderDiagnosticData?.inputBundleRef),
+      inputBundleHash:
+        stringValue(latestProviderDiagnosticData?.inputBundleHash) ??
+        stringValue(latestProviderDiagnosticData?.promptHash),
+      responseShapeRef: stringValue(latestProviderDiagnosticData?.responseShapeRef),
+      responseBodyKeys: [
+        ...new Set([
+          ...stringArrayValue(latestProviderDiagnosticData?.bodyKeys, 24),
+          ...stringArrayValue(latestProviderDiagnosticData?.providerBodyKeys, 24),
+        ]),
+      ].slice(0, 24),
+      choiceKeys: stringArrayValue(latestProviderDiagnosticData?.choiceKeys, 24),
+      messageKeys: stringArrayValue(latestProviderDiagnosticData?.messageKeys, 24),
+      errorKeys: stringArrayValue(latestProviderDiagnosticData?.errorKeys, 24),
+      failureClass:
+        stringValue(latestProviderDiagnosticData?.failureClass) ??
+        (latestProviderDiagnosticPreflight ? "structured_adapter_preflight_blocked" : null),
+      rawPromptStored: false,
+      rawResponseStored: false,
+      rawProviderLogStored: false,
+      rawToolLogStored: false,
+      rawDbRowsStored: false,
+      secretsStored: false,
+    },
+    proofEnvironment: {
+      state:
+        latestRunProofEnvironment ||
+        asRecord(data.heapPhaseSnapshot) ||
+        Array.isArray(data.heapPhaseSnapshots)
+          ? "present"
+          : "missing",
+      heapPhaseSnapshotRefs: [
+        ...new Set([
+          ...stringArrayValue(latestRunProofEnvironment?.heapPhaseSnapshotRefs, 20),
+          ...stringArrayValue(data.heapPhaseSnapshotRefs, 20),
+          ...(
+            Array.isArray(latestRunProofEnvironment?.heapPhaseSnapshots)
+              ? latestRunProofEnvironment.heapPhaseSnapshots
+              : Array.isArray(data.heapPhaseSnapshots)
+                ? data.heapPhaseSnapshots
+                : []
+          )
+            .map((snapshot) => stringValue(asRecord(snapshot)?.snapshotRef))
+            .filter((ref): ref is string => Boolean(ref)),
+          stringValue(asRecord(data.heapPhaseSnapshot)?.snapshotRef),
+        ].filter((ref): ref is string => Boolean(ref))),
+      ].slice(0, 20),
+      largestMetadataBytes:
+        numberValue(latestRunProofEnvironment?.largestMetadataBytes) ??
+        numberValue(data.largestMetadataBytes),
+      largestMetadataRef:
+        stringValue(latestRunProofEnvironment?.largestMetadataRef) ??
+        stringValue(data.largestMetadataRef),
+      largestArtifactBodyBytes:
+        numberValue(latestRunProofEnvironment?.largestArtifactBodyBytes) ??
+        numberValue(data.largestArtifactBodyBytes),
+      largestArtifactBodyRef:
+        stringValue(latestRunProofEnvironment?.largestArtifactBodyRef) ??
+        stringValue(data.largestArtifactBodyRef),
+      latestRunStateMetadataBytes:
+        numberValue(latestRunProofEnvironment?.latestRunStateMetadataBytes) ??
+        numberValue(data.latestRunStateMetadataBytes),
+      schedulerProgressMetadataBytes:
+        numberValue(latestRunProofEnvironment?.schedulerProgressMetadataBytes) ??
+        numberValue(data.schedulerProgressMetadataBytes),
+      workQueueProjectionMetadataBytes:
+        numberValue(latestRunProofEnvironment?.workQueueProjectionMetadataBytes) ??
+        numberValue(data.workQueueProjectionMetadataBytes),
+      providerRequestMaxBytes:
+        numberValue(latestRunProofEnvironment?.providerRequestMaxBytes) ??
+        numberValue(data.providerRequestMaxBytes),
+      reasonCodes: [
+        ...new Set([
+          ...stringArrayValue(latestRunProofEnvironment?.reasonCodes, 40),
+          ...stringArrayValue(data.proofEnvironmentReasonCodes, 40),
+        ]),
+      ].slice(0, 40),
+      rawPromptStored: false,
+      rawResponseStored: false,
+      rawProviderLogStored: false,
+      rawToolLogStored: false,
+      rawDbRowsStored: false,
+      secretsStored: false,
+    },
     budget: {
       policyRef: stringValue(data.budgetPolicyRef) ?? stringValue(nodeData.budgetPolicyRef),
       budgetClass: stringValue(data.budgetClass) ?? stringValue(nodeData.budgetClass),
@@ -571,18 +1171,22 @@ export function activeGraphProgressReadback(
       repoRevision: stringValue(data.repoRevision),
       worktreeFingerprint: stringValue(data.worktreeFingerprint),
       freshnessSummary: stringValue(data.contextFreshnessSummary),
-      blockingContextReason:
-        stringValue(data.currentPhase) === "context_freshness_blocked"
-          ? stringValue(data.blockerSummary)
-          : null,
+      blockingContextReason: null,
     },
     contextScout: {
       qualityState: stringValue(data.contextQualityState),
       verifiedFileRefs: collect("verifiedContextFileRefs", 30),
-      handoffPacketRefs: collect("contextHandoffPacketRefs", 20),
+      handoffPacketRefs: collect("resourceHandoffPacketRefs", 20),
       toolLoopRefs: collect("contextScoutToolLoopRefs", 20),
       runtimeToolInvocationRefs: collect("contextScoutRuntimeToolInvocationRefs", 40),
       executionPacketRefs: collect("contextScoutExecutionPacketRefs", 20),
+      frontierRequestRef: collectedString("resourceFrontierRequestRef"),
+      frontierStatus: collectedString("resourceFrontierStatus"),
+      shardManifestRef: collectedString("contextShardManifestRef"),
+      shardCount: collectedNumber("contextShardCount"),
+      shardUnitKind: collectedString("contextShardUnitKind"),
+      mergePacketRef: collectedString("contextMergePacketRef"),
+      singleUnitBlockerRef: collectedString("contextSingleUnitBlockerRef"),
       executionPacketInputBytes: numberValue(data.contextScoutExecutionPacketInputBytes),
       executionPacketMaxInputBytes: numberValue(data.contextScoutExecutionPacketMaxInputBytes),
       providerTimeoutMs: numberValue(data.contextScoutProviderTimeoutMs),
@@ -590,56 +1194,10 @@ export function activeGraphProgressReadback(
       packetCompileReasonCodes: collect("contextScoutPacketCompileReasonCodes", 20),
       rejectedRefs: collect("contextScoutRejectedRefs", 20),
       sufficiencySummary: stringValue(data.contextScoutSufficiencySummary),
-      synthesisReadiness: stringValue(data.contextScoutSynthesisReadiness),
-      synthesisBlockers: collect("contextScoutSynthesisBlockers", 20),
       repoAnalysisFindingCount: numberValue(data.contextScoutRepoAnalysisFindingCount),
       symbolRefs: collect("contextScoutSymbolRefs", 40),
       testRefs: collect("contextScoutTestRefs", 32),
-      handoffSummaryForSynthesis: stringValue(data.contextScoutHandoffSummaryForSynthesis),
       openBlockers: collect("openContextBlockers", 12),
-    },
-    contextSynthesis: {
-      state:
-        collect("contextSynthesisRef", 1).length > 0 ||
-        collect("contextSynthesisImplementationGroupIds", 1).length > 0
-          ? collectedString("contextSynthesisStatus") === "accepted"
-            ? "accepted"
-            : collectedString("contextSynthesisStatus") === "needs_review"
-              ? "needs_review"
-              : "present"
-          : "missing",
-      synthesisRef: collectedString("contextSynthesisRef"),
-      status: collectedString("contextSynthesisStatus"),
-      implementationGroupCount: collectedNumber("contextSynthesisImplementationGroupCount"),
-      dependencyCount: collectedNumber("contextSynthesisDependencyCount"),
-      parallelGroupCount: collectedNumber("contextSynthesisParallelGroupCount"),
-      blockerCount: collectedNumber("contextSynthesisBlockerCount"),
-      validationLaneCount: collectedNumber("contextSynthesisValidationLaneCount"),
-      reviewLaneCount: collectedNumber("contextSynthesisReviewLaneCount"),
-      workerFitSummary: collectedString("contextSynthesisWorkerFitSummary"),
-      graphCompileInputSummary: collectedString("contextSynthesisGraphCompileInputSummary"),
-      implementationGroupIds: collect("contextSynthesisImplementationGroupIds", 40),
-      targetRefs: collect("contextSynthesisTargetRefs", 40),
-      validationLanes: collect("contextSynthesisValidationLanes", 20),
-      reviewLanes: collect("contextSynthesisReviewLanes", 20),
-      semanticCodeIntelligenceRefs: collect("contextSynthesisSemanticCodeIntelligenceRefs", 40),
-      contextSnapshotRefs: collect("contextSnapshotRefs", 40),
-      nextDecision:
-        collectedString("contextSynthesisStatus") === "accepted"
-          ? "compile_post_synthesis_graph"
-          : collectedString("contextSynthesisStatus") === "needs_review"
-            ? "repair_context_synthesis"
-            : stringValue(data.nextDecisionNeeded),
-      eli5:
-        collectedString("contextSynthesisStatus") === "accepted"
-          ? "Context synthesis accepted the scout handoffs and produced worker-ready implementation groups for scheduler graph compile."
-          : collectedString("contextSynthesisStatus") === "needs_review"
-            ? "Context synthesis needs repair before implementation can start."
-            : null,
-      rawPromptStored: false,
-      rawResponseStored: false,
-      rawProviderLogStored: false,
-      rawToolLogStored: false,
     },
     resourceMaterialization: {
       state:
@@ -695,10 +1253,15 @@ export function activeGraphProgressReadback(
       targetFileSnapshotRefs: collect("targetFileSnapshotRefs", 40),
       targetFileSnapshotHashes: collect("targetFileSnapshotHashes", 40),
       implementationContextRepairAction: collectedString("implementationContextRepairAction"),
+      nodeExecutionContractRef: collectedString("nodeExecutionContractRef"),
+      nodeExecutionContractVersion: collectedString("nodeExecutionContractVersion"),
+      nodeExecutionContractHash: collectedString("nodeExecutionContractHash"),
       nodeExecutionPacketRef: collectedString("nodeExecutionPacketRef"),
+      nodeExecutionPacketHash: collectedString("nodeExecutionPacketHash"),
       nodeExecutionPacketStatus: collectedString("nodeExecutionPacketStatus"),
       resourcePacketKind: collectedString("resourcePacketKind"),
       resourcePacketRef: collectedString("resourcePacketRef"),
+      resourcePacketHash: collectedString("resourcePacketHash"),
       nodeReadinessState: (asRecord(data.nodeReadinessState) as JsonValue | null) ?? null,
       nodeReadinessStateRef: collectedString("nodeReadinessStateRef"),
       nodeReadinessPhase: collectedString("nodeReadinessPhase"),
@@ -711,6 +1274,12 @@ export function activeGraphProgressReadback(
       nodeReadinessValidationStatus: collectedString("nodeReadinessValidationStatus"),
       nodeReadinessAuthorityStatus: collectedString("nodeReadinessAuthorityStatus"),
       nodeReadinessEvidenceStatus: collectedString("nodeReadinessEvidenceStatus"),
+      readinessProjectionStatus: collectedString("readinessProjectionStatus"),
+      readinessProjectionDriftReasonCodes: collect("readinessProjectionDriftReasonCodes", 40),
+      readinessProjectionMissingFields: collect("readinessProjectionMissingFields", 40),
+      readinessProjectionDrift:
+        (asRecord(data.readinessProjectionDrift) as JsonValue | null) ?? null,
+      nodeReadinessStale: booleanValue(data.nodeReadinessStale),
       readinessReasonCodes: collect("resourceReadinessReasonCodes", 40),
       blockingLimitations: collect("resourceBlockingLimitations", 20),
       nonblockingLimitations: collect("resourceNonblockingLimitations", 20),
@@ -769,28 +1338,6 @@ export function activeGraphProgressReadback(
       rawProviderLogStored: false,
       rawToolLogStored: false,
     },
-    commitmentWorkPackets,
-    commitmentPacketFanout: {
-      state: latestPacketAuthorFanoutPresent ? "present" : "missing",
-      totalCount: numberValue(latestPacketAuthorFanout.totalCount),
-      completedCount: numberValue(latestPacketAuthorFanout.completedCount),
-      failedCount: numberValue(latestPacketAuthorFanout.failedCount),
-      runningCount: numberValue(latestPacketAuthorFanout.runningCount),
-      retryCount: numberValue(latestPacketAuthorFanout.retryCount),
-      fallbackCount: numberValue(latestPacketAuthorFanout.fallbackCount),
-      longLatencyCount: numberValue(latestPacketAuthorFanout.longLatencyCount),
-      noContentCount: numberValue(latestPacketAuthorFanout.noContentCount),
-      runningCommitmentIds: stringArrayValue(latestPacketAuthorFanout.runningCommitmentIds, 12),
-      affectedCommitmentIds: stringArrayValue(latestPacketAuthorFanout.affectedCommitmentIds, 20),
-      topBlockerSummaries: stringArrayValue(latestPacketAuthorFanout.topBlockerSummaries, 3),
-      diagnosticArtifactRef: stringValue(latestPacketAuthorFanout.diagnosticArtifactRef),
-      diagnosticArtifactHash: stringValue(latestPacketAuthorFanout.diagnosticArtifactHash),
-      diagnosticHydrationToolId: stringValue(latestPacketAuthorFanout.diagnosticHydrationToolId),
-      rawPromptStored: false,
-      rawResponseStored: false,
-      rawProviderLogStored: false,
-      rawToolLogStored: false,
-    },
     costAwareDecision: {
       selectedCapabilityId:
         stringValue(nodeData.selectedCapabilityId) ?? stringValue(data.selectedCapabilityId),
@@ -830,13 +1377,19 @@ export function activeGraphProgressReadback(
       invocationRefs: collect("schedulerToolInvocationRefs", 20),
     },
     contextBroker: {
-      state: contextBrokerRequestRefs.length > 0 ? "present" : "missing",
+      state:
+        resourceRequirementRefs.length > 0 || contextBrokerRequestRefs.length > 0
+          ? "present"
+          : "missing",
+      requirementRefs: resourceRequirementRefs,
+      requirementStatuses: resourceRequirementStatuses,
+      requirementReasonCodes: collect("resourceRequirementReasonCodes", 40),
       requestRefs: contextBrokerRequestRefs,
       statuses: contextBrokerStatuses,
       dedupeKeys: collect("contextBrokerDedupeKeys", 40),
       consumerNodeIds: collect("contextBrokerConsumerNodeIds", 40),
       scoutRequiredCount: contextBrokerStatuses.filter(
-        (status) => status === "context_scout_required",
+        (status) => status === "context_specialist_required",
       ).length,
       inheritedSatisfiedCount: contextBrokerStatuses.filter(
         (status) =>
@@ -927,9 +1480,9 @@ export function activeGraphProgressReadback(
       skippedReasonCodes: frontierStringArray("skippedReasonCodes", 60),
       conflictDomains: frontierConflictDomains,
       providerConcurrencyBudgets: frontierProviderConcurrencyBudgets,
+      branchScopedFrontierStates,
       branchResults: frontierBranchResults,
       joinReadyNodeIds: frontierStringArray("joinReadyNodeIds", 30),
-      contextSynthesisRefs: frontierStringArray("contextSynthesisRefs", 12),
       implementationGroupCount: latestParallelFrontierData
         ? numberValue(latestParallelFrontierData.implementationGroupCount)
         : null,
@@ -954,6 +1507,7 @@ export function activeGraphProgressReadback(
       readinessRefs: schedulerFrontierStringArray("readinessRefs", 80),
       resourceRefs: schedulerFrontierStringArray("resourceRefs", 60),
       contextRefs: schedulerFrontierStringArray("contextRefs", 60),
+      branchScopedFrontierStates,
       openCommitmentIds: schedulerFrontierStringArray("openCommitmentIds", 80),
       nextLegalTransition: latestSchedulerFrontierData
         ? stringValue(latestSchedulerFrontierData.nextLegalTransition)
@@ -979,7 +1533,29 @@ export function activeGraphProgressReadback(
       schedulerNextLegalTransition: stringValue(latestRunFrontier?.schedulerNextLegalTransition),
       noProgressRepeatCount: numberValue(latestRunNoProgress?.repeatCount),
       terminalBlockerCode: stringValue(latestRunNoProgress?.terminalBlockerCode),
+      rootCauseRecommendedRepairBoundary: stringValue(
+        latestRunRootCause?.recommendedRepairBoundary,
+      ),
       missionLedgerThrottleShouldEvaluate: booleanValue(latestRunThrottle?.shouldEvaluate),
+      canonicalReadbackGate: latestRunCanonicalReadbackGate
+        ? {
+            gateKind: stringValue(latestRunCanonicalReadbackGate.gateKind),
+            gateStatus: stringValue(latestRunCanonicalReadbackGate.gateStatus),
+            sourceKind: stringValue(latestRunCanonicalReadbackGate.sourceKind),
+            nodeId: stringValue(latestRunCanonicalReadbackGate.nodeId),
+            branchId: stringValue(latestRunCanonicalReadbackGate.branchId),
+            contractRef: stringValue(latestRunCanonicalReadbackGate.contractRef),
+            readinessStateRef: stringValue(latestRunCanonicalReadbackGate.readinessStateRef),
+            schemaPath: stringValue(latestRunCanonicalReadbackGate.schemaPath),
+            nextLegalTransition: stringValue(latestRunCanonicalReadbackGate.nextLegalTransition),
+            reasonCodes: stringArrayValue(latestRunCanonicalReadbackGate.reasonCodes, 40),
+            rawPromptStored: false,
+            rawResponseStored: false,
+            rawProviderLogStored: false,
+            rawToolLogStored: false,
+            rawDbRowsStored: false,
+          }
+        : null,
       agreement: {
         state: latestRunArtifact ? "present" : "missing",
         graphIdMatches: latestRunArtifact
@@ -1004,6 +1580,12 @@ export function activeGraphProgressReadback(
             ? normalizeTransition(stringValue(latestRunFrontier?.schedulerNextLegalTransition)) ===
               normalizeTransition(schedulerNextTransition)
             : null
+          : null,
+        canonicalGateMatches: latestRunCanonicalReadbackGate
+          ? stringValue(latestRunCanonicalReadbackGate.gateKind) === canonicalReadbackGate.gateKind &&
+            stringValue(latestRunCanonicalReadbackGate.nodeId) === canonicalReadbackGate.nodeId &&
+            stringValue(latestRunCanonicalReadbackGate.readinessStateRef) ===
+              canonicalReadbackGate.readinessStateRef
           : null,
         reasonCodes: latestRunAgreementReasonCodes,
       },
@@ -1034,6 +1616,29 @@ export function activeGraphProgressReadback(
       reusedEdgeIds: noProgressStringArray("reusedEdgeIds", 80),
       reasonCodes: noProgressStringArray("blockerReasonCodes", 80),
     },
+    rootCause: {
+      state: projectedRootCauseData ? "present" : "missing",
+      signatureHash: projectedRootCauseData ? stringValue(projectedRootCauseData.signatureHash) : null,
+      repeatCount: projectedRootCauseData ? numberValue(projectedRootCauseData.repeatCount) : null,
+      systemic: projectedRootCauseData ? booleanValue(projectedRootCauseData.systemic) : null,
+      recommendedRepairBoundary: projectedRootCauseData
+        ? stringValue(projectedRootCauseData.recommendedRepairBoundary)
+        : null,
+      affectedNodeIds: projectedRootCauseStringArray("affectedNodeIds", 80),
+      affectedBranchIds: projectedRootCauseStringArray("affectedBranchIds", 80),
+      successfulSiblingEvidenceRefs: projectedRootCauseStringArray(
+        "successfulSiblingEvidenceRefs",
+        40,
+      ),
+      missingFields: projectedRootCauseStringArray("missingFields", 80),
+      schemaErrorPaths: projectedRootCauseStringArray("schemaErrorPaths", 40),
+      policyErrorPaths: projectedRootCauseStringArray("policyErrorPaths", 40),
+      contractRefs: projectedRootCauseStringArray("contractRefs", 40),
+      domainResourcePacketKinds: projectedRootCauseStringArray("domainResourcePacketKinds", 40),
+      providerProfileIds: projectedRootCauseStringArray("providerProfileIds", 40),
+      nextLegalTransitions: projectedRootCauseStringArray("nextLegalTransitions", 40),
+      reasonCodes: projectedRootCauseStringArray("reasonCodes", 80),
+    },
     missionLedgerEvaluationThrottle: {
       state: latestMissionLedgerThrottleData ? "present" : "missing",
       nodeId: latestMissionLedgerThrottleData
@@ -1056,6 +1661,106 @@ export function activeGraphProgressReadback(
         : [],
     },
     modelCallProgress: projectModelCallProgress({ latestModelCallData }),
+    schedulerModelCallEnvelope: {
+      state: latestSchedulerModelCallEnvelopeData ? "present" : "missing",
+      envelopeRef: stringValue(latestSchedulerModelCallEnvelopeData?.envelopeRef),
+      envelopeId: stringValue(latestSchedulerModelCallEnvelopeData?.envelopeId),
+      phase: stringValue(latestSchedulerModelCallEnvelopeData?.phase),
+      decisionSlot: stringValue(latestSchedulerModelCallEnvelopeData?.decisionSlot),
+      schedulerPhase: stringValue(latestSchedulerModelCallEnvelopeData?.schedulerPhase),
+      modelRef: stringValue(latestSchedulerModelCallEnvelopeData?.modelRef),
+      providerPath: stringValue(latestSchedulerModelCallEnvelopeData?.providerPath),
+      providerProfileId: stringValue(latestSchedulerModelCallEnvelopeData?.providerProfileId),
+      modelTaskClass: stringValue(latestSchedulerModelCallEnvelopeData?.modelTaskClass),
+      modelPolicyRef: stringValue(latestSchedulerModelCallEnvelopeData?.modelPolicyRef),
+      contractBoundaryId: stringValue(latestSchedulerModelCallEnvelopeData?.contractBoundaryId),
+      modelPolicyBindingRef: stringValue(
+        latestSchedulerModelCallEnvelopeData?.modelPolicyBindingRef,
+      ),
+      reasoningMode: stringValue(latestSchedulerModelCallEnvelopeData?.reasoningMode),
+      parserMode: stringValue(latestSchedulerModelCallEnvelopeData?.parserMode),
+      allowedToolFamily: stringValue(latestSchedulerModelCallEnvelopeData?.allowedToolFamily),
+      allowedOutputContractId: stringValue(
+        latestSchedulerModelCallEnvelopeData?.allowedOutputContractId,
+      ),
+      allowedOutputContractVersion: stringValue(
+        latestSchedulerModelCallEnvelopeData?.allowedOutputContractVersion,
+      ),
+      proofCleanlinessState: stringValue(
+        latestSchedulerModelCallEnvelopeData?.proofCleanlinessState,
+      ),
+      proofCleanlinessReasonCodes: latestSchedulerModelCallEnvelopeData
+        ? stringArrayValue(latestSchedulerModelCallEnvelopeData.proofCleanlinessReasonCodes, 20)
+        : [],
+      policyMismatchFields: Array.isArray(
+        latestSchedulerModelCallEnvelopeData?.policyMismatchFields,
+      )
+        ? latestSchedulerModelCallEnvelopeData.policyMismatchFields
+            .map((field) => asRecord(field))
+            .filter((field): field is Record<string, unknown> => Boolean(field))
+            .map((field) => ({
+              fieldPath: stringValue(field.fieldPath) ?? "",
+              reasonCode: stringValue(field.reasonCode) ?? "",
+            }))
+            .filter((field) => field.fieldPath.length > 0 && field.reasonCode.length > 0)
+            .slice(0, 16)
+        : [],
+      inputByteCount: numberValue(latestSchedulerModelCallEnvelopeData?.inputByteCount),
+      outputByteCount: numberValue(latestSchedulerModelCallEnvelopeData?.outputByteCount),
+      graphNodeCount: numberValue(latestSchedulerModelCallEnvelopeData?.graphNodeCount),
+      graphEdgeCount: numberValue(latestSchedulerModelCallEnvelopeData?.graphEdgeCount),
+      commitmentCount: numberValue(latestSchedulerModelCallEnvelopeData?.commitmentCount),
+      workIntentCount: numberValue(latestSchedulerModelCallEnvelopeData?.workIntentCount),
+      activeFrontierCounts: {
+        ready: numberValue(latestSchedulerModelCallFrontierCounts?.ready),
+        selected: numberValue(latestSchedulerModelCallFrontierCounts?.selected),
+        blocked: numberValue(latestSchedulerModelCallFrontierCounts?.blocked),
+        running: numberValue(latestSchedulerModelCallFrontierCounts?.running),
+        completed: numberValue(latestSchedulerModelCallFrontierCounts?.completed),
+        failed: numberValue(latestSchedulerModelCallFrontierCounts?.failed),
+        needsReview: numberValue(latestSchedulerModelCallFrontierCounts?.needsReview),
+        waitingForHuman: numberValue(latestSchedulerModelCallFrontierCounts?.waitingForHuman),
+        branches: numberValue(latestSchedulerModelCallFrontierCounts?.branches),
+      },
+      elapsedMs: numberValue(latestSchedulerModelCallEnvelopeData?.elapsedMs),
+      timeoutMs: numberValue(latestSchedulerModelCallEnvelopeData?.timeoutMs),
+      heartbeatCount: numberValue(latestSchedulerModelCallEnvelopeData?.heartbeatCount),
+      heartbeatAgeMs: numberValue(latestSchedulerModelCallEnvelopeData?.heartbeatAgeMs),
+      finishReason: stringValue(latestSchedulerModelCallEnvelopeData?.finishReason),
+      nativeFinishReason: stringValue(latestSchedulerModelCallEnvelopeData?.nativeFinishReason),
+      providerResponseShape:
+        (asRecord(latestSchedulerModelCallEnvelopeData?.providerResponseShape) as JsonValue) ??
+        null,
+      acceptedToolCallSummary:
+        (asRecord(latestSchedulerModelCallEnvelopeData?.acceptedToolCallSummary) as JsonValue) ??
+        null,
+      rejectedToolCallSummary:
+        (asRecord(latestSchedulerModelCallEnvelopeData?.rejectedToolCallSummary) as JsonValue) ??
+        null,
+      schemaErrorPath: stringValue(latestSchedulerModelCallEnvelopeData?.schemaErrorPath),
+      policyErrorPath: stringValue(latestSchedulerModelCallEnvelopeData?.policyErrorPath),
+      repairFieldHints: latestSchedulerModelCallEnvelopeData
+        ? stringArrayValue(latestSchedulerModelCallEnvelopeData.repairFieldHints, 20)
+        : [],
+      missingFields: latestSchedulerModelCallEnvelopeData
+        ? stringArrayValue(latestSchedulerModelCallEnvelopeData.missingFields, 20)
+        : [],
+      rejectedDecisionRef: stringValue(latestSchedulerModelCallEnvelopeData?.rejectedDecisionRef),
+      rejectedDecisionId: stringValue(latestSchedulerModelCallEnvelopeData?.rejectedDecisionId),
+      rejectedDecisionKind: stringValue(
+        latestSchedulerModelCallEnvelopeData?.rejectedDecisionKind,
+      ),
+      reasonCodes: latestSchedulerModelCallEnvelopeData
+        ? stringArrayValue(latestSchedulerModelCallEnvelopeData.reasonCodes, 40)
+        : [],
+      rawPromptStored: false,
+      rawResponseStored: false,
+      rawProviderLogStored: false,
+      rawToolLogStored: false,
+      rawCommandLogStored: false,
+      rawDbRowsStored: false,
+      secretsStored: false,
+    },
     spanProgress,
     repairClassification: {
       state: latestRepairClassification ? "present" : "missing",
@@ -1112,6 +1817,7 @@ export function activeGraphProgressReadback(
       ].slice(0, 20),
       changedFileRefs: collect("changedFileRefs", 20),
       validationRefs: collect("validationRefs", 20),
+      reviewArtifactRefs: reviewArtifactRefs.slice(0, 20),
       contextRequestRefs: collect("contextRequestRefs", 20),
       editStepIds: collect("editStepIds", 20),
       evidenceClaimRefs: collect("evidenceClaimRefs", 20),

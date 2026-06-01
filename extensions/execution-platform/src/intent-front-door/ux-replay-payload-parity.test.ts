@@ -53,8 +53,8 @@ function baseEnvelopeInput(
       missionLedgerInputRef: "mission-ledger-input://aaaaaaaaaaaaaaaa",
       missionLedgerPromptHash: "a".repeat(64),
       missionLedgerRef: "mission-ledger://job-1/ledger",
-      commitmentPacketInputRef: "commitment-work-packet-input://job-1",
-      commitmentPacketRef: "commitment-work-packets://job-1",
+      commitmentPacketInputRef: "source-contract-input://job-1",
+      commitmentPacketRef: "source-contracts://job-1",
     },
     schedulerRefs: {
       workflowDefinitionRef: "workflow-definition://agent_team.coding",

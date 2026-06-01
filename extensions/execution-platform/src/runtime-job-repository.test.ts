@@ -280,6 +280,34 @@ describe("runtime job repository", () => {
     });
   });
 
+  it("lists bounded artifact windows without hydrating every artifact row", async () => {
+    await withRepository(async ({ repository, setNow }) => {
+      await repository.enqueueJob({ jobId: "job-artifact-window", jobType: "demo.echo" });
+
+      for (let index = 0; index < 5; index += 1) {
+        setNow(new Date(`2026-05-02T00:00:0${index}.000Z`));
+        await repository.attachArtifact({
+          jobId: "job-artifact-window",
+          artifactType: `artifact-${index}`,
+          storageKind: "object-store",
+          uri: `artifact://job-artifact-window/${index}`,
+          sizeBytes: 10,
+        });
+      }
+
+      await expect(
+        repository
+          .listArtifacts("job-artifact-window", { limit: 2 })
+          .then((artifacts) => artifacts.map((artifact) => artifact.artifactType)),
+      ).resolves.toEqual(["artifact-0", "artifact-1"]);
+      await expect(
+        repository
+          .listArtifacts("job-artifact-window", { limit: 2, order: "desc" })
+          .then((artifacts) => artifacts.map((artifact) => artifact.artifactType)),
+      ).resolves.toEqual(["artifact-3", "artifact-4"]);
+    });
+  });
+
   it("stores large JSON payload artifacts behind bounded manifests", async () => {
     await withRepository(
       async ({ repository }) => {
@@ -359,13 +387,13 @@ describe("runtime job repository", () => {
         await expect(
           repository.attachArtifact({
             jobId: "job-contract-required",
-            artifactType: "execution_platform.commitment_work_packet",
+            artifactType: "execution_platform.node_execution_packet",
             storageKind: "metadata",
-            uri: "runtime-job://job-contract-required/packet/c-001",
+            uri: "runtime-job://job-contract-required/node-execution-packet/node-001",
             contentType: "application/json",
             metadata: {
-              artifactKind: "execution_platform.commitment_work_packet",
-              commitmentWorkPacket: { packetKind: "commitment_work_packet" },
+              artifactKind: "execution_platform.node_execution_packet",
+              nodeExecutionPacket: { packetKind: "node_execution_packet" },
               rawPromptStored: false,
               rawResponseStored: false,
               rawProviderLogStored: false,
@@ -376,11 +404,11 @@ describe("runtime job repository", () => {
         await expect(
           repository.attachJsonPayloadArtifact({
             jobId: "job-contract-required",
-            artifactType: "execution_platform.commitment_work_packet",
-            uri: "runtime-job://job-contract-required/packet/c-001",
+            artifactType: "execution_platform.node_execution_packet",
+            uri: "runtime-job://job-contract-required/node-execution-packet/node-001",
             body: {
-              packetKind: "commitment_work_packet",
-              commitmentId: "c-001",
+              packetKind: "node_execution_packet",
+              nodeId: "node-001",
               rawPromptStored: false,
               rawResponseStored: false,
               rawProviderLogStored: false,
@@ -548,7 +576,7 @@ describe("runtime job repository", () => {
       async ({ repository }) => {
         await repository.enqueueJob({ jobId: "job-contract-hydrate", jobType: "demo.echo" });
         const body = {
-          packetKind: "context_handoff_packet",
+          packetKind: "resource_handoff_packet",
           packetId: "handoff-1",
           sourceNodeId: "context-1",
           targetCommitmentIds: ["c-001"],
@@ -560,20 +588,20 @@ describe("runtime job repository", () => {
 
         const artifact = await repository.attachRuntimeArtifactByContract({
           jobId: "job-contract-hydrate",
-          artifactType: "execution_platform.context_handoff_packet",
-          uri: "runtime-job://job-contract-hydrate/context-handoff/handoff-1",
+          artifactType: "execution_platform.resource_handoff_packet",
+          uri: "runtime-job://job-contract-hydrate/resource-handoff/handoff-1",
           body,
           boundedSummary: body.handoffSummaryForImplementation,
         });
 
         expect(JSON.stringify(artifact.metadata)).not.toContain(
-          'context_handoff_packet","packetId',
+          'resource_handoff_packet","packetId',
         );
         expect(artifact.metadata).toMatchObject({
           artifactKind: "runtime_job_artifact_payload_manifest",
           extension: {
             runtimeArtifactContract: {
-              contractId: "runtime-artifact.context-handoff-packet.v1",
+              contractId: "runtime-artifact.resource-handoff-packet.v1",
               storagePolicy: "payload_required",
             },
           },
@@ -586,7 +614,7 @@ describe("runtime job repository", () => {
           body,
           reasonCodes: expect.arrayContaining([
             "runtime_artifact_contract_payload_hydrated",
-            "runtime_artifact_contract:runtime-artifact.context-handoff-packet.v1",
+            "runtime_artifact_contract:runtime-artifact.resource-handoff-packet.v1",
           ]),
         });
       },
@@ -600,9 +628,9 @@ describe("runtime job repository", () => {
         await repository.enqueueJob({ jobId: "job-contract-legacy", jobType: "demo.echo" });
         const legacy = await repository.attachArtifact({
           jobId: "job-contract-legacy",
-          artifactType: "legacy.execution_platform.commitment_work_packet",
+          artifactType: "legacy.execution_platform.node_execution_packet",
           storageKind: "metadata",
-          uri: "runtime-job://job-contract-legacy/legacy-packet/c-001",
+          uri: "runtime-job://job-contract-legacy/legacy-node-execution-packet/node-001",
           metadata: { note: "unregistered fixture" },
         });
         expect((await repository.hydrateRuntimeArtifactByContract(legacy)).status).toBe(
@@ -611,12 +639,12 @@ describe("runtime job repository", () => {
 
         const registeredLegacy = {
           ...legacy,
-          artifactType: "execution_platform.commitment_work_packet",
+          artifactType: "execution_platform.node_execution_packet",
           metadata: {
-            artifactKind: "execution_platform.commitment_work_packet",
-            commitmentWorkPacket: {
-              packetKind: "commitment_work_packet",
-              commitmentId: "c-001",
+            artifactKind: "execution_platform.node_execution_packet",
+            nodeExecutionPacket: {
+              packetKind: "node_execution_packet",
+              nodeId: "node-001",
               rawPromptStored: false,
               rawResponseStored: false,
               rawProviderLogStored: false,
@@ -629,7 +657,7 @@ describe("runtime job repository", () => {
         const hydrated = await repository.hydrateRuntimeArtifactByContract(registeredLegacy);
         expect(hydrated.status).toBe("legacy_metadata_hydrated");
         expect(hydrated.legacyHydrated).toBe(true);
-        expect(hydrated.reasonCodes).toContain("legacy_body_key:commitmentWorkPacket");
+        expect(hydrated.reasonCodes).toContain("legacy_body_key:nodeExecutionPacket");
       },
       { maxArtifactSizeBytes: 8 * 1024, maxArtifactMetadataBytes: 8 * 1024 },
     );

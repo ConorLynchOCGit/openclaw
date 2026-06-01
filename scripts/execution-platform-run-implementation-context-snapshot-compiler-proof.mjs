@@ -42,9 +42,9 @@ const result = await compileImplementationContextSnapshotPacket({
   targetCommitmentIds: ["commitment-implementation-context"],
   targetRefs: ["extensions/execution-platform/src/workflows/index.ts"],
   allowedFileRefs: ["extensions/execution-platform/src/workflows/"],
-  contextPacketRefs: ["context-handoff://proof/context-scout"],
-  sourceCommitmentPacketRefs: ["commitment-work-packet://proof/commitment-implementation-context"],
-  sourceContextHandoffRefs: ["context-handoff://proof/context-scout"],
+  contextPacketRefs: ["resource-handoff://proof/context-scout"],
+  sourceContractRefs: ["source-contract://proof/commitment-implementation-context"],
+  sourceResourceHandoffRefs: ["resource-handoff://proof/context-scout"],
   sourcePromptExcerptRefs: ["source-prompt-excerpt://proof/implementation-context"],
   contextSynthesisRefs: ["context-synthesis://proof/accepted"],
   validationCommandRefs: [

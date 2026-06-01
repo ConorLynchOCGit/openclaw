@@ -99,7 +99,7 @@ function nodeUtility(nodeId, capabilityId, extras = {}) {
         "A cheap context scout reduces file uncertainty before any editing worker runs.",
       costRationale:
         "Read-only context gathering is cheaper than starting a premium implementation lane.",
-      expectedEvidence: ["context_handoff"],
+      expectedEvidence: ["resource_handoff"],
       expectedDownstreamConsumer: "implementation_engineer",
       stopOrEscalationCondition:
         "Ask the orchestrator to split or escalate if target refs stay unclear.",
@@ -328,7 +328,7 @@ async function main() {
         utilityRationale: "Codex could do all work.",
         costRationale: "This intentionally omits a sufficient cheaper-node rationale.",
         whyThisIsNotDuplicateWork: "No prior implementation has run.",
-        expectedEvidence: ["context_handoff", "source_change_ref", "validation_ref"],
+        expectedEvidence: ["resource_handoff", "source_change_ref", "validation_ref"],
         stopOrEscalationCondition: "Stop if rejected by policy.",
       },
     };
@@ -397,7 +397,7 @@ async function main() {
             fromNodeId: nodeIds.context,
             toNodeId: nodeIds.implementation,
             edgeKind: "handoff",
-            reasonCodes: ["context_handoff_to_implementation"],
+            reasonCodes: ["resource_handoff_to_implementation"],
           },
           {
             edgeId: `${runId}-kimi-to-validation`,

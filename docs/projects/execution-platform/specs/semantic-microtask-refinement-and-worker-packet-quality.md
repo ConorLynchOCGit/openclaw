@@ -95,7 +95,7 @@ Executable target refs must come from one of:
 
 ### Semantic Microtask Refinement
 
-Before creating executable implementation nodes from broad post-context work,
+Before creating executable implementation nodes from broad post-resource work,
 runtime must require semantic file-change intent.
 
 The canonical refinement body is:
@@ -107,7 +107,7 @@ The canonical refinement body is:
 - `sourceNodeId`
 - `sourceWorkUnitId`
 - `targetCommitmentIds`
-- `sourceContextHandoffRefs`
+- `sourceResourceHandoffRefs`
 - `sourceCommitmentPacketRefs`
 - `microtasks[]`
 
@@ -148,7 +148,7 @@ unless every existing target file has a file-change intent, or an explicit
 new-file intent covers the target. Missing intent coverage is a
 context/refinement blocker, not a worker failure.
 
-For broad directory-only context, the post-context compiler returns
+For broad directory-only context, the post-resource compiler returns
 `context_repair_required` unless model-authored file-change intents cover the
 resulting concrete files.
 

@@ -360,10 +360,10 @@ describe("runtime worker supervisor", () => {
     });
   });
 
-  it("classifies commitment packet fanout boundaries without scheduling an ambiguous retry", async () => {
+  it("preserves runtime needs-review reason codes without generic worker_adapter_threw", async () => {
     await withRepository(async (repository) => {
       await repository.enqueueJob({
-        jobId: "job-supervisor-packet-boundary",
+        jobId: "job-supervisor-obligation-stage-blocked",
         jobType: "executor.agent_team",
         maxAttempts: 1,
       });
@@ -375,29 +375,47 @@ describe("runtime worker supervisor", () => {
             adapterId: "worker.acp-codex.coding",
             jobTypes: ["executor.agent_team"],
             execute: async () => {
-              throw new Error("commitment_packet_author_fanout_failed:commitment-002");
+              const error = new Error("obligation_graph_authoring_blocked:commitment-002") as Error & {
+                runtimeNeedsReviewReasonCodes: string[];
+              };
+              error.runtimeNeedsReviewReasonCodes = [
+                "obligation_graph_authoring_blocked",
+                "obligation_graph_missing_semantic_field",
+                "missing_field:evidenceExpectation",
+                "blocked_commitment:commitment-002",
+              ];
+              throw error;
             },
           },
         ],
       });
 
       const result = await supervisor.runOnce({
-        runtimeJobId: "job-supervisor-packet-boundary",
+        runtimeJobId: "job-supervisor-obligation-stage-blocked",
       });
 
       expect(result).toMatchObject({
         status: "needs_review",
         reasonCodes: [
-          "worker_adapter_threw",
-          "worker_adapter_threw:commitment_packet_authoring_boundary",
+          "obligation_graph_authoring_blocked",
+          "obligation_graph_missing_semantic_field",
+          "missing_field:evidenceExpectation",
+          "blocked_commitment:commitment-002",
           "worker_adapter_failure_terminalized_needs_review",
         ],
       });
+      expect(result.reasonCodes).not.toContain("worker_adapter_threw");
       expect(result.reasonCodes).not.toContain("worker_adapter_threw:unclassified");
-      await expect(repository.getJob("job-supervisor-packet-boundary")).resolves.toMatchObject({
+      await expect(repository.getJob("job-supervisor-obligation-stage-blocked")).resolves.toMatchObject({
         state: "failed",
         result: {
           status: "needs_review",
+          reasonCodes: [
+            "obligation_graph_authoring_blocked",
+            "obligation_graph_missing_semantic_field",
+            "missing_field:evidenceExpectation",
+            "blocked_commitment:commitment-002",
+          ],
           retryScheduled: false,
         },
       });

@@ -4,8 +4,11 @@ import type { WorkflowEvidenceClass } from "./workflow-evidence-profile.ts";
 
 export type WorkflowPhase =
   | "mission_ledger"
-  | "commitment_packet_authoring"
-  | "context_supply"
+  | "obligation_graph"
+  | "resource_demand"
+  | "resource_ledger"
+  | "domain_resource_selection"
+  | "domain_action_gate"
   | "work_breakdown"
   | "capability_selection"
   | "graph_compile"
@@ -15,6 +18,7 @@ export type WorkflowPhase =
   | "node_result_review"
   | "repair_or_escalation"
   | "validation"
+  | "evidence_closure"
   | "human_decision"
   | "readback"
   | "closeout"
@@ -36,14 +40,14 @@ export type WorkflowRoleClass =
   | "observability"
   | "closeout";
 
-export type WorkflowContextNeed = {
-  contextNeedId: string;
+export type WorkflowResourceNeed = {
+  resourceNeedId: string;
   roleClass: WorkflowRoleClass;
   required: boolean;
   sourcePromptAccess: "none" | "bounded_index" | "bounded_excerpt_request";
-  repoContextAccess: "none" | "candidate_refs" | "verified_file_refs";
-  externalContextAccess: "none" | "research_brief_refs" | "artifact_refs";
-  handoffPacketRequired: boolean;
+  repoResourceAccess: "none" | "candidate_refs" | "verified_file_refs";
+  externalResourceAccess: "none" | "research_brief_refs" | "artifact_refs";
+  resourceHandoffRequired: boolean;
   reasonCodes: string[];
   rawPromptStored: false;
   rawResponseStored: false;
@@ -52,7 +56,7 @@ export type WorkflowContextNeed = {
 export type WorkflowCapabilityPolicy = {
   policyId: string;
   cheapestSufficientWorkerRequired: boolean;
-  contextDistributionValueRequired: boolean;
+  resourceDistributionValueRequired: boolean;
   roleSpecializationRequired: boolean;
   parallelismValueRequired: boolean;
   escalationCostRequired: boolean;
@@ -103,7 +107,7 @@ export type WorkflowOrchestrationPolicy = {
   requiredRoleClasses: WorkflowRoleClass[];
   optionalRoleClasses: WorkflowRoleClass[];
   allowedCapabilityIds: string[];
-  contextNeeds: WorkflowContextNeed[];
+  resourceNeeds: WorkflowResourceNeed[];
   sourcePromptPolicy: WorkflowSourcePromptPolicy;
   capabilityPolicy: WorkflowCapabilityPolicy;
   humanDecisionPolicy: WorkflowHumanDecisionPolicy;
@@ -132,7 +136,7 @@ export type WorkflowOrchestrationPolicyValidation = {
 
 const COMPLEX_REQUIRED_PHASES: WorkflowPhase[] = [
   "mission_ledger",
-  "commitment_packet_authoring",
+  "obligation_graph",
   "work_breakdown",
   "capability_selection",
   "graph_compile",
@@ -183,12 +187,12 @@ export function validateWorkflowOrchestrationPolicy(
       reasonCodes.push("workflow_orchestration_broad_worker_monopoly_must_be_blocked");
     }
   }
-  for (const need of policy.contextNeeds) {
+  for (const need of policy.resourceNeeds) {
     if (need.rawPromptStored || need.rawResponseStored) {
-      reasonCodes.push(`workflow_context_need_raw_storage_rejected:${need.contextNeedId}`);
+      reasonCodes.push(`workflow_resource_need_raw_storage_rejected:${need.resourceNeedId}`);
     }
-    if (need.required && need.sourcePromptAccess === "none" && need.repoContextAccess === "none") {
-      reasonCodes.push(`workflow_context_need_required_but_no_access:${need.contextNeedId}`);
+    if (need.required && need.sourcePromptAccess === "none" && need.repoResourceAccess === "none") {
+      reasonCodes.push(`workflow_resource_need_required_but_no_access:${need.resourceNeedId}`);
     }
   }
   if (policy.entryNodePolicy) {
@@ -235,14 +239,14 @@ export function workflowOrchestrationPolicySummary(policy: WorkflowOrchestration
     requiredRoleClasses: policy.requiredRoleClasses,
     optionalRoleClasses: policy.optionalRoleClasses,
     allowedCapabilityIds: policy.allowedCapabilityIds.slice(0, 40),
-    contextNeeds: policy.contextNeeds.map((need) => ({
-      contextNeedId: need.contextNeedId,
+    resourceNeeds: policy.resourceNeeds.map((need) => ({
+      resourceNeedId: need.resourceNeedId,
       roleClass: need.roleClass,
       required: need.required,
       sourcePromptAccess: need.sourcePromptAccess,
-      repoContextAccess: need.repoContextAccess,
-      externalContextAccess: need.externalContextAccess,
-      handoffPacketRequired: need.handoffPacketRequired,
+      repoResourceAccess: need.repoResourceAccess,
+      externalResourceAccess: need.externalResourceAccess,
+      resourceHandoffRequired: need.resourceHandoffRequired,
       reasonCodes: need.reasonCodes.slice(0, 8),
       rawPromptStored: false,
       rawResponseStored: false,

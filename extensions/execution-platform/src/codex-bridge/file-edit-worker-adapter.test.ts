@@ -11,7 +11,7 @@ import { RuntimeToolTraceRepository } from "../runtime-tool-call/runtime-tool-tr
 import {
   buildImplementationTaskPacket,
   type ImplementationTaskFileSnapshot,
-} from "../workflows/mission-work-packets.ts";
+} from "../workflows/worker-execution-packets.ts";
 import { compileNodeExecutionPacketForImplementationTask } from "../workflows/node-resource-materialization.ts";
 import { RuntimeWorkGraphRepository } from "../workflows/runtime-work-graph-repository.ts";
 import { registerSchedulerRuntimeTools } from "../workflows/scheduler-runtime-tools.ts";
@@ -47,7 +47,7 @@ describe("ModelAgnosticFileEditWorkerAdapter", () => {
   }) {
     const snapshot: ImplementationTaskFileSnapshot = {
       fileRef: input.fileRef,
-      snapshotRef: `repo-snapshot://${input.fileRef}`,
+      snapshotRef: `file-window://${input.fileRef}#L1-L40`,
       contentHash: "sha256:file-edit-worker-snapshot",
       byteCount: 128,
       sourceKind: "repo_file",
@@ -64,20 +64,21 @@ describe("ModelAgnosticFileEditWorkerAdapter", () => {
       taskSummary: "Use hydrated file snapshots and validation refs for this worker invocation.",
       targetCommitmentIds: [input.commitmentId],
       targetFileRefs: [input.fileRef],
+      domainResourceSelectionRefs: [`domain-resource-selection://${input.nodeId}`],
       targetFileSnapshots: [snapshot],
       allowedFileRefs: [input.fileRef],
       allowedEditScope: [input.fileRef],
       mustReadRefs: [input.fileRef],
       likelyModifyRefs: [input.fileRef],
-      contextPacketRefs: [`context-handoff://${input.nodeId}`],
-      sourceContextHandoffRefs: [`context-handoff://${input.nodeId}`],
+      contextPacketRefs: [`file-window://${input.fileRef}#L1-L40`],
+      sourceResourceHandoffRefs: [`file-window://${input.fileRef}#L1-L40`],
       validationCommandRefs: [input.validationCommandRef],
       acceptanceCriteria: ["The worker applies a bounded edit and returns validation evidence."],
       evidenceClaimExpectations: [
         `Changed file and validation evidence close ${input.commitmentId}.`,
       ],
     });
-    return compileNodeExecutionPacketForImplementationTask({
+    const materialized = compileNodeExecutionPacketForImplementationTask({
       runtimeJobId: input.runtimeJobId,
       workflowId: "agent_team.coding",
       graphId: input.graphId,
@@ -88,6 +89,7 @@ describe("ModelAgnosticFileEditWorkerAdapter", () => {
       workerRef: "worker.kimi.file-implementation",
       implementationTaskPacket: taskPacket,
     });
+    return { implementationTaskPacket: taskPacket, ...materialized };
   }
 
   it("retires the Kimi JSON patch proposal path from production success", async () => {
@@ -100,6 +102,41 @@ describe("ModelAgnosticFileEditWorkerAdapter", () => {
     expect(result.sourceAdapterKind).toBe("kimi_microtask_executor_retired");
     expect(result.reasonCodes).toContain("file_edit_worker_kimi_patch_json_path_retired");
     expect(result.reasonCodes).toContain("non_codex_tool_worker_runtime_required");
+  });
+
+  it("blocks production non-Codex worker invocation before broad tools when packets are missing", async () => {
+    let modelCalled = false;
+    const adapter = new ModelAgnosticFileEditWorkerAdapter({
+      toolUsingKimiWorkerLoop: new NonCodexToolUsingWorkerLoop({
+        runtimeToolKernel: {} as RuntimeToolKernel,
+        modelClient: {
+          async nextTurn() {
+            modelCalled = true;
+            throw new Error("model_should_not_be_called_without_node_execution_packet");
+          },
+        },
+        validationRunner: {
+          async run() {
+            throw new Error("validation_should_not_run_without_node_execution_packet");
+          },
+        },
+      }),
+    });
+
+    const result = await adapter.run(baseInput);
+
+    expect(modelCalled).toBe(false);
+    expect(result.status).toBe("needs_review");
+    expect(result.modelRunRef).toBeNull();
+    expect(result.toolResults).toEqual([]);
+    expect(result.reasonCodes).toEqual(
+      expect.arrayContaining([
+        "file_edit_worker_node_execution_packet_required",
+        "file_edit_worker_node_execution_contract_missing",
+        "file_edit_worker_node_execution_packet_missing",
+        "file_edit_worker_coding_resource_packet_missing",
+      ]),
+    );
   });
 
   it("keeps model-specific editing behavior in explicit profiles instead of prompt hacks", () => {
@@ -207,6 +244,31 @@ describe("ModelAgnosticFileEditWorkerAdapter", () => {
                 };
               }
               if (input.modelSlot === "patch") {
+                if (input.taskSummary.includes("Only legal choices:")) {
+                  return {
+                    modelRunRef: "openrouter://kimi/tool-worker-forced-author",
+                    responseText: JSON.stringify({
+                      toolCalls: [
+                        {
+                          callId: "author",
+                          toolId: "worker.patch.author_edit",
+                          reason: "Author the runtime-forced accepted plan edit.",
+                          input: {
+                            path: fileRef,
+                            operation: "replace_text",
+                            targetText: "label = 'before'",
+                            replacement: "label = 'after'",
+                            rationale: "Scoped worker edit.",
+                          },
+                        },
+                      ],
+                    }),
+                    responseHash: "sha256:tool-worker-forced-author",
+                    latencyMs: 5,
+                    rawPromptStored: false,
+                    rawResponseStored: false,
+                  };
+                }
                 return {
                   modelRunRef: "openrouter://kimi/tool-worker-author",
                   responseText: JSON.stringify({
@@ -227,22 +289,6 @@ describe("ModelAgnosticFileEditWorkerAdapter", () => {
                           ],
                         },
                       },
-                      {
-                        callId: "apply",
-                        toolId: "worker.edit.apply_patch",
-                        reason: "Apply runtime-owned edit.",
-                        input: {
-                          fileEdits: [
-                            {
-                              path: fileRef,
-                              operation: "replace_text",
-                              oldText: "label = 'before'",
-                              newText: "label = 'after'",
-                              rationale: "Scoped worker edit.",
-                            },
-                          ],
-                        },
-                      },
                     ],
                   }),
                   responseHash: "sha256:tool-worker-author",
@@ -252,6 +298,35 @@ describe("ModelAgnosticFileEditWorkerAdapter", () => {
                 };
               }
               if (input.modelSlot === "controller") {
+                if (input.taskSummary.includes("Visible model-facing tools: worker.edit.plan")) {
+                  return {
+                    modelRunRef: "openrouter://qwen/tool-worker-plan",
+                    responseText: JSON.stringify({
+                      toolCalls: [
+                        {
+                          callId: "plan",
+                          toolId: "worker.edit.plan",
+                          reason: "Plan scoped edit.",
+                          input: {
+                            editPlanSteps: [
+                              {
+                                stepId: "step-1",
+                                objective: "Change label value.",
+                                targetFileRefs: [fileRef],
+                                validationExpectation: "Focused validation passes.",
+                                commitmentIdsAdvanced: ["commitment-source-edit"],
+                              },
+                            ],
+                          },
+                        },
+                      ],
+                    }),
+                    responseHash: "sha256:tool-worker-plan",
+                    latencyMs: 5,
+                    rawPromptStored: false,
+                    rawResponseStored: false,
+                  };
+                }
                 return {
                   modelRunRef: "openrouter://qwen/tool-worker-validation",
                   responseText: JSON.stringify({
@@ -301,18 +376,12 @@ describe("ModelAgnosticFileEditWorkerAdapter", () => {
                   toolCalls: [
                     {
                       callId: "claim",
-                      toolId: "worker.evidence.claim",
+                      toolId: "worker.evidence.claim_from_validation",
                       reason: "Claim commitment evidence.",
                       input: {
-                        evidenceClaims: [
-                          {
-                            commitmentId: "commitment-source-edit",
-                            claimSummary: "Kimi tool worker edited and validated the scoped file.",
-                            changedFileRefs: [fileRef],
-                            validationRefs: ["validation://passed"],
-                            confidence: "high",
-                          },
-                        ],
+                        changedFileRefs: [fileRef],
+                        validationRefs: ["validation://passed"],
+                        targetCommitmentIds: ["commitment-source-edit"],
                       },
                     },
                   ],
@@ -363,7 +432,15 @@ describe("ModelAgnosticFileEditWorkerAdapter", () => {
       expect(result.evidenceClaims[0]?.commitmentId).toBe("commitment-source-edit");
       expect(result.workerPhaseRefs.length).toBeGreaterThan(0);
       expect(result.workerPhases.map((phase) => phase.phase)).toEqual(
-        expect.arrayContaining(["context", "author", "applicator", "validation", "evidence"]),
+        expect.arrayContaining(["controller", "validation", "evidence"]),
+      );
+      expect(result.reasonCodes).toEqual(
+        expect.arrayContaining([
+          "worker_patch_force_author_from_plan_invoked_after_plan",
+          "worker_patch_author_edit_compiled_to_runtime_patch",
+          "worker_edit_apply_patch_completed",
+          "non_codex_worker_runtime_auto_validation_after_patch",
+        ]),
       );
       expect(result.reasonCodes).not.toContain("file_edit_worker_kimi_patch_json_path_retired");
       await expect(readFile(path.join(repoRoot, fileRef), "utf8")).resolves.toContain(
@@ -376,9 +453,9 @@ describe("ModelAgnosticFileEditWorkerAdapter", () => {
       const toolIds = invocations.map((invocation) => invocation.toolId);
       expect(toolIds).toEqual(
         expect.arrayContaining([
-          "worker.repo.read_files",
           "worker.edit.plan",
-          "worker.edit.apply_patch",
+          "worker.patch.force_author_from_plan",
+          "worker.patch.author_edit",
           "worker.validation.run",
           "worker.evidence.claim_from_validation",
         ]),
@@ -451,6 +528,31 @@ describe("ModelAgnosticFileEditWorkerAdapter", () => {
                 };
               }
               if (input.modelSlot === "patch") {
+                if (input.taskSummary.includes("Only legal choices:")) {
+                  return {
+                    modelRunRef: "openrouter://kimi/strict-forced-author",
+                    responseText: JSON.stringify({
+                      toolCalls: [
+                        {
+                          callId: "strict-author-edit",
+                          toolId: "worker.patch.author_edit",
+                          reason: "Patch author applies the scoped edit.",
+                          input: {
+                            path: fileRef,
+                            operation: "replace_text",
+                            targetText: "'before'",
+                            replacement: "'mid'",
+                            rationale: "This edit is allowed because it is in the forced patch lane.",
+                          },
+                        },
+                      ],
+                    }),
+                    responseHash: "sha256:strict-forced-author",
+                    latencyMs: 1,
+                    rawPromptStored: false,
+                    rawResponseStored: false,
+                  };
+                }
                 return {
                   modelRunRef: "openrouter://kimi/strict-author",
                   responseText: JSON.stringify({
@@ -471,22 +573,6 @@ describe("ModelAgnosticFileEditWorkerAdapter", () => {
                           ],
                         },
                       },
-                      {
-                        callId: "apply-author-edit",
-                        toolId: "worker.edit.apply_patch",
-                        reason: "Patch author applies the first scoped edit.",
-                        input: {
-                          fileEdits: [
-                            {
-                              path: fileRef,
-                              operation: "replace_text",
-                              oldText: "'before'",
-                              newText: "'mid'",
-                              rationale: "This edit is allowed because it is in the patch lane.",
-                            },
-                          ],
-                        },
-                      },
                     ],
                   }),
                   responseHash: "sha256:strict-author",
@@ -496,6 +582,35 @@ describe("ModelAgnosticFileEditWorkerAdapter", () => {
                 };
               }
               if (input.modelSlot === "controller") {
+                if (input.taskSummary.includes("Visible model-facing tools: worker.edit.plan")) {
+                  return {
+                    modelRunRef: "openrouter://qwen/strict-plan",
+                    responseText: JSON.stringify({
+                      toolCalls: [
+                        {
+                          callId: "plan-target",
+                          toolId: "worker.edit.plan",
+                          reason: "Plan the edit only.",
+                          input: {
+                            editPlanSteps: [
+                              {
+                                stepId: "step-1",
+                                objective: "Change strictPhase value.",
+                                targetFileRefs: [fileRef],
+                                validationExpectation: "Focused validation passes.",
+                                commitmentIdsAdvanced: ["commitment-strict-phase"],
+                              },
+                            ],
+                          },
+                        },
+                      ],
+                    }),
+                    responseHash: "sha256:strict-plan",
+                    latencyMs: 1,
+                    rawPromptStored: false,
+                    rawResponseStored: false,
+                  };
+                }
                 controllerAttemptedDirectEdit = true;
                 return {
                   modelRunRef: "openrouter://qwen/strict-controller-bad-apply",
@@ -585,7 +700,9 @@ describe("ModelAgnosticFileEditWorkerAdapter", () => {
       expect(controllerAttemptedDirectEdit).toBe(false);
       expect(result.reasonCodes).toEqual(
         expect.arrayContaining([
-          "non_codex_worker_post_patch_exit_to_runtime_validation",
+          "worker_patch_force_author_from_plan_invoked_after_plan",
+          "worker_patch_author_edit_compiled_to_runtime_patch",
+          "worker_edit_apply_patch_completed",
           "non_codex_worker_runtime_auto_validation_after_patch",
         ]),
       );

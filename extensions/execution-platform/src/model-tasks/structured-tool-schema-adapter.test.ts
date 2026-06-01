@@ -34,7 +34,7 @@ describe("structured tool/schema adapter", () => {
     const profile = buildStructuredAdapterProviderProfile(
       classifyModelTaskCall({
         taskClass: "schema_normalization",
-        callSite: "commitment_packet.targeted_normalization",
+        callSite: "obligation.targeted_normalization",
       }),
     );
     const preflight = structuredAdapterPreflight({
@@ -53,7 +53,7 @@ describe("structured tool/schema adapter", () => {
     const profile = buildStructuredAdapterProviderProfile(
       classifyModelTaskCall({
         taskClass: "local_semantic_extraction",
-        callSite: "commitment_packet.semantic_content",
+        callSite: "obligation.semantic_content",
       }),
     );
     const firstDiagnostics = structuredAdapterDiagnostics({
@@ -85,6 +85,63 @@ describe("structured tool/schema adapter", () => {
       retryAllowed: false,
       escalationModelRefs: ["openai-codex/gpt-5.5"],
     });
+  });
+
+  it("records bounded provider response shape and profile settings on diagnostics", () => {
+    const profile = buildStructuredAdapterProviderProfile(
+      classifyModelTaskCall({
+        taskClass: "local_semantic_extraction",
+        callSite: "resource.scout.specialist_handoff",
+      }),
+    );
+    const diagnostics = structuredAdapterDiagnostics({
+      profile,
+      attempt: 1,
+      httpStatus: 200,
+      latencyMs: 1234,
+      providerRequestId: "request-123",
+      content: '{"tool":"resource.scout.submit_specialist_handoff"}',
+      choiceCount: 1,
+      contentLengthByChoice: [49],
+      parsedContentLength: 49,
+      bodyKeys: ["choices", "usage"],
+      choiceKeys: ["message", "finish_reason"],
+      messageKeys: ["role", "content"],
+      finishReason: "stop",
+      nativeFinishReason: "stop",
+      inputBytes: 12_345,
+      timeoutState: "completed_before_timeout",
+      concurrencySlot: "openrouter:qwen:0",
+      inputBundleRef: "provider-input-bundle://proof",
+      inputBundleHash: "sha256:input",
+      usage: { inputTokenCount: 1200, outputTokenCount: 32, totalTokenCount: 1232 },
+    });
+
+    expect(diagnostics).toMatchObject({
+      modelRef: "qwen/qwen3-coder-next",
+      providerPath: "openrouter",
+      providerRequestId: "request-123",
+      taskClass: "local_semantic_extraction",
+      callSite: "resource.scout.specialist_handoff",
+      reasoningModeSent: "none",
+      choiceCount: 1,
+      contentLengthByChoice: [49],
+      parsedContentLength: 49,
+      requestByteCount: 12_345,
+      retryNumber: 0,
+      concurrencySlot: "openrouter:qwen:0",
+      inputBundleRef: "provider-input-bundle://proof",
+      inputBundleHash: "sha256:input",
+      rawPromptStored: false,
+      rawResponseStored: false,
+      rawProviderLogStored: false,
+      rawToolLogStored: false,
+      rawCommandLogStored: false,
+      rawDbRowsStored: false,
+      secretsStored: false,
+    });
+    expect(diagnostics.bodyKeys).toEqual(["choices", "usage"]);
+    expect(diagnostics.messageKeys).toEqual(["role", "content"]);
   });
 
   it("turns schema failures into field-specific repair requests that preserve accepted fields", () => {

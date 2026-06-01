@@ -70,6 +70,7 @@ function defaultValidationCommands(input: AgentTeamImplementationBridgeRunInput)
 }
 
 function nodeExecutionPacketPromptSummary(input: AgentTeamImplementationBridgeRunInput): string[] {
+  const contract = input.nodeExecutionContract;
   const packet = input.nodeExecutionPacket;
   const resource = input.codingResourcePacket;
   if (!packet) {
@@ -79,6 +80,13 @@ function nodeExecutionPacketPromptSummary(input: AgentTeamImplementationBridgeRu
     ];
   }
   return [
+    "NodeExecutionContract:",
+    contract
+      ? `- contractRef: ${contract.contractRef}`
+      : "- not supplied; production implementation workers must receive the hydrated execution contract before source-edit work",
+    contract ? `- executionIntent: ${contract.executionIntent}` : "",
+    contract ? `- capabilityId: ${contract.capabilityId}` : "",
+    contract ? `- evidenceModes: ${contract.evidenceMode.join(", ") || "none"}` : "",
     "NodeExecutionPacket:",
     `- packetRef: ${packet.packetRef}`,
     `- readiness: ${packet.readinessStatus}`,
@@ -116,11 +124,21 @@ function nodeExecutionPacketPromptSummary(input: AgentTeamImplementationBridgeRu
 
 function bridgePacketPreflightFailure(input: AgentTeamImplementationBridgeRunInput): string[] {
   const failures: string[] = [];
+  if (!input.nodeExecutionContract) {
+    failures.push("codex_bridge_node_execution_contract_missing");
+  }
   if (!input.nodeExecutionPacket) {
     failures.push("codex_bridge_node_execution_packet_missing");
   }
   if (!input.codingResourcePacket) {
     failures.push("codex_bridge_coding_resource_packet_missing");
+  }
+  if (
+    input.nodeExecutionContract &&
+    input.nodeExecutionPacket &&
+    input.nodeExecutionPacket.nodeExecutionContractRef !== input.nodeExecutionContract.contractRef
+  ) {
+    failures.push("codex_bridge_node_execution_contract_ref_mismatch");
   }
   if (
     input.nodeExecutionPacket &&

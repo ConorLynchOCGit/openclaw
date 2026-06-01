@@ -75,7 +75,7 @@ describe("agent-team runtime evidence", () => {
         objective: "agent-team-runtime-read-model-projection",
         roster: [
           { roleId: "implementation_engineer", modelId: "moonshotai/kimi-k2.6", status: "allowed" },
-          { roleId: "context_scout", modelId: "deepseek/deepseek-v4-pro", status: "needs_review" },
+          { roleId: "resource_scout", modelId: "deepseek/deepseek-v4-pro", status: "needs_review" },
         ],
         roleAssignments: [
           {
@@ -93,7 +93,7 @@ describe("agent-team runtime evidence", () => {
         handoffHistory: [
           {
             handoffId: "handoff-1",
-            fromRole: "context_scout",
+            fromRole: "resource_scout",
             toRole: "implementation_engineer",
             status: "completed",
             recordedAt: "2026-05-03T16:00:00.000Z",
@@ -140,7 +140,7 @@ describe("agent-team runtime evidence", () => {
         currentTeamState: "completed",
         activeRole: "observability_scribe",
         completedRoles: ["implementation_engineer"],
-        needsReviewRoles: ["context_scout"],
+        needsReviewRoles: ["resource_scout"],
         validationState: "passed",
         reviewState: "reviewed",
         closeoutState: "present",

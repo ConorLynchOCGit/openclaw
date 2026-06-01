@@ -16,7 +16,6 @@ const executor = {
 
 function codingExecutors() {
   return {
-    "kind:context_scout": executor,
     "kind:implementation": executor,
     "kind:validation": executor,
     "kind:test_review": executor,
@@ -25,7 +24,6 @@ function codingExecutors() {
     "kind:observability_readback": executor,
     "kind:human_task": executor,
     "kind:closeout": executor,
-    "role:context_scout": executor,
     "role:implementation_engineer": executor,
     "role:test_engineer": executor,
     "role:reviewer": executor,
@@ -79,10 +77,10 @@ describe("RuntimeWorkflowGraphEngine", () => {
       "runtime_workflow_graph_engine_runtime_tool_kernel_missing",
     );
     expect(readiness.missingExecutorKeys).toEqual(
-      expect.arrayContaining(["kind:context_scout", "kind:closeout", "role:reviewer"]),
+      expect.arrayContaining(["kind:closeout", "role:reviewer"]),
     );
     expect(readiness.missingPluginExecutorKeys).toEqual(
-      expect.arrayContaining(["kind:context_scout", "kind:closeout", "role:reviewer"]),
+      expect.arrayContaining(["kind:closeout", "role:reviewer"]),
     );
   });
 

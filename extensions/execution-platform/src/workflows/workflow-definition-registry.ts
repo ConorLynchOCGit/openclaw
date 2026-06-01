@@ -13,7 +13,7 @@ import {
 } from "./workflow-definition.ts";
 import { workflowEvidenceProfileForWorkflow } from "./workflow-evidence-profile.ts";
 import {
-  type WorkflowContextNeed,
+  type WorkflowResourceNeed,
   type WorkflowEntryNodePolicy,
   type WorkflowOrchestrationPolicy,
   type WorkflowPhase,
@@ -24,20 +24,13 @@ export const CANONICAL_WORKFLOW_RUNTIME_ENGINE_WORK_ITEM_ID =
   "openclaw-convergence.workflow-runtime-01-definition-registry";
 
 function completionReviewPolicy(workflowId: string): WorkflowCompletionReviewPolicy {
+  const evidenceProfile = workflowEvidenceProfileForWorkflow(workflowId);
   return {
     required: true,
     policyId: `${workflowId}.completion_review.v1`,
     reviewerRoleClass: "review",
     modelPolicyRef: "model-policy://workflow-completion-review/model-authored",
-    requiredEvidenceClasses: [
-      "runtime_graph",
-      "scheduler_tool_trace",
-      "worker_tool_trace",
-      "validation",
-      "review",
-      "closeout",
-      "work_queue_readback",
-    ],
+    requiredEvidenceClasses: evidenceProfile.requiredEvidenceClasses,
     allowedOutcomes: ["accepted", "needs_review", "failed"],
     deepCompletionQuestion: DEEP_COMPLETION_REVIEW_QUESTION,
     rawPromptStored: false,
@@ -56,8 +49,11 @@ function closeoutPolicy(): WorkflowDefinition["closeoutPolicy"] {
 
 const GENERIC_REQUIRED_PHASES: WorkflowPhase[] = [
   "mission_ledger",
-  "commitment_packet_authoring",
-  "context_supply",
+  "obligation_graph",
+  "resource_demand",
+  "resource_ledger",
+  "domain_resource_selection",
+  "domain_action_gate",
   "work_breakdown",
   "capability_selection",
   "graph_compile",
@@ -67,6 +63,7 @@ const GENERIC_REQUIRED_PHASES: WorkflowPhase[] = [
   "node_result_review",
   "repair_or_escalation",
   "validation",
+  "evidence_closure",
   "readback",
   "closeout",
   "completion_review",
@@ -74,23 +71,23 @@ const GENERIC_REQUIRED_PHASES: WorkflowPhase[] = [
 
 const DEFAULT_OPTIONAL_PHASES: WorkflowPhase[] = ["human_decision"];
 
-function contextNeed(input: {
+function resourceNeed(input: {
   workflowId: string;
   roleClass: WorkflowRoleClass;
   required: boolean;
-  sourcePromptAccess?: WorkflowContextNeed["sourcePromptAccess"];
-  repoContextAccess?: WorkflowContextNeed["repoContextAccess"];
-  externalContextAccess?: WorkflowContextNeed["externalContextAccess"];
+  sourcePromptAccess?: WorkflowResourceNeed["sourcePromptAccess"];
+  repoResourceAccess?: WorkflowResourceNeed["repoResourceAccess"];
+  externalResourceAccess?: WorkflowResourceNeed["externalResourceAccess"];
   reasonCode: string;
-}): WorkflowContextNeed {
+}): WorkflowResourceNeed {
   return {
-    contextNeedId: `${input.workflowId}.${input.roleClass}.context.v1`,
+    resourceNeedId: `${input.workflowId}.${input.roleClass}.resource.v1`,
     roleClass: input.roleClass,
     required: input.required,
     sourcePromptAccess: input.sourcePromptAccess ?? "bounded_excerpt_request",
-    repoContextAccess: input.repoContextAccess ?? "candidate_refs",
-    externalContextAccess: input.externalContextAccess ?? "artifact_refs",
-    handoffPacketRequired: true,
+    repoResourceAccess: input.repoResourceAccess ?? "candidate_refs",
+    externalResourceAccess: input.externalResourceAccess ?? "artifact_refs",
+    resourceHandoffRequired: true,
     reasonCodes: [input.reasonCode],
     rawPromptStored: false,
     rawResponseStored: false,
@@ -113,7 +110,7 @@ function capabilityPolicy(workflowId: string): WorkflowDefinition["capabilityPol
   return {
     policyId: `${workflowId}.capability_utility.v1`,
     cheapestSufficientWorkerRequired: true,
-    contextDistributionValueRequired: true,
+    resourceDistributionValueRequired: true,
     roleSpecializationRequired: true,
     parallelismValueRequired: true,
     escalationCostRequired: true,
@@ -145,7 +142,7 @@ function orchestrationPolicy(input: {
   requiredRoleClasses: WorkflowRoleClass[];
   optionalRoleClasses: WorkflowRoleClass[];
   allowedCapabilityIds: string[];
-  contextNeeds: WorkflowContextNeed[];
+  resourceNeeds: WorkflowResourceNeed[];
   runtimeToolFamilies: WorkflowDefinition["runtimeToolFamilies"];
   complexWorkflow: boolean;
   entryNodePolicy?: WorkflowEntryNodePolicy | null;
@@ -159,7 +156,7 @@ function orchestrationPolicy(input: {
     requiredRoleClasses: input.requiredRoleClasses,
     optionalRoleClasses: input.optionalRoleClasses,
     allowedCapabilityIds: input.allowedCapabilityIds,
-    contextNeeds: input.contextNeeds,
+    resourceNeeds: input.resourceNeeds,
     sourcePromptPolicy: sourcePromptPolicy(input.workflowId),
     capabilityPolicy: capabilityPolicy(input.workflowId),
     humanDecisionPolicy: humanDecisionPolicy(input.workflowId),
@@ -167,10 +164,14 @@ function orchestrationPolicy(input: {
     evidenceProfileId: input.evidenceProfileId,
     evidenceClassesByPhase: {
       mission_ledger: ["runtime_graph"],
-      commitment_packet_authoring: ["runtime_graph"],
-      context_supply: ["worker_tool_trace"],
+      obligation_graph: ["runtime_graph"],
+      resource_demand: ["worker_tool_trace"],
+      resource_ledger: ["worker_tool_trace"],
+      domain_resource_selection: ["model_call_trace"],
+      domain_action_gate: ["worker_tool_trace"],
       node_execution: ["worker_tool_trace"],
       validation: ["validation"],
+      evidence_closure: ["closeout"],
       readback: ["work_queue_readback"],
       closeout: ["closeout"],
       completion_review: ["review"],
@@ -204,7 +205,7 @@ function baseDefinition(input: {
   requiredRoleClasses: WorkflowRoleClass[];
   optionalRoleClasses?: WorkflowRoleClass[];
   allowedCapabilityIds?: string[];
-  contextNeeds: WorkflowContextNeed[];
+  resourceNeeds: WorkflowResourceNeed[];
   entryNodePolicy?: WorkflowEntryNodePolicy | null;
   liveProofRequirements?: string[];
 }): WorkflowDefinition {
@@ -226,7 +227,7 @@ function baseDefinition(input: {
     requiredRoleClasses: input.requiredRoleClasses,
     optionalRoleClasses: input.optionalRoleClasses ?? [],
     allowedCapabilityIds,
-    contextNeeds: input.contextNeeds,
+    resourceNeeds: input.resourceNeeds,
     runtimeToolFamilies,
     complexWorkflow: input.schedulerBacked,
     entryNodePolicy: input.entryNodePolicy ?? null,
@@ -256,7 +257,7 @@ function baseDefinition(input: {
     allowedCapabilityIds,
     requiredRoleClasses: input.requiredRoleClasses,
     optionalRoleClasses: input.optionalRoleClasses ?? [],
-    contextNeeds: input.contextNeeds,
+    resourceNeeds: input.resourceNeeds,
     sourcePromptPolicy: workflowOrchestrationPolicy.sourcePromptPolicy,
     capabilityPolicy: workflowOrchestrationPolicy.capabilityPolicy,
     humanDecisionPolicy: workflowOrchestrationPolicy.humanDecisionPolicy,
@@ -287,15 +288,13 @@ export function buildCanonicalWorkflowDefinitions(): WorkflowDefinition[] {
       ],
       requiredRoleClasses: [
         "orchestrator",
-        "context",
         "implementation",
         "qa",
         "review",
         "closeout",
       ],
-      optionalRoleClasses: ["docs", "architecture", "human", "observability"],
+      optionalRoleClasses: ["context", "docs", "architecture", "human", "observability"],
       allowedCapabilityIds: [
-        "context_scout",
         "implementation_standard",
         "implementation_complex",
         "validation",
@@ -305,25 +304,24 @@ export function buildCanonicalWorkflowDefinitions(): WorkflowDefinition[] {
         "human_task",
         "closeout",
       ],
-      contextNeeds: [
-        contextNeed({
+      resourceNeeds: [
+        resourceNeed({
           workflowId: "agent_team.coding",
           roleClass: "context",
           required: true,
-          repoContextAccess: "verified_file_refs",
-          reasonCode: "coding_requires_repo_context_supply_chain",
+          repoResourceAccess: "verified_file_refs",
+          reasonCode: "coding_requires_repo_resource_demand_chain",
         }),
-        contextNeed({
+        resourceNeed({
           workflowId: "agent_team.coding",
           roleClass: "implementation",
           required: true,
-          repoContextAccess: "verified_file_refs",
-          reasonCode: "coding_requires_worker_ready_commitment_packets",
+          repoResourceAccess: "verified_file_refs",
+          reasonCode: "coding_requires_worker_ready_contracts",
         }),
       ],
       allowedNodeKinds: [
         "orchestrator_plan",
-        "context_scout",
         "implementation",
         "validation",
         "test_review",
@@ -335,16 +333,14 @@ export function buildCanonicalWorkflowDefinitions(): WorkflowDefinition[] {
         "human_task",
         "closeout",
       ],
-      requiredNodeKinds: ["context_scout", "implementation", "validation", "reviewer", "closeout"],
+      requiredNodeKinds: ["implementation", "validation", "reviewer", "closeout"],
       nodeExecutorKeys: [
-        "kind:context_scout",
         "kind:implementation",
         "kind:validation",
         "kind:test_review",
         "kind:repair",
         "kind:reviewer",
         "kind:closeout",
-        "role:context_scout",
         "role:implementation_engineer",
         "role:test_engineer",
         "role:reviewer",
@@ -357,7 +353,7 @@ export function buildCanonicalWorkflowDefinitions(): WorkflowDefinition[] {
         "scheduler.repair_decision",
         "node.resource_materialization",
         "source_prompt.context",
-        "context_scout.tool_loop",
+        "resource.scout",
         "code_intelligence.query",
         "worker.invoke",
         "model.call",
@@ -402,21 +398,21 @@ export function buildCanonicalWorkflowDefinitions(): WorkflowDefinition[] {
         "reviewer",
         "closeout",
       ],
-      contextNeeds: [
-        contextNeed({
+      resourceNeeds: [
+        resourceNeed({
           workflowId: "agent_team.product_spec_planning",
           roleClass: "planning",
           required: true,
-          repoContextAccess: "candidate_refs",
-          externalContextAccess: "research_brief_refs",
+          repoResourceAccess: "candidate_refs",
+          externalResourceAccess: "research_brief_refs",
           reasonCode: "planning_requires_source_prompt_and_project_context",
         }),
-        contextNeed({
+        resourceNeed({
           workflowId: "agent_team.product_spec_planning",
           roleClass: "research",
           required: false,
-          repoContextAccess: "none",
-          externalContextAccess: "research_brief_refs",
+          repoResourceAccess: "none",
+          externalResourceAccess: "research_brief_refs",
           reasonCode: "planning_may_require_current_external_research",
         }),
       ],
@@ -457,11 +453,17 @@ export function buildCanonicalWorkflowDefinitions(): WorkflowDefinition[] {
         "scheduler.select_next_node",
         "scheduler.evaluate_node_result",
         "scheduler.repair_decision",
-        "node.resource_materialization",
+        "artifact.payload",
+        "source_prompt.context",
+        "resource.demand",
+        "resource.ledger",
+        "resource.selection",
+        "domain.action_gate",
         "worker.invoke",
         "model.call",
         "research.fetch",
         "validation.run",
+        "validation.result",
         "human_task.request",
         "human_task.resume",
         "work_queue.project_event",
@@ -509,29 +511,29 @@ export function buildCanonicalWorkflowDefinitions(): WorkflowDefinition[] {
         "final_recommendation_reviewer",
         "red_team_closeout",
       ],
-      contextNeeds: [
-        contextNeed({
+      resourceNeeds: [
+        resourceNeed({
           workflowId: "agent_team.architecture_red_team",
           roleClass: "architecture",
           required: true,
-          repoContextAccess: "verified_file_refs",
-          externalContextAccess: "artifact_refs",
+          repoResourceAccess: "verified_file_refs",
+          externalResourceAccess: "artifact_refs",
           reasonCode: "architecture_red_team_requires_target_system_refs",
         }),
-        contextNeed({
+        resourceNeed({
           workflowId: "agent_team.architecture_red_team",
           roleClass: "research",
           required: true,
-          repoContextAccess: "candidate_refs",
-          externalContextAccess: "research_brief_refs",
+          repoResourceAccess: "candidate_refs",
+          externalResourceAccess: "research_brief_refs",
           reasonCode: "architecture_red_team_requires_narrow_research_refs",
         }),
-        contextNeed({
+        resourceNeed({
           workflowId: "agent_team.architecture_red_team",
           roleClass: "review",
           required: true,
-          repoContextAccess: "verified_file_refs",
-          externalContextAccess: "artifact_refs",
+          repoResourceAccess: "verified_file_refs",
+          externalResourceAccess: "artifact_refs",
           reasonCode: "architecture_red_team_requires_model_authored_final_review",
         }),
       ],
@@ -600,13 +602,13 @@ export function buildCanonicalWorkflowDefinitions(): WorkflowDefinition[] {
       requiredRoleClasses: ["research", "review", "closeout"],
       optionalRoleClasses: ["human", "observability"],
       allowedCapabilityIds: ["web_research", "reviewer", "closeout"],
-      contextNeeds: [
-        contextNeed({
+      resourceNeeds: [
+        resourceNeed({
           workflowId: "single_agent.web_research",
           roleClass: "research",
           required: true,
-          repoContextAccess: "none",
-          externalContextAccess: "research_brief_refs",
+          repoResourceAccess: "none",
+          externalResourceAccess: "research_brief_refs",
           reasonCode: "web_research_requires_bounded_research_brief_context",
         }),
       ],
@@ -626,12 +628,12 @@ export function buildCanonicalWorkflowDefinitions(): WorkflowDefinition[] {
       requiredRoleClasses: ["docs", "qa", "review", "closeout"],
       optionalRoleClasses: ["context", "human", "observability"],
       allowedCapabilityIds: ["docs_update", "validation", "reviewer", "closeout"],
-      contextNeeds: [
-        contextNeed({
+      resourceNeeds: [
+        resourceNeed({
           workflowId: "workflow.docs_skills",
           roleClass: "docs",
           required: true,
-          repoContextAccess: "candidate_refs",
+          repoResourceAccess: "candidate_refs",
           reasonCode: "docs_skills_requires_docs_context_and_validation_refs",
         }),
       ],
@@ -651,12 +653,12 @@ export function buildCanonicalWorkflowDefinitions(): WorkflowDefinition[] {
       requiredRoleClasses: ["qa", "review", "closeout"],
       optionalRoleClasses: ["implementation", "human", "observability"],
       allowedCapabilityIds: ["validation", "test_review", "test_authoring", "reviewer", "closeout"],
-      contextNeeds: [
-        contextNeed({
+      resourceNeeds: [
+        resourceNeed({
           workflowId: "workflow.qa_test",
           roleClass: "qa",
           required: true,
-          repoContextAccess: "candidate_refs",
+          repoResourceAccess: "candidate_refs",
           reasonCode: "qa_test_requires_validation_scope_and_artifact_refs",
         }),
       ],
@@ -676,12 +678,12 @@ export function buildCanonicalWorkflowDefinitions(): WorkflowDefinition[] {
       requiredRoleClasses: ["architecture", "review", "closeout"],
       optionalRoleClasses: ["research", "human", "observability"],
       allowedCapabilityIds: ["architecture_spec", "reviewer", "closeout"],
-      contextNeeds: [
-        contextNeed({
+      resourceNeeds: [
+        resourceNeed({
           workflowId: "workflow.architecture",
           roleClass: "architecture",
           required: true,
-          repoContextAccess: "candidate_refs",
+          repoResourceAccess: "candidate_refs",
           reasonCode: "architecture_requires_system_context_and_tradeoff_refs",
         }),
       ],
@@ -701,12 +703,12 @@ export function buildCanonicalWorkflowDefinitions(): WorkflowDefinition[] {
       requiredRoleClasses: ["design", "review", "closeout"],
       optionalRoleClasses: ["research", "human", "observability"],
       allowedCapabilityIds: ["design_spec", "reviewer", "closeout"],
-      contextNeeds: [
-        contextNeed({
+      resourceNeeds: [
+        resourceNeed({
           workflowId: "workflow.design",
           roleClass: "design",
           required: true,
-          repoContextAccess: "candidate_refs",
+          repoResourceAccess: "candidate_refs",
           reasonCode: "design_requires_product_context_and_visual_constraints",
         }),
       ],
@@ -726,13 +728,13 @@ export function buildCanonicalWorkflowDefinitions(): WorkflowDefinition[] {
       requiredRoleClasses: ["marketing", "review", "closeout"],
       optionalRoleClasses: ["research", "human", "observability"],
       allowedCapabilityIds: ["marketing_brief", "reviewer", "closeout"],
-      contextNeeds: [
-        contextNeed({
+      resourceNeeds: [
+        resourceNeed({
           workflowId: "workflow.marketing",
           roleClass: "marketing",
           required: true,
-          repoContextAccess: "candidate_refs",
-          externalContextAccess: "research_brief_refs",
+          repoResourceAccess: "candidate_refs",
+          externalResourceAccess: "research_brief_refs",
           reasonCode: "marketing_requires_audience_context_and_research_refs",
         }),
       ],
@@ -760,7 +762,7 @@ export type WorkflowDefinitionRegistrySummary = {
     orchestrationPolicyId: string;
     requiredPhases: WorkflowPhase[];
     requiredRoleClasses: WorkflowRoleClass[];
-    contextNeedCount: number;
+    resourceNeedCount: number;
   }>;
   rawPromptStored: false;
   rawResponseStored: false;
@@ -832,7 +834,7 @@ export class WorkflowDefinitionRegistry {
         orchestrationPolicyId: definition.orchestrationPolicy.policyId,
         requiredPhases: definition.requiredPhases,
         requiredRoleClasses: definition.requiredRoleClasses,
-        contextNeedCount: definition.contextNeeds.length,
+        resourceNeedCount: definition.resourceNeeds.length,
       })),
       rawPromptStored: false,
       rawResponseStored: false,

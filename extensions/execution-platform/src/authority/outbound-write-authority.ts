@@ -125,7 +125,7 @@ export function buildOutboundWriteAuthorityProof(
     contract,
     unlockRecord,
     canary: configured
-      ? { status: "passed", reasonCodes: ["canary_write_gate_satisfied_by_configured_scope"] }
+      ? { status: "passed", reasonCodes: ["canary_action_gate_satisfied_by_configured_scope"] }
       : { status: "skipped", reasonCodes: ["outbound_write_config_missing"] },
     payloadScan: configured
       ? { status: "passed", rawPayloadStored: false, reasonCodes: ["secret_like_payloads_blocked"] }

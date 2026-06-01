@@ -8,7 +8,7 @@ import type {
 } from "./node-resource-materialization.ts";
 
 export const CONTEXT_BROKER_REQUEST_ARTIFACT_TYPE =
-  "execution_platform.context_broker.request" as const;
+  "execution_platform.resource_broker.request" as const;
 
 const boundedString = (max: number) => z.string().trim().min(1).max(max);
 const optionalBoundedString = (max: number) => z.string().trim().max(max).nullable().default(null);
@@ -18,7 +18,7 @@ const stringList = (maxItems: number, maxChars = 300) =>
 export const ContextBrokerRequestStatusSchema = z.enum([
   "satisfied_from_inherited_context",
   "satisfied_from_cache",
-  "context_scout_required",
+  "context_specialist_required",
   "blocked_needs_review",
 ]);
 
@@ -26,7 +26,7 @@ export type ContextBrokerRequestStatus = z.infer<typeof ContextBrokerRequestStat
 
 export const ContextBrokerRequestSchema = z
   .object({
-    artifactKind: z.literal("context_broker_request"),
+    artifactKind: z.literal("resource_broker_request"),
     schemaVersion: z.literal("execution-platform.context-broker-request.v1"),
     requestId: boundedString(180),
     requestRef: boundedString(420),
@@ -49,7 +49,7 @@ export const ContextBrokerRequestSchema = z
     consumerWaiverRefs: stringList(40, 320),
     blockingIfMissing: z.boolean(),
     inheritedContextUsable: z.boolean(),
-    contextScoutRequired: z.boolean(),
+    contextSpecialistRequired: z.boolean(),
     budgetClass: z.enum(["cheap", "standard", "premium", "unknown"]).default("unknown"),
     deadlineMs: z.number().int().min(0).nullable().default(null),
     dedupeKey: boundedString(220),
@@ -57,7 +57,7 @@ export const ContextBrokerRequestSchema = z
     nextTransition: z.enum([
       "none",
       "use_inherited_context",
-      "dispatch_context_scout",
+      "dispatch_context_specialist_subturn",
       "needs_review",
     ]),
     reasonCodes: stringList(100, 180),
@@ -84,7 +84,7 @@ export type ContextBrokerRequestSummary = {
   requiredResourceKind: string;
   neededByPhase: string;
   inheritedContextUsable: boolean;
-  contextScoutRequired: boolean;
+  contextSpecialistRequired: boolean;
   dedupeKey: string;
   reasonCodes: string[];
   rawPromptStored: false;
@@ -239,7 +239,7 @@ export function buildContextBrokerRequest(input: {
   const status: ContextBrokerRequestStatus = inheritedContextUsable
     ? "satisfied_from_inherited_context"
     : missingContextReasonCodes.length > 0 || blockingLimitations.length > 0
-      ? "context_scout_required"
+      ? "context_specialist_required"
       : knownContextRefs.length > 0
         ? "satisfied_from_cache"
         : "blocked_needs_review";
@@ -261,17 +261,19 @@ export function buildContextBrokerRequest(input: {
   });
   const reasonCodes = unique(
     [
-      "context_broker_request_compiled",
-      `context_broker_status:${status}`,
-      ...(inheritedContextUsable ? ["context_broker_inherited_context_usable"] : []),
-      ...(status === "context_scout_required" ? ["context_broker_context_scout_required"] : []),
+      "resource_broker_request_compiled",
+      `resource_broker_status:${status}`,
+      ...(inheritedContextUsable ? ["resource_broker_inherited_context_usable"] : []),
+      ...(status === "context_specialist_required"
+        ? ["resource_broker_context_specialist_required"]
+        : []),
       ...missingContextReasonCodes,
     ],
     100,
     180,
   );
   return ContextBrokerRequestSchema.parse({
-    artifactKind: "context_broker_request",
+    artifactKind: "resource_broker_request",
     schemaVersion: "execution-platform.context-broker-request.v1",
     requestId: `${bounded(input.consumerNodeId, 120)}:${dedupeKey}`,
     requestRef,
@@ -294,7 +296,7 @@ export function buildContextBrokerRequest(input: {
     consumerWaiverRefs: unique(input.consumerWaiverRefs ?? [], 40, 320),
     blockingIfMissing: input.blockingIfMissing ?? true,
     inheritedContextUsable,
-    contextScoutRequired: status === "context_scout_required",
+    contextSpecialistRequired: status === "context_specialist_required",
     budgetClass: input.budgetClass ?? "unknown",
     deadlineMs: input.deadlineMs ?? null,
     dedupeKey,
@@ -302,8 +304,8 @@ export function buildContextBrokerRequest(input: {
     nextTransition:
       status === "satisfied_from_inherited_context" || status === "satisfied_from_cache"
         ? "use_inherited_context"
-        : status === "context_scout_required"
-          ? "dispatch_context_scout"
+        : status === "context_specialist_required"
+          ? "dispatch_context_specialist_subturn"
           : "needs_review",
     reasonCodes,
     createdAt: input.createdAt ?? null,
@@ -337,11 +339,10 @@ export function buildContextBrokerRequestFromReadiness(input: {
     [
       ...readiness.contextSnapshotRefs,
       ...(nodePacket?.sourceContextRefs ?? []),
-      ...stringArray(resource.acceptedContextHandoffRefs, 80, 320),
+      ...stringArray(resource.acceptedResourceHandoffRefs, 80, 320),
       ...stringArray(resource.contextPacketRefs, 80, 320),
-      ...stringArray(implementationContext.acceptedContextHandoffRefs, 80, 320),
-      ...stringArray(implementationContext.contextHandoffPacketRefs, 80, 320),
-      ...stringArray(implementationContext.contextSynthesisRefs, 80, 320),
+      ...stringArray(implementationContext.acceptedResourceHandoffRefs, 80, 320),
+      ...stringArray(implementationContext.resourceHandoffPacketRefs, 80, 320),
     ],
     80,
     320,
@@ -365,7 +366,7 @@ export function buildContextBrokerRequestFromReadiness(input: {
     [
       ...contextRelatedReasonCodes(readiness),
       ...(acceptedWithLimitationsWithoutWaiver
-        ? ["context_broker_accepted_with_limitations_consumer_waiver_required"]
+        ? ["resource_broker_accepted_with_limitations_consumer_waiver_required"]
         : []),
     ],
     80,
@@ -398,7 +399,7 @@ export function buildContextBrokerRequestFromReadiness(input: {
     requestingNodeId: input.requestingNodeId ?? readiness.nodeId,
     consumerNodeId: readiness.nodeId,
     targetCommitmentIds: readiness.targetCommitmentIds,
-    requiredResourceKind: readiness.resourcePacketRef ? "context_repair" : "context_and_resource",
+    requiredResourceKind: readiness.resourcePacketRef ? "resource_repair" : "context_and_resource",
     neededByPhase: readiness.phase,
     semanticQuestion: input.semanticQuestion ?? defaultSemanticQuestion(readiness),
     candidateResourceRefs,
@@ -418,7 +419,7 @@ export function buildContextBrokerRequestFromReadiness(input: {
     blockingLimitations,
     nonblockingLimitations: readiness.nonblockingLimitations,
     consumerWaiverRefs: readiness.contextLimitationWaiverRefs,
-    blockingIfMissing: readiness.repairAction === "request_context_repair",
+    blockingIfMissing: readiness.repairAction === "open_node_resource_demand",
     inheritedContextUsable,
     budgetClass: input.budgetClass ?? "cheap",
     deadlineMs: input.deadlineMs ?? null,
@@ -438,7 +439,7 @@ export function summarizeContextBrokerRequest(
     requiredResourceKind: request.requiredResourceKind,
     neededByPhase: request.neededByPhase,
     inheritedContextUsable: request.inheritedContextUsable,
-    contextScoutRequired: request.contextScoutRequired,
+    contextSpecialistRequired: request.contextSpecialistRequired,
     dedupeKey: request.dedupeKey,
     reasonCodes: request.reasonCodes.slice(0, 20),
     rawPromptStored: false,

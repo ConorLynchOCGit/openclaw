@@ -143,7 +143,7 @@ The first pass must register and enforce these production artifact classes:
 - `execution_platform.commitment_work_packet.post_repair`
 - `execution_platform.commitment_work_packet.replay`
 - `execution_platform.context_scout_execution_packet`
-- `execution_platform.context_handoff_packet`
+- `execution_platform.resource_handoff_packet`
 - `execution_platform.implementation_context_packet`
 - `execution_platform.implementation_task_packet`
 - `execution_platform.coding_resource_packet`

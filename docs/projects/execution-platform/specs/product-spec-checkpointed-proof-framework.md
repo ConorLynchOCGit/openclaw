@@ -1,5 +1,128 @@
 # Product/Spec Checkpointed Proof Framework
 
+2026-05-28 shared resource-lifecycle alignment: Product/Spec proof evidence
+is now split into two proof families:
+
+1. Coding vertical proof with `agent_team.coding` as executor and
+   `agent_team.product_spec_planning` as target subject. This proves the
+   coding team can implement real Product/Spec Planning framework code through
+   the shared lifecycle.
+2. Product/Spec Planning workflow proof with
+   `agent_team.product_spec_planning` as executor. This proves the planning
+   domain can produce PlanningIntentRecord, ResearchBrief when needed,
+   PlanningCapsule, HumanPlanningDecision when needed, ActionGraphProposal,
+   CompileRuntimePlanResult, readback, and closeout without executing child
+   work.
+
+Both proof families use the same shared domain-resource lifecycle:
+
+```text
+WorkIntentGraph
+  -> NodeExecutionContract
+  -> ResourceObjectiveFocus
+  -> NodeResourceDemandSession
+  -> NodeResourceLedger
+  -> DomainResourceSelection
+  -> ProgressiveNodeExecutionPacket
+  -> DomainActionGate
+  -> worker small-verb loop
+  -> validation
+  -> evidence
+```
+
+Coding maps this to file windows, target selection, write gate, patch
+authoring, structural validation, and changed-file evidence. Product/Spec
+Planning maps it to prompt sections, project facts, research briefs, planning
+capsules, action graph proposals, compile readiness, human decision refs, and
+planning evidence. `resource_fulfillment`, graph-level `context_scout` fanout, and
+`context_synthesis` are not positive proof gates.
+
+2026-05-29 Product/Spec domain-profile proof: the framework now has a
+middle-lane real-model proof for Product/Spec as executor at
+`.artifacts/execution-platform/product-spec-domain-profile-real-model-proof/manifest.json`.
+This is not the final full Product/Spec proof. It proves that the executor
+profile no longer inherits coding snapshot/write readiness: the model selects
+planning-domain resources, authors planning intent, and runtime validates
+planning artifacts, evidence profile, runner action-tool projection, bounded
+manifests, and no child execution auto-start.
+
+2026-05-28 convergence correction: the proof harness must not run again as a
+positive closure candidate until
+[Canonical Lifecycle Convergence And Residue Excision](/projects/execution-platform/specs/canonical-lifecycle-convergence-and-residue-excision)
+passes. The replay proof must consume `NodeLifecycleProjection` and canonical
+run-scoped proof manifests, not scheduler-local readiness, WorkIntent
+status-to-transition maps, packet-level context coverage, context handoff
+artifacts, graph-level scout fanout, or stale checkpoint labels. If a replay
+path reaches old context handoff/scout/synthesis topology, it is negative
+evidence and must block closure.
+
+2026-05-27 update: Product/Spec proof success now requires the architecture
+transition closure in
+[Architecture Transition Closure And Context Objective Focus](/projects/execution-platform/specs/architecture-transition-closure-and-resource-objective-focus).
+The checkpoint harness must not use packet-level context coverage,
+graph-level context scout fanout, broad context supply, or context-synthesis
+readiness as the main proof gate. After accepted packets, valid proof state
+comes from canonical node-local execution state: `ResourceObjectiveFocus`,
+`NodeResourceDemandSession`, `NodeResourceLedger`, scope revision lifecycle,
+target selection, write gate, validation, evidence, and root-cause collapse.
+If a broad scout/synthesis path appears by default, the proof fails before
+implementation.
+
+2026-05-27 proof-harness gate update: the checkpoint harness first-open gate
+is now a canonical node-local projection. It cannot report retired
+`resource_fulfillment`, graph-level context scout coverage, or context-synthesis
+readiness as proof progress after packets. Retired topology is
+`graph_compile_invalid`; stale retired checkpoint labels with no canonical
+node-local state are rejected as missing runtime state. The canonical gate
+vocabulary includes context focus, demand, scope revision, ledger readiness,
+target selection, write gate, validation, evidence closure, and root-cause
+terminal state. Latest-run-state and proof summary writes carry manifest byte
+guards so large bodies must remain artifact-backed.
+
+2026-05-28 run-scoped substrate update: Product/Spec replay closeout must be
+based on a proof-run manifest under
+`.artifacts/execution-platform/proof-runs/<run-id>/manifest.json`. The shared
+latest files `product-spec-boundary-replay-result.json`,
+`product-spec-replay-proof-admission-gate.json`, and resource-materialization
+`proof.json` may exist only as convenience mirrors. They are not closeout
+truth. The admission gate and closeout script must reject known stale runtime
+job ids, known stale graph ids, retired graph-level context acquisition
+topology, component-only proofs, and any proof artifact that is not scoped to
+the current proof run. Freshness is a closure predicate, not just a source
+label: the manifest must record `closurePredicateStatus: "admitted"`,
+`proofClosureAllowed: true`, and every closure artifact ref must resolve under
+the same `<run-id>` as the manifest. Shared latest files and mismatched
+proof-run refs are operator mirrors or negative evidence, never proof closure.
+The manifest remains bounded metadata; any large proof body stays in
+artifact-backed files referenced by the manifest.
+
+2026-05-27 target-selection hardening: proof success also requires that
+`ResourceObjectiveFocus` is not optional. Context requirements, node resource demand,
+and scout specialist subturns must cite an accepted focus decision, and
+source-edit snapshots must cite accepted model-authored target selection.
+Runtime-compiled broad `targetRefs`, packet `likelyRepoAreas`, approved repo
+scope, or context prose cannot count as selected executable targets.
+
+2026-05-28 focus-first replay gate: after accepted packets, proof replay must
+show the scheduler either accepting a model-authored
+`ResourceObjectiveFocusDecision` or stopping at
+`context_focus_required`/`context.focus.request_for_work_intent`. A replay that
+opens `context.demand.open`, context scout specialist work, target selection,
+resource materialization, or worker execution before accepted focus is invalid.
+The harness should report this as a canonical focus/readiness gate, not as
+generic `resource_fulfillment`, stale graph context coverage, or worker failure.
+
+2026-05-28 middle-lane closure gate: `blocker-closure-06` closes only from a
+run-scoped Product/Spec middle-lane proof manifest. The positive proof
+boundary is `node-local-middle-lane`, and it must prove a real implementation
+node traversed WorkIntent acceptance, model-authored context focus,
+`NodeResourceDemandSession`, specialist/narrowed context fulfillment,
+`NodeResourceLedger`, model-authored target selection, hydrated write gate,
+worker edit, structural validation, and evidence emission. Older
+`after_resource_materialization` component proofs are supporting evidence
+only unless wrapped by this run-scoped manifest and admitted by the
+Product/Spec replay proof gate.
+
 2026-05-25 update: Product/Spec proof is blocked until
 `openclaw-convergence.control-plane-07-readback-telemetry-proof` passes and
 the live gateway build/start checks are clean. The latest accepted worker
@@ -23,12 +146,14 @@ Product/Spec Planning proof runs must be evaluated as a checkpointed generic
 orchestration runtime pipeline, not as a single end-state verdict.
 
 This framework now assumes Product/Spec Planning is a production workflow
-plugin on the canonical runtime spine. The proof must exercise
+plugin on the canonical shared resource lifecycle. The proof must exercise
 WorkflowDefinition/plugin readiness, GenericOrchestrationRuntime, Mission
-Ledger, Commitment Work Packets, Context Supply Chain, staged scheduler tools,
-runtime node executors, evidence claims, Work Queue projection, closeout, and
-completion review. It must not pass through a bespoke Product/Spec runner or
-the generic queued workflow runner.
+Ledger, Commitment Work Packets, resource focus, node-local resource demand,
+resource ledger, domain resource selection, staged scheduler tools, runtime
+node executors, evidence claims, Work Queue projection, closeout, and
+completion review. It must not pass through a bespoke Product/Spec runner,
+the generic queued workflow runner, default graph context scout fanout, or
+context synthesis glue.
 
 The core rule is:
 
@@ -85,30 +210,58 @@ Stop conditions:
 Required evidence:
 
 - model-authored CommitmentWorkPackets exist for all blocking commitments.
-- packet quality review is accepted.
+- production packet model review is skipped/retired; packet acceptance comes
+  from model-authored packet compilation plus runtime structural readiness.
 - each packet contains worker objective, context scout objective,
   implementation objective, validation objective, review objective, likely
   repo areas, context questions, acceptance criteria, stop-if-missing rules,
   downstream consumer, and evidence-claim expectations.
 - packets receive full original prompt access as volatile input and source
   prompt refs as bounded persistence.
-- packet review stores pre-review packet refs, model review notes, blocking
-  versus nonblocking defects, and original-versus-repaired packet refs.
+- packet diagnostics store pre-review packet refs, compiler/readiness reason
+  codes, and structural risk signals. Qualitative packet review is diagnostic
+  only and must not gate production or trigger repair.
 
 Stop conditions:
 
 - packets are deterministic wrappers.
-- packet quality review is missing or not accepted.
+- compiled packet structural readiness fails.
 - likely repo areas are empty without model-authored reason.
 - a human engineer or child agent would need to guess what to do next.
 
-### 4. Context Supply
+### 4. Resource Focus And Node-Local Resource Demand
 
 Required evidence:
 
-- after Commitment Work Packets, the scheduler produces a draft work-intent
-  graph before context scout fanout for complex implementation prompts.
-- context is scoped to WorkIntent/node consumers and their resource
+- after Commitment Work Packets, the scheduler produces an accepted
+  WorkIntentGraph and NodeExecutionContract state before any context
+  acquisition.
+- the accepted proof path uses node-local `NodeResourceDemandSession`s and
+  per-node `NodeResourceLedger`s. Current implementation names may still use
+  `NodeResourceDemandSession` and `NodeResourceLedger` during migration, but proof
+  readback and specs must treat them as shared resource lifecycle artifacts,
+  not a global context phase.
+- a real implementation node must be able to start from a partial execution
+  packet, request exact resources locally, receive scoped refs/windows or
+  planning resource refs, select domain resources, and proceed to the domain
+  action gate.
+- broad context scout fanout is not proof success.
+- graph-visible context scout prerequisites are not default readiness repair.
+- context requirements are compiled from an accepted
+  `ResourceObjectiveFocus` or current `ResourceObjectiveFocus` migration
+  artifact, not by copying
+  every packet question, candidate repo ref, target ref, prompt summary, and
+  repo summary into the provider payload.
+- over-profile context units execute the production scope-revision lifecycle
+  or terminalize with a root-cause artifact. A recorded scope-revision request
+  alone is not proof progress.
+- WorkIntent resource readiness is satisfied from consumer-bound demand and
+  ledger state. Graph `context_supplies` edges count only when an explicit
+  workflow-defined coordination capability appended its output to the
+  consumer ledger.
+- context frontier/shard execution can count only when it is internal
+  fulfillment for a consumer-bound demand session and returns to that node.
+- resource demand is scoped to WorkIntent/node consumers and their resource
   requirements; broad context scout batches cannot satisfy implementation
   readiness unless they compile into consumer-specific handoff refs.
 - context scout tool loop artifacts exist for implementation-bearing draft
@@ -139,15 +292,14 @@ Required evidence:
 - synthesis is optional and scoped to cross-node coordination needs such as
   file ownership overlap, conflicting scout outputs, shared dependency
   decisions, integration sequencing, or validation-plan conflicts.
-- boundary replay for the context-scout phase persists the draft work graph,
-  node-scoped scout requests, node-scoped scout handoffs, readiness results,
-  and any optional synthesis decision.
+- boundary replay for context phases persists the draft work graph,
+  node-local demand sessions, ledger manifests, node-scoped scout subturns
+  when used, readiness results, and target-selection state.
 - replay from packet/context boundaries must use the scheduler-first graph
   path. It must not synthesize a global `context_synthesis` node simply
   because accepted context scout artifacts exist.
-- `after-context-synthesis` replay is legacy diagnostic-only. It is valid only
-  for old checkpoints that already contain an explicit synthesis node, and it
-  must be opt-in. It is not a passing Product/Spec proof path.
+- `after-context-synthesis` replay is retired. It must not exist as a passing
+  Product/Spec proof path, diagnostic closure path, or compatibility path.
 
 Stop conditions:
 
@@ -158,45 +310,30 @@ Stop conditions:
   consumer-specific nonblocking waiver exists.
 - the proof harness injects `context_synthesis` as default glue instead of
   letting the scheduler/compiler decide whether synthesis is required.
+- a replay reports success from broad scout output, global synthesis,
+  context-frontier merge alone, or any context artifact that is not attached
+  to the exact consumer node's demand session and ledger.
 
 ### 5. Context Synthesis
 
 Required evidence:
 
-- synthesis is explicitly marked `skipped_not_required`, `group_scoped`, or
-  `global_required`; global synthesis is not mandatory.
-- bounded `context_synthesis_input_manifest` artifact exists before the core
-  synthesis model call when synthesis runs.
-- the manifest contains model-authored packet/scout briefs, bounded refs,
-  constraints, source-prompt section refs, and budget status; it does not
-  contain raw prompt, raw response, raw provider log, raw tool log, raw DB
-  rows, or deterministically guessed semantic compression.
-- if the manifest is too large, synthesis stops as `needs_review` with a
-  split/model-selection policy instead of silently truncating.
-- accepted context synthesis artifact exists when cross-node coordination is
-  required.
-- synthesis preserves implementation groups, dependencies, worker-fit hints,
-  relevant refs, blockers, and stop-if-missing rules.
-- group guidance may be authored as `groupPlanningGuidance`,
-  `recommendedImplementationGroups`, `implementationGroups`, `workGroups`, or
-  `groups`; the runtime normalizes these general aliases before judging the
-  boundary failed.
-- missing group guidance triggers one focused field repair that preserves the
-  existing synthesis and asks only for the missing group field.
-- synthesis carries accepted context snapshot refs forward so implementation,
-  validation, review, and closeout nodes can prove fresh upstream context.
-- downstream scheduler input includes the actual synthesis detail, not only a
-  short summary or artifact ref.
+- default context synthesis is retired from Product/Spec proof success.
+- no proof harness may create, require, or accept a `context_synthesis` node
+  unless a future workflow introduces a new explicit coordination capability
+  with its own governing spec and proof gate.
+- old context synthesis artifacts are historical evidence only; they cannot
+  unlock implementation, satisfy context readiness, or close replay.
+- any old tests/proofs expecting context synthesis as default glue must be
+  deleted or rewritten under the legacy purge queue item.
 
 Stop conditions:
 
-- scheduler or implementation selection receives only a bounded summary when
-  node-scoped context details are needed.
-- synthesis collapses independent work into one broad implementation without
-  rationale.
-- synthesis omits blockers that should prevent implementation.
-- manifest budget is exceeded and the runtime truncates anyway.
-- group guidance is missing after focused repair.
+- any `context_synthesis` executor registration appears in the production
+  coding-team executor map.
+- replay still exposes an `after-context-synthesis` boundary.
+- a context synthesis artifact is treated as implementation readiness.
+- compatibility flags can resurrect the old context synthesis path.
 
 ### 6. Scheduler Graph
 
@@ -240,7 +377,7 @@ Stop conditions:
 - graph collapses into broad implementation before upstream context is
   accepted.
 - graph acceptance directly approves a non-executable implementation node.
-- `context_supply` is waiting while implementation execution begins.
+- `resource_fulfillment` is waiting while implementation execution begins.
 - child Work Queue materialization is missing.
 - model is asked to invent runtime-owned node or evidence schema.
 - missing preconditions surface as `worker_adapter_threw` instead of
@@ -296,7 +433,7 @@ Stop conditions:
 - missing snapshots, stale refs, payload hydration failures, or checkpoint
   shape mismatches surface as worker failures instead of readiness evidence.
 - Work Queue readback and latest-run-state disagree about the active blocker.
-- `post_context_task_split_required_for_file_resolved_microtasks` or an
+- `post_resource_task_split_required_for_file_resolved_microtasks` or an
   equivalent split-required result leaves the parent runnable or loops without
   creating executable children.
 - resource materialization failures surface as

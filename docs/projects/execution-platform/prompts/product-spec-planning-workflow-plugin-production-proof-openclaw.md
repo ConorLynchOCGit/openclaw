@@ -18,6 +18,7 @@ proof:
 
 - `docs/projects/execution-platform/product-spec-planning-production-workflow.md`
 - `docs/projects/execution-platform/specs/product-spec-checkpointed-proof-framework.md`
+- `docs/projects/execution-platform/specs/execution-contract-spine-resource-requirements-and-frontier-state.md`
 - `docs/projects/execution-platform/specs/control-plane-coding-team-recovery.md`
 - `docs/projects/execution-platform/specs/work-intent-control-plane-contract.md`
 - `docs/projects/execution-platform/specs/pre-product-spec-frontier-worker-proof-gate.md`
@@ -33,8 +34,8 @@ proof:
 - `docs/projects/execution-platform/specs/split-required-resource-materialization-transition.md`
 - `docs/projects/execution-platform/specs/resource-materialization-boundary-replay-and-canonical-node-readiness.md`
 - `docs/projects/execution-platform/specs/execution-intent-evidence-mode-and-worker-dispatch.md`
-- `docs/projects/execution-platform/specs/scheduler-first-node-scoped-context-supply.md`
-- `docs/projects/execution-platform/specs/post-context-implementation-task-compiler.md`
+- `docs/projects/execution-platform/specs/scheduler-first-node-scoped-resource-fulfillment.md`
+- `docs/projects/execution-platform/specs/post-resource-implementation-task-compiler.md`
 - `docs/projects/execution-platform/specs/native-agentic-coding-harness-convergence.md`
 - `docs/projects/execution-platform/specs/non-codex-tool-worker-runtime.md`
 - `docs/projects/execution-platform/specs/work-queue-execution-truth.md`
@@ -49,8 +50,10 @@ canonical generic orchestration runtime.
 
 Before submitting or running the proof, verify the pre-proof queue state:
 
-- `openclaw-convergence.control-plane-07-readback-telemetry-proof` must be
-  closed from accepted runtime/readback evidence.
+- all `openclaw-convergence.contract-spine-*` pre-proof items must be closed
+  from accepted runtime/readback/replay evidence.
+- `openclaw-convergence.control-plane-07-readback-telemetry-proof` must
+  remain closed from accepted runtime/readback evidence.
 - the live gateway must build and start cleanly from the current tree.
 - the canonical prompt artifact for this proof must be this file, with its
   prompt hash recorded in the run report.
@@ -70,8 +73,8 @@ runtime spine used by scheduler-backed workflows:
 1. Intent Front Door / UX-equivalent payload.
 2. Generic Orchestration Runtime.
 3. Mission Ledger.
-4. Commitment Work Packet authoring.
-5. Context Supply Chain and ResearchBrief selection when needed.
+4. typed ObligationGraph authoring.
+5. scheduler WorkIntent planning from runnable obligations.
 6. Staged Scheduler Tool Protocol.
 7. Runtime-derived graph/node envelopes.
 8. Runtime node readiness transition engine.
@@ -86,9 +89,12 @@ runtime spine used by scheduler-backed workflows:
 The current coding-team control-plane spine is WorkIntent-first:
 
 ```text
-prompt -> route -> Mission Ledger -> Commitment Work Packets -> WorkIntent
--> node-scoped context/resource requirements -> NodeReadinessState
--> NodeExecutionPacket + domain resource packet -> worker small-verb loop
+prompt -> route -> Mission Ledger -> ObligationGraph
+-> scheduler-created WorkIntent graph for runnable obligations
+-> NodeLifecycleTransitionRunner compiles executable contracts
+-> worker starts with authority/objective/commitments/legal tools
+-> worker-owned context/search/read/scout subturn loop as needed
+-> target/resource selection -> edit/validation/evidence
 -> validation -> evidence -> review/readback/closeout
 ```
 
@@ -308,7 +314,7 @@ runtime input. Persist bounded refs only.
 Planning context must include:
 
 - owner objective and constraints from Mission Ledger.
-- worker-ready Commitment Work Packets.
+- typed ObligationGraph records with conditional fields by obligation kind.
 - bounded source-prompt excerpts when needed.
 - project/repo context refs where the plan affects existing systems.
 - memory/context-pack refs when relevant.
@@ -412,17 +418,16 @@ The latest worker-smoke boundary gate passed at:
 
 - runtime job: `native-exec-272cf2d51fcba75b`
 - graph: `product-spec-replay-f69b40c5defa3687`
-- boundary: `after-resource-materialization`
+- boundary: worker-owned context/execution middle lane
 - proof artifact:
   `.artifacts/execution-platform/product-spec-replay-proof-resource-materialization/proof.json`
 
-Treat this as evidence that resource materialization and worker execution can
-hydrate Product/Spec-derived source-edit nodes, run the small-verb worker
-loop, apply a bounded edit, run structural validation, record commitment
-evidence, and roll back for review. The full proof must now show that the
-top-of-pipe Product/Spec run reaches canonical planning nodes and then
-proceeds through node execution, validation/compile readiness, evidence
-claims, readback, closeout, and completion review.
+Treat this as historical evidence only. The current proof must not rely on
+pre-worker resource materialization or broad context supply. It must show that
+typed obligations feed scheduler-created WorkIntents, runnable worker nodes
+start under NodeLifecycleTransitionRunner ownership, context is discovered
+inside the worker lifecycle through small-verb search/read/scout tools, and
+evidence closes the Mission Ledger commitments.
 
 The remaining pre-proof gate is owner readback/telemetry. It must show, from
 compact runtime state and Work Queue projection rather than raw logs:
@@ -442,9 +447,9 @@ The proof must record checkpoint evidence for:
 
 1. Payload and router.
 2. Mission Ledger.
-3. Commitment Work Packets.
-4. Context Supply.
-5. optional Context Synthesis.
+3. ObligationGraph.
+4. scheduler WorkIntent graph.
+5. worker-owned context/search/read/scout loop.
 6. Scheduler Graph.
 7. Worker/Node Execution.
 8. Validation and Repair.
@@ -590,8 +595,9 @@ Report:
 - prompt hash and proof prompt file.
 - route/executor/target-subject evidence.
 - Mission Ledger result.
-- Commitment Work Packet result.
-- context supply/research result.
+- ObligationGraph result.
+- WorkIntent graph result.
+- worker-owned context/search/read/scout result.
 - scheduler graph result.
 - transition readiness/executable frontier result.
 - node executor result.

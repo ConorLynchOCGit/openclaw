@@ -176,7 +176,7 @@ describe("OpenRouter agent-team model client", () => {
               native_finish_reason: "stop",
               message: {
                 content: JSON.stringify({
-                  commitmentWorkPackets: [
+                  sourceContracts: [
                     {
                       commitmentId: "commitment-1",
                       workerObjective: "write the packet",
@@ -213,9 +213,9 @@ describe("OpenRouter agent-team model client", () => {
     });
 
     const result = await client.callRole({
-      roleId: "context_scout",
+      roleId: "resource_scout",
       modelId: "qwen/qwen3-coder-next",
-      modelCandidateId: "qwen3-coder-next-commitment-packet-author",
+      modelCandidateId: "qwen3-coder-next-obligation-author",
       prompt: "Return packet JSON.",
       responseFormat: "json_object",
       requestProfileOverride: {
@@ -238,7 +238,7 @@ describe("OpenRouter agent-team model client", () => {
     });
     expect(bodies[0]).not.toHaveProperty("response_format");
     expect(result.providerResponseDiagnostics).toMatchObject({
-      modelCallSpanId: expect.stringContaining("qwen3-coder-next-commitment-packet-author"),
+      modelCallSpanId: expect.stringContaining("qwen3-coder-next-obligation-author"),
       choiceCount: 1,
       structuredAdapterProfile: {
         taskClass: "local_semantic_extraction",
@@ -311,7 +311,7 @@ describe("OpenRouter agent-team model client", () => {
     });
 
     const result = await client.callRole({
-      roleId: "context_scout",
+      roleId: "resource_scout",
       modelId: "qwen/qwen3-coder-next",
       modelCandidateId: "qwen3-coder-next-retry",
       prompt: "Return packet JSON.",
@@ -357,7 +357,7 @@ describe("OpenRouter agent-team model client", () => {
     });
 
     const result = await client.callRole({
-      roleId: "context_scout",
+      roleId: "resource_scout",
       modelId: "qwen/qwen3-coder-next",
       modelCandidateId: "qwen3-coder-next-preflight",
       prompt: "x".repeat(80_000),

@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { z } from "zod";
 import { CODE_INTELLIGENCE_RUNTIME_TOOL_IDS } from "../code-intelligence/index.ts";
 import type { JsonValue } from "../runtime-job-repository.ts";
-import type { ContextHandoffPacket } from "./mission-work-packets.ts";
+import type { ResourceHandoffPacket } from "./worker-execution-packets.ts";
 
 const boundedString = (max: number) => z.string().trim().min(1).max(max);
 const stringList = (maxItems: number, maxChars = 260) =>
@@ -26,7 +26,7 @@ function loopRef(kind: string, id: string, body: unknown): string {
   return `runtime-work-graph://${kind}/${id}/${sha256(body).slice(0, 16)}`;
 }
 
-export const CONTEXT_SCOUT_TOOL_LOOP_ARTIFACT_TYPE = "execution_platform.context_scout_tool_loop";
+export const RESOURCE_SCOUT_TOOL_LOOP_ARTIFACT_TYPE = "execution_platform.resource.scout.tool_loop";
 
 export const CONTEXT_SCOUT_TOOL_LOOP_TOOL_IDS = [
   "repo.search",
@@ -38,41 +38,51 @@ export const CONTEXT_SCOUT_TOOL_LOOP_TOOL_IDS = [
   "context.limitations",
   "context.evidence_claim",
   "context.request_more_context",
-  "context_scout.plan",
-  "context_scout.search_repo",
-  "context_scout.read_file_refs",
-  "context_scout.select_relevant_files",
-  "context_scout.extract_existing_patterns",
-  "context_scout.assess_risks",
-  "context_scout.plan_edit_points",
-  "context_scout.plan_validation",
-  "context_scout.inspect_tests",
-  "context_scout.request_prompt_excerpt",
-  "context_scout.receive_prompt_excerpt",
-  "context_scout.verify_refs",
-  "context_scout.review_sufficiency",
-  "context_scout.emit_handoff_packet",
-  "context_scout.request_repair",
-  "context_scout.build_execution_packet",
-  "context_scout.request_repo_context",
-  "context_scout.classify_context_blocker",
+  "resource.scout.plan",
+  "resource.scout.search_repo",
+  "resource.scout.read_file_refs",
+  "resource.scout.select_relevant_files",
+  "resource.scout.extract_existing_patterns",
+  "resource.scout.assess_risks",
+  "resource.scout.plan_edit_points",
+  "resource.scout.plan_validation",
+  "resource.scout.inspect_tests",
+  "resource.scout.request_prompt_excerpt",
+  "resource.scout.receive_prompt_excerpt",
+  "resource.scout.verify_refs",
+  "resource.scout.review_sufficiency",
+  "resource.scout.emit_handoff_packet",
+  "resource.scout.request_repair",
+  "resource.scout.build_execution_packet",
+  "resource.scout.request_repo_resource",
+  "resource.scout.classify_resource_blocker",
+  "resource.scout.report_relevant_file",
+  "resource.scout.report_existing_pattern",
+  "resource.scout.report_risk",
+  "resource.scout.recommend_edit_point",
+  "resource.scout.recommend_validation",
+  "resource.scout.submit_shard_handoff",
+  "resource.scout.mark_insufficient_context",
+  "resource.scope.select_legal_subset",
+  "resource.scope.explain_unshardable_unit",
+  "resource.scout.request_field_repair",
   ...CODE_INTELLIGENCE_RUNTIME_TOOL_IDS,
 ] as const;
 
-// Runtime file refs are evidence anchors, not the context scout's semantic output.
-// A context scout output MUST NOT be accepted solely from runtime-supplied refs.
+// Runtime file refs are evidence anchors, not the resource scout's semantic output.
+// A resource scout output MUST NOT be accepted solely from runtime-supplied refs.
 // Acceptance requires model-authored substance in the sufficiency review and
-// at least one acceptedContextSource !== "runtime_supplied" with
+// at least one acceptedResourceSource !== "runtime_supplied" with
 // runtimeSuppliedRefRejected === false. Runtime-supplied refs may be preserved
 // as bounded evidence only after explicit model-authored verification.
 // HARDENED: Any sufficiency review with status "accepted" or "accepted_with_limitations"
-// MUST have requiresSubstantiveContext === true AND at least one verified ref with
-// acceptedContextSource !== "runtime_supplied" and runtimeSuppliedRefRejected === false.
-// If all verified refs have acceptedContextSource === "runtime_supplied", the review
+// MUST have requiresSubstantiveResource === true AND at least one verified ref with
+// acceptedResourceSource !== "runtime_supplied" and runtimeSuppliedRefRejected === false.
+// If all verified refs have acceptedResourceSource === "runtime_supplied", the review
 // status MUST be downgraded to "needs_review_nonblocking" or "needs_repair".
 // ENFORCED: The scheduler MUST reject implementation graph selection when the
 // associated ContextScoutSufficiencyReview has no verified ref with
-// acceptedContextSource !== "runtime_supplied" and runtimeSuppliedRefRejected === false.
+// acceptedResourceSource !== "runtime_supplied" and runtimeSuppliedRefRejected === false.
 
 export type ContextScoutToolLoopToolId = (typeof CONTEXT_SCOUT_TOOL_LOOP_TOOL_IDS)[number];
 
@@ -117,7 +127,7 @@ export const ContextScoutVerifiedFileRefSchema = z
     evidenceHash: boundedString(90),
     boundedSummary: boundedString(700),
     reasonCodes: stringList(8, 160),
-    acceptedContextSource: z
+    acceptedResourceSource: z
       .enum(["model_authored", "runtime_supplied", "hybrid"])
       .default("model_authored"),
     // HARDENED: true when the runtime-supplied ref was explicitly rejected or
@@ -169,7 +179,7 @@ export type ContextSufficiencyConsumerWaiver = z.infer<
 
 export const ContextSufficiencyReviewSchema = z
   .object({
-    reviewSource: z.enum(["model_authored_context_scout_output", "model_authored_repair_review"]),
+    reviewSource: z.enum(["model_authored_resource_scout_output", "model_authored_repair_review"]),
     status: z.enum([
       "accepted",
       "accepted_with_limitations",
@@ -177,7 +187,7 @@ export const ContextSufficiencyReviewSchema = z
       "needs_repair",
       "rejected",
     ]),
-    requiresSubstantiveContext: z.literal(true),
+    requiresSubstantiveResource: z.literal(true),
     verifiedRefs: z.array(ContextScoutVerifiedFileRefSchema).max(48).default([]),
     rejectedRefs: z.array(ContextScoutRejectedRefSchema).max(48).default([]),
     rejectedRuntimeOnlyRefs: z.array(ContextScoutRejectedRefSchema).max(48).default([]),
@@ -193,10 +203,10 @@ export const ContextSufficiencyReviewSchema = z
     missingInformation: stringList(12, 700).default([]),
     repairInstructions: stringList(12, 700).default([]),
     // HARDENED: Gate field set by scheduler. True only when at least one
-    // verified ref has acceptedContextSource !== "runtime_supplied" and
+    // verified ref has acceptedResourceSource !== "runtime_supplied" and
     // runtimeSuppliedRefRejected === false.
     hasNonRuntimeContextSource: z.boolean().default(false),
-    // HARDENED: True when all verified refs have acceptedContextSource ===
+    // HARDENED: True when all verified refs have acceptedResourceSource ===
     // "runtime_supplied". Triggers scheduler rejection of implementation
     // graph selection regardless of other flags.
     runtimeOnlyContextDetected: z.boolean().default(false),
@@ -220,36 +230,36 @@ export function assertSufficiencyReviewAcceptance(review: ContextSufficiencyRevi
     return;
   }
 
-  if (!review.requiresSubstantiveContext) {
+  if (!review.requiresSubstantiveResource) {
     throw new Error(
-      `Sufficiency review status ${review.status} requires requiresSubstantiveContext === true`,
+      `Sufficiency review status ${review.status} requires requiresSubstantiveResource === true`,
     );
   }
 
   const hasNonRuntimeSource = review.verifiedRefs.some(
-    (ref) => ref.acceptedContextSource !== "runtime_supplied" && !ref.runtimeSuppliedRefRejected,
+    (ref) => ref.acceptedResourceSource !== "runtime_supplied" && !ref.runtimeSuppliedRefRejected,
   );
   if (!hasNonRuntimeSource) {
     throw new Error(
-      `Sufficiency review status ${review.status} requires at least one verified ref with acceptedContextSource !== "runtime_supplied" and runtimeSuppliedRefRejected === false`,
+      `Sufficiency review status ${review.status} requires at least one verified ref with acceptedResourceSource !== "runtime_supplied" and runtimeSuppliedRefRejected === false`,
     );
   }
 }
 
 // Hardened acceptance check: a sufficiency review cannot be accepted solely
 // from runtime-supplied refs. At least one verified ref must have
-// acceptedContextSource !== "runtime_supplied" and runtimeSuppliedRefRejected === false.
+// acceptedResourceSource !== "runtime_supplied" and runtimeSuppliedRefRejected === false.
 export function contextScoutSufficiencyReviewAccepted(review: ContextSufficiencyReview): boolean {
   const acceptableStatuses = ["accepted", "accepted_with_limitations"];
   if (!acceptableStatuses.includes(review.status)) {
     return false;
   }
-  if (!review.requiresSubstantiveContext) {
+  if (!review.requiresSubstantiveResource) {
     return false;
   }
   const hasNonRuntimeSource = review.verifiedRefs.some(
     (ref) =>
-      ref.acceptedContextSource !== "runtime_supplied" &&
+      ref.acceptedResourceSource !== "runtime_supplied" &&
       !ref.runtimeSuppliedRefRejected &&
       !ref.rejectedDuringSufficiencyReview,
   );
@@ -263,7 +273,7 @@ export function contextScoutSufficiencyAllowsImplementation(
   review: ContextSufficiencyReview,
   input?: { consumerNodeId?: string | null; workUnitId?: string | null },
 ): boolean {
-  if (!review.requiresSubstantiveContext) {
+  if (!review.requiresSubstantiveResource) {
     return false;
   }
   if (!review.sufficientForImplementation) {
@@ -294,7 +304,7 @@ export function contextScoutSufficiencyAllowsImplementation(
     }
   }
   if (
-    review.reviewSource !== "model_authored_context_scout_output" &&
+    review.reviewSource !== "model_authored_resource_scout_output" &&
     review.reviewSource !== "model_authored_repair_review"
   ) {
     return false;
@@ -336,18 +346,18 @@ export function inspectContextScoutModelAuthoredHandoffSubstance(input: {
     nonSummarySubstanceSignalCount,
     missingFieldPaths,
     reasonCodes: hasModelAuthoredHandoffSubstance
-      ? ["context_scout_model_authored_handoff_substance_present"]
+      ? ["resource_scout_model_authored_handoff_substance_present"]
       : [
-          "context_scout_model_authored_handoff_substance_missing",
-          `context_scout_handoff_summary_length:${summaryLength}`,
-          `context_scout_handoff_signal_count:${nonSummarySubstanceSignalCount}`,
+          "resource_scout_model_authored_handoff_substance_missing",
+          `resource_scout_handoff_summary_length:${summaryLength}`,
+          `resource_scout_handoff_signal_count:${nonSummarySubstanceSignalCount}`,
         ],
   };
 }
 
 export const ContextScoutToolLoopRunSchema = z
   .object({
-    artifactKind: z.literal("context_scout_tool_loop"),
+    artifactKind: z.literal("resource_scout_tool_loop"),
     schemaVersion: z.literal("execution-platform.context-scout-tool-loop.v1"),
     loopId: boundedString(180),
     loopRef: boundedString(320),
@@ -356,7 +366,7 @@ export const ContextScoutToolLoopRunSchema = z
     roleId: boundedString(120),
     modelRef: boundedString(260),
     targetCommitmentIds: stringList(24, 160),
-    commitmentWorkPacketRefs: stringList(32, 320),
+    sourceContractRefs: stringList(32, 320),
     requestedContextQuestions: stringList(24, 900),
     downstreamConsumer: boundedString(260),
     sourcePromptHash: z.string().max(90).nullable(),
@@ -366,15 +376,15 @@ export const ContextScoutToolLoopRunSchema = z
     expectedRepoAreaRefs: stringList(60, 260),
     repoAnalysisFindings: z.array(ContextScoutRepoAnalysisFindingSchema).max(120).default([]),
     modelAuthoredFindingCount: z.number().int().nonnegative().default(0),
-    synthesisReadiness: z
+    nodeResourceDemandReadiness: z
       .enum([
-        "ready_for_synthesis",
+        "ready_for_consumer",
         "ready_with_limitations",
-        "needs_repair_before_synthesis",
+        "needs_repair_before_consumer_use",
         "blocked_missing_context",
       ])
       .default("blocked_missing_context"),
-    synthesisBlockers: stringList(24, 700).default([]),
+    nodeResourceDemandBlockers: stringList(24, 700).default([]),
     verifiedFileRefs: z.array(ContextScoutVerifiedFileRefSchema).max(60),
     rejectedRefs: z.array(ContextScoutRejectedRefSchema).max(60),
     runtimeToolInvocationRefs: stringList(80, 320),
@@ -386,8 +396,8 @@ export const ContextScoutToolLoopRunSchema = z
     codeIntelligenceImpactRefs: stringList(80, 320).default([]),
     codeIntelligenceSemanticModes: stringList(8, 80).default([]),
     codeIntelligenceLimitations: stringList(16, 700).default([]),
-    contextHandoffPacketRef: z.string().max(320).nullable(),
-    contextHandoffPacketHash: z.string().max(90).nullable(),
+    resourceHandoffPacketRef: z.string().max(320).nullable(),
+    resourceHandoffPacketHash: z.string().max(90).nullable(),
     sufficiencyReview: ContextSufficiencyReviewSchema,
     reasonCodes: stringList(40, 180),
     rawPromptStored: z.literal(false),
@@ -411,7 +421,7 @@ export function buildContextScoutVerifiedFileRefs(input: {
     const body = {
       fileRef,
       nodeId: input.nodeId,
-      reasonCodes: input.reasonCodes ?? ["context_scout_file_ref_verified"],
+      reasonCodes: input.reasonCodes ?? ["resource_scout_file_ref_verified"],
       boundedSummary: input.boundedSummariesByFileRef?.[fileRef] ?? null,
     };
     return ContextScoutVerifiedFileRefSchema.parse({
@@ -420,12 +430,12 @@ export function buildContextScoutVerifiedFileRefs(input: {
       evidenceHash: sha256(body),
       boundedSummary: bounded(
         input.boundedSummariesByFileRef?.[fileRef] ??
-          `Verified repo file ref for context scout handoff: ${fileRef}`,
+          `Verified repo file ref for resource scout handoff: ${fileRef}`,
         700,
       ),
-      reasonCodes: input.reasonCodes ?? ["context_scout_file_ref_verified"],
-      acceptedContextSource: (input.reasonCodes ?? []).includes(
-        "context_scout_tool_first_verified_context_used",
+      reasonCodes: input.reasonCodes ?? ["resource_scout_file_ref_verified"],
+      acceptedResourceSource: (input.reasonCodes ?? []).includes(
+        "resource_scout_tool_first_verified_context_used",
       )
         ? "runtime_supplied"
         : "model_authored",
@@ -473,7 +483,7 @@ export function buildContextScoutRepoAnalysisFindings(input: {
       fileRef,
       symbolRef: null,
       testRef: null,
-      boundedSummary: `Context scout identified repo file ${fileRef} as relevant for downstream work.`,
+      boundedSummary: `resource scout identified repo file ${fileRef} as relevant for downstream work.`,
       downstreamUse: "Downstream worker should inspect this bounded file ref before editing.",
       sourceToolId: "file.read",
       evidenceRefs: [
@@ -493,7 +503,7 @@ export function buildContextScoutRepoAnalysisFindings(input: {
       fileRef,
       symbolRef,
       testRef: null,
-      boundedSummary: `Context scout identified ${symbolRef} as a likely symbol or file region for downstream inspection.`,
+      boundedSummary: `resource scout identified ${symbolRef} as a likely symbol or file region for downstream inspection.`,
       downstreamUse:
         "Use this symbol or region to focus implementation instead of rereading unrelated files.",
       sourceToolId: "file.inspect_symbols",
@@ -513,7 +523,7 @@ export function buildContextScoutRepoAnalysisFindings(input: {
       fileRef: testRef,
       symbolRef: null,
       testRef,
-      boundedSummary: `Context scout identified ${testRef} as a likely validation or test surface.`,
+      boundedSummary: `resource scout identified ${testRef} as a likely validation or test surface.`,
       downstreamUse: "Validation planning should consider this bounded test ref.",
       sourceToolId: "test.find_related",
       evidenceRefs: [
@@ -619,9 +629,9 @@ export function buildContextScoutRepoAnalysisFindings(input: {
       fileRef: null,
       symbolRef: null,
       testRef: null,
-      boundedSummary: `Code intelligence result available for context scout handoff: ${resultRef}`,
+      boundedSummary: `Code intelligence result available for resource scout handoff: ${resultRef}`,
       downstreamUse:
-        "Downstream context synthesis, implementation, and validation should inspect this bounded code-intelligence ref before editing.",
+        "Node-local node resource demand consumers should inspect this bounded code-intelligence ref before target selection, implementation, or validation.",
       sourceToolId: "code.search_symbols",
       evidenceRefs: [resultRef],
       rawFileContentStored: false,
@@ -640,7 +650,7 @@ export function buildContextScoutRepoAnalysisFindings(input: {
       testRef: null,
       boundedSummary: `Code intelligence identified ${symbolRef} as a bounded symbol candidate.`,
       downstreamUse:
-        "Use this code-intelligence symbol ref to focus context synthesis and implementation handoff.",
+        "Use this code-intelligence symbol ref to focus node-local node resource demand, target selection, and implementation handoff.",
       sourceToolId: "code.get_document_symbols",
       evidenceRefs: input.codeIntelligenceResultRefs?.slice(0, 4) ?? [],
       rawFileContentStored: false,
@@ -731,7 +741,7 @@ export function buildContextScoutToolLoopRun(input: {
   roleId: string;
   modelRef: string;
   targetCommitmentIds: string[];
-  commitmentWorkPacketRefs: string[];
+  sourceContractRefs: string[];
   requestedContextQuestions: string[];
   downstreamConsumer?: string;
   sourcePromptHash?: string | null;
@@ -751,8 +761,8 @@ export function buildContextScoutToolLoopRun(input: {
   codeIntelligenceSemanticModes?: string[];
   codeIntelligenceLimitations?: string[];
   consumerSpecificWaivers?: ContextSufficiencyConsumerWaiver[];
-  contextHandoffPacketRef?: string | null;
-  contextHandoffPacket?: ContextHandoffPacket | null;
+  resourceHandoffPacketRef?: string | null;
+  resourceHandoffPacket?: ResourceHandoffPacket | null;
   modelAuthoredSummary: string;
   limitations?: string[];
   repoAnalysisFindings?: ContextScoutRepoAnalysisFinding[];
@@ -783,8 +793,8 @@ export function buildContextScoutToolLoopRun(input: {
       ),
     ) ||
     verifiedCandidateRefs.length > 0;
-  const hasHandoff = Boolean(input.contextHandoffPacketRef && input.contextHandoffPacket);
-  const handoff = input.contextHandoffPacket;
+  const hasHandoff = Boolean(input.resourceHandoffPacketRef && input.resourceHandoffPacket);
+  const handoff = input.resourceHandoffPacket;
   const substance = inspectContextScoutModelAuthoredHandoffSubstance({
     modelAuthoredSummary: input.modelAuthoredSummary,
     recommendedEditPoints: handoff?.recommendedEditPoints,
@@ -796,7 +806,7 @@ export function buildContextScoutToolLoopRun(input: {
   const hasModelAuthoredHandoffSubstance = substance.hasModelAuthoredHandoffSubstance;
   const usedRuntimeVerifiedFallback =
     (input.limitations ?? []).includes(RUNTIME_VERIFIED_FALLBACK_LIMITATION) ||
-    (input.groundingReasonCodes ?? []).includes("context_scout_tool_first_verified_context_used");
+    (input.groundingReasonCodes ?? []).includes("resource_scout_tool_first_verified_context_used");
   const codeIntelligenceSemanticModes = uniqueStrings(input.codeIntelligenceSemanticModes ?? [], 8);
   const usedStructuralCodeIntelligenceOnly =
     codeIntelligenceSemanticModes.includes("structural") &&
@@ -810,12 +820,12 @@ export function buildContextScoutToolLoopRun(input: {
     coversExpectedRepoArea &&
     hasModelAuthoredHandoffSubstance;
   const hasNonRuntimeContextSource = verifiedFileRefs.some(
-    (ref) => ref.acceptedContextSource !== "runtime_supplied" && !ref.runtimeSuppliedRefRejected,
+    (ref) => ref.acceptedResourceSource !== "runtime_supplied" && !ref.runtimeSuppliedRefRejected,
   );
   const runtimeOnlyContextDetected =
     verifiedFileRefs.length > 0 &&
     verifiedFileRefs.every(
-      (ref) => ref.acceptedContextSource === "runtime_supplied" || ref.runtimeSuppliedRefRejected,
+      (ref) => ref.acceptedResourceSource === "runtime_supplied" || ref.runtimeSuppliedRefRejected,
     );
   const sufficiencyStatus: ContextSufficiencyReview["status"] = structurallyUsable
     ? usedRuntimeVerifiedFallback || usedStructuralCodeIntelligenceOnly
@@ -833,25 +843,25 @@ export function buildContextScoutToolLoopRun(input: {
       finding.findingKind !== "file_summary" ||
       !finding.evidenceRefs.some((ref) => ref.includes("/runtime_verified_context/")),
   ).length;
-  const synthesisReadiness: ContextScoutToolLoopRun["synthesisReadiness"] =
+  const nodeResourceDemandReadiness: ContextScoutToolLoopRun["nodeResourceDemandReadiness"] =
     structurallyUsable && sufficiencyStatus === "accepted"
-      ? "ready_for_synthesis"
+      ? "ready_for_consumer"
       : structurallyUsable && sufficiencyStatus === "accepted_with_limitations"
         ? "ready_with_limitations"
         : verifiedFileRefs.length > 0 || hasHandoff
-          ? "needs_repair_before_synthesis"
+          ? "needs_repair_before_consumer_use"
           : "blocked_missing_context";
   const missingInformation = [
     ...(verifiedFileRefs.length === 0 ? ["No verified repo file refs were produced."] : []),
     ...(!coversExpectedRepoArea
       ? [
-          "Verified repo refs did not cover the expected source repo areas from the CommitmentWorkPackets.",
+          "Verified repo refs did not cover the expected source repo areas from the node source contracts.",
         ]
       : []),
     ...(!hasHandoff ? ["No context handoff packet was produced."] : []),
     ...(!hasModelAuthoredHandoffSubstance
       ? [
-          `Context scout handoff did not include enough model-authored implementation substance beyond runtime-supplied file refs. Missing or weak fields: ${substance.missingFieldPaths.join(", ") || "unknown"}.`,
+          `resource scout handoff did not include enough model-authored implementation substance beyond runtime-supplied file refs. Missing or weak fields: ${substance.missingFieldPaths.join(", ") || "unknown"}.`,
         ]
       : []),
     ...(usedRuntimeVerifiedFallback
@@ -867,20 +877,20 @@ export function buildContextScoutToolLoopRun(input: {
     ...(input.limitations ?? []),
   ].slice(0, 12);
   const sufficiencyReview = ContextSufficiencyReviewSchema.parse({
-    reviewSource: "model_authored_context_scout_output",
+    reviewSource: "model_authored_resource_scout_output",
     status: sufficiencyStatus,
-    requiresSubstantiveContext: true,
+    requiresSubstantiveResource: true,
     reviewerSummary: bounded(
-      input.modelAuthoredSummary || "Context scout did not provide enough summary for handoff.",
+      input.modelAuthoredSummary || "resource scout did not provide enough summary for handoff.",
       1_200,
     ),
     boundedSummary: bounded(
-      input.modelAuthoredSummary || "Context scout did not provide enough summary for handoff.",
+      input.modelAuthoredSummary || "resource scout did not provide enough summary for handoff.",
       1_200,
     ),
     boundedRationale: bounded(
       structurallyUsable
-        ? "Context scout produced verified refs, a bounded handoff packet, and model-authored implementation substance covering the requested packet."
+        ? "resource scout produced verified refs, a bounded handoff packet, and model-authored implementation substance covering the requested packet."
         : missingInformation.join(" "),
       1_500,
     ),
@@ -902,15 +912,15 @@ export function buildContextScoutToolLoopRun(input: {
     verifiedRefs: verifiedFileRefs,
     rejectedRefs: input.rejectedRefs ?? [],
     rejectedRuntimeOnlyRefs: (input.rejectedRefs ?? []).filter((ref) =>
-      ref.reasonCodes.includes("context_scout_runtime_supplied_ref_rejected"),
+      ref.reasonCodes.includes("resource_scout_runtime_supplied_ref_rejected"),
     ),
     substantiveContextVerified: verifiedFileRefs.some(
-      (ref) => ref.acceptedContextSource !== "runtime_supplied" && !ref.runtimeSuppliedRefRejected,
+      (ref) => ref.acceptedResourceSource !== "runtime_supplied" && !ref.runtimeSuppliedRefRejected,
     ),
     hasNonRuntimeContextSource,
     runtimeOnlyContextDetected,
     consumerSpecificWaivers: input.consumerSpecificWaivers ?? [],
-    stopIfMissingRefs: uniqueStrings(structurallyUsable ? [] : input.commitmentWorkPacketRefs, 8),
+    stopIfMissingRefs: uniqueStrings(structurallyUsable ? [] : input.sourceContractRefs, 8),
     rawFileContentStored: false,
     rawPromptStored: false,
     rawResponseStored: false,
@@ -918,12 +928,12 @@ export function buildContextScoutToolLoopRun(input: {
     rawToolLogStored: false,
   });
   const base = {
-    artifactKind: "context_scout_tool_loop" as const,
+    artifactKind: "resource_scout_tool_loop" as const,
     schemaVersion: "execution-platform.context-scout-tool-loop.v1" as const,
     loopId: `${input.nodeId}:${sha256({
-      commitmentWorkPacketRefs: input.commitmentWorkPacketRefs,
+      sourceContractRefs: input.sourceContractRefs,
       verifiedFileRefs: verifiedFileRefs.map((ref) => ref.fileRef),
-      contextHandoffPacketRef: input.contextHandoffPacketRef ?? null,
+      resourceHandoffPacketRef: input.resourceHandoffPacketRef ?? null,
     }).slice(0, 12)}`,
     loopRef: "pending",
     graphId: bounded(input.graphId, 180),
@@ -931,7 +941,7 @@ export function buildContextScoutToolLoopRun(input: {
     roleId: bounded(input.roleId, 120),
     modelRef: bounded(input.modelRef, 260),
     targetCommitmentIds: uniqueStrings(input.targetCommitmentIds, 24),
-    commitmentWorkPacketRefs: uniqueStrings(input.commitmentWorkPacketRefs, 32),
+    sourceContractRefs: uniqueStrings(input.sourceContractRefs, 32),
     requestedContextQuestions: uniqueStrings(input.requestedContextQuestions, 24),
     downstreamConsumer: bounded(input.downstreamConsumer ?? "implementation_and_validation", 260),
     sourcePromptHash: input.sourcePromptHash ?? null,
@@ -941,8 +951,8 @@ export function buildContextScoutToolLoopRun(input: {
     expectedRepoAreaRefs,
     repoAnalysisFindings,
     modelAuthoredFindingCount,
-    synthesisReadiness,
-    synthesisBlockers: structurallyUsable ? [] : missingInformation,
+    nodeResourceDemandReadiness,
+    nodeResourceDemandBlockers: structurallyUsable ? [] : missingInformation,
     verifiedFileRefs,
     rejectedRefs: input.rejectedRefs ?? [],
     runtimeToolInvocationRefs: uniqueStrings(input.runtimeToolInvocationRefs ?? [], 80),
@@ -957,29 +967,29 @@ export function buildContextScoutToolLoopRun(input: {
     codeIntelligenceImpactRefs: uniqueStrings(input.codeIntelligenceImpactRefs ?? [], 80),
     codeIntelligenceSemanticModes,
     codeIntelligenceLimitations: uniqueStrings(input.codeIntelligenceLimitations ?? [], 16),
-    contextHandoffPacketRef: input.contextHandoffPacketRef ?? null,
-    contextHandoffPacketHash: input.contextHandoffPacket
-      ? sha256(input.contextHandoffPacket)
+    resourceHandoffPacketRef: input.resourceHandoffPacketRef ?? null,
+    resourceHandoffPacketHash: input.resourceHandoffPacket
+      ? sha256(input.resourceHandoffPacket)
       : null,
     sufficiencyReview,
     reasonCodes: uniqueStrings(
       [
         sufficiencyStatus === "accepted"
-          ? "context_scout_tool_loop_accepted"
+          ? "resource_scout_tool_loop_accepted"
           : sufficiencyStatus === "accepted_with_limitations"
-            ? "context_scout_tool_loop_accepted_with_limitations"
+            ? "resource_scout_tool_loop_accepted_with_limitations"
             : sufficiencyStatus === "needs_review_nonblocking"
-              ? "context_scout_tool_loop_needs_review_nonblocking"
-              : "context_scout_tool_loop_needs_repair",
+              ? "resource_scout_tool_loop_needs_review_nonblocking"
+              : "resource_scout_tool_loop_needs_repair",
         ...(hasModelAuthoredHandoffSubstance
-          ? ["context_scout_model_authored_handoff_substance_present"]
+          ? ["resource_scout_model_authored_handoff_substance_present"]
           : [
-              "context_scout_model_authored_handoff_substance_missing",
+              "resource_scout_model_authored_handoff_substance_missing",
               ...substance.reasonCodes.slice(1, 4),
             ]),
-        ...(usedRuntimeVerifiedFallback ? ["context_scout_runtime_verified_fallback_used"] : []),
+        ...(usedRuntimeVerifiedFallback ? ["resource_scout_runtime_verified_fallback_used"] : []),
         ...(usedStructuralCodeIntelligenceOnly
-          ? ["context_scout_structural_code_intelligence_limitation_used"]
+          ? ["resource_scout_structural_code_intelligence_limitation_used"]
           : []),
         ...(input.groundingReasonCodes ?? []),
       ],
@@ -1002,14 +1012,14 @@ export function validateContextScoutToolLoopForImplementation(
   input?: { consumerNodeId?: string | null; workUnitId?: string | null },
 ): { valid: boolean; reasonCodes: string[] } {
   if (!run) {
-    return { valid: false, reasonCodes: ["context_scout_tool_loop_missing"] };
+    return { valid: false, reasonCodes: ["resource_scout_tool_loop_missing"] };
   }
   const reasonCodes: string[] = [];
   if (!contextScoutSufficiencyAllowsImplementation(run.sufficiencyReview, input)) {
-    reasonCodes.push("context_scout_sufficiency_not_accepted");
+    reasonCodes.push("resource_scout_sufficiency_not_accepted");
   }
   if (run.sufficiencyReview.status === "accepted_with_limitations") {
-    reasonCodes.push("context_scout_accepted_with_limitations");
+    reasonCodes.push("resource_scout_accepted_with_limitations");
     const consumerNodeId = input?.consumerNodeId ?? null;
     const workUnitId = input?.workUnitId ?? null;
     const hasConsumerWaiver = run.sufficiencyReview.consumerSpecificWaivers.some((waiver) => {
@@ -1020,29 +1030,29 @@ export function validateContextScoutToolLoopForImplementation(
       return consumerMatches && workUnitMatches && waiver.evidenceRefs.length > 0;
     });
     if (!hasConsumerWaiver) {
-      reasonCodes.push("context_scout_accepted_with_limitations_consumer_waiver_missing");
+      reasonCodes.push("resource_scout_accepted_with_limitations_consumer_waiver_missing");
     }
   }
   if (run.sufficiencyReview.runtimeOnlyContextDetected) {
-    reasonCodes.push("context_scout_runtime_only_context_detected");
+    reasonCodes.push("resource_scout_runtime_only_context_detected");
   }
   if (!run.sufficiencyReview.hasNonRuntimeContextSource) {
-    reasonCodes.push("context_scout_non_runtime_context_source_missing");
+    reasonCodes.push("resource_scout_non_runtime_context_source_missing");
   }
   if (run.sufficiencyReview.status === "needs_review_nonblocking") {
-    reasonCodes.push("context_scout_needs_review_nonblocking");
+    reasonCodes.push("resource_scout_needs_review_nonblocking");
   }
   if (!run.sufficiencyReview.sufficientForImplementation) {
-    reasonCodes.push("context_scout_not_sufficient_for_implementation");
+    reasonCodes.push("resource_scout_not_sufficient_for_implementation");
   }
   if (run.verifiedFileRefs.length === 0) {
-    reasonCodes.push("context_scout_verified_file_refs_missing");
+    reasonCodes.push("resource_scout_verified_file_refs_missing");
   }
-  if (!run.contextHandoffPacketRef) {
-    reasonCodes.push("context_scout_handoff_packet_missing");
+  if (!run.resourceHandoffPacketRef) {
+    reasonCodes.push("resource_scout_handoff_packet_missing");
   }
   const blockingReasonCodes = reasonCodes.filter(
-    (reasonCode) => reasonCode !== "context_scout_accepted_with_limitations",
+    (reasonCode) => reasonCode !== "resource_scout_accepted_with_limitations",
   );
   return { valid: blockingReasonCodes.length === 0, reasonCodes };
 }
@@ -1056,7 +1066,7 @@ export function summarizeContextScoutToolLoopRun(run: ContextScoutToolLoopRun): 
     roleId: run.roleId,
     modelRef: run.modelRef,
     targetCommitmentIds: run.targetCommitmentIds,
-    commitmentWorkPacketRefs: run.commitmentWorkPacketRefs,
+    sourceContractRefs: run.sourceContractRefs,
     verifiedFileRefs: run.verifiedFileRefs.map((ref) => ref.fileRef),
     rejectedRefs: run.rejectedRefs.map((ref) => ref.ref),
     runtimeToolInvocationRefs: run.runtimeToolInvocationRefs,
@@ -1070,8 +1080,8 @@ export function summarizeContextScoutToolLoopRun(run: ContextScoutToolLoopRun): 
     codeIntelligenceLimitations: run.codeIntelligenceLimitations,
     repoAnalysisFindingCount: run.repoAnalysisFindings.length,
     modelAuthoredFindingCount: run.modelAuthoredFindingCount,
-    synthesisReadiness: run.synthesisReadiness,
-    synthesisBlockers: run.synthesisBlockers,
+    nodeResourceDemandReadiness: run.nodeResourceDemandReadiness,
+    nodeResourceDemandBlockers: run.nodeResourceDemandBlockers,
     repoAnalysisFindings: run.repoAnalysisFindings
       .map((finding) => ({
         findingId: finding.findingId,
@@ -1090,7 +1100,7 @@ export function summarizeContextScoutToolLoopRun(run: ContextScoutToolLoopRun): 
         rawToolLogStored: false,
       }))
       .slice(0, 40),
-    contextHandoffPacketRef: run.contextHandoffPacketRef,
+    resourceHandoffPacketRef: run.resourceHandoffPacketRef,
     sufficiencyStatus: run.sufficiencyReview.status,
     hasNonRuntimeContextSource: run.sufficiencyReview.hasNonRuntimeContextSource,
     runtimeOnlyContextDetected: run.sufficiencyReview.runtimeOnlyContextDetected,

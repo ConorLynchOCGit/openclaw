@@ -225,7 +225,7 @@ Implementation status as of 2026-05-19:
   through the Runtime Tool Kernel before model handoff generation:
   `code.search_symbols`, `code.get_document_symbols`, `code.get_diagnostics`,
   `code.find_related_tests`, and `code.find_impact_radius`.
-- `ContextHandoffPacket` and `ContextScoutToolLoopRun` now carry bounded
+- `ResourceHandoffPacket` and `ContextScoutToolLoopRun` now carry bounded
   code-intelligence result refs, runtime tool invocation refs, symbol refs,
   diagnostic refs, related-test refs, impact refs, semantic modes, and
   semantic limitations.
@@ -734,7 +734,14 @@ Owner-facing readback now preserves compound execution state through
 Focused validation:
 
 - `pnpm test:file extensions/execution-platform/src/codex-bridge/non-codex-tool-using-worker-loop.test.ts extensions/execution-platform/src/codex-bridge/model-agnostic-tool-worker-loop.test.ts extensions/execution-platform/src/workflows/scheduler-runtime-tools.test.ts extensions/execution-platform/src/workflows/agent-team-coding-plugin.test.ts extensions/execution-platform/src/workflows/runtime-node-capability-registry.test.ts extensions/execution-platform/src/work-queue/execution-read-model.test.ts`
-- `node --import tsx scripts/execution-platform-run-non-codex-compound-tool-model-lane-proof.mjs`
+- Historical only, retired 2026-05-28:
+  `scripts/execution-platform-run-non-codex-compound-tool-model-lane-proof.mjs`
+  was deleted because it invoked the worker loop without a canonical
+  `NodeExecutionPacket` and carried a retired `context-synthesis://` fixture.
+  The later node-lifecycle ownership consolidation deleted the standalone
+  worker-readiness real-model proof script because it bypassed
+  `NodeLifecycleTransitionRunner`; current closure evidence must use the
+  runner-owned lifecycle walk and production replay paths.
 
 Model lane evidence:
 

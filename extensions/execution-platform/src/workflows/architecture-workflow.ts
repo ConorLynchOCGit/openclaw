@@ -72,6 +72,14 @@ export const architectureWorkflowContract: ExecutionWorkflowContract = {
       requestPolicyRef: "coding-followup-handoff.v1",
     },
   ],
+  permissionModel: {
+    permissionModelId: "permission-model://agent_team.architecture/read-only-planning.v1",
+    summary:
+      "Architecture workflow can create bounded planning, review, research-handoff, and closeout artifacts; it cannot edit code, deploy, send outbound messages, promote models, or mutate Work Queue lifecycle.",
+    allowedLocalActionKinds: ["plan", "review", "repo_read", "closeout"],
+    approvalRequiredActionKinds: ["create_runtime_jobs"],
+    blockedActionKinds: ["code_edit", "deploy", "outbound_send", "model_promotion", "authority_grant"],
+  },
   closeoutRequirement: {
     required: true,
     closeoutKind: "runtime_artifact",

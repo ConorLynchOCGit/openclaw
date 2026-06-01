@@ -177,7 +177,10 @@ export class ExecutionPlatformObservabilityService {
   private async runtimeJobDiagnosticBase(jobId: string): Promise<RuntimeJobDiagnosticBase> {
     const job = await this.options.runtimeJobs.getJob(jobId);
     const events = await this.options.runtimeJobs.listEvents(jobId, this.limits.eventLimit);
-    const artifacts = await this.options.runtimeJobs.listArtifacts(jobId);
+    const artifacts = await this.options.runtimeJobs.listArtifacts(jobId, {
+      limit: this.limits.artifactLimit,
+      order: "desc",
+    });
     return {
       state: this.diagnosticStateFromJob(job),
       job: job

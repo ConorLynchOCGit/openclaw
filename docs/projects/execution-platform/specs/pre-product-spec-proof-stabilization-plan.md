@@ -195,54 +195,38 @@ Implementation contract:
   closes or marks the Work Queue item `needs_review` from the verdict and
   annotates the Product/Spec proof item when it is safe to proceed.
 
-### 6. Staged Mission Ledger Obligation Candidate Compiler
+### 6. IntakeStageRunner ObligationGraph Scheduler Intake
 
 Spec:
-`docs/projects/execution-platform/specs/staged-mission-ledger-obligation-candidate-compiler.md`
+`docs/projects/execution-platform/specs/obligation-graph-scheduler-intake.md`
 
-This is the repair item for the diagnostic failure above.
+The staged Mission Ledger candidate/review/canonical-commitment experiment is
+retired and deleted. The repair item for the current intake boundary is a
+single pre-scheduler owner:
 
-The Mission Ledger must stop being a single model-authored commitment universe
-that can vary materially across identical runs. The new architecture is a
-staged model/runtime compiler:
-
-1. model extracts objective and constraints from the full prompt;
-2. model extracts obligation candidates with source prompt anchors;
-3. runtime compiles a candidate set and stable candidate refs from structural
-   anchors;
-4. model reviews the candidate set and authors merge/split/discard/add
-   rationale;
-5. runtime compiles canonical commitments and ids from anchors plus model
-   review operations;
-6. model/runtime gates accept the Mission Ledger;
-7. packet authoring consumes canonical commitments only.
-
-The boundary rule is strict:
-
-- model decides meaning, sufficiency, blocking status, and merge/split
-  rationale;
-- runtime owns source anchors, ids, refs, schema, bounds, storage, lifecycle,
-  and proof gates.
+1. `IntakeStageRunner` creates or reuses the Mission Ledger;
+2. `IntakeStageRunner` authors the typed ObligationGraph with small verbs;
+3. malformed/direct graph output gets one canonical small-verb repair turn;
+4. accepted ObligationGraph becomes the scheduler-facing intake contract;
+5. scheduler creates WorkIntents only from runnable obligations;
+6. NodeLifecycleTransitionRunner owns all post-WorkIntent node lifecycle.
 
 Runtime must not introduce keyword/regex/semantic taxonomy logic to decide
-commitments. Stable ids are mechanical identifiers derived from prompt hash,
-source anchors, and model review operations, not runtime semantic judgments.
+obligations. The model decides obligation kind and intent through the
+ObligationGraph tool family; runtime validates structure, bounds, ids, storage,
+and replay gates only.
 
 Success gate:
 
-- the same Product/Spec prompt can be run twice to the packet boundary with
-  the same canonical blocking commitment count and stable source-anchor-backed
-  commitment ids;
-- packet count equals canonical commitment count;
-- Qwen/fast-model packet authoring does not require GPT-5.5 rescue in a clean
-  proof;
-- provider no-content attempts are bounded and classified beyond the legacy
-  `openrouter_no_content` label, including model/provider/profile,
-  reasoning/response mode, input bytes, output budget, timeout state, native
-  finish reason, choice count, content lengths, parsed length, retry number,
-  concurrency slot, and bounded input bundle ref/hash;
-- repeated no-content on the same packet input triggers a failed-packet replay
-  lane before Product/Spec resumes;
+- Mission Ledger creation and ObligationGraph authoring live only in
+  `IntakeStageRunner`;
+- no staged Mission Ledger imports, env flags, artifact contracts, or queue
+  seed items remain in production source;
+- direct graph JSON is not accepted as a second dialect;
+- Qwen/fast-model no-content attempts are bounded and classified through
+  `fast-model-no-content-diagnostic.ts`;
+- replay can resume from accepted Mission Ledger and reauthor ObligationGraph
+  without resurrecting packet fanout;
 - Work Queue/readback exposes candidate count, review operations, canonical
   commitments, packet counts, retry/rescue counts, and proof cleanliness;
 - no raw prompts/provider logs/tool logs/command logs/DB rows are stored.

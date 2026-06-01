@@ -4,6 +4,10 @@ import type { JsonValue } from "../runtime-job-repository.ts";
 import type { WorkQueueActionKind, WorkQueueChildActionInput } from "../work-queue/action-graph.ts";
 import type { RuntimeWorkGraphRepository } from "../workflows/runtime-work-graph-repository.ts";
 import { graphRef } from "../workflows/runtime-work-graph.ts";
+import type {
+  SchedulerModelCallEnvelope,
+  SchedulerModelCallEnvelopeBase,
+} from "../workflows/scheduler-model-call-envelope.ts";
 import {
   normalizeOrchestratorDelegationReview,
   validateOrchestratorDelegationReviewShape,
@@ -36,6 +40,7 @@ export type DynamicCodingTeamModelCallProgressEvent = {
     topLevelKeys: string[];
   } | null;
   modelProviderDiagnostics?: JsonValue | null;
+  schedulerModelCallEnvelope?: SchedulerModelCallEnvelope | null;
   elapsedMs: number;
   timeoutMs: number;
   heartbeatCount: number;
@@ -60,6 +65,7 @@ export type DynamicCodingTeamModelClient = {
       spanId?: string;
       objectiveSummary?: string | null;
       reasonCodes?: string[];
+      schedulerEnvelope?: SchedulerModelCallEnvelopeBase | null;
       onEvent?: (event: DynamicCodingTeamModelCallProgressEvent) => void | Promise<void>;
     };
   }): Promise<{
@@ -96,7 +102,7 @@ export type DynamicCodingTeamOrchestratorPlan = {
   humanTasks: Array<{ title: string; requiredResponseShape: JsonValue; reasonCodes: string[] }>;
   dependencyGraph: Array<{ fromActionId: string; toActionId: string; edgeKind: string }>;
   validationPlan: string[];
-  contextNeeds: string[];
+  resourceNeeds: string[];
   budgetPlan: {
     maxWallTimeMs: number;
     maxModelCalls: number;
@@ -156,7 +162,7 @@ function systemPrompt(): string {
     "You are the OpenClaw dynamic coding-team orchestrator.",
     "Draft a bounded action graph for the requested coding-team work.",
     "Return strict JSON only. Do not include raw prompts, raw responses, logs, transcripts, secrets, or hidden reasoning.",
-    "You must propose concrete child tasks, role pairings, human tasks when needed, dependencies, validation plan, context needs, budget plan, and stop conditions.",
+    "You must propose concrete child tasks, role pairings, human tasks when needed, dependencies, validation plan, resource needs, budget plan, and stop conditions.",
     "Each child task metadata must include objective, rationaleForCallingThisRole, expectedOutput, acceptanceCriteria, targetRefs when known, and downstreamConsumer.",
     "Do not return generic tasks such as implement bounded change, validate implementation, or owner decision checkpoint.",
     "Do not grant authority, deploy, send outbound messages, promote models, mutate Work Queue lifecycle, or claim runtime success.",
@@ -294,7 +300,7 @@ function normalizePlan(parsed: Record<string, unknown>, input: DynamicCodingTeam
     validationPlan: stringArray(parsed.validationPlan)
       .concat(input.validationCommandRefs)
       .slice(0, 12),
-    contextNeeds: stringArray(parsed.contextNeeds).slice(0, 12),
+    resourceNeeds: stringArray(parsed.resourceNeeds).slice(0, 12),
     budgetPlan: {
       maxWallTimeMs: numberValue(budget.maxWallTimeMs, 30 * 60 * 1000),
       maxModelCalls: numberValue(budget.maxModelCalls, 12),
@@ -600,7 +606,7 @@ export class DynamicCodingTeamOrchestrator {
             specificEnoughForNextStep: "boolean",
             missingInformation: ["bounded string"],
             nextAction:
-              "handoff_to_implementation | rerun_same_role | call_context_scout | call_test_engineer | escalate | human_decision | needs_review",
+              "handoff_to_implementation | rerun_same_role | call_resource_scout | call_test_engineer | escalate | human_decision | needs_review",
             reasoningSummary: "bounded string",
           },
           nextNodePlan: {

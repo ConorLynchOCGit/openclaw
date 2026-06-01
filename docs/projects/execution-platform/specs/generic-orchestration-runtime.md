@@ -104,6 +104,18 @@ and keep the failure inside scheduler/readiness evidence instead of surfacing
 `worker_adapter_threw:unclassified`. The governing spec is
 `split-required-resource-materialization-transition.md`.
 
+Status update on 2026-05-28:
+the next generic-runtime closure item is
+`node-lifecycle-transition-runner.md`. The generic runtime already wraps the
+scheduler, but lifecycle remains too scheduler-local: context focus, demand,
+specialist narrowing, target selection, write-gate hydration, validation, and
+evidence can still fall through to global graph repair. The
+`NodeLifecycleTransitionRunner` makes local lifecycle transitions
+workflow-agnostic and authoritative. Coding is the proof domain, but the
+abstraction is general: capability transition profiles declare legal
+transitions and `domainResourceKinds`; models author semantic selections; the
+runtime validates refs, authority, budgets, manifests, and lifecycle.
+
 ## Purpose
 
 OpenClaw needs one canonical orchestration runtime for complex workflow
@@ -189,7 +201,7 @@ It owns:
 - loop guards and terminalization.
 
 For complex implementation workflows, the generic runtime uses a
-scheduler-first context-supply policy: Commitment Work Packets feed draft
+scheduler-first resource-fulfillment policy: Commitment Work Packets feed draft
 work-intent graph creation; context scouts then run per draft work node in
 parallel; implementation readiness promotes only nodes with resolved context
 to executable selection. Mandatory commitment-scoped scout fanout and global
@@ -218,6 +230,13 @@ It must not hard-code coding-team, Product/Spec Planning, design, marketing,
 research, QA, memory, or docs semantics. Those semantics belong in workflow
 definitions, plugins, capability manifests, node executors, and evidence
 profiles.
+
+The generic runtime must also not hard-code lifecycle semantics in the global
+scheduler. After this update, graph repair is only legal when the
+`NodeLifecycleTransitionRunner` reports no pending local transition. A
+workflow-specific or domain-specific transition is added through capability
+transition profiles and small-verb handlers, not by adding another global
+scheduler prompt branch.
 
 ### WorkflowDefinition
 

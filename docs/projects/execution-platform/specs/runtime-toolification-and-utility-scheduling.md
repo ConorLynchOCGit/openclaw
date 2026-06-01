@@ -597,7 +597,7 @@ The Product/Spec Planning proof is blocked until runtime evidence shows:
 
 The scheduler no longer relies on a lossy task summary as the only child
 worker input. Mission Ledger commitments compile into `CommitmentWorkPacket`
-records, context scout output can be passed as `ContextHandoffPacket`, and
+records, context scout output can be passed as `ResourceHandoffPacket`, and
 non-Codex file-edit workers receive `ImplementationTaskPacket v3`.
 
 This is the runtime boundary for future Kimi and model-agnostic worker
@@ -659,7 +659,7 @@ Contracts:
 - `SourcePromptExcerptDecision` stores request id, section ref, excerpt ref,
   excerpt hash, excerpt length, bounded summary, reason codes, and
   raw-storage flags.
-- `ContextHandoffPacket` is the implementation-facing output from context
+- `ResourceHandoffPacket` is the implementation-facing output from context
   scout. It carries verified file refs, recommended edit points, patterns,
   risks, validation suggestions, limitations, and a bounded implementation
   handoff summary.
@@ -676,7 +676,7 @@ Execution rules:
   turn with the excerpts as volatile input.
 - implementation nodes that require upstream context handoff must not proceed
   without an accepted `ContextScoutToolLoopRun`. A standalone
-  `ContextHandoffPacket` is not enough.
+  `ResourceHandoffPacket` is not enough.
 - Work Queue readback must surface source-prompt status, excerpt decisions,
   context scout tool-loop refs, runtime tool refs, verified/rejected file
   refs, context handoff refs, sufficiency summary, and blockers.

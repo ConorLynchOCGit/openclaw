@@ -1,5 +1,7 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
+import { createHash } from "node:crypto";
 import type { FrontDoorSourcePromptRef } from "../intent-front-door/request-compiler.ts";
+import { GatewaySubmitDiagnosticsCollector } from "../intent-routing/gateway-submit-diagnostics.ts";
 import {
   NativeExecutionRpcService,
   type NativeExecutionRpcAuth,
@@ -221,6 +223,10 @@ function writeJson(res: ServerResponse, statusCode: number, payload: JsonValue):
   res.end(JSON.stringify(payload));
 }
 
+function sha256(value: string): string {
+  return createHash("sha256").update(value, "utf8").digest("hex");
+}
+
 function unsafeBody(value: unknown): boolean {
   return /raw-transcript-marker|raw-prompt-marker|secret-marker|\bsk-[a-z0-9_-]{12,}/iu.test(
     JSON.stringify(value),
@@ -236,8 +242,9 @@ export async function handleExecutionPlatformQueueRunnerHostRoute(
     writeJson(res, 405, { error: "method_not_allowed" });
     return true;
   }
+  let body: JsonRecord = {};
   try {
-    const body = await readJsonBody(req);
+    body = await readJsonBody(req);
     if (unsafeBody(body)) {
       writeJson(res, 400, { error: "unsafe_request_content" });
       return true;
@@ -357,8 +364,9 @@ export async function handleExecutionPlatformWorkQueueControlHostRoute(
     writeJson(res, 405, { error: "method_not_allowed" });
     return true;
   }
+  let body: JsonRecord = {};
   try {
-    const body = await readJsonBody(req);
+    body = await readJsonBody(req);
     if (unsafeBody(body)) {
       writeJson(res, 400, { error: "unsafe_request_content" });
       return true;
@@ -404,8 +412,9 @@ export async function handleExecutionPlatformNativeExecutionHostRoute(
     writeJson(res, 405, { error: "method_not_allowed" });
     return true;
   }
+  let body: JsonRecord = {};
   try {
-    const body = await readJsonBody(req);
+    body = await readJsonBody(req);
     if (unsafeBody(body)) {
       writeJson(res, 400, { error: "unsafe_request_content" });
       return true;
@@ -458,6 +467,56 @@ export async function handleExecutionPlatformNativeExecutionHostRoute(
     writeJson(res, accepted ? 200 : 400, result as JsonValue);
     return true;
   } catch (error) {
+    if (operation === "submit") {
+      const prompt = readPromptText(body.prompt) ?? "";
+      const promptHash = sha256(prompt);
+      const promptSummary = prompt.replace(/\s+/gu, " ").trim().slice(0, 600);
+      const diagnostics = new GatewaySubmitDiagnosticsCollector({
+        submitId: `native-submit-host-error-${promptHash.slice(0, 16)}`,
+        promptHash,
+        promptLength: prompt.length,
+        promptByteLength: Buffer.byteLength(prompt, "utf8"),
+        promptSummary,
+      });
+      await diagnostics.record("host_route_submit_error", {
+        errorName: error instanceof Error ? error.name : "unknown_error",
+        errorSummary: error instanceof Error ? error.message : String(error),
+        reasonCodes: ["host_route_submit_error"],
+      });
+      const bundle = await diagnostics.finalize({
+        status: "failed",
+        reasonCodes: ["host_route_submit_error"],
+      });
+      writeJson(res, 400, {
+        artifactKind: "native_execution_submit_result",
+        accepted: false,
+        status: "rejected",
+        statusCode: 400,
+        runtimeJobId: null,
+        routeDecision: null,
+        validation: null,
+        compiledRequest: null,
+        frontDoorRouterResult: null,
+        frontDoorEscalation: null,
+        frontDoorValidation: null,
+        frontDoorClarification: null,
+        frontDoorCompiledRequest: null,
+        frontDoorMultiIntentPlan: null,
+        frontDoorMemoryPolicy: null,
+        frontDoorSubmitDiagnostics: bundle.body.phases,
+        frontDoorSubmitDiagnosticsManifest: bundle.manifest,
+        frontDoorSubmitDiagnosticsArtifactRef: bundle.manifest.manifestArtifactRef,
+        workflowId: null,
+        jobType: null,
+        workerContractState: null,
+        workerAdapterId: null,
+        reasonCodes: ["host_route_submit_error"],
+        rawPromptStored: false,
+        rawResponseStored: false,
+        workQueueLifecycleMutated: false,
+      });
+      return true;
+    }
     writeJson(res, 400, {
       error: error instanceof Error ? error.message : String(error),
     });

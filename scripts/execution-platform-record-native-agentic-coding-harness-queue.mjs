@@ -98,7 +98,7 @@ const preProductSpecItems = [
       "repo_search_tool_loop",
       "file_read_symbol_inspection",
       "related_test_discovery",
-      "context_handoff_artifact",
+      "resource_handoff_artifact",
       "runtime_refs_only_limited_acceptance",
       "parallel_scout_fanout",
     ],

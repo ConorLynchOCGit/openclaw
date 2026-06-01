@@ -2,7 +2,7 @@ import type { JsonValue } from "../runtime-job-repository.ts";
 import type { RequestedModelCandidate } from "./model-candidate-validation-plan.ts";
 
 export type AgentTeamRoleTargetId =
-  | "context_scout"
+  | "resource_scout"
   | "test_engineer"
   | "security_privacy_reviewer_assist"
   | "reviewer_assist"
@@ -131,7 +131,7 @@ export type WorkQueueModelReadinessSummary = {
 
 export const V4_PRO_AGENT_TEAM_ROLE_TARGETS: AgentTeamRoleTarget[] = [
   {
-    roleTargetId: "context_scout",
+    roleTargetId: "resource_scout",
     label: "Context Scout",
     modelMayAcceptWork: false,
     implementationAuthorityGranted: false,
@@ -205,7 +205,7 @@ export const V4_PRO_AGENT_TEAM_ROLE_TARGETS: AgentTeamRoleTarget[] = [
 export const AGENT_TEAM_ROLE_EVAL_FIXTURES: AgentTeamRoleEvalFixture[] = [
   {
     fixtureId: "codebase_research_summary",
-    roleTargets: ["context_scout", "implementation_engineer_shadow"],
+    roleTargets: ["resource_scout", "implementation_engineer_shadow"],
     purpose: "Evaluate whether the model can summarize relevant repo context before editing.",
     boundedPromptSummary:
       "Given bounded file names and snippets, identify relevant files, patterns, constraints, risks, implementation path, and unknowns without claiming edits are done.",
@@ -305,7 +305,7 @@ export const AGENT_TEAM_ROLE_EVAL_FIXTURES: AgentTeamRoleEvalFixture[] = [
   },
   {
     fixtureId: "scope_control_handoff_hygiene",
-    roleTargets: ["context_scout", "observability_scribe", "reviewer_assist"],
+    roleTargets: ["resource_scout", "observability_scribe", "reviewer_assist"],
     purpose: "Evaluate bounded handoff hygiene and evidence storage limits.",
     boundedPromptSummary:
       "Assess a handoff package for raw transcript/prompt/log leakage, scope drift, Work Queue lifecycle mutation, and unbounded evidence.",

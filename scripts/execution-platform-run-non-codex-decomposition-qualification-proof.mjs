@@ -281,7 +281,7 @@ async function main() {
               "Context scouting is read-only and cheaper than invoking Codex for broad inspection.",
             costRationale: "DeepSeek v4 Flash is qualified for repo context scouting.",
             whyThisIsNotDuplicateWork: "No context scout has run for this graph.",
-            expectedEvidence: ["context_handoff"],
+            expectedEvidence: ["resource_handoff"],
             selectedModelQualificationProfileId: "openrouter.deepseek.deepseek-v4-flash",
             qualificationEvidenceRefs: [
               ".artifacts/execution-platform/model-agnostic-worker-qualification-matrix.json",
@@ -380,7 +380,7 @@ async function main() {
           fromNodeId: `${runId}-context`,
           toNodeId: `${runId}-implementation`,
           edgeKind: "handoff",
-          reasonCodes: ["context_handoff_to_implementation"],
+          reasonCodes: ["resource_handoff_to_implementation"],
         },
         {
           edgeId: `${runId}-implementation-to-validation`,

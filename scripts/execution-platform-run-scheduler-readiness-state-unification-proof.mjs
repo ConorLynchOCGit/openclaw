@@ -42,7 +42,7 @@ function packet(input = {}) {
     allowedFileRefs: [snapshot.fileRef],
     allowedEditScope: [snapshot.fileRef],
     mustReadRefs: [snapshot.fileRef],
-    contextPacketRefs: ["context-handoff://proof-node"],
+    contextPacketRefs: ["resource-handoff://proof-node"],
     sourcePromptExcerptRefs: ["source-prompt://proof"],
     validationCommandRefs: input.withoutValidation
       ? []

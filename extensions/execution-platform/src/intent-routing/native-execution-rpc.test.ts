@@ -9,7 +9,10 @@ import {
   type StructuredModelIntentRouterProvider,
 } from "../intent-front-door/index.ts";
 import { listKnownProtocolSlashCommands } from "../intent-front-door/protocol-pre-gate.ts";
-import { RuntimeJobRepository } from "../runtime-job-repository.ts";
+import {
+  RUNTIME_JOB_ARTIFACT_PAYLOAD_STORAGE_KIND,
+  RuntimeJobRepository,
+} from "../runtime-job-repository.ts";
 import { WorkQueueRepository } from "../work-queue/work-queue-repository.ts";
 import { buildDefaultWorkflowWorkerAdapterRegistry } from "../workers/index.ts";
 import { NativeExecutionRpcService } from "./native-execution-rpc.ts";
@@ -71,6 +74,14 @@ describe("native execution rpc", () => {
           "protocol_command_compact",
         ]),
       );
+      expect(compact.frontDoorSubmitDiagnosticsManifest?.status).toBe("rejected");
+      expect(compact.frontDoorSubmitDiagnosticsManifest?.promptByteLength).toBe(
+        Buffer.byteLength("/compact now", "utf8"),
+      );
+      expect(compact.frontDoorSubmitDiagnosticsManifest?.rawPromptStored).toBe(false);
+      expect(compact.frontDoorSubmitDiagnostics?.map((phase) => phase.phase)).toEqual(
+        expect.arrayContaining(["submit_started", "protocol_pregate_completed"]),
+      );
       expect(compact.frontDoorMemoryPolicy?.decision).toBe("no_memory");
       expect(compact.frontDoorMemoryPolicy?.reasonCodes).toContain(
         "protocol_pregate_bypasses_memory_retrieval",
@@ -97,6 +108,10 @@ describe("native execution rpc", () => {
       expect(unauthenticated.accepted).toBe(false);
       expect(unauthenticated.statusCode).toBe(401);
       expect(unauthenticated.reasonCodes).toContain("authenticated_operator_required");
+      expect(unauthenticated.frontDoorSubmitDiagnosticsManifest?.status).toBe("rejected");
+      expect(unauthenticated.frontDoorSubmitDiagnosticsManifest?.reasonCodes).toEqual(
+        expect.arrayContaining(["authenticated_operator_required"]),
+      );
 
       expect(await runtimeJobs.listRecentJobs()).toHaveLength(0);
     } finally {
@@ -244,6 +259,36 @@ describe("native execution rpc", () => {
         "front_door_compiled_runtime_job_request",
       );
       expect(submit.frontDoorMemoryPolicy?.decision).toBe("runtime_context_refs_only");
+      expect(submit.frontDoorSubmitDiagnostics?.map((entry) => entry.phase)).toEqual(
+        expect.arrayContaining([
+          "submit_started",
+          "protocol_pregate_completed",
+          "workflow_summary_index_built",
+          "conversation_context_built",
+          "workflow_candidates_selected",
+          "before_router_model_call",
+          "after_router_model_call",
+          "front_door_request_compiled",
+          "worker_readiness_checked",
+          "before_runtime_job_enqueue",
+          "after_runtime_job_enqueue",
+          "before_front_door_artifact_attachment",
+          "after_front_door_artifact_attachment",
+        ]),
+      );
+      expect(submit.frontDoorSubmitDiagnostics?.[0]?.rawPromptStored).toBe(false);
+      expect(submit.frontDoorSubmitDiagnosticsManifest).toMatchObject({
+        status: "accepted",
+        runtimeJobId: submit.runtimeJobId,
+        rawPromptStored: false,
+        rawResponseStored: false,
+        hiddenReasoningStored: false,
+      });
+      expect(submit.frontDoorSubmitDiagnosticsManifest?.bodyByteCount).toBeGreaterThan(0);
+      expect(submit.frontDoorSubmitDiagnosticsManifest?.manifestJsonByteCount).toBeLessThanOrEqual(
+        16 * 1024,
+      );
+      expect(submit.frontDoorSubmitDiagnosticsManifest?.maxRouterPayloadBytes).toBeGreaterThan(0);
       expect(submit.rawPromptStored).toBe(false);
       expect(submit.workQueueLifecycleMutated).toBe(false);
 
@@ -272,8 +317,28 @@ describe("native execution rpc", () => {
           "execution.front_door.validation",
           "execution.front_door.compiled_request",
           "execution.front_door.memory_policy",
+          "execution.front_door.submit_heap_diagnostics",
         ]),
       );
+      const diagnosticsArtifact = artifacts.find(
+        (artifact) => artifact.artifactType === "execution.front_door.submit_heap_diagnostics",
+      );
+      expect(diagnosticsArtifact?.storageKind).toBe(RUNTIME_JOB_ARTIFACT_PAYLOAD_STORAGE_KIND);
+      expect(diagnosticsArtifact?.metadata).toMatchObject({
+        storageKind: RUNTIME_JOB_ARTIFACT_PAYLOAD_STORAGE_KIND,
+        rawPromptStored: false,
+        rawResponseStored: false,
+        rawProviderLogStored: false,
+      });
+      const hydratedDiagnostics = diagnosticsArtifact
+        ? await runtimeJobs.hydrateJsonPayloadArtifact(diagnosticsArtifact)
+        : null;
+      expect(hydratedDiagnostics?.body).toMatchObject({
+        artifactKind: "execution.front_door.submit_diagnostics_body",
+        status: "accepted",
+        rawPromptStored: false,
+        hiddenReasoningStored: false,
+      });
       const telemetry = routingTelemetryStore.list();
       expect(telemetry).toHaveLength(1);
       expect(telemetry[0]?.route).toBe("workflow_execution");
@@ -343,6 +408,12 @@ describe("native execution rpc", () => {
       expect(JSON.stringify(provider.requests[1])).toContain("blocked_route_repair_attempted");
       expect(submit.accepted).toBe(true);
       expect(submit.runtimeJobId).toBeTruthy();
+      expect(submit.frontDoorSubmitDiagnostics?.map((phase) => phase.phase)).toEqual(
+        expect.arrayContaining([
+          "before_blocked_route_repair_model_call",
+          "after_blocked_route_repair_model_call",
+        ]),
+      );
       expect(submit.frontDoorRouterResult?.output?.route).toBe("workflow_execution");
       expect(submit.frontDoorRouterResult?.metadata.reasonCodes).toEqual(
         expect.arrayContaining(["blocked_route_repair_attempted"]),
@@ -451,6 +522,12 @@ describe("native execution rpc", () => {
       expect(JSON.stringify(provider.requests[1])).toContain("action_separation_repair_attempted");
       expect(submit.accepted).toBe(true);
       expect(submit.runtimeJobId).toBeTruthy();
+      expect(submit.frontDoorSubmitDiagnostics?.map((phase) => phase.phase)).toEqual(
+        expect.arrayContaining([
+          "before_action_semantics_repair_model_call",
+          "after_action_semantics_repair_model_call",
+        ]),
+      );
       expect(
         submit.frontDoorRouterResult?.output?.requestedActions.map((action) => action.action),
       ).not.toContain("deploy");

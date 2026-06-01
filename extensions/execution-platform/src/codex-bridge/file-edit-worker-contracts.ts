@@ -1,4 +1,6 @@
-import type { ImplementationTaskPacket } from "../workflows/mission-work-packets.ts";
+import type { ImplementationTaskPacket } from "../workflows/worker-execution-packets.ts";
+import type { RuntimeValidationPhase } from "../workflows/validation-phase.ts";
+import type { CommitmentEvidenceClaim } from "../workflows/workflow-node-execution-contracts.ts";
 
 export type FileEditPatchModelClient = {
   proposeFileEdits(input: {
@@ -79,9 +81,11 @@ export type FileEditPlanStep = {
 export type FileEditEvidenceClaim = {
   commitmentId: string;
   evidenceRef: string;
+  evidenceKind: CommitmentEvidenceClaim["evidenceKind"];
   claimSummary: string;
   changedFileRefs: string[];
   validationRefs: string[];
+  validationPhase?: RuntimeValidationPhase;
   limitations: string[];
   confidence: "low" | "medium" | "high";
   rawPromptStored: false;

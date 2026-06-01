@@ -63,7 +63,7 @@ async function main() {
       "openclaw-convergence.scheduler-readiness-state-unification",
     ],
     successGate:
-      "Replay native-exec-06e162ea7066ac2e context-supply boundary; pass only if context scout execution packets compile within policy, provider calls can start, context blockers/handoffs are visible in readback, and request-context repair compiles runtime-owned prerequisite nodes/edges without model-authored envelopes.",
+      "Replay native-exec-06e162ea7066ac2e resource-fulfillment boundary; pass only if context scout execution packets compile within policy, provider calls can start, context blockers/handoffs are visible in readback, and request-context repair compiles runtime-owned prerequisite nodes/edges without model-authored envelopes.",
     scope: [
       "context_scout_execution_packet",
       "context_scout_build_execution_packet_tool",
@@ -75,8 +75,8 @@ async function main() {
       "semantic_request_context_intent",
       "runtime_compiled_context_prerequisite_nodes",
       "request_context_repair_diagnostics",
-      "work_queue_context_supply_readback",
-      "product_spec_context_supply_boundary_replay",
+      "work_queue_resource_fulfillment_readback",
+      "product_spec_resource_fulfillment_boundary_replay",
     ],
     rawPromptStored: false,
     rawResponseStored: false,
@@ -145,7 +145,7 @@ async function main() {
         productSpecProofSequencing:
           "after_context_scout_execution_packet_request_context_repair_boundary_replay",
         successGate:
-          "Full Product/Spec proof may rerun only after context-supply boundary replay from native-exec-06e162ea7066ac2e passes.",
+          "Full Product/Spec proof may rerun only after resource-fulfillment boundary replay from native-exec-06e162ea7066ac2e passes.",
         rawPromptStored: false,
         rawResponseStored: false,
         rawProviderLogStored: false,

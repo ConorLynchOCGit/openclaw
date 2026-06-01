@@ -20,6 +20,49 @@ updated before another expensive proof run.
 - Follow-up fix artifact:
   `.artifacts/execution-platform/product-spec-proof-follow-up-fix-list.json`
 
+### Boundary Replay Update - 2026-05-25
+
+- Replay graph: `product-spec-replay-b2d16db72ab13842`
+- Boundary: `after-parallel-context`
+- Result artifact:
+  `.artifacts/execution-platform/product-spec-boundary-replay-result.json`
+- Result: `succeeded` for scheduler-first frontier selection, but it selected
+  a missing-context repair node rather than implementation.
+- Added node:
+  `provide-context-research-and-planning-artifacts-context-repair`
+  (`context_scout`).
+- No implementation nodes ran and no source edits landed in this replay.
+- The replay proved the scheduler now avoids forcing implementation when one
+  blocking commitment lacks accepted context:
+  `accepted_resource_fulfillment_incomplete:13_of_14`,
+  skipped commitment `provide-context-research-and-planning-artifacts`.
+- A simple replay prompt bug was fixed before this run: replay staged
+  scheduler guidance now requires `executionIntent` on work breakdown units
+  and node contract drafts, matching production.
+- Scheduler model calls now bind to
+  `model-contract-boundary://scheduler_global_reasoning` instead of generic
+  dynamic JSON in replay; production scheduler calls were aligned to the same
+  binding.
+- Target-selection replay tooling was added but not proof-exercised in this
+  run because the scheduler stopped earlier on missing context. It will be
+  exercised once the missing context-scout repair can execute and the frontier
+  advances to implementation/resource materialization.
+
+New recurring architecture/tooling issues recorded from this replay:
+
+1. Replay can create a context repair node but cannot execute that context
+   scout from the same boundary lane, so a valid missing-context repair blocks
+   deeper implementation evidence.
+2. Scheduler input payloads remain oversized. The first replay scheduler call
+   sent about `351KB` into a global-reasoning model call even though the model
+   task policy declares a `240KB` input bound.
+3. Model-policy preflight surfaces contract binding and telemetry but does not
+   yet enforce input byte bounds before provider invocation.
+4. Structural staged-scheduler repair is still too broad. Before the prompt
+   bug was fixed, three repair attempts repeatedly missed
+   `workIntent.executionIntent` while resending `~356KB` payloads. Future
+   repair should be field-specific, not full graph regeneration.
+
 ### Wall Time And Token Evidence
 
 - Proof wall clock recorded by harness: `698192ms`.
@@ -567,3 +610,291 @@ Required general fixes before the next expensive proof:
      context limitations block correctly, resource packets split instead of
      throwing, and parallel frontier branch failures are repairable node
      outcomes.
+
+## 2026-05-25 Boundary Replay Findings: First Worker Smoke Success
+
+Focused replay continued from the older failed Product/Spec graph:
+
+- runtime job: `product-spec-replay-mpl69vto`
+- graph:
+  `team-run-native-exec-12fa6ecec70ecb9a-checkpoint-replay-mpl69vtn-runtime-work-graph`
+- parent node:
+  `g-1fe65d8620-work-intent-wu-plugin-definition-hardening-implementation-862f2c84e5e9`
+- successful worker node:
+  `g-1fe65d8620-work-intent-wu-plugin-definition-hardening-implementation-862f2c84e5e9:task:5`
+
+What was fixed as simple replay plumbing:
+
+1. The after-resource worker-smoke executor only hydrated
+   `NodeExecutionPacket`, `CodingResourcePacket`, and
+   `ImplementationTaskPacket`. The file-edit adapter now correctly requires a
+   hydrated `NodeExecutionContract` body too. Replay now hydrates the contract
+   through the `NodeExecutionPacket.nodeExecutionContractRef` and passes it to
+   the adapter.
+2. The after-resource frontier inspector recomputed readiness without the
+   contract body, causing a false `node_execution_contract_body_missing`
+   blocker even when the node packet had a contract ref. The inspector now
+   hydrates the contract body before recomputing readiness.
+3. The replay materializer can now persist payload-backed
+   `execution_platform.node_execution_contract` artifacts and attach contract
+   refs to split children.
+
+Successful worker-smoke evidence:
+
+- boundary: `after-resource-materialization`
+- status: `succeeded`
+- changed file ref:
+  `extensions/execution-platform/src/model-tasks/model-call-runtime-tool.ts`
+- validation ref: `validation://boundary-replay/passed/5b521bf9e672e497`
+- worker result ref:
+  `runtime-job://product-spec-replay-mpl69vto/boundary-replay/worker-result/g-1fe65d8620-work-intent-wu-plugin-definition-hardening-implementation-862f2c84e5e9:task:5/e300e2608765a871`
+- persistence mode: `rollback_after_review_artifact`
+- rollback result: restored the changed file with no failed refs.
+
+The worker used the intended control-plane sequence:
+
+1. Qwen context-decision slot selected `worker.repo.read_files`.
+2. Runtime read one bounded target snapshot.
+3. Kimi patch slot requested additional context, which runtime routed through
+   the context subturn instead of allowing phase-authority drift.
+4. Kimi recorded `worker.edit.plan`.
+5. Runtime forced `worker.patch.force_author_from_plan`.
+6. Kimi returned `worker.patch.author_edit`.
+7. Runtime compiled the edit into the patch applicator and applied one scoped
+   file edit.
+8. Runtime automatically ran `worker.validation.run_structural_default`.
+9. Runtime compiled `worker.evidence.claim_from_validation` for three
+   commitments.
+10. Boundary replay rolled the edit back for review.
+
+This is the first successful non-Codex implementation-boundary proof in the
+Product/Spec sequence. It proves that the contract-hydrated worker path can
+execute a scoped edit, run validation, and emit evidence when the upstream
+node is correctly materialized.
+
+Remaining architectural/toolification failures exposed by the same pass:
+
+1. Context repair nodes still lack `ResourceRequirementPacket` and context
+   broker request payloads.
+   - A context-repair replay for
+     `provide-context-research-and-planning-artifacts-context-repair` blocked
+     before model execution with:
+     `context_scout_execution_packet_context_broker_request_missing`,
+     `context_scout_execution_packet_resource_requirements_missing`, and
+     `context_scout_execution_packet_resource_requirement_missing`.
+   - This is a control-plane contract gap, not a context scout prompt issue.
+
+2. Target-selection model routing is incoherent.
+   - The model-task policy selected the Qwen/OpenRouter tool-selection lane,
+     but the replay implementation used `CodexDynamicJsonClient`, which only
+     supports Codex/OpenAI-Codex model refs.
+   - Overriding to `openai-codex/gpt-5.5` made the replay pass, but the
+     telemetry envelope still reported `providerPath: openrouter` inside the
+     model-task classification while the live call used `providerPath: codex`.
+   - This needs a first-class model-task client/router for bounded tool calls,
+     not ad hoc provider overrides.
+
+3. Target-selection input remains too large for the intended fast lane.
+   - The target-selection payload was `33,595` bytes against a nominal
+     `32,000` byte policy bound.
+   - The Codex override accepted it, but that does not prove Qwen suitability.
+   - The payload compiler should budget target candidates by canonical
+     handles, summaries, and context requirement refs without truncating away
+     semantic substance.
+
+4. Split-child rematerialization leaves stale duplicate children.
+   - Re-materializing the parent produced fresh child packets, but stale child
+     nodes from earlier attempts remained in the graph with older readiness
+     and missing payload refs.
+   - This is a graph upsert/retirement problem: replay and production need a
+     deterministic child-generation epoch or replacement policy so stale
+     children cannot masquerade as current frontier candidates.
+
+5. Readiness drift remains visible.
+   - The successful worker node recomputed as `ready_with_limitations` while
+     persisted readiness still said `ready`.
+   - Readback must show this as a non-terminal limitation and avoid allowing
+     persisted readiness to override canonical recomputation.
+
+6. Replay scripts still leave live Node handles after emitting terminal JSON.
+   - Both resource-materialization and worker-smoke replay emitted terminal
+     results but left a Node process alive until killed by the operator.
+   - This is a harness lifecycle bug and makes long proof loops harder to
+     manage.
+
+7. Rolled-back proof edit review artifacts are not easy to hydrate.
+   - The worker result metadata lists changed files, tool invocations,
+     validation refs, and evidence claims, but the bounded review patch body
+     was not directly hydrateable from the printed worker result ref.
+   - A proof that rolls back workspace edits must persist a bounded diff/review
+     patch artifact with a stable ref so Codex/human review can judge the edit
+     quality after rollback.
+
+Quality assessment of the worker edit:
+
+- The worker made a small, structurally valid edit and validation passed.
+- The edit was plausible for the target file, adding model-contract boundary
+  metadata fields to `ModelCallRuntimeToolMetadata` and corresponding runtime
+  output metadata.
+- This should not be treated as broad Product/Spec semantic completion. It is
+  a successful implementation-boundary smoke only: one scoped edit, one
+  structural validation, and runtime-compiled evidence.
+
+Next recommended proof path:
+
+1. Fix the replay/production lifecycle bugs that are clearly mechanical:
+   contract hydration everywhere, terminal script exit, and stale child
+   refresh/upsert.
+2. Catalogue but do not quick-patch the architecture gaps:
+   context-repair requirements, bounded target-selection client routing,
+   target-selection payload budgeting, and review-diff artifact hydration.
+3. Run at least one more worker smoke on a different materialized child to
+   expose whether the successful path generalizes beyond one target file.
+4. Only then decide whether to resume the top-to-bottom Product/Spec proof.
+
+## 2026-05-27 Blocker-Closure-06 Replay And Full Proof Attempt
+
+Queue item:
+`openclaw-convergence.blocker-closure-06-replay-and-full-proof-gates`.
+
+What passed:
+
+- The context specialist middle-lane real model proof passed:
+  `.artifacts/execution-platform/context-scout-specialist-subturn-real-model-proof/proof.json`.
+  It narrowed a broad legal-ref universe, wrote a node-local context ledger,
+  selected a concrete target ref, and reached
+  `ready_as_single_task` without graph-level scout/synthesis admission.
+- The worker readiness/edit/evidence real model proof passed:
+  `.artifacts/execution-platform/worker-readiness-edit-evidence-real-model-proof/proof.json`.
+  It completed target selection, node-local node resource demand, forced patch
+  authoring, structural validation, runtime evidence claim compilation, review
+  artifact creation, and workspace rollback. The proof manifest remained
+  metadata-safe.
+- Focused validation passed:
+  `boundary-replay-checkpoints`, `boundary-replay-proof-gate`,
+  canonical gate/readback, node resource demand, node resource ledger, resource
+  selection, implementation context compiler, resource materialization,
+  non-Codex worker loop, runtime artifact contracts, and no-semantic-cheats
+  suites passed with 169 tests.
+- `pnpm tsgo:fast` and `git diff --check` passed.
+
+Code hardening landed in this pass:
+
+- Product/Spec replay admission now blocks graph-visible default context
+  acquisition nodes, even when they are not connected through explicit
+  `context_supplies` edges.
+- Product/Spec replay admission now requires
+  `executionReadinessAuthority: recomputed_current_readiness`; persisted
+  readiness projections cannot unlock proof closure.
+- Boundary replay planning now reports active invalid checkpoint reason codes
+  from the latest required checkpoint per kind only. Superseded rejected
+  attempts stay visible as rejected refs but no longer poison a clean replay
+  plan or create contradictory active invalid reason codes.
+
+Replay from stale `after-resource-materialization` checkpoint:
+
+- Command:
+  `scripts/execution-platform-run-product-spec-boundary-replay.mjs --boundary after-resource-materialization --execute-workers true --max-iterations 0`.
+- Result: `needs_review`.
+- Admission: `blocked`.
+- Expected blocker:
+  `proof_graph_contains_default_context_acquisition_node` and
+  `proof_graph_contains_legacy_resource_fulfillment_fanout`.
+- Additional worker-smoke blockers:
+  missing/invalid implementation task packet payload on the stale graph,
+  no selected executable node, no changed file refs, no validation refs, and
+  no evidence claim refs.
+- Interpretation: this stale graph is correctly rejected under the new
+  architecture. It is not valid evidence for the node-local demand path.
+
+Top-to-bottom Product/Spec proof attempt:
+
+- Work item:
+  `product-spec-checkpointed-ae1d548f7801-op8njz`.
+- Prompt hash:
+  `ae1d548f7801c1593736f00b724c8eb56bf0165648911dc6edc6d81ebf3fef07`.
+- Prompt length: `24,664` chars.
+- Submit duration: `66,113 ms`.
+- Result: `submit_failed`.
+- Runtime job id: none assigned.
+- Failure class: live gateway transport/runtime failure before workflow
+  execution.
+- Bounded client evidence:
+  `TypeError` with cause `SocketError`, `UND_ERR_SOCKET`; no raw response or
+  prompt stored.
+- Gateway evidence: container restarted during submit after Node heap OOM at
+  roughly 4 GB old-space usage. The gateway was back up afterward, but the
+  proof request had already lost its socket.
+
+Important interpretation:
+
+- This full proof attempt did not evaluate Product/Spec orchestration quality.
+  It failed before runtime job acceptance.
+- The immediate full-proof blocker is a gateway heap/OOM reliability problem,
+  not a model-output, node-resource-demand, packet, scheduler, or worker execution
+  failure.
+- The OOM is recurring enough to treat as a proof-environment blocker. It
+  should not be solved by simply raising heap limits. The likely architectural
+  fixes are bounded live gateway projections, smaller startup/runtime
+  materialization surfaces, isolation of proof submit/front-door routing from
+  unrelated channel providers, and no large in-memory artifact scans during
+  submit.
+
+Predicate correction:
+
+- The worker readiness/edit/evidence proof is a component proof only. It is not
+  Product/Spec replay closure evidence.
+- The stale `after-resource-materialization` replay is a useful negative proof:
+  it proves retired graph-level context acquisition is rejected. It is not a
+  pass for `blocker-closure-06`.
+- Product/Spec closure must now carry
+  `proofSourceKind: product_spec_runtime_boundary_replay`, an admitted replay
+  proof gate, production node-local topology, all production replay boundary
+  checkpoints, and real worker edit/validation/evidence refs from that replay.
+  Standalone worker fixtures and stale retired topology are explicit blocker
+  reason codes.
+
+Gateway OOM diagnosis and proposed fix sequence:
+
+1. The submit path sends the 24,664-character Product/Spec prompt through the
+   live front-door router before any runtime job is created. Because the prompt
+   exceeds the two-lane long-prompt threshold, the gateway invokes the advanced
+   Codex app-server router inline during the HTTP request.
+2. The router payload includes the full prompt as volatile input plus workflow
+   summaries, conversation context, authority snapshot metadata, and the
+   canonical schema. This is bounded enough for ordinary calls, but not safe as
+   a long-lived in-gateway operation when the gateway is also running unrelated
+   channel/projection startup work.
+3. The container died with Node heap OOM at roughly 4 GB and the client saw
+   `UND_ERR_SOCKET` because the process restarted before it could return an
+   HTTP response. No runtime job id was assigned, so no orchestration evidence
+   exists for this attempt.
+4. The production fix should split submit acceptance from expensive advanced
+   routing: persist a bounded pending front-door routing job quickly, return a
+   runtime/submission ref, and perform advanced model routing in an isolated
+   worker process with heap telemetry and bounded artifacts. The live gateway
+   should not hold an HTTP socket through a high-memory model call.
+5. Add a gateway heap guard and submit-stage diagnostics: phase, heap used,
+   heap limit, payload bytes, prompt hash, workflow-summary count, selected
+   router lane, model/provider id, elapsed time, and restart count. If headroom
+   is insufficient, fail with a typed `front_door_heap_guard_blocked` result
+   before the process OOMs.
+6. Isolate unrelated channel/provider startup work from proof submit. Telegram
+   command sync failures and model-memory projection materialization warnings
+   were not the direct cause, but they should not share the critical submit path
+   or restart budget for Product/Spec proof routing.
+
+2026-05-28 correction: the prompt submission is kilobyte-scale, so prompt
+bytes alone cannot be the direct 4GB heap cause. The router must continue to
+see the prompt to classify the work. The actionable fix is therefore bounded
+phase diagnostics and stale substrate cleanup, not prompt elision:
+
+- record submit heap/RSS/external/array-buffer counters at each front-door
+  phase;
+- record workflow-summary bytes, conversation-context bytes, router-payload
+  bytes, candidate count, selected model/provider, and prompt hash/length;
+- keep raw prompt/provider/tool/command/DB bodies out of metadata;
+- require Product/Spec proof closeout to read a run-scoped proof manifest
+  instead of shared latest replay files;
+- treat stale after-resource replays that contain retired context topology as
+  negative fixtures only.

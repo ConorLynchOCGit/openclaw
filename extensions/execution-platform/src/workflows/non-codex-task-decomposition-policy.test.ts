@@ -134,9 +134,9 @@ describe("non-Codex task decomposition policy", () => {
         newNodes: [
           {
             nodeId: "context-runtime",
-            nodeKind: "context_scout",
-            capabilityId: "context_scout",
-            assignedRole: "context_scout",
+            nodeKind: "web_research",
+            capabilityId: "web_research",
+            assignedRole: "web_researcher",
             commitmentIdsAdvanced: ["context"],
             whyThisRoleIsNeededNow: "Context lowers implementation uncertainty.",
             exactObjective: "Find runtime graph files and scheduler touch points.",
@@ -147,9 +147,9 @@ describe("non-Codex task decomposition policy", () => {
           },
           {
             nodeId: "context-readback",
-            nodeKind: "context_scout",
-            capabilityId: "context_scout",
-            assignedRole: "context_scout",
+            nodeKind: "web_research",
+            capabilityId: "web_research",
+            assignedRole: "web_researcher",
             commitmentIdsAdvanced: ["implementation"],
             whyThisRoleIsNeededNow: "Readback context is needed before choosing edit nodes.",
             exactObjective: "Find Work Queue readback files and integration risks.",
@@ -161,7 +161,7 @@ describe("non-Codex task decomposition policy", () => {
         ],
         metadata: {
           parallelIndependentNodesJustification:
-            "The two context scouts inspect disjoint surfaces before implementation.",
+            "The two resource scouts inspect disjoint surfaces before implementation.",
           plannedLaterCommitmentIds: ["validation"],
         },
       }),
@@ -199,8 +199,8 @@ describe("non-Codex task decomposition policy", () => {
         nodeSummaries: [
           {
             nodeId: "context",
-            nodeKind: "context_scout",
-            assignedRole: "context_scout",
+            nodeKind: "web_research",
+            assignedRole: "web_researcher",
             nodeStatus: "succeeded",
             outputArtifactRefs: [],
           },
@@ -227,9 +227,9 @@ describe("non-Codex task decomposition policy", () => {
         newNodes: [
           {
             nodeId: "context-1",
-            nodeKind: "context_scout",
-            capabilityId: "non_codex_context_scout",
-            assignedRole: "context_scout",
+            nodeKind: "web_research",
+            capabilityId: "narrow_web_researcher",
+            assignedRole: "narrow_web_researcher",
             commitmentIdsAdvanced: ["context"],
             whyThisRoleIsNeededNow: "Context lowers uncertainty before editing.",
             exactObjective: "Find target files and summarize edit points.",
@@ -238,7 +238,7 @@ describe("non-Codex task decomposition policy", () => {
             acceptanceCriteria: ["Names target files and risks."],
             downstreamConsumer: "implementation-1",
             metadata: nonCodexMetadata({
-              taskFamily: "repo_context_scout",
+              taskFamily: "repo_resource_scout",
               selectedModelQualificationProfileId: "openrouter.deepseek.deepseek-v4-flash",
             }),
           },
@@ -328,7 +328,7 @@ describe("non-Codex task decomposition policy", () => {
         ],
         metadata: {
           parallelIndependentNodesJustification:
-            "This is a post-context implementation node with no parallel dependency.",
+            "This is a post-resource implementation node with no parallel dependency.",
         },
       }),
       snapshotSummary: {
@@ -336,10 +336,10 @@ describe("non-Codex task decomposition policy", () => {
         nodeSummaries: [
           {
             nodeId: "context",
-            nodeKind: "context_scout",
-            assignedRole: "context_scout",
+            nodeKind: "web_research",
+            assignedRole: "web_researcher",
             nodeStatus: "succeeded",
-            outputArtifactRefs: ["context-handoff://runtime"],
+            outputArtifactRefs: ["resource-handoff://runtime"],
           },
         ],
       },

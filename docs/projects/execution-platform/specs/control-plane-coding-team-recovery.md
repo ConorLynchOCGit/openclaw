@@ -11,6 +11,15 @@ Status: active pre-proof architecture. This spec governs the next Product/Spec
 Planning proof path and supersedes any proof plan that requires broad global
 context synthesis before a worker-ready implementation node can execute.
 
+2026-05-25 update: this recovery spec is now extended by
+[Execution Contract Spine, Context Requirements, And Frontier State](/projects/execution-platform/specs/execution-contract-spine-resource-requirements-and-frontier-state).
+The WorkIntent/control-plane recovery items proved necessary but not
+sufficient. The next pre-proof block hardens payload-backed
+`NodeExecutionContract`s, required `ResourceRequirementPacket`s, demand-driven
+context, frontier root-cause collapse, branch-scoped frontier/readiness,
+scheduler observability envelopes, validation phase semantics, canonical
+readback gates, and model-policy bindings before the full Product/Spec proof.
+
 ## Objective
 
 OpenClaw needs to prove a real coding-team control plane, not another
@@ -24,12 +33,17 @@ long prompt
   -> Commitment Work Packets
   -> WorkIntent DAG
   -> capability validation
+  -> ResourceRequirementPacket
+  -> ContextScoutExecutionPacket / context executor packet
   -> resource requirements
+  -> NodeExecutionContract
   -> NodeExecutionPacket
+  -> domain resource packet
   -> isolated worker tool loop
   -> source edit
-  -> validation
+  -> validation phase result
   -> evidence claims
+  -> branch-scoped frontier/readback
   -> owner readback and closeout
 ```
 
@@ -82,6 +96,15 @@ coding-team Product/Spec proof.
 6. No production success path may flow through proof replay glue, degraded
    closeout, compatibility runners, giant patch JSON, or deterministic
    semantic shortcuts.
+7. Graph nodes schedule work. Payload-backed contracts define executable
+   semantics. Graph metadata is manifest-only.
+8. Split children inherit parent contracts and may only narrow target refs,
+   task ids, dependency refs, context requirements, validation refs, and
+   evidence refs through runtime-validated override packets.
+9. Validation evidence is phase-scoped. Pre-proof validation cannot satisfy
+   implementation commitments.
+10. Repeated sibling blockers collapse into one root-cause artifact instead
+    of consuming many equivalent materialization or repair attempts.
 
 ## Pre-Proof Implementation Slice
 
@@ -259,6 +282,17 @@ The proof is incomplete unless operator readback shows:
 - next legal transition.
 
 This readback must come from compact runtime state, not from raw log scans.
+
+2026-05-25 implementation result: owner readback now projects a first-class
+bounded `ownerTelemetry` packet from compact scheduler/latest-run-state
+runtime evidence. The packet shows WorkIntent identity, execution intent,
+evidence mode, selected capability/executor/worker/model, runtime
+job/graph/branch/node/tool/phase, readiness status/ref/schema-policy path,
+payload/artifact/context/change/validation/evidence refs, rollback/review
+lifecycle state, and walltime/token-usage availability. Scheduler progress
+also carries `executionIntent`, `evidenceMode`, `executorKey`, and `workerRef`
+from `NodeExecutionPacket` summaries so future owner readback does not infer
+executable semantics from prose or raw logs.
 
 ## Full Toolification Catalog
 

@@ -54,7 +54,6 @@ const executor: RuntimeWorkGraphNodeExecutor = {
 
 function codingExecutors(): Record<string, RuntimeWorkGraphNodeExecutor> {
   return {
-    "kind:context_scout": executor,
     "kind:implementation": executor,
     "kind:validation": executor,
     "kind:test_review": executor,
@@ -63,7 +62,6 @@ function codingExecutors(): Record<string, RuntimeWorkGraphNodeExecutor> {
     "kind:observability_readback": executor,
     "kind:human_task": executor,
     "kind:closeout": executor,
-    "role:context_scout": executor,
     "role:implementation_engineer": executor,
     "role:test_engineer": executor,
     "role:reviewer": executor,
@@ -147,13 +145,15 @@ describe("GenericOrchestrationRuntime", () => {
 
     expect(metadata.schedulerResult).toBeUndefined();
     expect(metadata.schedulerResultStoredInline).toBe(false);
-    expect((metadata.executedNodeIds as string[]).length).toBe(100);
+    expect((metadata.executedNodeIds as string[]).length).toBe(30);
     expect(metadata.executedNodeCount).toBe(150);
-    expect((metadata.addedNodeIds as string[]).length).toBe(100);
+    expect((metadata.addedNodeIds as string[]).length).toBe(30);
     expect(metadata.addedNodeCount).toBe(150);
-    expect((metadata.decisionRefs as string[]).length).toBe(100);
+    expect((metadata.decisionRefs as string[]).length).toBe(30);
     expect(metadata.decisionRefCount).toBe(150);
-    expect(Buffer.byteLength(JSON.stringify(metadata), "utf8")).toBeLessThan(65_536);
+    expect(metadata.readiness).toBeUndefined();
+    expect(metadata.genericRuntimeSpineLifecycle).toBeUndefined();
+    expect(Buffer.byteLength(JSON.stringify(metadata), "utf8")).toBeLessThan(32_768);
   });
 
   it("does not call the scheduler when readiness fails", async () => {

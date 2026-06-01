@@ -6,7 +6,7 @@ commitment before scheduler graph creation.
 
 2026-05-24 implementation update: node-scoped context supply now runs through
 the production context broker and canonical readiness state. WorkIntent nodes
-with `context_handoff` requirements block at `node_scoped_context_supply`
+with `resource_handoff` requirements block at `node_scoped_resource_fulfillment`
 until consumer-scoped context exists; context scout prerequisites carry a
 broker request ref, target node id, semantic question, candidate resource
 refs, and `context_supplies` edge; and accepted-with-limitations context is
@@ -197,7 +197,7 @@ non-Codex file-edit worker with only directory refs. Directory-level refs seed
 context discovery; they do not satisfy implementation readiness.
 
 See
-`post-context-implementation-task-compiler.md` for the detailed packet,
+`post-resource-implementation-task-compiler.md` for the detailed packet,
 split, graph-mutation, readback, and proof-harness requirements.
 
 ## Parallelism

@@ -91,7 +91,7 @@ describe("source prompt context", () => {
           sectionRef: "source-prompt://missing/section-001/0-10",
           reason: "Need unavailable context.",
           maxChars: 500,
-          downstreamConsumer: "context_scout",
+          downstreamConsumer: "resource_scout",
           rawPromptStored: false,
           rawResponseStored: false,
           rawProviderLogStored: false,

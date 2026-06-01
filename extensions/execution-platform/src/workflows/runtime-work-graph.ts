@@ -4,8 +4,6 @@ import type { JsonValue } from "../runtime-job-repository.ts";
 export const TEAM_GRAPH_NODE_KINDS = [
   "work_intent",
   "orchestrator_plan",
-  "context_scout",
-  "context_synthesis",
   "implementation",
   "validation",
   "test_review",
@@ -29,8 +27,6 @@ export type TeamGraphNodeKind = (typeof TEAM_GRAPH_NODE_KINDS)[number];
 export const TEAM_GRAPH_EDGE_KINDS = [
   "depends_on",
   "handoff",
-  "context_supplies",
-  "synthesis_groups",
   "implementation_depends_on",
   "validation_depends_on",
   "review_depends_on",
@@ -252,7 +248,7 @@ const RAW_KEY_PATTERN =
 const DEFAULT_STRING_BOUND = 1_200;
 const DEFAULT_ARRAY_BOUND = 24;
 const GRAPH_METADATA_BODY_KEY_PATTERN =
-  /^(implementationContextPacket|implementationTaskPacket|codingResourcePacket|nodeExecutionPacket|nodeReadinessState|contextPacket|contextHandoffPacket|contextSynthesisArtifact|resourcePacket|targetFileSnapshots|fileSnapshots|splitTasks|taskPackets|packetBody|payloadBody|body)$/u;
+  /^(implementationContextPacket|implementationTaskPacket|codingResourcePacket|nodeExecutionContract|executionContract|contractBody|nodeExecutionPacket|nodeReadinessState|resourceRequirementPacket|contextPacket|resourceHandoffPacket|nodeResourceDemandSession|nodeResourceDemandRequest|nodeResourceDemandFulfillment|nodeResourceDemandBlocker|resourcePacket|targetFileSnapshots|fileSnapshots|splitTasks|taskPackets|packetBody|payloadBody|body)$/u;
 const GRAPH_METADATA_MANIFEST_ARRAY_MAX = 120;
 const GRAPH_METADATA_MANIFEST_OBJECT_ARRAY_MAX = 8;
 
@@ -315,6 +311,9 @@ function isManifestLikeObject(value: Record<string, unknown>): boolean {
     typeof value.artifactRef === "string" ||
     typeof value.packetRef === "string" ||
     typeof value.stateRef === "string" ||
+    typeof value.contractRef === "string" ||
+    typeof value.nodeExecutionContractRef === "string" ||
+    typeof value.resourceRequirementRef === "string" ||
     typeof value.contentHash === "string" ||
     typeof value.sha256 === "string"
   );
@@ -339,12 +338,76 @@ function isBoundedManifestOnlyObject(value: Record<string, unknown>): boolean {
     "artifactRef",
     "packetRef",
     "stateRef",
+    "contractRef",
+    "contractVersion",
+    "contractHash",
+    "nodeExecutionContractRef",
+    "nodeExecutionContractVersion",
+    "nodeExecutionContractHash",
+    "nodeExecutionPacketRef",
+    "nodeExecutionPacketHash",
+    "resourcePacketRef",
+    "resourcePacketHash",
+    "domainResourcePacketRef",
+    "domainResourcePacketHash",
+    "nodeReadinessStateRef",
+    "nodeReadinessStatus",
+    "nodeReadinessPhase",
+    "nodeReadinessRepairAction",
+    "nodeReadinessNextAllowedTransitions",
+    "nodeReadinessFreshnessStatus",
+    "nodeReadinessSnapshotStatus",
+    "nodeReadinessContextStatus",
+    "nodeReadinessValidationStatus",
+    "nodeReadinessAuthorityStatus",
+    "nodeReadinessEvidenceStatus",
+    "nodeReadinessStale",
+    "readinessProjectionStatus",
+    "readinessProjectionDriftReasonCodes",
+    "readinessProjectionMissingFields",
+    "readinessProjectionRef",
+    "readinessProjectionHash",
+    "boundaryEpoch",
+    "currentBoundaryEpoch",
+    "childBoundaryEpoch",
+    "parentNodeId",
+    "parentContractHash",
+    "currentParentContractHash",
+    "parentResourcePacketHash",
+    "currentParentResourcePacketHash",
+    "childEpochFrontierEligible",
+    "childEpochStale",
+    "childEpochReasonCodes",
+    "childEpochSuperseded",
+    "supersededByBoundaryEpoch",
+    "resourceRequirementRef",
+    "resourceRequirementId",
+    "resourceRequirementHash",
+    "contextPurpose",
+    "semanticQuestionCount",
+    "semanticQuestionSample",
+    "requiredResourceKinds",
+    "downstreamCapabilityId",
+    "downstreamExecutionIntent",
+    "downstreamEvidenceMode",
+    "candidateRepoAreaRefCount",
+    "knownTargetRefCount",
+    "knownValidationNeedRefCount",
+    "sourceContextBrokerRequestRef",
+    "workIntentRef",
     "contentHash",
     "sha256",
     "byteCount",
     "boundedSummary",
     "readinessStatus",
     "reasonCodes",
+    "executionIntent",
+    "capabilityId",
+    "executorKey",
+    "workerRef",
+    "evidenceMode",
+    "domainResourcePacketKind",
+    "nodeExecutionPacketRequired",
     "rawPromptStored",
     "rawResponseStored",
     "rawProviderLogStored",

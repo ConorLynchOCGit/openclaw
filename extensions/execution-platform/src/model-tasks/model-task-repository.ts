@@ -16,6 +16,7 @@ import {
   structuredOutputFromModelCallResult,
   type ModelCallVolatileInput,
 } from "./model-call-runtime-tool.ts";
+import type { ModelTaskClass } from "./model-task-classification.ts";
 import { ModelTaskContractRegistry } from "./registry.ts";
 import {
   isModelTaskPayload,
@@ -69,6 +70,8 @@ export type InvokeClaimedModelTaskRuntimeToolInput = {
   inputSummary: string;
   idempotencyKey?: string;
   maxStructuredOutputBytes?: number;
+  taskClass?: ModelTaskClass;
+  callSite?: string;
 };
 
 export type InvokeClaimedModelTaskRuntimeToolResult = {
@@ -323,6 +326,8 @@ export class ModelTaskRepository {
       metadata: {
         contractId: contract.id,
         modelTaskJobId: job.jobId,
+        taskClass: input.taskClass ?? "global_reasoning",
+        callSite: input.callSite ?? `model_task.${contract.id}`,
         providerRef: input.providerRef ?? null,
         rawPromptStored: false,
         rawResponseStored: false,

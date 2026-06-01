@@ -1,7 +1,8 @@
 import type { RuntimeToolKernel } from "../runtime-tool-call/runtime-tool-kernel.ts";
-import type { ImplementationTaskPacket } from "../workflows/mission-work-packets.ts";
+import type { ImplementationTaskPacket } from "../workflows/worker-execution-packets.ts";
 import type {
   CodingResourcePacket,
+  NodeExecutionContract,
   NodeExecutionPacket,
 } from "../workflows/node-resource-materialization.ts";
 import type { EditTransactionRecord } from "./edit-transaction-engine.ts";
@@ -91,6 +92,7 @@ export type FileEditWorkerAdapterInput = {
   taskTitle: string;
   exactEditObjective: string;
   implementationTaskPacket?: ImplementationTaskPacket;
+  nodeExecutionContract?: NodeExecutionContract;
   nodeExecutionPacket?: NodeExecutionPacket;
   codingResourcePacket?: CodingResourcePacket;
   rationaleForCallingThisRole?: string;
@@ -108,7 +110,6 @@ export type FileEditWorkerAdapterInput = {
   deniedFileRefs?: string[];
   contextPackRefs: string[];
   sourcePromptExcerptRefs?: string[];
-  contextSynthesisRefs?: string[];
   priorNodeOutputRefs?: string[];
   validationCommandRefs: string[];
   acceptanceCriteria: string[];
@@ -143,6 +144,7 @@ export type FileEditWorkerAdapterResult = {
   diffHash: string | null;
   validationRefs: string[];
   artifactRefs: string[];
+  reviewArtifactRefs: string[];
   priorFailureRefs: string[];
   limitations: string[];
   contextExpansionRequests: KimiContextExpansionRequest[];
@@ -357,7 +359,7 @@ export class ModelAgnosticFileEditWorkerAdapter implements FileEditWorkerExecuto
     const workerProfile = fileEditWorkerProfileFor(input.workerKind);
     if (input.workerKind === "kimi_standard_implementation") {
       if (this.options.toolUsingKimiWorkerLoop) {
-        if (!input.nodeExecutionPacket || !input.codingResourcePacket) {
+        if (!input.nodeExecutionContract || !input.nodeExecutionPacket || !input.codingResourcePacket) {
           return {
             artifactKind: "file_edit_worker_adapter_result",
             adapterSchemaVersion: "openclaw.file-edit-worker-adapter.v1",
@@ -372,10 +374,11 @@ export class ModelAgnosticFileEditWorkerAdapter implements FileEditWorkerExecuto
             changedFileRefs: [],
             diffHash: null,
             validationRefs: [],
-            artifactRefs: [],
+          artifactRefs: [],
+          reviewArtifactRefs: [],
             priorFailureRefs: uniqueStrings(input.priorFailureRefs ?? [], 12),
             limitations: [
-              "Non-Codex implementation worker invocation requires a hydrated NodeExecutionPacket and CodingResourcePacket before any provider call.",
+              "Non-Codex implementation worker invocation requires hydrated NodeExecutionContract, NodeExecutionPacket, and CodingResourcePacket bodies before any provider call.",
             ],
             contextExpansionRequests: [],
             editPlanSteps: [],
@@ -388,7 +391,10 @@ export class ModelAgnosticFileEditWorkerAdapter implements FileEditWorkerExecuto
             reasonCodes: uniqueStrings(
               [
                 "file_edit_worker_generic_adapter_used",
-                "file_edit_worker_node_execution_packet_required",
+              "file_edit_worker_node_execution_packet_required",
+                !input.nodeExecutionContract
+                  ? "file_edit_worker_node_execution_contract_missing"
+                  : "",
                 !input.nodeExecutionPacket ? "file_edit_worker_node_execution_packet_missing" : "",
                 !input.codingResourcePacket
                   ? "file_edit_worker_coding_resource_packet_missing"
@@ -418,6 +424,7 @@ export class ModelAgnosticFileEditWorkerAdapter implements FileEditWorkerExecuto
           taskId: input.taskId,
           taskTitle: input.taskTitle,
           implementationTaskPacket: input.implementationTaskPacket,
+          nodeExecutionContract: input.nodeExecutionContract,
           nodeExecutionPacket: input.nodeExecutionPacket,
           codingResourcePacket: input.codingResourcePacket,
           exactEditObjective: [
@@ -434,7 +441,6 @@ export class ModelAgnosticFileEditWorkerAdapter implements FileEditWorkerExecuto
           deniedFileRefs: input.deniedFileRefs,
           contextPackRefs: input.contextPackRefs,
           sourcePromptExcerptRefs: input.sourcePromptExcerptRefs,
-          contextSynthesisRefs: input.contextSynthesisRefs,
           priorNodeOutputRefs: input.priorNodeOutputRefs,
           validationCommandRefs: input.validationCommandRefs,
           acceptanceCriteria: input.acceptanceCriteria,
@@ -489,6 +495,7 @@ export class ModelAgnosticFileEditWorkerAdapter implements FileEditWorkerExecuto
           diffHash: result.diffHash,
           validationRefs: result.validationRefs,
           artifactRefs: result.artifactRefs,
+          reviewArtifactRefs: result.reviewArtifactRefs,
           priorFailureRefs: uniqueStrings(input.priorFailureRefs ?? [], 12),
           limitations: result.limitations,
           contextExpansionRequests: result.contextExpansionRequests,
@@ -537,6 +544,7 @@ export class ModelAgnosticFileEditWorkerAdapter implements FileEditWorkerExecuto
         diffHash: null,
         validationRefs: [],
         artifactRefs: [],
+        reviewArtifactRefs: [],
         priorFailureRefs: uniqueStrings(input.priorFailureRefs ?? [], 12),
         limitations: [
           "The legacy Kimi microtask JSON patch-proposal executor is retired from production. Configure NonCodexToolWorkerRuntime for this worker.",
@@ -585,6 +593,7 @@ export class ModelAgnosticFileEditWorkerAdapter implements FileEditWorkerExecuto
       diffHash: null,
       validationRefs: [],
       artifactRefs: [],
+      reviewArtifactRefs: [],
       priorFailureRefs: uniqueStrings(input.priorFailureRefs ?? [], 12),
       limitations: [
         `${input.workerKind} is represented by the generic file-edit worker contract but does not yet have a concrete executor.`,

@@ -81,8 +81,26 @@ function boundedError(error: unknown): JsonValue {
   };
 }
 
+function runtimeNeedsReviewReasonCodes(error: unknown): string[] | null {
+  if (!error || typeof error !== "object") {
+    return null;
+  }
+  const maybeReasonCodes = (error as { runtimeNeedsReviewReasonCodes?: unknown })
+    .runtimeNeedsReviewReasonCodes;
+  if (!Array.isArray(maybeReasonCodes)) {
+    return null;
+  }
+  const reasonCodes = maybeReasonCodes
+    .filter((code): code is string => typeof code === "string" && code.trim().length > 0)
+    .slice(0, 80);
+  return reasonCodes.length > 0 ? reasonCodes : null;
+}
+
 function boundedErrorReasonCode(error: unknown): string {
   const message = error instanceof Error ? error.message : String(error);
+  if (runtimeNeedsReviewReasonCodes(error)) {
+    return "runtime_needs_review_boundary";
+  }
   if (message.includes("artifact metadata exceeds")) {
     return "worker_adapter_threw:artifact_metadata_limit";
   }
@@ -92,16 +110,6 @@ function boundedErrorReasonCode(error: unknown): string {
     message.includes("resource_materialization")
   ) {
     return "worker_adapter_threw:resource_materialization_boundary";
-  }
-  if (message.includes("commitment_packet_author_fanout_failed")) {
-    return "worker_adapter_threw:commitment_packet_authoring_boundary";
-  }
-  if (
-    message.includes("mission_ledger_stage_contract") ||
-    message.includes("mission_ledger_acceptance") ||
-    message.includes("staged_mission_ledger")
-  ) {
-    return "worker_adapter_threw:mission_ledger_stage_contract";
   }
   if (
     message.includes("unknown_candidate_ref") ||
@@ -123,8 +131,6 @@ function adapterThrownShouldTerminalizeNeedsReview(reasonCode: string): boolean 
   return [
     "worker_adapter_threw:artifact_metadata_limit",
     "worker_adapter_threw:resource_materialization_boundary",
-    "worker_adapter_threw:commitment_packet_authoring_boundary",
-    "worker_adapter_threw:mission_ledger_stage_contract",
     "worker_adapter_threw:mission_ledger_contract_parse",
     "worker_adapter_threw:contract_parse",
   ].includes(reasonCode);
@@ -399,6 +405,8 @@ export class RuntimeWorkerSupervisor {
       });
     } catch (error) {
       const errorReasonCode = boundedErrorReasonCode(error);
+      const directNeedsReviewReasonCodes = runtimeNeedsReviewReasonCodes(error);
+      const recordedReasonCodes = directNeedsReviewReasonCodes ?? ["worker_adapter_threw", errorReasonCode];
       await this.options.repository.recordEvent({
         jobId: claimed.job.jobId,
         eventType: "runtime_worker.adapter_failed",
@@ -407,7 +415,7 @@ export class RuntimeWorkerSupervisor {
         data: {
           adapterId: adapter.adapterId,
           currentPhase: "adapter_execute_failed",
-          reasonCodes: ["worker_adapter_threw", errorReasonCode],
+          reasonCodes: recordedReasonCodes,
           error: boundedError(error),
           rawPromptStored: false,
           rawResponseStored: false,
@@ -420,21 +428,21 @@ export class RuntimeWorkerSupervisor {
         leaseId: claimed.leaseId,
         spanId: `${claimed.job.jobId}:runtime-worker:${adapter.adapterId}`,
         phase: "adapter_execute_failed",
-        status: adapterThrownShouldTerminalizeNeedsReview(errorReasonCode)
+        status: directNeedsReviewReasonCodes || adapterThrownShouldTerminalizeNeedsReview(errorReasonCode)
           ? "needs_review"
           : "failed",
         adapterId: adapter.adapterId,
         blockerSummary:
           error instanceof Error ? error.message.slice(0, 500) : String(error).slice(0, 500),
-        reasonCodes: ["worker_adapter_threw", errorReasonCode],
+        reasonCodes: recordedReasonCodes,
       });
-      if (adapterThrownShouldTerminalizeNeedsReview(errorReasonCode)) {
+      if (directNeedsReviewReasonCodes || adapterThrownShouldTerminalizeNeedsReview(errorReasonCode)) {
         await this.options.repository.markJobNeedsReview({
           leaseToken: claimed.leaseToken,
           error: boundedError(error),
           result: {
             status: "needs_review",
-            reasonCodes: ["worker_adapter_threw", errorReasonCode],
+            reasonCodes: recordedReasonCodes,
             retryScheduled: false,
             rawPromptStored: false,
             rawResponseStored: false,
@@ -449,8 +457,7 @@ export class RuntimeWorkerSupervisor {
           jobType: claimed.job.jobType,
           adapterId: adapter.adapterId,
           reasonCodes: [
-            "worker_adapter_threw",
-            errorReasonCode,
+            ...recordedReasonCodes,
             "worker_adapter_failure_terminalized_needs_review",
           ],
         });

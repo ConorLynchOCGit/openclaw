@@ -60,7 +60,7 @@ async function main() {
       "repo_scope_not_executable_targets",
       "implementation_task_file_change_intents",
       "context_scout_recommended_edit_points_to_worker_intent",
-      "post_context_semantic_microtask_refinement_gate",
+      "post_resource_semantic_microtask_refinement_gate",
       "new_file_intent_parent_snapshot_support",
       "accepted_with_limitations_consumer_waiver_gate",
       "boundary_replay_worker_smoke_rollback_default",

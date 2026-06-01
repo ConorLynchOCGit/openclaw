@@ -4,7 +4,10 @@ import type {
   JsonModelExecutionResponse,
   JsonModelExecutor,
 } from "../../../model-memory/src/model-execution.ts";
-import { ModelCloseoutCapsuleReporter } from "./model-closeout-capsule-reporter.ts";
+import {
+  createDegradedSystemCloseoutCapsule,
+  ModelCloseoutCapsuleReporter,
+} from "./model-closeout-capsule-reporter.ts";
 
 class FakeExecutor implements JsonModelExecutor {
   requests: JsonModelExecutionRequest[] = [];
@@ -202,6 +205,79 @@ describe("ModelCloseoutCapsuleReporter", () => {
         return transport?.type === "json_schema" ? transport.name : null;
       }),
     ).toContain("execution_platform_closeout_opportunity_seed_repair");
+  });
+
+  it("bounds long factual refs before parsing model-authored closeout capsules", async () => {
+    const executor = new FakeExecutor();
+    const reporter = new ModelCloseoutCapsuleReporter({ executor });
+    const longArtifactRef = `runtime-job://job-1/${"context-scout-repoctx-".repeat(30)}`;
+    const result = await reporter.createCapsule({
+      factualRefs: {
+        runtimeJobId: "job-1",
+        teamRunId: "team-1",
+        workflowId: "agent_team.coding",
+        status: "needs_review",
+        roles: [],
+        fileRefs: [],
+        artifactRefs: Array.from({ length: 45 }, (_, index) => `${longArtifactRef}-${index}`),
+        validationRefs: [],
+        runtimeEventRefs: [`runtime-job://job-1/${"events-".repeat(80)}`],
+      },
+      objectiveSummary: "Create bounded closeout.",
+      boundedRoleEvidence: [],
+      boundedResultEvidence: {
+        completed: false,
+        needsReview: true,
+        failed: false,
+        findings: [],
+        requiredFixes: [],
+        limitations: ["context supply remains open"],
+      },
+    });
+
+    expect(result.capsule.factualRefs.artifactRefs).toHaveLength(40);
+    expect(
+      result.capsule.factualRefs.artifactRefs.every((ref) => ref.length <= 260),
+    ).toBe(true);
+    expect(
+      result.capsule.factualRefs.runtimeEventRefs.every((ref) => ref.length <= 260),
+    ).toBe(true);
+  });
+
+  it("bounds long factual refs before parsing degraded closeout capsules", () => {
+    const longArtifactRef = `runtime-job://job-1/${"context-scout-repoctx-".repeat(30)}`;
+    const result = createDegradedSystemCloseoutCapsule({
+      factualRefs: {
+        runtimeJobId: "job-1",
+        teamRunId: "team-1",
+        workflowId: "agent_team.coding",
+        status: "needs_review",
+        roles: [],
+        fileRefs: [],
+        artifactRefs: Array.from({ length: 45 }, (_, index) => `${longArtifactRef}-${index}`),
+        validationRefs: [],
+        runtimeEventRefs: [`runtime-job://job-1/${"events-".repeat(80)}`],
+      },
+      objectiveSummary: "Create degraded bounded closeout.",
+      boundedRoleEvidence: [],
+      boundedResultEvidence: {
+        completed: false,
+        needsReview: true,
+        failed: false,
+        findings: [],
+        requiredFixes: [],
+        limitations: ["context supply remains open"],
+      },
+      reasonCodes: ["scheduler_terminal_without_model_closeout"],
+    });
+
+    expect(result.capsule.factualRefs.artifactRefs).toHaveLength(40);
+    expect(
+      result.capsule.factualRefs.artifactRefs.every((ref) => ref.length <= 260),
+    ).toBe(true);
+    expect(
+      result.capsule.factualRefs.runtimeEventRefs.every((ref) => ref.length <= 260),
+    ).toBe(true);
   });
 
   it("bounds closeout model timeout without storing raw model content", async () => {

@@ -26,6 +26,35 @@ export function projectBoundaryReplayReadback(input: {
     currentReplayBoundary:
       stringValue(latestRunBoundaryReplay?.currentReplayBoundary) ?? latestCheckpointKind,
     nextReplayBoundary: stringValue(latestRunBoundaryReplay?.nextReplayBoundary),
+    productionPathEquivalence:
+      stringValue(latestBoundaryPlanData.productionPathEquivalence) ??
+      stringValue(latestBoundaryData.productionPathEquivalence) ??
+      stringValue(latestRunBoundaryReplay?.productionPathEquivalence),
+    boundaryEpoch:
+      stringValue(latestBoundaryPlanData.boundaryEpoch) ??
+      stringValue(latestBoundaryData.boundaryEpoch) ??
+      stringValue(latestRunBoundaryReplay?.boundaryEpoch),
+    currentChildEpoch:
+      stringValue(latestBoundaryProgressData.currentChildEpoch) ??
+      stringValue(latestRunBoundaryReplay?.currentChildEpoch),
+    supersededChildCount:
+      typeof latestBoundaryProgressData.supersededChildCount === "number"
+        ? latestBoundaryProgressData.supersededChildCount
+        : typeof latestRunBoundaryReplay?.supersededChildCount === "number"
+          ? latestRunBoundaryReplay.supersededChildCount
+          : null,
+    supersededChildNodeIds: [
+      ...new Set([
+        ...stringArrayValue(latestBoundaryProgressData.supersededChildNodeIds, 80),
+        ...stringArrayValue(latestRunBoundaryReplay?.supersededChildNodeIds, 80),
+      ]),
+    ].slice(0, 80),
+    proofClosureAllowed:
+      typeof latestBoundaryPlanData.proofClosureAllowed === "boolean"
+        ? latestBoundaryPlanData.proofClosureAllowed
+        : typeof latestRunBoundaryReplay?.proofClosureAllowed === "boolean"
+          ? latestRunBoundaryReplay.proofClosureAllowed
+          : null,
     checkpointRefs,
     graphCheckpointRefs,
     planRefs,

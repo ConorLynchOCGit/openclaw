@@ -11,7 +11,7 @@ export const MODEL_TASK_MODEL_POLICY_VERSION = "execution-platform.model-task-mo
 export type ModelTaskLane =
   | "implementation_engineer"
   | "test_engineer"
-  | "context_scout"
+  | "resource_scout"
   | "security_privacy_reviewer"
   | "reviewer"
   | "observability_scribe"
@@ -87,7 +87,7 @@ export const DEFAULT_MODEL_TASK_ROSTER: ModelTaskRosterCandidate[] = [
   {
     modelRef: "deepseek/deepseek-v4-flash",
     providerPath: "openrouter",
-    roleLanes: ["context_scout", "observability_scribe", "retrieval_interpretation"],
+    roleLanes: ["resource_scout", "observability_scribe", "retrieval_interpretation"],
     capabilities: ["structured_json", "json_schema", "low_cost"],
     settings: {
       timeoutMs: 120_000,
@@ -173,8 +173,8 @@ const CONTRACT_LANES: Record<string, ModelTaskLane[]> = {
     "model_memory_capture_interpretation",
     "model_memory_capture",
   ],
-  "retrieval.structured_json": ["retrieval_interpretation", "context_scout"],
-  "retrieval.request_interpretation": ["retrieval_interpretation", "context_scout"],
+  "retrieval.structured_json": ["retrieval_interpretation", "resource_scout"],
+  "retrieval.request_interpretation": ["retrieval_interpretation", "resource_scout"],
   "retrieval.final_inclusion_review": ["retrieval_final_inclusion_review", "reviewer"],
   "proactivity.structured_json": ["proactivity", "closeout_synthesis"],
   "proactivity.opportunity_extraction": ["proactivity", "closeout_synthesis"],

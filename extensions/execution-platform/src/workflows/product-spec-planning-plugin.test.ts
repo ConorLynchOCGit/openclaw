@@ -60,6 +60,9 @@ describe("agent_team.product_spec_planning workflow plugin", () => {
       stagedSchedulerProtocolRequired: true,
       stagedGraphAcceptanceRequired: true,
       modelAuthoredWorkPacketsRequiredForComplexMission: true,
+      resourceReadinessPolicy: "domain_resource_manifest",
+      freshContextSnapshotsRequiredForWorkerExecution: false,
+      domainResourceManifestRequiredForWorkerExecution: true,
       runtimeDerivedNodeEnvelopeRequired: true,
       runtimeDerivedExpectedEvidenceRequired: true,
       modelAuthoredStructureReviewRequired: true,
@@ -70,6 +73,18 @@ describe("agent_team.product_spec_planning workflow plugin", () => {
     });
     expect(plugin.runtimeToolFamilies).toEqual(
       expect.arrayContaining(PRODUCT_SPEC_PLANNING_PLUGIN_RUNTIME_TOOL_FAMILIES),
+    );
+    expect(plugin.runtimeToolFamilies).toEqual(
+      expect.arrayContaining([
+                "resource.demand",
+        "resource.ledger",
+        "resource.selection",
+        "domain.action_gate",
+      ]),
+    );
+    expect(plugin.runtimeToolFamilies).not.toContain("node.resource_materialization");
+    expect(plugin.validationExpectations).toContain(
+      "planning_framework_contract_lifecycle_validated",
     );
     expect(plugin.nodeExecutorKeys).toEqual(
       expect.arrayContaining([
@@ -101,6 +116,9 @@ describe("agent_team.product_spec_planning workflow plugin", () => {
       status: "production_ready",
       productionEnabled: true,
       stagedSchedulerProtocolRequired: true,
+      resourceReadinessPolicy: "domain_resource_manifest",
+      freshContextSnapshotsRequiredForWorkerExecution: false,
+      domainResourceManifestRequiredForWorkerExecution: true,
       runtimeDerivedNodeEnvelopeRequired: true,
       firstNodeApprovalRequired: true,
       degradedCloseoutSuccessAllowed: false,

@@ -1,7 +1,7 @@
 import type { ModelAgnosticWorkerSpecializationKind } from "./model-agnostic-tool-worker-loop.ts";
 
 export type ModelAgnosticWorkerTaskFamily =
-  | "repo_context_scout"
+  | "repo_resource_scout"
   | "small_source_edit"
   | "test_writing_edit"
   | "docs_spec_edit"
@@ -109,7 +109,7 @@ export type ModelPolicyPromotionStage =
   | "worker_evidence"
   | "worker_escalation"
   | "router_front_door"
-  | "context_scout";
+  | "resource_scout";
 
 export type NonCodexProviderRoleSlot =
   | "controller"
@@ -184,7 +184,7 @@ const MODEL_POLICY_STAGE_MIN_RUNS: Record<ModelPolicyPromotionStage, number> = {
   worker_evidence: 3,
   worker_escalation: 3,
   router_front_door: 8,
-  context_scout: 8,
+  resource_scout: 8,
 };
 
 const MODEL_POLICY_STAGE_MAX_P95_LATENCY_MS: Record<ModelPolicyPromotionStage, number> = {
@@ -195,7 +195,7 @@ const MODEL_POLICY_STAGE_MAX_P95_LATENCY_MS: Record<ModelPolicyPromotionStage, n
   worker_evidence: 30_000,
   worker_escalation: 30_000,
   router_front_door: 15_000,
-  context_scout: 45_000,
+  resource_scout: 45_000,
 };
 
 export function evaluateModelPolicyStagePromotionGate(input: {
@@ -229,7 +229,7 @@ export function evaluateModelPolicyStagePromotionGate(input: {
     reasonCodes.push("model_policy_stage_gate_latency_exceeded");
   }
   if (
-    (input.stage === "router_front_door" || input.stage === "context_scout") &&
+    (input.stage === "router_front_door" || input.stage === "resource_scout") &&
     input.candidateId === "openrouter.qwen.qwen3-coder-next" &&
     matching.length < minimumRuns
   ) {
@@ -290,7 +290,7 @@ const PROFILE_QWEN_CODER_NEXT: ModelAgnosticWorkerCandidateProfile = {
   providerPath: "openrouter",
   specializationIds: [
     "kimi_implementation",
-    "non_codex_context_scout",
+    "non_codex_resource_scout",
     "non_codex_validation_failure_explainer",
     "non_codex_test_writer",
     "non_codex_docs_editor",
@@ -304,7 +304,7 @@ const PROFILE_QWEN_CODER_NEXT: ModelAgnosticWorkerCandidateProfile = {
   latencyClass: "fast",
   contextCapacity: "large",
   idealTaskFamilies: [
-    "repo_context_scout",
+    "repo_resource_scout",
     "validation_failure_explanation",
     "small_source_edit",
     "test_writing_edit",
@@ -329,7 +329,7 @@ const PROFILE_DEEPSEEK_FLASH: ModelAgnosticWorkerCandidateProfile = {
   modelRef: "deepseek/deepseek-v4-flash",
   providerPath: "openrouter",
   specializationIds: [
-    "non_codex_context_scout",
+    "non_codex_resource_scout",
     "non_codex_validation_failure_explainer",
     "non_codex_docs_editor",
   ],
@@ -341,7 +341,7 @@ const PROFILE_DEEPSEEK_FLASH: ModelAgnosticWorkerCandidateProfile = {
   costClass: "cheap",
   latencyClass: "fast",
   contextCapacity: "medium",
-  idealTaskFamilies: ["repo_context_scout", "validation_failure_explanation", "docs_spec_edit"],
+  idealTaskFamilies: ["repo_resource_scout", "validation_failure_explanation", "docs_spec_edit"],
   maxTargetFiles: 4,
   maxDiffBytes: 900,
   toolProfileRefs: ["tool-profile://non-codex-support-worker/deepseek-v4-flash/v1"],
@@ -361,7 +361,7 @@ const PROFILE_DEEPSEEK_PRO: ModelAgnosticWorkerCandidateProfile = {
   modelRef: "deepseek/deepseek-v4-pro",
   providerPath: "openrouter",
   specializationIds: [
-    "non_codex_context_scout",
+    "non_codex_resource_scout",
     "non_codex_validation_failure_explainer",
     "non_codex_test_writer",
   ],
@@ -373,7 +373,7 @@ const PROFILE_DEEPSEEK_PRO: ModelAgnosticWorkerCandidateProfile = {
   costClass: "standard",
   latencyClass: "medium",
   contextCapacity: "large",
-  idealTaskFamilies: ["repo_context_scout", "validation_failure_explanation", "test_writing_edit"],
+  idealTaskFamilies: ["repo_resource_scout", "validation_failure_explanation", "test_writing_edit"],
   maxTargetFiles: 4,
   maxDiffBytes: 1_000,
   toolProfileRefs: ["tool-profile://non-codex-support-worker/deepseek-v4-pro/v1"],
@@ -439,7 +439,7 @@ const CANONICAL_SLOT_PROFILES: ProviderCapabilitySlotProfile[] = [
       reasoningModesAllowed: ["none"],
       responseFormatModesAllowed: ["prompt_only", "tool_loop"],
       taskFamilies: [
-        "repo_context_scout",
+        "repo_resource_scout",
         "small_source_edit",
         "test_writing_edit",
         "docs_spec_edit",
@@ -775,7 +775,7 @@ export function buildModelAgnosticWorkerSchedulerRecommendations(input: {
   const candidateProfiles = input.candidateProfiles ?? MODEL_AGNOSTIC_WORKER_CANDIDATE_PROFILES;
   const recordsByCandidate = new Map(input.records.map((record) => [record.candidateId, record]));
   const taskFamilies: ModelAgnosticWorkerTaskFamily[] = [
-    "repo_context_scout",
+    "repo_resource_scout",
     "small_source_edit",
     "test_writing_edit",
     "docs_spec_edit",

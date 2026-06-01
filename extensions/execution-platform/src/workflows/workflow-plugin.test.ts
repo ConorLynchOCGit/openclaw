@@ -18,7 +18,6 @@ const executor: RuntimeWorkGraphNodeExecutor = {
 
 function codingExecutors(): Record<string, RuntimeWorkGraphNodeExecutor> {
   return {
-    "kind:context_scout": executor,
     "kind:implementation": executor,
     "kind:validation": executor,
     "kind:test_review": executor,
@@ -27,7 +26,6 @@ function codingExecutors(): Record<string, RuntimeWorkGraphNodeExecutor> {
     "kind:observability_readback": executor,
     "kind:human_task": executor,
     "kind:closeout": executor,
-    "role:context_scout": executor,
     "role:implementation_engineer": executor,
     "role:test_engineer": executor,
     "role:reviewer": executor,
@@ -54,7 +52,7 @@ describe("workflow plugin contract", () => {
       status: "production_ready",
       productionEnabled: true,
       orchestrationPolicyRef: "workflow-orchestration-policy://agent_team.coding.orchestration.v1",
-      requiredRoleClasses: expect.arrayContaining(["context", "implementation", "qa"]),
+      requiredRoleClasses: expect.arrayContaining(["implementation", "qa"]),
       completionReviewRequired: true,
       degradedCloseoutSuccessAllowed: false,
     });
@@ -80,7 +78,7 @@ describe("workflow plugin contract", () => {
       ]),
     );
     expect(validation.missingExecutorKeys).toEqual(
-      expect.arrayContaining(["kind:context_scout", "kind:closeout", "role:reviewer"]),
+      expect.arrayContaining(["kind:closeout", "role:reviewer"]),
     );
   });
 

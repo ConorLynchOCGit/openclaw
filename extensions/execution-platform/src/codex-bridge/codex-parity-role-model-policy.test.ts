@@ -14,8 +14,8 @@ describe("Codex parity role/model policy", () => {
     expect(selection.codexNativeSubagentsAllowed).toBe(false);
   });
 
-  it("uses cheaper large-context role workers for context scout", () => {
-    const selection = selectCodexParityRoleModel("context_scout", {
+  it("uses cheaper large-context role workers for resource scout", () => {
+    const selection = selectCodexParityRoleModel("resource_scout", {
       availableModelRefs: ["moonshotai/kimi-k2.6"],
     });
 

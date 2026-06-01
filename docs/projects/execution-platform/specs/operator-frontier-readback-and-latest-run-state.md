@@ -20,6 +20,34 @@ and Work Queue readback contract.
 
 Implemented on 2026-05-22.
 
+Canonical readback gate update, 2026-05-25:
+
+- Latest-run-state now emits `canonicalReadbackGate`, a compact bounded gate
+  object derived from terminal outcome, root-cause/no-progress state,
+  branch-scoped frontier state, readiness/resource blockers, scheduler
+  frontier, and checkpoint fallback only as a low-confidence diagnostic.
+- Work Queue active graph progress consumes the same gate as `firstOpenGate`;
+  checkpoint phase labels no longer own owner-facing gate truth.
+- Materialization blockers surface as `resource_materialization` with branch,
+  node, contract, readiness, schema/policy path, reason codes, successful
+  sibling evidence, consumer refs, and next legal transition.
+- Lifecycle phase projection no longer uses substring inference for closeout
+  or finalization; it relies on explicit terminal/finalization/readiness
+  state.
+
+Node lifecycle projection update, 2026-05-28:
+
+- `NodeLifecycleProjection` becomes the preferred source for
+  `firstOpenGate`, branch gate, next legal transition, accepted refs, blocked
+  refs, diagnostic refs, and root-cause signature.
+- Latest-run-state and Work Queue readback must consume runner projections
+  before using checkpoint fallback or reason-code-derived gates.
+- If a projection says `canCallGlobalScheduler: false`, readback must show
+  the node-local gate and next legal transition; it must not report a generic
+  scheduler/frontier gate.
+- Checkpoint fallback is allowed only when no runner projection exists, and
+  it must be labeled as low-confidence stale fallback.
+
 Production wiring:
 
 - `buildLatestRunState(...)` now includes bounded `activeFrontier` state with
@@ -62,8 +90,8 @@ state object that answers:
 - what the next legal transition is.
 
 This object is readback, not lifecycle truth. Runtime jobs, graph state,
-tool traces, payload refs, and evidence claims remain the authoritative
-substrates.
+`NodeLifecycleProjection`, tool traces, payload refs, and evidence claims
+remain the authoritative substrates.
 
 ## `latest-run-state` Extensions
 
@@ -179,6 +207,24 @@ Required tests:
 6. Token/wall-clock totals are present when provider/runtime data exists and
    explicitly labeled as estimated when app-server usage is unavailable.
 7. Bounded latest-run-state metadata stays under artifact storage limits.
+8. Provider diagnostics project bounded response shape and profile settings:
+   provider/model/profile, request bytes, preflight/provider-started state,
+   timeout, native finish reason, choice count, content lengths, usage or
+   unavailable reason, retry/concurrency, input bundle ref/hash, body keys,
+   message keys, and error keys.
+9. Proof-environment diagnostics project heap phase and manifest pressure:
+   heap snapshot refs, largest metadata/object bytes/ref, largest artifact
+   body bytes/ref, latest-run-state bytes, scheduler-progress bytes, Work
+   Queue projection bytes, provider request bytes, and reason codes.
+10. Product/Spec proof readback distinguishes run-scoped proof closure from
+    stale shared replay mirrors. A stale after-resource replay with retired
+    context topology must read as negative diagnostic evidence, not as a
+    blocked-but-closeable Product/Spec proof.
+11. Front-door submit diagnostics project the phase where heap pressure rises:
+    submit start, workflow summary index, conversation context, router payload,
+    router model call, runtime enqueue, and artifact attachment. The readback
+    must show prompt hash/length and payload byte counts without raw prompt
+    content.
 
 ## Natural Follow-Ons
 

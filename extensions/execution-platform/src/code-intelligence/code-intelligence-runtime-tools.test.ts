@@ -60,7 +60,7 @@ describe("code intelligence runtime tools", () => {
           runtimeJobId: null,
           graphId: null,
           nodeId: null,
-          roleRef: "context_scout",
+          roleRef: "resource_scout",
           modelRef: "model://none",
           idempotencyScope: "code-intelligence-test",
           idempotencyKey: "search-runtime-thing",

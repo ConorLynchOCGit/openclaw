@@ -32,7 +32,7 @@ const closeout = {
     "docs/projects/execution-platform/specs/demand-driven-frontier-orchestration-and-context-broker.md",
     "docs/projects/execution-platform/specs/runtime-work-graph.md",
     "docs/projects/execution-platform/specs/generic-orchestration-runtime.md",
-    "docs/projects/execution-platform/specs/scheduler-first-node-scoped-context-supply.md",
+    "docs/projects/execution-platform/specs/scheduler-first-node-scoped-resource-fulfillment.md",
     "docs/projects/execution-platform/CURRENT_SLICE.md",
     "docs/projects/execution-platform/STATUS.md",
     "docs/projects/execution-platform/DECISIONS.md",

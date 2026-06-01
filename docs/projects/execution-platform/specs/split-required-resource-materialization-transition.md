@@ -63,7 +63,7 @@ Runtime evidence:
   - `implementation_context_materialization_blocked`
   - `implementation_context_resource_packet_bounds_exceeded`
   - `implementation_context_resolved_target_file_refs_exceeds_packet_bound:120:100`
-  - `post_context_task_split_required_for_file_resolved_microtasks`
+  - `post_resource_task_split_required_for_file_resolved_microtasks`
   - `worker_adapter_threw:unclassified`
   - `scheduler_terminal_with_10_open_blocking_commitments`
 

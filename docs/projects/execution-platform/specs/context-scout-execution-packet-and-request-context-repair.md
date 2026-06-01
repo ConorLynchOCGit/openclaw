@@ -26,10 +26,33 @@ candidate resource refs, target node ids, and reason codes. This keeps the
 model's job semantic and consumer-scoped while runtime owns ids, refs, edge
 wiring, lifecycle, bounds, storage, and readback.
 
+2026-05-26 follow-up: the Product/Spec replay advanced past the original
+context scout call-shape blocker and exposed a second-order lifecycle problem:
+structural resharding created graph-visible context shard fanout large enough
+to fail node output-ref bounds before implementation. The governing follow-up
+spec is
+`context-frontier-lifecycle-and-shard-manifests.md`. Context scout execution
+packets remain valid, but context shard lists, shard packet refs, shard
+handoffs, and merge inputs must move behind payload-backed
+`ContextShardManifest` and `ContextMergePacket` contracts instead of being
+stored as graph node output refs or default graph topology.
+
+2026-05-27 production status: this spec is superseded for default production
+topology by
+`mandatory-context-focus-and-target-selection-boundary.md` and
+`node-local-node-resource-demand-and-legacy-evisceration.md`. A context scout
+execution packet is no longer default graph glue and must not be created
+from broad graph `targetRefs`, packet `likelyRepoAreas`, or approved repo
+scope. Context scout may remain only as a consumer-bound specialist subturn
+inside a `NodeResourceDemandSession`, after an accepted model-authored
+`ResourceObjectiveFocus` selected legal handles and stated the next unknown.
+If future implementation needs this packet, it must be compiled from that
+accepted focus/demand session and return ledger entries to the consumer node.
+
 ## Problem
 
 The latest Product/Spec Planning proof proved the top of the runtime path,
-then failed at the first context-supply boundary before implementation.
+then failed at the first resource-fulfillment boundary before implementation.
 
 Runtime evidence:
 
@@ -44,7 +67,7 @@ Runtime evidence:
 - packet review: skipped
 - graph: 10 nodes, 14 edges
 - role invocations: 0
-- first open gate: `context_supply`
+- first open gate: `resource_fulfillment`
 - terminal result: `needs_review`
 
 The root failure had two parts.
@@ -151,7 +174,7 @@ Execution Platform specs:
 Add a first-class `ContextScoutExecutionPacket` and compile it before any
 context-scout provider call.
 
-The packet is a domain resource packet for context-supply nodes. It is
+The packet is a domain resource packet for resource-fulfillment nodes. It is
 analogous to `ImplementationTaskPacket` for implementation nodes, but it is
 optimized for discovery, relevance judgment, and handoff production.
 
@@ -197,7 +220,7 @@ Optional fields:
 - `repoContextIndexRef`
 - `boundedRepoContextRefs`
 - `memoryContextPackRefs`
-- `priorContextHandoffRefs`
+- `priorResourceHandoffRefs`
 - `contextBrokerRequest`
 - `blockingLimitationRefs`
 - `nonblockingLimitationRefs`
@@ -366,7 +389,7 @@ The compiler must:
 1. validate the semantic intent shape.
 2. validate that failed/blocked node ids exist in the graph.
 3. validate commitment ids against the Mission Ledger.
-4. select a context-supply capability from the canonical capability registry.
+4. select a resource-fulfillment capability from the canonical capability registry.
 5. compile a context scout prerequisite node.
 6. compile handoff/dependency edges from context scout to blocked targets.
 7. create or update graph node metadata with bounded refs.
@@ -505,8 +528,8 @@ Add focused tests covering:
 Add a replay lane from the latest Product/Spec checkpoint:
 
 - input: accepted Mission Ledger, Commitment Work Packets, accepted graph, and
-  context-supply frontier from `native-exec-06e162ea7066ac2e`.
-- run only context-supply packet compilation, context scout preflight/provider
+  resource-fulfillment frontier from `native-exec-06e162ea7066ac2e`.
+- run only resource-fulfillment packet compilation, context scout preflight/provider
   start, handoff emission, and request-context repair as needed.
 - do not rerun router, Mission Ledger, packet authoring, or scheduler graph
   selection.
@@ -516,7 +539,7 @@ Add a replay lane from the latest Product/Spec checkpoint:
   - context scout handoffs or precise semantic blockers are emitted,
   - request-context repair compiles runtime-owned prerequisite nodes and
     edges without model-authored runtime envelopes,
-  - Work Queue/readback includes the active context-supply state.
+  - Work Queue/readback includes the active resource-fulfillment state.
 
 After this replay passes, rerun the full Product/Spec proof.
 
@@ -549,7 +572,7 @@ Expected implementation areas:
 - `extensions/execution-platform/src/work-queue/execution-read-model.ts`
   - surface context-scout packet/preflight/repair state.
 - `scripts/execution-platform-run-product-spec-boundary-replay.mjs`
-  - add the context-supply boundary replay.
+  - add the resource-fulfillment boundary replay.
 
 ## Acceptance Criteria
 
@@ -605,7 +628,7 @@ runtime-owned context prerequisite nodes and edges.
 
 Success gate:
 
-Replay the failed Product/Spec context-supply boundary from
+Replay the failed Product/Spec resource-fulfillment boundary from
 `native-exec-06e162ea7066ac2e`. Pass only if context scout execution packets
 compile under policy, provider calls can start, context blockers or handoffs
 are visible in readback, and request-context repair compiles without

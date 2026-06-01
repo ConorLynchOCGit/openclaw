@@ -3,7 +3,7 @@ import type { RuntimeJob } from "../runtime-job-repository.ts";
 import {
   buildImplementationTaskPacket,
   type ImplementationTaskFileSnapshot,
-} from "../workflows/mission-work-packets.ts";
+} from "../workflows/worker-execution-packets.ts";
 import { compileNodeExecutionPacketForImplementationTask } from "../workflows/node-resource-materialization.ts";
 import { CodexParityImplementationBridge } from "./codex-parity-implementation-bridge.ts";
 import type { CodexParityRuntimeAdapterResult } from "./codex-parity-runtime-adapter.ts";
@@ -221,8 +221,8 @@ function readyPackets() {
     allowedEditScope: [snapshot.fileRef],
     mustReadRefs: [snapshot.fileRef],
     likelyModifyRefs: [snapshot.fileRef],
-    contextPacketRefs: ["context-handoff://node-1"],
-    sourceContextHandoffRefs: ["context-handoff://node-1"],
+    contextPacketRefs: ["resource-handoff://node-1"],
+    sourceResourceHandoffRefs: ["resource-handoff://node-1"],
     validationCommandRefs: ["pnpm test:file src/example.test.ts"],
     acceptanceCriteria: ["The worker receives a hydrated packet handoff."],
     evidenceClaimExpectations: ["Changed file and validation evidence close commitment-1."],
@@ -269,6 +269,7 @@ describe("Codex parity implementation bridge", () => {
       evidenceRefs: ["artifact://context"],
       validationRefs: ["pnpm test:file src/example.test.ts"],
       approvedRepoScopePaths: ["extensions/execution-platform/src/work-queue/"],
+      nodeExecutionContract: packets.nodeExecutionContract,
       nodeExecutionPacket: packets.nodeExecutionPacket,
       codingResourcePacket: packets.codingResourcePacket,
       nodeReadinessStateRef: packets.readiness.state.stateRef,

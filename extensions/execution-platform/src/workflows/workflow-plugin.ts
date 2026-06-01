@@ -7,7 +7,7 @@ import type {
 } from "./runtime-work-graph-scheduler.ts";
 import type { WorkflowDefinition } from "./workflow-definition.ts";
 import type {
-  WorkflowContextNeed,
+  WorkflowResourceNeed,
   WorkflowPhase,
   WorkflowRoleClass,
 } from "./workflow-orchestration-policy.ts";
@@ -28,7 +28,9 @@ export type WorkflowPluginSchedulerPolicy = {
   stagedSchedulerProtocolRequired: boolean;
   stagedGraphAcceptanceRequired: boolean;
   modelAuthoredWorkPacketsRequiredForComplexMission: boolean;
+  resourceReadinessPolicy: "fresh_context_snapshots" | "domain_resource_manifest";
   freshContextSnapshotsRequiredForWorkerExecution: boolean;
+  domainResourceManifestRequiredForWorkerExecution: boolean;
   nodeExecutionPacketRequiredForWorkerExecution?: boolean;
   runtimeDerivedNodeEnvelopeRequired: boolean;
   runtimeDerivedExpectedEvidenceRequired: boolean;
@@ -49,7 +51,6 @@ export type WorkflowPluginSchedulerOptions = Pick<
   | "requireEvidenceClaimsForMissionLedger"
   | "requireSchedulerToolKernel"
   | "requireGenericStagedSchedulerProtocol"
-  | "requireFreshContextSnapshotsForWorkerExecution"
   | "requireNodeExecutionPacketForWorkerExecution"
   | "deferCloseoutUntilExecutableGraphComplete"
   | "roleCoverageProfile"
@@ -75,7 +76,7 @@ export type WorkflowPlugin = {
   optionalPhases: WorkflowPhase[];
   requiredRoleClasses: WorkflowRoleClass[];
   optionalRoleClasses: WorkflowRoleClass[];
-  contextNeeds: WorkflowContextNeed[];
+  resourceNeeds: WorkflowResourceNeed[];
   allowedNodeKinds: string[];
   requiredNodeKinds: string[];
   nodeExecutorKeys: string[];
@@ -127,12 +128,14 @@ export type WorkflowPluginResolution = {
   orchestrationPolicyRef: string;
   requiredPhases: WorkflowPhase[];
   requiredRoleClasses: WorkflowRoleClass[];
-  contextNeedCount: number;
+  resourceNeedCount: number;
   roleCoverageProfileId: string;
   completionReviewRequired: boolean;
   stagedSchedulerProtocolRequired: boolean;
   stagedGraphAcceptanceRequired: boolean;
+  resourceReadinessPolicy: "fresh_context_snapshots" | "domain_resource_manifest";
   freshContextSnapshotsRequiredForWorkerExecution: boolean;
+  domainResourceManifestRequiredForWorkerExecution: boolean;
   nodeExecutionPacketRequiredForWorkerExecution: boolean;
   runtimeDerivedNodeEnvelopeRequired: boolean;
   runtimeDerivedExpectedEvidenceRequired: boolean;
@@ -193,9 +196,24 @@ export function validateWorkflowPlugin(input: {
   }
   if (
     plugin.productionEnabled &&
+    plugin.schedulerPolicy.resourceReadinessPolicy === "fresh_context_snapshots" &&
     !plugin.schedulerPolicy.freshContextSnapshotsRequiredForWorkerExecution
   ) {
     reasonCodes.push("workflow_plugin_fresh_context_snapshots_required");
+  }
+  if (
+    plugin.productionEnabled &&
+    plugin.schedulerPolicy.resourceReadinessPolicy === "domain_resource_manifest" &&
+    !plugin.schedulerPolicy.domainResourceManifestRequiredForWorkerExecution
+  ) {
+    reasonCodes.push("workflow_plugin_domain_resource_manifest_required");
+  }
+  if (
+    plugin.productionEnabled &&
+    !plugin.schedulerPolicy.freshContextSnapshotsRequiredForWorkerExecution &&
+    !plugin.schedulerPolicy.domainResourceManifestRequiredForWorkerExecution
+  ) {
+    reasonCodes.push("workflow_plugin_resource_readiness_required");
   }
   if (
     plugin.productionEnabled &&
@@ -295,13 +313,16 @@ export function workflowPluginResolutionFor(input: {
     orchestrationPolicyRef: input.plugin.orchestrationPolicyRef,
     requiredPhases: input.plugin.requiredPhases,
     requiredRoleClasses: input.plugin.requiredRoleClasses,
-    contextNeedCount: input.plugin.contextNeeds.length,
+    resourceNeedCount: input.plugin.resourceNeeds.length,
     roleCoverageProfileId: input.plugin.roleCoverageProfile.profileId,
     completionReviewRequired: input.definition.completionReviewPolicy.required,
     stagedSchedulerProtocolRequired: input.plugin.schedulerPolicy.stagedSchedulerProtocolRequired,
     stagedGraphAcceptanceRequired: input.plugin.schedulerPolicy.stagedGraphAcceptanceRequired,
+    resourceReadinessPolicy: input.plugin.schedulerPolicy.resourceReadinessPolicy,
     freshContextSnapshotsRequiredForWorkerExecution:
       input.plugin.schedulerPolicy.freshContextSnapshotsRequiredForWorkerExecution,
+    domainResourceManifestRequiredForWorkerExecution:
+      input.plugin.schedulerPolicy.domainResourceManifestRequiredForWorkerExecution,
     nodeExecutionPacketRequiredForWorkerExecution:
       input.plugin.schedulerPolicy.nodeExecutionPacketRequiredForWorkerExecution === true,
     runtimeDerivedNodeEnvelopeRequired:

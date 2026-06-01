@@ -11,6 +11,24 @@ top.
 Work Queue item:
 `openclaw-convergence.runtime-artifact-payload-store-bounded-manifests`.
 
+2026-05-27 mandatory focus update: the same manifest-only rule applies to
+`ResourceObjectiveFocus`, legal resource universes, `NodeResourceDemandSession`,
+specialist scout handoffs, `NodeResourceLedger`, and target-selection packets.
+Graph metadata, Work Queue metadata, latest-run-state, and artifact metadata
+may carry only refs, hashes, counts, byte counts, status, and short previews.
+Selected handles and target selections must be artifact-backed manifests, not
+large context bodies or broad ref baskets. If a focus/demand/selection
+surface overflows metadata, that is a structural failure, not a reason to
+raise caps.
+
+2026-05-28 lifecycle runner update: `NodeLifecycleProjection` follows the
+same contract. Projection metadata may contain refs, hashes, counts, byte
+counts, compact status, gate, and short summaries only. Large accepted,
+blocked, request, diagnostic, provider, context, target-selection, validation,
+or evidence bodies must remain behind artifact/payload refs. The fix for
+projection or readback overflow is manifest-plus-payload storage, never
+raising metadata limits or hiding the lifecycle gate.
+
 ## Failure Evidence
 
 The checkpointed Product/Spec proof for runtime job
@@ -28,7 +46,7 @@ Observed evidence:
 - failure reason codes:
   - `worker_adapter_threw`
   - `worker_adapter_threw:artifact_metadata_limit`
-- first open gate: `context_supply`
+- first open gate: `resource_fulfillment`
 - graph state at failure: 9 nodes, 11 edges, 3 role invocations.
 - graph included context scout, implementation, validation, reviewer, and
   closeout nodes.
@@ -200,6 +218,43 @@ For coding implementation resources:
 - file snapshot bundle manifests.
 - optional per-file snapshot manifests for large file bodies.
 - validation plan/result manifests.
+
+For node-local node resource demand and specialist scout fulfillment:
+
+- `NodeResourceDemandSession`, `NodeResourceDemandRequest`, `NodeResourceDemandFulfillment`,
+  and `NodeResourceDemandBlocker` bodies are payload-backed artifacts.
+- `ContextScoutSpecialistSubturnRequest`, `ContextScoutSpecialistHandoff`,
+  and specialist result bodies are payload-backed artifacts.
+- `NodeResourceLedger` and `NodeResourceLedgerEntry` bodies are payload-backed
+  artifacts.
+- graph metadata, Work Queue metadata, scheduler progress metadata, and
+  latest-run-state metadata may carry only manifests: refs, hashes, counts,
+  state, reason codes, byte counts, and short previews.
+- Large specialist handoffs, many ledger entries, provider diagnostics, and
+  file-window bodies must never be packed into metadata to avoid recurring
+  metadata overflow failures.
+- Provider response-shape diagnostics and heap phase snapshots are first-class
+  diagnostic artifacts. They may store bounded keys, counts, byte lengths,
+  refs, hashes, finish reasons, timeout/preflight state, usage or unavailable
+  reason, and memory counters. They must not store raw prompts, raw provider
+  response bodies, raw provider logs, raw tool logs, raw command logs, raw DB
+  rows, hidden reasoning, or secrets.
+- Latest-run-state and Work Queue projections may include compact
+  `proofEnvironment` summaries derived from heap phase snapshots:
+  snapshot refs, largest metadata bytes/ref, largest artifact body bytes/ref,
+  latest-run-state bytes, scheduler-progress bytes, Work Queue projection
+  bytes, provider request max bytes, and reason codes. Full diagnostic bodies
+  remain payload-backed.
+- Product/Spec proof-run manifests are bounded metadata. Replay result,
+  admission gate, resource-materialization proof, worker results, validation,
+  evidence, and gateway submit diagnostics are referenced by run-scoped refs
+  under `.artifacts/execution-platform/proof-runs/<run-id>/`. Shared latest
+  replay files are mirrors only and must not be used as closeout truth.
+- Front-door submit heap diagnostics record prompt hash/length, workflow
+  summary bytes, conversation-context bytes, router-payload bytes, candidate
+  count, model/provider refs, and heap/RSS/external/array-buffer counters by
+  phase. They do not store raw prompt bodies. The router still receives the
+  prompt so routing quality is not sacrificed to diagnostics.
 
 The root packet should reference part refs instead of embedding all
 expensive bodies in metadata. Worker-facing hydration can assemble the exact

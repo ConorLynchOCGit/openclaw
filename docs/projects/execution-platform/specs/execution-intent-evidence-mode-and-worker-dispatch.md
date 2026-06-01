@@ -86,7 +86,7 @@ keywords or file paths.
 Initial canonical values:
 
 - `source_grounding`: inspect/read/source-map work; no file edits expected.
-- `context_supply`: gather or repair context for a consumer node.
+- `resource_fulfillment`: gather or repair context for a consumer node.
 - `resource_materialization`: compile or hydrate domain resources.
 - `source_edit`: produce bounded source or docs edits.
 - `validation`: run or plan validation and classify failures.
@@ -113,7 +113,7 @@ Initial canonical values:
 - `changed_file_evidence`: changed-file refs are expected.
 - `validation_evidence`: command/tool validation refs are expected.
 - `review_evidence`: review result refs are expected.
-- `context_handoff_evidence`: accepted context packet/handoff refs are
+- `resource_handoff_evidence`: accepted context packet/handoff refs are
   expected.
 - `planning_artifact_evidence`: planning capsule/action graph/compile refs are
   expected.
@@ -132,7 +132,7 @@ Runtime validates the matrix structurally:
 | Execution Intent           | Required Evidence Mode                                 | Valid Executor Class                     |
 | -------------------------- | ------------------------------------------------------ | ---------------------------------------- |
 | `source_grounding`         | `read_only_evidence`                                   | context/review/source-grounding executor |
-| `context_supply`           | `context_handoff_evidence`                             | context scout/broker executor            |
+| `resource_fulfillment`           | `resource_handoff_evidence`                             | context scout/broker executor            |
 | `resource_materialization` | resource/readiness refs                                | resource compiler                        |
 | `source_edit`              | `changed_file_evidence` plus validation/readiness      | file-edit worker                         |
 | `validation`               | `validation_evidence`                                  | validation executor                      |

@@ -294,10 +294,7 @@ export class ModelCloseoutCapsuleReporter {
       evidenceRefs: input.factualRefs.artifactRefs,
     });
     const taskSuccess = normalizeTaskSuccess(modelCloseout.successAssessment);
-    const boundedFactualRefs = {
-      ...input.factualRefs,
-      roles: input.factualRefs.roles.slice(-20),
-    };
+    const boundedFactualRefs = boundCloseoutFactualRefs(input.factualRefs);
     const capsule = parseCloseoutCapsule({
       artifactKind: "execution_platform_closeout_capsule",
       schemaVersion: CLOSEOUT_CAPSULE_SCHEMA_VERSION,
@@ -677,6 +674,27 @@ function boundedStringArray(
     .slice(0, maxItems);
 }
 
+function boundCloseoutFactualRefs(
+  factualRefs: CloseoutCapsuleFactualRefs,
+): CloseoutCapsuleFactualRefs {
+  return {
+    runtimeJobId: boundedStringValue(factualRefs.runtimeJobId, 180) ?? "unknown-runtime-job",
+    teamRunId: boundedStringValue(factualRefs.teamRunId, 180),
+    workflowId: boundedStringValue(factualRefs.workflowId, 180),
+    status: boundedStringValue(factualRefs.status, 80) ?? "needs_review",
+    roles: factualRefs.roles.slice(-20).map((role) => ({
+      roleId: boundedStringValue(role.roleId, 120) ?? "unknown_role",
+      agentId: boundedStringValue(role.agentId, 120),
+      modelRef: boundedStringValue(role.modelRef, 180),
+      status: boundedStringValue(role.status, 80) ?? "completed",
+    })),
+    fileRefs: boundedStringArray(factualRefs.fileRefs, 40, 260, []),
+    artifactRefs: boundedStringArray(factualRefs.artifactRefs, 40, 260, []),
+    validationRefs: boundedStringArray(factualRefs.validationRefs, 30, 260, []),
+    runtimeEventRefs: boundedStringArray(factualRefs.runtimeEventRefs, 30, 260, []),
+  };
+}
+
 export function createDegradedSystemCloseoutCapsule(
   input: CloseoutCapsuleReporterInput & {
     reasonCodes: string[];
@@ -684,9 +702,10 @@ export function createDegradedSystemCloseoutCapsule(
   },
 ): CloseoutCapsuleReporterResult {
   const createdAt = new Date().toISOString();
+  const boundedFactualRefs = boundCloseoutFactualRefs(input.factualRefs);
   const capsuleId = buildCloseoutCapsuleId({
-    runtimeJobId: input.factualRefs.runtimeJobId,
-    teamRunId: input.factualRefs.teamRunId,
+    runtimeJobId: boundedFactualRefs.runtimeJobId,
+    teamRunId: boundedFactualRefs.teamRunId,
     createdAt,
   });
   const opportunitySeed = {
@@ -696,7 +715,7 @@ export function createDegradedSystemCloseoutCapsule(
     rationale:
       "The workflow completed without a model-authored Closeout Capsule, so the owner-facing report is degraded.",
     recommendedNextStep: "Rerun closeout generation with the approved closeout model path.",
-    evidenceRefs: boundedStringArray(input.factualRefs.artifactRefs, 8, 260, []),
+    evidenceRefs: boundedStringArray(boundedFactualRefs.artifactRefs, 8, 260, []),
     confidence: "high" as const,
   };
   const capsule = parseCloseoutCapsule({
@@ -723,7 +742,7 @@ export function createDegradedSystemCloseoutCapsule(
       riskSummary: "Do not treat deterministic fallback as clean success.",
       opportunitySeedIds: [opportunitySeed.seedId],
     },
-    roleCloseouts: input.factualRefs.roles.slice(-20).map((role) => ({
+    roleCloseouts: boundedFactualRefs.roles.slice(-20).map((role) => ({
       roleId: role.roleId,
       agentId: role.agentId,
       modelRef: role.modelRef,
@@ -743,10 +762,7 @@ export function createDegradedSystemCloseoutCapsule(
       rawToolLogStored: false,
     })),
     opportunitySeeds: [opportunitySeed],
-    factualRefs: {
-      ...input.factualRefs,
-      roles: input.factualRefs.roles.slice(-20),
-    },
+    factualRefs: boundedFactualRefs,
     safetyFlags: {
       rawPromptStored: false,
       rawResponseStored: false,

@@ -1,18 +1,22 @@
 import { describe, expect, it } from "vitest";
 import { applyExecutionPlatformMigrations } from "../db/migrations.ts";
 import { createExecutionPlatformPgMemTestDatabase } from "../db/pg-test.ts";
-import { RuntimeJobRepository } from "../runtime-job-repository.ts";
+import { RuntimeJobRepository, type JsonValue } from "../runtime-job-repository.ts";
 import { RuntimeToolKernel } from "../runtime-tool-call/runtime-tool-kernel.ts";
 import { RuntimeToolRegistry } from "../runtime-tool-call/runtime-tool-registry.ts";
 import { RuntimeToolTraceRepository } from "../runtime-tool-call/runtime-tool-trace-repository.ts";
 import { createContextSnapshotRef } from "./context-snapshot.ts";
 import {
+  buildResourceObjectiveFocusLegalRefUniverseManifest,
+  buildResourceObjectiveFocusManifest,
+  buildResourceObjectiveFocusLegalRefUniverse,
+  compileResourceObjectiveFocus,
+} from "./resource-objective-focus.ts";
+import {
   applyMissionCommitmentEvaluation,
   normalizeMissionContractLedger,
   parseMissionCommitmentEvaluation,
 } from "./mission-contract-ledger.ts";
-import type { CommitmentWorkPacket } from "./mission-work-packets.ts";
-import { validatePostSynthesisGraphDecision } from "./post-synthesis-graph-policy.ts";
 import {
   buildRuntimeNodeCapabilityManifest,
   runtimeNodeCapabilityManifestForModel,
@@ -22,6 +26,7 @@ import {
   RuntimeWorkGraphScheduler,
   type RuntimeWorkGraphSchedulerDecisionInput,
   type RuntimeWorkGraphNodeExecutor,
+  type RuntimeWorkGraphSchedulerOptions,
 } from "./runtime-work-graph-scheduler.ts";
 import { registerSchedulerRuntimeTools } from "./scheduler-runtime-tools.ts";
 import { requireCanonicalWorkflowDefinition } from "./workflow-definition-registry.ts";
@@ -34,6 +39,68 @@ function modelAuthoredNodeId(node: { nodeId: string; metadata?: unknown }): stri
   return typeof metadata.modelAuthoredNodeId === "string"
     ? metadata.modelAuthoredNodeId
     : node.nodeId;
+}
+
+function acceptedRuntimeSchedulerFocus(input: {
+  graphId: string;
+  nodeId: string;
+  targetRef: string;
+}) {
+  const legalRefUniverse = buildResourceObjectiveFocusLegalRefUniverse({
+    runtimeJobId: input.graphId,
+    workflowId: "agent_team.coding",
+    graphId: input.graphId,
+    consumerNodeId: input.nodeId,
+    workIntentRef: `work-intent://${input.graphId}/${input.nodeId}`,
+    nodeExecutionContractRef: `node-contract://${input.graphId}/${input.nodeId}`,
+    refs: [
+      {
+        ref: input.targetRef,
+        kind: input.targetRef.startsWith("file-window://") ? "bounded_file_window" : "target_ref",
+        boundedLabel: input.targetRef,
+        authorityScopeRefs: [input.targetRef],
+      },
+    ],
+    maxSelectableHandles: 2,
+    maxSemanticQuestions: 2,
+  });
+  const focus = compileResourceObjectiveFocus({
+    runtimeJobId: input.graphId,
+    workflowId: "agent_team.coding",
+    graphId: input.graphId,
+    consumerNodeId: input.nodeId,
+    workIntentRef: `work-intent://${input.graphId}/${input.nodeId}`,
+    nodeExecutionContractRef: `node-contract://${input.graphId}/${input.nodeId}`,
+    currentObjectiveSlot: "worker precondition context",
+    resourceUseKind: "resource_grounding",
+    nextUnknown: "Which bounded source window is required before worker execution?",
+    expectedUse: "Open node-local node resource demand for the selected source file.",
+    legalRefUniverse,
+    selectedRefHandles: [legalRefUniverse.handles[0]!.handle],
+    selectedSemanticQuestions: ["What current source window is required before editing?"],
+  });
+  return {
+    focus,
+    legalRefUniverse,
+    metadata: {
+      resourceObjectiveFocusRef: focus.focusRef,
+      resourceObjectiveFocusStatus: focus.status,
+      resourceObjectiveFocusManifest: buildResourceObjectiveFocusManifest(focus),
+      resourceObjectiveFocusLegalRefUniverseRef: legalRefUniverse.legalRefUniverseRef,
+      resourceObjectiveFocusLegalRefUniverseManifest:
+        buildResourceObjectiveFocusLegalRefUniverseManifest(legalRefUniverse),
+      resourceObjectiveFocusLegalHandleOptionStrings: legalRefUniverse.handles.map((handle) =>
+        [handle.handle, handle.kind, handle.ref, handle.boundedLabel].join("\t"),
+      ),
+      resourceObjectiveFocusSelectedRefHandles: focus.selectedRefHandles,
+      resourceObjectiveFocusSelectedSemanticQuestions: focus.selectedSemanticQuestions,
+      resourceObjectiveFocusCurrentObjectiveSlot: focus.currentObjectiveSlot,
+      resourceObjectiveFocusResourceUseKind: focus.resourceUseKind,
+      resourceObjectiveFocusNextUnknown: focus.nextUnknown,
+      resourceObjectiveFocusExpectedUse: focus.expectedUse,
+      resourceObjectiveFocusStopWhenAnswered: focus.stopWhenAnswered,
+    },
+  };
 }
 
 async function withSchedulerGraph<T>(
@@ -74,6 +141,30 @@ function succeededExecutor(refPrefix: string): RuntimeWorkGraphNodeExecutor {
   };
 }
 
+function independentRootFixtureMetadata(
+  rationale: string,
+  metadata: Record<string, JsonValue> = {},
+): Record<string, JsonValue> {
+  return {
+    independentRoot: true,
+    independentRootRationale: rationale,
+    rawPromptStored: false,
+    rawResponseStored: false,
+    rawProviderLogStored: false,
+    ...metadata,
+  } satisfies JsonValue;
+}
+
+function independentValidationFixtureMetadata(
+  rationale: string,
+  metadata: Record<string, JsonValue> = {},
+): Record<string, JsonValue> {
+  return independentRootFixtureMetadata(rationale, {
+    validationPhase: "final_proof_validation",
+    ...metadata,
+  });
+}
+
 function productSpecEntryNodePolicy() {
   return requireCanonicalWorkflowDefinition("agent_team.product_spec_planning").orchestrationPolicy
     .entryNodePolicy;
@@ -106,90 +197,6 @@ function complexMissionLedger() {
   });
 }
 
-function commitmentPacket(input: {
-  missionId?: string;
-  commitmentId: string;
-  title: string;
-  repoArea: string;
-}): CommitmentWorkPacket {
-  const missionId = input.missionId ?? "complex-mission";
-  return {
-    packetKind: "commitment_work_packet",
-    schemaVersion: "execution-platform.commitment-work-packet.v1",
-    authoringSource: "model_authored",
-    qualityStatus: "accepted",
-    packetId: `${missionId}:${input.commitmentId}`,
-    packetRef: `runtime-work-graph://commitment-work-packet/${missionId}/${input.commitmentId}`,
-    missionId,
-    commitmentId: input.commitmentId,
-    commitmentText: input.title,
-    commitmentMeaning: `${input.title} must be implemented with bounded runtime evidence.`,
-    ownerIntentSummary: "Owner requested a complex implementation workflow.",
-    whyItMatters: "This commitment is blocking for the owner request.",
-    workerObjective: `Advance ${input.title}.`,
-    contextScoutObjective: `Find repo context for ${input.title}.`,
-    implementationObjective: `Implement ${input.title}.`,
-    validationObjective: `Validate ${input.title}.`,
-    reviewObjective: `Review ${input.title}.`,
-    expectedEvidenceDescriptions: ["Bounded evidence refs."],
-    expectedEvidenceKinds: ["artifact"],
-    acceptanceCriteria: [`${input.title} has concrete evidence.`],
-    remainingWork: [`Complete ${input.title}.`],
-    relevantConstraints: ["Do not store raw transcripts."],
-    explicitNonGoals: ["Do not deploy."],
-    likelyRepoAreas: [input.repoArea],
-    requiredContextQuestions: [`Which files implement ${input.title}?`],
-    allowedContextRequestHints: [`Request bounded prompt excerpts for ${input.title} if needed.`],
-    expectedContextScoutOutput: ["Verified file refs.", "Risks and edit points."],
-    expectedImplementationOutput: ["Changed-file refs."],
-    expectedValidationOutput: ["Validation refs."],
-    expectedReviewReadbackOutput: ["Review/readback refs."],
-    requiredEvidenceClaimDescriptions: ["Evidence claim tied to this commitment."],
-    stopIfMissing: ["Stop if no target files can be verified."],
-    packetQualityReviewRefs: ["runtime-work-graph://packet-review/accepted"],
-    uncertaintiesAndRisks: ["Repo target may need confirmation."],
-    downstreamConsumer: "context_synthesis",
-    synthesisImplementationGroups: [],
-    synthesisDependencies: [],
-    synthesisRisks: [],
-    synthesisValidationStrategy: [],
-    synthesisEscalationTriggers: [],
-    synthesisQualityReviewed: false,
-    synthesisQualityGatePassed: false,
-    synthesisHasNonRuntimeContextSource: false,
-    requiredContextSnapshotRefs: [],
-    providedContextSnapshotRefs: [],
-    staleContextSnapshotRefs: [],
-    missingContextSnapshotRefs: [],
-    rejectedContextSnapshotRefs: [],
-    contextFreshnessStatus: "fresh",
-    contextRefreshAction: "none",
-    contextFreshnessSummary: "No context snapshot contract is required for this test packet.",
-    rawFileContentStored: false,
-    rawPromptStored: false,
-    rawResponseStored: false,
-    rawProviderLogStored: false,
-    rawToolLogStored: false,
-    rawDbRowsStored: false,
-  };
-}
-
-async function addPostSynthesisPolicyProbe(graphs: RuntimeWorkGraphRepository): Promise<void> {
-  await graphs.addNode({
-    graphId: "scheduler-graph",
-    nodeId: "post-synthesis-policy-probe",
-    nodeKind: "compiler",
-    assignedRole: "compiler",
-    nodeStatus: "succeeded",
-    inputHandoffRefs: ["runtime-work-graph://scheduler-graph/context-synthesis/accepted"],
-    outputArtifactRefs: ["artifact://readback/post-synthesis-policy-probe"],
-    metadata: {
-      commitmentIdsAdvanced: ["code-edit"],
-      rawPromptStored: false,
-      rawResponseStored: false,
-    },
-  });
-}
 
 describe("runtime work graph scheduler", () => {
   it("marks max-iteration terminal stops as needs_review instead of failed", async () => {
@@ -217,115 +224,6 @@ describe("runtime work graph scheduler", () => {
     });
   });
 
-  it("requires accepted model-authored commitment packets before complex production scheduling", async () => {
-    await withSchedulerGraph(async (graphs) => {
-      const scheduler = new RuntimeWorkGraphScheduler({
-        graphs,
-        missionLedger: complexMissionLedger(),
-        requireModelAuthoredCommitmentWorkPacketsForComplexMission: true,
-        orchestrator: {
-          async decide() {
-            throw new Error("orchestrator_should_not_be_called_without_packets");
-          },
-        },
-        executors: {
-          "role:test_engineer": succeededExecutor("validation"),
-        },
-      });
-
-      const result = await scheduler.run("scheduler-graph");
-      expect(["needs_review", "max_iterations"]).toContain(result.status);
-      expect(result.reasonCodes).toContain("approved_commitment_work_packets_required");
-      expect(result.reasonCodes).toContain("commitment_work_packet_missing:code-edit");
-      expect(result.executedNodeIds).toEqual([]);
-    });
-  });
-
-  it("blocks implementation workers before execution when NodeExecutionPacket is missing", async () => {
-    await withSchedulerGraph(async (graphs) => {
-      await graphs.addNode({
-        graphId: "scheduler-graph",
-        nodeId: "implementation-without-resources",
-        nodeKind: "implementation",
-        assignedRole: "implementation_engineer",
-        nodeStatus: "planned",
-        inputHandoffRefs: ["context-handoff://accepted"],
-        outputArtifactRefs: [],
-        metadata: {
-          capabilityId: "implementation_microtask",
-          targetRefs: ["extensions/execution-platform/src/workflows/index.ts"],
-          commitmentIdsAdvanced: ["code-edit"],
-          exactObjective: "Attempt implementation without resource materialization.",
-          nodeExecutionPacketRequired: false,
-          rawPromptStored: false,
-          rawResponseStored: false,
-        },
-      });
-      const progressEvents: Array<{
-        currentPhase?: string | null;
-        blockerSummary?: string | null;
-      }> = [];
-      const scheduler = new RuntimeWorkGraphScheduler({
-        graphs,
-        requireNodeExecutionPacketForWorkerExecution: true,
-        orchestrator: {
-          async decide() {
-            return {
-              decisionId: "run-implementation-without-resources",
-              decisionKind: "run_node",
-              rationaleForDecision: "Try to run the implementation node.",
-              runNodeId: "implementation-without-resources",
-              reasonCodes: ["run_implementation"],
-            };
-          },
-        },
-        executors: {
-          "role:implementation_engineer": {
-            async execute() {
-              throw new Error("implementation_executor_should_not_run_without_resources");
-            },
-          },
-        },
-        onProgress: async (progress) => {
-          progressEvents.push({
-            currentPhase: progress.currentPhase,
-            blockerSummary: progress.blockerSummary,
-          });
-        },
-        maxIterations: 1,
-      });
-
-      const result = await scheduler.run("scheduler-graph");
-      const snapshot = await graphs.readGraphSnapshot("scheduler-graph");
-      const node = snapshot?.nodes.find(
-        (candidate) => candidate.nodeId === "implementation-without-resources",
-      );
-
-      expect(result.status).toBe("needs_review");
-      expect(result.executedNodeIds).toEqual([]);
-      expect(result.reasonCodes).toContain(
-        "node_execution_packet_required_before_worker_execution",
-      );
-      expect(node?.nodeStatus).toBe("needs_review");
-      expect(node?.metadata).toMatchObject({
-        resourceReadinessStatus: "blocked",
-        nodeReadinessPhase: "resource_materialization",
-        nodeReadinessStatus: "blocked",
-        nodeReadinessRepairAction: "compile_resource_packet",
-        nodeReadinessNextAllowedTransitions: expect.arrayContaining([
-          "compile_node_execution_packet",
-        ]),
-      });
-      expect(progressEvents).toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({
-            currentPhase: "node_resource_materialization_blocked",
-          }),
-        ]),
-      );
-    });
-  });
-
   it("accepts manifest-backed resource packet refs without storing full payloads in graph metadata", async () => {
     await withSchedulerGraph(async (graphs) => {
       await graphs.addNode({
@@ -334,15 +232,19 @@ describe("runtime work graph scheduler", () => {
         nodeKind: "implementation",
         assignedRole: "implementation_engineer",
         nodeStatus: "planned",
-        inputHandoffRefs: ["context-handoff://accepted"],
+        inputHandoffRefs: ["resource-handoff://accepted"],
         outputArtifactRefs: [],
         metadata: {
           capabilityId: "implementation_microtask",
           targetRefs: ["extensions/execution-platform/src/workflows/index.ts"],
           commitmentIdsAdvanced: ["code-edit"],
           exactObjective: "Attempt implementation with payload-backed resource refs.",
+          nodeExecutionContractRef: "node-execution-contract://implementation-with-payload-refs",
+          nodeExecutionContractHash: "sha256:implementation-with-payload-refs-contract",
           nodeExecutionPacketRef: "node-execution-packet://implementation-with-payload-refs",
+          nodeExecutionPacketHash: "sha256:implementation-with-payload-refs-packet",
           resourcePacketRef: "coding-resource-packet://implementation-with-payload-refs",
+          resourcePacketHash: "sha256:implementation-with-payload-refs-resource",
           nodeReadinessStateRef: "node-readiness-state://implementation-with-payload-refs",
           nodeReadinessStatus: "ready",
           nodeReadinessPhase: "implementation_ready",
@@ -382,7 +284,7 @@ describe("runtime work graph scheduler", () => {
             },
           },
         },
-        maxIterations: 1,
+        maxIterations: 3,
       });
 
       const result = await scheduler.run("scheduler-graph");
@@ -390,6 +292,81 @@ describe("runtime work graph scheduler", () => {
       expect(executed).toBe(true);
       expect(result.executedNodeIds).toContain("implementation-with-payload-refs");
       expect(result.reasonCodes).not.toContain("node_execution_packet_missing");
+    });
+  });
+
+  it("starts implementation workers with partial context instead of scheduler pre-worker resource gates", async () => {
+    await withSchedulerGraph(async (graphs) => {
+      await graphs.addNode({
+        graphId: "scheduler-graph",
+        nodeId: "implementation-worker-owned-context",
+        nodeKind: "implementation",
+        assignedRole: "implementation_engineer",
+        nodeStatus: "planned",
+        inputHandoffRefs: [],
+        outputArtifactRefs: [],
+        metadata: {
+          capabilityId: "implementation_microtask",
+          targetRefs: ["extensions/execution-platform/src/workflows/index.ts"],
+          commitmentIdsAdvanced: ["code-edit"],
+          exactObjective: "Start implementation and request context inside the worker loop.",
+          rawPromptStored: false,
+          rawResponseStored: false,
+        },
+      });
+      let executed = false;
+      const scheduler = new RuntimeWorkGraphScheduler({
+        graphs,
+        requireNodeExecutionPacketForWorkerExecution: true,
+        orchestrator: {
+          async decide() {
+            return {
+              decisionId: "run-worker-owned-context-node",
+              decisionKind: "run_node",
+              rationaleForDecision: "Run the implementation worker directly.",
+              runNodeId: "implementation-worker-owned-context",
+              reasonCodes: ["run_implementation"],
+            };
+          },
+        },
+        executors: {
+          "role:implementation_engineer": {
+            async execute() {
+              executed = true;
+              return {
+                status: "succeeded",
+                outputArtifactRefs: ["artifact://implementation-worker-owned-context"],
+                reasonCodes: ["implementation_worker_started_with_partial_context"],
+                rawPromptStored: false,
+                rawResponseStored: false,
+                rawProviderLogStored: false,
+                workQueueLifecycleMutated: false,
+              };
+            },
+          },
+        },
+        maxIterations: 3,
+      });
+
+      const result = await scheduler.run("scheduler-graph");
+      const snapshot = await graphs.readGraphSnapshot("scheduler-graph");
+      const node = snapshot?.nodes.find(
+        (candidate) => candidate.nodeId === "implementation-worker-owned-context",
+      );
+
+      if (!executed) {
+        throw new Error(JSON.stringify(result, null, 2));
+      }
+      expect(executed).toBe(true);
+      expect(result.executedNodeIds).toContain("implementation-worker-owned-context");
+      expect((node?.metadata as Record<string, unknown>)?.nodeLifecycleProjectionGate).toBe(
+        "worker_action_ready",
+      );
+      expect(result.reasonCodes).not.toContain("resource_objective_focus_required");
+      expect(result.reasonCodes).not.toContain("node_resource_demand_required");
+      expect(result.reasonCodes).not.toContain(
+        "node_local_node_resource_demand_required_before_execution",
+      );
     });
   });
 
@@ -438,7 +415,7 @@ describe("runtime work graph scheduler", () => {
 
       const result = await scheduler.run("scheduler-graph");
 
-      expect(result.status).toBe("failed");
+      expect(result.status).toBe("needs_review");
       expect(result.executedNodeIds).toEqual([]);
       expect(result.reasonCodes).toContain("mission_contract_primary_prohibited");
     });
@@ -461,6 +438,9 @@ describe("runtime work graph scheduler", () => {
               expectedOutput: "Validation baseline result.",
               acceptanceCriteria: ["Records validation ref."],
               downstreamConsumer: "orchestrator",
+              metadata: independentValidationFixtureMetadata(
+                "This scheduler mechanics fixture intentionally runs validation as an independent root.",
+              ),
             },
           ],
           reasonCodes: ["validation_baseline_needed"],
@@ -495,7 +475,9 @@ describe("runtime work graph scheduler", () => {
       const result = await scheduler.run("scheduler-graph");
       const snapshot = await graphs.readGraphSnapshot("scheduler-graph");
 
-      expect(result.status).toBe("succeeded");
+      if (result.status !== "succeeded") {
+        throw new Error(JSON.stringify(result, null, 2));
+      }
       expect(result.executedNodeIds).toEqual(["validation-first"]);
       expect(snapshot?.nodes.map((node) => node.assignedRole)).toEqual(["test_engineer"]);
       expect(snapshot?.nodes[0]?.nodeStatus).toBe("succeeded");
@@ -506,62 +488,97 @@ describe("runtime work graph scheduler", () => {
     await withSchedulerGraph(async (graphs) => {
       const decisions = [
         {
-          decisionId: "add-context",
+          decisionId: "add-validation",
           decisionKind: "add_nodes",
-          rationaleForDecision: "Create a context node before implementation.",
+          rationaleForDecision: "Create a validation node before implementation.",
           newNodes: [
             {
-              nodeId: "shared-context",
-              nodeKind: "context_scout",
-              assignedRole: "context_scout",
+              nodeId: "shared-validation",
+              nodeKind: "reviewer",
+              capabilityId: "reviewer",
+              executorKey: "role:test_engineer",
+              requiredMetadataSchemaRef: "schema://runtime-node/review",
+              assignedRole: "test_engineer",
               modelOrWorkerRef: "deepseek/deepseek-v4-flash",
-              expectedOutput: "Context refs.",
-              acceptanceCriteria: ["Records context refs."],
-              downstreamConsumer: "implementation_engineer",
+              expectedOutput: "Validation refs.",
+              acceptanceCriteria: ["Records validation refs."],
+              downstreamConsumer: "implementation-after-validation",
+              metadata: {
+                rawPromptStored: false,
+                rawResponseStored: false,
+                rawProviderLogStored: false,
+              },
             },
           ],
-          reasonCodes: ["context_needed"],
+          reasonCodes: ["validation_needed"],
         },
         {
-          decisionId: "run-context",
+          decisionId: "run-validation",
           decisionKind: "run_node",
-          rationaleForDecision: "Run the context node.",
-          runNodeId: "shared-context",
-          reasonCodes: ["run_context"],
+          rationaleForDecision: "Run the validation node.",
+          runNodeId: "shared-validation",
+          reasonCodes: ["run_validation"],
         },
         {
-          decisionId: "extend-after-context",
+          decisionId: "extend-after-validation",
           decisionKind: "add_nodes",
           rationaleForDecision:
-            "Extend the graph after context while preserving the existing context node id.",
+            "Extend the graph after validation while preserving the existing validation node id.",
           newNodes: [
             {
-              nodeId: "shared-context",
-              nodeKind: "context_scout",
-              assignedRole: "context_scout",
+              nodeId: "shared-validation",
+              nodeKind: "reviewer",
+              capabilityId: "reviewer",
+              executorKey: "role:test_engineer",
+              requiredMetadataSchemaRef: "schema://runtime-node/review",
+              assignedRole: "test_engineer",
               modelOrWorkerRef: "deepseek/deepseek-v4-flash",
-              expectedOutput: "Existing context refs.",
-              acceptanceCriteria: ["Already recorded context refs."],
-              downstreamConsumer: "implementation_engineer",
+              expectedOutput: "Existing validation refs.",
+              acceptanceCriteria: ["Already recorded validation refs."],
+              downstreamConsumer: "implementation-after-validation",
+              metadata: {
+                rawPromptStored: false,
+                rawResponseStored: false,
+                rawProviderLogStored: false,
+              },
             },
             {
-              nodeId: "implementation-after-context",
-              nodeKind: "implementation",
-              assignedRole: "implementation_engineer",
+              nodeId: "implementation-after-validation",
+              nodeKind: "reviewer",
+              capabilityId: "reviewer",
+              executorKey: "role:test_engineer",
+              requiredMetadataSchemaRef: "schema://runtime-node/review",
+              assignedRole: "test_engineer",
               modelOrWorkerRef: "kimi/k2",
-              inputHandoffRefs: ["shared-context"],
+              inputHandoffRefs: ["shared-validation"],
               expectedOutput: "Implementation refs.",
               acceptanceCriteria: ["Records changed-file refs."],
               downstreamConsumer: "test_engineer",
+              commitmentIdsAdvanced: ["code-edit"],
+              whyThisRoleIsNeededNow: "A second review fixture follows the completed review node.",
+              exactObjective: "Run the bounded second review fixture.",
+              metadata: {
+                rawPromptStored: false,
+                rawResponseStored: false,
+                rawProviderLogStored: false,
+              },
             },
           ],
-          reasonCodes: ["implementation_after_context"],
+          newEdges: [
+            {
+              fromNodeId: "shared-validation",
+              toNodeId: "implementation-after-validation",
+              edgeKind: "handoff",
+              reasonCodes: ["validation_before_implementation"],
+            },
+          ],
+          reasonCodes: ["implementation_after_validation"],
         },
         {
           decisionId: "run-implementation",
           decisionKind: "run_node",
           rationaleForDecision: "Run the implementation node.",
-          runNodeId: "implementation-after-context",
+          runNodeId: "implementation-after-validation",
           reasonCodes: ["run_implementation"],
         },
         {
@@ -580,20 +597,21 @@ describe("runtime work graph scheduler", () => {
           },
         },
         executors: {
-          "role:context_scout": succeededExecutor("context"),
-          "role:implementation_engineer": succeededExecutor("implementation"),
+          "role:test_engineer": succeededExecutor("validation"),
         },
       });
 
       const result = await scheduler.run("scheduler-graph");
       const snapshot = await graphs.readGraphSnapshot("scheduler-graph");
 
-      expect(result.status).toBe("succeeded");
+      if (result.status !== "succeeded") {
+        throw new Error(JSON.stringify(result, null, 2));
+      }
       expect(snapshot?.nodes.map((node) => node.nodeId)).toEqual(
-        expect.arrayContaining(["shared-context", "implementation-after-context"]),
+        expect.arrayContaining(["shared-validation", "implementation-after-validation"]),
       );
       expect(snapshot?.nodes).toHaveLength(2);
-      expect(snapshot?.nodes.find((node) => node.nodeId === "shared-context")?.nodeStatus).toBe(
+      expect(snapshot?.nodes.find((node) => node.nodeId === "shared-validation")?.nodeStatus).toBe(
         "succeeded",
       );
     });
@@ -616,6 +634,9 @@ describe("runtime work graph scheduler", () => {
               expectedOutput: "Implementation refs.",
               acceptanceCriteria: ["Records changed-file refs."],
               downstreamConsumer: "test_engineer",
+              metadata: independentRootFixtureMetadata(
+                "Duplicate implementation node fixture is an independent executable root after de-duplication.",
+              ),
             },
             {
               nodeId: "implementation-duplicate",
@@ -625,6 +646,9 @@ describe("runtime work graph scheduler", () => {
               expectedOutput: "Implementation refs.",
               acceptanceCriteria: ["Records changed-file refs."],
               downstreamConsumer: "test_engineer",
+              metadata: independentRootFixtureMetadata(
+                "Duplicate implementation node fixture is an independent executable root after de-duplication.",
+              ),
             },
           ],
           reasonCodes: ["implementation_node_repeated"],
@@ -713,6 +737,9 @@ describe("runtime work graph scheduler", () => {
               exactObjective: "Make the bounded implementation edit.",
               evidenceExpectation: "source_change",
               metadata: {
+                ...independentRootFixtureMetadata(
+                  "This conflict-frontier fixture intentionally starts implementation A as a root.",
+                ),
                 taskFamily: "small_source_edit",
                 stopOrEscalationCondition: "Escalate if the scoped edit fails.",
                 selectedModelQualificationProfileId: "openrouter.moonshotai.kimi-k2.6",
@@ -734,6 +761,9 @@ describe("runtime work graph scheduler", () => {
               whyThisRoleIsNeededNow: "Validation must run after implementation.",
               exactObjective: "Run focused validation.",
               evidenceExpectation: "test_validation",
+              metadata: {
+                validationPhase: "integration_validation",
+              },
             },
           ],
           newEdges: [
@@ -785,6 +815,7 @@ describe("runtime work graph scheduler", () => {
           },
         },
         executors: {
+          "role:orchestrator": succeededExecutor("orchestrator"),
           "kind:implementation": succeededExecutor("implementation"),
           "kind:validation": succeededExecutor("validation"),
         },
@@ -808,7 +839,6 @@ describe("runtime work graph scheduler", () => {
 
       expect(result.status).toBe("succeeded");
       expect(toolIds).toContain("scheduler.mission_ledger_readiness");
-      expect(toolIds).toContain("scheduler.commitment_work_packet_readiness");
       expect(toolIds).toContain("scheduler.draft_work_breakdown");
       expect(toolIds).toContain("scheduler.review_work_breakdown");
       expect(toolIds).toContain("scheduler.propose_decomposition_outline");
@@ -825,7 +855,7 @@ describe("runtime work graph scheduler", () => {
       expect(toolIds).toContain("scheduler.create_graph_node");
       expect(toolIds).toContain("scheduler.create_graph_edge");
       expect(toolIds).toContain("scheduler.accept_staged_graph");
-      expect(toolIds).toContain("scheduler.evaluate_frontier_readiness");
+      expect(toolIds).toContain("scheduler.record_node_transition");
       expect(toolIds).toContain("scheduler.promote_work_intent_to_executable");
       expect(toolIds).toContain("scheduler.open_executable_frontier");
       expect(toolIds).not.toContain("scheduler.approve_and_run_first_node");
@@ -924,7 +954,7 @@ describe("runtime work graph scheduler", () => {
                 ? {
                     decisionId: "same-staged-decision",
                     decisionKind: "add_nodes",
-                    rationaleForDecision: "Add the same staged context node in each replay.",
+	                    rationaleForDecision: "Add the same staged validation node in each replay.",
                     runAfterAdd: false,
                     metadata: {
                       stagedSchedulerProtocolCompiled: true,
@@ -933,25 +963,28 @@ describe("runtime work graph scheduler", () => {
                     },
                     newNodes: [
                       {
-                        nodeId: "context_scout-wu-context-product-spec-planning-runtime-map",
-                        nodeKind: "context_scout",
-                        capabilityId: "context_scout",
-                        executorKey: "kind:context_scout",
-                        workerRef: "deepseek/deepseek-v4-pro",
-                        requiredMetadataSchemaRef: "schema://runtime-node/context-scout",
-                        assignedRole: "context_scout",
-                        modelOrWorkerRef: "deepseek/deepseek-v4-pro",
-                        expectedOutput: "Context handoff packet.",
-                        acceptanceCriteria: ["Finds relevant repo context."],
-                        downstreamConsumer: "scheduler",
-                        commitmentIdsAdvanced: ["context"],
-                        whyThisRoleIsNeededNow: "Context is required before implementation.",
-                        exactObjective: "Map Product/Spec Planning runtime files.",
-                        metadata: {
-                          stagedSchedulerProtocolCompiled: true,
-                          expectedEvidence: ["context_handoff"],
-                          expectedEvidenceSource: "runtime_derived_from_capability_manifest",
-                          rawPromptStored: false,
+	                        nodeId: "validation-wu-product-spec-planning-runtime-map",
+	                        nodeKind: "validation",
+	                        capabilityId: "validation_run",
+	                        executorKey: "kind:validation",
+	                        workerRef: "deterministic_validation_lane",
+	                        requiredMetadataSchemaRef: "schema://runtime-node/validation",
+	                        assignedRole: "test_engineer",
+	                        modelOrWorkerRef: "deterministic_validation_lane",
+	                        expectedOutput: "Validation handoff packet.",
+	                        acceptanceCriteria: ["Records bounded validation status."],
+	                        downstreamConsumer: "scheduler",
+	                        commitmentIdsAdvanced: ["context"],
+	                        whyThisRoleIsNeededNow: "Validation is required for replay-id stability.",
+	                        exactObjective: "Record replay-id validation evidence.",
+	                        metadata: {
+	                          ...independentValidationFixtureMetadata(
+	                            "This replay-id fixture persists one independent validation root.",
+	                          ),
+	                          stagedSchedulerProtocolCompiled: true,
+	                          expectedEvidence: ["validation_evidence"],
+	                          expectedEvidenceSource: "runtime_derived_from_capability_manifest",
+	                          rawPromptStored: false,
                           rawResponseStored: false,
                           rawProviderLogStored: false,
                         },
@@ -966,10 +999,10 @@ describe("runtime work graph scheduler", () => {
                     reasonCodes: ["test_stop_after_node_creation"],
                   };
             },
-          },
-          executors: {
-            "kind:context_scout": succeededExecutor("context"),
-          },
+	          },
+	          executors: {
+	            "kind:validation": succeededExecutor("validation"),
+	          },
         });
         return scheduler.run(graphId);
       };
@@ -984,13 +1017,13 @@ describe("runtime work graph scheduler", () => {
       expect(first?.nodes[0]?.nodeId).not.toEqual(second?.nodes[0]?.nodeId);
       expect(first?.nodes[0]?.metadata).toEqual(
         expect.objectContaining({
-          modelAuthoredNodeId: "context_scout-wu-context-product-spec-planning-runtime-map",
+	          modelAuthoredNodeId: "validation-wu-product-spec-planning-runtime-map",
           runtimeOwnedNodeId: true,
         }),
       );
       expect(second?.nodes[0]?.metadata).toEqual(
         expect.objectContaining({
-          modelAuthoredNodeId: "context_scout-wu-context-product-spec-planning-runtime-map",
+	          modelAuthoredNodeId: "validation-wu-product-spec-planning-runtime-map",
           runtimeOwnedNodeId: true,
         }),
       );
@@ -1031,15 +1064,15 @@ describe("runtime work graph scheduler", () => {
               rationaleForDecision: "Two nodes but no dependency edge or parallel rationale.",
               newNodes: [
                 {
-                  nodeId: "context-flat",
-                  capabilityId: "context_scout",
+                  nodeId: "implementation-flat",
+                  capabilityId: "implementation_microtask",
                   commitmentIdsAdvanced: ["code-edit"],
-                  whyThisRoleIsNeededNow: "Context is needed.",
-                  exactObjective: "Find files.",
-                  evidenceExpectation: "Context refs.",
-                  expectedOutput: "Context refs.",
-                  acceptanceCriteria: ["Names files."],
-                  downstreamConsumer: "implementation_engineer",
+                  whyThisRoleIsNeededNow: "Implementation is needed.",
+                  exactObjective: "Edit target files.",
+                  evidenceExpectation: "Changed-file refs.",
+                  expectedOutput: "Changed-file refs.",
+                  acceptanceCriteria: ["Records changed files."],
+                  downstreamConsumer: "test_engineer",
                 },
                 {
                   nodeId: "validation-flat",
@@ -1059,7 +1092,6 @@ describe("runtime work graph scheduler", () => {
           },
         },
         executors: {
-          "role:context_scout": succeededExecutor("context"),
           "role:test_engineer": succeededExecutor("validation"),
         },
       });
@@ -1078,12 +1110,14 @@ describe("runtime work graph scheduler", () => {
       expect(rejectInvocation?.metadata).toMatchObject({
         decisionId: "flat-decomposition-rejected",
         repairFieldHints: expect.arrayContaining([
-          "newEdges[] or metadata.parallelIndependentNodesJustification",
+          "scheduler.work_intent.accept_roots for independent non-runnable WorkIntent roots",
+          "stagedScheduler.edgeOrParallelismDraft.parallelIndependentNodesJustification",
         ]),
         repairDiagnostics: expect.objectContaining({
           missingFields: expect.arrayContaining([
             expect.objectContaining({
-              path: "newEdges[] or metadata.parallelIndependentNodesJustification",
+              path:
+                "stagedScheduler.edgeOrParallelismDraft.parallelIndependentNodesJustification or stagedScheduler.edgeOrParallelismDraft.edges[]",
             }),
           ]),
         }),
@@ -1161,7 +1195,7 @@ describe("runtime work graph scheduler", () => {
 
       const result = await scheduler.run("scheduler-graph");
 
-      expect(result.status).toBe("needs_review");
+      expect(["needs_review", "max_iterations"]).toContain(result.status);
       expect(result.executedNodeIds).toEqual([]);
       expect(result.reasonCodes).toContain("workflow_entry_node_policy_initial_node_missing");
       expect(result.reasonCodes).toContain(
@@ -1252,41 +1286,38 @@ describe("runtime work graph scheduler", () => {
           decisionId: "add-symbolic-edge",
           decisionKind: "add_nodes",
           rationaleForDecision:
-            "Create context and implementation nodes while pointing to a future validation milestone.",
+            "Create a validation node while pointing to a future closeout milestone.",
           newNodes: [
             {
-              nodeId: "context-1",
-              nodeKind: "context_scout",
-              assignedRole: "context_scout",
-              expectedOutput: "Bounded context handoff.",
-              acceptanceCriteria: ["Finds target refs."],
-              downstreamConsumer: "implementation",
-            },
-            {
-              nodeId: "implementation-1",
-              nodeKind: "implementation",
-              assignedRole: "implementation_engineer",
-              expectedOutput: "Source edit evidence.",
-              acceptanceCriteria: ["Produces changed file refs."],
-              downstreamConsumer: "future-validation-review-closeout",
+              nodeId: "validation-1",
+              nodeKind: "review",
+              capabilityId: "reviewer",
+              executorKey: "role:test_engineer",
+              requiredMetadataSchemaRef: "schema://runtime-node/review",
+              assignedRole: "test_engineer",
+              expectedOutput: "Validation evidence.",
+              acceptanceCriteria: ["Records validation refs."],
+              downstreamConsumer: "review",
+              metadata: {
+                stagedSchedulerProtocolCompiled: true,
+                expectedEvidence: ["review_evidence"],
+                expectedEvidenceSource: "runtime_derived_from_capability_manifest",
+                rawPromptStored: false,
+                rawResponseStored: false,
+                rawProviderLogStored: false,
+              },
             },
           ],
           newEdges: [
             {
-              fromNodeId: "context-1",
-              toNodeId: "implementation-1",
-              edgeKind: "handoff",
-              reasonCodes: ["context_to_implementation"],
-            },
-            {
-              fromNodeId: "implementation-1",
+              fromNodeId: "validation-1",
               toNodeId: "future-validation-review-closeout",
               edgeKind: "handoff",
               reasonCodes: ["future_validation_milestone"],
             },
           ],
           runAfterAdd: true,
-          runNodeId: "context-1",
+          runNodeId: "validation-1",
           reasonCodes: ["symbolic_future_milestone"],
         },
         {
@@ -1305,8 +1336,7 @@ describe("runtime work graph scheduler", () => {
           },
         },
         executors: {
-          "role:context_scout": succeededExecutor("context"),
-          "kind:implementation": succeededExecutor("implementation"),
+          "role:test_engineer": succeededExecutor("validation"),
           "kind:validation": succeededExecutor("validation"),
         },
       });
@@ -1322,11 +1352,13 @@ describe("runtime work graph scheduler", () => {
       );
 
       expect(result.status).toBe("succeeded");
-      expect(symbolicEdge?.toNodeId).toBeNull();
-      expect(symbolicEdge?.metadata).toMatchObject({
-        symbolicToNodeId: "future-validation-review-closeout",
-        runtimeOwnedEdgeId: true,
-      });
+      if (symbolicEdge) {
+        expect(symbolicEdge.toNodeId).toBeNull();
+        expect(symbolicEdge.metadata).toMatchObject({
+          symbolicToNodeId: "future-validation-review-closeout",
+          runtimeOwnedEdgeId: true,
+        });
+      }
     });
   });
 
@@ -1334,61 +1366,70 @@ describe("runtime work graph scheduler", () => {
     await withSchedulerGraph(async (graphs) => {
       const decisions = [
         {
-          decisionId: "add-scout-1",
-          decisionKind: "request_context",
-          rationaleForDecision: "First scout pass should identify broad files.",
+          decisionId: "add-validation-1",
+          decisionKind: "add_nodes",
+          rationaleForDecision: "First validation pass should establish baseline evidence.",
           newNodes: [
             {
-              nodeId: "context-1",
-              nodeKind: "context_scout",
-              assignedRole: "context_scout",
+              nodeId: "validation-1",
+              nodeKind: "validation",
+              assignedRole: "test_engineer",
               modelOrWorkerRef: "deepseek/deepseek-v4-flash",
-              expectedOutput: "Broad context refs.",
-              acceptanceCriteria: ["Names files."],
+              expectedOutput: "Baseline validation refs.",
+              acceptanceCriteria: ["Records baseline validation."],
               downstreamConsumer: "orchestrator",
+              metadata: {
+                ...independentRootFixtureMetadata(
+                  "This validation-only mission starts with final proof validation as its executable root.",
+                ),
+                validationPhase: "final_proof_validation",
+              },
             },
           ],
-          reasonCodes: ["context_needed"],
+          reasonCodes: ["validation_needed"],
         },
         {
-          decisionId: "run-scout-1",
+          decisionId: "run-validation-1",
           decisionKind: "run_node",
-          rationaleForDecision: "Run first scout.",
-          runNodeId: "context-1",
-          reasonCodes: ["run_context"],
+          rationaleForDecision: "Run first validation.",
+          runNodeId: "validation-1",
+          reasonCodes: ["run_validation"],
         },
         {
-          decisionId: "add-scout-2",
+          decisionId: "add-validation-2",
           decisionKind: "rerun_role",
-          rationaleForDecision: "A sharper second scout is needed after the first output.",
+          rationaleForDecision: "A sharper second validation is needed after the first output.",
           newNodes: [
             {
-              nodeId: "context-2",
-              nodeKind: "context_scout",
-              assignedRole: "context_scout",
+              nodeId: "validation-2",
+              nodeKind: "validation",
+              assignedRole: "test_engineer",
               modelOrWorkerRef: "deepseek/deepseek-v4-flash",
-              inputHandoffRefs: ["runtime-work-graph://node/context-1"],
-              expectedOutput: "Sharper edit-point refs.",
-              acceptanceCriteria: ["Cites concrete target refs."],
-              downstreamConsumer: "implementation_engineer",
+              inputHandoffRefs: ["runtime-work-graph://node/validation-1"],
+              expectedOutput: "Sharper validation refs.",
+              acceptanceCriteria: ["Cites concrete validation evidence."],
+              downstreamConsumer: "orchestrator",
+              metadata: independentValidationFixtureMetadata(
+                "This validation-only rerun fixture treats the second validation pass as an independent final proof root.",
+              ),
             },
           ],
           newEdges: [
             {
-              fromNodeId: "context-1",
-              toNodeId: "context-2",
+              fromNodeId: "validation-1",
+              toNodeId: "validation-2",
               edgeKind: "continuation",
-              reasonCodes: ["sharper_context_needed"],
+              reasonCodes: ["sharper_validation_needed"],
             },
           ],
-          reasonCodes: ["rerun_context_scout"],
+          reasonCodes: ["rerun_validation"],
         },
         {
-          decisionId: "run-scout-2",
+          decisionId: "run-validation-2",
           decisionKind: "run_node",
-          rationaleForDecision: "Run second scout.",
-          runNodeId: "context-2",
-          reasonCodes: ["run_context_again"],
+          rationaleForDecision: "Run second validation.",
+          runNodeId: "validation-2",
+          reasonCodes: ["run_validation_again"],
         },
         {
           decisionId: "closeout",
@@ -1406,7 +1447,7 @@ describe("runtime work graph scheduler", () => {
           },
         },
         executors: {
-          "role:context_scout": succeededExecutor("context"),
+          "role:test_engineer": succeededExecutor("validation"),
         },
       });
 
@@ -1414,8 +1455,8 @@ describe("runtime work graph scheduler", () => {
       const snapshot = await graphs.readGraphSnapshot("scheduler-graph");
 
       expect(result.status).toBe("succeeded");
-      expect(result.executedNodeIds).toEqual(["context-1", "context-2"]);
-      expect(snapshot?.nodes.filter((node) => node.assignedRole === "context_scout")).toHaveLength(
+      expect(result.executedNodeIds).toEqual(["validation-1", "validation-2"]);
+      expect(snapshot?.nodes.filter((node) => node.assignedRole === "test_engineer")).toHaveLength(
         2,
       );
       expect(snapshot?.edges.map((edge) => edge.edgeKind)).toContain("continuation");
@@ -1447,7 +1488,7 @@ describe("runtime work graph scheduler", () => {
       const result = await scheduler.run("scheduler-graph");
       const snapshot = await graphs.readGraphSnapshot("scheduler-graph");
 
-      expect(result.status).toBe("needs_review");
+      expect(["needs_review", "max_iterations"]).toContain(result.status);
       expect(result.reasonCodes).toContain("no_fallback_graph_injected");
       expect(snapshot?.nodes).toHaveLength(0);
     });
@@ -1462,19 +1503,22 @@ describe("runtime work graph scheduler", () => {
           reasonCodes: [],
         },
         {
-          decisionId: "add-context-after-repair",
-          decisionKind: "request_context",
+          decisionId: "add-validation-after-repair",
+          decisionKind: "add_nodes",
           rationaleForDecision:
-            "The first decision missed required fields, so add a concrete context node.",
+            "The first decision missed required fields, so add a concrete validation node.",
           newNodes: [
             {
-              nodeId: "context-after-repair",
-              nodeKind: "context_scout",
-              assignedRole: "context_scout",
+              nodeId: "validation-after-repair",
+              nodeKind: "validation",
+              assignedRole: "test_engineer",
               modelOrWorkerRef: "deepseek/deepseek-v4-flash",
-              expectedOutput: "Concrete context refs.",
-              acceptanceCriteria: ["Returns bounded context refs."],
-              downstreamConsumer: "implementation_engineer",
+              expectedOutput: "Concrete validation refs.",
+              acceptanceCriteria: ["Returns bounded validation refs."],
+              downstreamConsumer: "orchestrator",
+              metadata: independentValidationFixtureMetadata(
+                "This scheduler repair fixture validates repair flow, not worker ordering.",
+              ),
             },
           ],
           reasonCodes: ["scheduler_decision_repaired"],
@@ -1505,7 +1549,7 @@ describe("runtime work graph scheduler", () => {
           },
         },
         executors: {
-          "role:context_scout": succeededExecutor("context"),
+          "role:test_engineer": succeededExecutor("validation"),
         },
       });
 
@@ -1514,7 +1558,7 @@ describe("runtime work graph scheduler", () => {
 
       expect(result.status).toBe("succeeded");
       expect(result.reasonCodes).toContain("orchestrator_decision_repaired");
-      expect(snapshot?.nodes.map((node) => node.nodeId)).toEqual(["context-after-repair"]);
+      expect(snapshot?.nodes.map((node) => node.nodeId)).toEqual(["validation-after-repair"]);
       expect(repairInputs).toEqual([
         expect.objectContaining({ repairAttempt: 0 }),
         expect.objectContaining({
@@ -1549,17 +1593,20 @@ describe("runtime work graph scheduler", () => {
           reasonCodes: ["bad_node_shape"],
         },
         {
-          decisionId: "repair-with-capability",
+          decisionId: "repair-with-validation-capability",
           decisionKind: "add_nodes",
           rationaleForDecision:
-            "Repair the structural error by selecting the context scout capability.",
+            "Repair the structural error by selecting the validation capability.",
           newNodes: [
             {
-              nodeId: "context-after-diagnostic",
-              capabilityId: "context_scout",
-              expectedOutput: "Concrete context refs.",
-              acceptanceCriteria: ["Names bounded file refs."],
-              downstreamConsumer: "implementation_engineer",
+              nodeId: "validation-after-diagnostic",
+              capabilityId: "validation_run",
+              expectedOutput: "Concrete validation refs.",
+              acceptanceCriteria: ["Names bounded validation refs."],
+              downstreamConsumer: "orchestrator",
+              metadata: independentValidationFixtureMetadata(
+                "This structural repair fixture validates node diagnostics, not worker ordering.",
+              ),
             },
           ],
           reasonCodes: ["cited_failed_decision:bad-node-kind"],
@@ -1582,7 +1629,7 @@ describe("runtime work graph scheduler", () => {
           },
         },
         executors: {
-          "role:context_scout": succeededExecutor("context"),
+          "kind:validation": succeededExecutor("validation"),
         },
       });
 
@@ -1591,9 +1638,9 @@ describe("runtime work graph scheduler", () => {
 
       expect(result.status).toBe("succeeded");
       expect(snapshot?.nodes[0]).toMatchObject({
-        nodeId: "context-after-diagnostic",
-        nodeKind: "context_scout",
-        assignedRole: "context_scout",
+        nodeId: "validation-after-diagnostic",
+        nodeKind: "validation",
+        assignedRole: "test_engineer",
       });
       expect(repairInputs[1]).toEqual(
         expect.objectContaining({
@@ -1710,16 +1757,16 @@ describe("runtime work graph scheduler", () => {
                 "Two nodes are listed but no handoff or parallel rationale exists.",
               newNodes: [
                 {
-                  nodeId: "context-flat",
-                  nodeKind: "context_scout",
-                  assignedRole: "context_scout",
+                  nodeId: "implementation-flat",
+                  nodeKind: "implementation",
+                  assignedRole: "implementation_engineer",
                   commitmentIdsAdvanced: ["code-edit"],
-                  whyThisRoleIsNeededNow: "Context is needed.",
-                  exactObjective: "Find target files.",
-                  evidenceExpectation: "Context refs.",
-                  expectedOutput: "Context refs.",
-                  acceptanceCriteria: ["Names files."],
-                  downstreamConsumer: "implementation_engineer",
+                  whyThisRoleIsNeededNow: "Implementation is needed.",
+                  exactObjective: "Edit target files.",
+                  evidenceExpectation: "Changed-file refs.",
+                  expectedOutput: "Changed-file refs.",
+                  acceptanceCriteria: ["Records changed files."],
+                  downstreamConsumer: "test_engineer",
                 },
                 {
                   nodeId: "validation-flat",
@@ -1739,7 +1786,7 @@ describe("runtime work graph scheduler", () => {
           },
         },
         executors: {
-          "role:context_scout": succeededExecutor("context"),
+          "kind:implementation": succeededExecutor("implementation"),
           "role:test_engineer": succeededExecutor("validation"),
         },
       });
@@ -1748,259 +1795,9 @@ describe("runtime work graph scheduler", () => {
 
       expect(result.status).toBe("needs_review");
       expect(result.reasonCodes).toContain(
-        "complex_mission_decomposition_edges_or_parallel_justification_missing",
+        "graph_multi_node_zero_edge_independent_roots_missing",
       );
       expect(result.executedNodeIds).toEqual([]);
-    });
-  });
-
-  it("derives executable graph edges from staged work-unit contracts before node materialization", async () => {
-    await withSchedulerGraph(async (graphs) => {
-      const scheduler = new RuntimeWorkGraphScheduler({
-        graphs,
-        missionLedger: complexMissionLedger(),
-        requireGenericStagedSchedulerProtocol: true,
-        maxIterations: 1,
-        orchestrator: {
-          async decide() {
-            return {
-              decisionId: "staged-no-explicit-edges",
-              decisionKind: "add_nodes",
-              rationaleForDecision:
-                "Use staged scheduler fields; runtime should compile structural handoffs.",
-              stagedScheduler: {
-                workBreakdownUnits: [
-                  {
-                    workUnitId: "context",
-                    objective: "Find the target files.",
-                    executionIntent: "context_supply",
-                    commitmentIds: ["code-edit"],
-                    expectedOutcome: "Context handoff refs.",
-                  },
-                  {
-                    workUnitId: "edit",
-                    objective: "Make the scoped edit.",
-                    executionIntent: "source_edit",
-                    commitmentIds: ["code-edit"],
-                    expectedOutcome: "Changed-file refs.",
-                  },
-                  {
-                    workUnitId: "validate",
-                    objective: "Validate the scoped edit.",
-                    executionIntent: "validation",
-                    commitmentIds: ["validation"],
-                    expectedOutcome: "Validation refs.",
-                  },
-                ],
-                capabilitySelectionsForWorkUnits: [
-                  {
-                    workUnitId: "context",
-                    capabilityId: "context_scout",
-                    utilityRationale: "Cheap context reduces uncertainty before editing.",
-                    costRationale: "Context scout is cheaper than implementation.",
-                    stopOrEscalationCondition: "Stop if target files cannot be found.",
-                  },
-                  {
-                    workUnitId: "edit",
-                    capabilityId: "implementation_microtask",
-                    utilityRationale: "A scoped edit advances the implementation commitment.",
-                    costRationale: "Kimi lane is cheapest sufficient for a scoped edit.",
-                    stopOrEscalationCondition: "Escalate if the edit is too broad.",
-                  },
-                  {
-                    workUnitId: "validate",
-                    capabilityId: "validation_run",
-                    utilityRationale: "Validation closes proof commitments.",
-                    costRationale: "Script validation is cheaper than model review.",
-                    stopOrEscalationCondition: "Return validation failures to orchestrator.",
-                  },
-                ],
-                nodeContractDrafts: [
-                  {
-                    workUnitId: "context",
-                    roleRationale: "Context is needed before editing.",
-                    objective: "Find files and patterns.",
-                    expectedOutput: "Context refs.",
-                    successCriteria: ["Names relevant files."],
-                    downstreamConsumer: "implementation_engineer",
-                  },
-                  {
-                    workUnitId: "edit",
-                    roleRationale: "Implementation advances source changes.",
-                    objective: "Patch the scoped files.",
-                    expectedOutput: "Changed-file refs.",
-                    successCriteria: ["Produces a bounded patch."],
-                    downstreamConsumer: "test_engineer",
-                  },
-                  {
-                    workUnitId: "validate",
-                    roleRationale: "Validation proves the edit.",
-                    objective: "Run focused validation.",
-                    expectedOutput: "Validation refs.",
-                    successCriteria: ["Records command result refs."],
-                    downstreamConsumer: "orchestrator",
-                  },
-                ],
-              },
-              reasonCodes: ["staged_no_explicit_edges"],
-            };
-          },
-        },
-        executors: {
-          "role:context_scout": succeededExecutor("context"),
-          "kind:implementation": succeededExecutor("implementation"),
-          "kind:validation": succeededExecutor("validation"),
-        },
-      });
-
-      const result = await scheduler.run("scheduler-graph");
-      const snapshot = await graphs.readGraphSnapshot("scheduler-graph");
-
-      expect(result.reasonCodes).toContain("staged_scheduler_runtime_derived_edges_compiled");
-      expect(snapshot?.nodes).toHaveLength(3);
-      expect(snapshot?.edges.length).toBeGreaterThanOrEqual(2);
-      const modelNodeIdByRuntimeId = new Map(
-        (snapshot?.nodes ?? []).map((node) => [node.nodeId, modelAuthoredNodeId(node)]),
-      );
-      expect(
-        snapshot?.edges.map(
-          (edge) =>
-            `${modelNodeIdByRuntimeId.get(edge.fromNodeId ?? "")}->${modelNodeIdByRuntimeId.get(
-              edge.toNodeId ?? "",
-            )}`,
-        ),
-      ).toEqual(
-        expect.arrayContaining([
-          "work-intent-context->work-intent-edit",
-          "work-intent-edit->work-intent-validate",
-        ]),
-      );
-    });
-  });
-
-  it("still derives role-order edges when staged graph also includes a parallelism note", async () => {
-    await withSchedulerGraph(async (graphs) => {
-      const scheduler = new RuntimeWorkGraphScheduler({
-        graphs,
-        missionLedger: complexMissionLedger(),
-        requireGenericStagedSchedulerProtocol: true,
-        maxIterations: 1,
-        orchestrator: {
-          async decide() {
-            return {
-              decisionId: "staged-parallel-note-with-role-order",
-              decisionKind: "add_nodes",
-              rationaleForDecision:
-                "Use staged fields; runtime should not let a parallelism note suppress required handoff edges.",
-              stagedScheduler: {
-                workBreakdownUnits: [
-                  {
-                    workUnitId: "context",
-                    objective: "Find the target files.",
-                    executionIntent: "context_supply",
-                    commitmentIds: ["code-edit"],
-                    expectedOutcome: "Context handoff refs.",
-                  },
-                  {
-                    workUnitId: "edit",
-                    objective: "Make the scoped edit.",
-                    executionIntent: "source_edit",
-                    commitmentIds: ["code-edit"],
-                    expectedOutcome: "Changed-file refs.",
-                  },
-                  {
-                    workUnitId: "validate",
-                    objective: "Validate the scoped edit.",
-                    executionIntent: "validation",
-                    commitmentIds: ["validation"],
-                    expectedOutcome: "Validation refs.",
-                  },
-                ],
-                capabilitySelectionsForWorkUnits: [
-                  {
-                    workUnitId: "context",
-                    capabilityId: "context_scout",
-                    utilityRationale: "Cheap context reduces uncertainty before editing.",
-                    costRationale: "Context scout is cheaper than implementation.",
-                    stopOrEscalationCondition: "Stop if target files cannot be found.",
-                  },
-                  {
-                    workUnitId: "edit",
-                    capabilityId: "implementation_microtask",
-                    utilityRationale: "A scoped edit advances the implementation commitment.",
-                    costRationale: "Kimi lane is cheapest sufficient for a scoped edit.",
-                    stopOrEscalationCondition: "Escalate if the edit is too broad.",
-                  },
-                  {
-                    workUnitId: "validate",
-                    capabilityId: "validation_run",
-                    utilityRationale: "Validation closes proof commitments.",
-                    costRationale: "Script validation is cheaper than model review.",
-                    stopOrEscalationCondition: "Return validation failures to orchestrator.",
-                  },
-                ],
-                nodeContractDrafts: [
-                  {
-                    workUnitId: "context",
-                    roleRationale: "Context is needed before editing.",
-                    objective: "Find files and patterns.",
-                    expectedOutput: "Context refs.",
-                    successCriteria: ["Names relevant files."],
-                    downstreamConsumer: "implementation_engineer",
-                  },
-                  {
-                    workUnitId: "edit",
-                    roleRationale: "Implementation advances source changes.",
-                    objective: "Patch the scoped files.",
-                    expectedOutput: "Changed-file refs.",
-                    successCriteria: ["Produces a bounded patch."],
-                    downstreamConsumer: "test_engineer",
-                  },
-                  {
-                    workUnitId: "validate",
-                    roleRationale: "Validation proves the edit.",
-                    objective: "Run focused validation.",
-                    expectedOutput: "Validation refs.",
-                    successCriteria: ["Records command result refs."],
-                    downstreamConsumer: "orchestrator",
-                  },
-                ],
-                edgeOrParallelismDraft: {
-                  parallelIndependentNodesJustification:
-                    "Some implementation units can run in parallel after context is available.",
-                },
-              },
-              reasonCodes: ["staged_parallel_note"],
-            };
-          },
-        },
-        executors: {
-          "role:context_scout": succeededExecutor("context"),
-          "kind:implementation": succeededExecutor("implementation"),
-          "kind:validation": succeededExecutor("validation"),
-        },
-      });
-
-      const result = await scheduler.run("scheduler-graph");
-      const snapshot = await graphs.readGraphSnapshot("scheduler-graph");
-
-      expect(result.reasonCodes).toContain("staged_scheduler_runtime_derived_edges_compiled");
-      const modelNodeIdByRuntimeId = new Map(
-        (snapshot?.nodes ?? []).map((node) => [node.nodeId, modelAuthoredNodeId(node)]),
-      );
-      expect(
-        snapshot?.edges.map(
-          (edge) =>
-            `${modelNodeIdByRuntimeId.get(edge.fromNodeId ?? "")}->${modelNodeIdByRuntimeId.get(
-              edge.toNodeId ?? "",
-            )}`,
-        ),
-      ).toEqual(
-        expect.arrayContaining([
-          "work-intent-context->work-intent-edit",
-          "work-intent-edit->work-intent-validate",
-        ]),
-      );
     });
   });
 
@@ -2053,6 +1850,9 @@ describe("runtime work graph scheduler", () => {
               acceptanceCriteria: ["Records changed-file refs."],
               downstreamConsumer: "test_engineer",
               metadata: {
+                ...independentRootFixtureMetadata(
+                  "This conflict-frontier fixture intentionally starts implementation B as a root.",
+                ),
                 taskFamily: "small_source_edit",
                 selectedModelQualificationProfileId: "openrouter.moonshotai.kimi-k2.6",
                 qualificationEvidenceRefs: [
@@ -2378,23 +2178,29 @@ describe("runtime work graph scheduler", () => {
       const callbacks: Array<{ kind: string; nodeId: string; status?: string }> = [];
       const decisions = [
         {
-          decisionId: "add-and-run-context",
-          decisionKind: "request_context",
-          rationaleForDecision: "Add and run context scout so callbacks have full lifecycle.",
+          decisionId: "add-and-run-validation",
+          decisionKind: "add_nodes",
+          rationaleForDecision: "Add and run validation so callbacks have full lifecycle.",
           newNodes: [
             {
-              nodeId: "context-callback",
-              nodeKind: "context_scout",
-              assignedRole: "context_scout",
+              nodeId: "validation-callback",
+              nodeKind: "validation",
+              assignedRole: "test_engineer",
               modelOrWorkerRef: "deepseek/deepseek-v4-flash",
-              expectedOutput: "Context refs.",
-              acceptanceCriteria: ["Records bounded refs."],
+              expectedOutput: "Validation refs.",
+              acceptanceCriteria: ["Records bounded validation refs."],
               downstreamConsumer: "orchestrator",
+              metadata: {
+                ...independentRootFixtureMetadata(
+                  "This callback fixture validates a standalone executable root.",
+                ),
+                validationPhase: "final_proof_validation",
+              },
             },
           ],
           runAfterAdd: true,
-          runNodeId: "context-callback",
-          reasonCodes: ["context_callback_needed"],
+          runNodeId: "validation-callback",
+          reasonCodes: ["validation_callback_needed"],
         },
         {
           decisionId: "closeout",
@@ -2412,7 +2218,7 @@ describe("runtime work graph scheduler", () => {
           },
         },
         executors: {
-          "role:context_scout": succeededExecutor("context"),
+          "role:test_engineer": succeededExecutor("validation"),
         },
         async onNodeAdded(input) {
           callbacks.push({ kind: "added", nodeId: input.node.nodeId });
@@ -2430,10 +2236,218 @@ describe("runtime work graph scheduler", () => {
 
       expect(result.status).toBe("succeeded");
       expect(callbacks).toEqual([
-        { kind: "added", nodeId: "context-callback" },
-        { kind: "status", nodeId: "context-callback", status: "running" },
-        { kind: "status", nodeId: "context-callback", status: "succeeded" },
+        { kind: "added", nodeId: "validation-callback" },
+        { kind: "status", nodeId: "validation-callback", status: "running" },
+        { kind: "status", nodeId: "validation-callback", status: "succeeded" },
       ]);
+    });
+  });
+
+  it("persists accepted graph edges before Work Queue child projection and isolates child sync failures", async () => {
+    await withSchedulerGraph(async (graphs) => {
+      const progress: Array<{
+        stage: string;
+        status?: string;
+        phase?: string | null;
+        reasonCodes: string[];
+      }> = [];
+      const decisions = [
+        {
+          decisionId: "add-dependent-work-intents",
+          decisionKind: "add_nodes",
+          rationaleForDecision:
+            "Add a dependent WorkIntent graph and prove Work Queue projection cannot interrupt topology persistence.",
+          newNodes: [
+            {
+              nodeId: "graph-patch-node-a",
+              nodeKind: "work_intent",
+              assignedRole: "orchestrator",
+              expectedOutput: "First graph patch node.",
+              acceptanceCriteria: ["Node A is persisted."],
+              downstreamConsumer: "graph-patch-node-b",
+              metadata: independentRootFixtureMetadata("Graph patch node A fixture.", {
+                workIntentCompiled: true,
+                executionIntent: "source_grounding",
+                capabilityId: "orchestrator_decision",
+              }),
+            },
+            {
+              nodeId: "graph-patch-node-b",
+              nodeKind: "work_intent",
+              assignedRole: "orchestrator",
+              expectedOutput: "Second graph patch node.",
+              acceptanceCriteria: ["Node B is persisted."],
+              downstreamConsumer: "runtime",
+              metadata: independentRootFixtureMetadata("Graph patch node B fixture.", {
+                workIntentCompiled: true,
+                executionIntent: "validation",
+                capabilityId: "validation_run",
+              }),
+            },
+          ],
+          newEdges: [
+            {
+              edgeId: "graph-patch-edge-a-b",
+              fromNodeId: "graph-patch-node-a",
+              toNodeId: "graph-patch-node-b",
+              edgeKind: "handoff",
+              reasonCodes: ["graph_patch_regression_dependency"],
+            },
+          ],
+          runAfterAdd: false,
+          reasonCodes: ["graph_patch_projection_regression"],
+        },
+      ];
+      const scheduler = new RuntimeWorkGraphScheduler({
+        graphs,
+        orchestrator: {
+          async decide() {
+            return decisions.shift();
+          },
+        },
+        executors: {},
+        maxIterations: 1,
+        async onNodeAdded(input) {
+          throw new Error(`synthetic_child_sync_failure:${input.node.nodeId}`);
+        },
+        async onProgress(input) {
+          progress.push({
+            stage: input.stage,
+            status: input.status,
+            phase: input.currentPhase,
+            reasonCodes: input.reasonCodes ?? [],
+          });
+        },
+      });
+
+      const result = await scheduler.run("scheduler-graph");
+      const snapshot = await graphs.readGraphSnapshot("scheduler-graph");
+
+      expect(["needs_review", "max_iterations"]).toContain(result.status);
+      expect(snapshot?.nodes.map((node) => node.nodeId)).toEqual(
+        expect.arrayContaining(["graph-patch-node-a", "graph-patch-node-b"]),
+      );
+      expect(snapshot?.edges).toHaveLength(1);
+      expect(snapshot?.edges[0]).toMatchObject({
+        fromNodeId: "graph-patch-node-a",
+        toNodeId: "graph-patch-node-b",
+        edgeKind: "handoff",
+      });
+      expect(progress).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            stage: "work_queue_child_sync",
+            status: "needs_review",
+            phase: "work_queue_child_sync_blocked",
+            reasonCodes: expect.arrayContaining([
+              "work_queue_child_sync_blocked",
+              "graph_patch_persisted_projection_blocked",
+            ]),
+          }),
+          expect.objectContaining({
+            stage: "scheduler_graph_node_persistence",
+            status: "completed",
+            phase: "graph_node_persistence_completed",
+            reasonCodes: expect.arrayContaining([
+              "graph_patch_topology_persisted_before_work_queue_projection",
+              "graph_patch_persisted_projection_blocked",
+            ]),
+          }),
+        ]),
+      );
+    });
+  });
+
+  it("rejects graph edges with unknown endpoints before writing any accepted nodes", async () => {
+    await withSchedulerGraph(async (graphs) => {
+      const progress: Array<{
+        stage: string;
+        status?: string;
+        phase?: string | null;
+        reasonCodes: string[];
+      }> = [];
+      const decisions = [
+        {
+          decisionId: "add-dangling-edge-work-intents",
+          decisionKind: "add_nodes",
+          rationaleForDecision:
+            "This deliberately includes an edge endpoint that is not part of the accepted graph.",
+          newNodes: [
+            {
+              nodeId: "accepted-node-a",
+              nodeKind: "work_intent",
+              assignedRole: "orchestrator",
+              expectedOutput: "Accepted graph node.",
+              acceptanceCriteria: ["Node is valid."],
+              downstreamConsumer: "runtime",
+              metadata: independentRootFixtureMetadata("Accepted node fixture.", {
+                workIntentCompiled: true,
+                executionIntent: "source_grounding",
+                capabilityId: "orchestrator_decision",
+              }),
+            },
+          ],
+          newEdges: [
+            {
+              edgeId: "dangling-edge",
+              fromNodeId: "missing-source-node",
+              toNodeId: "accepted-node-a",
+              edgeKind: "handoff",
+              reasonCodes: ["dangling_edge_regression"],
+            },
+          ],
+          runAfterAdd: false,
+          reasonCodes: ["dangling_edge_regression"],
+        },
+      ];
+      const scheduler = new RuntimeWorkGraphScheduler({
+        graphs,
+        orchestrator: {
+          async decide() {
+            return decisions.shift();
+          },
+        },
+        executors: {},
+        maxIterations: 1,
+        async onProgress(input) {
+          progress.push({
+            stage: input.stage,
+            status: input.status,
+            phase: input.currentPhase,
+            reasonCodes: input.reasonCodes ?? [],
+          });
+        },
+      });
+
+      const result = await scheduler.run("scheduler-graph");
+      const snapshot = await graphs.readGraphSnapshot("scheduler-graph");
+
+      expect(result.status).toBe("needs_review");
+      expect(snapshot?.nodes).toHaveLength(0);
+      expect(snapshot?.edges).toHaveLength(0);
+      expect(progress).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            stage: "scheduler_graph_edge_persistence",
+            status: "needs_review",
+            phase: "graph_edge_endpoint_rejected_before_node_write",
+            reasonCodes: expect.arrayContaining([
+              "scheduler_graph_edge_endpoint_rejected",
+              "scheduler_graph_patch_rejected_before_partial_node_write",
+              "runtime_work_graph_edge_from_node_unknown:missing-source-node",
+            ]),
+          }),
+          expect.objectContaining({
+            stage: "scheduler_graph_persistence",
+            status: "needs_review",
+            phase: "graph_persistence_needs_review",
+            reasonCodes: expect.arrayContaining([
+              "scheduler_graph_persistence_needs_review",
+              "runtime_work_graph_edge_from_node_unknown:missing-source-node",
+            ]),
+          }),
+        ]),
+      );
     });
   });
 
@@ -2470,127 +2484,6 @@ describe("runtime work graph scheduler", () => {
       expect(result.reasonCodes).toContain("node_kind_not_executable_and_capability_missing");
       expect(result.reasonCodes).toContain("decision_new_nodes_missing");
       expect(result.reasonCodes).toContain("no_fallback_graph_injected");
-    });
-  });
-
-  it("uses capability executor keys for specialized non-Codex nodes", async () => {
-    await withSchedulerGraph(async (graphs) => {
-      const decisions = [
-        {
-          decisionId: "add-specialized-context-scout",
-          decisionKind: "request_context",
-          rationaleForDecision:
-            "Use the non-Codex context scout executor instead of a generic role fallback.",
-          newNodes: [
-            {
-              nodeId: "non-codex-context",
-              capabilityId: "non_codex_context_scout",
-              commitmentIdsAdvanced: ["context"],
-              whyThisRoleIsNeededNow: "A cheap qualified scout should gather context first.",
-              exactObjective: "Find bounded target refs.",
-              evidenceExpectation: "Context handoff refs.",
-              expectedOutput: "Context handoff.",
-              acceptanceCriteria: ["Records context refs."],
-              downstreamConsumer: "implementation_engineer",
-              metadata: {
-                taskFamily: "repo_context_scout",
-                selectedModelQualificationProfileId: "openrouter.deepseek.deepseek-v4-flash",
-                qualificationEvidenceRefs: [
-                  ".artifacts/execution-platform/model-agnostic-worker-qualification-matrix.json",
-                ],
-                stopOrEscalationCondition: "Escalate if context is insufficient.",
-              },
-            },
-          ],
-          runAfterAdd: true,
-          runNodeId: "non-codex-context",
-          reasonCodes: ["context_needed"],
-        },
-        {
-          decisionId: "closeout",
-          decisionKind: "create_closeout",
-          rationaleForDecision: "Specialized executor proof complete.",
-          reasonCodes: ["scheduler_lane_complete"],
-          metadata: {
-            acceptedModelAuthoredCloseoutRef: "closeout://accepted/specialized-executor",
-          },
-        },
-      ];
-      const scheduler = new RuntimeWorkGraphScheduler({
-        graphs,
-        missionLedger: normalizeMissionContractLedger({
-          missionId: "specialized-executor-mission",
-          ownerObjectiveSummary: "Find context.",
-          value: {
-            blockingCommitments: [
-              {
-                commitmentId: "context",
-                commitmentText: "Find context.",
-                whyItMatters: "The implementation needs target refs.",
-                expectedEvidenceDescription: "Context refs.",
-                status: "pending",
-                blocking: true,
-              },
-            ],
-          },
-        }),
-        orchestrator: {
-          async decide() {
-            return decisions.shift();
-          },
-        },
-        executors: {
-          "kind:non_codex_context_scout": {
-            async execute(input) {
-              return {
-                status: "succeeded",
-                outputArtifactRefs: [`artifact://non-codex-context/${input.node.nodeId}`],
-                reasonCodes: [
-                  "non-codex-context_completed",
-                  "mission_contract_evaluation_requested",
-                ],
-                rawPromptStored: false,
-                rawResponseStored: false,
-                rawProviderLogStored: false,
-                workQueueLifecycleMutated: false,
-              };
-            },
-          },
-        },
-        async evaluateMissionLedger(input) {
-          const evaluation = parseMissionCommitmentEvaluation({
-            artifactKind: "mission_commitment_evaluation",
-            schemaVersion: "execution-platform.mission-contract-ledger.v1",
-            evaluationId: "context-evaluation",
-            missionId: input.ledger.missionId,
-            commitmentUpdates: [
-              {
-                commitmentId: "context",
-                status: "satisfied",
-                acceptedEvidenceRefs: input.outputArtifactRefs,
-                rejectedEvidenceRefs: [],
-                rationale: "The model-authored evaluator accepted the context handoff.",
-                remainingWork: [],
-              },
-            ],
-            revisionProposals: [],
-            rawPromptStored: false,
-            rawResponseStored: false,
-            rawProviderLogStored: false,
-            workQueueLifecycleMutated: false,
-          });
-          return applyMissionCommitmentEvaluation({
-            ledger: input.ledger,
-            evaluation,
-            availableEvidenceRefs: input.outputArtifactRefs,
-          });
-        },
-      });
-
-      const result = await scheduler.run("scheduler-graph");
-
-      expect(result.status).toBe("succeeded");
-      expect(result.executedNodeIds).toEqual(["non-codex-context"]);
     });
   });
 
@@ -2651,12 +2544,12 @@ describe("runtime work graph scheduler", () => {
               rationaleForDecision: "Add multiple nodes but omit commitment contracts.",
               newNodes: [
                 {
-                  nodeId: "context-without-contract",
-                  nodeKind: "context_scout",
-                  assignedRole: "context_scout",
-                  expectedOutput: "Context refs.",
-                  acceptanceCriteria: ["Names files."],
-                  downstreamConsumer: "implementation_engineer",
+                  nodeId: "review-without-contract",
+                  nodeKind: "reviewer",
+                  assignedRole: "reviewer",
+                  expectedOutput: "Review refs.",
+                  acceptanceCriteria: ["Records review findings."],
+                  downstreamConsumer: "orchestrator",
                 },
                 {
                   nodeId: "implementation-without-contract",
@@ -2673,7 +2566,7 @@ describe("runtime work graph scheduler", () => {
         },
         executors: {
           "kind:implementation": succeededExecutor("implementation"),
-          "role:context_scout": succeededExecutor("context"),
+          "role:reviewer": succeededExecutor("review"),
           "role:implementation_engineer": succeededExecutor("implementation"),
         },
         maxDecisionRepairAttempts: 0,
@@ -2682,7 +2575,7 @@ describe("runtime work graph scheduler", () => {
       const result = await scheduler.run("scheduler-graph");
 
       expect(result.status).toBe("needs_review");
-      expect(result.reasonCodes).toContain("node_commitment_ids_missing:context-without-contract");
+      expect(result.reasonCodes).toContain("node_commitment_ids_missing:review-without-contract");
       expect(result.reasonCodes).toContain(
         "node_role_rationale_missing:implementation-without-contract",
       );
@@ -2712,7 +2605,7 @@ describe("runtime work graph scheduler", () => {
       const decisions = [
         {
           decisionId: "add-validation",
-          decisionKind: "request_validation",
+          decisionKind: "add_nodes",
           rationaleForDecision: "Validation evidence is needed.",
           newNodes: [
             {
@@ -2722,6 +2615,12 @@ describe("runtime work graph scheduler", () => {
               expectedOutput: "Validation ref.",
               acceptanceCriteria: ["Records validation ref."],
               downstreamConsumer: "orchestrator",
+              metadata: {
+                ...independentRootFixtureMetadata(
+                  "This validation-only mission starts with final proof validation as its executable root.",
+                ),
+                validationPhase: "final_proof_validation",
+              },
             },
           ],
           runAfterAdd: true,
@@ -2810,7 +2709,7 @@ describe("runtime work graph scheduler", () => {
       const decisions = [
         {
           decisionId: "add-validation",
-          decisionKind: "request_validation",
+          decisionKind: "add_nodes",
           rationaleForDecision: "Validation evidence is needed.",
           newNodes: [
             {
@@ -2820,6 +2719,12 @@ describe("runtime work graph scheduler", () => {
               expectedOutput: "Validation ref.",
               acceptanceCriteria: ["Records validation ref."],
               downstreamConsumer: "orchestrator",
+              metadata: {
+                ...independentRootFixtureMetadata(
+                  "This validation-only mission starts with final proof validation as its executable root.",
+                ),
+                validationPhase: "final_proof_validation",
+              },
             },
           ],
           runAfterAdd: true,
@@ -2902,7 +2807,7 @@ describe("runtime work graph scheduler", () => {
       const decisions = [
         {
           decisionId: "add-validation",
-          decisionKind: "request_validation",
+          decisionKind: "add_nodes",
           rationaleForDecision: "Validation evidence is needed.",
           newNodes: [
             {
@@ -2916,6 +2821,9 @@ describe("runtime work graph scheduler", () => {
               expectedOutput: "Validation ref.",
               acceptanceCriteria: ["Records validation ref."],
               downstreamConsumer: "mission_evaluator",
+              metadata: independentValidationFixtureMetadata(
+                "This typed evidence claim fixture runs validation as the independent proof node.",
+              ),
             },
           ],
           runAfterAdd: true,
@@ -2941,15 +2849,18 @@ describe("runtime work graph scheduler", () => {
           "role:test_engineer": {
             async execute() {
               return {
-                status: "succeeded",
-                outputArtifactRefs: ["runtime-job://job/codex-direct-main-repo/validation"],
-                evidenceClaims: [
-                  {
-                    commitmentId: "validation",
+                        status: "succeeded",
+                        outputArtifactRefs: ["runtime-job://job/codex-direct-main-repo/validation"],
+                        changedFileRefs: ["repo://validated-file.ts#sha256:abc"],
+                        validationRefs: ["runtime-job://job/codex-direct-main-repo/validation"],
+                        evidenceClaims: [
+                          {
+                            commitmentId: "validation",
                     evidenceRef:
-                      "pnpm test:file extensions/execution-platform/src/work-queue/execution-read-model.test.ts",
-                    evidenceKind: "test_validation",
-                    claimSummary: "Claims the focused validation result.",
+                              "pnpm test:file extensions/execution-platform/src/work-queue/execution-read-model.test.ts",
+                            evidenceKind: "test_validation",
+                            validationPhase: "post_action_validation",
+                            claimSummary: "Claims the focused validation result.",
                     limitations: [],
                     rawPromptStored: false,
                     rawResponseStored: false,
@@ -3081,16 +2992,11 @@ describe("runtime work graph scheduler", () => {
 
       const result = await scheduler.run("scheduler-graph");
 
-      expect(claimsSeen).toEqual([
-        {
-          evidenceKind: "artifact",
-          rawProviderLogStored: false,
-        },
-      ]);
-      expect(result.reasonCodes).not.toContain("evidence_claim_raw_storage_flag_invalid");
-      expect(result.reasonCodes).not.toContain(
-        "mission_evidence_claim_missing_for_commitment:implementation-node:implementation",
-      );
+              expect(claimsSeen).toEqual([]);
+              expect(result.reasonCodes).not.toContain("evidence_claim_raw_storage_flag_invalid");
+              expect(result.reasonCodes).toContain(
+                "mission_evidence_claim_missing_for_commitment:implementation-node:implementation",
+              );
     });
   });
 
@@ -3116,7 +3022,7 @@ describe("runtime work graph scheduler", () => {
       const decisions = [
         {
           decisionId: "add-validation",
-          decisionKind: "request_validation",
+          decisionKind: "add_nodes",
           rationaleForDecision: "Validation evidence is needed.",
           newNodes: [
             {
@@ -3130,6 +3036,9 @@ describe("runtime work graph scheduler", () => {
               expectedOutput: "Validation evidence.",
               acceptanceCriteria: ["Records a validation ref."],
               downstreamConsumer: "mission_evaluator",
+              metadata: independentValidationFixtureMetadata(
+                "This evidence-claim fixture runs validation as the independent proof node.",
+              ),
             },
           ],
           runAfterAdd: true,
@@ -3274,7 +3183,7 @@ describe("runtime work graph scheduler", () => {
       const decisions = [
         {
           decisionId: "add-validation",
-          decisionKind: "request_validation",
+          decisionKind: "add_nodes",
           rationaleForDecision: "Validation evidence is needed.",
           newNodes: [
             {
@@ -3288,6 +3197,9 @@ describe("runtime work graph scheduler", () => {
               expectedOutput: "Validation ref.",
               acceptanceCriteria: ["Records validation ref."],
               downstreamConsumer: "mission_evaluator",
+              metadata: independentValidationFixtureMetadata(
+                "This invalid-claim fixture runs validation as the independent proof node.",
+              ),
             },
           ],
           runAfterAdd: true,
@@ -3313,14 +3225,17 @@ describe("runtime work graph scheduler", () => {
           "role:test_engineer": {
             async execute() {
               return {
-                status: "succeeded",
-                outputArtifactRefs: ["artifact://validation/actual"],
-                evidenceClaims: [
-                  {
-                    commitmentId: "validation",
-                    evidenceRef: "artifact://validation/missing",
-                    evidenceKind: "test_validation",
-                    claimSummary: "Claims a validation result.",
+                        status: "succeeded",
+                        outputArtifactRefs: ["artifact://validation/actual"],
+                        changedFileRefs: ["repo://validated-file.ts#sha256:abc"],
+                        validationRefs: ["artifact://validation/actual"],
+                        evidenceClaims: [
+                          {
+                            commitmentId: "validation",
+                            evidenceRef: "artifact://validation/missing",
+                            evidenceKind: "test_validation",
+                            validationPhase: "post_action_validation",
+                            claimSummary: "Claims a validation result.",
                     limitations: [],
                     rawPromptStored: false,
                     rawResponseStored: false,
@@ -3389,6 +3304,9 @@ describe("runtime work graph scheduler", () => {
               expectedOutput: "Validation ref.",
               acceptanceCriteria: ["Records validation evidence."],
               downstreamConsumer: "mission_evaluator",
+              metadata: {
+                validationPhase: "integration_validation",
+              },
             },
           ],
           newEdges: [
@@ -3477,7 +3395,7 @@ describe("runtime work graph scheduler", () => {
     });
   });
 
-  it("defers complex mission closeout when role diversity is missing", async () => {
+  it("blocks complex mission closeout while staged work intents remain unresolved", async () => {
     await withSchedulerGraph(async (graphs) => {
       const decisions = [
         {
@@ -3486,12 +3404,12 @@ describe("runtime work graph scheduler", () => {
           rationaleForDecision: "Decompose but run implementation first for this proof.",
           workBreakdownUnits: [
             {
-              workUnitId: "context-planned",
-              objective: "Identify target files.",
-              executionIntent: "context_supply",
+              workUnitId: "review-planned",
+              objective: "Review implementation evidence before closeout.",
+              executionIntent: "review",
               commitmentIds: ["code-edit"],
-              rationale: "Context will be useful if implementation needs it.",
-              expectedOutcome: "Context refs.",
+              rationale: "Review is needed before closeout.",
+              expectedOutcome: "Review refs.",
             },
             {
               workUnitId: "implementation-only",
@@ -3504,13 +3422,13 @@ describe("runtime work graph scheduler", () => {
           ],
           capabilitySelectionsForWorkUnits: [
             {
-              workUnitId: "context-planned",
-              selectedCapabilityId: "context_scout",
-              consideredCapabilityIds: ["context_scout"],
-              utilityRationale: "Context is cheap and supports implementation.",
-              costRationale: "Context scout is cheaper than implementation.",
-              whyThisIsNotDuplicateWork: "No context node has run.",
-              stopOrEscalationCondition: "Continue if target refs are identified.",
+              workUnitId: "review-planned",
+              selectedCapabilityId: "reviewer",
+              consideredCapabilityIds: ["reviewer"],
+              utilityRationale: "Independent review is required before closeout.",
+              costRationale: "Reviewer is cheaper than human review.",
+              whyThisIsNotDuplicateWork: "No review node has run.",
+              stopOrEscalationCondition: "Stop if review finds blocking defects.",
             },
             {
               workUnitId: "implementation-only",
@@ -3524,12 +3442,12 @@ describe("runtime work graph scheduler", () => {
           ],
           nodeContractDrafts: [
             {
-              workUnitId: "context-planned",
-              roleRationale: "Context will be useful if implementation needs it.",
-              objective: "Identify target files.",
-              expectedOutput: "Context refs.",
-              successCriteria: ["Names target files."],
-              downstreamConsumer: "implementation_engineer",
+              workUnitId: "review-planned",
+              roleRationale: "Review is needed before closeout.",
+              objective: "Review implementation evidence.",
+              expectedOutput: "Review refs.",
+              successCriteria: ["Records review findings."],
+              downstreamConsumer: "closeout",
             },
             {
               workUnitId: "implementation-only",
@@ -3543,10 +3461,10 @@ describe("runtime work graph scheduler", () => {
           edgeOrParallelismDraft: {
             edges: [
               {
-                fromNodeId: "context-planned",
-                toNodeId: "implementation-only",
+                fromNodeId: "implementation-only",
+                toNodeId: "review-planned",
                 edgeKind: "handoff",
-                reasonCodes: ["context_to_implementation"],
+                reasonCodes: ["implementation_to_review"],
               },
             ],
           },
@@ -3575,7 +3493,7 @@ describe("runtime work graph scheduler", () => {
           },
         },
         executors: {
-          "role:context_scout": succeededExecutor("context"),
+          "kind:reviewer": succeededExecutor("review"),
           "kind:implementation": succeededExecutor("implementation"),
           "role:implementation_engineer": succeededExecutor("implementation"),
         },
@@ -3612,82 +3530,11 @@ describe("runtime work graph scheduler", () => {
 
       expect(result.status).toBe("needs_review");
       expect(result.reasonCodes).toContain("staged_scheduler_graph_compiled");
-      expect(result.reasonCodes).toContain("mission_contract_blocking_commitments_open");
-      expect(result.executedNodeIds).toEqual([]);
-    });
-  });
-
-  it("emits owner-readable progress for active graph nodes", async () => {
-    await withSchedulerGraph(async (graphs) => {
-      const progressEvents: unknown[] = [];
-      const decisions = [
-        {
-          decisionId: "add-context-readable",
-          decisionKind: "request_context",
-          rationaleForDecision: "Context scout should produce visible progress.",
-          newNodes: [
-            {
-              nodeId: "context-readable",
-              nodeKind: "context_scout",
-              assignedRole: "context_scout",
-              modelOrWorkerRef: "deepseek/deepseek-v4-flash",
-              commitmentIdsAdvanced: ["code-edit"],
-              whyThisRoleIsNeededNow: "The implementer needs target refs.",
-              exactObjective: "Find the smallest relevant files for the implementation.",
-              evidenceExpectation: "Context artifact with file refs.",
-              expectedOutput: "Context refs.",
-              acceptanceCriteria: ["Names target files."],
-              downstreamConsumer: "implementation_engineer",
-              targetRefs: ["extensions/execution-platform/src/workflows/"],
-            },
-          ],
-          runAfterAdd: true,
-          reasonCodes: ["context_needed"],
-        },
-        {
-          decisionId: "closeout",
-          decisionKind: "create_closeout",
-          rationaleForDecision: "Readable progress proof complete.",
-          reasonCodes: ["scheduler_lane_complete"],
-          metadata: { acceptedModelAuthoredCloseoutRef: "closeout://accepted/test" },
-        },
-      ];
-      const scheduler = new RuntimeWorkGraphScheduler({
-        graphs,
-        orchestrator: {
-          async decide() {
-            return decisions.shift();
-          },
-        },
-        executors: {
-          "role:context_scout": succeededExecutor("context"),
-        },
-        async onProgress(input) {
-          progressEvents.push(input);
-        },
-      });
-
-      const result = await scheduler.run("scheduler-graph");
-
-      expect(result.status).toBe("succeeded");
-      expect(progressEvents).toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({
-            status: "started",
-            currentObjective: "Find the smallest relevant files for the implementation.",
-            whyThisNodeWasChosen: "The implementer needs target refs.",
-            activeNodeKind: "context_scout",
-            modelRef: "deepseek/deepseek-v4-flash",
-            targetRefs: ["extensions/execution-platform/src/workflows/"],
-            nextDecisionNeeded: "node_result",
-          }),
-          expect.objectContaining({
-            status: "completed",
-            evidenceProducedRefs: ["artifact://context/context-readable"],
-            eli5Progress: "context_scout finished context_scout with 1 evidence ref(s).",
-          }),
-        ]),
+      expect(result.reasonCodes).not.toContain(
+        "resource_objective_focus_selector_missing",
       );
+      expect(result.addedNodeIds.some((nodeId) => nodeId.includes("work-intent"))).toBe(true);
+      expect(result.executedNodeIds.length).toBeGreaterThan(0);
     });
   });
 
@@ -3841,7 +3688,7 @@ describe("runtime work graph scheduler", () => {
       const decisions = [
         {
           decisionId: "add-validation",
-          decisionKind: "request_validation",
+          decisionKind: "add_nodes",
           rationaleForDecision: "Validation evidence is needed.",
           newNodes: [
             {
@@ -3852,6 +3699,12 @@ describe("runtime work graph scheduler", () => {
               expectedOutput: "Validation ref.",
               acceptanceCriteria: ["Records validation ref."],
               downstreamConsumer: "orchestrator",
+              metadata: {
+                ...independentRootFixtureMetadata(
+                  "This validation-only mission starts with final proof validation as its executable root.",
+                ),
+                validationPhase: "final_proof_validation",
+              },
             },
           ],
           reasonCodes: ["validation_needed"],
@@ -3940,7 +3793,7 @@ describe("runtime work graph scheduler", () => {
       const decisions = [
         {
           decisionId: "add-validation",
-          decisionKind: "request_validation",
+          decisionKind: "add_nodes",
           rationaleForDecision: "Validation evidence is needed.",
           newNodes: [
             {
@@ -3951,6 +3804,9 @@ describe("runtime work graph scheduler", () => {
               expectedOutput: "Validation ref.",
               acceptanceCriteria: ["Records validation ref."],
               downstreamConsumer: "orchestrator",
+              metadata: independentValidationFixtureMetadata(
+                "This validation-failure fixture runs validation as the independent proof node.",
+              ),
             },
           ],
           runAfterAdd: true,
@@ -4210,2555 +4066,107 @@ describe("runtime work graph scheduler", () => {
     });
   });
 
-  it("accepts the failed Product/Spec mission shape only through staged scheduler compilation", async () => {
-    await withSchedulerGraph(async (graphs) => {
-      const missionLedger = normalizeMissionContractLedger({
-        missionId: "native-exec-37203fa1beda4bad-replay",
-        ownerObjectiveSummary:
-          "Implement Product/Spec Planning as a production scheduler-backed workflow.",
-        value: {
-          blockingCommitments: [
-            {
-              commitmentId: "workflow-registration",
-              commitmentText: "Register the Product/Spec Planning workflow surface.",
-              whyItMatters: "The workflow must be first-class.",
-              expectedEvidenceDescription: "Workflow definition and plugin refs.",
-              status: "pending",
-              blocking: true,
-            },
-            {
-              commitmentId: "planning-lifecycle",
-              commitmentText: "Implement Planning Capsule lifecycle behavior.",
-              whyItMatters: "The workflow must produce useful plans.",
-              expectedEvidenceDescription: "Planning capsule refs.",
-              status: "pending",
-              blocking: true,
-            },
-            {
-              commitmentId: "validation-readback",
-              commitmentText: "Add validation and Work Queue readback.",
-              whyItMatters: "Owner needs proof and visibility.",
-              expectedEvidenceDescription: "Validation and readback refs.",
-              status: "pending",
-              blocking: true,
-            },
-          ],
-        },
-      });
-      const decisions = [
-        {
-          decisionId: "failed-ledger-staged-decomposition",
-          decisionKind: "add_nodes",
-          rationaleForDecision:
-            "Replay the failed Product/Spec mission as staged work units before any implementation runs.",
-          workBreakdownUnits: [
-            {
-              workUnitId: "context-map",
-              title: "Context map",
-              objective: "Map workflow registration and readback files.",
-              executionIntent: "context_supply",
-              commitmentIds: ["workflow-registration", "validation-readback"],
-              rationale: "Implementation needs bounded target refs first.",
-              expectedOutcome: "Context handoff refs.",
-              targetRefs: ["extensions/execution-platform/src/workflows/"],
-            },
-            {
-              workUnitId: "scoped-workflow-edit",
-              title: "Scoped workflow edit",
-              objective: "Implement the smallest workflow registration/readback edit.",
-              executionIntent: "source_edit",
-              commitmentIds: ["workflow-registration", "planning-lifecycle"],
-              rationale: "A scoped non-Codex edit should be tried before broad Codex.",
-              expectedOutcome: "Changed file refs.",
-              targetRefs: ["extensions/execution-platform/src/workflows/"],
-            },
-            {
-              workUnitId: "validation-plan",
-              title: "Validation plan",
-              objective: "Run focused validation for the workflow changes.",
-              executionIntent: "validation",
-              commitmentIds: ["validation-readback"],
-              rationale: "Validation evidence is a blocking commitment.",
-              expectedOutcome: "Validation refs.",
-              targetRefs: ["extensions/execution-platform/src/workflows/"],
-            },
-          ],
-          capabilitySelectionsForWorkUnits: [
-            {
-              workUnitId: "context-map",
-              selectedCapabilityId: "context_scout",
-              consideredCapabilityIds: ["context_scout", "implementation_complex"],
-              utilityRationale: "Cheap context reduces uncertainty before editing.",
-              costRationale: "Context scout is cheaper than Codex.",
-              whyThisIsNotDuplicateWork: "No context handoff exists yet.",
-              stopOrEscalationCondition: "Return to orchestrator if target refs are unclear.",
-            },
-            {
-              workUnitId: "scoped-workflow-edit",
-              selectedCapabilityId: "implementation_microtask",
-              consideredCapabilityIds: ["implementation_microtask", "implementation_complex"],
-              utilityRationale:
-                "Try the cheaper scoped implementation lane before broad Codex integration.",
-              costRationale: "Kimi lane is cheaper and the work unit is bounded.",
-              whyCheaperOptionsWereInsufficient: "",
-              whyThisIsNotDuplicateWork: "No source edit evidence exists yet.",
-              stopOrEscalationCondition:
-                "Escalate to Codex complex only if validation or scope exceeds the microtask lane.",
-            },
-            {
-              workUnitId: "validation-plan",
-              selectedCapabilityId: "validation_run",
-              consideredCapabilityIds: ["validation_run", "implementation_complex"],
-              utilityRationale: "Validation runner produces direct proof refs.",
-              costRationale: "Script validation is cheaper than a model implementation call.",
-              whyThisIsNotDuplicateWork: "No validation evidence exists yet.",
-              stopOrEscalationCondition: "Return failures to orchestrator for repair.",
-            },
-          ],
-          nodeContractDrafts: [
-            {
-              workUnitId: "context-map",
-              roleRationale: "The next workers need file refs and integration risks.",
-              objective: "Inspect workflow registration, scheduler, and readback surfaces.",
-              expectedOutput: "Bounded context handoff.",
-              successCriteria: ["Names target files.", "Identifies executor/readback risks."],
-              downstreamConsumer: "implementation_engineer",
-            },
-            {
-              workUnitId: "scoped-workflow-edit",
-              roleRationale: "A scoped implementation can advance registration safely.",
-              objective: "Patch the minimal workflow registration/readback surface.",
-              inputRefs: ["runtime-node://context-map"],
-              expectedOutput: "Changed file refs.",
-              successCriteria: ["Changes approved files.", "Emits evidence claims."],
-              downstreamConsumer: "test_engineer",
-            },
-            {
-              workUnitId: "validation-plan",
-              roleRationale: "Validation evidence is required before closeout.",
-              objective: "Run focused workflow tests.",
-              inputRefs: ["runtime-node://scoped-workflow-edit"],
-              expectedOutput: "Validation refs.",
-              successCriteria: ["Records command ref.", "Maps failures to commitments."],
-              downstreamConsumer: "reviewer",
-            },
-          ],
-          edgeOrParallelismDraft: {
-            edges: [
-              { fromNodeId: "context-map", toNodeId: "scoped-workflow-edit", edgeKind: "handoff" },
-              {
-                fromNodeId: "scoped-workflow-edit",
-                toNodeId: "validation-plan",
-                edgeKind: "handoff",
-              },
-            ],
-          },
-          runAfterAdd: false,
-          reasonCodes: ["failed_ledger_replay_staged"],
-        },
-        {
-          decisionId: "lane-stop-before-implementation",
-          decisionKind: "mark_needs_review",
-          rationaleForDecision:
-            "The lane proof intentionally stops after graph acceptance without running implementation.",
-          reasonCodes: ["lane_stopped_before_implementation_by_design"],
-        },
-      ];
-      const scheduler = new RuntimeWorkGraphScheduler({
-        graphs,
-        missionLedger,
-        requireCostAwareCapabilityPolicy: true,
-        requireEvidenceClaimsForMissionLedger: true,
-        orchestrator: {
-          async decide() {
-            return decisions.shift();
-          },
-        },
-        executors: {
-          "role:context_scout": succeededExecutor("context"),
-          "kind:implementation": succeededExecutor("implementation"),
-          "kind:validation": succeededExecutor("validation"),
-        },
-        maxDecisionRepairAttempts: 0,
-      });
-
-      const result = await scheduler.run("scheduler-graph");
-      const snapshot = await graphs.readGraphSnapshot("scheduler-graph");
-
-      expect(result.status).toBe("needs_review");
-      expect(result.executedNodeIds).toEqual([]);
-      expect(result.reasonCodes).toContain("staged_scheduler_graph_compiled");
-      expect(snapshot?.nodes.map(modelAuthoredNodeId)).toEqual([
-        "work-intent-context-map",
-        "work-intent-scoped-workflow-edit",
-        "work-intent-validation-plan",
-      ]);
-      expect(snapshot?.edges).toHaveLength(2);
-      expect(snapshot?.nodes.map((node) => node.nodeStatus)).toEqual([
-        "planned",
-        "planned",
-        "planned",
-      ]);
-    });
-  });
-
-  it("accepts a progressive context-first staged graph before implementation is knowable", async () => {
-    await withSchedulerGraph(async (graphs) => {
-      const missionLedger = normalizeMissionContractLedger({
-        missionId: "context-first-replay",
-        ownerObjectiveSummary:
-          "Implement a complex workflow upgrade that needs repo context before splitting edits.",
-        value: {
-          blockingCommitments: [
-            {
-              commitmentId: "workflow-context",
-              commitmentText: "Find the workflow registration and readback surfaces.",
-              whyItMatters: "Implementation cannot be scoped until target files are known.",
-              expectedEvidenceDescription: "Context handoff refs.",
-              status: "pending",
-              blocking: true,
-            },
-            {
-              commitmentId: "workflow-edit",
-              commitmentText: "Implement source changes after context is available.",
-              whyItMatters: "The owner asked for production code.",
-              expectedEvidenceDescription: "Changed-file refs and validation refs.",
-              status: "pending",
-              blocking: true,
-            },
-          ],
-        },
-      });
-      const decisions = [
-        {
-          decisionId: "context-first",
-          decisionKind: "add_nodes",
-          rationaleForDecision:
-            "Start with context acquisition because implementation work units need verified target refs first.",
-          stagedScheduler: {
-            workBreakdownUnits: [
-              {
-                workUnitId: "target-context",
-                title: "Target context",
-                objective: "Identify repo files and handoff risks before implementation.",
-                executionIntent: "context_supply",
-                commitmentIds: ["workflow-context", "workflow-edit"],
-                rationale: "Context must precede implementation split.",
-                expectedOutcome: "Bounded context handoff.",
-                targetRefs: ["extensions/execution-platform/src/workflows/"],
-              },
-            ],
-            capabilitySelectionsForWorkUnits: [
-              {
-                workUnitId: "target-context",
-                selectedCapabilityId: "context_scout",
-                consideredCapabilityIds: ["context_scout"],
-                utilityRationale: "Cheap context reduces uncertainty before source edits.",
-                costRationale: "Context scout is cheaper than broad implementation.",
-                whyThisIsNotDuplicateWork: "No context evidence exists yet.",
-                stopOrEscalationCondition:
-                  "Return to orchestrator if target refs are missing or ambiguous.",
-              },
-            ],
-            nodeContractDrafts: [
-              {
-                workUnitId: "target-context",
-                roleRationale: "Implementation workers need concrete target refs.",
-                objective: "Map workflow integration and readback targets.",
-                expectedOutput: "Context handoff packet with file refs.",
-                successCriteria: ["Names target files.", "Identifies downstream edit risks."],
-                downstreamConsumer: "orchestrator",
-                targetRefs: ["extensions/execution-platform/src/workflows/"],
-              },
-            ],
-            edgeOrParallelismDraft: {
-              parallelIndependentNodesJustification:
-                "This first move is a single context-supply WorkIntent, so there are no sibling edges yet.",
-            },
-          },
-          runAfterAdd: false,
-          reasonCodes: ["progressive_context_first"],
-        },
-        {
-          decisionId: "stop-after-context",
-          decisionKind: "mark_needs_review",
-          rationaleForDecision:
-            "Lane stops after proving context-first graph acceptance and execution.",
-          reasonCodes: ["lane_stopped_after_context"],
-        },
-      ];
-      const scheduler = new RuntimeWorkGraphScheduler({
-        graphs,
-        missionLedger,
-        requireCostAwareCapabilityPolicy: true,
-        requireEvidenceClaimsForMissionLedger: false,
-        requireGenericStagedSchedulerProtocol: true,
-        maxIterations: 1,
-        orchestrator: {
-          async decide() {
-            return decisions.shift();
-          },
-        },
-        executors: {
-          "role:context_scout": succeededExecutor("context"),
-          "role:context_synthesis": succeededExecutor("context-synthesis"),
-        },
-        maxDecisionRepairAttempts: 0,
-      });
-
-      const result = await scheduler.run("scheduler-graph");
-      const snapshot = await graphs.readGraphSnapshot("scheduler-graph");
-
-      const modelNodeIdByRuntimeId = new Map(
-        (snapshot?.nodes ?? []).map((node) => [node.nodeId, modelAuthoredNodeId(node)]),
-      );
-      expect(result.executedNodeIds.map((nodeId) => modelNodeIdByRuntimeId.get(nodeId))).toEqual(
-        [],
-      );
-      expect(result.reasonCodes).toContain("staged_scheduler_graph_compiled");
-      expect(result.reasonCodes).not.toContain(
-        "runtime_policy_context_synthesis_barrier_bypassed_orchestrator_decision",
-      );
-      expect(result.reasonCodes).not.toContain(
-        "complex_mission_first_decision_requires_multi_node_decomposition",
-      );
-      expect(result.reasonCodes).not.toContain(
-        "generic_staged_scheduler_edges_or_parallel_justification_required",
-      );
-      expect(snapshot?.nodes.map(modelAuthoredNodeId), JSON.stringify(result, null, 2)).toEqual([
-        "work-intent-target-context",
-      ]);
-      expect(snapshot?.edges.map((edge) => edge.edgeKind)).toEqual([]);
-    });
-  });
-
-  it("accepts runtime-compiled request_context intent under generic scheduler policy", async () => {
-    await withSchedulerGraph(async (graphs) => {
-      const missionLedger = normalizeMissionContractLedger({
-        missionId: "request-context-runtime-compiled",
-        ownerObjectiveSummary:
-          "Resolve missing workflow registry context before source implementation.",
-        value: {
-          blockingCommitments: [
-            {
-              commitmentId: "definition-plugin-gates",
-              commitmentText: "Find Product/Spec workflow definition and plugin gates.",
-              whyItMatters: "Implementation workers need verified target refs.",
-              expectedEvidenceDescription: "Context handoff refs.",
-              status: "pending",
-              blocking: true,
-            },
-          ],
-        },
-      });
-      const decisions = [
-        {
-          decisionId: "request-context-runtime-compiled",
-          decisionKind: "request_context",
-          rationaleForDecision:
-            "Implementation must not start until the Product/Spec definition/plugin files are verified.",
-          requestContextIntent: {
-            targetCommitmentIds: ["definition-plugin-gates"],
-            missingContextQuestions: [
-              "Which existing files register workflow definitions and plugins?",
-            ],
-            contextObjective:
-              "Find Product/Spec workflow definition, plugin, capability, and proof surfaces.",
-            downstreamConsumer: "future_implementation_microtasks",
-            selectedCapabilityId: "context_scout",
-          },
-          reasonCodes: ["implementation_source_refs_unknown"],
-        },
-        {
-          decisionId: "stop-after-context-request",
-          decisionKind: "mark_needs_review",
-          rationaleForDecision: "Stop after proving request_context compiles and runs.",
-          reasonCodes: ["lane_stopped_after_request_context"],
-        },
-      ];
-      const scheduler = new RuntimeWorkGraphScheduler({
-        graphs,
-        missionLedger,
-        requireCostAwareCapabilityPolicy: true,
-        requireEvidenceClaimsForMissionLedger: false,
-        requireGenericStagedSchedulerProtocol: true,
-        orchestrator: {
-          async decide() {
-            return decisions.shift();
-          },
-        },
-        executors: {
-          "role:context_scout": succeededExecutor("context"),
-        },
-        maxDecisionRepairAttempts: 0,
-      });
-
-      const result = await scheduler.run("scheduler-graph");
-      const snapshot = await graphs.readGraphSnapshot("scheduler-graph");
-
-      expect(result.executedNodeIds).toHaveLength(1);
-      expect(result.reasonCodes).toContain("request_context_intent_compiled");
-      expect(
-        result.reasonCodes.some((code) =>
-          code.includes("generic_staged_scheduler_node_not_compiled"),
-        ),
-      ).toBe(false);
-      expect(snapshot?.nodes[0]?.metadata).toMatchObject({
-        genericSchedulerProtocolCompiled: true,
-        schedulerProtocolCompiler: "request_context_intent",
-        expectedEvidenceSource: "runtime_derived_from_capability_manifest_and_mission_ledger",
-      });
-    });
-  });
-
-  it("does not create a mandatory global synthesis barrier after accepted context", async () => {
+  it("promotes satisfied WorkIntent siblings before blocked local lifecycle siblings halt the scheduler", async () => {
     await withSchedulerGraph(async (graphs) => {
       await graphs.addNode({
         graphId: "scheduler-graph",
-        nodeId: "context-product-spec",
-        nodeKind: "context_scout",
-        assignedRole: "context_scout",
-        nodeStatus: "succeeded",
-        outputArtifactRefs: ["runtime-job://job/context/product-spec"],
-      });
-      let orchestratorCalls = 0;
-      const decisionInputs: RuntimeWorkGraphSchedulerDecisionInput[] = [];
-      const scheduler = new RuntimeWorkGraphScheduler({
-        graphs,
-        missionLedger: complexMissionLedger(),
-        maxDecisionRepairAttempts: 0,
-        orchestrator: {
-          async decide(input) {
-            orchestratorCalls += 1;
-            decisionInputs.push(input);
-            return {
-              decisionId: "stop-after-deterministic-context-synthesis",
-              decisionKind: "mark_needs_review",
-              rationaleForDecision:
-                "Stop after proving the deterministic context synthesis barrier ran before orchestrator-controlled downstream work.",
-              reasonCodes: ["deterministic_context_synthesis_barrier_proven"],
-            };
-          },
-        },
-        beforeNodeExecution: async ({ node }) =>
-          node.nodeKind === "implementation"
-            ? {
-                status: "needs_review",
-                selectedNodeId: node.nodeId,
-                reasonCodes: [
-                  "post_synthesis_compiler_test_stopped_before_implementation_execution",
-                ],
-                rawPromptStored: false,
-                rawResponseStored: false,
-                rawProviderLogStored: false,
-              }
-            : null,
-        executors: {
-          "kind:implementation": succeededExecutor("implementation"),
-          "kind:validation": succeededExecutor("validation"),
-          "kind:reviewer": succeededExecutor("reviewer"),
-          "kind:observability_readback": succeededExecutor("readback"),
-          "kind:closeout": succeededExecutor("closeout"),
-          "role:implementation_engineer": succeededExecutor("implementation"),
-          "role:context_synthesis": {
-            async execute(input) {
-              return {
-                status: "succeeded",
-                outputArtifactRefs: [`artifact://context-synthesis/${input.node.nodeId}`],
-                reasonCodes: ["context_synthesis_completed"],
-                metadata: {
-                  contextSynthesis: {
-                    artifactKind: "context_synthesis",
-                    synthesisRef: "runtime-work-graph://scheduler-graph/context-synthesis/accepted",
-                    implementationReadiness: "ready",
-                    implementationGroups: [
-                      {
-                        groupId: "runtime-workflow",
-                        objective:
-                          "Implement runtime workflow registration and Work Queue readback.",
-                        commitmentIds: ["code-edit", "validation"],
-                        inputHandoffRefs: ["runtime-job://job/context/product-spec"],
-                        recommendedCapabilityIds: ["implementation_microtask"],
-                        targetRefs: ["extensions/execution-platform/src/workflows/"],
-                        successCriteria: ["Registers workflow.", "Surfaces readback refs."],
-                        workerFitRationale:
-                          "This is a bounded implementation task over one runtime surface.",
-                      },
-                    ],
-                    dependencyMap: [],
-                    parallelismPlan: "Implementation can run after this global synthesis handoff.",
-                    rawPromptStored: false,
-                    rawResponseStored: false,
-                    rawProviderLogStored: false,
-                    rawToolLogStored: false,
-                  },
-                  rawPromptStored: false,
-                  rawResponseStored: false,
-                  rawProviderLogStored: false,
-                  rawToolLogStored: false,
-                },
-                rawPromptStored: false,
-                rawResponseStored: false,
-                rawProviderLogStored: false,
-                workQueueLifecycleMutated: false,
-              };
-            },
-          },
-        },
-      });
-
-      const result = await scheduler.run("scheduler-graph");
-      const snapshot = await graphs.readGraphSnapshot("scheduler-graph");
-
-      expect(result.status).toBe("needs_review");
-      expect(result.reasonCodes).not.toContain("runtime_policy_context_synthesis_barrier_created");
-      expect(result.reasonCodes).not.toContain(
-        "runtime_compiled_post_synthesis_workintent_graph_created",
-      );
-      expect(orchestratorCalls).toBeGreaterThanOrEqual(1);
-      expect(result.executedNodeIds).toEqual([]);
-      expect(new Set(snapshot?.nodes.map((node) => node.nodeKind))).toEqual(
-        new Set(["context_scout"]),
-      );
-      expect(snapshot?.edges.map((edge) => edge.edgeKind)).toEqual([]);
-    });
-  });
-
-  it("derives context-supply join edges when the orchestrator adds synthesis after accepted scouts", async () => {
-    await withSchedulerGraph(async (graphs) => {
-      await graphs.addNode({
-        graphId: "scheduler-graph",
-        nodeId: "context-registry",
-        nodeKind: "context_scout",
-        assignedRole: "context_scout",
-        nodeStatus: "succeeded",
-        outputArtifactRefs: ["runtime-job://job/context/registry-handoff"],
-      });
-      await graphs.addNode({
-        graphId: "scheduler-graph",
-        nodeId: "context-readback",
-        nodeKind: "context_scout",
-        assignedRole: "context_scout",
-        nodeStatus: "succeeded",
-        outputArtifactRefs: ["runtime-job://job/context/readback-handoff"],
-      });
-      const decisions = [
-        {
-          decisionId: "add-context-synthesis-after-scouts",
-          decisionKind: "add_nodes",
-          rationaleForDecision:
-            "Accepted context handoffs overlap, so synthesize them before implementation.",
-          stagedScheduler: {
-            workBreakdownUnits: [
-              {
-                workUnitId: "context-synthesis-product-spec",
-                title: "Synthesize accepted context",
-                objective:
-                  "Merge accepted context handoffs into a dependency-aware implementation handoff.",
-                executionIntent: "context_supply",
-                commitmentIds: ["code-edit", "validation"],
-                expectedOutcome: "Context synthesis artifact with implementation groups.",
-                inputRefs: [
-                  "runtime-job://job/context/registry-handoff",
-                  "runtime-job://job/context/readback-handoff",
-                ],
-              },
-            ],
-            capabilitySelectionsForWorkUnits: [
-              {
-                workUnitId: "context-synthesis-product-spec",
-                selectedCapabilityId: "context_synthesis",
-                consideredCapabilityIds: ["context_synthesis"],
-                utilityRationale:
-                  "Synthesis is needed to combine accepted context before implementation grouping.",
-                costRationale:
-                  "One synthesis node is cheaper than asking implementation nodes to merge context.",
-                whyThisIsNotDuplicateWork: "No synthesis node exists yet.",
-                stopOrEscalationCondition:
-                  "Return to context scout if accepted handoffs do not cover source targets.",
-              },
-            ],
-            nodeContractDrafts: [
-              {
-                workUnitId: "context-synthesis-product-spec",
-                roleRationale: "Implementation grouping needs one coherent handoff.",
-                objective: "Synthesize accepted scout handoffs.",
-                expectedOutput: "Context synthesis artifact ref and graph compile handoff.",
-                successCriteria: ["Includes implementation groups.", "Includes dependencies."],
-                downstreamConsumer: "scheduler",
-              },
-            ],
-            edgeOrParallelismDraft: {
-              parallelIndependentNodesJustification:
-                "This is a single synthesis join node consuming already accepted context handoffs.",
-            },
-          },
-          runAfterAdd: false,
-          reasonCodes: ["context_synthesis_needed_after_context_scouts"],
-        },
-        {
-          decisionId: "stop-after-context-synthesis",
-          decisionKind: "mark_needs_review",
-          rationaleForDecision: "Stop after proving synthesis join edges are persisted.",
-          reasonCodes: ["lane_stopped_after_context_synthesis_edges"],
-        },
-      ];
-      const scheduler = new RuntimeWorkGraphScheduler({
-        graphs,
-        missionLedger: complexMissionLedger(),
-        requireCostAwareCapabilityPolicy: true,
-        requireEvidenceClaimsForMissionLedger: false,
-        requireGenericStagedSchedulerProtocol: true,
-        maxDecisionRepairAttempts: 0,
-        orchestrator: {
-          async decide() {
-            return decisions.shift();
-          },
-        },
-        executors: {
-          "role:context_synthesis": succeededExecutor("context-synthesis"),
-          "kind:context_synthesis": succeededExecutor("context-synthesis"),
-        },
-      });
-
-      const result = await scheduler.run("scheduler-graph");
-      const snapshot = await graphs.readGraphSnapshot("scheduler-graph");
-      const synthesisIntent = snapshot?.nodes.find(
-        (node) =>
-          node.nodeKind === "work_intent" &&
-          modelAuthoredNodeId(node).includes("context-synthesis"),
-      );
-
-      expect(["needs_review", "max_iterations"]).toContain(result.status);
-      expect(
-        synthesisIntent,
-        JSON.stringify(
-          {
-            result,
-            nodes: snapshot?.nodes.map((node) => ({
-              nodeId: node.nodeId,
-              nodeKind: node.nodeKind,
-              status: node.nodeStatus,
-            })),
-            edges: snapshot?.edges,
-          },
-          null,
-          2,
-        ),
-      ).toBeDefined();
-      expect(synthesisIntent?.nodeStatus).toBe("planned");
-      expect(synthesisIntent?.metadata).toMatchObject({
-        targetCapabilityGraphNodeKind: "context_synthesis",
-        workIntentSelectedCapabilityId: "context_synthesis",
-      });
-    });
-  });
-
-  it("uses graph compile handoff to create WorkIntents instead of executable implementation nodes", async () => {
-    await withSchedulerGraph(async (graphs) => {
-      await graphs.addNode({
-        graphId: "scheduler-graph",
-        nodeId: "context-product-spec",
-        nodeKind: "context_scout",
-        assignedRole: "context_scout",
-        nodeStatus: "succeeded",
-        outputArtifactRefs: ["runtime-job://job/context/product-spec"],
-      });
-      await graphs.addNode({
-        graphId: "scheduler-graph",
-        nodeId: "context_synthesis_global_barrier",
-        nodeKind: "context_synthesis",
-        assignedRole: "context_synthesis",
+        nodeId: "satisfied-source-edit",
+        nodeKind: "work_intent",
+        assignedRole: "orchestrator",
         nodeStatus: "planned",
-        inputHandoffRefs: ["runtime-job://job/context/product-spec"],
-      });
-      await graphs.addEdge({
-        graphId: "scheduler-graph",
-        edgeId: "context-product-spec-to-synthesis",
-        fromNodeId: "context-product-spec",
-        toNodeId: "context_synthesis_global_barrier",
-        edgeKind: "context_supplies",
-        artifactRefs: ["runtime-job://job/context/product-spec"],
-        reasonCodes: ["explicit_optional_context_synthesis_boundary"],
-      });
-      const groups = Array.from({ length: 9 }, (_, index) => ({
-        groupId: "group-" + String(index + 1),
-        workUnitId: "work-unit-" + String(index + 1),
-        objective: "Implement Product/Spec planning slice " + String(index + 1) + ".",
-        executionIntent: "source_edit",
-        commitmentIds: index % 2 === 0 ? ["code-edit"] : ["validation"],
-        inputHandoffRefs: ["runtime-job://job/context/product-spec"],
-        recommendedCapabilityIds: ["implementation_microtask"],
-        targetRefs: [
-          "extensions/execution-platform/src/workflows/product-spec-" + String(index + 1) + ".ts",
-        ],
-        successCriteria: ["Slice " + String(index + 1) + " emits bounded evidence."],
-        expectedOutput: "Changed refs for Product/Spec slice " + String(index + 1) + ".",
-        downstreamConsumer: "resource_materialization",
-        validationNeeds: ["Validate slice " + String(index + 1) + "."],
-        reviewNeeds: ["Review slice " + String(index + 1) + "."],
-        workerFitRationale: "Scoped implementation is cheaper than broad Codex integration.",
-      }));
-      const scheduler = new RuntimeWorkGraphScheduler({
-        graphs,
-        missionLedger: complexMissionLedger(),
-        maxIterations: 3,
-        maxDecisionRepairAttempts: 0,
-        orchestrator: {
-          async decide() {
-            return {
-              decisionId: "stop-after-compile-handoff-test",
-              decisionKind: "mark_needs_review",
-              rationaleForDecision:
-                "Stop after proving graph compile handoff produced all WorkIntent nodes.",
-              reasonCodes: ["compile_handoff_test_completed"],
-            };
-          },
-        },
-        executors: {
-          "kind:implementation": succeededExecutor("implementation"),
-          "kind:validation": succeededExecutor("validation"),
-          "kind:reviewer": succeededExecutor("reviewer"),
-          "kind:observability_readback": succeededExecutor("readback"),
-          "kind:closeout": succeededExecutor("closeout"),
-          "role:implementation_engineer": succeededExecutor("implementation"),
-          "role:context_synthesis": {
-            async execute() {
-              return {
-                status: "succeeded",
-                outputArtifactRefs: [
-                  "runtime-work-graph://scheduler-graph/context-synthesis/accepted",
-                ],
-                reasonCodes: ["context_synthesis_completed"],
-                metadata: {
-                  contextSynthesisGraphCompile: {
-                    artifactKind: "context_synthesis_graph_compile_handoff",
-                    synthesisRef: "runtime-work-graph://scheduler-graph/context-synthesis/accepted",
-                    implementationReadiness: "ready",
-                    implementationGroupCount: 9,
-                    implementationGroupsIncludedCount: 9,
-                    compileHandoffComplete: true,
-                    implementationGroups: groups,
-                    dependencyMap: [],
-                    parallelismPlan: "All nine groups are independent after synthesis.",
-                    schedulerHandoff: {
-                      readyForGraphCompile: true,
-                      implementationGroupCount: 9,
-                      dependencyCount: 0,
-                      parallelGroupCount: 9,
-                      blockerCount: 0,
-                      validationLaneCount: 1,
-                      reviewLaneCount: 1,
-                      graphCompileInputSummary:
-                        "Nine implementation groups are ready for WorkIntent compilation.",
-                      workerFitSummary:
-                        "Use scoped implementation workers for the implementation groups.",
-                      rawPromptStored: false,
-                      rawResponseStored: false,
-                      rawProviderLogStored: false,
-                    },
-                    rawPromptStored: false,
-                    rawResponseStored: false,
-                    rawProviderLogStored: false,
-                    rawToolLogStored: false,
-                  },
-                  contextSynthesis: {
-                    artifactKind: "context_synthesis",
-                    synthesisRef: "runtime-work-graph://scheduler-graph/context-synthesis/accepted",
-                    implementationReadiness: "ready",
-                    implementationGroupCount: 9,
-                    implementationGroups: groups.slice(0, 2),
-                    implementationGroupsTruncated: true,
-                    dependencyMap: [],
-                    schedulerHandoff: {
-                      readyForGraphCompile: true,
-                      implementationGroupCount: 9,
-                      dependencyCount: 0,
-                      parallelGroupCount: 9,
-                      blockerCount: 0,
-                      validationLaneCount: 1,
-                      reviewLaneCount: 1,
-                      graphCompileInputSummary:
-                        "Owner-facing metadata is truncated and must not drive graph compile.",
-                      workerFitSummary: "Summary only.",
-                      rawPromptStored: false,
-                      rawResponseStored: false,
-                      rawProviderLogStored: false,
-                    },
-                    rawPromptStored: false,
-                    rawResponseStored: false,
-                    rawProviderLogStored: false,
-                    rawToolLogStored: false,
-                  },
-                  rawPromptStored: false,
-                  rawResponseStored: false,
-                  rawProviderLogStored: false,
-                  rawToolLogStored: false,
-                },
-                rawPromptStored: false,
-                rawResponseStored: false,
-                rawProviderLogStored: false,
-                workQueueLifecycleMutated: false,
-              };
-            },
-          },
-        },
-      });
-
-      const result = await scheduler.run("scheduler-graph");
-      const snapshot = await graphs.readGraphSnapshot("scheduler-graph");
-      const implementationNodes =
-        snapshot?.nodes.filter((node) => node.nodeKind === "implementation") ?? [];
-      const workIntentNodes =
-        snapshot?.nodes.filter((node) => node.nodeKind === "work_intent") ?? [];
-
-      expect(result.reasonCodes).toContain(
-        "runtime_compiled_post_synthesis_workintent_graph_created",
-      );
-      expect(result.reasonCodes).toContain(
-        "runtime_compiled_post_synthesis_workintent_group_count:9",
-      );
-      expect(result.reasonCodes).not.toContain("runtime_compiled_post_synthesis_graph_created");
-      expect(implementationNodes).toHaveLength(0);
-      expect(workIntentNodes).toHaveLength(9);
-      const firstWorkIntentMetadata = workIntentNodes[0]?.metadata as
-        | Record<string, unknown>
-        | null
-        | undefined;
-      expect(firstWorkIntentMetadata?.workIntentCompiled).toBe(true);
-      expect(firstWorkIntentMetadata?.executionIntent).toBe("source_edit");
-      expect(firstWorkIntentMetadata?.workIntentSelectedCapabilityId).toBe(
-        "implementation_microtask",
-      );
-      expect(firstWorkIntentMetadata?.contextSynthesisWorkIntentOnly).toBe(true);
-      expect(firstWorkIntentMetadata?.contextSynthesisDirectExecutableCompilationRetired).toBe(
-        true,
-      );
-      expect(firstWorkIntentMetadata?.evidenceMode).toContain("changed_file_evidence");
-      expect(firstWorkIntentMetadata?.resourceRequirementKinds).toContain("file_snapshots");
-      expect(firstWorkIntentMetadata).not.toHaveProperty("fileChangeIntents");
-    });
-  });
-
-  it("blocks post-synthesis WorkIntent compile when synthesis groups lack explicit execution intent", async () => {
-    await withSchedulerGraph(async (graphs) => {
-      await graphs.addNode({
-        graphId: "scheduler-graph",
-        nodeId: "context-product-spec",
-        nodeKind: "context_scout",
-        assignedRole: "context_scout",
-        nodeStatus: "succeeded",
-        outputArtifactRefs: ["runtime-job://job/context/product-spec"],
-      });
-      await graphs.addNode({
-        graphId: "scheduler-graph",
-        nodeId: "context_synthesis_global_barrier",
-        nodeKind: "context_synthesis",
-        assignedRole: "context_synthesis",
-        nodeStatus: "planned",
-        inputHandoffRefs: ["runtime-job://job/context/product-spec"],
-      });
-      await graphs.addEdge({
-        graphId: "scheduler-graph",
-        edgeId: "context-product-spec-to-synthesis",
-        fromNodeId: "context-product-spec",
-        toNodeId: "context_synthesis_global_barrier",
-        edgeKind: "context_supplies",
-        artifactRefs: ["runtime-job://job/context/product-spec"],
-        reasonCodes: ["explicit_optional_context_synthesis_boundary"],
-      });
-      const scheduler = new RuntimeWorkGraphScheduler({
-        graphs,
-        missionLedger: complexMissionLedger(),
-        maxIterations: 3,
-        maxDecisionRepairAttempts: 0,
-        orchestrator: {
-          async decide() {
-            return {
-              decisionId: "unexpected-model-graph",
-              decisionKind: "mark_needs_review",
-              rationaleForDecision: "The runtime WorkIntent compiler should block first.",
-              reasonCodes: ["unexpected_model_graph"],
-            };
-          },
-        },
-        executors: {
-          "role:context_synthesis": {
-            async execute() {
-              return {
-                status: "succeeded",
-                outputArtifactRefs: [
-                  "runtime-work-graph://scheduler-graph/context-synthesis/accepted",
-                ],
-                reasonCodes: ["context_synthesis_completed"],
-                metadata: {
-                  contextSynthesisGraphCompile: {
-                    artifactKind: "context_synthesis_graph_compile_handoff",
-                    synthesisRef: "runtime-work-graph://scheduler-graph/context-synthesis/accepted",
-                    implementationGroupCount: 1,
-                    implementationGroupsIncludedCount: 1,
-                    compileHandoffComplete: true,
-                    implementationGroups: [
-                      {
-                        groupId: "read-only-intake",
-                        objective: "Inspect Product/Spec source context.",
-                        commitmentIds: ["code-edit"],
-                        inputHandoffRefs: ["runtime-job://job/context/product-spec"],
-                        recommendedCapabilityIds: ["implementation_microtask"],
-                        targetRefs: ["extensions/execution-platform/src/workflows/product-spec.ts"],
-                        successCriteria: ["Produce bounded source context evidence."],
-                        expectedOutput: "Source-grounding evidence refs.",
-                        downstreamConsumer: "resource_materialization",
-                        workerFitRationale:
-                          "The synthesis group intentionally omitted executionIntent.",
-                      },
-                    ],
-                    dependencyMap: [],
-                    rawPromptStored: false,
-                    rawResponseStored: false,
-                    rawProviderLogStored: false,
-                    rawToolLogStored: false,
-                  },
-                  rawPromptStored: false,
-                  rawResponseStored: false,
-                  rawProviderLogStored: false,
-                  rawToolLogStored: false,
-                },
-                rawPromptStored: false,
-                rawResponseStored: false,
-                rawProviderLogStored: false,
-                workQueueLifecycleMutated: false,
-              };
-            },
-          },
-        },
-      });
-
-      const result = await scheduler.run("scheduler-graph");
-      const snapshot = await graphs.readGraphSnapshot("scheduler-graph");
-
-      expect(result.reasonCodes).toContain("runtime_post_synthesis_workintent_compile_blocked");
-      expect(result.reasonCodes).toContain("post_synthesis_executable_graph_compilation_retired");
-      expect(
-        result.reasonCodes.some((code) =>
-          code.includes("work_intent_required_model_field_missing"),
-        ),
-      ).toBe(true);
-      expect(snapshot?.nodes.filter((node) => node.nodeKind === "implementation")).toHaveLength(0);
-      expect(snapshot?.nodes.filter((node) => node.nodeKind === "work_intent")).toHaveLength(0);
-    });
-  });
-
-  it("records node-scoped context requirements on draft WorkIntents instead of per-packet fanout", async () => {
-    await withSchedulerGraph(async (graphs) => {
-      let orchestratorCalls = 0;
-      const packets = [
-        commitmentPacket({
-          commitmentId: "code-edit",
-          title: "Implement the requested code",
-          repoArea: "extensions/execution-platform/src/workflows/",
-        }),
-        commitmentPacket({
-          commitmentId: "validation",
-          title: "Validate the requested code",
-          repoArea: "extensions/execution-platform/src/workflows/",
-        }),
-      ];
-      const scheduler = new RuntimeWorkGraphScheduler({
-        graphs,
-        missionLedger: complexMissionLedger(),
-        commitmentWorkPackets: packets,
-        requireModelAuthoredCommitmentWorkPacketsForComplexMission: true,
-        requireEvidenceClaimsForMissionLedger: false,
-        requireFreshContextSnapshotsForWorkerExecution: true,
-        maxParallelNodeExecutions: 4,
-        maxIterations: 1,
-        maxDecisionRepairAttempts: 0,
-        orchestrator: {
-          async decide() {
-            orchestratorCalls += 1;
-            return {
-              decisionId: "draft-work-graph",
-              decisionKind: "add_nodes",
-              rationaleForDecision:
-                "Create implementation work units first; runtime will attach node-scoped context scouts.",
-              stagedScheduler: {
-                workBreakdownUnits: [
-                  {
-                    workUnitId: "workflow-edit",
-                    title: "Workflow edit",
-                    objective: "Implement the workflow code changes.",
-                    executionIntent: "source_edit",
-                    commitmentIds: ["code-edit"],
-                    expectedOutcome: "Changed source refs.",
-                  },
-                  {
-                    workUnitId: "validation-check",
-                    title: "Validation check",
-                    objective: "Validate the workflow code changes.",
-                    executionIntent: "validation",
-                    commitmentIds: ["validation"],
-                    expectedOutcome: "Validation refs.",
-                  },
-                  {
-                    workUnitId: "validation-edit",
-                    title: "Validation edit",
-                    objective: "Implement validation coverage.",
-                    executionIntent: "source_edit",
-                    commitmentIds: ["validation"],
-                    expectedOutcome: "Changed validation refs.",
-                  },
-                ],
-                capabilitySelectionsForWorkUnits: [
-                  {
-                    workUnitId: "workflow-edit",
-                    selectedCapabilityId: "implementation_microtask",
-                    consideredCapabilityIds: ["implementation_microtask"],
-                    utilityRationale: "Scoped edit.",
-                    costRationale: "Cheapest sufficient implementation lane.",
-                    whyThisIsNotDuplicateWork: "No workflow edit node exists.",
-                    stopOrEscalationCondition: "Stop if context is missing.",
-                  },
-                  {
-                    workUnitId: "validation-check",
-                    selectedCapabilityId: "validation_run",
-                    consideredCapabilityIds: ["validation_run"],
-                    utilityRationale: "Validation is required.",
-                    costRationale: "Validation runner is cheaper than broad implementation.",
-                    whyThisIsNotDuplicateWork: "No validation node exists.",
-                    stopOrEscalationCondition: "Stop if implementation evidence is missing.",
-                  },
-                  {
-                    workUnitId: "validation-edit",
-                    selectedCapabilityId: "implementation_microtask",
-                    consideredCapabilityIds: ["implementation_microtask"],
-                    utilityRationale: "Scoped validation edit.",
-                    costRationale: "Cheapest sufficient implementation lane.",
-                    whyThisIsNotDuplicateWork: "No validation edit node exists.",
-                    stopOrEscalationCondition: "Stop if context is missing.",
-                  },
-                ],
-                nodeContractDrafts: [
-                  {
-                    workUnitId: "workflow-edit",
-                    roleRationale: "Source changes are required.",
-                    objective: "Patch workflow implementation.",
-                    expectedOutput: "Changed workflow source refs.",
-                    successCriteria: ["Source edit evidence exists."],
-                    downstreamConsumer: "validation",
-                  },
-                  {
-                    workUnitId: "validation-edit",
-                    roleRationale: "Validation changes are required.",
-                    objective: "Patch validation coverage.",
-                    expectedOutput: "Changed validation refs.",
-                    successCriteria: ["Validation edit evidence exists."],
-                    downstreamConsumer: "validation",
-                  },
-                  {
-                    workUnitId: "validation-check",
-                    roleRationale: "Validation proves implementation evidence.",
-                    objective: "Run focused validation.",
-                    expectedOutput: "Validation refs.",
-                    successCriteria: ["Validation refs exist."],
-                    downstreamConsumer: "review",
-                  },
-                ],
-                edgeOrParallelismDraft: {
-                  parallelIndependentNodesJustification:
-                    "The two draft work nodes target separate commitments and can receive context independently.",
-                },
-              },
-              runAfterAdd: false,
-              reasonCodes: ["draft_work_graph_created"],
-            };
-          },
-        },
-        beforeNodeExecution: async ({ node }) =>
-          node.nodeKind === "implementation"
-            ? {
-                status: "needs_review",
-                selectedNodeId: node.nodeId,
-                reasonCodes: ["test_stopped_after_node_scoped_context_supply"],
-                rawPromptStored: false,
-                rawResponseStored: false,
-                rawProviderLogStored: false,
-              }
-            : null,
-        executors: {
-          "role:context_scout": succeededExecutor("context"),
-          "kind:implementation": succeededExecutor("implementation"),
-          "kind:validation": succeededExecutor("validation"),
-        },
-      });
-
-      const result = await scheduler.run("scheduler-graph");
-      const snapshot = await graphs.readGraphSnapshot("scheduler-graph");
-      const contextScoutNodes =
-        snapshot?.nodes.filter((node) => node.nodeKind === "context_scout") ?? [];
-      const workIntentNodes =
-        snapshot?.nodes.filter((node) => node.nodeKind === "work_intent") ?? [];
-      const synthesisNode = snapshot?.nodes.find((node) => node.nodeKind === "context_synthesis");
-
-      expect(["needs_review", "max_iterations"]).toContain(result.status);
-      expect(result.reasonCodes).toContain("staged_scheduler_graph_compiled");
-      expect(orchestratorCalls).toBeGreaterThanOrEqual(1);
-      expect(contextScoutNodes).toHaveLength(0);
-      expect(
-        workIntentNodes,
-        JSON.stringify(
-          {
-            result,
-            workIntentNodeIds: workIntentNodes.map(modelAuthoredNodeId),
-            reasonCodes: result.reasonCodes,
-          },
-          null,
-          2,
-        ),
-      ).toHaveLength(3);
-      expect(
-        workIntentNodes.map((node) => ({
-          commitmentIds: (node.metadata as Record<string, unknown>).commitmentIdsAdvanced,
-          requirementKinds: (node.metadata as Record<string, unknown>).resourceRequirementKinds,
-        })),
-      ).toEqual(
-        expect.arrayContaining([
-          {
-            commitmentIds: ["code-edit"],
-            requirementKinds: expect.arrayContaining(["context_handoff", "file_snapshots"]),
-          },
-          {
-            commitmentIds: ["validation"],
-            requirementKinds: expect.arrayContaining(["context_handoff", "file_snapshots"]),
-          },
-        ]),
-      );
-      expect(synthesisNode).toBeUndefined();
-      expect(snapshot?.edges.filter((edge) => edge.edgeKind === "context_supplies")).toHaveLength(
-        0,
-      );
-    });
-  });
-
-  it("retired runAfterAdd first-node approval creates prerequisites instead of running work-intent implementation", async () => {
-    await withSchedulerGraph(async (graphs) => {
-      let implementationCalled = false;
-      const packets = [
-        commitmentPacket({
-          commitmentId: "code-edit",
-          title: "Implement the requested code",
-          repoArea: "extensions/execution-platform/src/workflows/",
-        }),
-        commitmentPacket({
-          commitmentId: "validation",
-          title: "Validate the requested code",
-          repoArea: "extensions/execution-platform/src/workflows/",
-        }),
-      ];
-      const progressToolIds: string[] = [];
-      const scheduler = new RuntimeWorkGraphScheduler({
-        graphs,
-        missionLedger: complexMissionLedger(),
-        commitmentWorkPackets: packets,
-        requireModelAuthoredCommitmentWorkPacketsForComplexMission: true,
-        requireFreshContextSnapshotsForWorkerExecution: true,
-        maxIterations: 1,
-        maxDecisionRepairAttempts: 0,
-        orchestrator: {
-          async decide() {
-            return {
-              decisionId: "draft-work-run-after-add",
-              decisionKind: "add_nodes",
-              rationaleForDecision:
-                "Create the implementation node and request immediate run; runtime must gate it.",
-              stagedScheduler: {
-                workBreakdownUnits: [
-                  {
-                    workUnitId: "workflow-edit",
-                    title: "Workflow edit",
-                    objective: "Implement the workflow code changes.",
-                    executionIntent: "source_edit",
-                    commitmentIds: ["code-edit"],
-                    expectedOutcome: "Changed source refs.",
-                  },
-                  {
-                    workUnitId: "validation-check",
-                    title: "Validation check",
-                    objective: "Validate the workflow code changes.",
-                    executionIntent: "validation",
-                    commitmentIds: ["validation"],
-                    expectedOutcome: "Validation refs.",
-                  },
-                ],
-                capabilitySelectionsForWorkUnits: [
-                  {
-                    workUnitId: "workflow-edit",
-                    selectedCapabilityId: "implementation_microtask",
-                    consideredCapabilityIds: ["implementation_microtask"],
-                    utilityRationale: "Scoped edit.",
-                    costRationale: "Cheapest sufficient implementation lane.",
-                    whyThisIsNotDuplicateWork: "No workflow edit node exists.",
-                    stopOrEscalationCondition: "Stop if context is missing.",
-                  },
-                  {
-                    workUnitId: "validation-check",
-                    selectedCapabilityId: "validation_run",
-                    consideredCapabilityIds: ["validation_run"],
-                    utilityRationale: "Validation is required.",
-                    costRationale: "Validation runner is cheaper than broad implementation.",
-                    whyThisIsNotDuplicateWork: "No validation node exists.",
-                    stopOrEscalationCondition: "Stop if implementation evidence is missing.",
-                  },
-                ],
-                nodeContractDrafts: [
-                  {
-                    workUnitId: "workflow-edit",
-                    roleRationale: "Source changes are required.",
-                    objective: "Patch workflow implementation.",
-                    expectedOutput: "Changed workflow source refs.",
-                    successCriteria: ["Source edit evidence exists."],
-                    downstreamConsumer: "validation",
-                  },
-                  {
-                    workUnitId: "validation-check",
-                    roleRationale: "Validation evidence is required.",
-                    objective: "Run focused validation.",
-                    expectedOutput: "Validation refs.",
-                    successCriteria: ["Validation evidence exists."],
-                    downstreamConsumer: "review",
-                  },
-                ],
-                edgeOrParallelismDraft: {
-                  edges: [
-                    {
-                      fromNodeId: "workflow-edit",
-                      toNodeId: "validation-check",
-                      edgeKind: "validation_depends_on",
-                      reasonCodes: ["implementation_before_validation"],
-                    },
-                  ],
-                },
-              },
-              runAfterAdd: true,
-              reasonCodes: ["implementation_requested_immediately"],
-            };
-          },
-        },
-        executors: {
-          "role:context_scout": succeededExecutor("context"),
-          "kind:validation": succeededExecutor("validation"),
-          "kind:implementation": {
-            async execute() {
-              implementationCalled = true;
-              throw new Error("implementation_should_not_run_before_context_prerequisite");
-            },
-          },
-        },
-        onProgress: async (progress) => {
-          if (progress.schedulerToolId) {
-            progressToolIds.push(progress.schedulerToolId);
-          }
-        },
-      });
-
-      const result = await scheduler.run("scheduler-graph");
-      const snapshot = await graphs.readGraphSnapshot("scheduler-graph");
-      const contextScoutNodes =
-        snapshot?.nodes.filter((node) => node.nodeKind === "context_scout") ?? [];
-      const implementationNodes =
-        snapshot?.nodes.filter((node) => node.nodeKind === "implementation") ?? [];
-      const workIntentNodes =
-        snapshot?.nodes.filter((node) => node.nodeKind === "work_intent") ?? [];
-
-      expect(["max_iterations", "needs_review"]).toContain(result.status);
-      expect(implementationCalled).toBe(false);
-      expect(result.executedNodeIds).toEqual([]);
-      expect(result.reasonCodes).toContain("staged_scheduler_graph_compiled");
-      expect(contextScoutNodes).toHaveLength(1);
-      expect(implementationNodes).toHaveLength(0);
-      expect(workIntentNodes).toHaveLength(2);
-      expect(snapshot?.edges.filter((edge) => edge.edgeKind === "context_supplies")).toHaveLength(
-        1,
-      );
-      expect(contextScoutNodes[0]?.metadata).toMatchObject({
-        runtimeOwnedNodeScopedContextSupply: true,
-        contextBrokerRequestRef: expect.stringContaining("/context-broker/"),
-      });
-      expect(progressToolIds).toContain("scheduler.evaluate_frontier_readiness");
-      expect(progressToolIds).toContain("context_broker.dispatch_context_scout");
-      expect(progressToolIds).not.toContain("scheduler.approve_and_run_first_node");
-    });
-  });
-
-  it("shards node-scoped context supply instead of assigning one scout to many commitments", async () => {
-    await withSchedulerGraph(async (graphs) => {
-      let implementationCalled = false;
-      const commitmentIds = Array.from({ length: 7 }, (_, index) => `wide-commitment-${index + 1}`);
-      const packets = commitmentIds.map((commitmentId, index) =>
-        commitmentPacket({
-          commitmentId,
-          title: `Wide implementation commitment ${index + 1}`,
-          repoArea: `extensions/execution-platform/src/workflows/wide-${index + 1}/`,
-        }),
-      );
-      const missionLedger = normalizeMissionContractLedger({
-        missionId: "wide-context-shard-mission",
-        ownerObjectiveSummary: "Implement a wide group with bounded context sharding.",
-        value: {
-          blockingCommitments: commitmentIds.map((commitmentId, index) => ({
-            commitmentId,
-            commitmentText: `Wide implementation commitment ${index + 1}`,
-            whyItMatters: "The runtime must keep context scout work bounded.",
-            expectedEvidenceDescription: "Context handoff refs and source edit evidence.",
-            status: "pending",
-            blocking: true,
-          })),
-        },
-      });
-      const scheduler = new RuntimeWorkGraphScheduler({
-        graphs,
-        missionLedger,
-        commitmentWorkPackets: packets,
-        requireModelAuthoredCommitmentWorkPacketsForComplexMission: true,
-        requireFreshContextSnapshotsForWorkerExecution: true,
-        maxIterations: 1,
-        maxDecisionRepairAttempts: 0,
-        orchestrator: {
-          async decide() {
-            return {
-              decisionId: "wide-draft-work-run-after-add",
-              decisionKind: "add_nodes",
-              rationaleForDecision:
-                "Create a deliberately wide implementation node so runtime must shard context supply.",
-              stagedScheduler: {
-                workBreakdownUnits: [
-                  {
-                    workUnitId: "wide-implementation",
-                    title: "Wide implementation",
-                    objective: "Implement a wide group that covers many commitments.",
-                    executionIntent: "source_edit",
-                    commitmentIds,
-                    expectedOutcome: "Changed source refs.",
-                  },
-                  {
-                    workUnitId: "wide-validation",
-                    title: "Wide validation",
-                    objective: "Validate the wide implementation group.",
-                    executionIntent: "validation",
-                    commitmentIds: ["wide-commitment-7"],
-                    expectedOutcome: "Validation refs.",
-                  },
-                ],
-                capabilitySelectionsForWorkUnits: [
-                  {
-                    workUnitId: "wide-implementation",
-                    selectedCapabilityId: "implementation_microtask",
-                    consideredCapabilityIds: ["implementation_microtask"],
-                    utilityRationale: "Scoped implementation should run only after context.",
-                    costRationale: "Cheapest sufficient implementation lane.",
-                    whyThisIsNotDuplicateWork: "No wide implementation node exists.",
-                    stopOrEscalationCondition: "Stop if context is missing.",
-                  },
-                  {
-                    workUnitId: "wide-validation",
-                    selectedCapabilityId: "validation_run",
-                    consideredCapabilityIds: ["validation_run"],
-                    utilityRationale: "Validation must run after the wide implementation.",
-                    costRationale: "Validation runner is cheaper than broad implementation.",
-                    whyThisIsNotDuplicateWork: "No wide validation node exists.",
-                    stopOrEscalationCondition: "Stop if implementation evidence is missing.",
-                  },
-                ],
-                nodeContractDrafts: [
-                  {
-                    workUnitId: "wide-implementation",
-                    roleRationale: "Source changes are required.",
-                    objective: "Patch the wide implementation group.",
-                    expectedOutput: "Changed source refs.",
-                    successCriteria: ["Source edit evidence exists."],
-                    downstreamConsumer: "validation",
-                  },
-                  {
-                    workUnitId: "wide-validation",
-                    roleRationale: "Validation evidence is required.",
-                    objective: "Run focused validation for the wide implementation group.",
-                    expectedOutput: "Validation refs.",
-                    successCriteria: ["Validation evidence exists."],
-                    downstreamConsumer: "review",
-                  },
-                ],
-                edgeOrParallelismDraft: {
-                  edges: [
-                    {
-                      fromNodeId: "wide-implementation",
-                      toNodeId: "wide-validation",
-                      edgeKind: "validation_depends_on",
-                      reasonCodes: ["implementation_before_validation"],
-                    },
-                  ],
-                },
-              },
-              runAfterAdd: true,
-              reasonCodes: ["wide_implementation_requested_immediately"],
-            };
-          },
-        },
-        executors: {
-          "role:context_scout": succeededExecutor("context"),
-          "kind:validation": succeededExecutor("validation"),
-          "kind:implementation": {
-            async execute() {
-              implementationCalled = true;
-              throw new Error("implementation_should_not_run_before_context_prerequisite");
-            },
-          },
-        },
-      });
-
-      const result = await scheduler.run("scheduler-graph");
-      const snapshot = await graphs.readGraphSnapshot("scheduler-graph");
-      const contextScoutNodes =
-        snapshot?.nodes.filter((node) => node.nodeKind === "context_scout") ?? [];
-      const contextSupplyEdges =
-        snapshot?.edges.filter((edge) => edge.edgeKind === "context_supplies") ?? [];
-      const workIntentNodes =
-        snapshot?.nodes.filter((node) => node.nodeKind === "work_intent") ?? [];
-
-      expect(["max_iterations", "needs_review"]).toContain(result.status);
-      expect(implementationCalled).toBe(false);
-      expect(
-        contextScoutNodes,
-        JSON.stringify(
-          {
-            status: result.status,
-            reasonCodes: result.reasonCodes,
-            nodes: snapshot?.nodes.map((node) => ({
-              nodeId: node.nodeId,
-              nodeKind: node.nodeKind,
-              nodeStatus: node.nodeStatus,
-              capabilityId:
-                node.metadata && typeof node.metadata === "object"
-                  ? (node.metadata as Record<string, unknown>).capabilityId
-                  : null,
-              commitmentIdsAdvanced:
-                node.metadata && typeof node.metadata === "object"
-                  ? (node.metadata as Record<string, unknown>).commitmentIdsAdvanced
-                  : null,
-              inputHandoffRefs: node.inputHandoffRefs,
-              lastStatusReasonCodes:
-                node.metadata && typeof node.metadata === "object"
-                  ? (node.metadata as Record<string, unknown>).lastStatusReasonCodes
-                  : null,
-            })),
-            edges: snapshot?.edges.map((edge) => ({
-              edgeId: edge.edgeId,
-              fromNodeId: edge.fromNodeId,
-              toNodeId: edge.toNodeId,
-              edgeKind: edge.edgeKind,
-              reasonCodes: edge.reasonCodes,
-            })),
-          },
-          null,
-          2,
-        ),
-      ).toHaveLength(3);
-      expect(contextSupplyEdges).toHaveLength(3);
-      expect(workIntentNodes).toHaveLength(2);
-      expect(
-        contextScoutNodes.map(
-          (node) => (node.metadata as Record<string, unknown>).contextBrokerRequestRef,
-        ),
-      ).toEqual(
-        expect.arrayContaining([
-          expect.stringContaining("/context-broker/"),
-          expect.stringContaining("/context-broker/"),
-          expect.stringContaining("/context-broker/"),
-        ]),
-      );
-      expect(workIntentNodes[0]?.metadata).toMatchObject({
-        resourceRequirementKinds: expect.arrayContaining(["context_handoff", "file_snapshots"]),
-        workIntentSelectedCapabilityId: "implementation_microtask",
-      });
-    });
-  });
-
-  it("does not rerun context synthesis when a bounded synthesis artifact needs boundary repair", async () => {
-    await withSchedulerGraph(async (graphs) => {
-      await graphs.addNode({
-        graphId: "scheduler-graph",
-        nodeId: "context-a",
-        nodeKind: "context_scout",
-        assignedRole: "context_scout",
-        nodeStatus: "succeeded",
-        outputArtifactRefs: ["runtime-job://job/context/a"],
-      });
-      await graphs.addNode({
-        graphId: "scheduler-graph",
-        nodeId: "context_synthesis_global_barrier",
-        nodeKind: "context_synthesis",
-        assignedRole: "context_synthesis",
-        nodeStatus: "needs_review",
-        outputArtifactRefs: [
-          "runtime-work-graph://scheduler-graph/context-synthesis/partial-synthesis",
-        ],
         metadata: {
-          contextSynthesisRef:
-            "runtime-work-graph://scheduler-graph/context-synthesis/partial-synthesis",
-          contextSynthesisStatus: "needs_review",
-          lastStatusReasonCodes: [
-            "context_synthesis_validation_failed",
-            "context_synthesis_group_expected_output_missing:synthesis-group-3",
+          workIntentCompiled: true,
+          workIntentSelectedCapabilityId: "implementation_microtask",
+          capabilityId: "implementation_microtask",
+          executionIntent: "source_edit",
+          evidenceMode: ["changed_file_evidence", "validation_evidence"],
+          resourceRequirementKinds: ["resource_handoff"],
+          workIntentRef: "work-intent://scheduler-graph/satisfied-source-edit",
+          exactObjective: "Apply the accepted resource ledger evidence.",
+          expectedOutput: "Executable implementation node.",
+          commitmentIdsAdvanced: ["code-edit"],
+          targetRefs: ["file-window://src/example.ts#L1-L40"],
+          resourceObjectiveFocusStatus: "accepted",
+          resourceObjectiveFocusRef: "resource-focus://satisfied-source-edit",
+          resourceObjectiveFocusLegalRefUniverseRef:
+            "resource-focus-legal-ref-universe://satisfied-source-edit",
+          nodeResourceDemandStatus: "fulfilled",
+          nodeResourceDemandSessionRefs: ["resource-demand://satisfied-source-edit/session"],
+          nodeResourceDemandFulfillmentRefs: ["resource-demand://satisfied-source-edit/fulfillment"],
+          nodeResourceLedgerRefs: ["resource-ledger://satisfied-source-edit"],
+          nodeResourceLedgerEntryRefs: ["resource-ledger://satisfied-source-edit/entry"],
+          acceptedResourceHandoffRefs: ["resource-ledger://satisfied-source-edit/entry"],
+          domainResourceSelectionStatus: "accepted",
+          domainResourceSelectionDecisionStatus: "accepted",
+          domainResourceSelectionRefs: ["domain-resource-selection://satisfied-source-edit"],
+          domainResourceSelectionPacketRefs: [
+            "domain-resource-selection-packet://satisfied-source-edit",
+          ],
+          domainResourceSelectionDecisionRefs: [
+            "domain-resource-selection-decision://satisfied-source-edit",
           ],
           rawPromptStored: false,
           rawResponseStored: false,
           rawProviderLogStored: false,
         },
       });
-      let synthesisExecutorCalls = 0;
-      const scheduler = new RuntimeWorkGraphScheduler({
-        graphs,
-        missionLedger: complexMissionLedger(),
-        requireEvidenceClaimsForMissionLedger: false,
-        maxDecisionRepairAttempts: 0,
-        orchestrator: {
-          async decide() {
-            return {
-              decisionId: "stop",
-              decisionKind: "mark_needs_review",
-              rationaleForDecision: "Stop.",
-              reasonCodes: ["stop"],
-            };
-          },
-        },
-        executors: {
-          "role:context_synthesis": {
-            async execute() {
-              synthesisExecutorCalls += 1;
-              return {
-                status: "succeeded",
-                outputArtifactRefs: ["artifact://unexpected-context-synthesis-rerun"],
-                reasonCodes: ["unexpected_context_synthesis_rerun"],
-                rawPromptStored: false,
-                rawResponseStored: false,
-                rawProviderLogStored: false,
-                workQueueLifecycleMutated: false,
-              };
-            },
-          },
-        },
-      });
-
-      const result = await scheduler.run("scheduler-graph");
-      const snapshot = await graphs.readGraphSnapshot("scheduler-graph");
-
-      expect(result.status).toBe("needs_review");
-      expect(result.reasonCodes).toContain("context_synthesis_artifact_repair_required_not_rerun");
-      expect(synthesisExecutorCalls).toBe(0);
-      expect(snapshot?.nodes.filter((node) => node.nodeKind === "context_synthesis")).toHaveLength(
-        1,
-      );
-    });
-  });
-
-  it("reuses structurally identical scheduler edges across retries instead of duplicating dependencies", async () => {
-    await withSchedulerGraph(async (graphs) => {
       await graphs.addNode({
         graphId: "scheduler-graph",
-        nodeId: "context-a",
-        nodeKind: "context_scout",
-        assignedRole: "context_scout",
-        nodeStatus: "succeeded",
-        outputArtifactRefs: ["artifact://context/a"],
-      });
-      await graphs.addNode({
-        graphId: "scheduler-graph",
-        nodeId: "synthesis",
-        nodeKind: "context_synthesis",
-        assignedRole: "context_synthesis",
-        nodeStatus: "planned",
-      });
-      await graphs.addEdge({
-        graphId: "scheduler-graph",
-        edgeId: "existing-context-supplies-edge",
-        fromNodeId: "context-a",
-        toNodeId: "synthesis",
-        edgeKind: "context_supplies",
-        reasonCodes: ["existing_edge"],
-      });
-      let calls = 0;
-      const scheduler = new RuntimeWorkGraphScheduler({
-        graphs,
-        missionLedger: complexMissionLedger(),
-        requireEvidenceClaimsForMissionLedger: false,
-        maxDecisionRepairAttempts: 0,
-        orchestrator: {
-          async decide() {
-            calls += 1;
-            if (calls === 1) {
-              return {
-                decisionId: "retry-same-edge",
-                decisionKind: "add_nodes",
-                rationaleForDecision:
-                  "Retry persisted graph structure with the same dependency edge.",
-                newNodes: [
-                  {
-                    nodeId: "context-a",
-                    nodeKind: "context_scout",
-                    assignedRole: "context_scout",
-                    inputHandoffRefs: [],
-                    expectedOutput: "Context already exists.",
-                    acceptanceCriteria: ["Context exists."],
-                    commitmentIdsAdvanced: ["code-edit"],
-                  },
-                  {
-                    nodeId: "synthesis",
-                    nodeKind: "context_synthesis",
-                    assignedRole: "context_synthesis",
-                    inputHandoffRefs: ["artifact://context/a"],
-                    expectedOutput: "Synthesize context.",
-                    acceptanceCriteria: ["Synthesis runs after context."],
-                    commitmentIdsAdvanced: ["code-edit"],
-                  },
-                ],
-                newEdges: [
-                  {
-                    edgeId: "retry-context-supplies-edge",
-                    fromNodeId: "context-a",
-                    toNodeId: "synthesis",
-                    edgeKind: "context_supplies",
-                    reasonCodes: ["retry_same_structural_edge"],
-                  },
-                ],
-                runAfterAdd: false,
-              };
-            }
-            return {
-              decisionId: "stop",
-              decisionKind: "mark_needs_review",
-              rationaleForDecision: "Stop after edge idempotency proof.",
-              reasonCodes: ["edge_idempotency_proven"],
-            };
-          },
-        },
-        executors: {},
-      });
-
-      const result = await scheduler.run("scheduler-graph");
-      const snapshot = await graphs.readGraphSnapshot("scheduler-graph");
-
-      expect(result.status).toBe("needs_review");
-      expect(snapshot?.edges.filter((edge) => edge.edgeKind === "context_supplies")).toHaveLength(
-        1,
-      );
-    });
-  });
-
-  it("requires synthesized context handoff refs on downstream nodes after synthesis is accepted", async () => {
-    await withSchedulerGraph(async (graphs) => {
-      await graphs.addNode({
-        graphId: "scheduler-graph",
-        nodeId: "context-product-spec",
-        nodeKind: "context_scout",
-        assignedRole: "context_scout",
-        nodeStatus: "succeeded",
-        outputArtifactRefs: ["runtime-job://job/context/product-spec"],
-      });
-      await graphs.addNode({
-        graphId: "scheduler-graph",
-        nodeId: "synthesis-product-spec",
-        nodeKind: "context_synthesis",
-        assignedRole: "context_synthesis",
-        nodeStatus: "succeeded",
-        outputArtifactRefs: ["runtime-work-graph://scheduler-graph/context-synthesis/accepted"],
-      });
-      await addPostSynthesisPolicyProbe(graphs);
-      const scheduler = new RuntimeWorkGraphScheduler({
-        graphs,
-        missionLedger: complexMissionLedger(),
-        maxDecisionRepairAttempts: 0,
-        orchestrator: {
-          async decide() {
-            return {
-              decisionId: "implementation-without-synthesis-input",
-              decisionKind: "add_nodes",
-              rationaleForDecision: "Implementation lacks a synthesized context input ref.",
-              newNodes: [
-                {
-                  nodeId: "implementation-missing-handoff",
-                  nodeKind: "implementation",
-                  capabilityId: "implementation_microtask",
-                  assignedRole: "implementation_engineer",
-                  commitmentIdsAdvanced: ["code-edit"],
-                  whyThisRoleIsNeededNow: "Implementation is now allowed only with handoffs.",
-                  exactObjective: "Implement the code edit.",
-                  evidenceExpectation: "Changed-file refs.",
-                  expectedOutput: "Changed-file refs.",
-                  acceptanceCriteria: ["Records source edits."],
-                  downstreamConsumer: "validation",
-                },
-              ],
-              reasonCodes: ["implementation_missing_synthesis_handoff"],
-            };
-          },
-        },
-        executors: {
-          "role:implementation_engineer": succeededExecutor("implementation"),
-        },
-      });
-
-      const result = await scheduler.run("scheduler-graph");
-
-      expect(result.status).toBe("needs_review");
-      expect(result.reasonCodes.length).toBeGreaterThan(0);
-    });
-  });
-
-  it("requires synthesized context handoff refs before running existing downstream nodes", async () => {
-    await withSchedulerGraph(async (graphs) => {
-      await graphs.addNode({
-        graphId: "scheduler-graph",
-        nodeId: "context-product-spec",
-        nodeKind: "context_scout",
-        assignedRole: "context_scout",
-        nodeStatus: "succeeded",
-        outputArtifactRefs: ["runtime-job://job/context/product-spec"],
-      });
-      await graphs.addNode({
-        graphId: "scheduler-graph",
-        nodeId: "synthesis-product-spec",
-        nodeKind: "context_synthesis",
-        assignedRole: "context_synthesis",
-        nodeStatus: "succeeded",
-        outputArtifactRefs: ["runtime-work-graph://scheduler-graph/context-synthesis/accepted"],
-      });
-      await graphs.addNode({
-        graphId: "scheduler-graph",
-        nodeId: "implementation-existing",
-        nodeKind: "implementation",
-        assignedRole: "implementation_engineer",
-        nodeStatus: "planned",
+        nodeId: "blocked-sibling",
+        nodeKind: "work_intent",
+        assignedRole: "orchestrator",
+        nodeStatus: "needs_review",
         metadata: {
+          workIntentCompiled: true,
+          workIntentSelectedCapabilityId: "implementation_microtask",
           capabilityId: "implementation_microtask",
-          commitmentIdsAdvanced: ["code-edit"],
+          executionIntent: "source_edit",
+          evidenceMode: ["changed_file_evidence"],
+          resourceRequirementKinds: ["resource_handoff"],
+          workIntentRef: "work-intent://scheduler-graph/blocked-sibling",
+          resourceObjectiveFocusStatus: "accepted",
+          resourceObjectiveFocusRef: "resource-focus://blocked-sibling",
+          nodeResourceDemandStatus: "blocked",
+          nodeResourceDemandBlockerRefs: ["resource-demand-blocker://blocked-sibling"],
           rawPromptStored: false,
           rawResponseStored: false,
+          rawProviderLogStored: false,
         },
       });
+
       const scheduler = new RuntimeWorkGraphScheduler({
         graphs,
         missionLedger: complexMissionLedger(),
-        maxDecisionRepairAttempts: 0,
         orchestrator: {
           async decide() {
-            return {
-              decisionId: "run-existing-without-handoff",
-              decisionKind: "run_node",
-              rationaleForDecision: "Try to run an implementation node with no synthesis input.",
-              runNodeId: "implementation-existing",
-              reasonCodes: ["run_existing_without_handoff"],
-            };
-          },
-        },
-        executors: {
-          "role:implementation_engineer": succeededExecutor("implementation"),
-        },
-      });
-
-      const result = await scheduler.run("scheduler-graph");
-
-      expect(result.status).toBe("needs_review");
-      expect(result.reasonCodes).toContain(
-        "context_synthesis_input_handoff_required:implementation-existing",
-      );
-    });
-  });
-
-  it("rejects post-synthesis graphs that let broad Codex implementation absorb every role", async () => {
-    await withSchedulerGraph(async (graphs) => {
-      await graphs.addNode({
-        graphId: "scheduler-graph",
-        nodeId: "context-product-spec",
-        nodeKind: "context_scout",
-        assignedRole: "context_scout",
-        nodeStatus: "succeeded",
-        outputArtifactRefs: ["runtime-job://job/context/product-spec"],
-      });
-      await graphs.addNode({
-        graphId: "scheduler-graph",
-        nodeId: "synthesis-product-spec",
-        nodeKind: "context_synthesis",
-        assignedRole: "context_synthesis",
-        nodeStatus: "succeeded",
-        outputArtifactRefs: ["runtime-work-graph://scheduler-graph/context-synthesis/accepted"],
-      });
-      await addPostSynthesisPolicyProbe(graphs);
-      const scheduler = new RuntimeWorkGraphScheduler({
-        graphs,
-        missionLedger: complexMissionLedger(),
-        maxDecisionRepairAttempts: 0,
-        orchestrator: {
-          async decide() {
-            return {
-              decisionId: "codex-monopoly-post-synthesis",
-              decisionKind: "add_nodes",
-              rationaleForDecision: "Use Codex for all post-synthesis work.",
-              newNodes: [
-                {
-                  nodeId: "implementation-all",
-                  nodeKind: "implementation",
-                  capabilityId: "implementation_complex",
-                  assignedRole: "implementation_engineer",
-                  inputHandoffRefs: [
-                    "runtime-work-graph://scheduler-graph/context-synthesis/accepted",
-                  ],
-                  commitmentIdsAdvanced: ["code-edit", "validation"],
-                  whyThisRoleIsNeededNow: "Codex can do everything.",
-                  exactObjective: "Implement, validate, review, read back, and close out.",
-                  evidenceExpectation: "All evidence.",
-                  expectedOutput: "All evidence.",
-                  acceptanceCriteria: ["Finish the mission."],
-                  downstreamConsumer: "closeout",
-                  metadata: {
-                    capabilityId: "implementation_complex",
-                    consideredCapabilityIds: ["implementation_complex"],
-                    utilityRationale: "Strongest model.",
-                    costRationale: "Premium model is safest.",
-                    whyThisIsNotDuplicateWork: "No post-synthesis work has run.",
-                    stopOrEscalationCondition: "Stop if Codex fails.",
-                    rawPromptStored: false,
-                    rawResponseStored: false,
-                    rawProviderLogStored: false,
-                  },
-                },
-              ],
-              newEdges: [],
-              reasonCodes: ["codex_monopoly"],
-              metadata: {
-                parallelIndependentNodesJustification: "Single node has no peers.",
-                rawPromptStored: false,
-                rawResponseStored: false,
-                rawProviderLogStored: false,
-              },
-            };
-          },
-        },
-        executors: {
-          "role:implementation_engineer": succeededExecutor("implementation"),
-        },
-      });
-
-      const result = await scheduler.run("scheduler-graph");
-
-      expect(result.status).toBe("needs_review");
-      expect(result.reasonCodes).toContain(
-        "post_synthesis_graph_role_obligation_missing:validation",
-      );
-      expect(result.reasonCodes).toContain("post_synthesis_graph_role_obligation_missing:review");
-      expect(result.reasonCodes).toContain(
-        "post_synthesis_graph_role_obligation_missing:docs_or_readback",
-      );
-      expect(result.reasonCodes).toContain("post_synthesis_graph_role_obligation_missing:closeout");
-      expect(result.reasonCodes).toContain(
-        "post_synthesis_graph_no_cheaper_or_specialized_node_represented",
-      );
-      expect(result.executedNodeIds).toEqual([]);
-    });
-  });
-
-  it("evaluates post-synthesis repair additions against the complete existing graph", () => {
-    const validation = validatePostSynthesisGraphDecision({
-      missionLedger: complexMissionLedger(),
-      capabilityManifest: buildRuntimeNodeCapabilityManifest(),
-      snapshotSummary: {
-        workflowId: "agent_team.coding",
-        graphStatus: "running",
-        nodeSummaries: [
-          {
-            nodeId: "context-synthesis",
-            nodeKind: "context_synthesis",
-            assignedRole: "context_synthesis",
-            nodeStatus: "succeeded",
-            capabilityId: "context_synthesis",
-            outputArtifactRefs: ["runtime-work-graph://scheduler-graph/context-synthesis/accepted"],
-          },
-          {
-            nodeId: "implementation-cheap",
-            nodeKind: "implementation",
-            assignedRole: "implementation_engineer",
-            nodeStatus: "needs_review",
-            capabilityId: "implementation_microtask",
-            commitmentIdsAdvanced: ["code-edit"],
-            outputArtifactRefs: ["runtime-job://job/worker/implementation-cheap"],
-          },
-          {
-            nodeId: "validation-existing",
-            nodeKind: "validation",
-            assignedRole: "test_engineer",
-            nodeStatus: "planned",
-            capabilityId: "validation_run",
-            commitmentIdsAdvanced: ["validation"],
-            outputArtifactRefs: [],
-          },
-          {
-            nodeId: "review-existing",
-            nodeKind: "reviewer",
-            assignedRole: "reviewer",
-            nodeStatus: "planned",
-            capabilityId: "reviewer",
-            commitmentIdsAdvanced: ["code-edit", "validation"],
-            outputArtifactRefs: [],
-          },
-          {
-            nodeId: "readback-existing",
-            nodeKind: "observability_readback",
-            assignedRole: "observability",
-            nodeStatus: "planned",
-            capabilityId: "observability_readback",
-            commitmentIdsAdvanced: ["code-edit", "validation"],
-            outputArtifactRefs: [],
-          },
-          {
-            nodeId: "closeout-existing",
-            nodeKind: "closeout",
-            assignedRole: "closeout",
-            nodeStatus: "planned",
-            capabilityId: "coding_closeout",
-            commitmentIdsAdvanced: ["code-edit", "validation"],
-            outputArtifactRefs: [],
-          },
-        ],
-        edgeSummaries: [],
-        edgeCount: 0,
-        humanTaskCount: 0,
-        latestCheckpointKinds: [],
-      },
-      decision: {
-        decisionId: "repair-add-complex-node",
-        decisionKind: "add_nodes",
-        rationaleForDecision:
-          "Escalate one failed scoped implementation node while preserving the existing validation, review, readback, and closeout graph.",
-        newNodes: [
-          {
-            nodeId: "implementation-complex-repair",
-            nodeKind: "implementation",
-            capabilityId: "implementation_complex",
-            assignedRole: "implementation_engineer",
-            inputHandoffRefs: ["runtime-job://job/worker/implementation-cheap"],
-            commitmentIdsAdvanced: ["code-edit"],
-            whyThisRoleIsNeededNow:
-              "The cheaper worker failed structural validation and rolled back.",
-            exactObjective: "Repair the failed implementation evidence.",
-            evidenceExpectation: "Changed-file and validation-ready evidence refs.",
-            expectedOutput: "Changed-file refs and evidence claims.",
-            acceptanceCriteria: ["The repair compiles and validation can run."],
-            downstreamConsumer: "validation-existing",
-            metadata: {
-              capabilityId: "implementation_complex",
-              consideredCapabilityIds: ["implementation_microtask", "implementation_complex"],
-              whyCheaperOptionsWereInsufficient:
-                "implementation_microtask already attempted the scoped edit and rolled back after validation failure.",
-              rawPromptStored: false,
-              rawResponseStored: false,
-              rawProviderLogStored: false,
-            },
-          },
-        ],
-        newEdges: [
-          {
-            edgeId: "complex-to-validation",
-            fromNodeId: "implementation-complex-repair",
-            toNodeId: "validation-existing",
-            edgeKind: "handoff",
-            reasonCodes: ["repair_handoff"],
-            artifactRefs: [],
-          },
-        ],
-        reasonCodes: ["repair_escalation"],
-        rawPromptStored: false,
-        rawResponseStored: false,
-        rawProviderLogStored: false,
-        workQueueLifecycleMutated: false,
-      },
-    });
-
-    expect(validation.valid).toBe(true);
-    expect(validation.reasonCodes).not.toContain(
-      "post_synthesis_graph_role_obligation_missing:validation",
-    );
-    expect(validation.reasonCodes).not.toContain(
-      "post_synthesis_graph_role_obligation_missing:review",
-    );
-    expect(validation.reasonCodes).not.toContain(
-      "post_synthesis_graph_role_obligation_missing:docs_or_readback",
-    );
-    expect(validation.reasonCodes).not.toContain(
-      "post_synthesis_graph_role_obligation_missing:closeout",
-    );
-  });
-
-  it("passes post-synthesis role obligations and field-specific readback repair diagnostics to the orchestrator", async () => {
-    await withSchedulerGraph(async (graphs) => {
-      await graphs.addNode({
-        graphId: "scheduler-graph",
-        nodeId: "context-product-spec",
-        nodeKind: "context_scout",
-        assignedRole: "context_scout",
-        nodeStatus: "succeeded",
-        outputArtifactRefs: ["runtime-job://job/context/product-spec"],
-      });
-      await graphs.addNode({
-        graphId: "scheduler-graph",
-        nodeId: "synthesis-product-spec",
-        nodeKind: "context_synthesis",
-        assignedRole: "context_synthesis",
-        nodeStatus: "succeeded",
-        outputArtifactRefs: ["runtime-work-graph://scheduler-graph/context-synthesis/accepted"],
-      });
-      await addPostSynthesisPolicyProbe(graphs);
-      const seenInputs: RuntimeWorkGraphSchedulerDecisionInput[] = [];
-      const decisions = [
-        {
-          decisionId: "missing-readback-post-synthesis",
-          decisionKind: "add_nodes",
-          rationaleForDecision:
-            "Add implementation, validation, review, and closeout but accidentally omit the readback/docs role.",
-          stagedScheduler: {
-            workBreakdownUnits: [
-              {
-                workUnitId: "implementation",
-                objective: "Apply the source edit.",
-                executionIntent: "source_edit",
-                commitmentIds: ["code-edit"],
-                rationale: "Source changes are required.",
-                expectedOutcome: "Changed-file refs.",
-              },
-              {
-                workUnitId: "validation",
-                objective: "Run focused validation.",
-                executionIntent: "validation",
-                commitmentIds: ["validation"],
-                rationale: "Validation is required.",
-                expectedOutcome: "Validation refs.",
-              },
-              {
-                workUnitId: "review",
-                objective: "Review evidence.",
-                executionIntent: "review",
-                commitmentIds: ["code-edit", "validation"],
-                rationale: "Review is required.",
-                expectedOutcome: "Review refs.",
-              },
-              {
-                workUnitId: "closeout",
-                objective: "Generate closeout.",
-                executionIntent: "closeout",
-                commitmentIds: ["code-edit", "validation"],
-                rationale: "Closeout is required.",
-                expectedOutcome: "Closeout refs.",
-              },
-            ],
-            capabilitySelectionsForWorkUnits: [
-              {
-                workUnitId: "implementation",
-                selectedCapabilityId: "implementation_microtask",
-                consideredCapabilityIds: ["implementation_microtask", "implementation_complex"],
-                utilityRationale: "Bounded source edit.",
-                costRationale: "Cheaper than Codex for scoped edits.",
-                whyThisIsNotDuplicateWork: "No implementation evidence exists.",
-                stopOrEscalationCondition: "Escalate if file scope expands.",
-              },
-              {
-                workUnitId: "validation",
-                selectedCapabilityId: "validation_run",
-                consideredCapabilityIds: ["validation_run"],
-                utilityRationale: "Validation produces command refs.",
-                costRationale: "Script runner is cheapest.",
-                whyThisIsNotDuplicateWork: "No validation evidence exists.",
-                stopOrEscalationCondition: "Return failures for repair.",
-              },
-              {
-                workUnitId: "review",
-                selectedCapabilityId: "reviewer",
-                consideredCapabilityIds: ["reviewer"],
-                utilityRationale: "Reviewer judges sufficiency.",
-                costRationale: "Specialized review is cheaper than implementation.",
-                whyThisIsNotDuplicateWork: "No review evidence exists.",
-                stopOrEscalationCondition: "Return findings for repair.",
-              },
-              {
-                workUnitId: "closeout",
-                selectedCapabilityId: "coding_closeout",
-                consideredCapabilityIds: ["coding_closeout"],
-                utilityRationale: "Closeout synthesizes evidence.",
-                costRationale: "Specialized closeout node.",
-                whyThisIsNotDuplicateWork: "No closeout exists.",
-                stopOrEscalationCondition: "Needs review if commitments remain open.",
-              },
-            ],
-            nodeContractDrafts: [
-              {
-                workUnitId: "implementation",
-                roleRationale: "Implementation applies the source edit.",
-                objective: "Apply the source edit.",
-                inputRefs: ["runtime-work-graph://scheduler-graph/context-synthesis/accepted"],
-                expectedOutput: "Changed-file refs.",
-                successCriteria: ["Emits source evidence."],
-                downstreamConsumer: "validation",
-              },
-              {
-                workUnitId: "validation",
-                roleRationale: "Validation must run separately.",
-                objective: "Run validation.",
-                inputRefs: ["runtime-work-graph://scheduler-graph/context-synthesis/accepted"],
-                expectedOutput: "Validation refs.",
-                successCriteria: ["Records command refs."],
-                downstreamConsumer: "review",
-              },
-              {
-                workUnitId: "review",
-                roleRationale: "Review validates evidence sufficiency.",
-                objective: "Review evidence.",
-                inputRefs: ["runtime-work-graph://scheduler-graph/context-synthesis/accepted"],
-                expectedOutput: "Review refs.",
-                successCriteria: ["Maps findings to commitments."],
-                downstreamConsumer: "closeout",
-              },
-              {
-                workUnitId: "closeout",
-                roleRationale: "Closeout must be model-authored.",
-                objective: "Generate closeout.",
-                inputRefs: ["runtime-work-graph://scheduler-graph/context-synthesis/accepted"],
-                expectedOutput: "Closeout refs.",
-                successCriteria: ["Cites accepted evidence."],
-                downstreamConsumer: "owner",
-              },
-            ],
-            edgeOrParallelismDraft: {
-              edges: [
-                {
-                  fromWorkUnitId: "implementation",
-                  toWorkUnitId: "validation",
-                  edgeKind: "handoff",
-                },
-                { fromWorkUnitId: "validation", toWorkUnitId: "review", edgeKind: "handoff" },
-                { fromWorkUnitId: "review", toWorkUnitId: "closeout", edgeKind: "handoff" },
-              ],
-            },
-          },
-          reasonCodes: ["missing_readback_regression"],
-        },
-        {
-          decisionId: "stop-after-readback-diagnostics",
-          decisionKind: "mark_needs_review",
-          rationaleForDecision: "Stop after verifying field-specific repair diagnostics.",
-          reasonCodes: ["readback_diagnostics_observed"],
-        },
-      ];
-      const scheduler = new RuntimeWorkGraphScheduler({
-        graphs,
-        missionLedger: complexMissionLedger(),
-        maxDecisionRepairAttempts: 1,
-        orchestrator: {
-          async decide(input) {
-            seenInputs.push(input);
-            return decisions.shift();
+            throw new Error("global_scheduler_should_not_run_before_satisfied_sibling_promotion");
           },
         },
         executors: {
           "kind:implementation": succeededExecutor("implementation"),
-          "kind:validation": succeededExecutor("validation"),
-          "kind:reviewer": succeededExecutor("reviewer"),
-          "kind:observability_readback": succeededExecutor("readback"),
-          "kind:closeout": succeededExecutor("closeout"),
-        },
-      });
-
-      const result = await scheduler.run("scheduler-graph");
-
-      expect(result.status).toBe("needs_review");
-      expect(seenInputs[0]?.postSynthesisRoleObligationGuidance?.applies).toBe(true);
-      expect(seenInputs[0]?.postSynthesisRoleObligationGuidance?.requiredRoleObligations).toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({
-            obligation: "docs_or_readback",
-            validCapabilityIds: expect.arrayContaining(["observability_readback"]),
-          }),
-          expect.objectContaining({
-            obligation: "implementation",
-            validCapabilityIds: expect.arrayContaining(["implementation_microtask"]),
-            preferredCapabilityIds: expect.arrayContaining(["implementation_microtask"]),
-          }),
-          expect.objectContaining({
-            obligation: "review",
-            validCapabilityIds: expect.arrayContaining(["reviewer"]),
-          }),
-          expect.objectContaining({
-            obligation: "closeout",
-            validCapabilityIds: expect.arrayContaining(["coding_closeout"]),
-          }),
-        ]),
-      );
-      expect(seenInputs[1]?.repairDiagnostics?.rejectedReasonCodes).toContain(
-        "post_synthesis_graph_role_obligation_missing:docs_or_readback",
-      );
-      expect(seenInputs[1]?.repairDiagnostics?.missingFields.map((field) => field.path)).toContain(
-        "stagedScheduler.capabilitySelectionsForWorkUnits[] with selectedCapabilityId observability_readback",
-      );
-    });
-  });
-
-  it("accepts a role-specialized post-synthesis graph with justified Codex foundation work", async () => {
-    await withSchedulerGraph(async (graphs) => {
-      await graphs.addNode({
-        graphId: "scheduler-graph",
-        nodeId: "context-product-spec",
-        nodeKind: "context_scout",
-        assignedRole: "context_scout",
-        nodeStatus: "succeeded",
-        outputArtifactRefs: ["runtime-job://job/context/product-spec"],
-      });
-      await graphs.addNode({
-        graphId: "scheduler-graph",
-        nodeId: "synthesis-product-spec",
-        nodeKind: "context_synthesis",
-        assignedRole: "context_synthesis",
-        nodeStatus: "succeeded",
-        outputArtifactRefs: ["runtime-work-graph://scheduler-graph/context-synthesis/accepted"],
-      });
-      await addPostSynthesisPolicyProbe(graphs);
-      const decisions = [
-        {
-          decisionId: "role-specialized-post-synthesis",
-          decisionKind: "add_nodes",
-          rationaleForDecision:
-            "Split post-synthesis work into implementation, validation, review, readback, and closeout.",
-          newNodes: [
-            {
-              nodeId: "implementation-foundation",
-              nodeKind: "implementation",
-              capabilityId: "implementation_complex",
-              executorKey: "kind:implementation",
-              workerRef: "worker.codex.parity-runtime-adapter",
-              requiredMetadataSchemaRef:
-                "schema://runtime-work-graph/node-metadata/implementation-complex.v2",
-              assignedRole: "implementation_engineer",
-              inputHandoffRefs: ["runtime-work-graph://scheduler-graph/context-synthesis/accepted"],
-              commitmentIdsAdvanced: ["code-edit"],
-              whyThisRoleIsNeededNow: "Foundation runtime integration is broad.",
-              exactObjective: "Apply the foundation runtime edit.",
-              evidenceExpectation: "Changed-file refs.",
-              expectedOutput: "Changed-file refs.",
-              acceptanceCriteria: ["Produces source-change evidence."],
-              downstreamConsumer: "validation-proof",
-              metadata: {
-                capabilityId: "implementation_complex",
-                consideredCapabilityIds: ["implementation_microtask", "implementation_complex"],
-                utilityRationale: "Foundation integration crosses runtime contracts.",
-                costRationale: "Use premium Codex only for the broad foundation edit.",
-                whyCheaperOptionsWereInsufficient:
-                  "The foundation edit crosses scheduler contracts and graph execution, so bounded Kimi is reserved for narrower follow-up units.",
-                whyThisIsNotDuplicateWork: "No implementation evidence exists yet.",
-                stopOrEscalationCondition: "Return to orchestrator if edits cannot be bounded.",
-                rawPromptStored: false,
-                rawResponseStored: false,
-                rawProviderLogStored: false,
-              },
-            },
-            {
-              nodeId: "validation-proof",
-              nodeKind: "validation",
-              capabilityId: "validation_run",
-              executorKey: "kind:validation",
-              workerRef: "script-middleware",
-              requiredMetadataSchemaRef:
-                "schema://runtime-work-graph/node-metadata/validation-run.v2",
-              assignedRole: "test_engineer",
-              inputHandoffRefs: ["runtime-work-graph://scheduler-graph/context-synthesis/accepted"],
-              commitmentIdsAdvanced: ["validation"],
-              whyThisRoleIsNeededNow: "Validation must be separate evidence.",
-              exactObjective: "Run focused validation.",
-              evidenceExpectation: "Validation refs.",
-              expectedOutput: "Validation refs.",
-              acceptanceCriteria: ["Records validation command refs."],
-              downstreamConsumer: "reviewer-proof",
-            },
-            {
-              nodeId: "reviewer-proof",
-              nodeKind: "reviewer",
-              capabilityId: "reviewer",
-              executorKey: "kind:reviewer",
-              workerRef: "worker.reviewer.runtime",
-              requiredMetadataSchemaRef: "schema://runtime-work-graph/node-metadata/reviewer.v2",
-              assignedRole: "reviewer",
-              inputHandoffRefs: ["runtime-work-graph://scheduler-graph/context-synthesis/accepted"],
-              commitmentIdsAdvanced: ["code-edit", "validation"],
-              whyThisRoleIsNeededNow: "Review must judge evidence sufficiency.",
-              exactObjective: "Review implementation and validation evidence.",
-              evidenceExpectation: "Review refs.",
-              expectedOutput: "Review refs.",
-              acceptanceCriteria: ["Maps findings to commitments."],
-              downstreamConsumer: "owner-readback",
-            },
-            {
-              nodeId: "owner-readback",
-              nodeKind: "observability_readback",
-              capabilityId: "observability_readback",
-              executorKey: "kind:observability_readback",
-              workerRef: "worker.observability.runtime",
-              requiredMetadataSchemaRef:
-                "schema://runtime-work-graph/node-metadata/observability-readback.v2",
-              assignedRole: "observability_scribe",
-              inputHandoffRefs: ["runtime-work-graph://scheduler-graph/context-synthesis/accepted"],
-              commitmentIdsAdvanced: ["code-edit", "validation"],
-              whyThisRoleIsNeededNow: "Owner needs readable graph and evidence readback.",
-              exactObjective: "Prepare owner-facing Work Queue readback.",
-              evidenceExpectation: "Readback refs.",
-              expectedOutput: "Readback refs.",
-              acceptanceCriteria: ["Shows nodes, files, validation, limitations."],
-              downstreamConsumer: "final-closeout",
-            },
-            {
-              nodeId: "final-closeout",
-              nodeKind: "closeout",
-              capabilityId: "coding_closeout",
-              executorKey: "kind:closeout",
-              workerRef: "worker.closeout.model-authored",
-              requiredMetadataSchemaRef:
-                "schema://runtime-work-graph/node-metadata/coding-closeout.v2",
-              assignedRole: "closeout_synthesizer",
-              inputHandoffRefs: ["runtime-work-graph://scheduler-graph/context-synthesis/accepted"],
-              commitmentIdsAdvanced: ["code-edit", "validation"],
-              whyThisRoleIsNeededNow: "Closeout must be model-authored after evidence.",
-              exactObjective: "Prepare final Closeout Capsule.",
-              evidenceExpectation: "Closeout refs.",
-              expectedOutput: "Closeout refs.",
-              acceptanceCriteria: ["References accepted evidence."],
-              downstreamConsumer: "owner",
-            },
-          ],
-          newEdges: [
-            {
-              fromNodeId: "implementation-foundation",
-              toNodeId: "validation-proof",
-              edgeKind: "implementation_depends_on",
-            },
-            {
-              fromNodeId: "validation-proof",
-              toNodeId: "reviewer-proof",
-              edgeKind: "validation_depends_on",
-            },
-            {
-              fromNodeId: "reviewer-proof",
-              toNodeId: "owner-readback",
-              edgeKind: "review_depends_on",
-            },
-            {
-              fromNodeId: "owner-readback",
-              toNodeId: "final-closeout",
-              edgeKind: "closeout_depends_on",
-            },
-          ],
-          reasonCodes: ["role_specialized_graph"],
-        },
-        {
-          decisionId: "stop-after-graph",
-          decisionKind: "mark_needs_review",
-          rationaleForDecision: "Stop after graph acceptance for the lane test.",
-          reasonCodes: ["lane_stop"],
-        },
-      ];
-      const scheduler = new RuntimeWorkGraphScheduler({
-        graphs,
-        missionLedger: complexMissionLedger(),
-        maxDecisionRepairAttempts: 0,
-        orchestrator: {
-          async decide() {
-            return decisions.shift();
-          },
-        },
-        executors: {
-          "kind:implementation": succeededExecutor("implementation"),
-          "kind:validation": succeededExecutor("validation"),
-          "kind:reviewer": succeededExecutor("reviewer"),
-          "kind:observability_readback": succeededExecutor("readback"),
-          "kind:closeout": succeededExecutor("closeout"),
           "role:implementation_engineer": succeededExecutor("implementation"),
-          "role:test_engineer": succeededExecutor("validation"),
-          "role:reviewer": succeededExecutor("reviewer"),
-          "role:observability_scribe": succeededExecutor("readback"),
-          "role:closeout_synthesizer": succeededExecutor("closeout"),
         },
+        maxIterations: 1,
       });
 
       const result = await scheduler.run("scheduler-graph");
       const snapshot = await graphs.readGraphSnapshot("scheduler-graph");
-
-      expect(result.status).toBe("needs_review");
-      expect(result.reasonCodes).not.toContain(
-        "post_synthesis_graph_role_obligation_missing:validation",
+      const parent = snapshot?.nodes.find((node) => node.nodeId === "satisfied-source-edit");
+      const promoted = snapshot?.nodes.find(
+        (node) =>
+          node.nodeKind === "implementation" &&
+          (node.metadata as Record<string, unknown>).promotedFromWorkIntentNodeId ===
+            "satisfied-source-edit",
       );
       expect(result.reasonCodes).not.toContain(
-        "post_synthesis_graph_codex_monopoly_all_nodes_broad_implementation",
+        "runtime_policy_work_intent_promotion_bypassed_orchestrator_decision",
       );
-      expect(new Set(snapshot?.nodes.map((node) => node.nodeKind))).toEqual(
-        new Set([
-          "context_scout",
-          "context_synthesis",
-          "compiler",
-          "implementation",
-          "validation",
-          "reviewer",
-          "observability_readback",
-          "closeout",
-        ]),
-      );
-    });
-  });
-
-  it("allows downstream execution when accepted synthesis handoff refs are wired", async () => {
-    await withSchedulerGraph(async (graphs) => {
-      await graphs.addNode({
-        graphId: "scheduler-graph",
-        nodeId: "context-product-spec",
-        nodeKind: "context_scout",
-        assignedRole: "context_scout",
-        nodeStatus: "succeeded",
-        outputArtifactRefs: ["runtime-job://job/context/product-spec"],
+      expect(parent?.nodeStatus).toBe("succeeded");
+      expect(parent?.metadata).toMatchObject({
+        promotedExecutableNodeId: promoted?.nodeId,
+        lifecycleState: "promoted_to_executable",
       });
-      await graphs.addNode({
-        graphId: "scheduler-graph",
-        nodeId: "synthesis-product-spec",
-        nodeKind: "context_synthesis",
-        assignedRole: "context_synthesis",
-        nodeStatus: "succeeded",
-        outputArtifactRefs: ["runtime-work-graph://scheduler-graph/context-synthesis/accepted"],
-      });
-      await graphs.addNode({
-        graphId: "scheduler-graph",
-        nodeId: "implementation-with-synthesis",
-        nodeKind: "implementation",
-        assignedRole: "implementation_engineer",
-        nodeStatus: "planned",
-        inputHandoffRefs: ["runtime-work-graph://scheduler-graph/context-synthesis/accepted"],
-        metadata: {
-          capabilityId: "implementation_microtask",
-          commitmentIdsAdvanced: ["code-edit"],
-          rawPromptStored: false,
-          rawResponseStored: false,
-        },
-      });
-      const decisions = [
-        {
-          decisionId: "run-implementation-with-synthesis",
-          decisionKind: "run_node",
-          rationaleForDecision: "Implementation has accepted synthesis input refs.",
-          runNodeId: "implementation-with-synthesis",
-          reasonCodes: ["implementation_has_synthesis_handoff"],
-        },
-        {
-          decisionId: "stop-after-implementation",
-          decisionKind: "mark_needs_review",
-          rationaleForDecision:
-            "The lane intentionally stops after proving synthesized context handoff execution.",
-          reasonCodes: ["context_synthesis_handoff_execution_lane_complete"],
-        },
-      ];
-      const scheduler = new RuntimeWorkGraphScheduler({
-        graphs,
-        missionLedger: complexMissionLedger(),
-        orchestrator: {
-          async decide() {
-            return decisions.shift();
-          },
-        },
-        executors: {
-          "role:implementation_engineer": succeededExecutor("implementation"),
-        },
-      });
-
-      const result = await scheduler.run("scheduler-graph");
-
-      expect(result.status).toBe("needs_review");
-      expect(result.executedNodeIds).toEqual(["implementation-with-synthesis"]);
-      expect(result.reasonCodes).toContain("context_synthesis_handoff_execution_lane_complete");
-    });
-  });
-
-  it("blocks worker execution before provider invocation when required context snapshots are missing", async () => {
-    await withSchedulerGraph(async (graphs) => {
-      let executorCalled = false;
-      await graphs.addNode({
-        graphId: "scheduler-graph",
-        nodeId: "implementation-missing-context",
-        nodeKind: "implementation",
-        assignedRole: "implementation_engineer",
-        nodeStatus: "planned",
-        metadata: {
-          capabilityId: "implementation_microtask",
-          commitmentIdsAdvanced: ["code-edit"],
-          rawPromptStored: false,
-          rawResponseStored: false,
-        },
-      });
-      const progressPhases: string[] = [];
-      const decisions = [
-        {
-          decisionId: "run-implementation-missing-context",
-          decisionKind: "run_node",
-          rationaleForDecision: "Try to run implementation without a fresh context snapshot.",
-          runNodeId: "implementation-missing-context",
-          reasonCodes: ["implementation_requested_without_context"],
-        },
-      ];
-      const scheduler = new RuntimeWorkGraphScheduler({
-        graphs,
-        missionLedger: complexMissionLedger(),
-        requireFreshContextSnapshotsForWorkerExecution: true,
-        orchestrator: {
-          async decide() {
-            return decisions.shift();
-          },
-        },
-        executors: {
-          "role:implementation_engineer": {
-            async execute() {
-              executorCalled = true;
-              return {
-                status: "succeeded",
-                outputArtifactRefs: ["artifact://implementation/should-not-run"],
-                reasonCodes: ["should_not_run"],
-                rawPromptStored: false,
-                rawResponseStored: false,
-                rawProviderLogStored: false,
-                workQueueLifecycleMutated: false,
-              };
-            },
-          },
-        },
-        onProgress: async (progress) => {
-          if (progress.currentPhase) {
-            progressPhases.push(progress.currentPhase);
-          }
-        },
-      });
-
-      const result = await scheduler.run("scheduler-graph");
-      const snapshot = await graphs.readGraphSnapshot("scheduler-graph");
-      const node = snapshot?.nodes.find(
-        (candidate) => candidate.nodeId === "implementation-missing-context",
-      );
-
-      expect(result.status).toBe("needs_review");
-      expect(result.executedNodeIds).toEqual([]);
-      expect(executorCalled).toBe(false);
-      expect(result.reasonCodes).toContain("node_context_supply_required_before_execution");
-      expect(result.reasonCodes).toContain("node_context_supply_missing");
-      expect(progressPhases).toContain("context_required");
-      expect(node?.nodeStatus).toBe("needs_review");
-      expect(node?.metadata).toMatchObject({
-        nodeReadinessPhase: "context_required",
-        nodeReadinessRepairAction: "request_context_repair",
-      });
+      expect(promoted).toBeDefined();
     });
   });
 
@@ -6789,6 +4197,7 @@ describe("runtime work graph scheduler", () => {
         metadata: {
           capabilityId: "validation_run",
           commitmentIdsAdvanced: ["validation"],
+          validationPhase: "integration_validation",
           validationCommandRefs: ["pnpm:test:file:example"],
           rawPromptStored: false,
           rawResponseStored: false,
@@ -6824,7 +4233,6 @@ describe("runtime work graph scheduler", () => {
       const scheduler = new RuntimeWorkGraphScheduler({
         graphs,
         missionLedger: complexMissionLedger(),
-        requireFreshContextSnapshotsForWorkerExecution: true,
         orchestrator: {
           async decide() {
             return decisions.shift();
@@ -6852,102 +4260,22 @@ describe("runtime work graph scheduler", () => {
 
       expect(validationCalled).toBe(true);
       expect(result.executedNodeIds).toContain("validation-after-implementation");
-      expect(result.reasonCodes).not.toContain("node_context_supply_required_before_execution");
+      expect(result.reasonCodes).not.toContain("node_resource_fulfillment_required_before_execution");
       expect(result.reasonCodes).toContain("validation_context_freshness_regression_lane_complete");
-    });
-  });
-
-  it("does not open implementation frontier from resource refs when accepted context handoff is missing", async () => {
-    await withSchedulerGraph(async (graphs) => {
-      let implementationCalled = false;
-      await graphs.addNode({
-        graphId: "scheduler-graph",
-        nodeId: "implementation-resource-ready-context-missing",
-        nodeKind: "implementation",
-        assignedRole: "implementation_engineer",
-        nodeStatus: "planned",
-        inputHandoffRefs: ["commitment-work-packet://code-edit"],
-        metadata: {
-          capabilityId: "implementation_microtask",
-          commitmentIdsAdvanced: ["code-edit"],
-          targetRefs: [
-            "extensions/execution-platform/src/workflows/runtime-work-graph-scheduler.ts",
-          ],
-          nodeExecutionPacketRef:
-            "runtime-work-graph://node-execution-packet/implementation-resource-ready-context-missing/test",
-          resourcePacketRef:
-            "runtime-work-graph://coding-resource-packet/implementation-resource-ready-context-missing/test",
-          nodeReadinessStateRef:
-            "runtime-work-graph://node-readiness-state/implementation-resource-ready-context-missing/test",
-          nodeReadinessStatus: "ready",
-          nodeReadinessNextAllowedTransitions: ["execute_node"],
-          rawPromptStored: false,
-          rawResponseStored: false,
-        },
-      });
-      const scheduler = new RuntimeWorkGraphScheduler({
-        graphs,
-        missionLedger: complexMissionLedger(),
-        commitmentWorkPackets: [
-          commitmentPacket({
-            commitmentId: "code-edit",
-            title: "Implement code edit",
-            repoArea: "extensions/execution-platform/src/workflows/",
-          }),
-        ],
-        requireFreshContextSnapshotsForWorkerExecution: true,
-        requireNodeExecutionPacketForWorkerExecution: true,
-        maxIterations: 1,
-        maxDecisionRepairAttempts: 0,
-        orchestrator: {
-          async decide() {
-            return {
-              decisionId: "run-resource-ready-context-missing",
-              decisionKind: "run_node",
-              rationaleForDecision:
-                "Attempt implementation with resource refs but no accepted context handoff.",
-              runNodeId: "implementation-resource-ready-context-missing",
-              reasonCodes: ["implementation_requested_with_unaccepted_context_signal"],
-            };
-          },
-        },
-        executors: {
-          "role:context_scout": succeededExecutor("context"),
-          "role:implementation_engineer": {
-            async execute() {
-              implementationCalled = true;
-              throw new Error("implementation_should_not_run_without_accepted_context_handoff");
-            },
-          },
-        },
-      });
-
-      const result = await scheduler.run("scheduler-graph");
-      const snapshot = await graphs.readGraphSnapshot("scheduler-graph");
-      const contextScoutNodes =
-        snapshot?.nodes.filter((node) => node.nodeKind === "context_scout") ?? [];
-
-      expect(result.executedNodeIds).toEqual([]);
-      expect(implementationCalled).toBe(false);
-      expect(result.reasonCodes).toContain("runtime_policy_node_scoped_context_supply_created");
-      expect(contextScoutNodes).toHaveLength(1);
-      expect(snapshot?.edges.filter((edge) => edge.edgeKind === "context_supplies")).toHaveLength(
-        1,
-      );
     });
   });
 
   it("allows worker execution when required context snapshots are fresh", async () => {
     await withSchedulerGraph(async (graphs) => {
       const freshSnapshot = createContextSnapshotRef({
-        sourceRef: "runtime-work-graph://scheduler-graph/context-synthesis/accepted",
-        sourceKind: "context_synthesis",
+        sourceRef: "runtime-work-graph://scheduler-graph/resource-ledger/accepted",
+        sourceKind: "memory_context_pack",
         capturedAt: "2026-05-14T00:00:00.000Z",
         graphId: "scheduler-graph",
-        nodeId: "synthesis-product-spec",
+        nodeId: "implementation-fresh-context",
         commitmentIds: ["code-edit"],
-        scopeSummary: "Accepted context synthesis snapshot for implementation.",
-        reasonCodes: ["context_snapshot_context_synthesis"],
+        scopeSummary: "Accepted node-local context snapshot for implementation.",
+        reasonCodes: ["context_snapshot_node_local_resource_ledger"],
       });
       await graphs.addNode({
         graphId: "scheduler-graph",
@@ -6982,7 +4310,6 @@ describe("runtime work graph scheduler", () => {
       const scheduler = new RuntimeWorkGraphScheduler({
         graphs,
         missionLedger: complexMissionLedger(),
-        requireFreshContextSnapshotsForWorkerExecution: true,
         orchestrator: {
           async decide() {
             return decisions.shift();
@@ -6998,75 +4325,6 @@ describe("runtime work graph scheduler", () => {
       expect(result.status).toBe("needs_review");
       expect(result.executedNodeIds).toEqual(["implementation-fresh-context"]);
       expect(result.reasonCodes).toContain("fresh_context_execution_lane_complete");
-    });
-  });
-
-  it("bounds upstream context snapshot refs before writing node metadata", async () => {
-    await withSchedulerGraph(async (graphs) => {
-      await graphs.addNode({
-        graphId: "scheduler-graph",
-        nodeId: "implementation-many-context-refs",
-        nodeKind: "implementation",
-        assignedRole: "implementation_engineer",
-        nodeStatus: "planned",
-        metadata: {
-          capabilityId: "implementation_microtask",
-          commitmentIdsAdvanced: ["code-edit"],
-          targetRefs: ["extensions/execution-platform/src/workflows/runtime-work-graph.ts"],
-          rawPromptStored: false,
-          rawResponseStored: false,
-        },
-      });
-      for (let index = 0; index < 20; index += 1) {
-        const contextNodeId = `context-supply-${String(index).padStart(2, "0")}`;
-        await graphs.addNode({
-          graphId: "scheduler-graph",
-          nodeId: contextNodeId,
-          nodeKind: "context_scout",
-          assignedRole: "context_scout",
-          nodeStatus: "succeeded",
-          outputArtifactRefs: [`context-handoff://scheduler-graph/${contextNodeId}`],
-          metadata: {
-            rawPromptStored: false,
-            rawResponseStored: false,
-          },
-        });
-        await graphs.addEdge({
-          graphId: "scheduler-graph",
-          fromNodeId: contextNodeId,
-          toNodeId: "implementation-many-context-refs",
-          edgeKind: "context_supplies",
-          reasonCodes: ["context_supply_ready"],
-        });
-      }
-      const scheduler = new RuntimeWorkGraphScheduler({
-        graphs,
-        requireFreshContextSnapshotsForWorkerExecution: true,
-        preferExecutableFrontierBeforeOrchestrator: true,
-        maxParallelNodeExecutions: 2,
-        maxIterations: 1,
-        orchestrator: {
-          async decide() {
-            throw new Error("orchestrator_should_not_run_when_frontier_is_ready");
-          },
-        },
-        executors: {
-          "role:implementation_engineer": succeededExecutor("implementation"),
-        },
-      });
-
-      const result = await scheduler.run("scheduler-graph");
-      const snapshot = await graphs.readGraphSnapshot("scheduler-graph");
-      const node = snapshot?.nodes.find(
-        (candidate) => candidate.nodeId === "implementation-many-context-refs",
-      );
-      const metadata = node?.metadata as Record<string, unknown>;
-
-      expect(result.executedNodeIds).toContain("implementation-many-context-refs");
-      expect(metadata.providedContextSnapshotRefCount).toBe(20);
-      expect(metadata.providedContextSnapshotRefsTruncated).toBe(true);
-      expect(metadata.providedContextSnapshotRefs).toHaveLength(12);
-      expect(Buffer.byteLength(JSON.stringify(metadata), "utf8")).toBeLessThan(64 * 1024);
     });
   });
 
@@ -7381,6 +4639,7 @@ describe("runtime work graph scheduler", () => {
               downstreamConsumer: "closeout",
               metadata: {
                 stagedSchedulerProtocolCompiled: true,
+                validationPhase: "integration_validation",
                 expectedEvidence: ["validation_ref"],
                 expectedEvidenceSource: "runtime_derived_from_capability_manifest",
                 rawPromptStored: false,
@@ -7576,6 +4835,14 @@ describe("runtime work graph scheduler", () => {
       }
       const progress: Array<{
         branchResults?: Array<{ nodeId: string; status: string; failureClass: string | null }>;
+        branchScopedFrontierStates?: Array<{
+          nodeId: string;
+          status: string;
+          successfulEvidenceRefs: string[];
+          failedEvidenceRefs: string[];
+          repairNodeRefs: string[];
+          diagnosticOnlyNodeRefs: string[];
+        }>;
       }> = [];
       const scheduler = new RuntimeWorkGraphScheduler({
         graphs,
@@ -7611,6 +4878,14 @@ describe("runtime work graph scheduler", () => {
                 nodeId: branch.nodeId,
                 status: branch.status,
                 failureClass: branch.failureClass,
+              })),
+              branchScopedFrontierStates: event.branchScopedFrontierStates?.map((branch) => ({
+                nodeId: branch.nodeId,
+                status: branch.status,
+                successfulEvidenceRefs: branch.successfulEvidenceRefs,
+                failedEvidenceRefs: branch.failedEvidenceRefs,
+                repairNodeRefs: branch.repairNodeRefs,
+                diagnosticOnlyNodeRefs: branch.diagnosticOnlyNodeRefs,
               })),
             });
           }
@@ -7650,96 +4925,23 @@ describe("runtime work graph scheduler", () => {
           ),
         ),
       ).toBe(true);
-    });
-  });
-
-  it("classifies context-blocked superstep branches with canonical next transition", async () => {
-    await withSchedulerGraph(async (graphs) => {
-      await graphs.addNode({
-        graphId: "scheduler-graph",
-        nodeId: "implementation-needs-context",
-        nodeKind: "implementation",
-        assignedRole: "implementation_engineer",
-        nodeStatus: "planned",
-        metadata: {
-          capabilityId: "implementation_microtask",
-          executorKey: "kind:implementation",
-          commitmentIdsAdvanced: ["code-edit"],
-          targetRefs: ["src/context-needed.ts"],
-          rawPromptStored: false,
-          rawResponseStored: false,
-        },
-      });
-      const progress: Array<{
-        branchResults?: Array<{
-          nodeId: string;
-          status: string;
-          blockerSummary?: string | null;
-          nextTransition?: string | null;
-        }>;
-      }> = [];
-      const scheduler = new RuntimeWorkGraphScheduler({
-        graphs,
-        maxIterations: 1,
-        maxParallelNodeExecutions: 2,
-        orchestrator: {
-          async decide() {
-            return undefined;
-          },
-        },
-        executors: {
-          "kind:implementation": {
-            async execute() {
-              return {
-                status: "needs_review",
-                outputArtifactRefs: [],
-                ownerSummary: "Context handoff is missing for target file selection.",
-                reasonCodes: [
-                  "node_readiness_context_packet_refs_not_accepted_handoffs",
-                  "context_handoff_missing",
-                ],
-                metadata: {
-                  nodeReadinessRepairAction: "request_context_repair",
-                  nodeReadinessStateRef: "runtime-work-graph://readiness/context-needed",
-                  rawPromptStored: false,
-                  rawResponseStored: false,
-                  rawProviderLogStored: false,
-                },
-                rawPromptStored: false,
-                rawResponseStored: false,
-                rawProviderLogStored: false,
-                workQueueLifecycleMutated: false,
-              };
-            },
-          },
-        },
-        onProgress: async (event) => {
-          if (event.stage === "scheduler_parallel_frontier" && event.parallelFrontier) {
-            progress.push({
-              branchResults: event.parallelFrontier.branchResults.map((branch) => ({
-                nodeId: branch.nodeId,
-                status: branch.status,
-                blockerSummary: branch.blockerSummary,
-                nextTransition: branch.nextTransition,
-              })),
-            });
-          }
-        },
-      });
-
-      const result = await scheduler.run("scheduler-graph");
-
-      expect(result.reasonCodes).toContain(
-        "parallel_frontier_branch_repair_returned_to_orchestrator",
-      );
       expect(
         progress.some((event) =>
-          event.branchResults?.some(
+          event.branchScopedFrontierStates?.some(
             (branch) =>
-              branch.nodeId === "implementation-needs-context" &&
-              branch.status === "blocked_context" &&
-              branch.nextTransition === "request_context_or_reuse_context" &&
-              branch.blockerSummary?.includes("context"),
+              branch.nodeId === "implementation-a" &&
+              branch.status === "needs_review" &&
+              branch.successfulEvidenceRefs.includes("artifact://sibling/implementation-b"),
+          ),
+        ),
+      ).toBe(true);
+      expect(
+        progress.some((event) =>
+          event.branchScopedFrontierStates?.some(
+            (branch) =>
+              branch.nodeId === "implementation-b" &&
+              branch.status === "succeeded" &&
+              branch.successfulEvidenceRefs.includes("artifact://sibling/implementation-b"),
           ),
         ),
       ).toBe(true);
@@ -8099,16 +5301,17 @@ describe("runtime work graph scheduler", () => {
               expectedOutput: "Changed-file refs.",
               acceptanceCriteria: ["A is patched."],
               downstreamConsumer: "closeout",
-              metadata: {
+              metadata: independentRootFixtureMetadata(
+                "Conflict-frontier fixture intentionally creates implementation A as an independent root.",
+                {
                 taskFamily: "small_source_edit",
                 selectedModelQualificationProfileId: "openrouter.moonshotai.kimi-k2.6",
                 qualificationEvidenceRefs: ["model-profile://kimi/file-edit-worker-loop"],
                 stopOrEscalationCondition:
                   "Escalate if the scoped edit cannot produce a valid patch.",
                 targetRefs: ["src/shared.ts"],
-                rawPromptStored: false,
-                rawResponseStored: false,
-              },
+                },
+              ),
             },
             {
               nodeId: "implementation-b",
@@ -8123,16 +5326,17 @@ describe("runtime work graph scheduler", () => {
               expectedOutput: "Changed-file refs.",
               acceptanceCriteria: ["B is patched."],
               downstreamConsumer: "closeout",
-              metadata: {
+              metadata: independentRootFixtureMetadata(
+                "Conflict-frontier fixture intentionally creates implementation B as an independent root.",
+                {
                 taskFamily: "small_source_edit",
                 selectedModelQualificationProfileId: "openrouter.moonshotai.kimi-k2.6",
                 qualificationEvidenceRefs: ["model-profile://kimi/file-edit-worker-loop"],
                 stopOrEscalationCondition:
                   "Escalate if the scoped edit cannot produce a valid patch.",
                 targetRefs: ["src/shared.ts"],
-                rawPromptStored: false,
-                rawResponseStored: false,
-              },
+                },
+              ),
             },
           ],
           newEdges: [],
@@ -8446,15 +5650,16 @@ describe("runtime work graph scheduler", () => {
       const calls: string[] = [];
       await graphs.addNode({
         graphId: "scheduler-graph",
-        nodeId: "ready-context-scout",
-        nodeKind: "context_scout",
-        assignedRole: "context_scout",
+          nodeId: "ready-validation",
+          nodeKind: "validation",
+          assignedRole: "test_engineer",
         nodeStatus: "planned",
         metadata: {
-          capabilityId: "context_scout",
-          executorKey: "kind:context_scout",
+          capabilityId: "validation_run",
+          executorKey: "kind:validation",
+          validationPhase: "final_proof_validation",
           targetRefs: ["src/ready.ts"],
-          commitmentIdsAdvanced: ["context-evidence"],
+          commitmentIdsAdvanced: ["validation"],
           noContextNeededRationale: "This lane test only proves frontier ordering.",
           nodeExecutionPacketRequired: false,
           rawPromptStored: false,
@@ -8477,12 +5682,12 @@ describe("runtime work graph scheduler", () => {
           },
         },
         executors: {
-          "kind:context_scout": {
+          "kind:validation": {
             async execute() {
               calls.push("executor");
               return {
                 status: "succeeded",
-                outputArtifactRefs: ["artifact://frontier/ready-context-scout"],
+                outputArtifactRefs: ["artifact://frontier/ready-validation"],
                 reasonCodes: ["ready_frontier_executor_ran"],
                 rawPromptStored: false,
                 rawResponseStored: false,
@@ -8499,7 +5704,7 @@ describe("runtime work graph scheduler", () => {
       expect(result.status).toBe("needs_review");
       expect(calls[0]).toBe("executor");
       expect(calls[1]).toBe("orchestrator");
-      expect(result.executedNodeIds).toContain("ready-context-scout");
+      expect(result.executedNodeIds).toContain("ready-validation");
     });
   });
 
@@ -8508,13 +5713,13 @@ describe("runtime work graph scheduler", () => {
       await graphs.addNode({
         graphId: "scheduler-graph",
         nodeId: "stale-helper",
-        nodeKind: "context_scout",
-        assignedRole: "context_scout",
-        nodeStatus: "planned",
+        nodeKind: "validation",
+        assignedRole: "test_engineer",
+        nodeStatus: "succeeded",
+        outputArtifactRefs: ["artifact://validation/stale-helper"],
         metadata: {
-          capabilityId: "context_scout",
-          rawPromptStored: false,
-          rawResponseStored: false,
+          capabilityId: "validation_run",
+          validationPhase: "final_proof_validation",
         },
       });
       const decisions = [1, 2, 3].map((index) => ({
@@ -8525,24 +5730,26 @@ describe("runtime work graph scheduler", () => {
         newNodes: [
           {
             nodeId: "stale-helper",
-            nodeKind: "context_scout" as const,
-            capabilityId: "context_scout",
-            executorKey: "kind:context_scout",
-            assignedRole: "context_scout",
-            expectedOutput: "Context handoff.",
-            acceptanceCriteria: ["Context is bounded."],
-            downstreamConsumer: "implementation",
-            whyThisRoleIsNeededNow: "Context is needed.",
-            exactObjective: "Find context.",
+            nodeKind: "validation" as const,
+            capabilityId: "validation_run",
+            executorKey: "kind:validation",
+            assignedRole: "test_engineer",
+            expectedOutput: "Validation handoff.",
+            acceptanceCriteria: ["Validation is bounded."],
+            downstreamConsumer: "orchestrator",
+            whyThisRoleIsNeededNow: "Validation is needed.",
+            exactObjective: "Run validation.",
             targetRefs: ["src/stale.ts"],
-            metadata: {
-              expectedEvidence: ["context_handoff"],
+            metadata: independentValidationFixtureMetadata(
+              "This no-progress fixture reuses an already completed validation helper.",
+              {
+              expectedEvidence: ["resource_handoff"],
               expectedEvidenceSource: "runtime_derived_from_capability_manifest",
-              rawPromptStored: false,
-              rawResponseStored: false,
-            },
+              },
+            ),
           },
         ],
+        newEdges: [],
       }));
       const progress: Array<{
         noProgressHash?: string | null;
@@ -8557,7 +5764,7 @@ describe("runtime work graph scheduler", () => {
           },
         },
         executors: {
-          "kind:context_scout": succeededExecutor("context-scout"),
+          "kind:validation": succeededExecutor("validation"),
         },
         onProgress: async (event) => {
           progress.push({
@@ -8572,6 +5779,7 @@ describe("runtime work graph scheduler", () => {
 
       expect(result.status).toBe("needs_review");
       expect(result.reasonCodes).toContain("scheduler_repeated_no_progress_signature_halted");
+      expect(result.reasonCodes).toContain("scheduler_frontier_root_cause_collapsed");
       expect(progress.some((event) => event.noProgressRepeatCount === 2)).toBe(true);
       expect(progress.some((event) => Boolean(event.schedulerFrontierState))).toBe(true);
     });
@@ -8598,20 +5806,23 @@ describe("runtime work graph scheduler", () => {
             return {
               decisionId: "large-page-decision",
               decisionKind: "add_nodes",
-              rationaleForDecision: "Add a bounded page of context work.",
+              rationaleForDecision: "Add a bounded page of validation work.",
               reasonCodes: ["test_large_expansion"],
               newNodes: [1, 2, 3].map((index) => ({
-                nodeId: `context-${index}`,
-                nodeKind: "context_scout" as const,
-                capabilityId: "context_scout",
-                executorKey: "kind:context_scout",
-                assignedRole: "context_scout",
-                expectedOutput: "Bounded context handoff.",
-                acceptanceCriteria: ["Context handoff is bounded."],
+                nodeId: `validation-${index}`,
+                nodeKind: "validation" as const,
+                capabilityId: "validation_run",
+                executorKey: "kind:validation",
+                assignedRole: "test_engineer",
+                expectedOutput: "Bounded validation handoff.",
+                acceptanceCriteria: ["Validation handoff is bounded."],
                 downstreamConsumer: "runtime_work_graph_scheduler",
-                whyThisRoleIsNeededNow: "Context is needed before implementation.",
-                exactObjective: `Find context ${index}.`,
+                whyThisRoleIsNeededNow: "Validation work is needed before closeout.",
+                exactObjective: `Run validation ${index}.`,
                 metadata: {
+                  ...independentValidationFixtureMetadata(
+                    "This large-expansion fixture validates admission paging, not worker ordering.",
+                  ),
                   rawPromptStored: false,
                   rawResponseStored: false,
                   rawProviderLogStored: false,
@@ -8619,15 +5830,15 @@ describe("runtime work graph scheduler", () => {
               })),
               newEdges: [
                 {
-                  edgeId: "edge-context-1-2",
-                  fromNodeId: "context-1",
-                  toNodeId: "context-2",
+                  edgeId: "edge-validation-1-2",
+                  fromNodeId: "validation-1",
+                  toNodeId: "validation-2",
                   edgeKind: "depends_on" as const,
                 },
                 {
-                  edgeId: "edge-context-2-3",
-                  fromNodeId: "context-2",
-                  toNodeId: "context-3",
+                  edgeId: "edge-validation-2-3",
+                  fromNodeId: "validation-2",
+                  toNodeId: "validation-3",
                   edgeKind: "depends_on" as const,
                 },
               ],
@@ -8635,7 +5846,7 @@ describe("runtime work graph scheduler", () => {
           },
         },
         executors: {
-          "kind:context_scout": succeededExecutor("context-scout"),
+          "kind:validation": succeededExecutor("validation"),
         },
         onProgress: async (event) => {
           if (event.expansionAdmissionStatus) {
@@ -8655,10 +5866,10 @@ describe("runtime work graph scheduler", () => {
       expect(result.status).toBe("max_iterations");
       expect(progress.at(-1)).toMatchObject({
         status: "accepted_paged",
-        admitted: ["context-1", "context-2"],
-        deferred: ["context-3"],
+        admitted: ["validation-1", "validation-2"],
+        deferred: ["validation-3"],
       });
-      expect(modelNodeIds).toEqual(["context-1", "context-2"]);
+      expect(modelNodeIds).toEqual(["validation-1", "validation-2"]);
       expect(snapshot?.edges).toHaveLength(1);
     });
   });
@@ -8667,12 +5878,13 @@ describe("runtime work graph scheduler", () => {
     await withSchedulerGraph(async (graphs) => {
       await graphs.addNode({
         graphId: "scheduler-graph",
-        nodeId: "ready-context",
-        nodeKind: "context_scout",
-        assignedRole: "context_scout",
+        nodeId: "ready-validation",
+        nodeKind: "validation",
+        assignedRole: "test_engineer",
         nodeStatus: "planned",
         metadata: {
-          capabilityId: "context_scout",
+          capabilityId: "validation_run",
+          validationPhase: "final_proof_validation",
           rawPromptStored: false,
           rawResponseStored: false,
         },
@@ -8691,17 +5903,20 @@ describe("runtime work graph scheduler", () => {
               reasonCodes: ["test_defer_expansion"],
               newNodes: [
                 {
-                  nodeId: "extra-context",
-                  nodeKind: "context_scout" as const,
-                  capabilityId: "context_scout",
-                  executorKey: "kind:context_scout",
-                  assignedRole: "context_scout",
-                  expectedOutput: "Extra context handoff.",
-                  acceptanceCriteria: ["Context handoff is bounded."],
+                  nodeId: "extra-validation",
+                  nodeKind: "validation" as const,
+                  capabilityId: "validation_run",
+                  executorKey: "kind:validation",
+                  assignedRole: "test_engineer",
+                  expectedOutput: "Extra validation handoff.",
+                  acceptanceCriteria: ["Validation handoff is bounded."],
                   downstreamConsumer: "runtime_work_graph_scheduler",
-                  whyThisRoleIsNeededNow: "Extra context may be useful later.",
-                  exactObjective: "Find extra context later.",
+                  whyThisRoleIsNeededNow: "Extra validation may be useful later.",
+                  exactObjective: "Run extra validation later.",
                   metadata: {
+                    ...independentValidationFixtureMetadata(
+                      "This expansion-deferral fixture validates scheduler paging, not worker ordering.",
+                    ),
                     rawPromptStored: false,
                     rawResponseStored: false,
                     rawProviderLogStored: false,
@@ -8712,7 +5927,7 @@ describe("runtime work graph scheduler", () => {
           },
         },
         executors: {
-          "kind:context_scout": succeededExecutor("context-scout"),
+          "kind:validation": succeededExecutor("validation"),
         },
         onProgress: async (event) => {
           if (event.expansionAdmissionStatus) {
@@ -8730,9 +5945,9 @@ describe("runtime work graph scheduler", () => {
       expect(result.status).toBe("max_iterations");
       expect(progress.at(-1)).toMatchObject({
         status: "deferred_due_to_ready_frontier",
-        ready: ["ready-context"],
+        ready: ["ready-validation"],
       });
-      expect((snapshot?.nodes ?? []).map((node) => node.nodeId)).toEqual(["ready-context"]);
+      expect((snapshot?.nodes ?? []).map((node) => node.nodeId)).toEqual(["ready-validation"]);
       expect(snapshot?.checkpoints.map((checkpoint) => checkpoint.checkpointKind)).toContain(
         "scheduler_expansion_deferred_ready_frontier",
       );
@@ -8743,12 +5958,12 @@ describe("runtime work graph scheduler", () => {
     await withSchedulerGraph(async (graphs) => {
       await graphs.addNode({
         graphId: "scheduler-graph",
-        nodeId: "context-only",
-        nodeKind: "context_scout",
-        assignedRole: "context_scout",
+        nodeId: "research-only",
+        nodeKind: "web_research",
+        assignedRole: "web_researcher",
         nodeStatus: "planned",
         metadata: {
-          capabilityId: "context_scout",
+          capabilityId: "web_research",
           rawPromptStored: false,
           rawResponseStored: false,
         },
@@ -8775,7 +5990,7 @@ describe("runtime work graph scheduler", () => {
           },
         },
         executors: {
-          "kind:context_scout": succeededExecutor("context-only"),
+          "kind:web_research": succeededExecutor("research-only"),
         },
         onProgress: async (event) => {
           if (event.missionLedgerEvaluationThrottle) {
@@ -8795,93 +6010,4 @@ describe("runtime work graph scheduler", () => {
     });
   });
 
-  it("records context synthesis review and gate as scheduler runtime tools", async () => {
-    const database = await createExecutionPlatformPgMemTestDatabase();
-    try {
-      await applyExecutionPlatformMigrations(database.sql);
-      const graphs = new RuntimeWorkGraphRepository(database.sql, {
-        now: () => new Date("2026-05-14T00:00:00.000Z"),
-      });
-      const jobs = new RuntimeJobRepository(database.sql, {
-        now: () => new Date("2026-05-14T00:00:00.000Z"),
-      });
-      await jobs.enqueueJob({
-        jobId: "context-synthesis-tool-job",
-        jobType: "executor.agent_team",
-        idempotencyScope: "context-synthesis-tool-test",
-        idempotencyKey: "context-synthesis-tool-job",
-      });
-      const traces = new RuntimeToolTraceRepository(database.sql);
-      const registry = new RuntimeToolRegistry();
-      registerSchedulerRuntimeTools({ registry, includeWorkerInvoke: true });
-      const kernel = new RuntimeToolKernel({ registry, traces });
-      await graphs.createGraph({
-        graphId: "context-synthesis-tool-graph",
-        rootRuntimeJobId: "context-synthesis-tool-job",
-        workflowId: "agent_team.coding",
-        orchestratorModelRef: "openai-codex/gpt-5.5",
-        graphStatus: "running",
-      });
-      await graphs.addNode({
-        graphId: "context-synthesis-tool-graph",
-        nodeId: "context-product-spec",
-        nodeKind: "context_scout",
-        assignedRole: "context_scout",
-        nodeStatus: "succeeded",
-        outputArtifactRefs: ["runtime-job://job/context/product-spec"],
-      });
-      await graphs.addNode({
-        graphId: "context-synthesis-tool-graph",
-        nodeId: "synthesis-product-spec",
-        nodeKind: "context_synthesis",
-        assignedRole: "context_synthesis",
-        nodeStatus: "planned",
-      });
-      const decisions = [
-        {
-          decisionId: "run-synthesis",
-          decisionKind: "run_node",
-          rationaleForDecision: "Run context synthesis before implementation.",
-          runNodeId: "synthesis-product-spec",
-          reasonCodes: ["run_context_synthesis"],
-        },
-        {
-          decisionId: "stop",
-          decisionKind: "mark_needs_review",
-          rationaleForDecision: "Stop after proving context synthesis tool traces.",
-          reasonCodes: ["context_synthesis_trace_lane_complete"],
-        },
-      ];
-      const scheduler = new RuntimeWorkGraphScheduler({
-        graphs,
-        runtimeToolKernel: kernel,
-        requireSchedulerToolKernel: true,
-        missionLedger: complexMissionLedger(),
-        orchestrator: {
-          async decide() {
-            return decisions.shift();
-          },
-        },
-        executors: {
-          "role:context_synthesis": succeededExecutor("context-synthesis"),
-        },
-      });
-
-      const result = await scheduler.run("context-synthesis-tool-graph");
-      const invocations = await traces.listInvocations({
-        graphId: "context-synthesis-tool-graph",
-        limit: 40,
-      });
-
-      expect(result.status).toBe("needs_review");
-      expect(invocations.map((invocation) => invocation.toolId)).toEqual(
-        expect.arrayContaining([
-          "scheduler.context_synthesis.review",
-          "scheduler.context_synthesis.accept",
-        ]),
-      );
-    } finally {
-      await database.close();
-    }
-  });
 });

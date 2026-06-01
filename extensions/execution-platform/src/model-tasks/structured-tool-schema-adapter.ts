@@ -59,22 +59,54 @@ export type StructuredAdapterProviderDiagnostics = {
   artifactKind: "structured_adapter_provider_diagnostics";
   adapterVersion: typeof STRUCTURED_TOOL_SCHEMA_ADAPTER_VERSION;
   profileRef: string;
+  modelRef: string | null;
+  providerId: string | null;
+  providerPath: StructuredAdapterProviderKind;
+  providerRequestId: string | null;
+  taskClass: ModelTaskClassification["taskClass"];
+  callSite: string;
+  reasoningModeSent: ModelTaskReasoningMode;
+  responseFormatSent: ModelTaskResponseFormatMode;
+  parserMode: ModelTaskParserMode;
   attempt: number;
   httpStatus: number | null;
   latencyMs: number | null;
+  providerStarted: boolean;
+  preflightAccepted: boolean | null;
+  preflightBlockingReason: string | null;
   contentLength: number;
+  choiceCount: number | null;
+  contentLengthByChoice: number[];
+  parsedContentLength: number | null;
+  bodyKeys: string[];
+  choiceKeys: string[];
+  messageKeys: string[];
+  errorKeys: string[];
   finishReason: string | null;
   nativeFinishReason: string | null;
   errorReasonCode: string | null;
   inputBytes: number;
+  requestByteCount: number;
+  maxOutputTokens: number | null;
+  timeoutMs: number;
+  timeoutState: string | null;
+  retryNumber: number;
+  concurrencySlot: string | null;
+  inputBundleRef: string | null;
+  inputBundleHash: string | null;
   outputHash: string | null;
   promptTokens: number | null;
   outputTokens: number | null;
   totalTokens: number | null;
   estimatedCostUsd: number | null;
+  usageUnavailableReason: string | null;
   rawPromptStored: false;
   rawResponseStored: false;
   rawProviderLogStored: false;
+  rawToolLogStored: false;
+  rawCommandLogStored: false;
+  rawDbRowsStored: false;
+  secretsStored: false;
 };
 
 export type StructuredAdapterOutcome = {
@@ -103,6 +135,20 @@ export type StructuredAdapterOutcome = {
 
 function sha256(value: string): string {
   return createHash("sha256").update(value, "utf8").digest("hex");
+}
+
+function boundedStrings(value: unknown, max = 24): string[] {
+  return Array.isArray(value)
+    ? [
+        ...new Set(
+          value.filter(
+            (item): item is string => typeof item === "string" && item.trim().length > 0,
+          ),
+        ),
+      ]
+        .map((item) => item.trim().slice(0, 260))
+        .slice(0, max)
+    : [];
 }
 
 function providerKindFor(
@@ -212,11 +258,28 @@ export function structuredAdapterDiagnostics(input: {
   attempt: number;
   httpStatus?: number | null;
   latencyMs?: number | null;
+  providerId?: string | null;
+  providerRequestId?: string | null;
+  providerStarted?: boolean | null;
+  preflightAccepted?: boolean | null;
+  preflightBlockingReason?: string | null;
   content?: string | null;
+  choiceCount?: number | null;
+  contentLengthByChoice?: number[] | null;
+  parsedContentLength?: number | null;
+  bodyKeys?: string[] | null;
+  choiceKeys?: string[] | null;
+  messageKeys?: string[] | null;
+  errorKeys?: string[] | null;
   finishReason?: string | null;
   nativeFinishReason?: string | null;
   errorReasonCode?: string | null;
   inputBytes: number;
+  timeoutState?: string | null;
+  concurrencySlot?: string | null;
+  inputBundleRef?: string | null;
+  inputBundleHash?: string | null;
+  usageUnavailableReason?: string | null;
   usage?: {
     inputTokenCount?: number | null;
     outputTokenCount?: number | null;
@@ -228,18 +291,66 @@ export function structuredAdapterDiagnostics(input: {
   } | null;
 }): StructuredAdapterProviderDiagnostics {
   const content = input.content ?? "";
+  const choiceCount =
+    typeof input.choiceCount === "number" && Number.isFinite(input.choiceCount)
+      ? Math.trunc(input.choiceCount)
+      : content.trim()
+        ? 1
+        : null;
+  const contentLengthByChoice =
+    Array.isArray(input.contentLengthByChoice) && input.contentLengthByChoice.length > 0
+      ? input.contentLengthByChoice
+          .filter((value) => typeof value === "number" && Number.isFinite(value))
+          .map((value) => Math.trunc(value))
+          .slice(0, 12)
+      : content.trim()
+        ? [content.length]
+        : [];
   return {
     artifactKind: "structured_adapter_provider_diagnostics",
     adapterVersion: STRUCTURED_TOOL_SCHEMA_ADAPTER_VERSION,
     profileRef: input.profile.profileRef,
+    modelRef: input.profile.modelRef,
+    providerId: input.providerId ?? input.profile.providerKind,
+    providerPath: input.profile.providerKind,
+    providerRequestId: input.providerRequestId ?? null,
+    taskClass: input.profile.taskClass,
+    callSite: input.profile.callSite,
+    reasoningModeSent: input.profile.reasoningMode,
+    responseFormatSent: input.profile.responseFormatMode,
+    parserMode: input.profile.parserMode,
     attempt: input.attempt,
     httpStatus: input.httpStatus ?? null,
     latencyMs: input.latencyMs ?? null,
+    providerStarted:
+      input.providerStarted ?? (input.httpStatus !== undefined && input.httpStatus !== null),
+    preflightAccepted: input.preflightAccepted ?? null,
+    preflightBlockingReason: input.preflightBlockingReason ?? null,
     contentLength: content.length,
+    choiceCount,
+    contentLengthByChoice,
+    parsedContentLength:
+      typeof input.parsedContentLength === "number" && Number.isFinite(input.parsedContentLength)
+        ? Math.trunc(input.parsedContentLength)
+        : content.trim()
+          ? content.length
+          : null,
+    bodyKeys: boundedStrings(input.bodyKeys, 24),
+    choiceKeys: boundedStrings(input.choiceKeys, 24),
+    messageKeys: boundedStrings(input.messageKeys, 24),
+    errorKeys: boundedStrings(input.errorKeys, 24),
     finishReason: input.finishReason ?? null,
     nativeFinishReason: input.nativeFinishReason ?? null,
     errorReasonCode: input.errorReasonCode ?? null,
     inputBytes: input.inputBytes,
+    requestByteCount: input.inputBytes,
+    maxOutputTokens: input.profile.maxOutputTokens,
+    timeoutMs: input.profile.hardTimeoutMs,
+    timeoutState: input.timeoutState ?? null,
+    retryNumber: input.attempt - 1,
+    concurrencySlot: input.concurrencySlot ?? null,
+    inputBundleRef: input.inputBundleRef ?? null,
+    inputBundleHash: input.inputBundleHash ?? null,
     outputHash: content.trim() ? `sha256:${sha256(content)}` : null,
     promptTokens:
       input.usage?.inputTokenCount ??
@@ -249,9 +360,16 @@ export function structuredAdapterDiagnostics(input: {
     outputTokens: input.usage?.outputTokenCount ?? input.usage?.outputTokens ?? null,
     totalTokens: input.usage?.totalTokenCount ?? null,
     estimatedCostUsd: input.usage?.estimatedCostUsd ?? null,
+    usageUnavailableReason:
+      input.usageUnavailableReason ??
+      (input.usage ? null : "provider_usage_unavailable_or_not_reported"),
     rawPromptStored: false,
     rawResponseStored: false,
     rawProviderLogStored: false,
+    rawToolLogStored: false,
+    rawCommandLogStored: false,
+    rawDbRowsStored: false,
+    secretsStored: false,
   };
 }
 

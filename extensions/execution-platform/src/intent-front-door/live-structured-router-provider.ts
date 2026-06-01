@@ -14,7 +14,10 @@ import {
   type OpenRouterRetryPolicy,
 } from "../model-routing/openrouter-retry-policy.ts";
 import type { ConversationRoutingContext } from "./conversation-routing-context.ts";
-import type { LiveRouterModelPolicyDecision } from "./live-router-model-policy.ts";
+import type {
+  LiveRouterModelPolicyDecision,
+  LiveRouterReasoningEffort,
+} from "./live-router-model-policy.ts";
 import {
   CANONICAL_ACTION_CATEGORIES,
   CANONICAL_INTENT_ROUTES,
@@ -100,7 +103,7 @@ export type LiveRouterModelClientRequest = {
     requiredFields: readonly string[];
     routeValues: readonly string[];
   };
-  reasoningEffort?: "low" | "medium" | "high" | null;
+  reasoningEffort?: LiveRouterReasoningEffort | null;
   speedPreference?: "throughput" | "latency" | null;
   maxTokens?: number | null;
   schemaRepair?: {
@@ -679,10 +682,30 @@ export function buildOpenRouterIntentFrontDoorRouterBody(
 function codexReasoningEffort(
   effort: LiveRouterModelClientRequest["reasoningEffort"],
 ): JsonModelReasoningEffort | undefined {
-  if (effort === "low" || effort === "medium" || effort === "high") {
+  if (
+    effort === "none" ||
+    effort === "minimal" ||
+    effort === "low" ||
+    effort === "medium" ||
+    effort === "high" ||
+    effort === "xhigh"
+  ) {
     return effort;
   }
   return undefined;
+}
+
+function classifyCodexAppServerRouterFailure(message: string): string[] {
+  const lower = message.toLowerCase();
+  return [
+    /timed out|timeout/u.test(lower) ? "codex_app_server_router_timeout" : null,
+    /cwd|working directory|enoent|no such file or directory/u.test(lower)
+      ? "codex_app_server_router_invalid_cwd"
+      : null,
+    /eacces|permission denied/u.test(lower) ? "codex_app_server_router_permission_denied" : null,
+    /schema|json|parse/u.test(lower) ? "codex_app_server_router_schema_or_parse_failed" : null,
+    /app-server|app server/u.test(lower) ? "codex_app_server_router_app_server_failed" : null,
+  ].filter((reason): reason is string => Boolean(reason));
 }
 
 export class CodexAppServerIntentFrontDoorRouterClient implements IntentFrontDoorRouterModelClient {
@@ -690,13 +713,14 @@ export class CodexAppServerIntentFrontDoorRouterClient implements IntentFrontDoo
 
   async route(request: LiveRouterModelClientRequest): Promise<LiveRouterModelClientResponse> {
     const started = this.options.now?.().getTime() ?? Date.now();
-    const executor =
-      this.options.executor ??
-      new CodexAppServerJsonExecutor({
+    const ownedExecutor = this.options.executor
+      ? null
+      : new CodexAppServerJsonExecutor({
         cwd: this.options.cwd,
         requestTimeoutMs: this.options.requestTimeoutMs,
         serviceTier: this.options.serviceTier,
       });
+    const executor = this.options.executor ?? ownedExecutor!;
 
     try {
       const response = await executor.execute({
@@ -752,6 +776,26 @@ export class CodexAppServerIntentFrontDoorRouterClient implements IntentFrontDoo
       const completed = this.options.now?.().getTime() ?? Date.now();
       const message = error instanceof Error ? error.message : "codex app-server router failed";
       const timedOut = /timed out|timeout/iu.test(message);
+      if (ownedExecutor) {
+        try {
+          ownedExecutor.close();
+        } catch {
+          // Closing is best-effort cleanup for a failed provider path.
+        }
+      }
+      const classifiedReasonCodes = classifyCodexAppServerRouterFailure(message);
+      const reasonCodes = Array.from(
+        new Set(
+          [
+            timedOut ? "codex_app_server_router_timeout" : "codex_app_server_router_failed",
+            ...classifiedReasonCodes,
+            ownedExecutor ? "codex_app_server_router_owned_client_closed_after_failure" : null,
+            classifiedReasonCodes.length === 0
+              ? "codex_app_server_router_unclassified_failure"
+              : null,
+          ].filter((reason): reason is string => Boolean(reason)),
+        ),
+      );
       return {
         status: timedOut ? "timeout" : "failed",
         output: null,
@@ -761,9 +805,7 @@ export class CodexAppServerIntentFrontDoorRouterClient implements IntentFrontDoo
         estimatedCostUsd: null,
         retryCount: 0,
         responseHash: null,
-        reasonCodes: [
-          timedOut ? "codex_app_server_router_timeout" : "codex_app_server_router_failed",
-        ],
+        reasonCodes,
         rawPromptStored: false,
         rawResponseStored: false,
         rawProviderLogStored: false,
@@ -1029,6 +1071,78 @@ function buildRouterSchemaRepairRequest(input: {
   };
 }
 
+function workflowJobTypeFor(
+  workflowSummaries: StructuredModelIntentRouterRequest["workflowSummaries"],
+  workflowId: string | null,
+): string | null {
+  if (!workflowId) {
+    return null;
+  }
+  return workflowSummaries.find((summary) => summary.workflowId === workflowId)?.jobType ?? null;
+}
+
+function compileRouterExecutionAliases(input: {
+  output: unknown;
+  workflowSummaries: StructuredModelIntentRouterRequest["workflowSummaries"];
+}): { output: unknown; reasonCodes: string[] } {
+  if (!isRecord(input.output)) {
+    return { output: input.output, reasonCodes: [] };
+  }
+
+  const candidate = { ...input.output };
+  const route = typeof candidate.route === "string" ? candidate.route : null;
+  const responseMode = typeof candidate.responseMode === "string" ? candidate.responseMode : null;
+  const executeNow = typeof candidate.executeNow === "boolean" ? candidate.executeNow : null;
+  const executorWorkflowId =
+    typeof candidate.executorWorkflowId === "string"
+      ? candidate.executorWorkflowId
+      : typeof candidate.workflowId === "string"
+        ? candidate.workflowId
+        : null;
+  const reasonCodes: string[] = [];
+
+  if (executorWorkflowId && candidate.executorWorkflowId !== executorWorkflowId) {
+    candidate.executorWorkflowId = executorWorkflowId;
+    reasonCodes.push("router_execution_alias_executor_workflow_id_filled");
+  }
+
+  if (
+    route === "workflow_execution" &&
+    executorWorkflowId &&
+    (candidate.workflowId === null ||
+      candidate.workflowId === undefined ||
+      candidate.workflowId === "")
+  ) {
+    candidate.workflowId = executorWorkflowId;
+    reasonCodes.push("router_execution_alias_workflow_id_filled");
+  }
+
+  if (
+    route === "workflow_execution" &&
+    executorWorkflowId &&
+    (candidate.jobType === null || candidate.jobType === undefined || candidate.jobType === "")
+  ) {
+    const jobType = workflowJobTypeFor(input.workflowSummaries, executorWorkflowId);
+    if (jobType) {
+      candidate.jobType = jobType;
+      reasonCodes.push("router_execution_alias_job_type_filled_from_workflow_manifest");
+    }
+  }
+
+  if (
+    route === "workflow_execution" &&
+    executeNow === true &&
+    (responseMode === null || responseMode === "" || responseMode === "answer_in_chat")
+  ) {
+    candidate.responseMode = "create_runtime_job";
+    reasonCodes.push("router_execution_response_mode_filled_from_route");
+  }
+
+  return reasonCodes.length > 0
+    ? { output: candidate, reasonCodes }
+    : { output: input.output, reasonCodes };
+}
+
 export class LiveStructuredModelIntentRouterProvider implements StructuredModelIntentRouterProvider {
   constructor(
     private readonly options: {
@@ -1071,7 +1185,11 @@ export class LiveStructuredModelIntentRouterProvider implements StructuredModelI
               : "blocked",
       });
     }
-    const parse = parseCanonicalRouterOutput(response.output);
+    const compiledResponse = compileRouterExecutionAliases({
+      output: response.output,
+      workflowSummaries: request.workflowSummaries,
+    });
+    const parse = parseCanonicalRouterOutput(compiledResponse.output);
     if (!parse.valid) {
       const repairRequest = buildLiveRouterModelClientRequest({
         policyDecision: policy,
@@ -1086,15 +1204,19 @@ export class LiveStructuredModelIntentRouterProvider implements StructuredModelI
         },
         schemaRepair: buildRouterSchemaRepairRequest({
           request,
-          rejectedOutput: response.output,
+          rejectedOutput: compiledResponse.output,
           parseResult: parse,
         }),
       });
       const repairedResponse = await this.options.client.route(repairRequest);
       if (repairedResponse.status === "succeeded") {
-        const repairedParse = parseCanonicalRouterOutput(repairedResponse.output);
-        return {
+        const compiledRepairedResponse = compileRouterExecutionAliases({
           output: repairedResponse.output,
+          workflowSummaries: request.workflowSummaries,
+        });
+        const repairedParse = parseCanonicalRouterOutput(compiledRepairedResponse.output);
+        return {
+          output: repairedParse.valid ? repairedParse.output : compiledRepairedResponse.output,
           providerRef: repairedResponse.providerRef,
           modelCandidateId: repairedResponse.modelRef,
           routerModelPolicyRef: policy.routerPolicyRef,
@@ -1112,9 +1234,11 @@ export class LiveStructuredModelIntentRouterProvider implements StructuredModelI
           reasonCodes: [
             "live_structured_router_provider_called",
             ...response.reasonCodes,
+            ...compiledResponse.reasonCodes,
             ...parse.reasonCodes,
             "router_schema_repair_invoked",
             ...repairedResponse.reasonCodes,
+            ...compiledRepairedResponse.reasonCodes,
             ...(repairedParse.valid
               ? ["router_schema_repair_succeeded", "live_structured_router_schema_valid"]
               : ["router_schema_repair_failed", ...repairedParse.reasonCodes]),
@@ -1140,6 +1264,7 @@ export class LiveStructuredModelIntentRouterProvider implements StructuredModelI
         reasonCodes: [
           "live_structured_router_provider_called",
           ...response.reasonCodes,
+          ...compiledResponse.reasonCodes,
           ...parse.reasonCodes,
           "router_schema_repair_invoked",
           ...repairedResponse.reasonCodes,
@@ -1148,7 +1273,7 @@ export class LiveStructuredModelIntentRouterProvider implements StructuredModelI
       };
     }
     return {
-      output: response.output,
+      output: parse.valid ? parse.output : compiledResponse.output,
       providerRef: response.providerRef,
       modelCandidateId: response.modelRef,
       routerModelPolicyRef: policy.routerPolicyRef,
@@ -1160,6 +1285,7 @@ export class LiveStructuredModelIntentRouterProvider implements StructuredModelI
       reasonCodes: [
         "live_structured_router_provider_called",
         ...response.reasonCodes,
+        ...compiledResponse.reasonCodes,
         ...(parse.valid ? ["live_structured_router_schema_valid"] : parse.reasonCodes),
       ],
     };

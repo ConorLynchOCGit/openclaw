@@ -39,7 +39,7 @@ const artifact = {
   proofTarget:
     "runAfterAdd implementation work-intent nodes create context prerequisites and do not invoke workers before transition readiness.",
   expectedProofSignals: [
-    "node_context_supply_required_before_execution",
+    "node_resource_fulfillment_required_before_execution",
     "runtime_node_transition_prerequisite_created_before_execution",
     "scheduler.evaluate_frontier_readiness",
     "scheduler.approve_and_run_first_node absent",

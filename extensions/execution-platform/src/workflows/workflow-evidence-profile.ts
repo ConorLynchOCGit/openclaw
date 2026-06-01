@@ -13,7 +13,10 @@ export type WorkflowEvidenceClass =
   | "validation"
   | "review"
   | "research_brief"
+  | "planning_intent"
+  | "planning_framework_contract"
   | "planning_capsule"
+  | "planning_capsule_revision"
   | "action_graph_proposal"
   | "compile_readiness"
   | "human_decision"
@@ -98,6 +101,48 @@ type RuntimeArtifactStorageFlags = {
   rawLogsStored: false;
 };
 
+export type PlanningIntentRecord = RuntimeArtifactStorageFlags & {
+  artifactKind: "planning_intent_record";
+  intentId: string;
+  workflowId: string;
+  runtimeJobId: string;
+  authority: Extract<ArtifactAuthority, "model" | "human">;
+  lifecycle: Extract<ArtifactLifecycle, "draft" | "submitted" | "accepted" | "superseded">;
+  validationState: ArtifactValidationState;
+  objectiveRef: string;
+  targetSubjectRefs: string[];
+  scopeRef: string;
+  constraintRefs: string[];
+  nonGoalRefs: string[];
+  authorityLimitRefs: string[];
+  uncertaintyRefs: string[];
+  evidenceExpectationRefs: string[];
+  researchNeeded: boolean;
+  humanDecisionNeeded: boolean;
+  revisionRef: string | null;
+  supersededByIntentId: string | null;
+};
+
+export type PlanningFrameworkContractRecord = RuntimeArtifactStorageFlags & {
+  artifactKind: "planning_framework_contract";
+  contractId: string;
+  workflowId: string;
+  runtimeJobId: string;
+  authority: Extract<ArtifactAuthority, "model" | "human">;
+  lifecycle: Extract<ArtifactLifecycle, "draft" | "submitted" | "accepted" | "superseded">;
+  validationState: ArtifactValidationState;
+  targetSubjectRefs: string[];
+  lifecyclePhaseRefs: string[];
+  resourceContractRefs: string[];
+  actionGateRefs: string[];
+  evidenceExpectationRefs: string[];
+  implementationSliceRefs: string[];
+  compatibilityFallbackAllowed: false;
+  runtimeSemanticJudgmentAllowed: false;
+  revisionRef: string | null;
+  supersededByContractId: string | null;
+};
+
 export function validateArtifactStorageFlags(flags: Partial<RuntimeArtifactStorageFlags>): {
   valid: boolean;
   reasonCodes: string[];
@@ -148,6 +193,25 @@ export type WorkflowPlanningCapsuleEvidence = RuntimeArtifactStorageFlags & {
   limitationRefs: string[];
   revisionRef: string | null;
   supersededByCapsuleId: string | null;
+};
+
+export type PlanningCapsuleRevision = RuntimeArtifactStorageFlags & {
+  artifactKind: "planning_capsule_revision";
+  revisionId: string;
+  workflowId: string;
+  runtimeJobId: string;
+  authority: Extract<ArtifactAuthority, "model" | "human">;
+  lifecycle: Extract<ArtifactLifecycle, "draft" | "submitted" | "accepted" | "superseded">;
+  validationState: ArtifactValidationState;
+  capsuleRef: string;
+  previousCapsuleRef: string;
+  changeSummaryRef: string;
+  changedSectionRefs: string[];
+  limitationRefs: string[];
+  humanDecisionRefs: string[];
+  researchInfluenceRefs: string[];
+  revisionRef: string | null;
+  supersededByRevisionId: string | null;
 };
 
 export type HumanPlanningDecision = RuntimeArtifactStorageFlags & {
@@ -250,6 +314,29 @@ export type CompileReadinessValidation = RuntimeArtifactStorageFlags & {
   supersededByValidationId: string | null;
 };
 
+export type ProductSpecPlanningCloseout = RuntimeArtifactStorageFlags & {
+  artifactKind: "product_spec_planning_closeout";
+  closeoutId: string;
+  workflowId: string;
+  runtimeJobId: string;
+  authority: Extract<ArtifactAuthority, "model" | "human">;
+  lifecycle: Extract<ArtifactLifecycle, "draft" | "submitted" | "accepted" | "superseded">;
+  validationState: ArtifactValidationState;
+  missionLedgerRef: string;
+  planningIntentRef: string;
+  planningCapsuleRefs: string[];
+  actionGraphProposalRefs: string[];
+  compileReadinessRefs: string[];
+  humanDecisionRefs: string[];
+  researchBriefRefs: string[];
+  commitmentEvidenceRefs: string[];
+  limitationRefs: string[];
+  eli5SummaryRef: string;
+  childExecutionStarted: false;
+  revisionRef: string | null;
+  supersededByCloseoutId: string | null;
+};
+
 const MAX_REFS_PER_CLASS = 12;
 const MAX_REASON_CODES = 24;
 const MAX_LIMITATIONS = 12;
@@ -277,6 +364,10 @@ function nonEmptyString(value: unknown): value is string {
 
 function stringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.every((item) => typeof item === "string");
+}
+
+function nonEmptyStringArray(value: unknown): value is string[] {
+  return stringArray(value) && value.some((item) => item.trim().length > 0);
 }
 
 function objectRecord(value: unknown): Record<string, unknown> | null {
@@ -331,6 +422,99 @@ function requireCommonArtifactFields(
     reasonCodes.push(`${input.prefix}_validation_state_invalid`);
   }
   rejectRawStorage(artifact, reasonCodes, input.prefix);
+}
+
+export function validatePlanningIntentRecord(intent: unknown): {
+  valid: boolean;
+  reasonCodes: string[];
+} {
+  const reasonCodes: string[] = [];
+  const artifact = objectRecord(intent);
+  if (!artifact) {
+    return { valid: false, reasonCodes: ["planning_intent_record_not_object"] };
+  }
+  requireCommonArtifactFields(
+    artifact,
+    {
+      idField: "intentId",
+      idReason: "planning_intent_record_id_missing",
+      prefix: "planning_intent_record",
+      authorities: ["model", "human"],
+      lifecycles: ["draft", "submitted", "accepted", "superseded"],
+    },
+    reasonCodes,
+  );
+  for (const [field, reason] of [
+    ["objectiveRef", "planning_intent_record_objective_ref_missing"],
+    ["scopeRef", "planning_intent_record_scope_ref_missing"],
+  ] as const) {
+    if (!nonEmptyString(artifact[field])) {
+      reasonCodes.push(reason);
+    }
+  }
+  for (const [field, reason, required] of [
+    ["targetSubjectRefs", "planning_intent_record_target_subject_refs_missing"],
+    ["constraintRefs", "planning_intent_record_constraint_refs_must_be_array"],
+    ["nonGoalRefs", "planning_intent_record_non_goal_refs_must_be_array"],
+    ["authorityLimitRefs", "planning_intent_record_authority_limit_refs_must_be_array"],
+    ["uncertaintyRefs", "planning_intent_record_uncertainty_refs_must_be_array"],
+    ["evidenceExpectationRefs", "planning_intent_record_evidence_expectation_refs_missing"],
+  ].map(([field, reason]) => [field, reason, field === "targetSubjectRefs" || field === "evidenceExpectationRefs"] as const)) {
+    if (required ? !nonEmptyStringArray(artifact[field]) : !stringArray(artifact[field])) {
+      reasonCodes.push(reason);
+    }
+  }
+  if (typeof artifact.researchNeeded !== "boolean") {
+    reasonCodes.push("planning_intent_record_research_needed_boolean_required");
+  }
+  if (typeof artifact.humanDecisionNeeded !== "boolean") {
+    reasonCodes.push("planning_intent_record_human_decision_needed_boolean_required");
+  }
+  return { valid: reasonCodes.length === 0, reasonCodes };
+}
+
+export function validatePlanningFrameworkContractRecord(contract: unknown): {
+  valid: boolean;
+  reasonCodes: string[];
+} {
+  const reasonCodes: string[] = [];
+  const artifact = objectRecord(contract);
+  if (!artifact) {
+    return { valid: false, reasonCodes: ["planning_framework_contract_not_object"] };
+  }
+  requireCommonArtifactFields(
+    artifact,
+    {
+      idField: "contractId",
+      idReason: "planning_framework_contract_id_missing",
+      prefix: "planning_framework_contract",
+      authorities: ["model", "human"],
+      lifecycles: ["draft", "submitted", "accepted", "superseded"],
+    },
+    reasonCodes,
+  );
+  for (const [field, reason] of [
+    ["targetSubjectRefs", "planning_framework_contract_target_subject_refs_missing"],
+    ["lifecyclePhaseRefs", "planning_framework_contract_lifecycle_phase_refs_missing"],
+    ["resourceContractRefs", "planning_framework_contract_resource_contract_refs_missing"],
+    ["actionGateRefs", "planning_framework_contract_action_gate_refs_missing"],
+    ["evidenceExpectationRefs", "planning_framework_contract_evidence_expectation_refs_missing"],
+    ["implementationSliceRefs", "planning_framework_contract_implementation_slice_refs_missing"],
+  ] as const) {
+    if (!nonEmptyStringArray(artifact[field])) {
+      reasonCodes.push(reason);
+    }
+  }
+  if (artifact.compatibilityFallbackAllowed !== false) {
+    reasonCodes.push("planning_framework_contract_compatibility_fallback_must_be_false");
+  }
+  if (artifact.runtimeSemanticJudgmentAllowed !== false) {
+    reasonCodes.push("planning_framework_contract_runtime_semantic_judgment_must_be_false");
+  }
+  if (artifact.lifecycle === "superseded" && !nonEmptyString(artifact.supersededByContractId)) {
+    reasonCodes.push("planning_framework_contract_superseded_missing_ref");
+  }
+  return { valid: reasonCodes.length === 0, reasonCodes };
 }
 
 export function validateResearchBrief(brief: unknown): { valid: boolean; reasonCodes: string[] } {
@@ -396,6 +580,48 @@ export function validateWorkflowPlanningCapsuleEvidence(capsule: unknown): {
   }
   if (artifact.lifecycle === "superseded" && !nonEmptyString(artifact.supersededByCapsuleId)) {
     reasonCodes.push("planning_capsule_superseded_missing_ref");
+  }
+  return { valid: reasonCodes.length === 0, reasonCodes };
+}
+
+export function validatePlanningCapsuleRevision(revision: unknown): {
+  valid: boolean;
+  reasonCodes: string[];
+} {
+  const reasonCodes: string[] = [];
+  const artifact = objectRecord(revision);
+  if (!artifact) {
+    return { valid: false, reasonCodes: ["planning_capsule_revision_not_object"] };
+  }
+  requireCommonArtifactFields(
+    artifact,
+    {
+      idField: "revisionId",
+      idReason: "planning_capsule_revision_id_missing",
+      prefix: "planning_capsule_revision",
+      authorities: ["model", "human"],
+      lifecycles: ["draft", "submitted", "accepted", "superseded"],
+    },
+    reasonCodes,
+  );
+  for (const [field, reason] of [
+    ["capsuleRef", "planning_capsule_revision_capsule_ref_missing"],
+    ["previousCapsuleRef", "planning_capsule_revision_previous_capsule_ref_missing"],
+    ["changeSummaryRef", "planning_capsule_revision_change_summary_ref_missing"],
+  ] as const) {
+    if (!nonEmptyString(artifact[field])) {
+      reasonCodes.push(reason);
+    }
+  }
+  for (const [field, reason, required] of [
+    ["changedSectionRefs", "planning_capsule_revision_changed_section_refs_missing"],
+    ["limitationRefs", "planning_capsule_revision_limitation_refs_must_be_array"],
+    ["humanDecisionRefs", "planning_capsule_revision_human_decision_refs_must_be_array"],
+    ["researchInfluenceRefs", "planning_capsule_revision_research_influence_refs_must_be_array"],
+  ].map(([field, reason]) => [field, reason, field === "changedSectionRefs"] as const)) {
+    if (required ? !nonEmptyStringArray(artifact[field]) : !stringArray(artifact[field])) {
+      reasonCodes.push(reason);
+    }
   }
   return { valid: reasonCodes.length === 0, reasonCodes };
 }
@@ -530,6 +756,58 @@ export function validateCompileReadinessValidation(validation: unknown): {
   return { valid: reasonCodes.length === 0, reasonCodes };
 }
 
+export function validateProductSpecPlanningCloseout(closeout: unknown): {
+  valid: boolean;
+  reasonCodes: string[];
+} {
+  const reasonCodes: string[] = [];
+  const artifact = objectRecord(closeout);
+  if (!artifact) {
+    return { valid: false, reasonCodes: ["product_spec_planning_closeout_not_object"] };
+  }
+  requireCommonArtifactFields(
+    artifact,
+    {
+      idField: "closeoutId",
+      idReason: "product_spec_planning_closeout_id_missing",
+      prefix: "product_spec_planning_closeout",
+      authorities: ["model", "human"],
+      lifecycles: ["draft", "submitted", "accepted", "superseded"],
+    },
+    reasonCodes,
+  );
+  for (const [field, reason] of [
+    ["missionLedgerRef", "product_spec_planning_closeout_mission_ledger_ref_missing"],
+    ["planningIntentRef", "product_spec_planning_closeout_planning_intent_ref_missing"],
+    ["eli5SummaryRef", "product_spec_planning_closeout_eli5_summary_ref_missing"],
+  ] as const) {
+    if (!nonEmptyString(artifact[field])) {
+      reasonCodes.push(reason);
+    }
+  }
+  for (const [field, reason, required] of [
+    ["planningCapsuleRefs", "product_spec_planning_closeout_capsule_refs_missing"],
+    ["actionGraphProposalRefs", "product_spec_planning_closeout_action_graph_refs_missing"],
+    ["compileReadinessRefs", "product_spec_planning_closeout_compile_readiness_refs_missing"],
+    ["humanDecisionRefs", "product_spec_planning_closeout_human_decision_refs_must_be_array"],
+    ["researchBriefRefs", "product_spec_planning_closeout_research_brief_refs_must_be_array"],
+    ["commitmentEvidenceRefs", "product_spec_planning_closeout_commitment_evidence_refs_missing"],
+    ["limitationRefs", "product_spec_planning_closeout_limitation_refs_must_be_array"],
+  ].map(([field, reason]) => [
+    field,
+    reason,
+    ["planningCapsuleRefs", "actionGraphProposalRefs", "compileReadinessRefs", "commitmentEvidenceRefs"].includes(field),
+  ] as const)) {
+    if (required ? !nonEmptyStringArray(artifact[field]) : !stringArray(artifact[field])) {
+      reasonCodes.push(reason);
+    }
+  }
+  if (artifact.childExecutionStarted !== false) {
+    reasonCodes.push("product_spec_planning_closeout_child_execution_started_must_be_false");
+  }
+  return { valid: reasonCodes.length === 0, reasonCodes };
+}
+
 function refsFor(
   refs: Partial<Record<WorkflowEvidenceClass, string[]>>,
 ): Partial<Record<WorkflowEvidenceClass, string[]>> {
@@ -578,13 +856,20 @@ export function listWorkflowEvidenceProfiles(): WorkflowEvidenceProfile[] {
       requiredEvidenceClasses: [
         "runtime_graph",
         "scheduler_tool_trace",
+        "planning_intent",
         "planning_capsule",
         "action_graph_proposal",
         "compile_readiness",
         "closeout",
         "work_queue_readback",
       ],
-      optionalEvidenceClasses: ["research_brief", "human_decision", "model_call_trace"],
+      optionalEvidenceClasses: [
+        "planning_framework_contract",
+        "research_brief",
+        "planning_capsule_revision",
+        "human_decision",
+        "model_call_trace",
+      ],
       cleanSuccessAllowed: true,
       closeoutMustBeModelAuthored: true,
       deepCompletionReviewRequired: true,

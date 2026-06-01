@@ -26,7 +26,9 @@ import {
   TwoLaneStructuredModelIntentRouterProvider,
   WorkQueueEventStore,
   WorkQueueRepository,
+  createFileGatewaySubmitDiagnosticsSink,
   type LiveRouterModelPolicy,
+  type LiveRouterReasoningEffort,
   type RouterModelCandidateRef,
 } from "../../extensions/execution-platform/runtime-api.js";
 import { CodexAppServerJsonExecutor } from "../../extensions/model-memory/src/mmv2/codex-app-server-json-executor.js";
@@ -41,6 +43,7 @@ type ExecutionPlatformRouteRuntime = {
   workQueue: WorkQueueRepository;
   nativeExecutionRpc: NativeExecutionRpcService;
   runtimeToolKernel: RuntimeToolKernel;
+  shutdown?: () => Promise<void>;
 };
 
 let runtimePromise: Promise<ExecutionPlatformRouteRuntime> | null = null;
@@ -90,10 +93,17 @@ function numberConfig(config: OpenClawConfig, name: string, fallback: number): n
 function reasoningConfig(
   config: OpenClawConfig,
   name: string,
-  fallback: "low" | "medium" | "high",
+  fallback: LiveRouterReasoningEffort,
 ) {
   const value = configValue(config, name);
-  return value === "low" || value === "medium" || value === "high" ? value : fallback;
+  return value === "none" ||
+    value === "minimal" ||
+    value === "low" ||
+    value === "medium" ||
+    value === "high" ||
+    value === "xhigh"
+    ? value
+    : fallback;
 }
 
 function speedConfig(
@@ -103,6 +113,17 @@ function speedConfig(
 ) {
   const value = configValue(config, name);
   return value === "latency" || value === "throughput" ? value : fallback;
+}
+
+export function resolveGatewayCodexAppServerCwd(
+  config: OpenClawConfig,
+  currentCwd = process.cwd(),
+): string {
+  return (
+    configValue(config, "OPENCLAW_INTENT_FRONT_DOOR_CODEX_APP_SERVER_CWD") ??
+    configValue(config, "OPENCLAW_CODEX_APP_SERVER_CWD") ??
+    currentCwd
+  );
 }
 
 function routerCandidate(input: {
@@ -177,14 +198,15 @@ export function createGatewayStructuredRouterProvider(config: OpenClawConfig) {
   const apiKey = configValue(config, "OPENROUTER_API_KEY");
   const triageModelRef =
     configValue(config, "OPENCLAW_INTENT_FRONT_DOOR_TRIAGE_ROUTER_MODEL_REF") ??
-    "deepseek/deepseek-v4-flash";
+    "qwen/qwen3-coder-next";
   const advancedModelRef =
     configValue(config, "OPENCLAW_INTENT_FRONT_DOOR_ADVANCED_ROUTER_MODEL_REF") ??
-    "openai-codex/gpt-5.5";
-  const requiredAdvancedModelRef =
-    configValue(config, "OPENCLAW_INTENT_FRONT_DOOR_ADVANCED_ROUTER_REQUIRED_MODEL_REF") ??
-    "openai-codex/gpt-5.5";
-  if (advancedModelRef !== requiredAdvancedModelRef) {
+    "qwen/qwen3-coder-next";
+  const requiredAdvancedModelRef = configValue(
+    config,
+    "OPENCLAW_INTENT_FRONT_DOOR_ADVANCED_ROUTER_REQUIRED_MODEL_REF",
+  );
+  if (requiredAdvancedModelRef && advancedModelRef !== requiredAdvancedModelRef) {
     console.warn(
       JSON.stringify({
         event: "execution_platform_front_door_model_policy_mismatch",
@@ -222,7 +244,7 @@ export function createGatewayStructuredRouterProvider(config: OpenClawConfig) {
           reasoningEffort: reasoningConfig(
             config,
             "OPENCLAW_INTENT_FRONT_DOOR_TRIAGE_ROUTER_REASONING_EFFORT",
-            "low",
+            "none",
           ),
           speedPreference: speedConfig(
             config,
@@ -259,29 +281,29 @@ export function createGatewayStructuredRouterProvider(config: OpenClawConfig) {
     policyId: "router-policy://intent-front-door/live-router/advanced",
     routerPolicyVersion: ROUTER_MODEL_POLICY_VERSION,
     routerProviderProfile: {
-      providerRef: "provider-profile://intent-front-door/router/codex-app-server/advanced",
-      providerKind: "approved_model_routing_client",
-      baseUrlRef: "provider-base-url://codex-app-server/default",
+      providerRef: "provider-profile://intent-front-door/router/openrouter/advanced",
+      providerKind: "openrouter",
+      baseUrlRef: "provider-base-url://openrouter/default",
       timeoutMs: numberConfig(
         config,
         "OPENCLAW_INTENT_FRONT_DOOR_ADVANCED_ROUTER_TIMEOUT_MS",
-        600_000,
+        90_000,
       ),
       maxAttempts: 1,
       maxTokens: numberConfig(
         config,
         "OPENCLAW_INTENT_FRONT_DOOR_ADVANCED_ROUTER_MAX_TOKENS",
-        8_000,
+        2_000,
       ),
       reasoningEffort: reasoningConfig(
         config,
         "OPENCLAW_INTENT_FRONT_DOOR_ADVANCED_ROUTER_REASONING_EFFORT",
-        "medium",
+        "none",
       ),
       speedPreference: speedConfig(
         config,
         "OPENCLAW_INTENT_FRONT_DOOR_ADVANCED_ROUTER_SPEED_PREFERENCE",
-        "throughput",
+        "latency",
       ),
     },
     routerModelRef: advancedModelRef,
@@ -289,10 +311,9 @@ export function createGatewayStructuredRouterProvider(config: OpenClawConfig) {
     modelRosterRef:
       configValue(config, "OPENCLAW_INTENT_FRONT_DOOR_ROUTER_MODEL_ROSTER_REF") ??
       "model-roster://intent-front-door/router/live",
-    requiredCapabilities: ["structured_json", "json_schema", "reasoning", "large_context"],
+    requiredCapabilities: ["structured_json", "json_schema"],
     fallbackModelRef:
-      configValue(config, "OPENCLAW_INTENT_FRONT_DOOR_ADVANCED_ROUTER_FALLBACK_MODEL_REF") ??
-      "openai-codex/gpt-5.5",
+      configValue(config, "OPENCLAW_INTENT_FRONT_DOOR_ADVANCED_ROUTER_FALLBACK_MODEL_REF") ?? null,
     escalationModelRef: escalationModelRef ?? advancedModelRef,
     killSwitchRef:
       configValue(config, "OPENCLAW_INTENT_FRONT_DOOR_ROUTER_KILL_SWITCH_REF") ??
@@ -320,11 +341,11 @@ export function createGatewayStructuredRouterProvider(config: OpenClawConfig) {
           baseUrlRef: "provider-base-url://openrouter/default",
           timeoutMs: numberConfig(config, "OPENCLAW_INTENT_FRONT_DOOR_ROUTER_TIMEOUT_MS", 10_000),
           maxAttempts: numberConfig(config, "OPENCLAW_INTENT_FRONT_DOOR_ROUTER_MAX_ATTEMPTS", 1),
-          maxTokens: numberConfig(config, "OPENCLAW_INTENT_FRONT_DOOR_ROUTER_MAX_TOKENS", 1_500),
+          maxTokens: numberConfig(config, "OPENCLAW_INTENT_FRONT_DOOR_ROUTER_MAX_TOKENS", 8_000),
           reasoningEffort: reasoningConfig(
             config,
             "OPENCLAW_INTENT_FRONT_DOOR_ROUTER_REASONING_EFFORT",
-            "low",
+            "none",
           ),
           speedPreference: speedConfig(
             config,
@@ -408,7 +429,7 @@ export function createGatewayStructuredRouterProvider(config: OpenClawConfig) {
         policyDecision: advancedDecision,
         client: new CodexAppServerIntentFrontDoorRouterClient({
           requestTimeoutMs: advancedPolicy.routerProviderProfile?.timeoutMs ?? 600_000,
-          cwd: "/root/services/openclaw-roles/live",
+          cwd: resolveGatewayCodexAppServerCwd(config),
         }),
       }),
     });
@@ -513,6 +534,9 @@ export async function getExecutionPlatformRuntime(
       workQueue,
       runtimeToolKernel,
       structuredRouterProvider: createGatewayStructuredRouterProvider(config) ?? undefined,
+      submitDiagnosticsSink: createFileGatewaySubmitDiagnosticsSink({
+        rootDir: process.cwd(),
+      }),
     });
     return {
       runtimeJobs,
@@ -521,6 +545,10 @@ export async function getExecutionPlatformRuntime(
       workQueueEvents,
       workQueue,
       nativeExecutionRpc,
+      shutdown: async () => {
+        runtimePromise = null;
+        await database.pool.end();
+      },
     };
   })().catch((error) => {
     runtimePromise = null;

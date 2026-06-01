@@ -160,9 +160,9 @@ function implementationTaskPacket(jobId, nodeId, contextPacket) {
     nodeId,
     targetCommitmentIds: ["product-spec-storage"],
     targetFileRefs: contextPacket.readableTargetFileRefs.slice(0, 24),
-    sourceCommitmentPacketRefs: ["commitment-work-packet://product-spec-storage"],
+    sourceContractRefs: ["source-contract://product-spec-storage"],
     contextPacketRefs: [contextPacket.packetRef],
-    sourceContextHandoffRefs: ["context-handoff://product-spec-storage"],
+    sourceResourceHandoffRefs: ["resource-handoff://product-spec-storage"],
     contextSynthesisRefs: ["context-synthesis://product-spec-storage"],
     targetFileSnapshots: contextPacket.targetFileSnapshots.slice(0, 24),
     allowedEditScope: {
@@ -296,9 +296,9 @@ async function runProof() {
         nodeKind: index % 5 === 0 ? "validation" : "context_scout",
         assignedRole: index % 5 === 0 ? "test_engineer" : "context_scout",
         nodeStatus: "succeeded",
-        outputArtifactRefs: [`context-handoff://large-graph/${index}`],
+        outputArtifactRefs: [`resource-handoff://large-graph/${index}`],
         metadata: {
-          capabilityId: index % 5 === 0 ? "validation.focused" : "context.scout",
+          capabilityId: index % 5 === 0 ? "validation.focused" : "resource.scout",
           boundedSummary: `Terminal prerequisite node ${index}; payload bodies live outside graph metadata.`,
           rawPromptStored: false,
           rawResponseStored: false,
@@ -381,7 +381,7 @@ async function runProof() {
       assignedRole: "implementation_engineer",
       modelOrWorkerRef: "qwen/qwen3-coder-next",
       nodeStatus: "planned",
-      inputHandoffRefs: ["context-handoff://large-graph/accepted"],
+      inputHandoffRefs: ["resource-handoff://large-graph/accepted"],
       metadata: {
         capabilityId: "implementation.qwen.scoped_patch",
         commitmentIdsAdvanced: ["product-spec-storage"],
@@ -423,7 +423,7 @@ async function runProof() {
         toNodeId: index < 80 ? readyNodeId : closeoutNodeId,
         edgeKind: index < 80 ? "context_supplies" : "closeout_depends_on",
         reasonCodes: ["large_graph_dependency_manifest_only"],
-        artifactRefs: [`context-handoff://large-graph/${index % 88}`],
+        artifactRefs: [`resource-handoff://large-graph/${index % 88}`],
         metadata: {
           boundedSummary: `Manifest edge ${index} carries refs only.`,
           rawPromptStored: false,
@@ -537,9 +537,9 @@ async function runProof() {
         syntheticLargeGraphState: {
           nodeIds: refreshedSnapshot.nodes.map((node) => node.nodeId),
           edgeIds: refreshedSnapshot.edges.map((edge) => edge.edgeId),
-          repeatedContextHandoffRefs: Array.from(
+          repeatedResourceHandoffRefs: Array.from(
             { length: 140 },
-            (_, index) => `context-handoff://large-graph/${index}`,
+            (_, index) => `resource-handoff://large-graph/${index}`,
           ),
           note: "This intentionally large body must live in payload storage, not metadata.",
         },

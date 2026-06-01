@@ -134,7 +134,7 @@ describe("execution autonomy next sequence", () => {
     });
     expect(
       decideModelFallback({
-        roleId: "context_scout",
+        roleId: "resource_scout",
         failedModelId: "deepseek/deepseek-v4-pro",
         failureKind: "empty_response",
       }),

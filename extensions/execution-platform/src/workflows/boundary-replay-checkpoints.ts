@@ -7,11 +7,15 @@ import type {
 } from "../runtime-job-repository.ts";
 import {
   BOUNDARY_REPLAY_CHECKPOINT_KINDS,
+  BOUNDARY_REPLAY_PRODUCTION_PROOF_BOUNDARY_IDS,
   BOUNDARY_REPLAY_REGISTRY_VERSION,
+  boundaryReplayCheckpointKindForProofBoundaryId,
   boundaryReplayDefinitionFor,
+  boundaryReplayProofBoundaryIdForCheckpointKind,
   boundaryReplayRegistrySummary,
   boundaryReplayCheckpointKindForCliAlias,
   requiredBoundaryReplayCheckpointKindsFor,
+  type BoundaryReplayProductionProofBoundaryId,
   type BoundaryReplayBoundaryDefinition,
   type BoundaryReplayCheckpointKind,
 } from "./boundary-replay-registry.ts";
@@ -24,13 +28,17 @@ import type { RuntimeWorkGraphRepository } from "./runtime-work-graph-repository
 
 export {
   BOUNDARY_REPLAY_CHECKPOINT_KINDS,
+  BOUNDARY_REPLAY_PRODUCTION_PROOF_BOUNDARY_IDS,
   BOUNDARY_REPLAY_REGISTRY_VERSION,
   boundaryReplayDefinitionFor,
   boundaryReplayDefinitions,
   boundaryReplayBoundaryIsDiagnosticOnly,
   boundaryReplayCheckpointKindForCliAlias,
+  boundaryReplayCheckpointKindForProofBoundaryId,
+  boundaryReplayProofBoundaryIdForCheckpointKind,
   boundaryReplayRegistrySummary,
   requiredBoundaryReplayCheckpointKindsFor,
+  type BoundaryReplayProductionProofBoundaryId,
   type BoundaryReplayBoundaryDefinition,
   type BoundaryReplayCheckpointKind,
 } from "./boundary-replay-registry.ts";
@@ -44,6 +52,13 @@ export type BoundaryReplayCheckpoint = {
   schemaVersion: "execution-platform.boundary-replay-checkpoint.v1";
   checkpointId: string;
   checkpointKind: BoundaryReplayCheckpointKind;
+  productionPathEquivalence: "production_equivalent" | "diagnostic_only";
+  sourceCheckpointVersion: "execution-platform.boundary-replay-checkpoint.v1";
+  allowedSyntheticArtifacts: string[];
+  forbiddenSyntheticArtifacts: string[];
+  boundaryEpoch: string;
+  supersedesNodeEpochRefs: string[];
+  terminalLifecyclePolicy: BoundaryReplayBoundaryDefinition["terminalLifecyclePolicy"];
   workflowId: string;
   runtimeJobId: string;
   graphId: string;
@@ -95,6 +110,17 @@ export type BoundaryReplayPlan = {
   graphId: string;
   workflowId: string;
   requestedStartBoundary: BoundaryReplayCheckpointKind;
+  replayBoundaryId: string;
+  sourceRuntimeJobId: string;
+  sourceGraphId: string;
+  productionPathEquivalence: "production_equivalent" | "diagnostic_only";
+  sourceCheckpointVersion: "execution-platform.boundary-replay-checkpoint.v1";
+  allowedSyntheticArtifacts: string[];
+  forbiddenSyntheticArtifacts: string[];
+  boundaryEpoch: string | null;
+  supersedesNodeEpochRefs: string[];
+  terminalLifecyclePolicy: BoundaryReplayBoundaryDefinition["terminalLifecyclePolicy"];
+  proofClosureAllowed: boolean;
   status: "accepted" | "needs_review" | "blocked";
   registryVersion: typeof BOUNDARY_REPLAY_REGISTRY_VERSION;
   boundaryDefinition: BoundaryReplayBoundaryDefinition;
@@ -142,6 +168,10 @@ export type BoundaryReplayContinuation = {
   graphId: string;
   workflowId: string;
   requestedStartBoundary: BoundaryReplayCheckpointKind;
+  replayBoundaryId: string;
+  productionPathEquivalence: "production_equivalent" | "diagnostic_only";
+  boundaryEpoch: string | null;
+  proofClosureAllowed: boolean;
   status: "accepted" | "needs_review" | "blocked";
   registryVersion: typeof BOUNDARY_REPLAY_REGISTRY_VERSION;
   diagnosticOnly: boolean;
@@ -268,6 +298,36 @@ function checkpointArtifactRef(input: {
   return `runtime-job://${input.runtimeJobId}/boundary-replay/${input.graphId}/${input.checkpointKind}/${input.checkpointId}`;
 }
 
+function replayBoundaryId(input: {
+  runtimeJobId: string;
+  graphId: string;
+  checkpointKind: BoundaryReplayCheckpointKind;
+}): string {
+  return `boundary-replay://${input.runtimeJobId}/${input.graphId}/${input.checkpointKind}`;
+}
+
+function boundaryEpochFor(input: {
+  runtimeJobId: string;
+  graphId: string;
+  checkpointKind: BoundaryReplayCheckpointKind;
+  boundaryInputHash: string | null;
+  boundaryOutputHash: string | null;
+  currentNodeIds: string[];
+  acceptedArtifactRefs: string[];
+}): string {
+  return `boundary-epoch:${sha256(
+    JSON.stringify({
+      runtimeJobId: input.runtimeJobId,
+      graphId: input.graphId,
+      checkpointKind: input.checkpointKind,
+      boundaryInputHash: input.boundaryInputHash,
+      boundaryOutputHash: input.boundaryOutputHash,
+      currentNodeIds: unique(input.currentNodeIds, 80, 180),
+      acceptedArtifactRefs: unique(input.acceptedArtifactRefs, 80, 260),
+    }),
+  ).slice(0, 20)}`;
+}
+
 export function buildBoundaryReplayCheckpoint(input: {
   checkpointId?: string;
   checkpointKind: BoundaryReplayCheckpointKind;
@@ -290,6 +350,11 @@ export function buildBoundaryReplayCheckpoint(input: {
   currentCommitmentIds?: string[];
   openCommitmentIds?: string[];
   satisfiedCommitmentIds?: string[];
+  productionPathEquivalence?: BoundaryReplayCheckpoint["productionPathEquivalence"];
+  allowedSyntheticArtifacts?: string[];
+  forbiddenSyntheticArtifacts?: string[];
+  boundaryEpoch?: string | null;
+  supersedesNodeEpochRefs?: string[];
   replayStartPolicy?: BoundaryReplayCheckpoint["replayStartPolicy"];
   replaySafetyStatus?: BoundaryReplayCheckpoint["replaySafetyStatus"];
   replayFreshnessStatus?: BoundaryReplayCheckpoint["replayFreshnessStatus"];
@@ -334,6 +399,19 @@ export function buildBoundaryReplayCheckpoint(input: {
       rejectedArtifactRefs: unique(input.rejectedArtifactRefs ?? [], 40),
       replayContinuationMode: input.replayContinuationMode ?? "continue_scheduler",
     });
+  const productionPathEquivalence =
+    input.productionPathEquivalence ?? definition.productionPathEquivalence;
+  const boundaryEpoch =
+    input.boundaryEpoch?.trim() ||
+    boundaryEpochFor({
+      runtimeJobId: input.runtimeJobId,
+      graphId: input.graphId,
+      checkpointKind: input.checkpointKind,
+      boundaryInputHash,
+      boundaryOutputHash,
+      currentNodeIds: input.currentNodeIds ?? [],
+      acceptedArtifactRefs: input.acceptedArtifactRefs ?? [],
+    });
   const identityBindingHash = jsonHash({
     checkpointKind: input.checkpointKind,
     workflowId: input.workflowId,
@@ -354,6 +432,21 @@ export function buildBoundaryReplayCheckpoint(input: {
       input.checkpointId ??
       `${bounded(input.checkpointKind, 80)}-${bounded(input.runtimeJobId, 80)}-${fingerprint}`,
     checkpointKind: input.checkpointKind,
+    productionPathEquivalence,
+    sourceCheckpointVersion: definition.sourceCheckpointVersion,
+    allowedSyntheticArtifacts: unique(
+      input.allowedSyntheticArtifacts ?? definition.allowedSyntheticArtifacts,
+      20,
+      180,
+    ),
+    forbiddenSyntheticArtifacts: unique(
+      input.forbiddenSyntheticArtifacts ?? definition.forbiddenSyntheticArtifacts,
+      20,
+      180,
+    ),
+    boundaryEpoch: bounded(boundaryEpoch, 180),
+    supersedesNodeEpochRefs: unique(input.supersedesNodeEpochRefs ?? [], 80, 180),
+    terminalLifecyclePolicy: definition.terminalLifecyclePolicy,
     workflowId: bounded(input.workflowId, 180),
     runtimeJobId: bounded(input.runtimeJobId, 180),
     graphId: bounded(input.graphId, 180),
@@ -435,6 +528,21 @@ export function validateBoundaryReplayCheckpoint(checkpoint: BoundaryReplayCheck
   }
   if (definition?.diagnosticOnly && checkpoint.replayStartPolicy === "allowed_from_checkpoint") {
     reasonCodes.push("boundary_replay_checkpoint_diagnostic_boundary_not_replayable");
+  }
+  if (
+    checkpoint.productionPathEquivalence === "diagnostic_only" &&
+    checkpoint.replayStartPolicy === "allowed_from_checkpoint"
+  ) {
+    reasonCodes.push("boundary_replay_checkpoint_diagnostic_equivalence_not_replayable");
+  }
+  if (
+    !definition?.diagnosticOnly &&
+    checkpoint.productionPathEquivalence !== "production_equivalent"
+  ) {
+    reasonCodes.push("boundary_replay_checkpoint_production_boundary_equivalence_invalid");
+  }
+  if (!checkpoint.boundaryEpoch) {
+    reasonCodes.push("boundary_replay_checkpoint_boundary_epoch_missing");
   }
   if (
     definition &&
@@ -546,6 +654,29 @@ export function normalizeBoundaryReplayCheckpointArtifact(
     schemaVersion: "execution-platform.boundary-replay-checkpoint.v1",
     checkpointId: stringValue(metadata.checkpointId) ?? artifact.artifactId,
     checkpointKind: checkpointKind as BoundaryReplayCheckpointKind,
+    productionPathEquivalence:
+      metadata.productionPathEquivalence === "diagnostic_only"
+        ? "diagnostic_only"
+        : boundaryReplayDefinitionFor(checkpointKind as BoundaryReplayCheckpointKind)
+            .productionPathEquivalence,
+    sourceCheckpointVersion: "execution-platform.boundary-replay-checkpoint.v1",
+    allowedSyntheticArtifacts: stringArray(metadata.allowedSyntheticArtifacts, 20),
+    forbiddenSyntheticArtifacts: stringArray(metadata.forbiddenSyntheticArtifacts, 20),
+    boundaryEpoch:
+      stringValue(metadata.boundaryEpoch) ??
+      boundaryEpochFor({
+        runtimeJobId: stringValue(metadata.runtimeJobId) ?? artifact.jobId,
+        graphId: stringValue(metadata.graphId) ?? "",
+        checkpointKind: checkpointKind as BoundaryReplayCheckpointKind,
+        boundaryInputHash: stringValue(metadata.boundaryInputHash),
+        boundaryOutputHash: stringValue(metadata.boundaryOutputHash),
+        currentNodeIds: stringArray(metadata.currentNodeIds, 60),
+        acceptedArtifactRefs: stringArray(metadata.acceptedArtifactRefs, 80),
+      }),
+    supersedesNodeEpochRefs: stringArray(metadata.supersedesNodeEpochRefs, 80),
+    terminalLifecyclePolicy: boundaryReplayDefinitionFor(
+      checkpointKind as BoundaryReplayCheckpointKind,
+    ).terminalLifecyclePolicy,
     workflowId: stringValue(metadata.workflowId) ?? "",
     runtimeJobId: stringValue(metadata.runtimeJobId) ?? artifact.jobId,
     graphId: stringValue(metadata.graphId) ?? "",
@@ -716,6 +847,63 @@ function checkpointAcceptedForReplay(input: {
   return { accepted: reasonCodes.length === 0, reasonCodes };
 }
 
+export function evaluateBoundaryReplayChildEpochEligibility(input: {
+  nodeMetadata: Record<string, unknown>;
+  graphMetadata?: Record<string, unknown> | null;
+}): {
+  eligible: boolean;
+  boundaryEpoch: string | null;
+  currentBoundaryEpoch: string | null;
+  reasonCodes: string[];
+} {
+  const nodeEpoch =
+    stringValue(input.nodeMetadata.boundaryEpoch) ??
+    stringValue(input.nodeMetadata.replayBoundaryEpoch) ??
+    stringValue(input.nodeMetadata.boundaryReplayEpoch) ??
+    stringValue(input.nodeMetadata.childBoundaryEpoch);
+  const replayParentRef =
+    stringValue(input.nodeMetadata.replayParentNodeId) ??
+    stringValue(input.nodeMetadata.boundaryReplayParentNodeId) ??
+    stringValue(input.nodeMetadata.parentNodeId);
+  const replayChildSurface =
+    Boolean(nodeEpoch) ||
+    Boolean(replayParentRef) ||
+    input.nodeMetadata.boundaryReplayChild === true ||
+    input.nodeMetadata.replayChild === true ||
+    input.nodeMetadata.boundaryReplayChildSuperseded === true ||
+    input.nodeMetadata.replayChildSuperseded === true;
+  const currentEpoch =
+    stringValue(input.nodeMetadata.currentBoundaryEpoch) ??
+    stringValue(input.nodeMetadata.currentReplayBoundaryEpoch) ??
+    stringValue(input.graphMetadata?.currentBoundaryEpoch) ??
+    stringValue(input.graphMetadata?.boundaryEpoch) ??
+    stringValue(input.graphMetadata?.boundaryReplayEpoch);
+  const superseded =
+    input.nodeMetadata.replayChildSuperseded === true ||
+    input.nodeMetadata.boundaryReplayChildSuperseded === true ||
+    input.nodeMetadata.nodeEpochSuperseded === true;
+  const diagnosticOnly =
+    input.nodeMetadata.diagnosticOnly === true ||
+    input.nodeMetadata.boundaryReplayDiagnosticOnly === true ||
+    input.nodeMetadata.productionPathEquivalence === "diagnostic_only";
+  const reasonCodes = [
+    ...(superseded ? ["boundary_replay_child_superseded_not_executable"] : []),
+    ...(diagnosticOnly ? ["boundary_replay_diagnostic_child_not_executable"] : []),
+    ...(currentEpoch && replayChildSurface && !nodeEpoch
+      ? ["boundary_replay_child_epoch_missing"]
+      : []),
+    ...(nodeEpoch && currentEpoch && nodeEpoch !== currentEpoch
+      ? ["boundary_replay_child_epoch_mismatch"]
+      : []),
+  ];
+  return {
+    eligible: reasonCodes.length === 0,
+    boundaryEpoch: nodeEpoch,
+    currentBoundaryEpoch: currentEpoch,
+    reasonCodes,
+  };
+}
+
 function continuationActionForCheckpoint(
   checkpoint: BoundaryReplayCheckpoint | null,
   requestedStartBoundary: BoundaryReplayCheckpointKind,
@@ -816,6 +1004,13 @@ export class BoundaryReplayService {
         boundaryDefinition: boundaryReplayDefinitionFor(
           checkpoint.checkpointKind,
         ) as unknown as JsonValue,
+        productionPathEquivalence: checkpoint.productionPathEquivalence,
+        boundaryEpoch: checkpoint.boundaryEpoch,
+        supersedesNodeEpochRefs: checkpoint.supersedesNodeEpochRefs.slice(0, 40),
+        sourceCheckpointVersion: checkpoint.sourceCheckpointVersion,
+        allowedSyntheticArtifacts: checkpoint.allowedSyntheticArtifacts,
+        forbiddenSyntheticArtifacts: checkpoint.forbiddenSyntheticArtifacts,
+        terminalLifecyclePolicy: checkpoint.terminalLifecyclePolicy as unknown as JsonValue,
         replayStartPolicy: checkpoint.replayStartPolicy,
         replaySafetyStatus: checkpoint.replaySafetyStatus,
         replayFreshnessStatus: checkpoint.replayFreshnessStatus,
@@ -854,6 +1049,11 @@ export class BoundaryReplayService {
     currentCommitmentIds?: string[];
     openCommitmentIds?: string[];
     satisfiedCommitmentIds?: string[];
+    productionPathEquivalence?: BoundaryReplayCheckpoint["productionPathEquivalence"];
+    allowedSyntheticArtifacts?: string[];
+    forbiddenSyntheticArtifacts?: string[];
+    boundaryEpoch?: string | null;
+    supersedesNodeEpochRefs?: string[];
     replayContinuationMode?: BoundaryReplayCheckpoint["replayContinuationMode"];
     replayStartPolicy?: BoundaryReplayCheckpoint["replayStartPolicy"];
     replaySafetyStatus?: BoundaryReplayCheckpoint["replaySafetyStatus"];
@@ -886,6 +1086,11 @@ export class BoundaryReplayService {
         currentCommitmentIds: input.currentCommitmentIds,
         openCommitmentIds: input.openCommitmentIds,
         satisfiedCommitmentIds: input.satisfiedCommitmentIds,
+        productionPathEquivalence: input.productionPathEquivalence,
+        allowedSyntheticArtifacts: input.allowedSyntheticArtifacts,
+        forbiddenSyntheticArtifacts: input.forbiddenSyntheticArtifacts,
+        boundaryEpoch: input.boundaryEpoch,
+        supersedesNodeEpochRefs: input.supersedesNodeEpochRefs,
         replayContinuationMode:
           input.replayContinuationMode ?? definition.resumeCommand.defaultContinuationMode,
         replayStartPolicy:
@@ -905,6 +1110,155 @@ export class BoundaryReplayService {
         ],
       }),
     });
+  }
+
+  async supersedeStaleBoundaryChildren(input: {
+    graphId: string;
+    currentBoundaryEpoch: string;
+    parentNodeIds?: string[];
+    currentChildNodeIds?: string[];
+    reasonCodes?: string[];
+  }): Promise<{
+    artifactKind: "boundary_replay_stale_child_supersession";
+    graphId: string;
+    currentBoundaryEpoch: string;
+    inspectedChildCount: number;
+    supersededChildCount: number;
+    currentChildNodeIds: string[];
+    supersededChildNodeIds: string[];
+    reasonCodes: string[];
+    rawPromptStored: false;
+    rawResponseStored: false;
+    rawProviderLogStored: false;
+    rawToolLogStored: false;
+    rawDbRowsStored: false;
+  }> {
+    const snapshot = await this.options.runtimeWorkGraphs.readGraphSnapshot(input.graphId);
+    if (!snapshot) {
+      return {
+        artifactKind: "boundary_replay_stale_child_supersession",
+        graphId: input.graphId,
+        currentBoundaryEpoch: input.currentBoundaryEpoch,
+        inspectedChildCount: 0,
+        supersededChildCount: 0,
+        currentChildNodeIds: [],
+        supersededChildNodeIds: [],
+        reasonCodes: ["boundary_replay_stale_child_supersession_graph_missing"],
+        rawPromptStored: false,
+        rawResponseStored: false,
+        rawProviderLogStored: false,
+        rawToolLogStored: false,
+        rawDbRowsStored: false,
+      };
+    }
+    const parentSet = new Set(input.parentNodeIds ?? []);
+    const currentChildSet = new Set(input.currentChildNodeIds ?? []);
+    const candidates = snapshot.nodes.filter((node) => {
+      const metadata = asRecord(node.metadata);
+      const nodeEpoch =
+        stringValue(metadata.boundaryEpoch) ??
+        stringValue(metadata.replayBoundaryEpoch) ??
+        stringValue(metadata.boundaryReplayEpoch) ??
+        stringValue(metadata.childBoundaryEpoch);
+      const parentRef =
+        stringValue(metadata.replayParentNodeId) ??
+        stringValue(metadata.boundaryReplayParentNodeId) ??
+        stringValue(metadata.parentNodeId);
+      const replayChildSurface =
+        Boolean(nodeEpoch) ||
+        Boolean(parentRef) ||
+        metadata.boundaryReplayChild === true ||
+        metadata.replayChild === true;
+      if (!replayChildSurface || nodeEpoch === input.currentBoundaryEpoch) {
+        return false;
+      }
+      if (currentChildSet.has(node.nodeId)) {
+        return false;
+      }
+      if (parentSet.size === 0) {
+        return true;
+      }
+      return parentRef ? parentSet.has(parentRef) : false;
+    });
+    const supersededChildNodeIds: string[] = [];
+    for (const node of candidates) {
+      const nodeStatus =
+        node.nodeStatus === "planned" || node.nodeStatus === "running" || node.nodeStatus === "needs_review"
+          ? "skipped"
+          : node.nodeStatus;
+      const metadata = asRecord(node.metadata);
+      await this.options.runtimeWorkGraphs.updateNodeStatus({
+        nodeId: node.nodeId,
+        nodeStatus,
+        metadataPatch: {
+          ...metadata,
+          boundaryReplayChildSuperseded: true,
+          replayChildSuperseded: true,
+          supersededByBoundaryEpoch: input.currentBoundaryEpoch,
+          currentBoundaryEpoch: input.currentBoundaryEpoch,
+          boundaryReplayFrontierEligible: false,
+          boundaryReplaySupersededReasonCodes: unique(
+            [
+              "boundary_replay_stale_child_superseded",
+              ...(input.reasonCodes ?? []),
+            ],
+            20,
+            180,
+          ),
+          rawPromptStored: false,
+          rawResponseStored: false,
+          rawProviderLogStored: false,
+        },
+      });
+      supersededChildNodeIds.push(node.nodeId);
+    }
+    const graphMetadata = asRecord(snapshot.graph.metadata);
+    await this.options.runtimeWorkGraphs.updateGraphStatus({
+      graphId: input.graphId,
+      graphStatus: snapshot.graph.graphStatus,
+      finalCloseoutRef: snapshot.graph.finalCloseoutRef,
+      metadata: {
+        ...graphMetadata,
+        currentBoundaryEpoch: input.currentBoundaryEpoch,
+        boundaryReplayCurrentEpoch: input.currentBoundaryEpoch,
+        boundaryReplaySupersededChildCount: supersededChildNodeIds.length,
+        boundaryReplaySupersededChildNodeIds: supersededChildNodeIds.slice(0, 80),
+        boundaryReplayCurrentChildNodeIds: [...currentChildSet].slice(0, 80),
+        boundaryReplayReasonCodes: unique(
+          ["boundary_replay_stale_child_supersession_evaluated", ...(input.reasonCodes ?? [])],
+          40,
+          180,
+        ),
+        rawPromptStored: false,
+        rawResponseStored: false,
+        rawProviderLogStored: false,
+      },
+    });
+    return {
+      artifactKind: "boundary_replay_stale_child_supersession",
+      graphId: input.graphId,
+      currentBoundaryEpoch: input.currentBoundaryEpoch,
+      inspectedChildCount: candidates.length,
+      supersededChildCount: supersededChildNodeIds.length,
+      currentChildNodeIds: [...currentChildSet].slice(0, 80),
+      supersededChildNodeIds,
+      reasonCodes: unique(
+        [
+          "boundary_replay_stale_child_supersession_evaluated",
+          ...(supersededChildNodeIds.length > 0
+            ? ["boundary_replay_stale_children_retired"]
+            : ["boundary_replay_no_stale_children_found"]),
+          ...(input.reasonCodes ?? []),
+        ],
+        40,
+        180,
+      ),
+      rawPromptStored: false,
+      rawResponseStored: false,
+      rawProviderLogStored: false,
+      rawToolLogStored: false,
+      rawDbRowsStored: false,
+    };
   }
 
   async listCheckpoints(input: {
@@ -989,8 +1343,12 @@ export class BoundaryReplayService {
     });
     const invalidReasonCodes = [
       ...new Set(
-        relevant.flatMap((item) =>
-          checkpointAcceptedForReplay({
+        requiredUpstreamCheckpointKinds.flatMap((kind) => {
+          const item = latestByKind.get(kind);
+          if (!item) {
+            return [];
+          }
+          return checkpointAcceptedForReplay({
             checkpoint: item.checkpoint,
             runtimeJobId: input.runtimeJobId,
             graphId: input.graphId,
@@ -1000,8 +1358,8 @@ export class BoundaryReplayService {
             repoRevision: input.repoRevision,
             worktreeFingerprint: input.worktreeFingerprint,
             authorityPolicyRef: input.authorityPolicyRef,
-          }).reasonCodes.map((code) => `${item.checkpoint.checkpointKind}:${code}`),
-        ),
+          }).reasonCodes.map((code) => `${item.checkpoint.checkpointKind}:${code}`);
+        }),
       ),
     ].slice(0, 60);
     const diagnosticBoundaryBlocked =
@@ -1018,6 +1376,11 @@ export class BoundaryReplayService {
       status === "accepted" && requested ? requested.artifactRef : null;
     const exactContinuationMode =
       status === "accepted" && requested ? requested.checkpoint.replayContinuationMode : null;
+    const productionPathEquivalence = boundaryDefinition.productionPathEquivalence;
+    const proofClosureAllowed =
+      status === "accepted" &&
+      productionPathEquivalence === "production_equivalent" &&
+      !boundaryDefinition.diagnosticOnly;
     const reasonCodes = [
       "boundary_replay_plan_compiled",
       status === "accepted"
@@ -1027,6 +1390,9 @@ export class BoundaryReplayService {
           : "boundary_replay_requested_checkpoint_missing",
       ...(diagnosticBoundaryBlocked ? ["boundary_replay_requested_boundary_diagnostic_only"] : []),
       ...missingUpstreamKinds.map((kind) => `boundary_replay_upstream_checkpoint_missing:${kind}`),
+      ...(invalidReasonCodes.length > 0
+        ? ["boundary_replay_invalid_latest_checkpoint_blocks_proof_closure"]
+        : []),
       ...invalidReasonCodes.slice(0, 12),
     ];
     return {
@@ -1043,6 +1409,21 @@ export class BoundaryReplayService {
       graphId: input.graphId,
       workflowId: input.workflowId,
       requestedStartBoundary: input.requestedStartBoundary,
+      replayBoundaryId: replayBoundaryId({
+        runtimeJobId: input.runtimeJobId,
+        graphId: input.graphId,
+        checkpointKind: input.requestedStartBoundary,
+      }),
+      sourceRuntimeJobId: input.runtimeJobId,
+      sourceGraphId: input.graphId,
+      productionPathEquivalence,
+      sourceCheckpointVersion: boundaryDefinition.sourceCheckpointVersion,
+      allowedSyntheticArtifacts: boundaryDefinition.allowedSyntheticArtifacts,
+      forbiddenSyntheticArtifacts: boundaryDefinition.forbiddenSyntheticArtifacts,
+      boundaryEpoch: requested?.checkpoint.boundaryEpoch ?? null,
+      supersedesNodeEpochRefs: requested?.checkpoint.supersedesNodeEpochRefs ?? [],
+      terminalLifecyclePolicy: boundaryDefinition.terminalLifecyclePolicy,
+      proofClosureAllowed,
       status,
       registryVersion: BOUNDARY_REPLAY_REGISTRY_VERSION,
       boundaryDefinition,
@@ -1139,6 +1520,13 @@ export class BoundaryReplayService {
         requestedStartBoundary: input.plan.requestedStartBoundary,
         status: input.plan.status,
         registryVersion: input.plan.registryVersion,
+        replayBoundaryId: input.plan.replayBoundaryId,
+        sourceRuntimeJobId: input.plan.sourceRuntimeJobId,
+        sourceGraphId: input.plan.sourceGraphId,
+        productionPathEquivalence: input.plan.productionPathEquivalence,
+        boundaryEpoch: input.plan.boundaryEpoch,
+        supersedesNodeEpochRefs: input.plan.supersedesNodeEpochRefs.slice(0, 40),
+        proofClosureAllowed: input.plan.proofClosureAllowed,
         diagnosticOnly: input.plan.diagnosticOnly,
         allowedNextTransitions: input.plan.allowedNextTransitions,
         terminalBlockerClasses: input.plan.terminalBlockerClasses,
@@ -1176,6 +1564,10 @@ export class BoundaryReplayService {
       graphId: input.plan.graphId,
       workflowId: input.plan.workflowId,
       requestedStartBoundary: input.plan.requestedStartBoundary,
+      replayBoundaryId: input.plan.replayBoundaryId,
+      productionPathEquivalence: input.plan.productionPathEquivalence,
+      boundaryEpoch: input.plan.boundaryEpoch,
+      proofClosureAllowed: input.plan.proofClosureAllowed,
       status: input.plan.status,
       registryVersion: input.plan.registryVersion,
       diagnosticOnly: input.plan.diagnosticOnly,
@@ -1233,6 +1625,10 @@ export class BoundaryReplayService {
         requestedStartBoundary: input.continuation.requestedStartBoundary,
         status: input.continuation.status,
         registryVersion: input.continuation.registryVersion,
+        replayBoundaryId: input.continuation.replayBoundaryId,
+        productionPathEquivalence: input.continuation.productionPathEquivalence,
+        boundaryEpoch: input.continuation.boundaryEpoch,
+        proofClosureAllowed: input.continuation.proofClosureAllowed,
         diagnosticOnly: input.continuation.diagnosticOnly,
         runtimeEntryPoint: input.continuation.runtimeEntryPoint,
         schedulerEntryPoint: input.continuation.schedulerEntryPoint,

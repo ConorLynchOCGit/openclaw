@@ -47,6 +47,7 @@ export type AttachRuntimeJobJsonPayloadArtifactInput = {
   jobId: string;
   artifactType: string;
   uri: string;
+  payloadRef?: string;
   contentType?: string;
   body: JsonValue;
   boundedSummary?: string | null;

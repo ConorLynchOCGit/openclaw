@@ -121,15 +121,6 @@ const diagnosticAfterProofItems = [
       "docs/projects/execution-platform/specs/pre-product-spec-proof-stabilization-plan.md#mission-ledger-stability-diagnostics",
     priorityClass: "P1",
   },
-  {
-    id: "openclaw-convergence.staged-mission-ledger-obligation-candidate-compiler",
-    title: "Staged Mission Ledger Obligation Candidate Compiler",
-    description:
-      "Retain the staged Mission Ledger compiler as diagnostic/proof-only infrastructure behind explicit flags; it is not the production path for the next Product/Spec proof.",
-    specRef:
-      "docs/projects/execution-platform/specs/staged-mission-ledger-obligation-candidate-compiler.md",
-    priorityClass: "P2",
-  },
 ];
 
 function sha256(value) {

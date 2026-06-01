@@ -86,7 +86,7 @@ Every WorkIntent must carry explicit model-authored `executionIntent`.
 Initial values:
 
 - `source_grounding`
-- `context_supply`
+- `resource_fulfillment`
 - `resource_materialization`
 - `source_edit`
 - `validation`

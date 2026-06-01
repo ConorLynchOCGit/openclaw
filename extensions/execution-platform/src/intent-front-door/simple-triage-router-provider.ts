@@ -8,7 +8,10 @@ import {
   type OpenRouterRetryEvidence,
   type OpenRouterRetryPolicy,
 } from "../model-routing/openrouter-retry-policy.ts";
-import type { LiveRouterModelPolicyDecision } from "./live-router-model-policy.ts";
+import type {
+  LiveRouterModelPolicyDecision,
+  LiveRouterReasoningEffort,
+} from "./live-router-model-policy.ts";
 import type { ProtocolPreGateResult, ProtocolPreGateSourceRoute } from "./protocol-pre-gate.ts";
 import {
   createSimpleTriageRouterOutput,
@@ -83,7 +86,7 @@ export type SimpleTriageModelClientRequest = {
   protocolPreGateKind: string | null;
   sourceRoute: ProtocolPreGateSourceRoute;
   schemaVersion: typeof SIMPLE_TRIAGE_ROUTER_SCHEMA_VERSION;
-  reasoningEffort?: "low" | "medium" | "high" | null;
+  reasoningEffort?: LiveRouterReasoningEffort | null;
   speedPreference?: "throughput" | "latency" | null;
   maxTokens?: number | null;
   rawPromptStored: false;

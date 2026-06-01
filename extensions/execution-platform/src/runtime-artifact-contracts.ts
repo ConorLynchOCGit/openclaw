@@ -99,16 +99,60 @@ const BODY_KEY_HINTS = new Set([
   "body",
   "payloadBody",
   "packetBody",
-  "commitmentWorkPacket",
-  "commitmentWorkPackets",
   "contextScoutExecutionPacket",
-  "contextHandoffPacket",
+  "resourceFrontierRequest",
+  "contextShardManifest",
+  "contextShardHandoff",
+  "contextShardHandoffReview",
+  "contextMergePacket",
+  "contextSingleUnitBlocker",
+  "contextScopeRevisionRequest",
+  "contextScopeRevisionProposal",
+  "contextScopeRevisionDecision",
+  "contextScoutFieldRepairRequest",
+  "contextScopeRevisionRealModelProof",
+  "contextRepairRequirement",
+  "resourceRequirementPacket",
+  "resourceHandoffPacket",
+  "workIntentContextSatisfactionState",
+  "resourceFrontierShardRealModelProof",
   "contextBrokerRequest",
+  "resourceObjectiveFocus",
+  "resourceObjectiveFocusLegalRefUniverse",
+  "legalRefUniverse",
+  "legalRefs",
+  "selectedSemanticQuestions",
+  "nodeResourceDemandSession",
+  "nodeResourceDemandRequest",
+  "nodeResourceDemandFulfillment",
+  "nodeResourceDemandBlocker",
+  "contextScoutSpecialistRequest",
+  "contextScoutSpecialistSubturnRequest",
+  "contextScoutSpecialistHandoff",
+  "contextScoutSpecialistResult",
+  "nodeResourceLedger",
+  "nodeResourceLedgerEntry",
+  "ledgerEntries",
+  "ledgerEntryBodies",
+  "fileWindowBodies",
+  "contextBodies",
+  "providerResponseBodies",
+  "providerDiagnosticBodies",
+  "providerResponseShapeDiagnostic",
+  "heapPhaseSnapshot",
   "implementationContextPacket",
   "implementationTaskPacket",
+  "resourceSelectionPacket",
+  "resourceSelectionHandleManifest",
+  "resourceSelectionFieldRepairRequest",
+  "domainResourceSelectionPacket",
   "codingResourcePacket",
   "nodeExecutionPacket",
   "nodeReadinessState",
+  "actionReviewArtifact",
+  "workerEditReviewArtifact",
+  "reviewDecisionArtifact",
+  "boundedDiffPayload",
   "runtimeGraphPatch",
   "schedulerSnapshot",
   "runtimeResult",
@@ -116,80 +160,238 @@ const BODY_KEY_HINTS = new Set([
   "graphEdges",
   "targetFileSnapshots",
   "fileSnapshots",
+  "snapshots",
+  "boundedSnapshots",
+  "snapshotBodies",
+  "boundedContent",
+  "lineNumberedContent",
   "splitTasks",
   "taskPackets",
   "missionLedgerStabilityDiagnosticRun",
   "missionLedgerStabilityDiagnosticPair",
   "missionLedgerStabilityVerdict",
-  "stagedMissionLedgerObjectiveConstraints",
-  "stagedMissionLedgerObligationCandidateSet",
-  "stagedMissionLedgerCompiledCandidateSet",
-  "stagedMissionLedgerReviewPlan",
-  "stagedMissionLedgerCanonicalCommitments",
-  "stagedMissionLedgerAcceptance",
-  "packetSemanticBrief",
-  "packetFieldCompletion",
-  "commitmentPacketFanoutDiagnostics",
   "fastModelNoContentDiagnostic",
-  "failedPacketReplayResult",
+  "architectureResidueInventoryReport",
+  "architectureResidueSourceInventory",
+  "architectureResidueModelAudit",
+  "architectureResidueModelAuditBody",
+  "survivorRefs",
+  "blockedSurvivorRefs",
 ]);
 
 const BODY_ARTIFACT_CONTRACTS: RuntimeArtifactContract[] = [
   payloadContract({
-    artifactType: "execution_platform.commitment_work_packet",
-    contractId: "runtime-artifact.commitment-work-packet.v1",
-    domain: "packet",
-    bodySchemaRef: "CommitmentWorkPacketSchema",
-    legacyBodyKeys: ["commitmentWorkPacket"],
-  }),
-  payloadContract({
-    artifactType: "execution_platform.commitment_work_packet.pre_review",
-    contractId: "runtime-artifact.commitment-work-packet-pre-review.v1",
-    domain: "packet",
-    bodySchemaRef: "CommitmentWorkPacketSchema",
-    legacyBodyKeys: ["commitmentWorkPacket"],
-  }),
-  payloadContract({
-    artifactType: "execution_platform.commitment_work_packet.post_review",
-    contractId: "runtime-artifact.commitment-work-packet-post-review.v1",
-    domain: "packet",
-    bodySchemaRef: "CommitmentWorkPacketSchema",
-    legacyBodyKeys: ["commitmentWorkPacket"],
-  }),
-  payloadContract({
-    artifactType: "execution_platform.commitment_work_packet.post_repair",
-    contractId: "runtime-artifact.commitment-work-packet-post-repair.v1",
-    domain: "packet",
-    bodySchemaRef: "CommitmentWorkPacketSchema",
-    legacyBodyKeys: ["commitmentWorkPacket"],
-  }),
-  payloadContract({
-    artifactType: "execution_platform.commitment_work_packet.replay",
-    contractId: "runtime-artifact.commitment-work-packet-replay.v1",
-    domain: "packet",
-    bodySchemaRef: "CommitmentWorkPacketSchema",
-    legacyBodyKeys: ["commitmentWorkPacket"],
-  }),
-  payloadContract({
-    artifactType: "execution_platform.context_scout_execution_packet",
+    artifactType: "execution_platform.resource_scout_execution_packet",
     contractId: "runtime-artifact.context-scout-execution-packet.v1",
     domain: "context",
     bodySchemaRef: "ContextScoutExecutionPacket",
     legacyBodyKeys: ["contextScoutExecutionPacket", "packetBody", "body"],
   }),
   payloadContract({
-    artifactType: "execution_platform.context_handoff_packet",
-    contractId: "runtime-artifact.context-handoff-packet.v1",
+    artifactType: "execution_platform.resource_frontier.request",
+    contractId: "runtime-artifact.context-frontier-request.v1",
     domain: "context",
-    bodySchemaRef: "ContextHandoffPacketSchema",
-    legacyBodyKeys: ["contextHandoffPacket", "packetBody", "body"],
+    bodySchemaRef: "ResourceFrontierRequest",
+    legacyBodyKeys: ["resourceFrontierRequest", "packetBody", "body"],
   }),
   payloadContract({
-    artifactType: "execution_platform.context_broker.request",
+    artifactType: "execution_platform.resource_frontier.shard_manifest",
+    contractId: "runtime-artifact.context-frontier-shard-manifest.v1",
+    domain: "context",
+    bodySchemaRef: "ContextShardManifest",
+    legacyBodyKeys: ["contextShardManifest", "packetBody", "body"],
+  }),
+  payloadContract({
+    artifactType: "execution_platform.resource_frontier.shard_handoff",
+    contractId: "runtime-artifact.context-frontier-shard-handoff.v1",
+    domain: "context",
+    bodySchemaRef: "ContextShardHandoff",
+    legacyBodyKeys: ["contextShardHandoff", "packetBody", "body"],
+  }),
+  payloadContract({
+    artifactType: "execution_platform.resource_frontier.shard_handoff_review",
+    contractId: "runtime-artifact.context-frontier-shard-handoff-review.v1",
+    domain: "context",
+    bodySchemaRef: "ContextShardHandoffReview",
+    legacyBodyKeys: ["contextShardHandoffReview", "reviewBody", "body"],
+  }),
+  payloadContract({
+    artifactType: "execution_platform.resource_frontier.merge_packet",
+    contractId: "runtime-artifact.context-frontier-merge-packet.v1",
+    domain: "context",
+    bodySchemaRef: "ContextMergePacket",
+    legacyBodyKeys: ["contextMergePacket", "packetBody", "body"],
+  }),
+  payloadContract({
+    artifactType: "execution_platform.resource_frontier.single_unit_blocker",
+    contractId: "runtime-artifact.context-frontier-single-unit-blocker.v1",
+    domain: "context",
+    bodySchemaRef: "ContextScoutSingleUnitOverProfileBlocker",
+    legacyBodyKeys: ["contextSingleUnitBlocker", "blocker", "body"],
+  }),
+  payloadContract({
+    artifactType: "execution_platform.resource_scope_revision.request",
+    contractId: "runtime-artifact.context-scope-revision-request.v1",
+    domain: "context",
+    bodySchemaRef: "ContextScopeRevisionRequest",
+    legacyBodyKeys: ["contextScopeRevisionRequest", "packetBody", "body"],
+  }),
+  payloadContract({
+    artifactType: "execution_platform.resource_scope_revision.proposal",
+    contractId: "runtime-artifact.context-scope-revision-proposal.v1",
+    domain: "context",
+    bodySchemaRef: "ContextScopeRevisionProposal",
+    legacyBodyKeys: ["contextScopeRevisionProposal", "packetBody", "body"],
+  }),
+  payloadContract({
+    artifactType: "execution_platform.resource_scope_revision.decision",
+    contractId: "runtime-artifact.context-scope-revision-decision.v1",
+    domain: "context",
+    bodySchemaRef: "ContextScopeRevisionDecision",
+    legacyBodyKeys: ["contextScopeRevisionDecision", "packetBody", "body"],
+  }),
+  payloadContract({
+    artifactType: "execution_platform.resource.scout.field_repair_request",
+    contractId: "runtime-artifact.context-scout-field-repair-request.v1",
+    domain: "context",
+    bodySchemaRef: "ContextScoutFieldRepairRequest",
+    legacyBodyKeys: ["contextScoutFieldRepairRequest", "repairRequest", "body"],
+  }),
+  payloadContract({
+    artifactType: "execution_platform.resource_scope_revision_real_model_proof",
+    contractId: "runtime-artifact.context-scope-revision-real-model-proof.v1",
+    domain: "context",
+    bodySchemaRef: "ContextScopeRevisionRealModelProof",
+    legacyBodyKeys: ["contextScopeRevisionRealModelProof", "proofBody", "body"],
+  }),
+  payloadContract({
+    artifactType: "execution_platform.resource_requirement_packet",
+    contractId: "runtime-artifact.resource-requirement-packet.v1",
+    domain: "context",
+    bodySchemaRef: "ResourceRequirementPacket",
+    legacyBodyKeys: ["resourceRequirementPacket", "packetBody", "body"],
+  }),
+  payloadContract({
+    artifactType: "execution_platform.resource_repair_requirement",
+    contractId: "runtime-artifact.context-repair-requirement.v1",
+    domain: "context",
+    bodySchemaRef: "ContextRepairRequirementPacket",
+    legacyBodyKeys: ["contextRepairRequirement", "packetBody", "body"],
+  }),
+  payloadContract({
+    artifactType: "execution_platform.resource_handoff_packet",
+    contractId: "runtime-artifact.resource-handoff-packet.v1",
+    domain: "context",
+    bodySchemaRef: "ResourceHandoffPacketSchema",
+    legacyBodyKeys: ["resourceHandoffPacket", "packetBody", "body"],
+  }),
+  payloadContract({
+    artifactType: "execution_platform.resource_broker.request",
     contractId: "runtime-artifact.context-broker-request.v1",
     domain: "context",
     bodySchemaRef: "ContextBrokerRequestSchema",
     legacyBodyKeys: ["contextBrokerRequest", "body"],
+  }),
+  payloadContract({
+    artifactType: "execution_platform.resource_objective_focus",
+    contractId: "runtime-artifact.resource-objective-focus.v1",
+    domain: "context",
+    bodySchemaRef: "ResourceObjectiveFocus",
+    legacyBodyKeys: ["resourceObjectiveFocus", "focusBody", "body"],
+  }),
+  payloadContract({
+    artifactType: "execution_platform.resource_objective_focus.legal_ref_universe",
+    contractId: "runtime-artifact.resource-objective-focus-legal-ref-universe.v1",
+    domain: "context",
+    bodySchemaRef: "ResourceObjectiveFocusLegalRefUniverse",
+    legacyBodyKeys: [
+      "resourceObjectiveFocusLegalRefUniverse",
+      "legalRefUniverse",
+      "legalRefs",
+      "body",
+    ],
+  }),
+  payloadContract({
+    artifactType: "execution_platform.node_resource_demand.session",
+    contractId: "runtime-artifact.node-resource-demand-session.v1",
+    domain: "context",
+    bodySchemaRef: "NodeResourceDemandSession",
+    legacyBodyKeys: ["nodeResourceDemandSession", "sessionBody", "body"],
+  }),
+  payloadContract({
+    artifactType: "execution_platform.node_resource_demand.request",
+    contractId: "runtime-artifact.node-resource-demand-request.v1",
+    domain: "context",
+    bodySchemaRef: "NodeResourceDemandRequest",
+    legacyBodyKeys: ["nodeResourceDemandRequest", "requestBody", "body"],
+  }),
+  payloadContract({
+    artifactType: "execution_platform.node_resource_demand.fulfillment",
+    contractId: "runtime-artifact.node-resource-demand-fulfillment.v1",
+    domain: "context",
+    bodySchemaRef: "NodeResourceDemandFulfillment",
+    legacyBodyKeys: ["nodeResourceDemandFulfillment", "fulfillmentBody", "body"],
+  }),
+  payloadContract({
+    artifactType: "execution_platform.node_resource_demand.blocker",
+    contractId: "runtime-artifact.node-resource-demand-blocker.v1",
+    domain: "context",
+    bodySchemaRef: "NodeResourceDemandBlocker",
+    legacyBodyKeys: ["nodeResourceDemandBlocker", "blockerBody", "body"],
+  }),
+  payloadContract({
+    artifactType: "execution_platform.resource.scout.specialist_subturn_request",
+    contractId: "runtime-artifact.context-scout-specialist-subturn-request.v1",
+    domain: "context",
+    bodySchemaRef: "ContextScoutSpecialistSubturnRequest",
+    legacyBodyKeys: [
+      "contextScoutSpecialistRequest",
+      "contextScoutSpecialistSubturnRequest",
+      "requestBody",
+      "body",
+    ],
+  }),
+  payloadContract({
+    artifactType: "execution_platform.resource.scout.specialist_handoff",
+    contractId: "runtime-artifact.context-scout-specialist-handoff.v1",
+    domain: "context",
+    bodySchemaRef: "ContextScoutSpecialistHandoff",
+    legacyBodyKeys: ["contextScoutSpecialistHandoff", "handoffBody", "body"],
+  }),
+  payloadContract({
+    artifactType: "execution_platform.resource.scout.specialist_result",
+    contractId: "runtime-artifact.context-scout-specialist-result.v1",
+    domain: "context",
+    bodySchemaRef: "ContextScoutSpecialistResult",
+    legacyBodyKeys: ["contextScoutSpecialistResult", "resultBody", "body"],
+  }),
+  payloadContract({
+    artifactType: "execution_platform.node_resource_ledger",
+    contractId: "runtime-artifact.node-resource-ledger.v1",
+    domain: "context",
+    bodySchemaRef: "NodeResourceLedger",
+    legacyBodyKeys: ["nodeResourceLedger", "ledgerBody", "body"],
+  }),
+  payloadContract({
+    artifactType: "execution_platform.node_resource_ledger.entry",
+    contractId: "runtime-artifact.node-resource-ledger-entry.v1",
+    domain: "context",
+    bodySchemaRef: "NodeResourceLedgerEntry",
+    legacyBodyKeys: ["nodeResourceLedgerEntry", "ledgerEntryBody", "body"],
+  }),
+  payloadContract({
+    artifactType: "execution_platform.work_intent.context_satisfaction_state",
+    contractId: "runtime-artifact.work-intent-context-satisfaction-state.v1",
+    domain: "context",
+    bodySchemaRef: "WorkIntentContextSatisfactionState",
+    legacyBodyKeys: ["workIntentContextSatisfactionState", "contextSatisfactionState", "body"],
+  }),
+  payloadContract({
+    artifactType: "execution_platform.resource_frontier_shard_real_model_proof",
+    contractId: "runtime-artifact.context-frontier-shard-real-model-proof.v1",
+    domain: "diagnostic",
+    bodySchemaRef: "ResourceFrontierShardRealModelProof",
+    legacyBodyKeys: ["resourceFrontierShardRealModelProof", "proof", "body"],
   }),
   payloadContract({
     artifactType: "execution_platform.implementation_context_packet",
@@ -197,6 +399,62 @@ const BODY_ARTIFACT_CONTRACTS: RuntimeArtifactContract[] = [
     domain: "resource",
     bodySchemaRef: "ImplementationContextPacket",
     legacyBodyKeys: ["implementationContextPacket", "packetBody", "body"],
+  }),
+  payloadContract({
+    artifactType: "execution_platform.resource_selection_packet",
+    contractId: "runtime-artifact.resource-selection-packet.v1",
+    domain: "resource",
+    bodySchemaRef: "ResourceSelectionPacket",
+    legacyBodyKeys: ["resourceSelectionPacket", "packetBody", "body"],
+  }),
+  payloadContract({
+    artifactType: "execution_platform.resource_selection_handle_manifest",
+    contractId: "runtime-artifact.resource-selection-handle-manifest.v1",
+    domain: "resource",
+    bodySchemaRef: "ResourceSelectionHandleManifest",
+    legacyBodyKeys: ["resourceSelectionHandleManifest", "packetBody", "body"],
+  }),
+  payloadContract({
+    artifactType: "execution_platform.resource_selection_field_repair_request",
+    contractId: "runtime-artifact.resource-selection-field-repair-request.v1",
+    domain: "resource",
+    bodySchemaRef: "ResourceSelectionFieldRepairRequest",
+    legacyBodyKeys: ["resourceSelectionFieldRepairRequest", "packetBody", "body"],
+  }),
+  payloadContract({
+    artifactType: "execution_platform.domain_resource_selection_packet",
+    contractId: "runtime-artifact.domain-resource-selection-packet.v1",
+    domain: "resource",
+    bodySchemaRef: "DomainResourceSelectionPacket",
+    legacyBodyKeys: ["domainResourceSelectionPacket", "packetBody", "body"],
+  }),
+  payloadContract({
+    artifactType: "execution_platform.domain_resource_selection_request",
+    contractId: "runtime-artifact.domain-resource-selection-request.v1",
+    domain: "resource",
+    bodySchemaRef: "DomainResourceSelectionRequest",
+    legacyBodyKeys: ["domainResourceSelectionRequest", "packetBody", "body"],
+  }),
+  payloadContract({
+    artifactType: "execution_platform.domain_resource_selection_proposal",
+    contractId: "runtime-artifact.domain-resource-selection-proposal.v1",
+    domain: "resource",
+    bodySchemaRef: "DomainResourceSelectionProposal",
+    legacyBodyKeys: ["domainResourceSelectionProposal", "packetBody", "body"],
+  }),
+  payloadContract({
+    artifactType: "execution_platform.domain_resource_selection_decision",
+    contractId: "runtime-artifact.domain-resource-selection-decision.v1",
+    domain: "resource",
+    bodySchemaRef: "DomainResourceSelectionDecision",
+    legacyBodyKeys: ["domainResourceSelectionDecision", "packetBody", "body"],
+  }),
+  payloadContract({
+    artifactType: "execution_platform.domain_resource_selection_real_model_proof",
+    contractId: "runtime-artifact.domain-resource-selection-real-model-proof.v1",
+    domain: "diagnostic",
+    bodySchemaRef: "DomainResourceSelectionRealModelProof",
+    legacyBodyKeys: ["domainResourceSelectionRealModelProof", "proof", "body"],
   }),
   payloadContract({
     artifactType: "execution_platform.implementation_resource_materialization_result",
@@ -224,6 +482,13 @@ const BODY_ARTIFACT_CONTRACTS: RuntimeArtifactContract[] = [
     legacyBodyKeys: ["codingResourcePacket", "resourcePacket", "body"],
   }),
   payloadContract({
+    artifactType: "execution_platform.node_execution_contract",
+    contractId: "runtime-artifact.node-execution-contract.v1",
+    domain: "worker",
+    bodySchemaRef: "NodeExecutionContract",
+    legacyBodyKeys: ["nodeExecutionContract", "executionContract", "contractBody", "body"],
+  }),
+  payloadContract({
     artifactType: "execution_platform.node_execution_packet",
     contractId: "runtime-artifact.node-execution-packet.v1",
     domain: "worker",
@@ -236,6 +501,20 @@ const BODY_ARTIFACT_CONTRACTS: RuntimeArtifactContract[] = [
     domain: "worker",
     bodySchemaRef: "NodeReadinessState",
     legacyBodyKeys: ["nodeReadinessState", "readinessState", "body"],
+  }),
+  payloadContract({
+    artifactType: "execution_platform.action_review_artifact",
+    contractId: "runtime-artifact.action-review-artifact.v1",
+    domain: "worker",
+    bodySchemaRef: "ActionReviewArtifact",
+    legacyBodyKeys: ["actionReviewArtifact", "reviewArtifact", "body"],
+  }),
+  payloadContract({
+    artifactType: "execution_platform.worker_edit_review_artifact",
+    contractId: "runtime-artifact.worker-edit-review-artifact.v1",
+    domain: "worker",
+    bodySchemaRef: "WorkerEditReviewArtifact",
+    legacyBodyKeys: ["workerEditReviewArtifact", "actionReviewArtifact", "reviewArtifact", "body"],
   }),
   payloadContract({
     artifactType: "execution.generic_orchestration_runtime_result",
@@ -266,76 +545,6 @@ const BODY_ARTIFACT_CONTRACTS: RuntimeArtifactContract[] = [
     legacyBodyKeys: ["missionLedgerStabilityVerdict", "body"],
   }),
   payloadContract({
-    artifactType: "execution_platform.staged_mission_ledger.objective_constraints",
-    contractId: "runtime-artifact.staged-mission-ledger-objective-constraints.v1",
-    domain: "mission",
-    bodySchemaRef: "StagedObjectiveConstraintsSchema",
-    legacyBodyKeys: ["stagedMissionLedgerObjectiveConstraints", "body"],
-  }),
-  payloadContract({
-    artifactType: "execution_platform.staged_mission_ledger.obligation_candidate_set",
-    contractId: "runtime-artifact.staged-mission-ledger-obligation-candidate-set.v1",
-    domain: "mission",
-    bodySchemaRef: "ObligationCandidateSetSchema",
-    legacyBodyKeys: ["stagedMissionLedgerObligationCandidateSet", "body"],
-  }),
-  payloadContract({
-    artifactType: "execution_platform.staged_mission_ledger.compiled_candidate_set",
-    contractId: "runtime-artifact.staged-mission-ledger-compiled-candidate-set.v1",
-    domain: "mission",
-    bodySchemaRef: "CompiledObligationCandidateSetSchema",
-    legacyBodyKeys: ["stagedMissionLedgerCompiledCandidateSet", "body"],
-  }),
-  payloadContract({
-    artifactType: "execution_platform.staged_mission_ledger.review_plan",
-    contractId: "runtime-artifact.staged-mission-ledger-review-plan.v1",
-    domain: "mission",
-    bodySchemaRef: "ObligationReviewPlanSchema",
-    legacyBodyKeys: ["stagedMissionLedgerReviewPlan", "body"],
-  }),
-  payloadContract({
-    artifactType: "execution_platform.staged_mission_ledger.canonical_commitments",
-    contractId: "runtime-artifact.staged-mission-ledger-canonical-commitments.v1",
-    domain: "mission",
-    bodySchemaRef: "CanonicalMissionCommitmentsSchema",
-    legacyBodyKeys: ["stagedMissionLedgerCanonicalCommitments", "body"],
-  }),
-  payloadContract({
-    artifactType: "execution_platform.staged_mission_ledger.acceptance",
-    contractId: "runtime-artifact.staged-mission-ledger-acceptance.v1",
-    domain: "mission",
-    bodySchemaRef: "StagedMissionLedgerAcceptanceSchema",
-    legacyBodyKeys: ["stagedMissionLedgerAcceptance", "body"],
-  }),
-  payloadContract({
-    artifactType: "execution_platform.staged_mission_ledger.stage_repair_diagnostic",
-    contractId: "runtime-artifact.staged-mission-ledger-stage-repair-diagnostic.v1",
-    domain: "mission",
-    bodySchemaRef: "StagedMissionLedgerStageRepairDiagnosticSchema",
-    legacyBodyKeys: ["stagedMissionLedgerStageRepairDiagnostic", "body"],
-  }),
-  payloadContract({
-    artifactType: "execution_platform.commitment_packet.semantic_brief",
-    contractId: "runtime-artifact.commitment-packet-semantic-brief.v1",
-    domain: "packet",
-    bodySchemaRef: "PacketSemanticBriefSchema",
-    legacyBodyKeys: ["packetSemanticBrief", "body"],
-  }),
-  payloadContract({
-    artifactType: "execution_platform.commitment_packet.field_completion",
-    contractId: "runtime-artifact.commitment-packet-field-completion.v1",
-    domain: "packet",
-    bodySchemaRef: "PacketFieldCompletionSchema",
-    legacyBodyKeys: ["packetFieldCompletion", "body"],
-  }),
-  payloadContract({
-    artifactType: "execution_platform.commitment_packet_fanout_diagnostics",
-    contractId: "runtime-artifact.commitment-packet-fanout-diagnostics.v1",
-    domain: "diagnostic",
-    bodySchemaRef: "CommitmentPacketFanoutDiagnostics",
-    legacyBodyKeys: ["commitmentPacketFanoutDiagnostics", "body"],
-  }),
-  payloadContract({
     artifactType: "execution_platform.fast_model.no_content_diagnostic",
     contractId: "runtime-artifact.fast-model-no-content-diagnostic.v1",
     domain: "diagnostic",
@@ -343,11 +552,26 @@ const BODY_ARTIFACT_CONTRACTS: RuntimeArtifactContract[] = [
     legacyBodyKeys: ["fastModelNoContentDiagnostic", "body"],
   }),
   payloadContract({
-    artifactType: "execution_platform.commitment_packet.failed_replay_result",
-    contractId: "runtime-artifact.failed-packet-replay-result.v1",
+    artifactType: "execution_platform.architecture_residue_source_inventory",
+    contractId: "runtime-artifact.architecture-residue-source-inventory.v1",
     domain: "diagnostic",
-    bodySchemaRef: "FailedPacketReplayResultSchema",
-    legacyBodyKeys: ["failedPacketReplayResult", "body"],
+    bodySchemaRef: "ArchitectureResidueSourceInventoryReport",
+    legacyBodyKeys: [
+      "architectureResidueInventoryReport",
+      "architectureResidueSourceInventory",
+      "body",
+    ],
+  }),
+  payloadContract({
+    artifactType: "execution_platform.architecture_residue_model_audit",
+    contractId: "runtime-artifact.architecture-residue-model-audit.v1",
+    domain: "diagnostic",
+    bodySchemaRef: "ArchitectureResidueModelAudit",
+    legacyBodyKeys: [
+      "architectureResidueModelAudit",
+      "architectureResidueModelAuditBody",
+      "body",
+    ],
   }),
   payloadContract({
     artifactType: "execution_platform.runtime_graph_patch",
@@ -355,6 +579,20 @@ const BODY_ARTIFACT_CONTRACTS: RuntimeArtifactContract[] = [
     domain: "scheduler",
     bodySchemaRef: "RuntimeGraphPatch",
     legacyBodyKeys: ["runtimeGraphPatch", "graphPatch", "body"],
+  }),
+  payloadContract({
+    artifactType: "execution_platform.provider_diagnostics.response_shape",
+    contractId: "runtime-artifact.provider-diagnostics-response-shape.v1",
+    domain: "diagnostic",
+    bodySchemaRef: "ProviderResponseShapeDiagnostic",
+    legacyBodyKeys: ["providerResponseShapeDiagnostic", "providerDiagnosticBody", "body"],
+  }),
+  payloadContract({
+    artifactType: "execution_platform.proof_environment.heap_phase_snapshot",
+    contractId: "runtime-artifact.proof-environment-heap-phase-snapshot.v1",
+    domain: "diagnostic",
+    bodySchemaRef: "HeapPhaseSnapshot",
+    legacyBodyKeys: ["heapPhaseSnapshot", "proofEnvironmentHeapSnapshot", "body"],
   }),
 ];
 
@@ -518,6 +756,14 @@ function bodyContainsRegisteredBodyKey(metadata: JsonValue, path = "metadata"): 
   }
   for (const [key, value] of Object.entries(metadata)) {
     if (BODY_KEY_HINTS.has(key) && value !== null && value !== undefined) {
+      if (
+        typeof value === "number" &&
+        (path.endsWith(".inputCounts") ||
+          path.endsWith(".outputCounts") ||
+          path.endsWith(".maxBounds"))
+      ) {
+        continue;
+      }
       return `${path}.${key}`;
     }
     const child = bodyContainsRegisteredBodyKey(value, `${path}.${key}`);
@@ -616,24 +862,22 @@ export function assertRuntimeArtifactContractStorage(input: AttachRuntimeJobArti
       `runtime artifact metadata exceeds contract maxManifestBytes:${metadataBytes}:${contract.maxManifestBytes}; artifactType=${input.artifactType}`,
     );
   }
+  if (contract.storagePolicy === "payload_required" && input.storageKind !== "runtime-artifact-payload") {
+    throw new Error(
+      `runtime artifact contract requires payload storage; artifactType=${input.artifactType}; contractId=${contract.contractId}`,
+    );
+  }
+  const bodyPath = bodyContainsRegisteredBodyKey(metadata);
+  if (bodyPath) {
+    throw new Error(
+      `runtime artifact metadata manifest violation at ${bodyPath}; artifactType=${input.artifactType}; contractId=${contract.contractId}`,
+    );
+  }
   if (contract.storagePolicy === "payload_required") {
-    if (input.storageKind !== "runtime-artifact-payload") {
-      throw new Error(
-        `runtime artifact contract requires payload storage; artifactType=${input.artifactType}; contractId=${contract.contractId}`,
-      );
-    }
     const metadataRecord = record(metadata);
     if (metadataRecord.artifactKind !== "runtime_job_artifact_payload_manifest") {
       throw new Error(
         `runtime artifact contract requires payload manifest metadata; artifactType=${input.artifactType}; contractId=${contract.contractId}`,
-      );
-    }
-  }
-  if (contract.storagePolicy === "metadata_manifest_only") {
-    const bodyPath = bodyContainsRegisteredBodyKey(metadata);
-    if (bodyPath) {
-      throw new Error(
-        `runtime artifact metadata manifest violation at ${bodyPath}; artifactType=${input.artifactType}; contractId=${contract.contractId}`,
       );
     }
   }

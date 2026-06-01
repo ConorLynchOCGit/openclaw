@@ -119,7 +119,7 @@ function createWorkerInternalReadback() {
         targetRefs: ["repo-file://extensions/execution-platform/src/codex-bridge/proof.ts"],
         inputPacketRefs: ["implementation-task-packet://worker-streaming-readback-lane"],
         contextRefs: [
-          "context-handoff://worker-streaming-readback-lane/context",
+          "resource-handoff://worker-streaming-readback-lane/context",
           "context-synthesis://worker-streaming-readback-lane/synthesis",
         ],
         contextSynthesisRefs: ["context-synthesis://worker-streaming-readback-lane/synthesis"],

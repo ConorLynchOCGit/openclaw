@@ -115,6 +115,10 @@ Completed in the Work Queue truth/readback/closeout pass:
 Canonical Work Queue projection now treats execution-platform DB/runtime records as the only live source for active and closed queue state.
 
 - `sourceTrackerMode` is `db_primary_no_source_tracker`.
+- Owner progress `firstOpenGate` is readback only and is populated from the
+  canonical readiness/frontier/root-cause/contract gate. It does not mutate
+  Work Queue lifecycle, and stale checkpoint labels are diagnostic fallback
+  only.
 - Active and closed positions are derived from current `work_items` + runtime-linked truth at read time.
 - Closeout projection artifacts (`execution_platform.closeout_projection_readback`) may enrich queue readback metadata but cannot mutate lifecycle.
 - Active and closed queue ordering is deterministic when `updatedAt` ties occur:

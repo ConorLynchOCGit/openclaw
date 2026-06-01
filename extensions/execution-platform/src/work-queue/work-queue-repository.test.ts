@@ -579,7 +579,15 @@ describe("work queue execution truth repository", () => {
       });
       await runtimeJobs.cancelJob(runtimeJob.jobId, "operator canceled proof");
 
-      const active = await workQueue.listDbWorkQueue({ bucket: "active" });
+      const activeBeforeExplicitReconcile = await workQueue.listDbWorkQueue({ bucket: "active" });
+      expect(activeBeforeExplicitReconcile.items.map((entry) => entry.workItemId)).toContain(
+        item.workItemId,
+      );
+
+      const active = await workQueue.listDbWorkQueue({
+        bucket: "active",
+        reconcileTerminalProjections: true,
+      });
       const truth = await workQueue.readWorkItemTruth(item.workItemId);
 
       expect(active.items.map((entry) => entry.workItemId)).not.toContain(item.workItemId);

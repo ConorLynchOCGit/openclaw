@@ -11,8 +11,8 @@ compatibility, proof-shaped, or semantic-shortcut paths.
 
 Read and follow these specs before editing:
 
-- `docs/projects/execution-platform/specs/post-context-implementation-task-compiler.md`
-- `docs/projects/execution-platform/specs/scheduler-first-node-scoped-context-supply.md`
+- `docs/projects/execution-platform/specs/post-resource-implementation-task-compiler.md`
+- `docs/projects/execution-platform/specs/scheduler-first-node-scoped-resource-fulfillment.md`
 - `docs/projects/execution-platform/specs/runtime-work-graph.md`
 - `docs/projects/execution-platform/specs/non-codex-tool-worker-runtime.md`
 - `docs/projects/execution-platform/specs/native-agentic-coding-harness-convergence.md`
@@ -28,7 +28,7 @@ directly into executable implementation nodes. Complex coding missions must
 now use a two-layer graph:
 
 1. high-level work-intent graph.
-2. post-context executable task graph.
+2. post-resource executable task graph.
 
 Implementation workers must not run from broad work groups, directory-level
 target refs, or insufficient context. They may run only from accepted
@@ -93,7 +93,7 @@ Runtime owns packet schema, ids, refs, storage flags, authority, budgets,
 lifecycles, and canonical graph node creation. Models may author semantic
 judgment only where needed.
 
-### 2. Build a production post-context compiler
+### 2. Build a production post-resource compiler
 
 Add first-class runtime code that compiles each implementation-bearing
 work-intent node plus accepted node-scoped context scout handoffs into one or

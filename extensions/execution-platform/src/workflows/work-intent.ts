@@ -38,13 +38,13 @@ export const WORK_INTENT_NODE_KIND = "work_intent" satisfies TeamGraphNodeKind;
 export const WorkIntentResourceRequirementSchema = z
   .object({
     requirementKind: z.enum([
-      "context_handoff",
-      "target_refs",
-      "file_snapshots",
+      "resource_handoff",
+      "candidate_resource_refs",
+      "resource_snapshots",
       "new_file_intent",
       "validation_refs",
       "evidence_claims",
-      "read_only_refs",
+      "read_only_resource_refs",
       "human_decision",
       "closeout_refs",
     ]),
@@ -72,7 +72,7 @@ export const WorkIntentModelFieldsSchema = z
     expectedOutput: boundedString(1_200),
     successCriteria: boundedStringArray(24, 400),
     contextQuestions: boundedStringArray(24, 500),
-    targetRefs: boundedStringArray(32, 420),
+    resourceRefs: boundedStringArray(32, 420),
     inputRefs: boundedStringArray(32, 420),
     validationNeeds: boundedStringArray(16, 420),
     dependencyWorkUnitIds: boundedStringArray(24, 180),
@@ -101,6 +101,17 @@ export const RuntimeCompiledWorkIntentSchema = z
     selectedCapabilityGraphNodeKind: boundedString(120),
     selectedCapabilityExecutorKey: boundedString(220),
     selectedCapabilityWorkerRef: boundedString(220),
+    capabilityManifestBindingValidated: z.literal(true),
+    capabilityManifestRequiredMetadataSchemaRef: boundedString(260),
+    capabilityManifestRequiredResourcePacketKind: boundedString(180).nullable(),
+    capabilityManifestRequiredResourceKinds: boundedStringArray(16, 180),
+    capabilityManifestRequiredSnapshotKinds: boundedStringArray(16, 180),
+    capabilityManifestRequiredValidationKinds: boundedStringArray(16, 180),
+    capabilityManifestRequiredAuthorityScopes: boundedStringArray(16, 220),
+    capabilityManifestRequiredEvidenceClaimKinds: boundedStringArray(16, 180),
+    capabilityManifestAllowedAdapters: boundedStringArray(16, 220),
+    capabilityManifestDefaultRepairTransition: boundedString(180),
+    capabilityManifestDefaultBlockedTransition: boundedString(180),
     evidenceMode: z.array(EvidenceModeSchema).max(12),
     resourceRequirements: z.array(WorkIntentResourceRequirementSchema).max(16),
     nextLegalTransitions: boundedStringArray(12, 180),
@@ -120,6 +131,8 @@ export type WorkIntentCapabilityValidation = {
   selectedCapability: RuntimeNodeCapability | null;
   executionIntent: ExecutionIntent | null;
   evidenceMode: EvidenceMode[];
+  manifestDiagnostics: WorkIntentRepairDiagnostic[];
+  nextLegalTransitions: string[];
   reasonCodes: string[];
   rawPromptStored: false;
   rawResponseStored: false;
@@ -214,6 +227,24 @@ function modelFieldMissingDiagnostic(input: {
   };
 }
 
+function capabilityManifestDiagnostic(input: {
+  sourcePath?: string;
+  path: string;
+  errorCode: string;
+  message: string;
+  validValues?: string[];
+}): WorkIntentRepairDiagnostic {
+  return {
+    path: `${input.sourcePath ?? "workIntent"}.${input.path}`,
+    errorCode: input.errorCode,
+    message: input.message,
+    validValues: input.validValues,
+    rawPromptStored: false,
+    rawResponseStored: false,
+    rawProviderLogStored: false,
+  };
+}
+
 function missingFieldsForDiagnostics(
   diagnostics: WorkIntentRepairDiagnostic[],
 ): ModelDecisionMissingField[] {
@@ -250,14 +281,14 @@ function resourceRequirementsFor(input: {
   add("evidence_claims", true, "Evidence claims must map output to WorkIntent commitment ids.");
 
   if (input.executionIntent === "source_edit") {
-    add("context_handoff", true, "Source edits require accepted node-scoped context handoff refs.");
+    add("resource_handoff", true, "Source edits require accepted node-scoped resource handoff refs.");
     add(
-      "target_refs",
+      "candidate_resource_refs",
       true,
-      "Source edits require concrete target refs or explicit new-file intent.",
+      "Source edits require model-authored concrete target refs or explicit new-file intent.",
     );
     add(
-      "file_snapshots",
+      "resource_snapshots",
       true,
       "Source edits require target file snapshots before worker invocation.",
     );
@@ -267,18 +298,22 @@ function resourceRequirementsFor(input: {
   }
 
   if (input.executionIntent === "source_grounding") {
-    add("read_only_refs", true, "Source grounding produces read-only evidence from bounded refs.");
+    add("read_only_resource_refs", true, "Source grounding produces read-only evidence from bounded refs.");
     add(
-      "context_handoff",
-      input.capability.requiresContext,
-      "Read-only work may require context handoff refs, but never changed-file evidence.",
+      "resource_handoff",
+      input.capability.requiresResources,
+      "Read-only work may require resource handoff refs, but never changed-file evidence.",
     );
     return requirements;
   }
 
-  if (input.executionIntent === "context_supply") {
-    add("context_handoff", true, "Context supply must produce accepted context handoff evidence.");
-    add("target_refs", false, "Target refs are optional until a downstream consumer needs them.");
+  if (input.executionIntent === "resource_demand") {
+    add("resource_handoff", true, "Resource fulfillment must produce accepted resource handoff evidence.");
+    add(
+      "candidate_resource_refs",
+      false,
+      "Candidate resource refs are optional until a downstream consumer needs them.",
+    );
     return requirements;
   }
 
@@ -298,17 +333,163 @@ function resourceRequirementsFor(input: {
   }
 
   if (input.evidenceMode.includes("changed_file_evidence")) {
-    add("target_refs", true, "Changed-file evidence requires concrete target refs.");
-    add("file_snapshots", true, "Changed-file evidence requires target snapshots.");
+    add("candidate_resource_refs", true, "Changed-file evidence requires concrete target refs.");
+    add("resource_snapshots", true, "Changed-file evidence requires target snapshots.");
   } else {
-    add("read_only_refs", true, "This work can progress through bounded read-only refs.");
+    add("read_only_resource_refs", true, "This work can progress through bounded read-only refs.");
   }
   return requirements;
+}
+
+function capabilityManifestBindingDiagnostics(input: {
+  modelFields: WorkIntentModelFields;
+  capability: RuntimeNodeCapability;
+  sourcePath?: string;
+}): WorkIntentRepairDiagnostic[] {
+  const diagnostics: WorkIntentRepairDiagnostic[] = [];
+  const add = (path: string, errorCode: string, message: string, validValues?: string[]) => {
+    diagnostics.push(
+      capabilityManifestDiagnostic({
+        sourcePath: input.sourcePath,
+        path,
+        errorCode,
+        message,
+        validValues,
+      }),
+    );
+  };
+  const { capability, modelFields } = input;
+  if (!capability.canRunAsWorkIntent) {
+    add(
+      "selectedCapabilityId",
+      "work_intent_capability_manifest_cannot_run_as_work_intent",
+      "Selected capability is not registered as a WorkIntent-capable manifest capability.",
+    );
+  }
+  if (!capability.supportedExecutionIntents.includes(modelFields.executionIntent)) {
+    add(
+      "executionIntent",
+      "work_intent_capability_manifest_execution_intent_not_supported",
+      "Selected capability manifest must list the model-authored executionIntent as supported.",
+      capability.supportedExecutionIntents,
+    );
+  }
+  if (!capability.validLifecyclePhases.includes("work_intent")) {
+    add(
+      "selectedCapabilityId",
+      "work_intent_capability_manifest_lifecycle_missing_work_intent",
+      "Selected capability manifest must include the work_intent lifecycle phase.",
+    );
+  }
+  if (!capability.requiredMetadataSchemaRef.startsWith("schema://")) {
+    add(
+      "selectedCapabilityId",
+      "work_intent_capability_manifest_schema_ref_invalid",
+      "Selected capability manifest must declare a schema:// metadata contract.",
+    );
+  }
+  if (!capability.graphNodeKind) {
+    add(
+      "selectedCapabilityId",
+      "work_intent_capability_manifest_graph_node_kind_missing",
+      "Selected capability manifest must declare the graph node kind it can compile into.",
+    );
+  }
+  if (!capability.executorKey) {
+    add(
+      "selectedCapabilityId",
+      "work_intent_capability_manifest_executor_key_missing",
+      "Selected capability manifest must declare an executor key.",
+    );
+  }
+  if (!capability.workerRef) {
+    add(
+      "selectedCapabilityId",
+      "work_intent_capability_manifest_worker_ref_missing",
+      "Selected capability manifest must declare a worker ref.",
+    );
+  }
+  if (capability.allowedAdapters.length === 0) {
+    add(
+      "selectedCapabilityId",
+      "work_intent_capability_manifest_allowed_adapters_missing",
+      "Selected capability manifest must declare at least one allowed adapter.",
+    );
+  }
+  const deterministicOrHumanAdapter =
+    capability.allowedAdapters.includes("script-middleware") ||
+    capability.allowedAdapters.includes("work_queue_human_task");
+  if (capability.modelPolicyRefs.length === 0 && !deterministicOrHumanAdapter) {
+    add(
+      "selectedCapabilityId",
+      "work_intent_capability_manifest_model_policy_missing",
+      "Selected model-backed capability manifest must declare at least one model policy ref.",
+    );
+  }
+  if (!capability.budgetPolicyRef) {
+    add(
+      "selectedCapabilityId",
+      "work_intent_capability_manifest_budget_policy_missing",
+      "Selected capability manifest must declare a budget policy ref.",
+    );
+  }
+  if (!capability.parallelismPolicyRef) {
+    add(
+      "selectedCapabilityId",
+      "work_intent_capability_manifest_parallelism_policy_missing",
+      "Selected capability manifest must declare a parallelism policy ref.",
+    );
+  }
+  if (!capability.defaultRepairTransition || !capability.defaultBlockedTransition) {
+    add(
+      "selectedCapabilityId",
+      "work_intent_capability_manifest_transition_missing",
+      "Selected capability manifest must declare default repair and blocked transitions.",
+    );
+  }
+  if (capability.evidenceProducedKinds.length === 0) {
+    add(
+      "selectedCapabilityId",
+      "work_intent_capability_manifest_evidence_produced_missing",
+      "Selected capability manifest must declare produced evidence kinds.",
+    );
+  }
+  if (capability.requiredEvidenceClaimKinds.length === 0) {
+    add(
+      "selectedCapabilityId",
+      "work_intent_capability_manifest_evidence_claim_missing",
+      "Selected capability manifest must declare required evidence claim kinds.",
+    );
+  }
+  if (capability.requiresResources && capability.requiredResourceKinds.length === 0) {
+    add(
+      "selectedCapabilityId",
+          "work_intent_capability_manifest_resource_requirements_missing",
+          "Resource-requiring capabilities must declare required resource kinds.",
+    );
+  }
+  if (capability.requiredNodeExecutionPacket && !capability.requiredResourcePacketKind) {
+    add(
+      "selectedCapabilityId",
+      "work_intent_capability_manifest_resource_packet_kind_missing",
+      "Node-execution-packet capabilities must declare a required resource packet kind.",
+    );
+  }
+  return diagnostics;
+}
+
+function nextLegalTransitionsForCapability(input: {
+  executionIntent: ExecutionIntent;
+  capability: RuntimeNodeCapability;
+}): string[] {
+  void input;
+  return [];
 }
 
 function validateWorkIntentCapability(input: {
   modelFields: WorkIntentModelFields | null;
   capabilityManifest: RuntimeNodeCapabilityManifest;
+  sourcePath?: string;
 }): WorkIntentCapabilityValidation {
   if (!input.modelFields) {
     return {
@@ -316,6 +497,8 @@ function validateWorkIntentCapability(input: {
       selectedCapability: null,
       executionIntent: null,
       evidenceMode: [],
+      manifestDiagnostics: [],
+      nextLegalTransitions: [],
       reasonCodes: ["work_intent_model_fields_invalid"],
       rawPromptStored: false,
       rawResponseStored: false,
@@ -332,6 +515,8 @@ function validateWorkIntentCapability(input: {
       selectedCapability: null,
       executionIntent: input.modelFields.executionIntent,
       evidenceMode: [],
+      manifestDiagnostics: [],
+      nextLegalTransitions: [],
       reasonCodes: [
         `work_intent_selected_capability_unknown:${input.modelFields.selectedCapabilityId}`,
       ],
@@ -348,14 +533,30 @@ function validateWorkIntentCapability(input: {
     capability,
     executionIntent: input.modelFields.executionIntent,
   });
+  const manifestDiagnostics = capabilityManifestBindingDiagnostics({
+    modelFields: input.modelFields,
+    capability,
+    sourcePath: input.sourcePath,
+  });
+  const nextLegalTransitions = nextLegalTransitionsForCapability({
+    executionIntent: input.modelFields.executionIntent,
+    capability,
+  });
   return {
-    valid: !conflict,
+    valid: !conflict && manifestDiagnostics.length === 0,
     selectedCapability: capability,
     executionIntent: input.modelFields.executionIntent,
     evidenceMode,
-    reasonCodes: conflict
-      ? [`work_intent_execution_intent_capability_conflict:${conflict}`]
-      : ["work_intent_capability_validated"],
+    manifestDiagnostics,
+    nextLegalTransitions,
+    reasonCodes: [
+      ...(conflict ? [`work_intent_execution_intent_capability_conflict:${conflict}`] : []),
+      ...manifestDiagnostics.map((diagnostic) => diagnostic.errorCode),
+      ...(!conflict && manifestDiagnostics.length === 0
+        ? ["work_intent_capability_validated", "work_intent_capability_manifest_validated"]
+        : []),
+      "work_intent_next_legal_transitions_runner_owned",
+    ],
     rawPromptStored: false,
     rawResponseStored: false,
     rawProviderLogStored: false,
@@ -379,7 +580,7 @@ export function compileWorkIntent(input: {
   expectedOutput: string;
   successCriteria: string[];
   contextQuestions?: string[];
-  targetRefs?: string[];
+  resourceRefs?: string[];
   inputRefs?: string[];
   validationNeeds?: string[];
   dependencyWorkUnitIds?: string[];
@@ -410,7 +611,10 @@ export function compileWorkIntent(input: {
           "WorkIntent requires explicit model-authored executionIntent; runtime must not infer it from capability, prose, filename, or workflow name.",
         validValues: [
           "source_grounding",
-          "context_supply",
+          "resource_demand",
+          "domain_resource_selection",
+          "domain_action",
+          "domain_mutation",
           "resource_materialization",
           "source_edit",
           "validation",
@@ -443,7 +647,7 @@ export function compileWorkIntent(input: {
     expectedOutput: input.expectedOutput,
     successCriteria: unique(input.successCriteria, 24),
     contextQuestions: unique(input.contextQuestions ?? [], 24),
-    targetRefs: unique(input.targetRefs ?? [], 32),
+    resourceRefs: unique(input.resourceRefs ?? [], 32),
     inputRefs: unique(input.inputRefs ?? [], 32),
     validationNeeds: unique(input.validationNeeds ?? [], 16),
     dependencyWorkUnitIds: unique(input.dependencyWorkUnitIds ?? [], 24),
@@ -469,7 +673,9 @@ export function compileWorkIntent(input: {
   const capabilityValidation = validateWorkIntentCapability({
     modelFields,
     capabilityManifest: input.capabilityManifest,
+    sourcePath: input.sourcePath,
   });
+  diagnostics.push(...capabilityValidation.manifestDiagnostics);
   if (!capabilityValidation.valid) {
     for (const code of capabilityValidation.reasonCodes) {
       if (code.startsWith("work_intent_selected_capability_unknown")) {
@@ -560,12 +766,7 @@ export function compileWorkIntent(input: {
     capability,
     evidenceMode: capabilityValidation.evidenceMode,
   });
-  const nextLegalTransitions =
-    modelFields.executionIntent === "source_edit"
-      ? ["request_context_repair", "compile_node_execution_packet", "split_work_unit"]
-      : modelFields.executionIntent === "context_supply"
-        ? ["dispatch_context_scout", "mark_context_ready"]
-        : ["produce_read_only_evidence", "request_context_repair", "needs_review"];
+  const nextLegalTransitions = capabilityValidation.nextLegalTransitions;
   const compiled: RuntimeCompiledWorkIntent = {
     artifactKind: "runtime_compiled_work_intent",
     schemaVersion: "execution-platform.work-intent.v1",
@@ -581,6 +782,17 @@ export function compileWorkIntent(input: {
     selectedCapabilityGraphNodeKind: capability.graphNodeKind,
     selectedCapabilityExecutorKey: capability.executorKey,
     selectedCapabilityWorkerRef: capability.workerRef,
+    capabilityManifestBindingValidated: true,
+    capabilityManifestRequiredMetadataSchemaRef: capability.requiredMetadataSchemaRef,
+    capabilityManifestRequiredResourcePacketKind: capability.requiredResourcePacketKind,
+    capabilityManifestRequiredResourceKinds: capability.requiredResourceKinds,
+    capabilityManifestRequiredSnapshotKinds: capability.requiredSnapshotKinds,
+    capabilityManifestRequiredValidationKinds: capability.requiredValidationKinds,
+    capabilityManifestRequiredAuthorityScopes: capability.requiredAuthorityScopes,
+    capabilityManifestRequiredEvidenceClaimKinds: capability.requiredEvidenceClaimKinds,
+    capabilityManifestAllowedAdapters: capability.allowedAdapters,
+    capabilityManifestDefaultRepairTransition: capability.defaultRepairTransition,
+    capabilityManifestDefaultBlockedTransition: capability.defaultBlockedTransition,
     evidenceMode: capabilityValidation.evidenceMode,
     resourceRequirements,
     nextLegalTransitions,
@@ -605,7 +817,7 @@ export function compileWorkIntent(input: {
     whyThisRoleIsNeededNow: modelFields.capabilityRationale,
     exactObjective: modelFields.objective,
     evidenceExpectation: capabilityValidation.evidenceMode.join(","),
-    targetRefs: modelFields.targetRefs,
+    targetRefs: modelFields.resourceRefs,
     metadata: {
       workIntentCompiled: true,
       stagedSchedulerProtocolCompiled: true,
@@ -619,6 +831,7 @@ export function compileWorkIntent(input: {
       evidenceMode: capabilityValidation.evidenceMode,
       selectedCapabilityId: capability.capabilityId,
       workIntentSelectedCapabilityId: capability.capabilityId,
+      capabilityManifestBindingValidated: true,
       targetCapabilityRoleClass: capability.roleClass,
       targetCapabilityGraphNodeKind: capability.graphNodeKind,
       targetCapabilityExecutorKey: capability.executorKey,
@@ -638,6 +851,7 @@ export function compileWorkIntent(input: {
       commitmentIdsAdvanced: modelFields.commitmentIds,
       targetCommitmentIds: modelFields.commitmentIds,
       contextQuestions: modelFields.contextQuestions,
+      resourceRefs: modelFields.resourceRefs,
       validationNeeds: modelFields.validationNeeds,
       stopIfMissing: modelFields.stopIfMissing,
       dependencyWorkUnitIds: modelFields.dependencyWorkUnitIds,
@@ -647,6 +861,7 @@ export function compileWorkIntent(input: {
       whyCheaperOptionsWereInsufficient: modelFields.whyCheaperOptionsWereInsufficient,
       whyThisIsNotDuplicateWork: modelFields.whyThisIsNotDuplicateWork,
       consideredCapabilityIds: modelFields.consideredCapabilityIds,
+      parallelismRationale: modelFields.parallelismRationale,
       semanticQualityJudgedByDeterministicCode: false,
       rawPromptStored: false,
       rawResponseStored: false,

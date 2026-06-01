@@ -82,7 +82,7 @@ Implementation workers may run only from executable task graph nodes.
 
 The compiler must also preserve the semantic distinction between
 source-grounding/read-only evidence and edit-required implementation. A
-post-context packet with no changed-file evidence requirement is not an
+post-resource packet with no changed-file evidence requirement is not an
 `ImplementationTaskPacket`; it is a read-only/source-grounding execution
 packet routed to a context/review executor. The model authors the
 `executionIntent`; runtime compiles the evidence mode and dispatch contract.
@@ -95,7 +95,7 @@ The upstream `WorkIntent` contract is defined in
 
 ## ImplementationTaskPacket v3
 
-`ImplementationTaskPacket` is the canonical post-context handoff from
+`ImplementationTaskPacket` is the canonical post-resource handoff from
 scheduler/context supply to implementation workers.
 
 Required fields:
@@ -110,7 +110,7 @@ Required fields:
 - `graphId`
 - `targetCommitmentIds`
 - `sourceCommitmentPacketRefs`
-- `sourceContextHandoffRefs`
+- `sourceResourceHandoffRefs`
 - `objective`
 - `expectedPatchShape`
 - `expectedOutput`
@@ -262,7 +262,7 @@ Runtime mutation rules:
   non-runnable planned nodes.
 - implementation-bearing work-intent nodes cannot be selected for execution.
 - context scout handoff attaches to the work-intent node.
-- post-context compiler emits one or more implementation task packets.
+- post-resource compiler emits one or more implementation task packets.
 - runtime creates executable implementation/test/docs/readback nodes from
   those packets.
 - edges preserve provenance:
@@ -326,7 +326,7 @@ This feature is complete only when:
 
 - production `agent_team.coding` cannot invoke implementation workers from
   high-level work-intent groups.
-- post-context task-packet compilation is first-class runtime code, not proof
+- post-resource task-packet compilation is first-class runtime code, not proof
   script glue.
 - Product/Spec-class replay from accepted packets produces work-intent groups,
   node-scoped context scouts, task packets, executable implementation nodes,

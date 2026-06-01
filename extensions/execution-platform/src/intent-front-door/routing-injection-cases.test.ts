@@ -70,16 +70,26 @@ describe("Routing prompt and tool-output injection cases", () => {
     )!;
     const tampered = {
       ...injectionCase,
+      maliciousToolOutputSignal: false,
       routerOutput: {
         ...injectionCase.routerOutput,
         route: "workflow_execution",
         responseMode: "create_runtime_job",
         executeNow: true,
         workflowId: "agent_team.coding",
+        executorWorkflowId: "agent_team.coding",
         jobType: "executor.agent_team",
         requestedAuthority: "local_yolo",
         sideEffectClass: "code_edit",
         riskClass: "medium",
+        requestedCapabilities: ["code_edit"],
+        mentionedActions: [
+          {
+            action: "code_edit",
+            objectSummary: "unsafe tampered edit",
+            confidence: 0.99,
+          },
+        ],
         requestedActions: [
           {
             action: "code_edit",
@@ -94,6 +104,8 @@ describe("Routing prompt and tool-output injection cases", () => {
         responseMode: "create_runtime_job",
         workflowId: "agent_team.coding",
         jobType: "executor.agent_team",
+        validatorOutcome: "accepted",
+        clarificationRequired: false,
         runtimeJobCreated: false,
       },
     } as typeof injectionCase;

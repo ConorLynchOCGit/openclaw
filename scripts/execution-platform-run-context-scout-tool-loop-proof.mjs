@@ -4,7 +4,7 @@ import path from "node:path";
 import process from "node:process";
 import {
   CONTEXT_SCOUT_TOOL_LOOP_ARTIFACT_TYPE,
-  buildContextHandoffPacket,
+  buildResourceHandoffPacket,
   buildContextScoutToolLoopRun,
   buildContextScoutVerifiedFileRefs,
   createExecutionPlatformDatabaseRuntime,
@@ -82,7 +82,7 @@ async function main() {
       ],
       reasonCodes: ["context_scout_file_ref_verified_by_runtime"],
     });
-    const handoff = buildContextHandoffPacket({
+    const handoff = buildResourceHandoffPacket({
       sourceNodeId: nodeId,
       targetCommitmentIds: ["context-scout-tool-loop-production"],
       targetFileRefs: [
@@ -115,8 +115,8 @@ async function main() {
       roleId: "context_scout",
       modelRef: "proof:model-authored-context-scout-contract",
       targetCommitmentIds: ["context-scout-tool-loop-production"],
-      commitmentWorkPacketRefs: [
-        "runtime-work-graph://commitment-work-packet/context-scout-tool-loop-production/proof",
+      sourceContractRefs: [
+        "runtime-work-graph://source-contract/context-scout-tool-loop-production/proof",
       ],
       requestedContextQuestions: [
         "Which production files define context scout contracts, runtime wiring, and readback?",
@@ -137,28 +137,28 @@ async function main() {
         "runtime-tool://context_scout.review_sufficiency/proof",
         "runtime-tool://context_scout.emit_handoff_packet/proof",
       ],
-      contextHandoffPacketRef: `runtime-job://${job.jobId}/context-handoff/${handoff.packetId}`,
-      contextHandoffPacket: handoff,
+      resourceHandoffPacketRef: `runtime-job://${job.jobId}/resource-handoff/${handoff.packetId}`,
+      resourceHandoffPacket: handoff,
       modelAuthoredSummary:
         "The verified production context scout contract, runner gate, and readback files are sufficient for downstream implementation and validation.",
     });
     const validation = validateContextScoutToolLoopForImplementation(loopRun);
     const loopRef = `runtime-job://${job.jobId}/context-scout/tool-loop/${loopRun.loopId}`;
-    const handoffRef = `runtime-job://${job.jobId}/context-handoff/${handoff.packetId}`;
+    const handoffRef = `runtime-job://${job.jobId}/resource-handoff/${handoff.packetId}`;
     await runtimeJobs.attachRuntimeArtifactByContract({
       jobId: job.jobId,
-      artifactType: "execution_platform.context_handoff_packet",
+      artifactType: "execution_platform.resource_handoff_packet",
       uri: handoffRef,
       contentType: "application/json",
       body: handoff,
       boundedSummary: handoff.handoffSummaryForImplementation,
       targetCommitmentIds: handoff.targetCommitmentIds,
       targetNodeIds: [handoff.sourceNodeId],
-      resourcePacketKind: "context_handoff_packet",
+      resourcePacketKind: "resource_handoff_packet",
       readinessStatus: validation.valid ? "accepted" : "needs_review",
-      reasonCodes: ["context_handoff_packet_tool_loop_proof_persisted_by_contract"],
+      reasonCodes: ["resource_handoff_packet_tool_loop_proof_persisted_by_contract"],
       metadata: {
-        artifactKind: "execution_platform.context_handoff_packet",
+        artifactKind: "execution_platform.resource_handoff_packet",
         packetId: handoff.packetId,
         packetRef: handoff.packetRef,
         sourceNodeId: handoff.sourceNodeId,
@@ -196,7 +196,7 @@ async function main() {
         contextScoutRuntimeToolInvocationRefs: loopRun.runtimeToolInvocationRefs,
         contextScoutSufficiencySummary: loopRun.sufficiencyReview.reviewerSummary,
         verifiedContextFileRefs: verifiedFileRefs.map((ref) => ref.fileRef),
-        contextHandoffPacketRefs: [handoffRef],
+        resourceHandoffPacketRefs: [handoffRef],
         openContextBlockers: validation.valid ? [] : validation.reasonCodes,
         eli5Progress:
           "OpenClaw now checks that context scout found real files and made a usable handoff before implementation can start.",

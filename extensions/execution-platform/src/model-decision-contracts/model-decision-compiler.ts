@@ -52,8 +52,8 @@ export type ModelContractBoundaryKind =
   | "router_front_door"
   | "mission_ledger"
   | "commitment_work_packet"
-  | "context_scout"
-  | "context_repair"
+  | "resource_scout"
+  | "resource_repair"
   | "scheduler_staged_protocol"
   | "capability_selection"
   | "resource_materialization"
@@ -160,7 +160,7 @@ const COMMON_RUNTIME_OWNED_ALLOWED_ALTERNATIVES = [
   "targetCommitmentIds",
   "selectedCapabilityId",
   "inputRefs",
-  "targetRefs",
+  "resourceRefs",
   "expectedOutput",
   "successCriteria",
   "downstreamConsumer",
@@ -266,7 +266,7 @@ export function buildModelContractBoundaryRegistry(): ModelContractBoundaryDefin
       ],
     }),
     boundary({
-      boundaryKind: "context_scout",
+      boundaryKind: "resource_scout",
       title: "Context Scout",
       modelAuthoredSemanticFields: [
         "contextObjective",
@@ -290,7 +290,7 @@ export function buildModelContractBoundaryRegistry(): ModelContractBoundaryDefin
       ],
     }),
     boundary({
-      boundaryKind: "context_repair",
+      boundaryKind: "resource_repair",
       title: "Context Repair Intent",
       modelAuthoredSemanticFields: [
         "failedNodeIds",
@@ -326,6 +326,7 @@ export function buildModelContractBoundaryRegistry(): ModelContractBoundaryDefin
         "selectedCapabilityId",
         "utilityRationale",
         "costRationale",
+        "resourceRefs",
         "expectedOutput",
         "successCriteria",
         "downstreamConsumer",

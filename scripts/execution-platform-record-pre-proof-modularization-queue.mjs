@@ -25,7 +25,7 @@ const preProofItems = [
       "production_vs_proof_import_boundaries",
       "no_semantic_cheats_regression",
       "product_spec_replay_topology_characterization",
-      "scheduler_first_context_supply_guard",
+      "scheduler_first_resource_fulfillment_guard",
       "module_ownership_map",
     ],
     successGate:

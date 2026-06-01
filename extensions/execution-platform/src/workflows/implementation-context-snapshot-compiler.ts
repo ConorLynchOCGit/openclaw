@@ -4,18 +4,29 @@ import path from "node:path";
 import { z } from "zod";
 import type { JsonValue } from "../runtime-job-repository.ts";
 import type { ContextSnapshotRef } from "./context-snapshot.ts";
-import type { EvidenceMode, ExecutionIntent } from "./execution-intent.ts";
 import {
+  EvidenceModeSchema,
+  ExecutionIntentSchema,
+  type EvidenceMode,
+  type ExecutionIntent,
+} from "./execution-intent.ts";
+import {
+  ImplementationTaskFileChangeIntentSchema,
   validateImplementationTaskPacketForWorker,
   type ImplementationTaskFileSnapshot,
   type ImplementationTaskFileChangeIntent,
   type ImplementationTaskNewFileIntent,
   type ImplementationTaskPacket,
-} from "./mission-work-packets.ts";
+} from "./worker-execution-packets.ts";
 import {
-  compilePostContextImplementationTaskPackets,
-  type PostContextImplementationTaskCompileResult,
-} from "./post-context-implementation-task-compiler.ts";
+  compilePostResourceImplementationTaskPackets,
+  type PostResourceImplementationTaskCompileResult,
+} from "./post-resource-implementation-task-compiler.ts";
+import {
+  DomainResourceSelectionModelFileChangeIntentSchema,
+  type ResourceSelectionPacket,
+  type DomainResourceSelectionModelFileChangeIntent,
+} from "./resource-selection.ts";
 
 const boundedString = (max: number) => z.string().trim().min(1).max(max);
 const stringList = (maxItems: number, maxChars = 320) =>
@@ -46,7 +57,7 @@ export const IMPLEMENTATION_CONTEXT_PACKET_MAX_CANDIDATE_FILE_REFS = 120;
 export const ImplementationResourceMaterializationStatusSchema = z.enum([
   "accepted",
   "split_required",
-  "context_repair_required",
+  "resource_repair_required",
   "resource_repair_required",
   "needs_review",
 ]);
@@ -97,7 +108,7 @@ export type ImplementationResourceMaterializationResult = {
 export const ImplementationContextReadinessStatusSchema = z.enum([
   "ready_as_single_task",
   "split_required",
-  "context_repair_required",
+  "resource_repair_required",
   "human_decision_required",
   "codex_integration_required",
   "needs_review",
@@ -106,6 +117,49 @@ export const ImplementationContextReadinessStatusSchema = z.enum([
 export type ImplementationContextReadinessStatus = z.infer<
   typeof ImplementationContextReadinessStatusSchema
 >;
+
+export const DomainResourceSelectionFileChangeIntentSchema = DomainResourceSelectionModelFileChangeIntentSchema;
+export type DomainResourceSelectionFileChangeIntent = DomainResourceSelectionModelFileChangeIntent;
+
+export const DomainResourceSelectionPacketSchema = z
+  .object({
+    packetKind: z.literal("domain_resource_selection_packet"),
+    schemaVersion: z.literal("execution-platform.domain-resource-selection-packet.v1"),
+    packetId: boundedString(180),
+    packetRef: boundedString(320),
+    runtimeJobId: boundedString(180),
+    workflowId: boundedString(180),
+    graphId: boundedString(180),
+    nodeId: boundedString(180),
+    sourceWorkUnitId: boundedString(180),
+    targetCommitmentIds: stringList(24, 180),
+    candidateConcreteFileRefs: stringList(
+      IMPLEMENTATION_CONTEXT_PACKET_MAX_CANDIDATE_FILE_REFS,
+      320,
+    ),
+    selectedTargetFileRefs: stringList(
+      IMPLEMENTATION_CONTEXT_PACKET_MAX_TARGET_FILE_REFS,
+      320,
+    ),
+    fileChangeIntents: z.array(ImplementationTaskFileChangeIntentSchema).max(80).default([]),
+    modelAuthoredFileChangeIntents: z
+      .array(DomainResourceSelectionFileChangeIntentSchema)
+      .max(80)
+      .default([]),
+    validationDiscoveryPlan: stringList(24, 700),
+    selectionRationale: boundedString(1_200),
+    status: z.enum(["accepted", "needs_review"]),
+    reasonCodes: stringList(80, 180),
+    invalidSelections: stringList(80, 320),
+    uncoveredSelectedTargetFileRefs: stringList(80, 320),
+    rawPromptStored: z.literal(false),
+    rawResponseStored: z.literal(false),
+    rawProviderLogStored: z.literal(false),
+    rawToolLogStored: z.literal(false),
+  })
+  .strict();
+
+export type DomainResourceSelectionPacket = z.infer<typeof DomainResourceSelectionPacketSchema>;
 
 export const ImplementationContextPacketSchema = z
   .object({
@@ -124,21 +178,23 @@ export const ImplementationContextPacketSchema = z
     repairAction: z
       .enum([
         "none",
-        "request_context_repair",
+        "open_node_resource_demand",
+        "select_concrete_target_files",
         "split_into_file_resolved_tasks",
         "request_human_decision",
         "escalate_to_codex_integration",
         "needs_operator_review",
       ])
       .default("none"),
+    executionIntent: ExecutionIntentSchema.default("unspecified"),
+    evidenceMode: z.array(EvidenceModeSchema).max(12).default([]),
     exactEditObjective: boundedString(1_200),
     taskSummary: boundedString(2_500),
     targetCommitmentIds: stringList(24, 180),
     contextPacketRefs: stringList(IMPLEMENTATION_CONTEXT_PACKET_MAX_CONTEXT_REFS, 320),
-    sourceCommitmentPacketRefs: stringList(IMPLEMENTATION_CONTEXT_PACKET_MAX_CONTEXT_REFS, 320),
-    sourceContextHandoffRefs: stringList(IMPLEMENTATION_CONTEXT_PACKET_MAX_CONTEXT_REFS, 320),
+    sourceContractRefs: stringList(IMPLEMENTATION_CONTEXT_PACKET_MAX_CONTEXT_REFS, 320),
+    sourceResourceHandoffRefs: stringList(IMPLEMENTATION_CONTEXT_PACKET_MAX_CONTEXT_REFS, 320),
     sourcePromptExcerptRefs: stringList(40, 320),
-    contextSynthesisRefs: stringList(40, 320),
     priorNodeOutputRefs: stringList(40, 320),
     originalTargetRefs: stringList(100, 320),
     resolvedTargetFileRefs: stringList(IMPLEMENTATION_CONTEXT_PACKET_MAX_TARGET_FILE_REFS, 320),
@@ -151,6 +207,15 @@ export const ImplementationContextPacketSchema = z
       IMPLEMENTATION_CONTEXT_PACKET_MAX_CANDIDATE_FILE_REFS,
       320,
     ),
+    resourceSelectionPacketRef: z.string().trim().max(420).nullable().default(null),
+    resourceSelectionPacketHash: z.string().trim().max(180).nullable().default(null),
+    domainResourceSelectionPacketRef: z.string().trim().max(320).nullable().default(null),
+    domainResourceSelectionPacketHash: z.string().trim().max(180).nullable().default(null),
+    selectedTargetFileRefs: stringList(
+      IMPLEMENTATION_CONTEXT_PACKET_MAX_TARGET_FILE_REFS,
+      320,
+    ),
+    fileChangeIntents: z.array(ImplementationTaskFileChangeIntentSchema).max(80).default([]),
     newFileIntents: z.array(z.any()).max(40).default([]),
     newFileParentSnapshotRefs: stringList(40, 320),
     newFileParentMissingRefs: stringList(40, 320),
@@ -197,13 +262,12 @@ export const ImplementationContextPacketSchema = z
       .enum([
         "none",
         "request_excerpt",
-        "rerun_context_scout",
-        "rerun_context_synthesis",
+        "rerun_resource_scout",
         "refresh_replay_checkpoint",
-        "block_implementation",
+        "request_worker_context",
         "ask_human",
       ])
-      .default("block_implementation"),
+      .default("request_worker_context"),
     rawPromptStored: z.literal(false),
     rawResponseStored: z.literal(false),
     rawProviderLogStored: z.literal(false),
@@ -229,15 +293,17 @@ export type ImplementationContextSnapshotCompilerInput = {
   taskSummary: string;
   targetCommitmentIds: string[];
   targetRefs: string[];
+  selectedTargetFileRefs?: string[];
+  resourceSelectionPacket?: ResourceSelectionPacket | null;
+  domainResourceSelectionPacket?: DomainResourceSelectionPacket | null;
   allowedFileRefs: string[];
   deniedFileRefs?: string[];
   newFileIntents?: ImplementationTaskNewFileIntent[];
   fileChangeIntents?: ImplementationTaskFileChangeIntent[];
   contextPacketRefs: string[];
-  sourceCommitmentPacketRefs?: string[];
-  sourceContextHandoffRefs?: string[];
+  sourceContractRefs?: string[];
+  sourceResourceHandoffRefs?: string[];
   sourcePromptExcerptRefs?: string[];
-  contextSynthesisRefs?: string[];
   priorNodeOutputRefs?: string[];
   validationCommandRefs?: string[];
   validationDiscoveryPlan?: string[];
@@ -273,7 +339,7 @@ export type ImplementationContextCompileResult = {
   status: ImplementationContextReadinessStatus;
   packet: ImplementationContextPacket;
   resourceMaterialization: ImplementationResourceMaterializationResult;
-  implementationTaskCompile: PostContextImplementationTaskCompileResult | null;
+  implementationTaskCompile: PostResourceImplementationTaskCompileResult | null;
   implementationTaskPackets: ImplementationTaskPacket[];
   reasonCodes: string[];
   blockerSummary: string | null;
@@ -349,6 +415,49 @@ function asRecord(value: unknown): Record<string, unknown> {
     : {};
 }
 
+function stringValues(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.filter((item): item is string => typeof item === "string" && item.trim().length > 0);
+}
+
+function fileChangeIntentValues(value: unknown): ImplementationTaskFileChangeIntent[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value
+    .map((item) => {
+      const record = asRecord(item);
+      const fileRef =
+        typeof record.fileRef === "string"
+          ? bounded(record.fileRef, 260)
+          : typeof record.targetRef === "string"
+            ? bounded(record.targetRef, 260)
+            : "";
+      const symbolOrRegion =
+        typeof record.symbolOrRegion === "string"
+          ? bounded(record.symbolOrRegion, 260)
+          : typeof record.operation === "string"
+            ? bounded(record.operation, 260)
+            : "";
+      const intendedChange =
+        typeof record.intendedChange === "string" ? bounded(record.intendedChange, 900) : "";
+      const whyThisFile =
+        typeof record.whyThisFile === "string"
+          ? bounded(record.whyThisFile, 900)
+          : typeof record.rationale === "string"
+            ? bounded(record.rationale, 900)
+            : "";
+      if (!fileRef || !symbolOrRegion || !intendedChange || !whyThisFile) {
+        return null;
+      }
+      return { fileRef, symbolOrRegion, intendedChange, whyThisFile };
+    })
+    .filter((intent): intent is ImplementationTaskFileChangeIntent => Boolean(intent))
+    .slice(0, 80);
+}
+
 function schemaDiagnostics(error: z.ZodError): ResourceMaterializationSchemaDiagnostic[] {
   return error.issues.slice(0, 24).map((issue) => ({
     path: issue.path.join(".") || "root",
@@ -390,7 +499,10 @@ function splitFileRefs(
 }
 
 function normalizeRepoFileRef(fileRef: string, repoRoot: string): string | null {
-  const candidate = fileRef
+  const withoutWindowScheme = fileRef.trim().startsWith("file-window://")
+    ? fileRef.trim().slice("file-window://".length).replace(/#L\d+-L\d+$/u, "")
+    : fileRef;
+  const candidate = withoutWindowScheme
     .trim()
     .replace(/^file:\/\//u, "")
     .replaceAll("\\", "/");
@@ -494,6 +606,154 @@ async function snapshotDirectory(input: {
   return `repo-directory-snapshot://${hash.slice(0, 24)}/${encodeURIComponent(normalized)}`;
 }
 
+function normalizeFileChangeIntents(input: {
+  intents: Array<ImplementationTaskFileChangeIntent | DomainResourceSelectionFileChangeIntent>;
+  repoRoot: string;
+  allowedFileRefs: string[];
+  max?: number;
+}): ImplementationTaskFileChangeIntent[] {
+  return input.intents
+    .map((intent) => {
+      const source = "targetRef" in intent
+        ? {
+            fileRef: intent.targetRef,
+            symbolOrRegion: intent.operation,
+            intendedChange: intent.intendedChange,
+            whyThisFile: intent.rationale,
+          }
+        : intent;
+      const fileRef = normalizeRepoFileRef(source.fileRef, input.repoRoot);
+      if (!fileRef || !isAllowed(fileRef, input.allowedFileRefs)) {
+        return null;
+      }
+      return {
+        fileRef,
+        symbolOrRegion: bounded(source.symbolOrRegion, 260),
+        intendedChange: bounded(source.intendedChange, 900),
+        whyThisFile: bounded(source.whyThisFile, 900),
+      } satisfies ImplementationTaskFileChangeIntent;
+    })
+    .filter((intent): intent is ImplementationTaskFileChangeIntent => Boolean(intent))
+    .slice(0, input.max ?? 40);
+}
+
+export function compileDomainResourceSelectionPacket(input: {
+  runtimeJobId: string;
+  workflowId: string;
+  graphId: string;
+  nodeId: string;
+  sourceWorkUnitId?: string | null;
+  repoRoot: string;
+  allowedFileRefs: string[];
+  targetCommitmentIds?: string[];
+  candidateConcreteFileRefs: string[];
+  selectedTargetFileRefs: string[];
+  fileChangeIntents: Array<ImplementationTaskFileChangeIntent | DomainResourceSelectionFileChangeIntent>;
+  modelAuthoredFileChangeIntents?: DomainResourceSelectionFileChangeIntent[];
+  validationDiscoveryPlan?: string[];
+  selectionRationale?: string | null;
+}): DomainResourceSelectionPacket {
+  const allowedFileRefs = unique(input.allowedFileRefs, 160);
+  const candidateConcreteFileRefs = unique(
+    input.candidateConcreteFileRefs
+      .map((ref) => normalizeRepoFileRef(ref, input.repoRoot))
+      .filter((ref): ref is string => Boolean(ref))
+      .filter((ref) => !ref.endsWith("/") && isAllowed(ref, allowedFileRefs)),
+    IMPLEMENTATION_CONTEXT_PACKET_MAX_CANDIDATE_FILE_REFS,
+  );
+  const candidateSet = new Set(candidateConcreteFileRefs);
+  const selectedTargetFileRefs = unique(
+    input.selectedTargetFileRefs
+      .map((ref) => normalizeRepoFileRef(ref, input.repoRoot))
+      .filter((ref): ref is string => Boolean(ref)),
+    IMPLEMENTATION_CONTEXT_PACKET_MAX_TARGET_FILE_REFS,
+  );
+  const normalizedIntents = normalizeFileChangeIntents({
+    intents: input.fileChangeIntents,
+    repoRoot: input.repoRoot,
+    allowedFileRefs,
+    max: 80,
+  });
+  const targetFormInputIntents = input.fileChangeIntents.filter(
+    (intent): intent is DomainResourceSelectionFileChangeIntent => "targetRef" in intent,
+  );
+  const modelAuthoredFileChangeIntents = [
+    ...(input.modelAuthoredFileChangeIntents ?? []),
+    ...targetFormInputIntents,
+  ]
+    .map((intent) =>
+      DomainResourceSelectionFileChangeIntentSchema.parse({
+        ...intent,
+        targetRef: bounded(intent.targetRef, 420),
+        intendedChange: bounded(intent.intendedChange, 1_000),
+        rationale: bounded(intent.rationale, 1_000),
+      }),
+    )
+    .filter((intent) => {
+      const fileRef = normalizeRepoFileRef(intent.targetRef, input.repoRoot);
+      return Boolean(fileRef && isAllowed(fileRef, allowedFileRefs));
+    })
+    .slice(0, 80);
+  const intentRefs = new Set(normalizedIntents.map((intent) => intent.fileRef));
+  const invalidSelections = selectedTargetFileRefs.filter(
+    (ref) => !isAllowed(ref, allowedFileRefs) || !candidateSet.has(ref),
+  );
+  const uncoveredSelectedTargetFileRefs = selectedTargetFileRefs.filter(
+    (ref) => !intentRefs.has(ref),
+  );
+  const reasonCodes = [
+    "domain_resource_selection_packet_compiler_used",
+    ...(selectedTargetFileRefs.length > 0 ? [] : ["domain_resource_selection_selected_refs_missing"]),
+    ...(invalidSelections.length > 0 ? ["domain_resource_selection_selected_refs_not_in_candidate_set"] : []),
+    ...(uncoveredSelectedTargetFileRefs.length > 0
+      ? ["domain_resource_selection_file_change_intent_coverage_missing"]
+      : []),
+    ...(normalizedIntents.length > 0 ? ["domain_resource_selection_file_change_intents_model_authored"] : []),
+  ];
+  const status =
+    selectedTargetFileRefs.length > 0 &&
+    invalidSelections.length === 0 &&
+    uncoveredSelectedTargetFileRefs.length === 0
+      ? "accepted"
+      : "needs_review";
+  const packetBase = {
+    packetKind: "domain_resource_selection_packet" as const,
+    schemaVersion: "execution-platform.domain-resource-selection-packet.v1" as const,
+    packetId: `${input.nodeId}:domain-resource-selection`,
+    packetRef: "pending",
+    runtimeJobId: bounded(input.runtimeJobId, 180),
+    workflowId: bounded(input.workflowId, 180),
+    graphId: bounded(input.graphId, 180),
+    nodeId: bounded(input.nodeId, 180),
+    sourceWorkUnitId: bounded(input.sourceWorkUnitId ?? input.nodeId, 180),
+    targetCommitmentIds: unique(input.targetCommitmentIds ?? [], 24),
+    candidateConcreteFileRefs,
+    selectedTargetFileRefs,
+    fileChangeIntents: normalizedIntents,
+    modelAuthoredFileChangeIntents,
+    validationDiscoveryPlan: unique(input.validationDiscoveryPlan ?? [], 24),
+    selectionRationale: bounded(
+      input.selectionRationale ??
+        "Model-authored target selection chose concrete files from runtime-provided candidates.",
+      1_200,
+    ),
+    status,
+    reasonCodes,
+    invalidSelections: unique(invalidSelections, 80),
+    uncoveredSelectedTargetFileRefs: unique(uncoveredSelectedTargetFileRefs, 80),
+    rawPromptStored: false as const,
+    rawResponseStored: false as const,
+    rawProviderLogStored: false as const,
+    rawToolLogStored: false as const,
+  };
+  return DomainResourceSelectionPacketSchema.parse({
+    ...packetBase,
+    packetRef: `runtime-work-graph://domain-resource-selection-packet/${packetBase.packetId}/${hashValue(
+      packetBase,
+    ).slice(0, 16)}`,
+  });
+}
+
 export async function compileImplementationContextSnapshotPacket(
   input: ImplementationContextSnapshotCompilerInput,
 ): Promise<ImplementationContextCompileResult> {
@@ -507,6 +767,41 @@ export async function compileImplementationContextSnapshotPacket(
       .filter((ref): ref is string => Boolean(ref)),
     120,
   );
+  const domainResourceSelectionPacketAccepted = input.domainResourceSelectionPacket?.status === "accepted";
+  const resourceSelectionPacketAccepted = input.resourceSelectionPacket?.status === "accepted";
+  const sourceEditRequiresDomainResourceSelection =
+    input.executionIntent === "source_edit" ||
+    (input.evidenceMode ?? []).includes("changed_file_evidence") ||
+    (input.newFileIntents ?? []).length > 0;
+  const canonicalResourceSelectionAccepted =
+    domainResourceSelectionPacketAccepted || resourceSelectionPacketAccepted;
+  const resourceSelectionPacketRef = input.resourceSelectionPacket?.packetRef ?? null;
+  const resourceSelectionPacketHash = input.resourceSelectionPacket
+    ? `sha256:${hashValue(input.resourceSelectionPacket)}`
+    : null;
+  const domainResourceSelectionPacketRef = input.domainResourceSelectionPacket?.packetRef ?? null;
+  const domainResourceSelectionPacketHash = input.domainResourceSelectionPacket
+    ? `sha256:${hashValue(input.domainResourceSelectionPacket)}`
+    : null;
+  const directSelectedTargetFileRefs = unique(
+    (input.selectedTargetFileRefs ?? [])
+      .map((ref) => normalizeRepoFileRef(ref, input.repoRoot))
+      .filter((ref): ref is string => Boolean(ref)),
+    IMPLEMENTATION_CONTEXT_PACKET_MAX_TARGET_FILE_REFS,
+  );
+  const selectedTargetFileRefs = unique(
+    [
+      ...(domainResourceSelectionPacketAccepted
+        ? (input.domainResourceSelectionPacket?.selectedTargetFileRefs ?? [])
+        : []),
+      ...(resourceSelectionPacketAccepted
+        ? (input.resourceSelectionPacket?.selectedResourceRefs ?? [])
+        : []),
+    ]
+      .map((ref) => normalizeRepoFileRef(ref, input.repoRoot))
+      .filter((ref): ref is string => Boolean(ref)),
+    IMPLEMENTATION_CONTEXT_PACKET_MAX_TARGET_FILE_REFS,
+  );
   const directoryOnlyTargetRefs: string[] = [];
   const candidateConcreteFileRefs: string[] = [];
   const readableTargetFileRefs: string[] = [];
@@ -514,21 +809,23 @@ export async function compileImplementationContextSnapshotPacket(
   const unreadableTargetRefs: string[] = [];
   const targetFileSnapshots: ImplementationTaskFileSnapshot[] = [];
   const newFileIntents = input.newFileIntents ?? [];
-  const normalizedInputFileChangeIntents = (input.fileChangeIntents ?? [])
-    .map((intent) => {
-      const fileRef = normalizeRepoFileRef(intent.fileRef, input.repoRoot);
-      if (!fileRef || !isAllowed(fileRef, allowedFileRefs)) {
-        return null;
-      }
-      return {
-        fileRef,
-        symbolOrRegion: bounded(intent.symbolOrRegion, 260),
-        intendedChange: bounded(intent.intendedChange, 900),
-        whyThisFile: bounded(intent.whyThisFile, 900),
-      } satisfies ImplementationTaskFileChangeIntent;
-    })
-    .filter((intent): intent is ImplementationTaskFileChangeIntent => Boolean(intent))
-    .slice(0, 40);
+  const normalizedInputFileChangeIntents = normalizeFileChangeIntents({
+    intents: [
+      ...(input.fileChangeIntents ?? []),
+      ...(domainResourceSelectionPacketAccepted ? (input.domainResourceSelectionPacket?.fileChangeIntents ?? []) : []),
+      ...(resourceSelectionPacketAccepted
+        ? (input.resourceSelectionPacket?.resourceIntents ?? []).map((intent) => ({
+            fileRef: intent.resourceRef,
+            symbolOrRegion: intent.intentKind,
+            intendedChange: intent.intendedUse,
+            whyThisFile: intent.rationale,
+          }))
+        : []),
+    ],
+    repoRoot: input.repoRoot,
+    allowedFileRefs,
+    max: 80,
+  });
   const fileChangeIntentRefs = new Set(
     normalizedInputFileChangeIntents.map((intent) => intent.fileRef),
   );
@@ -575,13 +872,29 @@ export async function compileImplementationContextSnapshotPacket(
         fileRef.startsWith(dirRef),
       );
       candidateConcreteFileRefs.push(...candidates, ...intentRefsWithinDirectory);
-      for (const candidate of intentRefsWithinDirectory.slice(0, 24)) {
-        await addReadableTargetSnapshot(candidate);
-      }
       continue;
     }
     if (info?.isFile()) {
+      candidateConcreteFileRefs.push(targetRef);
+      if (!sourceEditRequiresDomainResourceSelection) {
+        await addReadableTargetSnapshot(targetRef);
+      }
+      continue;
+    }
+    if (!newFileIntentRefs.has(targetRef)) {
+      missingTargetRefs.push(targetRef);
+    }
+  }
+
+  for (const targetRef of selectedTargetFileRefs) {
+    if (!isAllowed(targetRef, allowedFileRefs)) {
+      unreadableTargetRefs.push(targetRef);
+      continue;
+    }
+    const info = await stat(path.join(input.repoRoot, targetRef)).catch(() => null);
+    if (info?.isFile()) {
       await addReadableTargetSnapshot(targetRef);
+      candidateConcreteFileRefs.push(targetRef);
       continue;
     }
     if (!newFileIntentRefs.has(targetRef)) {
@@ -653,8 +966,15 @@ export async function compileImplementationContextSnapshotPacket(
       Boolean(limitation),
     )
     .slice(0, 80);
+  const nodeLocalContextDiagnosticLimitations = new Set<string>();
   const blockingContextLimitations = contextLimitations
-    .filter((limitation) => limitation.blocking)
+    .filter(
+      (limitation) =>
+        limitation.blocking &&
+        ![...nodeLocalContextDiagnosticLimitations].some((diagnostic) =>
+          limitation.limitation.includes(diagnostic),
+        ),
+    )
     .map((limitation) => limitation.limitation);
   const nonblockingContextLimitations = contextLimitations
     .filter((limitation) => !limitation.blocking)
@@ -679,9 +999,9 @@ export async function compileImplementationContextSnapshotPacket(
     blockingLimitations.push("No commitment ids are mapped to this implementation node.");
   }
   if (contextPacketRefs.length === 0) {
-    reasonCodes.push("implementation_context_handoff_missing");
-    blockingLimitations.push(
-      "No accepted context handoff refs are available for this implementation node.",
+    reasonCodes.push("implementation_context_node_local_resource_window_required");
+    nonblockingLimitations.push(
+      "No accepted readable resource-window refs are available yet; the worker must open node-local context demand before write readiness.",
     );
   }
   if (blockingContextLimitations.length > 0) {
@@ -704,6 +1024,24 @@ export async function compileImplementationContextSnapshotPacket(
   if (acceptanceCriteria.length === 0) {
     reasonCodes.push("implementation_context_acceptance_criteria_missing");
     blockingLimitations.push("No acceptance criteria are available for the implementation task.");
+  }
+  if (input.domainResourceSelectionPacket && input.domainResourceSelectionPacket.status !== "accepted") {
+    reasonCodes.push("implementation_context_domain_resource_selection_packet_not_accepted");
+    blockingLimitations.push(
+      "Target selection packet exists but was not accepted; runtime cannot promote candidate refs into edit authority.",
+    );
+  }
+  if (sourceEditRequiresDomainResourceSelection && !canonicalResourceSelectionAccepted) {
+    reasonCodes.push("implementation_context_domain_resource_selection_packet_required");
+    blockingLimitations.push(
+      "Source-edit materialization requires an accepted model-authored resource-selection packet before runtime can hydrate executable target snapshots.",
+    );
+  }
+  if (directSelectedTargetFileRefs.length > 0 && !canonicalResourceSelectionAccepted) {
+    reasonCodes.push("implementation_context_direct_selected_target_refs_require_packet");
+    blockingLimitations.push(
+      "Direct selected target refs were present without an accepted resource-selection packet; runtime cannot promote them into edit authority.",
+    );
   }
   if (missingTargetRefs.length > 0) {
     reasonCodes.push("implementation_context_target_refs_missing");
@@ -730,10 +1068,17 @@ export async function compileImplementationContextSnapshotPacket(
     );
   }
   if (readableTargetFileRefs.length === 0 && newFileIntentRefs.size === 0) {
-    reasonCodes.push("implementation_context_no_executable_target_snapshots");
-    blockingLimitations.push(
-      "No readable target snapshots or explicit new-file intents are available.",
-    );
+    if (candidateConcreteFileRefs.length > 0) {
+      reasonCodes.push("implementation_context_concrete_domain_resource_selection_required");
+      blockingLimitations.push(
+        "Target seeds produced candidate concrete files, but no accepted model-authored selected target file refs or explicit new-file intents are available.",
+      );
+    } else {
+      reasonCodes.push("implementation_context_no_executable_target_snapshots");
+      blockingLimitations.push(
+        "No readable target snapshots or explicit new-file intents are available.",
+      );
+    }
   }
   if (packetBoundExceeded) {
     reasonCodes.push("implementation_context_resource_packet_bounds_exceeded");
@@ -755,13 +1100,19 @@ export async function compileImplementationContextSnapshotPacket(
   let status: ImplementationContextReadinessStatus = "ready_as_single_task";
   let repairAction: ImplementationContextPacket["repairAction"] = "none";
   if (blockingLimitations.length > 0) {
-    status = "context_repair_required";
-    repairAction = "request_context_repair";
+    status = "resource_repair_required";
+    repairAction = reasonCodes.some((reasonCode) =>
+      [
+        "implementation_context_concrete_domain_resource_selection_required",
+        "implementation_context_domain_resource_selection_packet_required",
+      ].includes(reasonCode),
+    )
+      ? "select_concrete_target_files"
+      : "open_node_resource_demand";
   } else if (packetBoundExceeded) {
     status = "split_required";
     repairAction = "split_into_file_resolved_tasks";
   } else if (
-    directoryOnlyTargetRefs.length > 0 ||
     readableTargetFileRefs.length > 6 ||
     new Set(readableTargetFileRefs.map(parentDirectory)).size > 1
   ) {
@@ -800,14 +1151,15 @@ export async function compileImplementationContextSnapshotPacket(
     reasonCodes,
     blockerSummary: blockingLimitations.length > 0 ? blockingLimitations.join("; ") : null,
     repairAction,
+    executionIntent: input.executionIntent ?? "unspecified",
+    evidenceMode: input.evidenceMode ?? [],
     exactEditObjective: bounded(input.exactEditObjective, 1_200),
     taskSummary: bounded(input.taskSummary, 2_500),
     targetCommitmentIds,
     contextPacketRefs,
-    sourceCommitmentPacketRefs: unique(input.sourceCommitmentPacketRefs ?? [], 80),
-    sourceContextHandoffRefs: unique(input.sourceContextHandoffRefs ?? contextPacketRefs, 80),
+    sourceContractRefs: unique(input.sourceContractRefs ?? [], 80),
+    sourceResourceHandoffRefs: unique(input.sourceResourceHandoffRefs ?? contextPacketRefs, 80),
     sourcePromptExcerptRefs: unique(input.sourcePromptExcerptRefs ?? [], 40),
-    contextSynthesisRefs: unique(input.contextSynthesisRefs ?? [], 40),
     priorNodeOutputRefs: unique(input.priorNodeOutputRefs ?? [], 40),
     originalTargetRefs: normalizedTargets.slice(
       0,
@@ -823,6 +1175,12 @@ export async function compileImplementationContextSnapshotPacket(
       candidateConcreteFileRefs,
       IMPLEMENTATION_CONTEXT_PACKET_MAX_CANDIDATE_FILE_REFS,
     ),
+    resourceSelectionPacketRef,
+    resourceSelectionPacketHash,
+    domainResourceSelectionPacketRef,
+    domainResourceSelectionPacketHash,
+    selectedTargetFileRefs,
+    fileChangeIntents: normalizedInputFileChangeIntents,
     newFileIntents,
     newFileParentSnapshotRefs: unique(newFileParentSnapshotRefs, 40),
     newFileParentMissingRefs: unique(newFileParentMissingRefs, 40),
@@ -880,7 +1238,7 @@ export async function compileImplementationContextSnapshotPacket(
     requiredContextSnapshotRefs: input.requiredContextSnapshotRefs ?? [],
     providedContextSnapshotRefs: input.providedContextSnapshotRefs ?? [],
     contextFreshnessStatus: blockingContextLimitations.length > 0 ? "missing" : "fresh",
-    contextRefreshAction: blockingLimitations.length > 0 ? "block_implementation" : "none",
+    contextRefreshAction: blockingLimitations.length > 0 ? "request_worker_context" : "none",
     rawPromptStored: false as const,
     rawResponseStored: false as const,
     rawProviderLogStored: false as const,
@@ -924,7 +1282,7 @@ export async function compileImplementationContextSnapshotPacket(
         ],
         nonblockingLimitations: [],
         contextFreshnessStatus: "rejected",
-        contextRefreshAction: "block_implementation",
+        contextRefreshAction: "request_worker_context",
         packetRef: `runtime-work-graph://implementation-context-packet/${packetId}/schema-invalid-${hashValue(
           schemaDiagnostics(parsedPacket.error),
         ).slice(0, 12)}`,
@@ -938,8 +1296,8 @@ export async function compileImplementationContextSnapshotPacket(
         ? "accepted"
         : packet.readinessStatus === "split_required"
           ? "split_required"
-          : packet.readinessStatus === "context_repair_required"
-            ? "context_repair_required"
+          : packet.readinessStatus === "resource_repair_required"
+            ? "resource_repair_required"
             : "needs_review",
     packetRef: packet.packetRef,
     blockingReasonCodes:
@@ -986,9 +1344,9 @@ export async function compileImplementationContextSnapshotPacket(
   status = packet.readinessStatus;
   repairAction = packet.repairAction;
 
-  let implementationTaskCompile: PostContextImplementationTaskCompileResult | null = null;
+  let implementationTaskCompile: PostResourceImplementationTaskCompileResult | null = null;
   if (status === "ready_as_single_task" || status === "split_required") {
-    implementationTaskCompile = compilePostContextImplementationTaskPackets({
+    implementationTaskCompile = compilePostResourceImplementationTaskPackets({
       runtimeJobId: input.runtimeJobId,
       workflowId: input.workflowId,
       graphId: input.graphId,
@@ -1003,6 +1361,10 @@ export async function compileImplementationContextSnapshotPacket(
       expectedPatchShape: packet.expectedPatchShape,
       whyThisWorkerWasSelected: input.whyThisWorkerWasSelected ?? null,
       targetCommitmentIds: packet.targetCommitmentIds,
+      domainResourceSelectionRefs: unique(
+        [packet.resourceSelectionPacketRef, packet.domainResourceSelectionPacketRef],
+        24,
+      ),
       targetFileRefs: packet.resolvedTargetFileRefs,
       readableFileRefs: packet.readableTargetFileRefs,
       missingFileRefs: [],
@@ -1011,10 +1373,9 @@ export async function compileImplementationContextSnapshotPacket(
       allowedFileRefs: unique([...allowedFileRefs, ...packet.allowedEditScope], 160),
       deniedFileRefs: packet.deniedFileRefs,
       contextPacketRefs: packet.contextPacketRefs,
-      sourceCommitmentPacketRefs: packet.sourceCommitmentPacketRefs,
-      sourceContextHandoffRefs: packet.sourceContextHandoffRefs,
+      sourceContractRefs: packet.sourceContractRefs,
+      sourceResourceHandoffRefs: packet.sourceResourceHandoffRefs,
       sourcePromptExcerptRefs: packet.sourcePromptExcerptRefs,
-      contextSynthesisRefs: packet.contextSynthesisRefs,
       priorNodeOutputRefs: packet.priorNodeOutputRefs,
       validationCommandRefs: packet.validationCommandRefs,
       validationDiscoveryPlan: packet.validationDiscoveryPlan,
@@ -1040,22 +1401,36 @@ export async function compileImplementationContextSnapshotPacket(
   }
 
   const implementationTaskPackets = implementationTaskCompile?.packets ?? [];
+  const implementationTaskCompileNeedsDomainResourceSelection =
+    implementationTaskCompile?.reasonCodes.some(
+      (code) =>
+        code === "post_resource_task_file_change_intent_coverage_missing" ||
+        code === "post_resource_task_semantic_microtask_refinement_required",
+    ) ?? false;
   const splitPrecedesTaskPacketRepair =
     status === "split_required" &&
-    implementationTaskCompile?.status === "context_repair_required" &&
-    resourceMaterialization.suggestedSplits.length > 1;
+    implementationTaskCompile?.status === "resource_repair_required" &&
+    resourceMaterialization.suggestedSplits.length > 1 &&
+    !implementationTaskCompileNeedsDomainResourceSelection;
 
   if (implementationTaskCompile?.status === "needs_review") {
     status = "needs_review";
     repairAction = "needs_operator_review";
   } else if (
-    implementationTaskCompile?.status === "context_repair_required" &&
+    implementationTaskCompile?.status === "resource_repair_required" &&
+    implementationTaskCompileNeedsDomainResourceSelection
+  ) {
+    status = "resource_repair_required";
+    repairAction = "select_concrete_target_files";
+    reasonCodes.push("implementation_context_domain_resource_selection_required_before_split");
+  } else if (
+    implementationTaskCompile?.status === "resource_repair_required" &&
     !splitPrecedesTaskPacketRepair
   ) {
-    status = "context_repair_required";
-    repairAction = "request_context_repair";
+    status = "resource_repair_required";
+    repairAction = "open_node_resource_demand";
   } else if (splitPrecedesTaskPacketRepair) {
-    reasonCodes.push("implementation_context_split_precedes_context_repair");
+    reasonCodes.push("implementation_context_split_precedes_resource_repair");
     repairAction = "split_into_file_resolved_tasks";
   }
   const finalResourceMaterialization: ImplementationResourceMaterializationResult = {
@@ -1065,8 +1440,8 @@ export async function compileImplementationContextSnapshotPacket(
         ? "accepted"
         : status === "split_required"
           ? "split_required"
-          : status === "context_repair_required"
-            ? "context_repair_required"
+          : status === "resource_repair_required"
+            ? "resource_repair_required"
             : status === "human_decision_required"
               ? "needs_review"
               : "needs_review",
@@ -1082,6 +1457,9 @@ export async function compileImplementationContextSnapshotPacket(
       implementationTaskPackets: implementationTaskPackets.length,
     },
   };
+  const finalBlockerSummary = implementationTaskCompileNeedsDomainResourceSelection
+    ? "Model-authored target selection is required before runtime can split or execute this implementation node; candidate refs exist, but selected target refs and file-change intents are incomplete."
+    : (packet.blockerSummary ?? implementationTaskCompile?.blockerSummary ?? null);
   return {
     status,
     packet,
@@ -1089,7 +1467,7 @@ export async function compileImplementationContextSnapshotPacket(
     implementationTaskCompile,
     implementationTaskPackets,
     reasonCodes: [...reasonCodes, ...(implementationTaskCompile?.reasonCodes ?? [])],
-    blockerSummary: packet.blockerSummary ?? implementationTaskCompile?.blockerSummary ?? null,
+    blockerSummary: finalBlockerSummary,
     repairAction,
     rawPromptStored: false,
     rawResponseStored: false,
@@ -1113,6 +1491,9 @@ export function summarizeImplementationContextPacketForReadback(
     unreadableTargetRefs: packet.unreadableTargetRefs.slice(0, 30),
     directoryOnlyTargetRefs: packet.directoryOnlyTargetRefs.slice(0, 20),
     candidateConcreteFileRefs: packet.candidateConcreteFileRefs.slice(0, 40),
+    domainResourceSelectionPacketRef: packet.domainResourceSelectionPacketRef,
+    domainResourceSelectionPacketHash: packet.domainResourceSelectionPacketHash,
+    selectedTargetFileRefs: packet.selectedTargetFileRefs.slice(0, 30),
     targetFileSnapshotRefs: packet.targetFileSnapshotRefs.slice(0, 30),
     targetFileSnapshotHashes: packet.targetFileSnapshotHashes.slice(0, 30),
     newFileParentSnapshotRefs: packet.newFileParentSnapshotRefs.slice(0, 20),
@@ -1214,6 +1595,171 @@ export function compileImplementationContextToolOutput(input: {
 } {
   const metadata = asRecord(input.metadata ?? null);
   const volatile = asRecord(input.volatileInput);
+  const baseReason = `${input.toolId.replaceAll(".", "_")}_recorded`;
+  if (input.toolId === "context.resolve_directory_seed") {
+    const directoryDiscoverySeeds = unique(
+      [
+        ...stringValues(volatile.directoryDiscoverySeeds),
+        ...stringValues(metadata.directoryDiscoverySeeds),
+        ...stringValues(volatile.directoryOnlyTargetRefs),
+        ...stringValues(metadata.directoryOnlyTargetRefs),
+      ],
+      40,
+    );
+    const candidateConcreteFileRefs = unique(
+      [
+        ...stringValues(volatile.candidateConcreteFileRefs),
+        ...stringValues(metadata.candidateConcreteFileRefs),
+      ],
+      IMPLEMENTATION_CONTEXT_PACKET_MAX_CANDIDATE_FILE_REFS,
+    );
+    const outputRef = `runtime-tool-output://context.resolve_directory_seed/${hashValue({
+      directoryDiscoverySeeds,
+      candidateConcreteFileRefs,
+    }).slice(0, 24)}`;
+    return {
+      status: candidateConcreteFileRefs.length > 0 ? "succeeded" : "needs_review",
+      outputRef,
+      outputHash: `implementation-context:context.resolve_directory_seed:${hashValue({
+        directoryDiscoverySeeds,
+        candidateConcreteFileRefs,
+      })}`,
+      outputSummary: `Resolved ${candidateConcreteFileRefs.length} candidate concrete file ref(s) from ${directoryDiscoverySeeds.length} directory discovery seed(s).`,
+      reasonCodes: [
+        baseReason,
+        "implementation_context_directory_seed_resolved_structurally",
+        ...(candidateConcreteFileRefs.length > 0
+          ? []
+          : ["implementation_context_directory_seed_candidate_refs_missing"]),
+      ],
+      metadata: {
+        directoryDiscoverySeeds,
+        candidateConcreteFileRefs,
+        candidateConcreteFileRefCount: candidateConcreteFileRefs.length,
+        modelSemanticSelectionRequired: true,
+        rawPromptStored: false,
+        rawResponseStored: false,
+        rawProviderLogStored: false,
+        rawToolLogStored: false,
+      } satisfies JsonValue,
+    };
+  }
+  if (input.toolId === "implementation.select_target_files") {
+    const candidateConcreteFileRefs = new Set(
+      unique(
+        [
+          ...stringValues(volatile.candidateConcreteFileRefs),
+          ...stringValues(metadata.candidateConcreteFileRefs),
+        ],
+        IMPLEMENTATION_CONTEXT_PACKET_MAX_CANDIDATE_FILE_REFS,
+      ),
+    );
+    const selectedTargetFileRefs = unique(
+      [
+        ...stringValues(volatile.selectedTargetFileRefs),
+        ...stringValues(metadata.selectedTargetFileRefs),
+        ...stringValues(volatile.selectedConcreteTargetRefs),
+        ...stringValues(metadata.selectedConcreteTargetRefs),
+      ],
+      IMPLEMENTATION_CONTEXT_PACKET_MAX_TARGET_FILE_REFS,
+    );
+    const fileChangeIntents = [
+      ...fileChangeIntentValues(volatile.fileChangeIntents),
+      ...fileChangeIntentValues(metadata.fileChangeIntents),
+    ].slice(0, 80);
+    const intentRefs = new Set(fileChangeIntents.map((intent) => intent.fileRef));
+    const uncoveredSelectedTargetFileRefs = selectedTargetFileRefs.filter(
+      (ref) => !intentRefs.has(ref),
+    );
+    const invalidSelections =
+      candidateConcreteFileRefs.size > 0
+        ? selectedTargetFileRefs.filter((ref) => !candidateConcreteFileRefs.has(ref))
+        : [];
+    const outputRef = `runtime-tool-output://implementation.select_target_files/${hashValue({
+      selectedTargetFileRefs,
+      invalidSelections,
+    }).slice(0, 24)}`;
+    return {
+      status:
+        selectedTargetFileRefs.length > 0 &&
+        invalidSelections.length === 0 &&
+        uncoveredSelectedTargetFileRefs.length === 0
+          ? "succeeded"
+          : "needs_review",
+      outputRef,
+      outputHash: `implementation-context:implementation.select_target_files:${hashValue({
+        selectedTargetFileRefs,
+        invalidSelections,
+      })}`,
+      outputSummary: `Selected ${selectedTargetFileRefs.length} concrete implementation target file ref(s).`,
+      reasonCodes: [
+        baseReason,
+        "implementation_target_file_selection_model_authored",
+        ...(selectedTargetFileRefs.length > 0
+          ? []
+          : ["implementation_target_file_selection_missing"]),
+        ...(invalidSelections.length > 0
+          ? ["implementation_target_file_selection_not_in_candidate_set"]
+          : []),
+        ...(uncoveredSelectedTargetFileRefs.length > 0
+          ? ["implementation_target_file_selection_file_change_intent_coverage_missing"]
+          : []),
+      ],
+      metadata: {
+        selectedTargetFileRefs,
+        selectedTargetFileRefCount: selectedTargetFileRefs.length,
+        fileChangeIntents,
+        invalidSelections,
+        uncoveredSelectedTargetFileRefs,
+        candidateConcreteFileRefCount: candidateConcreteFileRefs.size,
+        selectionRationale:
+          typeof volatile.rationale === "string"
+            ? bounded(volatile.rationale, 1_200)
+            : typeof metadata.rationale === "string"
+              ? bounded(metadata.rationale, 1_200)
+              : null,
+        rawPromptStored: false,
+        rawResponseStored: false,
+        rawProviderLogStored: false,
+        rawToolLogStored: false,
+      } satisfies JsonValue,
+    };
+  }
+  if (input.toolId === "implementation.declare_new_file_intent") {
+    const declaredNewFileRefs = unique(
+      [
+        ...stringValues(volatile.newFileRefs),
+        ...stringValues(metadata.newFileRefs),
+        ...stringValues(volatile.declaredNewFileRefs),
+        ...stringValues(metadata.declaredNewFileRefs),
+      ],
+      40,
+    );
+    const outputRef = `runtime-tool-output://implementation.declare_new_file_intent/${hashValue({
+      declaredNewFileRefs,
+    }).slice(0, 24)}`;
+    return {
+      status: declaredNewFileRefs.length > 0 ? "succeeded" : "needs_review",
+      outputRef,
+      outputHash: `implementation-context:implementation.declare_new_file_intent:${hashValue({
+        declaredNewFileRefs,
+      })}`,
+      outputSummary: `Declared ${declaredNewFileRefs.length} new-file intent ref(s).`,
+      reasonCodes: [
+        baseReason,
+        "implementation_new_file_intent_model_authored",
+        ...(declaredNewFileRefs.length > 0 ? [] : ["implementation_new_file_intent_missing"]),
+      ],
+      metadata: {
+        declaredNewFileRefs,
+        declaredNewFileRefCount: declaredNewFileRefs.length,
+        rawPromptStored: false,
+        rawResponseStored: false,
+        rawProviderLogStored: false,
+        rawToolLogStored: false,
+      } satisfies JsonValue,
+    };
+  }
   const packet = asRecord(
     volatile.implementationContextPacket ?? metadata.implementationContextPacket,
   );
@@ -1223,7 +1769,6 @@ export function compileImplementationContextToolOutput(input: {
       ? metadata.implementationTaskPackets
       : [];
   const parsed = ImplementationContextPacketSchema.safeParse(packet);
-  const baseReason = `${input.toolId.replaceAll(".", "_")}_recorded`;
   if (!parsed.success) {
     return {
       status: "needs_review",
@@ -1259,7 +1804,7 @@ export function compileImplementationContextToolOutput(input: {
     );
   const blocked =
     parsed.data.blockingLimitations.length > 0 ||
-    parsed.data.readinessStatus === "context_repair_required" ||
+    parsed.data.readinessStatus === "resource_repair_required" ||
     parsed.data.readinessStatus === "needs_review" ||
     taskValidations.some((validation) => validation.status === "invalid");
   return {

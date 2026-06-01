@@ -423,7 +423,7 @@ async function streamProgressUntilSettled(runtime, input, runPromise) {
 async function main() {
   const promptFile =
     process.argv[2] ??
-    "docs/projects/execution-platform/prompts/product-spec-planning-production-upgrade-openclaw.md";
+    "docs/projects/execution-platform/prompts/product-spec-planning-workflow-plugin-production-proof-openclaw.md";
   await loadEnvFile(".env");
   await loadEnvFile(".env.execution-platform-staging");
   const prompt = await fs.readFile(promptFile, "utf8");

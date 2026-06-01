@@ -105,7 +105,7 @@ const preProofItems = [
     specSection: "queue-item-6-productspec-replay-proof",
     scope: [
       "failed_wu_002_replay",
-      "context_handoff_to_snapshots",
+      "resource_handoff_to_snapshots",
       "implementation_task_packet_replay",
       "node_readiness_state_replay",
       "worker_ready_packet_gate",
@@ -136,12 +136,12 @@ const preProofItems = [
 
 const supersededItems = [
   {
-    id: "openclaw-convergence.scheduler-first-node-scoped-context-supply",
+    id: "openclaw-convergence.scheduler-first-node-scoped-resource-fulfillment",
     reason: "Detailed sub-spec absorbed into the generic resource-materialization block.",
     supersededBy: "openclaw-convergence.generic-node-resource-materialization-layer",
   },
   {
-    id: "openclaw-convergence.post-context-implementation-task-compiler",
+    id: "openclaw-convergence.post-resource-implementation-task-compiler",
     reason: "Detailed sub-spec absorbed into the implementation context snapshot compiler item.",
     supersededBy: "openclaw-convergence.implementation-context-snapshot-compiler",
   },

@@ -142,7 +142,7 @@ describe("ACP production executor and agent-team maturation", () => {
       reasonCodes: ["acp_endpoint_readiness_required"],
     });
     const v4ProContext = enforceModelRoster({
-      roleId: "context_scout",
+      roleId: "resource_scout",
       requestedModelId: "deepseek/deepseek-v4-pro",
       requestedAuthority: "observe",
       candidates: [
@@ -168,7 +168,7 @@ describe("ACP production executor and agent-team maturation", () => {
       decideExecutorTransportPolicy({
         transportKind: "openrouter_model_lane",
         jobType: "executor.agent_team",
-        roleId: "context_scout",
+        roleId: "resource_scout",
         requestedModelId: "deepseek/deepseek-v4-pro",
         modelRosterDecision: v4ProContext,
       }),
@@ -240,7 +240,7 @@ describe("ACP production executor and agent-team maturation", () => {
         completedAt: "2026-05-03T22:00:01.000Z",
         evidenceRef: "artifact:context-scout",
       });
-      expect(completed.lanes.find((lane) => lane.roleId === "context_scout")?.status).toBe(
+      expect(completed.lanes.find((lane) => lane.roleId === "resource_scout")?.status).toBe(
         "completed",
       );
 
@@ -296,7 +296,7 @@ describe("ACP production executor and agent-team maturation", () => {
     const cadence = createModelEvalCadenceRecord({
       candidateId: "new-candidate",
       modelId: "provider/new-model",
-      roleId: "context_scout",
+      roleId: "resource_scout",
     });
     expect(cadence).toMatchObject({ status: "unqualified", noGlobalWinner: true });
     expect(demoteModelEvalCadenceRecord(cadence, "scope_drift")).toMatchObject({

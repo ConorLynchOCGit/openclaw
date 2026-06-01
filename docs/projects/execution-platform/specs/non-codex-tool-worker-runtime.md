@@ -9,6 +9,61 @@ Date: 2026-05-18
 
 Status: pre-Product/Spec blocker.
 
+2026-05-26 node-local node resource demand update: worker context tools now connect
+to the canonical `NodeResourceDemandSession` lifecycle. A non-Codex worker may
+start from a partial `NodeExecutionPacket` for read/context phases, but
+source-edit tools remain unavailable until target selection, snapshots,
+authority, validation refs or structural defaults, and evidence expectations
+hydrate the write gate.
+
+2026-05-27 mandatory focus update: `worker.context.request_more` must not
+open broad context by itself. It must either cite an accepted
+`ResourceObjectiveFocus` or trigger the small-verb focus subturn that asks the
+model to choose legal handles, next unknown, expected use, semantic
+questions, and stop condition. Runtime validates handles, authority, counts,
+budgets, storage, and next transition only. Source-edit tools remain blocked
+until a separate model-authored target-selection packet accepts exact targets
+from the ledger/legal universe.
+
+2026-05-28 exact node resource demand update: after focus acceptance, the runtime
+may satisfy `NodeResourceDemandSession` only with exact model-selected handles.
+Exact means the handle already names the bounded unit to materialize, such as
+a file-window ref with line range, a bounded symbol ref, a validation/test ref,
+or a memory-pack ref. If the selected handle is a bare file, directory,
+repo-area, target ref, oversized unit, or mixed-kind bundle, the next legal
+transition is the specialist narrowing subturn:
+`context.scout.narrow_scope -> context.scout.submit_exact_handles` or
+`context.scout.mark_narrowing_blocked`. Runtime may validate that submitted
+handles are legal and authorized, but it must not choose line ranges or
+semantic sub-scope itself.
+
+The narrowing subturn is a live runtime transition, not a recorded request for
+later global scheduling. The worker/scheduler context loop must hand the
+specialist a compact, bounded demand payload and a legal handle/window menu;
+the specialist must author exact refs and handoff substance through the small
+verbs. Runtime compiles manifests and ledger entries from that output and
+keeps large bodies artifact-backed. Missing or malformed selector output is a
+typed context-narrowing blocker, not a reason to widen authority or resurrect
+graph-level context scouts.
+
+The model-facing focus menu exposes both generated handles and exact legal
+refs. If a worker or specialist returns the exact ref string in the handle
+slot, the gateway may normalize it to the matching handle. That normalization
+is structural membership repair only: it never picks a different ref, ranks
+candidates, or accepts anything outside the menu.
+
+2026-05-31 worker-owned search/read correction: implementation/test/docs-edit
+workers no longer require pre-worker implementation materialization before
+startup. The governing spec is
+[Worker-Owned Context Search/Read Lifecycle](/projects/execution-platform/specs/worker-owned-context-search-read-lifecycle).
+The worker starts from a partial runner-authorized packet and uses small
+verbs to propose searches, open matches, expand or contract windows after
+reading, accept exact windows into the node ledger, and then plan/edit/
+validate/evidence. `ImplementationContextSnapshotCompiler`,
+`before_resource_materialization`, `after_resource_materialization`, fixed
+first-window readiness, and `resource_fulfillment` handoff repair are retired
+as positive production/replay readiness paths.
+
 ## Problem
 
 The Product/Spec boundary replay reached real implementation nodes and invoked
@@ -50,6 +105,8 @@ Inputs:
 - accepted Mission Ledger refs
 - commitment work packet refs
 - context scout/synthesis refs
+- accepted `ResourceObjectiveFocus` refs when node resource demand is already known
+- accepted target-selection refs when source-edit snapshots are available
 - selected capability and cost-policy refs
 - bounded source-prompt excerpt refs
 - target and denied scope refs
@@ -77,6 +134,15 @@ The non-Codex worker gets a narrow but real coding harness:
 - `worker.request_context`: ask the scheduler/context layer for missing
   original prompt excerpts, repo context, upstream node output, or human
   clarification.
+- `worker.context.request_more`: request a node-local node resource demand. If no
+  accepted focus exists, this leads to the `context.focus.*` subturn first;
+  it cannot directly open a broad demand from approved scope or graph
+  `targetRefs`.
+- `worker.context.provide_bounded_snapshot`: runtime-owned response to a
+  demand session when exact model-selected repo/file/test/memory handles
+  satisfy the request.
+- `worker.context.deny_request`: runtime-owned denial when the request
+  exceeds authority, budget, or legal refs.
 - `edit.plan`: model-authored edit plan with target files, intent, risk, and
   validation expectation.
 - `edit.apply_patch`: runtime-owned patch application with conflict and scope
@@ -94,6 +160,38 @@ The non-Codex worker gets a narrow but real coding harness:
 
 The model sees tool descriptions and results. It does not invent runtime-owned
 node kinds, executor keys, file refs, evidence enums, or persistence payloads.
+
+## NodeResourceDemandSession Integration
+
+Worker context requests are no longer informal loop hints. They must compile
+into `NodeResourceDemandSession` records:
+
+- consumer node id;
+- WorkIntent ref;
+- NodeExecutionContract ref;
+- current partial `NodeExecutionPacket` ref;
+- requested context kind;
+- model-authored reason and expected use;
+- candidate refs or missing refs;
+- authority scope;
+- next legal transitions;
+- demand status.
+
+The session is illegal without an accepted focus decision or workflow-defined
+equivalent. Candidate refs are legal handles, not semantic target choices.
+The worker can ask for more context, but the model-authored focus decides
+which legal handles matter for the current unknown.
+
+Runtime fulfills exact demands directly with repo/file/test/memory tools. If
+the accepted focus selected broad or vague handles, runtime dispatches a
+specialist scout subturn bound to the same session. The specialist, not
+runtime, narrows broad handles into exact handles or marks the demand blocked.
+All successful or blocked fulfillment results append to the consumer node's
+`NodeResourceLedger`.
+
+The worker must not receive broad context scout fanout results as ambient
+context. It receives the ledger manifest and selected payload refs for its own
+node only.
 
 ## Provider Modes
 

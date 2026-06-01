@@ -32,10 +32,10 @@ export type RuntimeRepairFailureClass = (typeof RUNTIME_REPAIR_FAILURE_CLASSES)[
 export const RUNTIME_REPAIR_BOUNDARY_KINDS = [
   "router",
   "mission_ledger",
-  "commitment_packet_authoring",
-  "packet_review",
-  "context_scout",
-  "context_synthesis",
+  "obligation_graph",
+  "execution_contract",
+  "resource_scout",
+  "artifact_storage",
   "graph_planning",
   "scheduler_selection",
   "node_execution",
@@ -429,15 +429,13 @@ export function failureClassFromReasonCodes(input: {
   nodeKind?: string | null;
   status?: string | null;
 }): RuntimeRepairFailureClass {
+  const reasonCodeSet = new Set(input.reasonCodes);
   const combined = `${input.nodeKind ?? ""} ${input.status ?? ""} ${input.reasonCodes.join(" ")}`;
   if (/mission[_-]ledger|mission_contract/iu.test(combined)) {
     return "mission_ledger_invalid";
   }
   if (/commitment[_-]work[_-]packet|packet[_-](insufficient|invalid|missing)/iu.test(combined)) {
     return "upstream_packet_insufficient";
-  }
-  if (/context[_-]freshness|stale[_-]context|snapshot.*stale/iu.test(combined)) {
-    return "stale_context";
   }
   if (
     /artifact[_-](metadata|size).*limit|metadata exceeds \d+ bytes|artifact metadata exceeds|artifact sizeBytes exceeds/iu.test(
@@ -446,20 +444,42 @@ export function failureClassFromReasonCodes(input: {
   ) {
     return "artifact_storage_bound_exceeded";
   }
-  if (/context|handoff|excerpt|snapshot/iu.test(combined)) {
-    return "context_insufficient";
-  }
-  if (/schema|json|contract|missing[_-]field|field_path|parse/iu.test(combined)) {
-    return "schema_boundary_failure";
-  }
   if (/provider[_-]no[_-]content|no_content/iu.test(combined)) {
     return "provider_no_content";
   }
   if (/timeout|timed_out/iu.test(combined)) {
     return "provider_timeout";
   }
-  if (/provider|model_call_failed/iu.test(combined)) {
+  if (
+    reasonCodeSet.has("worker_context_request_unfulfilled_missing_exact_hydrated_windows") ||
+    reasonCodeSet.has("worker_context_request_more_unfulfilled") ||
+    reasonCodeSet.has("worker_context_request_more_empty") ||
+    reasonCodeSet.has("worker_context_required")
+  ) {
+    return "context_insufficient";
+  }
+  if (
+    reasonCodeSet.has("worker_patch_author_required_missing_snapshot") ||
+    reasonCodeSet.has("worker_patch_author_required_missing_plan") ||
+    reasonCodeSet.has("worker_patch_force_author_from_plan_missing_plan_or_snapshot")
+  ) {
+    return "adapter_protocol_failure";
+  }
+  if (
+    /provider_(error|failure|failed|exception)|provider[-_ ]?(error|failure|failed|exception)|model_call_failed/iu.test(
+      combined,
+    )
+  ) {
     return "provider_error";
+  }
+  if (/context[_-]freshness|stale[_-]context|snapshot.*stale/iu.test(combined)) {
+    return "stale_context";
+  }
+  if (/context|handoff|excerpt|snapshot/iu.test(combined)) {
+    return "context_insufficient";
+  }
+  if (/schema|json|contract|missing[_-]field|field_path|parse/iu.test(combined)) {
+    return "schema_boundary_failure";
   }
   if (/tool.*missing|executor_missing|tool_unavailable/iu.test(combined)) {
     return "tool_unavailable";
@@ -470,26 +490,11 @@ export function failureClassFromReasonCodes(input: {
   if (/scope|authority|blocked|prohibited/iu.test(combined)) {
     return "scope_or_authority_block";
   }
-  if (/validation.*unrecoverable/iu.test(combined)) {
-    return "validation_failure_unrecoverable";
-  }
-  if (/validation|test/iu.test(combined)) {
-    return "validation_failure_repairable";
-  }
-  if (/capability|qualification|high_capability|escalation_required/iu.test(combined)) {
-    return "worker_capability_insufficient";
-  }
   if (/adapter|worker_loop|file_edit|patch|edit_transaction/iu.test(combined)) {
     return "adapter_protocol_failure";
   }
   if (/edge|graph|decomposition|scheduler.*rejected|staged_scheduler/iu.test(combined)) {
     return "graph_structure_insufficient";
-  }
-  if (/evidence[_-]claim|evidence_mapping|commitment.*evidence/iu.test(combined)) {
-    return "evidence_mapping_missing";
-  }
-  if (/closeout|finalization/iu.test(combined)) {
-    return "closeout_evidence_missing";
   }
   if (/work[_-]queue|projection|readback/iu.test(combined)) {
     return "work_queue_projection_stale";
@@ -507,17 +512,17 @@ export function selectedBoundaryForFailureClass(
     case "mission_ledger_invalid":
       return "mission_ledger";
     case "upstream_packet_insufficient":
-      return "commitment_packet_authoring";
+      return "execution_contract";
     case "missing_context":
     case "stale_context":
     case "context_insufficient":
-      return "context_scout";
+      return "resource_scout";
     case "graph_structure_insufficient":
     case "schema_boundary_failure":
     case "model_contract_choke":
       return "graph_planning";
     case "artifact_storage_bound_exceeded":
-      return "context_synthesis";
+      return "artifact_storage";
     case "validation_failure_repairable":
     case "validation_failure_unrecoverable":
       return "validation";

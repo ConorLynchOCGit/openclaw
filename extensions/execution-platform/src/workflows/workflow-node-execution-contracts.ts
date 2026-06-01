@@ -1,4 +1,5 @@
 import type { JsonValue } from "../runtime-job-repository.ts";
+import type { RuntimeValidationPhase } from "./validation-phase.ts";
 
 export type CommitmentEvidenceClaim = {
   commitmentId: string;
@@ -19,6 +20,11 @@ export type CommitmentEvidenceClaim = {
     | "other";
   claimSummary: string;
   limitations: string[];
+  validationPhase?: RuntimeValidationPhase;
+  validationRefs?: string[];
+  changedFileRefs?: string[];
+  validationPhaseCompatibility?: "compatible" | "incompatible" | "not_closure_capable";
+  validationPhaseReasonCodes?: string[];
   rawPromptStored: false;
   rawResponseStored: false;
   rawProviderLogStored: false;

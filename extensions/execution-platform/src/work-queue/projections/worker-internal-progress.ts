@@ -65,10 +65,6 @@ export function projectWorkerInternalProgress(input: {
         ...stringArrayValue(latestWorkerInternalData.inputHandoffRefs, 30),
       ]),
     ].slice(0, 30),
-    contextSynthesisRefs: stringArrayValue(
-      latestWorkerInternalData.workerInternalContextSynthesisRefs,
-      20,
-    ),
     codeIntelligenceRefs: stringArrayValue(
       latestWorkerInternalData.workerInternalCodeIntelligenceRefs,
       20,

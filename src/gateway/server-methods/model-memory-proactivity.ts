@@ -48,6 +48,41 @@ function readBooleanParam(value: unknown): boolean | undefined {
   return undefined;
 }
 
+function readPositivePageLimit(value: unknown, fallback = 25, max = 50): number {
+  const parsed = readNonNegativeNumber(value);
+  if (parsed === undefined || parsed < 1) {
+    return fallback;
+  }
+  return Math.max(1, Math.min(Math.trunc(parsed), max));
+}
+
+function readOffsetCursor(value: unknown): number {
+  const text = readString(value);
+  if (!text) {
+    return 0;
+  }
+  const normalized = text.startsWith("offset:") ? text.slice("offset:".length) : text;
+  const parsed = Number.parseInt(normalized, 10);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : 0;
+}
+
+function pageItems<T>(items: T[], params: Record<string, unknown>) {
+  const limit = readPositivePageLimit(params.limit);
+  const offset = readOffsetCursor(params.cursor);
+  const page = items.slice(offset, offset + limit);
+  const nextOffset = offset + page.length;
+  return {
+    items: page,
+    pageInfo: {
+      limit,
+      offset,
+      totalCount: items.length,
+      hasMore: nextOffset < items.length,
+      nextCursor: nextOffset < items.length ? `offset:${nextOffset}` : null,
+    },
+  };
+}
+
 function resolveOperatorId(params: Record<string, unknown>, clientId: string | undefined): string {
   return readString(params.operatorId) ?? clientId ?? process.env.USER ?? "local-openclaw-operator";
 }
@@ -364,6 +399,7 @@ export const modelMemoryProactivityHandlers: GatewayRequestHandlers = {
           projectId,
         });
         const report = projection.projection?.productSurfacingReport ?? null;
+        const pagedQueue = pageItems(report?.queue.items ?? [], params);
         respond(true, {
           ok: true,
           readMode: "projection",
@@ -382,7 +418,16 @@ export const modelMemoryProactivityHandlers: GatewayRequestHandlers = {
           mergeAdjudicationReport: null,
           ledgerReport: null,
           draftReport: null,
-          queue: report?.queue ?? emptyProjectionQueue(sessionKey, projectId),
+          queue: report
+            ? {
+                ...report.queue,
+                items: pagedQueue.items,
+                pageInfo: pagedQueue.pageInfo,
+              }
+            : {
+                ...emptyProjectionQueue(sessionKey, projectId),
+                pageInfo: pagedQueue.pageInfo,
+              },
           rollbackPlan: report?.rollbackPlan ?? null,
           telemetry: report?.telemetry ?? null,
           workEpisodeOutcomePackIndex: {
@@ -409,6 +454,7 @@ export const modelMemoryProactivityHandlers: GatewayRequestHandlers = {
         },
       });
       const report = state.productSurfacingReport;
+      const pagedQueue = pageItems(report.queue.items, params);
       respond(true, {
         ok: true,
         reportId: report.reportId,
@@ -531,7 +577,11 @@ export const modelMemoryProactivityHandlers: GatewayRequestHandlers = {
           decision: state.draftReport.decision,
           draftCount: state.draftReport.telemetry.draftCount,
         },
-        queue: report.queue,
+        queue: {
+          ...report.queue,
+          items: pagedQueue.items,
+          pageInfo: pagedQueue.pageInfo,
+        },
         rollbackPlan: report.rollbackPlan,
         telemetry: report.telemetry,
       });
@@ -704,6 +754,7 @@ export const modelMemoryProactivityHandlers: GatewayRequestHandlers = {
           projectId,
         });
         const report = projection.projection?.inboxReport ?? null;
+        const pagedDigest = pageItems(report?.digest.items ?? [], params);
         respond(true, {
           ok: true,
           readMode: "projection",
@@ -721,7 +772,16 @@ export const modelMemoryProactivityHandlers: GatewayRequestHandlers = {
             sourceReportIds: [],
             sourceReportHashes: [],
           },
-          digest: report?.digest ?? emptyProjectionInboxDigest(sessionKey, projectId),
+          digest: report
+            ? {
+                ...report.digest,
+                items: pagedDigest.items,
+                pageInfo: pagedDigest.pageInfo,
+              }
+            : {
+                ...emptyProjectionInboxDigest(sessionKey, projectId),
+                pageInfo: pagedDigest.pageInfo,
+              },
           telemetry: report?.telemetry ?? null,
           rollbackPlan: report?.rollbackPlan ?? null,
         });
@@ -752,12 +812,17 @@ export const modelMemoryProactivityHandlers: GatewayRequestHandlers = {
         env: process.env,
         productSurfacingReport: state.productSurfacingReport,
       });
+      const pagedDigest = pageItems(report.digest.items, params);
       respond(true, {
         ok: true,
         reportId: report.reportId,
         decision: report.decision,
         state: report.state,
-        digest: report.digest,
+        digest: {
+          ...report.digest,
+          items: pagedDigest.items,
+          pageInfo: pagedDigest.pageInfo,
+        },
         telemetry: report.telemetry,
         rollbackPlan: report.rollbackPlan,
       });

@@ -8,13 +8,13 @@ import {
 describe("context snapshot refs", () => {
   it("validates fresh bounded context snapshots structurally", () => {
     const ref = createContextSnapshotRef({
-      sourceRef: "runtime-job://job/context-handoff/packet-1",
-      sourceKind: "context_scout_handoff",
+      sourceRef: "runtime-job://job/resource-handoff/packet-1",
+      sourceKind: "resource_scout_handoff",
       repoRevision: "rev-a",
       sourcePromptHash: "prompt-a",
       sourcePayloadHash: "payload-a",
       commitmentIds: ["commitment-1"],
-      scopeSummary: "Context scout handoff for commitment 1.",
+      scopeSummary: "resource scout handoff for commitment 1.",
     });
 
     const validation = validateContextSnapshotFreshness({
@@ -34,11 +34,11 @@ describe("context snapshot refs", () => {
 
   it("blocks stale repo revisions without semantic judgment", () => {
     const ref = createContextSnapshotRef({
-      sourceRef: "runtime-job://job/context-synthesis/synthesis-1",
-      sourceKind: "context_synthesis",
+      sourceRef: "runtime-job://job/resource-ledger/entry-1",
+      sourceKind: "memory_context_pack",
       repoRevision: "rev-old",
       sourcePromptHash: "prompt-a",
-      scopeSummary: "Accepted synthesis context.",
+      scopeSummary: "Accepted node-local context ledger entry.",
     });
 
     const validation = validateContextSnapshotFreshness({
@@ -57,13 +57,13 @@ describe("context snapshot refs", () => {
 
   it("derives bounded snapshot refs from artifact refs", () => {
     const refs = deriveContextSnapshotRefsFromArtifactRefs({
-      artifactRefs: ["runtime-job://job/context-handoff/a", "runtime-job://job/context-handoff/a"],
-      sourceKind: "context_scout_handoff",
+      artifactRefs: ["runtime-job://job/resource-handoff/a", "runtime-job://job/resource-handoff/a"],
+      sourceKind: "resource_scout_handoff",
       commitmentIds: ["commitment-1"],
     });
 
     expect(refs).toHaveLength(1);
-    expect(refs[0]?.sourceKind).toBe("context_scout_handoff");
+    expect(refs[0]?.sourceKind).toBe("resource_scout_handoff");
     expect(refs[0]?.commitmentIds).toEqual(["commitment-1"]);
   });
 });

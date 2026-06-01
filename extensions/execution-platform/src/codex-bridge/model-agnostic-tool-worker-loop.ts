@@ -7,6 +7,8 @@ export type ModelAgnosticWorkerPhase =
   | "worker.phase_queue.deferred"
   | "worker.phase_queue.replayed"
   | "worker.phase_queue.routed_subturn"
+  | "worker.phase_boundary.rejected_future_tool"
+  | "worker.phase_boundary.routed_context_subturn"
   | "worker.plan.started"
   | "worker.plan.completed"
   | "worker.explore.started"
@@ -31,7 +33,7 @@ export type ModelAgnosticWorkerPhase =
 
 export type ModelAgnosticWorkerSpecializationKind =
   | "kimi_implementation"
-  | "non_codex_context_scout"
+  | "non_codex_resource_scout"
   | "non_codex_test_writer"
   | "non_codex_docs_editor"
   | "non_codex_validation_failure_explainer"
@@ -75,7 +77,6 @@ export type ModelAgnosticWorkerPhaseEvent = {
   targetRefs: string[];
   inputPacketRefs: string[];
   contextRefs: string[];
-  contextSynthesisRefs: string[];
   codeIntelligenceRefs: string[];
   toolId: string | null;
   toolInvocationRef: string | null;
@@ -168,8 +169,8 @@ export const MODEL_AGNOSTIC_WORKER_SPECIALIZATIONS: ModelAgnosticWorkerSpecializ
     rawProviderLogStored: false,
   },
   {
-    specializationId: "non_codex_context_scout",
-    displayName: "Non-Codex context scout",
+    specializationId: "non_codex_resource_scout",
+    displayName: "Non-Codex resource scout",
     roleClass: "context",
     workerRef: "worker.non-codex.context-scout",
     modelPolicyRef: "policy://codex-parity/openclaw-role/context-scout/non-codex",
@@ -339,7 +340,6 @@ export function buildModelAgnosticWorkerPhaseEvent(input: {
   targetRefs?: string[];
   inputPacketRefs?: string[];
   contextRefs?: string[];
-  contextSynthesisRefs?: string[];
   codeIntelligenceRefs?: string[];
   toolId?: string | null;
   toolInvocationRef?: string | null;
@@ -391,7 +391,6 @@ export function buildModelAgnosticWorkerPhaseEvent(input: {
     targetRefs: [...new Set(input.targetRefs ?? [])].slice(0, 20),
     inputPacketRefs: [...new Set(input.inputPacketRefs ?? [])].slice(0, 20),
     contextRefs: [...new Set(input.contextRefs ?? [])].slice(0, 30),
-    contextSynthesisRefs: [...new Set(input.contextSynthesisRefs ?? [])].slice(0, 20),
     codeIntelligenceRefs: [...new Set(input.codeIntelligenceRefs ?? [])].slice(0, 20),
     toolId: input.toolId ?? null,
     toolInvocationRef: input.toolInvocationRef ?? null,

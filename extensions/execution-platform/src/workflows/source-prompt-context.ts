@@ -262,7 +262,7 @@ export function normalizeSourcePromptExcerptRequests(value: unknown): SourceProm
         downstreamConsumer:
           typeof request.downstreamConsumer === "string" && request.downstreamConsumer.trim()
             ? request.downstreamConsumer
-            : "context_scout",
+            : "resource_scout",
         rawPromptStored: false,
         rawResponseStored: false,
         rawProviderLogStored: false,

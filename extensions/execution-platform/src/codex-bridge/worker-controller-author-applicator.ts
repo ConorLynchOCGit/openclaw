@@ -188,6 +188,23 @@ export function splitPhaseForTool(toolId: NonCodexToolUsingWorkerToolId): Worker
   }
   if (
     toolId === "worker.context.request_more" ||
+    toolId === "worker.context.propose_searches" ||
+    toolId === "worker.context.search" ||
+    toolId === "worker.context.open_ref" ||
+    toolId === "worker.context.open_around_match" ||
+    toolId === "worker.context.open_window" ||
+    toolId === "worker.context.expand_window" ||
+    toolId === "worker.context.contract_window" ||
+    toolId === "worker.context.accept_window" ||
+    toolId === "worker.context.search_symbols" ||
+    toolId === "worker.context.find_callers" ||
+    toolId === "worker.context.find_tests" ||
+    toolId === "worker.context.open_adjacent" ||
+    toolId === "worker.context.report_pattern" ||
+    toolId === "worker.context.report_risk" ||
+    toolId === "worker.context.report_edit_point" ||
+    toolId === "worker.context.finish_context_turn" ||
+    toolId === "worker.context.mark_unanswerable" ||
     toolId === "worker.context.provide_bounded_snapshot" ||
     toolId === "worker.context.deny_request" ||
     toolId === "worker.repo.search" ||
@@ -196,7 +213,10 @@ export function splitPhaseForTool(toolId: NonCodexToolUsingWorkerToolId): Worker
   ) {
     return "context";
   }
-  if (toolId === "worker.edit.plan" || toolId === "worker.edit.draft_from_snapshot") {
+  if (toolId === "worker.edit.plan") {
+    return "controller";
+  }
+  if (toolId === "worker.edit.draft_from_snapshot") {
     return "author";
   }
   if (
@@ -243,7 +263,12 @@ export function splitPhaseAllowedForModelSlot(input: {
   modelSlot: NonCodexWorkerModelSlot;
 }): boolean {
   if (input.phase === "context") {
-    return input.modelSlot === "context_decision" || input.modelSlot === "controller";
+    return (
+      input.modelSlot === "context_decision" ||
+      input.modelSlot === "controller" ||
+      input.modelSlot === "validation_repair" ||
+      input.modelSlot === "evidence"
+    );
   }
   if (input.phase === "author") {
     return input.modelSlot === "patch" || input.modelSlot === "validation_repair";

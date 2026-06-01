@@ -82,6 +82,18 @@ process.stdout.write(JSON.stringify(lines));
 
 env_file_value() {
   local name="$1"
+  local config_dir
+  config_dir="$(awk -F= '
+    $1 == "OPENCLAW_CONFIG_DIR" {
+      value = substr($0, index($0, "=") + 1)
+    }
+    END {
+      if (value != "") {
+        print value
+      }
+    }
+  ' "$ROOT_DIR/.env" 2>/dev/null | sed -e 's/^"//' -e 's/"$//')"
+  local env_file="${config_dir:-/root/.openclaw}/.env"
   awk -F= -v key="$name" '
     $1 == key {
       value = substr($0, index($0, "=") + 1)
@@ -91,7 +103,7 @@ env_file_value() {
         print value
       }
     }
-  ' "$ROOT_DIR/.env" 2>/dev/null | sed -e 's/^"//' -e 's/"$//'
+  ' "$env_file" 2>/dev/null | sed -e 's/^"//' -e 's/"$//'
 }
 
 container_env_value() {
@@ -156,6 +168,9 @@ fi
 
 stale_env_lines=""
 for env_name in \
+  OPENCLAW_INTENT_FRONT_DOOR_ROUTER_MAX_TOKENS \
+  OPENCLAW_INTENT_FRONT_DOOR_ROUTER_REASONING_EFFORT \
+  OPENCLAW_INTENT_FRONT_DOOR_TRIAGE_ROUTER_REASONING_EFFORT \
   OPENCLAW_INTENT_FRONT_DOOR_ADVANCED_ROUTER_MODEL_REF \
   OPENCLAW_INTENT_FRONT_DOOR_ADVANCED_ROUTER_FALLBACK_MODEL_REF \
   OPENCLAW_INTENT_FRONT_DOOR_ADVANCED_ROUTER_REQUIRED_MODEL_REF

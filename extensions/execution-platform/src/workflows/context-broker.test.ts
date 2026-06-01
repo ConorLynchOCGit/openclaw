@@ -7,6 +7,7 @@ import {
 import {
   buildNodeExecutionPacket,
   type CodingResourcePacket,
+  type NodeExecutionPacket,
 } from "./node-resource-materialization.ts";
 
 function readyResourcePacket(overrides: Partial<CodingResourcePacket> = {}): CodingResourcePacket {
@@ -17,6 +18,7 @@ function readyResourcePacket(overrides: Partial<CodingResourcePacket> = {}): Cod
     packetRef: "runtime-work-graph://coding-resource-packet/impl-1",
     implementationTaskPacketRef: "runtime-work-graph://implementation-task/impl-1",
     targetFileRefs: ["extensions/execution-platform/src/workflows/context-broker.ts"],
+    domainResourceSelectionRefs: ["domain-resource-selection://context-broker/impl-1"],
     targetFileSnapshotRefs: ["repo-snapshot://context-broker.ts#abc"],
     targetFileSnapshotHashes: ["abc"],
     allowedEditScope: ["extensions/execution-platform/src/workflows/context-broker.ts"],
@@ -27,8 +29,8 @@ function readyResourcePacket(overrides: Partial<CodingResourcePacket> = {}): Cod
     fileChangeIntentRefs: [
       "file-change-intent://extensions/execution-platform/src/workflows/context-broker.ts",
     ],
-    contextPacketRefs: ["context-handoff://impl-1"],
-    acceptedContextHandoffRefs: ["context-handoff://impl-1"],
+    contextPacketRefs: ["resource-handoff://impl-1"],
+    acceptedResourceHandoffRefs: ["resource-handoff://impl-1"],
     validationRefs: ["validation://context-broker-test"],
     validationDiscoveryPlan: [],
     acceptanceCriteria: ["Broker request is payload-backed and branch-scoped."],
@@ -46,6 +48,25 @@ function readyResourcePacket(overrides: Partial<CodingResourcePacket> = {}): Cod
   };
 }
 
+function readinessProjectionFields(packet: NodeExecutionPacket, resource: CodingResourcePacket) {
+  return {
+    nodeExecutionContractHash: packet.nodeExecutionContractHash,
+    nodeExecutionPacketHash: "sha256:context-broker-test-packet",
+    domainResourcePacketHash: "sha256:context-broker-test-resource",
+    boundaryEpoch: null,
+    staleIfMismatch: true as const,
+    projectionStatus: "unknown" as const,
+    projectionMismatchReasonCodes: [],
+    progressiveState: packet.progressiveState,
+    actionGateStatus: packet.actionGateStatus,
+    actionGateReasonCodes: packet.actionGateReasonCodes,
+    actionGateMissingFields: packet.actionGateMissingFields,
+    legalWorkerToolIds: packet.nextLegalWorkerToolIds,
+    deniedWorkerToolIds: packet.deniedWorkerToolIds,
+    computedAt: null,
+  };
+}
+
 describe("context broker", () => {
   it("marks inherited accepted context as usable without spawning a scout", () => {
     const resource = readyResourcePacket();
@@ -59,7 +80,7 @@ describe("context broker", () => {
       executorKey: "kind:implementation",
       workerRef: "qwen",
       targetCommitmentIds: ["C1"],
-      sourceContextRefs: ["context-handoff://impl-1"],
+      sourceContextRefs: ["resource-handoff://impl-1"],
       resourcePacketKind: "coding_resource_packet",
       resourcePacketRef: resource.packetRef,
       validationRefs: ["validation://context-broker-test"],
@@ -85,13 +106,16 @@ describe("context broker", () => {
         lifecycleState: "executable",
         dependencyStatus: "accepted",
         resourcePacketRef: resource.packetRef,
+        nodeExecutionContractRef: packet.nodeExecutionContractRef,
+        nodeExecutionContractVersion: packet.nodeExecutionContractVersion,
         nodeExecutionPacketRef: packet.packetRef,
         domainResourcePacketRef: resource.packetRef,
+        ...readinessProjectionFields(packet, resource),
         resourceStatus: "ready",
         freshnessStatus: "fresh",
         snapshotStatus: "ready",
         contextStatus: "accepted",
-        contextSnapshotRefs: ["context-handoff://impl-1"],
+        contextSnapshotRefs: ["resource-handoff://impl-1"],
         contextLimitationStatus: "not_applicable",
         contextLimitationWaiverRefs: [],
         validationStatus: "ready",
@@ -126,15 +150,15 @@ describe("context broker", () => {
     });
 
     expect(request.status).toBe("satisfied_from_inherited_context");
-    expect(request.contextScoutRequired).toBe(false);
-    expect(request.outputContextRefs).toContain("context-handoff://impl-1");
+    expect(request.contextSpecialistRequired).toBe(false);
+    expect(request.outputContextRefs).toContain("resource-handoff://impl-1");
     expect(request.nextTransition).toBe("use_inherited_context");
   });
 
-  it("creates a branch-local context scout request when readiness is context-blocked", () => {
+  it("creates a branch-local context specialist request when readiness is context-blocked", () => {
     const resource = readyResourcePacket({
       contextPacketRefs: [],
-      acceptedContextHandoffRefs: [],
+      acceptedResourceHandoffRefs: [],
     });
     const packet = buildNodeExecutionPacket({
       workflowId: "agent_team.coding",
@@ -162,11 +186,14 @@ describe("context broker", () => {
         schemaVersion: "execution-platform.node-readiness-state.v1",
         stateRef: "runtime-work-graph://node-readiness-state/impl-2/blocked",
         roleClass: "implementation_scoped",
+        nodeExecutionContractRef: packet.nodeExecutionContractRef,
+        nodeExecutionContractVersion: packet.nodeExecutionContractVersion,
         nodeExecutionPacketRef: packet.packetRef,
         domainResourcePacketRef: resource.packetRef,
+        ...readinessProjectionFields(packet, resource),
         readinessStatus: "blocked",
-        phase: "context_supply",
-        lifecycleState: "context_required",
+        phase: "resource_demand",
+        lifecycleState: "resource_required",
         dependencyStatus: "accepted",
         resourceStatus: "ready",
         freshnessStatus: "missing",
@@ -192,9 +219,9 @@ describe("context broker", () => {
           "Accepted context handoff is missing for this implementation branch.",
         ],
         nonblockingLimitations: [],
-        repairAction: "request_context_repair",
-        nextAllowedTransitions: ["request_context_repair", "needs_review"],
-        nextLegalTransitions: ["request_context_repair", "needs_review"],
+        repairAction: "open_node_resource_demand",
+        nextAllowedTransitions: ["open_node_resource_demand", "needs_review"],
+        nextLegalTransitions: ["open_node_resource_demand", "needs_review"],
         replayBoundary: null,
         createdAt: null,
         updatedAt: null,
@@ -210,11 +237,11 @@ describe("context broker", () => {
       resourcePacket: resource,
     });
 
-    expect(request.status).toBe("context_scout_required");
-    expect(request.contextScoutRequired).toBe(true);
+    expect(request.status).toBe("context_specialist_required");
+    expect(request.contextSpecialistRequired).toBe(true);
     expect(request.consumerNodeId).toBe("impl-2");
-    expect(request.nextTransition).toBe("dispatch_context_scout");
-    expect(request.reasonCodes).toContain("context_broker_context_scout_required");
+    expect(request.nextTransition).toBe("dispatch_context_specialist_subturn");
+    expect(request.reasonCodes).toContain("resource_broker_context_specialist_required");
   });
 
   it("does not treat accepted-with-limitations context as inherited usable without a consumer waiver", () => {
@@ -229,7 +256,7 @@ describe("context broker", () => {
       executorKey: "kind:implementation",
       workerRef: "qwen",
       targetCommitmentIds: ["C1"],
-      sourceContextRefs: ["context-handoff://impl-limited"],
+      sourceContextRefs: ["resource-handoff://impl-limited"],
       resourcePacketKind: "coding_resource_packet",
       resourcePacketRef: resource.packetRef,
       validationRefs: ["validation://context-broker-test"],
@@ -256,13 +283,16 @@ describe("context broker", () => {
         lifecycleState: "executable",
         dependencyStatus: "accepted",
         resourcePacketRef: resource.packetRef,
+        nodeExecutionContractRef: packet.nodeExecutionContractRef,
+        nodeExecutionContractVersion: packet.nodeExecutionContractVersion,
         nodeExecutionPacketRef: packet.packetRef,
         domainResourcePacketRef: resource.packetRef,
+        ...readinessProjectionFields(packet, resource),
         resourceStatus: "ready",
         freshnessStatus: "fresh",
         snapshotStatus: "ready",
         contextStatus: "accepted_with_limitations",
-        contextSnapshotRefs: ["context-handoff://impl-limited"],
+        contextSnapshotRefs: ["resource-handoff://impl-limited"],
         contextLimitationStatus: "accepted_with_limitations",
         contextLimitationWaiverRefs: [],
         validationStatus: "ready",
@@ -296,10 +326,10 @@ describe("context broker", () => {
       resourcePacket: resource,
     });
 
-    expect(request.status).toBe("context_scout_required");
+    expect(request.status).toBe("context_specialist_required");
     expect(request.inheritedContextUsable).toBe(false);
     expect(request.reasonCodes).toContain(
-      "context_broker_accepted_with_limitations_consumer_waiver_required",
+      "resource_broker_accepted_with_limitations_consumer_waiver_required",
     );
     expect(request.blockingLimitations).toContain(
       "Accepted-with-limitations context cannot unlock this consumer without a consumer-specific waiver ref.",
@@ -352,7 +382,7 @@ describe("context broker", () => {
       executorKey: "kind:implementation",
       workerRef: "qwen",
       targetCommitmentIds: ["C1"],
-      sourceContextRefs: ["context-handoff://impl-1"],
+      sourceContextRefs: ["resource-handoff://impl-1"],
       resourcePacketKind: "coding_resource_packet",
       resourcePacketRef: resource.packetRef,
       validationRefs: ["validation://context-broker-test"],
@@ -377,13 +407,16 @@ describe("context broker", () => {
       lifecycleState: "executable" as const,
       dependencyStatus: "accepted" as const,
       resourcePacketRef: resource.packetRef,
+      nodeExecutionContractRef: packet.nodeExecutionContractRef,
+      nodeExecutionContractVersion: packet.nodeExecutionContractVersion,
       nodeExecutionPacketRef: packet.packetRef,
       domainResourcePacketRef: resource.packetRef,
+      ...readinessProjectionFields(packet, resource),
       resourceStatus: "ready" as const,
       freshnessStatus: "fresh" as const,
       snapshotStatus: "ready" as const,
       contextStatus: "accepted" as const,
-      contextSnapshotRefs: ["context-handoff://impl-1"],
+      contextSnapshotRefs: ["resource-handoff://impl-1"],
       contextLimitationStatus: "not_applicable" as const,
       contextLimitationWaiverRefs: [],
       validationStatus: "ready" as const,

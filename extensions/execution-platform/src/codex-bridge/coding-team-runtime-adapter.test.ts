@@ -23,7 +23,6 @@ describe("coding team runtime adapter", () => {
         roleCalls.push(roleId);
         return executor(roleId);
       },
-      contextSynthesisExecutor: executor("context_synthesis"),
       implementationExecutor: executor("implementation"),
       repairExecutor: executor("repair"),
       validationExecutor: executor("validation"),
@@ -34,8 +33,6 @@ describe("coding team runtime adapter", () => {
     expect(Object.keys(executors).toSorted()).toEqual(
       [
         "kind:closeout",
-        "kind:context_scout",
-        "kind:context_synthesis",
         "kind:human_task",
         "kind:implementation",
         "kind:observability_readback",
@@ -44,8 +41,6 @@ describe("coding team runtime adapter", () => {
         "kind:test_authoring",
         "kind:test_review",
         "kind:validation",
-        "role:context_scout",
-        "role:context_synthesis",
         "role:implementation_engineer",
         "role:observability_scribe",
         "role:reviewer",
@@ -53,13 +48,13 @@ describe("coding team runtime adapter", () => {
       ].toSorted(),
     );
     expect(roleCalls).toEqual([
-      "context_scout",
       "test_engineer",
       "reviewer",
       "observability_scribe",
-      "context_scout",
       "reviewer",
       "observability_scribe",
     ]);
+    expect(Object.keys(executors)).not.toContain("role:context_synthesis");
+    expect(Object.keys(executors)).not.toContain("kind:context_synthesis");
   });
 });

@@ -15,6 +15,21 @@ function hasTsxImport() {
   });
 }
 
+if (process.argv.includes("--help") || process.argv.includes("-h")) {
+  console.log(`Usage: node scripts/execution-platform-run-product-spec-checkpointed-test.mjs [prompt-file]
+
+Runs the Product/Spec checkpointed proof through the live gateway.
+
+Environment:
+  OPENCLAW_LOCAL_GATEWAY_BASE                 Gateway base URL, default http://127.0.0.1:28789
+  OPENCLAW_PRODUCT_SPEC_SUBMIT_TIMEOUT_MS    Submit timeout, default 600000
+  OPENCLAW_PRODUCT_SPEC_CHECKPOINT_MAX_MS    Runtime polling timeout, default 5400000
+  OPENCLAW_PRODUCT_SPEC_STOP_AFTER_GATE      Optional gate name to stop after
+
+This command performs a real submit unless --help/-h is provided.`);
+  process.exit(0);
+}
+
 if (!hasTsxImport()) {
   const result = spawnSync(
     process.execPath,
@@ -41,9 +56,12 @@ if (!hasTsxImport()) {
 
 let readExecutionPlatformDatabaseConfigLite;
 let buildLatestRunState;
+let projectProofHarnessCanonicalGate;
+let assertProofHarnessManifestBounds;
 let loadConfig;
 let runGatewayAgentTeamRuntimeJobOnce;
 let getExecutionPlatformRuntime;
+let evaluateArchitectureTransitionTopologyGate;
 
 async function loadRuntimeModules() {
   if (readExecutionPlatformDatabaseConfigLite) {
@@ -53,15 +71,21 @@ async function loadRuntimeModules() {
     await import("../extensions/execution-platform/src/db/runtime.ts"));
   ({ buildLatestRunState } =
     await import("../extensions/execution-platform/src/observability/latest-run-state.ts"));
+  ({ projectProofHarnessCanonicalGate, assertProofHarnessManifestBounds } = await import(
+    "../extensions/execution-platform/src/observability/proof-harness-canonical-gate.ts"
+  ));
   ({ loadConfig } = await import("../src/config/config.ts"));
   ({ runGatewayAgentTeamRuntimeJobOnce } =
     await import("../src/gateway/execution-platform-agent-team-runner.ts"));
   ({ getExecutionPlatformRuntime } = await import("../src/gateway/execution-platform-http.ts"));
+  ({ evaluateArchitectureTransitionTopologyGate } = await import(
+    "../extensions/execution-platform/src/workflows/architecture-transition-topology-gate.ts"
+  ));
 }
 
 const ARTIFACT_DIR = ".artifacts/execution-platform";
 const DEFAULT_PROMPT_FILE =
-  "docs/projects/execution-platform/prompts/product-spec-planning-production-upgrade-openclaw.md";
+  "docs/projects/execution-platform/prompts/product-spec-planning-workflow-plugin-production-proof-openclaw.md";
 const LOCAL_BASE = process.env.OPENCLAW_LOCAL_GATEWAY_BASE ?? "http://127.0.0.1:28789";
 const PROGRESS_INTERVAL_MS = Number(
   process.env.OPENCLAW_PRODUCT_SPEC_CHECKPOINT_INTERVAL_MS ?? 15_000,
@@ -386,6 +410,83 @@ function metadataOf(artifact) {
   return artifact?.metadata && typeof artifact.metadata === "object" ? artifact.metadata : {};
 }
 
+function boundedStringValue(value, max = 700) {
+  return typeof value === "string" && value.trim() ? value.trim().slice(0, max) : null;
+}
+
+function boundedStringArrayValue(value, max = 40) {
+  return Array.isArray(value)
+    ? [
+        ...new Set(
+          value
+            .map((item) => boundedStringValue(item, 500))
+            .filter((item) => typeof item === "string" && item.length > 0),
+        ),
+      ].slice(0, max)
+    : [];
+}
+
+function objectValue(value) {
+  return value && typeof value === "object" && !Array.isArray(value) ? value : null;
+}
+
+function boundedBranchScopedFrontierStates(value, max = 40) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value
+    .filter((item) => item && typeof item === "object" && !Array.isArray(item))
+    .map((branch) => ({
+      branchId: boundedStringValue(branch.branchId, 180),
+      nodeId: boundedStringValue(branch.nodeId, 260),
+      nodeKind: boundedStringValue(branch.nodeKind, 180),
+      workIntentRef: boundedStringValue(branch.workIntentRef ?? branch.workIntentId, 600),
+      executionIntent: boundedStringValue(branch.executionIntent, 160),
+      evidenceMode: boundedStringArrayValue(branch.evidenceMode, 12),
+      capabilityId: boundedStringValue(branch.capabilityId, 240),
+      executorKey: boundedStringValue(branch.executorKey, 240),
+      workerRef: boundedStringValue(branch.workerRef, 240),
+      modelRef: boundedStringValue(branch.modelRef, 240),
+      contractRef: boundedStringValue(branch.contractRef, 600),
+      readinessRef: boundedStringValue(branch.readinessRef ?? branch.readinessStateRef, 600),
+      resourceRequirementRefs: boundedStringArrayValue(branch.resourceRequirementRefs, 20),
+      nodeResourceDemandSessionRefs: boundedStringArrayValue(branch.nodeResourceDemandSessionRefs, 20),
+      nodeResourceLedgerManifestRefs: boundedStringArrayValue(
+        branch.nodeResourceLedgerManifestRefs,
+        20,
+      ),
+      domainResourceSelectionRefs: boundedStringArrayValue(branch.domainResourceSelectionRefs, 20),
+      actionGateStatus: boundedStringValue(branch.actionGateStatus, 160),
+      actionGateMissingFields: boundedStringArrayValue(branch.actionGateMissingFields, 20),
+      providerDiagnosticRefs: boundedStringArrayValue(branch.providerDiagnosticRefs, 20),
+      providerDiagnosticStatus: boundedStringValue(branch.providerDiagnosticStatus, 160),
+      resourcePacketRef: boundedStringValue(branch.resourcePacketRef, 600),
+      nodeExecutionPacketRef: boundedStringValue(branch.nodeExecutionPacketRef, 600),
+      status: boundedStringValue(branch.status, 160),
+      phase: boundedStringValue(branch.phase, 160),
+      blocker: objectValue(branch.blocker)
+        ? {
+            code: boundedStringValue(branch.blocker.code, 220),
+            summary: boundedStringValue(branch.blocker.summary, 700),
+            schemaPath: boundedStringValue(branch.blocker.schemaPath, 260),
+            policyPath: boundedStringValue(branch.blocker.policyPath, 260),
+            reasonCodes: boundedStringArrayValue(branch.blocker.reasonCodes, 40),
+            missingFields: boundedStringArrayValue(branch.blocker.missingFields, 20),
+          }
+        : undefined,
+      reasonCodes: boundedStringArrayValue(branch.reasonCodes, 40),
+      missingFields: boundedStringArrayValue(branch.missingFields, 20),
+      nextLegalTransitions: boundedStringArrayValue(branch.nextLegalTransitions, 20),
+      consumerRefs: boundedStringArrayValue(branch.consumerRefs, 20),
+      dependentConsumers: boundedStringArrayValue(branch.dependentConsumers, 20),
+      successfulEvidenceRefs: boundedStringArrayValue(branch.successfulEvidenceRefs, 20),
+      failedEvidenceRefs: boundedStringArrayValue(branch.failedEvidenceRefs, 20),
+      rootCauseRef: boundedStringValue(branch.rootCauseRef, 600),
+    }))
+    .filter((branch) => branch.nodeId)
+    .slice(0, max);
+}
+
 function artifactCounts(artifacts) {
   const counts = new Map();
   for (const artifact of artifacts) {
@@ -482,84 +583,27 @@ function summarizeMissionLedger(artifact) {
   };
 }
 
-function summarizeCommitmentPackets(packetArtifact, reviewArtifact) {
-  if (!packetArtifact) {
+function summarizeObligationGraph(artifact) {
+  if (!artifact) {
     return null;
   }
-  const metadata = metadataOf(packetArtifact);
-  const manifest =
-    metadata.commitmentWorkPacketManifest &&
-    typeof metadata.commitmentWorkPacketManifest === "object"
-      ? metadata.commitmentWorkPacketManifest
-      : null;
-  const packets = Array.isArray(metadata.commitmentWorkPackets)
-    ? metadata.commitmentWorkPackets
-    : Array.isArray(manifest?.packets)
-      ? manifest.packets
-      : [];
-  const review = reviewArtifact ? metadataOf(reviewArtifact) : null;
+  const metadata = metadataOf(artifact);
   return {
-    artifactRef: packetArtifact.uri,
-    reviewRef: reviewArtifact?.uri ?? null,
-    reviewStatus: typeof review?.status === "string" ? review.status : null,
-    packetCount:
-      typeof metadata.packetCount === "number"
-        ? metadata.packetCount
-        : typeof manifest?.packetCount === "number"
-          ? manifest.packetCount
-          : packets.length,
-    packets: packets
-      .filter((packet) => packet && typeof packet === "object")
-      .map((packet) => ({
-        packetRef: typeof packet.packetRef === "string" ? packet.packetRef : null,
-        commitmentId: typeof packet.commitmentId === "string" ? packet.commitmentId : null,
-        authoringSource: typeof packet.authoringSource === "string" ? packet.authoringSource : null,
-        qualityStatus: typeof packet.qualityStatus === "string" ? packet.qualityStatus : null,
-        workerObjective:
-          typeof packet.workerObjective === "string" ? packet.workerObjective.slice(0, 700) : null,
-        contextScoutObjective:
-          typeof packet.contextScoutObjective === "string"
-            ? packet.contextScoutObjective.slice(0, 700)
-            : null,
-        implementationObjective:
-          typeof packet.implementationObjective === "string"
-            ? packet.implementationObjective.slice(0, 700)
-            : null,
-        validationObjective:
-          typeof packet.validationObjective === "string"
-            ? packet.validationObjective.slice(0, 500)
-            : null,
-        likelyRepoAreas: Array.isArray(packet.likelyRepoAreas)
-          ? packet.likelyRepoAreas.filter((item) => typeof item === "string").slice(0, 12)
-          : [],
-        requiredContextQuestions: Array.isArray(packet.requiredContextQuestions)
-          ? packet.requiredContextQuestions.filter((item) => typeof item === "string").slice(0, 12)
-          : typeof packet.requiredContextQuestionCount === "number" &&
-              packet.requiredContextQuestionCount > 0
-            ? [`bounded-question-count:${packet.requiredContextQuestionCount}`]
-            : [],
-        stopIfMissing: Array.isArray(packet.stopIfMissing)
-          ? packet.stopIfMissing.filter((item) => typeof item === "string").slice(0, 8)
-          : [],
-      })),
+    artifactRef: artifact.uri,
+    graphRef: typeof metadata.graphRef === "string" ? metadata.graphRef : artifact.uri,
+    graphHash: typeof metadata.graphHash === "string" ? metadata.graphHash : null,
+    missionId: typeof metadata.missionId === "string" ? metadata.missionId : null,
+    obligationCount: typeof metadata.obligationCount === "number" ? metadata.obligationCount : null,
+    executableCount: typeof metadata.executableCount === "number" ? metadata.executableCount : null,
+    nonExecutableCount:
+      typeof metadata.nonExecutableCount === "number" ? metadata.nonExecutableCount : null,
     rawPromptStored: false,
     rawResponseStored: false,
+    rawProviderLogStored: false,
   };
 }
 
-function isSchedulerReadyPacketReviewStatus(status) {
-  return (
-    status === "accepted" ||
-    status === "accepted_with_limitations" ||
-    status === "needs_review_nonblocking"
-  );
-}
-
-function isSchedulerReadyPacketQualityStatus(status) {
-  return status === "accepted" || status === "accepted_with_limitations";
-}
-
-function summarizeContextScout(artifact) {
+function summarizeResourceSpecialist(artifact) {
   if (!artifact) {
     return null;
   }
@@ -596,8 +640,8 @@ function summarizeContextScout(artifact) {
     status: typeof metadata.status === "string" ? metadata.status : null,
     verifiedFileRefs,
     handoffPacketRef:
-      typeof metadata.contextHandoffPacketRef === "string"
-        ? metadata.contextHandoffPacketRef
+      typeof metadata.resourceHandoffPacketRef === "string"
+        ? metadata.resourceHandoffPacketRef
         : null,
     sufficiencyStatus,
     sufficientForImplementation,
@@ -625,6 +669,59 @@ function summarizeSchedulerProgress(artifacts) {
         schedulerToolId:
           typeof metadata.schedulerToolId === "string" ? metadata.schedulerToolId : null,
         nodeId: typeof metadata.nodeId === "string" ? metadata.nodeId : null,
+        branchId: boundedStringValue(metadata.branchId, 260),
+        graphId: boundedStringValue(metadata.graphId, 260),
+        activeNodeKind: boundedStringValue(metadata.activeNodeKind ?? metadata.nodeKind, 180),
+        executionIntent: boundedStringValue(metadata.executionIntent, 160),
+        evidenceMode: boundedStringArrayValue(metadata.evidenceMode, 12),
+        capabilityId: boundedStringValue(metadata.capabilityId ?? metadata.selectedCapabilityId, 240),
+        executorKey: boundedStringValue(metadata.executorKey ?? metadata.selectedExecutorKey, 240),
+        workerRef: boundedStringValue(metadata.workerRef, 240),
+        workIntentRef: boundedStringValue(metadata.workIntentRef ?? metadata.workIntentId, 600),
+        workIntentId: boundedStringValue(metadata.workIntentId ?? metadata.workUnitId, 260),
+        nodeExecutionContractRef: boundedStringValue(metadata.nodeExecutionContractRef, 600),
+        nodeReadinessStateRef: boundedStringValue(metadata.nodeReadinessStateRef, 600),
+        nodeReadinessStatus: boundedStringValue(metadata.nodeReadinessStatus, 180),
+        nodeReadinessPhase: boundedStringValue(metadata.nodeReadinessPhase, 180),
+        nodeReadinessStale:
+          typeof metadata.nodeReadinessStale === "boolean" ? metadata.nodeReadinessStale : null,
+        readinessProjectionStatus: boundedStringValue(metadata.readinessProjectionStatus, 180),
+        readinessProjectionDriftReasonCodes: boundedStringArrayValue(
+          metadata.readinessProjectionDriftReasonCodes,
+          40,
+        ),
+        readinessProjectionMissingFields: boundedStringArrayValue(
+          metadata.readinessProjectionMissingFields,
+          40,
+        ),
+        resourceRequirementRefs: boundedStringArrayValue(metadata.resourceRequirementRefs, 24),
+        nodeResourceDemandSessionRefs: boundedStringArrayValue(metadata.nodeResourceDemandSessionRefs, 24),
+        nodeResourceDemandStatus: boundedStringValue(metadata.nodeResourceDemandStatus, 180),
+        nodeResourceLedgerManifestRefs: boundedStringArrayValue(
+          metadata.nodeResourceLedgerManifestRefs,
+          24,
+        ),
+        nodeResourceLedgerStatus: boundedStringValue(metadata.nodeResourceLedgerStatus, 180),
+        domainResourceSelectionRefs: boundedStringArrayValue(metadata.domainResourceSelectionRefs, 24),
+        domainResourceSelectionStatus: boundedStringValue(metadata.domainResourceSelectionStatus, 180),
+        actionGateStatus: boundedStringValue(metadata.actionGateStatus, 180),
+        actionGateMissingFields: boundedStringArrayValue(metadata.actionGateMissingFields, 24),
+        resourcePacketRef: boundedStringValue(metadata.resourcePacketRef, 600),
+        domainResourcePacketRef: boundedStringValue(metadata.domainResourcePacketRef, 600),
+        nodeExecutionPacketRef: boundedStringValue(metadata.nodeExecutionPacketRef, 600),
+        missingFields: boundedStringArrayValue(metadata.missingFields, 40),
+        schemaPath: boundedStringValue(metadata.schemaPath ?? metadata.errorPath, 260),
+        policyPath: boundedStringValue(metadata.policyPath, 260),
+        nextDecisionNeeded: boundedStringValue(metadata.nextDecisionNeeded ?? metadata.nextAction, 260),
+        schedulerFrontierState: objectValue(metadata.schedulerFrontierState),
+        parallelFrontier: objectValue(metadata.parallelFrontier),
+        frontierRootCauseArtifact: objectValue(metadata.frontierRootCauseArtifact),
+        noProgressSignature: objectValue(metadata.noProgressSignature),
+        schedulerModelCallEnvelope: objectValue(metadata.schedulerModelCallEnvelope),
+        branchScopedFrontierStates: boundedBranchScopedFrontierStates(
+          metadata.branchScopedFrontierStates,
+          40,
+        ),
         roleId: typeof metadata.roleId === "string" ? metadata.roleId : null,
         modelRef: typeof metadata.modelRef === "string" ? metadata.modelRef : null,
         providerPath: typeof metadata.providerPath === "string" ? metadata.providerPath : null,
@@ -654,14 +751,6 @@ function summarizeSchedulerProgress(artifacts) {
         modelCallSpanElapsedMs:
           typeof metadata.modelCallSpanElapsedMs === "number"
             ? metadata.modelCallSpanElapsedMs
-            : null,
-        packetAuthorFanout:
-          metadata.packetAuthorFanout && typeof metadata.packetAuthorFanout === "object"
-            ? metadata.packetAuthorFanout
-            : null,
-        packetAuthorProfile:
-          metadata.packetAuthorProfile && typeof metadata.packetAuthorProfile === "object"
-            ? metadata.packetAuthorProfile
             : null,
       };
     })
@@ -975,6 +1064,165 @@ function summarizeModelTokenBurn(snapshot) {
   };
 }
 
+function compactSchedulerProgressEvents(events, max = 80) {
+  return Array.isArray(events)
+    ? events.slice(-max).map((event) => ({
+        createdAt: event.createdAt ?? null,
+        stage: event.stage ?? null,
+        status: event.status ?? null,
+        currentPhase: event.currentPhase ?? null,
+        schedulerPhase: event.schedulerPhase ?? null,
+        nodeId: event.nodeId ?? null,
+        roleId: event.roleId ?? null,
+        selectedCapabilityId: event.selectedCapabilityId ?? null,
+        activeToolId: event.schedulerToolId ?? event.activeToolId ?? null,
+        modelRef: event.modelRef ?? event.modelProviderDiagnostics?.modelRef ?? null,
+        providerPath: event.modelProviderDiagnostics?.providerPath ?? null,
+        currentObjective: boundedStringValue(event.currentObjective, 360),
+        nextDecisionNeeded: event.nextDecisionNeeded ?? null,
+        reasonCodes: Array.isArray(event.reasonCodes) ? event.reasonCodes.slice(0, 16) : [],
+        evidenceProducedRefs: Array.isArray(event.evidenceProducedRefs)
+          ? event.evidenceProducedRefs.slice(0, 12)
+          : [],
+      }))
+    : [];
+}
+
+function compactCanonicalProofGate(gate) {
+  if (!gate || typeof gate !== "object") {
+    return null;
+  }
+  const canonicalGate = gate.gate && typeof gate.gate === "object" ? gate.gate : {};
+  return {
+    firstOpenGate: gate.firstOpenGate ?? null,
+    staleCheckpointGateRejected: gate.staleCheckpointGateRejected === true,
+    topologyGateRejected: gate.topologyGateRejected === true,
+    reasonCodes: Array.isArray(gate.reasonCodes) ? gate.reasonCodes.slice(0, 24) : [],
+    gate: {
+      gateKind: canonicalGate.gateKind ?? null,
+      gateStatus: canonicalGate.gateStatus ?? null,
+      sourceKind: canonicalGate.sourceKind ?? null,
+      graphId: canonicalGate.graphId ?? null,
+      nodeId: canonicalGate.nodeId ?? null,
+      nodeKind: canonicalGate.nodeKind ?? null,
+      workIntentRef: canonicalGate.workIntentRef ?? null,
+      executionIntent: canonicalGate.executionIntent ?? null,
+      capabilityId: canonicalGate.capabilityId ?? null,
+      contractRef: canonicalGate.contractRef ?? null,
+      readinessStateRef: canonicalGate.readinessStateRef ?? null,
+      nodeExecutionPacketRef: canonicalGate.nodeExecutionPacketRef ?? null,
+      nodeResourceDemandSessionRefs: Array.isArray(canonicalGate.nodeResourceDemandSessionRefs)
+        ? canonicalGate.nodeResourceDemandSessionRefs.slice(0, 12)
+        : [],
+      nodeResourceLedgerManifestRefs: Array.isArray(
+        canonicalGate.nodeResourceLedgerManifestRefs,
+      )
+        ? canonicalGate.nodeResourceLedgerManifestRefs.slice(0, 12)
+        : [],
+      domainResourceSelectionRefs: Array.isArray(canonicalGate.domainResourceSelectionRefs)
+        ? canonicalGate.domainResourceSelectionRefs.slice(0, 12)
+        : [],
+      blockerCode: canonicalGate.blockerCode ?? null,
+      blockerSummary: boundedStringValue(canonicalGate.blockerSummary, 700),
+      missingFields: Array.isArray(canonicalGate.missingFields)
+        ? canonicalGate.missingFields.slice(0, 20)
+        : [],
+      reasonCodes: Array.isArray(canonicalGate.reasonCodes)
+        ? canonicalGate.reasonCodes.slice(0, 24)
+        : [],
+      nextLegalTransition: canonicalGate.nextLegalTransition ?? null,
+    },
+  };
+}
+
+function compactCheckpointGate(gate) {
+  return {
+    gateId: gate.gateId ?? null,
+    status: gate.status ?? null,
+    evidence:
+      gate.gateId === "scheduler_graph"
+        ? gate.evidence
+        : gate.gateId === "architecture_transition_topology_invalid"
+          ? {
+              failed: gate.evidence?.architectureTransitionTopology?.failed === true,
+              reasonCodes: Array.isArray(
+                gate.evidence?.architectureTransitionTopology?.reasonCodes,
+              )
+                ? gate.evidence.architectureTransitionTopology.reasonCodes.slice(0, 24)
+                : [],
+            }
+          : gate.gateId === "obligation_graph"
+            ? {
+                obligationCount: gate.evidence?.obligationCount ?? null,
+                executableCount: gate.evidence?.executableCount ?? null,
+                nonExecutableCount: gate.evidence?.nonExecutableCount ?? null,
+              }
+              : null,
+  };
+}
+
+function compactProofSnapshot(snapshot) {
+  const checkpoints = snapshot.checkpoints ?? {};
+  return {
+    runtimeJobId: snapshot.runtimeJobId ?? null,
+    workItemId: snapshot.workItemId ?? null,
+    generatedAt: snapshot.generatedAt ?? null,
+    job: snapshot.job
+      ? {
+          state: snapshot.job.state ?? null,
+          attempts: snapshot.job.attempts ?? null,
+          startedAt: snapshot.job.startedAt ?? null,
+          completedAt: snapshot.job.completedAt ?? null,
+          failureReason: snapshot.job.failureReason ?? null,
+        }
+      : null,
+    checkpoints: {
+      firstOpenGate: checkpoints.firstOpenGate ?? null,
+      hardFailures: Array.isArray(checkpoints.hardFailures)
+        ? checkpoints.hardFailures.slice(0, 32)
+        : [],
+      needsReview: Array.isArray(checkpoints.needsReview)
+        ? checkpoints.needsReview.slice(0, 32)
+        : [],
+      shouldStop: checkpoints.shouldStop === true,
+      graph: checkpoints.graph ?? null,
+      gates: Array.isArray(checkpoints.gates) ? checkpoints.gates.map(compactCheckpointGate) : [],
+      canonicalProofGate: compactCanonicalProofGate(checkpoints.canonicalProofGate),
+      schedulerProgress: compactSchedulerProgressEvents(checkpoints.schedulerProgress, 80),
+    },
+    telemetry: {
+      artifactCounts: Array.isArray(snapshot.telemetry?.artifactCounts)
+        ? snapshot.telemetry.artifactCounts.slice(0, 80)
+        : [],
+      allSchedulerProgress: compactSchedulerProgressEvents(
+        snapshot.telemetry?.allSchedulerProgress,
+        120,
+      ),
+    },
+    packetFailureDiagnostics: snapshot.packetFailureDiagnostics
+      ? {
+          diagnosticPacketCount: snapshot.packetFailureDiagnostics.diagnosticPacketCount ?? null,
+          concerningPacketCount: snapshot.packetFailureDiagnostics.concerningPacketCount ?? null,
+          incompletePacketCount: snapshot.packetFailureDiagnostics.incompletePacketCount ?? null,
+          retryPacketCount: snapshot.packetFailureDiagnostics.retryPacketCount ?? null,
+          fallbackPacketCount: snapshot.packetFailureDiagnostics.fallbackPacketCount ?? null,
+          providerErrorPacketCount:
+            snapshot.packetFailureDiagnostics.providerErrorPacketCount ?? null,
+          longLatencyPacketCount: snapshot.packetFailureDiagnostics.longLatencyPacketCount ?? null,
+          toFixItems: Array.isArray(snapshot.packetFailureDiagnostics.toFixItems)
+            ? snapshot.packetFailureDiagnostics.toFixItems.slice(0, 20)
+            : [],
+        }
+      : null,
+    rawPromptStored: false,
+    rawResponseStored: false,
+    rawProviderLogStored: false,
+    rawToolLogStored: false,
+    rawDbRowsStored: false,
+    secretsStored: false,
+  };
+}
+
 function graphSummary(snapshot) {
   if (!snapshot) {
     return null;
@@ -1013,194 +1261,6 @@ function graphSummary(snapshot) {
   };
 }
 
-function arrayOfStrings(value) {
-  return Array.isArray(value) ? value.filter((item) => typeof item === "string") : [];
-}
-
-function nodeCommitmentIds(node) {
-  const metadata = node.metadata && typeof node.metadata === "object" ? node.metadata : {};
-  return [
-    ...arrayOfStrings(metadata.commitmentIdsAdvanced),
-    ...arrayOfStrings(metadata.commitmentIds),
-    ...arrayOfStrings(metadata.targetCommitmentIds),
-  ];
-}
-
-function isImplementationContextTargetNode(node) {
-  return [
-    "implementation",
-    "test_authoring",
-    "docs_update",
-    "architecture_spec",
-    "planning_capsule",
-    "action_graph_compile",
-    "compiler",
-  ].includes(node.nodeKind);
-}
-
-function incomingAcceptedContextSupplyNodes(snapshot, nodeId) {
-  const incoming = snapshot.edges.filter(
-    (edge) => edge.toNodeId === nodeId && edge.edgeKind === "context_supplies",
-  );
-  return incoming
-    .map((edge) => snapshot.nodes.find((node) => node.nodeId === edge.fromNodeId))
-    .filter(
-      (node) =>
-        node &&
-        ["context_scout", "web_research"].includes(node.nodeKind) &&
-        node.nodeStatus === "succeeded" &&
-        arrayOfStrings(node.outputArtifactRefs).length > 0,
-    );
-}
-
-function packetContextSupplyCoverage(snapshot, packetSummary) {
-  const packets = packetSummary?.packets ?? [];
-  if (!snapshot || packets.length <= 1) {
-    return {
-      required: false,
-      packetCount: packets.length,
-      acceptedPacketCount: 0,
-      missingPacketCount: 0,
-      pendingPacketCount: 0,
-      allAccepted: true,
-      missingCommitmentIds: [],
-      pendingCommitmentIds: [],
-      acceptedCommitmentIds: [],
-      dedicatedContextNodeCount: 0,
-      broadContextNodeCount: snapshot
-        ? snapshot.nodes.filter((node) => ["context_scout", "web_research"].includes(node.nodeKind))
-            .length
-        : 0,
-      rawPromptStored: false,
-      rawResponseStored: false,
-    };
-  }
-  const targetNodes = snapshot.nodes.filter(isImplementationContextTargetNode);
-  if (targetNodes.length > 0) {
-    const acceptedTargetNodeIds = [];
-    const missingTargetNodeIds = [];
-    const pendingTargetNodeIds = [];
-    const acceptedCommitmentIds = new Set();
-    const pendingCommitmentIds = new Set();
-    const missingCommitmentIds = new Set();
-    const dedicatedContextNodeIds = new Set();
-    for (const node of targetNodes) {
-      const incomingAccepted = incomingAcceptedContextSupplyNodes(snapshot, node.nodeId);
-      const commitmentIds = nodeCommitmentIds(node);
-      if (incomingAccepted.length > 0) {
-        acceptedTargetNodeIds.push(node.nodeId);
-        for (const contextNode of incomingAccepted) {
-          dedicatedContextNodeIds.add(contextNode.nodeId);
-        }
-        for (const commitmentId of commitmentIds) {
-          acceptedCommitmentIds.add(commitmentId);
-        }
-        continue;
-      }
-      const hasIncomingContextEdge = snapshot.edges.some(
-        (edge) => edge.toNodeId === node.nodeId && edge.edgeKind === "context_supplies",
-      );
-      if (hasIncomingContextEdge) {
-        pendingTargetNodeIds.push(node.nodeId);
-        for (const commitmentId of commitmentIds) {
-          pendingCommitmentIds.add(commitmentId);
-        }
-      } else {
-        missingTargetNodeIds.push(node.nodeId);
-        for (const commitmentId of commitmentIds) {
-          missingCommitmentIds.add(commitmentId);
-        }
-      }
-    }
-    return {
-      required: true,
-      coverageMode: "node_scoped_context_supply",
-      packetCount: packets.length,
-      targetNodeCount: targetNodes.length,
-      acceptedTargetNodeCount: acceptedTargetNodeIds.length,
-      missingTargetNodeCount: missingTargetNodeIds.length,
-      pendingTargetNodeCount: pendingTargetNodeIds.length,
-      acceptedPacketCount: acceptedCommitmentIds.size,
-      missingPacketCount: missingCommitmentIds.size,
-      pendingPacketCount: pendingCommitmentIds.size,
-      allAccepted: acceptedTargetNodeIds.length === targetNodes.length,
-      missingCommitmentIds: [...missingCommitmentIds].toSorted((left, right) =>
-        left.localeCompare(right),
-      ),
-      pendingCommitmentIds: [...pendingCommitmentIds].toSorted((left, right) =>
-        left.localeCompare(right),
-      ),
-      acceptedCommitmentIds: [...acceptedCommitmentIds].toSorted((left, right) =>
-        left.localeCompare(right),
-      ),
-      acceptedTargetNodeIds,
-      missingTargetNodeIds,
-      pendingTargetNodeIds,
-      dedicatedContextNodeCount: dedicatedContextNodeIds.size,
-      broadContextNodeCount: 0,
-      rawPromptStored: false,
-      rawResponseStored: false,
-    };
-  }
-  const contextNodes = snapshot.nodes.filter((node) =>
-    ["context_scout", "web_research"].includes(node.nodeKind),
-  );
-  const acceptedCommitmentIds = [];
-  const missingCommitmentIds = [];
-  const pendingCommitmentIds = [];
-  const dedicatedNodeIds = new Set();
-  const broadNodeIds = new Set();
-  for (const packet of packets) {
-    const matching = contextNodes.filter((node) => {
-      const commitmentIds = nodeCommitmentIds(node);
-      const dedicated =
-        arrayOfStrings(node.inputHandoffRefs).includes(packet.packetRef) &&
-        commitmentIds.includes(packet.commitmentId) &&
-        commitmentIds.length <= 1;
-      if (
-        arrayOfStrings(node.inputHandoffRefs).includes(packet.packetRef) &&
-        commitmentIds.includes(packet.commitmentId) &&
-        commitmentIds.length > 1
-      ) {
-        broadNodeIds.add(node.nodeId);
-      }
-      return dedicated;
-    });
-    for (const node of matching) {
-      dedicatedNodeIds.add(node.nodeId);
-    }
-    if (matching.length === 0) {
-      missingCommitmentIds.push(packet.commitmentId);
-      continue;
-    }
-    if (
-      matching.some(
-        (node) =>
-          node.nodeStatus === "succeeded" && arrayOfStrings(node.outputArtifactRefs).length > 0,
-      )
-    ) {
-      acceptedCommitmentIds.push(packet.commitmentId);
-    } else {
-      pendingCommitmentIds.push(packet.commitmentId);
-    }
-  }
-  return {
-    required: true,
-    packetCount: packets.length,
-    acceptedPacketCount: acceptedCommitmentIds.length,
-    missingPacketCount: missingCommitmentIds.length,
-    pendingPacketCount: pendingCommitmentIds.length,
-    allAccepted: acceptedCommitmentIds.length === packets.length,
-    missingCommitmentIds,
-    pendingCommitmentIds,
-    acceptedCommitmentIds,
-    dedicatedContextNodeCount: dedicatedNodeIds.size,
-    broadContextNodeCount: broadNodeIds.size,
-    rawPromptStored: false,
-    rawResponseStored: false,
-  };
-}
-
 function latestSchedulerProgressForStage(progress, stage) {
   return progress
     .filter((event) => event.stage === stage)
@@ -1220,99 +1280,242 @@ function schedulerToolCompleted(progress, schedulerToolId) {
   return event?.status === "succeeded" || event?.status === "completed";
 }
 
-function contextSynthesisReadinessSatisfied(schedulerProgress) {
-  return schedulerProgress.some((event) => {
-    if (
-      event.stage !== "scheduler_node_context_freshness" ||
-      event.currentPhase !== "context_freshness_satisfied"
-    ) {
-      return false;
-    }
-    if (event.roleId !== "context_synthesis" && event.activeNodeKind !== "context_synthesis") {
-      return false;
-    }
-    return (event.reasonCodes ?? []).some(
-      (reasonCode) =>
-        reasonCode === "scheduler_node_context_freshness_satisfied_by_node_scoped_supply" ||
-        reasonCode === "context_freshness_satisfied" ||
-        String(reasonCode).startsWith("node_scoped_context_snapshot_count:"),
-    );
-  });
-}
-
 function graphPersistenceStatus(progress) {
   return (
     latestSchedulerProgressForStage(progress, "scheduler_graph_node_persistence")?.status ?? null
   );
 }
 
-function isProgressiveContextFirstGraph({ graph, contextScout, schedulerProgress }) {
-  if (!graph || graph.nodeCount !== 1 || graph.edgeCount !== 0) {
+function graphPersistenceInProgress(progress) {
+  return graphPersistenceStatus(progress) === "started";
+}
+
+function schedulerDecisionModelCallInProgress(progress) {
+  const latestSchedulerDecisionCall = progress
+    .filter((event) => event.stage === "scheduler_orchestrator_model_call")
+    .toReversed()
+    .at(0);
+  if (!latestSchedulerDecisionCall) {
     return false;
   }
-  const acceptedGraph = latestSchedulerToolEvent(
-    schedulerProgress,
-    "scheduler.accept_staged_graph",
+  if (
+    latestSchedulerDecisionCall.status === "failed" ||
+    latestSchedulerDecisionCall.status === "completed" ||
+    latestSchedulerDecisionCall.currentPhase === "model_call_completed" ||
+    latestSchedulerDecisionCall.currentPhase === "model_call_failed"
+  ) {
+    return false;
+  }
+  return (
+    latestSchedulerDecisionCall.status === "started" &&
+    (latestSchedulerDecisionCall.currentPhase === "model_call_started" ||
+      latestSchedulerDecisionCall.currentPhase === "model_call_heartbeat")
   );
-  const acceptedGraphCompleted =
-    acceptedGraph?.status === "succeeded" || acceptedGraph?.status === "completed";
-  const firstNode = graph.activeNodes.at(0);
-  const hasContextScoutNode = graph.nodeKinds.includes("context_scout");
-  const contextScoutAccepted =
-    (contextScout?.sufficiencyStatus === "accepted" ||
-      contextScout?.sufficiencyStatus === "accepted_with_limitations") &&
-    contextScout.sufficientForImplementation === true &&
-    contextScout.verifiedFileRefs.length > 0;
-  const contextScoutCompleted = schedulerProgress.some(
-    (event) =>
-      event.roleId === "context_scout" &&
-      event.status === "completed" &&
-      (event.reasonCodes.includes("context_scout_scheduler_node_completed") ||
-        event.reasonCodes.includes("context_scout_tool_loop_recorded")),
+}
+
+function schedulerDecisionOrGraphApplicationInProgress(progress) {
+  const latestProgress = progress.toReversed().at(0);
+  if (!latestProgress) {
+    return false;
+  }
+  if (schedulerDecisionModelCallInProgress(progress)) {
+    return true;
+  }
+  if (
+    latestProgress.stage === "scheduler_orchestrator_model_call" &&
+    latestProgress.currentPhase === "model_call_completed"
+  ) {
+    return true;
+  }
+  if (
+    latestProgress.stage === "scheduler_expansion_admission" ||
+    latestProgress.currentPhase === "expansion_admission_evaluated"
+  ) {
+    return true;
+  }
+  if (
+    latestProgress.stage === "scheduler_graph_node_persistence" ||
+    latestProgress.currentPhase === "graph_node_persistence_starting" ||
+    latestProgress.currentPhase === "graph_node_write_started"
+  ) {
+    return true;
+  }
+  return false;
+}
+
+const CANONICAL_LIFECYCLE_GATE_KINDS = new Set([
+  "work_intent_compile",
+  "resource_requirement_compile",
+  "resource_narrowing_required",
+  "resource_scope_revision_required",
+  "resource_scope_revision_blocked",
+  "resource_ledger_ready",
+  "resource_repair",
+  "domain_resource_selection_required",
+  "domain_resource_selection_blocked",
+  "resource_materialization",
+  "domain_action_gate_blocked",
+  "worker_action_ready",
+  "worker_execution",
+  "post_action_validation",
+  "evidence_closure",
+  "review_validation",
+  "closeout",
+  "frontier_execution",
+]);
+
+const CANONICAL_TERMINAL_FAILURE_GATE_KINDS = new Set([
+  "graph_compile_invalid",
+  "terminal_failed",
+  "terminal_needs_review",
+]);
+
+function canonicalProjectionLooksActionable(projection) {
+  const gate = projection?.gate;
+  if (!gate) {
+    return false;
+  }
+  if (gate.gateKind !== "missing_runtime_state" || gate.sourceKind !== "missing") {
+    return true;
+  }
+  return (
+    Array.isArray(gate.reasonCodes) &&
+    gate.reasonCodes.some((reasonCode) =>
+      [
+        "context_",
+        "target_",
+        "resource_",
+        "write_",
+        "worker_",
+        "evidence_",
+        "frontier_",
+        "no_progress",
+      ].some((prefix) => String(reasonCode).startsWith(prefix)),
+    )
+  );
+}
+
+function latestCanonicalProofGateProjection({ graphId, schedulerProgress, topologyGate }) {
+  const latestProgress = schedulerProgress.at(-1) ?? {};
+  const fallback = projectProofHarnessCanonicalGate({
+    graphId,
+    latestProgress,
+    topologyGate,
+  });
+  if (fallback.topologyGateRejected || fallback.staleCheckpointGateRejected) {
+    return fallback;
+  }
+  const candidates = schedulerProgress.toReversed().slice(0, 80);
+  for (const progress of candidates) {
+    const projection = projectProofHarnessCanonicalGate({
+      graphId,
+      latestProgress: progress,
+      topologyGate,
+    });
+    if (canonicalProjectionLooksActionable(projection)) {
+      return projection;
+    }
+  }
+  return fallback;
+}
+
+function canonicalGateIsTerminalStop(projection) {
+  const gate = projection?.gate;
+  if (!gate) {
+    return false;
+  }
+  if (CANONICAL_TERMINAL_FAILURE_GATE_KINDS.has(gate.gateKind)) {
+    return true;
+  }
+  if (gate.sourceKind === "frontier_root_cause" || gate.sourceKind === "no_progress_signature") {
+    return true;
+  }
+  return (
+    Boolean(gate.blockerCode) &&
+    !gate.nextLegalTransition &&
+    !CANONICAL_LIFECYCLE_GATE_KINDS.has(gate.gateKind)
+  );
+}
+
+function canonicalExecutionGateStatus(projection) {
+  const gate = projection.gate;
+  if (gate.gateStatus === "terminal") {
+    return gate.gateKind === "terminal_succeeded" ? "passed" : "failed";
+  }
+  if (gate.gateStatus === "ready") {
+    return "review_available_nonblocking";
+  }
+  if (gate.gateStatus === "running" || gate.gateStatus === "missing") {
+    return "waiting";
+  }
+  if (canonicalGateIsTerminalStop(projection)) {
+    return "failed";
+  }
+  if (CANONICAL_LIFECYCLE_GATE_KINDS.has(gate.gateKind)) {
+    return "waiting";
+  }
+  return "failed";
+}
+
+function isWorkIntentDemandContextExpansionInProgress({ graph, schedulerProgress }) {
+  if (!graph || graph.edgeCount !== 0 || !graph.nodeKinds.includes("work_intent")) {
+    return false;
+  }
+  const acceptedWorkIntentRoots =
+    schedulerToolCompleted(schedulerProgress, "scheduler.work_intent.accept_roots") ||
+    schedulerProgress.some(
+      (event) =>
+        event.schedulerToolId === "scheduler.work_intent.accept_roots" &&
+        (event.status === "succeeded" || event.status === "completed"),
+    );
+  if (!acceptedWorkIntentRoots) {
+    return false;
+  }
+  const resourceRequirementsCompiled =
+    schedulerToolCompleted(
+      schedulerProgress,
+      "scheduler.compile_resource_requirements_for_work_intents",
+    ) ||
+    schedulerProgress.some(
+      (event) =>
+        event.schedulerToolId === "scheduler.compile_resource_requirements_for_work_intents" &&
+        (event.status === "succeeded" || event.status === "completed"),
+    );
+  const contextDispatchStarted =
+    graph.nodeKinds.includes("resource_scout") ||
+    schedulerProgress.some(
+      (event) =>
+        event.stage === "resource_broker" &&
+        event.currentPhase === "resource_demand_specialist_subturn",
+    );
+  const postResourceLifecycleStarted = schedulerProgress.some((event) =>
+    [
+      "scheduler.resolve_work_intent_resource_requirements",
+      "scheduler.accept_resources_for_work_intent",
+      "scheduler.mark_read_only_work_intent_satisfied_from_resources",
+      "scheduler.promote_resource_satisfied_work_intent_to_executable",
+      "scheduler.request_resource_requirement_for_work_intent",
+    ].includes(event.schedulerToolId),
   );
   return (
-    (acceptedGraphCompleted || contextScoutCompleted) &&
-    hasContextScoutNode &&
-    (firstNode?.nodeKind === "context_scout" ||
-      !contextScout ||
-      contextScoutAccepted ||
-      contextScoutCompleted)
+    resourceRequirementsCompiled ||
+    contextDispatchStarted ||
+    postResourceLifecycleStarted ||
+    graph.nodeKinds.every((nodeKind) => nodeKind === "work_intent")
   );
 }
 
-function isParallelContextScoutFrontierGraph({ graph, schedulerProgress }) {
-  if (!graph || graph.nodeCount < 2 || graph.edgeCount !== 0) {
-    return false;
-  }
-  const onlyContextScoutNodes =
-    graph.nodeKinds.length === 1 && graph.nodeKinds.includes("context_scout");
-  if (!onlyContextScoutNodes) {
-    return false;
-  }
-  const acceptedGraph =
-    schedulerToolCompleted(schedulerProgress, "scheduler.accept_staged_graph") ||
-    schedulerProgress.some((event) => event.currentPhase === "decomposition_accepted");
-  const parallelStructureDeclared =
-    schedulerToolCompleted(schedulerProgress, "scheduler.define_edges_or_parallelism") ||
-    schedulerProgress.some((event) =>
-      (event.reasonCodes ?? []).some((reasonCode) => String(reasonCode).includes("parallel")),
-    );
-  const contextFrontierOpened = schedulerProgress.some(
-    (event) =>
-      event.nodeId &&
-      event.roleId === "context_scout" &&
-      (event.currentPhase === "executable" ||
-        event.currentPhase === "node_started" ||
-        event.currentPhase === "worker_runtime_tool_call_started" ||
-        event.currentPhase === "primary_role_output" ||
-        event.currentPhase === "primary_role_output_in_progress" ||
-        event.currentPhase === "primary_role_output_completed" ||
-        event.currentPhase === "node_completed"),
-  );
-  return (acceptedGraph && parallelStructureDeclared) || contextFrontierOpened;
+function legacyArchitectureTransitionTopologyFailure({
+  graph,
+  schedulerProgress,
+}) {
+  return evaluateArchitectureTransitionTopologyGate({
+    graph,
+    schedulerProgress,
+  });
 }
 
-function evaluateSchedulerGraphGate({ graph, contextScout, schedulerProgress }) {
+function evaluateSchedulerGraphGate({ graph, resourceSpecialist, schedulerProgress }) {
   const persistenceStatus = graphPersistenceStatus(schedulerProgress);
   const graphPersistenceInProgress = persistenceStatus === "started";
   const graphPersistenceFailed = persistenceStatus === "failed";
@@ -1328,14 +1531,8 @@ function evaluateSchedulerGraphGate({ graph, contextScout, schedulerProgress }) 
   if (graph.edgeCount > 0) {
     return "review_available_nonblocking";
   }
-  if (isProgressiveContextFirstGraph({ graph, contextScout, schedulerProgress })) {
-    return "review_available_nonblocking";
-  }
-  if (isParallelContextScoutFrontierGraph({ graph, schedulerProgress })) {
-    return "review_available_nonblocking";
-  }
-  if (graph.nodeCount === 1 && graph.nodeKinds.includes("context_scout") && !contextScout) {
-    return "review_available_nonblocking";
+  if (isWorkIntentDemandContextExpansionInProgress({ graph, schedulerProgress })) {
+    return "waiting";
   }
   return "failed";
 }
@@ -1351,22 +1548,23 @@ function evaluateCheckpoints({ submit, artifacts, snapshot }) {
   const mission = summarizeMissionLedger(
     latestArtifact(artifacts, "execution_platform.mission_contract_ledger"),
   );
-  const packets = summarizeCommitmentPackets(
-    latestArtifact(artifacts, "execution_platform.commitment_work_packets"),
-    latestArtifact(artifacts, "execution_platform.commitment_packet_quality_review"),
+  const obligationGraph = summarizeObligationGraph(
+    latestArtifact(artifacts, "execution_platform.obligation_graph"),
   );
-  const contextScout = summarizeContextScout(
-    latestArtifact(artifacts, "execution_platform.context_scout_tool_loop"),
+  const resourceSpecialist = summarizeResourceSpecialist(
+    latestArtifact(artifacts, "execution_platform.resource_specialist_tool_loop"),
   );
   const schedulerProgress = summarizeSchedulerProgress(artifacts);
-  const packetAcceptanceProgress = schedulerProgress.findLast(
-    (event) =>
-      event.stage === "commitment_packet_authoring" &&
-      event.currentPhase === "commitment_packets_accepted" &&
-      event.reasonCodes.includes("model_authored_commitment_packets_accepted"),
-  );
   const graph = graphSummary(snapshot);
-  const contextCoverage = packetContextSupplyCoverage(snapshot, packets);
+  const legacyTopologyFailure = legacyArchitectureTransitionTopologyFailure({
+    graph,
+    schedulerProgress,
+  });
+  const canonicalProofGate = latestCanonicalProofGateProjection({
+    graphId: graph?.graphId ?? null,
+    schedulerProgress,
+    topologyGate: legacyTopologyFailure,
+  });
   const hardFailures = [];
   const needsReview = [];
 
@@ -1417,134 +1615,94 @@ function evaluateCheckpoints({ submit, artifacts, snapshot }) {
     needsReview.push("mission_ledger_review_available_nonblocking");
   }
 
-  const packetSummaryLooksReady =
-    packets &&
-    packets.packetCount >= (mission?.blockingCommitmentCount ?? 1) &&
-    packets.packets.every(
-      (packet) =>
-        packet.authoringSource === "model_authored" &&
-        isSchedulerReadyPacketQualityStatus(packet.qualityStatus) &&
-        packet.likelyRepoAreas.length > 0 &&
-        packet.requiredContextQuestions.length > 0,
-    );
-  const packetGate = {
-    gateId: "commitment_work_packets",
-    status: !packets
+  const obligationGraphGate = {
+    gateId: "obligation_graph",
+    status: !obligationGraph
       ? "waiting"
-      : packetAcceptanceProgress ||
-          (isSchedulerReadyPacketReviewStatus(packets.reviewStatus) && packetSummaryLooksReady)
-        ? packets.reviewStatus === "accepted_with_limitations" ||
-          packets.reviewStatus === "needs_review_nonblocking"
-          ? "accepted_with_limitations"
-          : "review_available_nonblocking"
-        : packets.reviewStatus && !isSchedulerReadyPacketReviewStatus(packets.reviewStatus)
-          ? "failed"
-          : "waiting",
-    evidence: packets,
+      : (obligationGraph.obligationCount ?? 0) >= 1 &&
+          (obligationGraph.executableCount ?? 0) >= 1
+        ? "review_available_nonblocking"
+        : "failed",
+    evidence: obligationGraph,
   };
-  if (packetGate.status === "failed") {
-    hardFailures.push("commitment_work_packets_not_grade_a_shape");
+  if (obligationGraphGate.status === "failed") {
+    hardFailures.push("obligation_graph_invalid");
   }
-  if (
-    packetGate.status === "review_available_nonblocking" ||
-    packetGate.status === "accepted_with_limitations"
-  ) {
-    needsReview.push("commitment_packets_review_available_nonblocking");
+  if (obligationGraphGate.status === "review_available_nonblocking") {
+    needsReview.push("obligation_graph_review_available_nonblocking");
   }
 
-  const implementationStarted =
-    graph?.activeNodes.some((node) => node.nodeKind === "implementation") === true ||
-    schedulerProgress.some(
-      (event) =>
-        event.stage === "node_execution" &&
-        (event.roleId === "implementation_engineer" ||
-          event.selectedCapabilityId?.includes("implementation")),
-    );
-  const contextSynthesisExecutionStarted = schedulerProgress.some((event) => {
-    if (event.roleId !== "context_synthesis" && event.activeNodeKind !== "context_synthesis") {
-      return false;
-    }
-    if (event.schedulerToolId === "scheduler.context_synthesis.create") {
-      return false;
-    }
-    return (
-      String(event.stage ?? "").includes("context_synthesis") ||
-      String(event.currentPhase ?? "").includes("context_synthesis") ||
-      String(event.schedulerPhase ?? "").includes("context_synthesis")
-    );
-  });
-  const synthesisReadinessSatisfied = contextSynthesisReadinessSatisfied(schedulerProgress);
-  const contextGate = {
-    gateId: "context_supply",
-    status:
-      contextCoverage.required && contextCoverage.allAccepted
-        ? "needs_model_quality_review"
-        : contextCoverage.required &&
-            contextCoverage.pendingPacketCount > 0 &&
-            !contextSynthesisExecutionStarted &&
-            !implementationStarted
-          ? "waiting"
-          : contextCoverage.required &&
-              contextCoverage.missingPacketCount > 0 &&
-              !contextSynthesisExecutionStarted &&
-              !implementationStarted
-            ? "waiting"
-            : contextCoverage.required &&
-                (contextSynthesisExecutionStarted || implementationStarted) &&
-                !contextCoverage.allAccepted
-              ? contextSynthesisExecutionStarted &&
-                synthesisReadinessSatisfied &&
-                !implementationStarted
-                ? "review_available_nonblocking"
-                : "failed"
-              : !contextScout
-                ? implementationStarted
-                  ? "failed"
-                  : "waiting"
-                : (contextScout.sufficiencyStatus === "accepted" ||
-                      contextScout.sufficiencyStatus === "accepted_with_limitations") &&
-                    contextScout.sufficientForImplementation &&
-                    contextScout.verifiedFileRefs.length > 0
-                  ? contextScout.sufficiencyStatus === "accepted_with_limitations"
-                    ? "accepted_with_limitations"
-                    : "review_available_nonblocking"
-                  : "failed",
-    evidence: {
-      contextScout,
-      packetContextSupplyCoverage: contextCoverage,
-      contextSynthesisReadinessSatisfied: synthesisReadinessSatisfied,
-      rawPromptStored: false,
-      rawResponseStored: false,
-    },
-  };
-  if (contextGate.status === "failed") {
-    hardFailures.push(
-      contextCoverage.required && contextSynthesisExecutionStarted && !contextCoverage.allAccepted
-        ? "context_synthesis_started_without_required_context_handoffs"
-        : contextCoverage.required && implementationStarted && !contextCoverage.allAccepted
-          ? "implementation_started_without_node_scoped_context_handoffs"
-          : implementationStarted && !contextScout
-            ? "implementation_started_before_context_scout"
-            : "context_scout_not_accepted",
-    );
-  }
-  if (
-    contextGate.status === "review_available_nonblocking" ||
-    contextGate.status === "accepted_with_limitations"
-  ) {
-    needsReview.push("context_scout_review_available_nonblocking");
-  }
-
+  const graphGateStatus = legacyTopologyFailure.failed
+    ? "failed"
+    : evaluateSchedulerGraphGate({ graph, resourceSpecialist, schedulerProgress });
   const graphGate = {
-    gateId: "scheduler_graph",
-    status: evaluateSchedulerGraphGate({ graph, contextScout, schedulerProgress }),
-    evidence: graph,
+    gateId: legacyTopologyFailure.failed
+      ? "architecture_transition_topology_invalid"
+      : graphGateStatus === "failed"
+        ? "graph_compile_invalid"
+        : "scheduler_graph",
+    status: graphGateStatus,
+    evidence: legacyTopologyFailure.failed
+      ? {
+          graph,
+          architectureTransitionTopology: legacyTopologyFailure,
+          rawPromptStored: false,
+          rawResponseStored: false,
+        }
+      : graph,
   };
   if (graphGate.status === "failed") {
     hardFailures.push("scheduler_graph_missing_edges_or_nodes");
   }
   if (graphGate.status === "review_available_nonblocking") {
     needsReview.push("scheduler_graph_review_available_nonblocking");
+  }
+
+  const schedulerDecisionOrGraphApplicationActive =
+    schedulerDecisionOrGraphApplicationInProgress(schedulerProgress);
+  const canonicalGateIsBlockedOnlyBecauseSchedulerDecisionIsRunning =
+    schedulerDecisionOrGraphApplicationActive &&
+    canonicalProofGate.gate.gateKind === "missing_runtime_state" &&
+    canonicalProofGate.gate.sourceKind === "scheduler_frontier";
+  const canonicalGateIsWaitingForSchedulerGraphProgress =
+    graphGate.status === "waiting" &&
+    canonicalProofGate.gate.gateKind === "missing_runtime_state" &&
+    canonicalProofGate.gate.sourceKind === "scheduler_frontier" &&
+    typeof canonicalProofGate.gate.nextLegalTransition === "string" &&
+    canonicalProofGate.gate.nextLegalTransition.length > 0;
+  const canonicalExecutionGate = {
+    gateId: canonicalProofGate.firstOpenGate,
+    status:
+      canonicalProofGate.gate.gateKind === "missing_runtime_state" ||
+      canonicalGateIsBlockedOnlyBecauseSchedulerDecisionIsRunning ||
+      canonicalGateIsWaitingForSchedulerGraphProgress
+      ? "waiting"
+      : canonicalExecutionGateStatus(canonicalProofGate),
+    evidence: canonicalProofGate,
+  };
+  if (canonicalProofGate.topologyGateRejected) {
+    hardFailures.push("architecture_transition_topology_invalid");
+  }
+  if (canonicalProofGate.staleCheckpointGateRejected) {
+    hardFailures.push("stale_checkpoint_gate_rejected");
+  }
+  const canonicalGateBlockedDuringGraphPersistence =
+    canonicalExecutionGate.status === "failed" &&
+    graphGate.status === "waiting" &&
+    graphPersistenceInProgress(schedulerProgress);
+  const canonicalGateIsLifecycleProgress =
+    canonicalExecutionGate.status === "waiting" &&
+    CANONICAL_LIFECYCLE_GATE_KINDS.has(canonicalProofGate.gate.gateKind);
+  if (
+    canonicalExecutionGate.status === "failed" &&
+    !canonicalGateBlockedDuringGraphPersistence &&
+    !canonicalGateIsLifecycleProgress &&
+    !canonicalGateIsBlockedOnlyBecauseSchedulerDecisionIsRunning &&
+    !canonicalGateIsWaitingForSchedulerGraphProgress &&
+    canonicalProofGate.gate.gateKind !== "missing_runtime_state" &&
+    !["terminal_failed", "terminal_needs_review"].includes(canonicalProofGate.gate.gateKind)
+  ) {
+    hardFailures.push(`canonical_gate_blocked:${canonicalProofGate.gate.gateKind}`);
   }
 
   const closeoutArtifact =
@@ -1568,28 +1726,27 @@ function evaluateCheckpoints({ submit, artifacts, snapshot }) {
       payloadGate,
       sourcePromptGate,
       missionGate,
-      packetGate,
-      contextGate,
+      obligationGraphGate,
       graphGate,
+      canonicalExecutionGate,
       closeoutGate,
     ],
     hardFailures: [...new Set(hardFailures)],
     needsReview: [...new Set(needsReview)],
     shouldStop: hardFailures.length > 0,
     firstOpenGate:
-      [
-        payloadGate,
-        sourcePromptGate,
-        missionGate,
-        packetGate,
-        contextGate,
-        graphGate,
-        closeoutGate,
-      ].find((gate) => !gateStatusIsAcceptedForProgress(gate.status))?.gateId ?? null,
+      [payloadGate, sourcePromptGate, missionGate, obligationGraphGate].find(
+        (gate) => !gateStatusIsAcceptedForProgress(gate.status),
+      )?.gateId ??
+      (canonicalProofGate.gate.gateKind === "terminal_succeeded"
+        ? closeoutGate.status === "waiting"
+          ? closeoutGate.gateId
+          : null
+        : canonicalProofGate.firstOpenGate),
+    canonicalProofGate,
     sourcePrompt,
     mission,
-    packets,
-    contextScout,
+    resourceSpecialist,
     graph,
     schedulerProgress,
   };
@@ -1610,14 +1767,6 @@ async function collectSnapshot(runtime, submit) {
       .find(Boolean) ?? null;
   const snapshot = graphId ? await runtime.runtimeWorkGraphs.readGraphSnapshot(graphId) : null;
   const checkpoints = evaluateCheckpoints({ submit, artifacts, snapshot });
-  const packetFanout = await latestPacketAuthorFanoutFromArtifacts(runtime, artifacts);
-  const packetFailureDiagnostics = commitmentPacketFailureDiagnosticsForRun({
-    generatedAt,
-    runtimeJobId: submit.runtimeJobId,
-    workItemId: submit.workItemId,
-    fanout: packetFanout?.fanout ?? null,
-    sourceArtifactRef: packetFanout?.artifactRef ?? null,
-  });
   return {
     generatedAt,
     runtimeJobId: submit.runtimeJobId,
@@ -1634,7 +1783,6 @@ async function collectSnapshot(runtime, submit) {
       : null,
     artifactCounts: artifactCounts(artifacts),
     checkpoints,
-    packetFailureDiagnostics,
     telemetry: {
       schedulerProgressEventCount: artifacts.filter(
         (artifact) => artifact.artifactType === "agent_team.scheduler_progress",
@@ -1653,15 +1801,16 @@ async function collectSnapshot(runtime, submit) {
 
 function progressLine(snapshot) {
   const latest = snapshot.checkpoints.schedulerProgress.at(-1) ?? null;
-  const latestPacketFanout = latestPacketAuthorFanout(snapshot);
-  const packetDiagnostics =
-    snapshot.packetFailureDiagnostics ?? commitmentPacketFailureDiagnostics(snapshot);
   return {
     event: "product_spec_checkpoint_progress",
     at: snapshot.generatedAt,
     runtimeJobId: snapshot.runtimeJobId,
     jobState: snapshot.job?.state ?? null,
     firstOpenGate: snapshot.checkpoints.firstOpenGate,
+    canonicalFirstOpenGate:
+      snapshot.checkpoints.canonicalProofGate?.gate?.gateKind ?? snapshot.checkpoints.firstOpenGate,
+    canonicalGateStatus: snapshot.checkpoints.canonicalProofGate?.gate?.gateStatus ?? null,
+    canonicalGateReasonCodes: snapshot.checkpoints.canonicalProofGate?.reasonCodes ?? [],
     hardFailures: snapshot.checkpoints.hardFailures,
     needsReview: snapshot.checkpoints.needsReview,
     graphStatus: snapshot.checkpoints.graph?.status ?? null,
@@ -1671,452 +1820,7 @@ function progressLine(snapshot) {
     latestPhase: latest?.currentPhase ?? latest?.schedulerPhase ?? null,
     latestObjective: latest?.objective ?? null,
     latestEli5: latest?.eli5Progress ?? null,
-    packetFanout: latestPacketFanout
-      ? {
-          totalCount:
-            typeof latestPacketFanout.totalCount === "number"
-              ? latestPacketFanout.totalCount
-              : null,
-          failedCount:
-            typeof latestPacketFanout.failedCount === "number"
-              ? latestPacketFanout.failedCount
-              : null,
-          pendingCount:
-            typeof latestPacketFanout.pendingCount === "number"
-              ? latestPacketFanout.pendingCount
-              : null,
-          runningCount:
-            typeof latestPacketFanout.runningCount === "number"
-              ? latestPacketFanout.runningCount
-              : null,
-          completedCount:
-            typeof latestPacketFanout.completedCount === "number"
-              ? latestPacketFanout.completedCount
-              : null,
-          needsReviewCount:
-            typeof latestPacketFanout.needsReviewCount === "number"
-              ? latestPacketFanout.needsReviewCount
-              : null,
-        }
-      : null,
-    commitmentPacketDiagnostics: packetDiagnostics
-      ? {
-          diagnosticPacketCount: packetDiagnostics.diagnosticPacketCount,
-          concerningPacketCount: packetDiagnostics.concerningPacketCount,
-          incompletePacketCount: packetDiagnostics.incompletePacketCount,
-          retryPacketCount: packetDiagnostics.retryPacketCount,
-          fallbackPacketCount: packetDiagnostics.fallbackPacketCount,
-          providerErrorPacketCount: packetDiagnostics.providerErrorPacketCount,
-          longLatencyPacketCount: packetDiagnostics.longLatencyPacketCount,
-          toFixCount: packetDiagnostics.toFixItems.length,
-        }
-      : null,
   };
-}
-
-function latestPacketAuthorFanout(snapshot) {
-  return (
-    snapshot.checkpoints.schedulerProgress.findLast((progress) => progress.packetAuthorFanout)
-      ?.packetAuthorFanout ?? null
-  );
-}
-
-async function latestPacketAuthorFanoutFromArtifacts(runtime, artifacts) {
-  const diagnosticArtifact =
-    artifacts
-      .filter(
-        (artifact) =>
-          artifact.artifactType === "execution_platform.commitment_packet_fanout_diagnostics",
-      )
-      .toSorted((left, right) => left.createdAt.getTime() - right.createdAt.getTime())
-      .at(-1) ?? null;
-  if (diagnosticArtifact) {
-    const hydrated = await runtime.runtimeJobs.hydrateRuntimeArtifactByContract(diagnosticArtifact);
-    if (hydrated.status === "payload_hydrated" && hydrated.body) {
-      return {
-        fanout: hydrated.body,
-        artifactRef: diagnosticArtifact.uri,
-        createdAt: diagnosticArtifact.createdAt.toISOString(),
-      };
-    }
-  }
-  return (
-    artifacts
-      .filter((artifact) => artifact.artifactType === "agent_team.scheduler_progress")
-      .map((artifact) => {
-        const metadata = metadataOf(artifact);
-        return metadata.packetAuthorFanout && typeof metadata.packetAuthorFanout === "object"
-          ? {
-              fanout: metadata.packetAuthorFanout,
-              artifactRef:
-                typeof metadata.packetAuthorFanout.diagnosticArtifactRef === "string"
-                  ? metadata.packetAuthorFanout.diagnosticArtifactRef
-                  : artifact.uri,
-              createdAt: artifact.createdAt.toISOString(),
-            }
-          : null;
-      })
-      .findLast((packetFanout) => packetFanout !== null) ?? null
-  );
-}
-
-function packetDiagnosticUsage(diagnostics) {
-  const usage = usageFromDiagnostics(diagnostics);
-  if (!usage) {
-    return null;
-  }
-  return {
-    inputTokens: usage.inputTokens,
-    outputTokens: usage.outputTokens,
-    totalTokens: usage.totalTokens,
-    estimatedCostUsd:
-      typeof usage.estimatedCostUsd === "number" ? Number(usage.estimatedCostUsd.toFixed(8)) : null,
-  };
-}
-
-function normalizeReasonCodes(value) {
-  return Array.isArray(value)
-    ? value.filter((item) => typeof item === "string" && item.trim()).slice(0, 80)
-    : [];
-}
-
-function packetFailureClasses(packet) {
-  const latest =
-    packet.latestDiagnostics && typeof packet.latestDiagnostics === "object"
-      ? packet.latestDiagnostics
-      : {};
-  const providerDiagnostics =
-    latest.providerDiagnostics && typeof latest.providerDiagnostics === "object"
-      ? latest.providerDiagnostics
-      : {};
-  const retryEvidence =
-    latest.retryEvidence && typeof latest.retryEvidence === "object" ? latest.retryEvidence : {};
-  const retryReasonCodes = normalizeReasonCodes(retryEvidence.retryReasonCodes);
-  const classes = [];
-  const preflightBlocked =
-    latest.noContentReasonClass === "preflight_blocked" ||
-    (typeof latest.errorReasonCode === "string" && latest.errorReasonCode.includes("preflight"));
-  if (packet.status !== "completed") {
-    classes.push("packet_author_incomplete");
-  }
-  if (preflightBlocked) {
-    classes.push("packet_author_preflight_blocked");
-  }
-  if (typeof latest.errorReasonCode === "string" && latest.errorReasonCode.trim()) {
-    classes.push("packet_author_provider_error");
-  }
-  if (retryReasonCodes.length > 0) {
-    classes.push("packet_author_retry_needed");
-  }
-  if (
-    typeof latest.fallbackReasonCode === "string" ||
-    typeof latest.fallbackFromModelRef === "string" ||
-    normalizeReasonCodes(packet.reasonCodes).some((code) => code.includes("rescue"))
-  ) {
-    classes.push("packet_author_rescue_or_fallback");
-  }
-  if (
-    !preflightBlocked &&
-    (latest.outputContentLength === 0 ||
-      providerDiagnostics.contentLength === 0 ||
-      retryReasonCodes.some((code) => code.includes("no_content")) ||
-      latest.errorReasonCode === "openrouter_no_content")
-  ) {
-    classes.push("packet_author_no_content_or_empty_output");
-  }
-  const timeoutMs =
-    providerDiagnostics.requestProfileDiagnostics &&
-    typeof providerDiagnostics.requestProfileDiagnostics === "object" &&
-    typeof providerDiagnostics.requestProfileDiagnostics.timeoutMs === "number"
-      ? providerDiagnostics.requestProfileDiagnostics.timeoutMs
-      : null;
-  if (
-    typeof latest.latencyMs === "number" &&
-    (latest.latencyMs >= 90_000 || (timeoutMs !== null && latest.latencyMs >= timeoutMs))
-  ) {
-    classes.push("packet_author_long_latency");
-  }
-  return [...new Set(classes)];
-}
-
-function summarizePacketDiagnostic(packet) {
-  const latest =
-    packet.latestDiagnostics && typeof packet.latestDiagnostics === "object"
-      ? packet.latestDiagnostics
-      : {};
-  const providerDiagnostics =
-    latest.providerDiagnostics && typeof latest.providerDiagnostics === "object"
-      ? latest.providerDiagnostics
-      : {};
-  const requestProfileDiagnostics =
-    providerDiagnostics.requestProfileDiagnostics &&
-    typeof providerDiagnostics.requestProfileDiagnostics === "object"
-      ? providerDiagnostics.requestProfileDiagnostics
-      : {};
-  const retryEvidence =
-    latest.retryEvidence && typeof latest.retryEvidence === "object" ? latest.retryEvidence : {};
-  const failureClasses = packetFailureClasses(packet);
-  return {
-    commitmentId: typeof packet.commitmentId === "string" ? packet.commitmentId : null,
-    status: typeof packet.status === "string" ? packet.status : null,
-    modelRef: typeof packet.modelRef === "string" ? packet.modelRef : null,
-    modelCandidateId: typeof latest.modelCandidateId === "string" ? latest.modelCandidateId : null,
-    providerPath:
-      typeof packet.providerPath === "string"
-        ? packet.providerPath
-        : typeof latest.providerPath === "string"
-          ? latest.providerPath
-          : null,
-    profileRef:
-      typeof packet.profileRef === "string"
-        ? packet.profileRef
-        : typeof latest.requestProfileRef === "string"
-          ? latest.requestProfileRef
-          : null,
-    reasonCodes: normalizeReasonCodes(packet.reasonCodes),
-    failureClasses,
-    concerning: failureClasses.length > 0,
-    errorReasonCode: typeof latest.errorReasonCode === "string" ? latest.errorReasonCode : null,
-    terminalLaneErrorReasonCode:
-      typeof latest.terminalLaneErrorReasonCode === "string"
-        ? latest.terminalLaneErrorReasonCode
-        : null,
-    noContentReasonClass:
-      typeof latest.noContentReasonClass === "string" ? latest.noContentReasonClass : null,
-    fallbackReasonCode:
-      typeof latest.fallbackReasonCode === "string" ? latest.fallbackReasonCode : null,
-    fallbackFromModelRef:
-      typeof latest.fallbackFromModelRef === "string" ? latest.fallbackFromModelRef : null,
-    retryReasonCodes: normalizeReasonCodes(retryEvidence.retryReasonCodes),
-    retryAttemptCount:
-      typeof retryEvidence.attemptCount === "number" ? retryEvidence.attemptCount : null,
-    retryAttempts: Array.isArray(retryEvidence.attempts)
-      ? retryEvidence.attempts
-          .filter((attempt) => attempt && typeof attempt === "object")
-          .map((attempt) => ({
-            attempt: typeof attempt.attempt === "number" ? attempt.attempt : null,
-            latencyMs: typeof attempt.latencyMs === "number" ? attempt.latencyMs : null,
-            httpStatus: typeof attempt.httpStatus === "number" ? attempt.httpStatus : null,
-            reasonCode: typeof attempt.reasonCode === "string" ? attempt.reasonCode : null,
-            cooldownMs: typeof attempt.cooldownMs === "number" ? attempt.cooldownMs : null,
-          }))
-          .slice(0, 8)
-      : [],
-    latencyMs: typeof latest.latencyMs === "number" ? latest.latencyMs : null,
-    inputByteLength:
-      typeof latest.inputByteLength === "number"
-        ? latest.inputByteLength
-        : typeof requestProfileDiagnostics.promptByteLength === "number"
-          ? requestProfileDiagnostics.promptByteLength
-          : null,
-    outputContentLength:
-      typeof latest.outputContentLength === "number"
-        ? latest.outputContentLength
-        : typeof providerDiagnostics.contentLength === "number"
-          ? providerDiagnostics.contentLength
-          : null,
-    finishReason:
-      typeof latest.finishReason === "string"
-        ? latest.finishReason
-        : typeof providerDiagnostics.finishReason === "string"
-          ? providerDiagnostics.finishReason
-          : null,
-    nativeFinishReason:
-      typeof providerDiagnostics.nativeFinishReason === "string"
-        ? providerDiagnostics.nativeFinishReason
-        : null,
-    responseFormatSent:
-      typeof latest.responseFormatSent === "string" ? latest.responseFormatSent : null,
-    reasoningModeSent:
-      typeof latest.reasoningModeSent === "string" ? latest.reasoningModeSent : null,
-    structuredAdapterPreflight:
-      providerDiagnostics.structuredAdapterPreflight &&
-      typeof providerDiagnostics.structuredAdapterPreflight === "object"
-        ? providerDiagnostics.structuredAdapterPreflight
-        : null,
-    reasoningMode:
-      typeof requestProfileDiagnostics.reasoningMode === "string"
-        ? requestProfileDiagnostics.reasoningMode
-        : null,
-    reasoningTokenCount:
-      typeof providerDiagnostics.reasoningTokenCount === "number"
-        ? providerDiagnostics.reasoningTokenCount
-        : null,
-    maxTokens:
-      typeof requestProfileDiagnostics.maxTokens === "number"
-        ? requestProfileDiagnostics.maxTokens
-        : null,
-    timeoutMs:
-      typeof requestProfileDiagnostics.timeoutMs === "number"
-        ? requestProfileDiagnostics.timeoutMs
-        : null,
-    promptHash:
-      typeof requestProfileDiagnostics.promptHash === "string"
-        ? requestProfileDiagnostics.promptHash
-        : null,
-    outputHash: typeof latest.outputHash === "string" ? latest.outputHash : null,
-    modelCallSpanId:
-      typeof latest.modelCallSpanId === "string"
-        ? latest.modelCallSpanId
-        : typeof providerDiagnostics.modelCallSpanId === "string"
-          ? providerDiagnostics.modelCallSpanId
-          : null,
-    usage: packetDiagnosticUsage(latest),
-    rawPromptStored: false,
-    rawResponseStored: false,
-    rawProviderLogStored: false,
-  };
-}
-
-function buildPacketToFixItems(packetDiagnostics) {
-  const toFixItems = [];
-  const byClass = new Map();
-  for (const packet of packetDiagnostics) {
-    for (const failureClass of packet.failureClasses) {
-      byClass.set(failureClass, (byClass.get(failureClass) ?? 0) + 1);
-    }
-  }
-  const add = (condition, item) => {
-    if (condition) {
-      toFixItems.push(item);
-    }
-  };
-  add(byClass.has("packet_author_incomplete"), {
-    area: "commitment_packet_authoring",
-    priority: "P0",
-    issue: "One or more packet-author calls did not reach a terminal completed packet state.",
-    recommendedFix:
-      "Make packet fanout terminal accounting explicit: completed, retrying, rescued, blocked, or needs_review must be persisted before the phase can advance.",
-    affectedCommitmentIds: packetDiagnostics
-      .filter((packet) => packet.failureClasses.includes("packet_author_incomplete"))
-      .map((packet) => packet.commitmentId)
-      .filter(Boolean),
-  });
-  add(byClass.has("packet_author_no_content_or_empty_output"), {
-    area: "commitment_packet_authoring",
-    priority: "P0",
-    issue:
-      "Qwen/OpenRouter packet authoring returned no content or empty output for at least one commitment packet.",
-    recommendedFix:
-      "Diagnose the exact packet prompt shape, provider finish/native finish reason, output limit, timeout, and retry behavior. Prefer bounded semantic-content calls plus targeted normalization over GPT rescue as a normal path.",
-    affectedCommitmentIds: packetDiagnostics
-      .filter((packet) =>
-        packet.failureClasses.includes("packet_author_no_content_or_empty_output"),
-      )
-      .map((packet) => packet.commitmentId)
-      .filter(Boolean),
-  });
-  add(byClass.has("packet_author_preflight_blocked"), {
-    area: "commitment_packet_authoring",
-    priority: "P0",
-    issue:
-      "Structured adapter preflight blocked one or more packet-author calls before provider invocation.",
-    recommendedFix:
-      "Align call-site model-task bounds, requested timeouts, output limits, and input bundle size before rerunning; this is a runtime policy mismatch, not a model no-content event.",
-    affectedCommitmentIds: packetDiagnostics
-      .filter((packet) => packet.failureClasses.includes("packet_author_preflight_blocked"))
-      .map((packet) => packet.commitmentId)
-      .filter(Boolean),
-  });
-  add(byClass.has("packet_author_rescue_or_fallback"), {
-    area: "commitment_packet_authoring",
-    priority: "P1",
-    issue: "Packet authoring used a rescue/fallback model.",
-    recommendedFix:
-      "Treat rescue as an incident unless explicitly accepted by operator policy. Compare rescued and primary packet inputs by hash/size/commitment class and improve the primary two-step packet path.",
-    affectedCommitmentIds: packetDiagnostics
-      .filter((packet) => packet.failureClasses.includes("packet_author_rescue_or_fallback"))
-      .map((packet) => packet.commitmentId)
-      .filter(Boolean),
-  });
-  add(byClass.has("packet_author_long_latency"), {
-    area: "commitment_packet_authoring",
-    priority: "P1",
-    issue: "Packet authoring exceeded the expected latency budget.",
-    recommendedFix:
-      "Split model-owned semantic authoring from runtime-owned compilation/normalization, keep prompt context packs bounded by source refs rather than repeated full ledgers, and preserve per-packet latency budgets.",
-    affectedCommitmentIds: packetDiagnostics
-      .filter((packet) => packet.failureClasses.includes("packet_author_long_latency"))
-      .map((packet) => packet.commitmentId)
-      .filter(Boolean),
-  });
-  add(byClass.has("packet_author_provider_error"), {
-    area: "commitment_packet_authoring",
-    priority: "P1",
-    issue: "Packet authoring surfaced provider-level errors.",
-    recommendedFix:
-      "Route provider failures through structured model-task degradation policy with exact provider status, retry evidence, and model/profile-specific cooldown instead of broad phase retries.",
-    affectedCommitmentIds: packetDiagnostics
-      .filter((packet) => packet.failureClasses.includes("packet_author_provider_error"))
-      .map((packet) => packet.commitmentId)
-      .filter(Boolean),
-  });
-  return toFixItems;
-}
-
-function commitmentPacketFailureDiagnosticsForRun({
-  generatedAt,
-  runtimeJobId,
-  workItemId,
-  fanout,
-  sourceArtifactRef = null,
-}) {
-  if (!fanout || !Array.isArray(fanout.packetDiagnostics)) {
-    return null;
-  }
-  const packetDiagnostics = fanout.packetDiagnostics
-    .filter((packet) => packet && typeof packet === "object")
-    .map(summarizePacketDiagnostic);
-  const concerning = packetDiagnostics.filter((packet) => packet.concerning);
-  return {
-    artifactKind: "product_spec_commitment_packet_failure_diagnostics",
-    generatedAt,
-    runtimeJobId,
-    workItemId,
-    sourceArtifactRef,
-    fanoutSummary: {
-      totalCount: typeof fanout.totalCount === "number" ? fanout.totalCount : null,
-      completedCount: typeof fanout.completedCount === "number" ? fanout.completedCount : null,
-      failedCount: typeof fanout.failedCount === "number" ? fanout.failedCount : null,
-      pendingCount: typeof fanout.pendingCount === "number" ? fanout.pendingCount : null,
-      runningCount: typeof fanout.runningCount === "number" ? fanout.runningCount : null,
-      needsReviewCount:
-        typeof fanout.needsReviewCount === "number" ? fanout.needsReviewCount : null,
-    },
-    diagnosticPacketCount: packetDiagnostics.length,
-    concerningPacketCount: concerning.length,
-    incompletePacketCount: concerning.filter((packet) =>
-      packet.failureClasses.includes("packet_author_incomplete"),
-    ).length,
-    retryPacketCount: concerning.filter((packet) =>
-      packet.failureClasses.includes("packet_author_retry_needed"),
-    ).length,
-    fallbackPacketCount: concerning.filter((packet) =>
-      packet.failureClasses.includes("packet_author_rescue_or_fallback"),
-    ).length,
-    providerErrorPacketCount: concerning.filter((packet) =>
-      packet.failureClasses.includes("packet_author_provider_error"),
-    ).length,
-    longLatencyPacketCount: concerning.filter((packet) =>
-      packet.failureClasses.includes("packet_author_long_latency"),
-    ).length,
-    packetDiagnostics,
-    concerningPackets: concerning,
-    toFixItems: buildPacketToFixItems(packetDiagnostics),
-    rawPromptStored: false,
-    rawResponseStored: false,
-    rawProviderLogStored: false,
-    rawToolLogStored: false,
-  };
-}
-
-function commitmentPacketFailureDiagnostics(snapshot) {
-  return commitmentPacketFailureDiagnosticsForRun({
-    generatedAt: snapshot.generatedAt,
-    runtimeJobId: snapshot.runtimeJobId,
-    workItemId: snapshot.workItemId,
-    fanout: latestPacketAuthorFanout(snapshot),
-  });
 }
 
 async function writeLatestRunStateForSnapshot({
@@ -2173,6 +1877,15 @@ async function writeLatestRunStateForSnapshot({
           ? `Continue monitoring; first open gate is ${snapshot.checkpoints.firstOpenGate}.`
           : "Continue monitoring until terminal closeout or needs_review."),
   });
+  const latestRunStateManifestBounds = assertProofHarnessManifestBounds({
+    name: "latest-run-state",
+    value: state,
+    maxBytes: 96_000,
+  });
+  await writeJson(
+    "product-spec-proof-harness-manifest-bounds-latest-run-state.json",
+    latestRunStateManifestBounds,
+  );
   await writeJson("latest-run-state.json", state);
   if (snapshot.runtimeJobId) {
     await writeJson(`latest-run-state-${snapshot.runtimeJobId}.json`, state);
@@ -2191,7 +1904,13 @@ async function main() {
   const cloneRuntimeJobFlagIndex = process.argv.indexOf("--clone-runtime-job-id");
   const cloneRuntimeJobIdArg =
     cloneRuntimeJobFlagIndex >= 0 ? process.argv[cloneRuntimeJobFlagIndex + 1]?.trim() : null;
-  const fromCommitmentPackets = process.argv.includes("--from-commitment-packets");
+  const fromMissionLedger = process.argv.includes("--from-mission-ledger");
+  const fromObligationGraph = process.argv.includes("--from-obligation-graph");
+  const replayBoundary = fromObligationGraph
+    ? "obligation_graph"
+    : fromMissionLedger
+      ? "mission_ledger"
+      : "fresh_graph_replay_from_original_prompt_and_prior_failure_evidence";
   if (cloneRuntimeJobFlagIndex >= 0 && !cloneRuntimeJobIdArg) {
     throw new Error("clone_runtime_job_id_flag_missing_value");
   }
@@ -2325,9 +2044,7 @@ async function main() {
         checkpointReplay: {
           sourceRuntimeJobId: cloneSourceJob.jobId,
           sourceGraphId: cloneGraphId,
-          replayBoundary: fromCommitmentPackets
-            ? "commitment_packet_authoring"
-            : "fresh_graph_replay_from_original_prompt_and_prior_failure_evidence",
+          replayBoundary,
           rawPromptStored: false,
           rawResponseStored: false,
         },
@@ -2367,9 +2084,7 @@ async function main() {
       cloneTeamRunId,
       promptHash,
       promptLength: prompt.length,
-      replayBoundary: fromCommitmentPackets
-        ? "commitment_packet_authoring"
-        : "fresh_graph_replay_from_original_prompt_and_prior_failure_evidence",
+      replayBoundary,
       note: "Clone mode creates a fresh pending runtime job and fresh teamRunId while preserving the source graph/job refs as bounded replay evidence. This avoids reusing terminal graph state while exercising the same worker path.",
       rawPromptStored: false,
       rawResponseStored: false,
@@ -2428,7 +2143,7 @@ async function main() {
       promptHash,
       promptLength: prompt.length,
       checkpointReplayBoundary:
-        "existing_runtime_job_after_graph_creation_or_context_scout_boundary",
+        "existing_runtime_job_after_graph_creation_or_resource_scout_boundary",
       graph: beforeReplaySnapshot.checkpoints.graph,
       latestProgress: beforeReplaySnapshot.checkpoints.schedulerProgress.at(-1) ?? null,
       note: "Replay reuses persisted runtime job/graph state and runs the same gateway worker path. It does not resubmit the prompt or rerun router front-door work.",
@@ -2546,11 +2261,10 @@ async function main() {
         ? "Review source-grounded evidence before closure."
         : "Inspect latest blocker and replay from the nearest accepted boundary after patching.",
   });
-  const packetFailureDiagnostics =
-    finalSnapshot.packetFailureDiagnostics ?? commitmentPacketFailureDiagnostics(finalSnapshot);
+  const packetFailureDiagnostics = finalSnapshot.packetFailureDiagnostics ?? null;
   if (packetFailureDiagnostics) {
     await writeJson(
-      "product-spec-commitment-packet-failure-diagnostics.json",
+      "product-spec-obligation-graph-failure-diagnostics.json",
       packetFailureDiagnostics,
     );
     await writeJson("product-spec-proof-follow-up-fix-list.json", {
@@ -2559,8 +2273,8 @@ async function main() {
       runtimeJobId: finalSnapshot.runtimeJobId,
       workItemId: finalSnapshot.workItemId,
       sourceDiagnosticArtifact:
-        ".artifacts/execution-platform/product-spec-commitment-packet-failure-diagnostics.json",
-      commitmentPacketToFixItems: packetFailureDiagnostics.toFixItems,
+        ".artifacts/execution-platform/product-spec-obligation-graph-failure-diagnostics.json",
+      obligationGraphToFixItems: packetFailureDiagnostics.toFixItems,
       otherHardFailures: finalSnapshot.checkpoints.hardFailures,
       firstOpenGate: finalSnapshot.checkpoints.firstOpenGate,
       rawPromptStored: false,
@@ -2569,8 +2283,25 @@ async function main() {
       rawToolLogStored: false,
     });
   }
+  const finalSnapshotArtifact = await writeJson(
+    `product-spec-checkpointed-test-final-snapshot-${submit.runtimeJobId}.json`,
+    {
+      artifactKind: "product_spec_checkpointed_test_final_snapshot",
+      generatedAt: new Date().toISOString(),
+      runtimeJobId: finalSnapshot.runtimeJobId,
+      workItemId: finalSnapshot.workItemId,
+      snapshot: finalSnapshot,
+      rawPromptStored: false,
+      rawResponseStored: false,
+      rawProviderLogStored: false,
+      rawToolLogStored: false,
+      rawDbRowsStored: false,
+      secretsStored: false,
+    },
+  );
   const summary = {
     artifactKind: "product_spec_checkpointed_test_summary",
+    schemaVersion: "execution-platform.product-spec-checkpointed-test-summary-manifest.v1",
     generatedAt: new Date().toISOString(),
     status,
     promptHash,
@@ -2592,10 +2323,13 @@ async function main() {
           messageHash: sha256(runError.message ?? String(runError)),
         }
       : null,
-    finalSnapshot,
+    finalSnapshotRef: finalSnapshotArtifact.path,
+    finalSnapshotHash: finalSnapshotArtifact.sha256,
+    finalSnapshotBytes: finalSnapshotArtifact.bytes,
+    finalSnapshotManifest: compactProofSnapshot(finalSnapshot),
     phaseWallClock: summarizePhaseWallClock(finalSnapshot),
     modelTokenBurnByModel: summarizeModelTokenBurn(finalSnapshot),
-    commitmentPacketFailureDiagnostics: packetFailureDiagnostics
+    obligationGraphFailureDiagnostics: packetFailureDiagnostics
       ? {
           diagnosticPacketCount: packetFailureDiagnostics.diagnosticPacketCount,
           concerningPacketCount: packetFailureDiagnostics.concerningPacketCount,
@@ -2620,12 +2354,22 @@ async function main() {
     rawDbRowsStored: false,
     secretsStored: false,
   };
+  const finalSummaryManifestBounds = assertProofHarnessManifestBounds({
+    name: "product-spec-checkpointed-test-summary",
+    value: summary,
+    maxBytes: 256_000,
+  });
+  await writeJson(
+    "product-spec-proof-harness-manifest-bounds-final-summary.json",
+    finalSummaryManifestBounds,
+  );
   await writeJson("product-spec-checkpointed-test-summary.json", summary);
   await writeJson("product-spec-checkpointed-test-artifact-index.json", {
     artifactKind: "product_spec_checkpointed_test_artifact_index",
     artifacts: [
       ".artifacts/execution-platform/product-spec-checkpointed-test-preflight.json",
       ".artifacts/execution-platform/product-spec-checkpointed-test-latest.json",
+      finalSnapshotArtifact.path,
       ".artifacts/execution-platform/product-spec-checkpointed-test-summary.json",
     ],
     rawPromptStored: false,

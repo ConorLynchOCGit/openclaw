@@ -37,6 +37,11 @@ describe("model-memory proactivity gateway handlers", () => {
       attentionRequired: false,
       noDarkDataStatus: "pass",
     });
+    expect(payload.queue.pageInfo).toMatchObject({
+      limit: 25,
+      offset: 0,
+      hasMore: false,
+    });
     expect(payload.liveDetectionReport).toMatchObject({
       decision: "no_live_opportunities",
     });
@@ -662,6 +667,11 @@ describe("model-memory proactivity gateway handlers", () => {
     expect(payload.digest.items[0]).toMatchObject({
       noDarkDataStatus: "pass",
       whyThisAppearedSummary: expect.any(String),
+    });
+    expect(payload.digest.pageInfo).toMatchObject({
+      limit: 25,
+      offset: 0,
+      hasMore: false,
     });
     expect(JSON.stringify(payload).toLowerCase()).not.toContain("raw-prompt-marker");
   });

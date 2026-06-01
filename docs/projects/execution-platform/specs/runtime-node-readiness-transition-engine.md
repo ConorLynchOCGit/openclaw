@@ -6,9 +6,17 @@ Status: implemented and focused-proof passed. This spec remains the
 source-of-truth contract for generic node transition readiness before the
 Product/Spec proof and future workflow plugins.
 
+2026-05-28 amendment: readiness state is not enough without an authoritative
+transition runner. The governing implementation follow-up is
+`node-lifecycle-transition-runner.md`. `RuntimeNodeReadinessTransitionEngine`
+defines the state model; `NodeLifecycleTransitionRunner` must now own the
+mandatory drain of legal transitions, projection artifacts, no-progress
+collapse, and the guard that prevents global scheduler/orchestrator repair
+while local lifecycle transitions remain.
+
 2026-05-21 follow-on: transition readiness now correctly blocks workers
 until context/resource preconditions are satisfied, but the latest proof
-showed the context-supply node itself needs resource materialization. See
+showed the resource-fulfillment node itself needs resource materialization. See
 `context-scout-execution-packet-and-request-context-repair.md` for the next
 P0 context-scout packet and request-context repair compiler.
 
@@ -28,7 +36,7 @@ Mission Ledger, Commitment Work Packets, scheduler graph creation, graph-node
 Work Queue child materialization, and scheduler tool tracing. It failed before
 implementation because the scheduler accepted a graph and approved an
 `implementation` node while the first open proof gate remained
-`context_supply`.
+`resource_fulfillment`.
 
 Observed runtime evidence:
 
@@ -38,7 +46,7 @@ Observed runtime evidence:
 - node count: 8
 - edge count: 7
 - role invocation count: 0
-- first open gate: `context_supply`
+- first open gate: `resource_fulfillment`
 - context accepted target count: 0
 - context missing target count: 5
 - dedicated context node count: 0
@@ -101,6 +109,14 @@ the contract must support coding, research, docs, QA, architecture, planning,
 design, marketing, memory, proactivity, validation, human task, and closeout
 workflows.
 
+2026-05-28 correction: this engine must be wired as an executable
+`NodeLifecycleTransitionRunner`, not as optional scheduler-local helper
+branches. The runner must scan non-terminal nodes with lifecycle state even
+when their graph `nodeStatus` is `needs_review`, project a
+`NodeLifecycleProjection`, execute the next legal small-verb transition from
+the capability/workflow transition profile, and block `requestValidDecision()`
+unless every projection permits global scheduler repair.
+
 ## Lifecycle State Machine
 
 Every graph node must have one canonical readiness state.
@@ -114,7 +130,7 @@ Canonical node lifecycle:
    - It is not executable.
 2. `context_required`
    - The node needs context before resources can be materialized.
-   - The transition engine must create or select context-supply work.
+   - The transition engine must create or select resource-fulfillment work.
 3. `context_in_progress`
    - Context scout, research, memory retrieval, prompt excerpt, or human
      clarification is running.
@@ -246,8 +262,8 @@ Required capability precondition fields:
 - `workerRef`
 - `roleClass`
 - `validLifecyclePhases`
-- `requiresContext`
-- `requiredContextKinds`
+- `requiresResource`
+- `requiredResourceKinds`
 - `requiredResourcePacketKind`
 - `requiredNodeExecutionPacket`
 - `requiredSnapshotKinds`
@@ -273,7 +289,7 @@ Examples:
 - `context_scout`
   - can run as work intent: false
   - can run as executable: true
-  - required resource packet: `context_supply_request_packet`
+  - required resource packet: `resource_fulfillment_request_packet`
   - default repair transition: `ask_context_question_or_needs_review`
 - `planning_orchestrator`
   - required resource packet: `planning_input_packet`
@@ -367,7 +383,7 @@ Runtime creates:
 
 - a `context_scout` prerequisite node.
 - a typed `context_supplies` edge from scout to target node.
-- a context-supply request packet containing the target work node contract,
+- a resource-fulfillment request packet containing the target work node contract,
   packet refs, context questions, likely repo areas, source prompt refs,
   downstream consumer, stop-if-missing rules, and expected handoff.
 
@@ -471,9 +487,9 @@ The transition engine must classify blockers before workers run.
 Missing or invalid preconditions produce structured runtime evidence:
 
 - `node_context_required`
-- `node_context_supply_missing`
-- `node_context_supply_in_progress`
-- `node_context_supply_rejected`
+- `node_resource_fulfillment_missing`
+- `node_resource_fulfillment_in_progress`
+- `node_resource_fulfillment_rejected`
 - `node_resource_packet_required`
 - `node_execution_packet_missing`
 - `node_execution_packet_not_ready`
@@ -592,7 +608,7 @@ Boundary replay must support transition-engine checkpoints:
 
 The failed Product/Spec case must be replayable from accepted graph state:
 
-- input: accepted graph with implementation node first and `context_supply`
+- input: accepted graph with implementation node first and `resource_fulfillment`
   still waiting.
 - expected: runtime refuses implementation execution.
 - expected: runtime creates context/resource prerequisites or records a
@@ -610,8 +626,8 @@ Pass criteria:
 - graph acceptance does not run implementation directly.
 - `scheduler.approve_and_run_first_node` no longer bypasses readiness.
 - `scheduler.evaluate_frontier_readiness` records the implementation node as
-  non-executable because `context_supply` is missing.
-- runtime creates node-scoped context-supply prerequisites for every
+  non-executable because `resource_fulfillment` is missing.
+- runtime creates node-scoped resource-fulfillment prerequisites for every
   implementation/test node requiring context.
 - Work Queue readback shows the active transition and missing preconditions.
 - no Kimi/Qwen/Codex implementation worker is invoked before
@@ -627,9 +643,9 @@ Required tests:
 
 - accepted graph with first implementation node and missing context cannot
   run worker.
-- accepted graph with context-supply edge pending waits or runs the
+- accepted graph with resource-fulfillment edge pending waits or runs the
   prerequisite node first.
-- accepted graph with no context-supply edge creates node-scoped context
+- accepted graph with no resource-fulfillment edge creates node-scoped context
   prerequisite nodes for implementation-bearing work-intent nodes.
 - `approve_and_run_first_node` is disabled as a runtime tool and cannot
   authorize production execution.

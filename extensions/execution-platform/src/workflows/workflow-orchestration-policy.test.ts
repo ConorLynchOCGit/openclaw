@@ -16,7 +16,7 @@ describe("workflow orchestration policy", () => {
       complexWorkflow: true,
       requiredPhases: expect.arrayContaining([
         "mission_ledger",
-        "commitment_packet_authoring",
+        "obligation_graph",
         "work_breakdown",
         "capability_selection",
         "graph_compile",
@@ -26,7 +26,6 @@ describe("workflow orchestration policy", () => {
       ]),
       requiredRoleClasses: expect.arrayContaining([
         "orchestrator",
-        "context",
         "implementation",
         "qa",
         "review",

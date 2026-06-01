@@ -2,9 +2,9 @@ import { describe, expect, it } from "vitest";
 import { decideModelFallback, defaultModelFallbackPolicies } from "./model-fallback-policy.ts";
 
 describe("model fallback policy", () => {
-  it("keeps context scout on the qualified local-context policy without Kimi or DeepSeek fallback", () => {
+  it("keeps resource scout on the qualified local-context policy without Kimi or DeepSeek fallback", () => {
     const contextPolicy = defaultModelFallbackPolicies().find(
-      (policy) => policy.roleId === "context_scout",
+      (policy) => policy.roleId === "resource_scout",
     );
 
     expect(contextPolicy).toMatchObject({
@@ -15,7 +15,7 @@ describe("model fallback policy", () => {
     });
     expect(
       decideModelFallback({
-        roleId: "context_scout",
+        roleId: "resource_scout",
         failedModelId: "deepseek/deepseek-v4-pro",
         failureKind: "empty_response",
       }),

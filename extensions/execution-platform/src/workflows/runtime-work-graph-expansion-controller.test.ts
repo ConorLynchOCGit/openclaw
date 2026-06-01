@@ -30,12 +30,12 @@ function snapshotSummary(nodeIds: string[] = []): RuntimeWorkGraphSchedulerSnaps
 function node(nodeId: string): OrchestratorGraphNodeSpec {
   return {
     nodeId,
-    nodeKind: "context_scout",
-    capabilityId: "context_scout",
-    executorKey: "kind:context_scout",
-    assignedRole: "context_scout",
-    expectedOutput: "Bounded context handoff.",
-    acceptanceCriteria: ["Produce bounded context refs."],
+    nodeKind: "work_intent",
+    capabilityId: "planning_orchestrator",
+    executorKey: "role:orchestrator",
+    assignedRole: "planning_orchestrator",
+    expectedOutput: "Bounded WorkIntent contract.",
+    acceptanceCriteria: ["Produces a bounded WorkIntent contract."],
     downstreamConsumer: "runtime_work_graph_scheduler",
     exactObjective: `Find context for ${nodeId}.`,
     targetRefs: [`src/${nodeId}.ts`],
@@ -125,31 +125,56 @@ describe("runtime work graph expansion controller", () => {
     expect(result.deferredNodes.map((candidate) => candidate.nodeId)).toEqual(["extra-context"]);
   });
 
-  it("allows structurally prerequisite context expansion even with a ready frontier", () => {
-    const contextDecision = decision([
-      {
-        ...node("target-context"),
-        metadata: {
-          targetNodeId: "ready-implementation",
-          rawPromptStored: false,
-          rawResponseStored: false,
-          rawProviderLogStored: false,
-        },
+  it("does not defer runner-owned lifecycle transitions behind an existing ready frontier", () => {
+    const lifecycleDecision = {
+      ...decision([node("promoted-executable")]),
+      decisionId: "lifecycle-promotion",
+      runAfterAdd: true,
+      metadata: {
+        runtimeOwnedLifecycleTransition: true,
+        lifecycleTransitionOwner: "NodeLifecycleTransitionRunner",
+        lifecycleTransitionGate: "worker_action_ready",
+        runtimePrerequisiteCritical: true,
+        rawPromptStored: false,
+        rawResponseStored: false,
+        rawProviderLogStored: false,
       },
-    ]);
-    contextDecision.decisionKind = "request_context";
+    } satisfies OrchestratorGraphDecision;
 
     const result = evaluateRuntimeWorkGraphExpansionAdmission({
       graphId: "graph-1",
       iteration: 4,
-      decision: contextDecision,
+      decision: lifecycleDecision,
       snapshotSummary: snapshotSummary(["ready-implementation"]),
       readyFrontierNodeIds: ["ready-implementation"],
     });
 
     expect(result.decision.status).toBe("accepted");
     expect(result.decision.prerequisiteCritical).toBe(true);
-    expect(result.admittedNodes.map((candidate) => candidate.nodeId)).toEqual(["target-context"]);
+    expect(result.decision.reasonCodes).toContain("expansion_prerequisite_critical_not_deferred");
+    expect(result.admittedNodes.map((candidate) => candidate.nodeId)).toEqual([
+      "promoted-executable",
+    ]);
+    expect(result.deferredNodes).toEqual([]);
+  });
+
+  it("keeps global review prerequisite-critical without reviving node-local validation or escalation repair decisions", () => {
+    const result = evaluateRuntimeWorkGraphExpansionAdmission({
+      graphId: "graph-1",
+      iteration: 40,
+      decision: {
+        ...decision([node("request-review-node")]),
+        decisionId: "request-review-decision",
+        decisionKind: "request_review",
+        runAfterAdd: true,
+      },
+      snapshotSummary: snapshotSummary(["ready-implementation"]),
+      readyFrontierNodeIds: ["ready-implementation"],
+    });
+
+    expect(result.decision.status).toBe("accepted");
+    expect(result.decision.prerequisiteCritical).toBe(true);
+    expect(result.decision.reasonCodes).toContain("expansion_prerequisite_critical_not_deferred");
   });
 
   it("rejects expansions that exceed absolute runtime budgets", () => {

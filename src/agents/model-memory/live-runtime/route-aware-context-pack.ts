@@ -87,8 +87,7 @@ export function shouldAttemptLiveRetrievalContext(params: {
     params.status.includeRetrievalPacks &&
     (!policyDecision ||
       policyDecision === "bounded_chat_retrieval" ||
-      policyDecision === "bounded_advanced_retrieval" ||
-      policyDecision === "runtime_context_refs_only") &&
+      policyDecision === "bounded_advanced_retrieval") &&
     normalizeRetrievalTurnText(params.currentTurnText).length > 0
   );
 }
@@ -396,12 +395,6 @@ export async function resolveModelMemoryBootstrapOverlay(params: {
   }
 
   try {
-    const runtime = await getLiveRuntime(params.config);
-    const readModels = await loadRuntimeReadModels({
-      config: params.config,
-      sessionId: params.sessionId,
-      workspaceDir: params.workspaceDir,
-    });
     const memoryPolicyDecision = decidePromptRouterMemoryPolicy({
       routeKind: params.memoryRouteKind ?? "chat_send",
       promptHash: hashPromptForPolicy(params.currentTurnText),
@@ -410,6 +403,27 @@ export async function resolveModelMemoryBootstrapOverlay(params: {
       runtimeStatePresent: params.memoryRouteKind === "workflow_execution",
       untrustedExternalContentPresent: params.untrustedExternalContentPresent,
       stateVersionMismatch: params.stateVersionMismatch,
+    });
+    if (memoryPolicyDecision.decision === "runtime_context_refs_only") {
+      const routeAwarePack = assembleRouteAwareBootstrapContextPack({
+        contextFiles: [],
+        memoryPolicyDecision,
+        contextBudgetRemainingTokens: params.contextBudgetRemainingTokens,
+      });
+      return {
+        contextFiles: [],
+        projectionOutputs: {},
+        projectionVersions: [],
+        memoryPolicyDecision,
+        contextPackDecision: routeAwarePack.contextPackDecision,
+        status,
+      };
+    }
+    const runtime = await getLiveRuntime(params.config);
+    const readModels = await loadRuntimeReadModels({
+      config: params.config,
+      sessionId: params.sessionId,
+      workspaceDir: params.workspaceDir,
     });
     let retrievalArtifact: ContextArtifactRecord | undefined;
     const memoryTraceId =

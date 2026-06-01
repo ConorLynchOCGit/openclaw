@@ -41,6 +41,22 @@ readiness summary, and scheduler summary; the full scheduler state remains in
 runtime graph snapshots, scheduler progress, role invocation artifacts, and
 payload-backed node resources.
 
+2026-05-26 update: packet authoring now needs two additional classified
+boundaries before semantic packet authoring:
+
+- `packet.source_refs.select` is `local_semantic_extraction`. The model
+  chooses source refs/windows from the source prompt context index; runtime
+  validates ref existence and byte budgets. Runtime must not semantically
+  choose replacement refs or truncate source text to fit.
+- `packet.intent.set` is `local_semantic_extraction` or `tool_selection`
+  depending on the caller shape. The model declares packet execution intent;
+  runtime validates enum/capability compatibility and intent-specific
+  required fields.
+
+Targeted packet normalization remains `schema_normalization`, but it must now
+include selected source bundle refs, declared execution intent, missing
+intent-specific fields, and full provider/parse/tool diagnostics.
+
 ## Problem
 
 The latest Product/Spec Planning proof showed that the scheduler can create a
@@ -112,6 +128,15 @@ Production artifacts:
   and `extensions/execution-platform/src/work-queue/execution-read-model.ts`
   expose task class, policy ref, reasoning mode, parser mode, and telemetry
   in owner-facing progress/readback.
+- 2026-05-25 contract-boundary binding hardening adds
+  `ModelContractBoundaryPolicyBinding` and
+  `evaluateModelPolicyBindingPreflight` so task class policy is bound to the
+  exact runtime boundary, allowed tool family, output contract, parser mode,
+  reasoning mode, provider path, timeout, token/input bounds, retry policy,
+  escalation policy, and proof-cleanliness policy.
+- Scheduler model-call envelopes and Work Queue/latest-run-state readback now
+  expose contract boundary id, policy binding ref, proof-cleanliness state,
+  proof-cleanliness reason codes, and exact policy mismatch fields.
 
 Validation evidence:
 
@@ -208,6 +233,8 @@ Every model call must be classified before dispatch. The classification
 selects:
 
 - model policy ref.
+- contract boundary id when the call is at a registered boundary.
+- model policy binding ref when the call is at a registered boundary.
 - provider/model ref.
 - reasoning mode.
 - response format and parser mode.
@@ -216,21 +243,65 @@ selects:
 - token/cost telemetry requirements.
 - raw-storage flags.
 - expected output contract.
+- allowed model-facing tool family.
+- proof-cleanliness requirements.
 
 Classification is deterministic by call site and workflow definition. The
 model may justify exceptions, but runtime must record the exception and the
 policy ref that allowed it.
+
+The deterministic part is strictly structural. Runtime may use an exact
+workflow/call-site boundary id supplied by the workflow definition or tool
+contract. Runtime may not infer the boundary from natural-language task prose,
+node labels, artifact ref names, Product/Spec examples, or failure-message
+substrings.
+
+### Contract Boundary Preflight
+
+The model-call gateway and scheduler envelope path must preserve a bounded
+preflight diagnostic:
+
+- `accepted`
+- `boundaryId`
+- `boundaryRef`
+- `modelPolicyBindingRef`
+- `taskClass`
+- `modelPolicyRef`
+- `providerCallAllowed`
+- mismatch field paths with expected/actual values and reason codes
+- proof-cleanliness state and reason codes
+
+Preflight is required to reject:
+
+- provider calls for `resource_materialization`.
+- model/provider/profile mismatches not allowed by the binding.
+- reasoning-mode drift, including accidental reasoning on no-reasoning fast
+  lanes.
+- parser or response-format mismatch.
+- output-contract mismatch.
+- allowed-tool-family mismatch.
+- timeout, soft-timeout, output-token, or input-byte bounds violations.
+- hidden rescue/fallback.
+- proof-mode rescue/escalation without owner-accepted provider incident.
+
+This makes model policy a runtime-visible contract boundary instead of a
+prompt convention.
 
 ### Acceptance Criteria
 
 - model calls in router, Mission Ledger, packets, context scout, scheduler,
   implementation, validation, and closeout are tagged with one canonical task
   class.
+- registered model-call boundaries are tagged with one canonical contract
+  boundary id and model policy binding ref.
 - Work Queue/readback can show phase, task class, model ref, reasoning mode,
   timeout, retry count, token/cost where available, and escalation reason.
+- Work Queue/readback can show contract boundary, model policy binding, proof
+  cleanliness, and exact policy mismatch paths.
 - fast structured models are not asked to perform global reasoning.
 - reasoning models are not used for trivial schema normalization unless an
   explicit escalation reason exists.
+- hidden fallback/rescue cannot count as proof-stable boundary success.
 
 ## Queue Item 2: Generic Node Resource Materialization Layer
 
@@ -550,7 +621,7 @@ Required fields:
 - `workflowId`
 - `readinessStatus`: `not_evaluated`, `blocked`, `ready`, `ready_with_limitations`,
   `needs_repair`, `needs_review`
-- `phase`: `work_intent`, `context_supply`, `resource_materialization`,
+- `phase`: `work_intent`, `resource_fulfillment`, `resource_materialization`,
   `implementation_ready`, `executing`, `validation_ready`, `closeout_ready`
 - `resourcePacketRef`
 - `freshnessStatus`
@@ -576,7 +647,7 @@ Required fields:
 
 ### Acceptance Criteria
 
-- scheduler, post-context compiler, replay harness, Work Queue readback, and
+- scheduler, post-resource compiler, replay harness, Work Queue readback, and
   node executor invocation all consume the same readiness object.
 - contradictory status combinations are impossible or terminalize as
   needs_review with reason codes.
@@ -680,7 +751,7 @@ Status: blocked by `Runtime Node Readiness And Transition Engine` as of
 The resource-materialization replay proved that the runtime can compile
 worker-ready packets at the replay boundary. The next full proof exposed a
 different generic scheduler hole: after accepting a work graph, the scheduler
-still approved an `implementation` node while `context_supply` had zero
+still approved an `implementation` node while `resource_fulfillment` had zero
 accepted target nodes. That bypass happened before
 `NodeExecutionPacket` materialization could protect the worker path.
 
@@ -719,7 +790,7 @@ and worker execution:
 The transition-engine pass is complete only if:
 
 - `scheduler.approve_and_run_first_node` cannot run a non-executable node.
-- accepted graph plus missing `context_supply` creates context prerequisites
+- accepted graph plus missing `resource_fulfillment` creates context prerequisites
   or blocks with exact transition diagnostics.
 - implementation/test/review/closeout workers cannot run from work-intent
   nodes.
@@ -798,11 +869,11 @@ The full proof passes only if:
 ## Queue Reconciliation
 
 This spec supersedes narrow queue entries that treated context freshness,
-post-context task compilation, model policy, and schema adapter stability as
+post-resource task compilation, model policy, and schema adapter stability as
 separate local repairs. Those concerns now belong to one resource
 materialization and model-task classification block.
 
-The older scheduler-first node-scoped context supply and post-context
+The older scheduler-first node-scoped context supply and post-resource
 implementation task compiler specs remain valid as detailed sub-specs, but
 the queue should execute them through:
 

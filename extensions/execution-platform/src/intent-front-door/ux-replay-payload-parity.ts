@@ -282,7 +282,7 @@ export function validateUxReplayPayloadProofEligibility(
     parsed.missionLedgerRefs.missionLedgerInputRef ? null : "mission_ledger_input_ref_missing",
     parsed.missionLedgerRefs.commitmentPacketInputRef
       ? null
-      : "commitment_packet_input_ref_missing",
+      : "obligation_graph_input_ref_missing",
     parsed.schedulerRefs.schedulerHandoffRefs.length > 0 ? null : "scheduler_handoff_refs_missing",
   ].filter((code): code is string => Boolean(code));
   const surfaceAllowed =

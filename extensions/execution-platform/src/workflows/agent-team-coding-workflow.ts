@@ -32,7 +32,7 @@ export const agentTeamCodingWorkflowContract: ExecutionWorkflowContract = {
     ],
     routingHints: [
       "Use for bounded code, test, docs, review, or refactor work.",
-      "Require context scout before implementation.",
+      "Require node-local node resource demand readiness before write tools open.",
       "Use one write-authority lane at a time.",
       "Use V4 Pro only for test_engineer.",
     ],
@@ -56,7 +56,7 @@ export const agentTeamCodingWorkflowContract: ExecutionWorkflowContract = {
   ],
   roles: [
     { roleId: "orchestrator", required: true, authority: "control" },
-    { roleId: "context_scout", required: true, authority: "read_only" },
+    { roleId: "resource_scout", required: false, authority: "read_only" },
     { roleId: "implementation_engineer", required: true, authority: "write" },
     {
       roleId: "test_engineer",
@@ -75,7 +75,7 @@ export const agentTeamCodingWorkflowContract: ExecutionWorkflowContract = {
   ],
   preflightGates: [
     { gateId: "runtime_truth_available", required: true },
-    { gateId: "context_scout_before_write", required: true },
+    { gateId: "node_resource_demand_before_write", required: true },
     { gateId: "model_roster_enforced", required: true },
   ],
   approvalGates: [

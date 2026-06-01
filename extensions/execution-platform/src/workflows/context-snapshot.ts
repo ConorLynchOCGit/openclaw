@@ -11,8 +11,7 @@ export const CONTEXT_SNAPSHOT_SOURCE_KINDS = [
   "source_prompt_excerpt",
   "mission_ledger",
   "commitment_work_packet",
-  "context_scout_handoff",
-  "context_synthesis",
+  "resource_scout_handoff",
   "file_snapshot",
   "repo_search_result",
   "validation_result",
@@ -31,10 +30,9 @@ export const CONTEXT_SNAPSHOT_FRESHNESS_STATUSES = [
 export const CONTEXT_SNAPSHOT_REFRESH_ACTIONS = [
   "none",
   "request_excerpt",
-  "rerun_context_scout",
-  "rerun_context_synthesis",
+  "rerun_resource_scout",
   "refresh_replay_checkpoint",
-  "block_implementation",
+  "request_worker_context",
   "ask_human",
 ] as const;
 
@@ -174,13 +172,11 @@ export function createContextSnapshotRef(input: {
     (refreshRequired
       ? input.sourceKind === "source_prompt_excerpt"
         ? "request_excerpt"
-        : input.sourceKind === "context_scout_handoff"
-          ? "rerun_context_scout"
-          : input.sourceKind === "context_synthesis"
-            ? "rerun_context_synthesis"
-            : input.sourceKind === "boundary_replay_checkpoint"
-              ? "refresh_replay_checkpoint"
-              : "block_implementation"
+        : input.sourceKind === "resource_scout_handoff"
+          ? "rerun_resource_scout"
+        : input.sourceKind === "boundary_replay_checkpoint"
+          ? "refresh_replay_checkpoint"
+          : "request_worker_context"
       : "none");
   const id = snapshotId({
     sourceKind: input.sourceKind,
@@ -395,7 +391,7 @@ export function validateContextSnapshotFreshness(input: {
   }
   const requiredRefreshAction: ContextSnapshotRefreshAction =
     missingRefs.size > 0 || unknownRefs.size > 0
-      ? "block_implementation"
+      ? "request_worker_context"
       : rejectedRefs.size > 0
         ? "ask_human"
         : staleRefs.size > 0

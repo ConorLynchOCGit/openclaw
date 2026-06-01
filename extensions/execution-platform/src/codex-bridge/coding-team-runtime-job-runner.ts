@@ -5,6 +5,7 @@ import type { RuntimeToolKernel } from "../runtime-tool-call/runtime-tool-kernel
 import type { WorkQueueRepository } from "../work-queue/work-queue-repository.ts";
 import type {
   CodingResourcePacket,
+  NodeExecutionContract,
   NodeExecutionPacket,
 } from "../workflows/node-resource-materialization.ts";
 import type { RuntimeWorkGraphRepository } from "../workflows/runtime-work-graph-repository.ts";
@@ -93,6 +94,7 @@ export type AgentTeamImplementationBridgeRunInput = {
   evidenceRefs: string[];
   validationRefs: string[];
   approvedRepoScopePaths?: string[];
+  nodeExecutionContract?: NodeExecutionContract;
   nodeExecutionPacket?: NodeExecutionPacket;
   codingResourcePacket?: CodingResourcePacket;
   nodeReadinessStateRef?: string | null;

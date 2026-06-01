@@ -239,8 +239,8 @@ only directory-level target refs, missing file snapshots, missing explicit
 new-file intent, missing validation refs, or missing evidence expectations.
 The block is upstream context/task-compilation evidence, not a worker failure.
 
-See `scheduler-first-node-scoped-context-supply.md` and
-`post-context-implementation-task-compiler.md`.
+See `scheduler-first-node-scoped-resource-fulfillment.md` and
+`post-resource-implementation-task-compiler.md`.
 
 For complex implementation workflows, Runtime Work Graph now treats
 Commitment Work Packets as the input to draft work graph creation, not as the
@@ -269,7 +269,7 @@ runtime states.
 
 The latest Product/Spec proof showed that the scheduler can still accept a
 work graph and immediately approve an `implementation` node while the
-`context_supply` gate is waiting. That is invalid for every workflow, not only
+`resource_fulfillment` gate is waiting. That is invalid for every workflow, not only
 Product/Spec Planning. Graph acceptance proves that the planned work shape is
 valid; it does not prove that any worker can execute a node.
 
@@ -302,7 +302,7 @@ The old mandatory path
 is retired from production defaults. It may remain only as an explicitly
 labeled diagnostic or workflow-definition-specific exception.
 
-See `scheduler-first-node-scoped-context-supply.md`.
+See `scheduler-first-node-scoped-resource-fulfillment.md`.
 
 ## Demand-Driven Frontier Context
 
@@ -349,10 +349,10 @@ Child worker handoffs use typed packets:
 
 - `CommitmentWorkPacket`: scheduler/orchestrator input for deciding useful
   child nodes.
-- `ContextHandoffPacket`: context-scout output for downstream implementation,
+- `ResourceHandoffPacket`: context-scout output for downstream implementation,
   including relevant file refs, recommended edit points, risks, validation
   suggestions, and limitations.
-- `ImplementationTaskPacket v3`: post-context implementation-worker input
+- `ImplementationTaskPacket v3`: post-resource implementation-worker input
   for Kimi, Qwen, Codex escalation, docs, test, or other file-edit workers.
   It is compiled from work-intent node plus accepted node-scoped context and
   includes exact edit objective, concrete target files or explicit new-file

@@ -12,7 +12,88 @@ gates.
 
 ## Current Focus
 
-2026-05-24 control-plane recovery update: the current governing spec is
+2026-05-29 transition ownership update: the next Product/Spec proof is
+blocked by
+[Node Lifecycle Transition Ownership Consolidation](/projects/execution-platform/specs/node-lifecycle-transition-ownership-consolidation).
+The platform has many of the right small verbs and parsers, but code search
+showed direct proof/replay/worker paths can still bypass
+`NodeLifecycleTransitionRunner`. The current P0 rule is that focus, resource
+demand, specialist narrowing, domain resource selection, action gate, worker
+action, validation, evidence, root-cause collapse, and readback are all
+runner-owned transitions. Helper modules remain only as contract/compiler
+libraries. No second runner, compatibility path, or prompt-only proof lane can
+close the Product/Spec proof.
+
+2026-05-28 lifecycle runner update: the next Product/Spec proof is blocked by
+[Node Lifecycle Transition Runner](/projects/execution-platform/specs/node-lifecycle-transition-runner).
+The platform has the right node-local contracts, but lifecycle advancement is
+still optional inside the scheduler and global graph repair can run while
+local context/focus/demand/target/write/validation/evidence transitions are
+pending. The next P0 item makes `NodeLifecycleProjection` the readback source
+of truth, drains legal transitions before the global scheduler can run, and
+extends capability manifests with transition profiles that work across
+domains.
+
+2026-05-27 mandatory context focus update: the next Product/Spec proof is
+blocked by
+[Mandatory Context Focus And Target Selection Boundary](/projects/execution-platform/specs/mandatory-context-focus-and-target-selection-boundary).
+The platform must make model-authored `ResourceObjectiveFocus` mandatory
+before context requirements, node-local node resource demand, and scout specialist
+subturns. It must make model-authored target selection mandatory before
+source-edit snapshots. Runtime may compile legal resource universes and
+validate handles, authority, counts, budgets, storage, and lifecycle; it must
+not infer semantic relevance from broad `targetRefs`, packet
+`likelyRepoAreas`, approved repo scope, filenames, or Product/Spec-specific
+strings.
+
+Earlier 2026-05-26 node-local node resource demand update: the Product/Spec proof
+was blocked by
+[Node-Local Context Demand And Legacy Evisceration](/projects/execution-platform/specs/node-local-node-resource-demand-and-legacy-evisceration).
+The platform must replace pre-implementation context ceremonies with
+execution-adjacent `NodeResourceDemandSession`s, per-node `NodeResourceLedger`s,
+progressive `NodeExecutionPacket`s, specialist scout subturns, hard
+context-synthesis retirement, and destructive legacy cleanup. Broad context
+scout fanout and default context synthesis no longer count as proof success.
+
+Earlier 2026-05-26 code-verified blocker closure update: the Product/Spec proof
+is blocked by
+[Code-Verified Product/Spec Blocker Closure Plan](/projects/execution-platform/specs/code-verified-product-spec-blocker-closure-plan).
+The platform must close twelve verified boundary blockers across context
+frontier shard tools, model-authored scope revision, shard handoff-backed
+WorkIntent context resolution, target selection and file-change intent,
+worker packet/snapshot/plan readiness, precise readback, provider
+diagnostics, and root-cause collapse. The DB queue now records six P0 closure
+items before the Product/Spec proof. Real model tests in this tranche must use
+Product/Spec-class work slices, not only miniature fixtures.
+
+Earlier 2026-05-26 executable-spine recovery update: the Product/Spec proof
+was blocked by
+[Control-Plane Executable Spine Recovery](/projects/execution-platform/specs/control-plane-executable-spine-recovery).
+That tranche established the canonical path: Commitment Work Packets ->
+WorkIntentGraph -> capability validation -> ResourceRequirementPacket ->
+structurally reshardable context execution -> NodeExecutionPacket -> worker
+small-verb loop -> validation -> evidence.
+
+2026-05-25 execution-contract spine update: the next Product/Spec proof is
+blocked by
+[Execution Contract Spine, Context Requirements, And Frontier State](/projects/execution-platform/specs/execution-contract-spine-resource-requirements-and-frontier-state).
+The platform must promote payload-backed `NodeExecutionContract`s, required
+`ResourceRequirementPacket`s, demand-driven context, frontier root-cause
+collapse, branch-scoped readiness/readback, scheduler model-call observability,
+validation phase semantics, canonical `firstOpenGate`, and model-policy
+bindings before another full top-to-bottom proof. This is generic
+orchestration architecture: graph nodes schedule work; payload-backed
+contracts define work.
+
+Implementation status: contract-spine items 01 through 08 are closed. The
+runtime now has payload-backed `NodeExecutionContract`s, required
+`ResourceRequirementPacket`s, demand-driven context policy, frontier
+root-cause collapse, branch-scoped readiness/readback, scheduler model-call
+observability, phase-aware evidence semantics, and canonical readback gate
+truth from readiness/frontier state. The next active slice after closeout is
+model-policy bindings, not another broad proof pass.
+
+2026-05-24 control-plane recovery update: the current supporting spec is
 [Control-Plane Coding Team Recovery](/projects/execution-platform/specs/control-plane-coding-team-recovery).
 The missing contract is now explicitly documented in
 [WorkIntent Control-Plane Contract](/projects/execution-platform/specs/work-intent-control-plane-contract).
@@ -39,8 +120,8 @@ validation, review, readback, or closeout nodes. `after-context-synthesis`
 replay is diagnostic-only; `after-graph-selection` replay requires
 node-scoped context evidence.
 
-2026-05-24 node-scoped context update: WorkIntent nodes with context-handoff
-requirements now block at a broker-backed `node_scoped_context_supply`
+2026-05-24 node-scoped context update: WorkIntent nodes with resource-handoff
+requirements now block at a broker-backed `node_scoped_resource_fulfillment`
 transition until consumer-specific context exists. `accepted_with_limitations`
 context is no longer implementation-ready without a consumer waiver, context
 scout prerequisites carry a broker request ref and semantic question for the
@@ -203,12 +284,12 @@ Proof:
 The Product/Spec proof should focus on packet rescue dependence and downstream
 implementation readiness, not on harmless ledger count variance by itself.
 
-2026-05-22 Mission Ledger compiler update: the staged compiler is now
-[Staged Mission Ledger Obligation Candidate Compiler](/projects/execution-platform/specs/staged-mission-ledger-obligation-candidate-compiler).
-It is retained as diagnostic/proof infrastructure only. Production coding-team
-Mission Ledger creation is restored to the prior working single-pass path,
-with staged mode available only behind both the explicit diagnostic
-environment allow-list and a per-job diagnostic payload flag.
+2026-06-01 intake consolidation update: `IntakeStageRunner` is now the
+canonical pre-scheduler owner for Mission Ledger creation/replay and
+ObligationGraph small-verb authoring/repair. The staged Mission Ledger
+candidate/review/canonical-commitment experiment was deleted rather than
+kept as diagnostic infrastructure. Current governance lives in
+[ObligationGraph Scheduler Intake](/projects/execution-platform/specs/obligation-graph-scheduler-intake).
 
 ## Core Docs
 

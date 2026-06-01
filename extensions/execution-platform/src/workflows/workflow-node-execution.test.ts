@@ -28,6 +28,7 @@ describe("generic workflow node execution result", () => {
             commitmentId: "commitment-1",
             evidenceRef: "repo://file.ts#sha256:abc",
             evidenceKind: "source_change",
+            validationPhase: "post_action_validation",
             claimSummary: "Implemented the scoped source edit.",
             limitations: [],
             rawPromptStored: false,
@@ -59,6 +60,7 @@ describe("generic workflow node execution result", () => {
       producedByExecutorKey: "kind:implementation",
       changedFileRefs: ["repo://file.ts#sha256:abc"],
       validationRefs: ["validation://focused-test"],
+      validationPhase: "post_action_validation",
       rawToolLogStored: false,
       rawDbRowsStored: false,
       authorityGranted: false,
@@ -89,6 +91,7 @@ describe("generic workflow node execution result", () => {
             commitmentId: "unknown",
             evidenceRef: "review://model-run-1",
             evidenceKind: "review",
+            validationPhase: "review_validation",
             claimSummary: "Reviewed the work.",
             limitations: [],
             rawPromptStored: true as false,
@@ -169,6 +172,7 @@ describe("generic workflow node execution result", () => {
             commitmentId: "commitment-1",
             evidenceRef: "repo://file.ts#sha256:abc",
             evidenceKind: "source_change",
+            validationPhase: "post_action_validation",
             claimSummary: "Implemented the scoped source edit.",
             limitations: [],
             rawPromptStored: false,
@@ -203,6 +207,54 @@ describe("generic workflow node execution result", () => {
     );
   });
 
+  it("rejects pre-proof validation as implementation source-change evidence", () => {
+    const result = genericWorkflowNodeResultFromRuntime({
+      workflowId: "agent_team.coding",
+      graphId: "graph-1",
+      nodeId: "node-1",
+      nodeKind: "implementation",
+      roleClass: "implementation",
+      result: {
+        status: "succeeded",
+        outputArtifactRefs: ["repo://file.ts#sha256:abc"],
+        changedFileRefs: ["repo://file.ts#sha256:abc"],
+        validationRefs: ["validation://pre-proof"],
+        reasonCodes: ["pre_proof_check_recorded"],
+        evidenceClaims: [
+          {
+            commitmentId: "commitment-1",
+            evidenceRef: "repo://file.ts#sha256:abc",
+            evidenceKind: "source_change",
+            validationPhase: "pre_proof_validation",
+            claimSummary: "A pre-proof check claimed implementation progress.",
+            limitations: [],
+            rawPromptStored: false,
+            rawResponseStored: false,
+            rawProviderLogStored: false,
+          },
+        ],
+        rawPromptStored: false,
+        rawResponseStored: false,
+        rawProviderLogStored: false,
+        workQueueLifecycleMutated: false,
+      },
+    });
+
+    const validation = validateGenericWorkflowNodeResult({
+      result,
+      knownCommitmentIds: ["commitment-1"],
+      evidenceClaimsRequired: true,
+    });
+
+    expect(validation.valid).toBe(false);
+    expect(validation.reasonCodes).toEqual(
+      expect.arrayContaining([
+        `generic_node_result_evidence_claim_validation_phase_incompatible:${result.evidenceClaims[0]?.evidenceClaimId}`,
+        "validation_phase_source_change_requires_worker_post_edit_validation",
+      ]),
+    );
+  });
+
   it("derives workflow evidence class refs from canonical node results", () => {
     const result = genericWorkflowNodeResultFromRuntime({
       workflowId: "agent_team.product_spec_planning",
@@ -219,6 +271,7 @@ describe("generic workflow node execution result", () => {
             commitmentId: "commitment-1",
             evidenceRef: "artifact://planning-capsule/1",
             evidenceKind: "planning_capsule",
+            validationPhase: "pre_execution_validation",
             claimSummary: "Created the bounded planning capsule.",
             limitations: [],
             rawPromptStored: false,

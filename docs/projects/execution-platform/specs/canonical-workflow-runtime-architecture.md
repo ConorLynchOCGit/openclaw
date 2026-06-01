@@ -435,7 +435,7 @@ All scheduler-backed workflows now share these canonical runtime objects:
    - closeout/finalization/readback refs.
 3. `CommitmentWorkPacket`
    - model-authored, full-prompt-aware, per-commitment handoff input.
-4. `ContextHandoffPacket`
+4. `ResourceHandoffPacket`
    - context scout output and downstream worker handoff.
 5. `GenericWorkflowNodeExecutionResult`
    - role class, capability id, bounded refs, evidence claims, limitations,

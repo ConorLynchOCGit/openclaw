@@ -4,7 +4,9 @@ import { buildModelCallRuntimeToolDefinition } from "./model-call-runtime-tool.t
 import {
   buildModelTaskTelemetryEnvelope,
   classifyModelTaskCall,
+  evaluateModelPolicyBindingPreflight,
   MODEL_TASK_CLASSES,
+  modelContractBoundaryBindingFor,
   modelTaskPolicyFor,
   assertModelTaskPolicy,
 } from "./model-task-classification.ts";
@@ -59,10 +61,136 @@ describe("model task classification and utility policy", () => {
     });
   });
 
+  it("binds exact contract boundaries to task class, model policy, and output contracts", () => {
+    const packetBinding = modelContractBoundaryBindingFor("obligation_semantic_content");
+    expect(packetBinding).toMatchObject({
+      boundaryId: "obligation_semantic_content",
+      taskClass: "local_semantic_extraction",
+      modelPolicyRef:
+        "model-task-policy://local-semantic-extraction/qwen3-coder-next/obligation-semantic-content",
+      preferredModelRef: "qwen/qwen3-coder-next",
+      reasoningMode: "none",
+      allowedToolFamily: "obligation.semantic_author",
+      allowedOutputContractId: "obligation_semantic_brief",
+      providerCallAllowed: true,
+      rawPromptStored: false,
+      rawResponseStored: false,
+    });
+
+    const materializationBinding = modelContractBoundaryBindingFor("resource_materialization");
+    expect(materializationBinding).toMatchObject({
+      taskClass: "resource_materialization",
+      providerPath: "runtime_only",
+      providerCallAllowed: false,
+      allowedOutputContractId: "node_execution_packet",
+    });
+
+    const domainResourceSelectionBinding = modelContractBoundaryBindingFor(
+      "domain_resource_selection",
+    );
+    expect(domainResourceSelectionBinding).toMatchObject({
+      boundaryId: "domain_resource_selection",
+      taskClass: "tool_selection",
+      preferredModelRef: "qwen/qwen3-coder-next",
+      reasoningMode: "none",
+      allowedToolFamily: "resource.selection",
+      allowedOutputContractId: "domain_resource_selection_packet",
+      providerCallAllowed: true,
+    });
+
+    const contextNarrowingBinding = modelContractBoundaryBindingFor(
+      "context_narrowing_selector",
+    );
+    expect(contextNarrowingBinding).toMatchObject({
+      boundaryId: "context_narrowing_selector",
+      taskClass: "tool_selection",
+      preferredModelRef: "qwen/qwen3-coder-next",
+      reasoningMode: "none",
+      allowedToolFamily: "resource.scout.narrowing_selector",
+      allowedOutputContractId: "resource_scout_exact_handle_tool_call",
+      providerCallAllowed: true,
+    });
+  });
+
+  it("preflights exact model-policy binding mismatches before provider calls", () => {
+    const classification = classifyModelTaskCall({
+      taskClass: "local_semantic_extraction",
+      callSite: "obligation.semantic_content",
+    });
+
+    const accepted = evaluateModelPolicyBindingPreflight({
+      classification,
+      actualAllowedToolFamily: "obligation.semantic_author",
+      actualOutputContractId: "obligation_semantic_brief",
+      actualOutputContractVersion: "v1",
+      requestedInputBytes: 12_000,
+      requestedTimeoutMs: 120_000,
+    });
+    expect(accepted.accepted).toBe(true);
+    expect(accepted.modelPolicyBindingRef).toBe(
+      "model-contract-boundary://obligation_semantic_content",
+    );
+
+    const blocked = evaluateModelPolicyBindingPreflight({
+      classification,
+      actualReasoningMode: "high",
+      actualAllowedToolFamily: "scheduler.orchestrator_decision",
+      actualOutputContractId: "runtime_work_graph_orchestrator_plan",
+      requestedInputBytes: 40_000,
+      requestedTimeoutMs: 240_000,
+    });
+
+    expect(blocked.accepted).toBe(false);
+    expect(blocked.mismatches.map((mismatch) => mismatch.reasonCode)).toEqual(
+      expect.arrayContaining([
+        "model_policy_reasoning_mode_mismatch",
+        "model_policy_allowed_tool_family_mismatch",
+        "model_policy_output_contract_mismatch",
+        "model_policy_timeout_exceeds_bound",
+        "model_policy_input_exceeds_bound",
+      ]),
+    );
+  });
+
+  it("makes proof-mode rescue and escalation visible instead of silently clean", () => {
+    const classification = classifyModelTaskCall({
+      taskClass: "local_semantic_extraction",
+      callSite: "resource.scout.summary",
+    });
+
+    const blocked = evaluateModelPolicyBindingPreflight({
+      classification,
+      proofMode: true,
+      rescueCount: 1,
+      escalationCount: 1,
+      ownerAcceptedProviderIncident: false,
+    });
+    expect(blocked.accepted).toBe(false);
+    expect(blocked.proofCleanliness).toMatchObject({
+      state: "blocked",
+      rescueCount: 1,
+      escalationCount: 1,
+      ownerAcceptedProviderIncident: false,
+    });
+    expect(blocked.reasonCodes).toContain("model_policy_rescue_requires_owner_acceptance");
+
+    const acceptedConcern = evaluateModelPolicyBindingPreflight({
+      classification,
+      proofMode: true,
+      rescueCount: 1,
+      ownerAcceptedProviderIncident: true,
+    });
+    expect(acceptedConcern.accepted).toBe(true);
+    expect(acceptedConcern.proofCleanliness.state).toBe("concern");
+    expect(acceptedConcern.reasonCodes).toContain(
+      "model_policy_provider_incident_owner_accepted",
+    );
+  });
+
   it("records policy exceptions without losing the semantic task class", () => {
     const classification = classifyModelTaskCall({
       taskClass: "local_semantic_extraction",
-      callSite: "commitment_packet.gpt_rescue_author",
+      callSite: "obligation.gpt_rescue_author",
       overrideModelRef: "openai-codex/gpt-5.5",
       overrideReasonCode: "packet_author_rescue",
       overrideRationale: "Primary cheap lane failed to return usable content.",
@@ -85,11 +213,11 @@ describe("model task classification and utility policy", () => {
   it("applies call-site bounds for commitment packet semantic authoring without widening all local extraction calls", () => {
     const defaultClassification = classifyModelTaskCall({
       taskClass: "local_semantic_extraction",
-      callSite: "context_scout.summary",
+      callSite: "resource.scout.summary",
     });
     const packetClassification = classifyModelTaskCall({
       taskClass: "local_semantic_extraction",
-      callSite: "commitment_packet.semantic_content",
+      callSite: "obligation.semantic_content",
     });
 
     expect(defaultClassification.timeoutMs).toBe(90_000);
@@ -100,11 +228,109 @@ describe("model task classification and utility policy", () => {
     expect(packetClassification.maxInputBytes).toBe(32_000);
     expect(packetClassification.maxOutputTokens).toBe(8_000);
     expect(packetClassification.modelPolicyRef).toBe(
-      "model-task-policy://local-semantic-extraction/qwen3-coder-next/commitment-packet-semantic-content",
+      "model-task-policy://local-semantic-extraction/qwen3-coder-next/obligation-semantic-content",
     );
     expect(packetClassification.reasonCodes).toContain(
-      "model_task_call_site_bounds:commitment_packet.semantic_content",
+      "model_task_call_site_bounds:obligation.semantic_content",
     );
+    expect(packetClassification).toMatchObject({
+      contractBoundaryId: "obligation_semantic_content",
+      modelPolicyBindingRef: "model-contract-boundary://obligation_semantic_content",
+      allowedToolFamily: "obligation.semantic_author",
+      allowedOutputContractId: "obligation_semantic_brief",
+    });
+  });
+
+  it("applies production mission-ledger bounds without widening ordinary local extraction", () => {
+    const defaultClassification = classifyModelTaskCall({
+      taskClass: "local_semantic_extraction",
+      callSite: "resource.scout.summary",
+    });
+    const missionLedgerClassification = classifyModelTaskCall({
+      taskClass: "local_semantic_extraction",
+      callSite: "mission_ledger.production_single_pass",
+    });
+
+    expect(defaultClassification.timeoutMs).toBe(90_000);
+    expect(defaultClassification.maxInputBytes).toBe(32_000);
+    expect(missionLedgerClassification.timeoutMs).toBe(300_000);
+    expect(missionLedgerClassification.softTimeoutMs).toBe(180_000);
+    expect(missionLedgerClassification.maxInputBytes).toBe(64_000);
+    expect(missionLedgerClassification.maxOutputTokens).toBe(8_000);
+    expect(missionLedgerClassification.modelPolicyRef).toBe(
+      "model-task-policy://local-semantic-extraction/qwen3-coder-next/mission-ledger-production-single-pass",
+    );
+    expect(missionLedgerClassification.reasonCodes).toContain(
+      "model_task_call_site_bounds:mission_ledger.production_single_pass",
+    );
+
+    const accepted = evaluateModelPolicyBindingPreflight({
+      classification: missionLedgerClassification,
+      requestedInputBytes: 31_001,
+      requestedTimeoutMs: 300_000,
+      requestedMaxOutputTokens: 8_000,
+    });
+    expect(accepted.accepted).toBe(true);
+  });
+
+  it("applies obligation graph authoring bounds without widening ordinary local extraction", () => {
+    const defaultClassification = classifyModelTaskCall({
+      taskClass: "local_semantic_extraction",
+      callSite: "resource.scout.summary",
+    });
+    const obligationClassification = classifyModelTaskCall({
+      taskClass: "local_semantic_extraction",
+      callSite: "mission.obligation_graph_author",
+    });
+
+    expect(defaultClassification.timeoutMs).toBe(90_000);
+    expect(obligationClassification.timeoutMs).toBe(120_000);
+    expect(obligationClassification.softTimeoutMs).toBe(90_000);
+    expect(obligationClassification.maxInputBytes).toBe(32_000);
+    expect(obligationClassification.maxOutputTokens).toBe(8_000);
+    expect(obligationClassification.modelPolicyRef).toBe(
+      "model-task-policy://local-semantic-extraction/qwen3-coder-next/mission-obligation-graph-author",
+    );
+    expect(obligationClassification.reasonCodes).toContain(
+      "model_task_call_site_bounds:mission.obligation_graph_author",
+    );
+
+    const accepted = evaluateModelPolicyBindingPreflight({
+      classification: obligationClassification,
+      requestedInputBytes: 4_226,
+      requestedTimeoutMs: 120_000,
+      requestedMaxOutputTokens: 5_000,
+    });
+    expect(accepted.accepted).toBe(true);
+  });
+
+  it("preflights context narrowing as a first-class tool-selection boundary", () => {
+    const classification = classifyModelTaskCall({
+      taskClass: "tool_selection",
+      callSite: "resource.scout.narrowing_selector",
+    });
+
+    expect(classification).toMatchObject({
+      contractBoundaryId: "context_narrowing_selector",
+      modelPolicyBindingRef: "model-contract-boundary://context_narrowing_selector",
+      allowedToolFamily: "resource.scout.narrowing_selector",
+      allowedOutputContractId: "resource_scout_exact_handle_tool_call",
+      providerPath: "openrouter",
+      reasoningMode: "none",
+    });
+
+    const accepted = evaluateModelPolicyBindingPreflight({
+      classification,
+      actualAllowedToolFamily: "resource.scout.narrowing_selector",
+      actualOutputContractId: "resource_scout_exact_handle_tool_call",
+      actualOutputContractVersion: "v1",
+      requestedInputBytes: 12_653,
+      requestedMaxOutputTokens: 2_400,
+      requestedTimeoutMs: 60_000,
+      proofMode: true,
+    });
+    expect(accepted.accepted).toBe(true);
+    expect(accepted.reasonCodes).toContain("model_contract_boundary:context_narrowing_selector");
   });
 
   it("requires model.call invocations to carry task classification metadata", async () => {

@@ -1,12 +1,28 @@
 import type { JsonValue } from "../runtime-job-repository.ts";
 import type { ExecutionIntent } from "./execution-intent.ts";
+import {
+  lifecycleTransitionToolIdsForCapabilityTraits,
+  requiredLifecycleToolIdsForCapabilityTraits,
+} from "./node-lifecycle-transition-descriptors.ts";
 import { TEAM_GRAPH_NODE_KINDS, type TeamGraphNodeKind } from "./runtime-work-graph.ts";
+import {
+  sharedDomainActionGateKindsForCapabilityTraits,
+  sharedDomainEvidenceKindsForCapabilityTraits,
+  sharedDomainProfileIdForCapabilityTraits,
+  sharedDomainRequiredPacketKindsForCapabilityTraits,
+  sharedDomainResourceKindsForCapabilityTraits,
+  sharedDomainWorkerActionToolIdsForCapabilityTraits,
+  validateSharedDomainLifecycleCapability,
+  type SharedDomainActionGateKind,
+  type SharedDomainProfileId,
+  type SharedDomainResourceKind,
+  type SharedDomainWorkerActionToolId,
+} from "./shared-domain-resource-lifecycle.ts";
 
 export const RUNTIME_NODE_CAPABILITY_PHASES = [
   "planning",
   "decomposition",
   "capability_selection",
-  "context_synthesis",
   "execution",
   "validation",
   "review",
@@ -46,11 +62,21 @@ export type RuntimeNodeCapability = {
   supportedPhases: RuntimeNodeCapabilityPhase[];
   supportedExecutionIntents: ExecutionIntent[];
   defaultExecutionIntent: ExecutionIntent | null;
+  domainProfileId: SharedDomainProfileId;
+  resourceSelectionProfileRef: string;
+  domainActionGateProfileRef: string;
+  domainActionGateKinds: SharedDomainActionGateKind[];
+  domainWorkerActionToolIds: SharedDomainWorkerActionToolId[];
+  domainEvidenceKinds: string[];
+  lifecycleTransitionProfileRef: string;
+  allowedLifecycleTransitions: string[];
+  requiredLifecycleTools: string[];
+  domainResourceKinds: SharedDomainResourceKind[];
   validLifecyclePhases: Array<
     | "work_intent"
-    | "context_required"
-    | "context_in_progress"
-    | "context_ready"
+    | "resource_required"
+    | "resource_in_progress"
+    | "resource_ready"
     | "resources_required"
     | "resource_materialization_in_progress"
     | "resources_ready"
@@ -62,8 +88,8 @@ export type RuntimeNodeCapability = {
     | "failed"
     | "canceled"
   >;
-  requiresContext: boolean;
-  requiredContextKinds: string[];
+  requiresResources: boolean;
+  requiredResourceKinds: string[];
   requiredResourcePacketKind: string | null;
   requiredNodeExecutionPacket: boolean;
   requiredSnapshotKinds: string[];
@@ -73,7 +99,7 @@ export type RuntimeNodeCapability = {
   canRunAsWorkIntent: boolean;
   canRunAsExecutable: boolean;
   defaultRepairTransition:
-    | "request_context_repair"
+    | "open_node_resource_demand"
     | "compile_node_execution_packet"
     | "compile_validation_plan"
     | "repair_authority_scope"
@@ -82,7 +108,7 @@ export type RuntimeNodeCapability = {
     | "ask_human"
     | "needs_review";
   defaultBlockedTransition:
-    | "request_context_repair"
+    | "open_node_resource_demand"
     | "compile_node_execution_packet"
     | "compile_validation_plan"
     | "repair_authority_scope"
@@ -135,7 +161,7 @@ export type RuntimeNodeCapability = {
     | "research_brief"
     | "planning_capsule"
     | "action_graph"
-    | "context_handoff"
+    | "resource_handoff"
   >;
   commitmentFitKinds: string[];
   defaultBudgetPolicy: {
@@ -180,9 +206,19 @@ export type ProviderCapabilityProfile = {
   supportedPhases: RuntimeNodeCapabilityPhase[];
   supportedExecutionIntents: RuntimeNodeCapability["supportedExecutionIntents"];
   defaultExecutionIntent: RuntimeNodeCapability["defaultExecutionIntent"];
+  domainProfileId: RuntimeNodeCapability["domainProfileId"];
+  resourceSelectionProfileRef: RuntimeNodeCapability["resourceSelectionProfileRef"];
+  domainActionGateProfileRef: RuntimeNodeCapability["domainActionGateProfileRef"];
+  domainActionGateKinds: RuntimeNodeCapability["domainActionGateKinds"];
+  domainWorkerActionToolIds: RuntimeNodeCapability["domainWorkerActionToolIds"];
+  domainEvidenceKinds: RuntimeNodeCapability["domainEvidenceKinds"];
+  lifecycleTransitionProfileRef: RuntimeNodeCapability["lifecycleTransitionProfileRef"];
+  allowedLifecycleTransitions: RuntimeNodeCapability["allowedLifecycleTransitions"];
+  requiredLifecycleTools: RuntimeNodeCapability["requiredLifecycleTools"];
+  domainResourceKinds: RuntimeNodeCapability["domainResourceKinds"];
   validLifecyclePhases: RuntimeNodeCapability["validLifecyclePhases"];
-  requiresContext: boolean;
-  requiredContextKinds: string[];
+  requiresResources: boolean;
+  requiredResourceKinds: string[];
   requiredResourcePacketKind: string | null;
   requiredNodeExecutionPacket: boolean;
   requiredSnapshotKinds: string[];
@@ -271,6 +307,16 @@ type RuntimeNodeCapabilitySeed = Omit<
   | "supportedPhases"
   | "supportedExecutionIntents"
   | "defaultExecutionIntent"
+  | "domainProfileId"
+  | "resourceSelectionProfileRef"
+  | "domainActionGateProfileRef"
+  | "domainActionGateKinds"
+  | "domainWorkerActionToolIds"
+  | "domainEvidenceKinds"
+  | "lifecycleTransitionProfileRef"
+  | "allowedLifecycleTransitions"
+  | "requiredLifecycleTools"
+  | "domainResourceKinds"
   | "maxTaskSize"
   | "contextCapacity"
   | "expectedStrength"
@@ -287,8 +333,8 @@ type RuntimeNodeCapabilitySeed = Omit<
   | "modelQualificationProfileIds"
   | "productionSelectionRequiresQualification"
   | "validLifecyclePhases"
-  | "requiresContext"
-  | "requiredContextKinds"
+  | "requiresResources"
+  | "requiredResourceKinds"
   | "requiredResourcePacketKind"
   | "requiredNodeExecutionPacket"
   | "requiredSnapshotKinds"
@@ -307,18 +353,50 @@ function capability(input: RuntimeNodeCapabilitySeed): RuntimeNodeCapability {
   if (!TEAM_GRAPH_NODE_KINDS.includes(input.graphNodeKind)) {
     throw new Error(`capability_graph_node_kind_invalid:${input.capabilityId}`);
   }
+  const traits = capabilityTraits(input);
+  const domainProfileId = sharedDomainProfileIdForCapabilityTraits(traits);
+  const domainWorkerActionToolIds = sharedDomainWorkerActionToolIdsForCapabilityTraits(traits);
+  const domainResourceKinds = inferDomainResourceKinds(input);
+  const allowedLifecycleTransitions = inferAllowedLifecycleTransitions(input);
+  const requiredSnapshotKinds = inferRequiredSnapshotKinds(input);
+  const sharedValidation = validateSharedDomainLifecycleCapability({
+    capabilityId: input.capabilityId,
+    workflowId: input.workflowId,
+    domainProfileId,
+    canEditSource: input.canEditSource,
+    canWriteTests: input.canWriteTests,
+    requiredSnapshotKinds,
+    allowedLifecycleTransitions,
+    domainResourceKinds,
+    domainWorkerActionToolIds,
+  });
+  if (!sharedValidation.valid) {
+    throw new Error(
+      `shared_domain_lifecycle_capability_invalid:${input.capabilityId}:${sharedValidation.reasonCodes.join(",")}`,
+    );
+  }
   return {
     ...input,
     supportedWorkflowIds: [input.workflowId],
     supportedPhases: inferSupportedPhases(input),
     supportedExecutionIntents: inferSupportedExecutionIntents(input),
     defaultExecutionIntent: inferDefaultExecutionIntent(input),
+    domainProfileId,
+    resourceSelectionProfileRef: `resource-selection-profile://${input.workflowId}/${input.capabilityId}/${domainProfileId}.v1`,
+    domainActionGateProfileRef: `domain-action-gate-profile://${input.workflowId}/${input.capabilityId}/${domainProfileId}.v1`,
+    domainActionGateKinds: sharedDomainActionGateKindsForCapabilityTraits(traits),
+    domainWorkerActionToolIds,
+    domainEvidenceKinds: sharedDomainEvidenceKindsForCapabilityTraits(traits),
+    lifecycleTransitionProfileRef: inferLifecycleTransitionProfileRef(input),
+    allowedLifecycleTransitions,
+    requiredLifecycleTools: inferRequiredLifecycleTools(input),
+    domainResourceKinds,
     validLifecyclePhases: inferValidLifecyclePhases(input),
-    requiresContext: capabilityRequiresContext(input),
-    requiredContextKinds: inferRequiredContextKinds(input),
+    requiresResources: capabilityRequiresResources(input),
+    requiredResourceKinds: inferRequiredResourceKinds(input),
     requiredResourcePacketKind: inferRequiredResourcePacketKind(input),
     requiredNodeExecutionPacket: capabilityRequiresNodeExecutionPacket(input),
-    requiredSnapshotKinds: inferRequiredSnapshotKinds(input),
+    requiredSnapshotKinds,
     requiredValidationKinds: inferRequiredValidationKinds(input),
     requiredAuthorityScopes: input.authorityBoundaries,
     requiredEvidenceClaimKinds: inferEvidenceKinds(input),
@@ -400,6 +478,23 @@ function capability(input: RuntimeNodeCapabilitySeed): RuntimeNodeCapability {
   };
 }
 
+function capabilityTraits(input: RuntimeNodeCapabilitySeed) {
+  return {
+    workflowId: input.workflowId,
+    roleClass: input.roleClass,
+    canInspectRepo: input.canInspectRepo,
+    canEditSource: input.canEditSource,
+    canWriteTests: input.canWriteTests,
+    canRunValidation: input.canRunValidation,
+    canDoWebResearch: input.canDoWebResearch,
+    canCreatePlanningCapsules: input.canCreatePlanningCapsules,
+    canProposeChildActions: input.canProposeChildActions,
+    canCompileRuntimeJobs: input.canCompileRuntimeJobs,
+    canRequestHumanInput: input.canRequestHumanInput,
+    canReviewSecurityPrivacy: input.canReviewSecurityPrivacy,
+  };
+}
+
 function providerProfileId(capability: RuntimeNodeCapability): string {
   return `capability-profile://${capability.workflowId}/${capability.capabilityId}.v1`;
 }
@@ -431,9 +526,19 @@ export function providerCapabilityProfileForCapability(
     supportedPhases: capability.supportedPhases,
     supportedExecutionIntents: capability.supportedExecutionIntents,
     defaultExecutionIntent: capability.defaultExecutionIntent,
+    domainProfileId: capability.domainProfileId,
+    resourceSelectionProfileRef: capability.resourceSelectionProfileRef,
+    domainActionGateProfileRef: capability.domainActionGateProfileRef,
+    domainActionGateKinds: capability.domainActionGateKinds,
+    domainWorkerActionToolIds: capability.domainWorkerActionToolIds,
+    domainEvidenceKinds: capability.domainEvidenceKinds,
+    lifecycleTransitionProfileRef: capability.lifecycleTransitionProfileRef,
+    allowedLifecycleTransitions: capability.allowedLifecycleTransitions,
+    requiredLifecycleTools: capability.requiredLifecycleTools,
+    domainResourceKinds: capability.domainResourceKinds,
     validLifecyclePhases: capability.validLifecyclePhases,
-    requiresContext: capability.requiresContext,
-    requiredContextKinds: capability.requiredContextKinds,
+    requiresResources: capability.requiresResources,
+    requiredResourceKinds: capability.requiredResourceKinds,
     requiredResourcePacketKind: capability.requiredResourcePacketKind,
     requiredNodeExecutionPacket: capability.requiredNodeExecutionPacket,
     requiredSnapshotKinds: capability.requiredSnapshotKinds,
@@ -518,9 +623,6 @@ export function buildProviderCapabilityProfileRegistry(
 }
 
 function inferSupportedPhases(input: RuntimeNodeCapabilitySeed): RuntimeNodeCapabilityPhase[] {
-  if (input.nodeType === "context_synthesis") {
-    return ["context_synthesis", "execution"];
-  }
   if (input.roleClass === "orchestration") {
     return ["planning", "decomposition", "capability_selection", "execution"];
   }
@@ -551,14 +653,9 @@ function inferSupportedPhases(input: RuntimeNodeCapabilitySeed): RuntimeNodeCapa
 
 function inferSupportedExecutionIntents(input: RuntimeNodeCapabilitySeed): ExecutionIntent[] {
   const intents = new Set<ExecutionIntent>();
-  if (input.nodeType === "context_synthesis") {
-    intents.add("context_supply");
-    intents.add("resource_materialization");
-    return [...intents];
-  }
   if (input.roleClass === "context") {
     intents.add("source_grounding");
-    intents.add("context_supply");
+    intents.add("resource_demand");
   }
   if (input.roleClass === "implementation" || input.canEditSource || input.canWriteTests) {
     intents.add("source_edit");
@@ -582,7 +679,7 @@ function inferSupportedExecutionIntents(input: RuntimeNodeCapabilitySeed): Execu
     intents.add("human_decision");
   }
   if (input.roleClass === "research" || input.canDoWebResearch) {
-    intents.add("context_supply");
+    intents.add("resource_demand");
     intents.add("docs");
   }
   if (
@@ -590,13 +687,14 @@ function inferSupportedExecutionIntents(input: RuntimeNodeCapabilitySeed): Execu
     input.canCreatePlanningCapsules ||
     input.canProposeChildActions
   ) {
-    intents.add("context_supply");
-    intents.add("resource_materialization");
+    intents.add("resource_demand");
+    intents.add("domain_resource_selection");
+    intents.add("domain_action");
     intents.add("docs");
   }
   if (input.roleClass === "orchestration") {
     intents.add("source_grounding");
-    intents.add("resource_materialization");
+    intents.add("domain_resource_selection");
     intents.add("review");
   }
   return intents.size > 0 ? [...intents] : ["source_grounding"];
@@ -627,13 +725,40 @@ function inferDefaultExecutionIntent(input: RuntimeNodeCapabilitySeed): Executio
   if (input.canEditSource || input.canWriteTests || input.canRunValidation) {
     return null;
   }
-  if (input.nodeType === "context_synthesis") {
-    return "context_supply";
-  }
   if (input.roleClass === "context" || input.canInspectRepo) {
-    return "context_supply";
+    return "resource_demand";
   }
   return null;
+}
+
+function inferLifecycleTransitionProfileRef(input: RuntimeNodeCapabilitySeed): string {
+  return `lifecycle-profile://${input.workflowId}/${input.capabilityId}.v1`;
+}
+
+function inferDomainResourceKinds(input: RuntimeNodeCapabilitySeed): SharedDomainResourceKind[] {
+  return sharedDomainResourceKindsForCapabilityTraits(capabilityTraits(input));
+}
+
+function inferAllowedLifecycleTransitions(input: RuntimeNodeCapabilitySeed): string[] {
+  return lifecycleTransitionToolIdsForCapabilityTraits({
+    requiresResources: capabilityRequiresResources(input),
+    canInspectRepo: input.canInspectRepo,
+    canEditSource: input.canEditSource,
+    canWriteTests: input.canWriteTests,
+    canRunValidation: input.canRunValidation,
+    roleClass: input.roleClass,
+  });
+}
+
+function inferRequiredLifecycleTools(input: RuntimeNodeCapabilitySeed): string[] {
+  return requiredLifecycleToolIdsForCapabilityTraits({
+    requiresResources: capabilityRequiresResources(input),
+    canInspectRepo: input.canInspectRepo,
+    canEditSource: input.canEditSource,
+    canWriteTests: input.canWriteTests,
+    canRunValidation: input.canRunValidation,
+    roleClass: input.roleClass,
+  });
 }
 
 function inferValidLifecyclePhases(
@@ -650,7 +775,7 @@ function inferValidLifecyclePhases(
       "canceled",
     ];
   }
-  if (input.roleClass === "orchestration" || input.nodeType === "context_synthesis") {
+  if (input.roleClass === "orchestration") {
     return [
       "work_intent",
       "executable",
@@ -665,9 +790,9 @@ function inferValidLifecyclePhases(
   if (input.roleClass === "implementation" || input.roleClass === "docs") {
     return [
       "work_intent",
-      "context_required",
-      "context_in_progress",
-      "context_ready",
+      "resource_required",
+      "resource_in_progress",
+      "resource_ready",
       "resources_required",
       "resource_materialization_in_progress",
       "resources_ready",
@@ -682,9 +807,9 @@ function inferValidLifecyclePhases(
   }
   return [
     "work_intent",
-    "context_required",
-    "context_in_progress",
-    "context_ready",
+    "resource_required",
+    "resource_in_progress",
+    "resource_ready",
     "executable",
     "running",
     "completed",
@@ -695,24 +820,32 @@ function inferValidLifecyclePhases(
   ];
 }
 
-function capabilityRequiresContext(input: RuntimeNodeCapabilitySeed): boolean {
+function capabilityRequiresResources(input: RuntimeNodeCapabilitySeed): boolean {
   return (
     input.roleClass === "implementation" ||
-    input.roleClass === "validation" ||
-    input.roleClass === "review" ||
     input.roleClass === "docs" ||
-    input.roleClass === "planning"
+    input.roleClass === "planning" ||
+    input.roleClass === "context" ||
+    input.roleClass === "research"
   );
 }
 
-function inferRequiredContextKinds(input: RuntimeNodeCapabilitySeed): string[] {
-  if (!capabilityRequiresContext(input)) {
+function inferRequiredResourceKinds(input: RuntimeNodeCapabilitySeed): string[] {
+  if (!capabilityRequiresResources(input)) {
     return [];
   }
-  if (input.canEditSource || input.canWriteTests || input.canRunValidation) {
-    return ["commitment_work_packet", "context_handoff", "target_refs"];
+  if (sharedDomainProfileIdForCapabilityTraits(capabilityTraits(input)) === "product_spec_planning") {
+    return [
+      "commitment_work_packet",
+      "resource_handoff",
+      "planning_domain_resource_refs",
+      "planning_action_gate_inputs",
+    ];
   }
-  return ["commitment_work_packet", "context_handoff"];
+  if (input.canEditSource || input.canWriteTests || input.canRunValidation) {
+    return ["commitment_work_packet", "resource_handoff", "candidate_resource_refs"];
+  }
+  return ["commitment_work_packet", "resource_handoff"];
 }
 
 function capabilityRequiresNodeExecutionPacket(input: RuntimeNodeCapabilitySeed): boolean {
@@ -720,19 +853,28 @@ function capabilityRequiresNodeExecutionPacket(input: RuntimeNodeCapabilitySeed)
 }
 
 function inferRequiredResourcePacketKind(input: RuntimeNodeCapabilitySeed): string | null {
-  return capabilityRequiresNodeExecutionPacket(input)
-    ? input.canEditSource || input.canWriteTests
-      ? "coding_resource_packet"
-      : "domain_resource_packet"
-    : null;
+  if (!capabilityRequiresResources(input)) {
+    return null;
+  }
+  const packetKinds = sharedDomainRequiredPacketKindsForCapabilityTraits(capabilityTraits(input));
+  if (input.canEditSource || input.canWriteTests) {
+    return "coding_resource_packet";
+  }
+  if (packetKinds.includes("planning_domain_resource_packet")) {
+    return "planning_domain_resource_packet";
+  }
+  return "domain_resource_packet";
 }
 
 function inferRequiredSnapshotKinds(input: RuntimeNodeCapabilitySeed): string[] {
   if (input.canEditSource || input.canWriteTests) {
-    return ["target_file_snapshot", "context_snapshot"];
+    return ["target_file_snapshot", "resource_snapshot"];
   }
-  if (capabilityRequiresContext(input)) {
-    return ["context_snapshot"];
+  if (sharedDomainProfileIdForCapabilityTraits(capabilityTraits(input)) === "product_spec_planning") {
+    return ["planning_resource_manifest", "planning_resource_payload_ref"];
+  }
+  if (capabilityRequiresResources(input)) {
+    return ["resource_snapshot"];
   }
   return [];
 }
@@ -750,8 +892,8 @@ function inferDefaultRepairTransition(
   if (capabilityRequiresNodeExecutionPacket(input)) {
     return "compile_node_execution_packet";
   }
-  if (capabilityRequiresContext(input)) {
-    return "request_context_repair";
+  if (capabilityRequiresResources(input)) {
+    return "open_node_resource_demand";
   }
   if (input.roleClass === "validation") {
     return "compile_validation_plan";
@@ -825,7 +967,7 @@ function inferEvidenceKinds(
 ): RuntimeNodeCapability["evidenceProducedKinds"] {
   const kinds = new Set<RuntimeNodeCapability["evidenceProducedKinds"][number]>();
   if (input.canInspectRepo) {
-    kinds.add("context_handoff");
+    kinds.add("resource_handoff");
   }
   if (input.canEditSource) {
     kinds.add("source_change");
@@ -920,47 +1062,6 @@ export function buildRuntimeNodeCapabilityManifest(): RuntimeNodeCapabilityManif
         knownLimitations: ["planning_quality_depends_on_bounded_evidence"],
       }),
       capability({
-        capabilityId: "context_synthesis",
-        graphNodeKind: "context_synthesis",
-        executorKey: "kind:context_synthesis",
-        workerRef: "codex_app_server",
-        requiredMetadataSchemaRef: "schema://runtime-work-graph/node-metadata/context-synthesis.v1",
-        roleClass: "planning",
-        nodeType: "context_synthesis",
-        roleId: "context_synthesis",
-        workflowId: "agent_team.coding",
-        displayName: "Context synthesis and dependency-aware implementation graph planner",
-        modelPolicyRefs: ["policy://codex-parity/openclaw-role/context-synthesis/gpt-5.5"],
-        allowedAdapters: ["codex_app_server"],
-        writable: false,
-        canInspectRepo: true,
-        canEditSource: false,
-        canWriteTests: false,
-        canRunValidation: false,
-        canDoWebResearch: false,
-        canCreatePlanningCapsules: true,
-        canProposeChildActions: true,
-        canCompileRuntimeJobs: false,
-        canRequestHumanInput: true,
-        canReviewSecurityPrivacy: false,
-        preferredTaskSize: "large",
-        maxRecommendedFileCount: 0,
-        maxRecommendedDiffSize: 0,
-        maxRecommendedContextRefs: 60,
-        validationResponsibilities: [
-          "consume_accepted_context_handoffs",
-          "group_commitments_into_worker_ready_units",
-          "map_context_handoffs_to_downstream_nodes",
-          "identify_dependencies_and_parallelism",
-          "block_implementation_until_ready",
-        ],
-        escalationTargets: ["context_scout", "human_decision", "implementation_complex"],
-        costClass: "premium",
-        latencyClass: "slow",
-        authorityBoundaries: ["no_direct_file_write", "no_runtime_lifecycle_mutation"],
-        knownLimitations: ["requires_accepted_context_handoffs_for_complex_missions"],
-      }),
-      capability({
         capabilityId: "implementation_microtask",
         graphNodeKind: "implementation",
         executorKey: "kind:implementation",
@@ -1010,7 +1111,7 @@ export function buildRuntimeNodeCapabilityManifest(): RuntimeNodeCapabilityManif
           "repair_within_budget_or_escalate",
           "emit_commitment_evidence_claims",
         ],
-        escalationTargets: ["implementation_complex", "context_scout", "test_review"],
+        escalationTargets: ["implementation_complex", "test_review"],
         costClass: "cheap",
         latencyClass: "medium",
         authorityBoundaries: ["approved_file_scope_only", "no_shell_commands_except_validation"],
@@ -1018,7 +1119,7 @@ export function buildRuntimeNodeCapabilityManifest(): RuntimeNodeCapabilityManif
           "not_for_large_architectural_refactors",
           "requires_bounded_tool_results_and_file_snapshots",
           "escalates_after_repeated_same_failure",
-          "router_and_context_scout_qwen_defaults_require_stage_latency_gates_before_promotion",
+          "router_qwen_defaults_require_stage_latency_gates_before_promotion",
         ],
       }),
       capability({
@@ -1058,81 +1159,6 @@ export function buildRuntimeNodeCapabilityManifest(): RuntimeNodeCapabilityManif
         latencyClass: "slow",
         authorityBoundaries: ["approved_repo_scope_only", "no_deploy", "no_outbound_send"],
         knownLimitations: ["long_running_calls_need_progress_heartbeats"],
-      }),
-      capability({
-        capabilityId: "context_scout",
-        graphNodeKind: "context_scout",
-        executorKey: "role:context_scout",
-        workerRef: "openrouter_model_lane",
-        requiredMetadataSchemaRef: "schema://runtime-work-graph/node-metadata/context-scout.v2",
-        roleClass: "context",
-        nodeType: "context_scout",
-        roleId: "context_scout",
-        workflowId: "agent_team.coding",
-        displayName: "Bounded repo context scout",
-        modelPolicyRefs: ["policy://codex-parity/openclaw-role/context-scout"],
-        allowedAdapters: ["openrouter_model_lane"],
-        writable: false,
-        canInspectRepo: true,
-        canEditSource: false,
-        canWriteTests: false,
-        canRunValidation: false,
-        canDoWebResearch: false,
-        canCreatePlanningCapsules: false,
-        canProposeChildActions: false,
-        canCompileRuntimeJobs: false,
-        canRequestHumanInput: false,
-        canReviewSecurityPrivacy: false,
-        preferredTaskSize: "medium",
-        maxRecommendedFileCount: 20,
-        maxRecommendedDiffSize: 0,
-        maxRecommendedContextRefs: 30,
-        validationResponsibilities: ["identify_files", "summarize_patterns", "handoff_edit_points"],
-        escalationTargets: ["orchestrator", "implementation_microtask"],
-        costClass: "cheap",
-        latencyClass: "medium",
-        authorityBoundaries: ["read_only"],
-        knownLimitations: ["does_not_apply_edits"],
-      }),
-      capability({
-        capabilityId: "non_codex_context_scout",
-        graphNodeKind: "context_scout",
-        executorKey: "kind:non_codex_context_scout",
-        workerRef: "worker.non-codex.context-scout",
-        requiredMetadataSchemaRef:
-          "schema://runtime-work-graph/node-metadata/non-codex-context-scout.v1",
-        roleClass: "context",
-        nodeType: "non_codex_context_scout",
-        roleId: "context_scout",
-        workflowId: "agent_team.coding",
-        displayName: "Non-Codex tool-using context scout",
-        modelPolicyRefs: ["policy://codex-parity/openclaw-role/context-scout/non-codex"],
-        allowedAdapters: ["model_agnostic_tool_worker_loop"],
-        writable: false,
-        canInspectRepo: true,
-        canEditSource: false,
-        canWriteTests: false,
-        canRunValidation: false,
-        canDoWebResearch: false,
-        canCreatePlanningCapsules: false,
-        canProposeChildActions: false,
-        canCompileRuntimeJobs: false,
-        canRequestHumanInput: false,
-        canReviewSecurityPrivacy: false,
-        preferredTaskSize: "medium",
-        maxRecommendedFileCount: 20,
-        maxRecommendedDiffSize: 0,
-        maxRecommendedContextRefs: 30,
-        validationResponsibilities: [
-          "search_allowed_repo_scope",
-          "read_bounded_file_snapshots",
-          "emit_context_handoff_refs",
-        ],
-        escalationTargets: ["implementation_microtask", "implementation_complex"],
-        costClass: "cheap",
-        latencyClass: "medium",
-        authorityBoundaries: ["read_only", "no_file_edits"],
-        knownLimitations: ["does_not_apply_edits", "must_not_close_source_edit_commitments"],
       }),
       capability({
         capabilityId: "test_authoring",
@@ -2252,6 +2278,24 @@ export function validateProviderCapabilityProfileRegistry(
     if (profile.rawPromptStored || profile.rawResponseStored || profile.rawProviderLogStored) {
       reasonCodes.push(`provider_capability_profile_raw_storage_flag_invalid:${profile.profileId}`);
     }
+    const sharedLifecycle = validateSharedDomainLifecycleCapability({
+      capabilityId: profile.capabilityId,
+      workflowId: profile.workflowId,
+      domainProfileId: profile.domainProfileId,
+      canEditSource: profile.canEditSource,
+      canWriteTests: profile.canWriteTests,
+      requiredSnapshotKinds: profile.requiredSnapshotKinds,
+      allowedLifecycleTransitions: profile.allowedLifecycleTransitions,
+      domainResourceKinds: profile.domainResourceKinds,
+      domainWorkerActionToolIds: profile.domainWorkerActionToolIds,
+    });
+    if (!sharedLifecycle.valid) {
+      reasonCodes.push(
+        ...sharedLifecycle.reasonCodes.map(
+          (reasonCode) => `provider_capability_profile_${reasonCode}:${profile.profileId}`,
+        ),
+      );
+    }
     if (profile.productionSelectable) {
       productionSelectableProfileIds.push(profile.profileId);
       if (profile.allowedAdapters.includes("contract_only")) {
@@ -2317,14 +2361,12 @@ export function capabilitySelectableInPhase(
   if (!phase || capability.supportedPhases.includes(phase)) {
     return true;
   }
-  if (phase === "context_synthesis") {
-    return capability.capabilityId === "context_synthesis";
-  }
   if (phase === "decomposition") {
     if (capability.capabilityId === "implementation_complex") {
       return false;
     }
     return [
+      "orchestration",
       "context",
       "implementation",
       "validation",
@@ -2449,80 +2491,47 @@ export function runtimeNodeCapabilityManifestForModel(input?: {
   return {
     artifactKind: filtered.artifactKind,
     schemaVersion: filtered.schemaVersion,
+    projectionKind: "runtime_node_capability_model_menu",
     semanticRoutingPerformed: false,
     authorityGranted: false,
     rawPromptStored: false,
     rawResponseStored: false,
     rawProviderLogStored: false,
     modelVisibleRuntimeOwnedFieldsOmitted: true,
+    capabilityCount: filtered.capabilities.length,
+    fullProfileLookupToolId: "capability.lookup",
+    lifecycleToolLookupToolId: "capability.list_legal_transitions",
+    resourceRequirementToolId: "capability.require_resources",
+    validationRequirementToolId: "capability.require_validation",
+    evidenceRequirementToolId: "capability.require_evidence",
     capabilities: filtered.capabilities.map((capability) => {
       const profile = providerCapabilityProfileForCapability(capability);
+      const authorityFlags = [
+        ...(capability.canInspectRepo ? ["inspect_repo"] : []),
+        ...(capability.canEditSource ? ["edit_source"] : []),
+        ...(capability.canWriteTests ? ["write_tests"] : []),
+        ...(capability.canRunValidation ? ["run_validation"] : []),
+        ...(capability.canDoWebResearch ? ["web_research"] : []),
+        ...(capability.canCreatePlanningCapsules ? ["planning_capsule"] : []),
+        ...(capability.canProposeChildActions ? ["child_actions"] : []),
+        ...(capability.canRequestHumanInput ? ["human_input"] : []),
+      ];
       return {
         capabilityId: capability.capabilityId,
-        providerCapabilityProfileId: profile.profileId,
-        displayName: capability.displayName,
-        roleClass: capability.roleClass,
-        supportedWorkflowIds: capability.supportedWorkflowIds,
-        supportedPhases: capability.supportedPhases,
-        supportedExecutionIntents: capability.supportedExecutionIntents,
-        defaultExecutionIntent: capability.defaultExecutionIntent,
-        validLifecyclePhases: capability.validLifecyclePhases,
-        requiresContext: capability.requiresContext,
-        requiredContextKinds: capability.requiredContextKinds,
-        requiredResourcePacketKind: capability.requiredResourcePacketKind,
-        requiredNodeExecutionPacket: capability.requiredNodeExecutionPacket,
-        requiredSnapshotKinds: capability.requiredSnapshotKinds,
-        requiredValidationKinds: capability.requiredValidationKinds,
-        requiredAuthorityScopes: capability.requiredAuthorityScopes,
-        requiredEvidenceClaimKinds: capability.requiredEvidenceClaimKinds,
-        canRunAsWorkIntent: capability.canRunAsWorkIntent,
-        canRunAsExecutable: capability.canRunAsExecutable,
-        defaultRepairTransition: capability.defaultRepairTransition,
-        defaultBlockedTransition: capability.defaultBlockedTransition,
-        budgetPolicyRef: capability.budgetPolicyRef,
-        parallelismPolicyRef: capability.parallelismPolicyRef,
-        writable: capability.writable,
-        canInspectRepo: capability.canInspectRepo,
-        canEditSource: capability.canEditSource,
-        canWriteTests: capability.canWriteTests,
-        canRunValidation: capability.canRunValidation,
-        canDoWebResearch: capability.canDoWebResearch,
-        canCreatePlanningCapsules: capability.canCreatePlanningCapsules,
-        canProposeChildActions: capability.canProposeChildActions,
-        canCompileRuntimeJobs: capability.canCompileRuntimeJobs,
-        canRequestHumanInput: capability.canRequestHumanInput,
-        canReviewSecurityPrivacy: capability.canReviewSecurityPrivacy,
-        preferredTaskSize: capability.preferredTaskSize,
-        idealTaskSize: capability.idealTaskSize,
-        maxTaskSize: capability.maxTaskSize,
-        maxRecommendedFileCount: capability.maxRecommendedFileCount,
-        maxRecommendedDiffSize: capability.maxRecommendedDiffSize,
-        maxRecommendedContextRefs: capability.maxRecommendedContextRefs,
-        contextCapacity: capability.contextCapacity,
-        expectedStrength: capability.expectedStrength,
-        expectedWeaknesses: capability.expectedWeaknesses,
-        costClass: capability.costClass,
-        latencyClass: capability.latencyClass,
-        estimatedTokenCostClass: capability.estimatedTokenCostClass,
-        expectedDollarCostClass: capability.expectedDollarCostClass,
-        parallelizable: capability.parallelizable,
-        retryable: capability.retryable,
-        repairable: capability.repairable,
-        evidenceProducedKinds: capability.evidenceProducedKinds,
-        qualifiedEvidenceKinds: profile.qualifiedEvidenceKinds,
-        commitmentFitKinds: capability.commitmentFitKinds,
-        validationResponsibilities: capability.validationResponsibilities,
-        escalationTargets: capability.escalationTargets,
-        authorityBoundaries: capability.authorityBoundaries,
-        toolProfileRefs: profile.toolProfileRefs,
-        knownLimitations: capability.knownLimitations,
+        providerCapabilityProfileId: `profile:${capability.capabilityId}`,
+        summary: [
+          `workflow=${capability.workflowId}`,
+          `role=${capability.roleClass}`,
+          `domain=${capability.domainProfileId}`,
+          `intents=${capability.supportedExecutionIntents.slice(0, 5).join("|")}`,
+          `actions=${capability.domainWorkerActionToolIds.slice(0, 5).join("|") || "none"}`,
+          `resourcePacket=${capability.requiredResourcePacketKind ?? "none"}`,
+          `nodePacket=${capability.requiredNodeExecutionPacket ? "yes" : "no"}`,
+          `authority=${authorityFlags.join("|") || "none"}`,
+          `task=${capability.preferredTaskSize}`,
+          `cost=${capability.costClass}`,
+        ].join("; "),
         productionSelectable: profile.productionSelectable,
-        productionSelectionRequiresQualification:
-          capability.productionSelectionRequiresQualification,
-        modelQualificationProfileIds: capability.modelQualificationProfileIds,
-        rawPromptStored: false,
-        rawResponseStored: false,
-        rawProviderLogStored: false,
       };
     }),
   } satisfies JsonValue;
