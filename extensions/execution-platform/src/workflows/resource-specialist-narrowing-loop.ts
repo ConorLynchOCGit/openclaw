@@ -313,7 +313,7 @@ async function listFilesUnder(input: { repoRoot: string; relativePath: string; m
       return;
     }
     const entries = await readdir(current, { withFileTypes: true }).catch(() => []);
-    for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {
+    for (const entry of entries.toSorted((a, b) => a.name.localeCompare(b.name))) {
       if (output.length >= maxFiles) {
         return;
       }

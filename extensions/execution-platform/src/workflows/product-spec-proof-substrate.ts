@@ -727,13 +727,20 @@ export function assertProductSpecProofRunManifestBounds(
     proofArtifactRefs.every((ref) => isProductSpecProofRunArtifactRefForRun(ref, manifest.proofRunId))
       ? null
       : "manifest_proof_artifact_ref_scope_invalid",
-    manifest.rawPromptStored === false ? null : "manifest_raw_prompt_flag_invalid",
-    manifest.rawResponseStored === false ? null : "manifest_raw_response_flag_invalid",
-    manifest.rawProviderLogStored === false ? null : "manifest_raw_provider_log_flag_invalid",
-    manifest.rawToolLogStored === false ? null : "manifest_raw_tool_log_flag_invalid",
-    manifest.rawCommandLogStored === false ? null : "manifest_raw_command_log_flag_invalid",
-    manifest.rawDbRowsStored === false ? null : "manifest_raw_db_rows_flag_invalid",
-    manifest.secretsStored === false ? null : "manifest_secrets_flag_invalid",
+    !
+    manifest.rawPromptStored ? null : "manifest_raw_prompt_flag_invalid",
+    !
+    manifest.rawResponseStored ? null : "manifest_raw_response_flag_invalid",
+    !
+    manifest.rawProviderLogStored ? null : "manifest_raw_provider_log_flag_invalid",
+    !
+    manifest.rawToolLogStored ? null : "manifest_raw_tool_log_flag_invalid",
+    !
+    manifest.rawCommandLogStored ? null : "manifest_raw_command_log_flag_invalid",
+    !
+    manifest.rawDbRowsStored ? null : "manifest_raw_db_rows_flag_invalid",
+    !
+    manifest.secretsStored ? null : "manifest_secrets_flag_invalid",
   ].filter((reason): reason is string => Boolean(reason));
   if (reasonCodes.length > 0) {
     throw new Error(`product_spec_proof_run_manifest_invalid:${reasonCodes.join(",")}`);

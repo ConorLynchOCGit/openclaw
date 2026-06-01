@@ -374,7 +374,7 @@ describe("context scope revision contracts", () => {
     });
 
     expect(windows.some((window) => window.windowKind === "bounded_repo_context_ref")).toBe(true);
-    expect(windows.every((window) => window.rawFileContentStored === false)).toBe(true);
+    expect(windows.every((window) => ! window.rawFileContentStored)).toBe(true);
   });
 
   it("keeps request and decision metadata manifest-only and rejects body fields", () => {

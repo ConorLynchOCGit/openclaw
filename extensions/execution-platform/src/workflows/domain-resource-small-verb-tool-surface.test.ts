@@ -96,7 +96,7 @@ describe("domain resource small-verb tool surface", () => {
     ]);
     expect(menu.tools.every((tool) => tool.inputContractKind === "flat_small_verb")).toBe(true);
     expect(menu.tools.every((tool) => tool.payloadPolicy.metadataManifestOnly)).toBe(true);
-    expect(menu.tools.every((tool) => tool.payloadPolicy.rawPromptStored === false)).toBe(true);
+    expect(menu.tools.every((tool) => ! tool.payloadPolicy.rawPromptStored)).toBe(true);
     expect(menu.rejectedToolIds).toEqual(["worker.edit.plan", "resource_selection.submit_selection"]);
     expect(menu.rejectedToolReasonCodes).toEqual([
       "product_spec_planning_coding_tool_rejected",

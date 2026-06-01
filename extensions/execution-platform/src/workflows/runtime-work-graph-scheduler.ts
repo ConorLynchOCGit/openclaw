@@ -1120,10 +1120,10 @@ function isBroadStructuralResourceRef(ref: string): boolean {
   if (text.endsWith("/") || text.endsWith("/**")) {
     return true;
   }
-  if (/^runtime-work-graph:\/\//u.test(text) || /^runtime-job:\/\//u.test(text)) {
+  if (text.startsWith('runtime-work-graph://') || text.startsWith('runtime-job://')) {
     return true;
   }
-  if (/^artifact:\/\//u.test(text) || /^resource-demand:\/\//u.test(text)) {
+  if (text.startsWith('artifact://') || text.startsWith('resource-demand://')) {
     return true;
   }
   return false;
@@ -1539,7 +1539,7 @@ function systemicParallelFrontierFailure(input: {
 } | null {
   const pendingBranchLocalTransitionNodeIds = new Set(
     input.branchResults
-      .filter((branch) => branch.branchLocalTransitionPending === true)
+      .filter((branch) =>  branch.branchLocalTransitionPending)
       .map((branch) => branch.nodeId),
   );
   const entries: Array<{
@@ -1550,7 +1550,7 @@ function systemicParallelFrontierFailure(input: {
     nodeId: string;
   }> = [];
   for (const branch of input.branchResults) {
-    if (branch.branchLocalTransitionPending === true) {
+    if (branch.branchLocalTransitionPending) {
       continue;
     }
     const signature = branchFailureSignature(branch);
@@ -1811,7 +1811,7 @@ function missingFieldsFromReadiness(
   if (readiness.validationStatus !== "ready" && readiness.validationStatus !== "not_required") {
     missingFields.push("validationRef");
   }
-  return uniqueStrings(missingFields).sort();
+  return uniqueStrings(missingFields).toSorted();
 }
 
 function branchSimilarityClassForDiagnostic(input: {
@@ -1832,10 +1832,10 @@ function branchSimilarityClassForDiagnostic(input: {
     nodeKind: input.nodeKind,
     capabilityId: input.capabilityId,
     executionIntent: input.executionIntent,
-    evidenceMode: input.evidenceMode.slice().sort(),
+    evidenceMode: input.evidenceMode.slice().toSorted(),
     lifecycleState: input.lifecycleState,
-    missingFields: input.missingFields.slice().sort(),
-    reasonCodes: input.reasonCodes.slice().sort(),
+    missingFields: input.missingFields.slice().toSorted(),
+    reasonCodes: input.reasonCodes.slice().toSorted(),
     contractVersion: input.contractVersion,
     domainResourcePacketKind: input.domainResourcePacketKind,
     schemaErrorPath: input.schemaErrorPath,
@@ -2103,7 +2103,7 @@ function branchBlockerSignature(input: {
         policyPath: input.policyPath,
         contractRef: input.contractRef,
         readinessRef: input.readinessRef,
-        reasonCodes: input.reasonCodes.slice().sort(),
+        reasonCodes: input.reasonCodes.slice().toSorted(),
       }),
     )
     .digest("hex")
@@ -2552,37 +2552,37 @@ function buildNoProgressSignature(input: {
   ).slice(0, 80);
   const missingFields = uniqueStrings(
     diagnostics.flatMap((diagnostic) => diagnostic.missingFields),
-  ).sort();
-  const nodeKinds = uniqueStrings(diagnostics.map((diagnostic) => diagnostic.nodeKind)).sort();
-  const capabilityIds = uniqueStrings(diagnostics.map((diagnostic) => diagnostic.capabilityId)).sort();
+  ).toSorted();
+  const nodeKinds = uniqueStrings(diagnostics.map((diagnostic) => diagnostic.nodeKind)).toSorted();
+  const capabilityIds = uniqueStrings(diagnostics.map((diagnostic) => diagnostic.capabilityId)).toSorted();
   const executionIntents = uniqueStrings(
     diagnostics.map((diagnostic) => diagnostic.executionIntent),
-  ).sort();
+  ).toSorted();
   const evidenceModes = uniqueStrings(
     diagnostics.flatMap((diagnostic) => diagnostic.evidenceMode),
-  ).sort();
+  ).toSorted();
   const contractVersions = uniqueStrings(
     diagnostics.map((diagnostic) => diagnostic.contractVersion),
-  ).sort();
+  ).toSorted();
   const domainResourcePacketKinds = uniqueStrings(
     diagnostics.map((diagnostic) => diagnostic.domainResourcePacketKind),
-  ).sort();
+  ).toSorted();
   const schemaErrorPaths = uniqueStrings(
     diagnostics.map((diagnostic) => diagnostic.schemaErrorPath),
-  ).sort();
+  ).toSorted();
   const policyErrorPaths = uniqueStrings(
     diagnostics.map((diagnostic) => diagnostic.policyErrorPath),
-  ).sort();
+  ).toSorted();
   const providerProfileIds = uniqueStrings(
     diagnostics.map((diagnostic) => diagnostic.providerProfileId),
-  ).sort();
+  ).toSorted();
   const branchSimilarityClasses = uniqueStrings(
     diagnostics.map((diagnostic) => diagnostic.branchSimilarityClass),
-  ).sort();
+  ).toSorted();
   const nextLegalTransitions = uniqueStrings([
     input.frontierState.nextLegalTransition,
     ...diagnostics.flatMap((diagnostic) => diagnostic.nextAllowedTransitions),
-  ]).sort();
+  ]).toSorted();
   const stage = input.terminalBlockerCode ?? "scheduler_frontier_blocked";
   const hashCore = {
     graphId: input.graphId,

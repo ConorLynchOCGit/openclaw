@@ -126,15 +126,15 @@ function requireReplayProofCloseable({ proof, admission, replayResult }) {
   if (admission?.sourceTopologyStatus !== "production_node_local_topology") {
     failures.push("admission topology is not production node-local topology");
   }
-  if (proof?.status !== "succeeded") failures.push("proof status is not succeeded");
+  if (proof?.status !== "succeeded") {failures.push("proof status is not succeeded");}
   if (proof?.boundary !== "after-resource-materialization" && !nodeLocalMiddleLaneBoundary) {
     failures.push("proof boundary is neither after-resource-materialization nor node-local-middle-lane");
   }
-  if (proof?.executeWorkers !== true) failures.push("proof did not execute workers");
-  if (replayResult?.status !== "succeeded") failures.push("replay result is not succeeded");
-  if (admission?.status !== "admitted") failures.push("admission gate is not admitted");
-  if (admission?.proofClosureAllowed !== true) failures.push("proof closure is not allowed");
-  if (admission?.replayPlanStatus !== "accepted") failures.push("replay plan is not accepted");
+  if (proof?.executeWorkers !== true) {failures.push("proof did not execute workers");}
+  if (replayResult?.status !== "succeeded") {failures.push("replay result is not succeeded");}
+  if (admission?.status !== "admitted") {failures.push("admission gate is not admitted");}
+  if (admission?.proofClosureAllowed !== true) {failures.push("proof closure is not allowed");}
+  if (admission?.replayPlanStatus !== "accepted") {failures.push("replay plan is not accepted");}
   if (admission?.replayPlanProofClosureAllowed !== true) {
     failures.push("replay plan proof closure is not allowed");
   }
@@ -147,16 +147,16 @@ function requireReplayProofCloseable({ proof, admission, replayResult }) {
   if ((admission?.blockerReasonCodes ?? []).length !== 0) {
     failures.push(`admission blocker reason codes present: ${admission.blockerReasonCodes.join(",")}`);
   }
-  if (worker.status !== "succeeded") failures.push("worker smoke result did not succeed");
-  if (admission?.workerStatus !== "succeeded") failures.push("admission worker status is not succeeded");
+  if (worker.status !== "succeeded") {failures.push("worker smoke result did not succeed");}
+  if (admission?.workerStatus !== "succeeded") {failures.push("admission worker status is not succeeded");}
   if (selected.executable !== true || admission?.selectedNodeExecutable !== true) {
     failures.push("selected boundary node is not executable");
   }
-  if (!selected.nodeExecutionPacketRef) failures.push("missing node execution packet ref");
+  if (!selected.nodeExecutionPacketRef) {failures.push("missing node execution packet ref");}
   if (!selected.resourcePacketRef && !nodeLocalMiddleLaneBoundary) {
     failures.push("missing resource packet ref");
   }
-  if (!selected.nodeReadinessStateRef) failures.push("missing node readiness state ref");
+  if (!selected.nodeReadinessStateRef) {failures.push("missing node readiness state ref");}
   if (selected.executionReadinessAuthority !== "recomputed_current_readiness") {
     failures.push("execution readiness authority is not recomputed_current_readiness");
   }
@@ -166,7 +166,7 @@ function requireReplayProofCloseable({ proof, admission, replayResult }) {
   if (selected.recomputedReadinessCanExecute !== true) {
     failures.push("recomputed readiness cannot execute");
   }
-  if (selected.implementationPacketReady !== true) failures.push("implementation packet is not ready");
+  if (selected.implementationPacketReady !== true) {failures.push("implementation packet is not ready");}
 
   if (nodeLocalMiddleLaneBoundary) {
     const lifecyclePath = Array.isArray(middleLaneProof.lifecyclePath)
@@ -183,7 +183,7 @@ function requireReplayProofCloseable({ proof, admission, replayResult }) {
       "post_action_validation_passed",
       "evidence_emitted",
     ];
-    if (middleLaneProof.status !== "passed") failures.push("middle-lane proof status is not passed");
+    if (middleLaneProof.status !== "passed") {failures.push("middle-lane proof status is not passed");}
     if (middleLaneProof.implementationNodeStarted !== true) {
       failures.push("middle-lane implementation node did not start");
     }
@@ -205,7 +205,7 @@ function requireReplayProofCloseable({ proof, admission, replayResult }) {
     if (middleLaneProof.targetSelection?.modelAuthored !== true) {
       failures.push("middle-lane target selection was not model-authored");
     }
-    if (middleLaneProof.writeGateStatus !== "ready") failures.push("middle-lane write gate is not ready");
+    if (middleLaneProof.writeGateStatus !== "ready") {failures.push("middle-lane write gate is not ready");}
     if (middleLaneProof.workerEditStatus !== "completed") {
       failures.push("middle-lane worker edit did not complete");
     }

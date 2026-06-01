@@ -323,7 +323,7 @@ function defaultGateForExecutableNode(input: {
   if (HARD_TERMINAL_NODE_STATUSES.has(input.node.nodeStatus)) {
     return "no_local_lifecycle_transition";
   }
-  if (input.capability && input.capability.canRunAsExecutable === false) {
+  if (input.capability && ! input.capability.canRunAsExecutable) {
     return "no_local_lifecycle_transition";
   }
   if (
@@ -715,7 +715,7 @@ export class NodeLifecycleTransitionRunner {
       .filter((node) => !nodeLifecycleHasUnsatisfiedDependencies({ snapshot: input.snapshot, node }))
       .map((node) => this.project({ graphId: input.graphId, snapshot: input.snapshot, node }))
       .filter((projection) => !projection.canCallGlobalScheduler)
-      .sort((a, b) => {
+      .toSorted((a, b) => {
         const priority = lifecycleProjectionPriority(a) - lifecycleProjectionPriority(b);
         return priority !== 0 ? priority : a.nodeId.localeCompare(b.nodeId);
       });

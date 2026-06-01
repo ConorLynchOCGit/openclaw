@@ -4635,7 +4635,8 @@ export class DynamicAgentTeamGraphRunner {
                 (result) =>
                   result.status === "ready" &&
                   (contextRepairRequirementCompileResult === null ||
-                    contextRepairRequirementCompileResult.canDispatchContextScout === true),
+
+                    contextRepairRequirementCompileResult.canDispatchContextScout),
               )
               .map((result) => result.packet),
             objectiveSummary: objective,

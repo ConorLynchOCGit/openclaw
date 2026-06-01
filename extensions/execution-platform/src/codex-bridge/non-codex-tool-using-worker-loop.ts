@@ -10188,14 +10188,14 @@ function evidenceKindForLoopInput(
       return evidenceKind;
     }
   }
-  const packetKinds = [
+  const packetKinds = new Set([
     ...(loopInput.nodeExecutionPacket?.evidenceMode ?? []),
     ...(loopInput.nodeExecutionContract?.evidenceMode ?? []),
-  ];
-  if (packetKinds.includes("validation_evidence")) {
+  ]);
+  if (packetKinds.has("validation_evidence")) {
     return "test_validation";
   }
-  if (packetKinds.includes("changed_file_evidence")) {
+  if (packetKinds.has("changed_file_evidence")) {
     return "source_change";
   }
   if (

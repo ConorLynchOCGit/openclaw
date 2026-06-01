@@ -56,26 +56,26 @@ function requireCanaryProof(proof) {
   ];
 
   const failures = [];
-  if (proof?.status !== "succeeded") failures.push("proof status is not succeeded");
+  if (proof?.status !== "succeeded") {failures.push("proof status is not succeeded");}
   if (proof?.boundary !== "after-resource-materialization") {
     failures.push("proof boundary is not after-resource-materialization");
   }
-  if (selected.executionIntent !== "source_edit") failures.push("selected node is not source_edit");
-  if (!selected.nodeExecutionPacketRef) failures.push("missing node execution packet ref");
-  if (!selected.resourcePacketRef) failures.push("missing resource packet ref");
-  if (!selected.implementationContextPacketRef) failures.push("missing implementation context packet ref");
-  if (!selected.nodeReadinessStateRef) failures.push("missing node readiness state ref");
-  if (worker.status !== "succeeded") failures.push("worker smoke result did not succeed");
-  if (changedFileRefs.length < 1) failures.push("worker canary recorded no changed files");
-  if (validationRefs.length < 1) failures.push("worker canary recorded no validation refs");
-  if (evidenceClaims.length < 1) failures.push("worker canary recorded no evidence claims");
+  if (selected.executionIntent !== "source_edit") {failures.push("selected node is not source_edit");}
+  if (!selected.nodeExecutionPacketRef) {failures.push("missing node execution packet ref");}
+  if (!selected.resourcePacketRef) {failures.push("missing resource packet ref");}
+  if (!selected.implementationContextPacketRef) {failures.push("missing implementation context packet ref");}
+  if (!selected.nodeReadinessStateRef) {failures.push("missing node readiness state ref");}
+  if (worker.status !== "succeeded") {failures.push("worker smoke result did not succeed");}
+  if (changedFileRefs.length < 1) {failures.push("worker canary recorded no changed files");}
+  if (validationRefs.length < 1) {failures.push("worker canary recorded no validation refs");}
+  if (evidenceClaims.length < 1) {failures.push("worker canary recorded no evidence claims");}
   for (const code of requiredReasonCodes) {
-    if (!reasonCodes.has(code)) failures.push(`missing reason code: ${code}`);
+    if (!reasonCodes.has(code)) {failures.push(`missing reason code: ${code}`);}
   }
   if (worker.rawPromptStored || worker.rawResponseStored || worker.rawProviderLogStored || worker.rawToolLogStored) {
     failures.push("worker canary stored raw prompt/response/provider/tool logs");
   }
-  if (worker.workQueueLifecycleMutated) failures.push("worker canary mutated work queue lifecycle");
+  if (worker.workQueueLifecycleMutated) {failures.push("worker canary mutated work queue lifecycle");}
 
   if (failures.length > 0) {
     throw new Error(`Executable spine 04 proof is not closeable: ${failures.join("; ")}`);

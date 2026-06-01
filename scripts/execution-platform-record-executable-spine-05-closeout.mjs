@@ -68,36 +68,36 @@ function requireReadinessReadbackProof(proof) {
   const driftMissing = selected.readinessProjectionMissingFields ?? [];
   const failures = [];
 
-  if (proof?.status !== "succeeded") failures.push("proof status is not succeeded");
+  if (proof?.status !== "succeeded") {failures.push("proof status is not succeeded");}
   if (proof?.boundary !== "after-resource-materialization") {
     failures.push("proof boundary is not after-resource-materialization");
   }
-  if (selected.executionIntent !== "source_edit") failures.push("selected node is not source_edit");
-  if (!selected.nodeExecutionPacketRef) failures.push("missing node execution packet ref");
-  if (!selected.resourcePacketRef) failures.push("missing resource packet ref");
-  if (!selected.nodeReadinessStateRef) failures.push("missing node readiness state ref");
+  if (selected.executionIntent !== "source_edit") {failures.push("selected node is not source_edit");}
+  if (!selected.nodeExecutionPacketRef) {failures.push("missing node execution packet ref");}
+  if (!selected.resourcePacketRef) {failures.push("missing resource packet ref");}
+  if (!selected.nodeReadinessStateRef) {failures.push("missing node readiness state ref");}
   if (selected.readinessProjectionStatus !== "stale") {
     failures.push("readiness projection status is not stale");
   }
-  if (selected.readinessProjectionStale !== true) failures.push("readiness projection is not marked stale");
+  if (selected.readinessProjectionStale !== true) {failures.push("readiness projection is not marked stale");}
   if (selected.readinessProjectionCanUnlockExecution !== false) {
     failures.push("stale readiness projection can still unlock execution");
   }
   if (selected.recomputedReadinessCanExecute !== true) {
     failures.push("current recomputed readiness cannot execute");
   }
-  if (selected.implementationPacketReady !== true) failures.push("implementation packet is not ready");
+  if (selected.implementationPacketReady !== true) {failures.push("implementation packet is not ready");}
   if (selected.executionReadinessAuthority !== "recomputed_current_readiness") {
     failures.push("execution readiness authority is not recomputed_current_readiness");
   }
-  if (selected.executable !== true) failures.push("selected boundary node is not executable");
+  if (selected.executable !== true) {failures.push("selected boundary node is not executable");}
   if (selected.recomputedReadinessDiffersFromPersisted !== true) {
     failures.push("proof does not demonstrate persisted/current readiness drift");
   }
-  if (!selected.nodeReadinessStatus) failures.push("missing recomputed node readiness status");
-  if (!selected.persistedNodeReadinessStatus) failures.push("missing persisted node readiness status");
-  if (driftCodes.length < 1) failures.push("readiness projection drift reason codes are missing");
-  if (driftMissing.length < 1) failures.push("readiness projection missing fields are missing");
+  if (!selected.nodeReadinessStatus) {failures.push("missing recomputed node readiness status");}
+  if (!selected.persistedNodeReadinessStatus) {failures.push("missing persisted node readiness status");}
+  if (driftCodes.length < 1) {failures.push("readiness projection drift reason codes are missing");}
+  if (driftMissing.length < 1) {failures.push("readiness projection missing fields are missing");}
   if (selected.readinessProjectionDrift?.rawPromptStored) {
     failures.push("readiness drift artifact stored raw prompt");
   }
@@ -110,14 +110,14 @@ function requireReadinessReadbackProof(proof) {
   if (selected.readinessProjectionDrift?.rawToolLogStored) {
     failures.push("readiness drift artifact stored raw tool log");
   }
-  if (worker.status !== "succeeded") failures.push("worker smoke result did not succeed");
-  if (changed.length < 1) failures.push("worker smoke result has no changed files");
-  if (validation.length < 1) failures.push("worker smoke result has no validation refs");
-  if (claims.length < 1) failures.push("worker smoke result has no evidence claims");
+  if (worker.status !== "succeeded") {failures.push("worker smoke result did not succeed");}
+  if (changed.length < 1) {failures.push("worker smoke result has no changed files");}
+  if (validation.length < 1) {failures.push("worker smoke result has no validation refs");}
+  if (claims.length < 1) {failures.push("worker smoke result has no evidence claims");}
   if (worker.rawPromptStored || worker.rawResponseStored || worker.rawProviderLogStored || worker.rawToolLogStored) {
     failures.push("worker canary stored raw prompt/response/provider/tool logs");
   }
-  if (worker.workQueueLifecycleMutated) failures.push("worker canary mutated work queue lifecycle");
+  if (worker.workQueueLifecycleMutated) {failures.push("worker canary mutated work queue lifecycle");}
 
   if (failures.length > 0) {
     throw new Error(`Executable spine 05 proof is not closeable: ${failures.join("; ")}`);

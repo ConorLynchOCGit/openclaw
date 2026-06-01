@@ -680,7 +680,8 @@ export function evaluateContextRepairNodeExecutionGate(input: {
     resourceRequirementRefs,
     contextBrokerRequestRef,
     canUnlockConsumer:
-      diagnosticOnly === true ? false : missingReasonCodes.length === 0 && wiring.canUnlockConsumer,
+
+      diagnosticOnly ? false : missingReasonCodes.length === 0 && wiring.canUnlockConsumer,
     reasonCodes: uniqueStrings(
       [
         "resource_repair_execution_gate_evaluated",

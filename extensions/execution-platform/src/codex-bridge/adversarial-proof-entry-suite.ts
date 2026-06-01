@@ -387,7 +387,8 @@ async function staleChildReplayCase(input: {
     metadata: { eligible: eligibility.eligible, stale: eligibility.stale },
   });
   const passed =
-    eligibility.eligible === false &&
+    !
+    eligibility.eligible &&
     eligibility.reasonCodes.includes("child_epoch_superseded_not_executable") &&
     eligibility.reasonCodes.includes("child_epoch_boundary_epoch_mismatch");
   return casePassed({
@@ -488,7 +489,8 @@ async function missingContractBodyCase(input: {
     metadata: { providerInvoked: false, workerInvoked: false },
   });
   const passed =
-    gate.allowed === false && gate.reasonCodes.includes("node_execution_contract_body_missing");
+    !
+    gate.allowed && gate.reasonCodes.includes("node_execution_contract_body_missing");
   return casePassed({
     caseId,
     passed,
@@ -868,7 +870,8 @@ async function acceptedWithLimitationsWithoutWaiverCase(input: {
     },
   });
   const passed =
-    blocked.allowed === false &&
+    !
+    blocked.allowed &&
     blocked.reasonCodes.includes("node_readiness_context_limitation_waiver_missing") &&
     !allowedWithWaiver.reasonCodes.includes("node_readiness_context_limitation_waiver_missing");
   return casePassed({
@@ -951,7 +954,8 @@ async function workerEditRollbackReviewCase(input: {
     },
   });
   const passed =
-    smoke.pass === true &&
+
+    smoke.pass &&
     Boolean(editLane) &&
     editLane?.workspaceRestored === true &&
     editLane.rollbackMode === "rolled_back" &&
@@ -1213,7 +1217,8 @@ async function providerRoutingContradictionCase(input: {
     },
   });
   const passed =
-    preflight.accepted === false &&
+    !
+    preflight.accepted &&
     preflight.reasonCodes.includes("model_policy_provider_path_mismatch") &&
     preflight.reasonCodes.includes("model_policy_model_ref_not_allowed");
   return casePassed({
@@ -1557,10 +1562,12 @@ async function nonCodingDomainFixtureCase(input: {
   });
   const passed =
     Boolean(workIntent.workIntent) &&
-    workIntent.capabilityValidation.valid === true &&
+
+    workIntent.capabilityValidation.valid &&
     requirement.reasonCodes.includes("resource_requirement_runtime_did_not_copy_broad_broker_refs") &&
     selectionPacket.status === "accepted" &&
-    materialized.readiness.valid === true &&
+
+    materialized.readiness.valid &&
     artifact.artifactKind === "action_review_artifact";
   return casePassed({
     caseId,
@@ -1810,12 +1817,12 @@ export async function runAdversarialProofEntrySuite(input: {
     const noUnsafeInvocation = caseResults.every(
       (result) =>
         result.caseId === "worker_edit_rollback_review" ||
-        (result.providerInvoked === false && result.workerInvoked === false),
+        (!result.providerInvoked && ! result.workerInvoked),
     );
     const noExecutableFrontier = caseResults.every(
-      (result) => result.executableFrontierOpened === false,
+      (result) => ! result.executableFrontierOpened,
     );
-    const noAuthorityWidening = caseResults.every((result) => result.authorityWidened === false);
+    const noAuthorityWidening = caseResults.every((result) => ! result.authorityWidened);
     const generalitySentinel = caseResults.some(
       (result) =>
         result.caseId === "non_coding_domain_fixture" && result.status === "passed",

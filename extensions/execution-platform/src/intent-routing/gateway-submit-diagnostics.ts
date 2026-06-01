@@ -181,7 +181,7 @@ function largestDelta(input: {
   const candidates = input.phases
     .map((phase) => ({ phase: phase.phase, bytes: phase[input.field] }))
     .filter((entry): entry is { phase: string; bytes: number } => typeof entry.bytes === "number")
-    .sort((left, right) => right.bytes - left.bytes);
+    .toSorted((left, right) => right.bytes - left.bytes);
   const top = candidates[0];
   return top ? { bytes: top.bytes, phase: top.phase } : { bytes: null, phase: null };
 }
@@ -390,14 +390,22 @@ export function assertGatewaySubmitDiagnosticsManifestBounds(
 ): void {
   const reasonCodes = [
     manifest.manifestJsonByteCount <= maxBytes ? null : "gateway_submit_manifest_overflow",
-    manifest.rawPromptStored === false ? null : "raw_prompt_flag_invalid",
-    manifest.rawResponseStored === false ? null : "raw_response_flag_invalid",
-    manifest.rawProviderLogStored === false ? null : "raw_provider_log_flag_invalid",
-    manifest.rawToolLogStored === false ? null : "raw_tool_log_flag_invalid",
-    manifest.rawCommandLogStored === false ? null : "raw_command_log_flag_invalid",
-    manifest.rawDbRowsStored === false ? null : "raw_db_rows_flag_invalid",
-    manifest.secretsStored === false ? null : "secrets_flag_invalid",
-    manifest.hiddenReasoningStored === false ? null : "hidden_reasoning_flag_invalid",
+    !
+    manifest.rawPromptStored ? null : "raw_prompt_flag_invalid",
+    !
+    manifest.rawResponseStored ? null : "raw_response_flag_invalid",
+    !
+    manifest.rawProviderLogStored ? null : "raw_provider_log_flag_invalid",
+    !
+    manifest.rawToolLogStored ? null : "raw_tool_log_flag_invalid",
+    !
+    manifest.rawCommandLogStored ? null : "raw_command_log_flag_invalid",
+    !
+    manifest.rawDbRowsStored ? null : "raw_db_rows_flag_invalid",
+    !
+    manifest.secretsStored ? null : "secrets_flag_invalid",
+    !
+    manifest.hiddenReasoningStored ? null : "hidden_reasoning_flag_invalid",
   ].filter((reason): reason is string => Boolean(reason));
   if (reasonCodes.length > 0) {
     throw new Error(`gateway_submit_diagnostics_manifest_invalid:${reasonCodes.join(",")}`);

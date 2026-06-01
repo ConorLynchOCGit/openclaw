@@ -233,7 +233,7 @@ async function main() {
     if (!hydratedDiagnostics?.body) {
       throw new Error("submit_diagnostics_payload_not_hydrated");
     }
-    if (rejected.accepted !== false || !rejected.frontDoorSubmitDiagnosticsManifest) {
+    if (rejected.accepted || !rejected.frontDoorSubmitDiagnosticsManifest) {
       throw new Error("rejected_submit_missing_diagnostics");
     }
     assertSafetyFlags(accepted.frontDoorSubmitDiagnosticsManifest, "accepted_manifest");

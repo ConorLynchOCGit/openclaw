@@ -103,7 +103,7 @@ describe("worker smoke matrix", () => {
         "valid_no_edit_blocker_child",
       ]),
     );
-    expect(lanes.every((lane) => lane.targetFileRef.includes("://") === false)).toBe(true);
+    expect(lanes.every((lane) => ! lane.targetFileRef.includes("://"))).toBe(true);
     expect(lanes.filter((lane) => lane.expectedOutcome === "precise_upstream_blocker")).toHaveLength(
       1,
     );

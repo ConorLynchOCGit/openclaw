@@ -270,7 +270,7 @@ export const NODE_LIFECYCLE_DESCRIPTOR_TOOL_IDS = Object.freeze(
         ...descriptor.legalToolIds,
       ]),
     ),
-  ].sort(),
+  ].toSorted(),
 );
 
 export function isNodeLifecycleGate(value: string | null | undefined): value is NodeLifecycleGate {

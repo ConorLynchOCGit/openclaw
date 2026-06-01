@@ -219,10 +219,10 @@ export function evaluateProductSpecReplayProofAdmission(input: {
   const recomputedReadinessCanExecute = boolValue(selected.recomputedReadinessCanExecute);
   const implementationPacketReady = boolValue(selected.implementationPacketReady);
   const executionReadinessAuthority = stringValue(selected.executionReadinessAuthority);
-  const nodeKinds = [
+  const nodeKinds = new Set([
     ...nodeKindsFromGraphSummary(proof.beforeGraph),
     ...nodeKindsFromGraphSummary(proof.afterGraph),
-  ];
+  ]);
   const graphHasLegacyContextFanout =
     graphHasResourceFulfillmentFanout(proof.beforeGraph) ||
     graphHasResourceFulfillmentFanout(proof.afterGraph);
@@ -277,7 +277,7 @@ export function evaluateProductSpecReplayProofAdmission(input: {
       boolValue(middleLaneProof.metadataManifestSafe) &&
       middleLaneLifecycleComplete);
   const graphHasRetiredTopology =
-    nodeKinds.includes("context_synthesis") ||
+    nodeKinds.has("context_synthesis") ||
     graphHasDefaultContextAcquisition ||
     graphHasLegacyContextFanout;
   const sourceTopologyStatus = graphHasRetiredTopology
@@ -328,7 +328,7 @@ export function evaluateProductSpecReplayProofAdmission(input: {
     ...(boolValue(proof.resourceMaterializationRerun)
       ? ["proof_reran_resource_materialization"]
       : []),
-    ...(nodeKinds.includes("context_synthesis")
+    ...(nodeKinds.has("context_synthesis")
       ? ["proof_graph_contains_context_synthesis_node"]
       : []),
     ...(graphHasDefaultContextAcquisition

@@ -1241,7 +1241,7 @@ function buildSingleUnitBlocker(input: {
   const largestResult =
     input.shardResults
       .slice()
-      .sort(
+      .toSorted(
         (left, right) =>
           right.packet.exactProviderInputBytes - left.packet.exactProviderInputBytes,
       )[0] ?? input.parentResult;
@@ -1623,12 +1623,10 @@ export function reviewContextShardHandoffs(input: {
     (shardPacketRef) => !handoffsByPacketRef.has(shardPacketRef),
   );
   const limitationRefs = uniqueStrings(
-    partial.flatMap((handoff) => [
-      ...handoff.limitations.map(
+    partial.flatMap((handoff) => handoff.limitations.map(
         (limitation) =>
           `${handoff.shardHandoffRef}#limitation-${sha256Text(limitation).slice(0, 10)}`,
-      ),
-    ]),
+      )),
     80,
     420,
   );

@@ -1045,7 +1045,7 @@ export function buildArchitectureResidueSourceInventoryManifest(input: {
     blockedSurvivorRefCount: input.report.blockedSurvivorRefCount,
     survivorRefCount: input.report.survivorRefCount,
     topSurvivorFiles: [...byFile.entries()]
-      .sort((a, b) => b[1] - a[1])
+      .toSorted((a, b) => b[1] - a[1])
       .slice(0, 20)
       .map(([file, count]) => ({ file, count })),
     lineReduction: {

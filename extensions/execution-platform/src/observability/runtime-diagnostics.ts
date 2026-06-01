@@ -139,7 +139,7 @@ function byteCount(value: unknown): number {
 
 function bodyKeys(value: unknown): string[] {
   const body = record(value);
-  return body ? Object.keys(body).sort().slice(0, 24) : [];
+  return body ? Object.keys(body).toSorted().slice(0, 24) : [];
 }
 
 function choiceShape(value: unknown): { choiceCount: number | null; choiceKeys: string[]; messageKeys: string[]; contentLengths: number[] } {
@@ -157,8 +157,8 @@ function choiceShape(value: unknown): { choiceCount: number | null; choiceKeys: 
     .filter((length): length is number => typeof length === "number");
   return {
     choiceCount: choices.length > 0 ? choices.length : null,
-    choiceKeys: firstChoice ? Object.keys(firstChoice).sort().slice(0, 24) : [],
-    messageKeys: message ? Object.keys(message).sort().slice(0, 24) : [],
+    choiceKeys: firstChoice ? Object.keys(firstChoice).toSorted().slice(0, 24) : [],
+    messageKeys: message ? Object.keys(message).toSorted().slice(0, 24) : [],
     contentLengths,
   };
 }
@@ -298,13 +298,13 @@ export function captureHeapPhaseSnapshot(input: {
   const memory = input.memoryUsage ?? process.memoryUsage();
   const largestMetadata = (input.metadataObjects ?? [])
     .map((item) => ({ ref: item.ref ?? null, bytes: byteCount(item.value) }))
-    .sort((left, right) => right.bytes - left.bytes)[0];
+    .toSorted((left, right) => right.bytes - left.bytes)[0];
   const largestBody = (input.artifactBodies ?? [])
     .map((item) => ({
       ref: item.ref ?? null,
       bytes: typeof item.byteCount === "number" ? Math.trunc(item.byteCount) : byteCount(item.value),
     }))
-    .sort((left, right) => right.bytes - left.bytes)[0];
+    .toSorted((left, right) => right.bytes - left.bytes)[0];
   const core: JsonValue = {
     phase: input.phase,
     gateKind: bounded(input.gateKind, 180),

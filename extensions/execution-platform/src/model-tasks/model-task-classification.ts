@@ -852,7 +852,7 @@ export function modelContractBoundaryBindingFor(
   const policy = resolvedPolicySettings(definition.taskClass, definition.callSite);
   const proofCleanlinessPolicy = {
     ...DEFAULT_PROOF_CLEANLINESS_POLICY,
-    ...(definition.proofCleanlinessPolicy ?? {}),
+    ...definition.proofCleanlinessPolicy,
   };
   return {
     artifactKind: "model_contract_boundary_policy_binding",
