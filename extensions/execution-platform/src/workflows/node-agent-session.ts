@@ -82,16 +82,16 @@ export type NodeAgentStepBudgetTier = "small" | "standard" | "large" | "mission"
 export type NodeAgentStepBudget = {
   profile: "execution-coding-parent";
   tier: NodeAgentStepBudgetTier;
-  maxToolCalls: number;
-  maxCompactions: number | null;
+  expectedToolCallCheckpoint: number;
+  expectedCompactionCheckpoint: number | null;
   basis: string[];
 };
 
 export const DEFAULT_EXECUTION_CODING_NODE_AGENT_STEP_BUDGET: NodeAgentStepBudget = {
   profile: "execution-coding-parent",
   tier: "standard",
-  maxToolCalls: 80,
-  maxCompactions: 3,
+  expectedToolCallCheckpoint: 80,
+  expectedCompactionCheckpoint: 3,
   basis: ["node_agent_step_budget_default_standard"],
 };
 
@@ -99,9 +99,9 @@ export type NodeAgentStepBudgetState = {
   profile: NodeAgentStepBudget["profile"];
   tier: NodeAgentStepBudgetTier;
   status: "within_budget" | "over_budget";
-  maxToolCalls: number;
+  expectedToolCallCheckpoint: number;
   observedToolCalls: number;
-  maxCompactions: number | null;
+  expectedCompactionCheckpoint: number | null;
   observedCompactions: number;
   basis: string[];
   reasonCodes: string[];
@@ -206,12 +206,12 @@ export function deriveNodeAgentStepBudgetFromSnapshot(
         : "standard";
   const tierLimits: Record<
     NodeAgentStepBudgetTier,
-    Pick<NodeAgentStepBudget, "maxToolCalls" | "maxCompactions">
+    Pick<NodeAgentStepBudget, "expectedToolCallCheckpoint" | "expectedCompactionCheckpoint">
   > = {
-    small: { maxToolCalls: 48, maxCompactions: 2 },
-    standard: { maxToolCalls: 80, maxCompactions: 3 },
-    large: { maxToolCalls: 120, maxCompactions: 4 },
-    mission: { maxToolCalls: 160, maxCompactions: 5 },
+    small: { expectedToolCallCheckpoint: 48, expectedCompactionCheckpoint: 2 },
+    standard: { expectedToolCallCheckpoint: 80, expectedCompactionCheckpoint: 3 },
+    large: { expectedToolCallCheckpoint: 120, expectedCompactionCheckpoint: 4 },
+    mission: { expectedToolCallCheckpoint: 160, expectedCompactionCheckpoint: 5 },
   };
   return {
     profile: "execution-coding-parent",
@@ -361,6 +361,12 @@ export type NodeAgentSessionTrace = {
     nativeCompactionCount: number;
     compactionObserved: boolean;
   };
+  providerAttempt: {
+    modelProvider: string | null;
+    modelId: string | null;
+    thinkingLevel: string | null;
+    reasoningLevel: string | null;
+  };
   todoState: {
     todoRef: string;
     sessionKey: string;
@@ -393,7 +399,14 @@ export type NodeAgentSessionTrace = {
     childResultRef: string | null;
     workingContextRef: string | null;
     workingContextEntryRef: string | null;
+    changeSetRef: string | null;
+    validationStateRef: string | null;
+    contextTodoDecisionRef: string | null;
+    contextNextActionRef: string | null;
+    validationTodoDecisionRef: string | null;
+    validationNextActionRef: string | null;
     parentSynthesisRef: string | null;
+    parentPostValidationActionRef: string | null;
     firstEditRef: string | null;
     validationActionRef: string | null;
     validationScoutResultRef: string | null;
@@ -408,6 +421,11 @@ export type NodeAgentSessionTrace = {
     childAgentId: string;
     canonicalDocsAdmitted: boolean;
     requiredSkillAdmitted: boolean;
+    childToolCatalogAdmitted: boolean;
+    providerToolNames: string[];
+    requiredToolNames: string[];
+    missingRequiredToolNames: string[];
+    forbiddenToolNames: string[];
     missingRequiredSources: string[];
     truncatedRequiredSources: string[];
     reportRef: string | null;
@@ -430,7 +448,14 @@ export type NodeAgentSessionTrace = {
     sessionsYieldObserved: boolean;
     childResultObserved: boolean;
     childResultOversized: boolean;
+    contextDecisionFooterObserved: boolean;
+    validationDecisionFooterObserved: boolean;
+    contextTodoDecisionObserved: boolean;
+    contextNextActionObserved: boolean;
+    validationTodoDecisionObserved: boolean;
+    validationNextActionObserved: boolean;
     parentSynthesisObserved: boolean;
+    parentPostValidationActionObserved: boolean;
     firstEditObserved: boolean;
     validationActionObserved: boolean;
     validationScoutObserved: boolean;
@@ -443,6 +468,8 @@ export type NodeAgentSessionTrace = {
     workingContextObserved: boolean;
     inlineContextWindowsObserved: boolean;
     fileGraphObserved: boolean;
+    changeSetObserved: boolean;
+    validationStateObserved: boolean;
   };
   missingOptics: string[];
   reasonCodes: string[];
@@ -497,6 +524,10 @@ export type NodeAgentSourceRuntimeLaunch = {
     label?: string;
   }>;
   manifestRef: string | null;
+  materializationRecordRef: string | null;
+  materializationStatus: "not_observed" | "aligned" | "blocked";
+  materializationIssueCount: number;
+  materializationIssues: string[];
 };
 
 export type NodeAgentStartReceipt = {
@@ -2392,9 +2423,9 @@ async function buildNodeWorkerPromptAuthoringMaterial(input: {
     lines.push("");
   }
 
-  lines.push("### Expansion Handles");
+  lines.push("### Exact Expansion Handles");
   lines.push(
-    'If the inline source is insufficient, instruct the worker to use openclaw_resource_read for exact refs or native task with agentId:"execution-context-scout" and this brief included in the child task. Context scout output must return actual prompt/code/test windows inline to the parent session.',
+    'The final worker prompt should be self-contained enough to start from directly. Mention openclaw_resource_read only as an exception path for exact refs intentionally supplied here when a specific missing runtime/source fact is needed. Do not make exact-ref hydration the default first move. If repo mapping is weak, instruct the worker to use native task with agentId:"execution-context-scout" and enough prompt/requirement/source material in the child task for the scout to return actual prompt/code/test windows inline to the parent session.',
   );
   if (sourcePromptBodyRefs.length > 0) {
     lines.push(`Full prompt body refs for expansion: ${sourcePromptBodyRefs.join(", ")}`);
@@ -2490,7 +2521,7 @@ function nodeWorkerPromptDirectiveAuthoringInput(
 }
 
 function composeNodeWorkerPrompt(input: { authoredDirectiveText: string }): string {
-  return input.authoredDirectiveText.trim();
+  return input.authoredDirectiveText;
 }
 
 function validateNodeWorkerPrompt(input: {
@@ -2825,7 +2856,7 @@ export async function authorNodeExecutionPrompt(input: {
       "Prefer a clear prose structure with a title, mission, scoped requirements, relevant mission context, what to investigate/build/change, suggested starting points, in scope, out of scope, done-when, evidence expectations, and blocker/escalation rules when those topics are relevant.",
       "Assigned requirements scope the node. The full original operator prompt is source material for terminology, refs, constraints, and success gates; it does not expand the worker's accountability to the entire mission.",
       "The prompt must require a visible native OpenClaw update_plan before work. update_plan is the native working plan surface; do not invent an Execution Platform todo ledger.",
-      "The prompt must include a concrete first move toward prompt-grounded context grounding and include relevant file refs/search terms inferred from the source material when available.",
+      "The prompt must include a concrete first move after update_plan: decide from the prompt whether there is enough edit-ready context to begin, use exact openclaw_resource_read only for a specific supplied ref when a missing runtime/source fact blocks the next decision, or delegate weak repo/source mapping through native task.",
       "The prompt must describe the expected dynamic context-task/edit/validation-task/repair loop at the level needed for this node, including native task delegation to execution-context-scout when mapping is weak and native task delegation to execution-validation-scout for non-trivial validation.",
       "Do not instruct the parent execution-coding agent to use direct repo read, grep, glob, list, exec, raw sessions_spawn, or raw sessions_yield. Those are scout/runtime responsibilities in executable-node mode.",
       "Preserve the node objective and assigned requirement verbs exactly. Do not turn a research/report/diagnosis requirement into implementation work just because broader prompt context mentions a system capability.",
@@ -3160,6 +3191,11 @@ function projectChildBootstrapAdmissions(
       childAgentId: firstString(entry, ["childAgentId"]) ?? "unknown",
       canonicalDocsAdmitted: booleanValue(entry.canonicalDocsAdmitted) === true,
       requiredSkillAdmitted: booleanValue(entry.requiredSkillAdmitted) === true,
+      childToolCatalogAdmitted: booleanValue(entry.childToolCatalogAdmitted) === true,
+      providerToolNames: stringArray(entry.providerToolNames, 40),
+      requiredToolNames: stringArray(entry.requiredToolNames, 40),
+      missingRequiredToolNames: stringArray(entry.missingRequiredToolNames, 40),
+      forbiddenToolNames: stringArray(entry.forbiddenToolNames, 40),
       missingRequiredSources: stringArray(entry.missingRequiredSources, 40),
       truncatedRequiredSources: stringArray(entry.truncatedRequiredSources, 40),
       reportRef: firstString(entry, ["reportRef"]),
@@ -3208,20 +3244,21 @@ function normalizeNodeAgentStepBudget(
   budget: NodeAgentStepBudget | null | undefined,
 ): NodeAgentStepBudget {
   const source = budget ?? DEFAULT_EXECUTION_CODING_NODE_AGENT_STEP_BUDGET;
-  const maxToolCalls = Number.isFinite(source.maxToolCalls)
-    ? Math.max(1, Math.floor(source.maxToolCalls))
-    : DEFAULT_EXECUTION_CODING_NODE_AGENT_STEP_BUDGET.maxToolCalls;
-  const maxCompactions =
-    typeof source.maxCompactions === "number" && Number.isFinite(source.maxCompactions)
-      ? Math.max(0, Math.floor(source.maxCompactions))
-      : source.maxCompactions === null
+  const expectedToolCallCheckpoint = Number.isFinite(source.expectedToolCallCheckpoint)
+    ? Math.max(1, Math.floor(source.expectedToolCallCheckpoint))
+    : DEFAULT_EXECUTION_CODING_NODE_AGENT_STEP_BUDGET.expectedToolCallCheckpoint;
+  const expectedCompactionCheckpoint =
+    typeof source.expectedCompactionCheckpoint === "number" &&
+    Number.isFinite(source.expectedCompactionCheckpoint)
+      ? Math.max(0, Math.floor(source.expectedCompactionCheckpoint))
+      : source.expectedCompactionCheckpoint === null
         ? null
-        : DEFAULT_EXECUTION_CODING_NODE_AGENT_STEP_BUDGET.maxCompactions;
+        : DEFAULT_EXECUTION_CODING_NODE_AGENT_STEP_BUDGET.expectedCompactionCheckpoint;
   return {
     profile: "execution-coding-parent",
     tier: source.tier,
-    maxToolCalls,
-    maxCompactions,
+    expectedToolCallCheckpoint,
+    expectedCompactionCheckpoint,
     basis: uniqueStrings(source.basis),
   };
 }
@@ -3236,10 +3273,11 @@ function buildNodeAgentStepBudgetState(input: {
   const observedCompactions = Math.max(0, Math.floor(input.observedCompactions));
   const reasonCodes = uniqueStrings([
     "node_agent_step_budget_observed",
-    observedToolCalls > budget.maxToolCalls
+    observedToolCalls > budget.expectedToolCallCheckpoint
       ? "node_agent_step_budget_tool_calls_over_budget"
       : null,
-    budget.maxCompactions !== null && observedCompactions > budget.maxCompactions
+    budget.expectedCompactionCheckpoint !== null &&
+    observedCompactions > budget.expectedCompactionCheckpoint
       ? "node_agent_step_budget_compactions_over_budget"
       : null,
   ]);
@@ -3317,6 +3355,18 @@ export function buildNodeAgentSessionTrace(input: {
   const observedToolNames = uniqueStrings(stringArray(toolSummary.tools, 120), 120);
   const toolCallCount = finiteNumber(toolSummary.calls) ?? observedToolNames.length;
   const contextManagement = asRecord(runMeta.contextManagement);
+  const executionTrace = asRecord(runMeta.executionTrace);
+  const requestShaping = asRecord(runMeta.requestShaping);
+  const providerAttempt = {
+    modelProvider:
+      firstString(executionTrace, ["winnerProvider", "provider"]) ??
+      firstString(runMeta, ["provider", "modelProvider"]),
+    modelId:
+      firstString(executionTrace, ["winnerModel", "model", "modelId"]) ??
+      firstString(runMeta, ["model", "modelId"]),
+    thinkingLevel: firstString(requestShaping, ["thinking", "thinkLevel", "thinkingLevel"]),
+    reasoningLevel: firstString(requestShaping, ["reasoning", "reasoningLevel"]),
+  };
   const todoState = projectSessionTodo(input.sessionTodo);
   const childBootstrapAdmissions = projectChildBootstrapAdmissions(nativeTrace);
   const childStartFailures = projectChildStartFailures(nativeTrace);
@@ -3348,7 +3398,11 @@ export function buildNodeAgentSessionTrace(input: {
     "sessionsSpawnRef",
   ]);
   const firstEditRef = traceString(nativeTrace, ["firstEditRef", "editRef", "patchRef"]);
-  const validationActionRef = traceString(nativeTrace, ["validationActionRef", "validationRef"]);
+  const validationActionRef = traceString(nativeTrace, [
+    "validationActionRef",
+    "validationTaskRef",
+    "validationRef",
+  ]);
   const waitingOnSubagentStateRef = traceString(nativeTrace, ["waitingOnSubagentStateRef"]);
   const terminalNodeFinishRef =
     input.finishArtifactRef ??
@@ -3372,15 +3426,50 @@ export function buildNodeAgentSessionTrace(input: {
     "workingContextEntryRef",
     "nativeWorkingContextEntryRef",
   ]);
+  const changeSetRef = traceString(nativeTrace, [
+    "changeSetRef",
+    "changeSetWorkingContextEntryRef",
+    "changeSetToolResultRef",
+  ]);
+  const validationStateRef = traceString(nativeTrace, [
+    "validationStateRef",
+    "validationStateWorkingContextEntryRef",
+  ]);
   const childSessionKeyRef = traceString(nativeTrace, [
     "childSessionKeyRef",
     "contextScoutSessionKey",
     "subagentSessionKey",
   ]);
   const parentSynthesisRef = traceString(nativeTrace, [
+    "parentPostChildActionRef",
     "parentSynthesisRef",
     "parentSynthesisEventRef",
     "synthesisRef",
+  ]);
+  const contextTodoDecisionRef =
+    traceString(nativeTrace, ["contextTodoDecisionRef", "contextReadinessTodoDecisionRef"]) ??
+    (traceString(nativeTrace, ["parentPostChildActionToolName"]) === "update_plan"
+      ? parentSynthesisRef
+      : null);
+  const contextNextActionRef = traceString(nativeTrace, [
+    "contextNextActionRef",
+    "postContextNextActionRef",
+  ]);
+  const parentPostValidationActionRef = traceString(nativeTrace, [
+    "parentPostValidationActionRef",
+    "parentPostValidationActionEventRef",
+  ]);
+  const validationTodoDecisionRef =
+    traceString(nativeTrace, [
+      "validationTodoDecisionRef",
+      "validationSufficiencyTodoDecisionRef",
+    ]) ??
+    (traceString(nativeTrace, ["parentPostValidationActionToolName"]) === "update_plan"
+      ? parentPostValidationActionRef
+      : null);
+  const validationNextActionRef = traceString(nativeTrace, [
+    "validationNextActionRef",
+    "postValidationNextActionRef",
   ]);
   const validationScoutResultRef = traceString(nativeTrace, [
     "validationScoutResultRef",
@@ -3402,10 +3491,31 @@ export function buildNodeAgentSessionTrace(input: {
     childResultObserved: Boolean(childResultRef),
     childResultOversized:
       traceBoolean(nativeTrace, ["childResultOversized", "subagentResultOversized"]) === true,
+    contextDecisionFooterObserved:
+      traceBoolean(nativeTrace, ["contextDecisionFooterObserved"]) === true ||
+      traceString(nativeTrace, ["contextDecisionFooterKind"]) === "minimal_edit_readiness",
+    validationDecisionFooterObserved:
+      traceBoolean(nativeTrace, ["validationDecisionFooterObserved"]) === true ||
+      traceString(nativeTrace, ["validationDecisionFooterKind"]) === "validation_sufficiency",
+    contextTodoDecisionObserved:
+      Boolean(contextTodoDecisionRef) ||
+      traceBoolean(nativeTrace, ["contextTodoDecisionObserved"]) === true,
+    contextNextActionObserved:
+      Boolean(contextNextActionRef) ||
+      traceBoolean(nativeTrace, ["contextNextActionObserved"]) === true,
+    validationTodoDecisionObserved:
+      Boolean(validationTodoDecisionRef) ||
+      traceBoolean(nativeTrace, ["validationTodoDecisionObserved"]) === true,
+    validationNextActionObserved:
+      Boolean(validationNextActionRef) ||
+      traceBoolean(nativeTrace, ["validationNextActionObserved"]) === true,
     parentSynthesisObserved: Boolean(parentSynthesisRef),
+    parentPostValidationActionObserved:
+      Boolean(parentPostValidationActionRef) ||
+      traceBoolean(nativeTrace, ["parentPostValidationActionObserved"]) === true,
     firstEditObserved: Boolean(firstEditRef),
     validationActionObserved: Boolean(validationActionRef) || Boolean(validationScoutResultRef),
-    validationScoutObserved: Boolean(validationScoutResultRef),
+    validationScoutObserved: Boolean(validationScoutResultRef) || Boolean(validationActionRef),
     repairLoopEvidenceObserved: Boolean(repairLoopEvidenceRef),
     terminalNodeFinishObserved: Boolean(terminalNodeFinishRef) || Boolean(input.finish),
     waitingOnSubagentObserved: Boolean(waitingOnSubagentStateRef),
@@ -3425,6 +3535,11 @@ export function buildNodeAgentSessionTrace(input: {
     fileGraphObserved:
       Boolean(workingContextEntryRef) &&
       traceBoolean(nativeTrace, ["workingContextHasFileGraph", "fileGraphObserved"]) === true,
+    changeSetObserved:
+      Boolean(changeSetRef) || traceBoolean(nativeTrace, ["changeSetObserved"]) === true,
+    validationStateObserved:
+      Boolean(validationStateRef) ||
+      traceBoolean(nativeTrace, ["validationStateObserved"]) === true,
   };
   const requiredOptics: Array<[keyof typeof observations, string]> = [
     ["workerPromptAuthored", "worker_prompt_authored_missing"],
@@ -3435,7 +3550,7 @@ export function buildNodeAgentSessionTrace(input: {
     ["workingContextObserved", "working_context_missing"],
     ["inlineContextWindowsObserved", "inline_context_windows_missing"],
     ["fileGraphObserved", "file_graph_missing"],
-    ["parentSynthesisObserved", "parent_synthesis_missing"],
+    ["parentSynthesisObserved", "parent_post_child_action_missing"],
     ["firstEditObserved", "first_edit_missing"],
     ["validationActionObserved", "validation_action_missing"],
     ["terminalNodeFinishObserved", "terminal_node_finish_missing"],
@@ -3443,6 +3558,30 @@ export function buildNodeAgentSessionTrace(input: {
   const missingOptics = requiredOptics
     .filter(([key]) => !observations[key])
     .map(([, reason]) => reason);
+  if (observations.childResultObserved && !observations.contextDecisionFooterObserved) {
+    missingOptics.push("context_decision_footer_missing");
+  }
+  if (observations.contextDecisionFooterObserved && !observations.contextTodoDecisionObserved) {
+    missingOptics.push("context_todo_decision_missing");
+  }
+  if (observations.contextTodoDecisionObserved && !observations.contextNextActionObserved) {
+    missingOptics.push("context_next_action_missing");
+  }
+  if (observations.validationActionObserved && !observations.validationDecisionFooterObserved) {
+    missingOptics.push("validation_decision_footer_missing");
+  }
+  if (
+    observations.validationDecisionFooterObserved &&
+    !observations.validationTodoDecisionObserved
+  ) {
+    missingOptics.push("validation_todo_decision_missing");
+  }
+  if (observations.validationTodoDecisionObserved && !observations.validationNextActionObserved) {
+    missingOptics.push("validation_next_action_missing");
+  }
+  if (observations.validationActionObserved && !observations.parentPostValidationActionObserved) {
+    missingOptics.push("parent_post_validation_action_missing");
+  }
 
   return {
     artifactKind: NODE_AGENT_SESSION_TRACE_ARTIFACT_TYPE,
@@ -3470,6 +3609,7 @@ export function buildNodeAgentSessionTrace(input: {
       nativeCompactionCount,
       compactionObserved: nativeCompactionCount > 0,
     },
+    providerAttempt,
     todoState,
     eventRefs: {
       workerPromptAuthoredRef,
@@ -3484,7 +3624,14 @@ export function buildNodeAgentSessionTrace(input: {
       childResultRef,
       workingContextRef,
       workingContextEntryRef,
+      changeSetRef,
+      validationStateRef,
+      contextTodoDecisionRef,
+      contextNextActionRef,
+      validationTodoDecisionRef,
+      validationNextActionRef,
       parentSynthesisRef,
+      parentPostValidationActionRef,
       firstEditRef,
       validationActionRef,
       validationScoutResultRef,
@@ -3506,6 +3653,30 @@ export function buildNodeAgentSessionTrace(input: {
           : null,
         observations.sessionsYieldObserved ? "node_agent_session_trace_yield_observed" : null,
         observations.childResultObserved ? "node_agent_session_trace_child_result_observed" : null,
+        providerAttempt.thinkingLevel === "xhigh"
+          ? "node_agent_session_trace_attempt_thinking_xhigh_observed"
+          : null,
+        providerAttempt.reasoningLevel === "stream"
+          ? "node_agent_session_trace_attempt_reasoning_stream_observed"
+          : null,
+        observations.contextDecisionFooterObserved
+          ? "node_agent_session_trace_context_decision_footer_observed"
+          : null,
+        observations.validationDecisionFooterObserved
+          ? "node_agent_session_trace_validation_decision_footer_observed"
+          : null,
+        observations.contextTodoDecisionObserved
+          ? "node_agent_session_trace_context_todo_decision_observed"
+          : null,
+        observations.contextNextActionObserved
+          ? "node_agent_session_trace_context_next_action_observed"
+          : null,
+        observations.validationTodoDecisionObserved
+          ? "node_agent_session_trace_validation_todo_decision_observed"
+          : null,
+        observations.validationNextActionObserved
+          ? "node_agent_session_trace_validation_next_action_observed"
+          : null,
         observations.workingContextObserved
           ? "node_agent_session_trace_working_context_observed"
           : null,
@@ -3513,11 +3684,18 @@ export function buildNodeAgentSessionTrace(input: {
           ? "node_agent_session_trace_inline_context_windows_observed"
           : null,
         observations.fileGraphObserved ? "node_agent_session_trace_file_graph_observed" : null,
+        observations.changeSetObserved ? "node_agent_session_trace_change_set_observed" : null,
+        observations.validationStateObserved
+          ? "node_agent_session_trace_validation_state_observed"
+          : null,
         observations.childResultOversized
           ? "node_agent_session_trace_child_result_oversized_not_delivered"
           : null,
         observations.parentSynthesisObserved
-          ? "node_agent_session_trace_parent_synthesis_observed"
+          ? "node_agent_session_trace_parent_action_after_child_observed"
+          : null,
+        observations.parentPostValidationActionObserved
+          ? "node_agent_session_trace_parent_action_after_validation_observed"
           : null,
         observations.firstEditObserved ? "node_agent_session_trace_edit_observed" : null,
         observations.validationActionObserved
@@ -3651,7 +3829,7 @@ export async function runNodeAgentSession(input: {
       agentId: nodeRun.agentId,
       sessionKey: nodeRun.sessionKey,
       runId: inputRunId ?? nodeRun.nodeRunId,
-      prompt: input.workerPromptText.trim(),
+      prompt: input.workerPromptText,
       nativeRuntimeTools: [finishTool, ...(inputNativeRuntimeTools ?? [])],
       ...(nodeAgentParentCrawlGuard ? { nodeAgentParentCrawlGuard } : {}),
       ...(nodeAgentNativeTaskMode ? { nodeAgentNativeTaskMode } : {}),

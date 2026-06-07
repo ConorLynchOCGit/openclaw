@@ -253,6 +253,46 @@ describe("overflow compaction in run loop", () => {
     expect(result.meta.error).toBeUndefined();
   });
 
+  it("blocks provider-context admission precheck without retrying or compacting", async () => {
+    const error = new Error(
+      "Provider context admission failed before model invocation. Missing skills: execution-node-workflow.",
+    );
+    mockedRunEmbeddedAttempt.mockResolvedValueOnce(
+      makeAttemptResult({
+        promptError: error,
+        promptErrorSource: "precheck",
+        preflightRecovery: {
+          route: "provider_context_admission_blocked",
+          handled: false,
+          reason: error.message,
+          reasonCodes: ["provider_context_required_admission_blocked"],
+        },
+        effectiveToolNames: ["task", "node_finish"],
+        nodeAgentSessionTrace: {
+          providerContextAdmission: "blocked",
+        },
+      }),
+    );
+
+    const result = await runEmbeddedPiAgent(baseParams);
+
+    expect(mockedRunEmbeddedAttempt).toHaveBeenCalledTimes(1);
+    expect(mockedCompactDirect).not.toHaveBeenCalled();
+    expect(mockedTruncateOversizedToolResultsInSession).not.toHaveBeenCalled();
+    expect(result.payloads).toBeDefined();
+    const payload = result.payloads?.[0];
+    expect(payload?.isError).toBe(true);
+    expect(payload?.text).toContain("Provider context admission failed");
+    expect(result.meta.error).toMatchObject({
+      kind: "provider_context_admission",
+      reasonCodes: ["provider_context_required_admission_blocked"],
+    });
+    expect(result.meta.effectiveToolNames).toEqual(["task", "node_finish"]);
+    expect(result.meta.nodeAgentSessionTrace).toEqual({
+      providerContextAdmission: "blocked",
+    });
+  });
+
   it("falls back to compaction when early truncate-only recovery does not help", async () => {
     mockedRunEmbeddedAttempt
       .mockResolvedValueOnce(

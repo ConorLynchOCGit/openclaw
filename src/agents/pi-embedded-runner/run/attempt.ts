@@ -96,7 +96,12 @@ import {
   findClientToolNameConflicts,
   toClientToolDefinitions,
 } from "../../pi-tool-definition-adapter.js";
-import { createOpenClawCodingTools, resolveToolLoopDetectionConfig } from "../../pi-tools.js";
+import {
+  createOpenClawCodingTools,
+  filterToolsForExecutionScoutMode,
+  isNodeAgentNativeTaskParentToolAllowed,
+  resolveToolLoopDetectionConfig,
+} from "../../pi-tools.js";
 import { wrapStreamFnTextTransforms } from "../../plugin-text-transforms.js";
 import { describeProviderRequestRoutingSummary } from "../../provider-attribution.js";
 import { registerProviderStreamForModel } from "../../provider-stream.js";
@@ -117,7 +122,10 @@ import {
 } from "../../skills.js";
 import { resolveSystemPromptOverride } from "../../system-prompt-override.js";
 import { buildSystemPromptParams } from "../../system-prompt-params.js";
-import { buildSystemPromptReport } from "../../system-prompt-report.js";
+import {
+  buildSystemPromptReport,
+  evaluateRequiredProviderContextAdmission,
+} from "../../system-prompt-report.js";
 import { resolveAgentTimeoutMs } from "../../timeout.js";
 import { UNKNOWN_TOOL_THRESHOLD } from "../../tool-loop-detection.js";
 import {
@@ -323,15 +331,6 @@ export function hasDeliveredNativeTaskResultAwaitingParentTurn(
   return true;
 }
 
-const NODE_AGENT_NATIVE_TASK_PARENT_TOOL_NAMES = new Set([
-  "edit",
-  "node_finish",
-  "openclaw_resource_read",
-  "read_todo",
-  "task",
-  "update_plan",
-]);
-
 export function filterEffectiveToolsForNodeAgentNativeTaskMode<
   TTool extends { name?: string | null },
 >(input: {
@@ -344,13 +343,11 @@ export function filterEffectiveToolsForNodeAgentNativeTaskMode<
   if (input.mode?.enabled !== true) {
     return [...input.tools];
   }
-  const mutationToolName = normalizeOptionalLowercaseString(input.mode.mutationToolName) ?? "edit";
   return input.tools.filter((tool) => {
-    const toolName = normalizeOptionalLowercaseString(tool.name);
-    return Boolean(
-      toolName &&
-      (NODE_AGENT_NATIVE_TASK_PARENT_TOOL_NAMES.has(toolName) || toolName === mutationToolName),
-    );
+    return isNodeAgentNativeTaskParentToolAllowed({
+      toolName: tool.name,
+      mutationToolName: input.mode?.mutationToolName,
+    });
   });
 }
 
@@ -370,7 +367,110 @@ function nativeTaskContextPreservationEvents(
     .slice(-20);
 }
 
-function buildNodeAgentSessionTraceFromEvents(
+function nodeAgentToolResultEvents(
+  events: readonly Record<string, unknown>[],
+): Record<string, unknown>[] {
+  return events.filter((event) => event.eventType === "node_agent_tool_result").slice(-80);
+}
+
+function findFirstToolResultEvent(
+  events: readonly Record<string, unknown>[],
+  predicate: (event: Record<string, unknown>) => boolean,
+): Record<string, unknown> | undefined {
+  return events.find((event) => event.eventType === "node_agent_tool_result" && predicate(event));
+}
+
+function findFirstParentActionEventAfter(
+  events: readonly Record<string, unknown>[],
+  anchor: Record<string, unknown> | undefined,
+): Record<string, unknown> | undefined {
+  const anchorIndex = anchor ? events.indexOf(anchor) : -1;
+  if (anchorIndex < 0) {
+    return undefined;
+  }
+  return events.slice(anchorIndex + 1).find((event) => {
+    if (event.eventType === "node_agent_tool_result") {
+      return isPostChildParentActionEvent(event);
+    }
+    return event.eventType === "node_agent_native_task_result";
+  });
+}
+
+function findFirstParentTodoDecisionEventAfter(
+  events: readonly Record<string, unknown>[],
+  anchor: Record<string, unknown> | undefined,
+): Record<string, unknown> | undefined {
+  const anchorIndex = anchor ? events.indexOf(anchor) : -1;
+  if (anchorIndex < 0) {
+    return undefined;
+  }
+  return events.slice(anchorIndex + 1).find((event) => {
+    return (
+      event.eventType === "node_agent_tool_result" &&
+      stringFromRecord(event, "toolName") === "update_plan"
+    );
+  });
+}
+
+function findFirstParentNextActionEventAfter(
+  events: readonly Record<string, unknown>[],
+  anchor: Record<string, unknown> | undefined,
+): Record<string, unknown> | undefined {
+  const anchorIndex = anchor ? events.indexOf(anchor) : -1;
+  if (anchorIndex < 0) {
+    return undefined;
+  }
+  return events.slice(anchorIndex + 1).find((event) => {
+    if (event.eventType === "node_agent_native_task_result") {
+      return true;
+    }
+    if (event.eventType !== "node_agent_tool_result") {
+      return false;
+    }
+    const toolName = stringFromRecord(event, "toolName");
+    return (
+      toolName === "edit" ||
+      toolName === "write" ||
+      toolName === "apply_patch" ||
+      toolName === "node_finish" ||
+      booleanFromRecord(event, "mutatingAction") === true
+    );
+  });
+}
+
+function isPostChildParentActionEvent(event: Record<string, unknown>): boolean {
+  const toolName = stringFromRecord(event, "toolName");
+  return (
+    toolName === "update_plan" ||
+    toolName === "edit" ||
+    toolName === "write" ||
+    toolName === "apply_patch" ||
+    toolName === "node_finish" ||
+    booleanFromRecord(event, "mutatingAction") === true
+  );
+}
+
+function parentActionRefFromEvent(event: Record<string, unknown> | undefined): string | null {
+  if (!event) {
+    return null;
+  }
+  if (event.eventType === "node_agent_native_task_result") {
+    return stringFromRecord(event, "taskRef") ?? null;
+  }
+  return stringFromRecord(event, "toolResultRef") ?? null;
+}
+
+function parentActionToolNameFromEvent(event: Record<string, unknown> | undefined): string | null {
+  if (!event) {
+    return null;
+  }
+  if (event.eventType === "node_agent_native_task_result") {
+    return "task";
+  }
+  return stringFromRecord(event, "toolName") ?? null;
+}
+
+export function buildNodeAgentSessionTraceFromEvents(
   events: readonly Record<string, unknown>[],
 ): Record<string, unknown> | undefined {
   type ChildBootstrapAdmissionTrace = Record<string, unknown> & {
@@ -386,8 +486,13 @@ function buildNodeAgentSessionTraceFromEvents(
     error: string | null;
   };
   const taskEvents = nativeTaskTraceEvents(events);
+  const toolEvents = nodeAgentToolResultEvents(events);
   const contextPreservationEvents = nativeTaskContextPreservationEvents(events);
-  if (taskEvents.length === 0 && contextPreservationEvents.length === 0) {
+  if (
+    taskEvents.length === 0 &&
+    toolEvents.length === 0 &&
+    contextPreservationEvents.length === 0
+  ) {
     return undefined;
   }
   const contextEvent = taskEvents.find(
@@ -436,10 +541,51 @@ function buildNodeAgentSessionTraceFromEvents(
     taskEvents.some((event) => booleanFromRecord(event, "resultOversized") === true);
   const latestContextPreservationEvent =
     contextPreservationEvents[contextPreservationEvents.length - 1];
+  const firstPlanUpdateEvent = findFirstToolResultEvent(
+    events,
+    (event) => stringFromRecord(event, "toolName") === "update_plan",
+  );
+  const firstEditEvent = findFirstToolResultEvent(events, (event) => {
+    const toolName = stringFromRecord(event, "toolName");
+    return (
+      toolName === "edit" ||
+      toolName === "write" ||
+      toolName === "apply_patch" ||
+      booleanFromRecord(event, "mutatingAction") === true
+    );
+  });
+  const terminalNodeFinishEvent = findFirstToolResultEvent(
+    events,
+    (event) => stringFromRecord(event, "toolName") === "node_finish",
+  );
+  const firstChangeSetEvent = findFirstToolResultEvent(
+    events,
+    (event) => stringFromRecord(event, "changeSetWorkingContextEntryRef") != null,
+  );
+  const parentPostChildActionEvent = findFirstParentActionEventAfter(events, contextEvent);
+  const parentPostValidationActionEvent = findFirstParentActionEventAfter(events, validationEvent);
+  const contextTodoDecisionEvent = findFirstParentTodoDecisionEventAfter(events, contextEvent);
+  const validationTodoDecisionEvent = findFirstParentTodoDecisionEventAfter(
+    events,
+    validationEvent,
+  );
+  const contextNextActionEvent = findFirstParentNextActionEventAfter(
+    events,
+    contextTodoDecisionEvent,
+  );
+  const validationNextActionEvent = findFirstParentNextActionEventAfter(
+    events,
+    validationTodoDecisionEvent,
+  );
   return {
     nativeTaskResultCount: taskEvents.length,
+    nodeAgentToolResultCount: toolEvents.length,
     nativeTaskRef: stringFromRecord(firstEvent, "taskRef") ?? null,
     taskRef: stringFromRecord(firstEvent, "taskRef") ?? null,
+    firstPlanUpdateRef:
+      stringFromRecord(firstPlanUpdateEvent, "todoRef") ??
+      stringFromRecord(firstPlanUpdateEvent, "toolResultRef") ??
+      null,
     scoutSpawnRef: stringFromRecord(contextEvent, "taskRef") ?? null,
     contextScoutSessionKey: stringFromRecord(contextEvent, "childSessionKey") ?? null,
     childSessionKeyRef: stringFromRecord(contextEvent, "childSessionKey") ?? null,
@@ -455,6 +601,11 @@ function buildNodeAgentSessionTraceFromEvents(
       stringFromRecord(contextEvent, "workingContextEntryRef") ??
       stringFromRecord(validationEvent, "workingContextEntryRef") ??
       null,
+    validationStateRef: stringFromRecord(validationEvent, "workingContextEntryRef") ?? null,
+    changeSetRef:
+      stringFromRecord(firstChangeSetEvent, "changeSetWorkingContextEntryRef") ??
+      stringFromRecord(firstChangeSetEvent, "toolResultRef") ??
+      null,
     workingContextPersisted:
       booleanFromRecord(contextEvent, "workingContextPersisted") === true ||
       booleanFromRecord(validationEvent, "workingContextPersisted") === true,
@@ -464,11 +615,42 @@ function buildNodeAgentSessionTraceFromEvents(
     workingContextHasFileGraph:
       booleanFromRecord(contextEvent, "workingContextHasFileGraph") === true ||
       booleanFromRecord(validationEvent, "workingContextHasFileGraph") === true,
+    contextDecisionFooterObserved:
+      booleanFromRecord(contextEvent, "parentDecisionFooterIncluded") === true,
+    contextDecisionFooterKind: stringFromRecord(contextEvent, "parentDecisionFooterKind") ?? null,
+    validationDecisionFooterObserved:
+      booleanFromRecord(validationEvent, "parentDecisionFooterIncluded") === true,
+    validationDecisionFooterKind:
+      stringFromRecord(validationEvent, "parentDecisionFooterKind") ?? null,
+    parentPostChildActionRef: parentActionRefFromEvent(parentPostChildActionEvent),
+    parentSynthesisRef: parentActionRefFromEvent(parentPostChildActionEvent),
+    parentPostChildActionObserved: Boolean(parentPostChildActionEvent),
+    parentPostChildActionToolName: parentActionToolNameFromEvent(parentPostChildActionEvent),
+    parentPostValidationActionRef: parentActionRefFromEvent(parentPostValidationActionEvent),
+    parentPostValidationActionObserved: Boolean(parentPostValidationActionEvent),
+    parentPostValidationActionToolName: parentActionToolNameFromEvent(
+      parentPostValidationActionEvent,
+    ),
+    contextTodoDecisionRef: parentActionRefFromEvent(contextTodoDecisionEvent),
+    contextTodoDecisionObserved: Boolean(contextTodoDecisionEvent),
+    contextNextActionRef: parentActionRefFromEvent(contextNextActionEvent),
+    contextNextActionObserved: Boolean(contextNextActionEvent),
+    contextNextActionToolName: parentActionToolNameFromEvent(contextNextActionEvent),
+    validationTodoDecisionRef: parentActionRefFromEvent(validationTodoDecisionEvent),
+    validationTodoDecisionObserved: Boolean(validationTodoDecisionEvent),
+    validationNextActionRef: parentActionRefFromEvent(validationNextActionEvent),
+    validationNextActionObserved: Boolean(validationNextActionEvent),
+    validationNextActionToolName: parentActionToolNameFromEvent(validationNextActionEvent),
+    firstEditRef: stringFromRecord(firstEditEvent, "toolResultRef") ?? null,
+    validationActionRef: stringFromRecord(validationEvent, "taskRef") ?? null,
+    terminalNodeFinishRef: stringFromRecord(terminalNodeFinishEvent, "toolResultRef") ?? null,
     childResultObserved,
     contextScoutSpawnObserved: Boolean(stringFromRecord(contextEvent, "childSessionKey")),
     validationActionObserved: Boolean(validationEvent),
     validationScoutObserved: Boolean(validationEvent),
     validationScoutResultRef: stringFromRecord(validationEvent, "childResultRef") ?? null,
+    validationStateObserved: Boolean(stringFromRecord(validationEvent, "workingContextEntryRef")),
+    changeSetObserved: Boolean(firstChangeSetEvent),
     childResultOversized,
     childBootstrapAdmissions,
     childStartFailures,
@@ -877,9 +1059,12 @@ export async function runEmbeddedAttempt(
           ],
         })
       : undefined;
-    const effectiveTools = filterEffectiveToolsForNodeAgentNativeTaskMode({
-      tools: [...tools, ...(bundleMcpRuntime?.tools ?? []), ...(bundleLspRuntime?.tools ?? [])],
-      mode: params.nodeAgentNativeTaskMode,
+    const effectiveTools = filterToolsForExecutionScoutMode({
+      tools: filterEffectiveToolsForNodeAgentNativeTaskMode({
+        tools: [...tools, ...(bundleMcpRuntime?.tools ?? []), ...(bundleLspRuntime?.tools ?? [])],
+        mode: params.nodeAgentNativeTaskMode,
+      }),
+      agentId: sessionAgentId,
     });
     const effectiveToolNames = Array.from(
       new Set(
@@ -1097,34 +1282,36 @@ export async function runEmbeddedAttempt(
         systemPrompt: builtAppendPrompt,
       },
     });
-    const systemPromptReport = buildSystemPromptReport({
-      source: "run",
-      generatedAt: Date.now(),
-      sessionId: params.sessionId,
-      sessionKey: params.sessionKey,
-      provider: params.provider,
-      model: params.modelId,
-      workspaceDir: effectiveWorkspace,
-      bootstrapMaxChars,
-      bootstrapTotalMaxChars,
-      bootstrapTruncation: buildBootstrapTruncationReportMeta({
-        analysis: bootstrapAnalysis,
-        warningMode: bootstrapPromptWarningMode,
-        warning: bootstrapPromptWarning,
-      }),
-      sandbox: (() => {
-        const runtime = resolveSandboxRuntimeStatus({
-          cfg: params.config,
-          sessionKey: sandboxSessionKey,
-        });
-        return { mode: runtime.mode, sandboxed: runtime.sandboxed };
-      })(),
-      systemPrompt: appendPrompt,
-      bootstrapFiles: hookAdjustedBootstrapFiles,
-      injectedFiles: contextFiles,
-      skillsPrompt,
-      tools: effectiveTools,
-    });
+    const buildAttemptSystemPromptReport = (systemPrompt: string) =>
+      buildSystemPromptReport({
+        source: "run",
+        generatedAt: Date.now(),
+        sessionId: params.sessionId,
+        sessionKey: params.sessionKey,
+        provider: params.provider,
+        model: params.modelId,
+        workspaceDir: effectiveWorkspace,
+        bootstrapMaxChars,
+        bootstrapTotalMaxChars,
+        bootstrapTruncation: buildBootstrapTruncationReportMeta({
+          analysis: bootstrapAnalysis,
+          warningMode: bootstrapPromptWarningMode,
+          warning: bootstrapPromptWarning,
+        }),
+        sandbox: (() => {
+          const runtime = resolveSandboxRuntimeStatus({
+            cfg: params.config,
+            sessionKey: sandboxSessionKey,
+          });
+          return { mode: runtime.mode, sandboxed: runtime.sandboxed };
+        })(),
+        systemPrompt,
+        bootstrapFiles: hookAdjustedBootstrapFiles,
+        injectedFiles: contextFiles,
+        skillsPrompt,
+        tools: effectiveTools,
+      });
+    let systemPromptReport = buildAttemptSystemPromptReport(appendPrompt);
     const systemPromptOverride = createSystemPromptOverride(appendPrompt);
     let systemPromptText = systemPromptOverride();
 
@@ -1852,7 +2039,8 @@ export async function runEmbeddedAttempt(
           onAgentEvent: async (evt) => {
             if (
               evt.stream === "node-agent" &&
-              evt.data.eventType === "node_agent_native_task_result"
+              (evt.data.eventType === "node_agent_native_task_result" ||
+                evt.data.eventType === "node_agent_tool_result")
             ) {
               nodeAgentSessionTraceEvents.push(evt.data);
             }
@@ -2072,6 +2260,40 @@ export async function runEmbeddedAttempt(
           }
         }
         refreshNativeWorkingContextSystemPrompt();
+        systemPromptReport = buildAttemptSystemPromptReport(systemPromptText);
+        if (params.requiredProviderContextAdmission && !skipPromptSubmission) {
+          const admission = evaluateRequiredProviderContextAdmission({
+            report: systemPromptReport,
+            required: params.requiredProviderContextAdmission,
+          });
+          if (!admission.admitted) {
+            preflightRecovery = {
+              route: "provider_context_admission_blocked",
+              handled: false,
+              reason: admission.message ?? undefined,
+              reasonCodes: admission.reasonCodes,
+            };
+            nodeAgentSessionTraceEvents.push({
+              eventType: "provider_context_admission_blocked",
+              sessionKey: params.sessionKey ?? params.sessionId,
+              agentId: sessionAgentId,
+              missingWorkspaceFileNames: admission.missingWorkspaceFileNames,
+              missingSkillNames: admission.missingSkillNames,
+              truncatedWorkspaceFileNames: admission.truncatedWorkspaceFileNames,
+              reasonCodes: admission.reasonCodes,
+            });
+            promptError = new Error(
+              admission.message ?? "Provider context admission failed before model invocation.",
+            );
+            promptErrorSource = "precheck";
+            skipPromptSubmission = true;
+            log.warn(
+              `[provider-context-admission] blocked model invocation for ` +
+                `${params.provider}/${params.modelId} sessionKey=${params.sessionKey ?? params.sessionId} ` +
+                `reasonCodes=${admission.reasonCodes.join(",")}`,
+            );
+          }
+        }
 
         if (cacheObservabilityEnabled) {
           const cacheObservation = beginPromptCacheObservation({

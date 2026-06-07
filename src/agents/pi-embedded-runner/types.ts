@@ -109,10 +109,12 @@ export type EmbeddedPiRunMeta = {
     kind:
       | "context_overflow"
       | "compaction_failure"
+      | "provider_context_admission"
       | "role_ordering"
       | "image_size"
       | "retry_limit";
     message: string;
+    reasonCodes?: string[];
   };
   /** Stop reason for the agent run (e.g., "completed", "tool_calls"). */
   stopReason?: string;

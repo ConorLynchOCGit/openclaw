@@ -13,6 +13,8 @@ export function buildSubagentSystemPrompt(params: {
   childDepth?: number;
   /** Config value: max allowed spawn depth. */
   maxSpawnDepth?: number;
+  /** Force visible leaf-worker guidance even for a depth-1 child. */
+  leafTask?: boolean;
 }) {
   const taskText =
     typeof params.task === "string" && params.task.trim()
@@ -86,7 +88,7 @@ export function buildSubagentSystemPrompt(params: {
         : []),
       "",
     );
-  } else if (childDepth >= 2) {
+  } else if (params.leafTask || childDepth >= 2) {
     lines.push(
       "## Sub-Agent Spawning",
       "You are a leaf worker and CANNOT spawn further sub-agents. Focus on your assigned task.",

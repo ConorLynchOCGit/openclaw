@@ -602,7 +602,7 @@ describe("RuntimeToolKernel", () => {
             },
           },
         },
-        maxIterations: 1,
+        progressCheckpointIterations: 1,
       });
 
       const result = await scheduler.run("graph-tool-trace");

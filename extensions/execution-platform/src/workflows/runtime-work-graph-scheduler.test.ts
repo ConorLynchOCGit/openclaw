@@ -82,11 +82,11 @@ describe("runtime work graph scheduler", () => {
     };
   }
 
-  it("marks max-iteration terminal stops as needs_review instead of failed", async () => {
+  it("marks explicit no-loop admission stops as needs_review instead of failed", async () => {
     await withSchedulerGraph(async (graphs) => {
       const scheduler = new RuntimeWorkGraphScheduler({
         graphs,
-        maxIterations: 0,
+        progressCheckpointIterations: 0,
         orchestrator: {
           async callSchedulerTool() {
             throw new Error("orchestrator_should_not_run_after_zero_iteration_budget");
@@ -99,7 +99,9 @@ describe("runtime work graph scheduler", () => {
       const snapshot = await graphs.readGraphSnapshot("scheduler-graph");
 
       expect(result.status).toBe("max_iterations");
-      expect(result.reasonCodes).toContain("scheduler_max_iterations_reached");
+      expect(result.reasonCodes).toContain(
+        "scheduler_progress_checkpoint_zero_no_iterations_requested",
+      );
       expect(snapshot?.graph.graphStatus).toBe("needs_review");
     });
   });
@@ -174,15 +176,24 @@ describe("runtime work graph scheduler", () => {
             },
           },
         },
-        maxIterations: 1,
+        progressCheckpointIterations: 1,
       });
 
       const result = await scheduler.run("scheduler-graph");
+      const snapshot = await graphs.readGraphSnapshot("scheduler-graph");
+      const executedNode = snapshot?.nodes.find(
+        (node) => node.nodeId === "implementation-worker-owned-context",
+      );
+      const executedNodeMetadata = executedNode?.metadata as
+        | { lastStatusReasonCodes?: unknown }
+        | undefined;
 
       expect(nativeNodeSessionInvoked).toBe(true);
       expect(legacyExecutorInvoked).toBe(false);
       expect(result.executedNodeIds).toContain("implementation-worker-owned-context");
-      expect(result.reasonCodes).toContain("node_agent_session_invoked");
+      expect(executedNodeMetadata?.lastStatusReasonCodes).toEqual(
+        expect.arrayContaining(["node_agent_session_invoked"]),
+      );
       expect(result.reasonCodes).not.toContain("resource_objective_focus_required");
       expect(result.reasonCodes).not.toContain("node_resource_demand_required");
       expect(result.reasonCodes).not.toContain(
@@ -197,7 +208,7 @@ describe("runtime work graph scheduler", () => {
         graphs,
         requirementMap: graphPatchRequirementMap(),
         closureRunMode: "proof",
-        maxIterations: 1,
+        progressCheckpointIterations: 1,
         maxSchedulerToolTurns: 8,
         orchestrator: {
           async callSchedulerTool(input) {

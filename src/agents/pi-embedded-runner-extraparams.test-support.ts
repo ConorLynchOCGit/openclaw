@@ -5,7 +5,7 @@ import { applyExtraParamsToAgent } from "./pi-embedded-runner/extra-params.js";
 export function runExtraParamsPayloadCase(params: {
   provider: string;
   modelId: string;
-  thinkingLevel?: "off" | "low" | "medium" | "high";
+  thinkingLevel?: "off" | "low" | "medium" | "high" | "xhigh";
   payload?: Record<string, unknown>;
   cfg?: Record<string, unknown>;
 }) {

@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { SessionSystemPromptReport } from "../../config/sessions/types.js";
 import type { SpawnSubagentResult } from "../subagent-spawn.js";
+import { buildSubagentSystemPrompt } from "../subagent-system-prompt.js";
 import {
   buildChildBootstrapAdmission,
   buildParentVisibleChildResult,
@@ -39,8 +40,21 @@ function readContentText(result: unknown): string {
     .join("\n");
 }
 
+function childCanonicalDocPaths(agentId: string): string[] {
+  return ["IDENTITY.md", "AGENTS.md", "BOOTSTRAP.md", "TOOLS.md"].map(
+    (docName) => `/root/.openclaw/agents/${agentId}/agent/${docName}`,
+  );
+}
+
+function childToolNames(agentId: string): string[] {
+  return agentId === "execution-validation-scout"
+    ? ["read", "list", "glob", "grep", "exec"]
+    : ["read", "list", "glob", "grep"];
+}
+
 function makeChildProviderReport(
   overrides: Partial<SessionSystemPromptReport> = {},
+  agentId = "execution-context-scout",
 ): SessionSystemPromptReport {
   const base: SessionSystemPromptReport = {
     source: "run",
@@ -53,7 +67,7 @@ function makeChildProviderReport(
     injectedWorkspaceFiles: [
       {
         name: "IDENTITY.md",
-        path: "/root/.openclaw/agents/execution-context-scout/agent/IDENTITY.md",
+        path: `/root/.openclaw/agents/${agentId}/agent/IDENTITY.md`,
         missing: false,
         rawChars: 10,
         injectedChars: 10,
@@ -61,7 +75,7 @@ function makeChildProviderReport(
       },
       {
         name: "AGENTS.md",
-        path: "/root/.openclaw/agents/execution-context-scout/agent/AGENTS.md",
+        path: `/root/.openclaw/agents/${agentId}/agent/AGENTS.md`,
         missing: false,
         rawChars: 10,
         injectedChars: 10,
@@ -69,7 +83,7 @@ function makeChildProviderReport(
       },
       {
         name: "BOOTSTRAP.md",
-        path: "/root/.openclaw/agents/execution-context-scout/agent/BOOTSTRAP.md",
+        path: `/root/.openclaw/agents/${agentId}/agent/BOOTSTRAP.md`,
         missing: false,
         rawChars: 10,
         injectedChars: 10,
@@ -77,7 +91,7 @@ function makeChildProviderReport(
       },
       {
         name: "TOOLS.md",
-        path: "/root/.openclaw/agents/execution-context-scout/agent/TOOLS.md",
+        path: `/root/.openclaw/agents/${agentId}/agent/TOOLS.md`,
         missing: false,
         rawChars: 10,
         injectedChars: 10,
@@ -88,18 +102,22 @@ function makeChildProviderReport(
       promptChars: 50,
       entries: [
         {
-          name: "execution-context-scout",
+          name: agentId,
           blockChars: 50,
-          location: "/root/.openclaw/workspace/skills/execution-context-scout/SKILL.md",
-          sourceRef: "openclaw-skill-file://execution-context-scout",
-          sourceHash: "context-scout-skill-hash",
+          location: `/root/.openclaw/workspace/skills/${agentId}/SKILL.md`,
+          sourceRef: `openclaw-skill-file://${agentId}`,
+          sourceHash: `${agentId}-skill-hash`,
         },
       ],
     },
     tools: {
       listChars: 0,
       schemaChars: 0,
-      entries: [],
+      entries: childToolNames(agentId).map((name) => ({
+        name,
+        summaryChars: 10,
+        schemaChars: 10,
+      })),
     },
   };
   return {
@@ -191,6 +209,7 @@ describe("native task tool", () => {
         mode: "run",
         thread: false,
         cleanup: "keep",
+        leafTask: true,
         expectsCompletionMessage: true,
       }),
       expect.objectContaining({
@@ -220,8 +239,252 @@ describe("native task tool", () => {
     });
     expect(readContentText(result)).toContain("Bounded excerpt");
     expect(readContentText(result)).toContain("native-task-tool.ts");
+    expect(readContentText(result)).toContain(
+      "Parent decision required: update todo, then choose one: enough for minimal edit / need more context / blocked.",
+    );
+    expect(readContentText(result)).toContain(
+      "If enough, make the smallest useful edit from the returned bounded source windows.",
+    );
     expect(readContentText(result)).not.toContain('"resultText"');
     expect(details).not.toHaveProperty("resultText");
+  });
+
+  it("supports independent parallel scout task calls without sharing child state", async () => {
+    const spawnSubagent = vi.fn(async (params: { label?: string }) => {
+      const suffix = params.label === "plugin scout" ? "plugin" : "validation";
+      return {
+        status: "accepted" as const,
+        childSessionKey: `agent:execution-context-scout:subagent:child-${suffix}`,
+        runId: `run-child-${suffix}`,
+        mode: "run" as const,
+      };
+    });
+    const waitForForegroundResult = vi.fn(
+      async (params: {
+        childSessionKey: string;
+        runId: string;
+      }): Promise<NativeTaskForegroundResult> => ({
+        status: "completed",
+        foreground: true,
+        childSessionKey: params.childSessionKey,
+        runId: params.runId,
+        waitStatus: "ok",
+        resultText: [
+          `Direct answer: ${params.runId} completed.`,
+          "",
+          "Bounded source windows:",
+          "```ts",
+          `export const ${params.runId.replace(/-/g, "_")} = true;`,
+          "```",
+          "",
+          "file_graph:",
+          `- ${params.runId}.ts -> parent via scout result`,
+        ].join("\n"),
+        resultDeliveredToParentContext: true,
+      }),
+    );
+    const tool = createNativeTaskTool({
+      allowedAgentIds: ["execution-context-scout"],
+      spawnSubagent,
+      waitForForegroundResult,
+    });
+
+    const [pluginResult, validationResult] = await Promise.all([
+      tool.execute("task-parallel-plugin-scout", {
+        agentId: "execution-context-scout",
+        task: "Map plugin registration source windows.",
+        label: "plugin scout",
+      }),
+      tool.execute("task-parallel-validation-scout", {
+        agentId: "execution-context-scout",
+        task: "Map validation gate source windows.",
+        label: "validation scout",
+      }),
+    ]);
+
+    expect(spawnSubagent).toHaveBeenCalledTimes(2);
+    expect(waitForForegroundResult).toHaveBeenCalledTimes(2);
+    expect(readDetails(pluginResult)).toMatchObject({
+      childSessionKey: "agent:execution-context-scout:subagent:child-plugin",
+      runId: "run-child-plugin",
+      resultDeliveredToParentContext: true,
+    });
+    expect(readDetails(validationResult)).toMatchObject({
+      childSessionKey: "agent:execution-context-scout:subagent:child-validation",
+      runId: "run-child-validation",
+      resultDeliveredToParentContext: true,
+    });
+    expect(readContentText(pluginResult)).toContain("run-child-plugin completed");
+    expect(readContentText(validationResult)).toContain("run-child-validation completed");
+  });
+
+  it("returns a continuation token instead of failing when a foreground child is still pending", async () => {
+    const childSessionKey = "agent:execution-context-scout:subagent:child-pending";
+    const runId = "run-child-pending";
+    const continuationId = `openclaw-native-task-continuation://${encodeURIComponent(
+      childSessionKey,
+    )}/${encodeURIComponent(runId)}`;
+    const spawnResult: SpawnSubagentResult = {
+      status: "accepted",
+      childSessionKey,
+      runId,
+      mode: "run",
+    };
+    const foregroundResult: NativeTaskForegroundResult = {
+      status: "pending",
+      foreground: true,
+      childSessionKey,
+      runId,
+      waitStatus: "pending",
+      resultDeliveredToParentContext: false,
+    };
+    const tool = createNativeTaskTool({
+      allowedAgentIds: ["execution-context-scout"],
+      spawnSubagent: vi.fn(async () => spawnResult),
+      waitForForegroundResult: vi.fn(async () => foregroundResult),
+    });
+
+    const result = await tool.execute("task-pending-context-scout", {
+      agentId: "execution-context-scout",
+      task: "Map relevant source windows.",
+    });
+
+    const text = readContentText(result);
+    expect(text).toContain("still pending at the foreground wait checkpoint");
+    expect(text).toContain(`continuationId: ${continuationId}`);
+    expect(text).toContain("Do not spawn duplicate scout work");
+    expect(text).toContain("call task again with the same agentId and continuationId");
+    expect(readDetails(result)).toMatchObject({
+      status: "pending",
+      waitStatus: "pending",
+      childSessionKey,
+      runId,
+      continuationId,
+      resultDeliveredToParentContext: false,
+    });
+    expect(readDetails(result)).not.toHaveProperty("childStartFailureKind");
+  });
+
+  it("waits on a native task continuation without spawning duplicate scout work", async () => {
+    const childSessionKey = "agent:execution-context-scout:subagent:child-continue";
+    const runId = "run-child-continue";
+    const continuationId = `openclaw-native-task-continuation://${encodeURIComponent(
+      childSessionKey,
+    )}/${encodeURIComponent(runId)}`;
+    const spawnSubagent = vi.fn();
+    const waitForForegroundResult = vi.fn(
+      async (): Promise<NativeTaskForegroundResult> => ({
+        status: "completed",
+        foreground: true,
+        childSessionKey,
+        runId,
+        waitStatus: "ok",
+        resultText:
+          "Direct answer:\n\nBounded source windows:\n```ts\nexport const ready = true;\n```",
+        resultDeliveredToParentContext: true,
+      }),
+    );
+    const tool = createNativeTaskTool({
+      allowedAgentIds: ["execution-context-scout"],
+      spawnSubagent,
+      waitForForegroundResult,
+    });
+
+    const result = await tool.execute("task-continuation-context-scout", {
+      agentId: "execution-context-scout",
+      continuationId,
+    });
+
+    expect(spawnSubagent).not.toHaveBeenCalled();
+    expect(waitForForegroundResult).toHaveBeenCalledWith({
+      childSessionKey,
+      runId,
+      requestedAgentId: "execution-context-scout",
+      runTimeoutSeconds: undefined,
+      parentVisibleResultMaxChars: 12_000,
+      readChildSystemPromptReport: undefined,
+    });
+    expect(readContentText(result)).toContain("export const ready = true");
+    expect(readDetails(result)).toMatchObject({
+      status: "completed",
+      childSessionKey,
+      runId,
+      continuationId,
+      continuationUsed: true,
+      resultDeliveredToParentContext: true,
+    });
+  });
+
+  it("rejects native task continuation tokens for the wrong child agent", async () => {
+    const continuationId = `openclaw-native-task-continuation://${encodeURIComponent(
+      "agent:execution-context-scout:subagent:child-continue",
+    )}/${encodeURIComponent("run-child-continue")}`;
+    const spawnSubagent = vi.fn();
+    const waitForForegroundResult = vi.fn();
+    const tool = createNativeTaskTool({
+      allowedAgentIds: ["execution-context-scout", "execution-validation-scout"],
+      spawnSubagent,
+      waitForForegroundResult,
+    });
+
+    await expect(
+      tool.execute("task-wrong-continuation-agent", {
+        agentId: "execution-validation-scout",
+        continuationId,
+      }),
+    ).rejects.toThrow(/continuationId child session does not match/i);
+    expect(spawnSubagent).not.toHaveBeenCalled();
+    expect(waitForForegroundResult).not.toHaveBeenCalled();
+  });
+
+  it("keeps execution scout child prompts in leaf mode without raw sessions_spawn guidance", () => {
+    const prompt = buildSubagentSystemPrompt({
+      childSessionKey: "agent:execution-context-scout:subagent:child-1",
+      task: "Map source context for the parent execution-coding node.",
+      childDepth: 1,
+      maxSpawnDepth: 1,
+      leafTask: true,
+    });
+
+    expect(prompt).toContain("You are a leaf worker and CANNOT spawn further sub-agents");
+    expect(prompt).not.toContain("sessions_spawn");
+    expect(prompt).not.toContain("You CAN spawn your own sub-agents");
+  });
+
+  it("appends the validation parent-decision footer to validation scout results", async () => {
+    const spawnResult: SpawnSubagentResult = {
+      status: "accepted",
+      childSessionKey: "agent:execution-validation-scout:subagent:child-validate",
+      runId: "run-child-validate",
+      mode: "run",
+    };
+    const foregroundResult: NativeTaskForegroundResult = {
+      status: "completed",
+      foreground: true,
+      childSessionKey: spawnResult.childSessionKey!,
+      runId: spawnResult.runId!,
+      waitStatus: "ok",
+      resultText:
+        "Validation result: pnpm test:file src/agents/tools/native-task-tool.test.ts passed.",
+      resultDeliveredToParentContext: true,
+    };
+    const tool = createNativeTaskTool({
+      allowedAgentIds: ["execution-validation-scout"],
+      spawnSubagent: vi.fn(async () => spawnResult),
+      waitForForegroundResult: vi.fn(async () => foregroundResult),
+    });
+
+    const result = await tool.execute("task-valid-validation-scout", {
+      agentId: "execution-validation-scout",
+      task: "Validate the native task footer behavior.",
+    });
+
+    expect(readContentText(result)).toContain(
+      "Parent decision required: update todo, then choose one: node/todo complete / repair from current context / need more context / blocked.",
+    );
+    expect(readContentText(result)).toContain(
+      "Then repair, delegate more context, validate again, call node_finish, or finish with a typed blocker.",
+    );
   });
 
   it("does not deliver mechanically truncated child output as parent edit context", async () => {
@@ -429,7 +692,7 @@ describe("native task tool", () => {
       canonicalDocsAdmitted: true,
       requiredSkillAdmitted: true,
       requiredSkillSourceRef: "openclaw-skill-file://execution-context-scout",
-      requiredSkillSourceHash: "context-scout-skill-hash",
+      requiredSkillSourceHash: "execution-context-scout-skill-hash",
       requiredSkillLocation: "/root/.openclaw/workspace/skills/execution-context-scout/SKILL.md",
       missingRequiredSources: [],
       truncatedRequiredSources: [],
@@ -501,5 +764,151 @@ describe("native task tool", () => {
         }),
       ),
     ).toBe("child_provider_bootstrap_report_missing");
+  });
+
+  it("requires validation-scout canonical docs and skill for validation child admission", () => {
+    const validationDocPaths = childCanonicalDocPaths("execution-validation-scout");
+    const admitted = buildChildBootstrapAdmission({
+      childSessionKey: "agent:execution-validation-scout:subagent:child-validate",
+      childAgentId: "execution-validation-scout",
+      report: makeChildProviderReport({}, "execution-validation-scout"),
+      requiredCanonicalDocPaths: validationDocPaths,
+    });
+
+    expect(admitted).toMatchObject({
+      providerReportObserved: true,
+      childAgentId: "execution-validation-scout",
+      canonicalDocsAdmitted: true,
+      requiredSkillAdmitted: true,
+      requiredSkillSourceRef: "openclaw-skill-file://execution-validation-scout",
+      requiredSkillSourceHash: "execution-validation-scout-skill-hash",
+      requiredSkillLocation: "/root/.openclaw/workspace/skills/execution-validation-scout/SKILL.md",
+      missingRequiredSources: [],
+      truncatedRequiredSources: [],
+    });
+    expect(classifyChildBootstrapAdmissionFailure(admitted)).toBeUndefined();
+
+    const wrongScoutReport = buildChildBootstrapAdmission({
+      childSessionKey: "agent:execution-validation-scout:subagent:child-validate",
+      childAgentId: "execution-validation-scout",
+      report: makeChildProviderReport({}, "execution-context-scout"),
+      requiredCanonicalDocPaths: validationDocPaths,
+    });
+
+    expect(wrongScoutReport).toMatchObject({
+      providerReportObserved: true,
+      childAgentId: "execution-validation-scout",
+      canonicalDocsAdmitted: false,
+      requiredSkillAdmitted: false,
+      missingRequiredSources: [
+        "agent-doc:execution-validation-scout:IDENTITY.md",
+        "agent-doc:execution-validation-scout:AGENTS.md",
+        "agent-doc:execution-validation-scout:BOOTSTRAP.md",
+        "agent-doc:execution-validation-scout:TOOLS.md",
+        "skill:execution-validation-scout:execution-validation-scout",
+      ],
+      truncatedRequiredSources: [],
+    });
+    expect(classifyChildBootstrapAdmissionFailure(wrongScoutReport)).toBe("child_docs_missing");
+
+    const validationDocsWrongSkill = buildChildBootstrapAdmission({
+      childSessionKey: "agent:execution-validation-scout:subagent:child-validate",
+      childAgentId: "execution-validation-scout",
+      report: makeChildProviderReport(
+        {
+          skills: {
+            promptChars: 50,
+            entries: [
+              {
+                name: "execution-context-scout",
+                blockChars: 50,
+                location: "/root/.openclaw/workspace/skills/execution-context-scout/SKILL.md",
+                sourceRef: "openclaw-skill-file://execution-context-scout",
+                sourceHash: "execution-context-scout-skill-hash",
+              },
+            ],
+          },
+        },
+        "execution-validation-scout",
+      ),
+      requiredCanonicalDocPaths: validationDocPaths,
+    });
+
+    expect(validationDocsWrongSkill).toMatchObject({
+      providerReportObserved: true,
+      childAgentId: "execution-validation-scout",
+      canonicalDocsAdmitted: true,
+      requiredSkillAdmitted: false,
+      missingRequiredSources: ["skill:execution-validation-scout:execution-validation-scout"],
+      truncatedRequiredSources: [],
+    });
+    expect(classifyChildBootstrapAdmissionFailure(validationDocsWrongSkill)).toBe(
+      "child_skill_missing",
+    );
+  });
+
+  it("does not admit child canonical docs by basename when exact child paths are required", () => {
+    const wrongAgentReport = makeChildProviderReport({
+      injectedWorkspaceFiles: [
+        {
+          name: "IDENTITY.md",
+          path: "/root/.openclaw/agents/execution-coding/agent/IDENTITY.md",
+          missing: false,
+          rawChars: 10,
+          injectedChars: 10,
+          truncated: false,
+        },
+        {
+          name: "AGENTS.md",
+          path: "/root/.openclaw/agents/execution-coding/agent/AGENTS.md",
+          missing: false,
+          rawChars: 10,
+          injectedChars: 10,
+          truncated: false,
+        },
+        {
+          name: "BOOTSTRAP.md",
+          path: "/root/.openclaw/agents/execution-coding/agent/BOOTSTRAP.md",
+          missing: false,
+          rawChars: 10,
+          injectedChars: 10,
+          truncated: false,
+        },
+        {
+          name: "TOOLS.md",
+          path: "/root/.openclaw/agents/execution-coding/agent/TOOLS.md",
+          missing: false,
+          rawChars: 10,
+          injectedChars: 10,
+          truncated: false,
+        },
+      ],
+    });
+
+    const blocked = buildChildBootstrapAdmission({
+      childSessionKey: "agent:execution-context-scout:subagent:child-1",
+      childAgentId: "execution-context-scout",
+      report: wrongAgentReport,
+      requiredCanonicalDocPaths: [
+        "/root/.openclaw/agents/execution-context-scout/agent/IDENTITY.md",
+        "/root/.openclaw/agents/execution-context-scout/agent/AGENTS.md",
+        "/root/.openclaw/agents/execution-context-scout/agent/BOOTSTRAP.md",
+        "/root/.openclaw/agents/execution-context-scout/agent/TOOLS.md",
+      ],
+    });
+
+    expect(blocked).toMatchObject({
+      providerReportObserved: true,
+      canonicalDocsAdmitted: false,
+      requiredSkillAdmitted: true,
+      missingRequiredSources: [
+        "agent-doc:execution-context-scout:IDENTITY.md",
+        "agent-doc:execution-context-scout:AGENTS.md",
+        "agent-doc:execution-context-scout:BOOTSTRAP.md",
+        "agent-doc:execution-context-scout:TOOLS.md",
+      ],
+      truncatedRequiredSources: [],
+    });
+    expect(classifyChildBootstrapAdmissionFailure(blocked)).toBe("child_docs_missing");
   });
 });

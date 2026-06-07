@@ -452,6 +452,12 @@ export type AgentCompactionConfig = {
    */
   truncateAfterCompaction?: boolean;
   /**
+   * Maximum retained pre-compaction snapshot files per session.
+   * Older generated checkpoint files are deleted when new checkpoints are
+   * persisted. Default: 5.
+   */
+  maxCheckpointsPerSession?: number;
+  /**
    * Send a "🧹 Compacting context..." notice to the user when compaction starts.
    * Default: false (silent by default).
    */

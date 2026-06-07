@@ -4,6 +4,21 @@ import { buildBootstrapInjectionStats } from "./bootstrap-budget.js";
 import type { EmbeddedContextFile } from "./pi-embedded-helpers.js";
 import type { WorkspaceBootstrapFile } from "./workspace.js";
 
+export type RequiredProviderContextAdmission = {
+  workspaceFileNames?: readonly string[];
+  skillNames?: readonly string[];
+  rejectTruncatedWorkspaceFiles?: boolean;
+};
+
+export type RequiredProviderContextAdmissionDecision = {
+  admitted: boolean;
+  missingWorkspaceFileNames: string[];
+  missingSkillNames: string[];
+  truncatedWorkspaceFileNames: string[];
+  reasonCodes: string[];
+  message: string | null;
+};
+
 function extractBetween(
   input: string,
   startMarker: string,
@@ -22,6 +37,44 @@ function extractBetween(
 
 function parseXmlAttr(attrs: string, name: string): string | undefined {
   return attrs.match(new RegExp(`\\b${name}=["']([^"']+)["']`, "i"))?.[1]?.trim() || undefined;
+}
+
+function normalizeAdmissionLookupName(value: string | null | undefined): string {
+  const trimmed = value?.trim();
+  if (!trimmed) {
+    return "";
+  }
+  const parts = trimmed.split(/[\\/]/u);
+  for (let index = parts.length - 1; index >= 0; index -= 1) {
+    const part = parts[index]?.trim();
+    if (part) {
+      return part;
+    }
+  }
+  return "";
+}
+
+function normalizeAdmissionPath(value: string | null | undefined): string {
+  return value?.trim().replace(/\\/gu, "/").replace(/\/+/gu, "/") ?? "";
+}
+
+function hasPathSeparator(value: string): boolean {
+  return /[\\/]/u.test(value);
+}
+
+function matchesRequiredWorkspaceFile(
+  entry: SessionSystemPromptReport["injectedWorkspaceFiles"][number],
+  required: string,
+): boolean {
+  if (hasPathSeparator(required)) {
+    const normalizedRequired = normalizeAdmissionPath(required);
+    return (
+      normalizeAdmissionPath(entry.path) === normalizedRequired ||
+      normalizeAdmissionPath(entry.name) === normalizedRequired
+    );
+  }
+  const requiredName = normalizeAdmissionLookupName(required);
+  return normalizeAdmissionLookupName(entry.name || entry.path) === requiredName;
 }
 
 function parseSkillBlocks(skillsPrompt: string): SessionSystemPromptReport["skills"]["entries"] {
@@ -150,5 +203,86 @@ export function buildSystemPromptReport(params: {
       schemaChars: toolsSchemaChars,
       entries: toolsEntries,
     },
+  };
+}
+
+export function evaluateRequiredProviderContextAdmission(params: {
+  report: SessionSystemPromptReport;
+  required: RequiredProviderContextAdmission;
+}): RequiredProviderContextAdmissionDecision {
+  const requiredWorkspaceFileNames = Array.from(
+    new Set((params.required.workspaceFileNames ?? []).map((name) => name.trim()).filter(Boolean)),
+  );
+  const requiredSkillNames = Array.from(
+    new Set((params.required.skillNames ?? []).map((name) => name.trim()).filter(Boolean)),
+  );
+  const rejectTruncatedWorkspaceFiles = params.required.rejectTruncatedWorkspaceFiles !== false;
+  const filesByName = new Map(
+    params.report.injectedWorkspaceFiles.map((entry) => [
+      normalizeAdmissionLookupName(entry.name || entry.path),
+      entry,
+    ]),
+  );
+  const skillsByName = new Map(
+    params.report.skills.entries.map((entry) => [entry.name.trim(), entry]),
+  );
+
+  const missingWorkspaceFileNames: string[] = [];
+  const truncatedWorkspaceFileNames: string[] = [];
+  for (const name of requiredWorkspaceFileNames) {
+    const entry = hasPathSeparator(name)
+      ? params.report.injectedWorkspaceFiles.find((candidate) =>
+          matchesRequiredWorkspaceFile(candidate, name),
+        )
+      : filesByName.get(normalizeAdmissionLookupName(name));
+    if (!entry || entry.missing || entry.injectedChars <= 0) {
+      missingWorkspaceFileNames.push(name);
+    }
+    if (rejectTruncatedWorkspaceFiles && entry?.truncated) {
+      truncatedWorkspaceFileNames.push(name);
+    }
+  }
+
+  const missingSkillNames = requiredSkillNames.filter(
+    (name) => (skillsByName.get(name)?.blockChars ?? 0) <= 0,
+  );
+
+  const admitted =
+    missingWorkspaceFileNames.length === 0 &&
+    missingSkillNames.length === 0 &&
+    truncatedWorkspaceFileNames.length === 0;
+  const reasonCodes = [
+    admitted
+      ? "provider_context_required_admission_accepted"
+      : "provider_context_required_admission_blocked",
+    missingWorkspaceFileNames.length > 0
+      ? "provider_context_required_workspace_files_missing"
+      : null,
+    truncatedWorkspaceFileNames.length > 0
+      ? "provider_context_required_workspace_files_truncated"
+      : null,
+    missingSkillNames.length > 0 ? "provider_context_required_skills_missing" : null,
+  ].filter((code): code is string => Boolean(code));
+  const message = admitted
+    ? null
+    : [
+        "Provider context admission failed before model invocation.",
+        missingWorkspaceFileNames.length > 0
+          ? `Missing workspace files: ${missingWorkspaceFileNames.join(", ")}.`
+          : null,
+        truncatedWorkspaceFileNames.length > 0
+          ? `Truncated workspace files: ${truncatedWorkspaceFileNames.join(", ")}.`
+          : null,
+        missingSkillNames.length > 0 ? `Missing skills: ${missingSkillNames.join(", ")}.` : null,
+      ]
+        .filter((line): line is string => Boolean(line))
+        .join(" ");
+  return {
+    admitted,
+    missingWorkspaceFileNames,
+    missingSkillNames,
+    truncatedWorkspaceFileNames,
+    reasonCodes,
+    message,
   };
 }

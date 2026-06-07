@@ -30,8 +30,8 @@ export type RuntimeTaskBudgetPolicy = {
   maxOutputTokens: number | null;
   maxCostUsd: number | null;
   retryLimit: number;
-  maxRepairAttempts: number;
-  maxContinuationTurns: number;
+  expectedRepairAttemptCheckpoint: number;
+  expectedContinuationTurnCheckpoint: number;
   reasonCodes: string[];
   rawPromptStored: false;
   rawResponseStored: false;
@@ -138,8 +138,10 @@ export function deriveRuntimeTaskBudgetPolicy(
       input.capability?.defaultBudgetPolicy.maxCostUsd ??
       (budgetClass === "long_running" ? 3 : budgetClass === "complex" ? 1 : 0.25),
     retryLimit: input.capability?.defaultBudgetPolicy.retryLimit ?? 0,
-    maxRepairAttempts: budgetClass === "long_running" || budgetClass === "complex" ? 2 : 1,
-    maxContinuationTurns: budgetClass === "long_running" ? 8 : budgetClass === "complex" ? 4 : 2,
+    expectedRepairAttemptCheckpoint:
+      budgetClass === "long_running" || budgetClass === "complex" ? 2 : 1,
+    expectedContinuationTurnCheckpoint:
+      budgetClass === "long_running" ? 8 : budgetClass === "complex" ? 4 : 2,
     reasonCodes: [
       "runtime_task_budget_policy_derived",
       `runtime_task_budget_class:${budgetClass}`,
@@ -175,8 +177,8 @@ export function runtimeToolBudgetFromPolicy(policy: RuntimeTaskBudgetPolicy): Ru
       staleProgressAfterMs: policy.staleProgressAfterMs,
       abortGraceMs: policy.abortGraceMs,
       retryLimit: policy.retryLimit,
-      maxRepairAttempts: policy.maxRepairAttempts,
-      maxContinuationTurns: policy.maxContinuationTurns,
+      expectedRepairAttemptCheckpoint: policy.expectedRepairAttemptCheckpoint,
+      expectedContinuationTurnCheckpoint: policy.expectedContinuationTurnCheckpoint,
       rawPromptStored: false,
       rawResponseStored: false,
       rawProviderLogStored: false,
@@ -208,8 +210,8 @@ export function summarizeRuntimeTaskBudgetPolicy(policy: RuntimeTaskBudgetPolicy
     maxOutputTokens: policy.maxOutputTokens,
     maxCostUsd: policy.maxCostUsd,
     retryLimit: policy.retryLimit,
-    maxRepairAttempts: policy.maxRepairAttempts,
-    maxContinuationTurns: policy.maxContinuationTurns,
+    expectedRepairAttemptCheckpoint: policy.expectedRepairAttemptCheckpoint,
+    expectedContinuationTurnCheckpoint: policy.expectedContinuationTurnCheckpoint,
     reasonCodes: policy.reasonCodes,
     rawPromptStored: false,
     rawResponseStored: false,

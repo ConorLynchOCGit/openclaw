@@ -55,6 +55,11 @@ import { runEmbeddedPiAgent } from "../agents/pi-embedded-runner/run.js";
 import { resolveEffectiveToolPolicyAccess } from "../agents/pi-tools.policy.js";
 import { buildRequiredActiveSkillSnapshot, type SkillSnapshot } from "../agents/skills.js";
 import {
+  materializeSourceRuntimeFiles,
+  type SourceRuntimeMaterializationResult,
+} from "../agents/source-runtime-unification.js";
+import { evaluateRequiredProviderContextAdmission } from "../agents/system-prompt-report.js";
+import {
   getRuntimeConfigSnapshot,
   getRuntimeConfigSourceSnapshot,
   loadConfig,
@@ -124,6 +129,15 @@ export function createGatewayRoleModelClient(): OpenRouterAgentTeamModelClient |
 }
 
 type GatewayThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "adaptive";
+
+type GatewaySourceRuntimeMaterializationPreflight = {
+  status: "aligned" | "blocked";
+  recordPath: string | null;
+  validationIssues: string[];
+  reasonCodes: string[];
+  errorName?: string;
+  errorHash?: string;
+};
 
 function normalizeGatewayThinkingLevel(value: unknown): GatewayThinkingLevel | undefined {
   return value === "off" ||
@@ -308,8 +322,38 @@ const REQUIRED_SCOUT_TOOLS_BY_AGENT_ID: Record<(typeof REQUIRED_SCOUT_AGENTS)[nu
 
 const FORBIDDEN_SCOUT_TOOLS_BY_AGENT_ID: Record<(typeof REQUIRED_SCOUT_AGENTS)[number], string[]> =
   {
-    "execution-context-scout": ["write", "edit", "apply_patch", NODE_FINISH_TOOL_NAME],
-    "execution-validation-scout": ["write", "edit", "apply_patch", NODE_FINISH_TOOL_NAME],
+    "execution-context-scout": [
+      "write",
+      "edit",
+      "apply_patch",
+      "process",
+      "update_plan",
+      "read_todo",
+      "task",
+      "sessions_spawn",
+      "sessions_yield",
+      "subagents",
+      "agents_list",
+      OPENCLAW_RESOURCE_READ_TOOL_NAME,
+      "resolve_openclaw_resource",
+      NODE_FINISH_TOOL_NAME,
+    ],
+    "execution-validation-scout": [
+      "write",
+      "edit",
+      "apply_patch",
+      "process",
+      "update_plan",
+      "read_todo",
+      "task",
+      "sessions_spawn",
+      "sessions_yield",
+      "subagents",
+      "agents_list",
+      OPENCLAW_RESOURCE_READ_TOOL_NAME,
+      "resolve_openclaw_resource",
+      NODE_FINISH_TOOL_NAME,
+    ],
   };
 
 type GatewayNodeStartPreparation =
@@ -394,9 +438,58 @@ function emptyBootstrapAdmissionSummary(): NodeAgentStartReceipt["bootstrapAdmis
   };
 }
 
+function providerToolNamesFromSystemPromptReport(
+  report: SessionSystemPromptReport | null | undefined,
+): string[] {
+  return uniqueStringList(report?.tools.entries.map((entry) => entry.name) ?? []);
+}
+
+function sameStringSet(left: readonly string[], right: readonly string[]): boolean {
+  if (left.length !== right.length) {
+    return false;
+  }
+  const rightSet = new Set(right);
+  return left.every((value) => rightSet.has(value));
+}
+
 function normalizeAdmissionName(value: string | null | undefined): string {
   const trimmed = value?.trim();
   return trimmed ? path.basename(trimmed) : "";
+}
+
+function normalizeAdmissionPath(value: string | null | undefined): string {
+  return value?.trim().replace(/\\/gu, "/").replace(/\/+/gu, "/") ?? "";
+}
+
+function admissionLookupHasPathSeparator(value: string): boolean {
+  return /[\\/]/u.test(value);
+}
+
+function findProviderWorkspaceFileEntry(
+  report: SessionSystemPromptReport,
+  lookup: string,
+): SessionSystemPromptReport["injectedWorkspaceFiles"][number] | undefined {
+  if (admissionLookupHasPathSeparator(lookup)) {
+    const normalizedLookup = normalizeAdmissionPath(lookup);
+    return report.injectedWorkspaceFiles.find(
+      (entry) =>
+        normalizeAdmissionPath(entry.path) === normalizedLookup ||
+        normalizeAdmissionPath(entry.name) === normalizedLookup,
+    );
+  }
+  const normalizedName = normalizeAdmissionName(lookup);
+  return report.injectedWorkspaceFiles.find(
+    (entry) => normalizeAdmissionName(entry.name || entry.path) === normalizedName,
+  );
+}
+
+function requiredParentCanonicalDocLookups(
+  requiredCanonicalDocPaths: readonly string[] | undefined,
+): Array<{ docName: (typeof REQUIRED_PARENT_CANONICAL_AGENT_DOCS)[number]; lookup: string }> {
+  return REQUIRED_PARENT_CANONICAL_AGENT_DOCS.map((docName, index) => ({
+    docName,
+    lookup: requiredCanonicalDocPaths?.[index]?.trim() || docName,
+  }));
 }
 
 function sourceLabel(kind: "agent-doc" | "skill", agentId: string, name: string): string {
@@ -407,6 +500,7 @@ export function buildNodeAgentBootstrapAdmissionFromSystemPromptReport(input: {
   report?: SessionSystemPromptReport | null;
   parentAgentId: string;
   requiredSkillNames: readonly string[];
+  requiredCanonicalDocPaths?: readonly string[];
 }): NodeAgentBootstrapAdmissionProjection {
   const parentAgentId = input.parentAgentId.trim() || "execution-coding";
   if (!input.report) {
@@ -418,36 +512,48 @@ export function buildNodeAgentBootstrapAdmissionFromSystemPromptReport(input: {
     };
   }
 
-  const reportFilesByName = new Map(
-    input.report.injectedWorkspaceFiles.map((entry) => [
-      normalizeAdmissionName(entry.name || entry.path),
-      entry,
-    ]),
-  );
-  const canonicalAgentDocAdmissions = REQUIRED_PARENT_CANONICAL_AGENT_DOCS.map((docName) => {
-    const entry = reportFilesByName.get(docName);
+  const report = input.report;
+  const docLookups = requiredParentCanonicalDocLookups(input.requiredCanonicalDocPaths);
+  const admissionDecision = evaluateRequiredProviderContextAdmission({
+    report,
+    required: {
+      workspaceFileNames: docLookups.map((doc) => doc.lookup),
+      skillNames: input.requiredSkillNames,
+      rejectTruncatedWorkspaceFiles: true,
+    },
+  });
+  const canonicalAgentDocAdmissions = docLookups.map((doc) => {
+    const entry = findProviderWorkspaceFileEntry(report, doc.lookup);
+    const missing =
+      admissionDecision.missingWorkspaceFileNames.includes(doc.lookup) ||
+      !entry ||
+      entry.missing ||
+      entry.injectedChars <= 0;
+    const truncated =
+      admissionDecision.truncatedWorkspaceFileNames.includes(doc.lookup) ||
+      Boolean(entry?.truncated);
+    const admitted = !missing && !truncated;
     if (!entry) {
       return {
         agentId: parentAgentId,
-        name: docName,
-        path: docName,
+        name: doc.docName,
+        path: doc.lookup,
         admitted: false,
         missing: true,
         rawChars: 0,
         admittedChars: 0,
-        truncated: false,
+        truncated,
       };
     }
-    const admitted = !entry.missing && entry.injectedChars > 0 && !entry.truncated;
     return {
       agentId: parentAgentId,
-      name: docName,
+      name: doc.docName,
       path: entry.path,
       admitted,
-      missing: entry.missing || entry.injectedChars <= 0,
+      missing,
       rawChars: entry.rawChars,
       admittedChars: entry.injectedChars,
-      truncated: entry.truncated,
+      truncated,
     };
   });
 
@@ -553,15 +659,21 @@ function resolveActiveConfigReceiptIdentity(input: {
 function resolveNodeAgentSourceRuntimeLaunch(input: {
   config: ReturnType<typeof loadConfig>;
   agentId: string;
+  materialization?: GatewaySourceRuntimeMaterializationPreflight | null;
 }): NodeAgentStartReceipt["sourceRuntime"] {
   const runtimeHome = resolveStateDir(process.env);
   const projectRoot = resolveAgentProjectRootDir(input.config, input.agentId);
+  const materialization = input.materialization ?? null;
   return {
     projectRoot,
     executionPlatformDocsRoot: path.join(projectRoot, "docs/projects/execution-platform"),
     runtimeHome,
     runtimeAliases: normalizeRuntimePathAliases(runtimeHome),
     manifestRef: SOURCE_RUNTIME_UNIFICATION_MANIFEST_REF,
+    materializationRecordRef: materialization?.recordPath ?? null,
+    materializationStatus: materialization?.status ?? "not_observed",
+    materializationIssueCount: materialization?.validationIssues.length ?? 0,
+    materializationIssues: uniqueStringList(materialization?.validationIssues ?? [], 20),
   };
 }
 
@@ -572,6 +684,11 @@ function nodeAgentSourceRuntimeMetadata(receipt: NodeAgentStartReceipt): Record<
     nodeAgentStartRuntimeHome: receipt.sourceRuntime.runtimeHome,
     nodeAgentStartRuntimeAliases: receipt.sourceRuntime.runtimeAliases as unknown as JsonValue,
     nodeAgentStartSourceRuntimeManifestRef: receipt.sourceRuntime.manifestRef,
+    nodeAgentStartSourceRuntimeMaterializationRecordRef:
+      receipt.sourceRuntime.materializationRecordRef,
+    nodeAgentStartSourceRuntimeMaterializationStatus: receipt.sourceRuntime.materializationStatus,
+    nodeAgentStartSourceRuntimeMaterializationIssueCount:
+      receipt.sourceRuntime.materializationIssueCount,
   };
 }
 
@@ -594,6 +711,7 @@ function baseNodeAgentStartReceipt(input: {
   missingSkills?: Array<{ agentId: string; skillName: string }>;
   missingAssets?: Array<{ agentId: string; assetPath: string }>;
   workspaceFailure?: string | null;
+  sourceRuntimeMaterialization?: GatewaySourceRuntimeMaterializationPreflight | null;
   blockerKind?: string | null;
   reasonCodes: string[];
 }): NodeAgentStartReceipt {
@@ -601,6 +719,7 @@ function baseNodeAgentStartReceipt(input: {
   const sourceRuntime = resolveNodeAgentSourceRuntimeLaunch({
     config: input.config,
     agentId: input.nodeRun.agentId,
+    materialization: input.sourceRuntimeMaterialization,
   });
   return {
     artifactKind: "execution_platform.node_agent_start_receipt",
@@ -735,6 +854,45 @@ function stableTextHash(value: string): string {
   return createHash("sha256").update(value).digest("hex");
 }
 
+function toSourceRuntimeMaterializationPreflight(
+  result: SourceRuntimeMaterializationResult,
+): GatewaySourceRuntimeMaterializationPreflight {
+  return result.status === "aligned"
+    ? {
+        status: "aligned",
+        recordPath: result.recordPath,
+        validationIssues: [],
+        reasonCodes: result.reasonCodes,
+      }
+    : {
+        status: "blocked",
+        recordPath: result.recordPath,
+        validationIssues: result.validationIssues,
+        reasonCodes: result.reasonCodes,
+      };
+}
+
+async function materializeNodeAgentSourceRuntimeBeforeStart(): Promise<GatewaySourceRuntimeMaterializationPreflight> {
+  try {
+    return toSourceRuntimeMaterializationPreflight(await materializeSourceRuntimeFiles());
+  } catch (error) {
+    const errorName = error instanceof Error ? error.name : "unknown_error";
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    return {
+      status: "blocked",
+      recordPath: null,
+      validationIssues: ["source_runtime_materialization_failed_before_node_agent_start"],
+      errorName,
+      errorHash: stableTextHash(errorMessage).slice(0, 20),
+      reasonCodes: [
+        "source_runtime_materialization_failed_before_node_agent_start",
+        `source_runtime_materialization_error_name:${errorName}`,
+        `source_runtime_materialization_error_hash:${stableTextHash(errorMessage).slice(0, 20)}`,
+      ],
+    };
+  }
+}
+
 function sessionTranscriptRef(sessionFilePath: string): string {
   return `openclaw-session-file://${encodeURIComponent(sessionFilePath)}`;
 }
@@ -754,18 +912,41 @@ export function withWorkerPromptSessionProof(input: {
   finalPromptText?: string | null;
   systemPromptReport?: SessionSystemPromptReport | null;
   effectiveToolNames?: string[] | null;
+  requiredCanonicalDocPaths?: readonly string[];
   enforceProviderBootstrapAdmission?: boolean;
 }): NodeAgentStartReceipt {
-  const nativeInitialPromptText = input.finalPromptText?.trim()
-    ? input.finalPromptText
-    : input.workerPrompt.promptText;
+  const nativeInitialPromptText =
+    typeof input.finalPromptText === "string"
+      ? input.finalPromptText
+      : input.workerPrompt.promptText;
   const nativeInitialMessageHash = stableTextHash(nativeInitialPromptText);
   const hashMatches = nativeInitialMessageHash === input.workerPrompt.promptHash;
-  const providerEffectiveToolNames = uniqueStringList(input.effectiveToolNames ?? []);
+  const suppliedEffectiveToolNames = uniqueStringList(input.effectiveToolNames ?? []);
+  const reportEffectiveToolNames = providerToolNamesFromSystemPromptReport(
+    input.systemPromptReport,
+  );
+  const providerEffectiveToolNames =
+    reportEffectiveToolNames.length > 0 ? reportEffectiveToolNames : suppliedEffectiveToolNames;
+  const providerToolNameSet = new Set(providerEffectiveToolNames);
+  const providerToolCatalogMismatch =
+    reportEffectiveToolNames.length > 0 &&
+    suppliedEffectiveToolNames.length > 0 &&
+    !sameStringSet(reportEffectiveToolNames, suppliedEffectiveToolNames);
+  const providerMissingRequiredTools =
+    input.enforceProviderBootstrapAdmission === true
+      ? REQUIRED_NODE_AGENT_TOOLS.filter((toolName) => !providerToolNameSet.has(toolName))
+      : [];
+  const providerForbiddenVisibleTools =
+    input.enforceProviderBootstrapAdmission === true
+      ? FORBIDDEN_NODE_AGENT_DIRECT_ACQUISITION_TOOLS.filter((toolName) =>
+          providerToolNameSet.has(toolName),
+        )
+      : [];
   const bootstrapAdmission = buildNodeAgentBootstrapAdmissionFromSystemPromptReport({
     report: input.systemPromptReport,
     parentAgentId: input.receipt.parentAgentId,
     requiredSkillNames: REQUIRED_NODE_AGENT_SKILLS,
+    requiredCanonicalDocPaths: input.requiredCanonicalDocPaths,
   });
   const providerBootstrapBlockers =
     input.enforceProviderBootstrapAdmission === true
@@ -784,12 +965,27 @@ export function withWorkerPromptSessionProof(input: {
             : null,
         ])
       : [];
+  const providerToolCatalogBlockers =
+    input.enforceProviderBootstrapAdmission === true
+      ? uniqueStringList([
+          providerToolCatalogMismatch ? "node_agent_provider_tool_catalog_mismatch" : null,
+          providerMissingRequiredTools.length > 0
+            ? "node_agent_provider_tool_catalog_missing_required_tool"
+            : null,
+          providerForbiddenVisibleTools.length > 0
+            ? "node_agent_provider_forbidden_tool_visible_in_catalog"
+            : null,
+        ])
+      : [];
   const bootstrapBlocked = providerBootstrapBlockers.length > 0;
+  const providerToolCatalogBlocked = providerToolCatalogBlockers.length > 0;
   const blockerKind = !hashMatches
     ? "node_agent_prompt_session_write_mismatch"
     : bootstrapBlocked
       ? providerBootstrapBlockers[0]
-      : input.receipt.blockerKind;
+      : providerToolCatalogBlocked
+        ? providerToolCatalogBlockers[0]
+        : input.receipt.blockerKind;
   return {
     ...input.receipt,
     promptRef: input.workerPrompt.promptRef,
@@ -818,25 +1014,42 @@ export function withWorkerPromptSessionProof(input: {
     promptSessionHashMatch: hashMatches,
     promptAuthorModelRunRef: input.workerPrompt.modelRunRef,
     blockerKind,
-    status: hashMatches && !bootstrapBlocked ? input.receipt.status : "blocked",
+    status:
+      hashMatches && !bootstrapBlocked && !providerToolCatalogBlocked
+        ? input.receipt.status
+        : "blocked",
     blockers: uniqueStringList([
       ...input.receipt.blockers,
       ...(!hashMatches ? ["node_agent_prompt_session_write_mismatch"] : []),
       ...providerBootstrapBlockers,
+      ...providerToolCatalogBlockers,
     ]),
     reasonCodes: uniqueStringList([
       ...input.receipt.reasonCodes,
       "node_agent_start_receipt_records_worker_prompt_ref",
       "node_agent_start_receipt_records_native_session_prompt_hash",
+      ...(reportEffectiveToolNames.length
+        ? ["node_agent_start_receipt_records_provider_report_tool_names"]
+        : []),
       ...(providerEffectiveToolNames.length
         ? ["node_agent_start_receipt_records_provider_effective_tool_names"]
         : []),
+      ...(providerToolCatalogMismatch ? ["node_agent_provider_tool_catalog_mismatch"] : []),
+      ...providerMissingRequiredTools.map(
+        (toolName) => `node_agent_provider_tool_catalog_missing_required_tool:${toolName}`,
+      ),
+      ...providerForbiddenVisibleTools.map(
+        (toolName) => `node_agent_provider_forbidden_tool_visible_in_catalog:${toolName}`,
+      ),
+      ...(providerToolCatalogBlocked
+        ? ["node_agent_provider_tool_catalog_admission_blocked"]
+        : ["node_agent_provider_tool_catalog_admitted"]),
       hashMatches
         ? "node_agent_prompt_session_hash_match"
         : "node_agent_prompt_session_write_mismatch",
       ...(input.enforceProviderBootstrapAdmission === true
         ? ["node_agent_start_receipt_enforces_provider_bootstrap_admission"]
-        : ["node_agent_start_receipt_provider_bootstrap_admission_not_yet_enforced"]),
+        : ["node_agent_start_receipt_provider_bootstrap_admission_deferred_to_native_precheck"]),
       ...(bootstrapBlocked ? ["node_agent_provider_bootstrap_admission_blocked"] : []),
       ...providerBootstrapBlockers,
       ...bootstrapAdmission.reasonCodes,
@@ -874,7 +1087,7 @@ function buildFixedNodeAgentWorkerPrompt(input: {
   modelRunRef: string;
   reasonCodes: string[];
 }): NodeAgentWorkerPrompt {
-  const promptText = input.promptText.trim();
+  const promptText = input.promptText;
   const promptHash = stableTextHash(promptText);
   return {
     artifactKind: NODE_AGENT_WORKER_PROMPT_ARTIFACT_TYPE,
@@ -1070,6 +1283,7 @@ export function prepareOpenClawNodeStart(input: {
   nodeRun: NodeExecutionRunRecord;
   nodeExecutionSnapshot: NodeExecutionSnapshot;
   sessionFilePath: string;
+  sourceRuntimeMaterialization?: GatewaySourceRuntimeMaterializationPreflight | null;
 }): GatewayNodeStartPreparation {
   const config = input.config;
   const parentAgent = resolveAgentConfig(config, input.nodeRun.agentId);
@@ -1089,6 +1303,8 @@ export function prepareOpenClawNodeStart(input: {
   const missingSkills: Array<{ agentId: string; skillName: string }> = [];
   const missingAssets: Array<{ agentId: string; assetPath: string }> = [];
   const reasonCodes: string[] = ["node_agent_start_prepared_from_native_openclaw_surfaces"];
+  const sourceRuntimeMaterialization = input.sourceRuntimeMaterialization ?? null;
+  const sourceRuntimeBlocked = sourceRuntimeMaterialization?.status === "blocked";
   const baseReceiptFacts = () => ({
     nodeExecutionSnapshot: input.nodeExecutionSnapshot,
     cwd,
@@ -1098,6 +1314,7 @@ export function prepareOpenClawNodeStart(input: {
     thinkingLevel: agentThinkingLevel ?? null,
     activeSkillNames: [...REQUIRED_NODE_AGENT_SKILLS],
     allowedSubagentIds: parentAgent?.subagents?.allowAgents ?? [],
+    sourceRuntimeMaterialization,
   });
 
   if (!parentAgent) {
@@ -1289,8 +1506,9 @@ export function prepareOpenClawNodeStart(input: {
     workspaceDiagnostics.find((diagnostic) => diagnostic.includes("not_directory")) ??
     workspaceDiagnostics.find((diagnostic) => diagnostic.includes("unwritable")) ??
     null;
-  const blockerKind =
-    missingSkills.length > 0
+  const blockerKind = sourceRuntimeBlocked
+    ? "node_agent_source_runtime_materialization_drift"
+    : missingSkills.length > 0
       ? "node_agent_skill_missing"
       : missingScoutPolicies.length > 0 || !requiresExplicitSubagentTarget
         ? "node_agent_subagent_policy_insufficient"
@@ -1353,6 +1571,10 @@ export function prepareOpenClawNodeStart(input: {
         ...missingAssets.map(
           (entry) => `node_agent_asset_missing:${entry.agentId}:${entry.assetPath}`,
         ),
+        ...(sourceRuntimeMaterialization?.reasonCodes ?? []),
+        ...(sourceRuntimeMaterialization?.validationIssues ?? []).map(
+          (issue) => `node_agent_source_runtime_materialization_issue:${issue}`,
+        ),
       ]),
     });
     return {
@@ -1374,6 +1596,7 @@ export function prepareOpenClawNodeStart(input: {
     acceptedRequiredToolNames: uniqueStringList(acceptedRequiredToolNames),
     reasonCodes: uniqueStringList([
       ...reasonCodes,
+      ...(sourceRuntimeMaterialization?.reasonCodes ?? []),
       "node_agent_start_native_openclaw_facts_accepted",
       "node_agent_config_epoch_recorded",
       `node_agent_profile_resolved:${input.nodeRun.agentId}`,
@@ -1439,11 +1662,13 @@ export function createOpenClawNodeSessionExecutor(input: {
     const sessionFilePath = resolveSessionFilePath(nodeRun.nodeRunId, undefined, {
       agentId: nodeRun.agentId,
     });
+    const sourceRuntimeMaterialization = await materializeNodeAgentSourceRuntimeBeforeStart();
     const startPreparation = prepareOpenClawNodeStart({
       config,
       nodeRun,
       nodeExecutionSnapshot,
       sessionFilePath,
+      sourceRuntimeMaterialization,
     });
     if (startPreparation.status === "blocked") {
       const startReceiptArtifact = await attachNodeAgentStartReceiptArtifact({
@@ -1535,9 +1760,10 @@ export function createOpenClawNodeSessionExecutor(input: {
       agentId: nodeRun.agentId,
     });
     const fixedWorkerPrompt = input.fixedWorkerPrompt;
-    const fixedPromptText = fixedWorkerPrompt?.promptText.trim();
+    const fixedPromptText =
+      typeof fixedWorkerPrompt?.promptText === "string" ? fixedWorkerPrompt.promptText : null;
     const promptResult =
-      fixedWorkerPrompt && fixedPromptText
+      fixedWorkerPrompt && fixedPromptText !== null && fixedPromptText.length > 0
         ? {
             status: "accepted" as const,
             promptText: fixedPromptText,
@@ -1650,6 +1876,9 @@ export function createOpenClawNodeSessionExecutor(input: {
       nodeExecutionSnapshot,
       workerPrompt: promptResult.workerPrompt,
     });
+    const parentRequiredCanonicalDocPaths = REQUIRED_PARENT_CANONICAL_AGENT_DOCS.map((docName) =>
+      path.join(resolveAgentDir(config, nodeRun.agentId), docName),
+    );
     const preSessionReceipt = withWorkerPromptSessionProof({
       receipt: {
         ...startPreparation.receipt,
@@ -1704,6 +1933,11 @@ export function createOpenClawNodeSessionExecutor(input: {
             enabled: true,
             allowedAgentIds: [...REQUIRED_SCOUT_AGENTS],
             mutationToolName: "edit",
+          },
+          requiredProviderContextAdmission: {
+            workspaceFileNames: parentRequiredCanonicalDocPaths,
+            skillNames: [...REQUIRED_NODE_AGENT_SKILLS],
+            rejectTruncatedWorkspaceFiles: true,
           },
           bootstrapContextMode: "full",
           bootstrapContextRunKind: "default",
@@ -1812,6 +2046,7 @@ export function createOpenClawNodeSessionExecutor(input: {
       finalPromptText: sessionResult.runResult?.meta.finalPromptText ?? null,
       systemPromptReport: sessionResult.runResult?.meta.systemPromptReport,
       effectiveToolNames: sessionResult.runResult?.meta.effectiveToolNames ?? null,
+      requiredCanonicalDocPaths: parentRequiredCanonicalDocPaths,
       enforceProviderBootstrapAdmission: true,
     });
     const startReceiptArtifact = await attachNodeAgentStartReceiptArtifact({

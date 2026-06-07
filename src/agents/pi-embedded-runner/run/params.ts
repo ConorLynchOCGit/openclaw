@@ -18,6 +18,7 @@ import type {
 import type { AnyAgentTool } from "../../pi-tools.types.js";
 import type { SessionLockAcquisitionTrace } from "../../session-write-lock.js";
 import type { SkillSnapshot } from "../../skills.js";
+import type { RequiredProviderContextAdmission } from "../../system-prompt-report.js";
 export type { ClientToolDefinition } from "../../command/shared-types.js";
 
 export type EmbeddedRunTrigger = "cron" | "heartbeat" | "manual" | "memory" | "overflow" | "user";
@@ -118,6 +119,12 @@ export type RunEmbeddedPiAgentParams = {
     mutationToolName?: string;
     parentVisibleResultMaxChars?: number;
   };
+  /**
+   * Optional native provider-context admission gate. When set, the embedded
+   * runner proves required bootstrap files/skills are present in the final
+   * provider-visible system prompt report before sending the model call.
+   */
+  requiredProviderContextAdmission?: RequiredProviderContextAdmission;
   /** Seen bootstrap truncation warning signatures for this session (once mode dedupe). */
   bootstrapPromptWarningSignaturesSeen?: string[];
   /** Last shown bootstrap truncation warning signature for this session. */

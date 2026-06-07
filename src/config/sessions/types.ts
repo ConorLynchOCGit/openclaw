@@ -141,19 +141,32 @@ export type SessionTodoState = {
   history: SessionTodoUpdateEvent[];
 };
 
-export type SessionWorkingContextEntryKind = "context_scout_result" | "validation_scout_result";
+export type SessionWorkingContextEntryKind =
+  | "context_scout_result"
+  | "validation_scout_result"
+  | "change_set"
+  | "validation_state";
+
+export type SessionWorkingContextEntrySource = "native_task" | "native_tool";
 
 export type SessionWorkingContextEntry = {
   entryId: string;
   kind: SessionWorkingContextEntryKind;
   createdAt: number;
-  source: "native_task";
+  source: SessionWorkingContextEntrySource;
   sourceToolCallId?: string;
+  toolResultRef?: string;
   taskRef?: string;
   childResultRef?: string;
   requestedAgentId?: string;
   childSessionKey?: string;
   childRunId?: string;
+  status?: string;
+  changedFilePaths?: string[];
+  addedFilePaths?: string[];
+  modifiedFilePaths?: string[];
+  deletedFilePaths?: string[];
+  validationStatus?: string;
   textHash: string;
   textByteCount: number;
   text: string;

@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { buildSystemPromptReport } from "./system-prompt-report.js";
+import {
+  buildSystemPromptReport,
+  evaluateRequiredProviderContextAdmission,
+} from "./system-prompt-report.js";
 import type { WorkspaceBootstrapFile } from "./workspace.js";
 
 function makeBootstrapFile(overrides: Partial<WorkspaceBootstrapFile>): WorkspaceBootstrapFile {
@@ -178,5 +181,118 @@ describe("buildSystemPromptReport", () => {
     });
 
     expect(report.injectedWorkspaceFiles[0]?.injectedChars).toBe("trimmed".length);
+  });
+
+  it("admits required provider context when required files and active skills are present", () => {
+    const file = makeBootstrapFile({
+      name: "IDENTITY.md",
+      path: "/tmp/workspace/agent/IDENTITY.md",
+      content: "identity",
+    });
+    const report = buildSystemPromptReport({
+      source: "run",
+      generatedAt: 0,
+      bootstrapMaxChars: 20_000,
+      systemPrompt: "system",
+      bootstrapFiles: [file],
+      injectedFiles: [{ path: "/tmp/workspace/agent/IDENTITY.md", content: "identity" }],
+      skillsPrompt: [
+        "<active_skills>",
+        '<active_skill name="execution-node-workflow">',
+        "Follow the active workflow.",
+        "</active_skill>",
+        "</active_skills>",
+      ].join("\n"),
+      tools: [],
+    });
+
+    const admission = evaluateRequiredProviderContextAdmission({
+      report,
+      required: {
+        workspaceFileNames: ["/tmp/workspace/agent/IDENTITY.md"],
+        skillNames: ["execution-node-workflow"],
+      },
+    });
+
+    expect(admission).toMatchObject({
+      admitted: true,
+      missingWorkspaceFileNames: [],
+      missingSkillNames: [],
+      truncatedWorkspaceFileNames: [],
+      reasonCodes: ["provider_context_required_admission_accepted"],
+      message: null,
+    });
+  });
+
+  it("does not satisfy a path-specific required file with the same basename from another location", () => {
+    const file = makeBootstrapFile({
+      name: "AGENTS.md",
+      path: "/tmp/workspace/repo/AGENTS.md",
+      content: "repo instructions",
+    });
+    const report = buildSystemPromptReport({
+      source: "run",
+      generatedAt: 0,
+      bootstrapMaxChars: 20_000,
+      systemPrompt: "system",
+      bootstrapFiles: [file],
+      injectedFiles: [{ path: "/tmp/workspace/repo/AGENTS.md", content: "repo instructions" }],
+      skillsPrompt: "",
+      tools: [],
+    });
+
+    const admission = evaluateRequiredProviderContextAdmission({
+      report,
+      required: {
+        workspaceFileNames: ["/tmp/workspace/agents/execution-coding/agent/AGENTS.md"],
+      },
+    });
+
+    expect(admission.admitted).toBe(false);
+    expect(admission.missingWorkspaceFileNames).toEqual([
+      "/tmp/workspace/agents/execution-coding/agent/AGENTS.md",
+    ]);
+  });
+
+  it("blocks required provider context when required files are truncated or skills are missing", () => {
+    const file = makeBootstrapFile({
+      name: "BOOTSTRAP.md",
+      path: "/tmp/workspace/agent/BOOTSTRAP.md",
+      content: "abcdefghijklmnopqrstuvwxyz",
+    });
+    const report = buildSystemPromptReport({
+      source: "run",
+      generatedAt: 0,
+      bootstrapMaxChars: 20_000,
+      systemPrompt: "system",
+      bootstrapFiles: [file],
+      injectedFiles: [{ path: "/tmp/workspace/agent/BOOTSTRAP.md", content: "short" }],
+      skillsPrompt: "",
+      tools: [],
+    });
+
+    const admission = evaluateRequiredProviderContextAdmission({
+      report,
+      required: {
+        workspaceFileNames: ["BOOTSTRAP.md", "TOOLS.md"],
+        skillNames: ["execution-node-workflow"],
+      },
+    });
+
+    expect(admission.admitted).toBe(false);
+    expect(admission.missingWorkspaceFileNames).toEqual(["TOOLS.md"]);
+    expect(admission.truncatedWorkspaceFileNames).toEqual(["BOOTSTRAP.md"]);
+    expect(admission.missingSkillNames).toEqual(["execution-node-workflow"]);
+    expect(admission.reasonCodes).toEqual(
+      expect.arrayContaining([
+        "provider_context_required_admission_blocked",
+        "provider_context_required_workspace_files_missing",
+        "provider_context_required_workspace_files_truncated",
+        "provider_context_required_skills_missing",
+      ]),
+    );
+    expect(admission.message).toContain(
+      "Provider context admission failed before model invocation",
+    );
   });
 });

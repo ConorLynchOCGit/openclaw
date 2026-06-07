@@ -159,6 +159,8 @@ export const AgentDefaultsSchema = z
         postCompactionSections: z.array(z.string()).optional(),
         model: z.string().optional(),
         timeoutSeconds: z.number().int().positive().optional(),
+        truncateAfterCompaction: z.boolean().optional(),
+        maxCheckpointsPerSession: z.number().int().min(0).max(25).optional(),
         memoryFlush: z
           .object({
             enabled: z.boolean().optional(),

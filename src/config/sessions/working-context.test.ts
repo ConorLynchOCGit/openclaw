@@ -119,6 +119,82 @@ describe("session working context", () => {
     ).toBe(true);
   });
 
+  it("persists compact change sets and validation state in the same native working context", async () => {
+    const sessionKey = "agent:execution-coding:node:nrun_unified_ledger";
+    const storePath = await createStore({
+      [sessionKey]: { sessionId: "sess-parent", updatedAt: 1 },
+    });
+
+    const changeSet = await updateSessionWorkingContext({
+      storePath,
+      sessionKey,
+      now: 1234,
+      entry: {
+        kind: "change_set",
+        source: "native_tool",
+        sourceToolCallId: "edit-1",
+        toolResultRef: "openclaw-tool-result://run/edit-1",
+        status: "completed",
+        changedFilePaths: ["src/a.ts"],
+        modifiedFilePaths: ["src/a.ts"],
+        text: [
+          "Change set:",
+          "tool=edit",
+          "toolResultRef=openclaw-tool-result://run/edit-1",
+          "status=completed",
+          "changed_files:",
+          "- src/a.ts",
+        ].join("\n"),
+      },
+    });
+    const validationState = await updateSessionWorkingContext({
+      storePath,
+      sessionKey,
+      now: 1235,
+      entry: {
+        kind: "validation_state",
+        source: "native_task",
+        sourceToolCallId: "task-validation",
+        taskRef: "openclaw-native-task-result://run/task-validation",
+        childResultRef: "openclaw-child-result://validation/run",
+        requestedAgentId: "execution-validation-scout",
+        validationStatus: "completed",
+        text: [
+          "Validation result:",
+          "commands run: pnpm test:file src/a.test.ts",
+          "exit status: 0",
+          "bounded output excerpt: passed",
+        ].join("\n"),
+      },
+    });
+
+    expect(changeSet.persisted).toBe(true);
+    expect(validationState.persisted).toBe(true);
+    const workingContext = readSessionWorkingContext({ storePath, sessionKey });
+    expect(workingContext?.activeEntries.map((entry) => entry.kind)).toEqual([
+      "change_set",
+      "validation_state",
+    ]);
+    expect(workingContext?.activeEntries[0]).toMatchObject({
+      source: "native_tool",
+      toolResultRef: "openclaw-tool-result://run/edit-1",
+      changedFilePaths: ["src/a.ts"],
+      modifiedFilePaths: ["src/a.ts"],
+    });
+    expect(workingContext?.activeEntries[1]).toMatchObject({
+      source: "native_task",
+      requestedAgentId: "execution-validation-scout",
+      validationStatus: "completed",
+    });
+    expect(workingContext?.history.at(-1)?.entries[0]).not.toHaveProperty("text");
+
+    const addition = buildSessionWorkingContextPromptAddition(workingContext, { maxChars: 4_000 });
+    expect(addition).toContain("change_set");
+    expect(addition).toContain("validation_state");
+    expect(addition).toContain("changedFilePaths=src/a.ts");
+    expect(addition).toContain("validationStatus=completed");
+  });
+
   it("formats working context as a bounded replaceable system prompt addition", async () => {
     const sessionKey = "agent:execution-coding:node:nrun_prompt_context";
     const storePath = await createStore({

@@ -66,10 +66,6 @@ function readYaml(relativePath: string): unknown {
   return YAML.parse(fs.readFileSync(repoPath(relativePath), "utf8")) as unknown;
 }
 
-function readJson(filePath: string): unknown {
-  return JSON.parse(fs.readFileSync(filePath, "utf8")) as unknown;
-}
-
 function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
@@ -184,20 +180,22 @@ describe("source/runtime unification inventory", () => {
   it("keeps a machine-readable Phase 0 source/runtime manifest", () => {
     const manifest = asRecord(readYaml("docs/system/registries/source-runtime-unification.yaml"));
     const canonical = asRecord(manifest.canonical);
-    expect(manifest.status).toBe("phase0_active_blocking_worker_agent_refactor");
+    expect(manifest.status).toBe(
+      "phase0_repo_local_runtime_unification_complete_worker_agent_refactor_unblocked",
+    );
     expect(canonical.projectRoot).toBe("/root/services/openclaw-roles/live");
     expect(canonical.executionPlatformDocsRoot).toBe(
       "/root/services/openclaw-roles/live/docs/projects/execution-platform",
     );
-    expect(canonical.runtimeHome).toBe("/root/.openclaw");
+    expect(canonical.runtimeHome).toBe("/root/services/openclaw-roles/live/.openclaw/runtime");
     expect(canonical.sourceRuntimeRecordPath).toBe(
-      "/root/.openclaw/source-runtime/materialization-records.json",
+      "/root/services/openclaw-roles/live/.openclaw/runtime/source-runtime/materialization-records.json",
     );
     expect(canonical.forkTransitionReadinessPath).toBe(
-      "/root/.openclaw/source-runtime/fork-transition-readiness.json",
+      "/root/services/openclaw-roles/live/.openclaw/runtime/source-runtime/fork-transition-readiness.json",
     );
     expect(canonical.dirtyWorktreeReconciliationPath).toBe(
-      "/root/.openclaw/source-runtime/dirty-worktree-reconciliation.json",
+      "/root/services/openclaw-roles/live/.openclaw/runtime/source-runtime/dirty-worktree-reconciliation.json",
     );
 
     const githubTopology = asRecord(manifest.githubTopology);
@@ -222,36 +220,31 @@ describe("source/runtime unification inventory", () => {
     const readinessRef = asRecord(currentGithubTopology.readiness);
     expect(readinessRef).toEqual(
       expect.objectContaining({
-        recordPath: "/root/.openclaw/source-runtime/fork-transition-readiness.json",
+        recordPath:
+          "/root/services/openclaw-roles/live/.openclaw/runtime/source-runtime/fork-transition-readiness.json",
         dirtyWorktreeReconciliationPath:
-          "/root/.openclaw/source-runtime/dirty-worktree-reconciliation.json",
-        dynamicStateOwner: "runtime_home_records",
-        statusSource: "/root/.openclaw/source-runtime/fork-transition-readiness.json",
-        countSource: "/root/.openclaw/source-runtime/dirty-worktree-reconciliation.json",
+          "/root/services/openclaw-roles/live/.openclaw/runtime/source-runtime/dirty-worktree-reconciliation.json",
+        dynamicStateOwner: "live_git_status_or_on_demand_inventory",
+        statusSource:
+          "/root/services/openclaw-roles/live/.openclaw/runtime/source-runtime/fork-transition-readiness.json",
+        countSource: "git status --porcelain=v1",
       }),
     );
     expect(readinessRef).not.toHaveProperty("dirtyEntryCount");
     expect(readinessRef).not.toHaveProperty("unclassifiedEntryCount");
     expect(readinessRef).not.toHaveProperty("actionCounts");
 
-    const runtimeReadinessFile = asRecord(
-      readJson("/root/.openclaw/source-runtime/fork-transition-readiness.json"),
-    );
-    const runtimeReadiness = asRecord(runtimeReadinessFile.readiness);
-    expect(runtimeReadiness).toEqual(
-      expect.objectContaining({
-        status: "migrated_with_preserved_dirty_worktree",
-        unclassifiedDirtyEntryCount: 0,
-      }),
-    );
-    expect(typeof runtimeReadiness.dirtyEntryCount).toBe("number");
-    expect(runtimeReadiness.dirtyEntryCount).toBeGreaterThan(0);
-
     const aliases = asList(manifest.runtimeAliases);
     expect(aliases).toContainEqual({
       aliasPath: "/home/node/.openclaw",
-      canonicalPath: "/root/.openclaw",
+      canonicalPath: "/root/services/openclaw-roles/live/.openclaw/runtime",
       label: "container-runtime-home-alias",
+      status: "compatibility_alias_only",
+    });
+    expect(aliases).toContainEqual({
+      aliasPath: "/root/.openclaw",
+      canonicalPath: "/root/services/openclaw-roles/live/.openclaw/runtime",
+      label: "host-runtime-home-alias",
       status: "compatibility_alias_only",
     });
 
@@ -261,7 +254,7 @@ describe("source/runtime unification inventory", () => {
         expect.objectContaining({
           agentId,
           projectRoot: "/root/services/openclaw-roles/live",
-          runtimePath: `/root/.openclaw/agents/${agentId}/agent`,
+          runtimePath: `/root/services/openclaw-roles/live/.openclaw/runtime/agents/${agentId}/agent`,
           runtimeAliasPath: `/home/node/.openclaw/agents/${agentId}/agent`,
           runtimeFileClass: "source_materialized",
           recordMode: "materialized",

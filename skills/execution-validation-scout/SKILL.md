@@ -61,6 +61,32 @@ Return a concise validation packet with:
 
 Do not include raw full logs. Provide bounded excerpts and refs.
 
+## Working Context Persistence
+
+Return validation output in a shape that native `task` delivery can place
+directly into the parent context and persist into the unified OpenClaw native
+working context as compact `validation_state`. You do not create a separate
+validation ledger or artifact. The useful persisted facts are:
+
+- validation task ref when available.
+- validation question or scope.
+- commands considered.
+- commands run with exit status.
+- bounded output excerpts or excerpt refs/hashes.
+- likely failure cause when failed.
+- source/test/config/proof refs.
+- next repair context.
+- residual risk.
+
+Do not persist raw command logs, broad stdout dumps, or model-only quality
+judgments as truth. Validation state is orientation for the parent; actual
+current files and command results remain the source of truth.
+
+Do not call `update_plan`, `read_todo`, `task`, raw session-control tools,
+subagent tools, agent-listing tools, `openclaw_resource_read`, fuzzy resource
+discovery, or `node_finish`. The parent owns todo, exact Execution Platform
+refs, delegation, lifecycle, and finish.
+
 ## Command Selection Quality Standard
 
 Validation should prove the parent question with the smallest useful scope.

@@ -87,6 +87,28 @@ const NODE_AGENT_NATIVE_TASK_ALWAYS_ALLOWED_TOOL_NAMES = new Set([
   "node_finish",
 ]);
 
+export function isNodeAgentNativeTaskParentToolAllowed(input: {
+  toolName?: string | null;
+  mutationToolName?: string | null;
+}): boolean {
+  const toolName = normalizeLowercaseStringOrEmpty(input.toolName);
+  const mutationToolName = normalizeLowercaseStringOrEmpty(input.mutationToolName ?? "edit");
+  return Boolean(
+    toolName &&
+    (NODE_AGENT_NATIVE_TASK_ALWAYS_ALLOWED_TOOL_NAMES.has(toolName) ||
+      (mutationToolName && toolName === mutationToolName)),
+  );
+}
+
+const EXECUTION_CONTEXT_SCOUT_ALLOWED_TOOL_NAMES = new Set(["read", "list", "glob", "grep"]);
+const EXECUTION_VALIDATION_SCOUT_ALLOWED_TOOL_NAMES = new Set([
+  "read",
+  "list",
+  "glob",
+  "grep",
+  "exec",
+]);
+
 type ResolvedNodeAuthorityOverlay = {
   readableRoots: string[];
   writableRoots: string[];
@@ -461,13 +483,31 @@ function filterToolsForNodeAgentNativeTaskMode(input: {
   if (!input.mode?.enabled) {
     return input.tools;
   }
-  const mutationToolName = normalizeLowercaseStringOrEmpty(input.mode.mutationToolName ?? "edit");
   return input.tools.filter((tool) => {
-    const toolName = normalizeLowercaseStringOrEmpty(tool.name);
-    return (
-      NODE_AGENT_NATIVE_TASK_ALWAYS_ALLOWED_TOOL_NAMES.has(toolName) ||
-      (mutationToolName && toolName === mutationToolName)
-    );
+    return isNodeAgentNativeTaskParentToolAllowed({
+      toolName: tool.name,
+      mutationToolName: input.mode?.mutationToolName,
+    });
+  });
+}
+
+export function filterToolsForExecutionScoutMode<TTool extends { name?: string | null }>(input: {
+  tools: readonly TTool[];
+  agentId?: string | null;
+}): TTool[] {
+  const agentId = normalizeLowercaseStringOrEmpty(input.agentId ?? "");
+  const allowedToolNames =
+    agentId === "execution-context-scout"
+      ? EXECUTION_CONTEXT_SCOUT_ALLOWED_TOOL_NAMES
+      : agentId === "execution-validation-scout"
+        ? EXECUTION_VALIDATION_SCOUT_ALLOWED_TOOL_NAMES
+        : null;
+  if (!allowedToolNames) {
+    return [...input.tools];
+  }
+  return input.tools.filter((tool) => {
+    const toolName = normalizeLowercaseStringOrEmpty(tool.name ?? "");
+    return Boolean(toolName && allowedToolNames.has(toolName));
   });
 }
 
@@ -1074,8 +1114,12 @@ export function createOpenClawCodingTools(options?: {
     tools: nodeAuthorityFiltered,
     mode: options?.nodeAgentNativeTaskMode,
   });
-  const nodeParentCrawlGuarded = wrapToolsWithNodeParentCrawlGuard({
+  const executionScoutFiltered = filterToolsForExecutionScoutMode({
     tools: nodeNativeTaskFiltered,
+    agentId,
+  });
+  const nodeParentCrawlGuarded = wrapToolsWithNodeParentCrawlGuard({
+    tools: executionScoutFiltered,
     enabled:
       options?.nodeAgentNativeTaskMode?.enabled === true
         ? false

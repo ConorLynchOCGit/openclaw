@@ -193,6 +193,20 @@ describe("handleToolExecutionEnd native task working context", () => {
             foreground: true,
             resultDeliveredToParentContext: true,
             childIdentityVerified: true,
+            childBootstrapAdmission: {
+              providerReportObserved: true,
+              childAgentId: "execution-context-scout",
+              canonicalDocsAdmitted: true,
+              requiredSkillAdmitted: true,
+              childToolCatalogAdmitted: true,
+              providerToolNames: ["read", "list", "glob", "grep"],
+              requiredToolNames: ["read", "list", "glob", "grep"],
+              missingRequiredToolNames: [],
+              forbiddenToolNames: [],
+              missingRequiredSources: [],
+              truncatedRequiredSources: [],
+              reasonCodes: ["native_task_child_provider_tool_catalog_admitted"],
+            },
           },
         },
       });
@@ -212,6 +226,8 @@ describe("handleToolExecutionEnd native task working context", () => {
         stream: "node-agent",
         data: expect.objectContaining({
           eventType: "node_agent_native_task_result",
+          parentDecisionFooterIncluded: true,
+          parentDecisionFooterKind: "minimal_edit_readiness",
           workingContextPersisted: true,
           workingContextKind: "context_scout_result",
           workingContextHasInlineContextWindows: true,
@@ -220,8 +236,233 @@ describe("handleToolExecutionEnd native task working context", () => {
           workingContextFileGraphTextByteCount: expect.any(Number),
           workingContextRef: expect.stringContaining("openclaw-session-working-context://"),
           workingContextEntryRef: expect.stringContaining("openclaw-session-working-context://"),
+          childBootstrapAdmission: expect.objectContaining({
+            childToolCatalogAdmitted: true,
+            providerToolNames: ["read", "list", "glob", "grep"],
+            requiredToolNames: ["read", "list", "glob", "grep"],
+            missingRequiredToolNames: [],
+            forbiddenToolNames: [],
+          }),
         }),
       });
+    } finally {
+      await fs.rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("persists validation scout results as validation state in the unified working context", async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-validation-state-"));
+    try {
+      const sessionKey = "agent:execution-coding:node:nrun_validation_state";
+      const storePath = path.join(dir, "sessions.json");
+      await fs.writeFile(
+        storePath,
+        JSON.stringify({
+          [sessionKey]: { sessionId: "sess-parent", updatedAt: 1 },
+        }),
+        "utf8",
+      );
+      const { ctx, onAgentEvent } = createTestContext();
+      ctx.params.sessionKey = sessionKey;
+      ctx.params.agentId = "execution-coding";
+      ctx.params.config = {
+        session: { store: storePath },
+      } as never;
+
+      await handleToolExecutionEnd(ctx, {
+        type: "tool_execution_end",
+        toolName: "task",
+        toolCallId: "task-validation-scout",
+        isError: false,
+        result: {
+          content: [
+            {
+              type: "text",
+              text: [
+                "Task result from execution-validation-scout (completed).",
+                "Validation question: prove native task footer behavior.",
+                "Commands run: pnpm test:file src/agents/tools/native-task-tool.test.ts",
+                "Exit status: 0",
+                "Bounded output excerpt: passed.",
+              ].join("\n"),
+            },
+          ],
+          details: {
+            status: "completed",
+            sourceTool: "task",
+            requestedAgentId: "execution-validation-scout",
+            childSessionKey: "agent:execution-validation-scout:subagent:child-validate",
+            runId: "run-child-validate",
+            foreground: true,
+            resultDeliveredToParentContext: true,
+            childIdentityVerified: true,
+          },
+        },
+      });
+
+      const store = loadSessionStore(storePath, { skipCache: true });
+      expect(store[sessionKey]?.workingContext?.activeEntries[0]).toMatchObject({
+        kind: "validation_state",
+        source: "native_task",
+        requestedAgentId: "execution-validation-scout",
+        validationStatus: "completed",
+      });
+      expect(onAgentEvent).toHaveBeenCalledWith({
+        stream: "node-agent",
+        data: expect.objectContaining({
+          eventType: "node_agent_native_task_result",
+          parentDecisionFooterIncluded: true,
+          parentDecisionFooterKind: "validation_sufficiency",
+          workingContextPersisted: true,
+          workingContextKind: "validation_state",
+          workingContextEntryRef: expect.stringContaining("openclaw-session-working-context://"),
+        }),
+      });
+    } finally {
+      await fs.rm(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("handleToolExecutionEnd node-agent tool result trace", () => {
+  it("emits compact parent tool refs without raw result text", async () => {
+    const { ctx, onAgentEvent } = createTestContext();
+
+    await handleToolExecutionEnd(ctx, {
+      type: "tool_execution_end",
+      toolName: "update_plan",
+      toolCallId: "plan-after-context",
+      isError: false,
+      result: {
+        content: [{ type: "text", text: "raw todo text should not enter node-agent event" }],
+        details: {
+          status: "updated",
+          todo: {
+            persisted: true,
+            todoRef: "openclaw-session-todo://agent%3Aexecution-coding%3Anode%3Anrun_test",
+          },
+        },
+      },
+    });
+    await handleToolExecutionEnd(ctx, {
+      type: "tool_execution_end",
+      toolName: "edit",
+      toolCallId: "edit-after-context",
+      isError: false,
+      result: {
+        content: [{ type: "text", text: "raw edit output should not enter node-agent event" }],
+        details: { status: "completed" },
+      },
+    });
+    await handleToolExecutionEnd(ctx, {
+      type: "tool_execution_end",
+      toolName: "node_finish",
+      toolCallId: "finish-after-validation",
+      isError: false,
+      result: {
+        content: [{ type: "text", text: "raw finish output should not enter node-agent event" }],
+        details: { accepted: true, status: "completed" },
+      },
+    });
+
+    const nodeAgentEvents = onAgentEvent.mock.calls
+      .map(([event]) => event)
+      .filter(
+        (event) =>
+          event.stream === "node-agent" && event.data.eventType === "node_agent_tool_result",
+      );
+
+    expect(nodeAgentEvents).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          data: expect.objectContaining({
+            toolResultRef: "openclaw-tool-result://run-test/plan-after-context",
+            toolName: "update_plan",
+            todoRef: "openclaw-session-todo://agent%3Aexecution-coding%3Anode%3Anrun_test",
+          }),
+        }),
+        expect.objectContaining({
+          data: expect.objectContaining({
+            toolResultRef: "openclaw-tool-result://run-test/edit-after-context",
+            toolName: "edit",
+            mutatingAction: true,
+          }),
+        }),
+        expect.objectContaining({
+          data: expect.objectContaining({
+            toolResultRef: "openclaw-tool-result://run-test/finish-after-validation",
+            toolName: "node_finish",
+            finishAccepted: true,
+          }),
+        }),
+      ]),
+    );
+    expect(JSON.stringify(nodeAgentEvents)).not.toContain("raw todo text");
+    expect(JSON.stringify(nodeAgentEvents)).not.toContain("raw edit output");
+    expect(JSON.stringify(nodeAgentEvents)).not.toContain("raw finish output");
+  });
+
+  it("persists successful mutations as compact change_set working context", async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-change-set-"));
+    try {
+      const sessionKey = "agent:execution-coding:node:nrun_change_set";
+      const storePath = path.join(dir, "sessions.json");
+      await fs.writeFile(
+        storePath,
+        JSON.stringify({
+          [sessionKey]: { sessionId: "sess-parent", updatedAt: 1 },
+        }),
+        "utf8",
+      );
+      const { ctx, onAgentEvent } = createTestContext();
+      ctx.params.sessionKey = sessionKey;
+      ctx.params.agentId = "execution-coding";
+      ctx.params.config = {
+        session: { store: storePath },
+      } as never;
+
+      await handleToolExecutionStart(ctx, {
+        type: "tool_execution_start",
+        toolName: "edit",
+        toolCallId: "edit-change-set",
+        args: {
+          file_path: "src/agents/tools/native-task-tool.ts",
+          old_string: "before",
+          new_string: "after",
+        },
+      });
+      await handleToolExecutionEnd(ctx, {
+        type: "tool_execution_end",
+        toolName: "edit",
+        toolCallId: "edit-change-set",
+        isError: false,
+        result: { details: { status: "completed" } },
+      });
+
+      const store = loadSessionStore(storePath, { skipCache: true });
+      expect(store[sessionKey]?.workingContext?.activeEntries[0]).toMatchObject({
+        kind: "change_set",
+        source: "native_tool",
+        sourceToolCallId: "edit-change-set",
+        toolResultRef: "openclaw-tool-result://run-test/edit-change-set",
+        status: "completed",
+        changedFilePaths: ["src/agents/tools/native-task-tool.ts"],
+      });
+      expect(onAgentEvent).toHaveBeenCalledWith({
+        stream: "node-agent",
+        data: expect.objectContaining({
+          eventType: "node_agent_tool_result",
+          toolName: "edit",
+          toolResultRef: "openclaw-tool-result://run-test/edit-change-set",
+          changedFilePaths: ["src/agents/tools/native-task-tool.ts"],
+          changeSetWorkingContextPersisted: true,
+          changeSetWorkingContextEntryRef: expect.stringContaining(
+            "openclaw-session-working-context://",
+          ),
+        }),
+      });
+      expect(JSON.stringify(store[sessionKey]?.workingContext)).not.toContain("before");
+      expect(JSON.stringify(store[sessionKey]?.workingContext)).not.toContain("after");
     } finally {
       await fs.rm(dir, { recursive: true, force: true });
     }

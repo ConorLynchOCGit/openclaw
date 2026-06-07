@@ -411,6 +411,8 @@ vi.mock("../../pi-tools.js", () => ({
         ),
     },
   ],
+  filterToolsForExecutionScoutMode: ({ tools }: { tools: unknown[] }) => tools,
+  isNodeAgentNativeTaskParentToolAllowed: () => true,
   resolveToolLoopDetectionConfig: () => undefined,
 }));
 

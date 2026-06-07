@@ -7,6 +7,7 @@ import { SYSTEM_PROMPT_CACHE_BOUNDARY } from "../../system-prompt-cache-boundary
 import { buildAgentSystemPrompt } from "../../system-prompt.js";
 import {
   buildAfterTurnRuntimeContext,
+  buildNodeAgentSessionTraceFromEvents,
   composeSystemPromptWithHookContext,
   decodeHtmlEntitiesInObject,
   filterEffectiveToolsForNodeAgentNativeTaskMode,
@@ -164,6 +165,27 @@ describe("filterEffectiveToolsForNodeAgentNativeTaskMode", () => {
     ]);
   });
 
+  it("keeps only the configured parent mutation surface", () => {
+    const tools = filterEffectiveToolsForNodeAgentNativeTaskMode({
+      mode: { enabled: true, mutationToolName: "apply_patch" },
+      tools: [
+        { name: "update_plan" },
+        { name: "task" },
+        { name: "edit" },
+        { name: "write" },
+        { name: "apply_patch" },
+        { name: "node_finish" },
+      ],
+    });
+
+    expect(tools.map((tool) => tool.name)).toEqual([
+      "update_plan",
+      "task",
+      "apply_patch",
+      "node_finish",
+    ]);
+  });
+
   it("does not filter ordinary sessions", () => {
     const tools = filterEffectiveToolsForNodeAgentNativeTaskMode({
       tools: [{ name: "read" }, { name: "exec" }],
@@ -266,6 +288,83 @@ describe("native task result parent-context preservation", () => {
         }),
       ]),
     ).toBe(false);
+  });
+
+  it("projects decision footers and post-validation parent action from native events", () => {
+    const trace = buildNodeAgentSessionTraceFromEvents([
+      {
+        eventType: "node_agent_native_task_result",
+        taskRef: "openclaw-native-task-result://run/task-context",
+        requestedAgentId: "execution-context-scout",
+        childSessionKey: "agent:execution-context-scout:subagent:child-context",
+        childResultRef: "openclaw-child-result://context",
+        resultDeliveredToParentContext: true,
+        workingContextRef: "openclaw-session-working-context://parent",
+        workingContextEntryRef: "openclaw-session-working-context://parent/context",
+        workingContextHasInlineContextWindows: true,
+        workingContextHasFileGraph: true,
+        parentDecisionFooterIncluded: true,
+        parentDecisionFooterKind: "minimal_edit_readiness",
+      },
+      {
+        eventType: "node_agent_tool_result",
+        toolResultRef: "openclaw-tool-result://run/plan-after-context",
+        toolName: "update_plan",
+      },
+      {
+        eventType: "node_agent_tool_result",
+        toolResultRef: "openclaw-tool-result://run/edit-after-context",
+        toolName: "edit",
+        mutatingAction: true,
+        changeSetWorkingContextEntryRef: "openclaw-session-working-context://parent/change-set",
+      },
+      {
+        eventType: "node_agent_native_task_result",
+        taskRef: "openclaw-native-task-result://run/task-validation",
+        requestedAgentId: "execution-validation-scout",
+        childSessionKey: "agent:execution-validation-scout:subagent:child-validation",
+        childResultRef: "openclaw-child-result://validation",
+        resultDeliveredToParentContext: true,
+        workingContextEntryRef: "openclaw-session-working-context://parent/validation",
+        parentDecisionFooterIncluded: true,
+        parentDecisionFooterKind: "validation_sufficiency",
+      },
+      {
+        eventType: "node_agent_tool_result",
+        toolResultRef: "openclaw-tool-result://run/plan-after-validation",
+        toolName: "update_plan",
+      },
+      {
+        eventType: "node_agent_tool_result",
+        toolResultRef: "openclaw-tool-result://run/finish-after-validation",
+        toolName: "node_finish",
+      },
+    ]);
+
+    expect(trace).toMatchObject({
+      contextDecisionFooterObserved: true,
+      contextDecisionFooterKind: "minimal_edit_readiness",
+      validationDecisionFooterObserved: true,
+      validationDecisionFooterKind: "validation_sufficiency",
+      parentPostChildActionRef: "openclaw-tool-result://run/plan-after-context",
+      parentPostChildActionToolName: "update_plan",
+      contextTodoDecisionRef: "openclaw-tool-result://run/plan-after-context",
+      contextTodoDecisionObserved: true,
+      contextNextActionRef: "openclaw-tool-result://run/edit-after-context",
+      contextNextActionObserved: true,
+      contextNextActionToolName: "edit",
+      validationTodoDecisionRef: "openclaw-tool-result://run/plan-after-validation",
+      validationTodoDecisionObserved: true,
+      validationNextActionRef: "openclaw-tool-result://run/finish-after-validation",
+      validationNextActionObserved: true,
+      validationNextActionToolName: "node_finish",
+      validationActionRef: "openclaw-native-task-result://run/task-validation",
+      parentPostValidationActionRef: "openclaw-tool-result://run/plan-after-validation",
+      parentPostValidationActionObserved: true,
+      parentPostValidationActionToolName: "update_plan",
+      changeSetRef: "openclaw-session-working-context://parent/change-set",
+      validationStateRef: "openclaw-session-working-context://parent/validation",
+    });
   });
 });
 

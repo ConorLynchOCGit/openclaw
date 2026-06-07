@@ -521,8 +521,8 @@ async function loadWorkerPromptFileTextTurnClient(promptFile) {
   const resolvedPromptFile = path.isAbsolute(promptFile)
     ? promptFile
     : path.resolve(root, promptFile);
-  const promptText = (await fs.readFile(resolvedPromptFile, "utf8")).trim();
-  if (!promptText) {
+  const promptText = await fs.readFile(resolvedPromptFile, "utf8");
+  if (promptText.length === 0) {
     throw new Error(`worker_prompt_file_empty:${promptFile}`);
   }
   const responseHash = sha256(promptText);

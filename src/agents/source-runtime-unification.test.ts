@@ -7,7 +7,9 @@ import {
   buildSourceRuntimeDirtyWorktreeReconciliation,
   buildSourceRuntimeMaterializationRecords,
   evaluateSourceRuntimeForkTransitionReadiness,
+  isSourceRuntimeMaterializedAgentStart,
   loadSourceRuntimeUnificationManifest,
+  materializeSourceRuntimeFiles,
   parseGitRemoteVerbose,
   resolveSourceRuntimeDirtyWorktreeReconciliationPath,
   resolveSourceRuntimeForkTransitionReadinessPath,
@@ -513,22 +515,32 @@ describe("source/runtime unification manifest", () => {
   it("loads the Phase 0 manifest from repo source", async () => {
     const manifest = await loadSourceRuntimeUnificationManifest();
 
-    expect(manifest.status).toBe("phase0_active_blocking_worker_agent_refactor");
+    expect(manifest.status).toBe(
+      "phase0_repo_local_runtime_unification_complete_worker_agent_refactor_unblocked",
+    );
     expect(manifest.canonical).toEqual({
       projectRoot: "/root/services/openclaw-roles/live",
       executionPlatformDocsRoot:
         "/root/services/openclaw-roles/live/docs/projects/execution-platform",
-      runtimeHome: "/root/.openclaw",
-      configPath: "/root/.openclaw/openclaw.json",
-      sourceRuntimeRecordPath: "/root/.openclaw/source-runtime/materialization-records.json",
-      forkTransitionReadinessPath: "/root/.openclaw/source-runtime/fork-transition-readiness.json",
+      runtimeHome: "/root/services/openclaw-roles/live/.openclaw/runtime",
+      configPath: "/root/services/openclaw-roles/live/.openclaw/runtime/openclaw.json",
+      sourceRuntimeRecordPath:
+        "/root/services/openclaw-roles/live/.openclaw/runtime/source-runtime/materialization-records.json",
+      forkTransitionReadinessPath:
+        "/root/services/openclaw-roles/live/.openclaw/runtime/source-runtime/fork-transition-readiness.json",
       dirtyWorktreeReconciliationPath:
-        "/root/.openclaw/source-runtime/dirty-worktree-reconciliation.json",
+        "/root/services/openclaw-roles/live/.openclaw/runtime/source-runtime/dirty-worktree-reconciliation.json",
     });
     expect(manifest.runtimeAliases).toContainEqual({
       aliasPath: "/home/node/.openclaw",
-      canonicalPath: "/root/.openclaw",
+      canonicalPath: "/root/services/openclaw-roles/live/.openclaw/runtime",
       label: "container-runtime-home-alias",
+      status: "compatibility_alias_only",
+    });
+    expect(manifest.runtimeAliases).toContainEqual({
+      aliasPath: "/root/.openclaw",
+      canonicalPath: "/root/services/openclaw-roles/live/.openclaw/runtime",
+      label: "host-runtime-home-alias",
       status: "compatibility_alias_only",
     });
     expect(manifest.githubTopology).toEqual(
@@ -566,7 +578,8 @@ describe("source/runtime unification manifest", () => {
     expect(records.length).toBeGreaterThanOrEqual(18);
     expect(records).toContainEqual(
       expect.objectContaining({
-        runtimePath: "/root/.openclaw/agents/execution-coding/agent/IDENTITY.md",
+        runtimePath:
+          "/root/services/openclaw-roles/live/.openclaw/runtime/agents/execution-coding/agent/IDENTITY.md",
         sourcePath:
           "/root/services/openclaw-roles/live/docs/agents/execution-coding/runtime/IDENTITY.md",
         sourceCommit: "test-commit",
@@ -576,14 +589,19 @@ describe("source/runtime unification manifest", () => {
     );
     expect(records).toContainEqual(
       expect.objectContaining({
-        runtimePath: "/root/.openclaw/workspace/skills/execution-node-workflow/SKILL.md",
+        runtimePath:
+          "/root/services/openclaw-roles/live/.openclaw/runtime/workspace/skills/execution-node-workflow/SKILL.md",
         sourcePath: "/root/services/openclaw-roles/live/skills/execution-node-workflow/SKILL.md",
         sourceCommit: "test-commit",
         mode: "materialized",
         reconciled: true,
       }),
     );
-    expect(records.every((record) => record.runtimePath.startsWith("/root/.openclaw/"))).toBe(true);
+    expect(
+      records.every((record) =>
+        record.runtimePath.startsWith("/root/services/openclaw-roles/live/.openclaw/runtime/"),
+      ),
+    ).toBe(true);
     expect(
       records.every((record) =>
         record.sourcePath?.startsWith("/root/services/openclaw-roles/live/"),
@@ -673,8 +691,17 @@ describe("source/runtime unification manifest", () => {
       "execution-node-workflow",
       "SKILL.md",
     );
+    const runtimeAliasSkillPath = path.join(
+      root,
+      "runtime-alias",
+      "workspace",
+      "skills",
+      "execution-node-workflow",
+      "SKILL.md",
+    );
     await fs.mkdir(path.dirname(sourceSkillPath), { recursive: true });
     await fs.mkdir(path.dirname(runtimeSkillPath), { recursive: true });
+    await fs.mkdir(path.dirname(runtimeAliasSkillPath), { recursive: true });
     await fs.writeFile(
       sourceSkillPath,
       "# Execution Node Workflow\n\nUse task delegation.\n",
@@ -682,6 +709,11 @@ describe("source/runtime unification manifest", () => {
     );
     await fs.writeFile(
       runtimeSkillPath,
+      "# Execution Node Workflow\n\nUse task delegation.\n",
+      "utf8",
+    );
+    await fs.writeFile(
+      runtimeAliasSkillPath,
       "# Execution Node Workflow\n\nUse task delegation.\n",
       "utf8",
     );
@@ -701,6 +733,7 @@ describe("source/runtime unification manifest", () => {
           kind: "skill",
           sourcePath: sourceSkillPath,
           runtimePath: runtimeSkillPath,
+          runtimeAliasPath: runtimeAliasSkillPath,
           projectRoot,
         },
       ],
@@ -725,29 +758,250 @@ describe("source/runtime unification manifest", () => {
     expect(await auditSourceRuntimeMaterializationDrift({ manifest })).toEqual([
       `runtime_source_materialization_drifted:${runtimeSkillPath}`,
     ]);
+
+    await fs.writeFile(
+      runtimeSkillPath,
+      "# Execution Node Workflow\n\nUse task delegation.\n",
+      "utf8",
+    );
+    await fs.writeFile(runtimeAliasSkillPath, "# stale runtime alias copy\n", "utf8");
+    expect(await auditSourceRuntimeMaterializationDrift({ manifest })).toEqual([
+      `runtime_source_materialization_alias_drifted:${runtimeAliasSkillPath}`,
+    ]);
+  });
+
+  it("links repo-owned execution docs and skills into runtime home and alias paths", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "source-runtime-materialize-"));
+    const projectRoot = path.join(root, "repo");
+    const runtimeHome = path.join(root, "runtime");
+    const runtimeAliasHome = path.join(root, "runtime-alias");
+    const sourceAgentDir = path.join(
+      projectRoot,
+      "docs",
+      "agents",
+      "execution-context-scout",
+      "runtime",
+    );
+    const runtimeAgentDir = path.join(runtimeHome, "agents", "execution-context-scout", "agent");
+    const runtimeAliasAgentDir = path.join(
+      runtimeAliasHome,
+      "agents",
+      "execution-context-scout",
+      "agent",
+    );
+    const sourceSkillPath = path.join(projectRoot, "skills", "execution-context-scout", "SKILL.md");
+    const runtimeSkillPath = path.join(
+      runtimeHome,
+      "workspace",
+      "skills",
+      "execution-context-scout",
+      "SKILL.md",
+    );
+    const runtimeAliasSkillPath = path.join(
+      runtimeAliasHome,
+      "workspace",
+      "skills",
+      "execution-context-scout",
+      "SKILL.md",
+    );
+    await fs.mkdir(sourceAgentDir, { recursive: true });
+    await fs.mkdir(path.dirname(sourceSkillPath), { recursive: true });
+    await fs.mkdir(runtimeAgentDir, { recursive: true });
+    await fs.mkdir(runtimeAliasAgentDir, { recursive: true });
+    await fs.mkdir(path.dirname(runtimeSkillPath), { recursive: true });
+    await fs.mkdir(path.dirname(runtimeAliasSkillPath), { recursive: true });
+    await fs.writeFile(path.join(sourceAgentDir, "AGENTS.md"), "# current agent docs\n", "utf8");
+    await fs.writeFile(sourceSkillPath, "# current context scout skill\n", "utf8");
+    await fs.writeFile(path.join(runtimeAgentDir, "AGENTS.md"), "# stale runtime docs\n", "utf8");
+    await fs.writeFile(
+      path.join(runtimeAliasAgentDir, "AGENTS.md"),
+      "# stale alias docs\n",
+      "utf8",
+    );
+    await fs.writeFile(runtimeSkillPath, "# stale runtime skill\n", "utf8");
+    await fs.writeFile(runtimeAliasSkillPath, "# stale alias skill\n", "utf8");
+
+    const manifest: SourceRuntimeUnificationManifest = {
+      version: 1,
+      status: "test",
+      canonical: {
+        projectRoot,
+        runtimeHome,
+        sourceRuntimeRecordPath: path.join(runtimeHome, "source-runtime", "records.json"),
+      },
+      runtimeAliases: [{ aliasPath: runtimeAliasHome, canonicalPath: runtimeHome }],
+      executionAgentMaterializations: [
+        {
+          id: "execution-context-scout",
+          kind: "agent",
+          sourcePath: sourceAgentDir,
+          runtimePath: runtimeAgentDir,
+          runtimeAliasPath: runtimeAliasAgentDir,
+          projectRoot,
+        },
+      ],
+      executionSkillMaterializations: [
+        {
+          id: "execution-context-scout",
+          kind: "skill",
+          sourcePath: sourceSkillPath,
+          runtimePath: runtimeSkillPath,
+          runtimeAliasPath: runtimeAliasSkillPath,
+          projectRoot,
+        },
+      ],
+    };
+
+    const result = await materializeSourceRuntimeFiles({
+      manifest,
+      sourceCommit: "test-commit",
+      generatedAt: "2026-06-07T00:00:00.000Z",
+    });
+
+    expect(result.status).toBe("aligned");
+    expect(result.validationIssues).toEqual([]);
+    expect(result.reasonCodes).toEqual(
+      expect.arrayContaining(["source_runtime_materialization_aligned"]),
+    );
+    expect(result.materializedFiles).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          sourcePath: path.join(sourceAgentDir, "AGENTS.md"),
+          runtimePath: path.join(runtimeAgentDir, "AGENTS.md"),
+          runtimeAliasPath: path.join(runtimeAliasAgentDir, "AGENTS.md"),
+        }),
+        expect.objectContaining({
+          sourcePath: sourceSkillPath,
+          runtimePath: runtimeSkillPath,
+          runtimeAliasPath: runtimeAliasSkillPath,
+        }),
+      ]),
+    );
+    await expect(fs.readFile(path.join(runtimeAgentDir, "AGENTS.md"), "utf8")).resolves.toBe(
+      "# current agent docs\n",
+    );
+    await expect(
+      fs.lstat(path.join(runtimeAgentDir, "AGENTS.md")).then((stats) => stats.isSymbolicLink()),
+    ).resolves.toBe(true);
+    await expect(
+      fs
+        .readlink(path.join(runtimeAgentDir, "AGENTS.md"))
+        .then((target) => path.resolve(runtimeAgentDir, target)),
+    ).resolves.toBe(path.resolve(path.join(sourceAgentDir, "AGENTS.md")));
+    await expect(fs.readFile(path.join(runtimeAliasAgentDir, "AGENTS.md"), "utf8")).resolves.toBe(
+      "# current agent docs\n",
+    );
+    await expect(
+      fs
+        .lstat(path.join(runtimeAliasAgentDir, "AGENTS.md"))
+        .then((stats) => stats.isSymbolicLink()),
+    ).resolves.toBe(true);
+    await expect(
+      fs
+        .readlink(path.join(runtimeAliasAgentDir, "AGENTS.md"))
+        .then((target) => path.resolve(runtimeAliasAgentDir, target)),
+    ).resolves.toBe(path.resolve(path.join(sourceAgentDir, "AGENTS.md")));
+    await expect(fs.readFile(runtimeSkillPath, "utf8")).resolves.toBe(
+      "# current context scout skill\n",
+    );
+    await expect(fs.lstat(runtimeSkillPath).then((stats) => stats.isSymbolicLink())).resolves.toBe(
+      true,
+    );
+    await expect(
+      fs
+        .readlink(runtimeSkillPath)
+        .then((target) => path.resolve(path.dirname(runtimeSkillPath), target)),
+    ).resolves.toBe(path.resolve(sourceSkillPath));
+    await expect(fs.readFile(runtimeAliasSkillPath, "utf8")).resolves.toBe(
+      "# current context scout skill\n",
+    );
+    await expect(
+      fs.lstat(runtimeAliasSkillPath).then((stats) => stats.isSymbolicLink()),
+    ).resolves.toBe(true);
+    await expect(
+      fs
+        .readlink(runtimeAliasSkillPath)
+        .then((target) => path.resolve(path.dirname(runtimeAliasSkillPath), target)),
+    ).resolves.toBe(path.resolve(sourceSkillPath));
+    await expect(auditSourceRuntimeMaterializationDrift({ manifest })).resolves.toEqual([]);
+    expect(result.recordPath).toBe(path.join(runtimeHome, "source-runtime", "records.json"));
+    expect(result.recordFile.validationIssues).toEqual([]);
+  });
+
+  it("identifies source-materialized agent starts by configured runtime path or alias", () => {
+    const manifest: SourceRuntimeUnificationManifest = {
+      version: 1,
+      status: "test",
+      canonical: {
+        projectRoot: "/repo",
+        runtimeHome: "/runtime",
+      },
+      runtimeAliases: [{ aliasPath: "/alias", canonicalPath: "/runtime" }],
+      executionAgentMaterializations: [
+        {
+          id: "execution-coding",
+          kind: "agent",
+          sourcePath: "/repo/docs/agents/execution-coding/runtime",
+          runtimePath: "/runtime/agents/execution-coding/agent",
+          runtimeAliasPath: "/alias/agents/execution-coding/agent",
+          projectRoot: "/repo",
+        },
+      ],
+      executionSkillMaterializations: [],
+    };
+
+    expect(
+      isSourceRuntimeMaterializedAgentStart({
+        manifest,
+        agentId: "execution-coding",
+        agentDir: "/runtime/agents/execution-coding/agent",
+      }),
+    ).toBe(true);
+    expect(
+      isSourceRuntimeMaterializedAgentStart({
+        manifest,
+        agentId: "execution-coding",
+        agentDir: "/alias/agents/execution-coding/agent",
+      }),
+    ).toBe(true);
+    expect(
+      isSourceRuntimeMaterializedAgentStart({
+        manifest,
+        agentId: "execution-coding",
+        agentDir: "/tmp/openclaw-agent",
+      }),
+    ).toBe(false);
+    expect(
+      isSourceRuntimeMaterializedAgentStart({
+        manifest,
+        agentId: "execution-context-scout",
+        agentDir: "/runtime/agents/execution-coding/agent",
+      }),
+    ).toBe(false);
   });
 
   it("validates execution-agent config against canonical projectRoot semantics", async () => {
     const manifest = await loadSourceRuntimeUnificationManifest();
+    const runtimeHome = manifest.canonical.runtimeHome;
     const config = {
       agents: {
         list: [
           {
             id: "execution-coding",
-            workspace: "/root/.openclaw/workspace",
-            agentDir: "/root/.openclaw/agents/execution-coding/agent",
+            workspace: `${runtimeHome}/workspace`,
+            agentDir: `${runtimeHome}/agents/execution-coding/agent`,
             projectRoot: "/root/services/openclaw-roles/live",
           },
           {
             id: "execution-context-scout",
-            workspace: "/root/.openclaw/workspace",
-            agentDir: "/root/.openclaw/agents/execution-context-scout/agent",
+            workspace: `${runtimeHome}/workspace`,
+            agentDir: `${runtimeHome}/agents/execution-context-scout/agent`,
             projectRoot: "/root/services/openclaw-roles/live",
           },
           {
             id: "execution-validation-scout",
-            workspace: "/root/.openclaw/workspace",
-            agentDir: "/root/.openclaw/agents/execution-validation-scout/agent",
+            workspace: `${runtimeHome}/workspace`,
+            agentDir: `${runtimeHome}/agents/execution-validation-scout/agent`,
             projectRoot: "/root/services/openclaw-roles/live",
           },
         ],

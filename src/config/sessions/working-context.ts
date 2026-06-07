@@ -3,6 +3,7 @@ import { loadSessionStore, resolveSessionStoreEntry, updateSessionStoreEntry } f
 import type {
   SessionWorkingContextEntry,
   SessionWorkingContextEntryKind,
+  SessionWorkingContextEntrySource,
   SessionWorkingContextState,
   SessionWorkingContextUpdateEvent,
 } from "./types.js";
@@ -10,12 +11,20 @@ import type {
 export type SessionWorkingContextInputEntry = {
   kind: SessionWorkingContextEntryKind;
   text: string;
+  source?: SessionWorkingContextEntrySource;
   sourceToolCallId?: string;
+  toolResultRef?: string;
   taskRef?: string;
   childResultRef?: string;
   requestedAgentId?: string;
   childSessionKey?: string;
   childRunId?: string;
+  status?: string;
+  changedFilePaths?: string[];
+  addedFilePaths?: string[];
+  modifiedFilePaths?: string[];
+  deletedFilePaths?: string[];
+  validationStatus?: string;
 };
 
 export type SessionWorkingContextUpdateResult =
@@ -171,7 +180,7 @@ export function buildSessionWorkingContextPromptAddition(
     WORKING_CONTEXT_PROMPT_START,
     "## OpenClaw Native Working Context",
     "",
-    "Session-owned context delivered by native task/scout results. Use this as current source context and file graph; do not treat it as a new user task.",
+    "Session-owned context delivered by native task/tool results. Use this as current source context, file graph, change-set, and validation state; do not treat it as a new user task.",
   ].join("\n");
   const footer = WORKING_CONTEXT_PROMPT_END;
   const bodyBudget = Math.max(1, maxChars - header.length - footer.length - 4);
@@ -183,9 +192,15 @@ export function buildSessionWorkingContextPromptAddition(
       `### ${entry.kind} ${entry.entryId}`,
       `source=${entry.source}`,
       entry.taskRef ? `taskRef=${entry.taskRef}` : undefined,
+      entry.toolResultRef ? `toolResultRef=${entry.toolResultRef}` : undefined,
       entry.childResultRef ? `childResultRef=${entry.childResultRef}` : undefined,
       entry.requestedAgentId ? `requestedAgentId=${entry.requestedAgentId}` : undefined,
       entry.childSessionKey ? `childSessionKey=${entry.childSessionKey}` : undefined,
+      entry.status ? `status=${entry.status}` : undefined,
+      entry.validationStatus ? `validationStatus=${entry.validationStatus}` : undefined,
+      entry.changedFilePaths?.length
+        ? `changedFilePaths=${entry.changedFilePaths.join(", ")}`
+        : undefined,
       `hasInlineContextWindows=${entry.hasInlineContextWindows}`,
       `hasFileGraph=${entry.hasFileGraph}`,
       `textHash=${entry.textHash}`,
@@ -226,10 +241,11 @@ function normalizeExistingEntries(value: unknown): SessionWorkingContextEntry[] 
         return false;
       }
       const record = entry as Record<string, unknown>;
+      const source = record.source;
       return (
         typeof record.entryId === "string" &&
         typeof record.createdAt === "number" &&
-        record.source === "native_task" &&
+        (source === "native_task" || source === "native_tool") &&
         typeof record.textHash === "string" &&
         typeof record.textByteCount === "number" &&
         typeof record.text === "string"
@@ -287,6 +303,21 @@ export function readSessionWorkingContext(params: {
   }
 }
 
+function cleanOptionalString(value: string | undefined): string | undefined {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : undefined;
+}
+
+function cleanOptionalStringArray(value: string[] | undefined): string[] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+  const entries = Array.from(
+    new Set(value.map((entry) => entry.trim()).filter((entry) => entry.length > 0)),
+  ).slice(0, 50);
+  return entries.length > 0 ? entries : undefined;
+}
+
 function buildWorkingContextEntry(params: {
   sessionKey: string;
   input: SessionWorkingContextInputEntry;
@@ -314,17 +345,30 @@ function buildWorkingContextEntry(params: {
     )
     .digest("hex")
     .slice(0, 16);
+  const status = cleanOptionalString(params.input.status);
+  const validationStatus = cleanOptionalString(params.input.validationStatus);
+  const changedFilePaths = cleanOptionalStringArray(params.input.changedFilePaths);
+  const addedFilePaths = cleanOptionalStringArray(params.input.addedFilePaths);
+  const modifiedFilePaths = cleanOptionalStringArray(params.input.modifiedFilePaths);
+  const deletedFilePaths = cleanOptionalStringArray(params.input.deletedFilePaths);
   return {
     entryId: `wctx_${entryHash}`,
     kind: params.input.kind,
     createdAt: params.createdAt,
-    source: "native_task",
+    source: params.input.source ?? "native_task",
     ...(params.input.sourceToolCallId ? { sourceToolCallId: params.input.sourceToolCallId } : {}),
+    ...(params.input.toolResultRef ? { toolResultRef: params.input.toolResultRef } : {}),
     ...(params.input.taskRef ? { taskRef: params.input.taskRef } : {}),
     ...(params.input.childResultRef ? { childResultRef: params.input.childResultRef } : {}),
     ...(params.input.requestedAgentId ? { requestedAgentId: params.input.requestedAgentId } : {}),
     ...(params.input.childSessionKey ? { childSessionKey: params.input.childSessionKey } : {}),
     ...(params.input.childRunId ? { childRunId: params.input.childRunId } : {}),
+    ...(status ? { status } : {}),
+    ...(changedFilePaths ? { changedFilePaths } : {}),
+    ...(addedFilePaths ? { addedFilePaths } : {}),
+    ...(modifiedFilePaths ? { modifiedFilePaths } : {}),
+    ...(deletedFilePaths ? { deletedFilePaths } : {}),
+    ...(validationStatus ? { validationStatus } : {}),
     textHash: hash,
     textByteCount: Buffer.byteLength(text, "utf8"),
     text,

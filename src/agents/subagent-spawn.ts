@@ -92,6 +92,11 @@ export type SpawnSubagentParams = {
   cleanup?: "delete" | "keep";
   sandbox?: SpawnSubagentSandboxMode;
   lightContext?: boolean;
+  /**
+   * Treat the child as a leaf worker in its visible subagent prompt even when
+   * the global subagent depth policy would allow nested children.
+   */
+  leafTask?: boolean;
   expectsCompletionMessage?: boolean;
   attachments?: Array<{
     name: string;
@@ -600,6 +605,7 @@ export async function spawnSubagentDirect(
   }
   const mountPathHint = sanitizeMountPathHint(params.attachMountPath);
 
+  const childPromptMaxSpawnDepth = params.leafTask ? childDepth : maxSpawnDepth;
   let childSystemPrompt = buildSubagentSystemPrompt({
     requesterSessionKey,
     requesterOrigin,
@@ -608,7 +614,8 @@ export async function spawnSubagentDirect(
     task,
     acpEnabled: cfg.acp?.enabled !== false && !childRuntime.sandboxed,
     childDepth,
-    maxSpawnDepth,
+    maxSpawnDepth: childPromptMaxSpawnDepth,
+    leafTask: params.leafTask === true,
   });
 
   let retainOnSessionKeep = false;
@@ -651,7 +658,7 @@ export async function spawnSubagentDirect(
     : undefined;
 
   const childTaskMessage = [
-    `[Subagent Context] You are running as a subagent (depth ${childDepth}/${maxSpawnDepth}). Results auto-announce to your requester; do not busy-poll for status.`,
+    `[Subagent Context] You are running as a subagent (depth ${childDepth}/${childPromptMaxSpawnDepth}). Results auto-announce to your requester; do not busy-poll for status.`,
     spawnMode === "session"
       ? "[Subagent Context] This subagent session is persistent and remains available for thread follow-up messages."
       : undefined,

@@ -81,6 +81,22 @@ export type SourceRuntimeMaterializationRecordsFile = {
   hiddenReasoningStored: false;
 };
 
+export type SourceRuntimeMaterializedFile = {
+  sourcePath: string;
+  runtimePath: string;
+  runtimeAliasPath: string | null;
+  afterHash: string;
+};
+
+export type SourceRuntimeMaterializationResult = {
+  status: "aligned" | "blocked";
+  recordPath: string;
+  recordFile: SourceRuntimeMaterializationRecordsFile;
+  materializedFiles: SourceRuntimeMaterializedFile[];
+  validationIssues: string[];
+  reasonCodes: string[];
+};
+
 export type SourceRuntimeGitRemote = {
   name: string;
   url: string;
@@ -732,6 +748,15 @@ function parseMaterializationEntry(kind: "agent" | "skill", value: RawManifestEn
   } satisfies SourceRuntimeMaterializationEntry;
 }
 
+function materializedRuntimePathForSourceFile(params: {
+  sourceRoot: string;
+  sourceFile: string;
+  runtimeRoot: string;
+}): string {
+  const relative = path.relative(params.sourceRoot, params.sourceFile);
+  return relative && relative !== "" ? path.join(params.runtimeRoot, relative) : params.runtimeRoot;
+}
+
 function resolveManifestPath() {
   return resolveBootstrapRepoPath({
     relativePath: MANIFEST_RELATIVE_PATH,
@@ -802,6 +827,28 @@ async function listSourceFiles(sourcePath: string): Promise<string[]> {
   return nested.flat().toSorted();
 }
 
+async function ensureSourceBackedRuntimeLink(input: {
+  sourceFile: string;
+  runtimePath: string;
+}): Promise<void> {
+  const sourceFile = path.resolve(input.sourceFile);
+  const runtimePath = path.resolve(input.runtimePath);
+  await fs.mkdir(path.dirname(runtimePath), { recursive: true });
+  const current = await fs.lstat(runtimePath).catch(() => null);
+  if (current?.isSymbolicLink()) {
+    const target = await fs.readlink(runtimePath);
+    const resolvedTarget = path.resolve(path.dirname(runtimePath), target);
+    if (resolvedTarget === sourceFile) {
+      return;
+    }
+  }
+  if (current?.isDirectory()) {
+    throw new Error(`source runtime link target is a directory: ${runtimePath}`);
+  }
+  await fs.rm(runtimePath, { force: true });
+  await fs.symlink(sourceFile, runtimePath);
+}
+
 export async function loadSourceRuntimeUnificationManifest(): Promise<SourceRuntimeUnificationManifest> {
   const raw = await fs.readFile(resolveManifestPath(), "utf8");
   const parsed = rawRecord(YAML.parse(raw));
@@ -834,6 +881,25 @@ export async function loadSourceRuntimeUnificationManifest(): Promise<SourceRunt
   };
 }
 
+export function isSourceRuntimeMaterializedAgentStart(input: {
+  manifest: SourceRuntimeUnificationManifest;
+  agentId: string;
+  agentDir: string;
+}): boolean {
+  const normalizedAgentId = input.agentId.trim();
+  const normalizedAgentDir = path.resolve(input.agentDir);
+  return input.manifest.executionAgentMaterializations.some((materialization) => {
+    if (materialization.id !== normalizedAgentId) {
+      return false;
+    }
+    const runtimePath = path.resolve(materialization.runtimePath);
+    const runtimeAliasPath = materialization.runtimeAliasPath
+      ? path.resolve(materialization.runtimeAliasPath)
+      : null;
+    return normalizedAgentDir === runtimePath || normalizedAgentDir === runtimeAliasPath;
+  });
+}
+
 export async function buildSourceRuntimeMaterializationRecords(input?: {
   sourceCommit?: string;
   manifest?: SourceRuntimeUnificationManifest;
@@ -848,14 +914,13 @@ export async function buildSourceRuntimeMaterializationRecords(input?: {
     const sourcePath = resolveRepoPath(materialization.sourcePath);
     const sourceFiles = await listSourceFiles(sourcePath);
     for (const sourceFile of sourceFiles) {
-      const relative = path.relative(sourcePath, sourceFile);
-      const runtimePath =
-        relative && relative !== ""
-          ? path.join(materialization.runtimePath, relative)
-          : materialization.runtimePath;
       records.push(
         createRuntimeSourceRecord({
-          runtimePath,
+          runtimePath: materializedRuntimePathForSourceFile({
+            sourceRoot: sourcePath,
+            sourceFile,
+            runtimeRoot: materialization.runtimePath,
+          }),
           sourcePath: sourceFile,
           sourceCommit: input?.sourceCommit,
           afterContent: await fs.readFile(sourceFile),
@@ -899,6 +964,42 @@ export async function auditSourceRuntimeMaterializationDrift(input?: {
       issues.push(`runtime_source_materialization_missing:${record.runtimePath}`);
     }
   }
+  const manifest = input?.manifest ?? (await loadSourceRuntimeUnificationManifest());
+  const materializations = [
+    ...manifest.executionAgentMaterializations,
+    ...manifest.executionSkillMaterializations,
+  ];
+  for (const materialization of materializations) {
+    if (!materialization.runtimeAliasPath) {
+      continue;
+    }
+    const sourcePath = resolveRepoPath(materialization.sourcePath);
+    const sourceFiles = await listSourceFiles(sourcePath);
+    for (const sourceFile of sourceFiles) {
+      const aliasRuntimePath = materializedRuntimePathForSourceFile({
+        sourceRoot: sourcePath,
+        sourceFile,
+        runtimeRoot: materialization.runtimeAliasPath,
+      });
+      const aliasRecord = createRuntimeSourceRecord({
+        runtimePath: aliasRuntimePath,
+        sourcePath: sourceFile,
+        sourceCommit: input?.sourceCommit,
+        afterContent: await fs.readFile(sourceFile),
+        mode: "materialized",
+        reconciled: true,
+      });
+      try {
+        const currentBytes = await fs.readFile(aliasRuntimePath);
+        const drift = detectRuntimeSourceDrift(aliasRecord, currentBytes);
+        if (drift.status === "drifted") {
+          issues.push(`runtime_source_materialization_alias_drifted:${aliasRuntimePath}`);
+        }
+      } catch {
+        issues.push(`runtime_source_materialization_alias_missing:${aliasRuntimePath}`);
+      }
+    }
+  }
   return issues;
 }
 
@@ -940,6 +1041,71 @@ export async function writeSourceRuntimeMaterializationRecords(input?: {
   await fs.writeFile(`${recordPath}.tmp`, `${JSON.stringify(recordFile, null, 2)}\n`, "utf8");
   await fs.rename(`${recordPath}.tmp`, recordPath);
   return { recordPath, recordFile };
+}
+
+export async function materializeSourceRuntimeFiles(input?: {
+  sourceCommit?: string;
+  manifest?: SourceRuntimeUnificationManifest;
+  generatedAt?: string;
+}): Promise<SourceRuntimeMaterializationResult> {
+  const manifest = input?.manifest ?? (await loadSourceRuntimeUnificationManifest());
+  const materializations = [
+    ...manifest.executionAgentMaterializations,
+    ...manifest.executionSkillMaterializations,
+  ];
+  const materializedFiles: SourceRuntimeMaterializedFile[] = [];
+  for (const materialization of materializations) {
+    const sourcePath = resolveRepoPath(materialization.sourcePath);
+    const sourceFiles = await listSourceFiles(sourcePath);
+    for (const sourceFile of sourceFiles) {
+      const bytes = await fs.readFile(sourceFile);
+      const runtimePath = materializedRuntimePathForSourceFile({
+        sourceRoot: sourcePath,
+        sourceFile,
+        runtimeRoot: materialization.runtimePath,
+      });
+      await ensureSourceBackedRuntimeLink({ sourceFile, runtimePath });
+
+      const runtimeAliasPath = materialization.runtimeAliasPath
+        ? materializedRuntimePathForSourceFile({
+            sourceRoot: sourcePath,
+            sourceFile,
+            runtimeRoot: materialization.runtimeAliasPath,
+          })
+        : null;
+      if (runtimeAliasPath) {
+        await ensureSourceBackedRuntimeLink({ sourceFile, runtimePath: runtimeAliasPath });
+      }
+      materializedFiles.push({
+        sourcePath: sourceFile,
+        runtimePath,
+        runtimeAliasPath,
+        afterHash: createHash("sha256").update(bytes).digest("hex"),
+      });
+    }
+  }
+
+  const written = await writeSourceRuntimeMaterializationRecords({
+    manifest,
+    sourceCommit: input?.sourceCommit,
+    generatedAt: input?.generatedAt,
+  });
+  const validationIssues = written.recordFile.validationIssues;
+  return {
+    status: validationIssues.length > 0 ? "blocked" : "aligned",
+    recordPath: written.recordPath,
+    recordFile: written.recordFile,
+    materializedFiles,
+    validationIssues,
+    reasonCodes: [
+      "source_runtime_materialization_executed",
+      "source_runtime_first_party_files_source_linked",
+      validationIssues.length > 0
+        ? "source_runtime_materialization_residual_drift_blocked"
+        : "source_runtime_materialization_aligned",
+      `source_runtime_materialized_file_count:${materializedFiles.length}`,
+    ],
+  };
 }
 
 export async function writeSourceRuntimeForkTransitionReadiness(input: {

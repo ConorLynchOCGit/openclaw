@@ -12,10 +12,15 @@ import { clearAllBootstrapSnapshots, getOrLoadBootstrapFiles } from "./bootstrap
 import {
   FULL_BOOTSTRAP_COMPLETED_CUSTOM_TYPE,
   hasCompletedBootstrapTurn,
+  materializeSourceRuntimeBeforeBootstrapIfNeeded,
   resolveBootstrapContextForRun,
   resolveBootstrapFilesForRun,
   resolveContextInjectionMode,
 } from "./bootstrap-files.js";
+import type {
+  SourceRuntimeMaterializationResult,
+  SourceRuntimeUnificationManifest,
+} from "./source-runtime-unification.js";
 import type { WorkspaceBootstrapFile } from "./workspace.js";
 
 function registerExtraBootstrapFileHook() {
@@ -88,6 +93,217 @@ const liveModelMemoryConfig = {
     },
   },
 } as OpenClawConfig;
+
+function createSourceRuntimeBootstrapManifest(params: {
+  projectRoot: string;
+  runtimeHome: string;
+  runtimeAgentDir: string;
+  runtimeAgentAliasDir?: string;
+}): SourceRuntimeUnificationManifest {
+  return {
+    version: 1,
+    status: "test",
+    canonical: {
+      projectRoot: params.projectRoot,
+      runtimeHome: params.runtimeHome,
+    },
+    runtimeAliases: [],
+    executionAgentMaterializations: [
+      {
+        id: "execution-coding",
+        kind: "agent",
+        sourcePath: path.join(params.projectRoot, "docs", "agents", "execution-coding", "runtime"),
+        runtimePath: params.runtimeAgentDir,
+        runtimeAliasPath: params.runtimeAgentAliasDir,
+        projectRoot: params.projectRoot,
+      },
+    ],
+    executionSkillMaterializations: [],
+  };
+}
+
+function createMaterializationResult(params: {
+  manifest: SourceRuntimeUnificationManifest;
+  status: SourceRuntimeMaterializationResult["status"];
+  runtimeAgentDir: string;
+  validationIssues?: string[];
+}): SourceRuntimeMaterializationResult {
+  const validationIssues = params.validationIssues ?? [];
+  return {
+    status: params.status,
+    recordPath: path.join(params.manifest.canonical.runtimeHome, "source-runtime", "records.json"),
+    recordFile: {
+      artifactKind: "openclaw.source_runtime.materialization_records",
+      schemaVersion: "openclaw.source-runtime.materialization-records.v1",
+      generatedAt: "2026-06-07T00:00:00.000Z",
+      manifestRef: "docs/system/registries/source-runtime-unification.yaml",
+      sourceCommit: null,
+      canonical: params.manifest.canonical,
+      runtimeAliases: [],
+      records: [],
+      validationIssues,
+      rawPromptStored: false,
+      rawResponseStored: false,
+      rawProviderLogStored: false,
+      rawTranscriptStored: false,
+      hiddenReasoningStored: false,
+    },
+    materializedFiles: [
+      {
+        sourcePath: path.join(
+          params.manifest.canonical.projectRoot,
+          "docs",
+          "agents",
+          "execution-coding",
+          "runtime",
+          "IDENTITY.md",
+        ),
+        runtimePath: path.join(params.runtimeAgentDir, "IDENTITY.md"),
+        runtimeAliasPath: null,
+        afterHash: "hash",
+      },
+    ],
+    validationIssues,
+    reasonCodes: [
+      "source_runtime_materialization_executed",
+      params.status === "aligned"
+        ? "source_runtime_materialization_aligned"
+        : "source_runtime_materialization_residual_drift_blocked",
+    ],
+  };
+}
+
+describe("materializeSourceRuntimeBeforeBootstrapIfNeeded", () => {
+  it("materializes source-runtime docs and skills before a materialized execution agent bootstraps", async () => {
+    const root = await fs.mkdtemp(path.join(await fs.realpath("/tmp"), "openclaw-bootstrap-src-"));
+    const projectRoot = path.join(root, "repo");
+    const runtimeHome = path.join(root, "runtime");
+    const runtimeAgentDir = path.join(runtimeHome, "agents", "execution-coding", "agent");
+    const manifest = createSourceRuntimeBootstrapManifest({
+      projectRoot,
+      runtimeHome,
+      runtimeAgentDir,
+    });
+    const materializedManifests: SourceRuntimeUnificationManifest[] = [];
+
+    const result = await materializeSourceRuntimeBeforeBootstrapIfNeeded({
+      config: {
+        agents: {
+          list: [{ id: "execution-coding", agentDir: runtimeAgentDir }],
+        },
+      } as OpenClawConfig,
+      sessionKey: "agent:execution-coding:node:nrun-test",
+      agentId: "execution-coding",
+      deps: {
+        loadManifest: async () => manifest,
+        materializeFiles: async ({ manifest: loadedManifest }) => {
+          materializedManifests.push(loadedManifest);
+          return createMaterializationResult({
+            manifest: loadedManifest,
+            status: "aligned",
+            runtimeAgentDir,
+          });
+        },
+      },
+    });
+
+    expect(materializedManifests).toEqual([manifest]);
+    expect(result).toMatchObject({
+      status: "aligned",
+      agentId: "execution-coding",
+      agentDir: path.resolve(runtimeAgentDir),
+      materializedFileCount: 1,
+    });
+  });
+
+  it("skips materialization for configured agents outside the source-runtime manifest", async () => {
+    const root = await fs.mkdtemp(path.join(await fs.realpath("/tmp"), "openclaw-bootstrap-src-"));
+    const projectRoot = path.join(root, "repo");
+    const runtimeHome = path.join(root, "runtime");
+    const runtimeAgentDir = path.join(runtimeHome, "agents", "execution-coding", "agent");
+    const unrelatedAgentDir = path.join(runtimeHome, "agents", "main", "agent");
+    const manifest = createSourceRuntimeBootstrapManifest({
+      projectRoot,
+      runtimeHome,
+      runtimeAgentDir,
+    });
+    let materializeCalled = false;
+
+    const result = await materializeSourceRuntimeBeforeBootstrapIfNeeded({
+      config: {
+        agents: {
+          list: [{ id: "main", agentDir: unrelatedAgentDir }],
+        },
+      } as OpenClawConfig,
+      sessionKey: "agent:main:main",
+      agentId: "main",
+      deps: {
+        loadManifest: async () => manifest,
+        materializeFiles: async ({ manifest: loadedManifest }) => {
+          materializeCalled = true;
+          return createMaterializationResult({
+            manifest: loadedManifest,
+            status: "aligned",
+            runtimeAgentDir,
+          });
+        },
+      },
+    });
+
+    expect(materializeCalled).toBe(false);
+    expect(result).toMatchObject({
+      status: "skipped",
+      reasonCode: "source_runtime_bootstrap_agent_not_materialized",
+      agentId: "main",
+      agentDir: path.resolve(unrelatedAgentDir),
+    });
+  });
+
+  it("blocks bootstrap when source-runtime materialization leaves residual drift", async () => {
+    const root = await fs.mkdtemp(path.join(await fs.realpath("/tmp"), "openclaw-bootstrap-src-"));
+    const projectRoot = path.join(root, "repo");
+    const runtimeHome = path.join(root, "runtime");
+    const runtimeAgentDir = path.join(runtimeHome, "agents", "execution-coding", "agent");
+    const manifest = createSourceRuntimeBootstrapManifest({
+      projectRoot,
+      runtimeHome,
+      runtimeAgentDir,
+    });
+    const warnings: string[] = [];
+
+    await expect(
+      materializeSourceRuntimeBeforeBootstrapIfNeeded({
+        config: {
+          agents: {
+            list: [{ id: "execution-coding", agentDir: runtimeAgentDir }],
+          },
+        } as OpenClawConfig,
+        sessionKey: "agent:execution-coding:node:nrun-test",
+        agentId: "execution-coding",
+        warn: (message) => warnings.push(message),
+        deps: {
+          loadManifest: async () => manifest,
+          materializeFiles: async ({ manifest: loadedManifest }) =>
+            createMaterializationResult({
+              manifest: loadedManifest,
+              status: "blocked",
+              runtimeAgentDir,
+              validationIssues: [
+                `runtime_source_materialization_drifted:${path.join(
+                  runtimeAgentDir,
+                  "IDENTITY.md",
+                )}`,
+              ],
+            }),
+        },
+      }),
+    ).rejects.toThrow(/source-runtime materialization blocked bootstrap/);
+
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain("source-runtime materialization blocked bootstrap");
+    expect(warnings[0]).toContain("runtime_source_materialization_drifted");
+  });
+});
 
 describe("resolveBootstrapFilesForRun", () => {
   beforeEach(() => clearInternalHooks());

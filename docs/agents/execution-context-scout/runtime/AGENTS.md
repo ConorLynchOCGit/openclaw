@@ -31,9 +31,7 @@ Follow a concrete iterative loop:
 2. Group terms into families, such as product/workflow names, function names,
    tool names, schema names, error text, command names, file stems, or test
    names.
-3. Run focused repo searches with native `grep`, `glob`, and `list`; use
-   `exec rg` only when the native tools cannot express the needed search
-   shape.
+3. Run focused repo searches with native `grep`, `glob`, and `list`.
 4. Read bounded high-signal file windows with `read`.
 5. Mine the files you opened for new identifiers, imports, callers, tests,
    adjacent config, and command names.
@@ -92,6 +90,10 @@ not a refs-only substitute for source excerpts.
 ## Boundaries
 
 Never edit, write, patch, stage, or run broad destructive commands.
+
+Never call `exec` or shell out for search. Your provider-visible catalog is
+read/search only. If native search cannot express a needed query, name the gap
+precisely in the result instead of trying a hidden tool.
 
 Never call `node_finish`.
 

@@ -9,7 +9,11 @@ import type { OpenClawConfig } from "../config/config.js";
 import { resolveChannelGroupToolsPolicy } from "../config/group-policy.js";
 import { setActivePluginRegistry } from "../plugins/runtime.js";
 import { createSessionConversationTestRegistry } from "../test-utils/session-conversation-registry.js";
-import { createOpenClawCodingTools, __testing as piToolsTesting } from "./pi-tools.js";
+import {
+  createOpenClawCodingTools,
+  filterToolsForExecutionScoutMode,
+  __testing as piToolsTesting,
+} from "./pi-tools.js";
 import { resolveEffectiveToolPolicy } from "./pi-tools.policy.js";
 import type { SandboxDockerConfig } from "./sandbox.js";
 import type { SandboxFsBridge } from "./sandbox/fs-bridge.js";
@@ -266,6 +270,7 @@ describe("Agent-specific tool filtering", () => {
         allowedAgentIds: ["execution-context-scout", "execution-validation-scout"],
         mutationToolName: "edit",
       },
+      nodeAgentParentCrawlGuard: { enabled: true },
       allowGatewaySubagentBinding: true,
     });
     const toolNames = tools.map((tool) => tool.name);
@@ -293,7 +298,311 @@ describe("Agent-specific tool filtering", () => {
     expect(toolNames).not.toEqual(expect.arrayContaining(["agents_list"]));
   });
 
-  it("blocks broad execution-node parent crawling before accepted context scout delegation", async () => {
+  it("uses native-task catalog filtering, not parent crawl guard, as executable-node control plane", () => {
+    const cfg = createMainAgentConfig({
+      tools: {
+        allow: [
+          "read",
+          "list",
+          "glob",
+          "grep",
+          "exec",
+          "write",
+          "edit",
+          "update_plan",
+          "read_todo",
+          "sessions_spawn",
+          "sessions_yield",
+          "task",
+          "openclaw_resource_read",
+          "node_finish",
+        ],
+      },
+      agentTools: {
+        allow: [
+          "read",
+          "list",
+          "glob",
+          "grep",
+          "exec",
+          "write",
+          "edit",
+          "update_plan",
+          "read_todo",
+          "sessions_spawn",
+          "sessions_yield",
+          "task",
+          "openclaw_resource_read",
+          "node_finish",
+        ],
+      },
+    });
+    const tools = createOpenClawCodingTools({
+      config: cfg,
+      sessionKey: "agent:main:node:nrun_native_task_control",
+      workspaceDir: "/tmp/test",
+      agentDir: "/tmp/agent",
+      nativeRuntimeTools: [
+        createStubNodeTool("openclaw_resource_read"),
+        createStubNodeTool("node_finish"),
+      ],
+      nodeAgentNativeTaskMode: {
+        enabled: true,
+        allowedAgentIds: ["execution-context-scout", "execution-validation-scout"],
+        mutationToolName: "edit",
+      },
+      nodeAgentParentCrawlGuard: { enabled: true },
+      allowGatewaySubagentBinding: true,
+    });
+    const toolNames = tools.map((tool) => tool.name);
+
+    expect(toolNames).toEqual(
+      expect.arrayContaining([
+        "task",
+        "update_plan",
+        "read_todo",
+        "edit",
+        "openclaw_resource_read",
+        "node_finish",
+      ]),
+    );
+    expect(toolNames).not.toEqual(
+      expect.arrayContaining([
+        "read",
+        "list",
+        "glob",
+        "grep",
+        "exec",
+        "write",
+        "sessions_spawn",
+        "sessions_yield",
+      ]),
+    );
+  });
+
+  it("keeps one configured mutation surface in executable node native task mode", () => {
+    const cfg = createMainAgentConfig({
+      tools: {
+        allow: [
+          "read",
+          "list",
+          "glob",
+          "grep",
+          "exec",
+          "write",
+          "edit",
+          "apply_patch",
+          "update_plan",
+          "read_todo",
+          "task",
+          "openclaw_resource_read",
+          "node_finish",
+        ],
+      },
+      agentTools: {
+        allow: [
+          "read",
+          "list",
+          "glob",
+          "grep",
+          "exec",
+          "write",
+          "edit",
+          "apply_patch",
+          "update_plan",
+          "read_todo",
+          "task",
+          "openclaw_resource_read",
+          "node_finish",
+        ],
+      },
+    });
+    const tools = createOpenClawCodingTools({
+      config: cfg,
+      sessionKey: "agent:main:node:nrun_apply_patch",
+      workspaceDir: "/tmp/test",
+      agentDir: "/tmp/agent",
+      modelProvider: "openai",
+      modelId: "gpt-5.4",
+      nativeRuntimeTools: [
+        createStubNodeTool("openclaw_resource_read"),
+        createStubNodeTool("node_finish"),
+      ],
+      nodeAgentNativeTaskMode: {
+        enabled: true,
+        allowedAgentIds: ["execution-context-scout", "execution-validation-scout"],
+        mutationToolName: "apply_patch",
+      },
+    });
+    const toolNames = tools.map((tool) => tool.name);
+
+    expect(toolNames).toEqual(
+      expect.arrayContaining(["task", "update_plan", "read_todo", "apply_patch", "node_finish"]),
+    );
+    expect(toolNames).not.toEqual(expect.arrayContaining(["edit"]));
+    expect(toolNames).not.toEqual(expect.arrayContaining(["write"]));
+    expect(toolNames).not.toEqual(expect.arrayContaining(["read", "grep", "exec"]));
+  });
+
+  it("filters execution context scout catalog to read and search tools only", () => {
+    const broadTools = [
+      "read",
+      "list",
+      "glob",
+      "grep",
+      "exec",
+      "process",
+      "write",
+      "edit",
+      "update_plan",
+      "read_todo",
+      "task",
+      "openclaw_resource_read",
+      "node_finish",
+      "sessions_spawn",
+      "sessions_yield",
+      "subagents",
+      "agents_list",
+    ];
+    const cfg: OpenClawConfig = {
+      tools: { allow: broadTools },
+      agents: {
+        list: [
+          {
+            id: "execution-context-scout",
+            workspace: "~/openclaw",
+            tools: { allow: broadTools },
+          },
+        ],
+      },
+    };
+
+    const tools = createOpenClawCodingTools({
+      config: cfg,
+      agentId: "execution-context-scout",
+      sessionKey: "agent:execution-context-scout:subagent:test",
+      workspaceDir: "/tmp/test",
+      agentDir: "/tmp/agent",
+      senderIsOwner: true,
+      nativeRuntimeTools: [
+        createStubNodeTool("openclaw_resource_read"),
+        createStubNodeTool("node_finish"),
+      ],
+      extraTools: [
+        createStubNodeTool("task"),
+        createStubNodeTool("sessions_spawn"),
+        createStubNodeTool("read_todo"),
+      ],
+    });
+    const toolNames = tools.map((tool) => tool.name);
+
+    expect(toolNames).toEqual(expect.arrayContaining(["read", "list", "glob", "grep"]));
+    expect(toolNames).not.toEqual(
+      expect.arrayContaining([
+        "exec",
+        "process",
+        "write",
+        "edit",
+        "update_plan",
+        "read_todo",
+        "task",
+        "openclaw_resource_read",
+        "node_finish",
+        "sessions_spawn",
+        "sessions_yield",
+        "subagents",
+        "agents_list",
+      ]),
+    );
+  });
+
+  it("filters execution validation scout catalog to read, search, and exec tools only", () => {
+    const broadTools = [
+      "read",
+      "list",
+      "glob",
+      "grep",
+      "exec",
+      "process",
+      "write",
+      "edit",
+      "update_plan",
+      "read_todo",
+      "task",
+      "openclaw_resource_read",
+      "node_finish",
+      "sessions_spawn",
+      "sessions_yield",
+      "subagents",
+      "agents_list",
+    ];
+    const cfg: OpenClawConfig = {
+      tools: { allow: broadTools },
+      agents: {
+        list: [
+          {
+            id: "execution-validation-scout",
+            workspace: "~/openclaw",
+            tools: { allow: broadTools },
+          },
+        ],
+      },
+    };
+
+    const tools = createOpenClawCodingTools({
+      config: cfg,
+      agentId: "execution-validation-scout",
+      sessionKey: "agent:execution-validation-scout:subagent:test",
+      workspaceDir: "/tmp/test",
+      agentDir: "/tmp/agent",
+      senderIsOwner: true,
+      nativeRuntimeTools: [
+        createStubNodeTool("openclaw_resource_read"),
+        createStubNodeTool("node_finish"),
+      ],
+      extraTools: [
+        createStubNodeTool("task"),
+        createStubNodeTool("sessions_spawn"),
+        createStubNodeTool("read_todo"),
+      ],
+    });
+    const toolNames = tools.map((tool) => tool.name);
+
+    expect(toolNames).toEqual(expect.arrayContaining(["read", "list", "glob", "grep", "exec"]));
+    expect(toolNames).not.toEqual(
+      expect.arrayContaining([
+        "process",
+        "write",
+        "edit",
+        "update_plan",
+        "read_todo",
+        "task",
+        "openclaw_resource_read",
+        "node_finish",
+        "sessions_spawn",
+        "sessions_yield",
+        "subagents",
+        "agents_list",
+      ]),
+    );
+  });
+
+  it("filters execution scout provider-effective bundle tools after native tool construction", () => {
+    const tools = filterToolsForExecutionScoutMode({
+      agentId: "execution-context-scout",
+      tools: [
+        createStubNodeTool("read"),
+        createStubNodeTool("grep"),
+        createStubNodeTool("model_context_bundle"),
+        createStubNodeTool("task"),
+        createStubNodeTool("node_finish"),
+      ],
+    });
+
+    expect(tools.map((tool) => tool.name)).toEqual(["read", "grep"]);
+  });
+
+  it("keeps defensive legacy parent crawl guard quarantined outside native task mode", async () => {
     const workspaceDir = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-node-crawl-"));
     await fs.mkdir(path.join(workspaceDir, "src"), { recursive: true });
     await fs.writeFile(
@@ -354,7 +663,7 @@ describe("Agent-specific tool filtering", () => {
     await fs.rm(workspaceDir, { recursive: true, force: true });
   });
 
-  it("unlocks broad execution-node parent mapping only after accepted context scout spawn", async () => {
+  it("keeps defensive legacy parent crawl guard unlock behavior quarantined outside native task mode", async () => {
     const grepTool: AnyAgentTool = {
       name: "grep",
       label: "grep",

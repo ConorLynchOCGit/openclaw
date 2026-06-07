@@ -212,12 +212,18 @@ async function createExecutionConfig(
   );
 }
 
-function prepare(config: OpenClawConfig) {
+function prepare(
+  config: OpenClawConfig,
+  sourceRuntimeMaterialization?: Parameters<
+    typeof prepareOpenClawNodeStart
+  >[0]["sourceRuntimeMaterialization"],
+) {
   return prepareOpenClawNodeStart({
     config,
     nodeRun: makeNodeRun(),
     nodeExecutionSnapshot: makeSnapshot(),
     sessionFilePath: "/tmp/openclaw-node-start-test/session.jsonl",
+    sourceRuntimeMaterialization,
   });
 }
 
@@ -292,6 +298,36 @@ function makeProviderAdmissionReport(
     ...base,
     ...overrides,
   };
+}
+
+function providerToolEntries(
+  names: readonly string[],
+): SessionSystemPromptReport["tools"]["entries"] {
+  return names.map((name) => ({
+    name,
+    summaryChars: 10,
+    schemaChars: 20,
+    propertiesCount: 1,
+  }));
+}
+
+function canonicalDocPaths(agentDir: string): string[] {
+  return ["IDENTITY.md", "AGENTS.md", "BOOTSTRAP.md", "TOOLS.md"].map((docName) =>
+    path.join(agentDir, docName),
+  );
+}
+
+function providerWorkspaceFileEntriesForAgent(
+  agentId: string,
+): SessionSystemPromptReport["injectedWorkspaceFiles"] {
+  return ["IDENTITY.md", "AGENTS.md", "BOOTSTRAP.md", "TOOLS.md"].map((docName) => ({
+    name: docName,
+    path: `/root/.openclaw/agents/${agentId}/agent/${docName}`,
+    missing: false,
+    rawChars: 10,
+    injectedChars: 10,
+    truncated: false,
+  }));
 }
 
 function makeWorkerPrompt(
@@ -379,8 +415,27 @@ describe("execution platform node agent start", () => {
   it("blocks mutating tools on scout agents to preserve native mode separation", async () => {
     const result = prepare(
       await createExecutionConfig({
-        contextScoutTools: ["read", "list", "glob", "grep", "edit"],
-        validationScoutTools: ["read", "list", "glob", "grep", "exec", "write"],
+        contextScoutTools: [
+          "read",
+          "list",
+          "glob",
+          "grep",
+          "edit",
+          "task",
+          "update_plan",
+          "openclaw_resource_read",
+        ],
+        validationScoutTools: [
+          "read",
+          "list",
+          "glob",
+          "grep",
+          "exec",
+          "write",
+          "sessions_spawn",
+          "read_todo",
+          "openclaw_resource_read",
+        ],
       }),
     );
 
@@ -399,6 +454,42 @@ describe("execution platform node agent start", () => {
         expect.objectContaining({
           agentId: "execution-validation-scout",
           toolName: "write",
+          allowed: false,
+          blockedBy: expect.arrayContaining(["execution_node_scout_mode_separation"]),
+        }),
+        expect.objectContaining({
+          agentId: "execution-context-scout",
+          toolName: "task",
+          allowed: false,
+          blockedBy: expect.arrayContaining(["execution_node_scout_mode_separation"]),
+        }),
+        expect.objectContaining({
+          agentId: "execution-context-scout",
+          toolName: "update_plan",
+          allowed: false,
+          blockedBy: expect.arrayContaining(["execution_node_scout_mode_separation"]),
+        }),
+        expect.objectContaining({
+          agentId: "execution-context-scout",
+          toolName: "openclaw_resource_read",
+          allowed: false,
+          blockedBy: expect.arrayContaining(["execution_node_scout_mode_separation"]),
+        }),
+        expect.objectContaining({
+          agentId: "execution-validation-scout",
+          toolName: "sessions_spawn",
+          allowed: false,
+          blockedBy: expect.arrayContaining(["execution_node_scout_mode_separation"]),
+        }),
+        expect.objectContaining({
+          agentId: "execution-validation-scout",
+          toolName: "read_todo",
+          allowed: false,
+          blockedBy: expect.arrayContaining(["execution_node_scout_mode_separation"]),
+        }),
+        expect.objectContaining({
+          agentId: "execution-validation-scout",
+          toolName: "openclaw_resource_read",
           allowed: false,
           blockedBy: expect.arrayContaining(["execution_node_scout_mode_separation"]),
         }),
@@ -558,6 +649,48 @@ describe("execution platform node agent start", () => {
     );
   });
 
+  it("does not admit parent canonical docs by basename when exact parent paths are required", () => {
+    const wrongAgentReport = makeProviderAdmissionReport({
+      injectedWorkspaceFiles: providerWorkspaceFileEntriesForAgent("execution-context-scout"),
+    });
+
+    const projection = buildNodeAgentBootstrapAdmissionFromSystemPromptReport({
+      report: wrongAgentReport,
+      parentAgentId: "execution-coding",
+      requiredSkillNames: ["execution-node-workflow"],
+      requiredCanonicalDocPaths: canonicalDocPaths("/root/.openclaw/agents/execution-coding/agent"),
+    });
+
+    expect(projection.summary).toMatchObject({
+      providerReportObserved: true,
+      parentCanonicalDocsAdmitted: false,
+      parentRequiredSkillsAdmitted: true,
+      missingRequiredSources: [
+        "agent-doc:execution-coding:IDENTITY.md",
+        "agent-doc:execution-coding:AGENTS.md",
+        "agent-doc:execution-coding:BOOTSTRAP.md",
+        "agent-doc:execution-coding:TOOLS.md",
+      ],
+      truncatedRequiredSources: [],
+    });
+    expect(projection.canonicalAgentDocAdmissions).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: "IDENTITY.md",
+          path: "/root/.openclaw/agents/execution-coding/agent/IDENTITY.md",
+          admitted: false,
+          missing: true,
+        }),
+      ]),
+    );
+    expect(projection.reasonCodes).toEqual(
+      expect.arrayContaining([
+        "node_agent_parent_canonical_docs_missing_from_provider_context",
+        "node_agent_parent_required_skills_admitted_to_provider_context",
+      ]),
+    );
+  });
+
   it("surfaces missing or truncated bootstrap context from the provider prompt report", () => {
     const report: SessionSystemPromptReport = {
       source: "run",
@@ -620,12 +753,15 @@ describe("execution platform node agent start", () => {
   it("accepts worker prompt session proof when provider bootstrap admission is complete", async () => {
     const start = prepare(await createExecutionConfig());
     expect(start.status).toBe("accepted");
+    const promptText = "Use update_plan, validate the change, and finish with node_finish.\n";
+    const workerPrompt = makeWorkerPrompt(promptText);
 
     const receipt = withWorkerPromptSessionProof({
       receipt: start.receipt,
-      workerPrompt: makeWorkerPrompt(),
+      workerPrompt,
       workerPromptArtifactRef: "runtime-job://job-test/node-worker-prompt/proof",
       sessionFilePath: "/tmp/openclaw-node-start-test/session.jsonl",
+      finalPromptText: promptText,
       systemPromptReport: makeProviderAdmissionReport(),
       effectiveToolNames: [
         "node_finish",
@@ -641,6 +777,9 @@ describe("execution platform node agent start", () => {
     expect(receipt.status).toBe("accepted");
     expect(receipt.blockerKind).toBeNull();
     expect(receipt.blockers).toEqual([]);
+    expect(receipt.promptHash).toBe(stableTestHash(promptText));
+    expect(receipt.submittedPromptHash).toBe(stableTestHash(promptText));
+    expect(receipt.promptSessionHashMatch).toBe(true);
     expect(receipt.bootstrapAdmission).toMatchObject({
       providerReportObserved: true,
       parentCanonicalDocsAdmitted: true,
@@ -652,6 +791,165 @@ describe("execution platform node agent start", () => {
       expect.arrayContaining([
         "node_agent_start_receipt_enforces_provider_bootstrap_admission",
         "node_agent_parent_canonical_docs_admitted_to_provider_context",
+        "node_agent_parent_required_skills_admitted_to_provider_context",
+      ]),
+    );
+  });
+
+  it("uses provider-reported tool entries as the worker prompt session catalog truth", async () => {
+    const start = prepare(await createExecutionConfig());
+    expect(start.status).toBe("accepted");
+    const workerPrompt = makeWorkerPrompt();
+
+    const accepted = withWorkerPromptSessionProof({
+      receipt: start.receipt,
+      workerPrompt,
+      workerPromptArtifactRef: "runtime-job://job-test/node-worker-prompt/proof",
+      sessionFilePath: "/tmp/openclaw-node-start-test/session.jsonl",
+      systemPromptReport: makeProviderAdmissionReport({
+        tools: {
+          listChars: 0,
+          schemaChars: 120,
+          entries: providerToolEntries(REQUIRED_NODE_TOOL_ALLOW),
+        },
+      }),
+      effectiveToolNames: REQUIRED_NODE_TOOL_ALLOW,
+      enforceProviderBootstrapAdmission: true,
+    });
+
+    expect(accepted.status).toBe("accepted");
+    expect(accepted.effectiveToolNames).toEqual(REQUIRED_NODE_TOOL_ALLOW);
+    expect(accepted.reasonCodes).toEqual(
+      expect.arrayContaining([
+        "node_agent_start_receipt_records_provider_report_tool_names",
+        "node_agent_provider_tool_catalog_admitted",
+      ]),
+    );
+
+    const blocked = withWorkerPromptSessionProof({
+      receipt: start.receipt,
+      workerPrompt,
+      workerPromptArtifactRef: "runtime-job://job-test/node-worker-prompt/proof",
+      sessionFilePath: "/tmp/openclaw-node-start-test/session.jsonl",
+      systemPromptReport: makeProviderAdmissionReport({
+        tools: {
+          listChars: 0,
+          schemaChars: 120,
+          entries: providerToolEntries(["node_finish", "read"]),
+        },
+      }),
+      effectiveToolNames: REQUIRED_NODE_TOOL_ALLOW,
+      enforceProviderBootstrapAdmission: true,
+    });
+
+    expect(blocked.status).toBe("blocked");
+    expect(blocked.blockerKind).toBe("node_agent_provider_tool_catalog_mismatch");
+    expect(blocked.effectiveToolNames).toEqual(["node_finish", "read"]);
+    expect(blocked.blockers).toEqual(
+      expect.arrayContaining([
+        "node_agent_provider_tool_catalog_mismatch",
+        "node_agent_provider_tool_catalog_missing_required_tool",
+        "node_agent_provider_forbidden_tool_visible_in_catalog",
+      ]),
+    );
+    expect(blocked.reasonCodes).toEqual(
+      expect.arrayContaining([
+        "node_agent_provider_tool_catalog_admission_blocked",
+        "node_agent_provider_tool_catalog_mismatch",
+        "node_agent_provider_tool_catalog_missing_required_tool:openclaw_resource_read",
+        "node_agent_provider_tool_catalog_missing_required_tool:edit",
+        "node_agent_provider_forbidden_tool_visible_in_catalog:read",
+      ]),
+    );
+  });
+
+  it("blocks worker prompt session proof when the provider-submitted prompt differs from the worker prompt", async () => {
+    const start = prepare(await createExecutionConfig());
+    expect(start.status).toBe("accepted");
+    const workerPrompt = makeWorkerPrompt();
+    const finalPromptText = `Injected context that should not be part of the native worker prompt.\n\n${workerPrompt.promptText}`;
+
+    const receipt = withWorkerPromptSessionProof({
+      receipt: start.receipt,
+      workerPrompt,
+      workerPromptArtifactRef: "runtime-job://job-test/node-worker-prompt/proof",
+      sessionFilePath: "/tmp/openclaw-node-start-test/session.jsonl",
+      finalPromptText,
+      systemPromptReport: makeProviderAdmissionReport(),
+      effectiveToolNames: [
+        "node_finish",
+        "openclaw_resource_read",
+        "edit",
+        "update_plan",
+        "read_todo",
+        "task",
+      ],
+      enforceProviderBootstrapAdmission: true,
+    });
+
+    expect(receipt.status).toBe("blocked");
+    expect(receipt.blockerKind).toBe("node_agent_prompt_session_write_mismatch");
+    expect(receipt.promptHash).toBe(workerPrompt.promptHash);
+    expect(receipt.submittedPromptHash).toBe(stableTestHash(finalPromptText));
+    expect(receipt.promptSessionHashMatch).toBe(false);
+    expect(receipt.blockers).toContain("node_agent_prompt_session_write_mismatch");
+    expect(receipt.reasonCodes).toEqual(
+      expect.arrayContaining([
+        "node_agent_start_receipt_records_native_session_prompt_hash",
+        "node_agent_prompt_session_write_mismatch",
+        "node_agent_start_receipt_enforces_provider_bootstrap_admission",
+      ]),
+    );
+  });
+
+  it("blocks worker prompt session proof when exact parent canonical docs resolve to the wrong agent", async () => {
+    const config = await createExecutionConfig();
+    const start = prepare(config);
+    expect(start.status).toBe("accepted");
+    const parentAgentDir = config.agents?.list?.find(
+      (agent) => agent.id === "execution-coding",
+    )?.agentDir;
+    expect(parentAgentDir).toEqual(expect.any(String));
+
+    const receipt = withWorkerPromptSessionProof({
+      receipt: start.receipt,
+      workerPrompt: makeWorkerPrompt(),
+      workerPromptArtifactRef: "runtime-job://job-test/node-worker-prompt/proof",
+      sessionFilePath: "/tmp/openclaw-node-start-test/session.jsonl",
+      systemPromptReport: makeProviderAdmissionReport({
+        injectedWorkspaceFiles: providerWorkspaceFileEntriesForAgent("execution-context-scout"),
+      }),
+      effectiveToolNames: [
+        "node_finish",
+        "openclaw_resource_read",
+        "edit",
+        "update_plan",
+        "read_todo",
+        "task",
+      ],
+      requiredCanonicalDocPaths: canonicalDocPaths(parentAgentDir as string),
+      enforceProviderBootstrapAdmission: true,
+    });
+
+    expect(receipt.status).toBe("blocked");
+    expect(receipt.blockerKind).toBe("node_agent_provider_canonical_docs_missing");
+    expect(receipt.bootstrapAdmission).toMatchObject({
+      providerReportObserved: true,
+      parentCanonicalDocsAdmitted: false,
+      parentRequiredSkillsAdmitted: true,
+      missingRequiredSources: [
+        "agent-doc:execution-coding:IDENTITY.md",
+        "agent-doc:execution-coding:AGENTS.md",
+        "agent-doc:execution-coding:BOOTSTRAP.md",
+        "agent-doc:execution-coding:TOOLS.md",
+      ],
+      truncatedRequiredSources: [],
+    });
+    expect(receipt.reasonCodes).toEqual(
+      expect.arrayContaining([
+        "node_agent_start_receipt_enforces_provider_bootstrap_admission",
+        "node_agent_provider_bootstrap_admission_blocked",
+        "node_agent_parent_canonical_docs_missing_from_provider_context",
         "node_agent_parent_required_skills_admitted_to_provider_context",
       ]),
     );
@@ -676,7 +974,7 @@ describe("execution platform node agent start", () => {
     expect(receipt.bootstrapAdmission.providerReportObserved).toBe(false);
     expect(receipt.reasonCodes).toEqual(
       expect.arrayContaining([
-        "node_agent_start_receipt_provider_bootstrap_admission_not_yet_enforced",
+        "node_agent_start_receipt_provider_bootstrap_admission_deferred_to_native_precheck",
         "node_agent_start_receipt_provider_prompt_report_not_observed",
       ]),
     );
@@ -839,6 +1137,12 @@ describe("execution platform node agent start", () => {
       await createExecutionConfig({
         globalTools: { profile: "messaging" },
       }),
+      {
+        status: "aligned",
+        recordPath: "/root/.openclaw/source-runtime/materialization-records.json",
+        validationIssues: [],
+        reasonCodes: ["source_runtime_materialization_aligned"],
+      },
     );
 
     expect(result.status).toBe("accepted");
@@ -869,6 +1173,10 @@ describe("execution platform node agent start", () => {
           }),
         ]),
         manifestRef: "repo://docs/system/registries/source-runtime-unification.yaml",
+        materializationRecordRef: "/root/.openclaw/source-runtime/materialization-records.json",
+        materializationStatus: "aligned",
+        materializationIssueCount: 0,
+        materializationIssues: [],
       },
       activeSkillNames: ["execution-node-workflow"],
       effectiveToolNames: expect.arrayContaining([
@@ -901,6 +1209,7 @@ describe("execution platform node agent start", () => {
     expect(result.receipt.sourceRuntime.executionPlatformDocsRoot).toBe(
       path.join(result.receipt.sourceRuntime.projectRoot ?? "", "docs/projects/execution-platform"),
     );
+    expect(result.receipt.reasonCodes).toContain("source_runtime_materialization_aligned");
     expect(result.receipt.acceptedRequiredToolNames).toEqual(
       expect.arrayContaining([
         "node_finish",
@@ -972,6 +1281,25 @@ describe("execution platform node agent start", () => {
     expect(result.receipt.blockedTools).toEqual([]);
     expect(result.reasonCodes).toEqual(
       expect.arrayContaining(["node_agent_start_native_openclaw_facts_accepted"]),
+    );
+  });
+
+  it("does not use source-runtime materialization as node-agent start authority", async () => {
+    const result = prepare(await createExecutionConfig());
+
+    expect(result.status).toBe("accepted");
+    expect(result.receipt.sourceRuntime).toMatchObject({
+      manifestRef: "repo://docs/system/registries/source-runtime-unification.yaml",
+      materializationRecordRef: null,
+      materializationStatus: "not_observed",
+      materializationIssueCount: 0,
+      materializationIssues: [],
+    });
+    expect(result.receipt.reasonCodes).not.toContain(
+      "node_agent_source_runtime_materialization_drift",
+    );
+    expect(result.receipt.reasonCodes).not.toContain(
+      "source_runtime_materialization_residual_drift_blocked",
     );
   });
 

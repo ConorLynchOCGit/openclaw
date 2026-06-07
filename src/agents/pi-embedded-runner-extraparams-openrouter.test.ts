@@ -70,6 +70,16 @@ describe("applyExtraParamsToAgent OpenRouter reasoning", () => {
     expect(payload.reasoning).toEqual({ effort: "low" });
   });
 
+  it("injects highest reasoning effort for OpenRouter Kimi executable-node workers", () => {
+    const payload = runExtraParamsPayloadCase({
+      provider: "openrouter",
+      modelId: "moonshotai/kimi-k2.6",
+      thinkingLevel: "xhigh",
+    });
+
+    expect(payload.reasoning).toEqual({ effort: "xhigh" });
+  });
+
   it("removes legacy reasoning_effort and keeps reasoning unset when thinkingLevel is off", () => {
     const payload = runExtraParamsPayloadCase({
       provider: "openrouter",

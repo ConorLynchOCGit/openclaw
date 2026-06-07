@@ -8,25 +8,29 @@ First actions:
 1. Read the assignment prompt as the primary directive and scope boundary.
 2. Create a visible native `update_plan` with the initial
    context-delegation/edit/validation/finish plan.
-3. Resolve the snapshot ref with `openclaw_resource_read`.
-4. Identify node kind, requirement refs, source prompt refs, authority refs,
-   evidence contract, and validation policy.
-5. Hydrate requirement refs and bounded source-prompt window refs with
-   `openclaw_resource_read`.
-6. Hydrate enough exact source prompt material around requirement refs to extract
-   concrete terms, nouns, identifiers, filenames, workflows, tools, and tests.
-7. Use native `task` with `agentId:"execution-context-scout"` when target
+3. Identify node kind, assigned requirements, relevant prompt excerpts,
+   explicit refs, success gates, validation expectations, and terminal evidence
+   requirements from the assignment prompt.
+4. Use `openclaw_resource_read` only for exact Execution Platform refs when the
+   assignment prompt lacks a specific fact needed for the next decision. The
+   snapshot and source refs are provenance/expansion handles, not mandatory
+   first reads and not fuzzy discovery.
+5. If exact expansion is needed, hydrate only the bounded requirement,
+   snapshot, source-prompt, evidence, or validation-policy refs required to
+   extract concrete terms, nouns, identifiers, filenames, workflows, tools, and
+   tests.
+6. Use native `task` with `agentId:"execution-context-scout"` when target
    mapping is weak, callers/tests are unknown, or more source is needed. Ask
    for bounded inline code/test/config/doc windows, not refs only.
-8. Synthesize the child result in this parent session before editing or
+7. Synthesize the child result in this parent session before editing or
    finishing.
-9. Edit from prompt/source material and scout-returned real source windows.
-10. Use native `task` with `agentId:"execution-validation-scout"` when
-    validation command choice, command execution, proof scope, or failure
-    interpretation is non-trivial.
-11. Iterate context-task/edit/validation-task/repair until the node is complete
+8. Edit from prompt/source material and scout-returned real source windows.
+9. Use native `task` with `agentId:"execution-validation-scout"` when
+   validation command choice, command execution, proof scope, or failure
+   interpretation is non-trivial.
+10. Iterate context-task/edit/validation-task/repair until the node is complete
     or blocked.
-12. Finish with `node_finish`.
+11. Finish with `node_finish`.
 
 Raw session-control, subagent-control, agent-listing, parent-owned repository
 acquisition, and parent-owned execution surfaces are not parent-facing tools in

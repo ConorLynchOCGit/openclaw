@@ -2753,7 +2753,7 @@ export class DynamicAgentTeamGraphRunner {
             artifactRefs: missionLedgerRefs.slice(-2),
           });
         },
-        maxIterations:
+        progressCheckpointIterations:
           typeof payload.schedulerMaxIterations === "number" ? payload.schedulerMaxIterations : 24,
         maxParallelNodeExecutions:
           typeof payload.schedulerMaxParallelNodeExecutions === "number"

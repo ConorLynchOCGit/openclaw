@@ -771,6 +771,7 @@ export async function runEmbeddedPiAgent(
                   }),
                 }
               : undefined,
+            requiredProviderContextAdmission: params.requiredProviderContextAdmission,
             disableMessageTool: params.disableMessageTool,
             requireExplicitMessageTarget: params.requireExplicitMessageTarget,
             internalEvents: params.internalEvents,
@@ -853,6 +854,49 @@ export async function runEmbeddedPiAgent(
                 `completed for ${provider}/${modelId}; retrying prompt`,
             );
             continue;
+          }
+          if (preflightRecovery?.route === "provider_context_admission_blocked") {
+            const errorText = promptError
+              ? formatErrorMessage(promptError)
+              : preflightRecovery.reason;
+            const providerAdmissionErrorText =
+              errorText ?? "Provider context admission failed before model invocation.";
+            attempt.setTerminalLifecycleMeta?.({
+              replayInvalid: resolveReplayInvalidForAttempt(),
+              livenessState: "blocked",
+            });
+            return {
+              payloads: [
+                {
+                  text: providerAdmissionErrorText,
+                  isError: true,
+                },
+              ],
+              meta: {
+                durationMs: Date.now() - started,
+                agentMeta: buildErrorAgentMeta({
+                  sessionId: sessionIdUsed,
+                  provider,
+                  model: model.id,
+                  usageAccumulator,
+                  lastRunPromptUsage,
+                  lastAssistant: sessionLastAssistant,
+                  lastTurnTotal,
+                }),
+                systemPromptReport: attempt.systemPromptReport,
+                effectiveToolNames: attempt.effectiveToolNames,
+                nodeAgentSessionTrace: attempt.nodeAgentSessionTrace,
+                sessionLockTrace: attempt.sessionLockTrace,
+                finalPromptText: attempt.finalPromptText,
+                replayInvalid: resolveReplayInvalidForAttempt(),
+                livenessState: "blocked",
+                error: {
+                  kind: "provider_context_admission",
+                  message: providerAdmissionErrorText,
+                  reasonCodes: preflightRecovery.reasonCodes,
+                },
+              },
+            };
           }
           const requestedSelection = shouldSwitchToLiveModel({
             cfg: params.config,

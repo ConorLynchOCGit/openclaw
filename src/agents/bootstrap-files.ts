@@ -1,8 +1,9 @@
 import fs from "node:fs/promises";
+import path from "node:path";
 import type { AgentContextInjection } from "../config/types.agent-defaults.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { normalizeOptionalString } from "../shared/string-coerce.js";
-import { resolveSessionAgentIds } from "./agent-scope.js";
+import { resolveAgentConfig, resolveAgentDir, resolveSessionAgentIds } from "./agent-scope.js";
 import { getOrLoadBootstrapFiles } from "./bootstrap-cache.js";
 import { materializeCanonicalBootstrapCompatibilityFiles } from "./bootstrap-canonicalization.js";
 import { applyBootstrapHookOverrides } from "./bootstrap-hooks.js";
@@ -13,6 +14,13 @@ import {
   resolveBootstrapMaxChars,
   resolveBootstrapTotalMaxChars,
 } from "./pi-embedded-helpers.js";
+import {
+  isSourceRuntimeMaterializedAgentStart,
+  loadSourceRuntimeUnificationManifest,
+  materializeSourceRuntimeFiles,
+  type SourceRuntimeMaterializationResult,
+  type SourceRuntimeUnificationManifest,
+} from "./source-runtime-unification.js";
 import {
   DEFAULT_HEARTBEAT_FILENAME,
   filterBootstrapFilesForSession,
@@ -26,6 +34,32 @@ export type BootstrapContextRunKind = "default" | "heartbeat" | "cron";
 const CONTINUATION_SCAN_MAX_TAIL_BYTES = 256 * 1024;
 const CONTINUATION_SCAN_MAX_RECORDS = 500;
 export const FULL_BOOTSTRAP_COMPLETED_CUSTOM_TYPE = "openclaw:bootstrap-context:full";
+
+export type SourceRuntimeBootstrapMaterializationDeps = {
+  loadManifest?: () => Promise<SourceRuntimeUnificationManifest>;
+  materializeFiles?: (input: {
+    manifest: SourceRuntimeUnificationManifest;
+  }) => Promise<SourceRuntimeMaterializationResult>;
+};
+
+export type SourceRuntimeBootstrapMaterializationPreflight =
+  | {
+      status: "skipped";
+      reasonCode:
+        | "source_runtime_bootstrap_config_missing"
+        | "source_runtime_bootstrap_agent_dir_missing"
+        | "source_runtime_bootstrap_agent_not_materialized";
+      agentId?: string;
+      agentDir?: string;
+    }
+  | {
+      status: "aligned";
+      agentId: string;
+      agentDir: string;
+      recordPath: string;
+      materializedFileCount: number;
+      reasonCodes: string[];
+    };
 
 export function resolveContextInjectionMode(config?: OpenClawConfig): AgentContextInjection {
   return config?.agents?.defaults?.contextInjection ?? "always";
@@ -180,6 +214,70 @@ function filterHeartbeatBootstrapFile(
     return files;
   }
   return files.filter((file) => file.name !== DEFAULT_HEARTBEAT_FILENAME);
+}
+
+export async function materializeSourceRuntimeBeforeBootstrapIfNeeded(params: {
+  config?: OpenClawConfig;
+  sessionKey?: string;
+  sessionId?: string;
+  agentId?: string;
+  warn?: (message: string) => void;
+  deps?: SourceRuntimeBootstrapMaterializationDeps;
+}): Promise<SourceRuntimeBootstrapMaterializationPreflight> {
+  if (!params.config) {
+    return {
+      status: "skipped",
+      reasonCode: "source_runtime_bootstrap_config_missing",
+    };
+  }
+  const { sessionAgentId } = resolveSessionAgentIds({
+    sessionKey: params.sessionKey ?? params.sessionId,
+    config: params.config,
+    agentId: params.agentId,
+  });
+  if (!resolveAgentConfig(params.config, sessionAgentId)?.agentDir) {
+    return {
+      status: "skipped",
+      reasonCode: "source_runtime_bootstrap_agent_dir_missing",
+      agentId: sessionAgentId,
+    };
+  }
+  const agentDir = resolveAgentDir(params.config, sessionAgentId);
+  const manifest = await (params.deps?.loadManifest ?? loadSourceRuntimeUnificationManifest)();
+  if (
+    !isSourceRuntimeMaterializedAgentStart({
+      manifest,
+      agentId: sessionAgentId,
+      agentDir,
+    })
+  ) {
+    return {
+      status: "skipped",
+      reasonCode: "source_runtime_bootstrap_agent_not_materialized",
+      agentId: sessionAgentId,
+      agentDir: path.resolve(agentDir),
+    };
+  }
+  const result = await (params.deps?.materializeFiles ?? materializeSourceRuntimeFiles)({
+    manifest,
+  });
+  if (result.status === "aligned") {
+    return {
+      status: "aligned",
+      agentId: sessionAgentId,
+      agentDir: path.resolve(agentDir),
+      recordPath: result.recordPath,
+      materializedFileCount: result.materializedFiles.length,
+      reasonCodes: result.reasonCodes,
+    };
+  }
+  const message = [
+    `source-runtime materialization blocked bootstrap for ${sessionAgentId}`,
+    `agentDir=${path.resolve(agentDir)}`,
+    `issues=${result.validationIssues.join(",") || "unknown"}`,
+  ].join(" ");
+  params.warn?.(message);
+  throw new Error(message);
 }
 
 export function overlayBootstrapFilesByName(

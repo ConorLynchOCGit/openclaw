@@ -1,19 +1,23 @@
 version: 1
-status: phase0_active_blocking_worker_agent_refactor
+status: phase0_repo_local_runtime_unification_complete_worker_agent_refactor_unblocked
 canonical:
   projectRoot: /root/services/openclaw-roles/live
   executionPlatformDocsRoot: /root/services/openclaw-roles/live/docs/projects/execution-platform
-  runtimeHome: /root/.openclaw
-  configPath: /root/.openclaw/openclaw.json
-  sourceRuntimeRecordPath: /root/.openclaw/source-runtime/materialization-records.json
-  forkTransitionReadinessPath: /root/.openclaw/source-runtime/fork-transition-readiness.json
-  dirtyWorktreeReconciliationPath: /root/.openclaw/source-runtime/dirty-worktree-reconciliation.json
+  runtimeHome: /root/services/openclaw-roles/live/.openclaw/runtime
+  configPath: /root/services/openclaw-roles/live/.openclaw/runtime/openclaw.json
+  sourceRuntimeRecordPath: /root/services/openclaw-roles/live/.openclaw/runtime/source-runtime/materialization-records.json
+  forkTransitionReadinessPath: /root/services/openclaw-roles/live/.openclaw/runtime/source-runtime/fork-transition-readiness.json
+  dirtyWorktreeReconciliationPath: /root/services/openclaw-roles/live/.openclaw/runtime/source-runtime/dirty-worktree-reconciliation.json
 runtimeAliases:
   - aliasPath: /home/node/.openclaw
-    canonicalPath: /root/.openclaw
+    canonicalPath: /root/services/openclaw-roles/live/.openclaw/runtime
     label: container-runtime-home-alias
     status: compatibility_alias_only
-sourceRuntimeRule: behavior_defined_in_repo_state_recorded_in_runtime_home
+  - aliasPath: /root/.openclaw
+    canonicalPath: /root/services/openclaw-roles/live/.openclaw/runtime
+    label: host-runtime-home-alias
+    status: compatibility_alias_only
+sourceRuntimeRule: first_party_behavior_source_linked_from_repo_runtime_home_state_only
 githubTopology:
   current:
     branch: phase2-prune-remaining-runtime-and-test-judgment-debt
@@ -41,20 +45,31 @@ githubTopology:
       branch: source-runtime-unification-safety-20260607T031154Z
       status: refreshed_current_dirty_worktree_preservation_snapshot
     readiness:
-      recordPath: /root/.openclaw/source-runtime/fork-transition-readiness.json
-      dirtyWorktreeReconciliationPath: /root/.openclaw/source-runtime/dirty-worktree-reconciliation.json
-      dynamicStateOwner: runtime_home_records
-      statusSource: /root/.openclaw/source-runtime/fork-transition-readiness.json
-      countSource: /root/.openclaw/source-runtime/dirty-worktree-reconciliation.json
-      note: Repo manifest records the readiness record locations only. Live dirty counts and action counts belong to Runtime Home records.
+      recordPath: /root/services/openclaw-roles/live/.openclaw/runtime/source-runtime/fork-transition-readiness.json
+      dirtyWorktreeReconciliationPath: /root/services/openclaw-roles/live/.openclaw/runtime/source-runtime/dirty-worktree-reconciliation.json
+      dynamicStateOwner: live_git_status_or_on_demand_inventory
+      statusSource: /root/services/openclaw-roles/live/.openclaw/runtime/source-runtime/fork-transition-readiness.json
+      countSource: git status --porcelain=v1
+      note: The fork-transition readiness record is a static migration/topology receipt after origin has moved to the fork. Live dirty counts and action counts come from git status or an explicitly regenerated dirty-worktree reconciliation inventory, not from a continuously refreshed runtime-home readiness gate.
   target:
     origin: writable_fork_remote
     upstream: original_openclaw_read_only_remote
-    migrationStatus: migrated_with_preserved_dirty_worktree
+    migrationStatus: migrated
 runtimeFileClasses:
+  compaction_checkpoint_snapshot:
+    inspect: true
+    editMode: denied
+    sourceBacking: generated_session_state
+    cleanupMode: native_session_maintenance
+  stale_generated_ballast:
+    inspect: true
+    editMode: denied
+    sourceBacking: none
+    cleanupMode: operator_approved_cleanup
   source_materialized:
     inspect: true
     editMode: hot_patch_only
+    sourceBacking: symlink_to_repo_source
   local_override:
     inspect: true
     editMode: local_override
@@ -77,21 +92,21 @@ executionAgentMaterializations:
   - agentId: execution-coding
     projectRoot: /root/services/openclaw-roles/live
     sourcePath: docs/agents/execution-coding/runtime
-    runtimePath: /root/.openclaw/agents/execution-coding/agent
+    runtimePath: /root/services/openclaw-roles/live/.openclaw/runtime/agents/execution-coding/agent
     runtimeAliasPath: /home/node/.openclaw/agents/execution-coding/agent
     runtimeFileClass: source_materialized
     recordMode: materialized
   - agentId: execution-context-scout
     projectRoot: /root/services/openclaw-roles/live
     sourcePath: docs/agents/execution-context-scout/runtime
-    runtimePath: /root/.openclaw/agents/execution-context-scout/agent
+    runtimePath: /root/services/openclaw-roles/live/.openclaw/runtime/agents/execution-context-scout/agent
     runtimeAliasPath: /home/node/.openclaw/agents/execution-context-scout/agent
     runtimeFileClass: source_materialized
     recordMode: materialized
   - agentId: execution-validation-scout
     projectRoot: /root/services/openclaw-roles/live
     sourcePath: docs/agents/execution-validation-scout/runtime
-    runtimePath: /root/.openclaw/agents/execution-validation-scout/agent
+    runtimePath: /root/services/openclaw-roles/live/.openclaw/runtime/agents/execution-validation-scout/agent
     runtimeAliasPath: /home/node/.openclaw/agents/execution-validation-scout/agent
     runtimeFileClass: source_materialized
     recordMode: materialized
@@ -99,21 +114,21 @@ executionSkillMaterializations:
   - skillName: execution-node-workflow
     projectRoot: /root/services/openclaw-roles/live
     sourcePath: skills/execution-node-workflow/SKILL.md
-    runtimePath: /root/.openclaw/workspace/skills/execution-node-workflow/SKILL.md
+    runtimePath: /root/services/openclaw-roles/live/.openclaw/runtime/workspace/skills/execution-node-workflow/SKILL.md
     runtimeAliasPath: /home/node/.openclaw/workspace/skills/execution-node-workflow/SKILL.md
     runtimeFileClass: source_materialized
     recordMode: materialized
   - skillName: execution-context-scout
     projectRoot: /root/services/openclaw-roles/live
     sourcePath: skills/execution-context-scout/SKILL.md
-    runtimePath: /root/.openclaw/workspace/skills/execution-context-scout/SKILL.md
+    runtimePath: /root/services/openclaw-roles/live/.openclaw/runtime/workspace/skills/execution-context-scout/SKILL.md
     runtimeAliasPath: /home/node/.openclaw/workspace/skills/execution-context-scout/SKILL.md
     runtimeFileClass: source_materialized
     recordMode: materialized
   - skillName: execution-validation-scout
     projectRoot: /root/services/openclaw-roles/live
     sourcePath: skills/execution-validation-scout/SKILL.md
-    runtimePath: /root/.openclaw/workspace/skills/execution-validation-scout/SKILL.md
+    runtimePath: /root/services/openclaw-roles/live/.openclaw/runtime/workspace/skills/execution-validation-scout/SKILL.md
     runtimeAliasPath: /home/node/.openclaw/workspace/skills/execution-validation-scout/SKILL.md
     runtimeFileClass: source_materialized
     recordMode: materialized
@@ -128,8 +143,157 @@ activeConfigRequirements:
     requiresProjectRoot: /root/services/openclaw-roles/live
     runtimeWorkspaceClass: runtime_state
 splitFilesystemRepair:
-  status: active_blocking_prerequisite
-  requiredBeforeWorkerAgentItemsResume: true
+  status: phase0_topology_postflight_clean
+  requiredBeforeWorkerAgentItemsResume: false
+  currentEvidence:
+    status: complete_current_topology_state_only_runtime
+    checkedAt: 2026-06-07T22:36:01Z
+    runtimeHome: /root/services/openclaw-roles/live/.openclaw/runtime
+    runtimeHomeApproxSize: 1.3M
+    nestedMountsUnderRuntimeHome: []
+    sourceSignatureMatchCount: 0
+    rootAlias:
+      path: /root/.openclaw
+      target: /root/services/openclaw-roles/live/.openclaw/runtime
+      status: compatibility_symlink_to_repo_local_runtime
+    containerAlias:
+      path: /home/node/.openclaw
+      target: /root/services/openclaw-roles/live/.openclaw/runtime
+      status: compatibility_symlink_to_repo_local_runtime
+    activeEnvFile:
+      path: /root/services/openclaw-roles/live/.openclaw/runtime/.env
+      status: restored_from_validated_recovery_candidate
+      hashPrefix: d6057f48554f0a35
+      ownerMode: ubuntu:ubuntu 600
+    activeConfigFile:
+      path: /root/services/openclaw-roles/live/.openclaw/runtime/openclaw.json
+      status: restored_from_validated_recovery_candidate_and_stale_retired_plugin_entry_removed
+      hashPrefix: be7bf0a9c6947afc
+      ownerMode: ubuntu:ubuntu 600
+      configGetStatus: valid_zero_issues
+      configGetWarnings: []
+      stalePluginCleanupReceiptRef: /root/services/openclaw-roles/live/.openclaw/runtime/recovery/openclaw.memory-middleware-warning-cleanup.latest.redacted.json
+    providerModelCredentialRegistry:
+      path: /root/services/openclaw-roles/live/.openclaw/runtime/agents/main/agent/models.json
+      status: present
+    recoveredEnvArtifact:
+      path: /root/services/openclaw-roles/live/.openclaw/runtime/recovery/env.latest.env
+      status: present_recovery_artifact_not_active_env
+    executionPlatformDatabasePointer:
+      status: dedicated_recovered_candidate_promoted_active
+      activeConfigStatus: restored
+      recoveredCandidateEnvPath: /root/services/openclaw-roles/live/.openclaw/runtime/recovery/execution-platform-db.latest.env
+      recoveredCandidateRedactedProofPath: /root/services/openclaw-roles/live/.openclaw/runtime/recovery/execution-platform-db.latest.redacted.json
+      recoveredCandidateReadinessRedactedProofPath: /root/services/openclaw-roles/live/.openclaw/runtime/recovery/execution-platform-db.dedicated-readiness.latest.redacted.json
+      activeConfigReadinessRedactedProofPath: /root/services/openclaw-roles/live/.openclaw/runtime/recovery/active-config-recovery-readiness.latest.redacted.json
+      activationReceiptRef: /root/services/openclaw-roles/live/.openclaw/runtime/recovery/active-config-recovery-activation.latest.redacted.json
+      activationBackupDir: /root/backups/openclaw-runtime-activation-20260607T221418Z
+      recoveredCandidateHashPrefix: ef6d35b30b3aa959
+      recoveredCandidateDatabaseName: execution_platform
+      recoveredCandidateResolutionSource: env:EXECUTION_PLATFORM_DATABASE_URL
+      recoveredCandidateBoundaryKind: dedicated_execution_platform_db
+      recoveredCandidateReadinessState: ready
+      recoveredCandidateMissingTables: []
+      recoveredCandidateMissingMigrationRefs: []
+      recoveredCandidateWorkQueueLiveLinkageMayAttach: true
+      weakerHistoricalModelMemoryCandidateHashPrefix: 0a55e42f487c9406
+      mergedEnvRebuildCandidatePath: /root/services/openclaw-roles/live/.openclaw/runtime/recovery/env.rebuild-candidate.latest.env
+      configRebuildCandidatePath: /root/services/openclaw-roles/live/.openclaw/runtime/recovery/openclaw.rebuild-candidate.latest.json
+      configRebuildCandidateRedactedProofPath: /root/services/openclaw-roles/live/.openclaw/runtime/recovery/openclaw.rebuild-candidate.latest.redacted.json
+      liveGatewayRouteStatus: work_queue_list_returns_execution_platform_work_queue_db
+      dockerEnvHasExecutionPlatformDbUrl: false
+      dockerEnvHasModelMemoryDbUrl: false
+      gatewayConfigGetStatus: valid_restored_snapshot
+      note: active .env/openclaw.json now contain a restored env-backed EXECUTION_PLATFORM_DATABASE_URL path; the stale retired memory-middleware plugin entry has been removed from active config and recovery candidate
+    modelMemoryDatabase:
+      status: reachable_from_recovered_memory_middleware_url
+      memoryObjects: 234
+      memorySources: 289
+    workQueueRows:
+      status: dedicated_recovered_candidate_promoted_active
+      firstRecoveredPointerWorkItems: 0
+      firstRecoveredPointerWorkQueueEvents: missing_table
+      weakerHistoricalModelMemoryCandidateRuntimeJobs: 3679
+      weakerHistoricalModelMemoryCandidateWorkItemEvents: 5612
+      weakerHistoricalModelMemoryCandidateWorkItems: 825
+      weakerHistoricalModelMemoryCandidateWorkQueueEvents: 1183
+      dedicatedRecoveredCandidateRuntimeJobs: 5972
+      dedicatedRecoveredCandidateWorkItemEvents: 6135
+      dedicatedRecoveredCandidateWorkItems: 1886
+      dedicatedRecoveredCandidateWorkQueueEvents: 8920
+      liveGatewayListAccepted: true
+      liveGatewayListItemCountSample: 12
+      liveGatewayListSampleStatus: active
+      note: Work Queue rows are present behind the dedicated recovered Codex-log DB candidate, and active runtime config now resolves that candidate through env:EXECUTION_PLATFORM_DATABASE_URL
+    duplicateImplementationTree:
+      path: /root/services/openclaw-roles/live/.openclaw/runtime/host-operator/openclaw-live
+      status: removed_unmounted_bind_mount
+      head: b261eee247659dbc13bd8fa6fdd1e69331ec7d75
+      inventoryRef: /root/services/openclaw-roles/live/.openclaw/runtime/recovery/duplicate-runtime-checkout-inventory.latest.redacted.json
+      preflightRef: /root/services/openclaw-roles/live/.openclaw/runtime/recovery/duplicate-runtime-bind-mount-cleanup-preflight.latest.redacted.json
+      unmountReceiptRef: /root/services/openclaw-roles/live/.openclaw/runtime/recovery/duplicate-runtime-bind-mount-unmount.latest.redacted.json
+      emptyMountpointRemovalReceiptRef: /root/services/openclaw-roles/live/.openclaw/runtime/recovery/duplicate-runtime-empty-mountpoint-rmdir.latest.redacted.json
+      cleanupStatus: unmounted_empty_mountpoint_removed_postflight_clean
+    workspaceProductLiveImport:
+      path: /root/services/openclaw-roles/live/.openclaw/runtime/workspace/imports/product_live/content
+      status: removed_unmounted_bind_mount
+      unmountReceiptRef: /root/services/openclaw-roles/live/.openclaw/runtime/recovery/workspace-import-product-live-unmount.latest.redacted.json
+      cleanupStatus: unmounted_empty_mountpoint_removed_postflight_clean
+    sourceMountPostflight:
+      status: clean
+      postflightRef: /root/services/openclaw-roles/live/.openclaw/runtime/recovery/runtime-home-source-mount-removal-postflight.latest.redacted.json
+      nestedMountsUnderRuntimeHome: []
+      sourceSignatureMatchCount: 0
+      hostOperatorExists: false
+      productLiveImportExists: false
+  runtimeCleanup:
+    status: phase0_cleanup_complete_for_current_topology
+    observedRuntimeHome: /root/.openclaw
+    targetRuntimeHome: /root/services/openclaw-roles/live/.openclaw/runtime
+    dominantBallastClass: compaction_checkpoint_snapshot
+    observedLargeClasses:
+      - path: /root/.openclaw/agents/main/sessions
+        class: compaction_checkpoint_snapshot
+        note: hundreds of generated *.checkpoint.*.jsonl snapshots, individual files around 500MiB
+        checkpointInventory:
+          files: 930
+          bytes: 211.12GiB
+          referencedFiles: 25
+          referencedBytes: 12.21GiB
+          unreferencedFiles: 905
+          unreferencedBytes: 198.90GiB
+          retainedIfCapFiveFiles: 5
+          retainedIfCapFiveBytes: 2.48GiB
+          referencedPrunableIfCapFiveFiles: 20
+          referencedPrunableIfCapFiveBytes: 9.74GiB
+          totalPrunableIfUnreferencedPlusCapFive: 208.64GiB
+      - path: /root/.openclaw/host-operator/openclaw-live
+        class: stale_generated_ballast
+        note: legacy/runtime-host tree with generated deployment surfaces such as node_modules, .artifacts, .git, and dist
+        sizeBreakdown:
+          node_modules: 13GiB
+          artifacts: 2.4GiB
+          git: 613MiB
+          turbo: 724MiB
+          dist: 369MiB
+    nativeDiskBudgetDryRun:
+      maxDiskBytes: 50GiB
+      highWaterBytes: 30GiB
+      projectedRemovedFiles: 1286
+      projectedRemovedEntries: 0
+      projectedFreedBytes: 182.11GiB
+      note: proof of native guard path, not the preferred first destructive cleanup operation
+    preferredPreMoveCleanup:
+      mode: surgical_checkpoint_only
+      rule: remove unreferenced generated checkpoint snapshots, then trim over-retained checkpoint metadata to the native cap and delete only those older generated checkpoint snapshots
+    destructiveCleanupRequiresOperatorApproval: true
+    cleanupBeforeMove: true
+    growthGuardsRequired:
+      - agents.defaults.compaction.maxCheckpointsPerSession config/schema/help surface
+      - generated checkpoint files deleted when native checkpoint metadata prunes them
+      - unreferenced generated checkpoint snapshots eligible for native session disk-budget cleanup
+      - session.maintenance.maxDiskBytes/highWaterBytes remain the native sessions-directory budget surface
+      - runtime source/materialization compatibility cannot accumulate independent first-party implementation copies
   affectedSurfaces:
     - execution-agent config
     - native task/session spawn inheritance
@@ -139,8 +303,18 @@ splitFilesystemRepair:
     - file_graph generation
     - node-agent readback optics
   successGate:
+    - implementation source tree and Runtime Home physically sit under one top-level OpenClaw root
+    - selected Runtime Home is /root/services/openclaw-roles/live/.openclaw/runtime
+    - /root/.openclaw and /home/node/.openclaw are compatibility links to repo-local Runtime Home
+    - .openclaw/ remains gitignored
+    - Runtime Home state is inventoried by class before relocation
+    - Runtime Home cleanup is completed before physical relocation
+    - dominant generated compaction checkpoint ballast is pruned or explicitly retained by operator decision before relocation
+    - old runtime-host tree is classified as retained state, archive candidate, or deletion candidate before relocation
+    - stale/generated Runtime Home ballast is retained, archived, or removed intentionally before relocation
+    - session/checkpoint/cache/artifact growth guards prevent Runtime Home from silently regrowing into opaque ballast
     - execution-agent source work uses canonical projectRoot
     - runtime paths are classified by runtime file class
     - container runtime paths are aliases only
-    - active runtime skills are hash-aligned with repo source or reported as hot-patch drift
+    - native registry resolves first-party docs and skills from repo source; runtime copies are not worker bootstrap authority
     - readback reports canonical source/runtime paths and alias status

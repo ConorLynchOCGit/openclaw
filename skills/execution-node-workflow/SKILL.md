@@ -1,6 +1,6 @@
 ---
 name: execution-node-workflow
-description: Use when running an Execution Platform Runtime Work Graph node through an OpenClaw native agent session. Guides assignment prompt intake, native update_plan use, exact prompt/source ref hydration, native task delegation to scouts, edit/validation/repair, evidence discipline, and mandatory node_finish terminalization.
+description: Use when running an Execution Platform Runtime Work Graph node through an OpenClaw native agent session. Guides assignment prompt intake, native update_plan use, exact ref expansion when needed, native task delegation to scouts, edit/validation/repair, evidence discipline, and mandatory node_finish terminalization.
 ---
 
 # Execution Node Workflow
@@ -17,34 +17,44 @@ Create a visible native `update_plan` before broad work. The plan should cover
 the immediate context/search/edit/validation/finish path and should be updated
 after scout output, edits, validation, repair, and before `node_finish`.
 
-Then open the node execution snapshot ref from the user message. Use
-`openclaw_resource_read` for Execution Platform refs such as node snapshots,
-requirements, source-prompt windows, and evidence artifacts.
+Do not treat the snapshot or source refs as a mandatory first read when the
+assignment prompt already contains enough node-specific task material. The
+happy path is: understand the model-authored prompt, plan, delegate scout
+context when repo mapping is weak, edit from real source windows, validate,
+repair, and finish.
 
-Read:
+Use `openclaw_resource_read` only for exact Execution Platform refs
+intentionally handed to this node when a specific missing fact is needed. That
+can include node snapshots, requirements, bounded source-prompt windows, and
+evidence artifacts. It is an expansion path, not fuzzy discovery and not a
+replacement for the assignment prompt.
+
+When exact expansion is needed, read only the missing facts that matter for the
+next decision, such as:
 
 - node id, node kind, attempt id, and node run id.
 - requirement refs.
 - source prompt refs.
 - task refs.
-- readable and writable authority refs.
 - evidence contract ref.
 - validation policy ref.
 - validation command refs.
 
 If the assignment prompt is missing or incoherent, or the snapshot is
-unavailable, finish with a typed blocker. Do not continue from memory or
-guesswork.
+needed but unavailable, finish with a typed blocker. Do not continue from
+memory or guesswork.
 
-## Source Prompt Inspection
+## Source Prompt Context
 
-Requirements are compact pointers. The raw operator prompt/source material is
-the source of truth.
+The model-authored assignment prompt should already include the node objective,
+assigned requirement text, relevant original-prompt excerpts, explicit refs,
+constraints, non-goals, success gates, validation expectations, and terminal
+`node_finish` expectations.
 
-Before asking a scout to map the repo, inspect the prompt/source refs associated with the node.
-Hydrate exact `source-prompt://.../body/start-end` refs through
-`openclaw_resource_read`; these are bounded windows from the operator prompt,
-not generic summaries.
+Treat requirements and source refs as expansion handles. If the assignment
+prompt is too thin to produce concrete search signal, hydrate exact
+`source-prompt://.../body/start-end` refs through `openclaw_resource_read`;
+these are bounded windows from the operator prompt, not generic summaries.
 Extract concrete search signal:
 
 - product, workflow, plugin, package, class, function, and tool names.
@@ -57,18 +67,19 @@ Extract concrete search signal:
 Avoid generic terms such as "implementation", "validation", "workflow", or
 "scheduler" unless combined with specific adjacent terms from source material.
 
-If target files are not already known after hydrating the assigned
-requirements and source-prompt ranges, do not begin with parent-owned repo
-crawling. Use native `task` with `agentId:"execution-context-scout"` as the first repo-mapping move and
-give it the hydrated requirement text, the relevant prompt excerpts, and the
-source prompt body ref or manifest. Prompt refs, likely repo targets, and
-validation hints may live in a separate source-prompt section from the assigned
-requirement span, so the scout should inspect adjacent or broader prompt
-windows through the body manifest when needed. Use the scout again whenever
-editing, validation, or a failed patch reveals new search terms. The scout must
-return actual inline prompt/code/test windows into this parent session. The
-parent execution agent then decides whether those windows are enough to plan
-edits or whether to ask the scout for another focused pass.
+If target files are not already known from the assignment prompt and any
+needed exact prompt/source expansion, do not begin with parent-owned repo
+crawling. Use native `task` with `agentId:"execution-context-scout"` as the
+first repo-mapping move and give it the requirement text, relevant prompt
+excerpts, known refs, likely search terms, and source prompt body ref or
+manifest when useful. Prompt refs, likely repo targets, and validation hints
+may live in a separate source-prompt section from the assigned requirement
+span, so the scout should inspect adjacent or broader prompt windows through
+the body manifest when needed. Use the scout again whenever editing,
+validation, or a failed patch reveals new search terms. The scout must return
+actual inline prompt/code/test windows into this parent session. The parent
+execution agent then decides whether those windows are enough to plan edits or
+whether to ask the scout for another focused pass.
 
 ## Scout-Owned Repo Mapping
 
@@ -115,8 +126,11 @@ When delegating to `execution-context-scout`, ask it to return actual bounded
 not just file refs. When more than one file or symbol matters, also ask for a
 compact `file_graph` that maps the relevant files/symbols and their imports,
 callers, registrations, tests, configs, scripts, and runtime entrypoints. The
-parent execution agent must use those excerpts and the graph directly, and ask
-the scout for more context when it needs adjacent windows or missing edges.
+parent execution agent must use those excerpts and the graph directly. OpenClaw
+native task delivery must put those bounded windows in parent-visible context
+and persist the same bounded windows plus `file_graph` into the native
+working-context ledger for compaction/resume/readback. Ask the scout for more
+context when adjacent windows or graph edges are missing.
 
 ### Context Scout Task Template
 
@@ -155,6 +169,39 @@ creation, wait/yield behavior, and child-result delivery into the parent
 session. After the result is visible, inspect the child output, update
 `update_plan`, and continue the dynamic context/search/edit/validate loop.
 
+## Minimum Viable Edit Checkpoint
+
+After each context scout result, decide whether you have enough concrete source
+context to make the next useful edit now. You do not need enough context for
+the whole node before starting; you need enough for the next safe edit.
+
+You have enough to start editing when:
+
+- the target file/window is known.
+- the relevant source excerpt is visible in this parent context.
+- adjacent helper/type/caller/config/test context is sufficient for this edit.
+- the intended behavior change is clear from the assignment or current todo.
+- you can state the validation question for the edit.
+
+Record the decision in native `update_plan`: enough for next edit, more
+context needed, or blocked. If more context is needed, delegate another focused
+`execution-context-scout` task using the newly discovered symbol, missing graph
+edge, test, caller, command, or prompt term. Do not broad-crawl from the parent
+and do not edit from refs-only output.
+
+The native `task` result may end with a fixed parent-decision footer. Treat
+that footer as part of normal OpenClaw tool-result delivery, not as a separate
+prompt or scheduler phase. On the next parent turn, update todo with the
+decision and then edit, delegate another focused context scout, or finish/block
+with `node_finish`.
+
+The OpenClaw native working context is the unified node working ledger for this
+session. It may contain context scout windows, `file_graph`, compact
+`change_set` entries, and compact `validation_state` entries. Use it to orient
+quickly after compaction/resume, but keep source of truth boundaries clear:
+actual files are truth for edits, validation scout command results are truth
+for validation, and `node_finish` is truth for lifecycle completion.
+
 ## Edit Planning
 
 Plan from concrete source context, not summaries.
@@ -180,6 +227,23 @@ unrelated code unless the node explicitly requires it.
 If a patch fails, delegate a focused context scout task for the current
 file/window and retry from real file contents returned by the scout.
 
+After each mutation attempt, treat the native mutation tool result as the source
+for a compact `change_set` entry in the OpenClaw native working context. The
+parent does not maintain a separate edit ledger. The useful durable facts are:
+
+- mutation tool result ref.
+- changed file paths.
+- added/modified/deleted summary.
+- related todo item when known.
+- source context refs or scout windows used.
+- whether the mutation succeeded or failed.
+- stale-edit or re-grounding flag when mutation failed.
+- timestamp/order from native session events.
+
+Do not persist full patch text, full file contents, or a second semantic
+explanation unless the native mutation tool already stores it. Actual current
+files remain the source of truth for future edits.
+
 ## Validation
 
 State the validation intent, then use native `task` with
@@ -199,6 +263,25 @@ The parent execution agent should not use parent-owned execution or repository
 acquisition surfaces to run or inspect validation in executable-node mode. The
 validation scout owns those tools. The parent owns the validation question,
 repair decision, evidence selection, and terminal `node_finish`.
+
+After each validation scout result, treat native task delivery as the source for
+a compact `validation_state` entry in the OpenClaw native working context. The
+parent does not maintain a separate validation ledger. The useful durable facts
+are:
+
+- validation scout task ref.
+- validation question or scope.
+- commands considered and commands run.
+- exit status.
+- bounded output excerpt refs or hashes.
+- likely failure cause when failed.
+- repair context refs or bounded windows.
+- residual risk.
+- timestamp/order from native session events.
+
+Do not persist raw command logs, broad stdout dumps, or model-only quality
+judgments as truth. The validation scout command result is truth for validation
+evidence; current source files are truth for repair.
 
 Do not call validation done from memory. Use command/tool evidence.
 
@@ -248,6 +331,33 @@ Require this in the child result:
 
 After the child returns, decide whether to repair, validate again, escalate, or
 finish. The child does not own that decision.
+
+## Sufficiency Checkpoint
+
+After validation, decide whether the validated edit satisfies the current todo
+item or the whole node success gate.
+
+- If the current todo item is satisfied but the node is not done, mark that
+  todo item complete and continue to the next incomplete todo.
+- If the node success gate is satisfied, call `node_finish` with bounded
+  evidence.
+- If more edits can continue from current context, keep editing and update
+  `update_plan`.
+- If sufficiency is unknown or validation exposed missing context, delegate a
+  focused context scout task for the missing source window, symbol, test,
+  command, or file-graph edge.
+- If validation gives enough repair context, repair from that result before
+  asking for more context.
+
+Passing validation is not automatically node completion. Failed validation is
+not automatically a context request. Use the validation result and the current
+todo/success gate to choose the next step.
+
+The native validation `task` result may end with a fixed parent-decision
+footer. Treat that as the required next decision checkpoint: update todo, then
+choose node/todo complete, repair from current context, need more context, or
+blocked. Continue with repair, follow-up context delegation, validation retry,
+`node_finish`, or a typed blocker.
 
 ## Searching Again After Failure
 

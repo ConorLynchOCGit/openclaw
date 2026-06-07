@@ -81,6 +81,30 @@ const forwardingCases = [
     },
   },
   {
+    name: "forwards highest Kimi reasoning controls into the provider attempt",
+    runId: "forward-kimi-highest-reasoning",
+    params: { thinkLevel: "xhigh", reasoningLevel: "stream" },
+    expected: { thinkLevel: "xhigh", reasoningLevel: "stream" },
+  },
+  {
+    name: "forwards requiredProviderContextAdmission so native node starts can block missing provider-visible docs and skills",
+    runId: "forward-requiredProviderContextAdmission",
+    params: {
+      requiredProviderContextAdmission: {
+        workspaceFileNames: ["IDENTITY.md", "AGENTS.md"],
+        skillNames: ["execution-node-workflow"],
+        rejectTruncatedWorkspaceFiles: true,
+      },
+    },
+    expected: {
+      requiredProviderContextAdmission: {
+        workspaceFileNames: ["IDENTITY.md", "AGENTS.md"],
+        skillNames: ["execution-node-workflow"],
+        rejectTruncatedWorkspaceFiles: true,
+      },
+    },
+  },
+  {
     name: "forwards allowGatewaySubagentBinding so node sessions expose native scouts",
     runId: "forward-allowGatewaySubagentBinding",
     params: { allowGatewaySubagentBinding: true },

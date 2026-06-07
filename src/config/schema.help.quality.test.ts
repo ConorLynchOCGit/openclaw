@@ -388,6 +388,7 @@ const TARGET_KEYS = [
   "agents.defaults.compaction.timeoutSeconds",
   "agents.defaults.compaction.model",
   "agents.defaults.compaction.truncateAfterCompaction",
+  "agents.defaults.compaction.maxCheckpointsPerSession",
   "agents.defaults.compaction.memoryFlush",
   "agents.defaults.compaction.memoryFlush.enabled",
   "agents.defaults.compaction.memoryFlush.softThresholdTokens",
@@ -800,6 +801,11 @@ describe("config help copy quality", () => {
 
     const compactionModel = FIELD_HELP["agents.defaults.compaction.model"];
     expect(/provider\/model|different model|primary agent model/i.test(compactionModel)).toBe(true);
+
+    const checkpointCap = FIELD_HELP["agents.defaults.compaction.maxCheckpointsPerSession"];
+    expect(/pre-compaction|snapshot|checkpoint/i.test(checkpointCap)).toBe(true);
+    expect(/default:\s*5/i.test(checkpointCap)).toBe(true);
+    expect(/hard maximum:\s*25/i.test(checkpointCap)).toBe(true);
 
     const flush = FIELD_HELP["agents.defaults.compaction.memoryFlush.enabled"];
     expect(/pre-compaction|memory flush|token/i.test(flush)).toBe(true);

@@ -4,7 +4,11 @@ import {
   normalizeLowercaseStringOrEmpty,
   normalizeOptionalLowercaseString,
 } from "../../shared/string-coerce.js";
-import { isPrimarySessionTranscriptFileName, isSessionArchiveArtifactName } from "./artifacts.js";
+import {
+  isCompactionCheckpointSnapshotFileName,
+  isPrimarySessionTranscriptFileName,
+  isSessionArchiveArtifactName,
+} from "./artifacts.js";
 import { resolveSessionFilePath } from "./paths.js";
 import type { SessionEntry } from "./types.js";
 
@@ -127,6 +131,21 @@ function resolveReferencedSessionTranscriptPaths(params: {
     });
     if (resolved) {
       referenced.add(canonicalizePathForComparison(resolved));
+    }
+    for (const checkpoint of entry.compactionCheckpoints ?? []) {
+      const checkpointFile = checkpoint.preCompaction?.sessionFile?.trim();
+      if (!checkpointFile) {
+        continue;
+      }
+      const resolvedCheckpointPath = canonicalizePathForComparison(checkpointFile);
+      const relative = path.relative(
+        canonicalizePathForComparison(params.sessionsDir),
+        resolvedCheckpointPath,
+      );
+      if (!relative || relative.startsWith("..") || path.isAbsolute(relative)) {
+        continue;
+      }
+      referenced.add(resolvedCheckpointPath);
     }
   }
   return referenced;
@@ -259,6 +278,8 @@ export async function enforceSessionDiskBudget(params: {
     .filter(
       (file) =>
         isSessionArchiveArtifactName(file.name) ||
+        (isCompactionCheckpointSnapshotFileName(file.name) &&
+          !referencedPaths.has(file.canonicalPath)) ||
         (isPrimarySessionTranscriptFileName(file.name) && !referencedPaths.has(file.canonicalPath)),
     )
     .toSorted((a, b) => a.mtimeMs - b.mtimeMs);

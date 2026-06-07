@@ -53,6 +53,11 @@ Do not edit, write, patch, or stage files.
 
 Do not call `node_finish`.
 
+Do not call `update_plan`, `read_todo`, `task`, raw session-control tools,
+subagent tools, agent-listing tools, `openclaw_resource_read`, or fuzzy
+resource discovery. The parent owns node todo, exact Execution Platform refs,
+delegation decisions, and lifecycle.
+
 Do not call scheduler, lifecycle, graph, or evidence closure tools.
 
 Do not run broad expensive proof suites unless the parent task explicitly asks

@@ -14,7 +14,8 @@ import { createSubsystemLogger } from "../logging/subsystem.js";
 import { resolveGatewaySessionStoreTarget } from "./session-utils.js";
 
 const log = createSubsystemLogger("gateway/session-compaction-checkpoints");
-const MAX_COMPACTION_CHECKPOINTS_PER_SESSION = 25;
+export const DEFAULT_MAX_COMPACTION_CHECKPOINTS_PER_SESSION = 5;
+export const HARD_MAX_COMPACTION_CHECKPOINTS_PER_SESSION = 25;
 
 export type CapturedCompactionCheckpointSnapshot = {
   sessionId: string;
@@ -24,11 +25,44 @@ export type CapturedCompactionCheckpointSnapshot = {
 
 function trimSessionCheckpoints(
   checkpoints: SessionCompactionCheckpoint[] | undefined,
+  maxCheckpoints = DEFAULT_MAX_COMPACTION_CHECKPOINTS_PER_SESSION,
 ): SessionCompactionCheckpoint[] | undefined {
   if (!Array.isArray(checkpoints) || checkpoints.length === 0) {
     return undefined;
   }
-  return checkpoints.slice(-MAX_COMPACTION_CHECKPOINTS_PER_SESSION);
+  const boundedMax = Math.min(
+    Math.max(Math.trunc(maxCheckpoints), 0),
+    HARD_MAX_COMPACTION_CHECKPOINTS_PER_SESSION,
+  );
+  if (boundedMax === 0) {
+    return undefined;
+  }
+  return checkpoints.slice(-boundedMax);
+}
+
+function checkpointFileKey(checkpoint: SessionCompactionCheckpoint): string | undefined {
+  const sessionFile = checkpoint.preCompaction?.sessionFile?.trim();
+  return sessionFile ? path.resolve(sessionFile) : undefined;
+}
+
+function isGeneratedCompactionCheckpointFile(filePath: string): boolean {
+  return /\.checkpoint\.[^/]+\.jsonl$/u.test(path.basename(filePath));
+}
+
+async function cleanupPrunedCompactionCheckpointFiles(
+  checkpoints: SessionCompactionCheckpoint[],
+): Promise<void> {
+  for (const checkpoint of checkpoints) {
+    const sessionFile = checkpointFileKey(checkpoint);
+    if (!sessionFile || !isGeneratedCompactionCheckpointFile(sessionFile)) {
+      continue;
+    }
+    try {
+      await fs.unlink(sessionFile);
+    } catch {
+      // Best-effort cleanup; retention metadata has already been trimmed.
+    }
+  }
 }
 
 function sessionStoreCheckpoints(
@@ -136,6 +170,9 @@ export async function persistSessionCompactionCheckpoint(params: {
     cfg: params.cfg,
     key: params.sessionKey,
   });
+  const maxCheckpoints =
+    params.cfg.agents?.defaults?.compaction?.maxCheckpointsPerSession ??
+    DEFAULT_MAX_COMPACTION_CHECKPOINTS_PER_SESSION;
   const createdAt = params.createdAt ?? Date.now();
   const checkpoint: SessionCompactionCheckpoint = {
     checkpointId: randomUUID(),
@@ -163,6 +200,7 @@ export async function persistSessionCompactionCheckpoint(params: {
   };
 
   let stored = false;
+  let prunedCheckpoints: SessionCompactionCheckpoint[] = [];
   await updateSessionStore(target.storePath, (store) => {
     const existing = store[target.canonicalKey];
     if (!existing?.sessionId) {
@@ -170,10 +208,16 @@ export async function persistSessionCompactionCheckpoint(params: {
     }
     const checkpoints = sessionStoreCheckpoints(existing);
     checkpoints.push(checkpoint);
+    const retained = trimSessionCheckpoints(checkpoints, maxCheckpoints);
+    const retainedFiles = new Set((retained ?? []).map(checkpointFileKey).filter(Boolean));
+    prunedCheckpoints = checkpoints.filter((candidate) => {
+      const fileKey = checkpointFileKey(candidate);
+      return fileKey ? !retainedFiles.has(fileKey) : false;
+    });
     store[target.canonicalKey] = {
       ...existing,
       updatedAt: Math.max(existing.updatedAt ?? 0, createdAt),
-      compactionCheckpoints: trimSessionCheckpoints(checkpoints),
+      compactionCheckpoints: retained,
     };
     stored = true;
   });
@@ -184,6 +228,7 @@ export async function persistSessionCompactionCheckpoint(params: {
     });
     return null;
   }
+  await cleanupPrunedCompactionCheckpointFiles(prunedCheckpoints);
   return checkpoint;
 }
 

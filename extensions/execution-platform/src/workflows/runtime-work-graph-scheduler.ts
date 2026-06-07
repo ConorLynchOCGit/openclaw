@@ -749,7 +749,17 @@ export type RuntimeWorkGraphSchedulerOptions = {
   deferCloseoutUntilExecutableGraphComplete?: boolean;
   roleCoverageProfile?: RuntimeWorkGraphRoleCoverageProfile | null;
   entryNodePolicy?: WorkflowEntryNodePolicy | null;
+  /**
+   * Historical compatibility option. Positive values are now treated as a
+   * progress checkpoint, not a terminal loop cap. Use 0 only for explicit
+   * no-loop admission tests.
+   */
   maxIterations?: number;
+  /**
+   * Expected scheduler loop checkpoint. Crossing this value emits diagnostics
+   * while the scheduler continues as long as it is making progress.
+   */
+  progressCheckpointIterations?: number;
   maxDecisionRepairAttempts?: number;
   maxSchedulerToolTurns?: number;
   maxParallelNodeExecutions?: number;
@@ -3352,7 +3362,7 @@ function nodeFailureIsExplicitlyUnrecoverable(
 }
 
 export class RuntimeWorkGraphScheduler {
-  private readonly maxIterations: number;
+  private readonly progressCheckpointIterations: number;
   private readonly maxDecisionRepairAttempts: number;
   private readonly maxSchedulerToolTurns: number;
   private readonly maxParallelNodeExecutions: number;
@@ -3362,7 +3372,10 @@ export class RuntimeWorkGraphScheduler {
   private readonly recentNodeResultSummaries: RuntimeWorkGraphRecentNodeResultSummary[] = [];
 
   constructor(private readonly options: RuntimeWorkGraphSchedulerOptions) {
-    this.maxIterations = options.maxIterations ?? 24;
+    this.progressCheckpointIterations = Math.max(
+      0,
+      Math.floor(options.progressCheckpointIterations ?? options.maxIterations ?? 24),
+    );
     this.maxDecisionRepairAttempts = options.maxDecisionRepairAttempts ?? 2;
     this.maxSchedulerToolTurns = Math.max(
       this.maxDecisionRepairAttempts + 1,
@@ -3411,7 +3424,27 @@ export class RuntimeWorkGraphScheduler {
       roleIdsSeen: new Set(),
       repeatedNoProgressBySignature: new Map(),
     };
-    for (let iteration = 1; iteration <= this.maxIterations; iteration += 1) {
+    if (this.progressCheckpointIterations === 0) {
+      return await this.result({
+        status: "max_iterations",
+        graphId,
+        iterations: 0,
+        executedNodeIds,
+        addedNodeIds,
+        decisionRefs,
+        reasonCodes: ["scheduler_progress_checkpoint_zero_no_iterations_requested"],
+        missionLedger: missionLedger ? summarizeMissionContractLedger(missionLedger) : null,
+      });
+    }
+    let checkpointReported = false;
+    for (let iteration = 1; ; iteration += 1) {
+      if (iteration > this.progressCheckpointIterations && !checkpointReported) {
+        checkpointReported = true;
+        reasonCodes.push(
+          "scheduler_progress_checkpoint_exceeded_progress_continues",
+          `scheduler_progress_checkpoint_iterations:${this.progressCheckpointIterations}`,
+        );
+      }
       const snapshot = await this.options.graphs.readGraphSnapshot(graphId);
       if (!snapshot) {
         return await this.result({
@@ -3603,16 +3636,6 @@ export class RuntimeWorkGraphScheduler {
         missionLedger: missionLedger ? summarizeMissionContractLedger(missionLedger) : null,
       });
     }
-    return await this.result({
-      status: "max_iterations",
-      graphId,
-      iterations: this.maxIterations,
-      executedNodeIds,
-      addedNodeIds,
-      decisionRefs,
-      reasonCodes: [...reasonCodes, "scheduler_max_iterations_reached"],
-      missionLedger: missionLedger ? summarizeMissionContractLedger(missionLedger) : null,
-    });
   }
 
   private recentNodeResultSummariesForDecision(

@@ -11,11 +11,12 @@ import type { SessionSystemPromptReport } from "../../config/sessions/types.js";
 import { parseAgentSessionKey } from "../../routing/session-key.js";
 import { normalizeLowercaseStringOrEmpty } from "../../shared/string-coerce.js";
 import type { GatewayMessageChannel } from "../../utils/message-channel.js";
-import { resolveAgentConfig } from "../agent-scope.js";
+import { resolveAgentConfig, resolveAgentDir } from "../agent-scope.js";
 import { waitForAgentRun, type AgentWaitResult } from "../run-wait.js";
 import type { SpawnedToolContext } from "../spawned-context.js";
 import { readSubagentOutput, type SubagentRunOutcome } from "../subagent-announce-output.js";
 import { spawnSubagentDirect, type SpawnSubagentResult } from "../subagent-spawn.js";
+import { evaluateRequiredProviderContextAdmission } from "../system-prompt-report.js";
 import type { AnyAgentTool } from "./common.js";
 import {
   jsonResult,
@@ -28,16 +29,25 @@ import {
 const DEFAULT_FOREGROUND_TASK_TIMEOUT_SECONDS = 120;
 const DEFAULT_PARENT_VISIBLE_CHILD_RESULT_MAX_CHARS = 12_000;
 const PARENT_VISIBLE_CHILD_RESULT_GUARD_HEADROOM_CHARS = 512;
+const NATIVE_TASK_CONTINUATION_PREFIX = "openclaw-native-task-continuation://";
 
 const NativeTaskToolSchema = Type.Object({
   agentId: Type.String({
     description:
       "Required child agent id. Executable node sessions allow execution-context-scout or execution-validation-scout.",
   }),
-  task: Type.String({
-    description:
-      "Detailed, self-contained task prompt for the child agent. Include node scope, relevant requirements, source excerpts/refs, expected output, and constraints.",
-  }),
+  task: Type.Optional(
+    Type.String({
+      description:
+        "Detailed, self-contained task prompt for a fresh child agent task. Include node scope, relevant requirements, source excerpts/refs, expected output, and constraints. Required unless continuationId is provided.",
+    }),
+  ),
+  continuationId: Type.Optional(
+    Type.String({
+      description:
+        "Continuation token returned by a pending foreground task wait. Use only to wait for the same child task instead of spawning duplicate work.",
+    }),
+  ),
   label: Type.Optional(Type.String({ description: "Short label for the delegated task." })),
   runTimeoutSeconds: Type.Optional(
     Type.Number({ minimum: 0, description: "Optional bounded runtime for the child task." }),
@@ -54,6 +64,11 @@ const REQUIRED_CHILD_CANONICAL_AGENT_DOCS = [
 const REQUIRED_CHILD_SKILL_BY_AGENT_ID: Record<string, string> = {
   "execution-context-scout": "execution-context-scout",
   "execution-validation-scout": "execution-validation-scout",
+};
+
+const REQUIRED_CHILD_PROVIDER_TOOL_NAMES_BY_AGENT_ID: Record<string, readonly string[]> = {
+  "execution-context-scout": ["read", "list", "glob", "grep"],
+  "execution-validation-scout": ["read", "list", "glob", "grep", "exec"],
 };
 
 function normalizeAllowedAgentIds(values: readonly string[]): Set<string> {
@@ -80,7 +95,7 @@ export type NativeTaskChildStartFailureKind =
   | "child_session_start_failed";
 
 export type NativeTaskForegroundResult = {
-  status: "completed" | "timeout" | "error";
+  status: "completed" | "pending" | "timeout" | "error";
   foreground: true;
   childSessionKey: string;
   runId: string;
@@ -97,6 +112,7 @@ export type NativeTaskForegroundResult = {
   resultOversized?: boolean;
   childBootstrapAdmission?: NativeTaskChildBootstrapAdmission;
   childStartFailureKind?: NativeTaskChildStartFailureKind;
+  continuationId?: string;
 };
 
 export type NativeTaskChildBootstrapAdmission = {
@@ -104,6 +120,11 @@ export type NativeTaskChildBootstrapAdmission = {
   childAgentId: string;
   canonicalDocsAdmitted: boolean;
   requiredSkillAdmitted: boolean;
+  childToolCatalogAdmitted: boolean;
+  providerToolNames: string[];
+  requiredToolNames: string[];
+  missingRequiredToolNames: string[];
+  forbiddenToolNames: string[];
   requiredSkillSourceRef?: string | null;
   requiredSkillSourceHash?: string | null;
   requiredSkillLocation?: string | null;
@@ -136,9 +157,44 @@ function normalizeForegroundStatus(wait: AgentWaitResult): NativeTaskForegroundR
     return "completed";
   }
   if (wait.status === "timeout" || wait.status === "pending") {
-    return "timeout";
+    return "pending";
   }
   return "error";
+}
+
+function buildNativeTaskContinuationId(params: { childSessionKey: string; runId: string }): string {
+  return `${NATIVE_TASK_CONTINUATION_PREFIX}${encodeURIComponent(
+    params.childSessionKey,
+  )}/${encodeURIComponent(params.runId)}`;
+}
+
+function parseNativeTaskContinuationId(
+  continuationId: string | undefined,
+): { childSessionKey: string; runId: string } | null {
+  const trimmed = continuationId?.trim();
+  if (!trimmed?.startsWith(NATIVE_TASK_CONTINUATION_PREFIX)) {
+    return null;
+  }
+  const rest = trimmed.slice(NATIVE_TASK_CONTINUATION_PREFIX.length);
+  const separator = rest.indexOf("/");
+  if (separator < 0) {
+    return null;
+  }
+  const childSessionKey = decodeURIComponent(rest.slice(0, separator)).trim();
+  const runId = decodeURIComponent(rest.slice(separator + 1)).trim();
+  if (!childSessionKey || !runId) {
+    return null;
+  }
+  return { childSessionKey, runId };
+}
+
+function continuationIdForForegroundResult(
+  result: Pick<NativeTaskForegroundResult, "childSessionKey" | "runId">,
+): string {
+  return buildNativeTaskContinuationId({
+    childSessionKey: result.childSessionKey,
+    runId: result.runId,
+  });
 }
 
 export function resolveParentVisibleChildResultMaxChars(
@@ -220,6 +276,42 @@ function uniqueStringList(values: readonly (string | null | undefined)[], max = 
   ].slice(0, max);
 }
 
+function resolveChildProviderToolCatalogAdmission(params: {
+  childAgentId: string;
+  report: SessionSystemPromptReport;
+}): Pick<
+  NativeTaskChildBootstrapAdmission,
+  | "childToolCatalogAdmitted"
+  | "providerToolNames"
+  | "requiredToolNames"
+  | "missingRequiredToolNames"
+  | "forbiddenToolNames"
+> {
+  const childAgentId = normalizeLowercaseStringOrEmpty(params.childAgentId) || "unknown";
+  const requiredToolNames = uniqueStringList(
+    REQUIRED_CHILD_PROVIDER_TOOL_NAMES_BY_AGENT_ID[childAgentId] ?? [],
+  );
+  const requiredToolNameSet = new Set(requiredToolNames);
+  const providerToolNames = uniqueStringList(
+    params.report.tools.entries.map((entry) => normalizeLowercaseStringOrEmpty(entry.name)),
+  );
+  const providerToolNameSet = new Set(providerToolNames);
+  const missingRequiredToolNames = requiredToolNames.filter(
+    (name) => !providerToolNameSet.has(name),
+  );
+  const forbiddenToolNames = providerToolNames.filter((name) => !requiredToolNameSet.has(name));
+  return {
+    childToolCatalogAdmitted:
+      requiredToolNames.length > 0 &&
+      missingRequiredToolNames.length === 0 &&
+      forbiddenToolNames.length === 0,
+    providerToolNames,
+    requiredToolNames,
+    missingRequiredToolNames,
+    forbiddenToolNames,
+  };
+}
+
 function reportRefForChildSession(params: {
   childSessionKey: string;
   report: SessionSystemPromptReport;
@@ -235,15 +327,30 @@ function sourceLabel(kind: "agent-doc" | "skill", agentId: string, name: string)
   return `${kind}:${agentId}:${name}`;
 }
 
-function normalizeReportFileName(value: string | null | undefined): string {
-  const trimmed = value?.trim();
-  return trimmed ? path.basename(trimmed) : "";
+function requiredChildCanonicalDocLookups(
+  requiredCanonicalDocPaths: readonly string[] | undefined,
+): Array<{ docName: (typeof REQUIRED_CHILD_CANONICAL_AGENT_DOCS)[number]; lookup: string }> {
+  return REQUIRED_CHILD_CANONICAL_AGENT_DOCS.map((docName, index) => ({
+    docName,
+    lookup: requiredCanonicalDocPaths?.[index]?.trim() || docName,
+  }));
+}
+
+function resolveRequiredChildCanonicalDocPaths(childAgentId: string): string[] | undefined {
+  try {
+    const config = loadConfig();
+    const agentDir = resolveAgentDir(config, childAgentId);
+    return REQUIRED_CHILD_CANONICAL_AGENT_DOCS.map((docName) => path.join(agentDir, docName));
+  } catch {
+    return undefined;
+  }
 }
 
 export function buildChildBootstrapAdmission(params: {
   childSessionKey: string;
   childAgentId: string;
   report: SessionSystemPromptReport | null;
+  requiredCanonicalDocPaths?: readonly string[];
 }): NativeTaskChildBootstrapAdmission {
   const childAgentId = normalizeLowercaseStringOrEmpty(params.childAgentId) || "unknown";
   const requiredSkillName = REQUIRED_CHILD_SKILL_BY_AGENT_ID[childAgentId];
@@ -253,6 +360,15 @@ export function buildChildBootstrapAdmission(params: {
       childAgentId,
       canonicalDocsAdmitted: false,
       requiredSkillAdmitted: false,
+      childToolCatalogAdmitted: false,
+      providerToolNames: [],
+      requiredToolNames: uniqueStringList(
+        REQUIRED_CHILD_PROVIDER_TOOL_NAMES_BY_AGENT_ID[childAgentId] ?? [],
+      ),
+      missingRequiredToolNames: uniqueStringList(
+        REQUIRED_CHILD_PROVIDER_TOOL_NAMES_BY_AGENT_ID[childAgentId] ?? [],
+      ),
+      forbiddenToolNames: [],
       missingRequiredSources: uniqueStringList([
         ...REQUIRED_CHILD_CANONICAL_AGENT_DOCS.map((docName) =>
           sourceLabel("agent-doc", childAgentId, docName),
@@ -264,28 +380,27 @@ export function buildChildBootstrapAdmission(params: {
     };
   }
 
-  const filesByName = new Map(
-    params.report.injectedWorkspaceFiles.map((entry) => [
-      normalizeReportFileName(entry.name || entry.path),
-      entry,
-    ]),
-  );
-  const missingDocs: string[] = [];
-  const truncatedDocs: string[] = [];
-  for (const docName of REQUIRED_CHILD_CANONICAL_AGENT_DOCS) {
-    const entry = filesByName.get(docName);
-    const admitted = entry && !entry.missing && entry.injectedChars > 0 && !entry.truncated;
-    if (!admitted) {
-      missingDocs.push(sourceLabel("agent-doc", childAgentId, docName));
-    }
-    if (entry?.truncated) {
-      truncatedDocs.push(sourceLabel("agent-doc", childAgentId, docName));
-    }
-  }
+  const docLookups = requiredChildCanonicalDocLookups(params.requiredCanonicalDocPaths);
+  const admissionDecision = evaluateRequiredProviderContextAdmission({
+    report: params.report,
+    required: {
+      workspaceFileNames: docLookups.map((doc) => doc.lookup),
+      skillNames: requiredSkillName ? [requiredSkillName] : [],
+      rejectTruncatedWorkspaceFiles: true,
+    },
+  });
+  const missingDocs = docLookups
+    .filter((doc) => admissionDecision.missingWorkspaceFileNames.includes(doc.lookup))
+    .map((doc) => sourceLabel("agent-doc", childAgentId, doc.docName));
+  const truncatedDocs = docLookups
+    .filter((doc) => admissionDecision.truncatedWorkspaceFileNames.includes(doc.lookup))
+    .map((doc) => sourceLabel("agent-doc", childAgentId, doc.docName));
   const skillEntry = requiredSkillName
     ? params.report.skills.entries.find((entry) => entry.name.trim() === requiredSkillName)
     : undefined;
-  const requiredSkillAdmitted = requiredSkillName ? (skillEntry?.blockChars ?? 0) > 0 : true;
+  const requiredSkillAdmitted = requiredSkillName
+    ? !admissionDecision.missingSkillNames.includes(requiredSkillName)
+    : true;
   const missingRequiredSources = uniqueStringList([
     ...missingDocs,
     requiredSkillAdmitted || !requiredSkillName
@@ -293,12 +408,17 @@ export function buildChildBootstrapAdmission(params: {
       : sourceLabel("skill", childAgentId, requiredSkillName),
   ]);
   const truncatedRequiredSources = uniqueStringList(truncatedDocs);
-  const canonicalDocsAdmitted = missingDocs.length === 0;
+  const canonicalDocsAdmitted = missingDocs.length === 0 && truncatedDocs.length === 0;
+  const toolCatalogAdmission = resolveChildProviderToolCatalogAdmission({
+    childAgentId,
+    report: params.report,
+  });
   return {
     providerReportObserved: true,
     childAgentId,
     canonicalDocsAdmitted,
     requiredSkillAdmitted,
+    ...toolCatalogAdmission,
     requiredSkillSourceRef: skillEntry?.sourceRef ?? null,
     requiredSkillSourceHash: skillEntry?.sourceHash ?? null,
     requiredSkillLocation: skillEntry?.location ?? null,
@@ -316,6 +436,15 @@ export function buildChildBootstrapAdmission(params: {
       requiredSkillAdmitted
         ? "native_task_child_required_skill_admitted_to_provider_context"
         : "native_task_child_required_skill_missing_from_provider_context",
+      toolCatalogAdmission.childToolCatalogAdmitted
+        ? "native_task_child_provider_tool_catalog_admitted"
+        : "native_task_child_provider_tool_catalog_invalid",
+      toolCatalogAdmission.missingRequiredToolNames.length > 0
+        ? "native_task_child_provider_tool_catalog_missing_required_tools"
+        : null,
+      toolCatalogAdmission.forbiddenToolNames.length > 0
+        ? "native_task_child_provider_tool_catalog_forbidden_tools"
+        : null,
       truncatedRequiredSources.length > 0
         ? "native_task_child_bootstrap_required_sources_truncated"
         : null,
@@ -337,6 +466,9 @@ export function classifyChildBootstrapAdmissionFailure(
   }
   if (!admission.requiredSkillAdmitted) {
     return "child_skill_missing";
+  }
+  if (!admission.childToolCatalogAdmitted) {
+    return "child_tool_catalog_invalid";
   }
   return undefined;
 }
@@ -453,6 +585,7 @@ async function waitForForegroundSubagentTaskResult(params: {
     childSessionKey: params.childSessionKey,
     childAgentId: params.requestedAgentId,
     report: childReport,
+    requiredCanonicalDocPaths: resolveRequiredChildCanonicalDocPaths(params.requestedAgentId),
   });
   const childBootstrapFailureKind =
     wait.status === "ok"
@@ -476,6 +609,10 @@ async function waitForForegroundSubagentTaskResult(params: {
     ...(typeof wait.endedAt === "number" ? { endedAt: wait.endedAt } : {}),
     ...(wait.error ? { error: wait.error } : {}),
     ...boundedResult,
+    continuationId: buildNativeTaskContinuationId({
+      childSessionKey: params.childSessionKey,
+      runId: params.runId,
+    }),
     resultDeliveredToParentContext:
       status === "completed" &&
       boundedResult.resultOversized !== true &&
@@ -522,11 +659,13 @@ function formatNativeTaskParentVisibleText(params: {
   requestedAgentId: string;
   result: NativeTaskForegroundResult;
 }): string {
+  const decisionFooter = buildParentDecisionFooter(params.requestedAgentId);
   if (params.result.status === "completed" && params.result.resultText?.trim()) {
     return [
       `Task result from ${params.requestedAgentId} (${params.result.status}).`,
       "",
       params.result.resultText.trim(),
+      decisionFooter,
     ].join("\n");
   }
   if (params.result.childStartFailureKind === "child_result_oversized") {
@@ -536,7 +675,19 @@ function formatNativeTaskParentVisibleText(params: {
       `The child result was ${params.result.resultTextByteCount ?? "unknown"} bytes and exceeded the ${params.result.resultMaxParentVisibleChars ?? DEFAULT_PARENT_VISIBLE_CHILD_RESULT_MAX_CHARS} character parent-visible cap.`,
       "No truncated source excerpt was delivered to the parent. Do not edit from partial context.",
       "Delegate a narrower follow-up task asking the scout for fewer, exact bounded source windows around the specific edit target.",
+      decisionFooter,
     ].join("\n");
+  }
+  if (params.result.status === "pending") {
+    return [
+      `Task result from ${params.requestedAgentId} is still pending at the foreground wait checkpoint.`,
+      "",
+      params.result.continuationId ? `continuationId: ${params.result.continuationId}` : null,
+      "Do not spawn duplicate scout work for the same question. Do not edit or finish from missing child output.",
+      "Parent decision required: update todo, then call task again with the same agentId and continuationId to wait for the child result, or finish/block only if the child is no longer needed.",
+    ]
+      .filter((line): line is string => typeof line === "string" && line.length > 0)
+      .join("\n");
   }
   return [
     `Task result from ${params.requestedAgentId} did not produce parent-visible edit context.`,
@@ -545,9 +696,28 @@ function formatNativeTaskParentVisibleText(params: {
       ? `childStartFailureKind: ${params.result.childStartFailureKind}`
       : null,
     params.result.error ? `error: ${params.result.error}` : null,
+    decisionFooter,
   ]
     .filter((line): line is string => typeof line === "string" && line.length > 0)
     .join("\n");
+}
+
+function buildParentDecisionFooter(requestedAgentId: string): string {
+  if (requestedAgentId === "execution-context-scout") {
+    return [
+      "",
+      "Parent decision required: update todo, then choose one: enough for minimal edit / need more context / blocked.",
+      "If enough, make the smallest useful edit from the returned bounded source windows. If not, delegate another focused context scout task with the missing question.",
+    ].join("\n");
+  }
+  if (requestedAgentId === "execution-validation-scout") {
+    return [
+      "",
+      "Parent decision required: update todo, then choose one: node/todo complete / repair from current context / need more context / blocked.",
+      "Then repair, delegate more context, validate again, call node_finish, or finish with a typed blocker.",
+    ].join("\n");
+  }
+  return "";
 }
 
 export function createNativeTaskTool(
@@ -596,7 +766,6 @@ export function createNativeTaskTool(
           `task agentId must be one of ${allowedText}; got ${agentId || "<empty>"}.`,
         );
       }
-      const task = readStringParam(params, "task", { required: true, label: "task" });
       const label = readStringParam(params, "label");
       const rawTimeout = readNumberParam(params, "runTimeoutSeconds", {
         integer: true,
@@ -612,6 +781,56 @@ export function createNativeTaskTool(
       const parentVisibleResultMaxChars = resolveParentVisibleChildResultMaxChars(
         opts.parentVisibleResultMaxChars,
       );
+      const continuationId = readStringParam(params, "continuationId");
+      const continuation = continuationId ? parseNativeTaskContinuationId(continuationId) : null;
+      if (continuationId && !continuation) {
+        throw new ToolInputError(
+          "task continuationId must be a token returned by a previous pending native task result.",
+        );
+      }
+      if (
+        continuation &&
+        !childSessionMatchesRequestedAgent({
+          childSessionKey: continuation.childSessionKey,
+          requestedAgentId: agentId,
+        })
+      ) {
+        throw new ToolInputError(
+          `task continuationId child session does not match requested agentId ${agentId}.`,
+        );
+      }
+      if (continuation) {
+        const foregroundResult = await waitForForegroundResult({
+          childSessionKey: continuation.childSessionKey,
+          runId: continuation.runId,
+          requestedAgentId: agentId,
+          runTimeoutSeconds,
+          parentVisibleResultMaxChars,
+          readChildSystemPromptReport: opts.readChildSystemPromptReport,
+        });
+        const parentVisibleForegroundResult = enforceParentVisibleChildResultBudget(
+          {
+            ...foregroundResult,
+            continuationId: continuationIdForForegroundResult(foregroundResult),
+          },
+          parentVisibleResultMaxChars,
+        );
+        const details = {
+          ...stripParentVisibleResultText(parentVisibleForegroundResult),
+          sourceTool: "task",
+          requestedAgentId: agentId,
+          childIdentityVerified: true,
+          continuationUsed: true,
+        };
+        return textResult(
+          formatNativeTaskParentVisibleText({
+            requestedAgentId: agentId,
+            result: parentVisibleForegroundResult,
+          }),
+          details,
+        );
+      }
+      const task = readStringParam(params, "task", { required: true, label: "task" });
       const result: SpawnSubagentResult = await spawnSubagent(
         {
           task,
@@ -623,6 +842,7 @@ export function createNativeTaskTool(
           cleanup: "keep",
           sandbox: "inherit",
           lightContext: false,
+          leafTask: true,
           expectsCompletionMessage: true,
         },
         {
@@ -687,7 +907,10 @@ export function createNativeTaskTool(
         readChildSystemPromptReport: opts.readChildSystemPromptReport,
       });
       const parentVisibleForegroundResult = enforceParentVisibleChildResultBudget(
-        foregroundResult,
+        {
+          ...foregroundResult,
+          continuationId: continuationIdForForegroundResult(foregroundResult),
+        },
         parentVisibleResultMaxChars,
       );
       const details = {

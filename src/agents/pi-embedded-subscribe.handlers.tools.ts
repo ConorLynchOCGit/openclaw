@@ -205,6 +205,11 @@ function compactChildBootstrapAdmission(value: unknown): Record<string, unknown>
     childAgentId: readStringField(record, "childAgentId") ?? "unknown",
     canonicalDocsAdmitted: readBooleanField(record, "canonicalDocsAdmitted") === true,
     requiredSkillAdmitted: readBooleanField(record, "requiredSkillAdmitted") === true,
+    childToolCatalogAdmitted: readBooleanField(record, "childToolCatalogAdmitted") === true,
+    providerToolNames: readStringArrayField(record, "providerToolNames").slice(0, 30),
+    requiredToolNames: readStringArrayField(record, "requiredToolNames").slice(0, 30),
+    missingRequiredToolNames: readStringArrayField(record, "missingRequiredToolNames").slice(0, 30),
+    forbiddenToolNames: readStringArrayField(record, "forbiddenToolNames").slice(0, 30),
     missingRequiredSources: readStringArrayField(record, "missingRequiredSources").slice(0, 20),
     truncatedRequiredSources: readStringArrayField(record, "truncatedRequiredSources").slice(0, 20),
     ...(readStringField(record, "reportRef")
@@ -230,6 +235,7 @@ function buildNativeTaskResultEvent(params: {
   const childRunId = readStringField(details, "runId");
   const childSessionKey = readStringField(details, "childSessionKey");
   const requestedAgentId = readStringField(details, "requestedAgentId");
+  const parentDecisionFooterKind = parentDecisionFooterKindForNativeTaskAgent(requestedAgentId);
   const resultDelivered = readBooleanField(details, "resultDeliveredToParentContext") === true;
   const childResultRef =
     resultDelivered && childSessionKey && childRunId
@@ -251,7 +257,121 @@ function buildNativeTaskResultEvent(params: {
     childIdentityVerified: readBooleanField(details, "childIdentityVerified") === true,
     childStartFailureKind: readStringField(details, "childStartFailureKind"),
     ...(childResultRef ? { childResultRef } : {}),
+    ...(parentDecisionFooterKind
+      ? {
+          parentDecisionFooterIncluded: true,
+          parentDecisionFooterKind,
+        }
+      : {}),
     childBootstrapAdmission: compactChildBootstrapAdmission(details.childBootstrapAdmission),
+  };
+}
+
+function buildToolResultRef(params: { runId: string; toolCallId: string }): string {
+  return `openclaw-tool-result://${encodeURIComponent(params.runId)}/${encodeURIComponent(
+    params.toolCallId,
+  )}`;
+}
+
+function readNestedRecord(
+  record: Record<string, unknown> | undefined,
+  key: string,
+): Record<string, unknown> | undefined {
+  return readRecord(record?.[key]);
+}
+
+function uniqueStrings(values: readonly string[]): string[] {
+  return Array.from(new Set(values.map((entry) => entry.trim()).filter(Boolean)));
+}
+
+function readChangedFilePathsFromArgs(args: unknown): string[] {
+  const record = readRecord(args);
+  if (!record) {
+    return [];
+  }
+  const aliases = [
+    "path",
+    "file_path",
+    "filePath",
+    "file",
+    "filename",
+    "targetPath",
+    "target_path",
+    "oldPath",
+    "old_path",
+    "newPath",
+    "new_path",
+  ];
+  return uniqueStrings(
+    aliases
+      .map((key) => record[key])
+      .filter((value): value is string => typeof value === "string" && value.trim().length > 0),
+  );
+}
+
+function changedFilePathsFromPatchSummary(summary: ApplyPatchSummary | null): string[] {
+  if (!summary) {
+    return [];
+  }
+  return uniqueStrings([...summary.added, ...summary.modified, ...summary.deleted]);
+}
+
+function buildNodeAgentToolResultEvent(params: {
+  runId: string;
+  toolCallId: string;
+  toolName: string;
+  isToolError: boolean;
+  completedMutatingAction: boolean;
+  result: unknown;
+  args?: unknown;
+}): Record<string, unknown> | null {
+  if (params.toolName === "task") {
+    return null;
+  }
+  const details = readToolResultDetailsRecord(params.result) ?? readRecord(params.result);
+  const todoDetails = readNestedRecord(details, "todo");
+  const patchSummary =
+    params.toolName === "apply_patch" ? readApplyPatchSummary(params.result) : null;
+  const changedFilePaths = uniqueStrings([
+    ...readChangedFilePathsFromArgs(params.args),
+    ...changedFilePathsFromPatchSummary(patchSummary),
+  ]);
+  const isMutationTool =
+    params.completedMutatingAction ||
+    params.toolName === "edit" ||
+    params.toolName === "write" ||
+    params.toolName === "apply_patch";
+  const isRelevantNodeTool =
+    params.toolName === "update_plan" ||
+    params.toolName === "read_todo" ||
+    params.toolName === "node_finish" ||
+    params.toolName === "openclaw_resource_read" ||
+    isMutationTool;
+  if (!isRelevantNodeTool) {
+    return null;
+  }
+  const toolResultRef = buildToolResultRef(params);
+  return {
+    eventType: "node_agent_tool_result",
+    toolResultRef,
+    toolName: params.toolName,
+    toolCallId: params.toolCallId,
+    status: params.isToolError ? "error" : "completed",
+    isError: params.isToolError,
+    mutatingAction: isMutationTool,
+    changedFilePaths,
+    ...(patchSummary
+      ? {
+          addedFilePaths: patchSummary.added,
+          modifiedFilePaths: patchSummary.modified,
+          deletedFilePaths: patchSummary.deleted,
+        }
+      : {}),
+    todoRef: readStringField(todoDetails, "todoRef"),
+    finishAccepted:
+      params.toolName === "node_finish"
+        ? readBooleanField(details, "accepted") === true
+        : undefined,
   };
 }
 
@@ -262,9 +382,111 @@ function workingContextKindForNativeTaskAgent(
     return "context_scout_result";
   }
   if (requestedAgentId === "execution-validation-scout") {
-    return "validation_scout_result";
+    return "validation_state";
   }
   return null;
+}
+
+function parentDecisionFooterKindForNativeTaskAgent(
+  requestedAgentId: string | undefined,
+): string | null {
+  if (requestedAgentId === "execution-context-scout") {
+    return "minimal_edit_readiness";
+  }
+  if (requestedAgentId === "execution-validation-scout") {
+    return "validation_sufficiency";
+  }
+  return null;
+}
+
+function buildChangeSetWorkingContextText(event: Record<string, unknown>): string | undefined {
+  if (readBooleanField(event, "mutatingAction") !== true) {
+    return undefined;
+  }
+  const toolName = readStringField(event, "toolName") ?? "unknown";
+  const toolResultRef = readStringField(event, "toolResultRef");
+  const status = readStringField(event, "status") ?? "unknown";
+  const changedFilePaths = readStringArrayField(event, "changedFilePaths");
+  const addedFilePaths = readStringArrayField(event, "addedFilePaths");
+  const modifiedFilePaths = readStringArrayField(event, "modifiedFilePaths");
+  const deletedFilePaths = readStringArrayField(event, "deletedFilePaths");
+  return [
+    "Change set:",
+    `tool=${toolName}`,
+    toolResultRef ? `toolResultRef=${toolResultRef}` : undefined,
+    `status=${status}`,
+    `succeeded=${readBooleanField(event, "isError") === true ? "false" : "true"}`,
+    changedFilePaths.length > 0 ? "changed_files:" : undefined,
+    ...changedFilePaths.map((path) => `- ${path}`),
+    addedFilePaths.length > 0 ? `added=${addedFilePaths.join(", ")}` : undefined,
+    modifiedFilePaths.length > 0 ? `modified=${modifiedFilePaths.join(", ")}` : undefined,
+    deletedFilePaths.length > 0 ? `deleted=${deletedFilePaths.join(", ")}` : undefined,
+    readBooleanField(event, "isError") === true
+      ? "stale_edit_or_regrounding_required=true"
+      : undefined,
+  ]
+    .filter((line): line is string => typeof line === "string" && line.length > 0)
+    .join("\n");
+}
+
+async function admitNativeToolWorkingContext(params: {
+  ctx: ToolHandlerContext;
+  event: Record<string, unknown>;
+  toolCallId: string;
+}): Promise<Record<string, unknown>> {
+  const text = buildChangeSetWorkingContextText(params.event);
+  if (!text) {
+    return params.event;
+  }
+  const sessionKey = params.ctx.params.sessionKey?.trim();
+  if (!sessionKey) {
+    return params.event;
+  }
+  try {
+    const storePath = resolveStorePath(params.ctx.params.config?.session?.store, {
+      agentId: params.ctx.params.agentId,
+    });
+    const updateResult = await updateSessionWorkingContext({
+      storePath,
+      sessionKey,
+      entry: {
+        kind: "change_set",
+        source: "native_tool",
+        text,
+        sourceToolCallId: params.toolCallId,
+        toolResultRef: readStringField(params.event, "toolResultRef"),
+        status: readStringField(params.event, "status"),
+        changedFilePaths: readStringArrayField(params.event, "changedFilePaths"),
+        addedFilePaths: readStringArrayField(params.event, "addedFilePaths"),
+        modifiedFilePaths: readStringArrayField(params.event, "modifiedFilePaths"),
+        deletedFilePaths: readStringArrayField(params.event, "deletedFilePaths"),
+      },
+    });
+    if (!updateResult.persisted) {
+      return {
+        ...params.event,
+        changeSetWorkingContextPersisted: false,
+        changeSetWorkingContextPersistFailureReason: updateResult.reason,
+        changeSetWorkingContextRef: updateResult.workingContextRef,
+      };
+    }
+    return {
+      ...params.event,
+      changeSetWorkingContextPersisted: true,
+      changeSetWorkingContextRef: updateResult.workingContextRef,
+      changeSetWorkingContextEntryRef: updateResult.workingContextEntryRef,
+      changeSetWorkingContextEntryId: updateResult.entry.entryId,
+      changeSetTextHash: updateResult.entry.textHash,
+      changeSetTextByteCount: updateResult.entry.textByteCount,
+    };
+  } catch (err) {
+    return {
+      ...params.event,
+      changeSetWorkingContextPersisted: false,
+      changeSetWorkingContextPersistFailureReason: "persist_error",
+      changeSetWorkingContextPersistError: err instanceof Error ? err.message : String(err),
+    };
+  }
 }
 
 async function admitNativeTaskWorkingContext(params: {
@@ -302,6 +524,9 @@ async function admitNativeTaskWorkingContext(params: {
         requestedAgentId,
         childSessionKey: readStringField(params.event, "childSessionKey"),
         childRunId: readStringField(params.event, "childRunId"),
+        status: readStringField(params.event, "status"),
+        validationStatus:
+          kind === "validation_state" ? readStringField(params.event, "status") : undefined,
       },
     });
     if (!updateResult.persisted) {
@@ -997,6 +1222,30 @@ export async function handleToolExecutionEnd(
       await ctx.params.onAgentEvent?.({ stream: "node-agent", data: enrichedNativeTaskEvent });
     } catch {
       // Native task trace emission is diagnostic only; it must not alter tool semantics.
+    }
+  }
+  const nodeAgentToolResultEvent = buildNodeAgentToolResultEvent({
+    runId,
+    toolCallId,
+    toolName,
+    isToolError,
+    completedMutatingAction,
+    result,
+    args: startData?.args,
+  });
+  if (nodeAgentToolResultEvent) {
+    try {
+      const enrichedNodeAgentToolResultEvent = await admitNativeToolWorkingContext({
+        ctx,
+        event: nodeAgentToolResultEvent,
+        toolCallId,
+      });
+      await ctx.params.onAgentEvent?.({
+        stream: "node-agent",
+        data: enrichedNodeAgentToolResultEvent,
+      });
+    } catch {
+      // Compact node-agent trace emission is diagnostic only; it must not alter tool semantics.
     }
   }
   if (isToolError) {

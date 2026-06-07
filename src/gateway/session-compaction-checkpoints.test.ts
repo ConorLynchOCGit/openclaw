@@ -5,9 +5,11 @@ import path from "node:path";
 import type { AssistantMessage, UserMessage } from "@mariozechner/pi-ai";
 import { SessionManager } from "@mariozechner/pi-coding-agent";
 import { afterEach, describe, expect, test } from "vitest";
+import type { OpenClawConfig } from "../config/types.openclaw.js";
 import {
   captureCompactionCheckpointSnapshot,
   cleanupCompactionCheckpointSnapshot,
+  persistSessionCompactionCheckpoint,
 } from "./session-compaction-checkpoints.js";
 
 const tempDirs: string[] = [];
@@ -80,5 +82,68 @@ describe("session-compaction-checkpoints", () => {
 
     expect(fsSync.existsSync(snapshot!.sessionFile)).toBe(false);
     expect(fsSync.existsSync(sessionFile!)).toBe(true);
+  });
+
+  test("persist prunes generated snapshot files when checkpoint metadata exceeds retention cap", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-checkpoint-prune-"));
+    tempDirs.push(root);
+    const agentDir = path.join(root, "agents", "main", "agent");
+    const sessionsDir = path.join(root, "agents", "main", "sessions");
+    const storePath = path.join(sessionsDir, "sessions.json");
+    const sessionFile = path.join(sessionsDir, "main.jsonl");
+    await fs.mkdir(sessionsDir, { recursive: true });
+    await fs.mkdir(agentDir, { recursive: true });
+    await fs.writeFile(sessionFile, "{}\n", "utf8");
+    await fs.writeFile(
+      storePath,
+      `${JSON.stringify({
+        "agent:main:main": {
+          sessionId: "main-session",
+          sessionFile,
+          updatedAt: 1,
+        },
+      })}\n`,
+      "utf8",
+    );
+    const cfg = {
+      agents: {
+        list: [{ id: "main", agentDir }],
+      },
+    } as OpenClawConfig;
+
+    const snapshotFiles: string[] = [];
+    for (let index = 0; index < 7; index += 1) {
+      const snapshotFile = path.join(sessionsDir, `main.checkpoint.${index}.jsonl`);
+      snapshotFiles.push(snapshotFile);
+      await fs.writeFile(snapshotFile, `checkpoint ${index}\n`, "utf8");
+      const persisted = await persistSessionCompactionCheckpoint({
+        cfg,
+        sessionKey: "agent:main:main",
+        sessionId: "main-session",
+        reason: "manual",
+        snapshot: {
+          sessionId: `snapshot-${index}`,
+          sessionFile: snapshotFile,
+          leafId: `leaf-${index}`,
+        },
+        createdAt: index + 1,
+      });
+      expect(persisted).not.toBeNull();
+    }
+
+    const store = JSON.parse(await fs.readFile(storePath, "utf8")) as {
+      "agent:main:main"?: {
+        compactionCheckpoints?: Array<{ preCompaction?: { sessionFile?: string } }>;
+      };
+    };
+    const retained = store["agent:main:main"]?.compactionCheckpoints ?? [];
+    expect(retained).toHaveLength(5);
+    expect(await fs.stat(snapshotFiles[0]).catch(() => null)).toBeNull();
+    expect(await fs.stat(snapshotFiles[1]).catch(() => null)).toBeNull();
+    await expect(fs.stat(snapshotFiles[2])).resolves.toBeTruthy();
+    await expect(fs.stat(snapshotFiles[6])).resolves.toBeTruthy();
+    expect(retained.map((checkpoint) => checkpoint.preCompaction?.sessionFile)).toEqual(
+      snapshotFiles.slice(2),
+    );
   });
 });

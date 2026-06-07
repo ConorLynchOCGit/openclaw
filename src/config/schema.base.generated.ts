@@ -4529,6 +4529,20 @@ export const GENERATED_BASE_CONFIG_SCHEMA: BaseConfigSchemaResponse = {
                     description:
                       "Maximum time in seconds allowed for a single compaction operation before it is aborted (default: 900). Increase this for very large sessions that need more time to summarize, or decrease it to fail faster on unresponsive models.",
                   },
+                  truncateAfterCompaction: {
+                    type: "boolean",
+                    title: "Truncate After Compaction",
+                    description:
+                      "When enabled, rewrites the session JSONL file after compaction to remove entries that were summarized. Prevents unbounded file growth in long-running sessions with many compaction cycles. Default: false.",
+                  },
+                  maxCheckpointsPerSession: {
+                    type: "integer",
+                    minimum: 0,
+                    maximum: 25,
+                    title: "Max Compaction Checkpoints Per Session",
+                    description:
+                      "Maximum pre-compaction snapshot files retained per session. Older generated checkpoint files are deleted when new checkpoints are persisted. Default: 5; hard maximum: 25.",
+                  },
                   memoryFlush: {
                     type: "object",
                     properties: {
@@ -25709,6 +25723,11 @@ export const GENERATED_BASE_CONFIG_SCHEMA: BaseConfigSchemaResponse = {
       label: "Truncate After Compaction",
       help: "When enabled, rewrites the session JSONL file after compaction to remove entries that were summarized. Prevents unbounded file growth in long-running sessions with many compaction cycles. Default: false.",
       tags: ["advanced"],
+    },
+    "agents.defaults.compaction.maxCheckpointsPerSession": {
+      label: "Max Compaction Checkpoints Per Session",
+      help: "Maximum pre-compaction snapshot files retained per session. Older generated checkpoint files are deleted when new checkpoints are persisted. Default: 5; hard maximum: 25.",
+      tags: ["performance", "storage"],
     },
     "agents.defaults.compaction.notifyUser": {
       label: "Compaction Notify User",

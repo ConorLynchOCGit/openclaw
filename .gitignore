@@ -88,6 +88,7 @@ docs/.local/
 docs/internal/
 tmp/
 IDENTITY.md
+!docs/agents/**/runtime/IDENTITY.md
 USER.md
 .tgz
 .idea

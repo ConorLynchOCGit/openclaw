@@ -34,6 +34,10 @@ export function isPrimarySessionTranscriptFileName(fileName: string): boolean {
   return !isSessionArchiveArtifactName(fileName);
 }
 
+export function isCompactionCheckpointSnapshotFileName(fileName: string): boolean {
+  return /\.checkpoint\.[^/]+\.jsonl$/u.test(fileName);
+}
+
 export function isUsageCountedSessionTranscriptFileName(fileName: string): boolean {
   if (isPrimarySessionTranscriptFileName(fileName)) {
     return true;

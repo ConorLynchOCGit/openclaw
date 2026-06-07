@@ -176,31 +176,38 @@ skills materialized under Runtime Home. It must contain only bounded
 provider logs, transcripts, hidden reasoning, secrets, or unbounded runtime
 outputs.
 
-Runtime Home also stores the fork-transition readiness record at:
+Runtime Home also stores the fork-transition migration receipt at:
 
 ```text
 /root/.openclaw/source-runtime/fork-transition-readiness.json
 ```
 
 That record makes the fork migration state explicit: whether the fork and
-upstream remotes exist, whether `origin` already points at the fork, how many
-dirty worktree entries remain, whether a preservation artifact is present, and
-a bounded dirty-worktree summary for migration reconciliation. The summary is
-not a second source of truth and must not store raw logs or transcripts. It is
-only a compact queue-shaping aid: status counts, category counts, staged/
-unstaged/delete/untracked counts, and a capped sample of paths.
+upstream remotes existed at migration proof time, whether `origin` already
+points at the fork, and whether preservation artifacts verified. After `origin`
+has migrated to the fork, this record is a static migration/topology receipt.
+It must not remain a live dirty-worktree gate that must be refreshed after
+every ordinary patch.
 
-Runtime Home also stores the current dirty-worktree reconciliation inventory at:
+Current dirty-worktree truth comes from `git status --porcelain=v1` or from an
+explicitly regenerated dirty-worktree reconciliation inventory. The migration
+receipt may include bounded dirty-worktree summary fields captured during the
+transition, but those fields are historical receipt data, not live readiness
+truth.
+
+Runtime Home also stores an on-demand dirty-worktree reconciliation inventory at:
 
 ```text
 /root/.openclaw/source-runtime/dirty-worktree-reconciliation.json
 ```
 
-That inventory records the current `git status --porcelain=v1` path/status
-set with deterministic migration-action labels. It exists to make the fork
-transition executable without treating all dirty work as one opaque blocker.
-It may store paths, git status codes, deterministic categories, and
-deterministic next-action labels. It must not store source file contents,
+That inventory records a generated `git status --porcelain=v1` path/status set
+with deterministic migration-action labels. It exists to make migration or
+preservation operations executable without treating all dirty work as one
+opaque blocker. It is regenerated when explicitly needed for a transition or
+repair operation; it is not a continuously valid live gate during normal
+development. It may store paths, git status codes, deterministic categories,
+and deterministic next-action labels. It must not store source file contents,
 provider logs, command logs, transcripts, hidden reasoning, secrets, or
 unbounded runtime output.
 

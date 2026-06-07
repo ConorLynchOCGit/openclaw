@@ -68,9 +68,10 @@ export type EmbeddedRunAttemptResult = {
         reason?: string;
       }
     | {
-        route: Exclude<PreemptiveCompactionRoute, "fits">;
+        route: Exclude<PreemptiveCompactionRoute, "fits"> | "provider_context_admission_blocked";
         handled?: false;
         reason?: string;
+        reasonCodes?: string[];
       };
   sessionIdUsed: string;
   bootstrapPromptWarningSignaturesSeen?: string[];
