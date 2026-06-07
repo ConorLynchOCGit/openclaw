@@ -451,6 +451,18 @@ export function createProductSpecPlanningProofReviewArtifact(
       schedulerReasonCodes.push("product_spec_planning_research_brief_ref_missing");
     }
   }
+  // If validation/repair evidence recommends web research for an architectural failure,
+  // ensure web research was actually performed and sources were recorded.
+  if (validationRepairEvidence.webResearchRecommended) {
+    if (!input.schedulerNodeOrder.includes("web_research")) {
+      schedulerReasonCodes.push("product_spec_planning_architectural_failure_web_research_missing");
+    }
+    if (input.researchBriefRefs.length === 0) {
+      schedulerReasonCodes.push(
+        "product_spec_planning_architectural_failure_research_brief_ref_missing",
+      );
+    }
+  }
   if (input.planningCapsuleRefs.length === 0) {
     schedulerReasonCodes.push("product_spec_planning_capsule_ref_missing");
   }

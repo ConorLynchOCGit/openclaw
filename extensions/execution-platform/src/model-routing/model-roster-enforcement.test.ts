@@ -30,11 +30,11 @@ describe("model roster enforcement", () => {
 
   it("rejects DeepSeek V4 Pro while needs_review and keeps it separate from Flash", () => {
     const decision = enforceModelRoster({
-      roleId: "resource_scout",
+      roleId: "context_scout",
       requestedModelId: "deepseek/deepseek-v4-pro",
       requestedAuthority: "observe",
       candidates: OPERATOR_REQUESTED_AGENT_TEAM_MODEL_CANDIDATES,
-      roleTargetId: "resource_scout",
+      roleTargetId: "context_scout",
       roleQualificationStatus: "needs_review",
       evidenceRefs,
     });
@@ -105,11 +105,11 @@ describe("model roster enforcement", () => {
 
   it("accepts bounded operator override for V4 Pro needs_review but not high-blast-radius authority", () => {
     const override = enforceModelRoster({
-      roleId: "resource_scout",
+      roleId: "context_scout",
       requestedModelId: "deepseek/deepseek-v4-pro",
       requestedAuthority: "observe",
       candidates: OPERATOR_REQUESTED_AGENT_TEAM_MODEL_CANDIDATES,
-      roleTargetId: "resource_scout",
+      roleTargetId: "context_scout",
       roleQualificationStatus: "needs_review",
       evidenceRefs,
       operatorOverride: {
@@ -120,11 +120,11 @@ describe("model roster enforcement", () => {
       },
     });
     const deploy = enforceModelRoster({
-      roleId: "resource_scout",
+      roleId: "context_scout",
       requestedModelId: "deepseek/deepseek-v4-pro",
       requestedAuthority: "deploy",
       candidates: OPERATOR_REQUESTED_AGENT_TEAM_MODEL_CANDIDATES,
-      roleTargetId: "resource_scout",
+      roleTargetId: "context_scout",
       roleQualificationStatus: "qualified",
       evidenceRefs,
       operatorOverride: {
@@ -153,12 +153,12 @@ describe("model roster enforcement", () => {
         preferred: true,
       },
       {
-        roleId: "resource_scout",
+        roleId: "context_scout",
         qualityPassed: true,
         costPassed: true,
         latencyPassed: true,
         reliabilityPassed: true,
-        rollbackRef: "model-roster://agent_team.coding/resource_scout/rollback",
+        rollbackRef: "model-roster://agent_team.coding/context_scout/rollback",
         evidenceRefs: ["artifact://context-scout-eval"],
         fallbackOnly: true,
       },
@@ -177,7 +177,7 @@ describe("model roster enforcement", () => {
     expect(proof.noGlobalWinner).toBe(true);
     expect(proof.rawPromptStored).toBe(false);
     expect(proof.promotedRoles).toEqual(["test_engineer"]);
-    expect(proof.fallbackOnlyRoles).toEqual(["resource_scout"]);
+    expect(proof.fallbackOnlyRoles).toEqual(["context_scout"]);
     expect(proof.needsReviewRoles).toEqual(
       expect.arrayContaining(["implementation_engineer", "orchestrator"]),
     );

@@ -11,6 +11,11 @@ proof-shaped demo, not a narrow edge-case patch, and not a compatibility
 exercise. Execute through the canonical OpenClaw runtime spine and close the
 item only from accepted runtime evidence.
 
+This is an implementation and proof task for an existing workflow/plugin/system:
+Product/Spec Planning. Finish the production implementation, harden the runtime
+integration, run meaningful proof coverage, review the result, and close the
+work only from accepted runtime evidence.
+
 ## Source Specs To Read First
 
 Read and use these source-of-truth specs before changing code or running the
@@ -18,26 +23,19 @@ proof:
 
 - `docs/projects/execution-platform/product-spec-planning-production-workflow.md`
 - `docs/projects/execution-platform/specs/product-spec-checkpointed-proof-framework.md`
-- `docs/projects/execution-platform/specs/execution-contract-spine-resource-requirements-and-frontier-state.md`
-- `docs/projects/execution-platform/specs/control-plane-coding-team-recovery.md`
-- `docs/projects/execution-platform/specs/work-intent-control-plane-contract.md`
-- `docs/projects/execution-platform/specs/pre-product-spec-frontier-worker-proof-gate.md`
+- `docs/projects/execution-platform/specs/requirement-map-intake-decomposition.md`
+- `docs/projects/execution-platform/specs/scheduler-graph-patch-runner.md`
+- `docs/projects/execution-platform/specs/openclaw-native-node-execution.md`
+- `docs/projects/execution-platform/specs/runner-owned-worker-execution-session.md`
+- `docs/projects/execution-platform/specs/node-lifecycle-transition-ownership-consolidation.md`
 - `docs/projects/execution-platform/specs/canonical-workflow-runtime-architecture.md`
 - `docs/projects/execution-platform/specs/generic-orchestration-runtime.md`
 - `docs/projects/execution-platform/specs/runtime-work-graph.md`
 - `docs/projects/execution-platform/specs/maximum-toolification-architecture.md`
 - `docs/projects/execution-platform/specs/runtime-toolification-and-utility-scheduling.md`
-- `docs/projects/execution-platform/specs/model-task-classification-and-resource-materialization.md`
 - `docs/projects/execution-platform/specs/runtime-node-readiness-transition-engine.md`
-- `docs/projects/execution-platform/specs/demand-driven-frontier-orchestration-and-context-broker.md`
-- `docs/projects/execution-platform/specs/semantic-microtask-refinement-and-worker-packet-quality.md`
-- `docs/projects/execution-platform/specs/split-required-resource-materialization-transition.md`
-- `docs/projects/execution-platform/specs/resource-materialization-boundary-replay-and-canonical-node-readiness.md`
 - `docs/projects/execution-platform/specs/execution-intent-evidence-mode-and-worker-dispatch.md`
-- `docs/projects/execution-platform/specs/scheduler-first-node-scoped-resource-fulfillment.md`
-- `docs/projects/execution-platform/specs/post-resource-implementation-task-compiler.md`
 - `docs/projects/execution-platform/specs/native-agentic-coding-harness-convergence.md`
-- `docs/projects/execution-platform/specs/non-codex-tool-worker-runtime.md`
 - `docs/projects/execution-platform/specs/work-queue-execution-truth.md`
 - `docs/projects/execution-platform/specs/work-queue-generated-item-lifecycle.md`
 - `docs/projects/execution-platform/CURRENT_SLICE.md`
@@ -45,8 +43,8 @@ proof:
 
 ## Mission
 
-Prove Product/Spec Planning as a first-class production workflow plugin on the
-canonical generic orchestration runtime.
+Implement, harden, and prove Product/Spec Planning as a first-class production
+workflow plugin on the canonical generic orchestration runtime.
 
 Before submitting or running the proof, verify the pre-proof queue state:
 
@@ -71,30 +69,38 @@ The proof must demonstrate that Product/Spec Planning runs through the same
 runtime spine used by scheduler-backed workflows:
 
 1. Intent Front Door / UX-equivalent payload.
-2. Generic Orchestration Runtime.
-3. Mission Ledger.
-4. typed ObligationGraph authoring.
-5. scheduler WorkIntent planning from runnable obligations.
-6. Staged Scheduler Tool Protocol.
-7. Runtime-derived graph/node envelopes.
-8. Runtime node readiness transition engine.
-9. Registered node executors.
-10. Evidence claims mapped to commitments.
-11. Validation/compile-readiness.
-12. Work Queue child/readback projection.
-13. model-authored Closeout Capsule.
-14. completion review.
-15. boundary replay checkpoints for accepted gates.
+2. `IntakeStageRunner`.
+3. replayable source prompt artifact with bounded addressing only.
+4. `RequirementMap` authoring with model-authored requirements, roles, and
+   bounded source refs.
+5. `SchedulerStageRunner` graph-patch planning from RequirementMap inventory.
+6. runtime-derived graph/node envelopes from `SchedulerGraphPatch`.
+7. `NodeLifecycleTransitionRunner` node lifecycle ownership.
+8. persisted `NodeExecutionSnapshot` artifacts.
+9. `runNodeAgentSession` into a real OpenClaw native agent session.
+10. `openclaw.resource.read`, normal OpenClaw tools/skills/subagents, and
+    terminal `node.finish`.
+11. evidence claims mapped to RequirementMap coverage.
+12. validation/compile-readiness.
+13. Work Queue child/readback projection.
+14. model-authored Closeout Capsule.
+15. completion review.
+16. boundary replay checkpoints for accepted gates.
 
-The current coding-team control-plane spine is WorkIntent-first:
+The current coding-team scheduler spine is SchedulerGraphPatch-first:
 
 ```text
-prompt -> route -> Mission Ledger -> ObligationGraph
--> scheduler-created WorkIntent graph for runnable obligations
--> NodeLifecycleTransitionRunner compiles executable contracts
--> worker starts with authority/objective/commitments/legal tools
--> worker-owned context/search/read/scout subturn loop as needed
--> target/resource selection -> edit/validation/evidence
+prompt -> route -> IntakeStageRunner
+-> source prompt artifact ref
+-> RequirementMap
+-> SchedulerStageRunner creates SchedulerGraphPatch node seeds, edges, and coverage
+-> RuntimeGraphRepository persists runtime graph nodes/edges
+-> NodeLifecycleTransitionRunner projects executable node lifecycle
+-> NodeLifecycleTransitionRunner persists NodeExecutionSnapshot
+-> runNodeAgentSession starts/resumes execution-coding OpenClaw agent
+-> agent reads source prompt refs and repo through OpenClaw tools/subagents
+-> agent edits/plans/validates or blocks
+-> agent terminalizes with node.finish
 -> validation -> evidence -> review/readback/closeout
 ```
 
@@ -104,12 +110,8 @@ Do not reintroduce the forbidden shortcut:
 context_synthesis group -> implementation node
 ```
 
-If Product/Spec code is incomplete, implement it through the coding-team
-executor with `agent_team.product_spec_planning` as the target subject. If the
-workflow is already implemented, harden it until the full production proof can
-pass. Do not route an implementation prompt into the incomplete Product/Spec
-workflow itself. Do not execute Product/Spec child actions; Product/Spec may
-propose child actions and prove compile readiness only.
+Do not execute Product/Spec child actions; Product/Spec may propose child
+actions and prove compile readiness only.
 
 ## Required Architecture
 
@@ -126,6 +128,11 @@ spine. Do not build or preserve:
 - model-authored executable node envelopes.
 - model-authored executor keys, node kinds, worker refs, evidence enums, or
   storage/authority flags.
+- WorkIntent graph-control nodes, WorkIntent promotion, WorkIntent-owned
+  `nextLegalTransitions`, or `OrchestratorGraphDecision` as the scheduler
+  product.
+- model-authored scheduler submit ceremonies or JSON-shaped scheduler tool
+  calls.
 - raw prompt, raw response, raw transcript, raw provider log, raw tool log,
   raw command log, raw DB row, hidden-reasoning, or secret storage.
 
@@ -142,14 +149,16 @@ Confirm or implement the production definition/plugin with:
 - `productionEnabled: true`.
 - scheduler-backed execution.
 - Runtime Tool-Call Kernel required.
-- staged scheduler protocol required.
+- SchedulerStageRunner provider-native small-verb protocol required.
 - runtime-derived node envelopes required.
 - runtime-derived expected evidence required.
 - model-authored structure review required.
-- node lifecycle/readiness transition engine required before execution.
-- demand-driven context/resource broker required for blocked branches.
-- semantic microtask/file-change-intent gate required before file-edit worker
-  invocation.
+- NodeLifecycleTransitionRunner required for node lifecycle/readiness before execution.
+- OpenClaw-native node execution required for executable nodes.
+- `NodeExecutionSnapshot`, `runNodeAgentSession`, `openclaw.resource.read`, and
+  `node.finish` required for node execution.
+- no required pre-worker context sufficiency, resource-focus, or
+  resource-materialization gate before worker invocation.
 - degraded/system closeout blocked.
 - completion review required.
 - proposal-only compile authority for ActionGraphProposal.
@@ -246,7 +255,7 @@ artifacts and lifecycle states:
    - proposal schema/dependency/authority/workflow/executor/child-feasibility
      validation, missing decisions, compile-readiness state, and limitations.
 7. `ProductSpecPlanningCloseout`
-   - model-authored finalization mapped to Mission Ledger commitments,
+   - model-authored finalization mapped to RequirementMap coverage,
      planning artifacts, compile-readiness evidence, readback refs, and
      completion-review status.
 
@@ -255,56 +264,61 @@ propose child work and prove compile readiness; it must not execute proposed
 child actions, enqueue child runtime jobs, mutate child lifecycle state, or
 claim implementation success without a later explicit authority boundary.
 
-## Staged Scheduler And Transition Readiness
+## SchedulerGraphPatch And Transition Readiness
 
-Use the model-facing staged scheduler protocol. Do not ask the model to
-hand-author executable graph internals.
+Use the `SchedulerStageRunner` graph-patch protocol. Do not ask the model to
+hand-author executable graph internals, full staged scheduler JSON drafts,
+WorkIntent graph-control nodes, WorkIntent promotion, or scheduler-owned
+lifecycle transitions.
 
 Required scheduler stages:
 
-- work-unit breakdown.
-- capability selection.
-- node contract definition.
-- edge or parallelism definition.
-- runtime graph compile.
-- model-authored structure review.
-- graph acceptance.
+- coverage and node grouping from accepted RequirementMap inventory.
+- capability binding only when runtime cannot bind a single legal candidate.
+- non-obvious dependency ordering.
+- runtime-only `SchedulerGraphPatch` compile.
+- graph patch persistence.
 - frontier readiness evaluation.
 - executable frontier opening.
 - run/repair/review/finalize.
 
-Runtime must derive canonical node envelopes and evaluate node readiness after
-graph acceptance. Graph acceptance is not execution readiness.
+Runtime must derive canonical node envelopes from `SchedulerGraphPatch` and
+evaluate node lifecycle through `NodeLifecycleTransitionRunner`. Graph patch
+acceptance is not execution readiness.
 
 `scheduler.approve_and_run_first_node` is retired/disabled and must not be a
 production execution bypass. Execution must go through:
 
 - `scheduler.evaluate_frontier_readiness`
-- `scheduler.promote_work_intent_to_executable`
 - `scheduler.open_executable_frontier`
 - `scheduler.record_node_transition`
 
 Missing context/resource/authority/validation/evidence preconditions must
-create prerequisite nodes or precise transition blockers. They must not surface
-as unclassified worker adapter failures.
+create precise node-local transition blockers or typed graph-amendment
+requests when genuinely mission-level work is missing. They must not surface as
+unclassified worker adapter failures or scheduler-local repair.
 
 Implementation-bearing coding nodes inside this proof must use the current
-worker-packet quality contract:
+OpenClaw-native node execution contract:
 
-- repo scope and directory refs are discovery/authority scope, not executable
-  target refs.
-- broad work-intent nodes must refine into semantic microtasks before
-  non-Codex workers edit.
-- multi-file or multi-commitment implementation packets require
-  model-authored file-change intent or explicit new-file intents.
-- stale materialized packets from older checkpoints cannot be accepted unless
-  rehydrated and validated against the current `ImplementationTaskPacket`,
-  `CodingResourcePacket`, and `NodeExecutionPacket` schemas.
-- every graph work unit/node contract must declare model-authored
-  `executionIntent`; runtime derives `evidenceMode` and rejects capability
-  conflicts structurally.
-- source-grounding/read-only work is not edit-required implementation and
-  cannot be selected as the non-Codex file-edit worker smoke.
+- repo scope and source prompt refs are authority/navigation scope, not proof
+  that the agent has understood the work.
+- executable nodes may start only when `NodeLifecycleTransitionRunner` has a
+  valid objective, authority, RequirementMap refs, capability, and configured
+  OpenClaw agent profile.
+- node execution starts from a persisted `NodeExecutionSnapshot`, not from a
+  worker packet, start contract, materialized context packet, or replay-only
+  task packet.
+- the agent must hydrate the snapshot and requirement/source refs with
+  `openclaw.resource.read`.
+- implementation work must use normal OpenClaw repo search/read/edit/validate
+  tools and may use subagents, with subagent outputs visible to the parent
+  session before terminal finish.
+- terminal node status must be a `node.finish` call with bounded evidence refs
+  or a precise blocker/escalation, never assistant prose.
+- every graph node seed must carry model-authored objective/work kind and
+  covered RequirementMap ids; runtime derives node ids, node kinds, executor
+  keys, worker refs, evidence modes, storage flags, and lifecycle metadata.
 
 ## Context, Research, And Planning Artifacts
 
@@ -313,9 +327,12 @@ runtime input. Persist bounded refs only.
 
 Planning context must include:
 
-- owner objective and constraints from Mission Ledger.
-- typed ObligationGraph records with conditional fields by obligation kind.
-- bounded source-prompt excerpts when needed.
+- source prompt artifact/body refs used only for bounded addressing.
+- accepted RequirementMap requirements with source refs. Runtime validates
+  shape/refs only; downstream runners reopen prompt refs when they need more
+  source intent.
+- typed RequirementMap records with conditional execution and evidence fields
+  by requirement role.
 - project/repo context refs where the plan affects existing systems.
 - memory/context-pack refs when relevant.
 - ResearchBrief refs when current external facts affect the plan.
@@ -414,28 +431,24 @@ Run the proof as a checkpointed generic orchestration runtime pipeline. Do not
 evaluate a downstream node until every upstream handoff it depends on is
 proven high quality.
 
-The latest worker-smoke boundary gate passed at:
-
-- runtime job: `native-exec-272cf2d51fcba75b`
-- graph: `product-spec-replay-f69b40c5defa3687`
-- boundary: worker-owned context/execution middle lane
-- proof artifact:
-  `.artifacts/execution-platform/product-spec-replay-proof-resource-materialization/proof.json`
-
-Treat this as historical evidence only. The current proof must not rely on
-pre-worker resource materialization or broad context supply. It must show that
-typed obligations feed scheduler-created WorkIntents, runnable worker nodes
-start under NodeLifecycleTransitionRunner ownership, context is discovered
-inside the worker lifecycle through small-verb search/read/scout tools, and
-evidence closes the Mission Ledger commitments.
+Treat older worker-smoke and middle-lane artifacts as historical evidence
+only. The current proof must not rely on pre-worker resource materialization,
+worker packets, broad context supply, or non-Codex worker loops. It must show
+that accepted requirements feed `SchedulerGraphPatch`, runnable runtime graph
+nodes start under `NodeLifecycleTransitionRunner` ownership, node snapshots are
+persisted, OpenClaw native agent sessions run through `runNodeAgentSession`,
+agents use real OpenClaw tools against real source material, and evidence
+closes accepted RequirementMap coverage and downstream runtime evidence
+contracts.
 
 The remaining pre-proof gate is owner readback/telemetry. It must show, from
 compact runtime state and Work Queue projection rather than raw logs:
 
-- WorkIntent id/title.
+- runtime node id/title.
 - execution intent and evidence mode.
 - selected capability and executor.
-- readiness state and readiness ref.
+- node lifecycle projection gate/ref.
+- node execution snapshot ref and node agent session ref when execution starts.
 - active node/branch/phase.
 - active model/provider/tool call.
 - blocker and schema/policy path when blocked.
@@ -446,12 +459,12 @@ compact runtime state and Work Queue projection rather than raw logs:
 The proof must record checkpoint evidence for:
 
 1. Payload and router.
-2. Mission Ledger.
-3. ObligationGraph.
-4. scheduler WorkIntent graph.
-5. worker-owned context/search/read/scout loop.
-6. Scheduler Graph.
-7. Worker/Node Execution.
+2. RequirementMap.
+3. SchedulerStageRunner `SchedulerGraphPatch`.
+4. RuntimeGraph persistence.
+5. NodeLifecycleTransitionRunner snapshot preparation.
+6. OpenClaw native node session.
+7. Worker/Planning execution.
 8. Validation and Repair.
 9. Closeout and Readback.
 
@@ -472,14 +485,17 @@ Do not persist raw prompts or raw model/provider/tool logs.
 Stop early only for hard runtime facts:
 
 - wrong route.
-- missing/invalid Mission Ledger.
-- missing/rejected work packets.
-- implementation before required context/readiness.
+- missing/invalid RequirementMap.
+- missing/rejected SchedulerGraphPatch.
+- missing RuntimeGraph nodes.
+- missing NodeExecutionSnapshot for executable node.
+- OpenClaw node agent profile/tool/skill unavailable.
 - graph collapse into broad implementation before upstream gates.
 - missing Work Queue child materialization after graph node creation.
 - degraded closeout success attempt.
 - payload/replay hash mismatch.
-- worker adapter failure caused by missing upstream readiness.
+- node agent session failure caused by missing upstream snapshot/authority/ref
+  hydration.
 
 For qualitative weakness, emit bounded model/human review artifacts and mark
 `needs_review`; do not pretend deterministic code judged semantic quality.
@@ -525,12 +541,16 @@ At minimum, consider:
 - `runtime-work-graph-scheduler.test.ts`
 - `runtime-node-capability-registry.test.ts`
 - `execution-read-model.test.ts`
-- `mission-work-packets.test.ts`
-- `pre-proof-mission-packet-graph-lane.test.ts`
-- context-scout / context-synthesis tests when context behavior changes.
-- non-Codex worker tests when implementation handoff changes.
+- `requirement-map.test.ts`
+- `intake-stage-runner.test.ts`
+- `scheduler-stage-runner.test.ts`
+- `runtime-artifact-contracts.test.ts`
+- `node-agent-session.test.ts`
+- `execution-platform-agent-team-runner.test.ts`
+- OpenClaw-native node execution tests when implementation handoff changes.
 - validation/QA tests when validation or repair changes.
 - closeout/completion-review tests when closeout changes.
+- `architecture-residue-source-inventory.test.ts`
 - `pnpm tsgo:fast`
 
 Before running the Product/Spec proof, validate live gateway readiness:
@@ -563,10 +583,10 @@ After the core work and proof run, perform an explicit code review and answer:
 
 Did we maximally execute and implement this queue item? Is Product/Spec
 Planning canonical production code, fully wired into workflow definition
-registry, workflow plugin registry, generic orchestration runtime, staged
-scheduler, capability registry, node executors, Runtime Tool-Call Kernel,
-Mission Ledger evidence claims, validation/compile readiness, Work Queue
-readback, model-authored closeout, completion review, and boundary replay? Is
+registry, workflow plugin registry, generic orchestration runtime,
+SchedulerGraphPatch runner, capability registry, node executors, Runtime
+Tool-Call Kernel, RequirementMap coverage, validation/compile readiness, Work
+Queue readback, model-authored closeout, completion review, and boundary replay? Is
 there any way to improve, harden, optimize, sharpen, extend, or otherwise make
 it stronger before calling the item complete? Are there any fallback,
 compatibility, generic-runner, proof-only, dead-code, degraded-closeout, or
@@ -594,13 +614,13 @@ Report:
 
 - prompt hash and proof prompt file.
 - route/executor/target-subject evidence.
-- Mission Ledger result.
-- ObligationGraph result.
-- WorkIntent graph result.
-- worker-owned context/search/read/scout result.
+- RequirementMap result.
+- SchedulerGraphPatch result.
 - scheduler graph result.
 - transition readiness/executable frontier result.
-- node executor result.
+- node execution snapshot refs.
+- OpenClaw node agent session result.
+- `openclaw.resource.read` and `node.finish` result.
 - source edit summary.
 - validation summary.
 - Work Queue child/readback summary.

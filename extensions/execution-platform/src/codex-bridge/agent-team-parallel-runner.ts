@@ -39,7 +39,7 @@ export function createBoundedParallelAgentTeamPlan(input: {
     lanes: [
       {
         laneId: `${input.teamRunId}-context-scout`,
-        roleId: "resource_scout",
+        roleId: "context_scout",
         laneKind: "read_only",
         status: "pending",
         startedAt: null,
@@ -89,7 +89,7 @@ export function createBoundedParallelAgentTeamPlan(input: {
       },
     ],
     joinRequiredRoleIds: [
-      "resource_scout",
+      "context_scout",
       "implementation_engineer",
       "test_engineer",
       "security_privacy_reviewer",

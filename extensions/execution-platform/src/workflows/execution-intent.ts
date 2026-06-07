@@ -3,11 +3,8 @@ import { z } from "zod";
 export const EXECUTION_INTENTS = [
   "unspecified",
   "source_grounding",
-  "resource_demand",
-  "domain_resource_selection",
   "domain_action",
   "domain_mutation",
-  "resource_materialization",
   "source_edit",
   "validation",
   "review",
@@ -22,7 +19,7 @@ export const EVIDENCE_MODES = [
   "changed_file_evidence",
   "validation_evidence",
   "review_evidence",
-  "resource_handoff_evidence",
+  "source_material_evidence",
   "planning_artifact_evidence",
   "human_decision_evidence",
   "closeout_evidence",
@@ -47,16 +44,10 @@ const EXECUTION_INTENT_ALIASES = new Map<string, ExecutionIntent>([
   ["source-grounding", "source_grounding"],
   ["sourceGrounding", "source_grounding"],
   ["grounding", "source_grounding"],
-  ["resource-demand", "resource_demand"],
-  ["resourceDemand", "resource_demand"],
-  ["domain-resource-selection", "domain_resource_selection"],
-  ["domainResourceSelection", "domain_resource_selection"],
   ["domain-action", "domain_action"],
   ["domainAction", "domain_action"],
   ["domain-mutation", "domain_mutation"],
   ["domainMutation", "domain_mutation"],
-  ["resource-materialization", "resource_materialization"],
-  ["resourceMaterialization", "resource_materialization"],
   ["source-edit", "source_edit"],
   ["sourceEdit", "source_edit"],
   ["code_edit", "source_edit"],
@@ -116,8 +107,8 @@ export function evidenceModesForCapability(input: {
       modes.add("validation_evidence");
     } else if (kind === "review") {
       modes.add("review_evidence");
-    } else if (kind === "resource_handoff") {
-      modes.add("resource_handoff_evidence");
+    } else if (kind === "source_material") {
+      modes.add("source_material_evidence");
     } else if (kind === "human_decision") {
       modes.add("human_decision_evidence");
     } else if (kind === "closeout") {
@@ -169,9 +160,6 @@ export function executionIntentCapabilityConflict(input: {
   }
   if (executionIntent === "validation" && !capability.canRunValidation) {
     return "execution_intent_requires_validation_capability";
-  }
-  if (executionIntent === "resource_demand") {
-    return "execution_intent_requires_resource_capability";
   }
   if (executionIntent === "review" && !["review", "observability"].includes(capability.roleClass)) {
     return "execution_intent_requires_review_capability";

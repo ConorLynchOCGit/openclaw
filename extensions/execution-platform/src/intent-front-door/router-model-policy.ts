@@ -67,9 +67,9 @@ export type DefaultRouterModelPolicyDecision = {
 export const DEFAULT_ROUTER_MODEL_POLICY_FIXTURE: DefaultRouterModelPolicy = {
   policyId: "intent-front-door.default-router.fixture",
   routerPolicyVersion: ROUTER_MODEL_POLICY_VERSION,
-  defaultRouterModelRef: "model-route://intent-front-door/default/gpt-mini-structured-json",
+  defaultRouterModelRef: "model-route://intent-front-door/default/qwen-native-tools",
   modelRosterRef: "model-roster://intent-front-door/router/default",
-  requiredCapabilities: ["structured_json", "json_schema"],
+  requiredCapabilities: ["tool_calling"],
   latencyBudget: { targetMs: 1_000, maxMs: 3_000 },
   costBudget: { maxEstimatedUsdPerRoute: 0.0025 },
   reliabilityRequirement: {
@@ -87,12 +87,12 @@ export const DEFAULT_ROUTER_MODEL_POLICY_FIXTURE: DefaultRouterModelPolicy = {
 };
 
 export const DEFAULT_ROUTER_MODEL_CANDIDATE_FIXTURE: RouterModelCandidateRef = {
-  provider: "openai",
-  model: "gpt-mini-structured-json",
-  family: "GPT mini/nano lanes",
-  capabilities: ["structured_json", "json_schema", "low_cost"],
+  provider: "openrouter",
+  model: "qwen/qwen3-coder-next",
+  family: "OpenRouter-hosted candidates",
+  capabilities: ["tool_calling", "low_cost"],
   status: "enabled",
-  policyRef: "model-route://intent-front-door/default/gpt-mini-structured-json",
+  policyRef: "model-route://intent-front-door/default/qwen-native-tools",
 };
 
 function missingCapabilities(
@@ -121,8 +121,8 @@ export function resolveDefaultRouterModelPolicy(input: {
   if (!policy.modelRosterRef.trim()) {
     reasonCodes.push("default_router_model_roster_ref_missing");
   }
-  if (!policy.requiredCapabilities.includes("structured_json")) {
-    reasonCodes.push("structured_output_capability_required");
+  if (!policy.requiredCapabilities.includes("tool_calling")) {
+    reasonCodes.push("tool_calling_capability_required");
   }
   const candidates = input.candidates ?? [DEFAULT_ROUTER_MODEL_CANDIDATE_FIXTURE];
   const requestedRef = input.requestedModelRef ?? policy.defaultRouterModelRef;

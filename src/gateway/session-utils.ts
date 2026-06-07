@@ -1,6 +1,8 @@
 import fs from "node:fs";
 import path from "node:path";
 import {
+  resolveAgentConfig,
+  resolveAgentDir,
   resolveAgentEffectiveModelPrimary,
   resolveAgentModelFallbacksOverride,
   resolveAgentWorkspaceDir,
@@ -33,6 +35,7 @@ import {
   resolveAllAgentSessionStoreTargetsSync,
   resolveAgentMainSessionKey,
   resolveFreshSessionTotalTokens,
+  resolveSessionStorePathForAgentDir,
   resolveStorePath,
   type SessionEntry,
   type SessionStoreTarget,
@@ -761,6 +764,15 @@ function resolveGatewaySessionStoreCandidates(
   agentId: string,
 ): SessionStoreTarget[] {
   const storeConfig = cfg.session?.store;
+  const configuredAgentDir = resolveAgentConfig(cfg, agentId)?.agentDir?.trim();
+  if (!storeConfig && configuredAgentDir) {
+    return [
+      {
+        agentId,
+        storePath: resolveSessionStorePathForAgentDir(resolveAgentDir(cfg, agentId)),
+      },
+    ];
+  }
   const defaultTarget = {
     agentId,
     storePath: resolveStorePath(storeConfig, { agentId }),

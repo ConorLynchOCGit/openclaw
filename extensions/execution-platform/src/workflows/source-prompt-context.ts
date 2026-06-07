@@ -1,11 +1,9 @@
 import { createHash } from "node:crypto";
 import { z } from "zod";
-import type { JsonValue } from "../runtime-job-repository.ts";
-import {
-  createContextSnapshotRef,
-  deriveContextSnapshotRefsFromSourcePromptIndex,
-  type ContextSnapshotRef,
-} from "./context-snapshot.ts";
+import { createContextSnapshotRef } from "./context-snapshot.ts";
+
+export const SOURCE_PROMPT_ARTIFACT_TYPE = "execution_platform.source_prompt_artifact";
+export const SOURCE_PROMPT_WINDOW_ARTIFACT_TYPE = "execution_platform.source_prompt_window";
 
 type SourcePromptResolutionEvidence = {
   status: "not_present" | "resolved" | "unresolved" | "unsupported";
@@ -27,48 +25,112 @@ function bounded(value: string | null | undefined, max = 1_000): string {
   return (value ?? "").trim().replace(/\s+/gu, " ").slice(0, max);
 }
 
-function excerptRef(input: { promptHash: string; sectionId: string; start: number; end: number }) {
-  return `source-prompt://${input.promptHash.slice(0, 16)}/${input.sectionId}/${input.start}-${input.end}`;
+function excerptRef(input: { promptHash: string; start: number; end: number }) {
+  return `source-prompt://${input.promptHash.slice(0, 16)}/body/${input.start}-${input.end}`;
 }
 
-export const SourcePromptSectionSchema = z
+export const SourcePromptArtifactSchema = z
   .object({
-    sectionId: boundedString(120),
-    sectionRef: boundedString(260),
-    startOffset: z.number().int().min(0),
-    endOffset: z.number().int().min(0),
-    charLength: z.number().int().min(0),
-    heading: z.string().max(240).nullable(),
-    boundedSummary: z.string().max(500),
-    rawPromptStored: z.literal(false),
-  })
-  .strict();
-
-export type SourcePromptSection = z.infer<typeof SourcePromptSectionSchema>;
-
-export const SourcePromptContextIndexSchema = z
-  .object({
-    artifactKind: z.literal("source_prompt_context_index"),
-    schemaVersion: z.literal("execution-platform.source-prompt-context-index.v1"),
+    artifactKind: z.literal("source_prompt_artifact"),
+    schemaVersion: z.literal("execution-platform.source-prompt-artifact.v1"),
     promptHash: boundedString(90),
     promptLength: z.number().int().min(0),
+    sourcePromptBodyRef: boundedString(320),
+    boundedPreview: z.string().max(1_000),
     resolutionStatus: z.enum(["not_present", "resolved", "unresolved", "unsupported"]),
     reasonCodes: z.array(boundedString(160)).max(24),
-    sections: z.array(SourcePromptSectionSchema).max(80),
-    contextSnapshotRefs: z.array(z.unknown()).max(120).default([]),
     rawPromptStored: z.literal(false),
     rawResponseStored: z.literal(false),
     rawProviderLogStored: z.literal(false),
   })
   .strict();
 
-export type SourcePromptContextIndex = z.infer<typeof SourcePromptContextIndexSchema>;
+export type SourcePromptArtifact = z.infer<typeof SourcePromptArtifactSchema>;
+
+export const SourcePromptWindowArtifactSchema = z
+  .object({
+    artifactKind: z.literal("source_prompt_window"),
+    schemaVersion: z.literal("execution-platform.source-prompt-window.v1"),
+    windowRef: boundedString(420),
+    sourcePromptBodyRef: boundedString(320),
+    sourcePromptHash: boundedString(90),
+    start: z.number().int().min(0),
+    end: z.number().int().min(0),
+    promptLength: z.number().int().min(0),
+    text: z.string().max(8_000),
+    textHash: boundedString(90),
+    byteCount: z.number().int().min(0),
+    boundarySensitive: z.boolean(),
+    rawPromptStored: z.literal(false),
+    rawResponseStored: z.literal(false),
+    rawProviderLogStored: z.literal(false),
+    rawToolLogStored: z.literal(false),
+  })
+  .strict();
+
+export type SourcePromptWindowArtifact = z.infer<typeof SourcePromptWindowArtifactSchema>;
+
+export function buildSourcePromptArtifact(input: {
+  promptText: string | null;
+  resolution: SourcePromptResolutionEvidence;
+}): SourcePromptArtifact {
+  const promptText = input.promptText ?? "";
+  const promptHash =
+    input.resolution.promptHash ?? (promptText ? sha256Text(promptText) : "missing");
+  const promptLength = input.resolution.promptLength ?? promptText.length;
+  return SourcePromptArtifactSchema.parse({
+    artifactKind: "source_prompt_artifact",
+    schemaVersion: "execution-platform.source-prompt-artifact.v1",
+    promptHash,
+    promptLength,
+    sourcePromptBodyRef: `source-prompt://${promptHash.slice(0, 16)}/body`,
+    boundedPreview: bounded(promptText, 1_000),
+    resolutionStatus: input.resolution.status,
+    reasonCodes: input.resolution.reasonCodes.slice(0, 24),
+    rawPromptStored: false,
+    rawResponseStored: false,
+    rawProviderLogStored: false,
+  });
+}
+
+export function buildSourcePromptWindowArtifact(input: {
+  windowRef: string;
+  sourcePromptBodyRef: string;
+  sourcePromptHash: string;
+  start: number;
+  end: number;
+  promptLength: number;
+  text: string;
+  boundarySensitive: boolean;
+}): SourcePromptWindowArtifact {
+  const start = Math.max(0, Math.min(input.start, input.promptLength));
+  const end = Math.max(start, Math.min(input.end, input.promptLength));
+  const text = input.text.slice(0, 8_000);
+  return SourcePromptWindowArtifactSchema.parse({
+    artifactKind: "source_prompt_window",
+    schemaVersion: "execution-platform.source-prompt-window.v1",
+    windowRef: input.windowRef,
+    sourcePromptBodyRef: input.sourcePromptBodyRef,
+    sourcePromptHash: input.sourcePromptHash,
+    start,
+    end,
+    promptLength: input.promptLength,
+    text,
+    textHash: sha256Text(text),
+    byteCount: Buffer.byteLength(text, "utf8"),
+    boundarySensitive: input.boundarySensitive,
+    rawPromptStored: false,
+    rawResponseStored: false,
+    rawProviderLogStored: false,
+    rawToolLogStored: false,
+  });
+}
 
 export const SourcePromptExcerptRequestSchema = z
   .object({
     requestId: boundedString(160),
     commitmentId: boundedString(160),
-    sectionRef: boundedString(260),
+    sourcePromptBodyRef: boundedString(320),
     reason: boundedString(700),
     maxChars: z.number().int().min(200).max(4_000),
     downstreamConsumer: boundedString(260),
@@ -88,7 +150,7 @@ export const SourcePromptExcerptDecisionSchema = z
     status: z.enum(["provided", "denied"]),
     promptHash: boundedString(90),
     promptLength: z.number().int().min(0),
-    sectionRef: boundedString(260),
+    sourcePromptBodyRef: boundedString(320),
     excerptRef: boundedString(320).nullable(),
     excerptHash: boundedString(90).nullable(),
     excerptLength: z.number().int().min(0),
@@ -107,122 +169,6 @@ export type SourcePromptExcerptResult = {
   decision: SourcePromptExcerptDecision;
   volatileExcerptText: string | null;
 };
-
-function splitPromptSections(
-  promptText: string,
-): Array<{ start: number; end: number; heading: string | null }> {
-  const headingMatches = [
-    ...promptText.matchAll(/(?:^|\n)(#{1,6}\s+[^\n]+|[A-Z][^\n]{3,120}:\s*)/gu),
-  ];
-  if (headingMatches.length === 0) {
-    const sections: Array<{ start: number; end: number; heading: string | null }> = [];
-    const chunkSize = 4_000;
-    for (let start = 0; start < promptText.length; start += chunkSize) {
-      sections.push({ start, end: Math.min(promptText.length, start + chunkSize), heading: null });
-    }
-    return sections;
-  }
-  return headingMatches.map((match, index) => {
-    const start = match.index ?? 0;
-    const next = headingMatches[index + 1]?.index ?? promptText.length;
-    return {
-      start,
-      end: next,
-      heading: bounded(match[1] ?? null, 220) || null,
-    };
-  });
-}
-
-export function buildSourcePromptContextIndex(input: {
-  promptText: string | null;
-  resolution: SourcePromptResolutionEvidence;
-  maxSections?: number;
-}): SourcePromptContextIndex {
-  const promptText = input.promptText ?? "";
-  const promptHash =
-    input.resolution.promptHash ?? (promptText ? sha256Text(promptText) : "missing");
-  const promptLength = input.resolution.promptLength ?? promptText.length;
-  const sections =
-    input.resolution.status === "resolved" && promptText
-      ? splitPromptSections(promptText)
-          .slice(0, input.maxSections ?? 60)
-          .map((section, index) => {
-            const sectionText = promptText.slice(section.start, section.end);
-            const sectionId = `section-${String(index + 1).padStart(3, "0")}`;
-            const body = {
-              sectionId,
-              sectionRef: excerptRef({
-                promptHash,
-                sectionId,
-                start: section.start,
-                end: section.end,
-              }),
-              startOffset: section.start,
-              endOffset: section.end,
-              charLength: section.end - section.start,
-              heading: section.heading,
-              boundedSummary: bounded(sectionText, 500),
-              rawPromptStored: false as const,
-            };
-            return SourcePromptSectionSchema.parse(body);
-          })
-      : [];
-  const parsed = SourcePromptContextIndexSchema.parse({
-    artifactKind: "source_prompt_context_index",
-    schemaVersion: "execution-platform.source-prompt-context-index.v1",
-    promptHash,
-    promptLength,
-    resolutionStatus: input.resolution.status,
-    reasonCodes: input.resolution.reasonCodes.slice(0, 24),
-    sections,
-    contextSnapshotRefs: [],
-    rawPromptStored: false,
-    rawResponseStored: false,
-    rawProviderLogStored: false,
-  });
-  return SourcePromptContextIndexSchema.parse({
-    ...parsed,
-    contextSnapshotRefs:
-      parsed.resolutionStatus === "resolved"
-        ? deriveContextSnapshotRefsFromSourcePromptIndex({
-            sourceRef: `source-prompt://${promptHash.slice(0, 16)}/index`,
-            promptHash,
-            promptLength,
-            sectionRefs: parsed.sections.map((section) => section.sectionRef),
-          })
-        : [],
-  });
-}
-
-export function summarizeSourcePromptContextIndex(index: SourcePromptContextIndex): JsonValue {
-  return {
-    artifactKind: index.artifactKind,
-    promptHash: index.promptHash,
-    promptLength: index.promptLength,
-    resolutionStatus: index.resolutionStatus,
-    reasonCodes: index.reasonCodes,
-    sections: index.sections.map((section) => ({
-      sectionId: section.sectionId,
-      sectionRef: section.sectionRef,
-      charLength: section.charLength,
-      heading: section.heading,
-      boundedSummary: section.boundedSummary,
-      rawPromptStored: false,
-    })),
-    contextSnapshotRefs: (index.contextSnapshotRefs as ContextSnapshotRef[]).map((ref) => ({
-      snapshotRef: ref.snapshotRef,
-      sourceRef: ref.sourceRef,
-      sourceKind: ref.sourceKind,
-      freshnessStatus: ref.freshnessStatus,
-      sourcePromptHash: ref.sourcePromptHash,
-      refreshRequired: ref.refreshRequired,
-      refreshAction: ref.refreshAction,
-    })),
-    rawPromptStored: false,
-    rawResponseStored: false,
-    rawProviderLogStored: false,
-  } satisfies JsonValue;
-}
 
 export function normalizeSourcePromptExcerptRequests(value: unknown): SourcePromptExcerptRequest[] {
   const record =
@@ -247,10 +193,10 @@ export function normalizeSourcePromptExcerptRequests(value: unknown): SourceProm
           typeof request.commitmentId === "string" && request.commitmentId.trim()
             ? request.commitmentId
             : "unknown",
-        sectionRef:
-          typeof request.sectionRef === "string" && request.sectionRef.trim()
-            ? request.sectionRef
-            : "missing-section-ref",
+        sourcePromptBodyRef:
+          typeof request.sourcePromptBodyRef === "string" && request.sourcePromptBodyRef.trim()
+            ? request.sourcePromptBodyRef
+            : "missing-source-prompt-body-ref",
         reason:
           typeof request.reason === "string" && request.reason.trim()
             ? request.reason
@@ -262,7 +208,7 @@ export function normalizeSourcePromptExcerptRequests(value: unknown): SourceProm
         downstreamConsumer:
           typeof request.downstreamConsumer === "string" && request.downstreamConsumer.trim()
             ? request.downstreamConsumer
-            : "resource_scout",
+            : "context_scout",
         rawPromptStored: false,
         rawResponseStored: false,
         rawProviderLogStored: false,
@@ -274,14 +220,15 @@ export function normalizeSourcePromptExcerptRequests(value: unknown): SourceProm
 }
 
 export function fulfillSourcePromptExcerptRequest(input: {
-  index: SourcePromptContextIndex;
+  artifact: SourcePromptArtifact;
   promptText: string | null;
   request: SourcePromptExcerptRequest;
 }): SourcePromptExcerptResult {
-  const section = input.index.sections.find(
-    (candidate) => candidate.sectionRef === input.request.sectionRef,
-  );
-  if (!section || input.index.resolutionStatus !== "resolved" || !input.promptText) {
+  if (
+    input.artifact.resolutionStatus !== "resolved" ||
+    !input.promptText ||
+    input.request.sourcePromptBodyRef !== input.artifact.sourcePromptBodyRef
+  ) {
     return {
       volatileExcerptText: null,
       decision: SourcePromptExcerptDecisionSchema.parse({
@@ -289,19 +236,19 @@ export function fulfillSourcePromptExcerptRequest(input: {
         schemaVersion: "execution-platform.source-prompt-excerpt-decision.v1",
         requestId: input.request.requestId,
         status: "denied",
-        promptHash: input.index.promptHash,
-        promptLength: input.index.promptLength,
-        sectionRef: input.request.sectionRef,
+        promptHash: input.artifact.promptHash,
+        promptLength: input.artifact.promptLength,
+        sourcePromptBodyRef: input.request.sourcePromptBodyRef,
         excerptRef: null,
         excerptHash: null,
         excerptLength: 0,
         boundedExcerptSummary: "",
-        reasonCodes: ["source_prompt_excerpt_section_unavailable"],
+        reasonCodes: ["source_prompt_excerpt_body_unavailable"],
         contextSnapshotRefs: [
           createContextSnapshotRef({
-            sourceRef: input.request.sectionRef,
+            sourceRef: input.request.sourcePromptBodyRef,
             sourceKind: "source_prompt_excerpt",
-            sourcePromptHash: input.index.promptHash,
+            sourcePromptHash: input.artifact.promptHash,
             commitmentIds: [input.request.commitmentId],
             scopeSummary: "Requested source prompt excerpt was unavailable.",
             stalenessPolicy:
@@ -309,7 +256,7 @@ export function fulfillSourcePromptExcerptRequest(input: {
             freshnessStatus: "missing",
             refreshRequired: true,
             refreshAction: "request_excerpt",
-            reasonCodes: ["context_snapshot_source_prompt_excerpt_missing"],
+            reasonCodes: ["context_snapshot_source_prompt_body_excerpt_missing"],
           }),
         ],
         rawPromptStored: false,
@@ -319,17 +266,13 @@ export function fulfillSourcePromptExcerptRequest(input: {
     };
   }
   const excerptText = input.promptText
-    .slice(
-      section.startOffset,
-      Math.min(section.endOffset, section.startOffset + input.request.maxChars),
-    )
+    .slice(0, Math.min(input.promptText.length, input.request.maxChars))
     .trim();
   const excerptHash = sha256Text(excerptText);
   const providedExcerptRef = excerptRef({
-    promptHash: input.index.promptHash,
-    sectionId: section.sectionId,
-    start: section.startOffset,
-    end: Math.min(section.endOffset, section.startOffset + input.request.maxChars),
+    promptHash: input.artifact.promptHash,
+    start: 0,
+    end: Math.min(input.promptText.length, input.request.maxChars),
   });
   return {
     volatileExcerptText: excerptText,
@@ -338,9 +281,9 @@ export function fulfillSourcePromptExcerptRequest(input: {
       schemaVersion: "execution-platform.source-prompt-excerpt-decision.v1",
       requestId: input.request.requestId,
       status: "provided",
-      promptHash: input.index.promptHash,
-      promptLength: input.index.promptLength,
-      sectionRef: input.request.sectionRef,
+      promptHash: input.artifact.promptHash,
+      promptLength: input.artifact.promptLength,
+      sourcePromptBodyRef: input.request.sourcePromptBodyRef,
       excerptRef: providedExcerptRef,
       excerptHash,
       excerptLength: excerptText.length,
@@ -350,7 +293,7 @@ export function fulfillSourcePromptExcerptRequest(input: {
         createContextSnapshotRef({
           sourceRef: providedExcerptRef,
           sourceKind: "source_prompt_excerpt",
-          sourcePromptHash: input.index.promptHash,
+          sourcePromptHash: input.artifact.promptHash,
           commitmentIds: [input.request.commitmentId],
           scopeSummary: bounded(excerptText, 700),
           reasonCodes: ["context_snapshot_source_prompt_excerpt_provided"],

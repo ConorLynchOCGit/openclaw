@@ -6,6 +6,7 @@ import type {
   RuntimeJobRepository,
 } from "../runtime-job-repository.ts";
 import type { WorkItemLifecycleState } from "../work-queue/types.ts";
+import { DEFAULT_REPO_PATH } from "./policy.ts";
 import type { ReadinessReport, TrustHandoffEvidence } from "./readiness-gates.ts";
 import {
   type SupervisorDryRunStatus,
@@ -307,7 +308,7 @@ export function createLocalCodexAdapterContract(
     repoPath?: string;
   } = {},
 ): LocalCodexAdapterContract {
-  const cwd = input.repoPath ?? "/root/services/openclaw-roles/live";
+  const cwd = input.repoPath ?? DEFAULT_REPO_PATH;
   return {
     artifactKind: "local_codex_adapter_contract",
     executorKind: "codex_cli",

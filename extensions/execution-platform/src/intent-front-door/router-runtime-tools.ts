@@ -15,12 +15,8 @@ import type {
 } from "../runtime-tool-call/runtime-tool-types.ts";
 
 export const ROUTER_FRONT_DOOR_RUNTIME_TOOL_IDS = [
-  "router.classify_owner_turn_intent",
-  "router.extract_constraints",
-  "router.select_executor_workflow",
-  "router.identify_subject_refs",
-  "router.compile_execution_request",
-  "router.validate_route_contract",
+  "router.route_classification",
+  "router.executor_selection",
 ] as const;
 
 export type RouterFrontDoorRuntimeToolId = (typeof ROUTER_FRONT_DOOR_RUNTIME_TOOL_IDS)[number];
@@ -41,35 +37,15 @@ const ROUTER_TOOL_CONFIG: Record<
   RouterFrontDoorRuntimeToolId,
   { family: RuntimeToolFamily; authorityClass: RuntimeToolAuthorityClass; schemaRef: string }
 > = {
-  "router.classify_owner_turn_intent": {
+  "router.route_classification": {
     family: "router.front_door",
     authorityClass: "read_only",
-    schemaRef: "runtime-tool://router/classify-owner-turn-intent/v1",
+    schemaRef: "runtime-tool://router/route-classification/v1",
   },
-  "router.extract_constraints": {
+  "router.executor_selection": {
     family: "router.front_door",
     authorityClass: "read_only",
-    schemaRef: "runtime-tool://router/extract-constraints/v1",
-  },
-  "router.select_executor_workflow": {
-    family: "router.front_door",
-    authorityClass: "read_only",
-    schemaRef: "runtime-tool://router/select-executor-workflow/v1",
-  },
-  "router.identify_subject_refs": {
-    family: "router.front_door",
-    authorityClass: "read_only",
-    schemaRef: "runtime-tool://router/identify-subject-refs/v1",
-  },
-  "router.compile_execution_request": {
-    family: "router.front_door",
-    authorityClass: "bounded_runtime_write",
-    schemaRef: "runtime-tool://router/compile-execution-request/v1",
-  },
-  "router.validate_route_contract": {
-    family: "router.front_door",
-    authorityClass: "bounded_runtime_write",
-    schemaRef: "runtime-tool://router/validate-route-contract/v1",
+    schemaRef: "runtime-tool://router/executor-selection/v1",
   },
 };
 

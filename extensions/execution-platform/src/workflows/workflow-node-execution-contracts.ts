@@ -1,23 +1,11 @@
 import type { JsonValue } from "../runtime-job-repository.ts";
+import type { RuntimeEvidenceKind } from "./runtime-evidence-kind.ts";
 import type { RuntimeValidationPhase } from "./validation-phase.ts";
 
 export type CommitmentEvidenceClaim = {
   commitmentId: string;
   evidenceRef: string;
-  evidenceKind:
-    | "source_change"
-    | "test_validation"
-    | "review"
-    | "docs"
-    | "readback"
-    | "artifact"
-    | "human_decision"
-    | "closeout"
-    | "research_brief"
-    | "planning_capsule"
-    | "action_graph_proposal"
-    | "compile_readiness"
-    | "other";
+  evidenceKind: RuntimeEvidenceKind;
   claimSummary: string;
   limitations: string[];
   validationPhase?: RuntimeValidationPhase;

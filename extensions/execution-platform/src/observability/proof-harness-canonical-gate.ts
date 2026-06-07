@@ -12,6 +12,8 @@ const RETIRED_CHECKPOINT_GATES = new Set([
   "context_synthesis",
   "resource_scout",
   "parallel_resource_scout",
+  "context_scout",
+  "parallel_context_scout",
   "after_parallel_context",
   "after-parallel-context",
 ]);
@@ -71,9 +73,7 @@ function boundedStrings(value: unknown, max = 40): string[] {
   return Array.isArray(value)
     ? [
         ...new Set(
-          value
-            .map((item) => bounded(item, 500))
-            .filter((item): item is string => Boolean(item)),
+          value.map((item) => bounded(item, 500)).filter((item): item is string => Boolean(item)),
         ),
       ].slice(0, max)
     : [];
@@ -86,9 +86,7 @@ function withGateOverride(
   return {
     ...gate,
     ...overrides,
-    reasonCodes: [
-      ...new Set([...(overrides.reasonCodes ?? []), ...gate.reasonCodes]),
-    ].slice(0, 60),
+    reasonCodes: [...new Set([...(overrides.reasonCodes ?? []), ...gate.reasonCodes])].slice(0, 60),
     rawPromptStored: false,
     rawResponseStored: false,
     rawProviderLogStored: false,
@@ -174,11 +172,7 @@ export function projectProofHarnessCanonicalGate(input: {
     staleCheckpointGateRejected,
     topologyGateRejected,
     reasonCodes: [
-      ...new Set([
-        ...topologyReasonCodes,
-        ...staleReasonCodes,
-        ...gate.reasonCodes,
-      ]),
+      ...new Set([...topologyReasonCodes, ...staleReasonCodes, ...gate.reasonCodes]),
     ].slice(0, 60),
     rawPromptStored: false,
     rawResponseStored: false,

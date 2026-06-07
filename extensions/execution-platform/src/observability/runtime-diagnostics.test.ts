@@ -13,7 +13,7 @@ describe("runtime diagnostics", () => {
       providerPath: "openrouter",
       profileRef: "structured-adapter-profile://local_semantic_extraction/example",
       taskClass: "local_semantic_extraction",
-      callSite: "resource.scout.specialist_handoff",
+      callSite: "context.scout.specialist_handoff",
       reasoningModeSent: "none",
       responseFormatSent: "prompt_only_json",
       parserMode: "tool_json",
@@ -26,7 +26,7 @@ describe("runtime diagnostics", () => {
         choices: [
           {
             finish_reason: "stop",
-            message: { role: "assistant", content: "{\"tool\":\"ok\"}" },
+            message: { role: "assistant", content: '{"tool":"ok"}' },
           },
         ],
         usage: { prompt_tokens: 100, completion_tokens: 20 },
@@ -62,8 +62,8 @@ describe("runtime diagnostics", () => {
 
   it("captures heap and manifest pressure by phase", () => {
     const snapshot = captureHeapPhaseSnapshot({
-      phase: "resource_demand_open",
-      gateKind: "resource_demand_open",
+      phase: "node_agent_session",
+      gateKind: "node_agent_session_ready",
       graphId: "graph-proof",
       nodeId: "node-proof",
       memoryUsage: {
@@ -78,7 +78,10 @@ describe("runtime diagnostics", () => {
       activeBranchCount: 3,
       metadataObjects: [
         { ref: "metadata://small", value: { a: "b" } },
-        { ref: "metadata://large", value: { refs: Array.from({ length: 20 }, (_, i) => `r-${i}`) } },
+        {
+          ref: "metadata://large",
+          value: { refs: Array.from({ length: 20 }, (_, i) => `r-${i}`) },
+        },
       ],
       artifactBodies: [{ ref: "payload://body", value: { body: "x".repeat(2000) } }],
       latestRunStateMetadataBytes: 1000,
@@ -90,8 +93,8 @@ describe("runtime diagnostics", () => {
 
     expect(snapshot).toMatchObject({
       artifactKind: "execution_platform.heap_phase_snapshot",
-      phase: "resource_demand_open",
-      gateKind: "resource_demand_open",
+      phase: "node_agent_session",
+      gateKind: "node_agent_session_ready",
       graphNodeCount: 12,
       graphEdgeCount: 14,
       activeBranchCount: 3,

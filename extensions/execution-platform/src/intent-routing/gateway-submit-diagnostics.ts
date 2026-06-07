@@ -169,7 +169,7 @@ function withStableManifestByteCount(
     if (normalized.manifestJsonByteCount === manifestJsonByteCount) {
       return normalized;
     }
-    normalized = { ...normalized, manifestJsonByteCount };
+    Object.assign(normalized, { manifestJsonByteCount });
   }
   return normalized;
 }
@@ -390,22 +390,14 @@ export function assertGatewaySubmitDiagnosticsManifestBounds(
 ): void {
   const reasonCodes = [
     manifest.manifestJsonByteCount <= maxBytes ? null : "gateway_submit_manifest_overflow",
-    !
-    manifest.rawPromptStored ? null : "raw_prompt_flag_invalid",
-    !
-    manifest.rawResponseStored ? null : "raw_response_flag_invalid",
-    !
-    manifest.rawProviderLogStored ? null : "raw_provider_log_flag_invalid",
-    !
-    manifest.rawToolLogStored ? null : "raw_tool_log_flag_invalid",
-    !
-    manifest.rawCommandLogStored ? null : "raw_command_log_flag_invalid",
-    !
-    manifest.rawDbRowsStored ? null : "raw_db_rows_flag_invalid",
-    !
-    manifest.secretsStored ? null : "secrets_flag_invalid",
-    !
-    manifest.hiddenReasoningStored ? null : "hidden_reasoning_flag_invalid",
+    !manifest.rawPromptStored ? null : "raw_prompt_flag_invalid",
+    !manifest.rawResponseStored ? null : "raw_response_flag_invalid",
+    !manifest.rawProviderLogStored ? null : "raw_provider_log_flag_invalid",
+    !manifest.rawToolLogStored ? null : "raw_tool_log_flag_invalid",
+    !manifest.rawCommandLogStored ? null : "raw_command_log_flag_invalid",
+    !manifest.rawDbRowsStored ? null : "raw_db_rows_flag_invalid",
+    !manifest.secretsStored ? null : "secrets_flag_invalid",
+    !manifest.hiddenReasoningStored ? null : "hidden_reasoning_flag_invalid",
   ].filter((reason): reason is string => Boolean(reason));
   if (reasonCodes.length > 0) {
     throw new Error(`gateway_submit_diagnostics_manifest_invalid:${reasonCodes.join(",")}`);

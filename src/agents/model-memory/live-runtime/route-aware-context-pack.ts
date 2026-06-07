@@ -20,6 +20,7 @@ import { buildOrdinaryTurnMemoryTraceId } from "../../../plugin-sdk/model-memory
 import { emitModelMemoryActivityFeedEvent } from "../../model-memory.activity-feed.js";
 import {
   resolveLiveRetrievalMaxResults,
+  resolveModelMemoryBootstrapOverlayEnabled,
   resolveModelMemoryLiveRuntimeStatus,
   resolveRetrievalModelRef,
   type ModelMemoryLiveRuntimeStatus,
@@ -389,6 +390,9 @@ export async function resolveModelMemoryBootstrapOverlay(params: {
   stateVersionMismatch?: boolean;
   traceId?: string;
 }): Promise<ModelMemoryBootstrapOverlay | null> {
+  if (!resolveModelMemoryBootstrapOverlayEnabled(params.config)) {
+    return null;
+  }
   const status = resolveModelMemoryLiveRuntimeStatus(params.config);
   if (!status.enabled || !status.databaseConfigured) {
     return null;

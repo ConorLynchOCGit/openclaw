@@ -133,7 +133,7 @@ describe("runtime work graph expansion controller", () => {
       metadata: {
         runtimeOwnedLifecycleTransition: true,
         lifecycleTransitionOwner: "NodeLifecycleTransitionRunner",
-        lifecycleTransitionGate: "worker_action_ready",
+        lifecycleTransitionGate: "node_agent_session_ready",
         runtimePrerequisiteCritical: true,
         rawPromptStored: false,
         rawResponseStored: false,
@@ -156,6 +156,50 @@ describe("runtime work graph expansion controller", () => {
       "promoted-executable",
     ]);
     expect(result.deferredNodes).toEqual([]);
+  });
+
+  it("rejects downstream validation expansion while an executable prerequisite branch is blocked", () => {
+    const validationNode: OrchestratorGraphNodeSpec = {
+      ...node("gateway-validation"),
+      nodeKind: "validation",
+      assignedRole: "test_engineer",
+      exactObjective: "Validate gateway readiness after implementation evidence exists.",
+      metadata: {
+        executionIntent: "validation",
+        validationPhase: "final_proof_validation",
+        rawPromptStored: false,
+        rawResponseStored: false,
+        rawProviderLogStored: false,
+      },
+    };
+    const result = evaluateRuntimeWorkGraphExpansionAdmission({
+      graphId: "graph-1",
+      iteration: 41,
+      decision: {
+        ...decision([validationNode]),
+        decisionId: "validation-after-failed-worker",
+        metadata: {
+          runtimeOwnedLifecycleTransition: true,
+          lifecycleTransitionOwner: "NodeLifecycleTransitionRunner",
+          runtimePrerequisiteCritical: true,
+          rawPromptStored: false,
+          rawResponseStored: false,
+          rawProviderLogStored: false,
+        },
+      },
+      snapshotSummary: snapshotSummary(["failed-implementation"]),
+      blockedPrerequisiteNodeIds: ["failed-implementation"],
+    });
+
+    expect(result.decision.status).toBe("needs_review");
+    expect(result.decision.nextTransition).toBe("needs_review");
+    expect(result.decision.reasonCodes).toContain(
+      "expansion_blocked_by_failed_prerequisite_branch",
+    );
+    expect(result.admittedNodes).toEqual([]);
+    expect(result.deferredNodes.map((candidate) => candidate.nodeId)).toEqual([
+      "gateway-validation",
+    ]);
   });
 
   it("keeps global review prerequisite-critical without reviving node-local validation or escalation repair decisions", () => {

@@ -1,13 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { RuntimeToolRegistry } from "../runtime-tool-call/runtime-tool-registry.ts";
 import {
-  SCHEDULER_RUNTIME_TOOL_IDS,
-  registerSchedulerRuntimeTools,
-} from "./scheduler-runtime-tools.ts";
-import {
   NODE_LIFECYCLE_DESCRIPTOR_TOOL_IDS,
   validateLifecycleDescriptorToolRegistration,
 } from "./node-lifecycle-transition-runner.ts";
+import {
+  SCHEDULER_RUNTIME_TOOL_IDS,
+  registerSchedulerRuntimeTools,
+} from "./scheduler-runtime-tools.ts";
 
 describe("scheduler runtime tools", () => {
   it("keeps lifecycle descriptor tools registered in the runtime tool registry", () => {
@@ -31,26 +31,20 @@ describe("scheduler runtime tools", () => {
     }
   });
 
-  it("registers WorkIntent root and resource requirement compiler tools as small scheduler verbs", () => {
+  it("does not register retired WorkIntent graph compiler tools", () => {
     const registry = new RuntimeToolRegistry();
     registerSchedulerRuntimeTools({ registry, includeWorkerInvoke: true });
 
     for (const toolId of [
       "scheduler.work_intent.accept_roots",
       "scheduler.compile_resource_requirements_for_work_intents",
+      "scheduler.compile_work_intents",
+      "scheduler.accept_work_intent_graph",
+      "scheduler.reject_work_intent_graph",
+      "scheduler.promote_work_intent_to_executable",
     ]) {
-      expect(SCHEDULER_RUNTIME_TOOL_IDS).toContain(toolId);
-      const definition = registry.get(toolId)?.definition;
-      expect(definition).toMatchObject({
-        toolId,
-        toolFamily: "scheduler.decompose_graph",
-        authorityClass: "bounded_runtime_write",
-        enabled: true,
-      });
-      expect(definition?.rawPromptStored).toBe(false);
-      expect(definition?.rawResponseStored).toBe(false);
-      expect(definition?.storagePolicy.rawToolLogStored).toBe(false);
-      expect(definition?.schemaRef).toMatch(/^runtime-tool:\/\/scheduler\//u);
+      expect(SCHEDULER_RUNTIME_TOOL_IDS).not.toContain(toolId);
+      expect(registry.get(toolId)).toBeNull();
     }
   });
 
@@ -70,10 +64,11 @@ describe("scheduler runtime tools", () => {
       expect(SCHEDULER_RUNTIME_TOOL_IDS).not.toContain(toolId);
       expect(registry.get(toolId)).toBeNull();
     }
-    expect(SCHEDULER_RUNTIME_TOOL_IDS).toContain("resource.requirement.block_broad_payload");
+    expect(SCHEDULER_RUNTIME_TOOL_IDS).not.toContain("resource.requirement.block_broad_payload");
+    expect(registry.get("resource.requirement.block_broad_payload")).toBeNull();
   });
 
-  it("registers canonical resource requirement and structural resharding tools as small verbs", () => {
+  it("does not register retired scheduler-owned resource requirement and sharding tools", () => {
     const registry = new RuntimeToolRegistry();
     registerSchedulerRuntimeTools({ registry, includeWorkerInvoke: true });
 
@@ -97,55 +92,34 @@ describe("scheduler runtime tools", () => {
       "scheduler.resource.block_single_unit_over_profile",
       "scheduler.accept_resource_limitation_waiver",
     ] as const) {
-      expect(SCHEDULER_RUNTIME_TOOL_IDS).toContain(toolId);
-      const definition = registry.get(toolId)?.definition;
-      expect(definition).toMatchObject({
-        toolId,
-        toolFamily: "node.resource_materialization",
-        authorityClass: "bounded_runtime_write",
-        enabled: true,
-      });
-      expect(definition?.schemaRef).toMatch(/^runtime-tool:\/\/(?:scheduler\/)?context\//u);
-      expect(definition?.rawPromptStored).toBe(false);
-      expect(definition?.rawResponseStored).toBe(false);
-      expect(definition?.storagePolicy.rawToolLogStored).toBe(false);
+      expect(SCHEDULER_RUNTIME_TOOL_IDS).not.toContain(toolId);
+      expect(registry.get(toolId)).toBeNull();
     }
   });
 
-  it("registers node-local node resource demand tools as small consumer-bound verbs", () => {
+  it("does not register retired node-local resource demand tools", () => {
     const registry = new RuntimeToolRegistry();
     registerSchedulerRuntimeTools({ registry, includeWorkerInvoke: true });
 
     for (const toolId of [
       "resource.demand.open",
+      "resource.demand.fulfill_exact_handles",
       "resource.demand.request_file_window",
       "resource.demand.request_symbol",
       "resource.demand.request_related_tests",
       "resource.demand.request_memory_pack",
+      "resource.demand.fulfillment_required",
+      "resource.demand.recompile_from_scope_revision",
+      "resource.demand.execute_recompiled_packet",
       "resource.demand.mark_blocked",
       "resource.demand.close",
     ] as const) {
-      expect(SCHEDULER_RUNTIME_TOOL_IDS).toContain(toolId);
-      const definition = registry.get(toolId)?.definition;
-      expect(definition).toMatchObject({
-        toolId,
-        toolFamily: "resource.demand",
-        enabled: true,
-      });
-      expect(definition?.schemaRef).toMatch(/^runtime-tool:\/\/node-resource-demand\//u);
-      expect(definition?.rawPromptStored).toBe(false);
-      expect(definition?.rawResponseStored).toBe(false);
-      expect(definition?.storagePolicy.rawToolLogStored).toBe(false);
+      expect(SCHEDULER_RUNTIME_TOOL_IDS).not.toContain(toolId);
+      expect(registry.get(toolId)).toBeNull();
     }
-    expect(registry.get("resource.demand.open")?.definition.authorityClass).toBe(
-      "bounded_runtime_write",
-    );
-    expect(registry.get("resource.demand.request_file_window")?.definition.authorityClass).toBe(
-      "read_only",
-    );
   });
 
-  it("registers node resource ledger tools as small payload-backed context verbs", () => {
+  it("does not register retired node resource ledger tools", () => {
     const registry = new RuntimeToolRegistry();
     registerSchedulerRuntimeTools({ registry, includeWorkerInvoke: true });
 
@@ -179,27 +153,12 @@ describe("scheduler runtime tools", () => {
       "resource.ledger.hydrate_entry",
       "resource.ledger.close",
     ] as const) {
-      expect(SCHEDULER_RUNTIME_TOOL_IDS).toContain(toolId);
-      const definition = registry.get(toolId)?.definition;
-      expect(definition).toMatchObject({
-        toolId,
-        toolFamily: "resource.ledger",
-        enabled: true,
-      });
-      expect(definition?.schemaRef).toMatch(/^runtime-tool:\/\/resource-ledger\//u);
-      expect(definition?.rawPromptStored).toBe(false);
-      expect(definition?.rawResponseStored).toBe(false);
-      expect(definition?.storagePolicy.rawToolLogStored).toBe(false);
+      expect(SCHEDULER_RUNTIME_TOOL_IDS).not.toContain(toolId);
+      expect(registry.get(toolId)).toBeNull();
     }
-    expect(registry.get("resource.ledger.open")?.definition.authorityClass).toBe(
-      "bounded_runtime_write",
-    );
-    expect(registry.get("resource.ledger.project_manifest")?.definition.authorityClass).toBe(
-      "read_only",
-    );
   });
 
-  it("registers shared domain resource-selection, action-gate, and planning verbs", () => {
+  it("rejects retired resource-selection and action-gate tools while keeping planning verbs", () => {
     const registry = new RuntimeToolRegistry();
     registerSchedulerRuntimeTools({ registry, includeWorkerInvoke: true });
 
@@ -208,23 +167,15 @@ describe("scheduler runtime tools", () => {
       "resource.selection.mark_blocked",
       "resource.selection.accept",
       "resource.selection.request_revision",
-    ] as const) {
-      const definition = registry.get(toolId)?.definition;
-      expect(definition).toMatchObject({
-        toolId,
-        toolFamily: "resource.selection",
-        authorityClass: "bounded_runtime_write",
-        enabled: true,
-      });
-      expect(definition?.rawPromptStored).toBe(false);
-      expect(definition?.rawResponseStored).toBe(false);
-      expect(definition?.storagePolicy.rawToolLogStored).toBe(false);
-    }
-
-    for (const toolId of [
       "domain.action_gate.evaluate",
       "domain.action_gate.block",
       "domain.action_gate.promote_worker_action_ready",
+    ] as const) {
+      expect(SCHEDULER_RUNTIME_TOOL_IDS).not.toContain(toolId);
+      expect(registry.get(toolId)).toBeNull();
+    }
+
+    for (const toolId of [
       "planning.intent.record",
       "planning.research.request_brief",
       "planning.capsule.draft",
@@ -237,7 +188,7 @@ describe("scheduler runtime tools", () => {
       const definition = registry.get(toolId)?.definition;
       expect(definition).toMatchObject({
         toolId,
-        toolFamily: "domain.action_gate",
+        toolFamily: "planning.lifecycle",
         authorityClass: "bounded_runtime_write",
         enabled: true,
       });
@@ -247,11 +198,11 @@ describe("scheduler runtime tools", () => {
     }
   });
 
-  it("registers canonical WorkIntent and capability manifest tools as small verbs", () => {
+  it("rejects retired WorkIntent scheduler tools while keeping capability manifest tools", () => {
     const registry = new RuntimeToolRegistry();
     registerSchedulerRuntimeTools({ registry, includeWorkerInvoke: true });
 
-    for (const toolId of [
+    for (const retiredToolId of [
       "scheduler.work_intent.propose",
       "scheduler.work_intent.accept_roots",
       "scheduler.work_intent.link_dependencies",
@@ -259,6 +210,18 @@ describe("scheduler runtime tools", () => {
       "scheduler.work_intent.set_evidence_mode",
       "scheduler.work_intent.mark_non_runnable",
       "scheduler.work_intent.request_revision",
+      "scheduler.compile_work_intents",
+      "scheduler.validate_work_intent_capability",
+      "scheduler.compile_resource_requirements_for_work_intents",
+      "scheduler.accept_work_intent_graph",
+      "scheduler.reject_work_intent_graph",
+      "scheduler.promote_work_intent_to_executable",
+    ] as const) {
+      expect(SCHEDULER_RUNTIME_TOOL_IDS).not.toContain(retiredToolId);
+      expect(registry.get(retiredToolId)).toBeNull();
+    }
+
+    for (const toolId of [
       "capability.lookup",
       "capability.validate_intent",
       "capability.require_resources",
@@ -277,9 +240,6 @@ describe("scheduler runtime tools", () => {
     expect(registry.get("capability.lookup")?.definition.authorityClass).toBe("read_only");
     expect(registry.get("capability.list_legal_transitions")?.definition.authorityClass).toBe(
       "read_only",
-    );
-    expect(registry.get("scheduler.work_intent.propose")?.definition.schemaRef).toBe(
-      "runtime-tool://scheduler/work-intent/propose/v1",
     );
     expect(registry.get("capability.require_evidence")?.definition.schemaRef).toBe(
       "runtime-tool://capability/require-evidence/v1",
@@ -313,7 +273,7 @@ describe("scheduler runtime tools", () => {
     }
   });
 
-  it("registers implementation context materialization tools as first-class runtime operations", () => {
+  it("does not register retired implementation context materialization tools", () => {
     const registry = new RuntimeToolRegistry();
     registerSchedulerRuntimeTools({ registry, includeWorkerInvoke: true });
 
@@ -327,27 +287,16 @@ describe("scheduler runtime tools", () => {
       "implementation.declare_new_file_intent",
       "implementation.evaluate_readiness",
     ]) {
-      expect(SCHEDULER_RUNTIME_TOOL_IDS).toContain(toolId);
-      const definition = registry.get(toolId)?.definition;
-      expect(definition).toMatchObject({
-        toolId,
-        toolFamily: "node.resource_materialization",
-        enabled: true,
-      });
-      expect(definition?.rawPromptStored).toBe(false);
-      expect(definition?.rawResponseStored).toBe(false);
-      expect(definition?.storagePolicy.rawToolLogStored).toBe(false);
+      expect(SCHEDULER_RUNTIME_TOOL_IDS).not.toContain(toolId);
+      expect(registry.get(toolId)).toBeNull();
     }
   });
 
-  it("registers canonical execution-packet hydration tools as small resource verbs", () => {
+  it("does not register retired node execution-packet hydration tools", () => {
     const registry = new RuntimeToolRegistry();
     registerSchedulerRuntimeTools({ registry, includeWorkerInvoke: true });
 
     for (const toolId of [
-      "resource.requirement.compile",
-      "resource.materialize_node_packet",
-      "resource.materialize_domain_packet",
       "node.execution_packet.validate_hydration",
       "node.execution_packet.project_readiness",
       "node.execution_packet.create_partial",
@@ -360,20 +309,8 @@ describe("scheduler runtime tools", () => {
       "node.execution_packet.promote_worker_action_ready",
       "node.execution_packet.project_progressive_readiness",
     ] as const) {
-      expect(SCHEDULER_RUNTIME_TOOL_IDS).toContain(toolId);
-      const definition = registry.get(toolId)?.definition;
-      expect(definition).toMatchObject({
-        toolId,
-        toolFamily: "node.resource_materialization",
-        authorityClass: "bounded_runtime_write",
-        enabled: true,
-      });
-      expect(definition?.schemaRef).toMatch(
-        /^runtime-tool:\/\/(resource|node\/execution-packet)\//u,
-      );
-      expect(definition?.rawPromptStored).toBe(false);
-      expect(definition?.rawResponseStored).toBe(false);
-      expect(definition?.storagePolicy.rawToolLogStored).toBe(false);
+      expect(SCHEDULER_RUNTIME_TOOL_IDS).not.toContain(toolId);
+      expect(registry.get(toolId)).toBeNull();
     }
   });
 
@@ -522,7 +459,6 @@ describe("scheduler runtime tools", () => {
       "scheduler.create_prerequisite_node",
       "scheduler.link_prerequisite_to_target",
       "scheduler.block_node_for_precondition",
-      "scheduler.promote_work_intent_to_executable",
       "scheduler.request_transition_repair_intent",
       "scheduler.accept_transition_repair",
       "scheduler.reject_transition_repair",
@@ -539,7 +475,7 @@ describe("scheduler runtime tools", () => {
     }
   });
 
-  it("registers readiness recompute and child epoch small verbs as resource operations", () => {
+  it("does not register retired readiness recompute and child epoch scheduler tools", () => {
     const registry = new RuntimeToolRegistry();
     registerSchedulerRuntimeTools({ registry, includeWorkerInvoke: true });
 
@@ -553,17 +489,8 @@ describe("scheduler runtime tools", () => {
       "frontier.block_stale_child",
       "readback.project_readiness_drift",
     ]) {
-      expect(SCHEDULER_RUNTIME_TOOL_IDS).toContain(toolId);
-      const definition = registry.get(toolId)?.definition;
-      expect(definition).toMatchObject({
-        toolId,
-        toolFamily: "node.resource_materialization",
-        authorityClass: "bounded_runtime_write",
-        enabled: true,
-      });
-      expect(definition?.rawPromptStored).toBe(false);
-      expect(definition?.rawResponseStored).toBe(false);
-      expect(definition?.storagePolicy.rawToolLogStored).toBe(false);
+      expect(SCHEDULER_RUNTIME_TOOL_IDS).not.toContain(toolId);
+      expect(registry.get(toolId)).toBeNull();
     }
   });
 
@@ -643,7 +570,7 @@ describe("scheduler runtime tools", () => {
       expect(SCHEDULER_RUNTIME_TOOL_IDS).toContain(toolId);
       const definition = registry.get(toolId)?.definition;
       expect(definition?.toolId).toBe(toolId);
-      expect(definition?.toolFamily).toBe("node.resource_materialization");
+      expect(definition?.toolFamily).toBe("diagnostic.bounded");
       expect(definition?.enabled).toBe(true);
       expect(definition?.schemaRef).toMatch(/^runtime-tool:\/\/replay\//u);
       expect(definition?.rawPromptStored).toBe(false);
@@ -729,7 +656,7 @@ describe("scheduler runtime tools", () => {
     });
   });
 
-  it("registers resource scout execution packet and context repair tools", () => {
+  it("does not register retired resource scout execution packet and context repair tools", () => {
     const registry = new RuntimeToolRegistry();
     registerSchedulerRuntimeTools({ registry, includeWorkerInvoke: true });
 
@@ -739,49 +666,27 @@ describe("scheduler runtime tools", () => {
       "resource.scout.request_repo_resource",
       "resource.scout.classify_resource_blocker",
     ]) {
-      expect(SCHEDULER_RUNTIME_TOOL_IDS).toContain(toolId);
-      const definition = registry.get(toolId)?.definition;
-      expect(definition?.toolId).toBe(toolId);
-      expect(definition?.toolFamily).toBe("resource.scout");
-      expect(definition?.enabled).toBe(true);
-      expect(definition?.rawPromptStored).toBe(false);
-      expect(definition?.rawResponseStored).toBe(false);
-      expect(definition?.storagePolicy.rawToolLogStored).toBe(false);
+      expect(SCHEDULER_RUNTIME_TOOL_IDS).not.toContain(toolId);
+      expect(registry.get(toolId)).toBeNull();
     }
   });
 
-  it("registers context broker tools as first-class branch-local runtime operations", () => {
+  it("does not register retired context broker materialization tools", () => {
     const registry = new RuntimeToolRegistry();
     registerSchedulerRuntimeTools({ registry, includeWorkerInvoke: true });
 
-    expect(registry.get("resource_broker.resolve_inherited_resource")?.definition).toMatchObject({
-      toolId: "resource_broker.resolve_inherited_resource",
-      toolFamily: "node.resource_materialization",
-      authorityClass: "read_only",
-      enabled: true,
-    });
-
     for (const toolId of [
+      "resource_broker.resolve_inherited_resource",
       "resource_broker.submit_request",
       "resource_broker.dispatch_resource_specialist_subturn",
       "resource_broker.mark_consumer_ready",
     ]) {
-      expect(SCHEDULER_RUNTIME_TOOL_IDS).toContain(toolId);
-      const definition = registry.get(toolId)?.definition;
-      expect(definition).toMatchObject({
-        toolId,
-        toolFamily: "node.resource_materialization",
-        authorityClass: "bounded_runtime_write",
-        enabled: true,
-      });
-      expect(definition?.schemaRef).toMatch(/^runtime-tool:\/\/context-broker\//u);
-      expect(definition?.rawPromptStored).toBe(false);
-      expect(definition?.rawResponseStored).toBe(false);
-      expect(definition?.storagePolicy.rawToolLogStored).toBe(false);
+      expect(SCHEDULER_RUNTIME_TOOL_IDS).not.toContain(toolId);
+      expect(registry.get(toolId)).toBeNull();
     }
   });
 
-  it("registers post-resource WorkIntent lifecycle tools as small verb resource operations", () => {
+  it("does not register retired post-resource WorkIntent lifecycle tools", () => {
     const registry = new RuntimeToolRegistry();
     registerSchedulerRuntimeTools({ registry, includeWorkerInvoke: true });
 
@@ -792,18 +697,17 @@ describe("scheduler runtime tools", () => {
       "scheduler.promote_resource_satisfied_work_intent_to_executable",
       "scheduler.request_resource_requirement_for_work_intent",
     ] as const) {
-      expect(SCHEDULER_RUNTIME_TOOL_IDS).toContain(toolId);
-      const definition = registry.get(toolId)?.definition;
-      expect(definition).toMatchObject({
-        toolId,
-        toolFamily: "node.resource_materialization",
-        authorityClass: "bounded_runtime_write",
-        enabled: true,
-      });
-      expect(definition?.schemaRef).toMatch(/^runtime-tool:\/\/scheduler\//u);
-      expect(definition?.rawPromptStored).toBe(false);
-      expect(definition?.rawResponseStored).toBe(false);
-      expect(definition?.storagePolicy.rawToolLogStored).toBe(false);
+      expect(SCHEDULER_RUNTIME_TOOL_IDS).not.toContain(toolId);
+      expect(registry.get(toolId)).toBeNull();
+    }
+
+    for (const toolId of [
+      "resource.demand.open",
+      "node.execution_packet.mark_resource_ledger_ready",
+      "node.execution_packet.require_domain_resource_selection",
+    ] as const) {
+      expect(SCHEDULER_RUNTIME_TOOL_IDS).not.toContain(toolId);
+      expect(registry.get(toolId)).toBeNull();
     }
   });
 });

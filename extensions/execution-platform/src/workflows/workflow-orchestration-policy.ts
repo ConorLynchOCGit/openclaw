@@ -3,11 +3,9 @@ import type { RuntimeToolFamily } from "../runtime-tool-call/runtime-tool-types.
 import type { WorkflowEvidenceClass } from "./workflow-evidence-profile.ts";
 
 export type WorkflowPhase =
-  | "mission_ledger"
-  | "obligation_graph"
-  | "resource_demand"
-  | "resource_ledger"
-  | "domain_resource_selection"
+  | "requirement_map"
+  | "source_grounding"
+  | "source_material"
   | "domain_action_gate"
   | "work_breakdown"
   | "capability_selection"
@@ -44,10 +42,10 @@ export type WorkflowResourceNeed = {
   resourceNeedId: string;
   roleClass: WorkflowRoleClass;
   required: boolean;
-  sourcePromptAccess: "none" | "bounded_index" | "bounded_excerpt_request";
+  sourcePromptAccess: "none" | "bounded_body_ref" | "bounded_excerpt_request";
   repoResourceAccess: "none" | "candidate_refs" | "verified_file_refs";
   externalResourceAccess: "none" | "research_brief_refs" | "artifact_refs";
-  resourceHandoffRequired: boolean;
+  sourceMaterialRequired: boolean;
   reasonCodes: string[];
   rawPromptStored: false;
   rawResponseStored: false;
@@ -80,7 +78,7 @@ export type WorkflowHumanDecisionPolicy = {
 export type WorkflowSourcePromptPolicy = {
   policyId: string;
   fullPromptVolatileInputAllowed: boolean;
-  sourcePromptIndexRequired: boolean;
+  sourcePromptBodyRefRequired: boolean;
   boundedExcerptRequestsAllowed: boolean;
   rawPromptPersistenceAllowed: false;
   rawPromptStored: false;
@@ -135,8 +133,7 @@ export type WorkflowOrchestrationPolicyValidation = {
 };
 
 const COMPLEX_REQUIRED_PHASES: WorkflowPhase[] = [
-  "mission_ledger",
-  "obligation_graph",
+  "requirement_map",
   "work_breakdown",
   "capability_selection",
   "graph_compile",
@@ -177,8 +174,8 @@ export function validateWorkflowOrchestrationPolicy(
     if (policy.allowedCapabilityIds.length === 0) {
       reasonCodes.push("workflow_orchestration_allowed_capabilities_missing");
     }
-    if (!policy.sourcePromptPolicy.sourcePromptIndexRequired) {
-      reasonCodes.push("workflow_orchestration_source_prompt_index_required");
+    if (!policy.sourcePromptPolicy.sourcePromptBodyRefRequired) {
+      reasonCodes.push("workflow_orchestration_source_prompt_body_ref_required");
     }
     if (!policy.capabilityPolicy.cheapestSufficientWorkerRequired) {
       reasonCodes.push("workflow_orchestration_cheapest_sufficient_policy_required");
@@ -246,7 +243,7 @@ export function workflowOrchestrationPolicySummary(policy: WorkflowOrchestration
       sourcePromptAccess: need.sourcePromptAccess,
       repoResourceAccess: need.repoResourceAccess,
       externalResourceAccess: need.externalResourceAccess,
-      resourceHandoffRequired: need.resourceHandoffRequired,
+      sourceMaterialRequired: need.sourceMaterialRequired,
       reasonCodes: need.reasonCodes.slice(0, 8),
       rawPromptStored: false,
       rawResponseStored: false,

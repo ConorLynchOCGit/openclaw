@@ -1,7 +1,12 @@
 import fsSync from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { listAgentIds, resolveDefaultAgentId } from "../../agents/agent-scope.js";
+import {
+  listAgentIds,
+  resolveAgentConfig,
+  resolveAgentDir,
+  resolveDefaultAgentId,
+} from "../../agents/agent-scope.js";
 import {
   resolveAgentSessionDirsFromAgentsDir,
   resolveAgentSessionDirsFromAgentsDirSync,
@@ -10,7 +15,11 @@ import { DEFAULT_AGENT_ID, normalizeAgentId } from "../../routing/session-key.js
 import { normalizeLowercaseStringOrEmpty } from "../../shared/string-coerce.js";
 import { resolveStateDir } from "../paths.js";
 import type { OpenClawConfig } from "../types.openclaw.js";
-import { resolveAgentsDirFromSessionStorePath, resolveStorePath } from "./paths.js";
+import {
+  resolveAgentsDirFromSessionStorePath,
+  resolveSessionStorePathForAgentDir,
+  resolveStorePath,
+} from "./paths.js";
 
 export type SessionStoreSelectionOptions = {
   store?: string;
@@ -40,6 +49,37 @@ function dedupeTargetsByStorePath(targets: SessionStoreTarget[]): SessionStoreTa
     }
   }
   return [...deduped.values()];
+}
+
+function resolveConfiguredAgentSessionStorePath(params: {
+  cfg: OpenClawConfig;
+  agentId: string;
+  env: NodeJS.ProcessEnv;
+}): string | undefined {
+  const configuredAgentDir = resolveAgentConfig(params.cfg, params.agentId)?.agentDir?.trim();
+  if (!configuredAgentDir) {
+    return undefined;
+  }
+  return resolveSessionStorePathForAgentDir(
+    resolveAgentDir(params.cfg, params.agentId, params.env),
+  );
+}
+
+function resolveConfiguredSessionStoreTarget(params: {
+  cfg: OpenClawConfig;
+  agentId: string;
+  env: NodeJS.ProcessEnv;
+}): SessionStoreTarget {
+  return {
+    agentId: params.agentId,
+    storePath: !params.cfg.session?.store
+      ? (resolveConfiguredAgentSessionStorePath(params) ??
+        resolveStorePath(undefined, { agentId: params.agentId, env: params.env }))
+      : resolveStorePath(params.cfg.session.store, {
+          agentId: params.agentId,
+          env: params.env,
+        }),
+  };
 }
 
 function shouldSkipDiscoveryError(err: unknown): boolean {
@@ -315,10 +355,9 @@ export function resolveSessionStoreTargets(
   }
 
   if (allAgents) {
-    const targets = listAgentIds(cfg).map((agentId) => ({
-      agentId,
-      storePath: resolveStorePath(cfg.session?.store, { agentId, env }),
-    }));
+    const targets = listAgentIds(cfg).map((agentId) =>
+      resolveConfiguredSessionStoreTarget({ cfg, agentId, env }),
+    );
     return dedupeTargetsByStorePath(targets);
   }
 
@@ -330,18 +369,8 @@ export function resolveSessionStoreTargets(
         `Unknown agent id "${opts.agent}". Use "openclaw agents list" to see configured agents.`,
       );
     }
-    return [
-      {
-        agentId: requested,
-        storePath: resolveStorePath(cfg.session?.store, { agentId: requested, env }),
-      },
-    ];
+    return [resolveConfiguredSessionStoreTarget({ cfg, agentId: requested, env })];
   }
 
-  return [
-    {
-      agentId: defaultAgentId,
-      storePath: resolveStorePath(cfg.session?.store, { agentId: defaultAgentId, env }),
-    },
-  ];
+  return [resolveConfiguredSessionStoreTarget({ cfg, agentId: defaultAgentId, env })];
 }

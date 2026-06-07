@@ -163,6 +163,34 @@ describe("ClarificationGate", () => {
     );
   });
 
+  it("does not require router-authored actions for executable workflow routing", () => {
+    const output = createBaseCanonicalRouterOutput({
+      route: "workflow_execution",
+      responseMode: "create_runtime_job",
+      executeNow: true,
+      workflowId: "agent_team.coding",
+      executorWorkflowId: "agent_team.coding",
+      jobType: "executor.agent_team",
+      confidence: 0.95,
+      objectiveSummary: "Run the coding workflow from a prompt.",
+      requestedCapabilities: ["code_edit", "test", "review", "closeout"],
+      requestedActions: [],
+      conditionalActions: [],
+      reasonCodes: ["router_primary_outcome:implement_existing_system"],
+    });
+    const validation = validateIntentFrontDoorDecision({
+      parseResult: parseCanonicalRouterOutput(output),
+      workflowSummaryIndex,
+      auth,
+      authority,
+    });
+    const gate = runClarificationGate({ ...baseInput(), routerOutput: output, validation });
+
+    expect(validation.outcome).toBe("accepted");
+    expect(gate.outcome).toBe("pass_through");
+    expect(gate.reasonCodes).not.toContain("broad_execution_request_missing_scope");
+  });
+
   it("clarifies conflicting requested and negated actions without creating work", () => {
     const output = createBaseCanonicalRouterOutput({
       route: "workflow_execution",

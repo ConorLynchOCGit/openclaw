@@ -3,6 +3,7 @@ import { constants } from "node:fs";
 import { access, readdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
+import { resolveOpenClawPathRoots } from "../../../../src/agents/workspace-topology-resolver.ts";
 import { DEFAULT_DIAGNOSTIC_LIMITS, boundDiagnosticJson } from "../observability/redaction.ts";
 import type {
   JsonValue,
@@ -13,11 +14,7 @@ import { listRequiredCodexBridgeSkillDocs } from "./skill-triggers.ts";
 
 const execFileAsync = promisify(execFile);
 
-const DEFAULT_REPO_ROOT = "/root/services/openclaw-roles/live";
 const DEFAULT_CODEX_SKILL_ROOT = "/root/.codex/skills";
-const DEFAULT_WORKSPACE_SKILL_ROOT = "/root/.openclaw/workspace/skills";
-const DEFAULT_EXECUTION_PLATFORM_DOC_ROOT =
-  "/root/.openclaw/workspace/docs/projects/execution-platform";
 const DEFAULT_MAX_SKILL_AUDIT_METADATA_BYTES = 96 * 1024;
 
 export type CodexBridgeSkillInventorySourceKind =
@@ -151,6 +148,33 @@ export type CodexBridgeSkillInventoryOptions = {
   listDirectory?: (path: string) => Promise<string[]>;
   maxArtifactMetadataBytes?: number;
 };
+
+export type CodexBridgeSkillInventoryRoots = {
+  repoRoot: string;
+  codexSkillRoot: string;
+  workspaceSkillRoot: string;
+  executionPlatformDocRoot: string;
+};
+
+export function resolveCodexBridgeSkillInventoryRoots(
+  input: Pick<
+    CodexBridgeSkillInventoryOptions,
+    "repoRoot" | "codexSkillRoot" | "workspaceSkillRoot" | "executionPlatformDocRoot"
+  > = {},
+): CodexBridgeSkillInventoryRoots {
+  const pathRoots = resolveOpenClawPathRoots({
+    liveRepoRoot: input.repoRoot,
+  });
+  const repoRoot = input.repoRoot ?? pathRoots.liveRepoRoot;
+  return {
+    repoRoot,
+    codexSkillRoot: input.codexSkillRoot ?? DEFAULT_CODEX_SKILL_ROOT,
+    workspaceSkillRoot: input.workspaceSkillRoot ?? path.join(pathRoots.workspaceRoot, "skills"),
+    executionPlatformDocRoot:
+      input.executionPlatformDocRoot ??
+      path.join(pathRoots.workspaceRoot, "docs/projects/execution-platform"),
+  };
+}
 
 function requiredBridgeSafetyIds(): string[] {
   return listRequiredCodexBridgeSkillDocs()
@@ -289,11 +313,8 @@ async function maybeListMarkdownDocs(
 export async function inventoryCodexBridgeSkills(
   input: CodexBridgeSkillInventoryOptions = {},
 ): Promise<CodexBridgeSkillInventoryReport> {
-  const repoRoot = input.repoRoot ?? DEFAULT_REPO_ROOT;
-  const codexSkillRoot = input.codexSkillRoot ?? DEFAULT_CODEX_SKILL_ROOT;
-  const workspaceSkillRoot = input.workspaceSkillRoot ?? DEFAULT_WORKSPACE_SKILL_ROOT;
-  const executionPlatformDocRoot =
-    input.executionPlatformDocRoot ?? DEFAULT_EXECUTION_PLATFORM_DOC_ROOT;
+  const { repoRoot, codexSkillRoot, workspaceSkillRoot, executionPlatformDocRoot } =
+    resolveCodexBridgeSkillInventoryRoots(input);
   const options = {
     readTextFile: input.readTextFile ?? ((filePath: string) => readFile(filePath, "utf8")),
     listDirectory: input.listDirectory ?? ((dirPath: string) => readdir(dirPath)),
@@ -449,7 +470,8 @@ export async function compareCodexBridgeSkillsWithClawHub(input: {
   return {
     artifactKind: "codex_bridge_skill_clawhub_comparison_report",
     clawhubSkillPath:
-      input.clawhubSkillPath ?? path.join(DEFAULT_REPO_ROOT, "skills", "clawhub", "SKILL.md"),
+      input.clawhubSkillPath ??
+      path.join(resolveCodexBridgeSkillInventoryRoots().repoRoot, "skills", "clawhub", "SKILL.md"),
     hostClawHubAvailable,
     boundedSearchOnly: true,
     installUpdatePublishPerformed: false,

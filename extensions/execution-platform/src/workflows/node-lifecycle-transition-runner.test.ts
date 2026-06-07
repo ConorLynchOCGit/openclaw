@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { JsonValue } from "../runtime-job-repository.ts";
-import { buildRuntimeNodeCapabilityManifest } from "./runtime-node-capability-registry.ts";
+import { NODE_EXECUTION_STORAGE_POLICY } from "./node-agent-session.ts";
 import {
   buildNodeLifecycleProjectionManifest,
   lifecycleDescriptorForGate,
@@ -9,9 +9,10 @@ import {
   NodeLifecycleTransitionRunner,
   validateLifecycleDescriptorToolRegistration,
 } from "./node-lifecycle-transition-runner.ts";
-import { SCHEDULER_RUNTIME_TOOL_IDS } from "./scheduler-runtime-tools.ts";
-import type { TeamGraphNode, TeamRunGraph } from "./runtime-work-graph.ts";
+import { buildRuntimeNodeCapabilityManifest } from "./runtime-node-capability-registry.ts";
 import type { RuntimeWorkGraphSnapshot } from "./runtime-work-graph-repository.ts";
+import type { TeamGraphNode, TeamGraphNodeKind, TeamRunGraph } from "./runtime-work-graph.ts";
+import { SCHEDULER_RUNTIME_TOOL_IDS } from "./scheduler-runtime-tools.ts";
 
 const now = new Date("2026-05-28T00:00:00.000Z");
 
@@ -36,20 +37,27 @@ function graph(): TeamRunGraph {
   };
 }
 
-function node(metadata: Record<string, JsonValue>, status: TeamGraphNode["nodeStatus"] = "planned"): TeamGraphNode {
+function node(input: {
+  metadata: Record<string, JsonValue>;
+  status?: TeamGraphNode["nodeStatus"];
+  nodeKind?: TeamGraphNodeKind;
+  nodeId?: string;
+  assignedRole?: string;
+  modelOrWorkerRef?: string;
+}): TeamGraphNode {
   return {
-    nodeId: "work-intent-1",
+    nodeId: input.nodeId ?? "node-1",
     graphId: "graph-lifecycle",
-    nodeKind: "work_intent",
-    assignedRole: "implementation_engineer",
-    modelOrWorkerRef: "worker.kimi.file-implementation",
+    nodeKind: input.nodeKind ?? "implementation",
+    assignedRole: input.assignedRole ?? "implementation_engineer",
+    modelOrWorkerRef: input.modelOrWorkerRef ?? "agent:execution-coding",
     runtimeJobId: null,
     humanTaskId: null,
     inputHandoffRefs: [],
     outputArtifactRefs: [],
-    nodeStatus: status,
+    nodeStatus: input.status ?? "planned",
     budgetUsage: {},
-    metadata,
+    metadata: input.metadata,
     rawPromptStored: false,
     rawResponseStored: false,
     rawLogsStored: false,
@@ -75,8 +83,7 @@ function snapshot(nodes: TeamGraphNode[]): RuntimeWorkGraphSnapshot {
 }
 
 describe("NodeLifecycleTransitionRunner", () => {
-  it("keeps local gate transitions registered as scheduler/runtime tools and capability-authorized", () => {
-    const manifest = buildRuntimeNodeCapabilityManifest();
+  it("exposes only native OpenClaw agent-session lifecycle gates", () => {
     const schedulerToolIds = new Set<string>(SCHEDULER_RUNTIME_TOOL_IDS);
     const descriptorValidation = validateLifecycleDescriptorToolRegistration({
       registeredToolIds: schedulerToolIds,
@@ -86,122 +93,134 @@ describe("NodeLifecycleTransitionRunner", () => {
       missingToolIds: [],
       reasonCodes: ["node_lifecycle_descriptor_tool_registry_valid"],
     });
-    expect(NODE_LIFECYCLE_TRANSITION_DESCRIPTORS.length).toBeGreaterThan(10);
-    expect(lifecycleDescriptorForGate("resource_demand_open")).toMatchObject({
-      handlerRef: "node-lifecycle-handler://node-resource-demand/fulfill-or-narrow/v1",
-      stateMutationTarget: "node_resource_demand_session",
+    expect(NODE_LIFECYCLE_TRANSITION_DESCRIPTORS.map((descriptor) => descriptor.gate)).toEqual([
+      "node_agent_session_ready",
+      "node_agent_session_escalation_required",
+      "node_lifecycle_root_cause_collapsed",
+    ]);
+    expect(lifecycleDescriptorForGate("node_agent_session_ready")).toMatchObject({
+      handlerRef: "node-lifecycle-handler://node-agent-session/invoke/v1",
+      stateMutationTarget: "node_agent_session",
+      legalToolIds: ["node.agent_session.invoke"],
     });
-    const allGateTransitions = new Set(
-      Object.values(NODE_LIFECYCLE_GATE_TRANSITIONS).flatMap((transitions) => [...transitions]),
-    );
-    const missingRuntimeTools = [...allGateTransitions].filter(
-      (transition) => !schedulerToolIds.has(transition),
-    );
-    expect(missingRuntimeTools).toEqual([]);
+    expect(lifecycleDescriptorForGate("resource_demand_open")).toBeNull();
+    expect(lifecycleDescriptorForGate("worker_action_ready")).toBeNull();
+    expect(Object.values(NODE_LIFECYCLE_GATE_TRANSITIONS).flat()).toEqual([
+      "node.agent_session.invoke",
+      "node.agent_session.invoke_high_capability",
+    ]);
+  });
 
+  it("keeps capability lifecycle transitions narrowed to native agent-session invocation", () => {
+    const manifest = buildRuntimeNodeCapabilityManifest();
+    const retiredPrefixes = [
+      "resource.demand.",
+      "resource.scout.",
+      "resource.selection.",
+      "node.execution_packet.",
+      "domain.action_gate.",
+    ];
     for (const capability of manifest.capabilities) {
-      if (!capability.requiresResources || capability.canEditSource || capability.canWriteTests) {
-        continue;
+      expect(
+        capability.allowedLifecycleTransitions.filter((transition) =>
+          retiredPrefixes.some((prefix) => transition.startsWith(prefix)),
+        ),
+      ).toEqual([]);
+      if (capability.roleClass !== "human" && capability.canRunAsExecutable) {
+        expect(capability.allowedLifecycleTransitions).toContain("node.agent_session.invoke");
       }
-      expect(capability.allowedLifecycleTransitions).toEqual(
-        expect.arrayContaining([
-          "resource.scout.submit_exact_handles",
-          "scheduler.accept_resources_for_work_intent",
-          "scheduler.promote_resource_satisfied_work_intent_to_executable",
-        ]),
-      );
-    }
-    for (const capability of manifest.capabilities) {
-      if (!capability.canEditSource && !capability.canWriteTests) {
-        continue;
-      }
-      expect(capability.allowedLifecycleTransitions).not.toContain("resource.demand.open");
-      expect(capability.allowedLifecycleTransitions).toEqual(
-        expect.arrayContaining([
-          "node.execution_packet.promote_worker_action_ready",
-          "worker.edit.plan",
-        ]),
-      );
     }
   });
 
-  it("projects executable source-edit WorkIntents as worker-action-ready instead of pre-worker resource demand", () => {
+  it.each([
+    ["implementation", "implementation_microtask", "implementation_engineer"],
+    ["validation", "validation_run", "test_engineer"],
+    ["reviewer", "reviewer", "reviewer"],
+    ["closeout", "coding_closeout", "closeout_synthesizer"],
+  ] as const)(
+    "projects %s nodes as native agent-session ready",
+    (nodeKind, capabilityId, assignedRole) => {
+      const runner = new NodeLifecycleTransitionRunner({
+        capabilityManifest: buildRuntimeNodeCapabilityManifest(),
+      });
+      const executable = node({
+        nodeKind,
+        assignedRole,
+        metadata: {
+          schedulerGraphPatchCompiled: true,
+          capabilityId,
+          executionIntent:
+            nodeKind === "validation"
+              ? "validation"
+              : nodeKind === "reviewer"
+                ? "review"
+                : "source_edit",
+          evidenceMode: ["bounded_evidence"],
+          rawPromptStored: false,
+          rawResponseStored: false,
+          rawProviderLogStored: false,
+        },
+      });
+
+      const projection = runner.project({
+        graphId: "graph-lifecycle",
+        snapshot: snapshot([executable]),
+        node: executable,
+      });
+
+      expect(projection.currentLifecycleState).toBe("node_agent_session_ready");
+      expect(projection.currentGate).toBe("node_agent_session_ready");
+      expect(projection.canCallGlobalScheduler).toBe(false);
+      expect(projection.nextLegalTransitions).toEqual(["node.agent_session.invoke"]);
+      expect(projection.rejectedLifecycleTransitions).toEqual([]);
+      expect(projection.rootCauseSignature?.stage).toBe("node_agent_session");
+      expect(projection.rootCauseSignature?.reasonCodes).toContain(
+        "node_lifecycle_runner_authorized_openclaw_agent_session",
+      );
+    },
+  );
+
+  it("does not let stale worker/resource metadata become lifecycle authority", () => {
     const runner = new NodeLifecycleTransitionRunner({
       capabilityManifest: buildRuntimeNodeCapabilityManifest(),
     });
-    const workIntent = node(
-      {
-        workIntentCompiled: true,
-        workIntentId: "wi-1",
-        workIntentRef: "work-intent://wi-1",
+    const executable = node({
+      metadata: {
         capabilityId: "implementation_microtask",
-        executionIntent: "source_edit",
-        evidenceMode: ["changed_file_evidence"],
-        contextRequired: true,
-        resourceObjectiveFocusStatus: "accepted",
-        resourceObjectiveFocusRef: "context-focus://accepted/1",
+        nodeLifecycleProjectionGate: "resource_demand_open",
+        currentPhase: "worker_action_ready",
         rawPromptStored: false,
         rawResponseStored: false,
         rawProviderLogStored: false,
       },
-      "needs_review",
+    });
+
+    const projection = runner.project({
+      graphId: "graph-lifecycle",
+      snapshot: snapshot([executable]),
+      node: executable,
+    });
+
+    expect(projection.currentGate).toBe("node_agent_session_ready");
+    expect(projection.nextLegalTransitions).toEqual(["node.agent_session.invoke"]);
+    expect(projection.rejectedLifecycleTransitions).toEqual([]);
+    expect(projection.canCallGlobalScheduler).toBe(false);
+    expect(projection.rootCauseSignature?.reasonCodes).toContain(
+      "node_lifecycle_stale_metadata_gate_ignored",
     );
-
-    const projection = runner.project({
-      graphId: "graph-lifecycle",
-      snapshot: snapshot([workIntent]),
-      node: workIntent,
-    });
-
-    expect(projection.currentGate).toBe("worker_action_ready");
-    expect(projection.canCallGlobalScheduler).toBe(false);
-    expect(projection.nextLegalTransitions).toContain("worker.edit.plan");
-    expect(projection.nextLegalTransitions).not.toContain("resource.demand.open");
   });
 
-  it("does not let stale blocked focus stop executable source-edit worker start", () => {
-    const runner = new NodeLifecycleTransitionRunner({
-      capabilityManifest: buildRuntimeNodeCapabilityManifest(),
-    });
-    const workIntent = node({
-      workIntentCompiled: true,
-      workIntentId: "wi-1",
-      workIntentRef: "work-intent://wi-1",
-      capabilityId: "implementation_microtask",
-      executionIntent: "source_edit",
-      evidenceMode: ["changed_file_evidence"],
-      contextRequired: true,
-      resourceObjectiveFocusStatus: "blocked",
-      resourceObjectiveFocusRef: "context-focus://blocked/1",
-      rawPromptStored: false,
-      rawResponseStored: false,
-      rawProviderLogStored: false,
-    });
-
-    const projection = runner.project({
-      graphId: "graph-lifecycle",
-      snapshot: snapshot([workIntent]),
-      node: workIntent,
-    });
-
-    expect(projection.currentGate).toBe("worker_action_ready");
-    expect(projection.nextLegalTransitions).toContain("worker.edit.plan");
-    expect(projection.nextLegalTransitions).not.toContain("resource.scout.submit_exact_handles");
-    expect(projection.canCallGlobalScheduler).toBe(false);
-  });
-
-  it("blocks global scheduler calls and executes the local transition first", async () => {
-    const workIntent = node({
-      workIntentCompiled: true,
-      workIntentId: "wi-1",
-      workIntentRef: "work-intent://wi-1",
-      capabilityId: "implementation_microtask",
-      executionIntent: "source_edit",
-      evidenceMode: ["changed_file_evidence"],
-      contextRequired: true,
-      rawPromptStored: false,
-      rawResponseStored: false,
-      rawProviderLogStored: false,
+  it("drains pending native agent-session projections before global scheduler repair", async () => {
+    const executable = node({
+      metadata: {
+        schedulerGraphPatchCompiled: true,
+        capabilityId: "implementation_microtask",
+        executionIntent: "source_edit",
+        evidenceMode: ["changed_file_evidence"],
+        rawPromptStored: false,
+        rawResponseStored: false,
+        rawProviderLogStored: false,
+      },
     });
     const seen: string[] = [];
     const runner = new NodeLifecycleTransitionRunner({
@@ -215,8 +234,8 @@ describe("NodeLifecycleTransitionRunner", () => {
         return {
           status: "continue",
           continueLoop: true,
-          refs: ["transition://context-focus"],
-          reasonCodes: ["transition_executed"],
+          refs: ["transition://node-agent-session"],
+          reasonCodes: ["node_agent_session_transition_executed"],
         };
       },
     });
@@ -224,170 +243,38 @@ describe("NodeLifecycleTransitionRunner", () => {
     const result = await runner.drain({
       graphId: "graph-lifecycle",
       iteration: 1,
-      snapshot: snapshot([workIntent]),
+      snapshot: snapshot([executable]),
     });
 
     expect(result.actionTaken).toBe(true);
     expect(result.hasPendingLegalTransitions).toBe(true);
     expect(result.continueLoop).toBe(true);
-    expect(result.reasonCodes).toContain("transition_executed");
-    expect(seen).toEqual(["project:worker_action_ready", "execute:worker_action_ready"]);
-  });
-
-  it("projects validation repair and high-capability escalation as runner-owned gates", () => {
-    const runner = new NodeLifecycleTransitionRunner({
-      capabilityManifest: buildRuntimeNodeCapabilityManifest(),
-    });
-    const validationNode = node(
-      {
-        capabilityId: "implementation_microtask",
-        nodeLifecycleProjectionGate: "validation_repair_plan_required",
-        validationLifecycleStatus: "repair_required",
-        rawPromptStored: false,
-        rawResponseStored: false,
-        rawProviderLogStored: false,
-      },
-      "needs_review",
-    );
-    const escalationNode = node(
-      {
-        capabilityId: "implementation_microtask",
-        nodeLifecycleProjectionGate: "high_capability_escalation_required",
-        highCapabilityEscalationStatus: "requested",
-        rawPromptStored: false,
-        rawResponseStored: false,
-        rawProviderLogStored: false,
-      },
-      "needs_review",
-    );
-
-    const validationProjection = runner.project({
-      graphId: "graph-lifecycle",
-      snapshot: snapshot([validationNode]),
-      node: validationNode,
-    });
-    const escalationProjection = runner.project({
-      graphId: "graph-lifecycle",
-      snapshot: snapshot([escalationNode]),
-      node: escalationNode,
-    });
-
-    expect(validationProjection.currentGate).toBe("validation_repair_plan_required");
-    expect(validationProjection.nextLegalTransitions).toEqual(
-      expect.arrayContaining([
-        "worker.context.search",
-        "worker.context.find_tests",
-        "worker.validation.request_repair",
-        "worker.escalation.request_high_capability",
-      ]),
-    );
-    expect(validationProjection.canCallGlobalScheduler).toBe(false);
-    expect(escalationProjection.currentGate).toBe("high_capability_escalation_required");
-    expect(escalationProjection.nextLegalTransitions).toEqual(
-      expect.arrayContaining([
-        "worker.escalation.execute_high_capability",
-        "worker.escalation.mark_unavailable",
-      ]),
-    );
-    expect(escalationProjection.canCallGlobalScheduler).toBe(false);
-  });
-
-  it("does not treat skipped executable WorkIntent nodes with pending worker-action transitions as terminal", async () => {
-    const workIntent = node(
-      {
-        workIntentCompiled: true,
-        workIntentId: "wi-skipped-demand",
-        workIntentRef: "work-intent://wi-skipped-demand",
-        capabilityId: "implementation_microtask",
-        executionIntent: "source_edit",
-        evidenceMode: ["changed_file_evidence"],
-        contextRequired: true,
-        resourceObjectiveFocusStatus: "accepted",
-        resourceObjectiveFocusRef: "context-focus://accepted/skipped-demand",
-        nodeResourceDemandStatus: "open",
-        nodeResourceDemandSessionRefs: ["node-resource-demand://wi-skipped-demand/open"],
-        nextLegalTransitions: [
-          "resource.demand.fulfill_exact_handles",
-          "resource.scout.dispatch_specialist_subturn",
-        ],
-        rawPromptStored: false,
-        rawResponseStored: false,
-        rawProviderLogStored: false,
-      },
-      "skipped",
-    );
-    const seen: string[] = [];
-    const runner = new NodeLifecycleTransitionRunner({
-      capabilityManifest: buildRuntimeNodeCapabilityManifest(),
-      recordProjection: async ({ projection }) => {
-        seen.push(`project:${projection.nodeStatus}:${projection.currentGate}`);
-        return { refs: [projection.projectionRef], reasonCodes: ["projection_recorded"] };
-      },
-      executeTransition: async ({ projection }) => {
-        seen.push(`execute:${projection.nodeStatus}:${projection.currentGate}`);
-        return {
-          status: "continue",
-          continueLoop: true,
-          refs: ["transition://node-resource-demand"],
-          reasonCodes: ["node_resource_demand_transition_executed"],
-        };
-      },
-    });
-
-    const projection = runner.project({
-      graphId: "graph-lifecycle",
-      snapshot: snapshot([workIntent]),
-      node: workIntent,
-    });
-    const pending = runner.pendingProjections({
-      graphId: "graph-lifecycle",
-      snapshot: snapshot([workIntent]),
-    });
-    const result = await runner.drain({
-      graphId: "graph-lifecycle",
-      iteration: 1,
-      snapshot: snapshot([workIntent]),
-    });
-
-    expect(projection.nodeStatus).toBe("skipped");
-    expect(projection.currentGate).toBe("worker_action_ready");
-    expect(projection.canCallGlobalScheduler).toBe(false);
-    expect(pending.map((item) => item.nodeId)).toEqual(["work-intent-1"]);
-    expect(result.actionTaken).toBe(true);
-    expect(result.continueLoop).toBe(true);
-    expect(result.reasonCodes).toContain("node_resource_demand_transition_executed");
-    expect(seen).toEqual([
-      "project:skipped:worker_action_ready",
-      "execute:skipped:worker_action_ready",
-    ]);
+    expect(result.reasonCodes).toContain("node_agent_session_transition_executed");
+    expect(seen).toEqual(["project:node_agent_session_ready", "execute:node_agent_session_ready"]);
   });
 
   it("keeps projection metadata compact and manifest-shaped", () => {
     const runner = new NodeLifecycleTransitionRunner({
       capabilityManifest: buildRuntimeNodeCapabilityManifest(),
     });
-    const workIntent = node({
-      workIntentCompiled: true,
-      workIntentId: "wi-1",
-      workIntentRef: "work-intent://wi-1",
-      capabilityId: "implementation_microtask",
-      executionIntent: "source_edit",
-      evidenceMode: ["changed_file_evidence"],
-      contextRequired: true,
-      resourceObjectiveFocusStatus: "accepted",
-      resourceObjectiveFocusRefs: Array.from(
-        { length: 50 },
-        (_, index) => `context-focus://accepted/${index}`,
-      ),
-      rawPromptStored: false,
-      rawResponseStored: false,
-      rawProviderLogStored: false,
-    } as unknown as Record<string, JsonValue>);
+    const executable = node({
+      metadata: {
+        capabilityId: "implementation_microtask",
+        executionIntent: "source_edit",
+        acceptedArtifactRefs: Array.from(
+          { length: 50 },
+          (_, index) => `artifact://accepted/${index}`,
+        ),
+        rawPromptStored: false,
+        rawResponseStored: false,
+        rawProviderLogStored: false,
+      } as unknown as Record<string, JsonValue>,
+    });
 
     const projection = runner.project({
       graphId: "graph-lifecycle",
-      snapshot: snapshot([workIntent]),
-      node: workIntent,
+      snapshot: snapshot([executable]),
+      node: executable,
     });
     const manifest = buildNodeLifecycleProjectionManifest(projection);
 
@@ -398,295 +285,170 @@ describe("NodeLifecycleTransitionRunner", () => {
     expect(manifest.rawProviderLogStored).toBe(false);
   });
 
-  it("rejects local lifecycle transitions not registered by the capability profile", () => {
+  it("blocks native agent session start when the runner-owned agent profile resolver rejects it", async () => {
+    const persistedSnapshots: unknown[] = [];
     const runner = new NodeLifecycleTransitionRunner({
       capabilityManifest: buildRuntimeNodeCapabilityManifest(),
+      resolveNodeAgentProfile: ({ proposedAgentId }) => ({
+        status: "blocked",
+        agentId: proposedAgentId,
+        blockerKind: "node_agent_profile_missing",
+        reasonCodes: ["fixture_node_agent_profile_missing"],
+      }),
+      recordNodeExecutionSnapshot: async (input) => {
+        persistedSnapshots.push(input.nodeExecutionSnapshot);
+        return { refs: ["artifact://snapshot"], reasonCodes: ["fixture_snapshot_persisted"] };
+      },
     });
-    const workIntent = node({
-      workIntentCompiled: false,
-      capabilityId: "orchestrator_decision",
-      nodeLifecycleProjectionGate: "worker_action_ready",
-      rawPromptStored: false,
-      rawResponseStored: false,
-      rawProviderLogStored: false,
+    const executable = node({
+      metadata: {
+        capabilityId: "implementation_microtask",
+        executionIntent: "source_edit",
+        rawPromptStored: false,
+        rawResponseStored: false,
+        rawProviderLogStored: false,
+      },
     });
 
-    const projection = runner.project({
+    const result = await runner.prepareAgentSessionStart({
       graphId: "graph-lifecycle",
-      snapshot: snapshot([workIntent]),
-      node: workIntent,
+      iteration: 7,
+      snapshot: snapshot([executable]),
+      node: executable,
     });
-    const manifest = buildNodeLifecycleProjectionManifest(projection);
 
-    expect(projection.currentGate).toBe("worker_action_ready");
-    expect(projection.nextLegalTransitions).toEqual([]);
-    expect(projection.rejectedLifecycleTransitions).toEqual(
+    expect(result).toMatchObject({
+      status: "blocked",
+      blockerKind: "node_agent_profile_missing",
+    });
+    expect(result.reasonCodes).toEqual(
       expect.arrayContaining([
-        "worker.edit.plan",
-        "worker.context.request_more",
-        "worker.context.search",
-        "worker.context.find_tests",
+        "node_lifecycle_runner_blocked_openclaw_agent_session_start",
+        "node_agent_profile_missing",
+        "fixture_node_agent_profile_missing",
       ]),
     );
-    expect(projection.canCallGlobalScheduler).toBe(false);
-    expect(projection.rootCauseSignature?.reasonCodes).toContain(
-      "node_lifecycle_transition_profile_rejected_unregistered_tool",
-    );
-    expect(manifest.rejectedLifecycleTransitionCount).toBe(14);
+    expect(result.refs).toEqual([]);
+    expect(persistedSnapshots).toEqual([]);
   });
 
-  it("projects domain worker-action tools for Product/Spec Planning instead of coding edit tools", () => {
+  it("uses the runner-owned accepted agent profile resolution when building native snapshots", async () => {
     const runner = new NodeLifecycleTransitionRunner({
       capabilityManifest: buildRuntimeNodeCapabilityManifest(),
+      resolveNodeAgentProfile: () => ({
+        status: "accepted",
+        agentId: "execution-coding-specialized",
+        reasonCodes: ["fixture_node_agent_profile_accepted"],
+      }),
+      recordNodeExecutionSnapshot: async () => ({
+        refs: ["artifact://snapshot"],
+        reasonCodes: ["fixture_snapshot_persisted"],
+      }),
     });
-    const planningIntent = node({
-      workIntentCompiled: false,
-      capabilityId: "planning_capsule_draft",
-      nodeLifecycleProjectionGate: "worker_action_ready",
-      rawPromptStored: false,
-      rawResponseStored: false,
-      rawProviderLogStored: false,
+    const executable = node({
+      metadata: {
+        capabilityId: "implementation_microtask",
+        executionIntent: "source_edit",
+        rawPromptStored: false,
+        rawResponseStored: false,
+        rawProviderLogStored: false,
+      },
     });
 
-    const projection = runner.project({
+    const result = await runner.prepareAgentSessionStart({
       graphId: "graph-lifecycle",
-      snapshot: snapshot([planningIntent]),
-      node: planningIntent,
+      iteration: 7,
+      snapshot: snapshot([executable]),
+      node: executable,
     });
 
-    expect(projection.currentGate).toBe("worker_action_ready");
-    expect(projection.nextLegalTransitions).toEqual(
-      expect.arrayContaining(["planning.framework_contract.record", "planning.capsule.draft"]),
-    );
-    expect(projection.nextLegalTransitions).not.toContain("worker.edit.plan");
-    expect(projection.nextLegalTransitions).not.toContain("worker.patch.force_author_from_plan");
-    expect(projection.rejectedLifecycleTransitions).toEqual([]);
-  });
-
-  it("uses the same lifecycle runner for non-coding planning capabilities", () => {
-    const runner = new NodeLifecycleTransitionRunner({
-      capabilityManifest: buildRuntimeNodeCapabilityManifest(),
+    expect(result).toMatchObject({
+      status: "accepted",
+      blockerKind: null,
+      nodeExecutionSnapshot: {
+        agentId: "execution-coding-specialized",
+        sessionKey: expect.stringMatching(/^agent:execution-coding-specialized:node:nrun_/),
+      },
     });
-    const planningIntent = node({
-      workIntentCompiled: false,
-      capabilityId: "planning_capsule_draft",
-      executionIntent: "planning_capsule",
-      nodeLifecycleProjectionGate: "resource_demand_open",
-      rawPromptStored: false,
-      rawResponseStored: false,
-      rawProviderLogStored: false,
-    });
-
-    const projection = runner.project({
-      graphId: "graph-lifecycle",
-      snapshot: snapshot([planningIntent]),
-      node: planningIntent,
-    });
-
-    expect(projection.currentGate).toBe("resource_demand_open");
-    expect(projection.nextLegalTransitions).toEqual(
-      expect.arrayContaining(["resource.scout.dispatch_specialist_subturn"]),
-    );
-    expect(projection.rejectedLifecycleTransitions).toEqual([]);
-    expect(projection.lifecycleTransitionProfileRef).toBe(
-      "lifecycle-profile://agent_team.product_spec_planning/planning_capsule_draft.v1",
-    );
-    expect(projection.canCallGlobalScheduler).toBe(false);
-  });
-
-  it("ignores stale nodeReadinessPhase metadata as lifecycle authority", () => {
-    const runner = new NodeLifecycleTransitionRunner({
-      capabilityManifest: buildRuntimeNodeCapabilityManifest(),
-    });
-    const workIntent = node({
-      workIntentCompiled: false,
-      capabilityId: "implementation_microtask",
-      nodeReadinessPhase: "worker_action_ready",
-      nodeReadinessNextAllowedTransitions: ["worker.edit.plan"],
-      rawPromptStored: false,
-      rawResponseStored: false,
-      rawProviderLogStored: false,
-    });
-
-    const projection = runner.project({
-      graphId: "graph-lifecycle",
-      snapshot: snapshot([workIntent]),
-      node: workIntent,
-    });
-
-    expect(projection.currentGate).toBe("no_local_lifecycle_transition");
-    expect(projection.nextLegalTransitions).toEqual([]);
-    expect(projection.canCallGlobalScheduler).toBe(true);
-    expect(projection.rootCauseSignature?.reasonCodes).toContain(
-      "node_lifecycle_stale_metadata_gate_ignored",
+    expect(result.reasonCodes).toEqual(
+      expect.arrayContaining([
+        "node_lifecycle_runner_prepared_openclaw_agent_session_start",
+        "fixture_node_agent_profile_accepted",
+        "fixture_snapshot_persisted",
+      ]),
     );
   });
 
-  it("keeps context-satisfied source-edit WorkIntents on worker-owned execution", () => {
+  it("prepares native agent session snapshots from compact scheduler graph node metadata", async () => {
+    const implementationNode = node({
+      nodeId: "node-core-implementation",
+      metadata: {
+        schedulerGraphPatchCompiled: true,
+        schedulerGraphPatchWorkUnitId: "wu-core",
+        capabilityId: "implementation_microtask",
+        executorKey: "kind:implementation",
+        workerRef: "agent:execution-coding",
+        executionIntent: "source_edit",
+        coveredRequirementIds: ["req-core"],
+        targetCommitmentIds: ["req-core"],
+        authorityScopeRefs: ["repo-scope://workspace"],
+        sourceContextRefs: ["source-prompt://requirement-map/body"],
+        sourcePromptExcerptRefs: ["source-prompt://requirement-map/req-core"],
+        evidenceClaimExpectations: ["Changed-file and validation evidence covers req-core."],
+        expectedEvidenceClaimKinds: ["source_change", "test_validation"],
+        rawPromptStored: false,
+        rawResponseStored: false,
+        rawProviderLogStored: false,
+      },
+    });
+
     const runner = new NodeLifecycleTransitionRunner({
       capabilityManifest: buildRuntimeNodeCapabilityManifest(),
-    });
-    const workIntent = node({
-      workIntentCompiled: true,
-      workIntentId: "wi-context-ready",
-      workIntentRef: "work-intent://wi-context-ready",
-      capabilityId: "implementation_microtask",
-      executionIntent: "source_edit",
-      evidenceMode: ["changed_file_evidence"],
-      contextRequired: true,
-      resourceObjectiveFocusStatus: "accepted",
-      resourceObjectiveFocusRef: "context-focus://accepted/ready",
-      nodeResourceDemandStatus: "fulfilled",
-      nodeResourceDemandSessionRefs: ["node-resource-demand://wi-context-ready/open"],
-      nodeResourceDemandFulfillmentRefs: ["node-resource-demand://wi-context-ready/fulfilled"],
-      nodeResourceLedgerRefs: ["node-resource-ledger://wi-context-ready"],
-      nodeResourceLedgerEntryRefs: ["node-resource-ledger://wi-context-ready/entry/1"],
-      acceptedResourceHandoffRefs: ["node-resource-ledger://wi-context-ready/entry/1"],
-      rawPromptStored: false,
-      rawResponseStored: false,
-      rawProviderLogStored: false,
+      resolveNodeAgentProfile: () => ({
+        status: "accepted",
+        agentId: "execution-coding",
+        reasonCodes: ["fixture_native_agent_profile_accepted"],
+      }),
+      recordNodeExecutionSnapshot: async () => ({
+        refs: ["artifact://native-node-execution-snapshot"],
+        reasonCodes: ["fixture_native_node_execution_snapshot_persisted"],
+      }),
     });
 
-    const projection = runner.project({
+    const result = await runner.prepareAgentSessionStart({
       graphId: "graph-lifecycle",
-      snapshot: snapshot([workIntent]),
-      node: workIntent,
+      iteration: 9,
+      snapshot: snapshot([implementationNode]),
+      node: implementationNode,
+      attemptId: "attempt-1",
     });
 
-    expect(projection.currentGate).toBe("worker_action_ready");
-    expect(projection.rejectedLifecycleTransitions).toEqual([]);
-    expect(projection.nextLegalTransitions).toEqual(
-      expect.arrayContaining(["worker.edit.plan"]),
-    );
-    expect(projection.nextLegalTransitions).not.toContain("resource.selection.propose");
-    expect(projection.canCallGlobalScheduler).toBe(false);
-  });
-
-  it("keeps fully hydrated source-edit WorkIntents under worker-owned executable promotion", () => {
-    const runner = new NodeLifecycleTransitionRunner({
-      capabilityManifest: buildRuntimeNodeCapabilityManifest(),
-    });
-    const workIntent = node({
-      workIntentCompiled: true,
-      workIntentId: "wi-context-and-target-ready",
-      workIntentRef: "work-intent://wi-context-and-target-ready",
-      capabilityId: "implementation_microtask",
-      workIntentSelectedCapabilityId: "implementation_microtask",
-      executionIntent: "source_edit",
-      evidenceMode: ["changed_file_evidence"],
-      contextRequired: true,
-      resourceObjectiveFocusStatus: "accepted",
-      resourceObjectiveFocusRef: "context-focus://accepted/ready",
-      nodeResourceDemandStatus: "fulfilled",
-      nodeResourceDemandSessionRefs: ["node-resource-demand://wi-context-and-target-ready/open"],
-      nodeResourceDemandFulfillmentRefs: [
-        "node-resource-demand://wi-context-and-target-ready/fulfilled",
-      ],
-      nodeResourceLedgerRefs: ["node-resource-ledger://wi-context-and-target-ready"],
-      nodeResourceLedgerEntryRefs: ["node-resource-ledger://wi-context-and-target-ready/entry/1"],
-      acceptedResourceHandoffRefs: ["node-resource-ledger://wi-context-and-target-ready/entry/1"],
-      domainResourceSelectionStatus: "accepted",
-      domainResourceSelectionDecisionStatus: "accepted",
-      domainResourceSelectionRefs: ["resource-selection://wi-context-and-target-ready/accepted"],
-      domainResourceSelectionPacketRefs: [
-        "resource-selection-packet://wi-context-and-target-ready/accepted",
-      ],
-      domainResourceSelectionDecisionRefs: [
-        "resource-selection-decision://wi-context-and-target-ready/accepted",
-      ],
-      rawPromptStored: false,
-      rawResponseStored: false,
-      rawProviderLogStored: false,
-    });
-
-    const projection = runner.project({
+    expect(result.status).toBe("accepted");
+    expect(result.nodeExecutionSnapshot).toMatchObject({
       graphId: "graph-lifecycle",
-      snapshot: snapshot([workIntent]),
-      node: workIntent,
+      nodeId: "node-core-implementation",
+      attemptId: "attempt-1",
+      agentId: "execution-coding",
+      sessionKey: expect.stringMatching(/^agent:execution-coding:node:nrun_/),
+      taskRefs: ["runtime-work-graph://node/node-core-implementation"],
+      requirementRefs: ["req-core"],
+      sourcePromptRefs: expect.arrayContaining([
+        "source-prompt://requirement-map/body",
+        "source-prompt://requirement-map/req-core",
+      ]),
+      storagePolicy: {
+        artifactPolicyRef: NODE_EXECUTION_STORAGE_POLICY.artifactPolicyRef,
+        rawStoragePolicyRef: NODE_EXECUTION_STORAGE_POLICY.rawStoragePolicyRef,
+        boundedRefsOnly: true,
+      },
     });
-
-    expect(projection.currentLifecycleState).toBe("worker_action_ready");
-    expect(projection.currentGate).toBe("worker_action_ready");
-    expect(projection.nextLegalTransitions).toEqual(
-      expect.arrayContaining(["worker.edit.plan"]),
+    expect(result.nodeExecutionSnapshot).not.toHaveProperty("rawPromptStored");
+    expect(result.nodeExecutionSnapshot).not.toHaveProperty("rawResponseStored");
+    expect(result.refs).toEqual(
+      expect.arrayContaining([
+        result.nodeExecutionSnapshot.snapshotRef,
+        "artifact://native-node-execution-snapshot",
+      ]),
     );
-    expect(projection.canCallGlobalScheduler).toBe(false);
-  });
-
-  it("does not run pre-worker specialist narrowing for executable source-edit WorkIntents", () => {
-    const runner = new NodeLifecycleTransitionRunner({
-      capabilityManifest: buildRuntimeNodeCapabilityManifest(),
-    });
-    const workIntent = node({
-      workIntentCompiled: true,
-      workIntentId: "wi-context-narrowing",
-      workIntentRef: "work-intent://wi-context-narrowing",
-      capabilityId: "implementation_microtask",
-      executionIntent: "source_edit",
-      evidenceMode: ["changed_file_evidence"],
-      contextRequired: true,
-      resourceObjectiveFocusStatus: "accepted",
-      resourceObjectiveFocusRef: "context-focus://accepted/narrowing",
-      nodeResourceDemandStatus: "open",
-      nodeResourceDemandSessionRefs: ["node-resource-demand://wi-context-narrowing/open"],
-      contextScoutSpecialistStatus: "dispatch_ready",
-      contextScoutSpecialistRequestRef: "context-scout-specialist://wi-context-narrowing/request",
-      rawPromptStored: false,
-      rawResponseStored: false,
-      rawProviderLogStored: false,
-    });
-
-    const projection = runner.project({
-      graphId: "graph-lifecycle",
-      snapshot: snapshot([workIntent]),
-      node: workIntent,
-    });
-
-    expect(projection.currentGate).toBe("worker_action_ready");
-    expect(projection.nextLegalTransitions).toEqual(
-      expect.arrayContaining(["worker.edit.plan"]),
-    );
-    expect(projection.nextLegalTransitions).not.toContain("resource.scout.submit_exact_handles");
-    expect(projection.canCallGlobalScheduler).toBe(false);
-    expect(projection.rootCauseSignature?.stage).toBe("worker_action");
-  });
-
-  it("allows context-satisfied read-only WorkIntents through context acceptance", () => {
-    const runner = new NodeLifecycleTransitionRunner({
-      capabilityManifest: buildRuntimeNodeCapabilityManifest(),
-    });
-    const workIntent = node({
-      workIntentCompiled: true,
-      workIntentId: "wi-context-ready-readonly",
-      workIntentRef: "work-intent://wi-context-ready-readonly",
-      capabilityId: "reviewer",
-      executionIntent: "source_grounding",
-      evidenceMode: ["read_only_evidence"],
-      contextRequired: true,
-      resourceObjectiveFocusStatus: "accepted",
-      resourceObjectiveFocusRef: "context-focus://accepted/ready-readonly",
-      nodeResourceDemandStatus: "fulfilled",
-      nodeResourceDemandSessionRefs: ["node-resource-demand://wi-context-ready-readonly/open"],
-      nodeResourceDemandFulfillmentRefs: ["node-resource-demand://wi-context-ready-readonly/fulfilled"],
-      nodeResourceLedgerRefs: ["node-resource-ledger://wi-context-ready-readonly"],
-      nodeResourceLedgerEntryRefs: ["node-resource-ledger://wi-context-ready-readonly/entry/1"],
-      acceptedResourceHandoffRefs: ["node-resource-ledger://wi-context-ready-readonly/entry/1"],
-      rawPromptStored: false,
-      rawResponseStored: false,
-      rawProviderLogStored: false,
-    });
-
-    const projection = runner.project({
-      graphId: "graph-lifecycle",
-      snapshot: snapshot([workIntent]),
-      node: workIntent,
-    });
-
-    expect(projection.currentGate).toBe("resource_ledger_ready");
-    expect(projection.rejectedLifecycleTransitions).toEqual([]);
-    expect(projection.nextLegalTransitions).toEqual(
-      expect.arrayContaining(["scheduler.mark_read_only_work_intent_satisfied_from_resources"]),
-    );
-    expect(projection.canCallGlobalScheduler).toBe(false);
   });
 });

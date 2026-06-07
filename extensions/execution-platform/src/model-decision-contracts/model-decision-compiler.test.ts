@@ -72,24 +72,24 @@ describe("model decision compiler helpers", () => {
         "router_front_door",
         "mission_ledger",
         "commitment_work_packet",
-        "resource_scout",
+        "context_scout",
         "resource_repair",
-        "scheduler_staged_protocol",
+        "scheduler_graph_patch",
         "capability_selection",
-        "resource_materialization",
         "worker_file_edit_loop",
         "validation_qa",
         "review_readback",
         "closeout_finalization",
       ]),
     );
+    expect(registry.map((entry) => entry.boundaryKind)).not.toContain("resource_materialization");
     expect(registry.every((entry) => !entry.rawPromptStored)).toBe(true);
     expect(registry.every((entry) => !entry.rawResponseStored)).toBe(true);
   });
 
   it("rejects nested runtime-owned fields without semantic prompt-specific judgment", () => {
     const compiled = compileModelContractBoundary({
-      boundaryKind: "scheduler_staged_protocol",
+      boundaryKind: "scheduler_graph_patch",
       failedDecisionId: "decision-runtime-owned",
       value: {
         workUnitId: "wu-1",
@@ -104,12 +104,12 @@ describe("model decision compiler helpers", () => {
 
     expect(compiled.accepted).toBe(false);
     expect(compiled.reasonCodes).toContain(
-      "model_contract_runtime_owned_field_rejected:scheduler_staged_protocol.metadata.executorKey",
+      "model_contract_runtime_owned_field_rejected:scheduler_graph_patch.metadata.executorKey",
     );
     expect(compiled.repairRequest.missingFields).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          path: "scheduler_staged_protocol.metadata.executorKey",
+          path: "scheduler_graph_patch.metadata.executorKey",
           expectedType: "omit runtime-owned field",
           validAlternatives: expect.arrayContaining(["selectedCapabilityId", "objective"]),
         }),
@@ -162,7 +162,7 @@ describe("model decision compiler helpers", () => {
     expect(accepted.accepted).toBe(true);
   });
 
-  it("exposes compiler-backed staged scheduler runtime-owned reason codes", () => {
+  it("exposes compiler-backed runtime-owned reason codes", () => {
     const reasonCodes = runtimeOwnedFieldReasonCodesForRecords({
       records: [
         {
@@ -170,26 +170,26 @@ describe("model decision compiler helpers", () => {
           nodeContract: { workerRef: "codex" },
         },
       ],
-      pathPrefix: "stagedScheduler.workUnits",
-      boundaryKind: "scheduler_staged_protocol",
-      codePrefix: "staged_scheduler_runtime_owned_field_rejected",
+      pathPrefix: "modelToolDraft.workUnits",
+      boundaryKind: "scheduler_graph_patch",
+      codePrefix: "model_tool_runtime_owned_field_rejected",
     });
 
     expect(reasonCodes).toEqual([
-      "staged_scheduler_runtime_owned_field_rejected:stagedScheduler.workUnits[0].nodeContract.workerRef",
+      "model_tool_runtime_owned_field_rejected:modelToolDraft.workUnits[0].nodeContract.workerRef",
     ]);
   });
 
   it("does not change compiler result for Product/Spec wording", () => {
     const base = compileModelContractBoundary({
-      boundaryKind: "scheduler_staged_protocol",
+      boundaryKind: "scheduler_graph_patch",
       value: {
         objective: "Implement the workflow.",
         roleRationale: "This is the next scoped unit.",
       },
     });
     const productSpec = compileModelContractBoundary({
-      boundaryKind: "scheduler_staged_protocol",
+      boundaryKind: "scheduler_graph_patch",
       value: {
         objective: "Implement the Product/Spec Planning workflow.",
         roleRationale: "This is the next scoped unit.",

@@ -52,11 +52,10 @@ export type ModelContractBoundaryKind =
   | "router_front_door"
   | "mission_ledger"
   | "commitment_work_packet"
-  | "resource_scout"
+  | "context_scout"
   | "resource_repair"
-  | "scheduler_staged_protocol"
+  | "scheduler_graph_patch"
   | "capability_selection"
-  | "resource_materialization"
   | "worker_file_edit_loop"
   | "validation_qa"
   | "review_readback"
@@ -266,7 +265,7 @@ export function buildModelContractBoundaryRegistry(): ModelContractBoundaryDefin
       ],
     }),
     boundary({
-      boundaryKind: "resource_scout",
+      boundaryKind: "context_scout",
       title: "Context Scout",
       modelAuthoredSemanticFields: [
         "contextObjective",
@@ -316,7 +315,7 @@ export function buildModelContractBoundaryRegistry(): ModelContractBoundaryDefin
       ],
     }),
     boundary({
-      boundaryKind: "scheduler_staged_protocol",
+      boundaryKind: "scheduler_graph_patch",
       title: "Staged Scheduler Protocol",
       modelAuthoredSemanticFields: [
         "workUnitId",
@@ -374,20 +373,6 @@ export function buildModelContractBoundaryRegistry(): ModelContractBoundaryDefin
             "The model selects a capability id; runtime derives node kind, executor, worker, and evidence fields.",
         },
       ],
-    }),
-    boundary({
-      boundaryKind: "resource_materialization",
-      title: "Resource Materialization",
-      modelAuthoredSemanticFields: [
-        "targetRefs",
-        "resourceNeeds",
-        "missingResources",
-        "readinessLimitations",
-      ],
-      acceptedStructuralAliases: [
-        { canonicalField: "targetRefs", aliases: ["targetRefs", "fileRefs", "sourceRefs"] },
-      ],
-      requiredSemanticFields: [],
     }),
     boundary({
       boundaryKind: "worker_file_edit_loop",

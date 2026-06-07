@@ -50,6 +50,50 @@ export type DynamicCodingTeamModelCallProgressEvent = {
   rawProviderLogStored: false;
 };
 
+export type DynamicCodingTeamToolTurnInput = {
+  modelRef: string;
+  providerPath: string;
+  systemPrompt: string;
+  userPayload: JsonValue;
+  providerMessages?: JsonValue[] | null;
+  tools: Array<{
+    name: string;
+    description: string;
+    inputSchema: JsonValue;
+  }>;
+  allowedToolNames: string[];
+  requiredToolName?: string | null;
+  maxAcceptedToolCalls?: number;
+  maxOutputTokens: number;
+  timeoutMs: number;
+  maxAttempts?: number;
+  reasoningEffort?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh";
+  taskClass?: ModelTaskClass;
+  modelTaskCallSite?: string;
+  progress?: {
+    spanId?: string;
+    objectiveSummary?: string | null;
+    reasonCodes?: string[];
+    schedulerEnvelope?: SchedulerModelCallEnvelopeBase | null;
+    onEvent?: (event: DynamicCodingTeamModelCallProgressEvent) => void | Promise<void>;
+  };
+};
+
+export type DynamicCodingTeamToolTurnResult = {
+  modelRunRef: string;
+  toolCalls: Array<{
+    toolName: string;
+    toolArguments: unknown;
+    callId: string | null;
+  }>;
+  responseHash: string;
+  latencyMs: number;
+  providerDiagnostics?: JsonValue | null;
+  rawPromptStored: false;
+  rawResponseStored: false;
+  rawProviderLogStored?: false;
+};
+
 export type DynamicCodingTeamModelClient = {
   runJson(input: {
     modelRef: string;
@@ -76,6 +120,9 @@ export type DynamicCodingTeamModelClient = {
     rawPromptStored: false;
     rawResponseStored: false;
   }>;
+  executeProviderToolTurn?(
+    input: DynamicCodingTeamToolTurnInput,
+  ): Promise<DynamicCodingTeamToolTurnResult>;
 };
 
 export type DynamicOrchestratorPolicy = {
@@ -606,7 +653,7 @@ export class DynamicCodingTeamOrchestrator {
             specificEnoughForNextStep: "boolean",
             missingInformation: ["bounded string"],
             nextAction:
-              "handoff_to_implementation | rerun_same_role | call_resource_scout | call_test_engineer | escalate | human_decision | needs_review",
+              "handoff_to_implementation | rerun_same_role | call_context_scout | call_test_engineer | escalate | human_decision | needs_review",
             reasoningSummary: "bounded string",
           },
           nextNodePlan: {

@@ -5,6 +5,7 @@ import {
   PRODUCT_SPEC_PLANNING_WORKFLOW_PLUGIN_ID,
   buildProductSpecPlanningWorkflowPlugin,
 } from "./product-spec-planning-plugin.ts";
+import { productSpecPlanningWorkflowContract } from "./product-spec-planning-workflow.ts";
 import { validateRuntimeCapabilityExecutorCoverage } from "./runtime-node-capability-registry.ts";
 import type { RuntimeWorkGraphNodeExecutor } from "./runtime-work-graph-scheduler.ts";
 import { RuntimeWorkflowGraphEngine } from "./runtime-workflow-graph-engine.ts";
@@ -53,11 +54,9 @@ describe("agent_team.product_spec_planning workflow plugin", () => {
       productionEnabled: true,
     });
     expect(plugin.schedulerPolicy).toMatchObject({
-      requireMissionLedgerForExecutionWorkflow: true,
       requireCostAwareCapabilityPolicy: true,
       requireEvidenceClaimsForMissionLedger: true,
       requireSchedulerToolKernel: true,
-      stagedSchedulerProtocolRequired: true,
       stagedGraphAcceptanceRequired: true,
       modelAuthoredWorkPacketsRequiredForComplexMission: true,
       resourceReadinessPolicy: "domain_resource_manifest",
@@ -74,15 +73,16 @@ describe("agent_team.product_spec_planning workflow plugin", () => {
     expect(plugin.runtimeToolFamilies).toEqual(
       expect.arrayContaining(PRODUCT_SPEC_PLANNING_PLUGIN_RUNTIME_TOOL_FAMILIES),
     );
-    expect(plugin.runtimeToolFamilies).toEqual(
-      expect.arrayContaining([
-                "resource.demand",
-        "resource.ledger",
-        "resource.selection",
-        "domain.action_gate",
-      ]),
-    );
-    expect(plugin.runtimeToolFamilies).not.toContain("node.resource_materialization");
+    for (const retiredFamily of [
+      "resource.demand",
+      "resource.ledger",
+      "resource.selection",
+      "domain.action_gate",
+      "node.resource_materialization",
+      "resource.scout",
+    ]) {
+      expect(plugin.runtimeToolFamilies).not.toContain(retiredFamily);
+    }
     expect(plugin.validationExpectations).toContain(
       "planning_framework_contract_lifecycle_validated",
     );
@@ -115,7 +115,6 @@ describe("agent_team.product_spec_planning workflow plugin", () => {
       workflowId: "agent_team.product_spec_planning",
       status: "production_ready",
       productionEnabled: true,
-      stagedSchedulerProtocolRequired: true,
       resourceReadinessPolicy: "domain_resource_manifest",
       freshContextSnapshotsRequiredForWorkerExecution: false,
       domainResourceManifestRequiredForWorkerExecution: true,
@@ -175,5 +174,56 @@ describe("agent_team.product_spec_planning workflow plugin", () => {
     expect(readiness.missingPluginExecutorKeys).toEqual(
       expect.arrayContaining(["kind:planning_capsule", "kind:closeout"]),
     );
+  });
+
+  it("enforces proposal-only authority with blocked child execution and lifecycle mutation", () => {
+    const definition = requireCanonicalWorkflowDefinition("agent_team.product_spec_planning");
+    const contract = productSpecPlanningWorkflowContract;
+    const plugin = buildProductSpecPlanningWorkflowPlugin({
+      definition,
+      executors: productSpecExecutors(),
+    });
+
+    expect(contract.permissionModel?.blockedActionKinds).toEqual(
+      expect.arrayContaining(["deploy", "outbound_send", "model_promotion", "authority_grant"]),
+    );
+    expect(contract.permissionModel?.approvalRequiredActionKinds).toEqual(
+      expect.arrayContaining(["compile_child_action_graph", "create_runtime_jobs"]),
+    );
+    expect(contract.permissionModel?.allowedLocalActionKinds).toEqual(
+      expect.arrayContaining(["plan", "review", "propose_child_actions", "closeout"]),
+    );
+    expect(contract.workQueueProjection.lifecycleMutationAllowed).toBe(false);
+    expect(plugin.readbackProjectionRefs).toContain(
+      "work-queue-readback://product-spec-planning/action-graph-proposals",
+    );
+    expect(plugin.closeoutPolicyRef).toBe(
+      "closeout-policy://agent_team.product_spec_planning/model-authored.v1",
+    );
+    expect(plugin.completionReviewPolicyRef).toBe(definition.completionReviewPolicy.policyId);
+    expect(definition.evidenceProfileId).toBe("workflow-evidence-profile.product-spec-planning.v1");
+    expect(contract.childWorkflowRefs?.some((ref) => ref.workflowId === "agent_team.coding")).toBe(
+      true,
+    );
+    expect(
+      contract.childWorkflowRefs?.some((ref) => ref.workflowId === "single_agent.web_research"),
+    ).toBe(true);
+  });
+
+  it("requires scheduler tool kernel and staged graph acceptance for production readiness", () => {
+    const definition = requireCanonicalWorkflowDefinition("agent_team.product_spec_planning");
+    const pluginWithoutKernel = buildProductSpecPlanningWorkflowPlugin({
+      definition,
+      executors: productSpecExecutors(),
+      requireSchedulerToolKernel: false,
+    });
+
+    const validation = validateWorkflowPlugin({
+      plugin: pluginWithoutKernel,
+      definition,
+    });
+
+    expect(validation.valid).toBe(false);
+    expect(validation.reasonCodes).toContain("workflow_plugin_scheduler_tool_kernel_required");
   });
 });

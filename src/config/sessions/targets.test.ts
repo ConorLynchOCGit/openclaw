@@ -77,6 +77,40 @@ const discoveryResolvers = [
 ] as const;
 
 describe("resolveSessionStoreTargets", () => {
+  it("uses configured agentDir roots when no global session store is configured", async () => {
+    await withTempHome(async (home) => {
+      const executionAgentRoot = path.join(
+        home,
+        "root-openclaw",
+        "agents",
+        "execution-context-scout",
+      );
+      const cfg: OpenClawConfig = {
+        agents: {
+          list: [
+            { id: "main", default: true },
+            {
+              id: "execution-context-scout",
+              workspace: "/root",
+              agentDir: path.join(executionAgentRoot, "agent"),
+            },
+          ],
+        },
+      };
+
+      const [target] = resolveSessionStoreTargets(
+        cfg,
+        { agent: "execution-context-scout" },
+        { env: process.env },
+      );
+
+      expect(target).toEqual({
+        agentId: "execution-context-scout",
+        storePath: path.join(executionAgentRoot, "sessions", "sessions.json"),
+      });
+    });
+  });
+
   it("resolves all configured agent stores", async () => {
     await withTempHome(async () => {
       const cfg: OpenClawConfig = {

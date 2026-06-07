@@ -221,17 +221,14 @@ selection uses explicit model slots so cheap/fast models can control the
 worker while patch generation remains assigned to the model currently proven
 best for scoped source edits.
 
-Canonical pre-Product/Spec policy:
+Canonical coding-proof policy:
 
-- `controller`: `qwen/qwen3-coder-next`, OpenRouter, `reasoningMode: none`.
-  Used for tool selection, validation command selection, continuation, and
-  small bounded control decisions.
-- `context_decision`: `qwen/qwen3-coder-next`, OpenRouter,
-  `reasoningMode: none`. Used to request/search/read bounded context before
-  edits.
+- `implementation_controller`: `moonshotai/kimi-k2.6`, OpenRouter,
+  `reasoningMode: high`. Used for runner-visible context search/read/refine,
+  edit planning, validation-failure repair planning, evidence sufficiency, and
+  typed blocking decisions inside the node-local worker loop.
 - `patch`: `moonshotai/kimi-k2.6`, OpenRouter, `reasoningMode: none`. Used
-  only when bounded snapshots/context are present and the next action should be
-  `edit.plan`/`edit.apply_patch`.
+  only for the atomic patch-author envelope after an accepted edit plan.
 - `validation_repair`: `qwen/qwen3-coder-next`, OpenRouter,
   `reasoningMode: none`. Used to classify validation failures, choose rerun vs
   targeted repair vs escalation, and preserve prior runtime progress.

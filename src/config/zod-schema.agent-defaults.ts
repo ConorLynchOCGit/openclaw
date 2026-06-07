@@ -46,6 +46,7 @@ export const AgentDefaultsSchema = z
       )
       .optional(),
     workspace: z.string().optional(),
+    projectRoot: z.string().optional(),
     skills: z.array(z.string()).optional(),
     repoRoot: z.string().optional(),
     systemPromptOverride: z.string().optional(),

@@ -49,7 +49,18 @@ export type AgentPlanEventData = {
   title: string;
   explanation?: string;
   steps?: string[];
+  items?: Array<{
+    content: string;
+    status: string;
+    priority?: string;
+    position?: number;
+  }>;
   source?: string;
+  eventType?: string;
+  todoRef?: string;
+  itemCount?: number;
+  completedCount?: number;
+  inProgressCount?: number;
 };
 
 export type AgentApprovalEventPhase = "requested" | "resolved";

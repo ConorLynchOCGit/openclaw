@@ -6,6 +6,7 @@ import type {
   RuntimeJobArtifact,
   RuntimeJobRepository,
 } from "../runtime-job-repository.ts";
+import { DEFAULT_REPO_PATH, DEFAULT_WORKSPACE_DOCS_PATH } from "./policy.ts";
 import {
   createCompletedWorkPathContract,
   type CompletedWorkPathContract,
@@ -151,8 +152,6 @@ export type ExecutionSupervisorOptions = {
 };
 
 const DEFAULT_MAX_ARTIFACT_METADATA_BYTES = 64 * 1024;
-const DEFAULT_REPO_PATH = "/root/services/openclaw-roles/live";
-const DEFAULT_WORKSPACE_DOCS_PATH = "/root/.openclaw/workspace/docs/projects/execution-platform";
 
 function pilotAudit(): Slice8EPilotAudit {
   return {

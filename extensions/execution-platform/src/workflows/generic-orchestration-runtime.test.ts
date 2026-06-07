@@ -213,7 +213,7 @@ describe("GenericOrchestrationRuntime", () => {
     expect(result.reasonCodes).toContain("generic_orchestration_runtime_graph_evidence_missing");
   });
 
-  it("requires production scheduler graph options to opt into the generic staged protocol", async () => {
+  it("does not block native scheduler graph execution on retired node execution packet options", async () => {
     const definition = requireCanonicalWorkflowDefinition("agent_team.coding");
     const executors = codingExecutors();
     const plugin = buildAgentTeamCodingWorkflowPlugin({ definition, executors });
@@ -230,11 +230,14 @@ describe("GenericOrchestrationRuntime", () => {
       graphId: "graph-generic",
       schedulerOptions: {
         orchestrator: {
-          decide: async () => ({ decisionKind: "mark_needs_review" }),
+          callSchedulerTool: async () => {
+            throw new Error(
+              "scheduler_native_tool_should_not_run_in_generic_runtime_readiness_fixture",
+            );
+          },
         },
         executors,
         requireSchedulerToolKernel: true,
-        requireMissionLedgerForExecutionWorkflow: true,
         requireCostAwareCapabilityPolicy: true,
         requireEvidenceClaimsForMissionLedger: true,
         roleCoverageProfile: plugin.schedulerOptions.roleCoverageProfile,
@@ -242,9 +245,12 @@ describe("GenericOrchestrationRuntime", () => {
       },
     });
 
-    expect(result.status).toBe("needs_review");
-    expect(result.reasonCodes).toContain(
-      "generic_orchestration_scheduler_option_staged_protocol_missing",
+    expect(result.reasonCodes).not.toContain(
+      "generic_orchestration_scheduler_option_node_execution_packet_missing",
     );
+    expect(result.reasonCodes).not.toContain(
+      "generic_orchestration_runtime_scheduler_options_not_ready",
+    );
+    expect(result.reasonCodes).toContain("generic_orchestration_runtime_scheduler_executed");
   });
 });

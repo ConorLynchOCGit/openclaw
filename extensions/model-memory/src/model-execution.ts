@@ -100,8 +100,61 @@ export const JsonModelExecutionResponseSchema = z
 
 export type JsonModelExecutionResponse = z.infer<typeof JsonModelExecutionResponseSchema>;
 
+export const JsonModelToolDefinitionSchema = z
+  .object({
+    name: z.string().trim().min(1),
+    description: z.string().trim().min(1),
+    inputSchema: z.unknown(),
+  })
+  .strict();
+
+export type JsonModelToolDefinition = z.infer<typeof JsonModelToolDefinitionSchema>;
+
+export const JsonModelToolExecutionRequestSchema = JsonModelExecutionRequestSchema.extend({
+  responseFormat: z.literal("json"),
+  tools: z.array(JsonModelToolDefinitionSchema).min(1).max(16),
+  requiredToolName: z.string().trim().min(1).optional(),
+  allowedToolNames: z.array(z.string().trim().min(1)).min(1).max(16).optional(),
+}).strict();
+
+export type JsonModelToolExecutionRequest = z.infer<typeof JsonModelToolExecutionRequestSchema>;
+
+export const JsonModelToolTurnExecutionRequestSchema = JsonModelToolExecutionRequestSchema.extend({
+  maxAcceptedToolCalls: z.number().int().positive().max(64).optional(),
+}).strict();
+
+export type JsonModelToolTurnExecutionRequest = z.infer<
+  typeof JsonModelToolTurnExecutionRequestSchema
+>;
+
+export const JsonModelToolTurnExecutionResponseSchema = z
+  .object({
+    toolCalls: z
+      .array(
+        z
+          .object({
+            toolName: z.string().trim().min(1),
+            toolArguments: z.unknown(),
+            callId: z.string().trim().min(1).nullable(),
+          })
+          .strict(),
+      )
+      .min(1),
+    resolvedModelId: z.string().trim().min(1).optional(),
+    outputText: z.string().trim().min(1).optional(),
+    usage: JsonModelExecutionResponseSchema.shape.usage.optional(),
+  })
+  .strict();
+
+export type JsonModelToolTurnExecutionResponse = z.infer<
+  typeof JsonModelToolTurnExecutionResponseSchema
+>;
+
 export interface JsonModelExecutor {
   execute(request: JsonModelExecutionRequest): Promise<JsonModelExecutionResponse>;
+  executeTools?(
+    request: JsonModelToolTurnExecutionRequest,
+  ): Promise<JsonModelToolTurnExecutionResponse>;
 }
 
 export class JsonModelOutputError extends Error {

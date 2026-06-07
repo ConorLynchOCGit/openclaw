@@ -35,6 +35,43 @@ export type SessionLockInspection = {
   removed: boolean;
 };
 
+export type SessionLockAcquisitionOutcome =
+  | "acquired"
+  | "stale_lock_reclaimed_acquired"
+  | "dead_pid_reclaimed_acquired"
+  | "recycled_pid_reclaimed_acquired"
+  | "orphan_self_pid_reclaimed_acquired"
+  | "active_current_session_acquired"
+  | "active_lock_owner_live"
+  | "unreclaimable_lock"
+  | "acquisition_timeout";
+
+export type SessionLockAcquisitionTrace = {
+  outcome: SessionLockAcquisitionOutcome;
+  sessionFile: string;
+  lockPath: string;
+  acquired: boolean;
+  reclaimed: boolean;
+  attempts: number;
+  timeoutMs: number;
+  staleMs: number;
+  ownerPid: number | null;
+  ownerPidAlive: boolean | null;
+  ownerCreatedAt: string | null;
+  ownerAgeMs: number | null;
+  staleReasons: string[];
+};
+
+export class SessionWriteLockAcquisitionError extends Error {
+  readonly trace: SessionLockAcquisitionTrace;
+
+  constructor(message: string, trace: SessionLockAcquisitionTrace) {
+    super(message);
+    this.name = "SessionWriteLockAcquisitionError";
+    this.trace = trace;
+  }
+}
+
 const CLEANUP_SIGNALS = ["SIGINT", "SIGTERM", "SIGQUIT", "SIGABRT"] as const;
 type CleanupSignal = (typeof CLEANUP_SIGNALS)[number];
 const CLEANUP_STATE_KEY = Symbol.for("openclaw.sessionWriteLockCleanupState");
@@ -408,6 +445,49 @@ function shouldTreatAsOrphanSelfLock(params: {
   return !HELD_LOCKS.has(params.normalizedSessionFile);
 }
 
+function outcomeForReclaimedLock(reasons: readonly string[]): SessionLockAcquisitionOutcome {
+  if (reasons.includes("dead-pid")) {
+    return "dead_pid_reclaimed_acquired";
+  }
+  if (reasons.includes("recycled-pid")) {
+    return "recycled_pid_reclaimed_acquired";
+  }
+  if (reasons.includes("orphan-self-pid")) {
+    return "orphan_self_pid_reclaimed_acquired";
+  }
+  return "stale_lock_reclaimed_acquired";
+}
+
+function buildLockTrace(params: {
+  outcome: SessionLockAcquisitionOutcome;
+  sessionFile: string;
+  lockPath: string;
+  acquired: boolean;
+  reclaimed?: boolean;
+  attempts: number;
+  timeoutMs: number;
+  staleMs: number;
+  inspection?: LockInspectionDetails | null;
+  staleReasons?: string[];
+}): SessionLockAcquisitionTrace {
+  const inspection = params.inspection ?? null;
+  return {
+    outcome: params.outcome,
+    sessionFile: params.sessionFile,
+    lockPath: params.lockPath,
+    acquired: params.acquired,
+    reclaimed: params.reclaimed === true,
+    attempts: params.attempts,
+    timeoutMs: params.timeoutMs,
+    staleMs: params.staleMs,
+    ownerPid: inspection?.pid ?? null,
+    ownerPidAlive: inspection ? inspection.pidAlive : null,
+    ownerCreatedAt: inspection?.createdAt ?? null,
+    ownerAgeMs: inspection?.ageMs ?? null,
+    staleReasons: [...(params.staleReasons ?? inspection?.staleReasons ?? [])],
+  };
+}
+
 export async function cleanStaleLockFiles(params: {
   sessionsDir: string;
   staleMs?: number;
@@ -473,6 +553,7 @@ export async function acquireSessionWriteLock(params: {
   allowReentrant?: boolean;
 }): Promise<{
   release: () => Promise<void>;
+  trace: SessionLockAcquisitionTrace;
 }> {
   registerCleanupHandlers();
   const timeoutMs = resolvePositiveMs(params.timeoutMs, 10_000, { allowInfinity: true });
@@ -498,11 +579,22 @@ export async function acquireSessionWriteLock(params: {
       release: async () => {
         await releaseHeldLock(normalizedSessionFile, held);
       },
+      trace: buildLockTrace({
+        outcome: "active_current_session_acquired",
+        sessionFile: normalizedSessionFile,
+        lockPath,
+        acquired: true,
+        attempts: 0,
+        timeoutMs,
+        staleMs,
+      }),
     };
   }
 
   const startedAt = Date.now();
   let attempt = 0;
+  let reclaimed = false;
+  let reclaimedReasons: string[] = [];
   while (Date.now() - startedAt < timeoutMs) {
     attempt += 1;
     let handle: fs.FileHandle | null = null;
@@ -527,6 +619,17 @@ export async function acquireSessionWriteLock(params: {
         release: async () => {
           await releaseHeldLock(normalizedSessionFile, createdHeld);
         },
+        trace: buildLockTrace({
+          outcome: reclaimed ? outcomeForReclaimedLock(reclaimedReasons) : "acquired",
+          sessionFile: normalizedSessionFile,
+          lockPath,
+          acquired: true,
+          reclaimed,
+          attempts: attempt,
+          timeoutMs,
+          staleMs,
+          staleReasons: reclaimedReasons,
+        }),
       };
     } catch (err) {
       if (handle) {
@@ -562,7 +665,26 @@ export async function acquireSessionWriteLock(params: {
           }
         : inspected;
       if (await shouldReclaimContendedLockFile(lockPath, reclaimDetails, staleMs, nowMs)) {
-        await fs.rm(lockPath, { force: true });
+        try {
+          await fs.rm(lockPath, { force: true });
+        } catch {
+          const trace = buildLockTrace({
+            outcome: "unreclaimable_lock",
+            sessionFile: normalizedSessionFile,
+            lockPath,
+            acquired: false,
+            attempts: attempt,
+            timeoutMs,
+            staleMs,
+            inspection: reclaimDetails,
+          });
+          throw new SessionWriteLockAcquisitionError(
+            `session lock could not be reclaimed: ${lockPath}`,
+            trace,
+          );
+        }
+        reclaimed = true;
+        reclaimedReasons = [...reclaimDetails.staleReasons];
         continue;
       }
 
@@ -572,8 +694,24 @@ export async function acquireSessionWriteLock(params: {
   }
 
   const payload = await readLockPayload(lockPath);
+  const inspected = inspectLockPayload(payload, staleMs, Date.now());
+  const outcome: SessionLockAcquisitionOutcome =
+    inspected.pidAlive && !inspected.stale ? "active_lock_owner_live" : "acquisition_timeout";
+  const trace = buildLockTrace({
+    outcome,
+    sessionFile: normalizedSessionFile,
+    lockPath,
+    acquired: false,
+    attempts: attempt,
+    timeoutMs,
+    staleMs,
+    inspection: inspected,
+  });
   const owner = typeof payload?.pid === "number" ? `pid=${payload.pid}` : "unknown";
-  throw new Error(`session file locked (timeout ${timeoutMs}ms): ${owner} ${lockPath}`);
+  throw new SessionWriteLockAcquisitionError(
+    `session file locked (timeout ${timeoutMs}ms): ${owner} ${lockPath}`,
+    trace,
+  );
 }
 
 export const __testing = {

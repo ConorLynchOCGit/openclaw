@@ -1,7 +1,8 @@
+import path from "node:path";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { normalizeAgentId, parseAgentSessionKey } from "../routing/session-key.js";
 import { normalizeOptionalString } from "../shared/string-coerce.js";
-import { resolveAgentWorkspaceDir } from "./agent-scope.js";
+import { resolveAgentProjectRootDir } from "./agent-scope.js";
 
 export type SpawnedRunMetadata = {
   spawnedBy?: string | null;
@@ -56,16 +57,35 @@ export function resolveSpawnedWorkspaceInheritance(params: {
   explicitWorkspaceDir?: string | null;
 }): string | undefined {
   const explicit = normalizeOptionalString(params.explicitWorkspaceDir);
+  const requesterAgentId = params.requesterSessionKey
+    ? parseAgentSessionKey(params.requesterSessionKey)?.agentId
+    : undefined;
+  const agentId = params.targetAgentId ?? requesterAgentId;
+  const targetProjectRoot = agentId
+    ? resolveAgentProjectRootDir(params.config, normalizeAgentId(agentId))
+    : undefined;
   if (explicit) {
-    return explicit;
+    if (!targetProjectRoot) {
+      return explicit;
+    }
+    if (
+      requesterAgentId &&
+      agentId &&
+      normalizeAgentId(requesterAgentId) === normalizeAgentId(agentId)
+    ) {
+      return explicit;
+    }
+    // Preserve inherited project-root state when parent and target agent already
+    // share the same canonical project root. When they differ, target agent
+    // projectRoot remains authoritative for cross-agent implementation work.
+    if (path.resolve(explicit) === path.resolve(targetProjectRoot)) {
+      return explicit;
+    }
+    if (!params.targetAgentId) {
+      return explicit;
+    }
   }
-  // For cross-agent spawns, use the target agent's workspace instead of the requester's.
-  const agentId =
-    params.targetAgentId ??
-    (params.requesterSessionKey
-      ? parseAgentSessionKey(params.requesterSessionKey)?.agentId
-      : undefined);
-  return agentId ? resolveAgentWorkspaceDir(params.config, normalizeAgentId(agentId)) : undefined;
+  return targetProjectRoot;
 }
 
 export function resolveIngressWorkspaceOverrideForSpawnedRun(

@@ -24,10 +24,9 @@ import {
   type LocalCodexSmokeTestPlan,
   type SmokeRunnerOptionsSnapshot,
 } from "./local-codex-smoke-test.ts";
+import { DEFAULT_REPO_PATH, DEFAULT_WORKSPACE_DOCS_PATH } from "./policy.ts";
 import { CODEX_BRIDGE_JOB_TYPE, isCodexBridgeJobPayload } from "./types.ts";
 
-const DEFAULT_REPO_PATH = "/root/services/openclaw-roles/live";
-const DEFAULT_WORKSPACE_DOCS_PATH = "/root/.openclaw/workspace/docs/projects/execution-platform";
 const DEFAULT_MAX_ARTIFACT_METADATA_BYTES = 64 * 1024;
 const MAX_PREFLIGHT_RUNTIME_MS = 30 * 60 * 1000;
 const MAX_PREFLIGHT_STDOUT_BYTES = 10 * 1024 * 1024;

@@ -1,4 +1,5 @@
 import type { OpenClawConfig } from "../config/types.openclaw.js";
+import type { AnyAgentTool } from "./tools/common.js";
 
 export type EffectiveToolSource = "core" | "plugin" | "channel";
 
@@ -50,4 +51,11 @@ export type ResolveEffectiveToolInventoryParams = {
   modelHasVision?: boolean;
   requireExplicitMessageTarget?: boolean;
   disableMessageTool?: boolean;
+  nativeRuntimeTools?: AnyAgentTool[];
+  nodeAgentNativeTaskMode?: {
+    enabled: boolean;
+    allowedAgentIds: readonly string[];
+    mutationToolName?: string;
+    parentVisibleResultMaxChars?: number;
+  };
 };

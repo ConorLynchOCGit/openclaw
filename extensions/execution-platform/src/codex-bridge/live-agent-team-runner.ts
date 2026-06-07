@@ -28,6 +28,9 @@ export type AgentTeamModelClientResult = {
   status: "succeeded" | "failed" | "needs_review";
   responseText: string | null;
   responseHash: string | null;
+  toolName?: string | null;
+  toolArguments?: unknown;
+  toolCalls?: AgentTeamModelToolCall[];
   usage?: {
     inputTokenCount?: number | null;
     outputTokenCount?: number | null;
@@ -39,6 +42,12 @@ export type AgentTeamModelClientResult = {
   providerResponseDiagnostics?: JsonValue | null;
   errorReasonCode?: string | null;
   httpStatus?: number | null;
+};
+
+export type AgentTeamModelToolCall = {
+  toolName: string;
+  toolArguments: unknown;
+  callId: string | null;
 };
 
 export type AgentTeamModelClient = {
@@ -55,11 +64,44 @@ export type AgentTeamModelClient = {
     taskClass?: ModelTaskClass;
     modelTaskCallSite?: string;
   }): Promise<AgentTeamModelClientResult>;
+  callTool?(input: {
+    roleId: AgentTeamRoleId;
+    modelId: string;
+    modelCandidateId: string;
+    prompt: string;
+    tools: Array<{ name: string; description: string; inputSchema: JsonValue }>;
+    allowedToolNames: string[];
+    requiredToolName?: string | null;
+    requestProfileOverride?: OpenRouterRoleModelRequestProfile;
+    maxTokens?: number;
+    timeoutMs?: number;
+    maxAttempts?: number;
+    taskClass?: ModelTaskClass;
+    modelTaskCallSite?: string;
+  }): Promise<AgentTeamModelClientResult>;
+  callTools?(input: {
+    roleId: AgentTeamRoleId;
+    modelId: string;
+    modelCandidateId: string;
+    prompt: string;
+    tools: Array<{ name: string; description: string; inputSchema: JsonValue }>;
+    allowedToolNames: string[];
+    requiredToolName?: string | null;
+    maxAcceptedToolCalls?: number | null;
+    requestProfileOverride?: OpenRouterRoleModelRequestProfile;
+    maxTokens?: number;
+    timeoutMs?: number;
+    maxAttempts?: number;
+    reasoningEffort?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh";
+    taskClass?: ModelTaskClass;
+    modelTaskCallSite?: string;
+  }): Promise<AgentTeamModelClientResult>;
 };
 
 export type OpenRouterRoleModelRequestProfile = {
   responseFormatMode?: "native" | "prompt_only" | "auto";
   reasoningMode?: "exclude" | "omit" | "none";
+  reasoningEffort?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh";
   maxTokens?: number;
 };
 
@@ -90,6 +132,7 @@ export class OpenRouterAgentTeamModelClient implements AgentTeamModelClient {
     maxTokens?: number;
     timeoutMs?: number;
     maxAttempts?: number;
+    reasoningEffort?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh";
     taskClass?: ModelTaskClass;
     modelTaskCallSite?: string;
   }): Promise<AgentTeamModelClientResult> {
@@ -488,6 +531,389 @@ export class OpenRouterAgentTeamModelClient implements AgentTeamModelClient {
         providerResponseDiagnostics: null,
         httpStatus: null,
         errorReasonCode: "openrouter_network_error",
+      } satisfies AgentTeamModelClientResult);
+    return {
+      ...finalResult,
+      retryEvidence: createOpenRouterRetryEvidence({
+        modelId: input.modelId,
+        finalStatus: finalResult.status,
+        attempts,
+      }),
+    };
+  }
+
+  async callTool(input: {
+    roleId: AgentTeamRoleId;
+    modelId: string;
+    modelCandidateId: string;
+    prompt: string;
+    tools: Array<{ name: string; description: string; inputSchema: JsonValue }>;
+    allowedToolNames: string[];
+    requiredToolName?: string | null;
+    maxAcceptedToolCalls?: number | null;
+    requestProfileOverride?: OpenRouterRoleModelRequestProfile;
+    maxTokens?: number;
+    timeoutMs?: number;
+    maxAttempts?: number;
+    reasoningEffort?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh";
+    taskClass?: ModelTaskClass;
+    modelTaskCallSite?: string;
+  }): Promise<AgentTeamModelClientResult> {
+    const result = await this.callTools({
+      roleId: input.roleId,
+      modelId: input.modelId,
+      modelCandidateId: input.modelCandidateId,
+      prompt: input.prompt,
+      tools: input.tools,
+      allowedToolNames: input.allowedToolNames,
+      requestProfileOverride: input.requestProfileOverride,
+      maxTokens: input.maxTokens,
+      timeoutMs: input.timeoutMs,
+      maxAttempts: input.maxAttempts,
+      reasoningEffort: input.reasoningEffort,
+      taskClass: input.taskClass,
+      modelTaskCallSite: input.modelTaskCallSite,
+    });
+    const firstToolCall = result.toolCalls?.[0] ?? null;
+    return {
+      ...result,
+      responseText: firstToolCall
+        ? JSON.stringify({
+            toolName: firstToolCall.toolName,
+            toolArguments: firstToolCall.toolArguments,
+          })
+        : result.responseText,
+      responseHash: firstToolCall
+        ? sha256Text(
+            JSON.stringify({
+              toolName: firstToolCall.toolName,
+              toolArguments: firstToolCall.toolArguments,
+            }),
+          )
+        : result.responseHash,
+      toolName: firstToolCall?.toolName ?? result.toolName ?? null,
+      toolArguments: firstToolCall?.toolArguments ?? result.toolArguments ?? {},
+    };
+  }
+
+  async callTools(input: {
+    roleId: AgentTeamRoleId;
+    modelId: string;
+    modelCandidateId: string;
+    prompt: string;
+    tools: Array<{ name: string; description: string; inputSchema: JsonValue }>;
+    allowedToolNames: string[];
+    requiredToolName?: string | null;
+    maxAcceptedToolCalls?: number | null;
+    requestProfileOverride?: OpenRouterRoleModelRequestProfile;
+    maxTokens?: number;
+    timeoutMs?: number;
+    maxAttempts?: number;
+    reasoningEffort?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh";
+    taskClass?: ModelTaskClass;
+    modelTaskCallSite?: string;
+  }): Promise<AgentTeamModelClientResult> {
+    const fetchImpl = this.options.fetchImpl ?? fetch;
+    const policy = {
+      ...DEFAULT_OPENROUTER_RETRY_POLICY,
+      ...this.options.retryPolicy,
+      ...(input.maxAttempts ? { maxAttempts: input.maxAttempts } : {}),
+    };
+    const requestProfile = {
+      ...this.options.requestProfilesByModelId?.[input.modelId],
+      ...input.requestProfileOverride,
+    };
+    const reasoningMode = requestProfile.reasoningMode ?? "none";
+    const reasoningEffort = input.reasoningEffort ?? requestProfile.reasoningEffort ?? null;
+    const allowedToolNames = new Set(input.allowedToolNames);
+    const toolDefinitions = input.tools
+      .filter((tool) => allowedToolNames.has(tool.name))
+      .map((tool) => ({
+        type: "function",
+        function: {
+          name: tool.name,
+          description: tool.description,
+          parameters: tool.inputSchema,
+        },
+      }));
+    if (toolDefinitions.length === 0) {
+      return {
+        status: "needs_review",
+        responseText: null,
+        responseHash: null,
+        usage: null,
+        catalogPricing: this.options.catalogPricingByModelId?.[input.modelId] ?? null,
+        retryEvidence: createOpenRouterRetryEvidence({
+          modelId: input.modelId,
+          finalStatus: "needs_review",
+          attempts: [],
+        }),
+        providerResponseDiagnostics: {
+          reasonCode: "openrouter_tool_definitions_missing",
+          allowedToolNames: input.allowedToolNames,
+          rawPromptStored: false,
+          rawResponseStored: false,
+          rawProviderLogStored: false,
+        },
+        errorReasonCode: "openrouter_tool_definitions_missing",
+        httpStatus: null,
+      };
+    }
+    const promptHash = sha256Text(input.prompt);
+    const classification = input.taskClass
+      ? classifyModelTaskCall({
+          taskClass: input.taskClass,
+          callSite: input.modelTaskCallSite ?? `openrouter.tool.${input.roleId}`,
+          overrideModelRef: input.modelId,
+          overrideReasonCode: "openrouter_tool_model_explicit_model",
+          overrideRationale:
+            "OpenRouter tool call selected the role/capability model for this task.",
+        })
+      : null;
+    const promptByteLength = Buffer.byteLength(input.prompt, "utf8");
+    const maxAcceptedToolCalls = Math.max(1, Math.min(64, input.maxAcceptedToolCalls ?? 64));
+    const attempts: OpenRouterRetryEvidence["attempts"] = [];
+    let last: AgentTeamModelClientResult | null = null;
+    const modelCallSpanId = `openrouter-tool:${input.modelCandidateId}:${promptHash.slice(0, 16)}:${Date.now().toString(36)}`;
+    for (let attempt = 1; attempt <= policy.maxAttempts; attempt += 1) {
+      const started = this.options.now?.().getTime() ?? Date.now();
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), input.timeoutMs ?? policy.timeoutMs);
+      const body = {
+        model: input.modelId,
+        messages: [{ role: "user", content: input.prompt }],
+        temperature: 0,
+        max_tokens: input.maxTokens ?? requestProfile.maxTokens ?? 1_000,
+        tools: toolDefinitions,
+        tool_choice: input.requiredToolName
+          ? { type: "function", function: { name: input.requiredToolName } }
+          : "required",
+        parallel_tool_calls: true,
+        ...(reasoningEffort && reasoningEffort !== "none"
+          ? { reasoning: { effort: reasoningEffort } }
+          : reasoningMode === "none" || reasoningEffort === "none"
+            ? { reasoning: { effort: "none", exclude: true } }
+            : reasoningMode === "omit"
+              ? {}
+              : { reasoning: { exclude: true } }),
+      };
+      try {
+        const response = await fetchImpl(
+          `${this.options.baseUrl ?? "https://openrouter.ai/api/v1"}/chat/completions`,
+          {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${this.options.apiKey}`,
+              "Content-Type": "application/json",
+              "HTTP-Referer": "https://openclaw.local/execution-platform",
+              "X-Title": "OpenClaw Execution Platform",
+            },
+            body: JSON.stringify(body),
+            signal: controller.signal,
+          },
+        );
+        const providerBody = (await response.json().catch(() => null)) as Record<
+          string,
+          unknown
+        > | null;
+        const completed = this.options.now?.().getTime() ?? Date.now();
+        const choice = Array.isArray(providerBody?.choices)
+          ? (providerBody.choices[0] as Record<string, unknown> | undefined)
+          : undefined;
+        const message =
+          choice && typeof choice === "object"
+            ? (choice.message as Record<string, unknown> | undefined)
+            : undefined;
+        const toolCalls = Array.isArray(message?.tool_calls)
+          ? message.tool_calls.filter((item): item is Record<string, unknown> =>
+              Boolean(item && typeof item === "object" && !Array.isArray(item)),
+            )
+          : [];
+        const parsedToolCalls = toolCalls.map((toolCall, index): AgentTeamModelToolCall => {
+          const functionRecord =
+            toolCall.function &&
+            typeof toolCall.function === "object" &&
+            !Array.isArray(toolCall.function)
+              ? (toolCall.function as Record<string, unknown>)
+              : {};
+          const toolName = typeof functionRecord.name === "string" ? functionRecord.name : "";
+          const rawArguments = functionRecord.arguments;
+          let toolArguments: unknown = {};
+          if (typeof rawArguments === "string" && rawArguments.trim()) {
+            try {
+              toolArguments = JSON.parse(rawArguments);
+            } catch {
+              toolArguments = { rawArguments };
+            }
+          } else if (rawArguments && typeof rawArguments === "object") {
+            toolArguments = rawArguments;
+          }
+          return {
+            toolName,
+            toolArguments,
+            callId: typeof toolCall.id === "string" ? toolCall.id : `tool-call-${index + 1}`,
+          };
+        });
+        const acceptedToolCalls = parsedToolCalls
+          .filter((call) => allowedToolNames.has(call.toolName))
+          .slice(0, maxAcceptedToolCalls);
+        const rejectedToolCalls = parsedToolCalls.filter(
+          (call) => !allowedToolNames.has(call.toolName),
+        );
+        const firstToolCall = acceptedToolCalls[0] ?? null;
+        const toolName = firstToolCall?.toolName ?? null;
+        const toolArguments = firstToolCall?.toolArguments ?? {};
+        const usage =
+          providerBody?.usage && typeof providerBody.usage === "object"
+            ? (providerBody.usage as Record<string, unknown>)
+            : {};
+        const responseText =
+          acceptedToolCalls.length > 0
+            ? JSON.stringify({ toolCalls: acceptedToolCalls })
+            : typeof message?.content === "string"
+              ? message.content
+              : "";
+        const responseHash = responseText ? sha256Text(responseText) : null;
+        const reasonCode = retryReasonForOpenRouter({
+          httpStatus: response.status,
+          errorReasonCode:
+            response.ok && acceptedToolCalls.length > 0
+              ? null
+              : response.status === 429
+                ? "openrouter_http_429"
+                : "openrouter_tool_call_missing",
+          noContent: response.ok && acceptedToolCalls.length === 0,
+        });
+        const delay = shouldRetryOpenRouter({ attempt, reasonCode, policy })
+          ? openRouterRetryDelayMs({ attempt, reasonCode, policy })
+          : 0;
+        attempts.push({
+          attempt,
+          reasonCode,
+          httpStatus: response.status,
+          cooldownMs: delay,
+          latencyMs: Math.max(0, completed - started),
+        });
+        last = {
+          status: response.ok && acceptedToolCalls.length > 0 ? "succeeded" : "needs_review",
+          responseText: response.ok && responseText ? responseText : null,
+          responseHash: response.ok ? responseHash : null,
+          toolName,
+          toolArguments,
+          toolCalls: acceptedToolCalls,
+          usage: {
+            inputTokenCount: typeof usage.prompt_tokens === "number" ? usage.prompt_tokens : null,
+            outputTokenCount:
+              typeof usage.completion_tokens === "number" ? usage.completion_tokens : null,
+            totalTokenCount: typeof usage.total_tokens === "number" ? usage.total_tokens : null,
+            estimatedCostUsd: typeof usage.cost === "number" ? usage.cost : null,
+          },
+          catalogPricing: this.options.catalogPricingByModelId?.[input.modelId] ?? null,
+          providerResponseDiagnostics: {
+            modelCallSpanId,
+            providerKind: "openrouter",
+            modelRef: input.modelId,
+            inputByteLength: promptByteLength,
+            elapsedMs: Math.max(0, completed - started),
+            timeoutMs: input.timeoutMs ?? policy.timeoutMs,
+            httpStatus: response.status,
+            finishReason: typeof choice?.finish_reason === "string" ? choice.finish_reason : null,
+            choiceCount: Array.isArray(providerBody?.choices) ? providerBody.choices.length : null,
+            toolCallCount: toolCalls.length,
+            acceptedToolCallCount: acceptedToolCalls.length,
+            rejectedToolCallCount: rejectedToolCalls.length,
+            toolNames: acceptedToolCalls.map((call) => call.toolName).slice(0, 16),
+            rejectedToolNames: rejectedToolCalls.map((call) => call.toolName).slice(0, 16),
+            toolName,
+            allowedToolNames: input.allowedToolNames,
+            providerBodyKeys: providerBody ? Object.keys(providerBody).slice(0, 16) : [],
+            messageKeys: message ? Object.keys(message).slice(0, 12) : [],
+            modelTaskClassification: classification as unknown as JsonValue,
+            modelTaskTelemetry: classification
+              ? buildModelTaskTelemetryEnvelope({
+                  classification,
+                  usage: {
+                    promptTokens:
+                      typeof usage.prompt_tokens === "number" ? usage.prompt_tokens : null,
+                    outputTokens:
+                      typeof usage.completion_tokens === "number" ? usage.completion_tokens : null,
+                    cachedInputTokens: null,
+                  },
+                })
+              : null,
+            rawPromptStored: false,
+            rawResponseStored: false,
+            rawProviderLogStored: false,
+          } satisfies JsonValue,
+          errorReasonCode:
+            response.ok && acceptedToolCalls.length > 0
+              ? null
+              : response.ok
+                ? "openrouter_tool_call_missing"
+                : response.status === 429
+                  ? "openrouter_http_429"
+                  : "openrouter_http_error",
+          httpStatus: response.status,
+        };
+        if (!delay || last.status === "succeeded") {
+          break;
+        }
+        await sleep(delay);
+      } catch (error) {
+        const completed = this.options.now?.().getTime() ?? Date.now();
+        const reasonCode: OpenRouterRetryReasonCode =
+          error instanceof Error && error.name === "AbortError"
+            ? "openrouter_network_timeout"
+            : "openrouter_network_error";
+        const delay = shouldRetryOpenRouter({ attempt, reasonCode, policy })
+          ? openRouterRetryDelayMs({ attempt, reasonCode, policy })
+          : 0;
+        attempts.push({
+          attempt,
+          reasonCode,
+          httpStatus: null,
+          cooldownMs: delay,
+          latencyMs: Math.max(0, completed - started),
+        });
+        last = {
+          status: "needs_review",
+          responseText: null,
+          responseHash: null,
+          usage: null,
+          catalogPricing: this.options.catalogPricingByModelId?.[input.modelId] ?? null,
+          providerResponseDiagnostics: {
+            modelCallSpanId,
+            providerKind: "openrouter",
+            modelRef: input.modelId,
+            errorKind: reasonCode,
+            elapsedMs: Math.max(0, completed - started),
+            timeoutMs: input.timeoutMs ?? policy.timeoutMs,
+            rawPromptStored: false,
+            rawResponseStored: false,
+            rawProviderLogStored: false,
+          },
+          errorReasonCode: reasonCode,
+          httpStatus: null,
+        };
+        if (!delay) {
+          break;
+        }
+        await sleep(delay);
+      } finally {
+        clearTimeout(timeout);
+      }
+    }
+    const finalResult =
+      last ??
+      ({
+        status: "needs_review",
+        responseText: null,
+        responseHash: null,
+        usage: null,
+        catalogPricing: this.options.catalogPricingByModelId?.[input.modelId] ?? null,
+        providerResponseDiagnostics: null,
+        httpStatus: null,
+        errorReasonCode: "openrouter_tool_call_missing",
       } satisfies AgentTeamModelClientResult);
     return {
       ...finalResult,

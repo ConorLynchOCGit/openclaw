@@ -67,12 +67,12 @@ describe("product/spec planning mission readback", () => {
           workflowId: "agent_team.product_spec_planning",
         }),
       });
-      await runtimeJobs.attachArtifact({
+      await runtimeJobs.attachRuntimeArtifactByContract({
         jobId: job.jobId,
         artifactType: MISSION_CONTRACT_LEDGER_ARTIFACT_TYPE,
-        storageKind: "metadata",
         uri: "runtime-job://product-spec-mission-readback-job/mission-contract-ledger/mission-1/1",
-        metadata: {
+        contentType: "application/json",
+        body: {
           ledgerStatus: "pending",
           blockingCommitments: [
             {
@@ -91,6 +91,11 @@ describe("product/spec planning mission readback", () => {
             },
           ],
         },
+        boundedSummary: "Product/spec mission readback ledger fixture.",
+        targetCommitmentIds: ["commitment-source-validation-map"],
+        resourcePacketKind: "mission_contract_ledger",
+        readinessStatus: "accepted",
+        reasonCodes: ["mission_contract_ledger_fixture_attached_by_contract"],
       });
 
       const model = await buildWorkQueueExecutionReadModel({

@@ -198,6 +198,7 @@ export function installContextEngineLoopHook(params: {
   tokenBudget?: number;
   modelId: string;
   getPrePromptMessageCount?: () => number;
+  refreshSystemPrompt?: () => void | Promise<void>;
 }): () => void {
   const { contextEngine, sessionId, sessionKey, sessionFile, tokenBudget, modelId } = params;
   const mutableAgent = params.agent as GuardableAgentRecord;
@@ -266,6 +267,7 @@ export function installContextEngineLoopHook(params: {
         tokenBudget,
         model: modelId,
       });
+      await params.refreshSystemPrompt?.();
       if (assembled && Array.isArray(assembled.messages) && assembled.messages !== sourceMessages) {
         lastAssembledView = assembled.messages;
         return assembled.messages;

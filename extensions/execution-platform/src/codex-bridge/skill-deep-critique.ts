@@ -6,6 +6,7 @@ import type {
   RuntimeJobArtifact,
   RuntimeJobRepository,
 } from "../runtime-job-repository.ts";
+import { DEFAULT_REPO_PATH } from "./policy.ts";
 import type {
   ClawHubSearchResult,
   CodexBridgeClawHubComparisonItem,
@@ -15,7 +16,6 @@ import type {
 } from "./skill-inventory.ts";
 import { listRequiredCodexBridgeSkillDocs } from "./skill-triggers.ts";
 
-const DEFAULT_REPO_ROOT = "/root/services/openclaw-roles/live";
 const DEFAULT_CODEX_SKILL_ROOT = "/root/.codex/skills";
 const DEFAULT_MAX_SKILL_CRITIQUE_METADATA_BYTES = 128 * 1024;
 
@@ -467,7 +467,7 @@ export async function buildSkillDeepCritiqueTargets(input: {
   repoRoot?: string;
 }): Promise<SkillDeepCritiqueTarget[]> {
   const readTextFile = input.readTextFile ?? ((filePath: string) => readFile(filePath, "utf8"));
-  const repoRoot = input.repoRoot ?? DEFAULT_REPO_ROOT;
+  const repoRoot = input.repoRoot ?? DEFAULT_REPO_PATH;
   const codexSkillRoot = input.codexSkillRoot ?? DEFAULT_CODEX_SKILL_ROOT;
   const requiredConceptIds = listRequiredCodexBridgeSkillDocs().map((entry) => entry.skillDocId);
   const requiredRegistryById = new Map(

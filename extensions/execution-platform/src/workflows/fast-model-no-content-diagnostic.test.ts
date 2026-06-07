@@ -9,7 +9,7 @@ describe("fast model no-content diagnostics", () => {
     expect(
       buildFastModelNoContentDiagnostic({
         taskClass: "local_semantic_extraction",
-        callSite: "obligation.semantic_content",
+        callSite: "intake.requirement_map.native_tool_batch",
         modelRef: "qwen/qwen3-coder-next",
         providerPath: "openrouter",
         inputByteLength: 12_000,
@@ -22,7 +22,7 @@ describe("fast model no-content diagnostics", () => {
     expect(
       buildFastModelNoContentDiagnostic({
         taskClass: "schema_normalization",
-        callSite: "obligation.targeted_normalization",
+        callSite: "requirement_map.targeted_repair",
         modelRef: "qwen/qwen3-coder-next",
         providerPath: "openrouter",
         inputByteLength: 4_000,
@@ -35,7 +35,7 @@ describe("fast model no-content diagnostics", () => {
     expect(
       buildFastModelNoContentDiagnostic({
         taskClass: "local_semantic_extraction",
-        callSite: "obligation.semantic_content",
+        callSite: "intake.requirement_map.native_tool_batch",
         modelRef: "qwen/qwen3-coder-next",
         providerPath: "openrouter",
         inputByteLength: 22_000,
@@ -53,7 +53,7 @@ describe("fast model no-content diagnostics", () => {
     expect(
       buildFastModelNoContentDiagnostic({
         taskClass: "local_semantic_extraction",
-        callSite: "obligation.semantic_content",
+        callSite: "intake.requirement_map.native_tool_batch",
         modelRef: "moonshotai/kimi-k2.6",
         expectedModelRef: "qwen/qwen3-coder-next",
         providerPath: "openrouter",
@@ -66,7 +66,7 @@ describe("fast model no-content diagnostics", () => {
   it("records repeated failed packet replay as diagnostic evidence, not a silent rescue", () => {
     const attempt = buildFastModelNoContentDiagnostic({
       taskClass: "local_semantic_extraction",
-      callSite: "obligation.semantic_content",
+      callSite: "intake.requirement_map.native_tool_batch",
       modelRef: "qwen/qwen3-coder-next",
       providerPath: "openrouter",
       inputByteLength: 10_000,

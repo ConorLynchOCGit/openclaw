@@ -60,12 +60,25 @@ describe("Work Queue readback projection modules", () => {
             currentObjective: "Apply a scoped patch.",
             currentPhase: "worker.patch",
             blockerSummary: "target snapshot missing",
+            schedulerToolId: "node.agent_session.invoke",
+            nodeExecutionSnapshotRef: "runtime-job://job-projection/node-execution-snapshot/node-1",
+            nodeRunId: "nrun_projection_1",
+            nodeAgentId: "execution-coding",
+            nodeAgentSessionKey: "agent:execution-coding:node:nrun_projection_1",
+            nodeAgentStartReceiptRef:
+              "runtime-job://job-projection/node-agent-start-receipt/node-1",
+            nodeAgentStartStatus: "blocked",
+            nodeAgentStartBlockerKind: "session_lock",
+            nodeAgentStartLockAcquisitionOutcome: "active_lock_owner_live",
+            nodeFinishArtifactRef: "runtime-job://job-projection/node-finish/node-1",
+            nodeFinishStatus: "blocked",
+            nodeFinishBlockerKind: "target_snapshot_missing",
             selectedCapabilityId: "implementation.qwen.scoped_patch",
             executorKey: "kind:implementation",
             workerRef: "worker://qwen/implementation",
             nodeReadinessStatus: "blocked",
             nodeReadinessStateRef: "runtime-job://job-projection/readiness/node-1",
-            nodeReadinessPhase: "resource_materialization",
+            nodeReadinessPhase: "node_agent_session_ready",
             nodeReadinessNextAllowedTransitions: ["compile_node_execution_packet"],
             schedulerToolInvocationRefs: ["runtime-tool://tool-1"],
             workerInternalInputPacketRefs: ["node-execution-packet://node-1"],
@@ -82,8 +95,7 @@ describe("Work Queue readback projection modules", () => {
             },
             schedulerModelCallEnvelope: {
               artifactKind: "runtime_work_graph_scheduler_model_call_envelope",
-              envelopeRef:
-                "runtime-work-graph://scheduler-model-call-envelope/graph-1%3Ascheduler",
+              envelopeRef: "runtime-work-graph://scheduler-model-call-envelope/graph-1%3Ascheduler",
               envelopeId: "graph-1:scheduler",
               phase: "heartbeat",
               decisionSlot: "scheduler.select_next_action",
@@ -113,7 +125,7 @@ describe("Work Queue readback projection modules", () => {
               graphNodeCount: 3,
               graphEdgeCount: 2,
               commitmentCount: 14,
-              workIntentCount: 3,
+              sourceRequirementCount: 3,
               activeFrontierCounts: {
                 ready: 1,
                 blocked: 1,
@@ -161,10 +173,10 @@ describe("Work Queue readback projection modules", () => {
                   branchId: "branch-1",
                   nodeId: "node-1",
                   nodeKind: "implementation_scoped",
-                  workIntentRef: "work-intent://node-1",
+                  sourceRequirementRef: "requirement://node-1",
                   contractRef: "runtime-job://job-projection/contract/node-1",
                   readinessRef: "runtime-job://job-projection/readiness/node-1",
-                  resourceRequirementRefs: ["resource-requirement://node-1"],
+                  sourceMaterialRequirementRefs: ["source-material-requirement://node-1"],
                   status: "blocked",
                   blocker: {
                     code: "resources_required",
@@ -185,8 +197,8 @@ describe("Work Queue readback projection modules", () => {
                   executorKey: "kind:implementation",
                   modelRef: "qwen/qwen3-coder-next",
                   workerRef: "worker://qwen/implementation",
-                  phase: "resource_materialization",
-                  nodeLifecycleProjectionGate: "resource_materialization",
+                  phase: "node_agent_session_ready",
+                  nodeLifecycleProjectionGate: "node_agent_session_ready",
                   currentToolId: "node.compile_execution_packet",
                 },
               ],
@@ -224,7 +236,7 @@ describe("Work Queue readback projection modules", () => {
             graphId: "graph-1",
             selectedNodeIds: ["node-1"],
             blockedNodeIds: ["node-1"],
-            nextTransition: "materialize_resources",
+            nextTransition: "start_node_agent_session",
             branchStates: [
               {
                 branchId: "branch-1",
@@ -233,6 +245,7 @@ describe("Work Queue readback projection modules", () => {
                 blockerSummary: "target snapshot missing",
                 errorPath: "nodeReadinessState.snapshotStatus",
                 readinessStateRef: "runtime-job://job-projection/readiness/node-1",
+                nodeLifecycleProjectionGate: "node_agent_session_ready",
                 reasonCodes: ["target_snapshot_missing"],
               },
             ],
@@ -241,13 +254,12 @@ describe("Work Queue readback projection modules", () => {
             artifactKind: "execution_platform.canonical_readback_gate",
             schemaVersion: "execution-platform.canonical-readback-gate.v1",
             state: "present",
-            gateKind: "resource_materialization",
+            gateKind: "node_agent_session_ready",
             gateStatus: "blocked",
             sourceKind: "branch_scoped_frontier",
             branchId: "branch-1",
             nodeId: "node-1",
             contractRef: "runtime-job://job-projection/contract/node-1",
-            readinessStateRef: "runtime-job://job-projection/readiness/node-1",
             schemaPath: "nodeReadinessState.snapshotStatus",
             nextLegalTransition: "compile_node_execution_packet",
             reasonCodes: ["target_snapshot_missing"],
@@ -266,20 +278,121 @@ describe("Work Queue readback projection modules", () => {
             allowedNextTransitions: ["continue_from_checkpoint"],
           },
         }),
+        artifact(
+          "execution_platform.node_agent_start_receipt",
+          {
+            nodeRunId: "nrun_projection_1",
+            nodeAgentId: "execution-coding",
+            nodeAgentSessionKey: "agent:execution-coding:node:nrun_projection_1",
+            nodeAgentStartStatus: "blocked",
+            nodeAgentStartBlockerKind: "session_lock",
+            nodeAgentStartConfigFingerprint: "sha256:openclaw-config",
+            nodeAgentStartConfigEpoch: "2026-05-24T00:00:00.000Z",
+            nodeAgentStartProjectRoot: "/root/services/openclaw-roles/live",
+            nodeAgentStartExecutionPlatformDocsRoot:
+              "/root/services/openclaw-roles/live/docs/projects/execution-platform",
+            nodeAgentStartRuntimeHome: "/root/.openclaw",
+            nodeAgentStartRuntimeAliases: [
+              {
+                aliasPath: "/home/node/.openclaw",
+                canonicalPath: "/root/.openclaw",
+                label: "container-runtime-home-alias",
+              },
+            ],
+            nodeAgentStartSourceRuntimeManifestRef:
+              "repo://docs/system/registries/source-runtime-unification.yaml",
+            nodeAgentStartLockAcquisitionOutcome: "active_lock_owner_live",
+            nodeAgentStartBlockedTools: [
+              {
+                agentId: "execution-context-scout",
+                toolName: "grep",
+                blockedBy: ["global_profile"],
+                effectiveProfileSource: "agent",
+                localPolicyExplicit: true,
+              },
+            ],
+            artifactPolicyRef: "artifact-policy://execution-platform/native-node-start-receipt-v1",
+            rawStoragePolicyRef: "raw-storage-policy://execution-platform/no-raw-agent-material-v1",
+            boundedRefsOnly: true,
+          },
+          "runtime-job://job-projection/node-agent-start-receipt/node-1",
+        ),
+        artifact(
+          "execution_platform.node_agent_session_trace",
+          {
+            nodeRunId: "nrun_projection_1",
+            nodeAgentId: "execution-coding",
+            nodeAgentSessionKey: "agent:execution-coding:node:nrun_projection_1",
+            nodeExecutionSnapshotRef: "runtime-job://job-projection/node-execution-snapshot/node-1",
+            nodeWorkerPromptRef: "node-agent-worker-prompt://nrun_projection_1",
+            nodeWorkerPromptArtifactRef: "runtime-job://job-projection/node-worker-prompt/node-1",
+            nodeWorkerPromptHash: "sha256:node-worker-prompt-prompt",
+            nodeWorkerPromptAuthorModelRunRef: "model-run://node-worker-prompt-author/1",
+            nodeFinishArtifactRef: "runtime-job://job-projection/node-finish/node-1",
+            nodeAgentSessionStatus: "waiting_on_subagent",
+            nodeAgentSessionStopReason: "end_turn",
+            nodeExecutionWaitingOnSubagent: true,
+            nodeAgentObservedToolNames: ["update_plan", "task", "edit", "node_finish"],
+            nodeAgentToolCallCount: 6,
+            nodeAgentTraceMissingOptics: [],
+            nodeAgentTraceEventRefs: {
+              workerPromptAuthoredRef: "runtime-job://job-projection/node-worker-prompt/node-1",
+              workerPromptHashRef:
+                "node-agent-worker-prompt-hash://sha256:node-worker-prompt-prompt",
+              parentSessionKeyRef: "agent:execution-coding:node:nrun_projection_1",
+              firstPlanUpdateRef:
+                "agent:execution-coding:node:nrun_projection_1#tool/update_plan/first",
+              scoutSpawnRef: "agent:execution-coding:node:nrun_projection_1#tool/task/first",
+              childSessionKeyRef: "agent:execution-context-scout:node:nrun_projection_1/context",
+              childResultRef: "runtime-job://job-projection/subagent-result/context-scout-1",
+              parentSynthesisRef: "runtime-job://job-projection/session-event/parent-synthesis-1",
+              firstEditRef: "agent:execution-coding:node:nrun_projection_1#tool/edit/first",
+              validationActionRef:
+                "agent:execution-coding:node:nrun_projection_1#tool/validation/first",
+              validationScoutResultRef:
+                "runtime-job://job-projection/subagent-result/validation-scout-1",
+              repairLoopEvidenceRef: "runtime-job://job-projection/session-event/repair-loop-1",
+              terminalNodeFinishRef: "runtime-job://job-projection/node-finish/node-1",
+              waitingOnSubagentStateRef:
+                "agent:execution-coding:node:nrun_projection_1#state/waiting_on_subagent",
+            },
+            nodeAgentTraceObservations: {
+              workerPromptAuthored: true,
+              parentSessionStarted: true,
+              firstPlanUpdateObserved: true,
+              contextScoutSpawnObserved: true,
+              sessionsYieldObserved: true,
+              childResultObserved: true,
+              parentSynthesisObserved: true,
+              firstEditObserved: true,
+              validationActionObserved: true,
+              validationScoutObserved: true,
+              repairLoopEvidenceObserved: true,
+              terminalNodeFinishObserved: true,
+              waitingOnSubagentObserved: true,
+            },
+            nodeAgentNativeCompactionCount: 1,
+            artifactPolicyRef:
+              "artifact-policy://execution-platform/native-node-execution-bounded-refs-v1",
+            rawStoragePolicyRef: "raw-storage-policy://execution-platform/no-raw-agent-material-v1",
+            boundedRefsOnly: true,
+          },
+          "runtime-job://job-projection/node-agent-session-trace/node-1",
+        ),
       ],
     );
 
     expect(projection.state).toBe("present");
     expect(projection.activeNodeId).toBe("node-1");
     expect(projection.firstOpenGate).toMatchObject({
-      gateKind: "resource_materialization",
+      gateKind: "node_agent_session_ready",
       gateStatus: "blocked",
       confidence: "canonical",
       sourceKind: "branch_scoped_frontier",
       branchId: "branch-1",
       nodeId: "node-1",
       contractRef: "runtime-job://job-projection/contract/node-1",
-      readinessStateRef: "runtime-job://job-projection/readiness/node-1",
+      nodeAgentStartReceiptRefs: ["runtime-job://job-projection/node-agent-start-receipt/node-1"],
       schemaPath: "nodeReadinessState.snapshotStatus",
       nextLegalTransition: "compile_node_execution_packet",
       dependentConsumers: ["validation-node-1"],
@@ -288,7 +401,7 @@ describe("Work Queue readback projection modules", () => {
       rawResponseStored: false,
       rawProviderLogStored: false,
     });
-    expect(projection.firstOpenGateKind).toBe("resource_materialization");
+    expect(projection.firstOpenGateKind).toBe("node_agent_session_ready");
     expect(projection.workerInternal).toMatchObject({
       state: "present",
       modelRef: "qwen/qwen3-coder-next",
@@ -329,7 +442,6 @@ describe("Work Queue readback projection modules", () => {
     expect(projection.parallelFrontier.branchResults[0]).toMatchObject({
       branchId: "branch-1",
       errorPath: "nodeReadinessState.snapshotStatus",
-      readinessStateRef: "runtime-job://job-projection/readiness/node-1",
     });
     expect(projection.parallelFrontier.branchScopedFrontierStates[0]).toMatchObject({
       branchId: "branch-1",
@@ -345,6 +457,74 @@ describe("Work Queue readback projection modules", () => {
       repairNodeRefs: ["runtime-work-graph://node/context-repair-node-1"],
       diagnosticOnlyNodeRefs: ["runtime-work-graph://node/diagnostic-node-1"],
       nextLegalTransitions: ["compile_node_execution_packet"],
+    });
+    expect(projection.nodeAgentSession).toMatchObject({
+      state: "present",
+      nodeRunId: "nrun_projection_1",
+      agentId: "execution-coding",
+      sessionKey: "agent:execution-coding:node:nrun_projection_1",
+      snapshotRefs: ["runtime-job://job-projection/node-execution-snapshot/node-1"],
+      startReceiptRefs: ["runtime-job://job-projection/node-agent-start-receipt/node-1"],
+      startStatus: "blocked",
+      startBlockerKind: "session_lock",
+      startConfigFingerprint: "sha256:openclaw-config",
+      startConfigEpoch: "2026-05-24T00:00:00.000Z",
+      startProjectRoot: "/root/services/openclaw-roles/live",
+      startExecutionPlatformDocsRoot:
+        "/root/services/openclaw-roles/live/docs/projects/execution-platform",
+      startRuntimeHome: "/root/.openclaw",
+      startRuntimeAliases: [
+        {
+          aliasPath: "/home/node/.openclaw",
+          canonicalPath: "/root/.openclaw",
+          label: "container-runtime-home-alias",
+        },
+      ],
+      startSourceRuntimeManifestRef:
+        "repo://docs/system/registries/source-runtime-unification.yaml",
+      startLockAcquisitionOutcome: "active_lock_owner_live",
+      startBlockedTools: [
+        {
+          agentId: "execution-context-scout",
+          toolName: "grep",
+          blockedBy: ["global_profile"],
+          effectiveProfileSource: "agent",
+          localPolicyExplicit: true,
+        },
+      ],
+      traceRefs: ["runtime-job://job-projection/node-agent-session-trace/node-1"],
+      finishArtifactRefs: ["runtime-job://job-projection/node-finish/node-1"],
+      finishStatus: "blocked",
+      finishBlockerKind: "target_snapshot_missing",
+      latestToolId: "node.agent_session.invoke",
+      observedToolNames: ["update_plan", "task", "edit", "node_finish"],
+      toolCallCount: 6,
+      traceMissingOptics: [],
+      traceEventRefs: {
+        childResultRef: "runtime-job://job-projection/subagent-result/context-scout-1",
+        parentSynthesisRef: "runtime-job://job-projection/session-event/parent-synthesis-1",
+        validationScoutResultRef: "runtime-job://job-projection/subagent-result/validation-scout-1",
+        repairLoopEvidenceRef: "runtime-job://job-projection/session-event/repair-loop-1",
+        waitingOnSubagentStateRef:
+          "agent:execution-coding:node:nrun_projection_1#state/waiting_on_subagent",
+      },
+      traceObservations: {
+        workerPromptAuthored: true,
+        firstPlanUpdateObserved: true,
+        contextScoutSpawnObserved: true,
+        sessionsYieldObserved: true,
+        childResultObserved: true,
+        parentSynthesisObserved: true,
+        firstEditObserved: true,
+        validationActionObserved: true,
+        validationScoutObserved: true,
+        repairLoopEvidenceObserved: true,
+        terminalNodeFinishObserved: true,
+        waitingOnSubagentObserved: true,
+      },
+      nativeCompactionCount: 1,
+      rawPromptStored: false,
+      rawProviderLogStored: false,
     });
     expect(projection.ownerTelemetry).toMatchObject({
       state: "present",
@@ -367,15 +547,9 @@ describe("Work Queue readback projection modules", () => {
         nodeKind: "implementation_scoped",
         currentPhase: "worker.patch",
       },
-      readiness: {
-        status: "blocked",
-        ref: "runtime-job://job-projection/readiness/node-1",
-        phase: "resource_materialization",
-        schemaPath: "nodeReadinessState.snapshotStatus",
-      },
       refs: {
         inputHandoffRefs: [],
-        contextRefs: ["resource-requirement://node-1"],
+        contextRefs: ["source-material-requirement://node-1"],
         evidenceRefs: [
           "runtime-job://job-projection/evidence/sibling-ok",
           "runtime-job://job-projection/evidence/node-1-blocked",
@@ -396,9 +570,8 @@ describe("Work Queue readback projection modules", () => {
     });
     expect(projection.latestRunState).toMatchObject({
       canonicalReadbackGate: {
-        gateKind: "resource_materialization",
+        gateKind: "node_agent_session_ready",
         nodeId: "node-1",
-        readinessStateRef: "runtime-job://job-projection/readiness/node-1",
       },
       agreement: {
         canonicalGateMatches: true,
@@ -409,19 +582,20 @@ describe("Work Queue readback projection modules", () => {
     expect(projection.workerInternal.rawProviderLogStored).toBe(false);
   });
 
-  it("projects node-local context and write lifecycle gates instead of stale checkpoint labels", () => {
+  it("projects native node-agent lifecycle gates instead of stale checkpoint labels", () => {
     const projection = activeGraphProgressReadback(
       [
         event("agent_team.scheduler_progress", {
           graphId: "graph-node-local",
           nodeId: "implementation-node-local",
           activeNodeKind: "implementation_scoped",
-          currentPhase: "obligation_graph",
-          nodeResourceDemandStatus: "blocked",
-          nodeResourceDemandSessionRefs: ["node-resource-demand://implementation-node-local/session-1"],
-          nodeResourceDemandBlockerRefs: ["node-resource-demand://implementation-node-local/blocker-1"],
-          nodeResourceLedgerManifestRefs: ["node-resource-ledger://implementation-node-local"],
-          nodeResourceLedgerStatus: "ready",
+          currentPhase: "requirement_map",
+          nodeAgentSessionTraceRefs: [
+            "runtime-job://job-node-local/node-agent-trace/implementation-node-local",
+          ],
+          nodeFinishArtifactRefs: [
+            "runtime-job://job-node-local/node-finish/implementation-node-local",
+          ],
           domainResourceSelectionRefs: ["domain-resource-selection://implementation-node-local/1"],
           domainResourceSelectionStatus: "blocked",
           actionGateStatus: "blocked",
@@ -435,31 +609,35 @@ describe("Work Queue readback projection modules", () => {
               branchId: "branch-node-resource-demand",
               nodeId: "implementation-node-local",
               nodeKind: "implementation_scoped",
-              workIntentRef: "work-intent://implementation-node-local",
+              sourceRequirementRef: "requirement://implementation-node-local",
               contractRef: "contract://implementation-node-local",
               readinessRef: "readiness://implementation-node-local",
-              resourceRequirementRefs: ["resource-requirement://implementation-node-local"],
-              nodeResourceDemandSessionRefs: [
-                "node-resource-demand://implementation-node-local/session-1",
+              sourceMaterialRequirementRefs: [
+                "source-material-requirement://implementation-node-local",
               ],
-              nodeResourceLedgerManifestRefs: ["node-resource-ledger://implementation-node-local"],
-              domainResourceSelectionRefs: ["domain-resource-selection://implementation-node-local/1"],
+              nodeAgentSessionTraceRefs: [
+                "runtime-job://job-node-local/node-agent-trace/implementation-node-local",
+              ],
+              nodeFinishArtifactRefs: [
+                "runtime-job://job-node-local/node-finish/implementation-node-local",
+              ],
+              domainResourceSelectionRefs: [
+                "domain-resource-selection://implementation-node-local/1",
+              ],
               actionGateStatus: "blocked",
               actionGateMissingFields: ["targetFileSnapshots"],
-              providerDiagnosticRefs: [
-                "provider-diagnostic://implementation-node-local/context",
-              ],
+              providerDiagnosticRefs: ["provider-diagnostic://implementation-node-local/context"],
               providerDiagnosticStatus: "available",
               status: "blocked",
-              phase: "worker_context_window_required",
-              nodeLifecycleProjectionGate: "worker_context_window_required",
+              phase: "node_agent_session_ready",
+              nodeLifecycleProjectionGate: "node_agent_session_ready",
               blocker: {
-                code: "resource_demand_blocked",
-                summary: "node-local node resource demand needs a narrower file window",
-                schemaPath: "nodeResourceDemandSession.selectedWindowRefs",
-                reasonCodes: ["node_resource_demand_scope_missing"],
+                code: "node_worker_prompt_missing_source_material",
+                summary: "node worker prompt needs source material before session start",
+                schemaPath: "nodeAgentWorkerPrompt.sourceMaterial",
+                reasonCodes: ["node_worker_prompt_missing_source_material"],
               },
-              nextLegalTransitions: ["fulfill_node_resource_demand"],
+              nextLegalTransitions: ["start_node_agent_session"],
               capabilityId: "implementation.qwen.scoped_patch",
               executorKey: "kind:implementation",
               modelRef: "qwen/qwen3-coder-next",
@@ -468,41 +646,36 @@ describe("Work Queue readback projection modules", () => {
           ],
         }),
         event("execution.boundary_replay_checkpoint", {
-          checkpointKind: "obligation_graph",
-          checkpointRef: "checkpoint://stale-obligation-graph/stale",
+          checkpointKind: "requirement_map",
+          checkpointRef: "checkpoint://stale-requirement-map/stale",
         }),
       ],
       [],
     );
 
     expect(projection.firstOpenGate).toMatchObject({
-      gateKind: "worker_context_window_required",
+      gateKind: "node_agent_session_ready",
       gateStatus: "blocked",
       confidence: "canonical",
       sourceKind: "branch_scoped_frontier",
       branchId: "branch-node-resource-demand",
       nodeId: "implementation-node-local",
-      nodeResourceDemandSessionRefs: ["node-resource-demand://implementation-node-local/session-1"],
-      nodeResourceLedgerManifestRefs: ["node-resource-ledger://implementation-node-local"],
+      nodeAgentSessionTraceRefs: [
+        "runtime-job://job-node-local/node-agent-trace/implementation-node-local",
+      ],
+      nodeAgentFinishArtifactRefs: [
+        "runtime-job://job-node-local/node-finish/implementation-node-local",
+      ],
       domainResourceSelectionRefs: ["domain-resource-selection://implementation-node-local/1"],
       actionGateStatus: "blocked",
       providerDiagnosticRefs: ["provider-diagnostic://implementation-node-local/context"],
-      schemaPath: "nodeResourceDemandSession.selectedWindowRefs",
-      nextLegalTransition: "fulfill_node_resource_demand",
+      schemaPath: "nodeAgentWorkerPrompt.sourceMaterial",
+      nextLegalTransition: "start_node_agent_session",
       staleCheckpointKind: null,
     });
-    expect(projection.firstOpenGateKind).toBe("worker_context_window_required");
+    expect(projection.firstOpenGateKind).toBe("node_agent_session_ready");
     expect(projection.nodeLocalLifecycle).toMatchObject({
       state: "present",
-      nodeResourceDemand: {
-        status: "blocked",
-        sessionRefs: ["node-resource-demand://implementation-node-local/session-1"],
-        blockerRefs: ["node-resource-demand://implementation-node-local/blocker-1"],
-      },
-      ledger: {
-        status: "ready",
-        manifestRefs: ["node-resource-ledger://implementation-node-local"],
-      },
       domainResourceSelection: {
         status: "blocked",
         refs: ["domain-resource-selection://implementation-node-local/1"],
@@ -519,7 +692,7 @@ describe("Work Queue readback projection modules", () => {
       providerDiagnosticRefs: ["provider-diagnostic://implementation-node-local/context"],
       rawProviderLogStored: false,
     });
-    expect(JSON.stringify(projection.firstOpenGate)).not.toContain("obligation_graph");
+    expect(JSON.stringify(projection.firstOpenGate)).not.toContain("requirement_map");
   });
 
   it("projects bounded provider diagnostics and distinguishes preflight from provider response shape", () => {
@@ -712,23 +885,23 @@ describe("Work Queue readback projection modules", () => {
     });
   });
 
-  it("treats readiness projection drift as the canonical resource gate even when persisted status says ready", () => {
+  it("treats node lifecycle projection as the canonical gate even when persisted readiness says ready", () => {
     const projection = activeGraphProgressReadback(
       [
         event("agent_team.scheduler_progress", {
           graphId: "graph-readiness-drift",
           nodeId: "implementation-drift",
           activeNodeKind: "implementation",
-          currentPhase: "obligation_graph",
+          currentPhase: "requirement_map",
           nodeLifecycleProjectionRef: "node-lifecycle-projection://implementation-drift",
-          nodeLifecycleProjectionGate: "domain_action_gate_blocked",
+          nodeLifecycleProjectionGate: "node_agent_session_ready",
           nodeLifecycleProjectionStatus: "blocked",
           nodeReadinessStatus: "ready",
           nodeReadinessStateRef: "readiness://implementation-drift/current",
           nodeReadinessPhase: "implementation_ready",
           nodeExecutionContractRef: "contract://implementation-drift",
           nodeExecutionPacketRef: "packet://implementation-drift",
-          resourcePacketRef: "resource://implementation-drift",
+          sourceMaterialRef: "source-material://implementation-drift",
           readinessProjectionStatus: "stale",
           nodeReadinessStale: true,
           readinessProjectionDriftReasonCodes: [
@@ -739,38 +912,25 @@ describe("Work Queue readback projection modules", () => {
           nodeReadinessNextAllowedTransitions: ["execute_node"],
         }),
         event("execution.boundary_replay_checkpoint", {
-          checkpointKind: "obligation_graph",
-          checkpointRef: "checkpoint://stale-obligation-graph/stale",
+          checkpointKind: "requirement_map",
+          checkpointRef: "checkpoint://stale-requirement-map/stale",
         }),
       ],
       [],
     );
 
     expect(projection.firstOpenGate).toMatchObject({
-      gateKind: "domain_action_gate_blocked",
+      gateKind: "node_agent_session_ready",
       gateStatus: "blocked",
       confidence: "canonical",
       sourceKind: "branch_scoped_frontier",
       nodeId: "implementation-drift",
       contractRef: "contract://implementation-drift",
-      nodeExecutionPacketRef: "packet://implementation-drift",
-      readinessStateRef: "readiness://implementation-drift/current",
-      resourcePacketRef: "resource://implementation-drift",
-      readinessProjectionStatus: "stale",
-      readinessProjectionStale: true,
-      readinessProjectionDriftReasonCodes: [
-        "readiness_projection_status_mismatch",
-        "readiness_projection_nodeExecutionPacketHash_mismatch",
-      ],
+      nodeLifecycleProjectionRef: "node-lifecycle-projection://implementation-drift",
+      sourceMaterialRef: "source-material://implementation-drift",
       staleCheckpointKind: null,
     });
-    expect(projection.firstOpenGateKind).toBe("domain_action_gate_blocked");
-    expect(projection.firstOpenGateReasonCodes).toEqual(
-      expect.arrayContaining([
-        "readiness_projection_status_mismatch",
-        "readiness_projection_nodeExecutionPacketHash_mismatch",
-      ]),
-    );
+    expect(projection.firstOpenGateKind).toBe("node_agent_session_ready");
   });
 
   it("projects runtime artifact payload manifests as refs and counts only", () => {

@@ -1,5 +1,9 @@
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import type { AgentEvent } from "@mariozechner/pi-agent-core";
 import { describe, expect, it, vi } from "vitest";
+import { loadSessionStore } from "../config/sessions/store.js";
 import type { MessagingToolSend } from "./pi-embedded-messaging.types.js";
 import {
   handleToolExecutionUpdate,
@@ -133,6 +137,94 @@ describe("handleToolExecutionStart read path checks", () => {
     expect(ctx.state.itemStartedCount).toBe(2);
     expect(ctx.state.itemActiveIds.has("tool:tool-await-flush")).toBe(true);
     expect(ctx.state.itemActiveIds.has("command:tool-await-flush")).toBe(true);
+  });
+});
+
+describe("handleToolExecutionEnd native task working context", () => {
+  it("persists delivered context scout results as native session working context", async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-task-working-context-"));
+    try {
+      const sessionKey = "agent:execution-coding:node:nrun_file_graph";
+      const storePath = path.join(dir, "sessions.json");
+      await fs.writeFile(
+        storePath,
+        JSON.stringify({
+          [sessionKey]: { sessionId: "sess-parent", updatedAt: 1 },
+        }),
+        "utf8",
+      );
+      const { ctx, onAgentEvent } = createTestContext();
+      ctx.params.sessionKey = sessionKey;
+      ctx.params.agentId = "execution-coding";
+      ctx.params.config = {
+        session: { store: storePath },
+      } as never;
+
+      await handleToolExecutionEnd(ctx, {
+        type: "tool_execution_end",
+        toolName: "task",
+        toolCallId: "task-context-scout",
+        isError: false,
+        result: {
+          content: [
+            {
+              type: "text",
+              text: [
+                "Task result from execution-context-scout (completed).",
+                "",
+                "Direct answer: edit src/agents/tools/native-task-tool.ts.",
+                "",
+                "Bounded source windows:",
+                "```ts",
+                "export function createNativeTaskTool() {}",
+                "```",
+                "",
+                "file_graph:",
+                "- src/agents/tools/native-task-tool.ts -> src/agents/openclaw-tools.ts via registration",
+              ].join("\n"),
+            },
+          ],
+          details: {
+            status: "completed",
+            sourceTool: "task",
+            requestedAgentId: "execution-context-scout",
+            childSessionKey: "agent:execution-context-scout:subagent:child-1",
+            runId: "run-child-1",
+            foreground: true,
+            resultDeliveredToParentContext: true,
+            childIdentityVerified: true,
+          },
+        },
+      });
+
+      const store = loadSessionStore(storePath, { skipCache: true });
+      expect(store[sessionKey]?.workingContext?.activeEntries[0]).toMatchObject({
+        kind: "context_scout_result",
+        source: "native_task",
+        sourceToolCallId: "task-context-scout",
+        requestedAgentId: "execution-context-scout",
+        childSessionKey: "agent:execution-context-scout:subagent:child-1",
+        childRunId: "run-child-1",
+        hasInlineContextWindows: true,
+        hasFileGraph: true,
+      });
+      expect(onAgentEvent).toHaveBeenCalledWith({
+        stream: "node-agent",
+        data: expect.objectContaining({
+          eventType: "node_agent_native_task_result",
+          workingContextPersisted: true,
+          workingContextKind: "context_scout_result",
+          workingContextHasInlineContextWindows: true,
+          workingContextHasFileGraph: true,
+          workingContextFileGraphTextHash: expect.any(String),
+          workingContextFileGraphTextByteCount: expect.any(Number),
+          workingContextRef: expect.stringContaining("openclaw-session-working-context://"),
+          workingContextEntryRef: expect.stringContaining("openclaw-session-working-context://"),
+        }),
+      });
+    } finally {
+      await fs.rm(dir, { recursive: true, force: true });
+    }
   });
 });
 

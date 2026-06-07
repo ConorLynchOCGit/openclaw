@@ -40,7 +40,7 @@ describe("scheduler model call envelope", () => {
       inputByteCount: 23_456,
       inputHash: "sha256:input",
       commitmentCount: 14,
-      workIntentCount: 6,
+      sourceRequirementCount: 6,
       graphNodeCount: 8,
       graphEdgeCount: 9,
       activeFrontierCounts: {

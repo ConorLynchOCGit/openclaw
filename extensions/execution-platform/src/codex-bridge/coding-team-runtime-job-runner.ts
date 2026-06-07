@@ -3,12 +3,12 @@ import type { ModelRosterEnforcementDecision } from "../model-routing/model-rost
 import type { JsonValue, RuntimeJob, RuntimeJobRepository } from "../runtime-job-repository.ts";
 import type { RuntimeToolKernel } from "../runtime-tool-call/runtime-tool-kernel.ts";
 import type { WorkQueueRepository } from "../work-queue/work-queue-repository.ts";
-import type {
-  CodingResourcePacket,
-  NodeExecutionContract,
-  NodeExecutionPacket,
-} from "../workflows/node-resource-materialization.ts";
+import type { BoundaryReplayCheckpointKind } from "../workflows/boundary-replay-checkpoints.ts";
 import type { RuntimeWorkGraphRepository } from "../workflows/runtime-work-graph-repository.ts";
+import type {
+  RuntimeWorkGraphNodeAgentSessionRunner,
+  RuntimeWorkGraphSchedulerOptions,
+} from "../workflows/runtime-work-graph-scheduler.ts";
 import {
   AGENT_TEAM_JOB_TYPE,
   type AgentTeamRuntimeEvidence,
@@ -51,13 +51,15 @@ export type CodingTeamRuntimeJobRunnerOptions = {
     createCapsule(input: CloseoutCapsuleReporterInput): Promise<CloseoutCapsuleReporterResult>;
   };
   roleModelClient?: AgentTeamModelClient;
-  implementationBridge?: AgentTeamImplementationBridge;
+  nodeAgentSessionRunner?: RuntimeWorkGraphNodeAgentSessionRunner | null;
+  resolveNodeAgentProfile?: RuntimeWorkGraphSchedulerOptions["resolveNodeAgentProfile"];
   runtimeWorkGraphs?: RuntimeWorkGraphRepository;
   runtimeToolKernel?: RuntimeToolKernel | null;
   workQueue?: WorkQueueRepository;
   dynamicOrchestratorModelClient?: DynamicCodingTeamModelClient;
   missionContractModelClient?: DynamicCodingTeamModelClient;
   dynamicValidationRunner?: DynamicValidationRunner;
+  stopAfterBoundary?: BoundaryReplayCheckpointKind | null;
   now?: () => Date;
 };
 
@@ -84,50 +86,6 @@ function asRecord(value: unknown): Record<string, unknown> {
 function stringValue(value: unknown, fallback: string): string {
   return typeof value === "string" && value.trim() ? value : fallback;
 }
-
-export type AgentTeamImplementationBridgeRunInput = {
-  runtimeJob: RuntimeJob;
-  teamRunId: string;
-  objective: string;
-  roleId: "implementation_engineer";
-  assignedTaskSummary: string;
-  evidenceRefs: string[];
-  validationRefs: string[];
-  approvedRepoScopePaths?: string[];
-  nodeExecutionContract?: NodeExecutionContract;
-  nodeExecutionPacket?: NodeExecutionPacket;
-  codingResourcePacket?: CodingResourcePacket;
-  nodeReadinessStateRef?: string | null;
-  nodeExecutionPacketRef?: string | null;
-  resourcePacketRef?: string | null;
-};
-
-export type AgentTeamImplementationBridgeRunResult = {
-  status: "completed" | "needs_review" | "failed";
-  transportKind: "codex_app_server" | "acp_codex" | "codex_parity_runtime_adapter";
-  modelRef: string;
-  providerPath: string;
-  modelRunRef: string;
-  responseHash: string;
-  startedAt: string;
-  completedAt: string;
-  latencyMs: number;
-  summary: string;
-  changedFileRefs: string[];
-  validationRefs: string[];
-  artifactRefs: string[];
-  reasonCodes: string[];
-  rawPromptStored: false;
-  rawResponseStored: false;
-  rawProviderLogStored: false;
-  workQueueLifecycleMutated: false;
-};
-
-export type AgentTeamImplementationBridge = {
-  run(
-    input: AgentTeamImplementationBridgeRunInput,
-  ): Promise<AgentTeamImplementationBridgeRunResult>;
-};
 
 export class CodingTeamRuntimeJobRunner {
   private readonly queueName: string;
@@ -310,7 +268,7 @@ export class CodingTeamRuntimeJobRunner {
     });
     const liveQualityPathConfigured = Boolean(
       this.options.roleModelClient &&
-      this.options.implementationBridge &&
+      this.options.nodeAgentSessionRunner &&
       this.options.closeoutReporter,
     );
     if (workflowId === "agent_team.coding") {
@@ -320,7 +278,7 @@ export class CodingTeamRuntimeJobRunner {
         !this.options.runtimeToolKernel
       ) {
         throw new Error(
-          "dynamic_runtime_work_graph_required:live coding-team execution requires configured role model, implementation bridge, closeout reporter, runtime work graph, and scheduler tool kernel",
+          "dynamic_runtime_work_graph_required:live coding-team execution requires configured role model, native node-agent session runner, closeout reporter, runtime work graph, and scheduler tool kernel",
         );
       }
     }
@@ -340,8 +298,9 @@ export class CodingTeamRuntimeJobRunner {
         roleModelClient: this.options.roleModelClient!,
         orchestratorModelClient: this.options.dynamicOrchestratorModelClient,
         missionContractModelClient: this.options.missionContractModelClient,
-        validationRunner: this.options.dynamicValidationRunner,
-        implementationBridge: this.options.implementationBridge!,
+        nodeAgentSessionRunner: this.options.nodeAgentSessionRunner ?? null,
+        resolveNodeAgentProfile: this.options.resolveNodeAgentProfile,
+        stopAfterBoundary: this.options.stopAfterBoundary ?? null,
         closeoutReporter: this.options.closeoutReporter,
         now: this.now,
       }).run(job);

@@ -28,6 +28,8 @@ const coreTools = [
   stubActionTool("sessions_history", ["read", "tail"]),
   stubActionTool("sessions_send", ["send", "reply"]),
   stubActionTool("sessions_spawn", ["spawn", "handoff"]),
+  stubTool("update_plan"),
+  stubTool("read_todo"),
   stubActionTool("subagents", ["list", "show"]),
   stubActionTool("session_status", ["get", "show"]),
   stubTool("tts"),
@@ -39,7 +41,10 @@ const coreTools = [
 ];
 
 vi.mock("../openclaw-tools.js", () => ({
-  createOpenClawTools: () => coreTools.map((tool) => ({ ...tool })),
+  createOpenClawTools: (options?: { nativeTask?: { enabled?: boolean } }) => [
+    ...coreTools.map((tool) => ({ ...tool })),
+    ...(options?.nativeTask?.enabled === true ? [stubTool("task")] : []),
+  ],
   __testing: {
     setDepsForTest: () => {},
   },

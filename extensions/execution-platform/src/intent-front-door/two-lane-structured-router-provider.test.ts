@@ -95,7 +95,7 @@ function advancedProvider(): StructuredModelIntentRouterProvider & {
         reasonCodes: ["fixture_advanced_router"],
       }),
       providerRef: "fixture://advanced",
-      modelCandidateId: "openai-codex/gpt-5.5",
+      modelCandidateId: "qwen/qwen3-coder-next",
       routerModelPolicyRef: "router-policy://advanced",
       providerCallMade: true,
       latencyMs: 50,
@@ -141,7 +141,7 @@ describe("TwoLaneStructuredModelIntentRouterProvider", () => {
     expect(result.output?.route).toBe("workflow_execution");
     expect(triage.route).toHaveBeenCalledTimes(1);
     expect(advanced.route).toHaveBeenCalledTimes(1);
-    expect(result.metadata.modelCandidateId).toBe("openai-codex/gpt-5.5");
+    expect(result.metadata.modelCandidateId).toBe("qwen/qwen3-coder-next");
   });
 
   it("forces long prompts to the advanced router even when triage claims chat", async () => {

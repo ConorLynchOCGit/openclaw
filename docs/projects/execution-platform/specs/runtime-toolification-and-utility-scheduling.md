@@ -13,6 +13,64 @@ proof. The Product/Spec prompt should not be rerun until the pre-proof items
 below are production-primary, wired into live execution, and validated through
 runtime evidence.
 
+## 2026-06-03 Update: Canonical Provider Tool Transport
+
+Runner-owned model tool phases must use one provider-tool transport boundary.
+The platform previously standardized many callers around `runTools`, but that
+only hid a deeper split and is now deleted from runner-facing code:
+
+- OpenRouter tool phases used provider-native `callTools`.
+- Codex app-server tool phases used Codex dynamic tool events through
+  `executeTools`.
+- proof/replay scripts could still call `runTools` directly.
+
+The canonical shape is now:
+
+```text
+Runner phase owner
+  -> executeModelToolTurn(...)
+  -> executeProviderToolTurn(...)
+  -> provider adapter
+      -> OpenRouter callTools OR Codex app-server dynamic tools
+```
+
+The runner owns semantic phase state and tool legality. The transport owns only
+mechanical provider execution, accepted/rejected/surplus tool-call accounting,
+required-tool enforcement, latency/usage diagnostics, hashes, and raw-storage
+flags. Provider adapters hide OpenRouter/Codex differences; they do not choose
+phases or repair semantics.
+
+Production router, intake, scheduler, replay, resource-selection, and
+node-lifecycle paths must not call these directly:
+
+- `runJson`
+- `runTools`
+- `callTools`
+- Codex app-server `executeTools`
+- JSON-shaped `canonicalToolCalls` / `schedulerToolCalls` as model transport
+
+Allowed references are limited to the provider adapter implementation, tests
+proving rejection, and historical documentation. `runTools` compatibility
+wrappers are not allowed in production source. The end state is one transport
+layer with all legacy transport entrypoints deleted from runner-facing code.
+Domain resource selection is included in this rule: production and replay
+selectors may expose provider-native resource-selection tools, but they must do
+so through `executeModelToolTurn(...)`, not by calling the provider adapter
+directly.
+
+Parallelism is also transport-level, not prompt text. A runner may request:
+
+- one native single-tool turn;
+- one native multi-tool turn when all tools belong to the same semantic step;
+- parallel focused sessions when fields/windows/clusters are independent;
+- sequential repair only when later calls depend on earlier accepted state.
+
+The transport must persist bounded optics for each turn: owner, phase, provider
+adapter, model, allowed tools, accepted tools, rejected tools, surplus count,
+latency, usage if available, input hash, output hash, compile status, and
+raw-storage flags. It must not persist raw prompts, raw responses, raw provider
+logs, raw tool logs, or hidden reasoning.
+
 ## 2026-05-17 Update: Router Front Door Tool Protocol
 
 `openclaw-convergence.toolification-14-router-front-door-tool-protocol` is
@@ -654,10 +712,10 @@ Runtime tools:
 
 Contracts:
 
-- `SourcePromptContextIndex` stores prompt hash, length, resolution status,
-  bounded section refs, section summaries, reason codes, and raw-storage flags.
-- `SourcePromptExcerptDecision` stores request id, section ref, excerpt ref,
-  excerpt hash, excerpt length, bounded summary, reason codes, and
+- `SourcePromptArtifact` stores prompt hash, length, resolution status,
+  source prompt body ref, bounded preview, reason codes, and raw-storage flags.
+- `SourcePromptExcerptDecision` stores request id, source prompt body ref,
+  excerpt ref, excerpt hash, excerpt length, bounded summary, reason codes, and
   raw-storage flags.
 - `ResourceHandoffPacket` is the implementation-facing output from context
   scout. It carries verified file refs, recommended edit points, patterns,

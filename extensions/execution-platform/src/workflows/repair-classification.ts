@@ -32,9 +32,9 @@ export type RuntimeRepairFailureClass = (typeof RUNTIME_REPAIR_FAILURE_CLASSES)[
 export const RUNTIME_REPAIR_BOUNDARY_KINDS = [
   "router",
   "mission_ledger",
-  "obligation_graph",
+  "requirement_map",
   "execution_contract",
-  "resource_scout",
+  "context_scout",
   "artifact_storage",
   "graph_planning",
   "scheduler_selection",
@@ -451,12 +451,11 @@ export function failureClassFromReasonCodes(input: {
     return "provider_timeout";
   }
   if (
-    reasonCodeSet.has("worker_context_request_unfulfilled_missing_exact_hydrated_windows") ||
-    reasonCodeSet.has("worker_context_request_more_unfulfilled") ||
-    reasonCodeSet.has("worker_context_request_more_empty") ||
-    reasonCodeSet.has("worker_context_required")
+    reasonCodeSet.has("node_worker_prompt_authoring_failed") ||
+    reasonCodeSet.has("node_worker_prompt_authoring_unavailable") ||
+    reasonCodeSet.has("node_worker_prompt_missing_source_material")
   ) {
-    return "context_insufficient";
+    return "adapter_protocol_failure";
   }
   if (
     reasonCodeSet.has("worker_patch_author_required_missing_snapshot") ||
@@ -493,7 +492,7 @@ export function failureClassFromReasonCodes(input: {
   if (/adapter|worker_loop|file_edit|patch|edit_transaction/iu.test(combined)) {
     return "adapter_protocol_failure";
   }
-  if (/edge|graph|decomposition|scheduler.*rejected|staged_scheduler/iu.test(combined)) {
+  if (/edge|graph|decomposition|scheduler.*rejected|scheduler_graph_patch/iu.test(combined)) {
     return "graph_structure_insufficient";
   }
   if (/work[_-]queue|projection|readback/iu.test(combined)) {
@@ -516,7 +515,7 @@ export function selectedBoundaryForFailureClass(
     case "missing_context":
     case "stale_context":
     case "context_insufficient":
-      return "resource_scout";
+      return "context_scout";
     case "graph_structure_insufficient":
     case "schema_boundary_failure":
     case "model_contract_choke":

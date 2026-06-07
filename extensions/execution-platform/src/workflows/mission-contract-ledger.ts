@@ -28,47 +28,10 @@ const MissionSafetyConstraintSchema = z
       "security",
       "other",
     ]),
-    enforcementOwner: z.enum([
-      "mission_ledger",
-      "compiler",
-      "authority_gate",
-      "runtime_policy",
-      "human_review",
-    ]),
     evidenceRefs: stringList(12, 260),
     rawPromptStored: z.literal(false),
     rawResponseStored: z.literal(false),
     rawProviderLogStored: z.literal(false),
-  })
-  .strict();
-
-const ProhibitedDirectiveCandidateSchema = z
-  .object({
-    directiveId: boundedString(120),
-    directiveText: boundedString(800),
-    classification: z.enum([
-      "constraint_not_primary",
-      "primary_prohibited",
-      "ambiguous_needs_review",
-    ]),
-    rationale: boundedString(1_000),
-    actionCategory: optionalBoundedString(120),
-    evidenceRefs: stringList(12, 260),
-    rawPromptStored: z.literal(false),
-    rawResponseStored: z.literal(false),
-    rawProviderLogStored: z.literal(false),
-  })
-  .strict();
-
-const MissionAuthorityBoundarySchema = z
-  .object({
-    requestedAuthority: optionalBoundedString(120),
-    maximumAuthority: boundedString(120),
-    requiresApproval: z.boolean(),
-    approvalRefs: stringList(12, 260),
-    authorityRefs: stringList(12, 260),
-    rawPromptStored: z.literal(false),
-    rawResponseStored: z.literal(false),
   })
   .strict();
 
@@ -88,21 +51,12 @@ const MissionStoragePolicySchema = z
 const MissionLifecycleBoundarySchema = z
   .object({
     workQueueLifecycleMutationAllowed: z.literal(false),
-    authorityGrantAllowed: z.literal(false),
     deployAllowed: z.literal(false),
     outboundSendAllowed: z.literal(false),
     modelPromotionAllowed: z.literal(false),
     runtimeJobLifecycleOwner: z.literal("runtime_jobs"),
   })
   .strict();
-
-export const MissionGateSchema = z.enum([
-  "clear_to_execute",
-  "needs_review",
-  "blocked_primary_prohibited",
-]);
-
-export type MissionGate = z.infer<typeof MissionGateSchema>;
 
 export const MissionCommitmentStatusSchema = z.enum([
   "pending",
@@ -120,6 +74,9 @@ export const MissionCommitmentSchema = z
     commitmentText: boundedString(1_200),
     whyItMatters: boundedString(800),
     expectedEvidenceDescription: boundedString(900),
+    sourceAnchorRefs: stringList(24, 360).optional(),
+    sourceSpanRefs: stringList(24, 420).optional(),
+    lexicalAnchors: stringList(24, 180).optional(),
     acceptedEvidenceRefs: stringList(20, 260),
     rejectedEvidenceRefs: stringList(20, 260),
     status: MissionCommitmentStatusSchema,
@@ -161,16 +118,6 @@ export const MissionContractLedgerSchema = z
     nonBlockingCommitments: z.array(MissionCommitmentSchema).max(30),
     explicitNonGoals: stringList(20, 600),
     safetyConstraints: z.array(MissionSafetyConstraintSchema).max(30).default([]),
-    prohibitedDirectiveCandidates: z.array(ProhibitedDirectiveCandidateSchema).max(20).default([]),
-    authorityBoundary: MissionAuthorityBoundarySchema.default({
-      requestedAuthority: null,
-      maximumAuthority: "workflow_default",
-      requiresApproval: false,
-      approvalRefs: [],
-      authorityRefs: [],
-      rawPromptStored: false,
-      rawResponseStored: false,
-    }),
     storagePolicy: MissionStoragePolicySchema.default({
       rawPromptStorageAllowed: false,
       rawResponseStorageAllowed: false,
@@ -183,16 +130,13 @@ export const MissionContractLedgerSchema = z
     }),
     lifecycleBoundary: MissionLifecycleBoundarySchema.default({
       workQueueLifecycleMutationAllowed: false,
-      authorityGrantAllowed: false,
       deployAllowed: false,
       outboundSendAllowed: false,
       modelPromotionAllowed: false,
       runtimeJobLifecycleOwner: "runtime_jobs",
     }),
-    missionGate: MissionGateSchema.default("clear_to_execute"),
-    missionGateRationale: optionalBoundedString(1_000).default(null),
     revisionProposals: z.array(MissionContractRevisionProposalSchema).max(12),
-    ledgerStatus: z.enum(["pending", "satisfied", "needs_review", "blocked"]),
+    ledgerStatus: z.enum(["pending", "satisfied", "needs_review"]),
     rawPromptStored: z.literal(false),
     rawResponseStored: z.literal(false),
     rawProviderLogStored: z.literal(false),
@@ -232,15 +176,50 @@ export const MissionCommitmentEvaluationSchema = z
 
 export type MissionCommitmentEvaluation = z.infer<typeof MissionCommitmentEvaluationSchema>;
 
+export const MISSION_LEDGER_NATIVE_TOOL_IDS = [
+  "mission.add_blocking_commitment",
+  "mission.add_nonblocking_commitment",
+  "mission.add_non_goal",
+  "mission.add_safety_constraint",
+  "mission.attach_source_anchor",
+  "mission.attach_source_span",
+  "mission.attach_lexical_anchor",
+] as const;
+
+export type MissionLedgerNativeToolId = (typeof MISSION_LEDGER_NATIVE_TOOL_IDS)[number];
+
+export type MissionLedgerNativeToolDefinition = {
+  name: string;
+  canonicalToolId: MissionLedgerNativeToolId;
+  description: string;
+  inputSchema: JsonValue;
+};
+
+export type MissionLedgerToolCall = {
+  tool: MissionLedgerNativeToolId;
+  input: Record<string, unknown>;
+};
+
+export type MissionLedgerToolCompileResult = {
+  status: "accepted" | "blocked";
+  ledger: MissionContractLedger | null;
+  draft: Record<string, unknown>;
+  appliedToolNames: string[];
+  rejectedToolCalls: JsonValue[];
+  missingFields: string[];
+  reasonCodes: string[];
+  rawPromptStored: false;
+  rawResponseStored: false;
+  rawProviderLogStored: false;
+  rawToolLogStored: false;
+};
+
 export type MissionContractLedgerSummary = {
   missionId: string;
   ledgerStatus: MissionContractLedger["ledgerStatus"];
   blockingCommitmentCount: number;
   openBlockingCommitmentCount: number;
-  missionGate: MissionGate;
-  missionGateRationale: string | null;
   safetyConstraintCount: number;
-  prohibitedPrimaryDirectiveCount: number;
   commitments: Array<{
     commitmentId: string;
     commitmentText: string;
@@ -249,6 +228,9 @@ export type MissionContractLedgerSummary = {
     blocking: boolean;
     acceptedEvidenceRefs: string[];
     remainingWork: string[];
+    sourceAnchorRefs?: string[];
+    sourceSpanRefs?: string[];
+    lexicalAnchors?: string[];
   }>;
   rawPromptStored: false;
   rawResponseStored: false;
@@ -256,6 +238,400 @@ export type MissionContractLedgerSummary = {
 
 function hashText(value: string): string {
   return createHash("sha256").update(value).digest("hex");
+}
+
+function uniqueStringList(values: Array<string | null | undefined>, max = 30): string[] {
+  const seen = new Set<string>();
+  const output: string[] = [];
+  for (const value of values) {
+    const next = typeof value === "string" ? bounded(value, 900) : "";
+    if (!next || seen.has(next)) {
+      continue;
+    }
+    seen.add(next);
+    output.push(next);
+    if (output.length >= max) {
+      break;
+    }
+  }
+  return output;
+}
+
+export function missionLedgerProviderToolName(toolId: string): string {
+  return toolId.replace(/[^a-zA-Z0-9_-]/gu, "_").slice(0, 64);
+}
+
+export function missionLedgerCanonicalToolIdFromProviderName(
+  providerToolName: string,
+): MissionLedgerNativeToolId | null {
+  for (const toolId of MISSION_LEDGER_NATIVE_TOOL_IDS) {
+    if (missionLedgerProviderToolName(toolId) === providerToolName) {
+      return toolId;
+    }
+  }
+  return null;
+}
+
+function missionLedgerStringArraySchema(): JsonValue {
+  return { type: "array", items: { type: "string" } };
+}
+
+function missionLedgerEnumSchema(values: readonly string[]): JsonValue {
+  return { type: "string", enum: [...values] };
+}
+
+function missionLedgerToolRequiredFields(toolId: MissionLedgerNativeToolId): string[] {
+  const fields: Record<MissionLedgerNativeToolId, string[]> = {
+    "mission.add_blocking_commitment": [
+      "commitmentId",
+      "commitmentText",
+      "whyItMatters",
+      "expectedEvidenceDescription",
+    ],
+    "mission.add_nonblocking_commitment": [
+      "commitmentId",
+      "commitmentText",
+      "whyItMatters",
+      "expectedEvidenceDescription",
+    ],
+    "mission.add_non_goal": ["nonGoal"],
+    "mission.add_safety_constraint": ["constraintId", "constraintText", "boundaryKind"],
+    "mission.attach_source_anchor": ["commitmentId", "sourceAnchorRef"],
+    "mission.attach_source_span": ["commitmentId", "sourceSpanRef"],
+    "mission.attach_lexical_anchor": ["commitmentId", "lexicalAnchor"],
+  };
+  return fields[toolId];
+}
+
+function missionLedgerToolProperties(toolId: MissionLedgerNativeToolId): Record<string, JsonValue> {
+  const properties: Record<string, JsonValue> = {
+    reasonCodes: missionLedgerStringArraySchema(),
+  };
+  if (
+    toolId === "mission.add_blocking_commitment" ||
+    toolId === "mission.add_nonblocking_commitment"
+  ) {
+    properties.commitmentId = { type: "string" };
+    properties.commitmentText = { type: "string" };
+    properties.whyItMatters = { type: "string" };
+    properties.expectedEvidenceDescription = { type: "string" };
+    properties.remainingWork = missionLedgerStringArraySchema();
+    properties.sourceAnchorRefs = missionLedgerStringArraySchema();
+    properties.sourceSpanRefs = missionLedgerStringArraySchema();
+    properties.lexicalAnchors = missionLedgerStringArraySchema();
+  }
+  if (toolId === "mission.add_non_goal") {
+    properties.nonGoal = { type: "string" };
+  }
+  if (toolId === "mission.add_safety_constraint") {
+    properties.constraintId = { type: "string" };
+    properties.constraintText = { type: "string" };
+    properties.boundaryKind = missionLedgerEnumSchema(
+      MissionSafetyConstraintSchema.shape.boundaryKind.options,
+    );
+    properties.evidenceRefs = missionLedgerStringArraySchema();
+  }
+  if (toolId === "mission.attach_source_anchor") {
+    properties.commitmentId = { type: "string" };
+    properties.sourceAnchorRef = { type: "string" };
+  }
+  if (toolId === "mission.attach_source_span") {
+    properties.commitmentId = { type: "string" };
+    properties.sourceSpanRef = { type: "string" };
+  }
+  if (toolId === "mission.attach_lexical_anchor") {
+    properties.commitmentId = { type: "string" };
+    properties.lexicalAnchor = { type: "string" };
+  }
+  return properties;
+}
+
+export function missionLedgerNativeToolDefinitions(
+  allowedToolIds: readonly MissionLedgerNativeToolId[],
+): MissionLedgerNativeToolDefinition[] {
+  return allowedToolIds.map((toolId) => ({
+    name: missionLedgerProviderToolName(toolId),
+    canonicalToolId: toolId,
+    description: `Author one Mission Ledger small verb through ${toolId}. Runtime applies the tool to the canonical ledger draft and validates structure only.`,
+    inputSchema: {
+      type: "object",
+      additionalProperties: true,
+      properties: missionLedgerToolProperties(toolId),
+      required: missionLedgerToolRequiredFields(toolId),
+    },
+  }));
+}
+
+export function missionLedgerToolCallFromNativeToolCall(input: {
+  providerToolName: string;
+  toolArguments: Record<string, unknown>;
+}): MissionLedgerToolCall | null {
+  const tool = missionLedgerCanonicalToolIdFromProviderName(input.providerToolName);
+  return tool ? { tool, input: input.toolArguments } : null;
+}
+
+function missionLedgerCallsFromOutputs(outputs: unknown[]): MissionLedgerToolCall[] {
+  const calls: MissionLedgerToolCall[] = [];
+  for (const output of outputs) {
+    const record = asRecord(output);
+    const candidates = [record.missionLedgerToolCalls, record.toolCalls, record.actions];
+    for (const candidate of candidates) {
+      if (!Array.isArray(candidate)) {
+        continue;
+      }
+      for (const raw of candidate) {
+        const rawRecord = asRecord(raw);
+        const tool = stringValue(rawRecord.tool ?? rawRecord.toolId ?? rawRecord.name, "", 120);
+        if (MISSION_LEDGER_NATIVE_TOOL_IDS.includes(tool as MissionLedgerNativeToolId)) {
+          calls.push({
+            tool: tool as MissionLedgerNativeToolId,
+            input: { ...asRecord(rawRecord.input), ...rawRecord },
+          });
+        }
+      }
+    }
+  }
+  return calls;
+}
+
+function missionLedgerDraftMissingFields(draft: Record<string, unknown>): string[] {
+  const missing: string[] = [];
+  const blockingCommitments = Array.isArray(draft.blockingCommitments)
+    ? draft.blockingCommitments
+    : [];
+  if (blockingCommitments.length === 0) {
+    missing.push("blockingCommitments");
+  }
+  for (const commitment of blockingCommitments) {
+    const record = asRecord(commitment);
+    const commitmentId = stringValue(record.commitmentId, "unknown", 120);
+    const sourceAnchors = stringArray(record.sourceAnchorRefs, 24, 360);
+    const sourceSpans = stringArray(record.sourceSpanRefs, 24, 420);
+    const lexicalAnchors = stringArray(record.lexicalAnchors, 24, 180);
+    if (sourceAnchors.length === 0 && sourceSpans.length === 0) {
+      missing.push(`blockingCommitmentSourceGrounding:${commitmentId}`);
+    }
+    if (lexicalAnchors.length === 0) {
+      missing.push(`blockingCommitmentLexicalAnchors:${commitmentId}`);
+    }
+  }
+  return missing;
+}
+
+function updateDraftCommitment(
+  draft: Record<string, unknown>,
+  commitmentId: string,
+  update: (commitment: Record<string, unknown>) => void,
+): boolean {
+  for (const key of ["blockingCommitments", "nonBlockingCommitments"] as const) {
+    const commitments = Array.isArray(draft[key]) ? (draft[key] as unknown[]) : [];
+    for (const commitment of commitments) {
+      const record = asRecord(commitment);
+      if (stringValue(record.commitmentId, "", 120) === commitmentId) {
+        update(record);
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+export function applyMissionLedgerToolCallsToDraft(input: {
+  missionId: string;
+  sourceRuntimeJobId?: string | null;
+  sourceWorkItemId?: string | null;
+  ownerObjectiveSummary: string;
+  modelOutputs: unknown[];
+}): MissionLedgerToolCompileResult {
+  const calls = missionLedgerCallsFromOutputs(input.modelOutputs);
+  const draft: Record<string, unknown> = {
+    blockingCommitments: [],
+    nonBlockingCommitments: [],
+    explicitNonGoals: [],
+    safetyConstraints: [],
+    rawPromptStored: false,
+    rawResponseStored: false,
+    rawProviderLogStored: false,
+  };
+  const appliedToolNames: string[] = [];
+  const rejectedToolCalls: JsonValue[] = [];
+  for (const call of calls) {
+    const args = call.input;
+    switch (call.tool) {
+      case "mission.add_blocking_commitment":
+      case "mission.add_nonblocking_commitment": {
+        const commitment = {
+          commitmentId: stringValue(args.commitmentId, "", 120),
+          commitmentText: stringValue(args.commitmentText, "", 1_200),
+          whyItMatters: stringValue(
+            args.whyItMatters,
+            "Mission requirement from owner prompt.",
+            800,
+          ),
+          expectedEvidenceDescription: stringValue(
+            args.expectedEvidenceDescription,
+            "Model-authored evidence refs must show this commitment was handled.",
+            900,
+          ),
+          sourceAnchorRefs: stringArray(args.sourceAnchorRefs, 24, 360),
+          sourceSpanRefs: stringArray(args.sourceSpanRefs, 24, 420),
+          lexicalAnchors: stringArray(args.lexicalAnchors, 24, 180),
+          remainingWork: stringArray(args.remainingWork, 12, 500),
+          status: "pending",
+          blocking: call.tool === "mission.add_blocking_commitment",
+        };
+        if (!commitment.commitmentId || !commitment.commitmentText) {
+          rejectedToolCalls.push({ tool: call.tool, reason: "commitment_missing_id_or_text" });
+          break;
+        }
+        const key =
+          call.tool === "mission.add_blocking_commitment"
+            ? "blockingCommitments"
+            : "nonBlockingCommitments";
+        draft[key] = [...(Array.isArray(draft[key]) ? (draft[key] as unknown[]) : []), commitment];
+        appliedToolNames.push(call.tool);
+        break;
+      }
+      case "mission.attach_source_anchor": {
+        const commitmentId = stringValue(args.commitmentId, "", 120);
+        const sourceAnchorRef = stringValue(args.sourceAnchorRef, "", 360);
+        if (!commitmentId || !sourceAnchorRef) {
+          rejectedToolCalls.push({
+            tool: call.tool,
+            reason: "source_anchor_missing_commitment_or_ref",
+          });
+          break;
+        }
+        const updated = updateDraftCommitment(draft, commitmentId, (commitment) => {
+          commitment.sourceAnchorRefs = uniqueStringList(
+            [...stringArray(commitment.sourceAnchorRefs, 24, 360), sourceAnchorRef],
+            24,
+          );
+        });
+        if (!updated) {
+          rejectedToolCalls.push({
+            tool: call.tool,
+            reason: "source_anchor_commitment_missing",
+            commitmentId,
+          });
+          break;
+        }
+        appliedToolNames.push(call.tool);
+        break;
+      }
+      case "mission.attach_source_span": {
+        const commitmentId = stringValue(args.commitmentId, "", 120);
+        const sourceSpanRef = stringValue(args.sourceSpanRef, "", 420);
+        if (!commitmentId || !sourceSpanRef) {
+          rejectedToolCalls.push({
+            tool: call.tool,
+            reason: "source_span_missing_commitment_or_ref",
+          });
+          break;
+        }
+        const updated = updateDraftCommitment(draft, commitmentId, (commitment) => {
+          commitment.sourceSpanRefs = uniqueStringList(
+            [...stringArray(commitment.sourceSpanRefs, 24, 420), sourceSpanRef],
+            24,
+          );
+        });
+        if (!updated) {
+          rejectedToolCalls.push({
+            tool: call.tool,
+            reason: "source_span_commitment_missing",
+            commitmentId,
+          });
+          break;
+        }
+        appliedToolNames.push(call.tool);
+        break;
+      }
+      case "mission.attach_lexical_anchor": {
+        const commitmentId = stringValue(args.commitmentId, "", 120);
+        const lexicalAnchor = stringValue(args.lexicalAnchor, "", 180);
+        if (!commitmentId || !lexicalAnchor) {
+          rejectedToolCalls.push({
+            tool: call.tool,
+            reason: "lexical_anchor_missing_commitment_or_anchor",
+          });
+          break;
+        }
+        const updated = updateDraftCommitment(draft, commitmentId, (commitment) => {
+          commitment.lexicalAnchors = uniqueStringList(
+            [...stringArray(commitment.lexicalAnchors, 24, 180), lexicalAnchor],
+            24,
+          );
+        });
+        if (!updated) {
+          rejectedToolCalls.push({
+            tool: call.tool,
+            reason: "lexical_anchor_commitment_missing",
+            commitmentId,
+          });
+          break;
+        }
+        appliedToolNames.push(call.tool);
+        break;
+      }
+      case "mission.add_non_goal":
+        draft.explicitNonGoals = uniqueStringList(
+          [
+            ...(Array.isArray(draft.explicitNonGoals) ? (draft.explicitNonGoals as string[]) : []),
+            stringValue(args.nonGoal, "", 600),
+          ],
+          20,
+        );
+        appliedToolNames.push(call.tool);
+        break;
+      case "mission.add_safety_constraint":
+        draft.safetyConstraints = [
+          ...(Array.isArray(draft.safetyConstraints) ? (draft.safetyConstraints as unknown[]) : []),
+          {
+            constraintId: stringValue(args.constraintId, "", 120),
+            constraintText: stringValue(args.constraintText, "", 800),
+            boundaryKind: stringValue(args.boundaryKind, "other", 120),
+            evidenceRefs: stringArray(args.evidenceRefs, 12, 260),
+          },
+        ];
+        appliedToolNames.push(call.tool);
+        break;
+    }
+  }
+  const missingFields = missionLedgerDraftMissingFields(draft);
+  const normalized = normalizeMissionContractLedger({
+    value: draft,
+    missionId: input.missionId,
+    sourceRuntimeJobId: input.sourceRuntimeJobId,
+    sourceWorkItemId: input.sourceWorkItemId,
+    ownerObjectiveSummary: input.ownerObjectiveSummary,
+  });
+  const accepted = missingFields.length === 0;
+  return {
+    status: accepted ? "accepted" : "blocked",
+    ledger: accepted ? normalized : null,
+    draft,
+    appliedToolNames,
+    rejectedToolCalls,
+    missingFields,
+    reasonCodes: [
+      "mission_ledger_native_tool_compile",
+      accepted
+        ? "mission_ledger_native_tool_compile_accepted"
+        : "mission_ledger_native_tool_compile_blocked",
+      accepted
+        ? "mission_ledger_runtime_submitted_after_required_fields"
+        : "mission_ledger_authoring_blocked",
+      ...missingFields.map((field) => `mission_ledger_missing:${field}`),
+      ...rejectedToolCalls.map((call) => {
+        const reason = asRecord(call).reason;
+        return `mission_ledger_rejected:${typeof reason === "string" ? reason : "unknown"}`;
+      }),
+    ],
+    rawPromptStored: false,
+    rawResponseStored: false,
+    rawProviderLogStored: false,
+    rawToolLogStored: false,
+  };
 }
 
 function bounded(value: string, max: number): string {
@@ -309,6 +685,9 @@ function normalizeCommitment(
       "Model-authored evidence refs must show this commitment was handled.",
       900,
     ),
+    sourceAnchorRefs: stringArray(record.sourceAnchorRefs, 24, 360),
+    sourceSpanRefs: stringArray(record.sourceSpanRefs, 24, 420),
+    lexicalAnchors: stringArray(record.lexicalAnchors, 24, 180),
     acceptedEvidenceRefs: stringArray(record.acceptedEvidenceRefs, 20),
     rejectedEvidenceRefs: stringArray(record.rejectedEvidenceRefs, 20),
     status: statusValue(record.status),
@@ -340,64 +719,17 @@ function normalizeSafetyConstraint(value: unknown, index: number) {
   ].includes(String(record.boundaryKind))
     ? String(record.boundaryKind)
     : "other";
-  const enforcementOwner = [
-    "mission_ledger",
-    "compiler",
-    "authority_gate",
-    "runtime_policy",
-    "human_review",
-  ].includes(String(record.enforcementOwner))
-    ? String(record.enforcementOwner)
-    : "mission_ledger";
   return MissionSafetyConstraintSchema.parse({
     constraintId:
       stringValue(record.constraintId ?? record.id, "", 120) ||
       `constraint-${index + 1}-${hashText(constraintText).slice(0, 8)}`,
     constraintText,
     boundaryKind,
-    enforcementOwner,
     evidenceRefs: stringArray(record.evidenceRefs, 12),
     rawPromptStored: false,
     rawResponseStored: false,
     rawProviderLogStored: false,
   });
-}
-
-function normalizeProhibitedDirectiveCandidate(value: unknown, index: number) {
-  const record = asRecord(value);
-  const directiveText = stringValue(record.directiveText ?? record.text, "", 800);
-  if (!directiveText) {
-    return null;
-  }
-  const classification = [
-    "constraint_not_primary",
-    "primary_prohibited",
-    "ambiguous_needs_review",
-  ].includes(String(record.classification))
-    ? String(record.classification)
-    : "ambiguous_needs_review";
-  return ProhibitedDirectiveCandidateSchema.parse({
-    directiveId:
-      stringValue(record.directiveId ?? record.id, "", 120) ||
-      `directive-${index + 1}-${hashText(directiveText).slice(0, 8)}`,
-    directiveText,
-    classification,
-    rationale: stringValue(
-      record.rationale,
-      "Model-authored directive classification requires review.",
-      1_000,
-    ),
-    actionCategory:
-      typeof record.actionCategory === "string" ? bounded(record.actionCategory, 120) : null,
-    evidenceRefs: stringArray(record.evidenceRefs, 12),
-    rawPromptStored: false,
-    rawResponseStored: false,
-    rawProviderLogStored: false,
-  });
-}
-
-function normalizeMissionGate(value: unknown): MissionGate {
-  return MissionGateSchema.safeParse(value).success ? (value as MissionGate) : "clear_to_execute";
 }
 
 export function normalizeMissionContractLedger(input: {
@@ -432,6 +764,9 @@ export function normalizeMissionContractLedger(input: {
                 "This preserves the owner's stated mission when the model omits details.",
               expectedEvidenceDescription:
                 "Final evidence refs must show the owner objective was actually completed or explicitly revised.",
+              sourceAnchorRefs: [],
+              sourceSpanRefs: [],
+              lexicalAnchors: [],
               status: "pending",
               blocking: true,
             },
@@ -453,29 +788,6 @@ export function normalizeMissionContractLedger(input: {
       .map((item, index) => normalizeSafetyConstraint(item, index))
       .filter((item): item is z.infer<typeof MissionSafetyConstraintSchema> => Boolean(item))
       .slice(0, 30),
-    prohibitedDirectiveCandidates: (Array.isArray(record.prohibitedDirectiveCandidates)
-      ? record.prohibitedDirectiveCandidates
-      : []
-    )
-      .map((item, index) => normalizeProhibitedDirectiveCandidate(item, index))
-      .filter((item): item is z.infer<typeof ProhibitedDirectiveCandidateSchema> => Boolean(item))
-      .slice(0, 20),
-    authorityBoundary: {
-      requestedAuthority:
-        typeof asRecord(record.authorityBoundary).requestedAuthority === "string"
-          ? bounded(String(asRecord(record.authorityBoundary).requestedAuthority), 120)
-          : null,
-      maximumAuthority: stringValue(
-        asRecord(record.authorityBoundary).maximumAuthority,
-        "workflow_default",
-        120,
-      ),
-      requiresApproval: Boolean(asRecord(record.authorityBoundary).requiresApproval),
-      approvalRefs: stringArray(asRecord(record.authorityBoundary).approvalRefs, 12),
-      authorityRefs: stringArray(asRecord(record.authorityBoundary).authorityRefs, 12),
-      rawPromptStored: false,
-      rawResponseStored: false,
-    },
     storagePolicy: {
       rawPromptStorageAllowed: false,
       rawResponseStorageAllowed: false,
@@ -488,17 +800,11 @@ export function normalizeMissionContractLedger(input: {
     },
     lifecycleBoundary: {
       workQueueLifecycleMutationAllowed: false,
-      authorityGrantAllowed: false,
       deployAllowed: false,
       outboundSendAllowed: false,
       modelPromotionAllowed: false,
       runtimeJobLifecycleOwner: "runtime_jobs",
     },
-    missionGate: normalizeMissionGate(record.missionGate),
-    missionGateRationale:
-      typeof record.missionGateRationale === "string"
-        ? bounded(record.missionGateRationale, 1_000)
-        : null,
     revisionProposals: [],
     ledgerStatus: "pending" as const,
     rawPromptStored: false,
@@ -522,7 +828,10 @@ export function missionCommitmentIsClosed(commitment: MissionCommitment): boolea
 }
 
 export function openBlockingMissionCommitments(ledger: MissionContractLedger): MissionCommitment[] {
-  return ledger.blockingCommitments.filter((commitment) => !missionCommitmentIsClosed(commitment));
+  const blockingCommitments = Array.isArray(ledger.blockingCommitments)
+    ? ledger.blockingCommitments
+    : [];
+  return blockingCommitments.filter((commitment) => !missionCommitmentIsClosed(commitment));
 }
 
 export function missionLedgerHasOpenBlockingCommitments(ledger: MissionContractLedger): boolean {
@@ -534,24 +843,12 @@ export function recomputeMissionLedgerStatus(ledger: MissionContractLedger): Mis
   return {
     ...ledger,
     ledgerStatus:
-      ledger.missionGate === "blocked_primary_prohibited"
-        ? "blocked"
-        : ledger.missionGate === "needs_review"
+      openBlocking.length === 0
+        ? "satisfied"
+        : openBlocking.some((commitment) => commitment.status === "needs_review")
           ? "needs_review"
-          : openBlocking.length === 0
-            ? "satisfied"
-            : openBlocking.some((commitment) => commitment.status === "needs_review")
-              ? "needs_review"
-              : "pending",
+          : "pending",
   };
-}
-
-export function missionLedgerBlocksExecution(ledger: MissionContractLedger): boolean {
-  return ledger.missionGate === "blocked_primary_prohibited";
-}
-
-export function missionLedgerRequiresReviewBeforeExecution(ledger: MissionContractLedger): boolean {
-  return ledger.missionGate === "needs_review";
 }
 
 export function applyMissionCommitmentEvaluation(input: {
@@ -603,28 +900,31 @@ export function applyMissionCommitmentEvaluation(input: {
 export function summarizeMissionContractLedger(
   ledger: MissionContractLedger,
 ): MissionContractLedgerSummary {
-  const commitments = [...ledger.blockingCommitments, ...ledger.nonBlockingCommitments].map(
-    (commitment) => ({
-      commitmentId: commitment.commitmentId,
-      commitmentText: commitment.commitmentText,
-      expectedEvidenceDescription: commitment.expectedEvidenceDescription,
-      status: commitment.status,
-      blocking: commitment.blocking,
-      acceptedEvidenceRefs: commitment.acceptedEvidenceRefs.slice(0, 8),
-      remainingWork: commitment.remainingWork.slice(0, 6),
-    }),
-  );
+  const blockingCommitments = Array.isArray(ledger.blockingCommitments)
+    ? ledger.blockingCommitments
+    : [];
+  const nonBlockingCommitments = Array.isArray(ledger.nonBlockingCommitments)
+    ? ledger.nonBlockingCommitments
+    : [];
+  const safetyConstraints = Array.isArray(ledger.safetyConstraints) ? ledger.safetyConstraints : [];
+  const commitments = [...blockingCommitments, ...nonBlockingCommitments].map((commitment) => ({
+    commitmentId: commitment.commitmentId,
+    commitmentText: commitment.commitmentText,
+    expectedEvidenceDescription: commitment.expectedEvidenceDescription,
+    status: commitment.status,
+    blocking: commitment.blocking,
+    acceptedEvidenceRefs: commitment.acceptedEvidenceRefs.slice(0, 8),
+    remainingWork: commitment.remainingWork.slice(0, 6),
+    sourceAnchorRefs: (commitment.sourceAnchorRefs ?? []).slice(0, 8),
+    sourceSpanRefs: (commitment.sourceSpanRefs ?? []).slice(0, 8),
+    lexicalAnchors: (commitment.lexicalAnchors ?? []).slice(0, 8),
+  }));
   return {
     missionId: ledger.missionId,
     ledgerStatus: ledger.ledgerStatus,
-    blockingCommitmentCount: ledger.blockingCommitments.length,
+    blockingCommitmentCount: blockingCommitments.length,
     openBlockingCommitmentCount: openBlockingMissionCommitments(ledger).length,
-    missionGate: ledger.missionGate,
-    missionGateRationale: ledger.missionGateRationale,
-    safetyConstraintCount: ledger.safetyConstraints.length,
-    prohibitedPrimaryDirectiveCount: ledger.prohibitedDirectiveCandidates.filter(
-      (candidate) => candidate.classification === "primary_prohibited",
-    ).length,
+    safetyConstraintCount: safetyConstraints.length,
     commitments,
     rawPromptStored: false,
     rawResponseStored: false,

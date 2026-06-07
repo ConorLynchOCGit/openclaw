@@ -24,6 +24,7 @@ import {
   type LiveCodexRunnerOptions,
   type LiveCodexRunnerResult,
 } from "./live-codex-runner.ts";
+import { resolveCodexBridgeDefaultPaths } from "./policy.ts";
 import { CODEX_BRIDGE_JOB_TYPE, type CodexBridgeNormalizedStreamEvent } from "./types.ts";
 import { ExecutionPlatformWorkEpisodeCloseoutRepository } from "./work-episode-closeout.ts";
 
@@ -43,16 +44,12 @@ const CODE_WRITING_PILOT_STREAM_EVENT_TYPE = "codex_bridge.code_writing_pilot_st
 const CODE_WRITING_PILOT_HEARTBEAT_EVENT_TYPE = "codex_bridge.code_writing_pilot_heartbeat";
 const CODE_WRITING_PILOT_COMPLETED_EVENT_TYPE = "codex_bridge.code_writing_pilot_completed";
 const DEFAULT_MAX_CODE_WRITING_LIVE_METADATA_BYTES = 96 * 1024;
-function defaultRepoPath(): string {
-  return process.env.OPENCLAW_HOST_OPERATOR_REPO_ROOT?.trim() || process.cwd();
-}
 
-function defaultWorkspaceDocsPath(): string {
-  const workspaceRoot = process.env.OPENCLAW_HOST_OPERATOR_WORKSPACE_ROOT?.trim();
-  if (workspaceRoot) {
-    return path.join(workspaceRoot, "docs/projects/execution-platform");
-  }
-  return path.join(process.cwd(), "docs/projects/execution-platform");
+export function resolveCodeWritingPilotLiveDefaultPaths(env: NodeJS.ProcessEnv = process.env): {
+  repoPath: string;
+  workspaceDocsPath: string;
+} {
+  return resolveCodexBridgeDefaultPaths(env);
 }
 
 export type CodeWritingPilotExecutionApproval = {
@@ -673,8 +670,9 @@ export class CodeWritingPilotLiveEntrypointRepository {
     this.now = options.now ?? (() => new Date());
     this.maxArtifactMetadataBytes =
       options.maxArtifactMetadataBytes ?? DEFAULT_MAX_CODE_WRITING_LIVE_METADATA_BYTES;
-    this.repoPath = options.repoPath ?? defaultRepoPath();
-    this.workspaceDocsPath = options.workspaceDocsPath ?? defaultWorkspaceDocsPath();
+    const defaultPaths = resolveCodeWritingPilotLiveDefaultPaths();
+    this.repoPath = options.repoPath ?? defaultPaths.repoPath;
+    this.workspaceDocsPath = options.workspaceDocsPath ?? defaultPaths.workspaceDocsPath;
     this.closeout =
       options.closeoutRepository ??
       new ExecutionPlatformWorkEpisodeCloseoutRepository(runtimeJobs, {

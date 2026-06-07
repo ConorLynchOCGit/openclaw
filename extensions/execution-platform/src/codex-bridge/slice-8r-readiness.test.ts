@@ -141,7 +141,7 @@ function redirectPrompt(
     scope: ["Use runtime job evidence.", "Preserve configured repo/workspace paths."],
     nonGoals: ["Do not rebuild.", "Do not use subagents.", "Do not mutate Work Queue lifecycle."],
     repoPath: "/root/services/openclaw-roles/live",
-    workspaceDocsPath: "/root/.openclaw/workspace/docs/projects/execution-platform",
+    workspaceDocsPath: "/root/services/openclaw-roles/live/docs/projects/execution-platform",
     safeUiBridge: { tailscaleRequired: true, descriptor: "Tailscale safe UI bridge" },
     promptText: "Use Supabase resolver evidence instead of local env-var absence.",
     ...overrides,

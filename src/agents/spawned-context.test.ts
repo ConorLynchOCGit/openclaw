@@ -71,6 +71,72 @@ describe("resolveSpawnedWorkspaceInheritance", () => {
     expect(resolved).toBe("/tmp/workspace-ops");
   });
 
+  it("prefers target projectRoot over runtime workspace for cross-agent spawns", () => {
+    const resolved = resolveSpawnedWorkspaceInheritance({
+      config: {
+        agents: {
+          list: [
+            {
+              id: "execution-coding",
+              workspace: "/root/.openclaw/workspace",
+              projectRoot: "/root/services/openclaw-roles/live",
+            },
+            {
+              id: "execution-context-scout",
+              workspace: "/home/node/.openclaw/workspace",
+              projectRoot: "/root/services/openclaw-roles/live",
+            },
+          ],
+        },
+      },
+      targetAgentId: "execution-context-scout",
+      requesterSessionKey: "agent:execution-coding:node:nrun_test",
+    });
+    expect(resolved).toBe("/root/services/openclaw-roles/live");
+  });
+
+  it("keeps explicit inherited projectRoot when parent and target share source root", () => {
+    const resolved = resolveSpawnedWorkspaceInheritance({
+      config: {
+        agents: {
+          list: [
+            {
+              id: "execution-coding",
+              workspace: "/root/.openclaw/workspace",
+              projectRoot: "/root/services/openclaw-roles/live",
+            },
+            {
+              id: "execution-context-scout",
+              workspace: "/home/node/.openclaw/workspace",
+              projectRoot: "/root/services/openclaw-roles/live",
+            },
+          ],
+        },
+      },
+      targetAgentId: "execution-context-scout",
+      requesterSessionKey: "agent:execution-coding:node:nrun_test",
+      explicitWorkspaceDir: " /root/services/openclaw-roles/live ",
+    });
+    expect(resolved).toBe("/root/services/openclaw-roles/live");
+  });
+
+  it("preserves explicit inherited workspace for cross-agent spawns on the same workspace root", () => {
+    const resolved = resolveSpawnedWorkspaceInheritance({
+      config: {
+        agents: {
+          list: [
+            { id: "main", workspace: "/tmp/workspace-main" },
+            { id: "ops", workspace: "/tmp/workspace-main" },
+          ],
+        },
+      },
+      targetAgentId: "ops",
+      requesterSessionKey: "agent:main:subagent:parent",
+      explicitWorkspaceDir: " /tmp/workspace-main ",
+    });
+    expect(resolved).toBe("/tmp/workspace-main");
+  });
+
   it("falls back to requester session agent when targetAgentId is missing", () => {
     const resolved = resolveSpawnedWorkspaceInheritance({
       config,

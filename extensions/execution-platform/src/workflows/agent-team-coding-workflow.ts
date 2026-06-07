@@ -23,6 +23,7 @@ export const agentTeamCodingWorkflowContract: ExecutionWorkflowContract = {
       "Use the team to add tests for the execution router.",
       "Run the agent team on this small docs update.",
       "Make a small code change and close it out.",
+      "Implement, wire, harden, refactor, or fix a workflow, plugin, or system in the repo.",
     ],
     negativeExamples: [
       "What is the current status?",
@@ -31,7 +32,8 @@ export const agentTeamCodingWorkflowContract: ExecutionWorkflowContract = {
       "Research current pricing without code changes.",
     ],
     routingHints: [
-      "Use for bounded code, test, docs, review, or refactor work.",
+      "Use for bounded implementation, code edits, tests, docs/source updates, review, refactor, migration, hardening, wiring, bug-fix, validation, proof, or closeout work.",
+      "When a named workflow, plugin, system, feature, or product area is the thing being changed, keep it as the subject and use agent_team.coding as the executor.",
       "Require node-local node resource demand readiness before write tools open.",
       "Use one write-authority lane at a time.",
       "Use V4 Pro only for test_engineer.",
@@ -56,7 +58,7 @@ export const agentTeamCodingWorkflowContract: ExecutionWorkflowContract = {
   ],
   roles: [
     { roleId: "orchestrator", required: true, authority: "control" },
-    { roleId: "resource_scout", required: false, authority: "read_only" },
+    { roleId: "context_scout", required: false, authority: "read_only" },
     { roleId: "implementation_engineer", required: true, authority: "write" },
     {
       roleId: "test_engineer",
@@ -75,7 +77,7 @@ export const agentTeamCodingWorkflowContract: ExecutionWorkflowContract = {
   ],
   preflightGates: [
     { gateId: "runtime_truth_available", required: true },
-    { gateId: "node_resource_demand_before_write", required: true },
+    { gateId: "native_source_grounding_before_write", required: true },
     { gateId: "model_roster_enforced", required: true },
   ],
   approvalGates: [

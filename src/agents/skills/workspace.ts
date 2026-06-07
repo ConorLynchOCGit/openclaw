@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -110,6 +111,7 @@ const DEFAULT_MAX_SKILLS_LOADED_PER_SOURCE = 200;
 const DEFAULT_MAX_SKILLS_IN_PROMPT = 150;
 const DEFAULT_MAX_SKILLS_PROMPT_CHARS = 18_000;
 const DEFAULT_MAX_SKILL_FILE_BYTES = 256_000;
+const DEFAULT_ACTIVE_REQUIRED_SKILL_BYTES = 120_000;
 
 type ResolvedSkillsLimits = {
   maxCandidatesPerRoot: number;
@@ -598,6 +600,109 @@ function escapeXml(str: string): string {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&apos;");
+}
+
+function hashSkillSource(body: string): string {
+  return createHash("sha256").update(body).digest("hex");
+}
+
+function readActiveRequiredSkillBody(params: { filePath: string; maxBytes: number }): {
+  body: string | null;
+  rawChars: number;
+  missing: boolean;
+  truncated: boolean;
+} {
+  try {
+    const stat = fs.statSync(params.filePath);
+    if (!stat.isFile()) {
+      return { body: null, rawChars: 0, missing: true, truncated: false };
+    }
+    if (stat.size > params.maxBytes) {
+      return { body: null, rawChars: stat.size, missing: false, truncated: true };
+    }
+    const body = fs.readFileSync(params.filePath, "utf8");
+    return { body, rawChars: body.length, missing: false, truncated: false };
+  } catch {
+    return { body: null, rawChars: 0, missing: true, truncated: false };
+  }
+}
+
+function activeSkillSourceRef(filePath: string): string {
+  return `openclaw-skill-file://${encodeURIComponent(path.resolve(filePath))}`;
+}
+
+export function buildRequiredActiveSkillSnapshot(
+  workspaceDir: string,
+  opts: WorkspaceSkillBuildOptions & {
+    requiredSkillNames: readonly string[];
+    maxActiveSkillBytes?: number;
+  },
+): SkillSnapshot {
+  const requiredSkillNames = normalizeSkillFilter([...opts.requiredSkillNames]) ?? [];
+  const baseSnapshot = buildWorkspaceSkillSnapshot(workspaceDir, {
+    ...opts,
+    skillFilter: requiredSkillNames,
+  });
+  const resolvedByName = new Map(
+    (baseSnapshot.resolvedSkills ?? []).map((skill) => [skill.name, skill]),
+  );
+  const maxBytes = opts.maxActiveSkillBytes ?? DEFAULT_ACTIVE_REQUIRED_SKILL_BYTES;
+  const lines = [
+    "<active_skills>",
+    "The following required OpenClaw skills are active bootstrap context for this session.",
+    "They are operating instructions, not a catalog the model must search before starting.",
+  ];
+  const activeContextSources: NonNullable<SkillSnapshot["activeContextSources"]> = [];
+
+  for (const skillName of requiredSkillNames) {
+    const resolvedSkill = resolvedByName.get(skillName);
+    const skillFilePath =
+      resolvedSkill?.filePath ?? path.join(workspaceDir, "skills", skillName, "SKILL.md");
+    const sourceRef = activeSkillSourceRef(skillFilePath);
+    const read = readActiveRequiredSkillBody({
+      filePath: skillFilePath,
+      maxBytes,
+    });
+    const body = read.body?.trim();
+    const sourceHash = body ? hashSkillSource(body) : null;
+    activeContextSources.push({
+      kind: "required_skill",
+      name: skillName,
+      path: skillFilePath,
+      sourceRef,
+      sourceHash,
+      rawChars: read.rawChars,
+      missing: read.missing,
+      truncated: read.truncated,
+    });
+    lines.push(
+      `<active_skill name="${escapeXml(skillName)}" location="${escapeXml(
+        skillFilePath,
+      )}" source_ref="${escapeXml(sourceRef)}"${
+        sourceHash ? ` source_hash="${escapeXml(sourceHash)}"` : ""
+      }>`,
+    );
+    lines.push(
+      body ||
+        `Required skill ${skillName} could not be admitted from ${skillFilePath}. Native start admission must block before model invocation if this remains unresolved.`,
+    );
+    lines.push("</active_skill>");
+  }
+  lines.push("</active_skills>");
+
+  return {
+    ...baseSnapshot,
+    prompt: lines.join("\n"),
+    skills: requiredSkillNames.map((name) => {
+      const existing = baseSnapshot.skills.find((skill) => skill.name === name);
+      return existing ?? { name };
+    }),
+    skillFilter: requiredSkillNames,
+    activeContextSources,
+    resolvedSkills: (baseSnapshot.resolvedSkills ?? []).filter((skill) =>
+      requiredSkillNames.includes(skill.name),
+    ),
+  };
 }
 
 /**

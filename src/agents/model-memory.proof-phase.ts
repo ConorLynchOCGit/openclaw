@@ -46,8 +46,9 @@ import {
 } from "./model-memory.large-document-evidence.ts";
 import { OpenAICompatibleLiveJsonExecutor } from "./model-memory.live-json-executor.ts";
 import { summarizeModelMemoryPayload } from "./model-memory.payload-summary.ts";
+import { resolveOpenClawPathRoots } from "./workspace-topology-resolver.ts";
 
-const DEFAULT_WORKSPACE_ROOT = "/root/.openclaw/workspace";
+const DEFAULT_WORKSPACE_ROOT = resolveOpenClawPathRoots().workspaceRoot;
 const DEFAULT_DAILY_FILE_LIMIT = 4;
 const DEFAULT_SATURATION_RUNS = 3;
 const DEFAULT_CONTEXT_MAX_TOKENS = 1400;

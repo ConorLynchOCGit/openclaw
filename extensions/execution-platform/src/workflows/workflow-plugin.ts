@@ -21,17 +21,14 @@ export type WorkflowPluginStatus =
   | "test_only";
 
 export type WorkflowPluginSchedulerPolicy = {
-  requireMissionLedgerForExecutionWorkflow: boolean;
   requireCostAwareCapabilityPolicy: boolean;
   requireEvidenceClaimsForMissionLedger: boolean;
   requireSchedulerToolKernel: boolean;
-  stagedSchedulerProtocolRequired: boolean;
   stagedGraphAcceptanceRequired: boolean;
   modelAuthoredWorkPacketsRequiredForComplexMission: boolean;
   resourceReadinessPolicy: "fresh_context_snapshots" | "domain_resource_manifest";
   freshContextSnapshotsRequiredForWorkerExecution: boolean;
   domainResourceManifestRequiredForWorkerExecution: boolean;
-  nodeExecutionPacketRequiredForWorkerExecution?: boolean;
   runtimeDerivedNodeEnvelopeRequired: boolean;
   runtimeDerivedExpectedEvidenceRequired: boolean;
   modelAuthoredStructureReviewRequired: boolean;
@@ -46,16 +43,15 @@ export type WorkflowPluginSchedulerPolicy = {
 
 export type WorkflowPluginSchedulerOptions = Pick<
   RuntimeWorkGraphSchedulerOptions,
-  | "requireMissionLedgerForExecutionWorkflow"
   | "requireCostAwareCapabilityPolicy"
   | "requireEvidenceClaimsForMissionLedger"
   | "requireSchedulerToolKernel"
-  | "requireGenericStagedSchedulerProtocol"
-  | "requireNodeExecutionPacketForWorkerExecution"
   | "deferCloseoutUntilExecutableGraphComplete"
   | "roleCoverageProfile"
   | "capabilityRegistrySummary"
   | "capabilityManifest"
+  | "schedulerClosurePolicy"
+  | "closureRunMode"
   | "entryNodePolicy"
   | "maxParallelNodeExecutions"
 >;
@@ -131,12 +127,10 @@ export type WorkflowPluginResolution = {
   resourceNeedCount: number;
   roleCoverageProfileId: string;
   completionReviewRequired: boolean;
-  stagedSchedulerProtocolRequired: boolean;
   stagedGraphAcceptanceRequired: boolean;
   resourceReadinessPolicy: "fresh_context_snapshots" | "domain_resource_manifest";
   freshContextSnapshotsRequiredForWorkerExecution: boolean;
   domainResourceManifestRequiredForWorkerExecution: boolean;
-  nodeExecutionPacketRequiredForWorkerExecution: boolean;
   runtimeDerivedNodeEnvelopeRequired: boolean;
   runtimeDerivedExpectedEvidenceRequired: boolean;
   modelAuthoredStructureReviewRequired: boolean;
@@ -182,9 +176,6 @@ export function validateWorkflowPlugin(input: {
   if (plugin.productionEnabled && !plugin.schedulerPolicy.requireSchedulerToolKernel) {
     reasonCodes.push("workflow_plugin_scheduler_tool_kernel_required");
   }
-  if (plugin.productionEnabled && !plugin.schedulerPolicy.stagedSchedulerProtocolRequired) {
-    reasonCodes.push("workflow_plugin_staged_scheduler_protocol_required");
-  }
   if (plugin.productionEnabled && !plugin.schedulerPolicy.stagedGraphAcceptanceRequired) {
     reasonCodes.push("workflow_plugin_staged_graph_acceptance_required");
   }
@@ -214,12 +205,6 @@ export function validateWorkflowPlugin(input: {
     !plugin.schedulerPolicy.domainResourceManifestRequiredForWorkerExecution
   ) {
     reasonCodes.push("workflow_plugin_resource_readiness_required");
-  }
-  if (
-    plugin.productionEnabled &&
-    plugin.schedulerPolicy.nodeExecutionPacketRequiredForWorkerExecution !== true
-  ) {
-    reasonCodes.push("workflow_plugin_node_execution_packet_required");
   }
   if (plugin.productionEnabled && !plugin.schedulerPolicy.runtimeDerivedNodeEnvelopeRequired) {
     reasonCodes.push("workflow_plugin_runtime_derived_node_envelope_required");
@@ -316,15 +301,12 @@ export function workflowPluginResolutionFor(input: {
     resourceNeedCount: input.plugin.resourceNeeds.length,
     roleCoverageProfileId: input.plugin.roleCoverageProfile.profileId,
     completionReviewRequired: input.definition.completionReviewPolicy.required,
-    stagedSchedulerProtocolRequired: input.plugin.schedulerPolicy.stagedSchedulerProtocolRequired,
     stagedGraphAcceptanceRequired: input.plugin.schedulerPolicy.stagedGraphAcceptanceRequired,
     resourceReadinessPolicy: input.plugin.schedulerPolicy.resourceReadinessPolicy,
     freshContextSnapshotsRequiredForWorkerExecution:
       input.plugin.schedulerPolicy.freshContextSnapshotsRequiredForWorkerExecution,
     domainResourceManifestRequiredForWorkerExecution:
       input.plugin.schedulerPolicy.domainResourceManifestRequiredForWorkerExecution,
-    nodeExecutionPacketRequiredForWorkerExecution:
-      input.plugin.schedulerPolicy.nodeExecutionPacketRequiredForWorkerExecution === true,
     runtimeDerivedNodeEnvelopeRequired:
       input.plugin.schedulerPolicy.runtimeDerivedNodeEnvelopeRequired,
     runtimeDerivedExpectedEvidenceRequired:

@@ -95,7 +95,7 @@ function redirectPrompt(
     ],
     nonGoals: ["Do not rebuild.", "Do not use subagents.", "Do not mutate Work Queue lifecycle."],
     repoPath: "/root/services/openclaw-roles/live",
-    workspaceDocsPath: "/root/.openclaw/workspace/docs/projects/execution-platform",
+    workspaceDocsPath: "/root/services/openclaw-roles/live/docs/projects/execution-platform",
     safeUiBridge: { tailscaleRequired: true, descriptor: "Tailscale safe UI bridge" },
     promptText:
       "Pause and redirect: verify configured Supabase runtime before claiming live DB is absent.",

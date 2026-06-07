@@ -23,7 +23,7 @@ describe("child work order contract", () => {
           actionId: "context",
           actionKind: "coding",
           title: "Inspect exact readback files",
-          assignedRole: "resource_scout",
+          assignedRole: "context_scout",
           assignedWorkflow: "agent_team.coding",
           metadata: {
             objective:
@@ -63,7 +63,7 @@ describe("child work order contract", () => {
 
     expect(orders).toHaveLength(2);
     expect(orders[0]).toMatchObject({
-      roleId: "resource_scout",
+      roleId: "context_scout",
       parentGraphId: "graph-1",
       rawPromptStored: false,
       rawResponseStored: false,
@@ -225,7 +225,7 @@ describe("child work order contract", () => {
   it("normalizes orchestrator delegation review while keeping judgment model-authored", () => {
     const review = normalizeOrchestratorDelegationReview({
       reviewedWorkOrderId: "child-work-order-context",
-      reviewedRoleId: "resource_scout",
+      reviewedRoleId: "context_scout",
       modelRef: "openai-codex/gpt-5.5",
       providerPath: "codex_app_server",
       modelRunRef: "codex-app-server://review",
@@ -243,7 +243,7 @@ describe("child work order contract", () => {
           objective: "Add child work-order summaries to Work Queue readback.",
           targetRefs: ["extensions/execution-platform/src/work-queue/execution-read-model.ts"],
         },
-        reasonCodes: ["resource_scout_output_accepted_by_orchestrator"],
+        reasonCodes: ["context_scout_output_accepted_by_orchestrator"],
       }),
     });
 
@@ -261,7 +261,7 @@ describe("child work order contract", () => {
   it("flags missing delegation review shape without judging child output quality", () => {
     const review = normalizeOrchestratorDelegationReview({
       reviewedWorkOrderId: "child-work-order-context",
-      reviewedRoleId: "resource_scout",
+      reviewedRoleId: "context_scout",
       modelRef: "openai-codex/gpt-5.5",
       providerPath: "codex_app_server",
       modelRunRef: "codex-app-server://review",

@@ -1,3 +1,4 @@
+import { spawn } from "node:child_process";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -9,6 +10,7 @@ let acquireSessionWriteLock: typeof import("./session-write-lock.js").acquireSes
 let cleanStaleLockFiles: typeof import("./session-write-lock.js").cleanStaleLockFiles;
 let resetSessionWriteLockStateForTest: typeof import("./session-write-lock.js").resetSessionWriteLockStateForTest;
 let resolveSessionLockMaxHoldFromTimeout: typeof import("./session-write-lock.js").resolveSessionLockMaxHoldFromTimeout;
+let SessionWriteLockAcquisitionError: typeof import("./session-write-lock.js").SessionWriteLockAcquisitionError;
 
 vi.mock("../shared/pid-alive.js", async () => {
   const original =
@@ -101,6 +103,7 @@ describe("acquireSessionWriteLock", () => {
       cleanStaleLockFiles,
       resetSessionWriteLockStateForTest,
       resolveSessionLockMaxHoldFromTimeout,
+      SessionWriteLockAcquisitionError,
     } = await import("./session-write-lock.js"));
   });
 
@@ -169,10 +172,56 @@ describe("acquireSessionWriteLock", () => {
         "utf8",
       );
 
-      await expectCurrentPidOwnsLock({ sessionFile, timeoutMs: 500, staleMs: 10 });
+      const lock = await acquireSessionWriteLock({ sessionFile, timeoutMs: 500, staleMs: 10 });
+      expect(lock.trace).toMatchObject({
+        acquired: true,
+        reclaimed: true,
+        outcome: "dead_pid_reclaimed_acquired",
+      });
+      await lock.release();
     } finally {
       await fs.rm(root, { recursive: true, force: true });
     }
+  });
+
+  it("returns a typed trace for live unrelated lock contention", async () => {
+    await withTempSessionLockFile(async ({ sessionFile, lockPath }) => {
+      const child = spawn(process.execPath, ["-e", "setTimeout(() => {}, 10_000)"], {
+        stdio: "ignore",
+      });
+      if (!child.pid) {
+        throw new Error("child pid missing");
+      }
+      await fs.writeFile(
+        lockPath,
+        JSON.stringify({
+          pid: child.pid,
+          createdAt: new Date().toISOString(),
+        }),
+        "utf8",
+      );
+
+      try {
+        await acquireSessionWriteLock({
+          sessionFile,
+          timeoutMs: 50,
+          allowReentrant: false,
+        });
+        throw new Error("expected lock acquisition to fail");
+      } catch (error) {
+        expect(error).toBeInstanceOf(SessionWriteLockAcquisitionError);
+        expect(
+          (error as InstanceType<typeof SessionWriteLockAcquisitionError>).trace,
+        ).toMatchObject({
+          acquired: false,
+          outcome: "active_lock_owner_live",
+          ownerPid: child.pid,
+          ownerPidAlive: true,
+        });
+      } finally {
+        child.kill("SIGTERM");
+      }
+    });
   });
 
   it("does not reclaim fresh malformed lock files during contention", async () => {

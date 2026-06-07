@@ -2,14 +2,8 @@ export const BOUNDARY_REPLAY_REGISTRY_VERSION = "execution-platform.boundary-rep
 
 export const BOUNDARY_REPLAY_CHECKPOINT_KINDS = [
   "router_payload",
-  "mission_ledger",
-  "obligation_graph",
+  "requirement_map",
   "work_intent_graph",
-  "before_resource_requirement_compile",
-  "after_resource_requirement_compile",
-  "resource_specialist_subturn",
-  "before_resource_handoff",
-  "after_resource_handoff",
   "before_expansion_admission",
   "after_expansion_admission",
   "before_graph_patch_write",
@@ -31,10 +25,8 @@ export const BOUNDARY_REPLAY_CHECKPOINT_KINDS = [
 export type BoundaryReplayCheckpointKind = (typeof BOUNDARY_REPLAY_CHECKPOINT_KINDS)[number];
 
 export const BOUNDARY_REPLAY_PRODUCTION_PROOF_BOUNDARY_IDS = [
-  "after_obligation_graph",
+  "after_requirement_map",
   "after_work_intent_acceptance",
-  "before_resource_requirement_compile",
-  "after_resource_handoff",
   "before_worker_execution",
   "after_worker_edit_before_persistence",
 ] as const;
@@ -46,22 +38,16 @@ const PRODUCTION_PROOF_BOUNDARY_TO_CHECKPOINT_KIND: Record<
   BoundaryReplayProductionProofBoundaryId,
   BoundaryReplayCheckpointKind
 > = {
-  after_obligation_graph: "obligation_graph",
+  after_requirement_map: "requirement_map",
   after_work_intent_acceptance: "work_intent_graph",
-  before_resource_requirement_compile: "before_resource_requirement_compile",
-  after_resource_handoff: "after_resource_handoff",
   before_worker_execution: "before_worker_invocation",
   after_worker_edit_before_persistence: "after_worker_edit",
 };
 
 export const BOUNDARY_REPLAY_CLI_BOUNDARY_ALIASES = [
   "after-graph-selection",
-  "after-obligation-graph",
+  "after-requirement-map",
   "after-work-intent-acceptance",
-  "before-resource-requirement-compile",
-  "after-resource-requirement-compile",
-  "resource-specialist-subturn",
-  "after-resource-handoff",
   "before-worker-execution",
   "after-worker-edit-before-persistence",
 ] as const;
@@ -73,12 +59,8 @@ const BOUNDARY_REPLAY_CLI_ALIAS_TO_CHECKPOINT_KIND: Record<
   BoundaryReplayCheckpointKind
 > = {
   "after-graph-selection": "node_selection",
-  "after-obligation-graph": "obligation_graph",
+  "after-requirement-map": "requirement_map",
   "after-work-intent-acceptance": "work_intent_graph",
-  "before-resource-requirement-compile": "before_resource_requirement_compile",
-  "after-resource-requirement-compile": "after_resource_requirement_compile",
-  "resource-specialist-subturn": "resource_specialist_subturn",
-  "after-resource-handoff": "after_resource_handoff",
   "before-worker-execution": "before_worker_invocation",
   "after-worker-edit-before-persistence": "after_worker_edit",
 };
@@ -170,58 +152,39 @@ export type BoundaryReplayBoundaryDefinition = {
   workQueueLifecycleMutated: false;
 };
 
-const CORE_PREFIX: BoundaryReplayCheckpointKind[] = [
-  "router_payload",
-  "mission_ledger",
-  "obligation_graph",
-];
+const CORE_PREFIX: BoundaryReplayCheckpointKind[] = ["router_payload", "requirement_map"];
 
 const WORK_INTENT_PREFIX: BoundaryReplayCheckpointKind[] = [...CORE_PREFIX, "work_intent_graph"];
 
-const RESOURCE_REQUIREMENT_PREFIX: BoundaryReplayCheckpointKind[] = [
-  ...WORK_INTENT_PREFIX,
-  "before_resource_requirement_compile",
-  "after_resource_requirement_compile",
-];
-
-const RESOURCE_HANDOFF_PREFIX: BoundaryReplayCheckpointKind[] = [
-  ...RESOURCE_REQUIREMENT_PREFIX,
-  "resource_specialist_subturn",
-  "before_resource_handoff",
-  "after_resource_handoff",
-];
-
 const EXECUTABLE_GRAPH_PREFIX: BoundaryReplayCheckpointKind[] = [
-  ...RESOURCE_HANDOFF_PREFIX,
+  ...WORK_INTENT_PREFIX,
   "graph_compile",
   "node_selection",
 ];
 
 const DEPENDENCIES: Record<BoundaryReplayCheckpointKind, BoundaryReplayCheckpointKind[]> = {
   router_payload: ["router_payload"],
-  mission_ledger: ["router_payload", "mission_ledger"],
-  obligation_graph: [...CORE_PREFIX],
+  requirement_map: [...CORE_PREFIX],
   work_intent_graph: [...WORK_INTENT_PREFIX],
-  before_resource_requirement_compile: [...WORK_INTENT_PREFIX, "before_resource_requirement_compile"],
-  after_resource_requirement_compile: [...RESOURCE_REQUIREMENT_PREFIX],
-  resource_specialist_subturn: [...RESOURCE_REQUIREMENT_PREFIX, "resource_specialist_subturn"],
-  before_resource_handoff: [...RESOURCE_REQUIREMENT_PREFIX, "resource_specialist_subturn", "before_resource_handoff"],
-  after_resource_handoff: [...RESOURCE_HANDOFF_PREFIX],
-  before_expansion_admission: [...RESOURCE_HANDOFF_PREFIX, "graph_compile", "before_expansion_admission"],
+  before_expansion_admission: [
+    ...WORK_INTENT_PREFIX,
+    "graph_compile",
+    "before_expansion_admission",
+  ],
   after_expansion_admission: [
-    ...RESOURCE_HANDOFF_PREFIX,
+    ...WORK_INTENT_PREFIX,
     "graph_compile",
     "before_expansion_admission",
     "after_expansion_admission",
   ],
-  before_graph_patch_write: [...RESOURCE_HANDOFF_PREFIX, "graph_compile", "before_graph_patch_write"],
+  before_graph_patch_write: [...WORK_INTENT_PREFIX, "graph_compile", "before_graph_patch_write"],
   after_graph_patch_write: [
-    ...RESOURCE_HANDOFF_PREFIX,
+    ...WORK_INTENT_PREFIX,
     "graph_compile",
     "before_graph_patch_write",
     "after_graph_patch_write",
   ],
-  graph_compile: [...RESOURCE_HANDOFF_PREFIX, "graph_compile"],
+  graph_compile: [...WORK_INTENT_PREFIX, "graph_compile"],
   node_selection: [...EXECUTABLE_GRAPH_PREFIX],
   before_worker_invocation: [...EXECUTABLE_GRAPH_PREFIX, "before_worker_invocation"],
   worker_execution: [...EXECUTABLE_GRAPH_PREFIX, "before_worker_invocation", "worker_execution"],
@@ -282,11 +245,7 @@ function defaultContinuationModeFor(
   if (checkpointKind === "before_worker_invocation") {
     return "run_node";
   }
-  if (
-    checkpointKind === "validation_repair" ||
-    checkpointKind === "after_resource_handoff" ||
-    checkpointKind === "after_resource_requirement_compile"
-  ) {
+  if (checkpointKind === "validation_repair" || checkpointKind.includes("resource_")) {
     return "repair_boundary";
   }
   if (checkpointKind === "closeout_finalization") {
@@ -318,9 +277,6 @@ function blockerClassesFor(checkpointKind: BoundaryReplayCheckpointKind): string
     "rejected_checkpoint",
     "raw_storage_or_authority_violation",
   ];
-  if (checkpointKind.includes("resource_requirement") || checkpointKind.includes("resource_handoff")) {
-    return [...common, "resource_snapshot_missing", "resource_snapshot_stale"];
-  }
   if (checkpointKind.includes("resource") || checkpointKind.includes("worker")) {
     return [...common, "node_readiness_missing", "resource_packet_missing"];
   }
@@ -354,7 +310,6 @@ const READBACK_FIELDS = [
   "currentCommitmentIds",
   "terminalBlockerClass",
   "nextLegalTransition",
-  "rawStorageFlags",
   "operatorReadbackSummary",
 ];
 

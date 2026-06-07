@@ -23,7 +23,7 @@ export type DynamicTestEngineer = {
     latencyMs: number;
     recommendation:
       | "repair"
-      | "resource_scout"
+      | "context_scout"
       | "escalate"
       | "human_task"
       | "needs_review"
@@ -258,7 +258,7 @@ export class DynamicTestRepairLoop {
               nodeId: testReview.nodeId,
               nodeStatus:
                 diagnosis.recommendation === "repair" ||
-                diagnosis.recommendation === "resource_scout" ||
+                diagnosis.recommendation === "context_scout" ||
                 diagnosis.recommendation === "escalate" ||
                 diagnosis.recommendation === "human_task" ||
                 diagnosis.recommendation === "needs_review"
@@ -280,7 +280,7 @@ export class DynamicTestRepairLoop {
             });
             if (
               diagnosis.recommendation === "repair" ||
-              diagnosis.recommendation === "resource_scout" ||
+              diagnosis.recommendation === "context_scout" ||
               diagnosis.recommendation === "escalate" ||
               diagnosis.recommendation === "human_task" ||
               diagnosis.recommendation === "needs_review"

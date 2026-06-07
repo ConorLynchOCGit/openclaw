@@ -111,6 +111,20 @@ describe("SimpleTriageRouterProvider", () => {
     expect(body.max_tokens).toBe(600);
   });
 
+  it("omits OpenRouter reasoning parameter when policy says reasoning none", () => {
+    const clientRequest = buildSimpleTriageModelClientRequest({
+      policyDecision: {
+        ...policyDecision(),
+        reasoningEffort: "none",
+      },
+      routerRequest: request(),
+    });
+    const body = buildOpenRouterSimpleTriageRouterBody(clientRequest);
+
+    expect(body).not.toHaveProperty("reasoning");
+    expect(body.provider).toMatchObject({ require_parameters: true });
+  });
+
   it("adds provider metadata outside the model output", async () => {
     const output = createSimpleTriageRouterOutput({
       lane: "chat_send",

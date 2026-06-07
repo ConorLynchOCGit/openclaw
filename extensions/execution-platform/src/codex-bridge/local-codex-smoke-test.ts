@@ -19,6 +19,7 @@ import {
   type SupervisorProcessRunner,
 } from "./execution-supervisor.ts";
 import type { LiveCodexRunnerOptions } from "./live-codex-runner.ts";
+import { DEFAULT_REPO_PATH, DEFAULT_WORKSPACE_DOCS_PATH } from "./policy.ts";
 import {
   createCompletedWorkPathContract,
   type CompletedWorkPathContract,
@@ -33,8 +34,6 @@ import {
   isCodexBridgeJobPayload,
 } from "./types.ts";
 
-const DEFAULT_REPO_PATH = "/root/services/openclaw-roles/live";
-const DEFAULT_WORKSPACE_DOCS_PATH = "/root/.openclaw/workspace/docs/projects/execution-platform";
 const DEFAULT_MAX_RUNTIME_MS = 120_000;
 const DEFAULT_MAX_STDOUT_BYTES = 1024 * 1024;
 const DEFAULT_MAX_STDERR_BYTES = 128 * 1024;

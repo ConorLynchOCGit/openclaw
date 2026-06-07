@@ -199,6 +199,35 @@ export type RuntimeWorkGraphRepositoryOptions = {
   maxJsonBytes?: number;
 };
 
+export type RuntimeWorkGraphTopologyNodeInput = {
+  nodeId: string;
+  nodeKind: TeamGraphNodeKind;
+  assignedRole: string;
+  modelOrWorkerRef?: string | null;
+  inputHandoffRefs?: string[];
+  outputArtifactRefs?: string[];
+  nodeStatus?: TeamGraphNodeStatus;
+  budgetUsage?: JsonValue;
+  metadata?: JsonValue;
+};
+
+export type RuntimeWorkGraphTopologyEdgeInput = {
+  edgeId: string;
+  fromNodeId?: string | null;
+  toNodeId?: string | null;
+  edgeKind: TeamGraphEdgeKind;
+  reasonCodes?: string[];
+  artifactRefs?: string[];
+  metadata?: JsonValue;
+};
+
+export type RuntimeWorkGraphTopologyPersistenceResult = {
+  createdNodes: TeamGraphNode[];
+  reusedNodes: TeamGraphNode[];
+  createdEdges: TeamGraphEdge[];
+  reusedEdges: TeamGraphEdge[];
+};
+
 function toDate(value: Date | string): Date {
   return value instanceof Date ? value : new Date(value);
 }
@@ -219,6 +248,10 @@ function jsonObject(value: JsonValue | undefined): Record<string, JsonValue> {
 
 function stringArray(value: JsonValue): string[] {
   return parseStringArray(value);
+}
+
+function sqlPlaceholders(values: readonly unknown[]): string {
+  return values.map((_, index) => `$${index + 1}`).join(", ");
 }
 
 function decodeGraph(row: GraphRow): TeamRunGraph {
@@ -661,6 +694,173 @@ export class RuntimeWorkGraphRepository {
       ],
     );
     return decodeEdge(row.rows[0]!);
+  }
+
+  async persistGraphTopology(input: {
+    graphId: string;
+    nodes: RuntimeWorkGraphTopologyNodeInput[];
+    edges: RuntimeWorkGraphTopologyEdgeInput[];
+  }): Promise<RuntimeWorkGraphTopologyPersistenceResult> {
+    for (const node of input.nodes) {
+      assertBoundedStringArray(node.inputHandoffRefs ?? [], "input handoff refs");
+      assertBoundedStringArray(node.outputArtifactRefs ?? [], "output artifact refs");
+      this.assertMetadata(node.budgetUsage, "node budget usage");
+      this.assertMetadata(node.metadata, "node metadata", { manifestOnly: true });
+    }
+    for (const edge of input.edges) {
+      assertBoundedStringArray(edge.reasonCodes ?? [], "edge reason codes");
+      assertBoundedStringArray(edge.artifactRefs ?? [], "edge artifact refs");
+      this.assertMetadata(edge.metadata, "edge metadata");
+    }
+    const nodeIds = [...new Set(input.nodes.map((node) => node.nodeId))];
+    const edgeIds = [...new Set(input.edges.map((edge) => edge.edgeId))];
+    if (nodeIds.length !== input.nodes.length) {
+      throw new Error("runtime_work_graph_topology_duplicate_node_ids_in_patch");
+    }
+    if (edgeIds.length !== input.edges.length) {
+      throw new Error("runtime_work_graph_topology_duplicate_edge_ids_in_patch");
+    }
+    const now = this.now();
+    return await this.sql.withTransaction(async (tx) => {
+      const existingNodeRows =
+        nodeIds.length > 0
+          ? await tx.query<NodeRow>(
+              `SELECT * FROM execution_platform.runtime_work_graph_nodes WHERE node_id IN (${sqlPlaceholders(nodeIds)})`,
+              nodeIds,
+            )
+          : { rows: [] as NodeRow[] };
+      const existingNodesById = new Map(existingNodeRows.rows.map((row) => [row.node_id, row]));
+      const createdNodes: TeamGraphNode[] = [];
+      const reusedNodes: TeamGraphNode[] = [];
+      for (const node of input.nodes) {
+        const existing = existingNodesById.get(node.nodeId);
+        if (existing) {
+          if (existing.graph_id !== input.graphId) {
+            throw new Error(
+              `runtime_work_graph_topology_node_id_cross_graph_conflict:${node.nodeId}:${existing.graph_id}:${input.graphId}`,
+            );
+          }
+          if (
+            existing.node_kind !== node.nodeKind ||
+            existing.assigned_role !== node.assignedRole
+          ) {
+            throw new Error(
+              `runtime_work_graph_topology_node_id_same_graph_conflict:${node.nodeId}:${existing.node_kind}:${node.nodeKind}:${existing.assigned_role}:${node.assignedRole}`,
+            );
+          }
+          reusedNodes.push(decodeNode(existing));
+          continue;
+        }
+        const inserted = await tx.query<NodeRow>(
+          `
+            INSERT INTO execution_platform.runtime_work_graph_nodes (
+              node_id,
+              graph_id,
+              node_kind,
+              assigned_role,
+              model_or_worker_ref,
+              runtime_job_id,
+              human_task_id,
+              input_handoff_refs,
+              output_artifact_refs,
+              node_status,
+              budget_usage,
+              metadata,
+              started_at,
+              completed_at,
+              created_at,
+              updated_at
+            )
+            VALUES ($1, $2, $3, $4, $5, NULL, NULL, $6::jsonb, $7::jsonb, $8, $9::jsonb, $10::jsonb, $11::timestamptz, $12::timestamptz, $13::timestamptz, $13::timestamptz)
+            RETURNING *
+          `,
+          [
+            node.nodeId,
+            input.graphId,
+            node.nodeKind,
+            node.assignedRole,
+            node.modelOrWorkerRef ?? null,
+            JSON.stringify(node.inputHandoffRefs ?? []),
+            JSON.stringify(node.outputArtifactRefs ?? []),
+            node.nodeStatus ?? "planned",
+            json(node.budgetUsage),
+            json(node.metadata),
+            node.nodeStatus === "running" ? now : null,
+            ["succeeded", "failed", "skipped"].includes(node.nodeStatus ?? "") ? now : null,
+            now,
+          ],
+        );
+        createdNodes.push(decodeNode(inserted.rows[0]!));
+      }
+
+      const existingEdgeRows =
+        edgeIds.length > 0
+          ? await tx.query<EdgeRow>(
+              `SELECT * FROM execution_platform.runtime_work_graph_edges WHERE edge_id IN (${sqlPlaceholders(edgeIds)})`,
+              edgeIds,
+            )
+          : { rows: [] as EdgeRow[] };
+      const existingEdgesById = new Map(existingEdgeRows.rows.map((row) => [row.edge_id, row]));
+      const createdEdges: TeamGraphEdge[] = [];
+      const reusedEdges: TeamGraphEdge[] = [];
+      for (const edge of input.edges) {
+        const existing = existingEdgesById.get(edge.edgeId);
+        if (existing) {
+          if (existing.graph_id !== input.graphId) {
+            throw new Error(
+              `runtime_work_graph_topology_edge_id_cross_graph_conflict:${edge.edgeId}:${existing.graph_id}:${input.graphId}`,
+            );
+          }
+          if (
+            existing.from_node_id !== (edge.fromNodeId ?? null) ||
+            existing.to_node_id !== (edge.toNodeId ?? null) ||
+            existing.edge_kind !== edge.edgeKind
+          ) {
+            throw new Error(
+              `runtime_work_graph_topology_edge_id_same_graph_conflict:${edge.edgeId}`,
+            );
+          }
+          reusedEdges.push(decodeEdge(existing));
+          continue;
+        }
+        const inserted = await tx.query<EdgeRow>(
+          `
+            INSERT INTO execution_platform.runtime_work_graph_edges (
+              edge_id,
+              graph_id,
+              from_node_id,
+              to_node_id,
+              edge_kind,
+              reason_codes,
+              artifact_refs,
+              metadata,
+              created_at
+            )
+            VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7::jsonb, $8::jsonb, $9::timestamptz)
+            RETURNING *
+          `,
+          [
+            edge.edgeId,
+            input.graphId,
+            edge.fromNodeId ?? null,
+            edge.toNodeId ?? null,
+            edge.edgeKind,
+            JSON.stringify(edge.reasonCodes ?? []),
+            JSON.stringify(edge.artifactRefs ?? []),
+            json(edge.metadata),
+            now,
+          ],
+        );
+        createdEdges.push(decodeEdge(inserted.rows[0]!));
+      }
+
+      return {
+        createdNodes,
+        reusedNodes,
+        createdEdges,
+        reusedEdges,
+      };
+    });
   }
 
   async recordRoleInvocation(input: {

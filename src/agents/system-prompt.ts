@@ -153,6 +153,16 @@ function buildSkillsSection(params: { skillsPrompt?: string; readToolName: strin
   if (!trimmed) {
     return [];
   }
+  if (trimmed.includes("<active_skills>")) {
+    return [
+      "## Skills (mandatory)",
+      "The following skills are already active for this session. Follow their instructions directly.",
+      "Do not spend the first turn searching for or reading SKILL.md just to activate these skills.",
+      "Only read a skill file if you need a referenced support file or need to inspect the source after the active instructions are insufficient.",
+      trimmed,
+      "",
+    ];
+  }
   return [
     "## Skills (mandatory)",
     "Before replying: scan <available_skills> <description> entries unless a higher-priority exception below says to skip skill scanning.",

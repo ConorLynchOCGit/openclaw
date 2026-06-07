@@ -1,4 +1,5 @@
 import type { ConversationRoutingContext } from "./conversation-routing-context.ts";
+import { validateIntakeRouteContract, type IntakeRouteContract } from "./intake-route-contract.ts";
 import type { RouterEscalationDecision } from "./router-escalation-policy.ts";
 import type { CanonicalRouterOutput, CanonicalRouterParseResult } from "./router-schema.ts";
 import type { WorkflowSummaryIndex, WorkflowSummaryIndexEntry } from "./workflow-summary-index.ts";
@@ -41,6 +42,7 @@ export type IntentValidatorInput = {
   workQueueLifecycleMutationRequested?: boolean;
   strongerRouterResultPresent?: boolean;
   sourceRoute?: string | null;
+  intakeRouteContract?: IntakeRouteContract | null;
   reasonCodes?: string[];
 };
 
@@ -208,19 +210,14 @@ export function validateIntentFrontDoorDecision(
   if (output.jobType !== workflow.jobType) {
     return decision("blocked", output, reasonCodes.concat("workflow_job_type_mismatch"));
   }
-  const unsupportedCapabilities = output.requestedCapabilities.filter(
-    (capability) => !workflow.capabilitySummary.executableCapabilities.includes(capability),
-  );
-  if (unsupportedCapabilities.length > 0) {
-    return decision(
-      "needs_review",
-      output,
-      reasonCodes.concat(
-        unsupportedCapabilities.map(
-          (capability) => `executor_capability_unsupported:${capability}`,
-        ),
-      ),
-    );
+  const intakeRouteContract = validateIntakeRouteContract({
+    contract: input.intakeRouteContract ?? null,
+    routerOutput: output,
+    workflowSummaries: input.workflowSummaries ?? input.workflowSummaryIndex?.summaries ?? [],
+  });
+  reasonCodes.push(...intakeRouteContract.reasonCodes);
+  if (!intakeRouteContract.accepted) {
+    return decision("needs_review", output, reasonCodes);
   }
   if (output.confidence < (input.minimumExecutionConfidence ?? 0.75)) {
     return decision(
@@ -236,116 +233,7 @@ export function validateIntentFrontDoorDecision(
       reasonCodes.concat("side_effect_class_incompatible_with_workflow_contract"),
     );
   }
-  const authority = output.requestedAuthority;
-  if (authority && !workflow.supportedAuthorityProfiles.includes(authority)) {
-    return decision(
-      "blocked",
-      output,
-      reasonCodes.concat("requested_authority_not_supported_by_workflow"),
-    );
-  }
-  const approvalRefs = new Set([
-    ...(input.approvalRefs ?? []),
-    ...(input.authority?.approvalRefs ?? []),
-  ]);
-  if (output.requiresApproval || output.approvalKind) {
-    const approvalKind = output.approvalKind ?? output.requestedAuthority;
-    if (
-      ownerDefaultAuthoritySatisfiesApproval({
-        output,
-        workflow,
-        approvalKind,
-        authority: input.authority ?? null,
-      })
-    ) {
-      reasonCodes.push("approval_satisfied_by_owner_default_authority");
-    } else if (!approvalKind || !approvalRefs.has(approvalKind)) {
-      return decision("approval_required", output, reasonCodes.concat("approval_required"));
-    }
-  }
-  if (
-    authority &&
-    input.authority?.approvalRequiredAuthorityProfiles?.includes(authority) &&
-    !approvalRefs.has(authority)
-  ) {
-    return decision("approval_required", output, reasonCodes.concat("authority_approval_required"));
-  }
-  if (
-    authority &&
-    input.authority?.supportedAuthorityProfiles.length &&
-    !input.authority.supportedAuthorityProfiles.includes(authority)
-  ) {
-    return decision("blocked", output, reasonCodes.concat("authority_not_available_in_snapshot"));
-  }
-
   return decision("accepted", output, reasonCodes.concat("structured_intent_validated"));
-}
-
-function ownerDefaultAuthoritySatisfiesApproval(input: {
-  output: CanonicalRouterOutput;
-  workflow: WorkflowSummaryIndexEntry;
-  approvalKind: string | null;
-  authority: IntentValidatorAuthorityState | null;
-}): boolean {
-  const defaultEnabled = new Set(input.authority?.defaultEnabledAuthorityProfiles ?? []);
-  const approvalRequired = new Set(input.authority?.approvalRequiredAuthorityProfiles ?? []);
-  const approvalKind = input.approvalKind;
-  if (approvalKind) {
-    if (approvalRequired.has(approvalKind)) {
-      return false;
-    }
-    if (defaultEnabled.has(approvalKind)) {
-      return true;
-    }
-    const supportedAuthority = new Set([
-      ...input.workflow.supportedAuthorityProfiles,
-      ...(input.authority?.supportedAuthorityProfiles ?? []),
-    ]);
-    if (supportedAuthority.has(approvalKind)) {
-      return false;
-    }
-    return ownerDefaultAuthorityCoversLowRiskWork(input);
-  }
-  if (input.output.requestedAuthority && approvalRequired.has(input.output.requestedAuthority)) {
-    return false;
-  }
-  return ownerDefaultAuthorityCoversLowRiskWork(input);
-}
-
-function ownerDefaultAuthorityCoversLowRiskWork(input: {
-  output: CanonicalRouterOutput;
-  workflow: WorkflowSummaryIndexEntry;
-  authority: IntentValidatorAuthorityState | null;
-}): boolean {
-  const defaultEnabled = new Set(input.authority?.defaultEnabledAuthorityProfiles ?? []);
-  const approvalRequired = new Set(input.authority?.approvalRequiredAuthorityProfiles ?? []);
-  const highRiskSideEffects = new Set([
-    "install_dependency",
-    "external_outbound_write",
-    "deploy_dry_run",
-    "production_side_effect",
-    "production_model_promotion",
-  ]);
-  if (highRiskSideEffects.has(input.output.sideEffectClass)) {
-    return false;
-  }
-  const highRiskActions = new Set([
-    "install_dependency",
-    "deploy",
-    "outbound_send",
-    "model_promotion",
-  ]);
-  if (
-    [...input.output.requestedActions, ...input.output.conditionalActions].some((action) =>
-      highRiskActions.has(action.action),
-    )
-  ) {
-    return false;
-  }
-  return input.workflow.supportedAuthorityProfiles.some(
-    (authorityProfile) =>
-      defaultEnabled.has(authorityProfile) && !approvalRequired.has(authorityProfile),
-  );
 }
 
 function findWorkflowSummary(
@@ -388,8 +276,8 @@ function decision(
     route: output?.route ?? null,
     workflowId: output?.executorWorkflowId ?? output?.workflowId ?? null,
     jobType: output?.jobType ?? null,
-    requiresApproval: outcome === "approval_required" || Boolean(output?.requiresApproval),
-    approvalKind: output?.approvalKind ?? output?.requestedAuthority ?? null,
+    requiresApproval: false,
+    approvalKind: null,
     reasonCodes: [...new Set(reasonCodes.flat())].slice(0, 40),
     runtimeJobCreated: false,
     authorityGranted: false,

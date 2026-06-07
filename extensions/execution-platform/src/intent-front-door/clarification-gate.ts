@@ -165,18 +165,6 @@ function collectClarificationReasonCodes(input: ClarificationGateInput): string[
   ) {
     reasonCodes.push("requested_and_negated_action_conflict");
   }
-  if (actions?.outcome === "approval_required") {
-    reasonCodes.push("side_effect_requires_policy_or_approval_context");
-  }
-  if (
-    output?.executeNow &&
-    output.requestedActions.length === 0 &&
-    output.conditionalActions.length === 0 &&
-    (output.route === "workflow_execution" || output.route === "multi_workflow_plan")
-  ) {
-    reasonCodes.push("broad_execution_request_missing_scope");
-  }
-
   return [...new Set(reasonCodes)].slice(0, 40);
 }
 
@@ -248,13 +236,11 @@ function chooseQuestion(input: ClarificationGateInput, reasonCodes: string[]): s
       : reasonCodes.includes("selected_work_queue_item_stale") ||
           reasonCodes.includes("reference_stale")
         ? "Which current work item should this use?"
-        : reasonCodes.includes("side_effect_requires_policy_or_approval_context")
-          ? "Which approved scope or authority reference should this use?"
-          : reasonCodes.includes("requested_and_negated_action_conflict")
-            ? "Should this action be skipped or should the request be revised?"
-            : reasonCodes.includes("low_confidence_execution")
-              ? "Should I answer in chat or start a workflow?"
-              : "What target or scope should I use?");
+        : reasonCodes.includes("requested_and_negated_action_conflict")
+          ? "Should this action be skipped or should the request be revised?"
+          : reasonCodes.includes("low_confidence_execution")
+            ? "Should I answer in chat or start a workflow?"
+            : "What target or scope should I use?");
   return boundText(question, CLARIFICATION_QUESTION_MAX_CHARS);
 }
 
@@ -267,14 +253,8 @@ function chooseAnswerShape(reasonCodes: string[]): ClarificationAllowedAnswerSha
   ) {
     return "select_target";
   }
-  if (reasonCodes.includes("side_effect_requires_policy_or_approval_context")) {
-    return "approval_reference";
-  }
   if (reasonCodes.includes("low_confidence_execution")) {
     return "confirm_or_cancel";
-  }
-  if (reasonCodes.includes("broad_execution_request_missing_scope")) {
-    return "provide_missing_scope";
   }
   return "short_text";
 }

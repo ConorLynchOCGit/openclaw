@@ -7,9 +7,10 @@ import type {
   RuntimeJobRepository,
 } from "../runtime-job-repository.ts";
 import type { CodexBridgeControlReasonCategory } from "./control-bridge.ts";
+import { DEFAULT_REPO_PATH, DEFAULT_WORKSPACE_DOCS_PATH } from "./policy.ts";
 
 const DEFAULT_SKILL_ROOT = "/root/.codex/skills";
-const WORKSPACE_DOC_ROOT = "/root/.openclaw/workspace/docs/projects/execution-platform";
+const WORKSPACE_DOC_ROOT = DEFAULT_WORKSPACE_DOCS_PATH;
 const DEFAULT_MAX_SKILL_TRIGGER_METADATA_BYTES = 64 * 1024;
 
 export const CODEX_BRIDGE_SKILL_EXECUTION_MODES = [
@@ -567,7 +568,7 @@ export async function discoverOpenClawClawHubSkill(
     readSkillFile?: (path: string) => Promise<string>;
   } = {},
 ): Promise<OpenClawClawHubSkillDiscovery> {
-  const repoRoot = input.repoRoot ?? "/root/services/openclaw-roles/live";
+  const repoRoot = input.repoRoot ?? DEFAULT_REPO_PATH;
   const skillPath = path.join(repoRoot, "skills", "clawhub", "SKILL.md");
   const readSkillFile = input.readSkillFile ?? ((filePath: string) => readFile(filePath, "utf8"));
   try {

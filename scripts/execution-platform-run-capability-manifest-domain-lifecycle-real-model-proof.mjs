@@ -36,7 +36,10 @@ const { OpenRouterAgentTeamModelClient } = await tsImport(
 );
 
 function sha256(value) {
-  return crypto.createHash("sha256").update(String(value ?? ""), "utf8").digest("hex");
+  return crypto
+    .createHash("sha256")
+    .update(String(value ?? ""), "utf8")
+    .digest("hex");
 }
 
 function stringifyJson(value) {
@@ -216,7 +219,9 @@ async function main() {
     "coding_closeout",
   ];
   const candidates = candidateIds
-    .map((capabilityId) => manifest.capabilities.find((capability) => capability.capabilityId === capabilityId))
+    .map((capabilityId) =>
+      manifest.capabilities.find((capability) => capability.capabilityId === capabilityId),
+    )
     .filter(Boolean)
     .map(compactCandidate);
 
@@ -230,19 +235,19 @@ async function main() {
         slotId: "coding_source_edit",
         workflowId: "agent_team.coding",
         executionIntent: "source_edit",
-        requiredResourceKinds: ["candidate_resource_refs"],
+        requiredSourceMaterialKinds: ["candidate_resource_refs"],
         requiredEvidenceKinds: ["source_change"],
       },
       {
         slotId: "product_spec_action_graph",
         workflowId: "agent_team.product_spec_planning",
         executionIntent: "domain_action",
-        requiredResourceKinds: ["planning_domain_resource_refs"],
+        requiredSourceMaterialKinds: ["planning_domain_resource_refs"],
         requiredEvidenceKinds: ["action_graph"],
       },
     ],
     requiredOutputShape:
-      "{\"decisions\":[{\"slotId\":\"coding_source_edit\",\"capabilityId\":\"...\",\"rationale\":\"bounded\"},{\"slotId\":\"product_spec_action_graph\",\"capabilityId\":\"...\",\"rationale\":\"bounded\"}]}",
+      '{"decisions":[{"slotId":"coding_source_edit","capabilityId":"...","rationale":"bounded"},{"slotId":"product_spec_action_graph","capabilityId":"...","rationale":"bounded"}]}',
     rawPromptStored: false,
     rawResponseStored: false,
   };
@@ -340,7 +345,9 @@ async function main() {
     ...safety,
   };
   if (result.status !== "succeeded") {
-    throw new Error(`capability_manifest_domain_lifecycle_provider_failed:${result.reasonCodes.join(",")}`);
+    throw new Error(
+      `capability_manifest_domain_lifecycle_provider_failed:${result.reasonCodes.join(",")}`,
+    );
   }
 
   const parsed = parseDecision(result.responseText);
@@ -352,11 +359,17 @@ async function main() {
   if (!codingDecision || !planningDecision) {
     throw new Error("capability_manifest_domain_lifecycle_slot_decision_missing");
   }
-  if (!["implementation_microtask", "implementation_complex"].includes(codingDecision.capabilityId)) {
-    throw new Error(`capability_manifest_domain_lifecycle_wrong_coding_capability:${codingDecision.capabilityId}`);
+  if (
+    !["implementation_microtask", "implementation_complex"].includes(codingDecision.capabilityId)
+  ) {
+    throw new Error(
+      `capability_manifest_domain_lifecycle_wrong_coding_capability:${codingDecision.capabilityId}`,
+    );
   }
   if (!["action_graph_proposal"].includes(planningDecision.capabilityId)) {
-    throw new Error(`capability_manifest_domain_lifecycle_wrong_planning_capability:${planningDecision.capabilityId}`);
+    throw new Error(
+      `capability_manifest_domain_lifecycle_wrong_planning_capability:${planningDecision.capabilityId}`,
+    );
   }
 
   const codingValidation = api.compileCapabilityManifestRuntimeToolOutput({
@@ -366,7 +379,7 @@ async function main() {
       workflowId: "agent_team.coding",
       phase: "execution",
       executionIntent: "source_edit",
-      requiredResourceKinds: ["candidate_resource_refs"],
+      requiredSourceMaterialKinds: ["candidate_resource_refs"],
       requiredEvidenceKinds: ["source_change"],
     },
   });
@@ -377,7 +390,7 @@ async function main() {
       workflowId: "agent_team.product_spec_planning",
       phase: "execution",
       executionIntent: "domain_action",
-      requiredResourceKinds: ["planning_domain_resource_refs"],
+      requiredSourceMaterialKinds: ["planning_domain_resource_refs"],
       requiredEvidenceKinds: ["action_graph"],
     },
   });
@@ -445,7 +458,8 @@ async function main() {
   const proofBytes = assertManifestBounds(proof, "capability_manifest_domain_lifecycle_proof");
   const proofArtifact = await writeJson("proof.json", proof);
   const manifestArtifactBody = {
-    artifactKind: "execution_platform.capability_manifest_domain_lifecycle_real_model_proof_manifest",
+    artifactKind:
+      "execution_platform.capability_manifest_domain_lifecycle_real_model_proof_manifest",
     schemaVersion: PROOF_VERSION,
     status: "passed",
     proofRef:

@@ -19,7 +19,7 @@ describe("proof harness canonical gate projection", () => {
         failed: true,
         reasonCodes: [
           "architecture_transition_topology_invalid",
-          "default_resource_scout_fanout_retired",
+          "default_context_scout_fanout_retired",
         ],
       },
     });
@@ -41,41 +41,39 @@ describe("proof harness canonical gate projection", () => {
     expect(projection.reasonCodes).toEqual(
       expect.arrayContaining([
         "proof_harness_topology_gate_rejected",
-        "default_resource_scout_fanout_retired",
+        "default_context_scout_fanout_retired",
         "stale_resource_fulfillment_proof_gate_rejected",
       ]),
     );
   });
 
-  it("keeps canonical node-local state ahead of stale commitment packet checkpoints", () => {
+  it("keeps canonical node-local state ahead of stale RequirementMap checkpoints", () => {
     const projection = projectProofHarnessCanonicalGate({
       graphId: "product-spec-graph",
-      checkpointKind: "obligation_graph",
+      checkpointKind: "requirement_map",
       latestProgress: {
         nodeId: "implementation-1",
         activeNodeKind: "implementation_scoped",
         executionIntent: "source_edit",
         evidenceMode: ["changed_files"],
         nodeLifecycleProjectionRef: "node-lifecycle-projection://implementation-1",
-        nodeLifecycleProjectionGate: "resource_ledger_ready",
+        nodeLifecycleProjectionGate: "node_agent_session_ready",
         nodeLifecycleProjectionStatus: "blocked",
-        nodeResourceDemandSessionRefs: ["node-resource-demand://implementation-1/session"],
-        nodeResourceLedgerManifestRefs: ["node-resource-ledger://implementation-1/manifest"],
-        reasonCodes: ["resource_ledger_ready"],
+        reasonCodes: ["node_lifecycle_runner_authorized_openclaw_agent_session"],
       },
     });
 
     expect(projection).toMatchObject({
-      firstOpenGate: "resource_ledger_ready",
+      firstOpenGate: "node_agent_session_ready",
       staleCheckpointGateRejected: false,
       gate: {
-        gateKind: "resource_ledger_ready",
+        gateKind: "node_agent_session_ready",
         confidence: "canonical",
         nodeId: "implementation-1",
         staleCheckpointKind: null,
       },
     });
-    expect(JSON.stringify(projection.gate)).not.toContain("obligation_graph");
+    expect(JSON.stringify(projection.gate)).not.toContain("requirement_map");
   });
 
   it("blocks retired checkpoint labels when canonical node-local state is absent", () => {

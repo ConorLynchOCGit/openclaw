@@ -105,13 +105,6 @@ function boundedErrorReasonCode(error: unknown): string {
     return "worker_adapter_threw:artifact_metadata_limit";
   }
   if (
-    message.includes("split_required") ||
-    message.includes("resource materialization") ||
-    message.includes("resource_materialization")
-  ) {
-    return "worker_adapter_threw:resource_materialization_boundary";
-  }
-  if (
     message.includes("unknown_candidate_ref") ||
     message.includes("candidateLocalRefs") ||
     message.includes("candidateRefs")
@@ -130,7 +123,6 @@ function boundedErrorReasonCode(error: unknown): string {
 function adapterThrownShouldTerminalizeNeedsReview(reasonCode: string): boolean {
   return [
     "worker_adapter_threw:artifact_metadata_limit",
-    "worker_adapter_threw:resource_materialization_boundary",
     "worker_adapter_threw:mission_ledger_contract_parse",
     "worker_adapter_threw:contract_parse",
   ].includes(reasonCode);
@@ -406,7 +398,10 @@ export class RuntimeWorkerSupervisor {
     } catch (error) {
       const errorReasonCode = boundedErrorReasonCode(error);
       const directNeedsReviewReasonCodes = runtimeNeedsReviewReasonCodes(error);
-      const recordedReasonCodes = directNeedsReviewReasonCodes ?? ["worker_adapter_threw", errorReasonCode];
+      const recordedReasonCodes = directNeedsReviewReasonCodes ?? [
+        "worker_adapter_threw",
+        errorReasonCode,
+      ];
       await this.options.repository.recordEvent({
         jobId: claimed.job.jobId,
         eventType: "runtime_worker.adapter_failed",
@@ -428,15 +423,19 @@ export class RuntimeWorkerSupervisor {
         leaseId: claimed.leaseId,
         spanId: `${claimed.job.jobId}:runtime-worker:${adapter.adapterId}`,
         phase: "adapter_execute_failed",
-        status: directNeedsReviewReasonCodes || adapterThrownShouldTerminalizeNeedsReview(errorReasonCode)
-          ? "needs_review"
-          : "failed",
+        status:
+          directNeedsReviewReasonCodes || adapterThrownShouldTerminalizeNeedsReview(errorReasonCode)
+            ? "needs_review"
+            : "failed",
         adapterId: adapter.adapterId,
         blockerSummary:
           error instanceof Error ? error.message.slice(0, 500) : String(error).slice(0, 500),
         reasonCodes: recordedReasonCodes,
       });
-      if (directNeedsReviewReasonCodes || adapterThrownShouldTerminalizeNeedsReview(errorReasonCode)) {
+      if (
+        directNeedsReviewReasonCodes ||
+        adapterThrownShouldTerminalizeNeedsReview(errorReasonCode)
+      ) {
         await this.options.repository.markJobNeedsReview({
           leaseToken: claimed.leaseToken,
           error: boundedError(error),
@@ -456,10 +455,7 @@ export class RuntimeWorkerSupervisor {
           runtimeJobId: claimed.job.jobId,
           jobType: claimed.job.jobType,
           adapterId: adapter.adapterId,
-          reasonCodes: [
-            ...recordedReasonCodes,
-            "worker_adapter_failure_terminalized_needs_review",
-          ],
+          reasonCodes: [...recordedReasonCodes, "worker_adapter_failure_terminalized_needs_review"],
         });
       }
       await this.options.repository.failJob({

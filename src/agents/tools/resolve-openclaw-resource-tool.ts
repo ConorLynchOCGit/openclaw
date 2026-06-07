@@ -3,6 +3,7 @@ import {
   listOpenClawResourceRoots,
   listOpenClawResources,
   resolveOpenClawResource,
+  resolveOpenClawResourceRegistryOptions,
 } from "../openclaw-resource-registry.js";
 import type { AnyAgentTool } from "./common.js";
 import { jsonResult, readStringParam } from "./common.js";
@@ -36,17 +37,13 @@ export function createResolveOpenClawResourceTool(opts?: {
           label: "action",
         }) ?? "resolve";
       if (action === "list") {
+        const resolvedOptions = await resolveOpenClawResourceRegistryOptions({
+          workspaceRoot: opts?.workspaceDir,
+          liveRepoRoot: opts?.liveRepoRoot,
+        });
         const [roots, resources] = await Promise.all([
-          Promise.resolve(
-            listOpenClawResourceRoots({
-              workspaceRoot: opts?.workspaceDir,
-              liveRepoRoot: opts?.liveRepoRoot,
-            }),
-          ),
-          listOpenClawResources({
-            workspaceRoot: opts?.workspaceDir,
-            liveRepoRoot: opts?.liveRepoRoot,
-          }),
+          Promise.resolve(listOpenClawResourceRoots(resolvedOptions)),
+          listOpenClawResources(resolvedOptions),
         ]);
         return jsonResult({ action, roots, resources });
       }

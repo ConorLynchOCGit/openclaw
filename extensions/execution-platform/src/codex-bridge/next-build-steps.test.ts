@@ -309,7 +309,7 @@ describe("Execution Platform next build steps", () => {
           scope: ["extensions/execution-platform/src/codex-bridge"],
           nonGoals: ["Do not mutate Work Queue lifecycle."],
           repoPath: "/root/services/openclaw-roles/live",
-          workspaceDocsPath: "/root/.openclaw/workspace/docs/projects/execution-platform",
+          workspaceDocsPath: "/root/services/openclaw-roles/live/docs/projects/execution-platform",
           safeUiBridge: null,
         },
       });

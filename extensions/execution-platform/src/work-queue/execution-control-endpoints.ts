@@ -2,6 +2,7 @@ import {
   CodexBridgeControlBridgeRepository,
   type CodexBridgeRedirectPromptMetadata,
 } from "../codex-bridge/control-bridge.ts";
+import { DEFAULT_REPO_PATH, DEFAULT_WORKSPACE_DOCS_PATH } from "../codex-bridge/policy.ts";
 import type { RuntimeJobRepository } from "../runtime-job-repository.ts";
 import {
   WorkQueueExecutionControlApi,
@@ -85,8 +86,8 @@ async function handleControl(
               objective: request.reason,
               scope: ["."],
               nonGoals: ["Do not mutate Work Queue lifecycle."],
-              repoPath: "/root/services/openclaw-roles/live",
-              workspaceDocsPath: "/root/.openclaw/workspace/docs/projects/execution-platform",
+              repoPath: DEFAULT_REPO_PATH,
+              workspaceDocsPath: DEFAULT_WORKSPACE_DOCS_PATH,
             },
           })
         : await api.cancel({ ...base, cancelRuntimeJob: request.cancelRuntimeJob });

@@ -4,6 +4,7 @@ import { constants as fsConstants } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { Type } from "@sinclair/typebox";
+import { resolveOpenClawPathRoots } from "../workspace-topology-resolver.js";
 import type { AnyAgentTool } from "./common.js";
 import { jsonResult, readStringParam, ToolAuthorizationError, ToolInputError } from "./common.js";
 
@@ -53,12 +54,6 @@ type HostOperatorFileInput = {
   content: string;
 };
 
-const DEFAULT_REPO_ROOT = "/home/node/.openclaw/host-operator/openclaw-live";
-const DEFAULT_CANONICAL_REPO_ROOT = "/root/services/openclaw-roles/live";
-const DEFAULT_PRODUCT_IMPORT_ROOT = "/home/node/.openclaw/workspace/imports/product_live/content";
-const DEFAULT_WORKSPACE_ROOT = "/home/node/.openclaw/workspace";
-const DEFAULT_CANONICAL_WORKSPACE_ROOT = "/root/.openclaw/workspace";
-const DEFAULT_AUDIT_DIR = "/home/node/.openclaw/workspace/.openclaw/host-operator-audit";
 const MAX_READ_BYTES = 200_000;
 const MAX_WRITE_BYTES = 200_000;
 const MAX_COPY_FILE_BYTES = 200_000;
@@ -208,24 +203,36 @@ function sha256Buffer(value: Buffer): string {
 }
 
 function resolveSettings(env: NodeJS.ProcessEnv): HostOperatorSettings {
+  const roots = resolveOpenClawPathRoots({
+    liveRepoRoot: env.OPENCLAW_HOST_OPERATOR_CANONICAL_REPO_ROOT,
+    workspaceRoot: env.OPENCLAW_HOST_OPERATOR_CANONICAL_WORKSPACE_ROOT,
+  });
+  const canonicalRepoRoot = normalizePath(
+    env.OPENCLAW_HOST_OPERATOR_CANONICAL_REPO_ROOT ?? roots.liveRepoRoot,
+  );
+  const canonicalWorkspaceRoot = normalizePath(
+    env.OPENCLAW_HOST_OPERATOR_CANONICAL_WORKSPACE_ROOT ?? roots.workspaceRoot,
+  );
+  const repoRoot = normalizePath(env.OPENCLAW_HOST_OPERATOR_REPO_ROOT ?? canonicalRepoRoot);
+  const workspaceRoot = normalizePath(
+    env.OPENCLAW_HOST_OPERATOR_WORKSPACE_ROOT ?? canonicalWorkspaceRoot,
+  );
   return {
     enabled: readBoolean(env.OPENCLAW_HOST_OPERATOR_ENABLED) ?? false,
     writeEnabled: readBoolean(env.OPENCLAW_HOST_OPERATOR_WRITE_ENABLED) ?? false,
     execEnabled: readBoolean(env.OPENCLAW_HOST_OPERATOR_EXEC_ENABLED) ?? false,
-    repoRoot: normalizePath(env.OPENCLAW_HOST_OPERATOR_REPO_ROOT ?? DEFAULT_REPO_ROOT),
-    canonicalRepoRoot: normalizePath(
-      env.OPENCLAW_HOST_OPERATOR_CANONICAL_REPO_ROOT ?? DEFAULT_CANONICAL_REPO_ROOT,
-    ),
+    repoRoot,
+    canonicalRepoRoot,
     productImportRoot: normalizePath(
-      env.OPENCLAW_HOST_OPERATOR_PRODUCT_IMPORT_ROOT ?? DEFAULT_PRODUCT_IMPORT_ROOT,
+      env.OPENCLAW_HOST_OPERATOR_PRODUCT_IMPORT_ROOT ??
+        path.posix.join(canonicalWorkspaceRoot, "imports/product_live/content"),
     ),
-    workspaceRoot: normalizePath(
-      env.OPENCLAW_HOST_OPERATOR_WORKSPACE_ROOT ?? DEFAULT_WORKSPACE_ROOT,
+    workspaceRoot,
+    canonicalWorkspaceRoot,
+    auditDir: normalizePath(
+      env.OPENCLAW_HOST_OPERATOR_AUDIT_DIR ??
+        path.posix.join(canonicalWorkspaceRoot, ".openclaw/host-operator-audit"),
     ),
-    canonicalWorkspaceRoot: normalizePath(
-      env.OPENCLAW_HOST_OPERATOR_CANONICAL_WORKSPACE_ROOT ?? DEFAULT_CANONICAL_WORKSPACE_ROOT,
-    ),
-    auditDir: normalizePath(env.OPENCLAW_HOST_OPERATOR_AUDIT_DIR ?? DEFAULT_AUDIT_DIR),
   };
 }
 

@@ -34,7 +34,7 @@ describe("structured tool/schema adapter", () => {
     const profile = buildStructuredAdapterProviderProfile(
       classifyModelTaskCall({
         taskClass: "schema_normalization",
-        callSite: "obligation.targeted_normalization",
+        callSite: "requirement_map.targeted_repair",
       }),
     );
     const preflight = structuredAdapterPreflight({
@@ -53,7 +53,7 @@ describe("structured tool/schema adapter", () => {
     const profile = buildStructuredAdapterProviderProfile(
       classifyModelTaskCall({
         taskClass: "local_semantic_extraction",
-        callSite: "obligation.semantic_content",
+        callSite: "intake.requirement_map.native_tool_batch",
       }),
     );
     const firstDiagnostics = structuredAdapterDiagnostics({
@@ -91,7 +91,7 @@ describe("structured tool/schema adapter", () => {
     const profile = buildStructuredAdapterProviderProfile(
       classifyModelTaskCall({
         taskClass: "local_semantic_extraction",
-        callSite: "resource.scout.specialist_handoff",
+        callSite: "context.scout.specialist_handoff",
       }),
     );
     const diagnostics = structuredAdapterDiagnostics({
@@ -100,7 +100,7 @@ describe("structured tool/schema adapter", () => {
       httpStatus: 200,
       latencyMs: 1234,
       providerRequestId: "request-123",
-      content: '{"tool":"resource.scout.submit_specialist_handoff"}',
+      content: '{"tool":"context.scout.submit_specialist_handoff"}',
       choiceCount: 1,
       contentLengthByChoice: [49],
       parsedContentLength: 49,
@@ -122,7 +122,7 @@ describe("structured tool/schema adapter", () => {
       providerPath: "openrouter",
       providerRequestId: "request-123",
       taskClass: "local_semantic_extraction",
-      callSite: "resource.scout.specialist_handoff",
+      callSite: "context.scout.specialist_handoff",
       reasoningModeSent: "none",
       choiceCount: 1,
       contentLengthByChoice: [49],

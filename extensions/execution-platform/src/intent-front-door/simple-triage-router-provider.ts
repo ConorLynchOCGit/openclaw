@@ -203,6 +203,8 @@ function buildSimpleTriageRouterUserPayload(request: SimpleTriageModelClientRequ
 }
 
 export function buildOpenRouterSimpleTriageRouterBody(request: SimpleTriageModelClientRequest) {
+  const reasoningEffort =
+    request.reasoningEffort && request.reasoningEffort !== "none" ? request.reasoningEffort : null;
   return {
     model: request.modelRef,
     messages: [
@@ -211,7 +213,7 @@ export function buildOpenRouterSimpleTriageRouterBody(request: SimpleTriageModel
     ],
     temperature: 0,
     max_tokens: request.maxTokens ?? 600,
-    ...(request.reasoningEffort ? { reasoning: { effort: request.reasoningEffort } } : {}),
+    ...(reasoningEffort ? { reasoning: { effort: reasoningEffort } } : {}),
     response_format: {
       type: "json_schema",
       json_schema: {

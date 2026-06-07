@@ -78,7 +78,8 @@ describe("live control application", () => {
             scope: ["extensions/execution-platform/src/codex-bridge/"],
             nonGoals: ["Do not rebuild."],
             repoPath: "/root/services/openclaw-roles/live",
-            workspaceDocsPath: "/root/.openclaw/workspace/docs/projects/execution-platform",
+            workspaceDocsPath:
+              "/root/services/openclaw-roles/live/docs/projects/execution-platform",
           },
         }),
       });

@@ -42,7 +42,7 @@ export type ChildWorkOrderValidation = {
 };
 
 export type ContextScoutOutput = {
-  roleId: "resource_scout";
+  roleId: "context_scout";
   relevantFiles: Array<{
     path: string;
     whyRelevant: string;
@@ -87,7 +87,7 @@ export type OrchestratorDelegationReview = {
       | "split_task"
       | "rerun_same_role"
       | "retry_same_worker"
-      | "call_resource_scout"
+      | "call_context_scout"
       | "call_test_engineer"
       | "call_reviewer"
       | "repair_from_validation"
@@ -221,7 +221,7 @@ function defaultObjectiveForRole(input: {
   taskTitle: string;
   parentObjectiveSummary: string;
 }): string {
-  if (input.roleId === "resource_scout") {
+  if (input.roleId === "context_scout") {
     return `Find exact files, symbols, existing patterns, risks, and edit points needed for: ${input.parentObjectiveSummary}`;
   }
   if (input.roleId === "implementation_engineer") {
@@ -240,7 +240,7 @@ function defaultObjectiveForRole(input: {
 }
 
 function defaultExpectedOutput(roleId: string): string {
-  if (roleId === "resource_scout") {
+  if (roleId === "context_scout") {
     return "Concrete relevant files, symbols/functions, existing patterns, risks, recommended edit points, validation suggestions, and implementation handoff summary.";
   }
   if (roleId === "implementation_engineer") {
@@ -263,7 +263,7 @@ function defaultAcceptanceCriteria(roleId: string, validationCommandRefs: string
     "Output cites bounded evidence refs and does not store raw prompts, responses, provider logs, command logs, or secrets.",
     "Output is consumed by a downstream graph node or closeout evidence.",
   ];
-  if (roleId === "resource_scout") {
+  if (roleId === "context_scout") {
     return [
       "Names concrete files or records why target refs are unavailable.",
       "Identifies existing patterns or risks relevant to the objective.",
@@ -357,7 +357,7 @@ export function createChildWorkOrder(input: {
         roleId === "implementation_engineer" ? "codex_complex_implementation" : undefined,
     },
     splitPolicy: {
-      allowed: roleId === "implementation_engineer" || roleId === "resource_scout",
+      allowed: roleId === "implementation_engineer" || roleId === "context_scout",
       maxChildPackets: roleId === "implementation_engineer" ? 5 : 3,
     },
     escalationPolicy: {
@@ -502,7 +502,7 @@ export function parseContextScoutOutput(input: {
     ]),
   );
   return {
-    roleId: "resource_scout",
+    roleId: "context_scout",
     relevantFiles,
     existingPatterns: compactStrings(parsed.existingPatterns, 10, 260),
     risks: compactStrings(parsed.risks, 10, 260),
@@ -544,7 +544,7 @@ export function validateContextScoutOutputShape(
     reasonCodes.push("context_specialist_required_handoff_summary_missing");
   }
   if (output.confidence < 0 || output.confidence > 1) {
-    reasonCodes.push("resource_scout_confidence_out_of_bounds");
+    reasonCodes.push("context_scout_confidence_out_of_bounds");
   }
   return {
     valid: reasonCodes.length === 0,
@@ -560,7 +560,7 @@ function nextAction(value: unknown): OrchestratorDelegationReview["assessment"][
     value === "split_task" ||
     value === "rerun_same_role" ||
     value === "retry_same_worker" ||
-    value === "call_resource_scout" ||
+    value === "call_context_scout" ||
     value === "call_test_engineer" ||
     value === "call_reviewer" ||
     value === "repair_from_validation" ||

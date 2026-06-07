@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import type { OpenClawConfig } from "../config/config.js";
 import {
   clearInternalHooks,
   registerInternalHook,
@@ -58,6 +59,35 @@ function registerMalformedBootstrapFileHook() {
     ];
   });
 }
+
+const liveModelMemoryConfig = {
+  plugins: {
+    slots: {
+      memory: "none",
+    },
+    entries: {
+      "model-memory": {
+        enabled: true,
+        config: {
+          database: {
+            url: "postgresql://user:pass@example.com:5432/model_memory_live?sslmode=require",
+          },
+          live: {
+            enabled: true,
+            includeRetrievalPacks: true,
+          },
+        },
+      },
+    },
+  },
+  agents: {
+    defaults: {
+      memorySearch: {
+        enabled: false,
+      },
+    },
+  },
+} as OpenClawConfig;
 
 describe("resolveBootstrapFilesForRun", () => {
   beforeEach(() => clearInternalHooks());
@@ -223,6 +253,34 @@ describe("resolveBootstrapContextForRun", () => {
     );
 
     expect(extra?.content).toBe("extra");
+  });
+
+  it("does not inject model-memory overlay context into ordinary bootstrap unless explicitly opted in", async () => {
+    const workspaceDir = await makeTempWorkspace("openclaw-bootstrap-");
+    await fs.writeFile(
+      path.join(workspaceDir, "AGENTS.md"),
+      "# AGENTS.md\n\n- repo rules\n",
+      "utf8",
+    );
+
+    const result = await resolveBootstrapContextForRun({
+      workspaceDir,
+      config: liveModelMemoryConfig,
+      sessionKey: "agent:execution-coding:node:nrun-test",
+      sessionId: "nrun-test",
+      agentId: "execution-coding",
+      currentTurnText: "Execute the worker node.",
+    });
+
+    expect(
+      result.contextFiles.some(
+        (file) =>
+          file.path.includes(".openclaw/model-memory/") ||
+          file.path.includes("retrieval-pack") ||
+          file.path.includes("projection"),
+      ),
+    ).toBe(false);
+    expect(result.contextFiles.some((file) => file.path.endsWith("AGENTS.md"))).toBe(true);
   });
 
   it("uses heartbeat-only bootstrap files in lightweight heartbeat mode", async () => {

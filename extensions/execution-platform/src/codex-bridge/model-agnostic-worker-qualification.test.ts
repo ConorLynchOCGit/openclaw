@@ -40,9 +40,7 @@ describe("model-agnostic worker qualification matrix", () => {
             ".artifacts/execution-platform/non-codex-tool-using-worker-live-proof-summary.json",
           ],
           modelRunRefs: ["openrouter://non-codex-tool-using-worker/kimi"],
-          changedFileRefs: [
-            "extensions/execution-platform/src/codex-bridge/non-codex-tool-using-worker-loop.ts",
-          ],
+          changedFileRefs: ["extensions/execution-platform/src/workflows/node-agent-session.ts"],
           validationRefs: ["validation://passed"],
           liveModelCallMade: true,
           liveSourceEditMade: true,
@@ -114,7 +112,7 @@ describe("model-agnostic worker qualification matrix", () => {
       providerPath: "openrouter",
       taskFamilies: [
         buildQualificationTaskFamilyResult({
-          taskFamily: "repo_resource_scout",
+          taskFamily: "repo_context_scout",
           status: "production_qualified",
           evidenceRefs: ["artifact://deepseek/context-scout-quality"],
           modelRunRefs: ["openrouter://deepseek/context-run"],
@@ -135,8 +133,8 @@ describe("model-agnostic worker qualification matrix", () => {
 
     expect(
       selectModelAgnosticWorkerCandidate({
-        taskFamily: "repo_resource_scout",
-        specializationId: "non_codex_resource_scout",
+        taskFamily: "repo_context_scout",
+        specializationId: "non_codex_context_scout",
         matrix,
       }).profile?.candidateId,
     ).toBe("openrouter.deepseek.deepseek-v4-flash");
@@ -171,10 +169,10 @@ describe("model-agnostic worker qualification matrix", () => {
     );
 
     const passed = evaluateModelPolicyStagePromotionGate({
-      stage: "resource_scout",
+      stage: "context_scout",
       candidateId: "openrouter.qwen.qwen3-coder-next",
       observations: Array.from({ length: 8 }, (_, index) => ({
-        stage: "resource_scout" as const,
+        stage: "context_scout" as const,
         candidateId: "openrouter.qwen.qwen3-coder-next",
         validOutput: true,
         latencyMs: 3_000 + index,

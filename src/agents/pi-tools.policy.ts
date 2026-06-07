@@ -23,7 +23,11 @@ import {
   type SubagentSessionRole,
 } from "./subagent-capabilities.js";
 import { isToolAllowedByPolicies, isToolAllowedByPolicyName } from "./tool-policy-match.js";
-import { normalizeToolName } from "./tool-policy.js";
+import {
+  mergeAlsoAllowPolicy,
+  normalizeToolName,
+  resolveToolProfilePolicy,
+} from "./tool-policy.js";
 
 /**
  * Tools always denied for sub-agents regardless of depth.
@@ -297,6 +301,23 @@ function resolveImplicitProfileAlsoAllow(params: {
   return implicit.size > 0 ? Array.from(implicit) : undefined;
 }
 
+export type EffectiveToolProfileSource = "agent" | "global" | "provider" | "none";
+
+function hasExplicitAgentToolAllowOrProfile(agentTools?: AgentToolsConfig): boolean {
+  return Boolean(agentTools?.profile) || Array.isArray(agentTools?.allow);
+}
+
+function pickGlobalPolicyForAgent(params: {
+  globalTools?: OpenClawConfig["tools"];
+  localPolicyExplicit: boolean;
+}): SandboxToolPolicy | undefined {
+  if (!params.localPolicyExplicit) {
+    return pickSandboxToolPolicy(params.globalTools);
+  }
+  const deny = Array.isArray(params.globalTools?.deny) ? params.globalTools.deny : undefined;
+  return deny && deny.length > 0 ? { deny } : undefined;
+}
+
 export function resolveEffectiveToolPolicy(params: {
   config?: OpenClawConfig;
   sessionKey?: string;
@@ -315,8 +336,14 @@ export function resolveEffectiveToolPolicy(params: {
     params.config && agentId ? resolveAgentConfig(params.config, agentId) : undefined;
   const agentTools = agentConfig?.tools;
   const globalTools = params.config?.tools;
+  const localPolicyExplicit = hasExplicitAgentToolAllowOrProfile(agentTools);
 
-  const profile = agentTools?.profile ?? globalTools?.profile;
+  const profile = agentTools?.profile ?? (localPolicyExplicit ? undefined : globalTools?.profile);
+  const effectiveProfileSource: EffectiveToolProfileSource = agentTools?.profile
+    ? "agent"
+    : profile
+      ? "global"
+      : "none";
   const providerPolicy = resolveProviderToolPolicy({
     byProvider: globalTools?.byProvider,
     modelProvider: params.modelProvider,
@@ -328,7 +355,8 @@ export function resolveEffectiveToolPolicy(params: {
     modelId: params.modelId,
   });
   const explicitProfileAlsoAllow =
-    resolveExplicitProfileAlsoAllow(agentTools) ?? resolveExplicitProfileAlsoAllow(globalTools);
+    resolveExplicitProfileAlsoAllow(agentTools) ??
+    (localPolicyExplicit ? undefined : resolveExplicitProfileAlsoAllow(globalTools));
   const implicitProfileAlsoAllow = resolveImplicitProfileAlsoAllow({ globalTools, agentTools });
   const profileAlsoAllow =
     explicitProfileAlsoAllow || implicitProfileAlsoAllow
@@ -338,11 +366,13 @@ export function resolveEffectiveToolPolicy(params: {
       : undefined;
   return {
     agentId,
-    globalPolicy: pickSandboxToolPolicy(globalTools),
+    globalPolicy: pickGlobalPolicyForAgent({ globalTools, localPolicyExplicit }),
     globalProviderPolicy: pickSandboxToolPolicy(providerPolicy),
     agentPolicy: pickSandboxToolPolicy(agentTools),
     agentProviderPolicy: pickSandboxToolPolicy(agentProviderPolicy),
     profile,
+    effectiveProfileSource,
+    localPolicyExplicit,
     providerProfile: agentProviderPolicy?.profile ?? providerPolicy?.profile,
     // alsoAllow is applied at the profile stage (to avoid being filtered out early).
     profileAlsoAllow,
@@ -352,6 +382,57 @@ export function resolveEffectiveToolPolicy(params: {
         ? providerPolicy?.alsoAllow
         : undefined,
   };
+}
+
+export type EffectiveToolPolicyAccess = {
+  toolName: string;
+  allowed: boolean;
+  blockedBy: string[];
+  effectiveProfileSource: EffectiveToolProfileSource;
+  localPolicyExplicit: boolean;
+};
+
+export function resolveEffectiveToolPolicyAccess(params: {
+  config?: OpenClawConfig;
+  sessionKey?: string;
+  agentId?: string;
+  modelProvider?: string;
+  modelId?: string;
+  toolNames: string[];
+}): EffectiveToolPolicyAccess[] {
+  const effective = resolveEffectiveToolPolicy(params);
+  const profilePolicy = mergeAlsoAllowPolicy(
+    resolveToolProfilePolicy(effective.profile),
+    effective.profileAlsoAllow,
+  );
+  const providerProfilePolicy = mergeAlsoAllowPolicy(
+    resolveToolProfilePolicy(effective.providerProfile),
+    effective.providerProfileAlsoAllow,
+  );
+  const policies: Array<{ label: string; policy: SandboxToolPolicy | undefined }> = [
+    { label: "tools.profile", policy: profilePolicy },
+    { label: "tools.providerProfile", policy: providerProfilePolicy },
+    { label: "tools", policy: effective.globalPolicy },
+    { label: "tools.byProvider", policy: effective.globalProviderPolicy },
+    { label: "agents.list[].tools", policy: effective.agentPolicy },
+    { label: "agents.list[].tools.byProvider", policy: effective.agentProviderPolicy },
+  ];
+  return params.toolNames.map((toolName) => {
+    const blockedBy = policies
+      .filter(({ policy }) => !isToolAllowedByPolicyName(toolName, policy))
+      .map(({ label }) => label);
+    return {
+      toolName,
+      allowed: blockedBy.length === 0,
+      blockedBy,
+      effectiveProfileSource: blockedBy.includes("tools.providerProfile")
+        ? "provider"
+        : effective.providerProfile
+          ? "provider"
+          : effective.effectiveProfileSource,
+      localPolicyExplicit: effective.localPolicyExplicit,
+    };
+  });
 }
 
 export function resolveGroupToolPolicy(params: {

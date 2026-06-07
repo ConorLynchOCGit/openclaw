@@ -32,17 +32,14 @@ describe("agent_team.coding workflow plugin", () => {
     expect(plugin.workflowId).toBe("agent_team.coding");
     expect(plugin.definitionId).toBe(definition.definitionId);
     expect(plugin.schedulerPolicy).toMatchObject({
-      requireMissionLedgerForExecutionWorkflow: true,
       requireCostAwareCapabilityPolicy: true,
       requireEvidenceClaimsForMissionLedger: true,
       requireSchedulerToolKernel: true,
-      stagedSchedulerProtocolRequired: true,
       stagedGraphAcceptanceRequired: true,
       modelAuthoredWorkPacketsRequiredForComplexMission: true,
       resourceReadinessPolicy: "fresh_context_snapshots",
       freshContextSnapshotsRequiredForWorkerExecution: true,
       domainResourceManifestRequiredForWorkerExecution: false,
-      nodeExecutionPacketRequiredForWorkerExecution: true,
       runtimeDerivedNodeEnvelopeRequired: true,
       runtimeDerivedExpectedEvidenceRequired: true,
       modelAuthoredStructureReviewRequired: true,

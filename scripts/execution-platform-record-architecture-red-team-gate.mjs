@@ -8,7 +8,7 @@ import { tsImport } from "tsx/esm/api";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const artifactDir = path.join(root, ".artifacts/execution-platform");
 const workItemId = "openclaw-convergence.architecture-red-team-research-gate";
-const nextExistingItemId = "openclaw-convergence.pre-product-spec-01-context-scout-tool-loop";
+const nextExistingItemId = "openclaw-convergence.native-node-agent-session-proof";
 
 function sha256(value) {
   return createHash("sha256")

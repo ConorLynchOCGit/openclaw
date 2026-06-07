@@ -1,7 +1,13 @@
-import type { ModelAgnosticWorkerSpecializationKind } from "./model-agnostic-tool-worker-loop.ts";
+export type ModelAgnosticWorkerSpecializationKind =
+  | "kimi_implementation"
+  | "non_codex_context_scout"
+  | "non_codex_test_writer"
+  | "non_codex_docs_editor"
+  | "non_codex_validation_failure_explainer"
+  | "non_codex_frontend_editor";
 
 export type ModelAgnosticWorkerTaskFamily =
-  | "repo_resource_scout"
+  | "repo_context_scout"
   | "small_source_edit"
   | "test_writing_edit"
   | "docs_spec_edit"
@@ -102,18 +108,18 @@ export type SelectModelAgnosticWorkerCandidateInput = {
 };
 
 export type ModelPolicyPromotionStage =
+  | "worker_implementation_controller"
   | "worker_controller"
-  | "worker_context_decision"
   | "worker_patch"
   | "validation_repair"
   | "worker_evidence"
   | "worker_escalation"
   | "router_front_door"
-  | "resource_scout";
+  | "context_scout";
 
 export type NonCodexProviderRoleSlot =
+  | "implementation_controller"
   | "controller"
-  | "context_decision"
   | "patch"
   | "validation_repair"
   | "evidence"
@@ -177,25 +183,25 @@ export type ModelPolicyStagePromotionGate = {
 };
 
 const MODEL_POLICY_STAGE_MIN_RUNS: Record<ModelPolicyPromotionStage, number> = {
+  worker_implementation_controller: 3,
   worker_controller: 3,
-  worker_context_decision: 3,
   worker_patch: 3,
   validation_repair: 3,
   worker_evidence: 3,
   worker_escalation: 3,
   router_front_door: 8,
-  resource_scout: 8,
+  context_scout: 8,
 };
 
 const MODEL_POLICY_STAGE_MAX_P95_LATENCY_MS: Record<ModelPolicyPromotionStage, number> = {
+  worker_implementation_controller: 90_000,
   worker_controller: 30_000,
-  worker_context_decision: 30_000,
   worker_patch: 90_000,
   validation_repair: 30_000,
   worker_evidence: 30_000,
   worker_escalation: 30_000,
   router_front_door: 15_000,
-  resource_scout: 45_000,
+  context_scout: 45_000,
 };
 
 export function evaluateModelPolicyStagePromotionGate(input: {
@@ -229,7 +235,7 @@ export function evaluateModelPolicyStagePromotionGate(input: {
     reasonCodes.push("model_policy_stage_gate_latency_exceeded");
   }
   if (
-    (input.stage === "router_front_door" || input.stage === "resource_scout") &&
+    (input.stage === "router_front_door" || input.stage === "context_scout") &&
     input.candidateId === "openrouter.qwen.qwen3-coder-next" &&
     matching.length < minimumRuns
   ) {
@@ -290,7 +296,7 @@ const PROFILE_QWEN_CODER_NEXT: ModelAgnosticWorkerCandidateProfile = {
   providerPath: "openrouter",
   specializationIds: [
     "kimi_implementation",
-    "non_codex_resource_scout",
+    "non_codex_context_scout",
     "non_codex_validation_failure_explainer",
     "non_codex_test_writer",
     "non_codex_docs_editor",
@@ -304,7 +310,7 @@ const PROFILE_QWEN_CODER_NEXT: ModelAgnosticWorkerCandidateProfile = {
   latencyClass: "fast",
   contextCapacity: "large",
   idealTaskFamilies: [
-    "repo_resource_scout",
+    "repo_context_scout",
     "validation_failure_explanation",
     "small_source_edit",
     "test_writing_edit",
@@ -329,7 +335,7 @@ const PROFILE_DEEPSEEK_FLASH: ModelAgnosticWorkerCandidateProfile = {
   modelRef: "deepseek/deepseek-v4-flash",
   providerPath: "openrouter",
   specializationIds: [
-    "non_codex_resource_scout",
+    "non_codex_context_scout",
     "non_codex_validation_failure_explainer",
     "non_codex_docs_editor",
   ],
@@ -341,7 +347,7 @@ const PROFILE_DEEPSEEK_FLASH: ModelAgnosticWorkerCandidateProfile = {
   costClass: "cheap",
   latencyClass: "fast",
   contextCapacity: "medium",
-  idealTaskFamilies: ["repo_resource_scout", "validation_failure_explanation", "docs_spec_edit"],
+  idealTaskFamilies: ["repo_context_scout", "validation_failure_explanation", "docs_spec_edit"],
   maxTargetFiles: 4,
   maxDiffBytes: 900,
   toolProfileRefs: ["tool-profile://non-codex-support-worker/deepseek-v4-flash/v1"],
@@ -361,7 +367,7 @@ const PROFILE_DEEPSEEK_PRO: ModelAgnosticWorkerCandidateProfile = {
   modelRef: "deepseek/deepseek-v4-pro",
   providerPath: "openrouter",
   specializationIds: [
-    "non_codex_resource_scout",
+    "non_codex_context_scout",
     "non_codex_validation_failure_explainer",
     "non_codex_test_writer",
   ],
@@ -373,7 +379,7 @@ const PROFILE_DEEPSEEK_PRO: ModelAgnosticWorkerCandidateProfile = {
   costClass: "standard",
   latencyClass: "medium",
   contextCapacity: "large",
-  idealTaskFamilies: ["repo_resource_scout", "validation_failure_explanation", "test_writing_edit"],
+  idealTaskFamilies: ["repo_context_scout", "validation_failure_explanation", "test_writing_edit"],
   maxTargetFiles: 4,
   maxDiffBytes: 1_000,
   toolProfileRefs: ["tool-profile://non-codex-support-worker/deepseek-v4-pro/v1"],
@@ -427,9 +433,28 @@ export const MODEL_AGNOSTIC_WORKER_CANDIDATE_PROFILES: ModelAgnosticWorkerCandid
 ];
 
 const CANONICAL_SLOT_PROFILES: ProviderCapabilitySlotProfile[] = [
-  ...(
-    ["controller", "context_decision", "validation_repair", "evidence", "escalation"] as const
-  ).map(
+  {
+    candidateId: "openrouter.moonshotai.kimi-k2.6",
+    modelRef: "moonshotai/kimi-k2.6",
+    providerPath: "openrouter",
+    slot: "implementation_controller",
+    status: "production_qualified",
+    reasoningModesAllowed: ["high", "policy_owned"],
+    responseFormatModesAllowed: ["prompt_only", "tool_loop"],
+    taskFamilies: ["small_source_edit", "test_writing_edit", "docs_spec_edit"],
+    requiresEvidenceRefs: false,
+    evidenceRefs: [
+      "profile://openrouter.moonshotai.kimi-k2.6/implementation-controller-native-tools",
+    ],
+    limitations: [
+      "qualified for the coding proof implementation-controller path when NodeLifecycleRunner owns the legal tool envelope and readable source is included in bounded payloads",
+    ],
+    reasonCodes: ["provider_slot_profile_kimi_implementation_controller_qualified"],
+    rawPromptStored: false,
+    rawResponseStored: false,
+    rawProviderLogStored: false,
+  },
+  ...(["controller", "validation_repair", "evidence", "escalation"] as const).map(
     (slot): ProviderCapabilitySlotProfile => ({
       candidateId: "openrouter.qwen.qwen3-coder-next",
       modelRef: "qwen/qwen3-coder-next",
@@ -439,7 +464,7 @@ const CANONICAL_SLOT_PROFILES: ProviderCapabilitySlotProfile[] = [
       reasoningModesAllowed: ["none"],
       responseFormatModesAllowed: ["prompt_only", "tool_loop"],
       taskFamilies: [
-        "repo_resource_scout",
+        "repo_context_scout",
         "small_source_edit",
         "test_writing_edit",
         "docs_spec_edit",
@@ -492,9 +517,7 @@ const CANONICAL_SLOT_PROFILES: ProviderCapabilitySlotProfile[] = [
     rawResponseStored: false,
     rawProviderLogStored: false,
   },
-  ...(
-    ["controller", "context_decision", "validation_repair", "evidence", "escalation"] as const
-  ).map(
+  ...(["controller", "validation_repair", "evidence", "escalation"] as const).map(
     (slot): ProviderCapabilitySlotProfile => ({
       candidateId: "openrouter.moonshotai.kimi-k2.6",
       modelRef: "moonshotai/kimi-k2.6",
@@ -601,14 +624,7 @@ export function evaluateProviderCapabilitySlotGate(input: {
   requiredSlots?: NonCodexProviderRoleSlot[];
   profiles?: ProviderCapabilitySlotProfile[];
 }): ProviderCapabilitySlotGate {
-  const requiredSlots = input.requiredSlots ?? [
-    "controller",
-    "context_decision",
-    "patch",
-    "validation_repair",
-    "evidence",
-    "escalation",
-  ];
+  const requiredSlots = input.requiredSlots ?? ["implementation_controller", "patch"];
   const reasonCodes: string[] = [];
   const slotProfiles: ProviderCapabilitySlotProfile[] = [];
   let kimiControllerBlocked = false;
@@ -644,7 +660,11 @@ export function evaluateProviderCapabilitySlotGate(input: {
         `provider_slot_response_format_not_allowed:${slot}:${policy.responseFormatMode}`,
       );
     }
-    if (profile.candidateId === "openrouter.moonshotai.kimi-k2.6" && slot !== "patch") {
+    if (
+      profile.candidateId === "openrouter.moonshotai.kimi-k2.6" &&
+      slot !== "patch" &&
+      slot !== "implementation_controller"
+    ) {
       kimiControllerBlocked = true;
       reasonCodes.push(`kimi_controller_role_blocked:${slot}`);
     }
@@ -666,7 +686,10 @@ export function evaluateProviderCapabilitySlotGate(input: {
       : "passed",
     slotProfiles,
     reasonCodes: unique(reasonCodes, 80),
-    selectedControllerModelRef: input.modelPolicy.controller?.modelRef ?? null,
+    selectedControllerModelRef:
+      input.modelPolicy.implementation_controller?.modelRef ??
+      input.modelPolicy.controller?.modelRef ??
+      null,
     selectedPatchModelRef: input.modelPolicy.patch?.modelRef ?? null,
     kimiControllerBlocked,
     kimiPatchAuthorAllowed,
@@ -775,7 +798,7 @@ export function buildModelAgnosticWorkerSchedulerRecommendations(input: {
   const candidateProfiles = input.candidateProfiles ?? MODEL_AGNOSTIC_WORKER_CANDIDATE_PROFILES;
   const recordsByCandidate = new Map(input.records.map((record) => [record.candidateId, record]));
   const taskFamilies: ModelAgnosticWorkerTaskFamily[] = [
-    "repo_resource_scout",
+    "repo_context_scout",
     "small_source_edit",
     "test_writing_edit",
     "docs_spec_edit",

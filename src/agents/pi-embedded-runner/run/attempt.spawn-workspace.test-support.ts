@@ -68,6 +68,24 @@ type AttemptSpawnWorkspaceHoisted = {
   sessionManager: SessionManagerMocks;
 };
 
+function mockSessionLockTrace(sessionFile = "test-session.jsonl") {
+  return {
+    outcome: "active_current_session_acquired" as const,
+    sessionFile,
+    lockPath: `${sessionFile}.lock`,
+    acquired: true,
+    reclaimed: false,
+    attempts: 0,
+    timeoutMs: 0,
+    staleMs: 0,
+    ownerPid: null,
+    ownerPidAlive: null,
+    ownerCreatedAt: null,
+    ownerAgeMs: null,
+    staleReasons: [],
+  };
+}
+
 const hoisted = vi.hoisted((): AttemptSpawnWorkspaceHoisted => {
   const spawnSubagentDirectMock = vi.fn();
   const createAgentSessionMock = vi.fn();
@@ -107,6 +125,7 @@ const hoisted = vi.hoisted((): AttemptSpawnWorkspaceHoisted => {
   );
   const acquireSessionWriteLockMock = vi.fn<AcquireSessionWriteLockFn>(async (_params) => ({
     release: async () => {},
+    trace: mockSessionLockTrace(_params.sessionFile),
   }));
   const resolveBootstrapContextForRunMock = vi.fn<() => Promise<BootstrapContext>>(async () => ({
     bootstrapFiles: [],
@@ -707,6 +726,7 @@ export function resetEmbeddedAttemptHarness(
     .mockImplementation(() => createSubscriptionMock());
   hoisted.acquireSessionWriteLockMock.mockReset().mockResolvedValue({
     release: async () => {},
+    trace: mockSessionLockTrace(),
   });
   hoisted.installToolResultContextGuardMock.mockReset().mockReturnValue(() => {});
   hoisted.flushPendingToolResultsAfterIdleMock.mockReset().mockResolvedValue(undefined);

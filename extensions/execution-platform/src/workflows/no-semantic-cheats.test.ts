@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
@@ -8,6 +8,10 @@ const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../
 
 function source(relativePath: string): string {
   return readFileSync(path.join(repoRoot, relativePath), "utf8");
+}
+
+function exists(relativePath: string): boolean {
+  return existsSync(path.join(repoRoot, relativePath));
 }
 
 describe("no semantic cheats in runtime boundary code", () => {
@@ -58,21 +62,14 @@ describe("no semantic cheats in runtime boundary code", () => {
     expect(superstep).not.toContain("includesAny(");
     expect(superstep).not.toContain('code.includes("blocked")');
     expect(superstep).not.toContain('code.includes("missing")');
-    expect(superstep).toContain("CONTEXT_LIFECYCLE_STATES");
-    expect(superstep).toContain("RESOURCE_LIFECYCLE_STATES");
+    expect(superstep).toContain("SUPERSTEP_BRANCH_RESULT_STATUSES");
+    expect(superstep).toContain("SuperstepBranchResultStatusSchema");
+    expect(superstep).toContain("statusFromStructuredSignals");
+    expect(superstep).not.toContain("CONTEXT_LIFECYCLE_STATES");
+    expect(superstep).not.toContain("RESOURCE_LIFECYCLE_STATES");
     expect(compiler).not.toContain('values.includes("context")');
     expect(compiler).not.toContain('values.includes("implementation")');
     expect(compiler).toContain("findRuntimeNodeCapability");
-  });
-
-  it("does not hardcode repo file scoring in the non-Codex worker adapter", () => {
-    const adapter = source(
-      "extensions/execution-platform/src/codex-bridge/file-edit-worker-adapter.ts",
-    );
-
-    expect(adapter).not.toContain("canonical-runtime-queue");
-    expect(adapter).not.toContain("execution-read-model");
-    expect(adapter).not.toContain("work-queue-repository");
   });
 
   it("does not infer evidence kinds from artifact ref substrings", () => {
@@ -125,16 +122,6 @@ describe("no semantic cheats in runtime boundary code", () => {
     expect(compiler).toContain("Identify the target workflow registration files");
   });
 
-  it("keeps context sufficiency quality judgment model-authored", () => {
-    const contextScout = source(
-      "extensions/execution-platform/src/workflows/context-scout-tool-loop.ts",
-    );
-
-    expect(contextScout).not.toContain("summaryLength >=");
-    expect(contextScout).not.toContain("nonSummarySubstanceSignalCount >=");
-    expect(contextScout).not.toContain("no_model_authored_evidence");
-  });
-
   it("keeps scheduler model-call observability bounded and raw-free", () => {
     const envelope = source(
       "extensions/execution-platform/src/workflows/scheduler-model-call-envelope.ts",
@@ -165,29 +152,22 @@ describe("no semantic cheats in runtime boundary code", () => {
     const replayCheckpoints = source(
       "extensions/execution-platform/src/workflows/boundary-replay-checkpoints.ts",
     );
-    const readinessAuthority = source(
-      "extensions/execution-platform/src/workflows/readiness-recompute-authority.ts",
-    );
     const scheduler = source(
       "extensions/execution-platform/src/workflows/runtime-work-graph-scheduler.ts",
     );
 
+    expect(
+      exists("extensions/execution-platform/src/workflows/readiness-recompute-authority.ts"),
+    ).toBe(false);
     expect(replayCheckpoints).toContain("evaluateBoundaryReplayChildEpochEligibility");
     expect(replayCheckpoints).toContain("boundary_replay_child_epoch_mismatch");
     expect(replayCheckpoints).not.toContain('title.includes("Product/Spec")');
     expect(replayCheckpoints).not.toContain('includes("context_synthesis")');
-    expect(readinessAuthority).toContain("evaluateChildEpochFrontierEligibility");
-    expect(readinessAuthority).toContain("child_epoch_boundary_epoch_mismatch");
-    expect(readinessAuthority).not.toContain('includes("Product/Spec")');
-    expect(readinessAuthority).not.toContain("/context|implementation/iu.test");
     expect(scheduler).toContain("evaluateBoundaryReplayChildEpochEligibility");
-    expect(scheduler).toContain("compareReadinessProjectionToCurrent");
+    expect(scheduler).not.toContain("readiness-recompute-authority");
   });
 
-  it("keeps resource selection structural and model-authored", () => {
-    const resourceSelection = source(
-      "extensions/execution-platform/src/workflows/resource-selection.ts",
-    );
+  it("keeps retired resource selection deleted from production execution", () => {
     const replay = source("scripts/execution-platform-run-product-spec-boundary-replay.mjs");
     const productionRunner = source(
       "extensions/execution-platform/src/codex-bridge/dynamic-agent-team-graph-runner.ts",
@@ -197,14 +177,12 @@ describe("no semantic cheats in runtime boundary code", () => {
       replay.indexOf("function replayContextRefsForNode"),
     );
 
-    expect(resourceSelection).toContain("resource.selection.propose");
-    expect(resourceSelection).toContain("resource.selection.mark_blocked");
-    expect(resourceSelection).toContain("model_task_client_router_preflight_blocked");
-    expect(resourceSelection).not.toContain('includes("Product/Spec")');
-    expect(resourceSelection).not.toContain('includes("context")');
-    expect(resourceSelection).not.toContain('includes("implementation")');
+    expect(exists("extensions/execution-platform/src/workflows/resource-selection.ts")).toBe(false);
+    expect(replay).not.toContain("compileReplayDomainResourceSelectionPacket");
+    expect(replay).not.toContain("resource.selection.propose");
+    expect(replay).not.toContain("resource.selection.mark_blocked");
     expect(domainResourceSelectionReplaySection).not.toContain("new CodexDynamicJsonClient");
-    expect(domainResourceSelectionReplaySection).toContain("new ModelTaskClientRouter");
+    expect(domainResourceSelectionReplaySection).not.toContain("executeModelToolTurn");
     expect(replay).not.toContain("const concreteIntentRefs = [");
     expect(replay).not.toContain("...selectedTargetFileRefs,\n      ...replayNodeTargetRefs(node)");
     expect(productionRunner).not.toContain("const concreteIntentRefs = [");
@@ -249,81 +227,48 @@ describe("no semantic cheats in runtime boundary code", () => {
     expect(schedulerTools).toContain("worker.edit.persist_review_artifact");
   });
 
-  it("keeps worker smoke matrix proof lanes explicit instead of substring-classified", () => {
-    const workerSmokeMatrix = source(
-      "extensions/execution-platform/src/codex-bridge/worker-smoke-matrix.ts",
-    );
-
-    expect(workerSmokeMatrix).toContain("WorkerSmokeMatrixChildClass");
-    expect(workerSmokeMatrix).toContain("defaultProductSpecWorkerSmokeMatrixLanes");
-    expect(workerSmokeMatrix).not.toContain(".includes(\"Product/Spec\")");
-    expect(workerSmokeMatrix).not.toContain(".includes(\"implementation\")");
-    expect(workerSmokeMatrix).not.toContain(".includes(\"context\")");
-    expect(workerSmokeMatrix).not.toContain("/Product\\/Spec/");
-    expect(workerSmokeMatrix).not.toContain("/implementation/");
-  });
-
-  it("keeps adversarial proof-entry lexical traps structural instead of semantic", () => {
-    const adversarialSuite = source(
-      "extensions/execution-platform/src/codex-bridge/adversarial-proof-entry-suite.ts",
-    );
-
-    expect(adversarialSuite).toContain("ADVERSARIAL_PROOF_ENTRY_CASE_IDS");
-    expect(adversarialSuite).toContain("semantic_lexical_trap");
-    expect(adversarialSuite).toContain("lexical_trap_structural_fields_unchanged");
-    expect(adversarialSuite).not.toContain(".includes(\"Product/Spec\")");
-    expect(adversarialSuite).not.toContain(".includes(\"implementation\")");
-    expect(adversarialSuite).not.toContain(".includes(\"context\")");
-    expect(adversarialSuite).not.toContain("/Product\\/Spec/");
-    expect(adversarialSuite).not.toContain("/implementation/");
-    expect(adversarialSuite).not.toContain("/context/");
-  });
-
-  it("keeps context repair requirements structural and consumer-authority scoped", () => {
-    const contextRepair = source(
-      "extensions/execution-platform/src/workflows/context-repair-requirement.ts",
-    );
+  it("keeps retired context repair requirements out of scheduler ownership", () => {
     const scheduler = source(
       "extensions/execution-platform/src/workflows/runtime-work-graph-scheduler.ts",
     );
 
-    expect(contextRepair).toContain("compileContextRepairRequirement");
-    expect(contextRepair).toContain("resource_repair_consumer_edge_missing");
-    expect(contextRepair).not.toContain('includes("implementation")');
-    expect(contextRepair).not.toContain('includes("Product/Spec")');
-    expect(contextRepair).not.toContain("/context|implementation/iu.test");
-    expect(scheduler).toContain("evaluateContextRepairNodeExecutionGate");
-    expect(scheduler).toContain("resource_repair.block_without_requirement");
+    expect(
+      exists("extensions/execution-platform/src/workflows/context-repair-requirement.ts"),
+    ).toBe(false);
+    expect(scheduler).not.toContain("compileContextRepairRequirement");
+    expect(scheduler).not.toContain("evaluateContextRepairNodeExecutionGate");
+    expect(scheduler).not.toContain("resource_repair.block_without_requirement");
   });
 
-  it("keeps context scope revision structural while the model owns semantic scope", () => {
-    const scopeRevision = source(
-      "extensions/execution-platform/src/workflows/context-scope-revision.ts",
+  it("keeps retired context scope revision deleted from production execution", () => {
+    const schedulerTools = source(
+      "extensions/execution-platform/src/workflows/scheduler-runtime-tools.ts",
     );
+    const nodeSession = source("extensions/execution-platform/src/workflows/node-agent-session.ts");
 
-    expect(scopeRevision).toContain("semanticScopeChosenByModel: true");
-    expect(scopeRevision).toContain("runtimeSemanticTruncationApplied: false");
-    expect(scopeRevision).toContain("resource.scope.select_legal_subset");
-    expect(scopeRevision).toContain("resource.scope.explain_unshardable_unit");
-    expect(scopeRevision).not.toContain(".sort(");
-    expect(scopeRevision).not.toContain("score");
-    expect(scopeRevision).not.toContain("/Product\\/Spec/");
-    expect(scopeRevision).not.toContain('includes("Product/Spec")');
-    expect(scopeRevision).not.toContain('includes("implementation")');
+    expect(exists("extensions/execution-platform/src/workflows/context-scope-revision.ts")).toBe(
+      false,
+    );
+    expect(schedulerTools).not.toContain("resource.scope.select_legal_subset");
+    expect(schedulerTools).not.toContain("resource.scope.explain_unshardable_unit");
+    expect(nodeSession).not.toContain("resource.scope.select_legal_subset");
+    expect(nodeSession).not.toContain("resource.scope.explain_unshardable_unit");
   });
 
-  it("keeps node context ledger structural while models own context substance", () => {
-    const ledger = source("extensions/execution-platform/src/workflows/node-resource-ledger.ts");
+  it("keeps retired node resource ledger deleted from production execution", () => {
+    const nodeSession = source("extensions/execution-platform/src/workflows/node-agent-session.ts");
+    const runner = source("src/gateway/execution-platform-agent-team-runner.ts");
 
-    expect(ledger).toContain('semanticJudgmentOwner: z.literal("model_or_human")');
-    expect(ledger).toContain("semanticQualityJudgedByDeterministicCode: z.literal(false)");
-    expect(ledger).toContain("payloadBackedBodies: z.literal(true)");
-    expect(ledger).toContain("manifestMetadataOnly: z.literal(true)");
-    expect(ledger).not.toContain('includes("Product/Spec")');
-    expect(ledger).not.toContain('includes("implementation")');
-    expect(ledger).not.toContain('includes("context")');
-    expect(ledger).not.toContain("score");
-    expect(ledger).not.toContain("summary.length");
+    expect(exists("extensions/execution-platform/src/workflows/node-resource-ledger.ts")).toBe(
+      false,
+    );
+    expect(nodeSession).not.toContain("NodeExecutionAssignment");
+    expect(nodeSession).toContain("NodeAgentWorkerPrompt");
+    expect(nodeSession).toContain("NODE_EXECUTION_STORAGE_POLICY");
+    expect(nodeSession).toContain("boundedRefsOnly: true");
+    expect(runner).toContain("node_finish");
+    expect(runner).not.toContain("nodeResourceLedger");
+    expect(runner).not.toContain("node_resource_ledger");
   });
 
   it("uses the boundary guardrail audit for production/proof import separation", () => {

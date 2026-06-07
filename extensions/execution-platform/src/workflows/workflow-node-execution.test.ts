@@ -15,7 +15,7 @@ describe("generic workflow node execution result", () => {
       roleClass: "implementation",
       capabilityId: "implementation_standard",
       executorKey: "kind:implementation",
-      workerRef: "worker.kimi.file-implementation",
+      workerRef: "agent.execution-coding.native-node-session",
       runtimeToolInvocationRefs: ["runtime-tool://worker.invoke/invocation-1"],
       result: {
         status: "succeeded",
@@ -48,7 +48,7 @@ describe("generic workflow node execution result", () => {
     expect(result).toMatchObject({
       nodeExecutionId: "node-execution:graph-1:node-1",
       executorKey: "kind:implementation",
-      workerRef: "worker.kimi.file-implementation",
+      workerRef: "agent.execution-coding.native-node-session",
       runtimeToolInvocationRefs: ["runtime-tool://worker.invoke/invocation-1"],
       changedFileRefs: ["repo://file.ts#sha256:abc"],
       validationRefs: ["validation://focused-test"],

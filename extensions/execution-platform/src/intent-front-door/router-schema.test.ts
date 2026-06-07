@@ -163,6 +163,26 @@ describe("CanonicalRouterSchema", () => {
     ).toBe(false);
   });
 
+  it("repairs malformed reason-code tokens without emitting human schema text as reason codes", () => {
+    const parsed = parseCanonicalRouterOutput({
+      ...createBaseCanonicalRouterOutput({
+        route: "chat_response",
+        responseMode: "answer_in_chat",
+      }),
+      reasonCodes: [
+        "safe_reason_code",
+        "Invalid string: must match pattern /^[a-z0-9_.:-]+$/u",
+        "provider/model ref",
+      ],
+    });
+
+    expect(parsed.valid).toBe(true);
+    expect(parsed.reasonCodes).toContain("canonical_router_output_bounds_repaired");
+    expect(parsed.reasonCodes).toContain("canonical_router_reasonCodes_bounded");
+    expect(parsed.output?.reasonCodes).toContain("safe_reason_code");
+    expect(parsed.output?.reasonCodes.every((code) => /^[a-z0-9_.:-]+$/u.test(code))).toBe(true);
+  });
+
   it("keeps mentioned, requested, negated, and conditional actions distinct", () => {
     const output = createBaseCanonicalRouterOutput({
       route: "workflow_execution",

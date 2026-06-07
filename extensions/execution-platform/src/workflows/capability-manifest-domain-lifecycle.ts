@@ -40,9 +40,7 @@ function hashValue(value: unknown): string {
 }
 
 function asObject(value: unknown): JsonObject {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? (value as JsonObject)
-    : {};
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as JsonObject) : {};
 }
 
 function stringValue(value: unknown): string | null {
@@ -84,9 +82,8 @@ function boundedCapability(capability: RuntimeNodeCapability): JsonObject {
     requiredLifecycleTools: capability.requiredLifecycleTools,
     domainResourceKinds: capability.domainResourceKinds,
     requiresResources: capability.requiresResources,
-    requiredResourceKinds: capability.requiredResourceKinds,
+    requiredSourceMaterialKinds: capability.requiredSourceMaterialKinds,
     requiredResourcePacketKind: capability.requiredResourcePacketKind,
-    requiredNodeExecutionPacket: capability.requiredNodeExecutionPacket,
     requiredSnapshotKinds: capability.requiredSnapshotKinds,
     requiredValidationKinds: capability.requiredValidationKinds,
     requiredAuthorityScopes: capability.requiredAuthorityScopes,
@@ -240,7 +237,7 @@ export function compileCapabilityManifestRuntimeToolOutput(input: {
     const requestedPhase = phase;
     const requestedIntent = stringValue(payload.executionIntent);
     const requiredLifecycleTools = stringArray(payload.requiredLifecycleTools);
-    const requiredResourceKinds = stringArray(payload.requiredResourceKinds);
+    const requiredSourceMaterialKinds = stringArray(payload.requiredSourceMaterialKinds);
     const requiredEvidenceKinds = stringArray(payload.requiredEvidenceKinds);
     const reasonCodes: string[] = [];
     if (requestedWorkflowId && !capability.supportedWorkflowIds.includes(requestedWorkflowId)) {
@@ -249,7 +246,10 @@ export function compileCapabilityManifestRuntimeToolOutput(input: {
     if (requestedPhase && !capabilitySelectableInPhase(capability, requestedPhase)) {
       reasonCodes.push("capability_validate_intent_phase_unsupported");
     }
-    if (requestedIntent && !capability.supportedExecutionIntents.includes(requestedIntent as never)) {
+    if (
+      requestedIntent &&
+      !capability.supportedExecutionIntents.includes(requestedIntent as never)
+    ) {
       reasonCodes.push("capability_validate_intent_execution_intent_unsupported");
     }
     for (const toolId of requiredLifecycleTools) {
@@ -257,13 +257,19 @@ export function compileCapabilityManifestRuntimeToolOutput(input: {
         reasonCodes.push(`capability_validate_intent_required_lifecycle_tool_missing:${toolId}`);
       }
     }
-    for (const kind of requiredResourceKinds) {
-      if (!capability.requiredResourceKinds.includes(kind) && !capability.domainResourceKinds.includes(kind as never)) {
+    for (const kind of requiredSourceMaterialKinds) {
+      if (
+        !capability.requiredSourceMaterialKinds.includes(kind) &&
+        !capability.domainResourceKinds.includes(kind as never)
+      ) {
         reasonCodes.push(`capability_validate_intent_required_resource_kind_missing:${kind}`);
       }
     }
     for (const kind of requiredEvidenceKinds) {
-      if (!capability.requiredEvidenceClaimKinds.includes(kind) && !capability.evidenceProducedKinds.includes(kind as never)) {
+      if (
+        !capability.requiredEvidenceClaimKinds.includes(kind) &&
+        !capability.evidenceProducedKinds.includes(kind as never)
+      ) {
         reasonCodes.push(`capability_validate_intent_required_evidence_kind_missing:${kind}`);
       }
     }
@@ -285,7 +291,7 @@ export function compileCapabilityManifestRuntimeToolOutput(input: {
         requestedPhase,
         requestedIntent,
         requestedRequiredLifecycleTools: requiredLifecycleTools,
-        requestedRequiredResourceKinds: requiredResourceKinds,
+        requestedRequiredResourceKinds: requiredSourceMaterialKinds,
         requestedRequiredEvidenceKinds: requiredEvidenceKinds,
         supportedWorkflowIds: capability.supportedWorkflowIds,
         supportedPhases: capability.supportedPhases,
@@ -305,9 +311,8 @@ export function compileCapabilityManifestRuntimeToolOutput(input: {
         resourceSelectionProfileRef: capability.resourceSelectionProfileRef,
         requiresResources: capability.requiresResources,
         domainResourceKinds: capability.domainResourceKinds,
-        requiredResourceKinds: capability.requiredResourceKinds,
+        requiredSourceMaterialKinds: capability.requiredSourceMaterialKinds,
         requiredResourcePacketKind: capability.requiredResourcePacketKind,
-        requiredNodeExecutionPacket: capability.requiredNodeExecutionPacket,
         requiredSnapshotKinds: capability.requiredSnapshotKinds,
       },
     });

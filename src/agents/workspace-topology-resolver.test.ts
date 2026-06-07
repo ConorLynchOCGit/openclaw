@@ -2,12 +2,33 @@ import { describe, expect, it } from "vitest";
 import {
   buildSafeWorkspaceSearchCommand,
   resolveOpenClawPath,
+  resolveOpenClawPathRoots,
 } from "./workspace-topology-resolver.js";
 
 const liveRepoRoot = "/root/services/openclaw-roles/live";
 const workspaceRoot = "/root/.openclaw/workspace";
 
 describe("workspace topology resolver", () => {
+  it("derives default implementation and workspace roots from the source-runtime manifest", () => {
+    const roots = resolveOpenClawPathRoots();
+    const result = resolveOpenClawPath(
+      "docs/projects/execution-platform/specs/native-task-worker-agent-refactor.md",
+      { actorProfile: "repo-executor" },
+    );
+    const command = buildSafeWorkspaceSearchCommand("native task worker");
+
+    expect(roots).toEqual({
+      liveRepoRoot: "/root/services/openclaw-roles/live",
+      runtimeHome: "/root/.openclaw",
+      workspaceRoot: "/root/.openclaw/workspace",
+    });
+    expect(result.canonicalOwner).toBe("product_repo");
+    expect(result.canonicalPath).toBe(
+      "/root/services/openclaw-roles/live/docs/projects/execution-platform/specs/native-task-worker-agent-refactor.md",
+    );
+    expect(command).toContain("'/root/.openclaw/workspace'");
+  });
+
   it("resolves curated product imports to the canonical live repo path", () => {
     const result = resolveOpenClawPath(
       "/root/.openclaw/workspace/imports/product_live/content/docs/agents/web-researcher/README.md",

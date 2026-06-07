@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import { RuntimeToolRegistry } from "../runtime-tool-call/runtime-tool-registry.ts";
-import { registerSchedulerRuntimeTools } from "./scheduler-runtime-tools.ts";
 import {
   CAPABILITY_DOMAIN_LIFECYCLE_MANIFEST_MAX_BYTES,
   compileCapabilityManifestRuntimeToolOutput,
@@ -9,6 +8,7 @@ import {
   buildRuntimeNodeCapabilityManifest,
   runtimeNodeCapabilityManifestForModel,
 } from "./runtime-node-capability-registry.ts";
+import { registerSchedulerRuntimeTools } from "./scheduler-runtime-tools.ts";
 
 describe("capability manifest domain lifecycle", () => {
   it("keeps the model-facing capability menu compact and lookup-backed", () => {
@@ -52,7 +52,7 @@ describe("capability manifest domain lifecycle", () => {
           workflowId: "agent_team.product_spec_planning",
           phase: "execution",
           executionIntent: "domain_action",
-          requiredResourceKinds: ["planning_domain_resource_refs"],
+          requiredSourceMaterialKinds: ["planning_domain_resource_refs"],
           requiredEvidenceKinds: ["planning_capsule"],
         },
       });
@@ -82,7 +82,7 @@ describe("capability manifest domain lifecycle", () => {
         capabilityId: "planning_capsule_draft",
         workflowId: "agent_team.product_spec_planning",
         executionIntent: "source_edit",
-        requiredResourceKinds: ["target_snapshot"],
+        requiredSourceMaterialKinds: ["target_snapshot"],
         requiredEvidenceKinds: ["source_change"],
       },
     });
@@ -129,7 +129,7 @@ describe("capability manifest domain lifecycle", () => {
     expect(result.metadata).toMatchObject({
       toolId: "capability.require_resources",
       capabilityId: "planning_capsule_draft",
-      requiredResourcePacketKind: "planning_domain_resource_packet",
+      requiredResourcePacketKind: null,
       rawToolLogStored: false,
     });
   });

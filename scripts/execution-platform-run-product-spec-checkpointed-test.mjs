@@ -71,16 +71,14 @@ async function loadRuntimeModules() {
     await import("../extensions/execution-platform/src/db/runtime.ts"));
   ({ buildLatestRunState } =
     await import("../extensions/execution-platform/src/observability/latest-run-state.ts"));
-  ({ projectProofHarnessCanonicalGate, assertProofHarnessManifestBounds } = await import(
-    "../extensions/execution-platform/src/observability/proof-harness-canonical-gate.ts"
-  ));
+  ({ projectProofHarnessCanonicalGate, assertProofHarnessManifestBounds } =
+    await import("../extensions/execution-platform/src/observability/proof-harness-canonical-gate.ts"));
   ({ loadConfig } = await import("../src/config/config.ts"));
   ({ runGatewayAgentTeamRuntimeJobOnce } =
     await import("../src/gateway/execution-platform-agent-team-runner.ts"));
   ({ getExecutionPlatformRuntime } = await import("../src/gateway/execution-platform-http.ts"));
-  ({ evaluateArchitectureTransitionTopologyGate } = await import(
-    "../extensions/execution-platform/src/workflows/architecture-transition-topology-gate.ts"
-  ));
+  ({ evaluateArchitectureTransitionTopologyGate } =
+    await import("../extensions/execution-platform/src/workflows/architecture-transition-topology-gate.ts"));
 }
 
 const ARTIFACT_DIR = ".artifacts/execution-platform";
@@ -226,6 +224,22 @@ async function submitPrompt(prompt, promptHash, sourcePromptRef) {
   const workItemId = `product-spec-checkpointed-${promptHash.slice(0, 12)}-${Date.now()
     .toString(36)
     .slice(-6)}`;
+  const intakeRouteContract = {
+    artifactKind: "intake_route_contract",
+    schemaVersion: "intent-front-door.intake-route-contract.v1",
+    contractId: `checkpointed-proof-coding-executor:${promptHash.slice(0, 16)}`,
+    expectedPrimaryOutcomeKinds: [
+      "implement_existing_system",
+      "harden_existing_system",
+      "prove_existing_system",
+    ],
+    requiredExecutorCapabilities: ["code_edit", "test", "review", "closeout"],
+    requiredRequestedActions: ["code_edit", "test", "review", "closeout"],
+    expectedSubjectKinds: ["workflow", "workflow_plugin", "repo", "spec"],
+    reasonCodes: ["checkpointed_proof_requires_coding_executor_capability_profile"],
+    rawPromptStored: false,
+    rawResponseStored: false,
+  };
   await writeJson("product-spec-checkpointed-test-submit-start.json", {
     artifactKind: "product_spec_checkpointed_test_submit_start",
     generatedAt: new Date().toISOString(),
@@ -264,6 +278,7 @@ async function submitPrompt(prompt, promptHash, sourcePromptRef) {
       workItemId,
       sourceRoute: "ux",
       sourcePromptRef,
+      intakeRouteContract,
       auth: {
         actorId: "operator:primary",
         authenticated: true,
@@ -430,6 +445,12 @@ function objectValue(value) {
   return value && typeof value === "object" && !Array.isArray(value) ? value : null;
 }
 
+function artifactManifestFields(artifact) {
+  const metadata = metadataOf(artifact);
+  const extension = objectValue(metadata.extension) ?? {};
+  return { ...extension, ...metadata };
+}
+
 function boundedBranchScopedFrontierStates(value, max = 40) {
   if (!Array.isArray(value)) {
     return [];
@@ -448,11 +469,12 @@ function boundedBranchScopedFrontierStates(value, max = 40) {
       workerRef: boundedStringValue(branch.workerRef, 240),
       modelRef: boundedStringValue(branch.modelRef, 240),
       contractRef: boundedStringValue(branch.contractRef, 600),
-      readinessRef: boundedStringValue(branch.readinessRef ?? branch.readinessStateRef, 600),
-      resourceRequirementRefs: boundedStringArrayValue(branch.resourceRequirementRefs, 20),
-      nodeResourceDemandSessionRefs: boundedStringArrayValue(branch.nodeResourceDemandSessionRefs, 20),
-      nodeResourceLedgerManifestRefs: boundedStringArrayValue(
-        branch.nodeResourceLedgerManifestRefs,
+      nodeLifecycleProjectionRef: boundedStringValue(
+        branch.nodeLifecycleProjectionRef ?? branch.readinessRef,
+        600,
+      ),
+      sourceMaterialRequirementRefs: boundedStringArrayValue(
+        branch.sourceMaterialRequirementRefs,
         20,
       ),
       domainResourceSelectionRefs: boundedStringArrayValue(branch.domainResourceSelectionRefs, 20),
@@ -460,8 +482,7 @@ function boundedBranchScopedFrontierStates(value, max = 40) {
       actionGateMissingFields: boundedStringArrayValue(branch.actionGateMissingFields, 20),
       providerDiagnosticRefs: boundedStringArrayValue(branch.providerDiagnosticRefs, 20),
       providerDiagnosticStatus: boundedStringValue(branch.providerDiagnosticStatus, 160),
-      resourcePacketRef: boundedStringValue(branch.resourcePacketRef, 600),
-      nodeExecutionPacketRef: boundedStringValue(branch.nodeExecutionPacketRef, 600),
+      nodeExecutionSnapshotRef: boundedStringValue(branch.nodeExecutionSnapshotRef, 600),
       status: boundedStringValue(branch.status, 160),
       phase: boundedStringValue(branch.phase, 160),
       blocker: objectValue(branch.blocker)
@@ -501,13 +522,15 @@ function latestArtifact(artifacts, artifactType) {
   return artifacts.findLast((artifact) => artifact.artifactType === artifactType) ?? null;
 }
 
-function summarizeSourcePromptIndex(artifact) {
+function summarizeSourcePromptArtifact(artifact) {
   if (!artifact) {
     return null;
   }
-  const metadata = metadataOf(artifact);
+  const metadata = artifactManifestFields(artifact);
   return {
     artifactRef: artifact.uri,
+    sourcePromptBodyRef:
+      typeof metadata.sourcePromptBodyRef === "string" ? metadata.sourcePromptBodyRef : null,
     promptHash: typeof metadata.promptHash === "string" ? metadata.promptHash : null,
     promptLength: typeof metadata.promptLength === "number" ? metadata.promptLength : null,
     resolutionStatus:
@@ -515,88 +538,84 @@ function summarizeSourcePromptIndex(artifact) {
     reasonCodes: Array.isArray(metadata.reasonCodes)
       ? metadata.reasonCodes.filter((item) => typeof item === "string").slice(0, 20)
       : [],
-    sectionRefs: Array.isArray(metadata.sections)
-      ? metadata.sections
-          .filter((item) => item && typeof item === "object" && typeof item.sectionRef === "string")
-          .map((item) => item.sectionRef)
-          .slice(0, 20)
-      : [],
+    boundedPreviewLength:
+      typeof metadata.boundedPreview === "string" ? metadata.boundedPreview.length : 0,
     rawPromptStored: false,
     rawResponseStored: false,
   };
 }
 
-function summarizeMissionLedger(artifact) {
+function summarizeRequirementMap(artifact) {
   if (!artifact) {
     return null;
   }
-  const metadata = metadataOf(artifact);
-  const blockingCommitments = Array.isArray(metadata.blockingCommitments)
-    ? metadata.blockingCommitments
-    : [];
-  const nonBlockingCommitments = Array.isArray(metadata.nonBlockingCommitments)
-    ? metadata.nonBlockingCommitments
-    : [];
-  const commitments = [...blockingCommitments, ...nonBlockingCommitments]
-    .filter((item) => item && typeof item === "object")
-    .map((commitment) => ({
-      commitmentId: typeof commitment.commitmentId === "string" ? commitment.commitmentId : null,
-      commitmentText:
-        typeof commitment.commitmentText === "string"
-          ? commitment.commitmentText.slice(0, 900)
-          : null,
-      whyItMatters:
-        typeof commitment.whyItMatters === "string" ? commitment.whyItMatters.slice(0, 600) : null,
-      expectedEvidenceDescription:
-        typeof commitment.expectedEvidenceDescription === "string"
-          ? commitment.expectedEvidenceDescription.slice(0, 700)
-          : null,
-      status: typeof commitment.status === "string" ? commitment.status : null,
-      blocking: commitment.blocking === true,
-      remainingWork: Array.isArray(commitment.remainingWork)
-        ? commitment.remainingWork.filter((item) => typeof item === "string").slice(0, 8)
-        : [],
-    }));
+  const metadata = artifactManifestFields(artifact);
+  const summary =
+    metadata.requirementMapSummary &&
+    typeof metadata.requirementMapSummary === "object" &&
+    !Array.isArray(metadata.requirementMapSummary)
+      ? metadata.requirementMapSummary
+      : {};
   return {
     artifactRef: artifact.uri,
-    missionId: typeof metadata.missionId === "string" ? metadata.missionId : null,
-    ledgerStatus: typeof metadata.ledgerStatus === "string" ? metadata.ledgerStatus : null,
-    missionGate: typeof metadata.missionGate === "string" ? metadata.missionGate : null,
-    ownerObjectiveSummary:
-      typeof metadata.ownerObjectiveSummary === "string"
-        ? metadata.ownerObjectiveSummary.slice(0, 1_500)
+    mapRef:
+      typeof metadata.mapRef === "string"
+        ? metadata.mapRef
+        : typeof summary.mapRef === "string"
+          ? summary.mapRef
+          : artifact.uri,
+    mapHash: typeof metadata.mapHash === "string" ? metadata.mapHash : null,
+    sourcePromptBodyRef:
+      typeof metadata.sourcePromptBodyRef === "string"
+        ? metadata.sourcePromptBodyRef
+        : typeof summary.sourcePromptBodyRef === "string"
+          ? summary.sourcePromptBodyRef
+          : null,
+    requirementCount:
+      typeof metadata.requirementCount === "number"
+        ? metadata.requirementCount
+        : typeof summary.requirementCount === "number"
+          ? summary.requirementCount
+          : null,
+    runnableRequirementCount:
+      typeof summary.runnableRequirementCount === "number"
+        ? summary.runnableRequirementCount
         : null,
-    blockingCommitmentCount: blockingCommitments.length,
-    nonBlockingCommitmentCount: nonBlockingCommitments.length,
-    openBlockingCommitmentIds: commitments
-      .filter(
-        (commitment) =>
-          commitment.blocking &&
-          commitment.status !== "satisfied" &&
-          commitment.status !== "impossible",
-      )
-      .map((commitment) => commitment.commitmentId)
-      .filter(Boolean),
-    commitments,
-    rawPromptStored: false,
-    rawResponseStored: false,
-  };
-}
-
-function summarizeObligationGraph(artifact) {
-  if (!artifact) {
-    return null;
-  }
-  const metadata = metadataOf(artifact);
-  return {
-    artifactRef: artifact.uri,
-    graphRef: typeof metadata.graphRef === "string" ? metadata.graphRef : artifact.uri,
-    graphHash: typeof metadata.graphHash === "string" ? metadata.graphHash : null,
-    missionId: typeof metadata.missionId === "string" ? metadata.missionId : null,
-    obligationCount: typeof metadata.obligationCount === "number" ? metadata.obligationCount : null,
-    executableCount: typeof metadata.executableCount === "number" ? metadata.executableCount : null,
-    nonExecutableCount:
-      typeof metadata.nonExecutableCount === "number" ? metadata.nonExecutableCount : null,
+    validationRequirementCount:
+      typeof summary.validationRequirementCount === "number"
+        ? summary.validationRequirementCount
+        : null,
+    reviewRequirementCount:
+      typeof summary.reviewRequirementCount === "number" ? summary.reviewRequirementCount : null,
+    closeoutRequirementCount:
+      typeof summary.closeoutRequirementCount === "number"
+        ? summary.closeoutRequirementCount
+        : null,
+    constraintCount: typeof summary.constraintCount === "number" ? summary.constraintCount : null,
+    contextRequirementCount:
+      typeof summary.contextRequirementCount === "number" ? summary.contextRequirementCount : null,
+    coverage:
+      summary.coverage && typeof summary.coverage === "object" && !Array.isArray(summary.coverage)
+        ? {
+            status: typeof summary.coverage.status === "string" ? summary.coverage.status : null,
+            windowCount:
+              typeof summary.coverage.windowCount === "number"
+                ? summary.coverage.windowCount
+                : null,
+            coveredWindowCount:
+              typeof summary.coverage.coveredWindowCount === "number"
+                ? summary.coverage.coveredWindowCount
+                : null,
+            candidateCount:
+              typeof summary.coverage.candidateCount === "number"
+                ? summary.coverage.candidateCount
+                : null,
+            retiredCandidateCount:
+              typeof summary.coverage.retiredCandidateCount === "number"
+                ? summary.coverage.retiredCandidateCount
+                : null,
+          }
+        : null,
     rawPromptStored: false,
     rawResponseStored: false,
     rawProviderLogStored: false,
@@ -639,10 +658,6 @@ function summarizeResourceSpecialist(artifact) {
     loopId: typeof metadata.loopId === "string" ? metadata.loopId : null,
     status: typeof metadata.status === "string" ? metadata.status : null,
     verifiedFileRefs,
-    handoffPacketRef:
-      typeof metadata.resourceHandoffPacketRef === "string"
-        ? metadata.resourceHandoffPacketRef
-        : null,
     sufficiencyStatus,
     sufficientForImplementation,
     missingInformation: Array.isArray(sufficiency.missingInformation)
@@ -650,6 +665,55 @@ function summarizeResourceSpecialist(artifact) {
       : [],
     rawPromptStored: false,
     rawResponseStored: false,
+  };
+}
+
+function compactToolCallTelemetry(value) {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+  return {
+    artifactKind: value.artifactKind ?? null,
+    stage: value.stage ?? null,
+    repairAttempt: value.repairAttempt ?? null,
+    parseStatus: value.parseStatus ?? null,
+    compileStatus: value.compileStatus ?? null,
+    modelToolCallCount: value.modelToolCallCount ?? null,
+    acceptedToolCallCount: value.acceptedToolCallCount ?? null,
+    acceptedToolNames: Array.isArray(value.acceptedToolNames)
+      ? value.acceptedToolNames.slice(0, 40)
+      : [],
+    rejectedToolCallCount: value.rejectedToolCallCount ?? null,
+    rejectedToolNames: Array.isArray(value.rejectedToolNames)
+      ? value.rejectedToolNames.slice(0, 24)
+      : [],
+    rejectedToolCalls: Array.isArray(value.rejectedToolCalls)
+      ? value.rejectedToolCalls.slice(0, 12)
+      : [],
+    blockedObligationIds: Array.isArray(value.blockedObligationIds)
+      ? value.blockedObligationIds.slice(0, 24)
+      : [],
+    missingFieldObligationCount: value.missingFieldObligationCount ?? null,
+    missingFieldsByObligationId:
+      value.missingFieldsByObligationId && typeof value.missingFieldsByObligationId === "object"
+        ? value.missingFieldsByObligationId
+        : {},
+    draftSubmitted: value.draftSubmitted ?? null,
+    draftWorkUnitCount: value.draftWorkUnitCount ?? null,
+    draftCapabilitySelectionCount: value.draftCapabilitySelectionCount ?? null,
+    draftNodeContractCount: value.draftNodeContractCount ?? null,
+    draftEdgeCount: value.draftEdgeCount ?? null,
+    compilerDecisionAccepted: value.compilerDecisionAccepted ?? null,
+    repairFieldPaths: Array.isArray(value.repairFieldPaths)
+      ? value.repairFieldPaths.slice(0, 24)
+      : [],
+    reasonCodes: Array.isArray(value.reasonCodes) ? value.reasonCodes.slice(0, 32) : [],
+    compilerReasonCodes: Array.isArray(value.compilerReasonCodes)
+      ? value.compilerReasonCodes.slice(0, 32)
+      : [],
+    rejectionReasonCodes: Array.isArray(value.rejectionReasonCodes)
+      ? value.rejectionReasonCodes.slice(0, 32)
+      : [],
   };
 }
 
@@ -674,45 +738,43 @@ function summarizeSchedulerProgress(artifacts) {
         activeNodeKind: boundedStringValue(metadata.activeNodeKind ?? metadata.nodeKind, 180),
         executionIntent: boundedStringValue(metadata.executionIntent, 160),
         evidenceMode: boundedStringArrayValue(metadata.evidenceMode, 12),
-        capabilityId: boundedStringValue(metadata.capabilityId ?? metadata.selectedCapabilityId, 240),
+        capabilityId: boundedStringValue(
+          metadata.capabilityId ?? metadata.selectedCapabilityId,
+          240,
+        ),
         executorKey: boundedStringValue(metadata.executorKey ?? metadata.selectedExecutorKey, 240),
         workerRef: boundedStringValue(metadata.workerRef, 240),
         workIntentRef: boundedStringValue(metadata.workIntentRef ?? metadata.workIntentId, 600),
         workIntentId: boundedStringValue(metadata.workIntentId ?? metadata.workUnitId, 260),
         nodeExecutionContractRef: boundedStringValue(metadata.nodeExecutionContractRef, 600),
-        nodeReadinessStateRef: boundedStringValue(metadata.nodeReadinessStateRef, 600),
-        nodeReadinessStatus: boundedStringValue(metadata.nodeReadinessStatus, 180),
-        nodeReadinessPhase: boundedStringValue(metadata.nodeReadinessPhase, 180),
-        nodeReadinessStale:
-          typeof metadata.nodeReadinessStale === "boolean" ? metadata.nodeReadinessStale : null,
-        readinessProjectionStatus: boundedStringValue(metadata.readinessProjectionStatus, 180),
-        readinessProjectionDriftReasonCodes: boundedStringArrayValue(
-          metadata.readinessProjectionDriftReasonCodes,
-          40,
+        nodeLifecycleProjectionRef: boundedStringValue(metadata.nodeLifecycleProjectionRef, 600),
+        nodeLifecycleProjectionGate: boundedStringValue(metadata.nodeLifecycleProjectionGate, 180),
+        nodeLifecycleProjectionStatus: boundedStringValue(
+          metadata.nodeLifecycleProjectionStatus,
+          180,
         ),
-        readinessProjectionMissingFields: boundedStringArrayValue(
-          metadata.readinessProjectionMissingFields,
-          40,
-        ),
-        resourceRequirementRefs: boundedStringArrayValue(metadata.resourceRequirementRefs, 24),
-        nodeResourceDemandSessionRefs: boundedStringArrayValue(metadata.nodeResourceDemandSessionRefs, 24),
-        nodeResourceDemandStatus: boundedStringValue(metadata.nodeResourceDemandStatus, 180),
-        nodeResourceLedgerManifestRefs: boundedStringArrayValue(
-          metadata.nodeResourceLedgerManifestRefs,
+        sourceMaterialRequirementRefs: boundedStringArrayValue(
+          metadata.sourceMaterialRequirementRefs,
           24,
         ),
-        nodeResourceLedgerStatus: boundedStringValue(metadata.nodeResourceLedgerStatus, 180),
-        domainResourceSelectionRefs: boundedStringArrayValue(metadata.domainResourceSelectionRefs, 24),
-        domainResourceSelectionStatus: boundedStringValue(metadata.domainResourceSelectionStatus, 180),
+        domainResourceSelectionRefs: boundedStringArrayValue(
+          metadata.domainResourceSelectionRefs,
+          24,
+        ),
+        domainResourceSelectionStatus: boundedStringValue(
+          metadata.domainResourceSelectionStatus,
+          180,
+        ),
         actionGateStatus: boundedStringValue(metadata.actionGateStatus, 180),
         actionGateMissingFields: boundedStringArrayValue(metadata.actionGateMissingFields, 24),
-        resourcePacketRef: boundedStringValue(metadata.resourcePacketRef, 600),
-        domainResourcePacketRef: boundedStringValue(metadata.domainResourcePacketRef, 600),
-        nodeExecutionPacketRef: boundedStringValue(metadata.nodeExecutionPacketRef, 600),
+        nodeExecutionSnapshotRef: boundedStringValue(metadata.nodeExecutionSnapshotRef, 600),
         missingFields: boundedStringArrayValue(metadata.missingFields, 40),
         schemaPath: boundedStringValue(metadata.schemaPath ?? metadata.errorPath, 260),
         policyPath: boundedStringValue(metadata.policyPath, 260),
-        nextDecisionNeeded: boundedStringValue(metadata.nextDecisionNeeded ?? metadata.nextAction, 260),
+        nextDecisionNeeded: boundedStringValue(
+          metadata.nextDecisionNeeded ?? metadata.nextAction,
+          260,
+        ),
         schedulerFrontierState: objectValue(metadata.schedulerFrontierState),
         parallelFrontier: objectValue(metadata.parallelFrontier),
         frontierRootCauseArtifact: objectValue(metadata.frontierRootCauseArtifact),
@@ -752,6 +814,7 @@ function summarizeSchedulerProgress(artifacts) {
           typeof metadata.modelCallSpanElapsedMs === "number"
             ? metadata.modelCallSpanElapsedMs
             : null,
+        toolCallTelemetry: compactToolCallTelemetry(metadata.toolCallTelemetry),
       };
     })
     .slice(-60);
@@ -1084,6 +1147,44 @@ function compactSchedulerProgressEvents(events, max = 80) {
         evidenceProducedRefs: Array.isArray(event.evidenceProducedRefs)
           ? event.evidenceProducedRefs.slice(0, 12)
           : [],
+        toolCallTelemetry:
+          event.toolCallTelemetry && typeof event.toolCallTelemetry === "object"
+            ? {
+                artifactKind: event.toolCallTelemetry.artifactKind ?? null,
+                stage: event.toolCallTelemetry.stage ?? null,
+                repairAttempt: event.toolCallTelemetry.repairAttempt ?? null,
+                parseStatus: event.toolCallTelemetry.parseStatus ?? null,
+                compileStatus: event.toolCallTelemetry.compileStatus ?? null,
+                modelToolCallCount: event.toolCallTelemetry.modelToolCallCount ?? null,
+                acceptedToolCallCount: event.toolCallTelemetry.acceptedToolCallCount ?? null,
+                acceptedToolNames: Array.isArray(event.toolCallTelemetry.acceptedToolNames)
+                  ? event.toolCallTelemetry.acceptedToolNames.slice(0, 40)
+                  : [],
+                rejectedToolCallCount: event.toolCallTelemetry.rejectedToolCallCount ?? null,
+                rejectedToolNames: Array.isArray(event.toolCallTelemetry.rejectedToolNames)
+                  ? event.toolCallTelemetry.rejectedToolNames.slice(0, 24)
+                  : [],
+                draftSubmitted: event.toolCallTelemetry.draftSubmitted ?? null,
+                draftWorkUnitCount: event.toolCallTelemetry.draftWorkUnitCount ?? null,
+                draftCapabilitySelectionCount:
+                  event.toolCallTelemetry.draftCapabilitySelectionCount ?? null,
+                draftNodeContractCount: event.toolCallTelemetry.draftNodeContractCount ?? null,
+                draftEdgeCount: event.toolCallTelemetry.draftEdgeCount ?? null,
+                compilerDecisionAccepted: event.toolCallTelemetry.compilerDecisionAccepted ?? null,
+                repairFieldPaths: Array.isArray(event.toolCallTelemetry.repairFieldPaths)
+                  ? event.toolCallTelemetry.repairFieldPaths.slice(0, 24)
+                  : [],
+                reasonCodes: Array.isArray(event.toolCallTelemetry.reasonCodes)
+                  ? event.toolCallTelemetry.reasonCodes.slice(0, 32)
+                  : [],
+                compilerReasonCodes: Array.isArray(event.toolCallTelemetry.compilerReasonCodes)
+                  ? event.toolCallTelemetry.compilerReasonCodes.slice(0, 32)
+                  : [],
+                rejectionReasonCodes: Array.isArray(event.toolCallTelemetry.rejectionReasonCodes)
+                  ? event.toolCallTelemetry.rejectionReasonCodes.slice(0, 32)
+                  : [],
+              }
+            : null,
       }))
     : [];
 }
@@ -1109,16 +1210,9 @@ function compactCanonicalProofGate(gate) {
       executionIntent: canonicalGate.executionIntent ?? null,
       capabilityId: canonicalGate.capabilityId ?? null,
       contractRef: canonicalGate.contractRef ?? null,
-      readinessStateRef: canonicalGate.readinessStateRef ?? null,
-      nodeExecutionPacketRef: canonicalGate.nodeExecutionPacketRef ?? null,
-      nodeResourceDemandSessionRefs: Array.isArray(canonicalGate.nodeResourceDemandSessionRefs)
-        ? canonicalGate.nodeResourceDemandSessionRefs.slice(0, 12)
-        : [],
-      nodeResourceLedgerManifestRefs: Array.isArray(
-        canonicalGate.nodeResourceLedgerManifestRefs,
-      )
-        ? canonicalGate.nodeResourceLedgerManifestRefs.slice(0, 12)
-        : [],
+      nodeLifecycleProjectionRef: canonicalGate.nodeLifecycleProjectionRef ?? null,
+      nodeLifecycleProjectionGate: canonicalGate.nodeLifecycleProjectionGate ?? null,
+      nodeExecutionSnapshotRef: canonicalGate.nodeExecutionSnapshotRef ?? null,
       domainResourceSelectionRefs: Array.isArray(canonicalGate.domainResourceSelectionRefs)
         ? canonicalGate.domainResourceSelectionRefs.slice(0, 12)
         : [],
@@ -1145,19 +1239,19 @@ function compactCheckpointGate(gate) {
         : gate.gateId === "architecture_transition_topology_invalid"
           ? {
               failed: gate.evidence?.architectureTransitionTopology?.failed === true,
-              reasonCodes: Array.isArray(
-                gate.evidence?.architectureTransitionTopology?.reasonCodes,
-              )
+              reasonCodes: Array.isArray(gate.evidence?.architectureTransitionTopology?.reasonCodes)
                 ? gate.evidence.architectureTransitionTopology.reasonCodes.slice(0, 24)
                 : [],
             }
-          : gate.gateId === "obligation_graph"
+          : gate.gateId === "requirement_map"
             ? {
-                obligationCount: gate.evidence?.obligationCount ?? null,
-                executableCount: gate.evidence?.executableCount ?? null,
-                nonExecutableCount: gate.evidence?.nonExecutableCount ?? null,
+                requirementCount: gate.evidence?.requirementCount ?? null,
+                runnableRequirementCount: gate.evidence?.runnableRequirementCount ?? null,
+                validationRequirementCount: gate.evidence?.validationRequirementCount ?? null,
+                reviewRequirementCount: gate.evidence?.reviewRequirementCount ?? null,
+                closeoutRequirementCount: gate.evidence?.closeoutRequirementCount ?? null,
               }
-              : null,
+            : null,
   };
 }
 
@@ -1345,15 +1439,8 @@ function schedulerDecisionOrGraphApplicationInProgress(progress) {
 
 const CANONICAL_LIFECYCLE_GATE_KINDS = new Set([
   "work_intent_compile",
-  "resource_requirement_compile",
-  "resource_narrowing_required",
-  "resource_scope_revision_required",
-  "resource_scope_revision_blocked",
-  "resource_ledger_ready",
-  "resource_repair",
-  "domain_resource_selection_required",
-  "domain_resource_selection_blocked",
-  "resource_materialization",
+  "node_agent_session_ready",
+  "node_agent_session_escalation_required",
   "domain_action_gate_blocked",
   "worker_action_ready",
   "worker_execution",
@@ -1457,65 +1544,33 @@ function canonicalExecutionGateStatus(projection) {
   return "failed";
 }
 
-function isWorkIntentDemandContextExpansionInProgress({ graph, schedulerProgress }) {
-  if (!graph || graph.edgeCount !== 0 || !graph.nodeKinds.includes("work_intent")) {
+function isSchedulerGraphPatchOrNodeLocalResourceProgressInProgress({ graph, schedulerProgress }) {
+  if (!graph || graph.edgeCount !== 0) {
     return false;
   }
-  const acceptedWorkIntentRoots =
-    schedulerToolCompleted(schedulerProgress, "scheduler.work_intent.accept_roots") ||
+  const schedulerGraphPatchAccepted =
+    schedulerToolCompleted(schedulerProgress, "scheduler.accept_graph_patch") ||
     schedulerProgress.some(
       (event) =>
-        event.schedulerToolId === "scheduler.work_intent.accept_roots" &&
+        event.schedulerToolId === "scheduler.accept_graph_patch" &&
         (event.status === "succeeded" || event.status === "completed"),
     );
-  if (!acceptedWorkIntentRoots) {
-    return false;
-  }
-  const resourceRequirementsCompiled =
-    schedulerToolCompleted(
-      schedulerProgress,
-      "scheduler.compile_resource_requirements_for_work_intents",
-    ) ||
-    schedulerProgress.some(
-      (event) =>
-        event.schedulerToolId === "scheduler.compile_resource_requirements_for_work_intents" &&
-        (event.status === "succeeded" || event.status === "completed"),
-    );
-  const contextDispatchStarted =
-    graph.nodeKinds.includes("resource_scout") ||
-    schedulerProgress.some(
-      (event) =>
-        event.stage === "resource_broker" &&
-        event.currentPhase === "resource_demand_specialist_subturn",
-    );
-  const postResourceLifecycleStarted = schedulerProgress.some((event) =>
-    [
-      "scheduler.resolve_work_intent_resource_requirements",
-      "scheduler.accept_resources_for_work_intent",
-      "scheduler.mark_read_only_work_intent_satisfied_from_resources",
-      "scheduler.promote_resource_satisfied_work_intent_to_executable",
-      "scheduler.request_resource_requirement_for_work_intent",
-    ].includes(event.schedulerToolId),
+  const nodeAgentLifecycleStarted = schedulerProgress.some((event) =>
+    ["node.agent_session.invoke", "node.agent_session.invoke_high_capability"].includes(
+      event.schedulerToolId,
+    ),
   );
-  return (
-    resourceRequirementsCompiled ||
-    contextDispatchStarted ||
-    postResourceLifecycleStarted ||
-    graph.nodeKinds.every((nodeKind) => nodeKind === "work_intent")
-  );
+  return schedulerGraphPatchAccepted || nodeAgentLifecycleStarted;
 }
 
-function legacyArchitectureTransitionTopologyFailure({
-  graph,
-  schedulerProgress,
-}) {
+function legacyArchitectureTransitionTopologyFailure({ graph, schedulerProgress }) {
   return evaluateArchitectureTransitionTopologyGate({
     graph,
     schedulerProgress,
   });
 }
 
-function evaluateSchedulerGraphGate({ graph, resourceSpecialist, schedulerProgress }) {
+function evaluateSchedulerGraphGate({ graph, schedulerProgress }) {
   const persistenceStatus = graphPersistenceStatus(schedulerProgress);
   const graphPersistenceInProgress = persistenceStatus === "started";
   const graphPersistenceFailed = persistenceStatus === "failed";
@@ -1531,7 +1586,7 @@ function evaluateSchedulerGraphGate({ graph, resourceSpecialist, schedulerProgre
   if (graph.edgeCount > 0) {
     return "review_available_nonblocking";
   }
-  if (isWorkIntentDemandContextExpansionInProgress({ graph, schedulerProgress })) {
+  if (isSchedulerGraphPatchOrNodeLocalResourceProgressInProgress({ graph, schedulerProgress })) {
     return "waiting";
   }
   return "failed";
@@ -1542,14 +1597,11 @@ function gateStatusIsAcceptedForProgress(status) {
 }
 
 function evaluateCheckpoints({ submit, artifacts, snapshot }) {
-  const sourcePrompt = summarizeSourcePromptIndex(
-    latestArtifact(artifacts, "execution_platform.source_prompt_context_index"),
+  const sourcePrompt = summarizeSourcePromptArtifact(
+    latestArtifact(artifacts, "execution_platform.source_prompt_artifact"),
   );
-  const mission = summarizeMissionLedger(
-    latestArtifact(artifacts, "execution_platform.mission_contract_ledger"),
-  );
-  const obligationGraph = summarizeObligationGraph(
-    latestArtifact(artifacts, "execution_platform.obligation_graph"),
+  const requirementMap = summarizeRequirementMap(
+    latestArtifact(artifacts, "execution_platform.requirement_map"),
   );
   const resourceSpecialist = summarizeResourceSpecialist(
     latestArtifact(artifacts, "execution_platform.resource_specialist_tool_loop"),
@@ -1587,49 +1639,33 @@ function evaluateCheckpoints({ submit, artifacts, snapshot }) {
   }
 
   const sourcePromptGate = {
-    gateId: "source_prompt_context",
+    gateId: "source_prompt_artifact",
     status: !sourcePrompt
       ? "waiting"
-      : sourcePrompt.resolutionStatus === "resolved"
+      : sourcePrompt.resolutionStatus === "resolved" && sourcePrompt.sourcePromptBodyRef
         ? "passed"
         : "failed",
     evidence: sourcePrompt,
   };
   if (sourcePromptGate.status === "failed") {
-    hardFailures.push("source_prompt_context_unresolved");
+    hardFailures.push("source_prompt_artifact_unresolved");
   }
 
-  const missionGate = {
-    gateId: "mission_ledger",
-    status: !mission
+  const requirementMapGate = {
+    gateId: "requirement_map",
+    status: !requirementMap
       ? "waiting"
-      : mission.missionGate === "clear_to_execute" && mission.blockingCommitmentCount > 0
+      : (requirementMap.requirementCount ?? 0) >= 1 &&
+          (requirementMap.runnableRequirementCount ?? 0) >= 1
         ? "review_available_nonblocking"
         : "failed",
-    evidence: mission,
+    evidence: requirementMap,
   };
-  if (missionGate.status === "failed") {
-    hardFailures.push("mission_ledger_invalid");
+  if (requirementMapGate.status === "failed") {
+    hardFailures.push("requirement_map_invalid");
   }
-  if (missionGate.status === "review_available_nonblocking") {
-    needsReview.push("mission_ledger_review_available_nonblocking");
-  }
-
-  const obligationGraphGate = {
-    gateId: "obligation_graph",
-    status: !obligationGraph
-      ? "waiting"
-      : (obligationGraph.obligationCount ?? 0) >= 1 &&
-          (obligationGraph.executableCount ?? 0) >= 1
-        ? "review_available_nonblocking"
-        : "failed",
-    evidence: obligationGraph,
-  };
-  if (obligationGraphGate.status === "failed") {
-    hardFailures.push("obligation_graph_invalid");
-  }
-  if (obligationGraphGate.status === "review_available_nonblocking") {
-    needsReview.push("obligation_graph_review_available_nonblocking");
+  if (requirementMapGate.status === "review_available_nonblocking") {
+    needsReview.push("requirement_map_review_available_nonblocking");
   }
 
   const graphGateStatus = legacyTopologyFailure.failed
@@ -1676,8 +1712,8 @@ function evaluateCheckpoints({ submit, artifacts, snapshot }) {
       canonicalProofGate.gate.gateKind === "missing_runtime_state" ||
       canonicalGateIsBlockedOnlyBecauseSchedulerDecisionIsRunning ||
       canonicalGateIsWaitingForSchedulerGraphProgress
-      ? "waiting"
-      : canonicalExecutionGateStatus(canonicalProofGate),
+        ? "waiting"
+        : canonicalExecutionGateStatus(canonicalProofGate),
     evidence: canonicalProofGate,
   };
   if (canonicalProofGate.topologyGateRejected) {
@@ -1725,8 +1761,7 @@ function evaluateCheckpoints({ submit, artifacts, snapshot }) {
     gates: [
       payloadGate,
       sourcePromptGate,
-      missionGate,
-      obligationGraphGate,
+      requirementMapGate,
       graphGate,
       canonicalExecutionGate,
       closeoutGate,
@@ -1735,7 +1770,7 @@ function evaluateCheckpoints({ submit, artifacts, snapshot }) {
     needsReview: [...new Set(needsReview)],
     shouldStop: hardFailures.length > 0,
     firstOpenGate:
-      [payloadGate, sourcePromptGate, missionGate, obligationGraphGate].find(
+      [payloadGate, sourcePromptGate, requirementMapGate].find(
         (gate) => !gateStatusIsAcceptedForProgress(gate.status),
       )?.gateId ??
       (canonicalProofGate.gate.gateKind === "terminal_succeeded"
@@ -1745,7 +1780,7 @@ function evaluateCheckpoints({ submit, artifacts, snapshot }) {
         : canonicalProofGate.firstOpenGate),
     canonicalProofGate,
     sourcePrompt,
-    mission,
+    requirementMap,
     resourceSpecialist,
     graph,
     schedulerProgress,
@@ -1904,12 +1939,12 @@ async function main() {
   const cloneRuntimeJobFlagIndex = process.argv.indexOf("--clone-runtime-job-id");
   const cloneRuntimeJobIdArg =
     cloneRuntimeJobFlagIndex >= 0 ? process.argv[cloneRuntimeJobFlagIndex + 1]?.trim() : null;
-  const fromMissionLedger = process.argv.includes("--from-mission-ledger");
-  const fromObligationGraph = process.argv.includes("--from-obligation-graph");
-  const replayBoundary = fromObligationGraph
-    ? "obligation_graph"
-    : fromMissionLedger
-      ? "mission_ledger"
+  const fromRouterPayload = process.argv.includes("--from-router-payload");
+  const fromRequirementMap = process.argv.includes("--from-requirement-map");
+  const replayBoundary = fromRequirementMap
+    ? "requirement_map"
+    : fromRouterPayload
+      ? "router_payload"
       : "fresh_graph_replay_from_original_prompt_and_prior_failure_evidence";
   if (cloneRuntimeJobFlagIndex >= 0 && !cloneRuntimeJobIdArg) {
     throw new Error("clone_runtime_job_id_flag_missing_value");
@@ -2111,6 +2146,7 @@ async function main() {
   let runResult = null;
   let runError = null;
   let stoppedEarly = false;
+  let stopAfterGateSatisfied = false;
   let workerDrainTimedOut = false;
   const startedAt = Date.now();
 
@@ -2142,8 +2178,7 @@ async function main() {
       workItemId: existingJob.workItemId,
       promptHash,
       promptLength: prompt.length,
-      checkpointReplayBoundary:
-        "existing_runtime_job_after_graph_creation_or_resource_scout_boundary",
+      checkpointReplayBoundary: "existing_runtime_job_after_work_intent_or_worker_boundary",
       graph: beforeReplaySnapshot.checkpoints.graph,
       latestProgress: beforeReplaySnapshot.checkpoints.schedulerProgress.at(-1) ?? null,
       note: "Replay reuses persisted runtime job/graph state and runs the same gateway worker path. It does not resubmit the prompt or rerun router front-door work.",
@@ -2165,6 +2200,7 @@ async function main() {
     runtimeJobId: submit.runtimeJobId,
     workerId: "product-spec-checkpointed-test-worker",
     queueName: "agent-team",
+    stopAfterBoundary: STOP_AFTER_GATE === "requirement_map" ? "requirement_map" : null,
   })
     .then((result) => {
       runResult = result;
@@ -2193,6 +2229,7 @@ async function main() {
       const targetGate = snapshot.checkpoints.gates.find((gate) => gate.gateId === STOP_AFTER_GATE);
       if (targetGate && gateStatusIsAcceptedForProgress(targetGate.status)) {
         stoppedEarly = true;
+        stopAfterGateSatisfied = true;
         await runtime.runtimeJobs.cancelJob(
           submit.runtimeJobId,
           `checkpoint_stop:stop_after_gate:${STOP_AFTER_GATE}`,
@@ -2229,6 +2266,14 @@ async function main() {
   }
 
   const finalSnapshot = await collectSnapshot(runtime, submit);
+  const hardStopSatisfiedByRunner =
+    STOP_AFTER_GATE === "requirement_map" &&
+    Array.isArray(runResult?.reasonCodes) &&
+    runResult.reasonCodes.includes("hard_checkpoint_stop_boundary:requirement_map");
+  if (hardStopSatisfiedByRunner) {
+    stoppedEarly = true;
+    stopAfterGateSatisfied = true;
+  }
   const status = stoppedEarly
     ? "stopped_at_checkpoint"
     : runError
@@ -2264,7 +2309,7 @@ async function main() {
   const packetFailureDiagnostics = finalSnapshot.packetFailureDiagnostics ?? null;
   if (packetFailureDiagnostics) {
     await writeJson(
-      "product-spec-obligation-graph-failure-diagnostics.json",
+      "product-spec-requirement-map-failure-diagnostics.json",
       packetFailureDiagnostics,
     );
     await writeJson("product-spec-proof-follow-up-fix-list.json", {
@@ -2273,8 +2318,8 @@ async function main() {
       runtimeJobId: finalSnapshot.runtimeJobId,
       workItemId: finalSnapshot.workItemId,
       sourceDiagnosticArtifact:
-        ".artifacts/execution-platform/product-spec-obligation-graph-failure-diagnostics.json",
-      obligationGraphToFixItems: packetFailureDiagnostics.toFixItems,
+        ".artifacts/execution-platform/product-spec-requirement-map-failure-diagnostics.json",
+      requirementMapToFixItems: packetFailureDiagnostics.toFixItems,
       otherHardFailures: finalSnapshot.checkpoints.hardFailures,
       firstOpenGate: finalSnapshot.checkpoints.firstOpenGate,
       rawPromptStored: false,
@@ -2329,7 +2374,7 @@ async function main() {
     finalSnapshotManifest: compactProofSnapshot(finalSnapshot),
     phaseWallClock: summarizePhaseWallClock(finalSnapshot),
     modelTokenBurnByModel: summarizeModelTokenBurn(finalSnapshot),
-    obligationGraphFailureDiagnostics: packetFailureDiagnostics
+    requirementMapFailureDiagnostics: packetFailureDiagnostics
       ? {
           diagnosticPacketCount: packetFailureDiagnostics.diagnosticPacketCount,
           concerningPacketCount: packetFailureDiagnostics.concerningPacketCount,
@@ -2343,6 +2388,8 @@ async function main() {
       : null,
     proofWallClockMs: Date.now() - startedAt,
     stoppedEarly,
+    stopAfterGateSatisfied,
+    stopAfterGate: STOP_AFTER_GATE || null,
     modelCallsMade: true,
     gatewaySubmitPathUsed: true,
     codexCliInvokedManually: false,
@@ -2376,13 +2423,13 @@ async function main() {
     rawResponseStored: false,
   });
   process.stdout.write(`${JSON.stringify(summary, null, 2)}\n`);
-  if (status !== "completed_needs_quality_review") {
+  if (status !== "completed_needs_quality_review" && !stopAfterGateSatisfied) {
     process.exitCode = 1;
   }
   if (!existingJob) {
     await fs.rm(sourcePromptFile, { force: true });
   }
-  if (workerDrainTimedOut) {
+  if (workerDrainTimedOut && !stopAfterGateSatisfied) {
     process.exit(1);
   }
   process.exit(process.exitCode ?? 0);

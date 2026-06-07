@@ -1,0 +1,146 @@
+version: 1
+status: phase0_active_blocking_worker_agent_refactor
+canonical:
+  projectRoot: /root/services/openclaw-roles/live
+  executionPlatformDocsRoot: /root/services/openclaw-roles/live/docs/projects/execution-platform
+  runtimeHome: /root/.openclaw
+  configPath: /root/.openclaw/openclaw.json
+  sourceRuntimeRecordPath: /root/.openclaw/source-runtime/materialization-records.json
+  forkTransitionReadinessPath: /root/.openclaw/source-runtime/fork-transition-readiness.json
+  dirtyWorktreeReconciliationPath: /root/.openclaw/source-runtime/dirty-worktree-reconciliation.json
+runtimeAliases:
+  - aliasPath: /home/node/.openclaw
+    canonicalPath: /root/.openclaw
+    label: container-runtime-home-alias
+    status: compatibility_alias_only
+sourceRuntimeRule: behavior_defined_in_repo_state_recorded_in_runtime_home
+githubTopology:
+  current:
+    branch: phase2-prune-remaining-runtime-and-test-judgment-debt
+    origin:
+      remoteName: origin
+      nameWithOwner: ConorLynchOCGit/openclaw
+      url: git@github.com:ConorLynchOCGit/openclaw.git
+      isFork: true
+      parent: openclaw/openclaw
+      status: canonical_writable_fork_origin
+    platformLegacy:
+      remoteName: platform-legacy
+      nameWithOwner: ConorLynchOCGit/openclaw-platform
+      url: git@github.com:ConorLynchOCGit/openclaw-platform.git
+      push: DISABLED
+      status: preserved_fetch_only_legacy_origin
+    upstream:
+      remoteName: upstream
+      nameWithOwner: openclaw/openclaw
+      url: https://github.com/openclaw/openclaw.git
+      push: DISABLED
+      status: configured_read_only_reference_remote
+    preservation:
+      artifactPath: .artifacts/execution-platform/source-runtime-unification/20260607T031154Z
+      branch: source-runtime-unification-safety-20260607T031154Z
+      status: refreshed_current_dirty_worktree_preservation_snapshot
+    readiness:
+      recordPath: /root/.openclaw/source-runtime/fork-transition-readiness.json
+      dirtyWorktreeReconciliationPath: /root/.openclaw/source-runtime/dirty-worktree-reconciliation.json
+      dynamicStateOwner: runtime_home_records
+      statusSource: /root/.openclaw/source-runtime/fork-transition-readiness.json
+      countSource: /root/.openclaw/source-runtime/dirty-worktree-reconciliation.json
+      note: Repo manifest records the readiness record locations only. Live dirty counts and action counts belong to Runtime Home records.
+  target:
+    origin: writable_fork_remote
+    upstream: original_openclaw_read_only_remote
+    migrationStatus: migrated_with_preserved_dirty_worktree
+runtimeFileClasses:
+  source_materialized:
+    inspect: true
+    editMode: hot_patch_only
+  local_override:
+    inspect: true
+    editMode: local_override
+  secret_auth:
+    inspect: false
+    editMode: denied
+  session_state:
+    inspect: true
+    editMode: denied
+  log_cache:
+    inspect: true
+    editMode: denied
+  generated_artifact:
+    inspect: true
+    editMode: denied
+  hot_patch:
+    inspect: true
+    editMode: hot_patch_only
+executionAgentMaterializations:
+  - agentId: execution-coding
+    projectRoot: /root/services/openclaw-roles/live
+    sourcePath: docs/agents/execution-coding/runtime
+    runtimePath: /root/.openclaw/agents/execution-coding/agent
+    runtimeAliasPath: /home/node/.openclaw/agents/execution-coding/agent
+    runtimeFileClass: source_materialized
+    recordMode: materialized
+  - agentId: execution-context-scout
+    projectRoot: /root/services/openclaw-roles/live
+    sourcePath: docs/agents/execution-context-scout/runtime
+    runtimePath: /root/.openclaw/agents/execution-context-scout/agent
+    runtimeAliasPath: /home/node/.openclaw/agents/execution-context-scout/agent
+    runtimeFileClass: source_materialized
+    recordMode: materialized
+  - agentId: execution-validation-scout
+    projectRoot: /root/services/openclaw-roles/live
+    sourcePath: docs/agents/execution-validation-scout/runtime
+    runtimePath: /root/.openclaw/agents/execution-validation-scout/agent
+    runtimeAliasPath: /home/node/.openclaw/agents/execution-validation-scout/agent
+    runtimeFileClass: source_materialized
+    recordMode: materialized
+executionSkillMaterializations:
+  - skillName: execution-node-workflow
+    projectRoot: /root/services/openclaw-roles/live
+    sourcePath: skills/execution-node-workflow/SKILL.md
+    runtimePath: /root/.openclaw/workspace/skills/execution-node-workflow/SKILL.md
+    runtimeAliasPath: /home/node/.openclaw/workspace/skills/execution-node-workflow/SKILL.md
+    runtimeFileClass: source_materialized
+    recordMode: materialized
+  - skillName: execution-context-scout
+    projectRoot: /root/services/openclaw-roles/live
+    sourcePath: skills/execution-context-scout/SKILL.md
+    runtimePath: /root/.openclaw/workspace/skills/execution-context-scout/SKILL.md
+    runtimeAliasPath: /home/node/.openclaw/workspace/skills/execution-context-scout/SKILL.md
+    runtimeFileClass: source_materialized
+    recordMode: materialized
+  - skillName: execution-validation-scout
+    projectRoot: /root/services/openclaw-roles/live
+    sourcePath: skills/execution-validation-scout/SKILL.md
+    runtimePath: /root/.openclaw/workspace/skills/execution-validation-scout/SKILL.md
+    runtimeAliasPath: /home/node/.openclaw/workspace/skills/execution-validation-scout/SKILL.md
+    runtimeFileClass: source_materialized
+    recordMode: materialized
+activeConfigRequirements:
+  - agentId: execution-coding
+    requiresProjectRoot: /root/services/openclaw-roles/live
+    runtimeWorkspaceClass: runtime_state
+  - agentId: execution-context-scout
+    requiresProjectRoot: /root/services/openclaw-roles/live
+    runtimeWorkspaceClass: runtime_state
+  - agentId: execution-validation-scout
+    requiresProjectRoot: /root/services/openclaw-roles/live
+    runtimeWorkspaceClass: runtime_state
+splitFilesystemRepair:
+  status: active_blocking_prerequisite
+  requiredBeforeWorkerAgentItemsResume: true
+  affectedSurfaces:
+    - execution-agent config
+    - native task/session spawn inheritance
+    - skill loading
+    - bootstrap materialization
+    - openclaw_resource_read
+    - file_graph generation
+    - node-agent readback optics
+  successGate:
+    - execution-agent source work uses canonical projectRoot
+    - runtime paths are classified by runtime file class
+    - container runtime paths are aliases only
+    - active runtime skills are hash-aligned with repo source or reported as hot-patch drift
+    - readback reports canonical source/runtime paths and alias status

@@ -9,6 +9,36 @@ on the Model Memory fallback boundary. Runtime jobs remain lifecycle truth.
 
 ## Runtime Toolification Queue
 
+### SchedulerGraphPatch Runner Before Product/Spec Proof
+
+2026-06-04 update: the next scheduler-boundary correction is governed by
+`specs/scheduler-graph-patch-runner.md`. RequirementMap is accepted as the
+canonical pre-scheduler inventory. Scheduler must now collapse to one
+graph-shape product:
+
+```text
+RequirementMap -> SchedulerGraphPatch -> RuntimeGraphNode -> NodeLifecycleProjection
+```
+
+This supersedes fresh-scheduling work that creates WorkIntent graph-control
+nodes, staged scheduler JSON drafts, `OrchestratorGraphDecision` scheduler
+products, model-authored scheduler submit ceremonies, or scheduler-owned
+node-local repair.
+
+Next implementation queue shape:
+
+1. Add/complete `SchedulerGraphPatch` contracts, compiler, persistence, and
+   readback.
+2. Refactor `SchedulerStageRunner` phases to coverage/grouping, capability
+   binding, non-obvious dependency ordering, and runtime-only compile.
+3. Collapse WorkIntent graph-control output from fresh production scheduling.
+4. Route persisted runtime graph nodes directly into
+   `NodeLifecycleTransitionRunner`.
+5. Add inventory gates and negative tests proving retired scheduler and
+   WorkIntent lifecycle paths cannot return.
+6. Replay from accepted RequirementMap to persisted graph nodes or a typed
+   scheduler blocker.
+
 ### Node Lifecycle Transition Runner Before Product/Spec Proof
 
 2026-05-28 update: the next Product/Spec proof is blocked by the lack of one

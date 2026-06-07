@@ -19,7 +19,8 @@ agents:
     classification: active_system_agent
     durablePath: docs/agents/main
     runtimeSourcePath: docs/agents/main/runtime
-    runtimeSurfacePath: /home/node/.openclaw/agents/main/agent
+    runtimeSurfacePath: /root/.openclaw/agents/main/agent
+    runtimeSurfaceAliasPath: /home/node/.openclaw/agents/main/agent
     status: live_and_initialized
     primarySkills:
       - model-memory-deep-ingest
@@ -32,7 +33,8 @@ agents:
     classification: active_system_agent
     durablePath: docs/agents/chief
     sharedRuntimeSourcePath: docs/agents/main/runtime
-    runtimeSurfacePath: /home/node/.openclaw/agents/chief/agent
+    runtimeSurfacePath: /root/.openclaw/agents/chief/agent
+    runtimeSurfaceAliasPath: /home/node/.openclaw/agents/chief/agent
     status: live_and_initialized
     primarySkills: []
     basePackComplete: true
@@ -41,7 +43,8 @@ agents:
     classification: active_operator_agent
     durablePath: docs/agents/builder
     runtimeSourcePath: docs/agents/builder/runtime
-    runtimeSurfacePath: /home/node/.openclaw/agents/builder/agent
+    runtimeSurfacePath: /root/.openclaw/agents/builder/agent
+    runtimeSurfaceAliasPath: /home/node/.openclaw/agents/builder/agent
     status: live_and_initialized
     primarySkills:
       - coding-agent
@@ -51,7 +54,8 @@ agents:
     classification: experimental_agent
     durablePath: docs/agents/researcher
     runtimeSourcePath: docs/agents/researcher/runtime
-    runtimeSurfacePath: /home/node/.openclaw/agents/researcher/agent
+    runtimeSurfacePath: /root/.openclaw/agents/researcher/agent
+    runtimeSurfaceAliasPath: /home/node/.openclaw/agents/researcher/agent
     status: configured_but_uninitialized
     primarySkills:
       - nano-pdf
@@ -62,7 +66,8 @@ agents:
     classification: active_operator_agent
     durablePath: docs/agents/web-researcher
     runtimeSourcePath: docs/agents/web-researcher/runtime
-    runtimeSurfacePath: /home/node/.openclaw/agents/web-researcher/agent
+    runtimeSurfacePath: /root/.openclaw/agents/web-researcher/agent
+    runtimeSurfaceAliasPath: /home/node/.openclaw/agents/web-researcher/agent
     status: live_and_initialized
     primarySkills:
       - exact-page-read
@@ -78,7 +83,8 @@ agents:
     classification: active_operator_agent
     durablePath: docs/agents/writer
     runtimeSourcePath: docs/agents/writer/runtime
-    runtimeSurfacePath: /home/node/.openclaw/agents/writer/agent
+    runtimeSurfacePath: /root/.openclaw/agents/writer/agent
+    runtimeSurfaceAliasPath: /home/node/.openclaw/agents/writer/agent
     status: live_and_initialized
     primarySkills:
       - draft-from-source-pack
@@ -91,8 +97,45 @@ agents:
     classification: active_operator_agent
     durablePath: docs/agents/x-manager
     runtimeSourcePath: docs/agents/x-manager/runtime
-    runtimeSurfacePath: /home/node/.openclaw/agents/x-manager/agent
+    runtimeSurfacePath: /root/.openclaw/agents/x-manager/agent
+    runtimeSurfaceAliasPath: /home/node/.openclaw/agents/x-manager/agent
     status: live_and_initialized
     primarySkills:
       - xurl
+    basePackComplete: true
+  - id: execution-coding
+    displayName: Execution Coding
+    classification: execution_platform_agent
+    durablePath: docs/agents/execution-coding
+    runtimeSourcePath: docs/agents/execution-coding/runtime
+    runtimeSurfacePath: /root/.openclaw/agents/execution-coding/agent
+    runtimeSurfaceAliasPath: /home/node/.openclaw/agents/execution-coding/agent
+    projectRoot: /root/services/openclaw-roles/live
+    status: source_runtime_unification_source_added
+    primarySkills:
+      - execution-node-workflow
+    basePackComplete: true
+  - id: execution-context-scout
+    displayName: Execution Context Scout
+    classification: execution_platform_agent
+    durablePath: docs/agents/execution-context-scout
+    runtimeSourcePath: docs/agents/execution-context-scout/runtime
+    runtimeSurfacePath: /root/.openclaw/agents/execution-context-scout/agent
+    runtimeSurfaceAliasPath: /home/node/.openclaw/agents/execution-context-scout/agent
+    projectRoot: /root/services/openclaw-roles/live
+    status: source_runtime_unification_source_added
+    primarySkills:
+      - execution-context-scout
+    basePackComplete: true
+  - id: execution-validation-scout
+    displayName: Execution Validation Scout
+    classification: execution_platform_agent
+    durablePath: docs/agents/execution-validation-scout
+    runtimeSourcePath: docs/agents/execution-validation-scout/runtime
+    runtimeSurfacePath: /root/.openclaw/agents/execution-validation-scout/agent
+    runtimeSurfaceAliasPath: /home/node/.openclaw/agents/execution-validation-scout/agent
+    projectRoot: /root/services/openclaw-roles/live
+    status: source_runtime_unification_source_added
+    primarySkills:
+      - execution-validation-scout
     basePackComplete: true

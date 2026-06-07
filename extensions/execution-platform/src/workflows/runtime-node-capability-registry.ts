@@ -9,7 +9,6 @@ import {
   sharedDomainActionGateKindsForCapabilityTraits,
   sharedDomainEvidenceKindsForCapabilityTraits,
   sharedDomainProfileIdForCapabilityTraits,
-  sharedDomainRequiredPacketKindsForCapabilityTraits,
   sharedDomainResourceKindsForCapabilityTraits,
   sharedDomainWorkerActionToolIdsForCapabilityTraits,
   validateSharedDomainLifecycleCapability,
@@ -18,6 +17,8 @@ import {
   type SharedDomainResourceKind,
   type SharedDomainWorkerActionToolId,
 } from "./shared-domain-resource-lifecycle.ts";
+
+const OPENCLAW_NATIVE_NODE_AGENT_SESSION_ADAPTER = "openclaw_native_node_agent_session" as const;
 
 export const RUNTIME_NODE_CAPABILITY_PHASES = [
   "planning",
@@ -74,12 +75,6 @@ export type RuntimeNodeCapability = {
   domainResourceKinds: SharedDomainResourceKind[];
   validLifecyclePhases: Array<
     | "work_intent"
-    | "resource_required"
-    | "resource_in_progress"
-    | "resource_ready"
-    | "resources_required"
-    | "resource_materialization_in_progress"
-    | "resources_ready"
     | "executable"
     | "running"
     | "completed"
@@ -89,9 +84,8 @@ export type RuntimeNodeCapability = {
     | "canceled"
   >;
   requiresResources: boolean;
-  requiredResourceKinds: string[];
+  requiredSourceMaterialKinds: string[];
   requiredResourcePacketKind: string | null;
-  requiredNodeExecutionPacket: boolean;
   requiredSnapshotKinds: string[];
   requiredValidationKinds: string[];
   requiredAuthorityScopes: string[];
@@ -99,8 +93,7 @@ export type RuntimeNodeCapability = {
   canRunAsWorkIntent: boolean;
   canRunAsExecutable: boolean;
   defaultRepairTransition:
-    | "open_node_resource_demand"
-    | "compile_node_execution_packet"
+    | "node.agent_session.invoke"
     | "compile_validation_plan"
     | "repair_authority_scope"
     | "repair_evidence_expectations"
@@ -108,8 +101,7 @@ export type RuntimeNodeCapability = {
     | "ask_human"
     | "needs_review";
   defaultBlockedTransition:
-    | "open_node_resource_demand"
-    | "compile_node_execution_packet"
+    | "node.agent_session.invoke"
     | "compile_validation_plan"
     | "repair_authority_scope"
     | "repair_evidence_expectations"
@@ -159,9 +151,9 @@ export type RuntimeNodeCapability = {
     | "human_decision"
     | "closeout"
     | "research_brief"
+    | "source_material"
     | "planning_capsule"
     | "action_graph"
-    | "resource_handoff"
   >;
   commitmentFitKinds: string[];
   defaultBudgetPolicy: {
@@ -218,9 +210,8 @@ export type ProviderCapabilityProfile = {
   domainResourceKinds: RuntimeNodeCapability["domainResourceKinds"];
   validLifecyclePhases: RuntimeNodeCapability["validLifecyclePhases"];
   requiresResources: boolean;
-  requiredResourceKinds: string[];
+  requiredSourceMaterialKinds: string[];
   requiredResourcePacketKind: string | null;
-  requiredNodeExecutionPacket: boolean;
   requiredSnapshotKinds: string[];
   requiredValidationKinds: string[];
   requiredAuthorityScopes: string[];
@@ -334,9 +325,8 @@ type RuntimeNodeCapabilitySeed = Omit<
   | "productionSelectionRequiresQualification"
   | "validLifecyclePhases"
   | "requiresResources"
-  | "requiredResourceKinds"
+  | "requiredSourceMaterialKinds"
   | "requiredResourcePacketKind"
-  | "requiredNodeExecutionPacket"
   | "requiredSnapshotKinds"
   | "requiredValidationKinds"
   | "requiredAuthorityScopes"
@@ -393,9 +383,8 @@ function capability(input: RuntimeNodeCapabilitySeed): RuntimeNodeCapability {
     domainResourceKinds,
     validLifecyclePhases: inferValidLifecyclePhases(input),
     requiresResources: capabilityRequiresResources(input),
-    requiredResourceKinds: inferRequiredResourceKinds(input),
+    requiredSourceMaterialKinds: inferRequiredResourceKinds(input),
     requiredResourcePacketKind: inferRequiredResourcePacketKind(input),
-    requiredNodeExecutionPacket: capabilityRequiresNodeExecutionPacket(input),
     requiredSnapshotKinds,
     requiredValidationKinds: inferRequiredValidationKinds(input),
     requiredAuthorityScopes: input.authorityBoundaries,
@@ -408,9 +397,7 @@ function capability(input: RuntimeNodeCapabilitySeed): RuntimeNodeCapability {
     parallelismPolicyRef: `runtime-parallelism-policy://${input.workflowId}/${input.nodeType}/${input.roleClass}`,
     modelQualificationProfileIds: inferModelQualificationProfileIds(input),
     productionSelectionRequiresQualification:
-      input.allowedAdapters.includes("model_agnostic_file_edit_worker") ||
-      input.allowedAdapters.includes("model_agnostic_tool_worker_loop") ||
-      input.allowedAdapters.includes("non_codex_tool_using_worker_loop") ||
+      input.allowedAdapters.includes(OPENCLAW_NATIVE_NODE_AGENT_SESSION_ADAPTER) ||
       input.workerRef.startsWith("worker.kimi.") ||
       input.workerRef.startsWith("worker.non-codex."),
     idealTaskSize: input.preferredTaskSize,
@@ -538,9 +525,8 @@ export function providerCapabilityProfileForCapability(
     domainResourceKinds: capability.domainResourceKinds,
     validLifecyclePhases: capability.validLifecyclePhases,
     requiresResources: capability.requiresResources,
-    requiredResourceKinds: capability.requiredResourceKinds,
+    requiredSourceMaterialKinds: capability.requiredSourceMaterialKinds,
     requiredResourcePacketKind: capability.requiredResourcePacketKind,
-    requiredNodeExecutionPacket: capability.requiredNodeExecutionPacket,
     requiredSnapshotKinds: capability.requiredSnapshotKinds,
     requiredValidationKinds: capability.requiredValidationKinds,
     requiredAuthorityScopes: capability.requiredAuthorityScopes,
@@ -655,7 +641,6 @@ function inferSupportedExecutionIntents(input: RuntimeNodeCapabilitySeed): Execu
   const intents = new Set<ExecutionIntent>();
   if (input.roleClass === "context") {
     intents.add("source_grounding");
-    intents.add("resource_demand");
   }
   if (input.roleClass === "implementation" || input.canEditSource || input.canWriteTests) {
     intents.add("source_edit");
@@ -679,7 +664,7 @@ function inferSupportedExecutionIntents(input: RuntimeNodeCapabilitySeed): Execu
     intents.add("human_decision");
   }
   if (input.roleClass === "research" || input.canDoWebResearch) {
-    intents.add("resource_demand");
+    intents.add("source_grounding");
     intents.add("docs");
   }
   if (
@@ -687,14 +672,12 @@ function inferSupportedExecutionIntents(input: RuntimeNodeCapabilitySeed): Execu
     input.canCreatePlanningCapsules ||
     input.canProposeChildActions
   ) {
-    intents.add("resource_demand");
-    intents.add("domain_resource_selection");
+    intents.add("source_grounding");
     intents.add("domain_action");
     intents.add("docs");
   }
   if (input.roleClass === "orchestration") {
     intents.add("source_grounding");
-    intents.add("domain_resource_selection");
     intents.add("review");
   }
   return intents.size > 0 ? [...intents] : ["source_grounding"];
@@ -726,7 +709,7 @@ function inferDefaultExecutionIntent(input: RuntimeNodeCapabilitySeed): Executio
     return null;
   }
   if (input.roleClass === "context" || input.canInspectRepo) {
-    return "resource_demand";
+    return "source_grounding";
   }
   return null;
 }
@@ -790,12 +773,6 @@ function inferValidLifecyclePhases(
   if (input.roleClass === "implementation" || input.roleClass === "docs") {
     return [
       "work_intent",
-      "resource_required",
-      "resource_in_progress",
-      "resource_ready",
-      "resources_required",
-      "resource_materialization_in_progress",
-      "resources_ready",
       "executable",
       "running",
       "completed",
@@ -807,9 +784,6 @@ function inferValidLifecyclePhases(
   }
   return [
     "work_intent",
-    "resource_required",
-    "resource_in_progress",
-    "resource_ready",
     "executable",
     "running",
     "completed",
@@ -834,43 +808,29 @@ function inferRequiredResourceKinds(input: RuntimeNodeCapabilitySeed): string[] 
   if (!capabilityRequiresResources(input)) {
     return [];
   }
-  if (sharedDomainProfileIdForCapabilityTraits(capabilityTraits(input)) === "product_spec_planning") {
-    return [
-      "commitment_work_packet",
-      "resource_handoff",
-      "planning_domain_resource_refs",
-      "planning_action_gate_inputs",
-    ];
+  if (
+    sharedDomainProfileIdForCapabilityTraits(capabilityTraits(input)) === "product_spec_planning"
+  ) {
+    return ["source_material", "planning_domain_resource_refs", "planning_action_gate_inputs"];
   }
   if (input.canEditSource || input.canWriteTests || input.canRunValidation) {
-    return ["commitment_work_packet", "resource_handoff", "candidate_resource_refs"];
+    return ["source_material", "candidate_resource_refs"];
   }
-  return ["commitment_work_packet", "resource_handoff"];
-}
-
-function capabilityRequiresNodeExecutionPacket(input: RuntimeNodeCapabilitySeed): boolean {
-  return input.canEditSource || input.canWriteTests || input.nodeType === "docs_update";
+  return ["source_material"];
 }
 
 function inferRequiredResourcePacketKind(input: RuntimeNodeCapabilitySeed): string | null {
-  if (!capabilityRequiresResources(input)) {
-    return null;
-  }
-  const packetKinds = sharedDomainRequiredPacketKindsForCapabilityTraits(capabilityTraits(input));
-  if (input.canEditSource || input.canWriteTests) {
-    return "coding_resource_packet";
-  }
-  if (packetKinds.includes("planning_domain_resource_packet")) {
-    return "planning_domain_resource_packet";
-  }
-  return "domain_resource_packet";
+  void input;
+  return null;
 }
 
 function inferRequiredSnapshotKinds(input: RuntimeNodeCapabilitySeed): string[] {
   if (input.canEditSource || input.canWriteTests) {
     return ["target_file_snapshot", "resource_snapshot"];
   }
-  if (sharedDomainProfileIdForCapabilityTraits(capabilityTraits(input)) === "product_spec_planning") {
+  if (
+    sharedDomainProfileIdForCapabilityTraits(capabilityTraits(input)) === "product_spec_planning"
+  ) {
     return ["planning_resource_manifest", "planning_resource_payload_ref"];
   }
   if (capabilityRequiresResources(input)) {
@@ -889,11 +849,8 @@ function inferRequiredValidationKinds(input: RuntimeNodeCapabilitySeed): string[
 function inferDefaultRepairTransition(
   input: RuntimeNodeCapabilitySeed,
 ): RuntimeNodeCapability["defaultRepairTransition"] {
-  if (capabilityRequiresNodeExecutionPacket(input)) {
-    return "compile_node_execution_packet";
-  }
   if (capabilityRequiresResources(input)) {
-    return "open_node_resource_demand";
+    return "node.agent_session.invoke";
   }
   if (input.roleClass === "validation") {
     return "compile_validation_plan";
@@ -944,10 +901,7 @@ function inferModelQualificationProfileIds(input: RuntimeNodeCapabilitySeed): st
       refs.add("openrouter.deepseek.deepseek-v4-pro");
     }
   }
-  if (
-    input.allowedAdapters.includes("model_agnostic_file_edit_worker") ||
-    input.allowedAdapters.includes("model_agnostic_tool_worker_loop")
-  ) {
+  if (input.allowedAdapters.includes(OPENCLAW_NATIVE_NODE_AGENT_SESSION_ADAPTER)) {
     if (input.roleClass === "implementation" || input.canEditSource || input.canWriteTests) {
       refs.add("openrouter.moonshotai.kimi-k2.6");
     }
@@ -967,7 +921,7 @@ function inferEvidenceKinds(
 ): RuntimeNodeCapability["evidenceProducedKinds"] {
   const kinds = new Set<RuntimeNodeCapability["evidenceProducedKinds"][number]>();
   if (input.canInspectRepo) {
-    kinds.add("resource_handoff");
+    kinds.add("source_material");
   }
   if (input.canEditSource) {
     kinds.add("source_change");
@@ -1065,25 +1019,20 @@ export function buildRuntimeNodeCapabilityManifest(): RuntimeNodeCapabilityManif
         capabilityId: "implementation_microtask",
         graphNodeKind: "implementation",
         executorKey: "kind:implementation",
-        workerRef: "worker.kimi.file-implementation",
+        workerRef: "agent.execution-coding.native-node-session",
         requiredMetadataSchemaRef:
           "schema://runtime-work-graph/node-metadata/implementation-microtask.v2",
         roleClass: "implementation",
         nodeType: "implementation_microtask",
         roleId: "implementation_engineer",
         workflowId: "agent_team.coding",
-        displayName: "Non-Codex tool-using implementation worker loop",
+        displayName: "OpenClaw-native execution-coding node agent session",
         modelPolicyRefs: [
-          "policy://codex-parity/openclaw-role/implementation-standard/qwen-controller",
-          "policy://codex-parity/openclaw-role/implementation-standard/kimi-patch-reasoning-none",
-          "policy://codex-parity/openclaw-role/implementation-standard/qwen-validation-repair",
-          "policy://codex-parity/openclaw-role/implementation-standard/qwen-evidence",
+          "policy://openclaw-native-node/execution-coding/kimi-k2.6-high-reasoning",
+          "policy://openclaw-native-node/execution-context-scout/qwen-fast-search",
+          "policy://openclaw-native-node/execution-validation-scout/qwen-fast-validation",
         ],
-        allowedAdapters: [
-          "worker.kimi.file-implementation",
-          "model_agnostic_file_edit_worker",
-          "non_codex_tool_using_worker_loop",
-        ],
+        allowedAdapters: [OPENCLAW_NATIVE_NODE_AGENT_SESSION_ADAPTER],
         writable: true,
         canInspectRepo: true,
         canEditSource: true,
@@ -1100,26 +1049,30 @@ export function buildRuntimeNodeCapabilityManifest(): RuntimeNodeCapabilityManif
         maxRecommendedDiffSize: 1_200,
         maxRecommendedContextRefs: 18,
         validationResponsibilities: [
-          "request_bounded_context",
-          "search_allowed_repo_scope",
-          "read_bounded_file_snapshots",
-          "inspect_related_tests",
-          "select_compound_coding_tool_when_context_is_sufficient",
-          "execute_compound_inspect_edit_validate_evidence_operation",
-          "execute_ordered_edit_steps",
-          "run_focused_validation",
-          "repair_within_budget_or_escalate",
-          "emit_commitment_evidence_claims",
+          "create_native_update_plan",
+          "inspect_model_authored_worker_prompt",
+          "hydrate_assigned_prompt_source_when_needed",
+          "spawn_context_scout_when_target_mapping_is_weak",
+          "synthesize_inline_context_windows",
+          "edit_with_native_openclaw_tools",
+          "spawn_validation_scout_when_validation_scope_or_failure_needs_help",
+          "run_or_synthesize_focused_validation",
+          "repair_within_node_session_or_escalate",
+          "finish_with_node_finish_evidence",
         ],
         escalationTargets: ["implementation_complex", "test_review"],
         costClass: "cheap",
         latencyClass: "medium",
-        authorityBoundaries: ["approved_file_scope_only", "no_shell_commands_except_validation"],
+        authorityBoundaries: [
+          "repo_root_coding_workspace",
+          "openclaw_native_tool_permissions",
+          "node_finish_terminal_lifecycle",
+        ],
         knownLimitations: [
           "not_for_large_architectural_refactors",
-          "requires_bounded_tool_results_and_file_snapshots",
-          "escalates_after_repeated_same_failure",
-          "router_qwen_defaults_require_stage_latency_gates_before_promotion",
+          "requires coherent node prompt and active execution-node-workflow skill",
+          "requires child scout results to enter parent context before synthesis",
+          "context overflow must compact native session state rather than fall back to EP worker loops",
         ],
       }),
       capability({
@@ -1164,18 +1117,22 @@ export function buildRuntimeNodeCapabilityManifest(): RuntimeNodeCapabilityManif
         capabilityId: "test_authoring",
         graphNodeKind: "test_authoring",
         executorKey: "kind:test_authoring",
-        workerRef: "model_agnostic_file_edit_worker",
+        workerRef: "agent.execution-coding.native-node-session",
         requiredMetadataSchemaRef: "schema://runtime-work-graph/node-metadata/test-authoring.v2",
         roleClass: "validation",
         nodeType: "test_authoring",
         roleId: "test_engineer",
         workflowId: "agent_team.coding",
-        displayName: "Test engineer file-edit authoring",
-        modelPolicyRefs: ["policy://codex-parity/openclaw-role/test-engineer"],
-        allowedAdapters: ["model_agnostic_file_edit_worker"],
+        displayName: "OpenClaw-native test-authoring node agent session",
+        modelPolicyRefs: [
+          "policy://openclaw-native-node/execution-coding/kimi-k2.6-high-reasoning",
+          "policy://openclaw-native-node/execution-context-scout/qwen-fast-search",
+          "policy://openclaw-native-node/execution-validation-scout/qwen-fast-validation",
+        ],
+        allowedAdapters: [OPENCLAW_NATIVE_NODE_AGENT_SESSION_ADAPTER],
         writable: true,
         canInspectRepo: true,
-        canEditSource: false,
+        canEditSource: true,
         canWriteTests: true,
         canRunValidation: true,
         canDoWebResearch: false,
@@ -1188,128 +1145,29 @@ export function buildRuntimeNodeCapabilityManifest(): RuntimeNodeCapabilityManif
         maxRecommendedFileCount: 3,
         maxRecommendedDiffSize: 500,
         maxRecommendedContextRefs: 16,
-        validationResponsibilities: ["write_focused_tests", "repair_test_failures"],
+        validationResponsibilities: [
+          "create_native_update_plan",
+          "inspect_model_authored_worker_prompt",
+          "spawn_context_scout_when_target_mapping_is_weak",
+          "write_focused_tests",
+          "spawn_validation_scout_when_validation_scope_or_failure_needs_help",
+          "run_or_synthesize_focused_validation",
+          "repair_within_node_session_or_escalate",
+          "finish_with_node_finish_evidence",
+        ],
         escalationTargets: ["implementation_complex", "reviewer"],
         costClass: "standard",
         latencyClass: "medium",
-        authorityBoundaries: ["test_files_preferred", "no_test_weakening_without_review"],
-        knownLimitations: ["must_not_count_skipped_or_weakened_tests_as_success"],
-      }),
-      capability({
-        capabilityId: "non_codex_test_writer",
-        graphNodeKind: "test_authoring",
-        executorKey: "kind:non_codex_test_writer",
-        workerRef: "worker.non-codex.test-writer",
-        requiredMetadataSchemaRef:
-          "schema://runtime-work-graph/node-metadata/non-codex-test-writer.v1",
-        roleClass: "validation",
-        nodeType: "non_codex_test_writer",
-        roleId: "test_engineer",
-        workflowId: "agent_team.coding",
-        displayName: "Non-Codex tool-using test writer",
-        modelPolicyRefs: ["policy://codex-parity/openclaw-role/test-writer/non-codex"],
-        allowedAdapters: ["model_agnostic_tool_worker_loop"],
-        writable: true,
-        canInspectRepo: true,
-        canEditSource: true,
-        canWriteTests: true,
-        canRunValidation: true,
-        canDoWebResearch: false,
-        canCreatePlanningCapsules: false,
-        canProposeChildActions: false,
-        canCompileRuntimeJobs: false,
-        canRequestHumanInput: false,
-        canReviewSecurityPrivacy: false,
-        preferredTaskSize: "small",
-        maxRecommendedFileCount: 4,
-        maxRecommendedDiffSize: 900,
-        maxRecommendedContextRefs: 16,
-        validationResponsibilities: [
-          "write_focused_tests",
-          "run_focused_validation",
-          "emit_commitment_evidence_claims",
+        authorityBoundaries: [
+          "repo_root_coding_workspace",
+          "openclaw_native_tool_permissions",
+          "node_finish_terminal_lifecycle",
+          "no_test_weakening_without_review",
         ],
-        escalationTargets: ["implementation_microtask", "implementation_complex"],
-        costClass: "cheap",
-        latencyClass: "medium",
-        authorityBoundaries: ["test_or_adjacent_files_only", "no_test_weakening_without_review"],
-        knownLimitations: ["not_for_broad_test_strategy_without_planner"],
-      }),
-      capability({
-        capabilityId: "non_codex_docs_editor",
-        graphNodeKind: "docs_update",
-        executorKey: "kind:non_codex_docs_editor",
-        workerRef: "worker.non-codex.docs-editor",
-        requiredMetadataSchemaRef:
-          "schema://runtime-work-graph/node-metadata/non-codex-docs-editor.v1",
-        roleClass: "docs",
-        nodeType: "non_codex_docs_editor",
-        roleId: "docs_skills_writer",
-        workflowId: "agent_team.coding",
-        displayName: "Non-Codex tool-using docs editor",
-        modelPolicyRefs: ["policy://codex-parity/openclaw-role/docs-editor/non-codex"],
-        allowedAdapters: ["model_agnostic_tool_worker_loop"],
-        writable: true,
-        canInspectRepo: true,
-        canEditSource: true,
-        canWriteTests: false,
-        canRunValidation: true,
-        canDoWebResearch: false,
-        canCreatePlanningCapsules: false,
-        canProposeChildActions: false,
-        canCompileRuntimeJobs: false,
-        canRequestHumanInput: false,
-        canReviewSecurityPrivacy: false,
-        preferredTaskSize: "small",
-        maxRecommendedFileCount: 6,
-        maxRecommendedDiffSize: 1_600,
-        maxRecommendedContextRefs: 20,
-        validationResponsibilities: [
-          "edit_docs_specs_or_runbooks",
-          "run_format_validation_when_available",
-          "emit_commitment_evidence_claims",
+        knownLimitations: [
+          "must_not_count_skipped_or_weakened_tests_as_success",
+          "requires coherent node prompt and active execution-node-workflow skill",
         ],
-        escalationTargets: ["implementation_complex"],
-        costClass: "cheap",
-        latencyClass: "medium",
-        authorityBoundaries: ["docs_and_specs_only"],
-        knownLimitations: ["does_not_execute_application_code_changes"],
-      }),
-      capability({
-        capabilityId: "non_codex_validation_failure_explainer",
-        graphNodeKind: "test_review",
-        executorKey: "kind:non_codex_validation_failure_explainer",
-        workerRef: "worker.non-codex.validation-failure-explainer",
-        requiredMetadataSchemaRef:
-          "schema://runtime-work-graph/node-metadata/non-codex-validation-explainer.v1",
-        roleClass: "validation",
-        nodeType: "non_codex_validation_failure_explainer",
-        roleId: "test_engineer",
-        workflowId: "agent_team.coding",
-        displayName: "Non-Codex validation failure explainer",
-        modelPolicyRefs: ["policy://codex-parity/openclaw-role/validation-explainer/non-codex"],
-        allowedAdapters: ["model_agnostic_tool_worker_loop"],
-        writable: false,
-        canInspectRepo: true,
-        canEditSource: false,
-        canWriteTests: false,
-        canRunValidation: false,
-        canDoWebResearch: false,
-        canCreatePlanningCapsules: false,
-        canProposeChildActions: false,
-        canCompileRuntimeJobs: false,
-        canRequestHumanInput: false,
-        canReviewSecurityPrivacy: false,
-        preferredTaskSize: "small",
-        maxRecommendedFileCount: 8,
-        maxRecommendedDiffSize: 0,
-        maxRecommendedContextRefs: 16,
-        validationResponsibilities: ["explain_bounded_validation_failure", "recommend_repair"],
-        escalationTargets: ["implementation_microtask", "implementation_complex"],
-        costClass: "cheap",
-        latencyClass: "fast",
-        authorityBoundaries: ["read_only", "cannot_mark_source_edit_complete"],
-        knownLimitations: ["diagnostic_only"],
       }),
       capability({
         capabilityId: "validation_run",
@@ -1344,7 +1202,7 @@ export function buildRuntimeNodeCapabilityManifest(): RuntimeNodeCapabilityManif
           "record_validation_refs",
           "emit_commitment_evidence_claims",
         ],
-        escalationTargets: ["non_codex_validation_failure_explainer", "implementation_microtask"],
+        escalationTargets: ["implementation_microtask", "implementation_complex"],
         costClass: "cheap",
         latencyClass: "fast",
         authorityBoundaries: ["approved_validation_commands_only", "bounded_log_summaries_only"],
@@ -2501,7 +2359,7 @@ export function runtimeNodeCapabilityManifestForModel(input?: {
     capabilityCount: filtered.capabilities.length,
     fullProfileLookupToolId: "capability.lookup",
     lifecycleToolLookupToolId: "capability.list_legal_transitions",
-    resourceRequirementToolId: "capability.require_resources",
+    sourceMaterialRequirementToolId: "capability.require_resources",
     validationRequirementToolId: "capability.require_validation",
     evidenceRequirementToolId: "capability.require_evidence",
     capabilities: filtered.capabilities.map((capability) => {
@@ -2525,8 +2383,7 @@ export function runtimeNodeCapabilityManifestForModel(input?: {
           `domain=${capability.domainProfileId}`,
           `intents=${capability.supportedExecutionIntents.slice(0, 5).join("|")}`,
           `actions=${capability.domainWorkerActionToolIds.slice(0, 5).join("|") || "none"}`,
-          `resourcePacket=${capability.requiredResourcePacketKind ?? "none"}`,
-          `nodePacket=${capability.requiredNodeExecutionPacket ? "yes" : "no"}`,
+          `sourceMaterial=${capability.requiresResources ? "required" : "none"}`,
           `authority=${authorityFlags.join("|") || "none"}`,
           `task=${capability.preferredTaskSize}`,
           `cost=${capability.costClass}`,

@@ -285,4 +285,31 @@ describe("resolveEffectiveToolInventory", () => {
       }),
     );
   });
+
+  it("passes runner-owned native runtime tools into the effective inventory construction path", async () => {
+    const nativeRuntimeTools = [
+      mockTool({
+        name: "node_finish",
+        label: "Finish execution node",
+        description: "Terminal node lifecycle tool.",
+      }),
+    ];
+    const createToolsMock = vi.fn<typeof createOpenClawCodingTools>((options) => [
+      mockTool({ name: "exec", label: "Exec", description: "Run shell commands" }),
+      ...(options?.nativeRuntimeTools ?? []),
+    ]);
+    const { resolveEffectiveToolInventory } = await loadHarness({
+      createToolsMock,
+    });
+
+    const result = resolveEffectiveToolInventory({
+      cfg: {},
+      nativeRuntimeTools,
+    });
+
+    expect(createToolsMock).toHaveBeenCalledWith(expect.objectContaining({ nativeRuntimeTools }));
+    expect(result.groups.flatMap((group) => group.tools.map((tool) => tool.id))).toContain(
+      "node_finish",
+    );
+  });
 });

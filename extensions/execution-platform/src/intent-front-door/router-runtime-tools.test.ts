@@ -42,7 +42,7 @@ describe("router front-door runtime tools", () => {
 
       const result = await invokeRouterFrontDoorRuntimeTool({
         kernel,
-        toolId: "router.classify_owner_turn_intent",
+        toolId: "router.route_classification",
         runtimeJobId: null,
         requestId: "front-door-before-runtime-job",
         idempotencyKey: "front-door-before-runtime-job:classify",
@@ -60,7 +60,7 @@ describe("router front-door runtime tools", () => {
         runtimeJobId: null,
         graphId: null,
         nodeId: null,
-        toolId: "router.classify_owner_turn_intent",
+        toolId: "router.route_classification",
         rawPromptStored: false,
         rawResponseStored: false,
       });

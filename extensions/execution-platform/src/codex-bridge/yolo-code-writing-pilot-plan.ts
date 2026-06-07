@@ -2,6 +2,7 @@ import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { DEFAULT_DIAGNOSTIC_LIMITS, boundDiagnosticJson } from "../observability/redaction.ts";
 import type { JsonValue } from "../runtime-job-repository.ts";
+import { DEFAULT_REPO_PATH, DEFAULT_WORKSPACE_DOCS_PATH } from "./policy.ts";
 import {
   createOperatorEquivalentYoloTargetAuthorityProfile,
   createStagedYoloBridgeAuthorityProfile,
@@ -176,9 +177,6 @@ export type YoloCodeWritingPilotPlanResult = {
   requestSkeleton: YoloCodeWritingPilotRequestSkeleton;
   promptPackage: YoloCodeWritingPilotPromptPackage;
 };
-
-const DEFAULT_REPO_PATH = "/root/services/openclaw-roles/live";
-const DEFAULT_WORKSPACE_DOCS_PATH = "/root/.openclaw/workspace/docs/projects/execution-platform";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);

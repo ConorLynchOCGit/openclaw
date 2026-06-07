@@ -8,6 +8,8 @@ import {
 } from "@mariozechner/pi-coding-agent";
 import { filterHeartbeatPairs } from "../../../auto-reply/heartbeat-filter.js";
 import { resolveChannelCapabilities } from "../../../config/channel-capabilities.js";
+import { resolveStorePath } from "../../../config/sessions/paths.js";
+import { stripSessionWorkingContextPromptAddition } from "../../../config/sessions/working-context.js";
 import { formatErrorMessage } from "../../../infra/errors.js";
 import { resolveHeartbeatSummaryForAgent } from "../../../infra/heartbeat-summary.js";
 import { getMachineDisplayName } from "../../../infra/machine-name.js";
@@ -184,6 +186,7 @@ import { mapThinkingLevel } from "../utils.js";
 import { flushPendingToolResultsAfterIdle } from "../wait-for-idle-before-flush.js";
 import {
   assembleAttemptContextEngine,
+  buildAttemptWorkingContextPromptAddition,
   buildContextEnginePromptCacheInfo,
   findCurrentAttemptAssistantMessage,
   finalizeAttemptContextEngineTurn,
@@ -247,6 +250,249 @@ import {
   shouldPreemptivelyCompactBeforePrompt,
 } from "./preemptive-compaction.js";
 import type { EmbeddedRunAttemptParams, EmbeddedRunAttemptResult } from "./types.js";
+
+function recordFromUnknown(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined;
+}
+
+function stringFromRecord(
+  record: Record<string, unknown> | undefined,
+  key: string,
+): string | undefined {
+  const value = record?.[key];
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function booleanFromRecord(
+  record: Record<string, unknown> | undefined,
+  key: string,
+): boolean | undefined {
+  const value = record?.[key];
+  return typeof value === "boolean" ? value : undefined;
+}
+
+export const NATIVE_TASK_RESULT_AWAITING_PARENT_CONTEXT_REASON =
+  "native_task_result_awaiting_parent_context";
+
+const NATIVE_TASK_RESULT_AWAITING_PARENT_CONTEXT_ERROR_TEXT =
+  "Context overflow: native task child result is waiting for parent synthesis and cannot be compacted without losing edit-ready source context. Delegate a narrower scout task or reduce active context before retrying.";
+
+export function isDeliveredNativeTaskToolResult(message: AgentMessage): boolean {
+  if ((message as { role?: unknown }).role !== "toolResult") {
+    return false;
+  }
+  const toolName = normalizeOptionalLowercaseString((message as { toolName?: unknown }).toolName);
+  if (toolName !== "task") {
+    return false;
+  }
+  const details = recordFromUnknown((message as { details?: unknown }).details);
+  return (
+    stringFromRecord(details, "status") === "completed" &&
+    booleanFromRecord(details, "resultDeliveredToParentContext") === true &&
+    booleanFromRecord(details, "resultOversized") !== true
+  );
+}
+
+export function hasDeliveredNativeTaskResultAwaitingParentTurn(
+  messages: readonly AgentMessage[],
+): boolean {
+  let latestDeliveredTaskResultIndex = -1;
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    const message = messages[i];
+    if (!message) {
+      continue;
+    }
+    if (isDeliveredNativeTaskToolResult(message)) {
+      latestDeliveredTaskResultIndex = i;
+      break;
+    }
+    if ((message as { role?: unknown }).role === "assistant") {
+      return false;
+    }
+  }
+  if (latestDeliveredTaskResultIndex < 0) {
+    return false;
+  }
+  for (let i = latestDeliveredTaskResultIndex + 1; i < messages.length; i += 1) {
+    if ((messages[i] as { role?: unknown }).role === "assistant") {
+      return false;
+    }
+  }
+  return true;
+}
+
+const NODE_AGENT_NATIVE_TASK_PARENT_TOOL_NAMES = new Set([
+  "edit",
+  "node_finish",
+  "openclaw_resource_read",
+  "read_todo",
+  "task",
+  "update_plan",
+]);
+
+export function filterEffectiveToolsForNodeAgentNativeTaskMode<
+  TTool extends { name?: string | null },
+>(input: {
+  tools: readonly TTool[];
+  mode?: {
+    enabled?: boolean;
+    mutationToolName?: string;
+  };
+}): TTool[] {
+  if (input.mode?.enabled !== true) {
+    return [...input.tools];
+  }
+  const mutationToolName = normalizeOptionalLowercaseString(input.mode.mutationToolName) ?? "edit";
+  return input.tools.filter((tool) => {
+    const toolName = normalizeOptionalLowercaseString(tool.name);
+    return Boolean(
+      toolName &&
+      (NODE_AGENT_NATIVE_TASK_PARENT_TOOL_NAMES.has(toolName) || toolName === mutationToolName),
+    );
+  });
+}
+
+function nativeTaskTraceEvents(
+  events: readonly Record<string, unknown>[],
+): Record<string, unknown>[] {
+  return events.filter((event) => event.eventType === "node_agent_native_task_result").slice(-20);
+}
+
+function nativeTaskContextPreservationEvents(
+  events: readonly Record<string, unknown>[],
+): Record<string, unknown>[] {
+  return events
+    .filter(
+      (event) => event.eventType === "node_agent_native_task_result_context_preservation_blocked",
+    )
+    .slice(-20);
+}
+
+function buildNodeAgentSessionTraceFromEvents(
+  events: readonly Record<string, unknown>[],
+): Record<string, unknown> | undefined {
+  type ChildBootstrapAdmissionTrace = Record<string, unknown> & {
+    requestedAgentId: string;
+    childSessionKey: string | null;
+  };
+  type ChildStartFailureTrace = {
+    requestedAgentId: string;
+    childSessionKey: string | null;
+    taskRef: string | null;
+    status: string | null;
+    childStartFailureKind: string;
+    error: string | null;
+  };
+  const taskEvents = nativeTaskTraceEvents(events);
+  const contextPreservationEvents = nativeTaskContextPreservationEvents(events);
+  if (taskEvents.length === 0 && contextPreservationEvents.length === 0) {
+    return undefined;
+  }
+  const contextEvent = taskEvents.find(
+    (event) => stringFromRecord(event, "requestedAgentId") === "execution-context-scout",
+  );
+  const validationEvent = taskEvents.find(
+    (event) => stringFromRecord(event, "requestedAgentId") === "execution-validation-scout",
+  );
+  const firstEvent = contextEvent ?? taskEvents[0];
+  const childBootstrapAdmissions = taskEvents
+    .map<ChildBootstrapAdmissionTrace | null>((event) => {
+      const admission = recordFromUnknown(event.childBootstrapAdmission);
+      if (!admission) {
+        return null;
+      }
+      return {
+        requestedAgentId: stringFromRecord(event, "requestedAgentId") ?? "unknown",
+        childSessionKey: stringFromRecord(event, "childSessionKey") ?? null,
+        ...admission,
+      };
+    })
+    .filter((entry): entry is ChildBootstrapAdmissionTrace => entry !== null);
+  const childStartFailures = taskEvents
+    .map<ChildStartFailureTrace | null>((event) => {
+      const childStartFailureKind = stringFromRecord(event, "childStartFailureKind");
+      if (!childStartFailureKind) {
+        return null;
+      }
+      return {
+        requestedAgentId: stringFromRecord(event, "requestedAgentId") ?? "unknown",
+        childSessionKey: stringFromRecord(event, "childSessionKey") ?? null,
+        taskRef: stringFromRecord(event, "taskRef") ?? null,
+        status: stringFromRecord(event, "status") ?? null,
+        childStartFailureKind,
+        error: stringFromRecord(event, "error") ?? null,
+      };
+    })
+    .filter((entry): entry is ChildStartFailureTrace => entry !== null);
+  const childResultObserved =
+    booleanFromRecord(contextEvent, "resultDeliveredToParentContext") === true ||
+    booleanFromRecord(validationEvent, "resultDeliveredToParentContext") === true ||
+    taskEvents.some((event) => booleanFromRecord(event, "resultDeliveredToParentContext") === true);
+  const childResultOversized =
+    booleanFromRecord(contextEvent, "resultOversized") === true ||
+    booleanFromRecord(validationEvent, "resultOversized") === true ||
+    taskEvents.some((event) => booleanFromRecord(event, "resultOversized") === true);
+  const latestContextPreservationEvent =
+    contextPreservationEvents[contextPreservationEvents.length - 1];
+  return {
+    nativeTaskResultCount: taskEvents.length,
+    nativeTaskRef: stringFromRecord(firstEvent, "taskRef") ?? null,
+    taskRef: stringFromRecord(firstEvent, "taskRef") ?? null,
+    scoutSpawnRef: stringFromRecord(contextEvent, "taskRef") ?? null,
+    contextScoutSessionKey: stringFromRecord(contextEvent, "childSessionKey") ?? null,
+    childSessionKeyRef: stringFromRecord(contextEvent, "childSessionKey") ?? null,
+    childResultRef:
+      stringFromRecord(contextEvent, "childResultRef") ??
+      stringFromRecord(validationEvent, "childResultRef") ??
+      null,
+    workingContextRef:
+      stringFromRecord(contextEvent, "workingContextRef") ??
+      stringFromRecord(validationEvent, "workingContextRef") ??
+      null,
+    workingContextEntryRef:
+      stringFromRecord(contextEvent, "workingContextEntryRef") ??
+      stringFromRecord(validationEvent, "workingContextEntryRef") ??
+      null,
+    workingContextPersisted:
+      booleanFromRecord(contextEvent, "workingContextPersisted") === true ||
+      booleanFromRecord(validationEvent, "workingContextPersisted") === true,
+    workingContextHasInlineContextWindows:
+      booleanFromRecord(contextEvent, "workingContextHasInlineContextWindows") === true ||
+      booleanFromRecord(validationEvent, "workingContextHasInlineContextWindows") === true,
+    workingContextHasFileGraph:
+      booleanFromRecord(contextEvent, "workingContextHasFileGraph") === true ||
+      booleanFromRecord(validationEvent, "workingContextHasFileGraph") === true,
+    childResultObserved,
+    contextScoutSpawnObserved: Boolean(stringFromRecord(contextEvent, "childSessionKey")),
+    validationActionObserved: Boolean(validationEvent),
+    validationScoutObserved: Boolean(validationEvent),
+    validationScoutResultRef: stringFromRecord(validationEvent, "childResultRef") ?? null,
+    childResultOversized,
+    childBootstrapAdmissions,
+    childStartFailures,
+    childProviderAdmissionObserved: childBootstrapAdmissions.some(
+      (entry) => entry.providerReportObserved === true,
+    ),
+    childStartFailureObserved: childStartFailures.length > 0,
+    nativeTaskContextPreservationBlocked: Boolean(latestContextPreservationEvent),
+    nativeTaskContextPreservationReason:
+      stringFromRecord(latestContextPreservationEvent, "reason") ?? null,
+    nativeTaskContextPreservationRoute:
+      stringFromRecord(latestContextPreservationEvent, "route") ?? null,
+  };
+}
+
+export function prependSystemPromptAdditionReplacingNativeWorkingContext(params: {
+  systemPrompt: string;
+  systemPromptAddition?: string;
+}): string {
+  return prependSystemPromptAddition({
+    systemPrompt: stripSessionWorkingContextPromptAddition(params.systemPrompt),
+    systemPromptAddition: params.systemPromptAddition,
+  });
+}
 
 export {
   appendAttemptCacheTtlIfNeeded,
@@ -409,6 +655,9 @@ export async function runEmbeddedAttempt(
     config: params.config,
     agentId: params.agentId,
   });
+  const sessionStorePath = resolveStorePath(params.config?.session?.store, {
+    agentId: sessionAgentId,
+  });
 
   let restoreSkillEnv: (() => void) | undefined;
   try {
@@ -445,6 +694,7 @@ export async function runEmbeddedAttempt(
         }),
       }),
     });
+    await params.onSessionLockAcquired?.(sessionLock.trace);
 
     const sessionLabel = params.sessionKey ?? params.sessionId;
     const contextInjectionMode = resolveContextInjectionMode(params.config);
@@ -512,6 +762,7 @@ export async function runEmbeddedAttempt(
     let abortSessionForYield: (() => void) | null = null;
     let queueYieldInterruptForSession: (() => void) | null = null;
     let yieldAbortSettled: Promise<void> | null = null;
+    const nodeAgentSessionTraceEvents: Record<string, unknown>[] = [];
     // Check if the model supports native image input
     const modelHasVision = params.model.input?.includes("image") ?? false;
     const toolsRaw = params.disableTools
@@ -567,6 +818,11 @@ export async function runEmbeddedAttempt(
             requireExplicitMessageTarget:
               params.requireExplicitMessageTarget ?? isSubagentSessionKey(params.sessionKey),
             disableMessageTool: params.disableMessageTool,
+            nativeRuntimeTools: params.nativeRuntimeTools,
+            extraTools: params.extraTools,
+            nodeAuthorityOverlay: params.nodeAuthorityOverlay,
+            nodeAgentParentCrawlGuard: params.nodeAgentParentCrawlGuard,
+            nodeAgentNativeTaskMode: params.nodeAgentNativeTaskMode,
             onYield: (message) => {
               yieldDetected = true;
               yieldMessage = message;
@@ -621,11 +877,17 @@ export async function runEmbeddedAttempt(
           ],
         })
       : undefined;
-    const effectiveTools = [
-      ...tools,
-      ...(bundleMcpRuntime?.tools ?? []),
-      ...(bundleLspRuntime?.tools ?? []),
-    ];
+    const effectiveTools = filterEffectiveToolsForNodeAgentNativeTaskMode({
+      tools: [...tools, ...(bundleMcpRuntime?.tools ?? []), ...(bundleLspRuntime?.tools ?? [])],
+      mode: params.nodeAgentNativeTaskMode,
+    });
+    const effectiveToolNames = Array.from(
+      new Set(
+        effectiveTools
+          .map((tool) => tool.name)
+          .filter((name): name is string => typeof name === "string" && name.length > 0),
+      ),
+    ).toSorted();
     const allowedToolNames = collectAllowedToolNames({
       tools: effectiveTools,
       clientTools,
@@ -741,9 +1003,10 @@ export async function runEmbeddedAttempt(
     const isDefaultAgent = sessionAgentId === defaultAgentId;
     const promptMode = resolvePromptModeForSession(params.sessionKey);
 
-    // When toolsAllow is set, use minimal prompt and strip skills catalog
+    // When toolsAllow is set, use minimal prompt, but keep skills visible.
+    // Restricted tool menus still need skill instructions for correct agent behavior.
     const effectivePromptMode = params.toolsAllow?.length ? ("minimal" as const) : promptMode;
-    const effectiveSkillsPrompt = params.toolsAllow?.length ? undefined : skillsPrompt;
+    const effectiveSkillsPrompt = skillsPrompt;
     const docsPath = await resolveOpenClawDocsPath({
       workspaceDir: effectiveWorkspace,
       argv1: process.argv[1],
@@ -1048,6 +1311,20 @@ export async function runEmbeddedAttempt(
         throw new Error("Embedded agent session missing");
       }
       const activeSession = session;
+      const refreshNativeWorkingContextSystemPrompt = () => {
+        const workingContextAddition = buildAttemptWorkingContextPromptAddition({
+          sessionKey: params.sessionKey,
+          sessionStorePath,
+        });
+        const nextSystemPrompt = prependSystemPromptAdditionReplacingNativeWorkingContext({
+          systemPrompt: systemPromptText,
+          systemPromptAddition: workingContextAddition,
+        });
+        if (nextSystemPrompt !== systemPromptText) {
+          systemPromptText = nextSystemPrompt;
+          applySystemPromptOverrideToSession(activeSession, systemPromptText);
+        }
+      };
       let prePromptMessageCount = activeSession.messages.length;
       abortSessionForYield = () => {
         yieldAbortSettled = Promise.resolve(activeSession.abort());
@@ -1075,6 +1352,7 @@ export async function runEmbeddedAttempt(
           tokenBudget: params.contextTokenBudget,
           modelId: params.modelId,
           getPrePromptMessageCount: () => prePromptMessageCount,
+          refreshSystemPrompt: refreshNativeWorkingContextSystemPrompt,
         });
       }
       const cacheTrace = createCacheTrace({
@@ -1430,6 +1708,7 @@ export async function runEmbeddedAttempt(
               contextEngine: params.contextEngine,
               sessionId: params.sessionId,
               sessionKey: params.sessionKey,
+              sessionStorePath,
               messages: activeSession.messages,
               tokenBudget: params.contextTokenBudget,
               availableTools: new Set(effectiveTools.map((tool) => tool.name)),
@@ -1444,7 +1723,7 @@ export async function runEmbeddedAttempt(
               activeSession.agent.state.messages = assembled.messages;
             }
             if (assembled.systemPromptAddition) {
-              systemPromptText = prependSystemPromptAddition({
+              systemPromptText = prependSystemPromptAdditionReplacingNativeWorkingContext({
                 systemPrompt: systemPromptText,
                 systemPromptAddition: assembled.systemPromptAddition,
               });
@@ -1570,7 +1849,15 @@ export async function runEmbeddedAttempt(
           blockReplyChunking: params.blockReplyChunking,
           onPartialReply: params.onPartialReply,
           onAssistantMessageStart: params.onAssistantMessageStart,
-          onAgentEvent: params.onAgentEvent,
+          onAgentEvent: async (evt) => {
+            if (
+              evt.stream === "node-agent" &&
+              evt.data.eventType === "node_agent_native_task_result"
+            ) {
+              nodeAgentSessionTraceEvents.push(evt.data);
+            }
+            params.onAgentEvent?.(evt);
+          },
           enforceFinalTag: params.enforceFinalTag,
           silentExpected: params.silentExpected,
           config: params.config,
@@ -1784,6 +2071,7 @@ export async function runEmbeddedAttempt(
             );
           }
         }
+        refreshNativeWorkingContextSystemPrompt();
 
         if (cacheObservabilityEnabled) {
           const cacheObservation = beginPromptCacheObservation({
@@ -1995,7 +2283,48 @@ export async function runEmbeddedAttempt(
                     agentId: sessionAgentId,
                   }),
                 });
-          if (preemptiveCompaction.route === "truncate_tool_results_only") {
+          if (
+            preemptiveCompaction.route !== "fits" &&
+            hasDeliveredNativeTaskResultAwaitingParentTurn(activeSession.messages)
+          ) {
+            preflightRecovery = {
+              route: preemptiveCompaction.route,
+              handled: false,
+              reason: NATIVE_TASK_RESULT_AWAITING_PARENT_CONTEXT_REASON,
+            };
+            nodeAgentSessionTraceEvents.push({
+              eventType: "node_agent_native_task_result_context_preservation_blocked",
+              reason: NATIVE_TASK_RESULT_AWAITING_PARENT_CONTEXT_REASON,
+              route: preemptiveCompaction.route,
+              sessionKey: params.sessionKey ?? params.sessionId,
+              estimatedPromptTokens: preemptiveCompaction.estimatedPromptTokens,
+              promptBudgetBeforeReserve: preemptiveCompaction.promptBudgetBeforeReserve,
+              overflowTokens: preemptiveCompaction.overflowTokens,
+              toolResultReducibleChars: preemptiveCompaction.toolResultReducibleChars,
+              effectiveReserveTokens: preemptiveCompaction.effectiveReserveTokens,
+            });
+            promptError = new Error(NATIVE_TASK_RESULT_AWAITING_PARENT_CONTEXT_ERROR_TEXT);
+            promptErrorSource = "precheck";
+            log.warn(
+              `[context-overflow-precheck] blocked recovery that would compact or truncate a ` +
+                `delivered native task result before parent synthesis ` +
+                `sessionKey=${params.sessionKey ?? params.sessionId} ` +
+                `provider=${params.provider}/${params.modelId} ` +
+                `route=${preemptiveCompaction.route} ` +
+                `estimatedPromptTokens=${preemptiveCompaction.estimatedPromptTokens} ` +
+                `promptBudgetBeforeReserve=${preemptiveCompaction.promptBudgetBeforeReserve} ` +
+                `overflowTokens=${preemptiveCompaction.overflowTokens} ` +
+                `toolResultReducibleChars=${preemptiveCompaction.toolResultReducibleChars} ` +
+                `reserveTokens=${reserveTokens} ` +
+                `effectiveReserveTokens=${preemptiveCompaction.effectiveReserveTokens} ` +
+                `sessionFile=${params.sessionFile}`,
+            );
+            skipPromptSubmission = true;
+          }
+          if (
+            !skipPromptSubmission &&
+            preemptiveCompaction.route === "truncate_tool_results_only"
+          ) {
             const toolResultMaxChars = resolveLiveToolResultMaxChars({
               contextWindowTokens: contextTokenBudget,
               cfg: params.config,
@@ -2040,7 +2369,7 @@ export async function runEmbeddedAttempt(
               skipPromptSubmission = true;
             }
           }
-          if (preemptiveCompaction.shouldCompact) {
+          if (!skipPromptSubmission && preemptiveCompaction.shouldCompact) {
             preflightRecovery =
               preemptiveCompaction.route === "compact_then_truncate"
                 ? { route: "compact_then_truncate" }
@@ -2527,9 +2856,11 @@ export async function runEmbeddedAttempt(
         bootstrapPromptWarningSignature: bootstrapPromptWarning.signature,
         systemPromptReport,
         finalPromptText,
+        effectiveToolNames,
         messagesSnapshot,
         assistantTexts,
         toolMetas: toolMetasNormalized,
+        nodeAgentSessionTrace: buildNodeAgentSessionTraceFromEvents(nodeAgentSessionTraceEvents),
         lastAssistant,
         currentAttemptAssistant,
         lastToolError: getLastToolError?.(),
@@ -2547,6 +2878,7 @@ export async function runEmbeddedAttempt(
         // Client tool call detected (OpenResponses hosted tools)
         clientToolCall: clientToolCallDetected ?? undefined,
         yieldDetected: yieldDetected || undefined,
+        sessionLockTrace: sessionLock.trace,
       };
     } finally {
       // Always tear down the session (and release the lock) before we leave this attempt.

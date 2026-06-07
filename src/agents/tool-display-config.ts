@@ -254,6 +254,31 @@ export const TOOL_DISPLAY_CONFIG: ToolDisplayConfig = {
       title: "Update Plan",
       detailKeys: ["explanation", "plan.0.step"],
     },
+    read_todo: {
+      emoji: "🗺️",
+      title: "Read Todo",
+      detailKeys: ["status", "itemCount", "completedCount", "inProgressCount"],
+    },
+    task: {
+      emoji: "🧑‍🔧",
+      title: "Task",
+      detailKeys: ["label", "agentId", "task", "runTimeoutSeconds"],
+    },
+    glob: {
+      emoji: "🗂️",
+      title: "Glob",
+      detailKeys: ["pattern", "path", "maxResults"],
+    },
+    list: {
+      emoji: "🗂️",
+      title: "List",
+      detailKeys: ["path", "maxResults"],
+    },
+    grep: {
+      emoji: "🔎",
+      title: "Grep",
+      detailKeys: ["query", "path", "glob", "regex", "caseSensitive", "contextLines", "maxMatches"],
+    },
     gateway: {
       emoji: "🔌",
       title: "Gateway",

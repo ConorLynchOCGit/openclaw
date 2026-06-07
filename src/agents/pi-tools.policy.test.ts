@@ -7,6 +7,7 @@ import {
   filterToolsByPolicy,
   isToolAllowedByPolicyName,
   resolveEffectiveToolPolicy,
+  resolveEffectiveToolPolicyAccess,
   resolveSubagentToolPolicy,
   resolveSubagentToolPolicyForSession,
 } from "./pi-tools.policy.js";
@@ -36,6 +37,14 @@ describe("pi-tools.policy", () => {
 
   it("blocks apply_patch when write is denylisted", () => {
     expect(isToolAllowedByPolicyName("apply_patch", { deny: ["write"] })).toBe(false);
+  });
+
+  it("keeps read_todo with the native update_plan surface", () => {
+    expect(isToolAllowedByPolicyName("read_todo", { allow: ["update_plan"] })).toBe(true);
+  });
+
+  it("blocks read_todo when update_plan is denylisted", () => {
+    expect(isToolAllowedByPolicyName("read_todo", { deny: ["update_plan"] })).toBe(false);
   });
 });
 
@@ -240,6 +249,144 @@ describe("resolveSubagentToolPolicy depth awareness", () => {
 });
 
 describe("resolveEffectiveToolPolicy", () => {
+  it("does not cap explicit agent tools.allow with global tools.profile", () => {
+    const cfg = {
+      tools: {
+        profile: "messaging",
+      },
+      agents: {
+        list: [
+          {
+            id: "execution-context-scout",
+            tools: {
+              allow: ["read", "list", "glob", "grep", "exec"],
+            },
+          },
+        ],
+      },
+    } as OpenClawConfig;
+
+    const access = resolveEffectiveToolPolicyAccess({
+      config: cfg,
+      agentId: "execution-context-scout",
+      toolNames: ["read", "list", "glob", "grep", "exec"],
+    });
+
+    expect(access.map((entry) => [entry.toolName, entry.allowed])).toEqual([
+      ["read", true],
+      ["list", true],
+      ["glob", true],
+      ["grep", true],
+      ["exec", true],
+    ]);
+    expect(access.every((entry) => entry.localPolicyExplicit)).toBe(true);
+    expect(new Set(access.map((entry) => entry.effectiveProfileSource))).toEqual(new Set(["none"]));
+    expect(access.flatMap((entry) => entry.blockedBy)).not.toContain("tools.profile");
+  });
+
+  it("lets explicit agent tools.profile override the global profile", () => {
+    const cfg = {
+      tools: {
+        profile: "messaging",
+      },
+      agents: {
+        list: [
+          {
+            id: "execution-coding",
+            tools: {
+              profile: "coding",
+            },
+          },
+        ],
+      },
+    } as OpenClawConfig;
+
+    const resolved = resolveEffectiveToolPolicy({
+      config: cfg,
+      agentId: "execution-coding",
+    });
+    const access = resolveEffectiveToolPolicyAccess({
+      config: cfg,
+      agentId: "execution-coding",
+      toolNames: ["exec"],
+    });
+
+    expect(resolved.profile).toBe("coding");
+    expect(resolved.effectiveProfileSource).toBe("agent");
+    expect(resolved.localPolicyExplicit).toBe(true);
+    expect(access[0]).toMatchObject({
+      allowed: true,
+      effectiveProfileSource: "agent",
+      localPolicyExplicit: true,
+    });
+  });
+
+  it("keeps global deny precedence over explicit agent allow", () => {
+    const cfg = {
+      tools: {
+        deny: ["exec"],
+      },
+      agents: {
+        list: [
+          {
+            id: "execution-coding",
+            tools: {
+              allow: ["read", "exec"],
+            },
+          },
+        ],
+      },
+    } as OpenClawConfig;
+
+    const [execAccess] = resolveEffectiveToolPolicyAccess({
+      config: cfg,
+      agentId: "execution-coding",
+      toolNames: ["exec"],
+    });
+
+    expect(execAccess).toMatchObject({
+      allowed: false,
+      blockedBy: ["tools"],
+      localPolicyExplicit: true,
+    });
+  });
+
+  it("keeps provider deny precedence over explicit agent allow", () => {
+    const cfg = {
+      tools: {
+        byProvider: {
+          openrouter: {
+            deny: ["exec"],
+          },
+        },
+      },
+      agents: {
+        list: [
+          {
+            id: "execution-coding",
+            tools: {
+              allow: ["read", "exec"],
+            },
+          },
+        ],
+      },
+    } as OpenClawConfig;
+
+    const [execAccess] = resolveEffectiveToolPolicyAccess({
+      config: cfg,
+      agentId: "execution-coding",
+      modelProvider: "openrouter",
+      modelId: "moonshotai/kimi-k2",
+      toolNames: ["exec"],
+    });
+
+    expect(execAccess).toMatchObject({
+      allowed: false,
+      blockedBy: ["tools.byProvider"],
+      localPolicyExplicit: true,
+    });
+  });
+
   it("implicitly re-exposes exec and process when tools.exec is configured", () => {
     const cfg = {
       tools: {

@@ -20,20 +20,45 @@ function extractBetween(
   return { text: input.slice(start, end), found: true };
 }
 
-function parseSkillBlocks(skillsPrompt: string): Array<{ name: string; blockChars: number }> {
+function parseXmlAttr(attrs: string, name: string): string | undefined {
+  return attrs.match(new RegExp(`\\b${name}=["']([^"']+)["']`, "i"))?.[1]?.trim() || undefined;
+}
+
+function parseSkillBlocks(skillsPrompt: string): SessionSystemPromptReport["skills"]["entries"] {
   const prompt = skillsPrompt.trim();
   if (!prompt) {
     return [];
   }
-  const blocks = Array.from(prompt.matchAll(/<skill>[\s\S]*?<\/skill>/gi)).map(
+  const catalogBlocks = Array.from(prompt.matchAll(/<skill>[\s\S]*?<\/skill>/gi)).map(
     (match) => match[0] ?? "",
   );
-  return blocks
-    .map((block) => {
-      const name = block.match(/<name>\s*([^<]+?)\s*<\/name>/i)?.[1]?.trim() || "(unknown)";
-      return { name, blockChars: block.length };
-    })
-    .filter((b) => b.blockChars > 0);
+  const activeBlocks = Array.from(
+    prompt.matchAll(/<active_skill\b([^>]*)>[\s\S]*?<\/active_skill>/gi),
+  ).map((match) => ({
+    block: match[0] ?? "",
+    attrs: match[1] ?? "",
+  }));
+  const parsed = catalogBlocks.map((block) => {
+    const name = block.match(/<name>\s*([^<]+?)\s*<\/name>/i)?.[1]?.trim() || "(unknown)";
+    return { name, blockChars: block.length };
+  });
+  for (const active of activeBlocks) {
+    const name = parseXmlAttr(active.attrs, "name") || "(unknown)";
+    parsed.push({
+      name,
+      blockChars: active.block.length,
+      ...(parseXmlAttr(active.attrs, "location")
+        ? { location: parseXmlAttr(active.attrs, "location") }
+        : {}),
+      ...(parseXmlAttr(active.attrs, "source_ref")
+        ? { sourceRef: parseXmlAttr(active.attrs, "source_ref") }
+        : {}),
+      ...(parseXmlAttr(active.attrs, "source_hash")
+        ? { sourceHash: parseXmlAttr(active.attrs, "source_hash") }
+        : {}),
+    });
+  }
+  return parsed.filter((b) => b.blockChars > 0);
 }
 
 function buildToolsEntries(tools: AgentTool[]): SessionSystemPromptReport["tools"]["entries"] {

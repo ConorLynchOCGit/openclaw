@@ -141,6 +141,31 @@ describe("spawnSubagentDirect workspace inheritance", () => {
     });
   });
 
+  it("preserves the requester workspace for allowed cross-agent spawns on the same root", async () => {
+    hoisted.configOverride = createConfigOverride({
+      agents: {
+        list: [
+          {
+            id: "main",
+            workspace: "/tmp/requester-workspace",
+            subagents: {
+              allowAgents: ["ops"],
+            },
+          },
+          {
+            id: "ops",
+            workspace: "/tmp/requester-workspace",
+          },
+        ],
+      },
+    });
+
+    await expectAcceptedWorkspace({
+      agentId: "ops",
+      expectedWorkspaceDir: "/tmp/requester-workspace",
+    });
+  });
+
   it("preserves the inherited workspace for same-agent spawns", async () => {
     await expectAcceptedWorkspace({
       agentId: "main",

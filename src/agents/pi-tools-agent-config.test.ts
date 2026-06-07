@@ -9,11 +9,12 @@ import type { OpenClawConfig } from "../config/config.js";
 import { resolveChannelGroupToolsPolicy } from "../config/group-policy.js";
 import { setActivePluginRegistry } from "../plugins/runtime.js";
 import { createSessionConversationTestRegistry } from "../test-utils/session-conversation-registry.js";
-import { createOpenClawCodingTools } from "./pi-tools.js";
+import { createOpenClawCodingTools, __testing as piToolsTesting } from "./pi-tools.js";
 import { resolveEffectiveToolPolicy } from "./pi-tools.policy.js";
 import type { SandboxDockerConfig } from "./sandbox.js";
 import type { SandboxFsBridge } from "./sandbox/fs-bridge.js";
 import { createRestrictedAgentSandboxConfig } from "./test-helpers/sandbox-agent-config-fixtures.js";
+import type { AnyAgentTool } from "./tools/common.js";
 
 type ToolWithExecute = {
   execute: (toolCallId: string, args: unknown, signal?: AbortSignal) => Promise<unknown>;
@@ -130,6 +131,16 @@ describe("Agent-specific tool filtering", () => {
     };
   }
 
+  function createStubNodeTool(name: string): AnyAgentTool {
+    return {
+      name,
+      label: name,
+      description: `${name} test tool.`,
+      parameters: { type: "object", properties: {} },
+      execute: async () => ({ content: [], details: { status: "ok", text: name } }),
+    };
+  }
+
   it("should apply global tool policy when no agent-specific policy exists", () => {
     const cfg = createMainAgentConfig({
       tools: {
@@ -144,6 +155,249 @@ describe("Agent-specific tool filtering", () => {
     expect(toolNames).toContain("write");
     expect(toolNames).not.toContain("exec");
     expect(toolNames).not.toContain("apply_patch");
+  });
+
+  it("includes native repo discovery tools in the coding tool surface", () => {
+    const tools = createMainSessionTools({
+      tools: {
+        profile: "coding",
+      },
+    } as OpenClawConfig);
+
+    const toolNames = tools.map((tool) => tool.name);
+    expect(toolNames).toContain("list");
+    expect(toolNames).toContain("glob");
+    expect(toolNames).toContain("grep");
+  });
+
+  it("includes runner-owned native runtime tools through the same policy-filtered coding surface", () => {
+    const cfg = createMainAgentConfig({
+      tools: {
+        allow: ["read", "node_finish"],
+      },
+    });
+    const nativeRuntimeTool: AnyAgentTool = {
+      name: "node_finish",
+      label: "Finish execution node",
+      description: "Terminal node lifecycle tool.",
+      parameters: { type: "object", properties: {} },
+      execute: async () => ({ content: [], details: { status: "accepted" } }),
+    };
+
+    const allowedTools = createOpenClawCodingTools({
+      config: cfg,
+      sessionKey: "agent:main:main",
+      workspaceDir: "/tmp/test",
+      agentDir: "/tmp/agent",
+      nativeRuntimeTools: [nativeRuntimeTool],
+    });
+    expect(allowedTools.map((tool) => tool.name)).toContain("node_finish");
+
+    const deniedTools = createOpenClawCodingTools({
+      config: createMainAgentConfig({
+        tools: {
+          allow: ["read"],
+        },
+      }),
+      sessionKey: "agent:main:main",
+      workspaceDir: "/tmp/test",
+      agentDir: "/tmp/agent",
+      nativeRuntimeTools: [nativeRuntimeTool],
+    });
+    expect(deniedTools.map((tool) => tool.name)).not.toContain("node_finish");
+  });
+
+  it("filters executable node parent catalog to native task ownership tools", () => {
+    const cfg = createMainAgentConfig({
+      tools: {
+        allow: [
+          "read",
+          "list",
+          "glob",
+          "grep",
+          "exec",
+          "process",
+          "write",
+          "edit",
+          "update_plan",
+          "sessions_spawn",
+          "sessions_yield",
+          "subagents",
+          "agents_list",
+          "task",
+          "openclaw_resource_read",
+          "node_finish",
+        ],
+      },
+      agentTools: {
+        allow: [
+          "read",
+          "list",
+          "glob",
+          "grep",
+          "exec",
+          "process",
+          "write",
+          "edit",
+          "update_plan",
+          "sessions_spawn",
+          "sessions_yield",
+          "subagents",
+          "agents_list",
+          "task",
+          "openclaw_resource_read",
+          "node_finish",
+        ],
+      },
+    });
+    const nativeRuntimeTools: AnyAgentTool[] = [
+      createStubNodeTool("openclaw_resource_read"),
+      createStubNodeTool("node_finish"),
+    ];
+
+    const tools = createOpenClawCodingTools({
+      config: cfg,
+      sessionKey: "agent:main:node:nrun_test",
+      workspaceDir: "/tmp/test",
+      agentDir: "/tmp/agent",
+      nativeRuntimeTools,
+      nodeAgentNativeTaskMode: {
+        enabled: true,
+        allowedAgentIds: ["execution-context-scout", "execution-validation-scout"],
+        mutationToolName: "edit",
+      },
+      allowGatewaySubagentBinding: true,
+    });
+    const toolNames = tools.map((tool) => tool.name);
+
+    expect(toolNames).toEqual(
+      expect.arrayContaining([
+        "task",
+        "update_plan",
+        "read_todo",
+        "edit",
+        "openclaw_resource_read",
+        "node_finish",
+      ]),
+    );
+    expect(toolNames).not.toEqual(expect.arrayContaining(["read"]));
+    expect(toolNames).not.toEqual(expect.arrayContaining(["list"]));
+    expect(toolNames).not.toEqual(expect.arrayContaining(["glob"]));
+    expect(toolNames).not.toEqual(expect.arrayContaining(["grep"]));
+    expect(toolNames).not.toEqual(expect.arrayContaining(["exec"]));
+    expect(toolNames).not.toEqual(expect.arrayContaining(["process"]));
+    expect(toolNames).not.toEqual(expect.arrayContaining(["write"]));
+    expect(toolNames).not.toEqual(expect.arrayContaining(["sessions_spawn"]));
+    expect(toolNames).not.toEqual(expect.arrayContaining(["sessions_yield"]));
+    expect(toolNames).not.toEqual(expect.arrayContaining(["subagents"]));
+    expect(toolNames).not.toEqual(expect.arrayContaining(["agents_list"]));
+  });
+
+  it("blocks broad execution-node parent crawling before accepted context scout delegation", async () => {
+    const workspaceDir = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-node-crawl-"));
+    await fs.mkdir(path.join(workspaceDir, "src"), { recursive: true });
+    await fs.writeFile(
+      path.join(workspaceDir, "src", "target.ts"),
+      "export const target = true;\n",
+    );
+    const cfg = createMainAgentConfig({
+      tools: {
+        allow: ["read", "grep", "sessions_spawn"],
+      },
+      agentTools: {
+        allow: ["read", "grep", "sessions_spawn"],
+      },
+    });
+
+    const tools = createOpenClawCodingTools({
+      config: cfg,
+      sessionKey: "agent:main:node:nrun_test",
+      workspaceDir,
+      agentDir: "/tmp/agent",
+      nodeAgentParentCrawlGuard: { enabled: true },
+      allowGatewaySubagentBinding: true,
+    });
+    const read = tools.find((tool) => tool.name === "read");
+    const grep = tools.find((tool) => tool.name === "grep");
+    const sessionsSpawn = tools.find((tool) => tool.name === "sessions_spawn");
+    expect(read).toBeTruthy();
+    expect(grep).toBeTruthy();
+    expect(sessionsSpawn).toBeTruthy();
+
+    await expect(
+      read!.execute("read-window-before-scout", { path: "src/target.ts", offset: 0, limit: 20 }),
+    ).resolves.toBeTruthy();
+    await expect(
+      read!.execute("read-whole-file-before-scout", { path: "src/target.ts" }),
+    ).rejects.toThrow(/parent crawl guard blocked parent-side repo mapping/i);
+    await expect(
+      grep!.execute("grep-before-scout", {
+        query: "target",
+        path: ".",
+      }),
+    ).rejects.toThrow(/parent crawl guard blocked parent-side repo mapping/i);
+
+    await sessionsSpawn!
+      .execute("malformed-spawn-context-scout", {
+        runtime: "subagent",
+        agentId: "execution-context-scout",
+        prompt: "Find target files.",
+      })
+      .catch(() => null);
+    await expect(
+      grep!.execute("grep-after-failed-scout", {
+        query: "target",
+        path: ".",
+      }),
+    ).rejects.toThrow(/parent crawl guard blocked parent-side repo mapping/i);
+
+    await fs.rm(workspaceDir, { recursive: true, force: true });
+  });
+
+  it("unlocks broad execution-node parent mapping only after accepted context scout spawn", async () => {
+    const grepTool: AnyAgentTool = {
+      name: "grep",
+      label: "grep",
+      description: "Search files.",
+      parameters: { type: "object", properties: {} },
+      execute: async () => ({ content: [], details: { status: "matched" } }),
+    };
+    const sessionsSpawnTool: AnyAgentTool = {
+      name: "sessions_spawn",
+      label: "sessions_spawn",
+      description: "Spawn subagent.",
+      parameters: { type: "object", properties: {} },
+      execute: async () => ({
+        content: [],
+        details: {
+          status: "accepted",
+          childSessionKey: "agent:execution-context-scout:subagent:test",
+        },
+      }),
+    };
+    const [grep, sessionsSpawn] = piToolsTesting.wrapToolsWithNodeParentCrawlGuard({
+      tools: [grepTool, sessionsSpawnTool],
+      enabled: true,
+      workspaceRoot: "/tmp/openclaw-node-crawl-guard-test",
+    });
+
+    await expect(
+      grep.execute("grep-before-scout", {
+        query: "target",
+        path: ".",
+      }),
+    ).rejects.toThrow(/parent crawl guard blocked parent-side repo mapping/i);
+    await expect(
+      sessionsSpawn.execute("spawn-context-scout", {
+        agentId: "execution-context-scout",
+      }),
+    ).resolves.toBeTruthy();
+    await expect(
+      grep.execute("grep-after-accepted-scout", {
+        query: "target",
+        path: ".",
+      }),
+    ).resolves.toBeTruthy();
   });
 
   it("should keep global tool policy when agent only sets tools.elevated", () => {

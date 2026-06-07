@@ -2,27 +2,42 @@ import { createHash } from "node:crypto";
 import type {
   DynamicCodingTeamModelCallProgressEvent,
   DynamicCodingTeamModelClient,
+  DynamicCodingTeamToolTurnInput,
 } from "../codex-bridge/dynamic-coding-team-orchestrator.ts";
 import type { JsonValue, RuntimeJobRepository } from "../runtime-job-repository.ts";
-import {
-  MISSION_CONTRACT_LEDGER_ARTIFACT_TYPE,
-  MissionContractLedgerSchema,
-  normalizeMissionContractLedger,
-  openBlockingMissionCommitments,
-  type MissionContractLedger,
-} from "./mission-contract-ledger.ts";
-import {
-  OBLIGATION_GRAPH_ARTIFACT_TYPE,
-  applyObligationToolCallsToDraft,
-  obligationAuthorPayloadFromLedger,
-  obligationGraphAuthorNeedsRepair,
-  obligationGraphAuthorRepairPayload,
-  parseObligationGraphAuthorOutput,
-  type ObligationGraph,
-  type ObligationGraphAuthorParseResult,
-  type ObligationToolCompileResult,
-} from "./obligation-graph.ts";
 import type { BoundaryReplayCheckpointKind } from "./boundary-replay-checkpoints.ts";
+import {
+  executeModelToolTurn,
+  type ModelToolTurnParallelismPolicy,
+  type ModelToolTurnTransportRequirement,
+} from "./model-tool-turn-transport.ts";
+import {
+  REQUIREMENT_MAP_ARTIFACT_TYPE,
+  RequirementMapSchema,
+  applyRequirementConsolidationToolCalls,
+  applyRequirementExtractionToolCalls,
+  applyRequirementRepairToolCalls,
+  buildRequirementPromptWindows,
+  clusterRequirementCandidatesBySourceWindow,
+  compileRequirementMapFromCoverage,
+  createRequirementCoverageDraft,
+  requirementNativeToolDefinitions,
+  requirementToolCallFromNativeToolCall,
+  summarizeRequirementMapForManifest,
+  type RequirementMap,
+  type RequirementCoverageDraft,
+  type RequirementNativeToolId,
+  type RequirementPromptWindow,
+  type RequirementToolCall,
+  type RequirementToolCompileResult,
+} from "./requirement-map.ts";
+import {
+  SOURCE_PROMPT_ARTIFACT_TYPE,
+  SOURCE_PROMPT_WINDOW_ARTIFACT_TYPE,
+  buildSourcePromptArtifact,
+  buildSourcePromptWindowArtifact,
+  type SourcePromptArtifact,
+} from "./source-prompt-context.ts";
 
 type IntakeProgress = {
   stage: string;
@@ -40,11 +55,11 @@ type IntakeProgress = {
   nextDecisionNeeded?: string | null;
   eli5Progress?: string | null;
   schedulerPhase?: string | null;
-  missionLedgerMode?: "production_single_pass" | "staged_diagnostic" | null;
+  toolCallTelemetry?: JsonValue | null;
 };
 
 type BoundaryCheckpointInput = {
-  checkpointKind: BoundaryReplayCheckpointKind;
+  checkpointKind: BoundaryReplayCheckpointKind | "requirement_map";
   acceptedArtifactRefs?: string[];
   upstreamArtifactRefs?: string[];
   currentCommitmentIds?: string[];
@@ -57,9 +72,9 @@ type BoundaryCheckpointInput = {
 };
 
 export type IntakeStageRunnerResult = {
-  missionLedger: MissionContractLedger | null;
-  obligationGraph: ObligationGraph | null;
-  missionLedgerRefs: string[];
+  requirementMap: RequirementMap | null;
+  requirementMapRef: string | null;
+  sourcePromptArtifactRef: string | null;
   artifactRefs: string[];
   rawPromptStored: false;
   rawResponseStored: false;
@@ -71,10 +86,6 @@ export type IntakeStageRunnerOptions = {
   now: () => Date;
   missionModelClient: DynamicCodingTeamModelClient | null;
   attachProgress: (input: IntakeProgress) => Promise<string>;
-  attachMissionLedger: (
-    ledger: MissionContractLedger,
-    reasonCodes: string[],
-  ) => Promise<string>;
   recordBoundaryCheckpoint: (input: BoundaryCheckpointInput) => Promise<string>;
   attachModelCallProgress: (input: {
     event: DynamicCodingTeamModelCallProgressEvent;
@@ -93,18 +104,20 @@ export type IntakeStageRunnerRunInput = {
   objective: string;
   objectiveForModel: string;
   sourcePromptResolution: JsonValue;
-  sourcePromptContextIndexRef: string | null;
+  sourcePromptArtifact?: SourcePromptArtifact | null;
   repoScopeRefs: string[];
   validationCommandRefs: string[];
   checkpointReplay?: JsonValue | null;
 };
 
+type RequirementMapPhase =
+  | "window_extraction"
+  | "candidate_consolidation"
+  | "requirement_repair"
+  | "requirement_map_compile";
+
 function sha256Text(value: string): string {
   return createHash("sha256").update(value, "utf8").digest("hex");
-}
-
-function stringifyJson(value: unknown): string {
-  return JSON.stringify(value, null, 2);
 }
 
 function recordValue(value: unknown): Record<string, unknown> {
@@ -113,7 +126,11 @@ function recordValue(value: unknown): Record<string, unknown> {
     : {};
 }
 
-function readPositiveIntEnv(name: string, fallback: number, options: { max?: number } = {}): number {
+function readPositiveIntEnv(
+  name: string,
+  fallback: number,
+  options: { max?: number } = {},
+): number {
   const raw = process.env[name]?.trim();
   if (!raw) {
     return fallback;
@@ -125,515 +142,1236 @@ function readPositiveIntEnv(name: string, fallback: number, options: { max?: num
   return Math.min(parsed, options.max ?? parsed);
 }
 
-function parseJsonObject(text: string | null): Record<string, unknown> {
-  const source = text?.trim() ?? "";
-  const fenced = source.match(/```(?:json)?\s*([\s\S]*?)```/iu)?.[1]?.trim();
-  const candidates = [
-    source,
-    fenced ?? "",
-    source.includes("{") ? source.slice(source.indexOf("{"), source.lastIndexOf("}") + 1) : "",
-  ].filter((candidate) => candidate.trim().startsWith("{"));
-  for (const candidate of candidates) {
-    try {
-      const parsed = JSON.parse(candidate);
-      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-        return parsed as Record<string, unknown>;
-      }
-    } catch {
-      continue;
-    }
+function runtimeNeedsReviewError(message: string, reasonCodes: string[]): Error {
+  const error = new Error(message);
+  (error as Error & { runtimeNeedsReviewReasonCodes?: string[] }).runtimeNeedsReviewReasonCodes =
+    reasonCodes.slice(0, 80);
+  return error;
+}
+
+function requirementAllowedToolIdsForPhase(
+  phase: RequirementMapPhase,
+): readonly RequirementNativeToolId[] {
+  if (phase === "window_extraction") {
+    return [
+      "requirement.record_candidate",
+      "requirement.record_no_requirement",
+      "source_prompt.expand_window",
+      "source_prompt.open_adjacent",
+    ];
   }
-  throw new Error("intake_json_object_parse_failed");
+  if (phase === "candidate_consolidation") {
+    return ["requirement.merge", "requirement.split", "requirement.retire", "requirement.promote"];
+  }
+  if (phase === "requirement_repair") {
+    return ["requirement.set_role", "requirement.attach_source_ref"];
+  }
+  return [];
+}
+
+function requirementPhaseTransportDescriptor(phase: RequirementMapPhase): {
+  requiredTransport: ModelToolTurnTransportRequirement;
+  parallelismPolicy: ModelToolTurnParallelismPolicy;
+  maxAcceptedToolCalls: number;
+} {
+  if (phase === "window_extraction") {
+    return {
+      requiredTransport: "native_multi_tool_turn",
+      parallelismPolicy: "parallel_focused_sessions",
+      maxAcceptedToolCalls: 16,
+    };
+  }
+  if (phase === "candidate_consolidation") {
+    return {
+      requiredTransport: "native_multi_tool_turn",
+      parallelismPolicy: "single_turn_multi_tool",
+      maxAcceptedToolCalls: 48,
+    };
+  }
+  if (phase === "requirement_repair") {
+    return {
+      requiredTransport: "native_multi_tool_turn",
+      parallelismPolicy: "sequential_repair",
+      maxAcceptedToolCalls: 32,
+    };
+  }
+  return {
+    requiredTransport: "native_single_tool",
+    parallelismPolicy: "sequential_repair",
+    maxAcceptedToolCalls: 1,
+  };
+}
+
+function requirementToolTelemetry(input: {
+  draft: RequirementCoverageDraft | null;
+  compile?: RequirementToolCompileResult | null;
+  phase: RequirementMapPhase;
+  turnIndex: number;
+  selectedToolNames?: string[];
+  latencyMs?: number;
+}): JsonValue {
+  const missingFieldEntries = Object.entries(input.compile?.missingFieldsByPromotionId ?? {})
+    .slice(0, 24)
+    .map(([promotionId, missingFields]) => [
+      promotionId,
+      Array.isArray(missingFields) ? missingFields.slice(0, 12) : missingFields,
+    ]);
+  return {
+    artifactKind: "requirement_map_tool_call_telemetry",
+    schemaVersion: "execution-platform.tool-call-telemetry.v1",
+    stage: "requirement_map_authoring",
+    phase: input.phase,
+    turnIndex: input.turnIndex,
+    compileStatus: input.compile?.status ?? null,
+    candidateCount: input.draft?.candidates.length ?? 0,
+    promotionCount: input.draft?.promotions.length ?? 0,
+    noRequirementReceiptCount: input.draft?.noRequirementReceipts.length ?? 0,
+    retiredCandidateCount: input.draft?.retiredCandidateIds.length ?? 0,
+    appliedToolNames: (input.draft?.appliedToolNames ?? []).slice(-64),
+    selectedToolNames: (input.selectedToolNames ?? []).slice(0, 64),
+    rejectedToolCalls: (input.draft?.rejectedToolCalls ?? []).slice(-16),
+    missingFieldsByPromotionId: Object.fromEntries(missingFieldEntries),
+    blockedPromotionIds: (input.compile?.blockedPromotionIds ?? []).slice(0, 32),
+    reasonCodes: (input.compile?.reasonCodes ?? input.draft?.reasonCodes ?? []).slice(-80),
+    latencyMs: input.latencyMs ?? null,
+    rawPromptStored: false,
+    rawResponseStored: false,
+    rawProviderLogStored: false,
+    rawToolLogStored: false,
+  } as JsonValue;
+}
+
+function requirementRepairNoProgressSignature(input: {
+  draft: RequirementCoverageDraft;
+  compile: RequirementToolCompileResult | null;
+}): string {
+  const signature = {
+    candidateCount: input.draft.candidates.length,
+    promotionCount: input.draft.promotions.length,
+    retiredCandidateIds: input.draft.retiredCandidateIds.toSorted(),
+    blockedPromotionIds: (input.compile?.blockedPromotionIds ?? []).toSorted(),
+    missingFieldsByPromotionId: Object.fromEntries(
+      Object.entries(input.compile?.missingFieldsByPromotionId ?? {})
+        .toSorted(([left], [right]) => left.localeCompare(right))
+        .map(([promotionId, fields]) => [promotionId, [...fields].toSorted()]),
+    ),
+    draftHash: sha256Text(
+      JSON.stringify({
+        candidates: input.draft.candidates.map((candidate) => [
+          candidate.candidateId,
+          candidate.text,
+          candidate.sourceRefs,
+          candidate.sourceWindowRefs,
+          candidate.retired,
+        ]),
+        promotions: input.draft.promotions.map((promotion) => [
+          promotion.promotionId,
+          promotion.sourceCandidateIds,
+          promotion.text,
+          promotion.role,
+          promotion.sourceRefs,
+        ]),
+      }),
+    ),
+  };
+  return sha256Text(JSON.stringify(signature));
 }
 
 export class IntakeStageRunner {
   constructor(private readonly options: IntakeStageRunnerOptions) {}
 
-  async run(input: IntakeStageRunnerRunInput): Promise<IntakeStageRunnerResult> {
-    const replayLedger = await this.loadAcceptedReplayMissionLedger(input);
-    const missionLedger = replayLedger?.ledger ?? (await this.createProductionMissionLedger(input));
-    const obligationGraph = await this.authorObligationGraph(input, missionLedger);
+  private async runRequirementToolTurn(input: {
+    phase: RequirementMapPhase;
+    modelRef: string;
+    providerPath: string;
+    systemPrompt: string;
+    userPayload: JsonValue;
+    tools: ReturnType<typeof requirementNativeToolDefinitions>;
+    allowedToolNames: string[];
+    maxOutputTokens: number;
+    timeoutMs: number;
+    maxAttempts?: number;
+    reasoningEffort?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh";
+    taskClass: DynamicCodingTeamToolTurnInput["taskClass"];
+    modelTaskCallSite: string;
+    progress: {
+      objectiveSummary: string;
+      reasonCodes: string[];
+      onEvent: (event: DynamicCodingTeamModelCallProgressEvent) => void | Promise<void>;
+    };
+  }): Promise<{
+    calls: RequirementToolCall[];
+    selectedToolNames: string[];
+    rejectedToolCallCount: number;
+    latencyMs: number;
+    providerDiagnostics: JsonValue;
+  }> {
+    const descriptor = requirementPhaseTransportDescriptor(input.phase);
+    let response: Awaited<ReturnType<typeof executeModelToolTurn>>;
+    try {
+      response = await executeModelToolTurn({
+        modelClient: this.options.missionModelClient,
+        request: {
+          owner: "intake",
+          phaseId: `requirement_map.${input.phase}`,
+          modelRef: input.modelRef,
+          providerPath: input.providerPath,
+          systemPrompt: input.systemPrompt,
+          userPayload: input.userPayload,
+          tools: input.tools.map((tool) => ({
+            name: tool.name,
+            description: tool.description,
+            inputSchema: tool.inputSchema,
+          })),
+          allowedToolNames: input.allowedToolNames,
+          requiredTransport: descriptor.requiredTransport,
+          parallelismPolicy: descriptor.parallelismPolicy,
+          maxAcceptedToolCalls: descriptor.maxAcceptedToolCalls,
+          maxOutputTokens: input.maxOutputTokens,
+          timeoutMs: input.timeoutMs,
+          maxAttempts: input.maxAttempts,
+          reasoningEffort: input.reasoningEffort,
+          taskClass: input.taskClass,
+          modelTaskCallSite: input.modelTaskCallSite,
+          telemetryBudget: {
+            inlineToolCallNameLimit: 32,
+            inlineRejectedCallLimit: 12,
+          },
+          progress: input.progress,
+        },
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (!message.startsWith("model_tool_turn_no_accepted_tools:")) {
+        throw error;
+      }
+      return {
+        calls: [],
+        selectedToolNames: [],
+        rejectedToolCallCount: 0,
+        latencyMs: 0,
+        providerDiagnostics: {
+          artifactKind: "model_tool_turn_provider_diagnostics",
+          owner: "intake",
+          phaseId: `requirement_map.${input.phase}`,
+          status: "no_accepted_tool_calls",
+          reasonCodes: ["requirement_map_native_tool_turn_no_accepted_calls"],
+          rawPromptStored: false,
+          rawResponseStored: false,
+          rawProviderLogStored: false,
+        },
+      };
+    }
+    const calls = response.acceptedToolCalls
+      .map((toolCall) =>
+        requirementToolCallFromNativeToolCall({
+          providerToolName: toolCall.toolName,
+          toolArguments: toolCall.toolArguments,
+        }),
+      )
+      .filter((call): call is RequirementToolCall => Boolean(call));
     return {
-      missionLedger,
-      obligationGraph,
-      missionLedgerRefs: missionLedger ? [missionLedger.missionId] : [],
-      artifactRefs: obligationGraph ? [obligationGraph.graphRef] : [],
+      calls,
+      selectedToolNames: calls.map((call) => call.tool),
+      rejectedToolCallCount: response.rejectedToolCalls.length,
+      latencyMs: response.latencyMs,
+      providerDiagnostics: response.providerDiagnostics,
+    };
+  }
+
+  async run(input: IntakeStageRunnerRunInput): Promise<IntakeStageRunnerResult> {
+    const sourcePromptInput: IntakeStageRunnerRunInput = {
+      ...input,
+      sourcePromptArtifact: this.resolveSourcePromptArtifact(input),
+    };
+    const sourcePromptArtifactRef = await this.attachSourcePromptArtifact(sourcePromptInput);
+    await this.assertSourcePromptArtifactReadyForExecution(
+      sourcePromptInput,
+      sourcePromptArtifactRef,
+    );
+    const replayRequirementMap = await this.loadAcceptedReplayRequirementMap(sourcePromptInput);
+    const requirementMap =
+      replayRequirementMap ?? (await this.authorRequirementMap(sourcePromptInput));
+    return {
+      requirementMap,
+      requirementMapRef: requirementMap?.mapRef ?? null,
+      sourcePromptArtifactRef,
+      artifactRefs: [
+        ...(sourcePromptArtifactRef ? [sourcePromptArtifactRef] : []),
+        ...(requirementMap?.mapRef ? [requirementMap.mapRef] : []),
+      ],
       rawPromptStored: false,
       rawResponseStored: false,
       rawProviderLogStored: false,
     };
   }
 
-  private async createProductionMissionLedger(
-    input: IntakeStageRunnerRunInput,
-  ): Promise<MissionContractLedger | null> {
-    if (!this.options.missionModelClient) {
-      return null;
+  private resolveSourcePromptArtifact(input: IntakeStageRunnerRunInput): SourcePromptArtifact {
+    if (input.sourcePromptArtifact) {
+      return input.sourcePromptArtifact;
     }
-    const missionId = `${input.teamRunId}-mission-contract`;
-    let responseText: string | null = null;
-    try {
-      const response = await this.options.missionModelClient.runJson({
-        modelRef: process.env.OPENCLAW_MISSION_LEDGER_MODEL_REF?.trim() || "qwen/qwen3-coder-next",
-        providerPath: process.env.OPENCLAW_MISSION_LEDGER_PROVIDER_PATH?.trim() || "openrouter",
-        systemPrompt: [
-          "You are the OpenClaw Mission Contract author.",
-          "Convert the owner's bounded objective into a model-authored Mission Contract Ledger.",
-          "Use ownerPromptVolatileText as the full task input when present; ownerObjectiveSummary is only a bounded readback summary.",
-          "Return strict JSON with blockingCommitments, nonBlockingCommitments, explicitNonGoals, safetyConstraints, prohibitedDirectiveCandidates, authorityBoundary, storagePolicy, lifecycleBoundary, missionGate, and missionGateRationale.",
-          "Separate primary mission commitments from safety constraints and prohibited directive candidates.",
-          "If dangerous language appears only as a negative constraint such as do not deploy, no raw logs, no model promotion, or do not mutate Work Queue lifecycle, record it as a safety constraint and prohibitedDirectiveCandidate classification=constraint_not_primary; do not block the mission.",
-          "Use missionGate=blocked_primary_prohibited only when the primary owner mission itself asks for prohibited deploy, outbound send, model promotion, authority grant, raw storage, direct Work Queue lifecycle mutation, or unsafe untrusted instruction execution.",
-          "Use missionGate=needs_review only when primary-vs-constraint intent is genuinely ambiguous and child work should not start.",
-          "Use missionGate=clear_to_execute when the primary mission is allowed and dangerous terms are only constraints/non-goals.",
-          "Do not choose workflow-specific deliverable kinds or taxonomy labels.",
-          "Each commitment is opaque owner-mission text plus expected evidence description.",
-          "Do not store raw prompts, responses, transcripts, logs, secrets, or hidden reasoning.",
-          "Use false for rawPromptStored, rawResponseStored, rawProviderLogStored, and workQueueLifecycleMutated.",
-        ].join("\n"),
-        userPayload: {
-          missionId,
-          runtimeJobId: input.runtimeJobId,
-          workItemId: input.workItemId,
-          ownerObjectiveSummary: input.objective.slice(0, 8_000),
-          ownerPromptVolatileText: input.objectiveForModel.slice(0, 120_000),
-          ownerPromptHash: sha256Text(input.objectiveForModel),
-          ownerPromptLength: input.objectiveForModel.length,
-          sourcePromptResolution: input.sourcePromptResolution,
-          sourcePromptVersionRef: input.sourcePromptContextIndexRef,
-          repoScopeRefs: input.repoScopeRefs,
-          validationCommandRefs: input.validationCommandRefs,
-          missionLedgerMode: "production_single_pass",
-          rawPromptStored: false,
-          rawResponseStored: false,
-        },
-        maxOutputTokens: 8_000,
-        timeoutMs: 300_000,
-        taskClass: "local_semantic_extraction",
-        reasoningEffort:
-          (process.env.OPENCLAW_MISSION_LEDGER_REASONING_EFFORT?.trim() as
-            | "none"
-            | "minimal"
-            | "low"
-            | "medium"
-            | "high"
-            | "xhigh"
-            | undefined) || "none",
-        modelTaskCallSite: "mission_ledger.production_single_pass",
-        progress: {
-          spanId: `${input.runtimeJobId}:${input.graphId}:mission-ledger`,
-          objectiveSummary: "Create the Mission Contract Ledger from the full owner prompt.",
-          reasonCodes: ["mission_contract_model_call", "mission_ledger_mode:production_single_pass"],
-          onEvent: (event) =>
-            this.options.attachModelCallProgress({
-              event,
-              stage: "mission_contract_model_call",
-              schedulerPhase: "mission_contract_authoring",
-              currentObjective:
-                "Extract owner objective, commitments, constraints, and evidence expectations.",
-              nextDecisionNeeded:
-                event.phase === "completed" ? "validate_mission_contract" : "mission_contract",
-            }),
-        },
-      });
-      responseText = response.responseText;
-    } catch (error) {
-      await this.options.attachProgress({
-        stage: "mission_ledger",
-        status: "needs_review",
-        reasonCodes: [
-          "intake_mission_ledger_provider_failed",
-          error instanceof Error ? `provider_error:${error.name}` : "provider_error:unknown",
-        ],
-        currentPhase: "mission_ledger_provider_blocked",
-        blockerSummary:
-          "Mission Ledger model call failed before scheduler intake; no raw provider response was stored.",
-        schedulerPhase: "mission_ledger_blocked",
-      });
-      throw error;
-    }
-
-    let ledger: MissionContractLedger;
-    try {
-      ledger = normalizeMissionContractLedger({
-        value: parseJsonObject(responseText),
-        missionId,
-        sourceRuntimeJobId: input.runtimeJobId,
-        sourceWorkItemId: input.workItemId,
-        ownerObjectiveSummary: input.objective,
-      });
-    } catch (error) {
-      await this.options.attachProgress({
-        stage: "mission_ledger",
-        status: "needs_review",
-        reasonCodes: [
-          "intake_mission_ledger_parse_failed",
-          error instanceof Error ? `parse_error:${error.name}` : "parse_error:unknown",
-        ],
-        currentPhase: "mission_ledger_parse_blocked",
-        blockerSummary:
-          "Mission Ledger model output could not be normalized into the canonical ledger contract.",
-        schedulerPhase: "mission_ledger_blocked",
-      });
-      throw error;
-    }
-
-    const ledgerRef = await this.options.attachMissionLedger(ledger, [
-      "mission_contract_ledger_created",
-      "mission_ledger_mode:production_single_pass",
-    ]);
-    await this.options.attachProgress({
-      stage: "mission_ledger",
-      status: ledger.ledgerStatus === "blocked" ? "failed" : "completed",
-      artifactRefs: [ledgerRef],
-      reasonCodes: [
-        "mission_contract_ledger_created",
-        "mission_ledger_mode:production_single_pass",
-        `mission_gate:${ledger.missionGate}`,
-      ],
-      currentPhase: "mission_ledger_created",
-      currentObjective: ledger.ownerObjectiveSummary,
-      evidenceProducedRefs: [ledgerRef],
-      commitmentIdsAdvanced: ledger.blockingCommitments
-        .map((commitment) => commitment.commitmentId)
-        .slice(0, 30),
-      remainingOpenCommitmentIds: openBlockingMissionCommitments(ledger)
-        .map((commitment) => commitment.commitmentId)
-        .slice(0, 30),
-      eli5Progress: `Mission Ledger created with ${ledger.blockingCommitments.length} blocking commitment(s), gate ${ledger.missionGate}.`,
-      schedulerPhase: "mission_ledger_ready",
-      missionLedgerMode: "production_single_pass",
-    });
-    return ledger;
-  }
-
-  private async authorObligationGraph(
-    input: IntakeStageRunnerRunInput,
-    ledger: MissionContractLedger | null,
-  ): Promise<ObligationGraph | null> {
-    if (!ledger || !this.options.missionModelClient) {
-      return null;
-    }
-    const obligationGraphId = `${ledger.missionId}:obligation-graph`;
-    const obligationGraphRefPrefix = `runtime-job://${input.runtimeJobId}/obligation-graph/${ledger.missionId}`;
-    const obligationModelRef =
-      process.env.OPENCLAW_OBLIGATION_GRAPH_AUTHOR_MODEL_REF?.trim() || "qwen/qwen3-coder-next";
-    const obligationCandidateId =
-      process.env.OPENCLAW_OBLIGATION_GRAPH_AUTHOR_CANDIDATE_ID?.trim() ||
-      "qwen3-coder-next-obligation-graph-author";
-    const obligationTimeoutMs = readPositiveIntEnv(
-      "OPENCLAW_OBLIGATION_GRAPH_AUTHOR_TIMEOUT_MS",
-      120_000,
-      { max: 300_000 },
-    );
-    const obligationPayload = obligationAuthorPayloadFromLedger({
-      ledger,
-      missionLedgerRef: null,
-    });
-    await this.options.attachProgress({
-      stage: "obligation_graph_authoring",
-      status: "started",
-      reasonCodes: [
-        "obligation_graph_authoring_started",
-        `obligation_graph_model:${obligationModelRef}`,
-      ],
-      currentPhase: "obligation_graph_authoring",
-      currentObjective:
-        "Classify Mission Ledger commitments into typed obligations before scheduler decomposition.",
-      modelRef: obligationModelRef,
-      providerPath: "openrouter",
-      eli5Progress:
-        "OpenClaw is turning commitments into typed obligations so read-only, validation, review, closeout, constraint, and evidence requirements do not have to pretend to be implementation packets.",
-      schedulerPhase: "obligation_graph_authoring",
-    });
-
-    const first = await this.runObligationAuthorModelCall({
-      input,
-      ledger,
-      obligationModelRef,
-      obligationPayload,
-      timeoutMs: obligationTimeoutMs,
-      repairAttempt: 0,
-    });
-    const firstCompiled = first.parse.status === "parsed"
-      ? applyObligationToolCallsToDraft({
-          missionId: ledger.missionId,
-          graphId: obligationGraphId,
-          graphRefPrefix: obligationGraphRefPrefix,
-          sourceMissionLedgerRef: null,
-          ledger,
-          modelOutputs: [first.parse.parsed],
-        })
-      : null;
-    let finalParse = first.parse;
-    let finalCompile = firstCompiled;
-    if (obligationGraphAuthorNeedsRepair({ parse: first.parse, compile: firstCompiled })) {
-      await this.options.attachProgress({
-        stage: "obligation_graph_authoring",
-        status: "started",
-        reasonCodes: [
-          "obligation_graph_authoring_repairing_tool_shape",
-          ...first.parse.reasonCodes,
-          ...(firstCompiled?.reasonCodes ?? []),
-        ].slice(0, 30),
-        currentPhase: "obligation_graph_repairing_tool_shape",
-        currentObjective:
-          "Repair ObligationGraph author output into the canonical small-verb tool shape.",
-        nextDecisionNeeded: "obligation_graph_tool_shape_repair",
-        schedulerPhase: "obligation_graph_authoring_repair",
-      });
-      const repairPayload = obligationGraphAuthorRepairPayload({
-        originalPayload: obligationPayload,
-        parse: first.parse,
-        compile: firstCompiled,
-      });
-      const repaired = await this.runObligationAuthorModelCall({
-        input,
-        ledger,
-        obligationModelRef,
-        obligationPayload: repairPayload,
-        timeoutMs: obligationTimeoutMs,
-        repairAttempt: 1,
-      });
-      const repairedCompile = repaired.parse.status === "parsed"
-        ? applyObligationToolCallsToDraft({
-            missionId: ledger.missionId,
-            graphId: obligationGraphId,
-            graphRefPrefix: obligationGraphRefPrefix,
-            sourceMissionLedgerRef: null,
-            ledger,
-            modelOutputs: [repaired.parse.parsed],
-          })
+    const record = recordValue(input.sourcePromptResolution);
+    const statusValue = typeof record.status === "string" ? record.status : "not_present";
+    const status = ["not_present", "resolved", "unresolved", "unsupported"].includes(statusValue)
+      ? (statusValue as "not_present" | "resolved" | "unresolved" | "unsupported")
+      : "not_present";
+    const promptHash = typeof record.promptHash === "string" ? record.promptHash : null;
+    const promptLength =
+      typeof record.promptLength === "number" && Number.isFinite(record.promptLength)
+        ? Math.max(0, Math.floor(record.promptLength))
         : null;
-      finalParse = repaired.parse;
-      finalCompile = repairedCompile;
-    }
-
-    const diagnosticRef = await this.attachObligationDiagnostic({
-      input,
-      ledger,
-      compile: finalCompile,
-      parse: finalParse,
-      obligationGraphRefPrefix,
-      obligationModelRef,
-      obligationCandidateId,
-      obligationPayload,
-      latencyMs: first.latencyMs,
-    });
-
-    if (!finalCompile?.graph) {
-      const reasonCodes = [
-        ...(finalParse.reasonCodes ?? []),
-        ...(finalCompile?.reasonCodes ?? ["obligation_graph_compile_not_attempted"]),
-      ].slice(0, 80);
-      await this.options.attachProgress({
-        stage: "obligation_graph_authoring",
-        status: "needs_review",
-        artifactRefs: [diagnosticRef],
-        reasonCodes,
-        currentPhase: "obligation_graph_blocked",
-        currentObjective:
-          "Repair typed obligation graph authoring before scheduler decomposition.",
-        blockerSummary:
-          "ObligationGraph authoring did not produce a complete typed graph; scheduler cannot fall back to universal worker packet fanout.",
-        modelRef: obligationModelRef,
-        providerPath: "openrouter",
-        eli5Progress:
-          "OpenClaw stopped before scheduling because it refused to treat every commitment like a worker implementation packet.",
-        schedulerPhase: "obligation_graph_blocked",
-      });
-      throw new Error(`obligation_graph_authoring_blocked:${reasonCodes.join(",")}`);
-    }
-
-    await this.options.runtimeJobs.attachRuntimeArtifactByContract({
-      jobId: input.runtimeJobId,
-      artifactType: OBLIGATION_GRAPH_ARTIFACT_TYPE,
-      uri: finalCompile.graph.graphRef,
-      contentType: "application/json",
-      body: finalCompile.graph as unknown as JsonValue,
-      boundedSummary: `Typed ObligationGraph for ${ledger.missionId}: ${finalCompile.graph.obligations.length} obligation(s).`,
-      targetCommitmentIds: finalCompile.graph.obligations.flatMap((obligation) =>
-        obligation.commitmentIds,
-      ),
-      resourcePacketKind: "obligation_graph",
-      readinessStatus: "accepted",
-      reasonCodes: finalCompile.graph.reasonCodes,
-      metadata: {
-        artifactKind: OBLIGATION_GRAPH_ARTIFACT_TYPE,
-        missionId: ledger.missionId,
-        graphRef: finalCompile.graph.graphRef,
-        graphHash: finalCompile.graph.graphHash,
-        obligationCount: finalCompile.graph.obligations.length,
-        executableCount: finalCompile.graph.obligations.filter(
-          (obligation) => obligation.obligationKind === "executable",
-        ).length,
-        nonExecutableCount: finalCompile.graph.obligations.filter(
-          (obligation) => obligation.obligationKind !== "executable",
-        ).length,
+    return buildSourcePromptArtifact({
+      promptText: status === "resolved" ? input.objectiveForModel : null,
+      resolution: {
+        status,
+        reasonCodes: Array.isArray(record.reasonCodes)
+          ? record.reasonCodes.filter((item): item is string => typeof item === "string")
+          : [`source_prompt_resolution:${status}`],
+        promptHash,
+        promptLength,
         rawPromptStored: false,
         rawResponseStored: false,
         rawProviderLogStored: false,
-      } as Record<string, JsonValue>,
+      },
+    });
+  }
+
+  private async attachSourcePromptArtifact(
+    input: IntakeStageRunnerRunInput,
+  ): Promise<string | null> {
+    const artifact = input.sourcePromptArtifact;
+    if (!artifact) {
+      return null;
+    }
+    const ref = `runtime-job://${input.runtimeJobId}/source-prompt/artifact/${artifact.promptHash.slice(0, 16)}`;
+    await this.options.runtimeJobs.attachRuntimeArtifactByContract({
+      jobId: input.runtimeJobId,
+      artifactType: SOURCE_PROMPT_ARTIFACT_TYPE,
+      uri: ref,
+      contentType: "application/json",
+      body: artifact as unknown as JsonValue,
+      boundedSummary: `Source prompt artifact ${artifact.resolutionStatus}: ${artifact.promptLength} byte(s), body ref ${artifact.sourcePromptBodyRef}.`,
+      targetCommitmentIds: [],
+      resourcePacketKind: "source_prompt_artifact",
+      readinessStatus: artifact.resolutionStatus,
+      reasonCodes: [
+        `source_prompt_artifact:${artifact.resolutionStatus}`,
+        "source_prompt_artifact_owned_by_intake_stage_runner",
+        "source_prompt_body_ref_is_requirement_map_source_of_truth",
+        ...artifact.reasonCodes.slice(0, 12),
+      ],
+      metadata: {
+        artifactKind: SOURCE_PROMPT_ARTIFACT_TYPE,
+        promptHash: artifact.promptHash,
+        promptLength: artifact.promptLength,
+        sourcePromptBodyRef: artifact.sourcePromptBodyRef,
+        resolutionStatus: artifact.resolutionStatus,
+        rawPromptStored: false,
+        rawResponseStored: false,
+        rawProviderLogStored: false,
+      },
+    });
+    await this.options.attachProgress({
+      stage: "source_prompt_artifact",
+      status: artifact.resolutionStatus === "resolved" ? "completed" : "needs_review",
+      artifactRefs: [ref],
+      reasonCodes: [
+        `source_prompt_artifact:${artifact.resolutionStatus}`,
+        "source_prompt_artifact_owned_by_intake_stage_runner",
+        "source_prompt_body_ref_is_requirement_map_source_of_truth",
+        ...artifact.reasonCodes.slice(0, 8),
+      ],
+      currentPhase: "source_prompt_ready",
+      currentObjective: "Expose a stable source prompt body ref before RequirementMap authoring.",
+      evidenceProducedRefs: [ref],
+      eli5Progress:
+        artifact.resolutionStatus === "resolved"
+          ? "OpenClaw persisted a bounded source prompt artifact pointer before RequirementMap intake."
+          : "OpenClaw could not resolve the source prompt body for RequirementMap intake.",
+      schedulerPhase: "source_prompt_ready",
+    });
+    return ref;
+  }
+
+  private async attachSourcePromptWindowArtifacts(input: {
+    source: IntakeStageRunnerRunInput;
+    windows: RequirementPromptWindow[];
+  }): Promise<string[]> {
+    if (input.windows.length === 0) {
+      return [];
+    }
+    const refs = await Promise.all(
+      input.windows.map(async (window) => {
+        const body = buildSourcePromptWindowArtifact({
+          windowRef: window.windowRef,
+          sourcePromptBodyRef: window.sourcePromptBodyRef,
+          sourcePromptHash: window.promptHash,
+          start: window.start,
+          end: window.end,
+          promptLength: input.source.objectiveForModel.length,
+          text: window.text,
+          boundarySensitive: window.boundarySensitive,
+        });
+        await this.options.runtimeJobs.attachRuntimeArtifactByContract({
+          jobId: input.source.runtimeJobId,
+          artifactType: SOURCE_PROMPT_WINDOW_ARTIFACT_TYPE,
+          uri: body.windowRef,
+          contentType: "application/json",
+          body: body as unknown as JsonValue,
+          boundedSummary: `Source prompt window ${body.start}-${body.end} of ${body.promptLength} byte(s).`,
+          targetCommitmentIds: [],
+          resourcePacketKind: "source_prompt_window",
+          readinessStatus: "available",
+          reasonCodes: [
+            "source_prompt_window_artifact_attached",
+            "source_prompt_window_owned_by_intake_stage_runner",
+            ...(body.boundarySensitive ? ["source_prompt_window_boundary_sensitive"] : []),
+          ],
+          metadata: {
+            artifactKind: SOURCE_PROMPT_WINDOW_ARTIFACT_TYPE,
+            windowRef: body.windowRef,
+            sourcePromptBodyRef: body.sourcePromptBodyRef,
+            sourcePromptHash: body.sourcePromptHash,
+            start: body.start,
+            end: body.end,
+            promptLength: body.promptLength,
+            byteCount: body.byteCount,
+            boundarySensitive: body.boundarySensitive,
+            rawPromptStored: false,
+            rawResponseStored: false,
+            rawProviderLogStored: false,
+            rawToolLogStored: false,
+          },
+        });
+        return body.windowRef;
+      }),
+    );
+    await this.options.attachProgress({
+      stage: "source_prompt_window_artifacts",
+      status: "completed",
+      artifactRefs: refs.slice(0, 40),
+      reasonCodes: [
+        "source_prompt_window_artifacts_attached",
+        `source_prompt_window_artifact_count:${refs.length}`,
+        "source_prompt_windows_are_bounded_prompt_material_for_downstream_agents",
+      ],
+      currentPhase: "source_prompt_window_artifacts",
+      currentObjective:
+        "Persist bounded source prompt windows so downstream OpenClaw node agents can hydrate exact source refs.",
+      nextDecisionNeeded: "requirement_map_window_extraction",
+      schedulerPhase: "source_prompt_window_artifacts",
+    });
+    return refs;
+  }
+
+  private async assertSourcePromptArtifactReadyForExecution(
+    input: IntakeStageRunnerRunInput,
+    sourcePromptArtifactRef: string | null,
+  ): Promise<void> {
+    const artifact = input.sourcePromptArtifact;
+    const record = recordValue(input.sourcePromptResolution);
+    const promptLength =
+      typeof record.promptLength === "number" && Number.isFinite(record.promptLength)
+        ? Math.max(0, Math.floor(record.promptLength))
+        : input.objectiveForModel.length;
+    const longPrompt = promptLength > 8_000;
+    const unresolved =
+      !artifact ||
+      artifact.resolutionStatus !== "resolved" ||
+      !artifact.sourcePromptBodyRef ||
+      input.objectiveForModel.trim().length === 0;
+    if (!longPrompt || !unresolved) {
+      return;
+    }
+    await this.options.attachProgress({
+      stage: "source_prompt_artifact",
+      status: "needs_review",
+      artifactRefs: sourcePromptArtifactRef ? [sourcePromptArtifactRef] : [],
+      reasonCodes: [
+        "source_prompt_artifact_body_missing_for_long_prompt_execution",
+        "intake_blocked_before_requirement_map",
+      ],
+      currentPhase: "source_prompt_unresolved",
+      blockerSummary:
+        "Long-prompt execution requires a replayable source prompt body artifact before RequirementMap authoring.",
+      schedulerPhase: "intake_source_prompt_blocked",
+    });
+    throw runtimeNeedsReviewError("source_prompt_artifact_body_missing_for_long_prompt_execution", [
+      "source_prompt_artifact_body_missing_for_long_prompt_execution",
+      "intake_blocked_before_requirement_map",
+    ]);
+  }
+
+  private async authorRequirementMap(input: IntakeStageRunnerRunInput): Promise<RequirementMap> {
+    if (!this.options.missionModelClient?.executeProviderToolTurn) {
+      throw runtimeNeedsReviewError("requirement_map_native_tool_client_missing", [
+        "requirement_map_native_tool_client_missing",
+        "requirement_map_prompt_only_json_fallback_forbidden",
+      ]);
+    }
+    const artifact = input.sourcePromptArtifact;
+    if (!artifact || artifact.resolutionStatus !== "resolved") {
+      throw runtimeNeedsReviewError("requirement_map_source_prompt_unresolved", [
+        "requirement_map_source_prompt_unresolved",
+      ]);
+    }
+    const extractionModelRef =
+      process.env.OPENCLAW_REQUIREMENT_MAP_EXTRACTION_MODEL_REF?.trim() ||
+      process.env.OPENCLAW_REQUIREMENT_MAP_AUTHOR_MODEL_REF?.trim() ||
+      "qwen/qwen3-coder-next";
+    const extractionProviderPath =
+      process.env.OPENCLAW_REQUIREMENT_MAP_EXTRACTION_PROVIDER_PATH?.trim() ||
+      process.env.OPENCLAW_REQUIREMENT_MAP_AUTHOR_PROVIDER_PATH?.trim() ||
+      "openrouter";
+    const repairModelRef =
+      process.env.OPENCLAW_REQUIREMENT_MAP_REPAIR_MODEL_REF?.trim() || extractionModelRef;
+    const repairProviderPath =
+      process.env.OPENCLAW_REQUIREMENT_MAP_REPAIR_PROVIDER_PATH?.trim() || extractionProviderPath;
+    const timeoutMs = readPositiveIntEnv("OPENCLAW_REQUIREMENT_MAP_AUTHOR_TIMEOUT_MS", 180_000, {
+      max: 600_000,
+    });
+    const extractionWindowChars = readPositiveIntEnv(
+      "OPENCLAW_REQUIREMENT_MAP_WINDOW_CHARS",
+      3_000,
+      { max: 16_000 },
+    );
+    const extractionOverlapChars = readPositiveIntEnv(
+      "OPENCLAW_REQUIREMENT_MAP_WINDOW_OVERLAP_CHARS",
+      700,
+      { max: 4_000 },
+    );
+    const maxWindowTurns = readPositiveIntEnv("OPENCLAW_REQUIREMENT_MAP_WINDOW_MAX_TURNS", 2, {
+      max: 4,
+    });
+    const maxRepairTurns = readPositiveIntEnv("OPENCLAW_REQUIREMENT_MAP_REPAIR_MAX_TURNS", 2, {
+      max: 6,
+    });
+    const mapId = `${input.teamRunId}:requirement-map`;
+    const mapRefPrefix = `runtime-job://${input.runtimeJobId}/requirement-map/${sha256Text(mapId).slice(0, 16)}`;
+    const windows = buildRequirementPromptWindows({
+      promptText: input.objectiveForModel,
+      promptHash: artifact.promptHash,
+      sourcePromptBodyRef: artifact.sourcePromptBodyRef,
+      windowChars: extractionWindowChars,
+      overlapChars: extractionOverlapChars,
+    });
+    const sourcePromptWindowRefs = await this.attachSourcePromptWindowArtifacts({
+      source: input,
+      windows,
+    });
+    let draft = createRequirementCoverageDraft(windows);
+    await this.options.attachProgress({
+      stage: "requirement_map_authoring",
+      status: "started",
+      artifactRefs: sourcePromptWindowRefs.slice(0, 40),
+      reasonCodes: [
+        "requirement_map_window_plan_created",
+        `requirement_map_window_count:${windows.length}`,
+        "requirement_map_source_prompt_windows_persisted",
+      ],
+      currentPhase: "window_extraction",
+      currentObjective:
+        "Walk bounded source prompt windows and extract source-grounded obligation candidates.",
+      nextDecisionNeeded: "requirement_map_window_extraction",
+      modelRef: extractionModelRef,
+      providerPath: extractionProviderPath,
+      schedulerPhase: "window_extraction",
+      toolCallTelemetry: requirementToolTelemetry({
+        draft,
+        phase: "window_extraction",
+        turnIndex: 0,
+      }),
+    });
+
+    const extractionResults = await Promise.all(
+      windows.map((window, index) =>
+        this.extractRequirementWindow({
+          input,
+          window,
+          windowIndex: index,
+          windowCount: windows.length,
+          maxWindowTurns,
+          timeoutMs,
+          modelRef: extractionModelRef,
+          providerPath: extractionProviderPath,
+        }),
+      ),
+    );
+    for (const result of extractionResults) {
+      draft = applyRequirementExtractionToolCalls({
+        draft,
+        window: result.window,
+        calls: result.calls,
+      });
+    }
+
+    draft = await this.consolidateRequirementCandidates({
+      input,
+      artifact,
+      mapId,
+      draft,
+      timeoutMs,
+      modelRef: extractionModelRef,
+      providerPath: extractionProviderPath,
+    });
+
+    let compile = compileRequirementMapFromCoverage({
+      mapId,
+      mapRefPrefix,
+      sourcePromptBodyRef: artifact.sourcePromptBodyRef,
+      sourcePromptHash: artifact.promptHash,
+      sourcePromptLength: artifact.promptLength,
+      draft,
+    });
+    await this.options.attachProgress({
+      stage: "requirement_map_authoring",
+      status: compile.status === "accepted" ? "completed" : "needs_review",
+      reasonCodes: [
+        compile.status === "accepted"
+          ? "requirement_map_compile_accepted"
+          : "requirement_map_compile_blocked_before_repair",
+        ...compile.reasonCodes,
+      ].slice(0, 80),
+      currentPhase: "requirement_map_compile",
+      currentObjective:
+        "Compile source-grounded RequirementMap promotions before scheduler decomposition.",
+      blockerSummary:
+        compile.status === "accepted"
+          ? null
+          : "RequirementMap compile found missing fields and will run targeted native-tool repair.",
+      nextDecisionNeeded:
+        compile.status === "accepted"
+          ? "requirement_map_persist"
+          : "requirement_map_targeted_repair",
+      modelRef: extractionModelRef,
+      providerPath: extractionProviderPath,
+      schedulerPhase: "requirement_map_compile",
+      toolCallTelemetry: requirementToolTelemetry({
+        draft,
+        compile,
+        phase: "requirement_map_compile",
+        turnIndex: 0,
+      }),
+    });
+    let previousRepairSignature =
+      compile.status === "accepted"
+        ? null
+        : requirementRepairNoProgressSignature({ draft, compile });
+    for (
+      let repairTurn = 0;
+      compile.status !== "accepted" && repairTurn < maxRepairTurns;
+      repairTurn += 1
+    ) {
+      draft = await this.repairRequirementPromotions({
+        input,
+        artifact,
+        mapId,
+        draft,
+        compile,
+        turnIndex: repairTurn,
+        timeoutMs,
+        modelRef: repairModelRef,
+        providerPath: repairProviderPath,
+      });
+      compile = compileRequirementMapFromCoverage({
+        mapId,
+        mapRefPrefix,
+        sourcePromptBodyRef: artifact.sourcePromptBodyRef,
+        sourcePromptHash: artifact.promptHash,
+        sourcePromptLength: artifact.promptLength,
+        draft,
+      });
+      await this.options.attachProgress({
+        stage: "requirement_map_authoring",
+        status: compile.status === "accepted" ? "completed" : "needs_review",
+        reasonCodes: [
+          compile.status === "accepted"
+            ? "requirement_map_compile_accepted_after_repair"
+            : "requirement_map_compile_still_blocked_after_repair",
+          ...compile.reasonCodes,
+        ].slice(0, 80),
+        currentPhase: "requirement_map_compile",
+        currentObjective: "Compile targeted RequirementMap repair before scheduler decomposition.",
+        blockerSummary:
+          compile.status === "accepted"
+            ? null
+            : "RequirementMap targeted repair did not yet satisfy the compile gate.",
+        nextDecisionNeeded:
+          compile.status === "accepted"
+            ? "requirement_map_persist"
+            : "requirement_map_targeted_repair",
+        modelRef: repairModelRef,
+        providerPath: repairProviderPath,
+        schedulerPhase: "requirement_map_compile",
+        toolCallTelemetry: requirementToolTelemetry({
+          draft,
+          compile,
+          phase: "requirement_map_compile",
+          turnIndex: repairTurn + 1,
+        }),
+      });
+      const nextRepairSignature =
+        compile.status === "accepted"
+          ? null
+          : requirementRepairNoProgressSignature({ draft, compile });
+      if (nextRepairSignature && nextRepairSignature === previousRepairSignature) {
+        await this.options.attachProgress({
+          stage: "requirement_map_authoring",
+          status: "needs_review",
+          reasonCodes: [
+            "requirement_map_no_progress_collapsed",
+            ...(compile.reasonCodes ?? []),
+          ].slice(0, 80),
+          currentPhase: "requirement_repair_no_progress",
+          currentObjective:
+            "Stop repeated RequirementMap repair when blockers and draft state do not change.",
+          blockerSummary:
+            "RequirementMap targeted repair repeated the same typed blocker signature without improving the draft.",
+          nextDecisionNeeded: "requirement_map_authoring_blocked",
+          schedulerPhase: "requirement_repair_no_progress",
+          toolCallTelemetry: requirementToolTelemetry({
+            draft,
+            compile,
+            phase: "requirement_repair",
+            turnIndex: repairTurn,
+          }),
+        });
+        throw runtimeNeedsReviewError("requirement_map_no_progress_collapsed", [
+          "requirement_map_no_progress_collapsed",
+          ...compile.reasonCodes,
+        ]);
+      }
+      previousRepairSignature = nextRepairSignature;
+    }
+    if (!compile?.requirementMap) {
+      await this.options.attachProgress({
+        stage: "requirement_map_authoring",
+        status: "needs_review",
+        reasonCodes: [
+          "requirement_map_authoring_blocked",
+          ...(compile?.reasonCodes ?? ["requirement_map_compile_not_attempted"]),
+        ].slice(0, 80),
+        currentPhase: "requirement_map_blocked",
+        currentObjective: "Repair RequirementMap prompt coverage before scheduler decomposition.",
+        blockerSummary:
+          "RequirementMap native tool calls did not compile into a fully covered source-grounded intake product.",
+        nextDecisionNeeded: "requirement_map_targeted_repair",
+        schedulerPhase: "requirement_map_blocked",
+        toolCallTelemetry: requirementToolTelemetry({
+          draft,
+          compile,
+          phase: "requirement_repair",
+          turnIndex: maxRepairTurns,
+        }),
+      });
+      throw runtimeNeedsReviewError("requirement_map_authoring_blocked", [
+        "requirement_map_authoring_blocked",
+        ...(compile?.reasonCodes ?? []),
+      ]);
+    }
+    const requirementMap = compile.requirementMap;
+    await this.options.runtimeJobs.attachRuntimeArtifactByContract({
+      jobId: input.runtimeJobId,
+      artifactType: REQUIREMENT_MAP_ARTIFACT_TYPE,
+      uri: requirementMap.mapRef,
+      contentType: "application/json",
+      body: requirementMap as unknown as JsonValue,
+      boundedSummary: `RequirementMap for ${input.graphId}: ${requirementMap.requirements.length} requirement(s), source prompt ${requirementMap.sourcePromptLength} byte(s).`,
+      targetCommitmentIds: requirementMap.requirements.map(
+        (requirement) => requirement.requirementId,
+      ),
+      resourcePacketKind: "requirement_map",
+      readinessStatus: "accepted",
+      reasonCodes: [
+        "requirement_map_created",
+        "requirement_map_native_tool_batch",
+        ...requirementMap.reasonCodes.slice(0, 30),
+      ],
+      metadata: {
+        artifactKind: REQUIREMENT_MAP_ARTIFACT_TYPE,
+        mapId: requirementMap.mapId,
+        mapRef: requirementMap.mapRef,
+        mapHash: requirementMap.mapHash,
+        sourcePromptBodyRef: requirementMap.sourcePromptBodyRef,
+        sourcePromptHash: requirementMap.sourcePromptHash,
+        sourcePromptLength: requirementMap.sourcePromptLength,
+        requirementCount: requirementMap.requirements.length,
+        coverage: requirementMap.coverage,
+        requirementMapSummary: summarizeRequirementMapForManifest(requirementMap),
+        rawPromptStored: false,
+        rawResponseStored: false,
+        rawProviderLogStored: false,
+      },
     });
     await this.options.recordBoundaryCheckpoint({
-      checkpointKind: "obligation_graph",
-      upstreamArtifactRefs: [],
-      acceptedArtifactRefs: [finalCompile.graph.graphRef, diagnosticRef],
-      currentCommitmentIds: finalCompile.graph.obligations
-        .flatMap((obligation) => obligation.commitmentIds)
-        .slice(0, 40),
-      openCommitmentIds: openBlockingMissionCommitments(ledger).map(
-        (commitment) => commitment.commitmentId,
-      ),
+      checkpointKind: "requirement_map",
+      acceptedArtifactRefs: [requirementMap.mapRef],
+      currentCommitmentIds: requirementMap.requirements
+        .map((requirement) => requirement.requirementId)
+        .slice(0, 80),
       replayContinuationMode: "continue_scheduler",
       replayStartPolicy: "allowed_from_checkpoint",
       replaySafetyStatus: "safe_to_replay",
-      reasonCodes: [
-        "obligation_graph_boundary_checkpoint_recorded",
-        "obligation_graph_ready_for_scheduler",
-      ],
+      reasonCodes: ["requirement_map_boundary_checkpoint_recorded"],
     });
     await this.options.attachProgress({
-      stage: "obligation_graph_authoring",
+      stage: "requirement_map",
       status: "completed",
-      artifactRefs: [finalCompile.graph.graphRef, diagnosticRef],
-      reasonCodes: finalCompile.graph.reasonCodes,
-      currentPhase: "obligation_graph_accepted",
-      currentObjective: "Use typed obligations as the only scheduler-facing intake contract.",
-      evidenceProducedRefs: [finalCompile.graph.graphRef],
-      commitmentIdsAdvanced: finalCompile.graph.obligations
-        .flatMap((obligation) => obligation.commitmentIds)
-        .slice(0, 40),
-      modelRef: obligationModelRef,
-      providerPath: "openrouter",
-      eli5Progress:
-        "OpenClaw has typed obligations; the scheduler can now create runnable WorkIntents without forcing read-only commitments into worker packets.",
-      schedulerPhase: "obligation_graph_ready",
+      artifactRefs: [requirementMap.mapRef],
+      reasonCodes: [
+        "requirement_map_created",
+        "requirement_map_ready_for_scheduler",
+        "requirement_map_full_prompt_coverage_complete",
+        ...requirementMap.reasonCodes.slice(0, 20),
+      ],
+      currentPhase: "requirement_map_accepted",
+      currentObjective: "Use RequirementMap as the only scheduler-facing semantic intake product.",
+      evidenceProducedRefs: [requirementMap.mapRef],
+      schedulerPhase: "requirement_map_ready",
+      toolCallTelemetry: {
+        artifactKind: "requirement_map_quality_diagnostic",
+        schemaVersion: "execution-platform.requirement-map-quality.v1",
+        summary: summarizeRequirementMapForManifest(requirementMap),
+        rawPromptStored: false,
+        rawResponseStored: false,
+        rawProviderLogStored: false,
+        rawToolLogStored: false,
+      } as JsonValue,
     });
-    return finalCompile.graph;
+    return requirementMap;
   }
 
-  private async runObligationAuthorModelCall(input: {
-    input: IntakeStageRunnerRunInput;
-    ledger: MissionContractLedger;
-    obligationModelRef: string;
-    obligationPayload: JsonValue;
-    timeoutMs: number;
-    repairAttempt: 0 | 1;
-  }): Promise<{ parse: ObligationGraphAuthorParseResult; latencyMs: number }> {
-    const response = await this.options.missionModelClient!.runJson({
-      modelRef: input.obligationModelRef,
-      providerPath: "openrouter",
-      systemPrompt: [
-        "You are the OpenClaw ObligationGraph author.",
-        "Use only the obligation tool family. Return strict JSON with top-level obligationActions.",
-        "Classify each Mission Ledger commitment into typed obligations: executable, read_only_grounding, validation, review, closeout, constraint, prerequisite, or evidence_requirement.",
-        "Do not create worker packets, graph nodes, executor keys, worker refs, lifecycle state, or evidence enums.",
-        "Only executable obligations may include executionIntentHint, selectedCapabilityHints, or resourceRequirementKinds.",
-        "Every obligation must include commitmentIds, ownerIntentSummary, successCondition, evidenceExpectation, and obligationKind.",
-        "Call obligation.submit_graph after all obligations are complete.",
-        "Runtime validates structure, stores bounded artifacts, and scheduler/runner own downstream lifecycle.",
-        "Set rawPromptStored, rawResponseStored, and rawProviderLogStored false.",
-      ].join("\n"),
-      userPayload: input.obligationPayload,
-      maxOutputTokens: 5_000,
-      timeoutMs: input.timeoutMs,
-      reasoningEffort: "none",
-      taskClass: "local_semantic_extraction",
-      modelTaskCallSite:
-        input.repairAttempt === 0
-          ? "mission.obligation_graph_author"
-          : "mission.obligation_graph_author.repair_tool_shape",
-      progress: {
-        spanId: `${input.input.runtimeJobId}:${input.input.graphId}:obligation-graph-author:${input.ledger.missionId}:${input.repairAttempt}`,
-        objectiveSummary: "Author a typed ObligationGraph from Mission Ledger commitments.",
-        reasonCodes: [
-          input.repairAttempt === 0
-            ? "obligation_graph_author_model_call"
-            : "obligation_graph_author_repair_model_call",
-        ],
-        onEvent: (event) =>
-          this.options.attachModelCallProgress({
-            event,
-            stage:
-              input.repairAttempt === 0
-                ? "obligation_graph_author_model_call"
-                : "obligation_graph_author_repair_model_call",
-            schedulerPhase: "obligation_graph_authoring",
-            currentObjective:
-              "Classify commitments into conditional obligations before scheduler WorkIntent planning.",
-            nextDecisionNeeded:
-              event.phase === "completed" ? "compile_obligation_graph" : "obligation_graph_authoring",
-          }),
-      },
-    });
+  private promptWindowFromRange(input: {
+    source: IntakeStageRunnerRunInput;
+    baseWindow: RequirementPromptWindow;
+    start: number;
+    end: number;
+  }): RequirementPromptWindow {
+    const promptText = input.source.objectiveForModel;
+    const start = Math.max(0, Math.min(input.start, promptText.length));
+    const end = Math.max(start, Math.min(input.end, promptText.length));
     return {
-      parse: parseObligationGraphAuthorOutput(response.responseText),
-      latencyMs: response.latencyMs,
+      ...input.baseWindow,
+      start,
+      end,
+      text: promptText.slice(start, end),
+      boundarySensitive: start !== input.baseWindow.start || end !== input.baseWindow.end,
     };
   }
 
-  private async attachObligationDiagnostic(input: {
+  private windowAfterNavigation(input: {
+    source: IntakeStageRunnerRunInput;
+    window: RequirementPromptWindow;
+    calls: RequirementToolCall[];
+  }): RequirementPromptWindow {
+    const firstNavigation = input.calls.find(
+      (call) =>
+        call.tool === "source_prompt.expand_window" || call.tool === "source_prompt.open_adjacent",
+    );
+    if (!firstNavigation) {
+      return input.window;
+    }
+    const promptLength = input.source.objectiveForModel.length;
+    if (firstNavigation.tool === "source_prompt.expand_window") {
+      const expansionChars = readPositiveIntEnv(
+        "OPENCLAW_REQUIREMENT_MAP_WINDOW_EXPANSION_CHARS",
+        1_500,
+        { max: 4_000 },
+      );
+      return this.promptWindowFromRange({
+        source: input.source,
+        baseWindow: input.window,
+        start: Math.max(0, input.window.start - expansionChars),
+        end: Math.min(promptLength, input.window.end + expansionChars),
+      });
+    }
+    const direction =
+      typeof firstNavigation.input.direction === "string"
+        ? firstNavigation.input.direction
+        : "next";
+    const span = Math.max(1, input.window.end - input.window.start);
+    if (direction === "previous") {
+      return this.promptWindowFromRange({
+        source: input.source,
+        baseWindow: input.window,
+        start: Math.max(0, input.window.start - span),
+        end: input.window.start,
+      });
+    }
+    return this.promptWindowFromRange({
+      source: input.source,
+      baseWindow: input.window,
+      start: input.window.end,
+      end: Math.min(promptLength, input.window.end + span),
+    });
+  }
+
+  private async extractRequirementWindow(input: {
     input: IntakeStageRunnerRunInput;
-    ledger: MissionContractLedger;
-    parse: ObligationGraphAuthorParseResult;
-    compile: ObligationToolCompileResult | null;
-    obligationGraphRefPrefix: string;
-    obligationModelRef: string;
-    obligationCandidateId: string;
-    obligationPayload: JsonValue;
-    latencyMs: number;
-  }): Promise<string> {
-    const status = input.compile?.status ?? "blocked";
-    const reasonCodes = [
-      ...input.parse.reasonCodes,
-      ...(input.compile?.reasonCodes ?? ["obligation_graph_compile_not_attempted"]),
-    ].slice(0, 80);
-    const diagnosticRef = `${input.obligationGraphRefPrefix}/diagnostic/${sha256Text(
-      JSON.stringify({
-        status,
-        reasonCodes,
-        missingFieldsByObligationId: input.compile?.missingFieldsByObligationId ?? {},
-        outputHash: input.parse.outputHash,
+    window: RequirementPromptWindow;
+    windowIndex: number;
+    windowCount: number;
+    maxWindowTurns: number;
+    timeoutMs: number;
+    modelRef: string;
+    providerPath: string;
+  }): Promise<{ window: RequirementPromptWindow; calls: RequirementToolCall[] }> {
+    const phase: RequirementMapPhase = "window_extraction";
+    const allowedToolIds = requirementAllowedToolIdsForPhase(phase);
+    const tools = requirementNativeToolDefinitions(allowedToolIds);
+    const allowedToolNames = tools.map((tool) => tool.name);
+    let activeWindow = input.window;
+    let lastCalls: RequirementToolCall[] = [];
+    for (let turnIndex = 0; turnIndex < input.maxWindowTurns; turnIndex += 1) {
+      const response = await this.runRequirementToolTurn({
+        phase,
+        modelRef: input.modelRef,
+        providerPath: input.providerPath,
+        systemPrompt: [
+          "You are IntakeStageRunner's RequirementMap window extraction worker.",
+          "Use provider-native tools only. Do not return JSON text.",
+          "Read only this bounded source-prompt window. Record every operator-authored requirement candidate in the window, or record that the window has no requirement.",
+          "A requirement candidate is an operator obligation, constraint, validation/review/closeout instruction, non-goal, or contextual requirement that downstream scheduler/worker/closeout may need.",
+          "The evidenceExcerpt must be copied from the visible window so runtime can anchor a source ref. Runtime owns ids, refs, hashes, offsets, coverage, and submit.",
+          "If the visible window is cut in the middle of a requirement, call source_prompt.expand_window or source_prompt.open_adjacent. Do not invent text from outside the visible window.",
+        ].join("\n"),
+        userPayload: {
+          windowIndex: input.windowIndex,
+          windowCount: input.windowCount,
+          promptWindowRef: activeWindow.windowRef,
+          promptWindowStart: activeWindow.start,
+          promptWindowEnd: activeWindow.end,
+          boundarySensitive: activeWindow.boundarySensitive,
+          visiblePromptWindowText: activeWindow.text,
+          roleGuide: {
+            runnable_work: "Implementation or other executable work.",
+            validation: "Testing, verification, quality proof, replay, or validation obligations.",
+            review: "Review, inspection, or critique obligations.",
+            closeout: "Final report, readback, completion, or closure obligations.",
+            constraint:
+              "Hard restrictions, architectural constraints, or requirements that constrain work.",
+            non_goal: "Explicit do-not-do or out-of-scope instruction.",
+            context: "Background/source-grounding information later consumers must preserve.",
+          },
+        } as JsonValue,
+        tools,
+        allowedToolNames,
+        maxOutputTokens: 3_000,
+        timeoutMs: input.timeoutMs,
+        maxAttempts: 1,
+        reasoningEffort: "none",
+        taskClass: "local_semantic_extraction",
+        modelTaskCallSite: "intake.requirement_map.window_extraction",
+        progress: {
+          objectiveSummary:
+            "Extract RequirementMap candidates from a bounded source prompt window.",
+          reasonCodes: [
+            "requirement_map_window_extraction_native_tools",
+            `requirement_map_window_index:${input.windowIndex}`,
+          ],
+          onEvent: async (event) =>
+            this.options.attachModelCallProgress({
+              event,
+              stage: "requirement_map_authoring",
+              schedulerPhase: "window_extraction",
+              currentObjective:
+                "Extract source-grounded requirement candidates from prompt window.",
+              nextDecisionNeeded: "requirement_map_window_extraction",
+            }),
+        },
+      });
+      const calls = response.calls;
+      lastCalls = calls;
+      await this.options.attachProgress({
+        stage: "requirement_map_authoring",
+        status: "completed",
+        reasonCodes: [
+          "requirement_map_window_extraction_turn_completed",
+          `requirement_map_window_index:${input.windowIndex}`,
+        ],
+        currentPhase: phase,
+        currentObjective: "Extract source-grounded requirement candidates from prompt window.",
+        nextDecisionNeeded: "requirement_map_window_extraction",
+        modelRef: input.modelRef,
+        providerPath: input.providerPath,
+        schedulerPhase: phase,
+        toolCallTelemetry: requirementToolTelemetry({
+          draft: null,
+          phase,
+          turnIndex,
+          selectedToolNames: response.selectedToolNames,
+          latencyMs: response.latencyMs,
+        }),
+      });
+      if (
+        calls.some(
+          (call) =>
+            call.tool === "requirement.record_candidate" ||
+            call.tool === "requirement.record_no_requirement",
+        )
+      ) {
+        return { window: activeWindow, calls };
+      }
+      const nextWindow = this.windowAfterNavigation({
+        source: input.input,
+        window: activeWindow,
+        calls,
+      });
+      if (nextWindow.start === activeWindow.start && nextWindow.end === activeWindow.end) {
+        break;
+      }
+      activeWindow = nextWindow;
+    }
+    return { window: activeWindow, calls: lastCalls };
+  }
+
+  private async consolidateRequirementCandidates(input: {
+    input: IntakeStageRunnerRunInput;
+    artifact: SourcePromptArtifact;
+    mapId: string;
+    draft: RequirementCoverageDraft;
+    timeoutMs: number;
+    modelRef: string;
+    providerPath: string;
+  }): Promise<RequirementCoverageDraft> {
+    const phase: RequirementMapPhase = "candidate_consolidation";
+    const allowedToolIds = requirementAllowedToolIdsForPhase(phase);
+    const tools = requirementNativeToolDefinitions(allowedToolIds);
+    const candidateClusters = clusterRequirementCandidatesBySourceWindow({
+      draft: input.draft,
+      maxCandidatesPerCluster: 18,
+    });
+    const candidateById = new Map(
+      input.draft.candidates.map((candidate) => [candidate.candidateId, candidate]),
+    );
+    const coveredWindowCount = new Set([
+      ...input.draft.candidates.flatMap((candidate) => candidate.sourceWindowRefs),
+      ...input.draft.noRequirementReceipts.map((receipt) => receipt.sourceWindowRef),
+    ]).size;
+    const clusterResponses = await Promise.all(
+      candidateClusters.map((cluster, clusterIndex) =>
+        this.runRequirementToolTurn({
+          phase,
+          modelRef: input.modelRef,
+          providerPath: input.providerPath,
+          systemPrompt: [
+            "You are IntakeStageRunner's RequirementMap cluster consolidation worker.",
+            "Use provider-native tools only. Do not return JSON text.",
+            "Consolidate only the supplied source-anchored candidate cluster into final requirements for scheduler, worker, and closeout.",
+            "Merge duplicates, split bundled candidates, retire process artifacts or non-operator instructions, and promote every real operator requirement in this cluster.",
+            "Use compact requirement text and role only. Scheduler owns ordering and success/evidence projection after RequirementMap is accepted. Runtime owns ids, refs, hashes, coverage, and submit.",
+          ].join("\n"),
+          userPayload: {
+            artifactKind: "requirement_map_candidate_cluster_consolidation_request",
+            schemaVersion: "execution-platform.requirement-map-candidate-cluster-consolidation.v1",
+            mapId: input.mapId,
+            sourcePromptBodyRef: input.artifact.sourcePromptBodyRef,
+            sourcePromptHash: input.artifact.promptHash,
+            windowCount: input.draft.windows.length,
+            coveredWindowCount,
+            candidateClusterIndex: clusterIndex,
+            candidateClusterCount: candidateClusters.length,
+            candidateCluster: {
+              clusterId: cluster.clusterId,
+              sourceWindowRefs: cluster.sourceWindowRefs,
+              sourceRefs: cluster.sourceRefs,
+              candidateCount: cluster.candidateCount,
+              candidates: cluster.candidateIds.flatMap((candidateId) => {
+                const candidate = candidateById.get(candidateId);
+                return candidate
+                  ? [
+                      {
+                        candidateId: candidate.candidateId,
+                        text: candidate.text,
+                        sourceRefs: candidate.sourceRefs,
+                        sourceWindowRefs: candidate.sourceWindowRefs,
+                        retired: candidate.retired,
+                      },
+                    ]
+                  : [];
+              }),
+            },
+            roleGuide: {
+              runnable_work: "Implementation or other executable work.",
+              validation:
+                "Testing, verification, quality proof, replay, or validation obligations.",
+              review: "Review, inspection, or critique obligations.",
+              closeout: "Final report, readback, completion, or closure obligations.",
+              constraint:
+                "Hard restrictions, architectural constraints, or requirements that constrain work.",
+              non_goal: "Explicit do-not-do or out-of-scope instruction.",
+              context: "Background/source-grounding information later consumers must preserve.",
+            },
+            rawPromptStored: false,
+            rawResponseStored: false,
+            rawProviderLogStored: false,
+          } as JsonValue,
+          tools,
+          allowedToolNames: tools.map((tool) => tool.name),
+          maxOutputTokens: 6_000,
+          timeoutMs: input.timeoutMs,
+          reasoningEffort: "none",
+          taskClass: "schema_normalization",
+          modelTaskCallSite: "intake.requirement_map.native_tool_batch",
+          progress: {
+            objectiveSummary: "Consolidate one RequirementMap candidate cluster.",
+            reasonCodes: [
+              "requirement_map_candidate_cluster_consolidation_native_tools",
+              `requirement_map_candidate_cluster:${cluster.clusterId}`,
+            ],
+            onEvent: async (event) =>
+              this.options.attachModelCallProgress({
+                event,
+                stage: "requirement_map_authoring",
+                schedulerPhase: "candidate_consolidation",
+                currentObjective:
+                  "Consolidate one candidate cluster into final RequirementMap requirements.",
+                nextDecisionNeeded: "requirement_map_candidate_cluster_consolidation",
+              }),
+          },
+        }),
+      ),
+    );
+    let nextDraft = input.draft;
+    for (const response of clusterResponses) {
+      nextDraft = applyRequirementConsolidationToolCalls({
+        draft: nextDraft,
+        calls: response.calls,
+      });
+    }
+    const selectedToolNames = clusterResponses.flatMap((response) => response.selectedToolNames);
+    const latencyMs = Math.max(...clusterResponses.map((response) => response.latencyMs), 0);
+    await this.options.attachProgress({
+      stage: "requirement_map_authoring",
+      status: "completed",
+      reasonCodes: [
+        "requirement_map_candidate_consolidation_completed",
+        "requirement_map_candidate_consolidation_parallel_clusters_completed",
+        `requirement_map_candidate_cluster_count:${candidateClusters.length}`,
+      ],
+      currentPhase: phase,
+      currentObjective: "Consolidate candidate requirements into final requirements.",
+      nextDecisionNeeded: "requirement_map_compile",
+      modelRef: input.modelRef,
+      providerPath: input.providerPath,
+      schedulerPhase: phase,
+      toolCallTelemetry: requirementToolTelemetry({
+        draft: nextDraft,
+        phase,
+        turnIndex: 0,
+        selectedToolNames,
+        latencyMs,
       }),
-    ).slice(0, 16)}`;
-    await this.options.runtimeJobs.attachArtifact({
-      jobId: input.input.runtimeJobId,
-      artifactType: `${OBLIGATION_GRAPH_ARTIFACT_TYPE}.diagnostic`,
-      storageKind: "metadata",
-      uri: diagnosticRef,
-      contentType: "application/json",
-      metadata: {
-        artifactKind: "obligation_graph_diagnostic",
-        schemaVersion: "execution-platform.obligation-graph.v1",
-        missionId: input.ledger.missionId,
-        status,
-        parseStatus: input.parse.status,
-        parseTopLevelKeys: input.parse.topLevelKeys,
-        parseOutputHash: input.parse.outputHash,
-        appliedToolNames: input.compile?.appliedToolNames ?? [],
-        rejectedToolCalls: input.compile?.rejectedToolCalls ?? [],
-        blockedObligationIds: input.compile?.blockedObligationIds ?? [],
-        missingFieldsByObligationId: input.compile?.missingFieldsByObligationId ?? {},
-        reasonCodes,
-        modelRef: input.obligationModelRef,
-        providerPath: "openrouter",
-        modelCandidateId: input.obligationCandidateId,
-        latencyMs: input.latencyMs,
-        inputBytes: Buffer.byteLength(stringifyJson(input.obligationPayload), "utf8"),
-        outputBytes: input.parse.outputBytes,
-        providerDiagnostics: null,
+    });
+    return nextDraft;
+  }
+
+  private async repairRequirementPromotions(input: {
+    input: IntakeStageRunnerRunInput;
+    artifact: SourcePromptArtifact;
+    mapId: string;
+    draft: RequirementCoverageDraft;
+    compile: RequirementToolCompileResult;
+    turnIndex: number;
+    timeoutMs: number;
+    modelRef: string;
+    providerPath: string;
+  }): Promise<RequirementCoverageDraft> {
+    const phase: RequirementMapPhase = "requirement_repair";
+    const allowedToolIds = requirementAllowedToolIdsForPhase(phase);
+    const tools = requirementNativeToolDefinitions(allowedToolIds);
+    const response = await this.runRequirementToolTurn({
+      phase,
+      modelRef: input.modelRef,
+      providerPath: input.providerPath,
+      systemPrompt: [
+        "You are IntakeStageRunner's RequirementMap targeted repair worker.",
+        "Use provider-native tools only. Do not return JSON text.",
+        "Repair only missing fields in already promoted requirements. Do not redraft the map.",
+        "Runtime owns ids, refs, hashes, coverage, and submit. You may attach only source refs already present in knownSourceRefs.",
+      ].join("\n"),
+      userPayload: {
+        artifactKind: "requirement_map_repair_request",
+        schemaVersion: "execution-platform.requirement-map-repair.v1",
+        mapId: input.mapId,
+        sourcePromptBodyRef: input.artifact.sourcePromptBodyRef,
+        sourcePromptHash: input.artifact.promptHash,
+        missingFieldsByPromotionId: input.compile.missingFieldsByPromotionId,
+        blockedPromotionIds: input.compile.blockedPromotionIds,
+        reasonCodes: input.compile.reasonCodes,
+        promotions: input.draft.promotions.map((promotion) => ({
+          promotionId: promotion.promotionId,
+          text: promotion.text,
+          role: promotion.role,
+          sourceRefs: promotion.sourceRefs,
+        })),
+        knownSourceRefs: [
+          ...new Set(input.draft.candidates.flatMap((candidate) => candidate.sourceRefs)),
+        ].slice(0, 120),
+        roleGuide: {
+          runnable_work: "Implementation or other executable work.",
+          validation: "Testing, verification, quality proof, replay, or validation obligations.",
+          review: "Review, inspection, or critique obligations.",
+          closeout: "Final report, readback, completion, or closure obligations.",
+          constraint:
+            "Hard restrictions, architectural constraints, or requirements that constrain work.",
+          non_goal: "Explicit do-not-do or out-of-scope instruction.",
+          context: "Background/source-grounding information later consumers must preserve.",
+        },
         rawPromptStored: false,
         rawResponseStored: false,
         rawProviderLogStored: false,
       } as JsonValue,
+      tools,
+      allowedToolNames: tools.map((tool) => tool.name),
+      maxOutputTokens: 4_000,
+      timeoutMs: input.timeoutMs,
+      reasoningEffort: "low",
+      taskClass: "schema_normalization",
+      modelTaskCallSite: "intake.requirement_map.targeted_repair",
+      progress: {
+        objectiveSummary: "Repair missing RequirementMap fields without redrafting.",
+        reasonCodes: ["requirement_map_targeted_repair_native_tools"],
+        onEvent: async (event) =>
+          this.options.attachModelCallProgress({
+            event,
+            stage: "requirement_map_authoring",
+            schedulerPhase: "requirement_repair",
+            currentObjective: "Repair missing RequirementMap fields.",
+            nextDecisionNeeded: "requirement_map_targeted_repair",
+          }),
+      },
     });
-    return diagnosticRef;
+    const calls = response.calls;
+    const nextDraft = applyRequirementRepairToolCalls({
+      draft: input.draft,
+      calls,
+    });
+    await this.options.attachProgress({
+      stage: "requirement_map_authoring",
+      status: "completed",
+      reasonCodes: ["requirement_map_repair_turn_completed"],
+      currentPhase: phase,
+      currentObjective: "Repair missing RequirementMap fields.",
+      nextDecisionNeeded: "requirement_map_compile",
+      modelRef: input.modelRef,
+      providerPath: input.providerPath,
+      schedulerPhase: phase,
+      toolCallTelemetry: requirementToolTelemetry({
+        draft: nextDraft,
+        compile: input.compile,
+        phase,
+        turnIndex: input.turnIndex,
+        selectedToolNames: response.selectedToolNames,
+        latencyMs: response.latencyMs,
+      }),
+    });
+    return nextDraft;
   }
 
-  private async loadAcceptedReplayMissionLedger(
+  private async loadAcceptedReplayRequirementMap(
     input: IntakeStageRunnerRunInput,
-  ): Promise<{ ledger: MissionContractLedger; sourceRuntimeJobId: string } | null> {
+  ): Promise<RequirementMap | null> {
     const checkpointReplay = recordValue(input.checkpointReplay);
     const sourceRuntimeJobId =
       typeof checkpointReplay.sourceRuntimeJobId === "string"
@@ -641,78 +1379,92 @@ export class IntakeStageRunner {
         : "";
     const replayBoundary =
       typeof checkpointReplay.replayBoundary === "string" ? checkpointReplay.replayBoundary : "";
-    const replayFromMissionLedger =
-      replayBoundary === "mission_ledger" || replayBoundary === "obligation_graph";
-    if (!sourceRuntimeJobId || !replayFromMissionLedger) {
+    if (!sourceRuntimeJobId || replayBoundary !== "requirement_map") {
       return null;
     }
     const sourceArtifacts = await this.options.runtimeJobs.listArtifacts(sourceRuntimeJobId);
-    const ledgerArtifact =
+    const mapArtifact =
       sourceArtifacts
-        .filter((artifact) => artifact.artifactType === MISSION_CONTRACT_LEDGER_ARTIFACT_TYPE)
+        .filter((artifact) => artifact.artifactType === REQUIREMENT_MAP_ARTIFACT_TYPE)
         .toSorted((a, b) => b.createdAt.getTime() - a.createdAt.getTime())[0] ?? null;
-    if (!ledgerArtifact) {
+    if (!mapArtifact) {
       await this.options.attachProgress({
         stage: "checkpoint_replay",
         status: "needs_review",
-        reasonCodes: ["checkpoint_replay_source_mission_ledger_missing"],
+        reasonCodes: ["checkpoint_replay_source_requirement_map_missing"],
         currentPhase: "checkpoint_replay_blocked",
         blockerSummary:
-          "Replay requested from Mission Ledger or ObligationGraph, but the source job has no accepted Mission Ledger artifact.",
+          "Replay requested from RequirementMap, but the source job has no accepted RequirementMap artifact.",
         schedulerPhase: "checkpoint_replay_blocked",
       });
       return null;
     }
-    const { ledgerHash: _ledgerHash, reasonCodes: _reasonCodes, ...ledgerMetadata } = recordValue(
-      ledgerArtifact.metadata,
-    );
-    const ledger = MissionContractLedgerSchema.parse(ledgerMetadata);
-    const ledgerRef = await this.options.attachMissionLedger(ledger, [
-      "checkpoint_replay_mission_ledger_reused",
-      "checkpoint_replay_obligation_graph_will_be_reauthored",
-      `checkpoint_replay_source_runtime_job:${sourceRuntimeJobId}`,
-    ]);
-    await this.options.recordBoundaryCheckpoint({
-      checkpointKind: "mission_ledger",
-      upstreamArtifactRefs: [ledgerArtifact.uri],
-      acceptedArtifactRefs: [ledgerRef],
-      currentCommitmentIds: [
-        ...ledger.blockingCommitments.map((commitment) => commitment.commitmentId),
-        ...ledger.nonBlockingCommitments.map((commitment) => commitment.commitmentId),
-      ],
-      openCommitmentIds: openBlockingMissionCommitments(ledger).map(
-        (commitment) => commitment.commitmentId,
+    const hydrated = await this.options.runtimeJobs.hydrateRuntimeArtifactByContract(mapArtifact);
+    const mapBody =
+      hydrated.status === "payload_hydrated" && hydrated.body
+        ? hydrated.body
+        : mapArtifact.metadata;
+    const requirementMap = RequirementMapSchema.parse(mapBody);
+    await this.options.runtimeJobs.attachRuntimeArtifactByContract({
+      jobId: input.runtimeJobId,
+      artifactType: REQUIREMENT_MAP_ARTIFACT_TYPE,
+      uri: requirementMap.mapRef,
+      contentType: "application/json",
+      body: requirementMap as unknown as JsonValue,
+      boundedSummary: `Reused RequirementMap ${requirementMap.mapId}: ${requirementMap.requirements.length} requirement(s).`,
+      targetCommitmentIds: requirementMap.requirements.map(
+        (requirement) => requirement.requirementId,
       ),
+      resourcePacketKind: "requirement_map",
+      readinessStatus: "accepted",
+      reasonCodes: [
+        "checkpoint_replay_requirement_map_reused",
+        `checkpoint_replay_source_runtime_job:${sourceRuntimeJobId}`,
+      ],
+      metadata: {
+        artifactKind: REQUIREMENT_MAP_ARTIFACT_TYPE,
+        mapRef: requirementMap.mapRef,
+        mapHash: requirementMap.mapHash,
+        sourcePromptBodyRef: requirementMap.sourcePromptBodyRef,
+        requirementCount: requirementMap.requirements.length,
+        requirementMapSummary: summarizeRequirementMapForManifest(requirementMap),
+        rawPromptStored: false,
+        rawResponseStored: false,
+        rawProviderLogStored: false,
+      },
+    });
+    await this.options.recordBoundaryCheckpoint({
+      checkpointKind: "requirement_map",
+      upstreamArtifactRefs: [mapArtifact.uri],
+      acceptedArtifactRefs: [requirementMap.mapRef],
+      currentCommitmentIds: requirementMap.requirements
+        .map((requirement) => requirement.requirementId)
+        .slice(0, 80),
       replayContinuationMode: "continue_scheduler",
       replayStartPolicy: "allowed_from_checkpoint",
       replaySafetyStatus: "safe_to_replay",
       reasonCodes: [
-        "mission_ledger_replay_boundary_checkpoint_recorded",
-        "checkpoint_replay_mission_ledger_reused",
-        "checkpoint_replay_obligation_graph_will_be_reauthored",
+        "requirement_map_replay_boundary_checkpoint_recorded",
+        "checkpoint_replay_requirement_map_reused",
       ],
     });
     await this.options.attachProgress({
       stage: "checkpoint_replay",
       status: "completed",
-      artifactRefs: [ledgerRef],
+      artifactRefs: [requirementMap.mapRef],
       reasonCodes: [
-        "checkpoint_replay_mission_ledger_reused",
-        "checkpoint_replay_obligation_graph_will_be_reauthored",
+        "checkpoint_replay_requirement_map_reused",
         `checkpoint_replay_source_runtime_job:${sourceRuntimeJobId}`,
       ],
-      currentPhase: "mission_ledger_reused_for_obligation_graph",
+      currentPhase: "requirement_map_reused_for_scheduler",
       currentObjective:
-        "Resume Product/Spec proof from accepted Mission Ledger and reauthor the typed ObligationGraph.",
-      evidenceProducedRefs: [ledgerRef],
-      remainingOpenCommitmentIds: openBlockingMissionCommitments(ledger)
-        .map((commitment) => commitment.commitmentId)
-        .slice(0, 30),
-      nextDecisionNeeded: "obligation_graph_authoring",
+        "Resume proof from accepted RequirementMap and continue scheduler planning.",
+      evidenceProducedRefs: [requirementMap.mapRef],
+      nextDecisionNeeded: "scheduler_work_intent_planning",
       eli5Progress:
-        "OpenClaw reused the accepted Mission Ledger, but it will not replay retired worker-packet fanout artifacts.",
-      schedulerPhase: "obligation_graph_authoring",
+        "OpenClaw reused the accepted RequirementMap as the sole pre-scheduler intake product.",
+      schedulerPhase: "requirement_map_ready",
     });
-    return { ledger, sourceRuntimeJobId };
+    return requirementMap;
   }
 }

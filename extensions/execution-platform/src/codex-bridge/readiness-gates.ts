@@ -1,3 +1,4 @@
+import { DEFAULT_WORKSPACE_DOCS_PATH } from "./policy.ts";
 import {
   FUTURE_SUBAGENT_ROLE_CONTRACTS,
   MODEL_LANE_POLICIES,
@@ -255,7 +256,7 @@ export function listRequiredReadinessGates(): ReadinessGateRequirement[] {
 export function listRoleDocRequirements(): RoleDocRequirement[] {
   return listFutureSubagentRoleContracts().map((roleContract) => ({
     roleId: roleContract.roleId as RoleDocRequirementId,
-    docPath: `/root/.openclaw/workspace/docs/projects/execution-platform/roles/${roleContract.roleId}.md`,
+    docPath: `${DEFAULT_WORKSPACE_DOCS_PATH}/roles/${roleContract.roleId}.md`,
     requiredSections: [...REQUIRED_DOC_SECTIONS],
     roleContract,
   }));
@@ -264,7 +265,7 @@ export function listRoleDocRequirements(): RoleDocRequirement[] {
 export function listRequiredSkillDocRequirements(): SkillDocRequirement[] {
   return REQUIRED_LIVE_EXECUTION_SKILL_DOCS.map((skillDocId) => ({
     skillDocId,
-    docPath: `/root/.openclaw/workspace/docs/projects/execution-platform/skills/${skillDocId}.md`,
+    docPath: `${DEFAULT_WORKSPACE_DOCS_PATH}/skills/${skillDocId}.md`,
     requiredSections: [...REQUIRED_SKILL_SECTIONS],
   }));
 }

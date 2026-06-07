@@ -21,6 +21,11 @@ describe("shared domain resource lifecycle", () => {
     expect(coding.resourceKinds).toEqual(
       expect.arrayContaining(["repo_file", "bounded_file_window", "target_snapshot"]),
     );
+    expect(coding.workerActionToolIds).toEqual(
+      expect.arrayContaining(["node.agent_session.invoke"]),
+    );
+    expect(coding.workerActionToolIds).not.toContain("worker.edit.plan");
+    expect(coding.workerActionToolIds).not.toContain("worker.validation.run_structural_default");
     expect(planning.resourceKinds).toEqual(
       expect.arrayContaining([
         "source_prompt_section",

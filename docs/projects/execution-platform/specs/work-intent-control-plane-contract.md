@@ -7,7 +7,38 @@ title: "WorkIntent Control-Plane Contract"
 
 Date: 2026-05-24
 
-Status: implemented P0 pre-Product/Spec recovery contract.
+Status: superseded for fresh scheduling on 2026-06-04 by
+`scheduler-graph-patch-runner.md`. Retain this document only as historical and
+migration context until all WorkIntent compatibility code is deleted or
+quarantined outside production fresh scheduling.
+
+## 2026-06-04 Supersession
+
+Fresh scheduling no longer uses `WorkIntent` as a graph-control node or
+promotion boundary. The governing fresh-scheduling path is:
+
+```text
+RequirementMap
+  -> SchedulerStageRunner
+  -> SchedulerGraphPatch
+  -> RuntimeGraphNode / RuntimeGraphEdge
+  -> NodeLifecycleTransitionRunner
+```
+
+Consequences:
+
+- `WorkIntent` must not be created as a production graph-control node in fresh
+  scheduling.
+- WorkIntent promotion must not be required before node lifecycle projection.
+- WorkIntent must not own or expose `nextLegalTransitions`.
+- `SchedulerStageRunner` must emit `SchedulerGraphPatch`, not
+  `OrchestratorGraphDecision` or WorkIntent graphs, as its canonical product.
+- `NodeLifecycleTransitionRunner` remains the only owner of node-local
+  lifecycle, worker-start permission, legal tools, validation repair, evidence,
+  escalation, and readback.
+
+The remainder of this document describes the historical WorkIntent recovery
+contract and should not be read as the live fresh-scheduling architecture.
 
 ## Problem
 

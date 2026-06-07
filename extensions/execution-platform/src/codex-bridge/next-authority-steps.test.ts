@@ -255,7 +255,7 @@ describe("Execution Platform next authority productionization steps", () => {
           scope: ["extensions/execution-platform/src"],
           nonGoals: ["Do not mutate Work Queue lifecycle."],
           repoPath: "/root/services/openclaw-roles/live",
-          workspaceDocsPath: "/root/.openclaw/workspace/docs/projects/execution-platform",
+          workspaceDocsPath: "/root/services/openclaw-roles/live/docs/projects/execution-platform",
         },
       });
       expect(redirect.command.commandKind).toBe("redirect");

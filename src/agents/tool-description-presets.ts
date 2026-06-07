@@ -11,6 +11,7 @@ export const SESSIONS_SPAWN_TOOL_DISPLAY_SUMMARY = "Spawn sub-agent or ACP sessi
 export const SESSION_STATUS_TOOL_DISPLAY_SUMMARY =
   "Show session status, usage, model state, and current or recent task state.";
 export const UPDATE_PLAN_TOOL_DISPLAY_SUMMARY = "Track a short structured work plan.";
+export const READ_TODO_TOOL_DISPLAY_SUMMARY = "Read the current structured work plan.";
 
 export function describeSessionsListTool(): string {
   return [
@@ -60,5 +61,13 @@ export function describeUpdatePlanTool(): string {
     "Update the current structured work plan for this run.",
     "Use this for non-trivial multi-step work so the plan stays current while execution continues.",
     "Keep steps short, mark at most one step as `in_progress`, and skip this tool for simple one-step tasks.",
+  ].join(" ");
+}
+
+export function describeReadTodoTool(): string {
+  return [
+    "Read the current session-owned structured todo state.",
+    "Use this after resume, compaction, or uncertainty about which todo items are pending, in progress, or completed.",
+    "This tool only reads the current session todo; it cannot select another session and it never creates todo state.",
   ].join(" ");
 }

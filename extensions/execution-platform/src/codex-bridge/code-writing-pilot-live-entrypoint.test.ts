@@ -13,6 +13,7 @@ import {
   CodexBridgeRepository,
   LiveCodexRunner,
   createManualPromptSource,
+  resolveCodeWritingPilotLiveDefaultPaths,
   type CodeWritingPilotExecutionApproval,
   type CodeWritingPilotPlan,
   type CodeWritingPilotPromptPackage,
@@ -21,6 +22,20 @@ import {
   type CodexRunnerSpawn,
   type CodexRunnerSpawnOptions,
 } from "./index.ts";
+
+describe("code-writing pilot live default paths", () => {
+  it("uses repo source docs instead of the legacy workspace root as source truth", () => {
+    expect(
+      resolveCodeWritingPilotLiveDefaultPaths({
+        OPENCLAW_HOST_OPERATOR_REPO_ROOT: "/tmp/openclaw-source",
+        OPENCLAW_HOST_OPERATOR_WORKSPACE_ROOT: "/tmp/openclaw-runtime/workspace",
+      }),
+    ).toEqual({
+      repoPath: "/tmp/openclaw-source",
+      workspaceDocsPath: "/tmp/openclaw-source/docs/projects/execution-platform",
+    });
+  });
+});
 
 class FakeChildProcess extends EventEmitter implements CodexRunnerChildProcess {
   readonly stdout = new PassThrough();
@@ -89,7 +104,7 @@ async function withLivePilotHarness<T>(
       maxArtifactMetadataBytes: 160 * 1024,
       closeoutArtifactRoot: artifactRoot,
       repoPath: "/root/services/openclaw-roles/live",
-      workspaceDocsPath: "/root/.openclaw/workspace/docs/projects/execution-platform",
+      workspaceDocsPath: "/root/services/openclaw-roles/live/docs/projects/execution-platform",
     });
     const workQueue = new WorkQueueRepository(database.sql, runtimeJobs, { now: () => now });
     return await work({
@@ -167,7 +182,7 @@ function plan(overrides: Partial<CodeWritingPilotPlan> = {}): CodeWritingPilotPl
     noModelPromotion: true,
     noProviderDirectCall: true,
     repoPath: "/root/services/openclaw-roles/live",
-    workspaceDocsPath: "/root/.openclaw/workspace/docs/projects/execution-platform",
+    workspaceDocsPath: "/root/services/openclaw-roles/live/docs/projects/execution-platform",
     safeUiBridgeMetadata: { tailscaleRequired: true },
     workQueueLink: null,
     priorCloseoutGateState: {},

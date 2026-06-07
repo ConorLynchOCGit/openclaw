@@ -3191,6 +3191,9 @@ export const GENERATED_BASE_CONFIG_SCHEMA: BaseConfigSchemaResponse = {
                 description:
                   "Default workspace path exposed to agent runtime tools for filesystem context and repo-aware behavior. Set this explicitly when running from wrappers so path resolution stays deterministic.",
               },
+              projectRoot: {
+                type: "string",
+              },
               skills: {
                 type: "array",
                 items: {
@@ -5577,6 +5580,9 @@ export const GENERATED_BASE_CONFIG_SCHEMA: BaseConfigSchemaResponse = {
                   type: "string",
                 },
                 workspace: {
+                  type: "string",
+                },
+                projectRoot: {
                   type: "string",
                 },
                 agentDir: {

@@ -1,6 +1,6 @@
 export type V4ProEligibilityRoleId =
   | "orchestrator"
-  | "resource_scout"
+  | "context_scout"
   | "architect_spec_writer"
   | "implementation_engineer"
   | "test_engineer"
@@ -70,7 +70,7 @@ export type V4ProAllRoleEligibilityProof = {
 
 export const V4_PRO_ELIGIBILITY_ROLE_IDS: V4ProEligibilityRoleId[] = [
   "orchestrator",
-  "resource_scout",
+  "context_scout",
   "architect_spec_writer",
   "implementation_engineer",
   "test_engineer",

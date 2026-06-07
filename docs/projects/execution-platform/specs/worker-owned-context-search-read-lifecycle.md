@@ -35,19 +35,21 @@ evidence sufficiency claims. Runtime owns refs, bounds, file reads, search
 execution, payload storage, authority checks, lifecycle transitions, patch
 application, validation execution, evidence structure, and readback.
 
-The retained architecture is:
+The retained architecture for the fresh RequirementMap path is:
 
 ```text
-WorkIntent accepted
+RequirementMap accepted
+  -> SchedulerStageRunner persists RuntimeGraph nodes/edges
   -> NodeLifecycleTransitionRunner projects worker_action_ready / worker_context_required
-  -> worker starts from partial packet
+  -> node starts from compact graph/RequirementMap contract
   -> worker.context.search / open / open_window / expand_window / contract_window
-  -> NodeResourceLedger receives exact hydrated windows and findings
-  -> model-authored domain resource selection
+  -> NodeContextLedger receives exact hydrated windows and findings
   -> forced edit/action planning and authoring
-  -> validation
+  -> worker-local validation
   -> evidence
-  -> Mission Ledger closure
+  -> mission validation node
+  -> mission review node
+  -> mission closeout node
 ```
 
 The deleted architecture is:
@@ -85,69 +87,238 @@ lifecycle.
 - no-progress/root-cause collapse;
 - readback gate.
 
+The compact node start contract must contain refs and ids only:
+
+- node id;
+- node kind;
+- capability id;
+- covered RequirementMap ids/text refs;
+- source prompt body ref;
+- source prompt refs;
+- authority refs;
+- upstream evidence refs;
+- dependency node ids;
+- tool surface ref.
+
+It must not carry materialized context bodies, target selections,
+`CodingResourcePacket`, `ImplementationTaskPacket`, or `NodeExecutionPacket`
+payloads.
+
 The worker adapter may execute the model/tool loop only after the runner
 projects a legal worker/context transition. The adapter must consume
 `NodeLifecycleProjection.nextLegalTransitions`; it must not maintain a
 parallel lifecycle state machine.
 
-## Search/Read Small Verbs
+## Runner-Owned Native Context Contract
 
-The context loop must look like Codex-style search and read, but with explicit
-runtime-owned guardrails and payload-backed artifacts.
+The worker context loop is a `NodeLifecycleTransitionRunner` session, not an
+adapter-owned helper loop and not scheduler repair. The runner owns lifecycle
+state, visible phases, legal domains, visible tool ids, edit eligibility,
+validation/evidence repair transitions, no-progress collapse, typed blockers,
+and escalation. The worker adapter only executes the current runner-projected
+native tool turn and then executes the selected runtime tool mechanically.
 
-Required worker-facing verbs:
+The canonical session is:
 
-- `worker.context.propose_searches`
-  - model proposes one or more search terms/patterns and scope handles;
-  - runtime validates authority, count, query length, and storage policy only.
+```text
+context_loop
+  -> edit_plan
+  -> forced patch_author
+  -> validation
+  -> validation repair context/edit loop if needed
+  -> evidence
+  -> evidence repair context loop if needed
+```
+
+No production context turn may ask a model to return JSON-shaped
+`toolCalls`. The only accepted model transport for context selection is the
+shared provider-native model tool transport. The transport is intentionally
+thin: it receives the runner-supplied tool manifest, sends provider-native
+tools, normalizes accepted/rejected native calls, and returns bounded
+diagnostics. It must not decide phases, tools, domains, lifecycle state,
+semantic quality, repair, or next transitions.
+
+The minimal worker context verb family is:
+
 - `worker.context.search`
-  - runtime searches approved refs for model-authored query text;
-  - output is a bounded match manifest with refs, line numbers, previews,
-    hashes, and payload refs when needed.
-- `worker.context.open_ref`
-  - model opens a specific legal file/directory/symbol/prompt/resource ref;
-  - runtime returns a bounded listing or preview manifest.
-- `worker.context.open_around_match`
-  - model selects a search-match handle;
-  - runtime opens a mechanically bounded nearby window and records line
-    range, content hash, total line count, truncation, and payload ref.
-- `worker.context.open_window`
-  - model specifies exact path/ref and line range;
-  - runtime enforces hard max lines/bytes and authority.
-- `worker.context.expand_window`
-  - model expands an already opened window before, after, or both;
-  - input must include the prior window ref, direction/line counts or exact
-    revised line range, reason, and expected use.
-- `worker.context.contract_window`
-  - model narrows an already opened window to exact line bounds after reading;
-  - input must include prior window ref, exact new line range, reason, and
-    expected use.
-- `worker.context.accept_window`
-  - model marks a hydrated window as useful for the current objective and
-    states intended use.
-- `worker.context.report_pattern`
-  - model reports existing pattern/API/constraint tied to accepted window refs.
-- `worker.context.report_edit_point`
-  - model reports likely edit point tied to accepted window refs.
-- `worker.context.finish_context_turn`
-  - model states the current context turn is sufficient for edit planning,
-    target/resource selection, validation, or typed blocker.
-- `worker.context.mark_unanswerable`
-  - model declares a precise context blocker after bounded search/read
-    attempts.
+  - required input: `domain`, `terms`, `basisRefs`, `expectedUse`;
+  - optional bounded input: `methodology`, `pivotPlan`,
+    `stopWhenAnswered`, `termFamilies`;
+  - `domain` is one of `prompt`, `repo`, `symbols`, `tests`, or `callers`;
+  - runtime mechanically searches only the runner-approved domain and
+    authority refs.
+- `worker.context.open`
+  - required input: `ref`, `expectedUse`;
+  - optional input: `start`, `end`, `startLine`, `endLine`, `before`,
+    `after`;
+  - runtime infers the resource domain from the ref shape and hydrates a
+    bounded manifest.
+- `worker.context.refine_window`
+  - required input: `windowRef`, `operation`, `expectedUse`;
+  - `operation` is `expand` or `contract`;
+  - optional input: exact range or bounded expansion fields;
+  - runtime validates authority and produces a new bounded window ref.
+- `worker.context.block`
+  - required input: `blockerKind`, `summary`, `requirementIds`;
+  - input must also include either `missingRefs` or `missingCapabilities`.
+- `worker.escalate`
+  - terminal or continuation escalation selected by the runner when the
+    current worker lane cannot complete safely.
+
+The retired positive context tools are not required and must not be visible
+in production context phases:
+
+- `worker.context.propose_searches`;
+- `worker.context.propose_discovery_strategy`;
+- required `worker.context.inspect_scope_manifest`;
+- separate `worker.prompt.*` tools;
+- lexical-anchor or `DiscoveryBrief` prompt paths;
+- JSON-shaped context `toolCalls`.
+
+Older repo-oriented aliases such as `open_around_match`, `expand_window`, and
+`contract_window` are retired as model-facing worker context tools. Equivalent
+mechanics are expressed through `worker.context.open` and
+`worker.context.refine_window`; the domain is carried as tool input and runner
+phase policy, not by multiplying tool names.
 
 Runtime may create a default mechanical window around a selected search match,
 because that is not semantic judgment. Runtime must not decide that the
 mechanical window is semantically sufficient. After reading the bounded
-window, the model must be able to expand, contract, accept, reject, or search
-again through small verbs. A window is not useful context until accepted or
-reported by the model into the node ledger.
+window, the model must be able to refine, accept, block, escalate, or search
+again through runner-visible small verbs. A window is not useful context until
+accepted by the model into the node ledger.
+
+### Runner-Owned Domains
+
+The runner decides which domains are visible in each context phase:
+
+- initial context: `prompt`, `repo`;
+- after a prompt window is opened: `prompt`, `repo`;
+- after a repo window is opened: `prompt`, `repo`, `symbols`, `tests`,
+  `callers`;
+- validation repair: `prompt`, `repo`, `symbols`, `tests`, `callers`;
+- evidence repair: `prompt`, `repo`, `tests`;
+- forced patch authoring: no context tools and no context domains.
+
+The worker model may use requirement ids/text and source-prompt refs as basis
+for a direct repo search before opening prompt context, but every search must
+cite `basisRefs`. Basis is provenance, not a quality gate. Runner validation
+checks that cited refs exist and that the requested domain is legal; it does
+not score whether the model's terms are semantically good.
+
+Valid basis refs include:
+
+- RequirementMap requirement ids;
+- `source-prompt://...` body/range refs;
+- prompt search result refs and prompt window refs;
+- repo search result refs and repo/file window refs;
+- accepted window refs;
+- validation failure refs;
+- evidence gap refs.
+
+The old hard transition `keyword basis accepted -> repo search allowed` is
+deleted. Search, open, refine, accept, validation repair, and evidence repair
+are one iterative worker lifecycle.
+
+### Worker Start Contract
+
+The active `WorkerStartContract` carries only the minimum signal needed by
+the worker and the runner:
+
+- requirement ids/text/role/source refs;
+- `sourcePromptBodyRef`;
+- repo authority refs and edit authority refs;
+- objective;
+- expected output;
+- acceptance criteria;
+- prior evidence refs;
+- legal worker tool families and current runner transitions.
+
+It must not require `taskSummary`, `lexicalAnchorRefs`, `DiscoveryBrief`, or a
+separate `KeywordBasis`/discovery seed product. Raw source refs such as
+source-prompt excerpt refs, source context refs, and context packet refs may
+exist only as bounded source-of-truth handles that the runner can hydrate;
+they are not semantic readiness claims and do not unlock edit planning by
+themselves. Requirement source refs are the source-prompt spans. The full
+source prompt remains available through bounded prompt search/open tools, not
+through pre-generated discovery seeds.
+
+### Source Prompt Hydration
+
+Prompt refs have their own authority and resolver. Prompt refs are never repo
+file refs. The resolver must support:
+
+- `source-prompt://<hash>/body`;
+- `source-prompt://<hash>/body/<start>-<end>`;
+- prompt search result refs;
+- prompt window refs produced by `worker.context.open` and
+  `worker.context.refine_window`.
+
+Metadata stores bounded manifests: refs, hashes, byte ranges, preview counts,
+and lifecycle diagnostics. Prompt/window bodies are rehydratable payloads or
+volatile test inputs, not raw prompt blobs in graph metadata.
+
+### NodeContextLedger
+
+`NodeContextLedger` is the memory object for the worker context loop. There
+is no separate `KeywordBasis` artifact. The ledger records compact events:
+
+- `context_search_executed`;
+- `context_basis_recorded`;
+- `context_window_opened`;
+- `context_window_refined`;
+- `context_window_accepted`;
+- `context_blocker_recorded`.
+
+Each event stores bounded fields only: event id/ref, domain, basis refs,
+terms, result refs, window refs, requirement ids, expected use, status,
+summary, hashes/counts, and raw-storage flags set to false.
+
+### No-Progress Collapse
+
+No-progress is owned by the runner and keyed on typed state, not reason-code
+bags. A context loop collapses only when the same node repeats the same
+lifecycle gate, visible tool set, visible domains, selected tool/domain,
+terms, basis refs, and blocker/result class. Normal Codex-style iteration is
+not no-progress merely because the worker performs several searches or opens
+several windows.
+
+### Completion Gate
+
+The replay gate for this architecture is intentionally downstream of this
+implementation pass:
+
+```text
+RequirementMap requirement + source refs
+  -> WorkerStartContract with sourcePromptBodyRef
+  -> native worker.context.search(prompt or repo)
+  -> automatic basis ledger event
+  -> worker.context.open(prompt/repo result)
+  -> worker.context.refine_window
+  -> worker.edit.plan citing contextWindowRefs
+  -> patch/validation/evidence eligibility from context-use receipts
+```
+
+This replay gate must be run after implementation, but it is not part of the
+current documentation/implementation closeout.
 
 ## Search-Term Generation
 
 Search terms must be model-authored from the node's objective, commitments,
 restrictions, known refs, prior failed tool results, validation/evidence
-expectations, and ledger state.
+expectations, covered RequirementMap requirement text/source refs, source
+prompt body ref, dependency evidence refs, and ledger state.
+
+The first context phase is not "search broad authority refs". It is:
+
+1. runtime supplies the node objective, RequirementMap refs/text, source prompt
+   refs, authority refs, dependency evidence refs, and legal tool surface;
+2. model searches prompt/repo/symbol/test/caller domains directly with
+   `worker.context.search`, using the `domain` argument selected by the model
+   inside the runner-allowed phase domains;
+3. model opens, refines, and accepts exact windows;
+4. validation repair or evidence-gap repair may repeat the same search/read
+   loop after new failures reveal new terms.
 
 Runtime may provide:
 
@@ -156,6 +327,8 @@ Runtime may provide:
 - file/path/symbol handles;
 - prior match handles;
 - current objective and commitments;
+- RequirementMap source refs and text;
+- source prompt body ref and source prompt search/open tools;
 - current unknown / expected use;
 - byte and turn budgets.
 
@@ -191,7 +364,7 @@ surfaces so they cannot claim readiness:
 - required `compileImplementationContextSnapshotPacket` use before worker
   invocation;
 - required `ImplementationContextPacket -> ImplementationTaskPacket ->
-  NodeExecutionPacket` materialization before worker execution;
+NodeExecutionPacket` materialization before worker execution;
 - `before_resource_materialization` / `after_resource_materialization` as
   positive replay success gates for implementation worker readiness;
 - fixed first-window or first-120-lines worker readiness;
@@ -207,43 +380,42 @@ helpers called by runner-owned handlers and incapable of deciding readiness.
 If they still decide worker readiness or mutate lifecycle state, delete them
 from production paths.
 
-## Code-Verified Current Gaps
+## Code-Facing Completion Standard
 
-The current codebase already contains useful pieces:
+The current implementation must align to this code shape:
 
-- `resource-specialist-narrowing-loop.ts` can open refs, search within refs,
-  choose files from directory listings, choose windows from matches, open
-  windows, report findings, and submit exact handles.
-- `non-codex-tool-using-worker-loop.ts` has `worker.context.request_more`
-  and can dispatch the specialist narrowing loop.
-- `NodeLifecycleTransitionRunner` projects lifecycle gates and blocks global
-  scheduler while local transitions are pending.
-- `domain-resource-small-verb-tool-surface.ts` defines shared resource and
-  coding small-verb tool families.
-- payload-backed artifact specs already define bounded manifest policy.
+1. `NodeLifecycleTransitionRunner` projects worker context domains and legal
+   worker tools.
+2. `non-codex-tool-using-worker-loop.ts` executes worker context phases
+   through the shared provider-native model tool transport.
+3. Context phases accept only the canonical worker context verbs:
+   `worker.context.search`, `worker.context.open`,
+   `worker.context.refine_window`,
+   `worker.context.block`, and `worker.escalate`. The retired
+   `worker.context.record_basis` verb must not be model-facing; runtime records
+   basis/provenance from search/open/refine metadata and from later edit,
+   validation, and evidence context-use receipts.
+4. Prompt refs and repo refs are hydrated by separate resolvers. Prompt
+   windows never become repo authority; repo windows never become prompt
+   source truth.
+5. Edit planning is blocked until the node ledger contains at least one
+   accepted actionable repo/symbol/test/caller window for source-edit work.
+   Accepted prompt windows can seed terms and methodology but cannot unlock a
+   source edit alone.
+6. Forced patch-authoring exposes only patch-author or typed blocker tools.
+   If the patch boundary lacks context, the runner re-enters the native
+   context open/refine/accept loop after the blocker; it does not route to a
+   specialist demand/focus path.
+7. Replay, readback, repair classification, smoke fixtures, and live parity
+   proof scripts must not positively mention or require the retired
+   `worker.context.request_more` / resource-demand specialist path.
+8. Source inventory fails active production or proof files that expose the
+   retired worker context dialect or retired worker-start semantic payloads.
 
-The remaining gaps are production blockers:
-
-1. The replay harness still calls `materializeReplayImplementationResources`
-   before worker execution.
-2. `DynamicAgentTeamGraphRunner` still compiles implementation context
-   materialization inside production implementation execution.
-3. `implementation-context-snapshot-compiler.ts` and
-   `post-resource-implementation-task-compiler.ts` still encode pre-worker
-   readiness assumptions.
-4. The worker specialist loop has search/read/open-window mechanics but lacks
-   explicit model-owned expand/contract window verbs.
-5. The worker context request path can finish a specialist loop without
-   durable event artifacts and can still return
-   `worker_context_request_unfulfilled_missing_exact_hydrated_windows` after
-   a loop that searched/read but failed to hydrate exact accepted windows.
-6. The worker adapter still treats context request fulfillment as a tool
-   result rather than a first-class ledger-backed lifecycle transition owned
-   by the runner.
-7. Boundary replay registry/checkpoints still treat materialization
-   boundaries as positive replay gates.
-8. Readback/status docs and tests still mention resource/materialization
-   readiness as proof success in several places.
+The only deferred gate for this work item is the live replay/proof run. The
+implementation closeout may compile, typecheck, and run focused deterministic
+tests, but must not claim the final replay proof until the dedicated replay
+gate is executed.
 
 ## Required Acceptance Gates
 
@@ -269,12 +441,12 @@ This work is not complete unless all gates pass:
 9. A real middle-lane replay proves:
 
 ```text
-WorkIntent
+Requirement-backed scheduled node
   -> runner projection
   -> partial worker start
   -> model-authored context search
-  -> open around match
-  -> model expand/contract
+  -> open bounded prompt/repo window
+  -> model refine_window
   -> accepted exact windows in ledger
   -> resource/target selection
   -> edit plan

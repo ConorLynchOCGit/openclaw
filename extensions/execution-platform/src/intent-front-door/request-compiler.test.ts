@@ -184,7 +184,7 @@ describe("Front-door request compiler", () => {
     });
   });
 
-  it("carries router tool protocol refs into runtime job payload and Mission Ledger handoff", () => {
+  it("carries router tool protocol refs into runtime job payload and RequirementMap handoff", () => {
     const output = codingOutput({
       requestedCapabilities: ["code_edit", "test", "review", "closeout"],
       constraints: [
@@ -235,14 +235,14 @@ describe("Front-door request compiler", () => {
       throw new Error("expected runtime job compile result");
     }
     expect(result.routerToolInvocationRefs).toHaveLength(ROUTER_FRONT_DOOR_RUNTIME_TOOL_IDS.length);
-    expect(result.missionLedgerHandoffRef).toBe(routerToolProtocol.missionLedgerHandoffRef);
+    expect(result.requirementMapHandoffRef).toBe(routerToolProtocol.requirementMapHandoffRef);
     expect(result.runtimeJobCreateRequest.payload).toMatchObject({
       routerToolProtocolRef: "router-front-door-tool-protocol://runtime-job://front-door-test",
-      missionLedgerHandoffRef: routerToolProtocol.missionLedgerHandoffRef,
+      requirementMapHandoffRef: routerToolProtocol.requirementMapHandoffRef,
     });
   });
 
-  it("rejects a target workflow when selected as executor without required capabilities", () => {
+  it("keeps executor capability checks contract-owned instead of router-capability-owned", () => {
     const productSpecWorkflow = DEFAULT_EXECUTION_WORKFLOW_REGISTRY.workflows.find(
       (candidate) => candidate.workflowId === "agent_team.product_spec_planning",
     )!;
@@ -267,8 +267,35 @@ describe("Front-door request compiler", () => {
       auth,
       authority: { snapshotFresh: true, supportedAuthorityProfiles: ["read_only", "local_yolo"] },
     });
-    expect(validation.outcome).toBe("needs_review");
-    expect(validation.reasonCodes).toContain("executor_capability_unsupported:code_edit");
+    expect(validation.outcome).toBe("accepted");
+
+    const contractValidation = validateIntentFrontDoorDecision({
+      parseResult: parseCanonicalRouterOutput(
+        createBaseCanonicalRouterOutput({
+          ...output,
+          reasonCodes: ["router_primary_outcome:implement_existing_system"],
+        }),
+      ),
+      workflowSummaryIndex,
+      auth,
+      authority: { snapshotFresh: true, supportedAuthorityProfiles: ["read_only", "local_yolo"] },
+      intakeRouteContract: {
+        artifactKind: "intake_route_contract",
+        schemaVersion: "intent-front-door.intake-route-contract.v1",
+        contractId: "test-coding-contract",
+        expectedPrimaryOutcomeKinds: ["implement_existing_system"],
+        requiredExecutorCapabilities: ["code_edit", "test"],
+        requiredRequestedActions: [],
+        expectedSubjectKinds: ["workflow"],
+        reasonCodes: [],
+        rawPromptStored: false,
+        rawResponseStored: false,
+      },
+    });
+    expect(contractValidation.outcome).toBe("needs_review");
+    expect(contractValidation.reasonCodes).toContain(
+      "intake_route_contract_executor_capability_missing:code_edit",
+    );
   });
 
   it("does not compile chat/status runtime jobs and returns bounded plan-only artifacts", () => {

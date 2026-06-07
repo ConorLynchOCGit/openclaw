@@ -459,42 +459,6 @@ export function buildRuntimeToolificationTruthRegistry(): RuntimeToolificationSu
       blockerReasonCodes: [],
     }),
     surface({
-      surfaceId: "worker-tool-loops",
-      title: "Worker Tool Loops And Non-Codex File-Edit Worker Lane",
-      kind: "worker_loop",
-      ownerSystemArea: "execution-platform",
-      currentStatus: "production_primary",
-      targetStatus: "live_ux_proven",
-      canonicalToolFamilies: [
-        "worker.invoke",
-        "file_edit.propose",
-        "file_edit.apply",
-        "validation.run",
-      ],
-      productionEntryRefs: [
-        "extensions/execution-platform/src/codex-bridge/non-codex-tool-using-worker-loop.ts",
-        "extensions/execution-platform/src/codex-bridge/model-agnostic-tool-worker-loop.ts",
-      ],
-      compatibilityEntryRefs: [],
-      currentBoundary:
-        "Non-Codex/Kimi file-edit lane uses a model-agnostic worker loop with runtime tool events.",
-      targetBoundary:
-        "Worker loop is live-UX proven across multiple model profiles and larger decomposition tasks.",
-      nextQueueItemId: null,
-      gates: {
-        traceRequired: true,
-        workQueueReadbackRequired: true,
-        liveUxProofRequired: false,
-        compatibilityRetirementRequired: false,
-        closeoutRequired: true,
-      },
-      evidenceRefs: [
-        ".artifacts/execution-platform/non-codex-tool-using-worker-live-proof-summary.json",
-        ".artifacts/execution-platform/model-agnostic-worker-qualification-summary.json",
-      ],
-      blockerReasonCodes: [],
-    }),
-    surface({
       surfaceId: "mission-ledger-evidence-finalization",
       title: "Mission Ledger Evidence Claims And Finalization Handoff",
       kind: "scheduler",
@@ -1017,10 +981,6 @@ export const RUNTIME_TOOL_ADOPTION_BOUNDARY_LEGACY_ALIASES: RuntimeToolAdoptionB
     {
       legacySurfaceId: "script-db-middleware",
       canonicalSurfaceId: "script-db-operation-toolification",
-    },
-    {
-      legacySurfaceId: "kimi-codex-worker-loops",
-      canonicalSurfaceId: "worker-tool-loops",
     },
     {
       legacySurfaceId: "memory-proactivity-closeout",

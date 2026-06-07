@@ -1,5 +1,10 @@
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import type { OpenClawConfig } from "../config/config.js";
+import { loadSessionStore } from "../config/sessions.js";
+import { createOpenClawTools } from "./openclaw-tools.js";
 import { isUpdatePlanToolEnabledForOpenClawTools } from "./openclaw-tools.registration.js";
 import { createUpdatePlanTool } from "./tools/update-plan-tool.js";
 
@@ -255,5 +260,71 @@ describe("openclaw-tools update_plan gating", () => {
         modelId: "gpt-5.4",
       }),
     ).toBe(true);
+  });
+
+  it("registers a session-owned update_plan that persists native todo state", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-update-plan-registry-"));
+    try {
+      const sessionKey = "agent:execution-coding:node:nrun_registry";
+      const storePath = path.join(root, "agents", "execution-coding", "sessions", "sessions.json");
+      await fs.mkdir(path.dirname(storePath), { recursive: true });
+      await fs.writeFile(
+        storePath,
+        JSON.stringify({
+          [sessionKey]: { sessionId: "sess-registry", updatedAt: 1 },
+        }),
+        "utf8",
+      );
+      const cfg = {
+        session: {
+          store: path.join(root, "agents", "{agentId}", "sessions", "sessions.json"),
+        },
+        tools: {
+          experimental: {
+            planTool: true,
+          },
+        },
+        agents: {
+          list: [{ id: "execution-coding" }],
+        },
+      } as OpenClawConfig;
+
+      const nativeTodoTools = createOpenClawTools({
+        config: cfg,
+        agentSessionKey: sessionKey,
+        runId: "run-registry",
+        disablePluginTools: true,
+      });
+      const updatePlan = nativeTodoTools.find((tool) => tool.name === "update_plan");
+      const readTodo = nativeTodoTools.find((tool) => tool.name === "read_todo");
+
+      expect(updatePlan).toBeTruthy();
+      expect(readTodo).toBeTruthy();
+      await updatePlan!.execute("call-registry", {
+        plan: [{ step: "Persist through OpenClaw tool registry", status: "completed" }],
+      });
+      const readResult = await readTodo!.execute("call-read", {});
+
+      const store = loadSessionStore(storePath, { skipCache: true });
+      expect(store[sessionKey]?.todo?.items).toEqual([
+        {
+          content: "Persist through OpenClaw tool registry",
+          status: "completed",
+          priority: "normal",
+          position: 1,
+        },
+      ]);
+      expect(readResult.details).toEqual(
+        expect.objectContaining({
+          status: "ok",
+          sessionKey,
+          itemCount: 1,
+          completedCount: 1,
+          inProgressCount: 0,
+        }),
+      );
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
   });
 });

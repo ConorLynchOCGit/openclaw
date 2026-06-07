@@ -17,7 +17,7 @@ function baseEnvelopeInput(
       promptLength: 24_000,
       sourcePromptRef: "source-prompt://aaaaaaaaaaaaaaaa/full",
       promptFileRef: "prompt-file://aaaaaaaaaaaaaaaa",
-      sourcePromptContextIndexRef: "source-prompt-context://aaaaaaaaaaaaaaaa/index",
+      sourcePromptArtifactRef: "source-prompt://aaaaaaaaaaaaaaaa/body",
       sourcePromptResolutionStatus: "resolved",
       rawPromptStored: false,
     },
@@ -38,7 +38,7 @@ function baseEnvelopeInput(
       routerToolProtocolRef: "router-front-door-tool-protocol://request-1",
       routerToolInvocationRefs: ["runtime-tool://router/classify_intent/request-1"],
       requestCompilerRef: "runtime-job://job-1/execution/front-door/compiled-request",
-      missionLedgerHandoffRef: "mission-ledger-handoff://request-1",
+      requirementMapHandoffRef: "requirement-map-handoff://request-1",
     },
     executionRefs: {
       runtimeJobId: "job-1",
@@ -53,8 +53,8 @@ function baseEnvelopeInput(
       missionLedgerInputRef: "mission-ledger-input://aaaaaaaaaaaaaaaa",
       missionLedgerPromptHash: "a".repeat(64),
       missionLedgerRef: "mission-ledger://job-1/ledger",
-      commitmentPacketInputRef: "source-contract-input://job-1",
-      commitmentPacketRef: "source-contracts://job-1",
+      requirementMapInputRef: "source-contract-input://job-1",
+      requirementMapRef: "source-contracts://job-1",
     },
     schedulerRefs: {
       workflowDefinitionRef: "workflow-definition://agent_team.coding",

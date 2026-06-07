@@ -149,7 +149,7 @@ function packetDiagnosticSamples(metadata, artifactType, createdAt, uri) {
             diagnostic.reasonCodes?.at?.(-1),
             asRecord(metadata).latestPhase,
             asRecord(metadata).latestStage,
-          ) ?? "obligation_graph",
+          ) ?? "requirement_map",
         commitmentId: firstString(diagnostic.commitmentId),
         status: firstString(diagnostic.status, latest.status),
         model: firstString(diagnostic.modelRef, latest.modelRef),

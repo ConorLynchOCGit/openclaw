@@ -7,58 +7,65 @@ title: "Execution Platform Specs"
 
 ## Runtime And Workflow Architecture
 
-1. [ObligationGraph Scheduler Intake](/projects/execution-platform/specs/obligation-graph-scheduler-intake)
-2. [Worker-Owned Context Search/Read Lifecycle](/projects/execution-platform/specs/worker-owned-context-search-read-lifecycle)
-3. [Node Lifecycle Transition Ownership Consolidation](/projects/execution-platform/specs/node-lifecycle-transition-ownership-consolidation)
-4. [Shared Domain Resource Lifecycle And Product/Spec Alignment](/projects/execution-platform/specs/shared-domain-resource-lifecycle-and-product-spec-alignment)
-5. [Canonical Lifecycle Convergence And Residue Excision](/projects/execution-platform/specs/canonical-lifecycle-convergence-and-residue-excision)
-6. [Node Lifecycle Transition Runner](/projects/execution-platform/specs/node-lifecycle-transition-runner)
-7. [Architecture Transition Closure And Context Objective Focus](/projects/execution-platform/specs/architecture-transition-closure-and-resource-objective-focus)
-8. [Mandatory Context Focus And Target Selection Boundary](/projects/execution-platform/specs/mandatory-context-focus-and-target-selection-boundary)
-9. [Node-Local Context Demand And Legacy Evisceration](/projects/execution-platform/specs/node-local-context-demand-and-legacy-evisceration)
-10. [Code-Verified Product/Spec Blocker Closure Plan](/projects/execution-platform/specs/code-verified-product-spec-blocker-closure-plan)
-11. [Control-Plane Executable Spine Recovery](/projects/execution-platform/specs/control-plane-executable-spine-recovery)
-11. [Execution Contract Spine, Context Requirements, And Frontier State](/projects/execution-platform/specs/execution-contract-spine-context-requirements-and-frontier-state)
-12. [Scheduler WorkIntentGraph And Demand-Context Gate](/projects/execution-platform/specs/scheduler-workintent-graph-demand-context-gate)
-13. [Commitment Packet Source Selection And Execution Intent](/projects/execution-platform/specs/commitment-packet-source-selection-and-execution-intent)
-14. [Product/Spec Proof Hardening And Worker Boundary Suite](/projects/execution-platform/specs/product-spec-proof-hardening-worker-boundary-suite)
-15. [Control-Plane Coding Team Recovery](/projects/execution-platform/specs/control-plane-coding-team-recovery)
-16. [WorkIntent Control-Plane Contract](/projects/execution-platform/specs/work-intent-control-plane-contract)
-17. [Canonical Workflow Runtime Architecture](/projects/execution-platform/specs/canonical-workflow-runtime-architecture)
-18. [Generic Orchestration Runtime](/projects/execution-platform/specs/generic-orchestration-runtime)
-19. [Runtime Work Graph](/projects/execution-platform/specs/runtime-work-graph)
-20. [Maximum Toolification Architecture](/projects/execution-platform/specs/maximum-toolification-architecture)
-21. [Runtime Toolification And Utility Scheduling](/projects/execution-platform/specs/runtime-toolification-and-utility-scheduling)
-22. [Runtime Parallelism And Contract Boundaries](/projects/execution-platform/specs/runtime-parallelism-and-contract-boundaries)
-23. [Scheduler-First Node-Scoped Context Supply](/projects/execution-platform/specs/scheduler-first-node-scoped-resource-fulfillment)
-24. [Post-Context Implementation Task Compiler](/projects/execution-platform/specs/post-resource-implementation-task-compiler)
-25. [Model Task Classification And Resource Materialization](/projects/execution-platform/specs/model-task-classification-and-resource-materialization)
-26. [Runtime Node Readiness And Transition Engine](/projects/execution-platform/specs/runtime-node-readiness-transition-engine)
-27. [Context Scout Execution Packet And Request-Context Repair](/projects/execution-platform/specs/context-scout-execution-packet-and-request-context-repair)
-28. [Context Frontier Lifecycle And Shard Manifests](/projects/execution-platform/specs/context-frontier-lifecycle-and-shard-manifests)
-29. [Context Frontier Shard Execution And Merge Lifecycle](/projects/execution-platform/specs/context-frontier-shard-execution-and-merge-lifecycle)
-30. [Parallel Frontier Resource Boundary Hardening](/projects/execution-platform/specs/parallel-frontier-resource-boundary-hardening)
-31. [Runtime Artifact Payload Store And Bounded Manifests](/projects/execution-platform/specs/runtime-artifact-payload-store-and-bounded-manifests)
-32. [Resource Materialization Boundary Replay And Canonical Node Readiness](/projects/execution-platform/specs/resource-materialization-boundary-replay-and-canonical-node-readiness)
-33. [Split-Required Resource Materialization Transition](/projects/execution-platform/specs/split-required-resource-materialization-transition)
-34. [Runtime Artifact Contract Registry And Payload Boundary](/projects/execution-platform/specs/runtime-artifact-contract-registry-and-payload-boundary)
-35. [Scheduler Frontier, No-Progress, And Evaluation Throttle](/projects/execution-platform/specs/scheduler-frontier-no-progress-and-evaluation-throttle)
-36. [Operator Frontier Readback And Latest Run State](/projects/execution-platform/specs/operator-frontier-readback-and-latest-run-state)
-37. [Large Graph Storage And Scheduler Lane](/projects/execution-platform/specs/large-graph-storage-and-scheduler-lane)
-38. [Pre-Product/Spec Proof Stabilization Plan](/projects/execution-platform/specs/pre-product-spec-proof-stabilization-plan)
-39. [Demand-Driven Frontier Orchestration And Context Broker](/projects/execution-platform/specs/demand-driven-frontier-orchestration-and-context-broker)
-40. [Semantic Microtask Refinement And Worker Packet Quality](/projects/execution-platform/specs/semantic-microtask-refinement-and-worker-packet-quality)
-41. [Execution Intent, Evidence Mode, And Worker Dispatch](/projects/execution-platform/specs/execution-intent-evidence-mode-and-worker-dispatch)
-42. [Pre-Product/Spec Frontier Worker Proof Gate](/projects/execution-platform/specs/pre-product-spec-frontier-worker-proof-gate)
-43. [Pre-Product/Spec Execution Platform Modularization](/projects/execution-platform/specs/pre-product-spec-execution-platform-modularization)
-44. [Post-Proof Generic Runtime Extraction](/projects/execution-platform/specs/post-proof-generic-runtime-extraction)
-46. [Native Agentic Coding Harness Convergence](/projects/execution-platform/specs/native-agentic-coding-harness-convergence)
-47. [Non-Codex Tool Worker Runtime](/projects/execution-platform/specs/non-codex-tool-worker-runtime)
-48. [Native Agentic Coding Massive Leap Specs](/projects/execution-platform/specs/native-agentic-coding-massive-leap)
-49. [Coding Executor Team Massive Leap Research](/projects/execution-platform/specs/coding-executor-team-massive-leap-research)
-50. [Coding Executor Team Capability Leap](/projects/execution-platform/specs/coding-executor-team-capability-leap)
-51. [Pre-Product/Spec Assumption Audit](/projects/execution-platform/specs/pre-product-spec-assumption-audit)
-52. [Architecture Red-Team And Research Gate](/projects/execution-platform/specs/architecture-red-team-and-research-gate)
+1. [RequirementMap Intake Decomposition](/projects/execution-platform/specs/requirement-map-intake-decomposition)
+2. [Scheduler Graph Patch Runner](/projects/execution-platform/specs/scheduler-graph-patch-runner)
+3. [Native Task Worker Agent Refactor](/projects/execution-platform/specs/native-task-worker-agent-refactor)
+4. [OpenClaw-Native Node Worker Agent Refactor](/projects/execution-platform/specs/openclaw-native-node-worker-agent-refactor)
+5. [OpenClaw Agentic Node Execution Quality Gates](/projects/execution-platform/specs/openclaw-agentic-node-execution-quality-gates)
+6. [Runner-Owned Worker Execution Session](/projects/execution-platform/specs/runner-owned-worker-execution-session)
+7. [Node Worker Prompt Authoring And Session Optics](/projects/execution-platform/specs/node-worker-prompt-authoring-and-session-optics)
+8. [ObligationGraph Scheduler Intake](/projects/execution-platform/specs/obligation-graph-scheduler-intake) **Superseded for live intake authoring by RequirementMap; retain as historical/negative-residue context only.**
+9. [Worker-Owned Context Search/Read Lifecycle](/projects/execution-platform/specs/worker-owned-context-search-read-lifecycle)
+10. [Node Lifecycle Transition Ownership Consolidation](/projects/execution-platform/specs/node-lifecycle-transition-ownership-consolidation)
+11. [Shared Domain Resource Lifecycle And Product/Spec Alignment](/projects/execution-platform/specs/shared-domain-resource-lifecycle-and-product-spec-alignment)
+12. [Canonical Lifecycle Convergence And Residue Excision](/projects/execution-platform/specs/canonical-lifecycle-convergence-and-residue-excision)
+13. [Node Lifecycle Transition Runner](/projects/execution-platform/specs/node-lifecycle-transition-runner)
+14. [Architecture Transition Closure And Context Objective Focus](/projects/execution-platform/specs/architecture-transition-closure-and-resource-objective-focus)
+15. [Mandatory Context Focus And Target Selection Boundary](/projects/execution-platform/specs/mandatory-context-focus-and-target-selection-boundary)
+16. [Node-Local Context Demand And Legacy Evisceration](/projects/execution-platform/specs/node-local-context-demand-and-legacy-evisceration)
+17. [Code-Verified Product/Spec Blocker Closure Plan](/projects/execution-platform/specs/code-verified-product-spec-blocker-closure-plan)
+18. [Control-Plane Executable Spine Recovery](/projects/execution-platform/specs/control-plane-executable-spine-recovery)
+19. [Execution Contract Spine, Context Requirements, And Frontier State](/projects/execution-platform/specs/execution-contract-spine-context-requirements-and-frontier-state)
+20. [Scheduler WorkIntentGraph And Demand-Context Gate](/projects/execution-platform/specs/scheduler-workintent-graph-demand-context-gate)
+21. [Commitment Packet Source Selection And Execution Intent](/projects/execution-platform/specs/commitment-packet-source-selection-and-execution-intent)
+22. [Product/Spec Proof Hardening And Worker Boundary Suite](/projects/execution-platform/specs/product-spec-proof-hardening-worker-boundary-suite)
+23. [Control-Plane Coding Team Recovery](/projects/execution-platform/specs/control-plane-coding-team-recovery)
+24. [WorkIntent Control-Plane Contract](/projects/execution-platform/specs/work-intent-control-plane-contract) **Superseded for fresh scheduling by SchedulerGraphPatch; retain for historical/migration context only.**
+25. [Canonical Workflow Runtime Architecture](/projects/execution-platform/specs/canonical-workflow-runtime-architecture)
+26. [Generic Orchestration Runtime](/projects/execution-platform/specs/generic-orchestration-runtime)
+27. [Runtime Work Graph](/projects/execution-platform/specs/runtime-work-graph)
+28. [Maximum Toolification Architecture](/projects/execution-platform/specs/maximum-toolification-architecture)
+29. [Runtime Toolification And Utility Scheduling](/projects/execution-platform/specs/runtime-toolification-and-utility-scheduling)
+30. [Runtime Parallelism And Contract Boundaries](/projects/execution-platform/specs/runtime-parallelism-and-contract-boundaries)
+31. [Scheduler-First Node-Scoped Context Supply](/projects/execution-platform/specs/scheduler-first-node-scoped-resource-fulfillment)
+32. [Post-Context Implementation Task Compiler](/projects/execution-platform/specs/post-resource-implementation-task-compiler)
+33. [Model Task Classification And Resource Materialization](/projects/execution-platform/specs/model-task-classification-and-resource-materialization)
+34. [Runtime Node Readiness And Transition Engine](/projects/execution-platform/specs/runtime-node-readiness-transition-engine)
+35. [Context Scout Execution Packet And Request-Context Repair](/projects/execution-platform/specs/context-scout-execution-packet-and-request-context-repair)
+36. [Context Frontier Lifecycle And Shard Manifests](/projects/execution-platform/specs/context-frontier-lifecycle-and-shard-manifests)
+37. [Context Frontier Shard Execution And Merge Lifecycle](/projects/execution-platform/specs/context-frontier-shard-execution-and-merge-lifecycle)
+38. [Parallel Frontier Resource Boundary Hardening](/projects/execution-platform/specs/parallel-frontier-resource-boundary-hardening)
+39. [Runtime Artifact Payload Store And Bounded Manifests](/projects/execution-platform/specs/runtime-artifact-payload-store-and-bounded-manifests)
+40. [Resource Materialization Boundary Replay And Canonical Node Readiness](/projects/execution-platform/specs/resource-materialization-boundary-replay-and-canonical-node-readiness)
+41. [Split-Required Resource Materialization Transition](/projects/execution-platform/specs/split-required-resource-materialization-transition)
+42. [Runtime Artifact Contract Registry And Payload Boundary](/projects/execution-platform/specs/runtime-artifact-contract-registry-and-payload-boundary)
+43. [Scheduler Frontier, No-Progress, And Evaluation Throttle](/projects/execution-platform/specs/scheduler-frontier-no-progress-and-evaluation-throttle)
+44. [Operator Frontier Readback And Latest Run State](/projects/execution-platform/specs/operator-frontier-readback-and-latest-run-state)
+45. [Large Graph Storage And Scheduler Lane](/projects/execution-platform/specs/large-graph-storage-and-scheduler-lane)
+46. [Pre-Product/Spec Proof Stabilization Plan](/projects/execution-platform/specs/pre-product-spec-proof-stabilization-plan)
+47. [Demand-Driven Frontier Orchestration And Context Broker](/projects/execution-platform/specs/demand-driven-frontier-orchestration-and-context-broker)
+48. [Semantic Microtask Refinement And Worker Packet Quality](/projects/execution-platform/specs/semantic-microtask-refinement-and-worker-packet-quality)
+49. [Execution Intent, Evidence Mode, And Worker Dispatch](/projects/execution-platform/specs/execution-intent-evidence-mode-and-worker-dispatch)
+50. [Pre-Product/Spec Frontier Worker Proof Gate](/projects/execution-platform/specs/pre-product-spec-frontier-worker-proof-gate)
+51. [Pre-Product/Spec Execution Platform Modularization](/projects/execution-platform/specs/pre-product-spec-execution-platform-modularization)
+52. [Post-Proof Generic Runtime Extraction](/projects/execution-platform/specs/post-proof-generic-runtime-extraction)
+53. [Native Agentic Coding Harness Convergence](/projects/execution-platform/specs/native-agentic-coding-harness-convergence)
+54. [Non-Codex Tool Worker Runtime](/projects/execution-platform/specs/non-codex-tool-worker-runtime)
+55. [Native Agentic Coding Massive Leap Specs](/projects/execution-platform/specs/native-agentic-coding-massive-leap)
+56. [Coding Executor Team Massive Leap Research](/projects/execution-platform/specs/coding-executor-team-massive-leap-research)
+57. [Coding Executor Team Capability Leap](/projects/execution-platform/specs/coding-executor-team-capability-leap)
+58. [Pre-Product/Spec Assumption Audit](/projects/execution-platform/specs/pre-product-spec-assumption-audit)
+59. [Architecture Red-Team And Research Gate](/projects/execution-platform/specs/architecture-red-team-and-research-gate)
 
 ## Routing, Readiness, And Execution Truth
 
@@ -85,14 +92,75 @@ runtime; it is not the system spec by itself.
 
 ## Current Pre-Proof Priority
 
-2026-06-01 intake-boundary correction: the scheduler-facing intake contract is
-now governed by
+2026-06-06 native task worker-agent milestone: the next governing worker-node
+implementation spec is
+[Native Task Worker Agent Refactor](/projects/execution-platform/specs/native-task-worker-agent-refactor).
+It records the current detailed work plan for replacing visible-but-blocked
+parent tools, raw `sessions_spawn`/`sessions_yield`, EP skill prompt glue,
+child identity drift, weak bootstrap proof, and fabricated trace refs with
+native OpenClaw task, context epoch, skill, tool registry, durable todo, scout,
+and event semantics under `NodeLifecycleRunner` lifecycle ownership.
+
+The prior broad worker-node refactor spec is
+[OpenClaw-Native Node Worker Agent Refactor](/projects/execution-platform/specs/openclaw-native-node-worker-agent-refactor).
+It remains historical context for the native-agent direction, but the current
+work plan is the native task spec above.
+
+The prior quality-gate companion spec is
+[OpenClaw Agentic Node Execution Quality Gates](/projects/execution-platform/specs/openclaw-agentic-node-execution-quality-gates).
+The next pass must delete deterministic task brief worker input and replace it
+with one model-authored `node_agent_worker_prompt` artifact/ref under
+`NodeLifecycleRunner` ownership. The live worker path must then run through
+native OpenClaw agent
+mechanics: native plan/todo, `sessions_spawn`, `sessions_yield`, subagent
+attachments, child-result visibility in the parent session, native search/read
+tools where available, iterative search/edit/validate repair, and terminal
+`node_finish`. A parent `sessions_yield` is nonterminal
+`node_execution_waiting_on_subagent`, not `node_finish_not_called`. Execution
+Platform may add bounded ref hydration, node finish, lifecycle/evidence
+acceptance, and readback projection only; it must not recreate an EP todo
+ledger, subagent runner, context scout state machine, deterministic keyword
+compiler, scheduler worker-prompt phase, or compatibility worker loop.
+
+2026-06-04 scheduler architecture correction: the next governing scheduler
+boundary spec is
+[Scheduler Graph Patch Runner](/projects/execution-platform/specs/scheduler-graph-patch-runner).
+Accepted `RequirementMap` output feeds `SchedulerStageRunner`, which emits a
+compact `SchedulerGraphPatch` containing implementation/source nodes plus
+aggregate mission validation, review, and closeout tail nodes. Fresh
+scheduling must not create WorkIntent graph-control nodes, require WorkIntent
+promotion, expose scheduler-owned lifecycle transitions, or accept staged
+scheduler JSON drafts. Validation, review, and closeout requirements cannot be
+passive scheduler gates; they are graph work by default unless explicitly
+deferred or blocked by a typed policy/human blocker. Runtime persists graph
+nodes/edges and `NodeLifecycleTransitionRunner` owns node-local execution.
+
+2026-06-03 intake architecture correction: the governing intake-boundary
+spec is
+[RequirementMap Intake Decomposition](/projects/execution-platform/specs/requirement-map-intake-decomposition).
+The raw source prompt remains the source of truth through a durable prompt
+body ref. `IntakeStageRunner` must produce one canonical
+`RequirementMap` with requirement text, role, runtime-created source refs, and
+compact coverage. Scheduler,
+worker, validation, review, and closeout consume bounded slices plus prompt
+search/read tools.
+Worker search terms are generated
+inside the node runtime by grounding assigned requirements in the raw prompt;
+they are not pre-authored as intake discovery seeds. Mission Ledger,
+ObligationGraph, DiscoveryBriefSet, and SchedulerIntakePacket should not
+survive as independent semantic authoring products once this architecture is
+implemented.
+
+2026-06-01 intake-boundary correction, superseded on 2026-06-03 for live
+intake authoring: the scheduler-facing intake contract was governed by
 [ObligationGraph Scheduler Intake](/projects/execution-platform/specs/obligation-graph-scheduler-intake).
 Mission Ledger commitments are classified into typed obligations before
 scheduler decomposition. The scheduler creates runnable WorkIntents from
 runnable obligations; read-only grounding, constraints, prerequisites, and
 evidence requirements no longer have to masquerade as full worker packets.
-`NodeLifecycleTransitionRunner` remains the owner after WorkIntent creation.
+That decision remains useful historical context, but the live path must now
+consume `RequirementMap` slices directly. `NodeLifecycleTransitionRunner`
+remains the owner after WorkIntent creation.
 
 2026-05-28 shared resource-lifecycle alignment: the current DB-ranked
 pre-proof tranche is governed by
@@ -438,9 +506,11 @@ variance, and block only on mission gate changes, missing packet coverage,
 missing packet handoff fields, runtime boundary failure, or GPT rescue
 dependence. Harmless commitment-count variance is diagnostic-only.
 That diagnostic is implemented. The later staged Mission Ledger diagnostic
-experiment has been retired and deleted; the canonical pre-scheduler owner is
-now `IntakeStageRunner`, documented in
-[ObligationGraph Scheduler Intake](/projects/execution-platform/specs/obligation-graph-scheduler-intake).
+experiment has been retired and deleted. Historical intake ownership was
+documented in
+[ObligationGraph Scheduler Intake](/projects/execution-platform/specs/obligation-graph-scheduler-intake),
+but live pre-scheduler intake authoring is now governed by
+[RequirementMap Intake Decomposition](/projects/execution-platform/specs/requirement-map-intake-decomposition).
 The prior generic scheduler hole was that graph
 acceptance could still approve a worker node before the transition engine
 proved context/resource readiness. That P0 blocker is complete:

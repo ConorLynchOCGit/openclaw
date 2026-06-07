@@ -23,10 +23,7 @@ const missionLedgerSummary = {
   ledgerStatus: "pending" as const,
   blockingCommitmentCount: 2,
   openBlockingCommitmentCount: 2,
-  missionGate: "clear_to_execute" as const,
-  missionGateRationale: null,
   safetyConstraintCount: 0,
-  prohibitedPrimaryDirectiveCount: 0,
   commitments: [
     {
       commitmentId: "context",
@@ -60,7 +57,9 @@ describe("cost-aware capability policy", () => {
       selectedNodeKind: "implementation",
       selectedExecutorKey: "kind:implementation",
       selectedModelQualificationProfileId: "openrouter.moonshotai.kimi-k2.6",
-      qualificationEvidenceRefs: ["model-profile://openrouter.moonshotai.kimi-k2.6/runtime-capability"],
+      qualificationEvidenceRefs: [
+        "model-profile://openrouter.moonshotai.kimi-k2.6/runtime-capability",
+      ],
       targetCommitmentIds: ["implementation"],
       utilityRationale: "The scoped implementation is the next blocker.",
       costRationale: "The cheap qualified implementation lane is sufficient before Codex.",
@@ -120,7 +119,9 @@ describe("cost-aware capability policy", () => {
       selectedNodeKind: "implementation",
       selectedExecutorKey: "kind:implementation",
       selectedModelQualificationProfileId: "openrouter.moonshotai.kimi-k2.6",
-      qualificationEvidenceRefs: ["model-profile://openrouter.moonshotai.kimi-k2.6/runtime-capability"],
+      qualificationEvidenceRefs: [
+        "model-profile://openrouter.moonshotai.kimi-k2.6/runtime-capability",
+      ],
       targetCommitmentIds: ["implementation"],
       utilityRationale: "A scoped implementation is ready for the cheap qualified lane.",
       costRationale: "The cheap implementation lane is sufficient before Codex.",
@@ -213,16 +214,20 @@ describe("cost-aware capability policy", () => {
       acceptanceCriteria: ["Edits target files", "Runs focused validation"],
       downstreamConsumer: "validation_run",
       commitmentIdsAdvanced: ["context", "repo-scope-discipline"],
-      whyThisRoleIsNeededNow:
-        "The work is scoped enough for the qualified implementation lane.",
-      exactObjective: "Implement Product/Spec Planning registration and scheduler integration edits.",
+      whyThisRoleIsNeededNow: "The work is scoped enough for the qualified implementation lane.",
+      exactObjective:
+        "Implement Product/Spec Planning registration and scheduler integration edits.",
       metadata: {
         costAwareUtilityDecision: {
           selectedCapabilityId: "implementation_microtask",
           selectedModelQualificationProfileId: "openrouter.moonshotai.kimi-k2.6",
-          qualificationEvidenceRefs: ["model-profile://openrouter.moonshotai.kimi-k2.6/runtime-capability"],
-          utilityRationale: "The implementation is scoped and ready after node-local resource demand.",
-          costRationale: "The cheap qualified implementation lane is cheaper than broad Codex implementation.",
+          qualificationEvidenceRefs: [
+            "model-profile://openrouter.moonshotai.kimi-k2.6/runtime-capability",
+          ],
+          utilityRationale:
+            "The implementation is scoped and ready after node-local resource demand.",
+          costRationale:
+            "The cheap qualified implementation lane is cheaper than broad Codex implementation.",
         },
         rawPromptStored: false,
         rawResponseStored: false,
@@ -261,7 +266,9 @@ describe("cost-aware capability policy", () => {
       selectedNodeKind: "implementation",
       selectedExecutorKey: "kind:implementation",
       selectedModelQualificationProfileId: "openrouter.moonshotai.kimi-k2.6",
-      qualificationEvidenceRefs: ["model-profile://openrouter.moonshotai.kimi-k2.6/runtime-capability"],
+      qualificationEvidenceRefs: [
+        "model-profile://openrouter.moonshotai.kimi-k2.6/runtime-capability",
+      ],
       targetCommitmentIds: ["repo-scope-discipline"],
       utilityRationale: "Scope discipline is useful but not the blocking mission work.",
       costRationale: "The cheap implementation lane is sufficient.",
@@ -431,7 +438,7 @@ describe("cost-aware capability policy", () => {
     expect(readback.selectedProviderCapabilityProfileId).toBe(
       "capability-profile://agent_team.coding/implementation_microtask.v1",
     );
-    expect(readback.workerRef).toBe("worker.kimi.file-implementation");
+    expect(readback.workerRef).toBe("agent.execution-coding.native-node-session");
     expect(readback.productionSelectable).toBe(true);
     expect(readback.productionSelectionRequiresQualification).toBe(true);
     expect(readback.consideredProviderCapabilityProfileIds).toEqual(

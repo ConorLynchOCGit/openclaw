@@ -15,7 +15,7 @@ describe("Codex parity role/model policy", () => {
   });
 
   it("uses cheaper large-context role workers for resource scout", () => {
-    const selection = selectCodexParityRoleModel("resource_scout", {
+    const selection = selectCodexParityRoleModel("context_scout", {
       availableModelRefs: ["moonshotai/kimi-k2.6"],
     });
 

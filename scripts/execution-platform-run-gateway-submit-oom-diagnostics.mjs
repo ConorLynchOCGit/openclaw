@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-import { createHash } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
@@ -39,10 +38,6 @@ const middleLanePrompt = [
   "and proof evidence showing a KB-scale prompt is not itself a 4GB heap source.",
   "Keep the router able to see the prompt; do not solve this by truncating or hiding the prompt.",
 ].join(" ");
-
-function sha256(value) {
-  return createHash("sha256").update(String(value ?? ""), "utf8").digest("hex");
-}
 
 function jsonBytes(value) {
   return Buffer.byteLength(JSON.stringify(value), "utf8");

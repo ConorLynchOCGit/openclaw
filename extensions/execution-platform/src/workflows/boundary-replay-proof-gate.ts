@@ -36,10 +36,7 @@ export type ProductSpecReplayProofAdmission = {
   selectedNodeId: string | null;
   selectedNodeKind: string | null;
   selectedNodeExecutable: boolean;
-  selectedExecutionReadinessAuthority: string | null;
-  selectedRecomputedReadinessCanExecute: boolean;
-  selectedImplementationPacketReady: boolean;
-  selectedReadinessProjectionCanUnlockExecution: boolean | null;
+  selectedHasNodeAgentEvidence: boolean;
   changedFileRefs: string[];
   validationRefs: string[];
   evidenceClaimRefs: string[];
@@ -116,7 +113,10 @@ function graphHasResourceFulfillmentFanout(value: unknown): boolean {
         const record = asRecord(node);
         const nodeKind = stringValue(record.nodeKind);
         const nodeId = stringValue(record.nodeId);
-        return nodeId && (nodeKind === "resource_scout" || nodeKind === "web_research")
+        return nodeId &&
+          (nodeKind === "context_scout" ||
+            nodeKind === "resource_scout" ||
+            nodeKind === "web_research")
           ? nodeId
           : null;
       })
@@ -136,7 +136,9 @@ function graphHasDefaultContextAcquisitionNode(value: unknown): boolean {
   const nodes = Array.isArray(summary.nodes) ? summary.nodes : [];
   return nodes.some((node) => {
     const nodeKind = stringValue(asRecord(node).nodeKind);
-    return nodeKind === "resource_scout" || nodeKind === "web_research";
+    return (
+      nodeKind === "context_scout" || nodeKind === "resource_scout" || nodeKind === "web_research"
+    );
   });
 }
 
@@ -201,9 +203,7 @@ export function evaluateProductSpecReplayProofAdmission(input: {
     boundaryReplayProofGate: proof.boundaryReplayProofGate,
   });
   const coveredIds = new Set(
-    coverage
-      .filter((entry) => entry.status === "accepted")
-      .map((entry) => entry.boundaryId),
+    coverage.filter((entry) => entry.status === "accepted").map((entry) => entry.boundaryId),
   );
   const missingBoundaryIds = BOUNDARY_REPLAY_PRODUCTION_PROOF_BOUNDARY_IDS.filter(
     (boundaryId) => !coveredIds.has(boundaryId),
@@ -212,13 +212,12 @@ export function evaluateProductSpecReplayProofAdmission(input: {
   const validationRefs = stringArray(worker.validationRefs, 40);
   const evidenceClaimRefs = evidenceClaimRefsFromWorker(worker);
   const replayPlanPresent = Object.keys(replayPlan).length > 0;
-  const readinessProjectionCanUnlockExecution =
-    typeof selected.readinessProjectionCanUnlockExecution === "boolean"
-      ? selected.readinessProjectionCanUnlockExecution
-      : null;
-  const recomputedReadinessCanExecute = boolValue(selected.recomputedReadinessCanExecute);
-  const implementationPacketReady = boolValue(selected.implementationPacketReady);
-  const executionReadinessAuthority = stringValue(selected.executionReadinessAuthority);
+  const selectedHasNodeAgentEvidence = Boolean(
+    stringValue(selected.nodeLifecycleProjectionRef) ||
+    stringValue(selected.nodeExecutionSnapshotRef) ||
+    stringValue(selected.nodeRunId) ||
+    stringValue(selected.nodeAgentSessionKey),
+  );
   const nodeKinds = new Set([
     ...nodeKindsFromGraphSummary(proof.beforeGraph),
     ...nodeKindsFromGraphSummary(proof.afterGraph),
@@ -244,12 +243,15 @@ export function evaluateProductSpecReplayProofAdmission(input: {
   const proofBoundary = stringValue(proof.boundary);
   const nodeLocalMiddleLaneBoundary = proofBoundary === "node-local-middle-lane";
   const middleLaneLifecyclePath = stringArray(middleLaneProof.lifecyclePath, 24);
-  const workerOwnedContextDiscovery = asRecord(middleLaneProof.workerOwnedContextDiscovery);
+  const nativeContextScoutDelegation = asRecord(middleLaneProof.nativeContextScoutDelegation);
   const middleLaneRequiredLifecycleGates = [
-    "work_intent_accepted",
-    "worker_started_with_partial_authority",
-    "worker_context_request_more",
-    "worker_context_specialist_narrowing_completed",
+    "requirement_map_handoff",
+    "node_agent_session_started",
+    "update_plan_created",
+    "context_scout_spawned",
+    "sessions_yield_waiting",
+    "context_scout_inline_windows_returned",
+    "parent_synthesized_child_output",
     "worker_edit_completed",
     "post_action_validation_passed",
     "evidence_emitted",
@@ -261,12 +263,11 @@ export function evaluateProductSpecReplayProofAdmission(input: {
     !nodeLocalMiddleLaneBoundary ||
     (stringValue(middleLaneProof.status) === "passed" &&
       boolValue(middleLaneProof.implementationNodeStarted) &&
-      stringValue(workerOwnedContextDiscovery.status) === "fulfilled" &&
-      boolValue(workerOwnedContextDiscovery.modelAuthored) &&
-      ["open", "fulfilled", "succeeded", "worker_owned_fulfilled"].includes(
-        stringValue(middleLaneProof.nodeResourceDemandStatus) ?? "",
-      ) &&
-      boolValue(middleLaneProof.nodeResourceLedgerReady) &&
+      stringValue(nativeContextScoutDelegation.status) === "fulfilled" &&
+      boolValue(nativeContextScoutDelegation.spawned) &&
+      boolValue(nativeContextScoutDelegation.yielded) &&
+      boolValue(nativeContextScoutDelegation.inlineWindowsReturned) &&
+      boolValue(nativeContextScoutDelegation.parentSynthesized) &&
       stringValue(middleLaneProof.actionGateStatus) === "worker_owned_ready" &&
       stringValue(middleLaneProof.workerEditStatus) === "completed" &&
       stringValue(middleLaneProof.validationStatus) === "passed" &&
@@ -317,45 +318,27 @@ export function evaluateProductSpecReplayProofAdmission(input: {
     ...(familyGate.status === "passed" ? [] : ["proof_family_gate_not_passed"]),
     ...familyGate.reasonCodes,
     ...(stringValue(proof.status) === "succeeded" ? [] : ["proof_status_not_succeeded"]),
-    ...(proofBoundary === "after-resource-materialization" || nodeLocalMiddleLaneBoundary
+    ...(proofBoundary === "after-node-agent-session" || nodeLocalMiddleLaneBoundary
       ? []
-      : ["proof_boundary_not_after_resource_materialization_or_node_local_middle_lane"]),
+      : ["proof_boundary_not_after_node_agent_session_or_node_local_middle_lane"]),
     ...(boolValue(proof.executeWorkers) ? [] : ["proof_worker_execution_not_enabled"]),
     ...(boolValue(proof.replayGraphCreated) ? ["proof_created_replay_graph"] : []),
     ...(boolValue(proof.routerRerun) ? ["proof_reran_router"] : []),
     ...(boolValue(proof.missionLedgerRerun) ? ["proof_reran_mission_ledger"] : []),
-    ...(boolValue(proof.contextScoutRerun) ? ["proof_reran_resource_scout"] : []),
-    ...(boolValue(proof.resourceMaterializationRerun)
-      ? ["proof_reran_resource_materialization"]
-      : []),
-    ...(nodeKinds.has("context_synthesis")
-      ? ["proof_graph_contains_context_synthesis_node"]
-      : []),
+    ...(boolValue(proof.contextScoutRerun) ? ["proof_reran_context_scout"] : []),
+    ...(nodeKinds.has("context_synthesis") ? ["proof_graph_contains_context_synthesis_node"] : []),
     ...(graphHasDefaultContextAcquisition
       ? ["proof_graph_contains_default_context_acquisition_node"]
       : []),
-    ...(graphHasLegacyContextFanout ? ["proof_graph_contains_legacy_resource_fulfillment_fanout"] : []),
+    ...(graphHasLegacyContextFanout
+      ? ["proof_graph_contains_legacy_resource_fulfillment_fanout"]
+      : []),
     ...(graphHasRetiredTopology
       ? ["proof_source_stale_retired_topology_not_closure_evidence"]
       : []),
     ...(stringValue(worker.status) === "succeeded" ? [] : ["worker_smoke_not_succeeded"]),
-    ...(stringValue(selected.nodeExecutionPacketRef) ? [] : ["selected_node_packet_ref_missing"]),
-    ...(stringValue(selected.resourcePacketRef) || nodeLocalMiddleLaneBoundary
-      ? []
-      : ["selected_resource_packet_ref_missing"]),
-    ...(stringValue(selected.nodeReadinessStateRef)
-      ? []
-      : ["selected_readiness_state_ref_missing"]),
+    ...(selectedHasNodeAgentEvidence ? [] : ["selected_node_agent_evidence_missing"]),
     ...(boolValue(selected.executable) ? [] : ["selected_node_not_executable"]),
-    ...(executionReadinessAuthority === "recomputed_current_readiness"
-      ? []
-      : ["selected_execution_readiness_authority_invalid"]),
-    ...(readinessProjectionCanUnlockExecution === false && !recomputedReadinessCanExecute
-      ? ["selected_recomputed_readiness_cannot_execute"]
-      : []),
-    ...(readinessProjectionCanUnlockExecution === false && !implementationPacketReady
-      ? ["selected_implementation_packet_not_ready"]
-      : []),
     ...(codingExecutorProof && changedFileRefs.length === 0
       ? ["worker_changed_file_refs_missing"]
       : []),
@@ -369,20 +352,21 @@ export function evaluateProductSpecReplayProofAdmission(input: {
           ...(boolValue(middleLaneProof.implementationNodeStarted)
             ? []
             : ["middle_lane_implementation_node_not_started"]),
-          ...(stringValue(workerOwnedContextDiscovery.status) === "fulfilled"
+          ...(stringValue(nativeContextScoutDelegation.status) === "fulfilled"
             ? []
-            : ["middle_lane_worker_context_request_not_accepted"]),
-          ...(boolValue(workerOwnedContextDiscovery.modelAuthored)
+            : ["middle_lane_context_scout_delegation_not_fulfilled"]),
+          ...(boolValue(nativeContextScoutDelegation.spawned)
             ? []
-            : ["middle_lane_worker_context_request_not_model_authored"]),
-          ...(["open", "fulfilled", "succeeded", "worker_owned_fulfilled"].includes(
-            stringValue(middleLaneProof.nodeResourceDemandStatus) ?? "",
-          )
+            : ["middle_lane_context_scout_not_spawned"]),
+          ...(boolValue(nativeContextScoutDelegation.yielded)
             ? []
-            : ["middle_lane_node_resource_demand_not_open_or_fulfilled"]),
-          ...(boolValue(middleLaneProof.nodeResourceLedgerReady)
+            : ["middle_lane_parent_did_not_yield_for_scout"]),
+          ...(boolValue(nativeContextScoutDelegation.inlineWindowsReturned)
             ? []
-            : ["middle_lane_resource_ledger_not_ready"]),
+            : ["middle_lane_context_scout_inline_windows_missing"]),
+          ...(boolValue(nativeContextScoutDelegation.parentSynthesized)
+            ? []
+            : ["middle_lane_parent_synthesis_missing"]),
           ...(stringValue(middleLaneProof.actionGateStatus) === "worker_owned_ready"
             ? []
             : ["middle_lane_action_gate_not_ready"]),
@@ -436,18 +420,13 @@ export function evaluateProductSpecReplayProofAdmission(input: {
     missingBoundaryIds,
     replayPlanStatus: stringValue(replayPlan.status),
     replayPlanProofClosureAllowed:
-      typeof replayPlan.proofClosureAllowed === "boolean"
-        ? replayPlan.proofClosureAllowed
-        : null,
+      typeof replayPlan.proofClosureAllowed === "boolean" ? replayPlan.proofClosureAllowed : null,
     proofClosureAllowed: status === "admitted",
     workerStatus: stringValue(worker.status),
     selectedNodeId: stringValue(selected.nodeId),
     selectedNodeKind: stringValue(selected.nodeKind),
     selectedNodeExecutable: boolValue(selected.executable),
-    selectedExecutionReadinessAuthority: executionReadinessAuthority,
-    selectedRecomputedReadinessCanExecute: recomputedReadinessCanExecute,
-    selectedImplementationPacketReady: implementationPacketReady,
-    selectedReadinessProjectionCanUnlockExecution: readinessProjectionCanUnlockExecution,
+    selectedHasNodeAgentEvidence,
     changedFileRefs,
     validationRefs,
     evidenceClaimRefs,

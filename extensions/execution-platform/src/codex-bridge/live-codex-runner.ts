@@ -12,10 +12,11 @@ import {
   parseCodexJsonlEventLine,
   validateOperatorAcceptanceForObserveOnlyLocalCodex,
 } from "./execution-supervisor.ts";
+import { DEFAULT_REPO_PATH } from "./policy.ts";
 
 const DEFAULT_ALLOWED_COMMAND = "codex" as const;
 const DEFAULT_ALLOWED_ARGS_PREFIX = ["exec", "--json", "--cd"] as const;
-const DEFAULT_ALLOWED_REPO_PATH = "/root/services/openclaw-roles/live";
+const DEFAULT_ALLOWED_REPO_PATH = DEFAULT_REPO_PATH;
 const DEFAULT_MAX_RUNTIME_MS = 120_000;
 const DEFAULT_MAX_STDOUT_BYTES = 1024 * 1024;
 const DEFAULT_MAX_STDERR_BYTES = 128 * 1024;

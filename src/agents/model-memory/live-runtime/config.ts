@@ -11,6 +11,7 @@ import {
 import {
   DEFAULT_STRICT_MMV2_MODEL_REF,
   LIVE_MODEL_MEMORY_ENABLED_ENV,
+  MODEL_MEMORY_BOOTSTRAP_OVERLAY_ENABLED_ENV,
   MODEL_MEMORY_PLUGIN_ID,
   MODEL_MEMORY_PROJECTION_ARTIFACTS_ENABLED_ENV,
   MODEL_MEMORY_RETRIEVAL_MODEL_ID_ENV,
@@ -81,6 +82,22 @@ export function resolveProjectionArtifactMaterializationEnabled(
     ? projections.materializeArtifacts
     : {};
   return readBooleanLiteral(materializeArtifacts.enabled) ?? true;
+}
+
+export function resolveModelMemoryBootstrapOverlayEnabled(
+  config?: OpenClawConfig,
+  env: NodeJS.ProcessEnv = process.env,
+): boolean {
+  const envEnabled = resolveBooleanEnv(env[MODEL_MEMORY_BOOTSTRAP_OVERLAY_ENABLED_ENV]);
+  if (envEnabled !== undefined) {
+    return envEnabled;
+  }
+  const liveConfig = readLiveConfig(config);
+  const bootstrapOverlay =
+    readNestedRecord(liveConfig, ["bootstrapOverlay"]) ??
+    readNestedRecord(liveConfig, ["bootstrap", "overlay"]) ??
+    {};
+  return readBooleanLiteral(bootstrapOverlay.enabled) ?? false;
 }
 
 export function resolveToolResultProofCaptureEnabled(

@@ -17,6 +17,7 @@ import {
   listModelLanePolicies,
   normalizeFakeAcpStreamEvent,
   normalizeFakeCodexCliStreamEvent,
+  resolveCodexBridgeDefaultPaths,
   scoreSuppliedShadowEvalOutput,
   summarizeSoakFloodFixtureBatch,
   validateAlternativeModelCandidateForRole,
@@ -181,9 +182,18 @@ describe("codex bridge proof harness", () => {
     });
     expect(createEnvironmentContract()).toMatchObject({
       repoPath: "/root/services/openclaw-roles/live",
-      workspaceDocsPath: "/root/.openclaw/workspace/docs/projects/execution-platform",
+      workspaceDocsPath: "/root/services/openclaw-roles/live/docs/projects/execution-platform",
       safeUiBridge: { tailscaleRequired: true },
       secretsIncluded: false,
+    });
+    expect(
+      resolveCodexBridgeDefaultPaths({
+        OPENCLAW_HOST_OPERATOR_REPO_ROOT: "/tmp/openclaw-source",
+        OPENCLAW_HOST_OPERATOR_WORKSPACE_ROOT: "/tmp/runtime-workspace",
+      }),
+    ).toEqual({
+      repoPath: "/tmp/openclaw-source",
+      workspaceDocsPath: "/tmp/openclaw-source/docs/projects/execution-platform",
     });
   });
 

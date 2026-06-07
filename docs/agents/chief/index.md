@@ -19,6 +19,8 @@ title: "Chief"
 
 ## Runtime note
 
-- runtime surface: `/home/node/.openclaw/agents/chief/agent`
-- workspace surface: shared `/home/node/.openclaw/workspace`
+- runtime surface: `/root/.openclaw/agents/chief/agent`
+- runtime surface alias: `/home/node/.openclaw/agents/chief/agent`
+- workspace surface: shared `/root/.openclaw/workspace`
+- workspace surface alias: shared `/home/node/.openclaw/workspace`
 - runtime compatibility files are currently shared from the main workspace pack

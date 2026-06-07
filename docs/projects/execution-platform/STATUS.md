@@ -1,5 +1,53 @@
 # Execution Platform Status
 
+## 2026-06-04 SchedulerGraphPatch Runner
+
+The current scheduler correction is the `SchedulerGraphPatch` architecture.
+Accepted RequirementMap output is good enough as source-grounded inventory, but
+it is too raw and role-noisy to become executable graph shape directly. The
+scheduler must group requirements, bind capabilities, order dependencies, and
+persist minimal graph patches without reintroducing WorkIntent promotion or
+staged JSON drafts.
+
+Fresh scheduling target:
+
+```text
+RequirementMap
+  -> SchedulerStageRunner
+  -> SchedulerGraphPatch
+  -> RuntimeGraphNode / RuntimeGraphEdge
+  -> NodeLifecycleTransitionRunner
+```
+
+Fresh scheduling should no longer create `WorkIntent` graph-control nodes,
+require WorkIntent promotion, expose WorkIntent-owned `nextLegalTransitions`,
+or use `OrchestratorGraphDecision` as the canonical scheduler product.
+Scheduler tools must use provider-native calls through the shared transport.
+Runtime compile has no model-authored submit ceremony.
+
+Governing spec:
+
+- `docs/projects/execution-platform/specs/scheduler-graph-patch-runner.md`
+
+## 2026-06-03 RequirementMap Intake Decomposition
+
+The current pre-scheduler correction is the RequirementMap intake path.
+`IntakeStageRunner` owns source prompt readiness, full-prompt bounded-window
+coverage, provider-native RequirementMap tool phases, deterministic compile,
+artifact persistence, and replay checkpointing before `SchedulerStageRunner`.
+
+Fresh execution should no longer author Mission Ledger, ObligationGraph,
+DiscoveryBriefSet, SchedulerIntakePacket, or RequirementMap v1 batch tools as
+live pre-scheduler products. The accepted RequirementMap v2 persists only
+requirement text, role, runtime-created source refs, coverage counts/hash, and
+bounded storage flags. Acceptance/evidence wording is derived by downstream
+runner projections from requirement text and role; it is not a model-authored
+RequirementMap field.
+
+Governing spec:
+
+- `docs/projects/execution-platform/specs/requirement-map-intake-decomposition.md`
+
 ## 2026-05-31 Worker-Owned Context Search/Read Lifecycle
 
 The latest Product/Spec replay reached real worker execution, but one
@@ -523,9 +571,9 @@ The twelve verified blockers are:
    and consumer unlock;
 10. target selection producing refs without file-change intent;
 11. worker forced patch path depending on upstream packet/snapshot/plan
-   readiness that is not always guaranteed;
+    readiness that is not always guaranteed;
 12. repeated frontier failures still producing excessive scheduler progress
-   and graph-patch artifacts before root-cause collapse.
+    and graph-patch artifacts before root-cause collapse.
 
 Required pre-proof DB order:
 
@@ -1349,8 +1397,6 @@ false` for file-edit node kinds. That metadata can only opt out non-file-edit
 - Regression validation passed:
   `pnpm test:file extensions/execution-platform/src/workflows/no-semantic-cheats.test.ts extensions/execution-platform/src/codex-bridge/product-spec-boundary-replay-topology.test.ts extensions/execution-platform/src/work-queue/execution-read-model.test.ts`
   passed 182 tests.
-- Provider-free frontier proof passed:
-  `node scripts/execution-platform-run-scheduler-frontier-no-progress-evaluation-throttle-proof.mjs`.
 - Scoped type validation passed via `pnpm tsgo:fast` over the touched
   materialization, scheduler, test, readback, and proof script surfaces.
 
@@ -4211,10 +4257,10 @@ Production changes:
   execution submissions record staged front-door tool traces before compiling
   runtime jobs.
 - compiled runtime job payloads now carry `routerToolProtocolRef`,
-  `routerToolInvocationRefs`, and `missionLedgerHandoffRef`.
+  `routerToolInvocationRefs`, and `requirementMapHandoffRef`.
 - the live router prompt now states that the model owns semantic routing while
   runtime owns schema, refs, bounds, authority, persistence, lifecycle, and
-  Mission Ledger handoff.
+  RequirementMap handoff.
 - legacy semantic intent fallback is test-only; production cannot reactivate
   it with `OPENCLAW_LEGACY_SEMANTIC_INTENT_ROUTING_FALLBACK`.
 

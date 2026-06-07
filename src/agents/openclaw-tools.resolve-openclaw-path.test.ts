@@ -2,6 +2,23 @@ import { describe, expect, it } from "vitest";
 import { createResolveOpenClawPathTool } from "./tools/resolve-openclaw-path-tool.js";
 
 describe("resolve_openclaw_path tool", () => {
+  it("uses manifest-derived project root and workspace root when no tool roots are provided", async () => {
+    const tool = createResolveOpenClawPathTool();
+
+    const result = await tool.execute("resolve-path", {
+      path: "docs/projects/execution-platform/specs/native-task-worker-agent-refactor.md",
+      actorProfile: "repo-executor",
+    });
+
+    const text = result?.content?.find((entry) => entry.type === "text")?.text ?? "";
+    const parsed = JSON.parse(text);
+    expect(parsed.canonicalOwner).toBe("product_repo");
+    expect(parsed.canonicalPath).toBe(
+      "/root/services/openclaw-roles/live/docs/projects/execution-platform/specs/native-task-worker-agent-refactor.md",
+    );
+    expect(parsed.safeWorkspaceSearchExample).toContain("'/root/.openclaw/workspace'");
+  });
+
   it("blocks mirror edits by default", async () => {
     const tool = createResolveOpenClawPathTool({
       workspaceDir: "/root/.openclaw/workspace",

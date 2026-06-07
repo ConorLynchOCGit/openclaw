@@ -16,6 +16,7 @@ type AgentEntry = NonNullable<NonNullable<OpenClawConfig["agents"]>["list"]>[num
 export type ResolvedAgentConfig = {
   name?: string;
   workspace?: string;
+  projectRoot?: string;
   agentDir?: string;
   systemPromptOverride?: AgentEntry["systemPromptOverride"];
   model?: AgentEntry["model"];
@@ -107,6 +108,7 @@ export function resolveAgentConfig(
   return {
     name: readStringValue(entry.name),
     workspace: readStringValue(entry.workspace),
+    projectRoot: readStringValue(entry.projectRoot),
     agentDir: readStringValue(entry.agentDir),
     systemPromptOverride: readStringValue(entry.systemPromptOverride),
     model:
@@ -165,6 +167,20 @@ export function resolveAgentWorkspaceDir(cfg: OpenClawConfig, agentId: string) {
   }
   const stateDir = resolveStateDir(process.env);
   return stripNullBytes(path.join(stateDir, `workspace-${id}`));
+}
+
+export function resolveAgentProjectRootDir(cfg: OpenClawConfig, agentId: string) {
+  const id = normalizeAgentId(agentId);
+  const configured = resolveAgentConfig(cfg, id)?.projectRoot?.trim();
+  if (configured) {
+    return stripNullBytes(resolveUserPath(configured));
+  }
+  const defaults = cfg.agents?.defaults;
+  const defaultProjectRoot = defaults?.projectRoot?.trim() || defaults?.repoRoot?.trim();
+  if (defaultProjectRoot) {
+    return stripNullBytes(resolveUserPath(defaultProjectRoot));
+  }
+  return resolveAgentWorkspaceDir(cfg, id);
 }
 
 export function resolveAgentDir(

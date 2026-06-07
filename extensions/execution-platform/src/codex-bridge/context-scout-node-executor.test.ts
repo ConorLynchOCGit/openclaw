@@ -12,7 +12,7 @@ describe("resource scout node executor", () => {
 
     expect(budget.status).toBe("available");
     expect(budget.timeoutMs).toBe(10_000);
-    expect(budget.reasonCodes).toContain("resource_scout_model_call_budget_resolved");
+    expect(budget.reasonCodes).toContain("context_scout_model_call_budget_resolved");
   });
 
   it("expires repair turns instead of granting a second full timeout", () => {
@@ -25,6 +25,6 @@ describe("resource scout node executor", () => {
 
     expect(budget.status).toBe("expired");
     expect(budget.timeoutMs).toBe(0);
-    expect(budget.reasonCodes).toContain("resource_scout_total_budget_exhausted");
+    expect(budget.reasonCodes).toContain("context_scout_total_budget_exhausted");
   });
 });

@@ -82,6 +82,37 @@ describe("buildSystemPromptReport", () => {
     expect(report.bootstrapTotalMaxChars).toBe(22_222);
   });
 
+  it("parses active required skill blocks as admitted skill context", () => {
+    const file = makeBootstrapFile({ path: "/tmp/workspace/policies/AGENTS.md" });
+    const report = buildSystemPromptReport({
+      source: "run",
+      generatedAt: 0,
+      bootstrapMaxChars: 20_000,
+      systemPrompt: "system",
+      bootstrapFiles: [file],
+      injectedFiles: [{ path: "/tmp/workspace/policies/AGENTS.md", content: "trimmed" }],
+      skillsPrompt: [
+        "<active_skills>",
+        '<active_skill name="execution-node-workflow" location="/tmp/workspace/skills/execution-node-workflow/SKILL.md" source_ref="openclaw-skill-file://proof" source_hash="hash-1">',
+        "Follow the active workflow.",
+        "</active_skill>",
+        "</active_skills>",
+      ].join("\n"),
+      tools: [],
+    });
+
+    expect(report.skills.entries).toEqual([
+      {
+        name: "execution-node-workflow",
+        blockChars: expect.any(Number),
+        location: "/tmp/workspace/skills/execution-node-workflow/SKILL.md",
+        sourceRef: "openclaw-skill-file://proof",
+        sourceHash: "hash-1",
+      },
+    ]);
+    expect(report.skills.entries[0]?.blockChars).toBeGreaterThan(0);
+  });
+
   it("reports zero in-band tool list chars when tool info stays structured", () => {
     const file = makeBootstrapFile({ path: "/tmp/workspace/policies/AGENTS.md" });
     const report = makeReport({

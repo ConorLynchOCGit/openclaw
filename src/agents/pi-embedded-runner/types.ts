@@ -1,5 +1,6 @@
 import type { CliSessionBinding, SessionSystemPromptReport } from "../../config/sessions/types.js";
 import type { MessagingToolSend } from "../pi-embedded-messaging.types.js";
+import type { SessionLockAcquisitionTrace } from "../session-write-lock.js";
 
 export type EmbeddedPiAgentMeta = {
   sessionId: string;
@@ -124,9 +125,14 @@ export type EmbeddedPiRunMeta = {
   executionTrace?: ExecutionTrace;
   requestShaping?: RequestShapingTrace;
   promptSegments?: PromptSegmentTrace[];
+  /** Provider-facing native tool names after OpenClaw tool construction and filtering. */
+  effectiveToolNames?: string[];
+  /** Bounded native-node trace facts collected from OpenClaw tool/session events. */
+  nodeAgentSessionTrace?: Record<string, unknown>;
   toolSummary?: ToolSummaryTrace;
   completion?: CompletionTrace;
   contextManagement?: ContextManagementTrace;
+  sessionLockTrace?: SessionLockAcquisitionTrace;
 };
 
 export type EmbeddedPiRunResult = {

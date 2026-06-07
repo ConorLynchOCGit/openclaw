@@ -1,4 +1,7 @@
+import fs from "node:fs";
 import path from "node:path";
+import YAML from "yaml";
+import { resolveBootstrapRepoPath } from "./bootstrap-repo-paths.js";
 
 export type OpenClawPathActorProfile = "ordinary-main" | "host-operator" | "repo-executor";
 export type OpenClawPathOwnerHint = "product_repo" | "operator_workspace";
@@ -46,8 +49,17 @@ export type OpenClawPathResolverOptions = {
   ownerHint?: OpenClawPathOwnerHint;
 };
 
+export type OpenClawPathResolvedRoots = {
+  liveRepoRoot: string;
+  runtimeHome: string;
+  workspaceRoot: string;
+};
+
 const DEFAULT_LIVE_REPO_ROOT = "/root/services/openclaw-roles/live";
+const DEFAULT_RUNTIME_HOME = "/root/.openclaw";
 const DEFAULT_WORKSPACE_ROOT = "/root/.openclaw/workspace";
+const SOURCE_RUNTIME_MANIFEST_RELATIVE_PATH =
+  "docs/system/registries/source-runtime-unification.yaml";
 
 function normalizePath(value: string): string {
   const trimmed = value.trim();
@@ -55,6 +67,52 @@ function normalizePath(value: string): string {
     return "";
   }
   return path.posix.normalize(trimmed.replace(/\\/g, "/"));
+}
+
+function stringRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
+function optionalString(value: unknown): string | null {
+  return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
+}
+
+function readSourceRuntimeManifestRoots(): Partial<OpenClawPathResolvedRoots> {
+  try {
+    const manifestPath = resolveBootstrapRepoPath({
+      relativePath: SOURCE_RUNTIME_MANIFEST_RELATIVE_PATH,
+      importMetaUrl: import.meta.url,
+      cwd: process.cwd(),
+    });
+    const parsed = stringRecord(YAML.parse(fs.readFileSync(manifestPath, "utf8")));
+    const canonical = stringRecord(parsed.canonical);
+    const runtimeHome = optionalString(canonical.runtimeHome);
+    return {
+      liveRepoRoot: optionalString(canonical.projectRoot) ?? undefined,
+      runtimeHome: runtimeHome ?? undefined,
+      workspaceRoot: runtimeHome ? path.posix.join(runtimeHome, "workspace") : undefined,
+    };
+  } catch {
+    return {};
+  }
+}
+
+export function resolveOpenClawPathRoots(
+  options: Pick<OpenClawPathResolverOptions, "liveRepoRoot" | "workspaceRoot"> = {},
+): OpenClawPathResolvedRoots {
+  const manifestRoots = readSourceRuntimeManifestRoots();
+  const runtimeHome = normalizePath(manifestRoots.runtimeHome ?? DEFAULT_RUNTIME_HOME);
+  return {
+    liveRepoRoot: normalizePath(
+      options.liveRepoRoot ?? manifestRoots.liveRepoRoot ?? DEFAULT_LIVE_REPO_ROOT,
+    ),
+    runtimeHome,
+    workspaceRoot: normalizePath(
+      options.workspaceRoot ?? manifestRoots.workspaceRoot ?? DEFAULT_WORKSPACE_ROOT,
+    ),
+  };
 }
 
 function pathWithin(candidate: string, root: string): boolean {
@@ -135,8 +193,9 @@ export function resolveOpenClawPath(
   requested: string,
   options: OpenClawPathResolverOptions = {},
 ): OpenClawPathResolution {
-  const liveRepoRoot = normalizePath(options.liveRepoRoot ?? DEFAULT_LIVE_REPO_ROOT);
-  const workspaceRoot = normalizePath(options.workspaceRoot ?? DEFAULT_WORKSPACE_ROOT);
+  const roots = resolveOpenClawPathRoots(options);
+  const liveRepoRoot = roots.liveRepoRoot;
+  const workspaceRoot = roots.workspaceRoot;
   const actorProfile = options.actorProfile ?? "ordinary-main";
   const parsedRequest = parseOwnerHintFromRequest(requested);
   const ownerHint = options.ownerHint ?? parsedRequest.ownerHint;
@@ -362,12 +421,12 @@ export function resolveOpenClawPath(
   };
 }
 
-export function buildSafeWorkspaceSearchCommand(
-  pattern: string,
-  workspaceRoot = DEFAULT_WORKSPACE_ROOT,
-) {
+export function buildSafeWorkspaceSearchCommand(pattern: string, workspaceRoot?: string) {
   const safePattern = pattern.replace(/'/g, "'\\''");
-  const safeRoot = workspaceRoot.replace(/'/g, "'\\''");
+  const safeRoot = (workspaceRoot ?? resolveOpenClawPathRoots().workspaceRoot).replace(
+    /'/g,
+    "'\\''",
+  );
   return [
     `rg --hidden --glob '!system/hostfs/proc/**'`,
     `--glob '!system/hostfs/sys/**'`,

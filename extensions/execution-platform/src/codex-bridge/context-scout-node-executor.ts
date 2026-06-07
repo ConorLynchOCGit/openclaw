@@ -17,13 +17,6 @@ function bounded(value: string | null | undefined, max = 1_000): string {
   return (value ?? "").trim().replace(/\s+/gu, " ").slice(0, max);
 }
 
-function readPositiveIntEnv(name: string, fallback: number, input?: { max?: number }): number {
-  const raw = process.env[name]?.trim();
-  const parsed = raw ? Number(raw) : NaN;
-  const value = Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : fallback;
-  return Math.max(1, Math.min(input?.max ?? Number.MAX_SAFE_INTEGER, value));
-}
-
 export function resolveContextScoutModelCallBudget(input: {
   startedAtMs: number;
   nowMs: number;
@@ -42,9 +35,9 @@ export function resolveContextScoutModelCallBudget(input: {
       status: "expired",
       timeoutMs: 0,
       reasonCodes: [
-        "resource_scout_total_budget_exhausted",
-        `resource_scout_total_budget_ms:${totalTimeoutMs}`,
-        `resource_scout_remaining_budget_ms:${Math.max(0, Math.floor(remainingMs))}`,
+        "context_scout_total_budget_exhausted",
+        `context_scout_total_budget_ms:${totalTimeoutMs}`,
+        `context_scout_remaining_budget_ms:${Math.max(0, Math.floor(remainingMs))}`,
       ],
     };
   }
@@ -52,9 +45,9 @@ export function resolveContextScoutModelCallBudget(input: {
     status: "available",
     timeoutMs: Math.max(1, Math.floor(remainingMs)),
     reasonCodes: [
-      "resource_scout_model_call_budget_resolved",
-      `resource_scout_total_budget_ms:${totalTimeoutMs}`,
-      `resource_scout_remaining_budget_ms:${Math.max(0, Math.floor(remainingMs))}`,
+      "context_scout_model_call_budget_resolved",
+      `context_scout_total_budget_ms:${totalTimeoutMs}`,
+      `context_scout_remaining_budget_ms:${Math.max(0, Math.floor(remainingMs))}`,
     ],
   };
 }

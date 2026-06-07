@@ -18,6 +18,7 @@ import {
   inventoryCodexBridgeSkills,
   listRequiredCodexBridgeSkillDocs,
   produceCodexBridgeSkillReadinessReport,
+  resolveCodexBridgeSkillInventoryRoots,
   writeSkillActivationAuditArtifact,
   type ClawHubSearchRunner,
 } from "./index.ts";
@@ -69,6 +70,28 @@ async function seedBridgeJob(bridge: CodexBridgeRepository) {
 }
 
 describe("Codex bridge skill inventory and activation audit", () => {
+  it("resolves skill inventory roots from Phase 0 source/runtime topology", () => {
+    expect(resolveCodexBridgeSkillInventoryRoots()).toEqual({
+      repoRoot: "/root/services/openclaw-roles/live",
+      codexSkillRoot: "/root/.codex/skills",
+      workspaceSkillRoot: "/root/.openclaw/workspace/skills",
+      executionPlatformDocRoot: "/root/.openclaw/workspace/docs/projects/execution-platform",
+    });
+
+    expect(
+      resolveCodexBridgeSkillInventoryRoots({
+        repoRoot: "/tmp/openclaw-source",
+        workspaceSkillRoot: "/tmp/openclaw-runtime/workspace/skills",
+        executionPlatformDocRoot:
+          "/tmp/openclaw-runtime/workspace/docs/projects/execution-platform",
+      }),
+    ).toMatchObject({
+      repoRoot: "/tmp/openclaw-source",
+      workspaceSkillRoot: "/tmp/openclaw-runtime/workspace/skills",
+      executionPlatformDocRoot: "/tmp/openclaw-runtime/workspace/docs/projects/execution-platform",
+    });
+  });
+
   it("inventories Codex-active, OpenClaw repo, agent, workspace draft, skill-doc, and role-doc sources", async () => {
     const inventory = await inventoryCodexBridgeSkills();
 

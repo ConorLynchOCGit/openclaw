@@ -196,7 +196,7 @@ Required fields:
 - `maxInputBytes`;
 - `requestedTimeoutMs`;
 - `status`: `planned | sharding_required | shard_execution_ready |
-  executing_shards | merge_required | satisfied | blocked | needs_review`;
+executing_shards | merge_required | satisfied | blocked | needs_review`;
 - `nextLegalTransition`;
 - `reasonCodes`;
 - storage flags.
@@ -216,8 +216,8 @@ Required fields:
 - `parentFrontierRequestRef`;
 - `parentResourceRequirementRefs`;
 - `shardUnitKind`: `resource_requirement | source_commitment |
-  semantic_question | bounded_repo_context_ref | source_prompt_section_ref |
-  model_authored_scope_ref`;
+semantic_question | bounded_repo_context_ref | source_prompt_body_ref |
+model_authored_scope_ref`;
 - `losslessStructuralSplit`: boolean;
 - `modelAuthoredScopeRef`: nullable ref when a model explicitly narrows the
   context scope;
@@ -295,7 +295,7 @@ Required fields:
 - `limitations`;
 - `consumerWaiverRef`: nullable;
 - `status`: `accepted | accepted_with_limitations | blocked |
-  needs_review`;
+needs_review`;
 - `nextLegalTransition`;
 - storage flags.
 
@@ -307,7 +307,7 @@ author the sufficiency review when semantic sufficiency matters.
 Canonical readiness state for the consumer WorkIntent:
 
 - `contextStatus`: `not_required | required | in_progress | satisfied |
-  satisfied_with_limitations | blocked | needs_review`;
+satisfied_with_limitations | blocked | needs_review`;
 - `frontierRequestRef`;
 - `contextMergePacketRef`;
 - `acceptedResourceHandoffRefs`;

@@ -37,11 +37,6 @@ describe("agent-team dynamic graph boundary", () => {
             throw new Error("static_role_model_client_should_not_run");
           },
         },
-        implementationBridge: {
-          async run() {
-            throw new Error("static_implementation_bridge_should_not_run");
-          },
-        },
         closeoutReporter: {
           async createCapsule(input) {
             const capsule = createModelAuthoredCloseoutCapsuleFixture({

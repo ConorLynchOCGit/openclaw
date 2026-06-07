@@ -37,7 +37,7 @@ describe("canonical readback gate", () => {
     );
   });
 
-  it("projects scope revision as its own gate for over-profile context units", () => {
+  it("rejects retired resource narrowing projection gates as missing runtime state", () => {
     const gate = buildCanonicalReadbackGate({
       graphId: "product-spec-graph",
       progress: {
@@ -53,14 +53,14 @@ describe("canonical readback gate", () => {
     });
 
     expect(gate).toMatchObject({
-      gateKind: "resource_narrowing_required",
+      gateKind: "missing_runtime_state",
       gateStatus: "blocked",
-      nodeResourceDemandSessionRefs: ["node-resource-demand://work-intent-scope/session"],
       nextLegalTransition: "select_resource_scope",
     });
+    expect(JSON.stringify(gate)).not.toContain("nodeResourceDemandSessionRefs");
   });
 
-  it("projects target selection only from an explicit runner lifecycle projection", () => {
+  it("rejects retired target-selection projection gates", () => {
     const gate = buildCanonicalReadbackGate({
       graphId: "product-spec-graph",
       progress: {
@@ -68,23 +68,28 @@ describe("canonical readback gate", () => {
         activeNodeKind: "implementation_scoped",
         executionIntent: "source_edit",
         evidenceMode: ["changed_files"],
-        nodeLifecycleProjectionRef: "node-lifecycle-projection://implementation-domain-resource-selection",
+        nodeLifecycleProjectionRef:
+          "node-lifecycle-projection://implementation-domain-resource-selection",
         nodeLifecycleProjectionGate: "domain_resource_selection_required",
         nodeLifecycleProjectionStatus: "blocked",
-        nodeResourceDemandSessionRefs: ["node-resource-demand://implementation-domain-resource-selection/session"],
-        nodeResourceLedgerManifestRefs: [
-          "node-resource-ledger://implementation-domain-resource-selection/manifest",
+        nodeAgentSessionTraceRefs: [
+          "runtime-job://implementation-domain-resource-selection/node-agent-trace",
         ],
-        reasonCodes: ["resource_ledger_ready"],
+        nodeFinishArtifactRefs: [
+          "runtime-job://implementation-domain-resource-selection/node-finish",
+        ],
+        reasonCodes: ["source_material_ready"],
       },
     });
 
     expect(gate).toMatchObject({
-      gateKind: "domain_resource_selection_required",
+      gateKind: "missing_runtime_state",
       gateStatus: "blocked",
-      nodeResourceDemandSessionRefs: ["node-resource-demand://implementation-domain-resource-selection/session"],
-      nodeResourceLedgerManifestRefs: [
-        "node-resource-ledger://implementation-domain-resource-selection/manifest",
+      nodeAgentSessionTraceRefs: [
+        "runtime-job://implementation-domain-resource-selection/node-agent-trace",
+      ],
+      nodeAgentFinishArtifactRefs: [
+        "runtime-job://implementation-domain-resource-selection/node-finish",
       ],
       domainResourceSelectionRefs: [],
     });
@@ -96,9 +101,8 @@ describe("canonical readback gate", () => {
       progress: {
         nodeId: "stale-readback-node",
         activeNodeKind: "implementation_scoped",
-        currentPhase: "resource_ledger_ready",
-        nodeReadinessPhase: "worker_action_ready",
-        reasonCodes: ["resource_ledger_ready"],
+        currentPhase: "source_material_ready",
+        reasonCodes: ["source_material_ready"],
       },
     });
 
@@ -108,5 +112,90 @@ describe("canonical readback gate", () => {
       state: "missing",
       sourceKind: "missing",
     });
+  });
+
+  it("does not resurrect retired worker packet contract blockers", () => {
+    const gate = buildCanonicalReadbackGate({
+      graphId: "product-spec-graph",
+      progress: {
+        nodeId: "implementation-worker",
+        activeNodeKind: "implementation",
+        currentPhase: "worker_runtime_tool_call_completed",
+        reasonCodes: [
+          "worker_runtime_tool_call_completed",
+          "runtime_tool_executor_threw",
+          "runtime_tool_executor_error_summary:runtime_artifact_contract_missing_for_artifactType=execution_platform.worker_owned_implementation_task_packet",
+        ],
+        blockerSummary:
+          "runtime artifact contract missing for artifactType=execution_platform.worker_owned_implementation_task_packet",
+      },
+    });
+
+    expect(gate).toMatchObject({
+      gateKind: "missing_runtime_state",
+      gateStatus: "missing",
+      nodeId: "implementation-worker",
+      blockerSummary:
+        "runtime artifact contract missing for artifactType=execution_platform.worker_owned_implementation_task_packet",
+    });
+  });
+
+  it("projects runner-owned RequirementMap and DiscoveryBrief phases", () => {
+    const inventoryGate = buildCanonicalReadbackGate({
+      graphId: "product-spec-graph",
+      rootCause: { reasonCodes: ["requirement_map_native_tool_phase_started"] },
+      progress: {
+        currentPhase: "requirement_map_authoring",
+        reasonCodes: [
+          "requirement_map_native_tool_phase_started",
+          "requirement_map_native_tool_batch_call",
+        ],
+      },
+    });
+    const discoveryGate = buildCanonicalReadbackGate({
+      graphId: "product-spec-graph",
+      rootCause: { reasonCodes: ["worker_discovery_brief_phase_started"] },
+      progress: {
+        currentPhase: "implementation_discovery_brief_repair",
+        reasonCodes: [
+          "worker_discovery_brief_phase_started",
+          "worker_discovery_brief_phase:implementation",
+        ],
+      },
+    });
+
+    expect(inventoryGate.gateKind).toBe("requirement_map");
+    expect(discoveryGate.gateKind).toBe("discovery_brief_required");
+  });
+
+  it("projects node agent start receipts and typed lock blockers without generic collapse", () => {
+    const gate = buildCanonicalReadbackGate({
+      graphId: "product-spec-graph",
+      progress: {
+        nodeId: "implementation-node",
+        activeNodeKind: "implementation",
+        nodeLifecycleProjectionRef: "node-lifecycle-projection://implementation-node",
+        nodeLifecycleProjectionGate: "node_agent_session_ready",
+        nodeLifecycleProjectionStatus: "blocked",
+        nodeAgentStartReceiptRefs: ["runtime-job://job-1/artifacts/node-agent-start-receipt"],
+        reasonCodes: [
+          "node_agent_session_lock_owner_live",
+          "node_agent_start_blocked:session_lock",
+        ],
+        blockerCode: "node_agent_session_lock_owner_live",
+      },
+    });
+
+    expect(gate).toMatchObject({
+      gateKind: "node_agent_session_ready",
+      gateStatus: "blocked",
+      sourceKind: "branch_scoped_frontier",
+      nodeAgentStartReceiptRefs: ["runtime-job://job-1/artifacts/node-agent-start-receipt"],
+      blockerCode: "node_agent_session_lock_owner_live",
+    });
+    expect(gate.sourceRefs).toEqual(
+      expect.arrayContaining(["runtime-job://job-1/artifacts/node-agent-start-receipt"]),
+    );
+    expect(gate.reasonCodes).not.toContain("runtime_tool_executor_threw");
   });
 });

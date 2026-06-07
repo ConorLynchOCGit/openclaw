@@ -7,11 +7,10 @@ const stringList = (maxItems: number, maxChars = 260) =>
   z.array(boundedString(maxChars)).max(maxItems);
 
 export const CONTEXT_SNAPSHOT_SOURCE_KINDS = [
-  "source_prompt_index",
   "source_prompt_excerpt",
-  "mission_ledger",
-  "commitment_work_packet",
-  "resource_scout_handoff",
+  "requirement_map",
+  "native_context_scout_result",
+  "node_agent_worker_prompt",
   "file_snapshot",
   "repo_search_result",
   "validation_result",
@@ -30,7 +29,7 @@ export const CONTEXT_SNAPSHOT_FRESHNESS_STATUSES = [
 export const CONTEXT_SNAPSHOT_REFRESH_ACTIONS = [
   "none",
   "request_excerpt",
-  "rerun_resource_scout",
+  "rerun_native_context_scout",
   "refresh_replay_checkpoint",
   "request_worker_context",
   "ask_human",
@@ -172,11 +171,11 @@ export function createContextSnapshotRef(input: {
     (refreshRequired
       ? input.sourceKind === "source_prompt_excerpt"
         ? "request_excerpt"
-        : input.sourceKind === "resource_scout_handoff"
-          ? "rerun_resource_scout"
-        : input.sourceKind === "boundary_replay_checkpoint"
-          ? "refresh_replay_checkpoint"
-          : "request_worker_context"
+        : input.sourceKind === "native_context_scout_result"
+          ? "rerun_native_context_scout"
+          : input.sourceKind === "boundary_replay_checkpoint"
+            ? "refresh_replay_checkpoint"
+            : "request_worker_context"
       : "none");
   const id = snapshotId({
     sourceKind: input.sourceKind,
@@ -432,46 +431,6 @@ export function validateContextSnapshotFreshness(input: {
     rawResponseStored: false,
     rawProviderLogStored: false,
   };
-}
-
-export function deriveContextSnapshotRefsFromSourcePromptIndex(input: {
-  sourceRef: string;
-  promptHash: string;
-  promptLength: number;
-  sectionRefs?: string[];
-  capturedAt?: string | Date | null;
-  runtimeJobId?: string | null;
-  workflowId?: string | null;
-  graphId?: string | null;
-}): ContextSnapshotRef[] {
-  const indexSnapshot = createContextSnapshotRef({
-    sourceRef: input.sourceRef,
-    sourceKind: "source_prompt_index",
-    capturedAt: input.capturedAt,
-    sourcePromptHash: input.promptHash,
-    runtimeJobId: input.runtimeJobId,
-    workflowId: input.workflowId,
-    graphId: input.graphId,
-    scopeSummary: `Source prompt index for ${input.promptLength} characters.`,
-    targetRefs: input.sectionRefs ?? [],
-    reasonCodes: ["context_snapshot_source_prompt_index"],
-  });
-  return [
-    indexSnapshot,
-    ...(input.sectionRefs ?? []).map((sectionRef) =>
-      createContextSnapshotRef({
-        sourceRef: sectionRef,
-        sourceKind: "source_prompt_excerpt",
-        capturedAt: input.capturedAt,
-        sourcePromptHash: input.promptHash,
-        runtimeJobId: input.runtimeJobId,
-        workflowId: input.workflowId,
-        graphId: input.graphId,
-        scopeSummary: "Bounded source prompt section ref.",
-        reasonCodes: ["context_snapshot_source_prompt_section"],
-      }),
-    ),
-  ].slice(0, 80);
 }
 
 export function deriveContextSnapshotRefsFromArtifactRefs(input: {

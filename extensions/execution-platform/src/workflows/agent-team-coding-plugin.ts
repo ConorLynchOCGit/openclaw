@@ -8,6 +8,7 @@ import {
   CODING_TEAM_ROLE_COVERAGE_PROFILE,
   type RuntimeWorkGraphNodeExecutor,
 } from "./runtime-work-graph-scheduler.ts";
+import { DEFAULT_CODING_SCHEDULER_CLOSURE_POLICY } from "./scheduler-graph-closure-policy.ts";
 import { requireCanonicalWorkflowDefinition } from "./workflow-definition-registry.ts";
 import type { WorkflowDefinition } from "./workflow-definition.ts";
 import type { WorkflowPlugin } from "./workflow-plugin.ts";
@@ -36,11 +37,9 @@ export const AGENT_TEAM_CODING_PLUGIN_RUNTIME_TOOL_FAMILIES: RuntimeToolFamily[]
   "scheduler.select_next_node",
   "scheduler.evaluate_node_result",
   "scheduler.repair_decision",
-  "node.resource_materialization",
   "worker.invoke",
   "coding.compound",
   "source_prompt.context",
-  "resource.scout",
   "code_intelligence.query",
   "file_edit.propose",
   "file_edit.apply",
@@ -106,17 +105,14 @@ export function buildAgentTeamCodingWorkflowPlugin(input: {
       "plugin_readback",
     ],
     schedulerPolicy: {
-      requireMissionLedgerForExecutionWorkflow: true,
       requireCostAwareCapabilityPolicy: true,
       requireEvidenceClaimsForMissionLedger: true,
       requireSchedulerToolKernel: input.requireSchedulerToolKernel ?? true,
-      stagedSchedulerProtocolRequired: true,
       stagedGraphAcceptanceRequired: true,
       modelAuthoredWorkPacketsRequiredForComplexMission: true,
       resourceReadinessPolicy: "fresh_context_snapshots",
       freshContextSnapshotsRequiredForWorkerExecution: true,
       domainResourceManifestRequiredForWorkerExecution: false,
-      nodeExecutionPacketRequiredForWorkerExecution: true,
       runtimeDerivedNodeEnvelopeRequired: true,
       runtimeDerivedExpectedEvidenceRequired: true,
       modelAuthoredStructureReviewRequired: true,
@@ -129,16 +125,15 @@ export function buildAgentTeamCodingWorkflowPlugin(input: {
       rawLogsStored: false,
     },
     schedulerOptions: {
-      requireMissionLedgerForExecutionWorkflow: true,
       requireCostAwareCapabilityPolicy: true,
       requireEvidenceClaimsForMissionLedger: true,
       requireSchedulerToolKernel: input.requireSchedulerToolKernel ?? true,
-      requireGenericStagedSchedulerProtocol: true,
-      requireNodeExecutionPacketForWorkerExecution: true,
       deferCloseoutUntilExecutableGraphComplete: true,
       roleCoverageProfile: CODING_TEAM_ROLE_COVERAGE_PROFILE,
       capabilityRegistrySummary,
       capabilityManifest,
+      schedulerClosurePolicy: DEFAULT_CODING_SCHEDULER_CLOSURE_POLICY,
+      closureRunMode: "standard",
       maxParallelNodeExecutions: 12,
     },
     validationExpectations: [

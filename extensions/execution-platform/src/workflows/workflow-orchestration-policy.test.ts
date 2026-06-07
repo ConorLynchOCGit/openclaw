@@ -15,8 +15,7 @@ describe("workflow orchestration policy", () => {
       workflowId: "agent_team.coding",
       complexWorkflow: true,
       requiredPhases: expect.arrayContaining([
-        "mission_ledger",
-        "obligation_graph",
+        "requirement_map",
         "work_breakdown",
         "capability_selection",
         "graph_compile",
@@ -40,7 +39,7 @@ describe("workflow orchestration policy", () => {
       ...definition.orchestrationPolicy,
       sourcePromptPolicy: {
         ...definition.orchestrationPolicy.sourcePromptPolicy,
-        sourcePromptIndexRequired: false,
+        sourcePromptBodyRefRequired: false,
       },
       capabilityPolicy: {
         ...definition.orchestrationPolicy.capabilityPolicy,
@@ -53,7 +52,7 @@ describe("workflow orchestration policy", () => {
     expect(validation.valid).toBe(false);
     expect(validation.reasonCodes).toEqual(
       expect.arrayContaining([
-        "workflow_orchestration_source_prompt_index_required",
+        "workflow_orchestration_source_prompt_body_ref_required",
         "workflow_orchestration_cheapest_sufficient_policy_required",
       ]),
     );

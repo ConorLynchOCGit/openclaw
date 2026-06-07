@@ -24,6 +24,9 @@ describe("workflow registry", () => {
     expect(workflow?.permissionModel).toMatchObject({
       permissionModelId: "permission-model://agent_team.coding/local-repo-latitude.v1",
     });
+    expect(workflow?.intentPatterns.routingHints.join(" ")).toContain(
+      "keep it as the subject and use agent_team.coding as the executor",
+    );
     expect(JSON.stringify(workflow)).toContain("deepseek-v4-pro-test-engineer-only");
   });
 
@@ -100,6 +103,16 @@ describe("workflow registry", () => {
         productionModelPromotionAllowed: false,
       },
     });
+    const productSpecPlanning = getWorkflowContract(
+      DEFAULT_EXECUTION_WORKFLOW_REGISTRY,
+      "agent_team.product_spec_planning",
+    );
+    expect(productSpecPlanning?.intentPatterns.routingHints.join(" ")).toContain(
+      "Not for implementation/coding/source edits/tests",
+    );
+    expect(productSpecPlanning?.intentPatterns.negativeExamples.join(" ")).toContain(
+      "Implement this workflow or plugin in the repo.",
+    );
     expect(validateWorkflowRegistry(DEFAULT_EXECUTION_WORKFLOW_REGISTRY)).toEqual({
       valid: true,
       reasonCodes: [],

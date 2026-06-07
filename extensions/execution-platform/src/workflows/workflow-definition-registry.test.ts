@@ -44,22 +44,27 @@ describe("workflow definition registry", () => {
     for (const definition of listCanonicalWorkflowDefinitions()) {
       expect(definition.orchestrationPolicy.workflowId).toBe(definition.workflowId);
       expect(definition.requiredPhases).toEqual(
-        expect.arrayContaining(["mission_ledger", "obligation_graph", "closeout"]),
+        expect.arrayContaining(["requirement_map", "closeout"]),
       );
-      expect(definition.requiredPhases).toContain("resource_demand");
+      expect(definition.requiredPhases).toContain("source_grounding");
+      expect(definition.requiredPhases).toContain("source_material");
+      expect(definition.requiredPhases).not.toContain("resource_demand");
       expect(definition.requiredPhases).not.toContain("resource_fulfillment");
       expect(Object.keys(definition.orchestrationPolicy.evidenceClassesByPhase)).toContain(
-        "resource_demand",
+        "source_grounding",
       );
       expect(Object.keys(definition.orchestrationPolicy.evidenceClassesByPhase)).toContain(
-        "obligation_graph",
+        "source_material",
+      );
+      expect(Object.keys(definition.orchestrationPolicy.evidenceClassesByPhase)).toContain(
+        "requirement_map",
       );
       expect(Object.keys(definition.orchestrationPolicy.evidenceClassesByPhase)).not.toContain(
         "resource_fulfillment",
       );
       expect(definition.requiredRoleClasses.length).toBeGreaterThan(0);
       expect(definition.resourceNeeds.length).toBeGreaterThan(0);
-      expect(definition.sourcePromptPolicy.sourcePromptIndexRequired).toBe(true);
+      expect(definition.sourcePromptPolicy.sourcePromptBodyRefRequired).toBe(true);
       expect(definition.capabilityPolicy.expensiveBroadWorkerMonopolyBlocked).toBe(true);
     }
   });

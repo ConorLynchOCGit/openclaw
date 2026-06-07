@@ -5,31 +5,30 @@
 Accepted production execution routing is now a staged Runtime Tool-Call
 Kernel protocol:
 
-1. `router.classify_owner_turn_intent`
-2. `router.extract_constraints`
+1. `router.classify_primary_outcome`
+2. `router.set_route`
 3. `router.select_executor_workflow`
-4. `router.identify_subject_refs`
-5. `router.compile_execution_request`
-6. `router.validate_route_contract`
+4. `router.report_ambiguity` only when route or executor genuinely cannot be
+   selected.
 
-The model authors semantic routing only: primary outcome, requested actions,
-constraints, executor workflow, subject refs, requested capabilities, and
-rationale. Runtime code owns canonical tool invocation refs, schema
-validation, bounded persistence, authority checks, lifecycle separation,
-runtime-job compile, and Mission Ledger handoff refs.
+The model authors semantic routing only: primary outcome, route class, and
+executor workflow. Runtime code owns canonical tool invocation refs, schema
+validation, bounded persistence, authority checks, lifecycle separation, and
+runtime-job compile. `IntakeDecompositionRunner` authors the canonical
+`RequirementMap` after routing; router must not author RequirementMap fields.
 
 Accepted runtime jobs carry:
 
 - `routerToolProtocolRef`
 - `routerToolInvocationRefs`
-- `missionLedgerHandoffRef`
+- `requirementMapHandoffRef`
 - source prompt hash/ref/length
-- bounded constraint summaries for Mission Ledger
+- bounded route diagnostics for RequirementMap intake
 
 Safety-boundary text is not a route blocker unless the primary requested
 outcome itself is prohibited. Constraints such as no deploy, no outbound
 send, no model promotion, no raw storage, and no Work Queue lifecycle mutation
-must be preserved for Mission Ledger/compile enforcement.
+must be preserved for RequirementMap/runtime policy enforcement.
 
 The legacy semantic fallback is test-only and cannot be enabled in production
 with `OPENCLAW_LEGACY_SEMANTIC_INTENT_ROUTING_FALLBACK`.
@@ -91,17 +90,18 @@ Long implementation prompts should flow through:
 ```text
 ordinary-chat allow gate
   -> advanced workflow route
-  -> Mission Ledger
+  -> RequirementMap
   -> scheduler decomposition tool calls
   -> tool-backed node execution
   -> evidence claims
   -> model-authored closeout
 ```
 
-Routing should not duplicate Mission Ledger work. Safety constraints such as
-"do not deploy" or "do not store raw logs" are mission constraints, not
+Routing should not duplicate RequirementMap work. Safety constraints such as
+"do not deploy" or "do not store raw logs" are requirement constraints, not
 workflow-route blockers unless the primary requested outcome itself is
-prohibited.
+prohibited. `IntakeDecompositionRunner` preserves those constraints after
+routing.
 
 Background heartbeat/proactivity must not participate in this route while an
 owner turn is active. The gateway marks accepted owner chat turns before
@@ -148,7 +148,7 @@ runtime-owned schema:
   evidence requirements.
 
 The deterministic layer compiles runtime-owned fields from the capability
-manifest, Mission Ledger, workflow evidence profile, and current runtime graph
+manifest, RequirementMap, workflow evidence profile, and current runtime graph
 state. It should not ask the model to repeat fields the runtime can derive.
 This keeps the model responsible for judgment while reducing schema choke.
 

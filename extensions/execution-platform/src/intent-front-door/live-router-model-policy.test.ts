@@ -29,13 +29,13 @@ describe("LiveRouterModelPolicy", () => {
     expect(decision.rawResponseStored).toBe(false);
   });
 
-  it("blocks missing provider profile, model ref, and structured-output capability", () => {
+  it("blocks missing provider profile, model ref, and native tool-calling capability", () => {
     const decision = resolveLiveRouterModelPolicy({
       policy: {
         ...LIVE_ROUTER_MODEL_POLICY_FIXTURE,
         routerProviderProfile: null,
         routerModelRef: null,
-        requiredCapabilities: ["json_schema"],
+        requiredCapabilities: [],
       },
       candidates: [],
       providerSecretConfigured: true,
@@ -46,7 +46,7 @@ describe("LiveRouterModelPolicy", () => {
       expect.arrayContaining([
         "live_router_provider_profile_missing",
         "live_router_model_ref_missing",
-        "live_router_structured_output_capability_required",
+        "live_router_tool_calling_capability_required",
         "blocked_config_missing",
       ]),
     );
@@ -101,29 +101,29 @@ describe("LiveRouterModelPolicy", () => {
       ],
       providerSecretConfigured: true,
     });
-    const gpt55Decision = resolveLiveRouterModelPolicy({
+    const qwenDecision = resolveLiveRouterModelPolicy({
       policy: {
         ...LIVE_ROUTER_MODEL_POLICY_FIXTURE,
-        policyId: "intent-front-door.advanced.gpt-5.5-codex",
+        policyId: "intent-front-door.advanced.qwen-native-tools",
         routerProviderProfile: {
           ...LIVE_ROUTER_MODEL_POLICY_FIXTURE.routerProviderProfile!,
-          providerKind: "approved_model_routing_client",
-          providerRef: "provider-profile://intent-front-door/two-lane/advanced/codex-app-server",
-          baseUrlRef: "provider-base-url://codex-app-server",
+          providerKind: "openrouter",
+          providerRef: "provider-profile://intent-front-door/router/openrouter/qwen",
+          baseUrlRef: "provider-base-url://openrouter/default",
           timeoutMs: 600_000,
           maxAttempts: 2,
           maxTokens: 8_000,
-          reasoningEffort: "medium",
+          reasoningEffort: "none",
           speedPreference: "latency",
         },
-        routerModelRef: "openai-codex/gpt-5.5",
+        routerModelRef: "qwen/qwen3-coder-next",
       },
       candidates: [
         {
           ...LIVE_ROUTER_MODEL_CANDIDATE_FIXTURE,
-          provider: "openai-codex",
-          model: "openai-codex/gpt-5.5",
-          policyRef: "openai-codex/gpt-5.5",
+          provider: "openrouter",
+          model: "qwen/qwen3-coder-next",
+          policyRef: "qwen/qwen3-coder-next",
         },
       ],
       providerSecretConfigured: true,
@@ -132,11 +132,11 @@ describe("LiveRouterModelPolicy", () => {
     expect(v4ProDecision.allowed).toBe(true);
     expect(v4ProDecision.maxTokens).toBe(8_000);
     expect(v4ProDecision.reasoningEffort).toBe("medium");
-    expect(gpt55Decision.allowed).toBe(true);
-    expect(gpt55Decision.providerKind).toBe("approved_model_routing_client");
-    expect(gpt55Decision.routerModelRef).toBe("openai-codex/gpt-5.5");
-    expect(gpt55Decision.maxTokens).toBe(8_000);
-    expect(gpt55Decision.providerCallMade).toBe(false);
-    expect(gpt55Decision.modelPromotionPerformed).toBe(false);
+    expect(qwenDecision.allowed).toBe(true);
+    expect(qwenDecision.providerKind).toBe("openrouter");
+    expect(qwenDecision.routerModelRef).toBe("qwen/qwen3-coder-next");
+    expect(qwenDecision.maxTokens).toBe(8_000);
+    expect(qwenDecision.providerCallMade).toBe(false);
+    expect(qwenDecision.modelPromotionPerformed).toBe(false);
   });
 });

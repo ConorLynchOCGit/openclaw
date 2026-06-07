@@ -143,6 +143,8 @@ export function resolveEffectiveToolInventory(
     modelHasVision: params.modelHasVision,
     requireExplicitMessageTarget: params.requireExplicitMessageTarget,
     disableMessageTool: params.disableMessageTool,
+    nativeRuntimeTools: params.nativeRuntimeTools,
+    nodeAgentNativeTaskMode: params.nodeAgentNativeTaskMode,
   });
   const effectivePolicy = resolveEffectiveToolPolicy({
     config: params.cfg,

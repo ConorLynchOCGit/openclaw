@@ -50,7 +50,7 @@ export type LatestRunActiveFrontier = {
     schemaErrorPaths: string[];
     policyErrorPaths: string[];
     contractRefs: string[];
-    domainResourcePacketKinds: string[];
+    domainSourceMaterialKinds: string[];
     providerProfileIds: string[];
     nextLegalTransitions: string[];
     reasonCodes: string[];
@@ -87,21 +87,36 @@ export type LatestRunActiveFrontier = {
     errorPath: string | null;
     repairAction: string | null;
     nextTransition: string | null;
-    readinessStateRef: string | null;
+    nodeLifecycleProjectionRef: string | null;
+    nodeLifecycleProjectionGate: string | null;
+    nodeLifecycleProjectionStatus: string | null;
+    nodeExecutionSnapshotRef: string | null;
+    nodeWorkerPromptRef: string | null;
+    nodeWorkerPromptArtifactRef: string | null;
+    nodeWorkerPromptHash: string | null;
+    nodeWorkerPromptByteCount: number | null;
+    nodeWorkerPromptStatus: string | null;
+    nodeWorkerPromptAuthorModelRunRef: string | null;
+    nodeAgentSessionKey: string | null;
+    nodeAgentSessionMessageId: string | null;
+    nodeAgentSessionTranscriptRef: string | null;
+    nodeAgentInitialMessageHash: string | null;
+    nodeAgentPromptSessionHashMatch: boolean | null;
+    nodeAgentStartReceiptRef: string | null;
+    nodeAgentStartStatus: string | null;
+    nodeAgentStartBlockerKind: string | null;
     contractRef: string | null;
-    resourceRequirementRefs: string[];
-    nodeResourceDemandSessionRefs: string[];
-    nodeResourceDemandStatus: string | null;
-    nodeResourceLedgerManifestRefs: string[];
-    nodeResourceLedgerStatus: string | null;
+    sourceMaterialRequirementRefs: string[];
+    nodeAgentSessionTraceRefs: string[];
+    nodeAgentFinishArtifactRefs: string[];
     domainResourceSelectionRefs: string[];
     domainResourceSelectionStatus: string | null;
     actionGateStatus: string | null;
     actionGateMissingFields: string[];
     providerDiagnosticRefs: string[];
     providerDiagnosticStatus: string | null;
-    domainResourcePacketRef: string | null;
-    resourcePacketRef: string | null;
+    domainSourceMaterialRef: string | null;
+    sourceMaterialRef: string | null;
     blockerCode: string | null;
     blockerSchemaPath: string | null;
     blockerPolicyPath: string | null;
@@ -164,16 +179,26 @@ export type LatestRunState = {
     executorKey: string | null;
     workerRef: string | null;
     activeToolId: string | null;
-    readinessStateRef: string | null;
-    readinessStatus: string | null;
-    readinessProjectionStatus: string | null;
-    readinessProjectionDriftReasonCodes: string[];
-    readinessProjectionMissingFields: string[];
-    readinessStale: boolean | null;
-    nodeResourceDemandSessionRefs: string[];
-    nodeResourceDemandStatus: string | null;
-    nodeResourceLedgerManifestRefs: string[];
-    nodeResourceLedgerStatus: string | null;
+    nodeLifecycleProjectionRef: string | null;
+    nodeLifecycleProjectionGate: string | null;
+    nodeLifecycleProjectionStatus: string | null;
+    nodeExecutionSnapshotRef: string | null;
+    nodeWorkerPromptRef: string | null;
+    nodeWorkerPromptArtifactRef: string | null;
+    nodeWorkerPromptHash: string | null;
+    nodeWorkerPromptByteCount: number | null;
+    nodeWorkerPromptStatus: string | null;
+    nodeWorkerPromptAuthorModelRunRef: string | null;
+    nodeAgentSessionKey: string | null;
+    nodeAgentSessionMessageId: string | null;
+    nodeAgentSessionTranscriptRef: string | null;
+    nodeAgentInitialMessageHash: string | null;
+    nodeAgentPromptSessionHashMatch: boolean | null;
+    nodeAgentStartReceiptRef: string | null;
+    nodeAgentStartStatus: string | null;
+    nodeAgentStartBlockerKind: string | null;
+    nodeAgentSessionTraceRefs: string[];
+    nodeAgentFinishArtifactRefs: string[];
     domainResourceSelectionRefs: string[];
     domainResourceSelectionStatus: string | null;
     actionGateStatus: string | null;
@@ -255,17 +280,6 @@ export type LatestRunState = {
     consumerNodeIds: string[];
     nextTransition: string | null;
     reasonCodes: string[];
-  };
-  resourceFrontier: {
-    state: "present" | "missing";
-    status: string | null;
-    requestRef: string | null;
-    shardManifestRef: string | null;
-    shardCount: number | null;
-    shardUnitKind: string | null;
-    mergePacketRef: string | null;
-    singleUnitBlockerRef: string | null;
-    nextTransition: string | null;
   };
   expansionAdmission: {
     state: "present" | "missing";
@@ -424,46 +438,60 @@ function buildBranchStates(input: {
     explicitBranchStates.length > 0
       ? explicitBranchStates
       : branchRecords.length > 0
-      ? branchRecords
-      : input.nodeId
-        ? [
-            {
-              branchId: bounded(input.latest.branchId, 180),
-              nodeId: input.nodeId,
-              nodeKind: input.latest.activeNodeKind,
-              capabilityId: input.latest.capabilityId ?? input.latest.selectedCapabilityId,
-              executorKey: input.latest.executorKey ?? input.latest.selectedExecutorKey,
-              executionIntent: input.latest.executionIntent,
-              evidenceMode: input.latest.evidenceMode,
-              status: input.currentPhase,
-              blockerSummary: input.blockerSummary,
-              failureClass: input.latest.failureClass,
-              errorPath: input.latest.errorPath ?? input.latest.schemaPath,
-              repairAction:
-                input.latest.nodeReadinessRepairAction ?? input.latest.nextDecisionNeeded,
-              nextTransition: input.latest.nextDecisionNeeded,
-              readinessStateRef: input.latest.nodeReadinessStateRef,
-              contractRef: input.latest.nodeExecutionContractRef,
-              resourceRequirementRefs: input.latest.resourceRequirementRefs,
-              nodeResourceDemandSessionRefs: input.latest.nodeResourceDemandSessionRefs,
-              nodeResourceDemandStatus: input.latest.nodeResourceDemandStatus,
-              nodeResourceLedgerManifestRefs: input.latest.nodeResourceLedgerManifestRefs,
-              nodeResourceLedgerStatus: input.latest.nodeResourceLedgerStatus,
-              domainResourceSelectionRefs: input.latest.domainResourceSelectionRefs,
-              domainResourceSelectionStatus: input.latest.domainResourceSelectionStatus,
-              actionGateStatus: input.latest.actionGateStatus,
-              actionGateMissingFields: input.latest.actionGateMissingFields,
-              providerDiagnosticRefs: input.latest.providerDiagnosticRefs,
-              providerDiagnosticStatus: input.latest.providerDiagnosticStatus,
-              domainResourcePacketRef: input.latest.resourcePacketRef,
-              resourcePacketRef: input.latest.resourcePacketRef,
-              consumerRefs: input.latest.contextBrokerConsumerNodeIds,
-              dependentConsumers: input.latest.contextBrokerConsumerNodeIds,
-              evidenceRefs: input.latest.evidenceProducedRefs,
-              reasonCodes: input.latest.reasonCodes,
-            },
-          ]
-        : [];
+        ? branchRecords
+        : input.nodeId
+          ? [
+              {
+                branchId: bounded(input.latest.branchId, 180),
+                nodeId: input.nodeId,
+                nodeKind: input.latest.activeNodeKind,
+                capabilityId: input.latest.capabilityId ?? input.latest.selectedCapabilityId,
+                executorKey: input.latest.executorKey ?? input.latest.selectedExecutorKey,
+                executionIntent: input.latest.executionIntent,
+                evidenceMode: input.latest.evidenceMode,
+                status: input.currentPhase,
+                blockerSummary: input.blockerSummary,
+                failureClass: input.latest.failureClass,
+                errorPath: input.latest.errorPath ?? input.latest.schemaPath,
+                repairAction: input.latest.nextDecisionNeeded,
+                nextTransition: input.latest.nextDecisionNeeded,
+                nodeLifecycleProjectionRef: input.latest.nodeLifecycleProjectionRef,
+                nodeLifecycleProjectionGate: input.latest.nodeLifecycleProjectionGate,
+                nodeLifecycleProjectionStatus: input.latest.nodeLifecycleProjectionStatus,
+                nodeExecutionSnapshotRef: input.latest.nodeExecutionSnapshotRef,
+                nodeWorkerPromptRef: input.latest.nodeWorkerPromptRef,
+                nodeWorkerPromptArtifactRef: input.latest.nodeWorkerPromptArtifactRef,
+                nodeWorkerPromptHash: input.latest.nodeWorkerPromptHash,
+                nodeWorkerPromptByteCount: input.latest.nodeWorkerPromptByteCount,
+                nodeWorkerPromptStatus: input.latest.nodeWorkerPromptStatus,
+                nodeWorkerPromptAuthorModelRunRef: input.latest.nodeWorkerPromptAuthorModelRunRef,
+                nodeAgentSessionKey: input.latest.nodeAgentSessionKey,
+                nodeAgentSessionMessageId: input.latest.nodeAgentSessionMessageId,
+                nodeAgentSessionTranscriptRef: input.latest.nodeAgentSessionTranscriptRef,
+                nodeAgentInitialMessageHash: input.latest.nodeAgentInitialMessageHash,
+                nodeAgentPromptSessionHashMatch: input.latest.nodeAgentPromptSessionHashMatch,
+                nodeAgentStartReceiptRef: input.latest.nodeAgentStartReceiptRef,
+                nodeAgentStartStatus: input.latest.nodeAgentStartStatus,
+                nodeAgentStartBlockerKind: input.latest.nodeAgentStartBlockerKind,
+                contractRef: input.latest.nodeExecutionContractRef,
+                sourceMaterialRequirementRefs: input.latest.sourceMaterialRequirementRefs,
+                nodeAgentSessionTraceRefs: input.latest.nodeAgentSessionTraceRefs,
+                nodeAgentFinishArtifactRefs: input.latest.nodeFinishArtifactRefs,
+                domainResourceSelectionRefs: input.latest.domainResourceSelectionRefs,
+                domainResourceSelectionStatus: input.latest.domainResourceSelectionStatus,
+                actionGateStatus: input.latest.actionGateStatus,
+                actionGateMissingFields: input.latest.actionGateMissingFields,
+                providerDiagnosticRefs: input.latest.providerDiagnosticRefs,
+                providerDiagnosticStatus: input.latest.providerDiagnosticStatus,
+                domainSourceMaterialRef: input.latest.domainSourceMaterialRef,
+                sourceMaterialRef: input.latest.sourceMaterialRef,
+                consumerRefs: input.latest.contextBrokerConsumerNodeIds,
+                dependentConsumers: input.latest.contextBrokerConsumerNodeIds,
+                evidenceRefs: input.latest.evidenceProducedRefs,
+                reasonCodes: input.latest.reasonCodes,
+              },
+            ]
+          : [];
 
   return branches
     .map((branch) => ({
@@ -481,42 +509,59 @@ function buildBranchStates(input: {
       errorPath: bounded(branch.errorPath ?? branch.schemaPath, 260),
       repairAction: bounded(branch.repairAction, 360),
       nextTransition:
-        bounded(branch.nextTransition, 260) ?? boundedStrings(branch.nextLegalTransitions, 1)[0] ?? null,
-      readinessStateRef: bounded(branch.readinessStateRef ?? branch.readinessRef, 360),
+        bounded(branch.nextTransition, 260) ??
+        boundedStrings(branch.nextLegalTransitions, 1)[0] ??
+        null,
+      nodeLifecycleProjectionRef: bounded(
+        branch.nodeLifecycleProjectionRef ?? branch.readinessRef,
+        360,
+      ),
+      nodeLifecycleProjectionGate: bounded(branch.nodeLifecycleProjectionGate, 220),
+      nodeLifecycleProjectionStatus: bounded(branch.nodeLifecycleProjectionStatus, 220),
+      nodeExecutionSnapshotRef: bounded(branch.nodeExecutionSnapshotRef, 600),
+      nodeWorkerPromptRef: bounded(branch.nodeWorkerPromptRef, 600),
+      nodeWorkerPromptArtifactRef: bounded(branch.nodeWorkerPromptArtifactRef, 600),
+      nodeWorkerPromptHash: bounded(branch.nodeWorkerPromptHash, 180),
+      nodeWorkerPromptByteCount: numberOrNull(branch.nodeWorkerPromptByteCount),
+      nodeWorkerPromptStatus: bounded(branch.nodeWorkerPromptStatus, 120),
+      nodeWorkerPromptAuthorModelRunRef: bounded(branch.nodeWorkerPromptAuthorModelRunRef, 600),
+      nodeAgentSessionKey: bounded(branch.nodeAgentSessionKey, 300),
+      nodeAgentSessionMessageId: bounded(branch.nodeAgentSessionMessageId, 700),
+      nodeAgentSessionTranscriptRef: bounded(branch.nodeAgentSessionTranscriptRef, 700),
+      nodeAgentInitialMessageHash: bounded(branch.nodeAgentInitialMessageHash, 180),
+      nodeAgentPromptSessionHashMatch:
+        typeof branch.nodeAgentPromptSessionHashMatch === "boolean"
+          ? branch.nodeAgentPromptSessionHashMatch
+          : null,
+      nodeAgentStartReceiptRef: bounded(branch.nodeAgentStartReceiptRef, 700),
+      nodeAgentStartStatus: bounded(branch.nodeAgentStartStatus, 120),
+      nodeAgentStartBlockerKind: bounded(branch.nodeAgentStartBlockerKind, 180),
       contractRef: bounded(branch.contractRef, 360),
-      resourceRequirementRefs: boundedStrings(branch.resourceRequirementRefs, 20),
-      nodeResourceDemandSessionRefs: [
-        ...new Set([
-          ...boundedStrings(branch.nodeResourceDemandSessionRefs, 20),
-          bounded(branch.nodeResourceDemandSessionRef, 360),
-        ].filter((ref): ref is string => Boolean(ref))),
-      ].slice(0, 20),
-      nodeResourceDemandStatus: bounded(branch.nodeResourceDemandStatus, 160),
-      nodeResourceLedgerManifestRefs: [
-        ...new Set([
-          ...boundedStrings(branch.nodeResourceLedgerManifestRefs, 20),
-          bounded(branch.nodeResourceLedgerManifestRef, 360),
-        ].filter((ref): ref is string => Boolean(ref))),
-      ].slice(0, 20),
-      nodeResourceLedgerStatus: bounded(branch.nodeResourceLedgerStatus, 160),
+      sourceMaterialRequirementRefs: boundedStrings(branch.sourceMaterialRequirementRefs, 20),
+      nodeAgentSessionTraceRefs: boundedStrings(branch.nodeAgentSessionTraceRefs, 20),
+      nodeAgentFinishArtifactRefs: boundedStrings(branch.nodeFinishArtifactRefs, 20),
       domainResourceSelectionRefs: [
-        ...new Set([
-          ...boundedStrings(branch.domainResourceSelectionRefs, 20),
-          bounded(branch.domainResourceSelectionRef, 360),
-        ].filter((ref): ref is string => Boolean(ref))),
+        ...new Set(
+          [
+            ...boundedStrings(branch.domainResourceSelectionRefs, 20),
+            bounded(branch.domainResourceSelectionRef, 360),
+          ].filter((ref): ref is string => Boolean(ref)),
+        ),
       ].slice(0, 20),
       domainResourceSelectionStatus: bounded(branch.domainResourceSelectionStatus, 160),
       actionGateStatus: bounded(branch.actionGateStatus, 160),
       actionGateMissingFields: boundedStrings(branch.actionGateMissingFields, 20),
       providerDiagnosticRefs: [
-        ...new Set([
-          ...boundedStrings(branch.providerDiagnosticRefs, 20),
-          bounded(branch.providerDiagnosticRef, 360),
-        ].filter((ref): ref is string => Boolean(ref))),
+        ...new Set(
+          [
+            ...boundedStrings(branch.providerDiagnosticRefs, 20),
+            bounded(branch.providerDiagnosticRef, 360),
+          ].filter((ref): ref is string => Boolean(ref)),
+        ),
       ].slice(0, 20),
       providerDiagnosticStatus: bounded(branch.providerDiagnosticStatus, 160),
-      domainResourcePacketRef: bounded(branch.domainResourcePacketRef, 360),
-      resourcePacketRef: bounded(branch.resourcePacketRef, 360),
+      domainSourceMaterialRef: bounded(branch.domainSourceMaterialRef, 360),
+      sourceMaterialRef: bounded(branch.sourceMaterialRef, 360),
       blockerCode: bounded(asRecord(branch.blocker)?.code ?? branch.blockerCode, 220),
       blockerSchemaPath: bounded(
         asRecord(branch.blocker)?.schemaPath ?? branch.blockerSchemaPath,
@@ -594,7 +639,7 @@ function buildActiveFrontier(input: {
   const manifestFrontierStatus = explicitFrontierStatus(input.latest.frontierStatus);
   const finalizationSignal = Boolean(
     bounded(input.latest.finalizationState, 120) ||
-      bounded(input.latest.closeoutFinalizationState, 120),
+    bounded(input.latest.closeoutFinalizationState, 120),
   );
   const branchStates = buildBranchStates({
     parallelFrontier,
@@ -668,7 +713,7 @@ function buildActiveFrontier(input: {
       schemaErrorPaths: boundedStrings(frontierRootCause?.schemaErrorPaths, 20),
       policyErrorPaths: boundedStrings(frontierRootCause?.policyErrorPaths, 20),
       contractRefs: boundedStrings(frontierRootCause?.contractRefs, 20),
-      domainResourcePacketKinds: boundedStrings(frontierRootCause?.domainResourcePacketKinds, 20),
+      domainSourceMaterialKinds: boundedStrings(frontierRootCause?.domainSourceMaterialKinds, 20),
       providerProfileIds: boundedStrings(frontierRootCause?.providerProfileIds, 20),
       nextLegalTransitions: boundedStrings(frontierRootCause?.nextLegalTransitions, 20),
       reasonCodes: boundedStrings(frontierRootCause?.reasonCodes, 40),
@@ -819,7 +864,9 @@ function heapPhaseSnapshotFrom(value: unknown): HeapPhaseSnapshot | null {
   };
 }
 
-function buildProofEnvironment(latest: Record<string, unknown>): LatestRunState["proofEnvironment"] {
+function buildProofEnvironment(
+  latest: Record<string, unknown>,
+): LatestRunState["proofEnvironment"] {
   const explicitSnapshots = Array.isArray(latest.heapPhaseSnapshots)
     ? latest.heapPhaseSnapshots
     : Array.isArray(latest.proofEnvironmentHeapSnapshots)
@@ -872,7 +919,8 @@ function buildProofEnvironment(latest: Record<string, unknown>): LatestRunState[
     largestArtifactBodyBytes,
     largestArtifactBodyRef:
       bounded(latest.largestArtifactBodyRef, 600) ??
-      heapPhaseSnapshots.find((snapshot) => snapshot.largestArtifactBodyRef)?.largestArtifactBodyRef ??
+      heapPhaseSnapshots.find((snapshot) => snapshot.largestArtifactBodyRef)
+        ?.largestArtifactBodyRef ??
       null,
     latestRunStateMetadataBytes:
       numberOrNull(latest.latestRunStateMetadataBytes) ??
@@ -994,23 +1042,29 @@ export function buildLatestRunState(input: {
       executorKey: bounded(latest.executorKey ?? latest.selectedExecutorKey, 240),
       workerRef: bounded(latest.workerRef, 240),
       activeToolId: bounded(latest.schedulerToolId ?? latest.latestToolEventKind, 240),
-      readinessStateRef: bounded(latest.nodeReadinessStateRef, 600),
-      readinessStatus: bounded(latest.nodeReadinessStatus, 160),
-      readinessProjectionStatus: bounded(latest.readinessProjectionStatus, 160),
-      readinessProjectionDriftReasonCodes: boundedStrings(
-        latest.readinessProjectionDriftReasonCodes,
-        40,
-      ),
-      readinessProjectionMissingFields: boundedStrings(
-        latest.readinessProjectionMissingFields,
-        40,
-      ),
-      readinessStale:
-        typeof latest.nodeReadinessStale === "boolean" ? latest.nodeReadinessStale : null,
-      nodeResourceDemandSessionRefs: boundedStrings(latest.nodeResourceDemandSessionRefs, 20),
-      nodeResourceDemandStatus: bounded(latest.nodeResourceDemandStatus, 160),
-      nodeResourceLedgerManifestRefs: boundedStrings(latest.nodeResourceLedgerManifestRefs, 20),
-      nodeResourceLedgerStatus: bounded(latest.nodeResourceLedgerStatus, 160),
+      nodeLifecycleProjectionRef: bounded(latest.nodeLifecycleProjectionRef, 600),
+      nodeLifecycleProjectionGate: bounded(latest.nodeLifecycleProjectionGate, 220),
+      nodeLifecycleProjectionStatus: bounded(latest.nodeLifecycleProjectionStatus, 220),
+      nodeExecutionSnapshotRef: bounded(latest.nodeExecutionSnapshotRef, 600),
+      nodeWorkerPromptRef: bounded(latest.nodeWorkerPromptRef, 600),
+      nodeWorkerPromptArtifactRef: bounded(latest.nodeWorkerPromptArtifactRef, 600),
+      nodeWorkerPromptHash: bounded(latest.nodeWorkerPromptHash, 180),
+      nodeWorkerPromptByteCount: numberOrNull(latest.nodeWorkerPromptByteCount),
+      nodeWorkerPromptStatus: bounded(latest.nodeWorkerPromptStatus, 120),
+      nodeWorkerPromptAuthorModelRunRef: bounded(latest.nodeWorkerPromptAuthorModelRunRef, 600),
+      nodeAgentSessionKey: bounded(latest.nodeAgentSessionKey, 300),
+      nodeAgentSessionMessageId: bounded(latest.nodeAgentSessionMessageId, 700),
+      nodeAgentSessionTranscriptRef: bounded(latest.nodeAgentSessionTranscriptRef, 700),
+      nodeAgentInitialMessageHash: bounded(latest.nodeAgentInitialMessageHash, 180),
+      nodeAgentPromptSessionHashMatch:
+        typeof latest.nodeAgentPromptSessionHashMatch === "boolean"
+          ? latest.nodeAgentPromptSessionHashMatch
+          : null,
+      nodeAgentStartReceiptRef: bounded(latest.nodeAgentStartReceiptRef, 700),
+      nodeAgentStartStatus: bounded(latest.nodeAgentStartStatus, 120),
+      nodeAgentStartBlockerKind: bounded(latest.nodeAgentStartBlockerKind, 180),
+      nodeAgentSessionTraceRefs: boundedStrings(latest.nodeAgentSessionTraceRefs, 20),
+      nodeAgentFinishArtifactRefs: boundedStrings(latest.nodeFinishArtifactRefs, 20),
       domainResourceSelectionRefs: boundedStrings(latest.domainResourceSelectionRefs, 20),
       domainResourceSelectionStatus: bounded(latest.domainResourceSelectionStatus, 160),
       actionGateStatus: bounded(latest.actionGateStatus, 160),
@@ -1081,42 +1135,18 @@ export function buildLatestRunState(input: {
     },
     contextBroker: {
       state:
-        boundedStrings(latest.resourceRequirementRefs, 24).length > 0 ||
+        boundedStrings(latest.sourceMaterialRequirementRefs, 24).length > 0 ||
         boundedStrings(latest.contextBrokerRequestRefs, 24).length > 0
           ? "present"
           : "missing",
-      requirementRefs: boundedStrings(latest.resourceRequirementRefs, 24),
-      requirementStatuses: boundedStrings(latest.resourceRequirementStatuses, 24),
-      requirementReasonCodes: boundedStrings(latest.resourceRequirementReasonCodes, 40),
+      requirementRefs: boundedStrings(latest.sourceMaterialRequirementRefs, 24),
+      requirementStatuses: boundedStrings(latest.sourceMaterialRequirementStatuses, 24),
+      requirementReasonCodes: boundedStrings(latest.sourceMaterialRequirementReasonCodes, 40),
       requestRefs: boundedStrings(latest.contextBrokerRequestRefs, 24),
       statuses: boundedStrings(latest.contextBrokerStatuses, 24),
       consumerNodeIds: boundedStrings(latest.contextBrokerConsumerNodeIds, 24),
       nextTransition: bounded(latest.contextBrokerNextTransition, 180),
       reasonCodes: boundedStrings(latest.contextBrokerReasonCodes, 40),
-    },
-    resourceFrontier: {
-      state:
-        bounded(latest.resourceFrontierRequestRef, 600) ||
-        bounded(latest.contextShardManifestRef, 600) ||
-        bounded(latest.contextMergePacketRef, 600) ||
-        bounded(latest.contextSingleUnitBlockerRef, 600)
-          ? "present"
-          : "missing",
-      status: bounded(latest.resourceFrontierStatus, 180),
-      requestRef: bounded(latest.resourceFrontierRequestRef, 600),
-      shardManifestRef: bounded(latest.contextShardManifestRef, 600),
-      shardCount: numberOrNull(latest.contextShardCount),
-      shardUnitKind: bounded(latest.contextShardUnitKind, 180),
-      mergePacketRef: bounded(latest.contextMergePacketRef, 600),
-      singleUnitBlockerRef: bounded(latest.contextSingleUnitBlockerRef, 600),
-      nextTransition:
-        bounded(latest.contextMergePacketRef, 600)
-          ? "execute_shards_then_merge_handoffs"
-          : bounded(latest.contextSingleUnitBlockerRef, 600)
-            ? "operator_review_single_unit_over_profile"
-            : bounded(latest.resourceFrontierRequestRef, 600)
-              ? "split_for_profile"
-              : null,
     },
     expansionAdmission: {
       state:

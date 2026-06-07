@@ -70,6 +70,10 @@ vi.mock("../../auto-reply/reply/turn-activity-feed.js", () => ({
 
 vi.mock("../../agents/agent-scope.js", () => ({
   listAgentIds: () => ["main"],
+  resolveAgentConfig: (
+    cfg: { agents?: { list?: Array<Record<string, unknown>> } },
+    agentId: string,
+  ) => cfg?.agents?.list?.find((entry) => entry.id === agentId),
   resolveAgentWorkspaceDir: (cfg: { agents?: { defaults?: { workspace?: string } } }) =>
     cfg?.agents?.defaults?.workspace ?? "/tmp/workspace",
 }));

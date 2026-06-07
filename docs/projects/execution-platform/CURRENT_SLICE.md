@@ -1,5 +1,133 @@
 # Current Slice
 
+## 2026-06-04 Current Slice: SchedulerGraphPatch From RequirementMap
+
+The active architectural correction has moved from intake coverage to the
+scheduler boundary. RequirementMap is now accepted as the canonical
+pre-scheduler semantic inventory, but it must not be treated as an executable
+graph and it must not feed a WorkIntent promotion maze. The scheduler now has
+one narrow job: group the accepted RequirementMap into graph shape.
+
+Governing specs:
+
+- `specs/requirement-map-intake-decomposition.md`
+- `specs/scheduler-graph-patch-runner.md`
+
+Core decision:
+
+```text
+source prompt body ref
+  -> IntakeStageRunner
+  -> RequirementMap
+  -> SchedulerStageRunner
+  -> SchedulerGraphPatch
+  -> RuntimeGraphRepository
+  -> RuntimeGraphNode / RuntimeGraphEdge
+  -> NodeLifecycleTransitionRunner
+```
+
+Fresh scheduling no longer creates `WorkIntent` graph-control nodes.
+`SchedulerStageRunner` emits a minimal `SchedulerGraphPatch` with node seeds,
+edges, and requirement coverage. Runtime persists graph nodes and derives
+obvious source refs, capability candidates, role ordering, ids, refs, hashes,
+and manifests. `NodeLifecycleTransitionRunner` owns worker start, context
+search/read, action/edit, validation, repair, escalation, evidence, and
+node-local readback.
+
+Scheduler model phases are limited to:
+
+- coverage and node grouping;
+- capability binding only when runtime cannot bind a single legal candidate;
+- non-obvious dependency ordering.
+
+Runtime compile has no model submit tool. RequirementMap roles are hints, not
+execution truth. Validation, review, and closeout requirements default to
+coverage/gates, not early graph nodes. Graph amendment may call the scheduler
+again only from typed graph-level requests by the node lifecycle runner,
+closeout, or the operator. Node-local context, edit, validation repair,
+evidence gaps, and provider retries must not call scheduler repair.
+
+Retired live paths:
+
+- `WorkIntent` graph-control nodes and promotion semantics;
+- `WorkIntent.nextLegalTransitions`;
+- `OrchestratorGraphDecision` as canonical scheduler product;
+- model-facing staged scheduler JSON drafts;
+- JSON-shaped `schedulerToolCalls`;
+- model-authored `scheduler.submit_*` ceremony;
+- scheduler-owned node-local lifecycle repair.
+
+The next implementation pass should collapse scheduler output to:
+
+```text
+RequirementMap -> SchedulerGraphPatch -> RuntimeGraphNode -> NodeLifecycleProjection
+```
+
+and add source inventory gates proving old scheduler/WorkIntent lifecycle paths
+cannot re-enter production.
+
+## 2026-06-03 Current Slice: RequirementMap Intake Decomposition
+
+The active architectural correction is now at the pre-scheduler intake
+boundary. The Mission Ledger -> ObligationGraph -> DiscoveryBriefSet chain
+has too many overlapping semantic products and loses operator-intent signal
+before scheduler and worker execution. The raw prompt must remain the source
+of truth, with bounded prompt search/read tools available to downstream
+consumers.
+
+Governing spec:
+
+- `specs/requirement-map-intake-decomposition.md`
+
+Core decision:
+
+```text
+source prompt body ref
+  -> IntakeStageRunner
+  -> RequirementMap
+  -> SchedulerStageRunner / NodeLifecycleTransitionRunner / closeout
+```
+
+`RequirementMap` is the one canonical intake product. It records
+requirements, roles, runtime-created source refs, and compact coverage. It
+does not pre-author discovery seeds, evidence contracts, acceptance criteria,
+dependency intent, lexical anchors, or source-evidence quote objects.
+Scheduler, worker, and closeout consume bounded slices from the map plus
+`sourcePromptBodyRef`;
+they can ask their owning runner for more prompt context through bounded
+prompt search/read tools. Workers generate their initial repo/resource search
+terms at node runtime by grounding assigned requirements in the raw prompt.
+
+Implementation rules now made explicit in the governing spec:
+
+- model transport for intake, scheduler, worker context, and closeout phases
+  must be provider-native tool calls, never JSON-shaped `toolCalls` envelopes;
+- `IntakeStageRunner` owns RequirementMap phases and tool visibility;
+  `SchedulerStageRunner` owns graph scheduling from the map;
+  `NodeLifecycleTransitionRunner` owns worker-start, prompt/repo context,
+  action, validation, repair, escalation, and evidence transitions; mission
+  closeout owns mission-wide evidence closure;
+- runtime owns ids, refs, hashes, offsets, payload storage, status, and
+  manifests; models author requirement text, role, and source quote/purpose;
+- batch tool calls are allowed only inside one semantic step;
+- parallel model sessions are allowed only for independent focused targets and
+  must merge through the owning runner;
+- prompt search/open/expand/contract loops remain sequential when each tool
+  result changes the next model decision;
+- `RequirementMap` persistence is runtime-owned after compile succeeds; the
+  model may block with a typed reason but does not need a submit phase or
+  submit ceremony.
+- router prompts/tool diagnostics must not name Mission Ledger,
+  ObligationGraph, DiscoveryBriefSet, or SchedulerIntakePacket as the live
+  downstream path; router hands accepted execution prompts to
+  `IntakeStageRunner`, which creates `RequirementMap`.
+
+This replaces semantic handoff layers that try to summarize the raw prompt
+into atomized schema fragments and then ask later model turns to recover
+lost context. Mission Ledger, ObligationGraph, DiscoveryBriefSet, and
+SchedulerIntakePacket must not survive as independent semantic authoring
+products after this architecture is implemented.
+
 ## 2026-05-31 Current Slice: Worker-Owned Context Search/Read Lifecycle
 
 The current corrective decision is stronger than the previous
@@ -1436,8 +1564,9 @@ Pre-proof order:
 5. Mission Ledger Stability Diagnostics. **Implemented; live diagnostic
    preflight remains a diagnostic/proof concern only after production
    rollback.**
-6. IntakeStageRunner ObligationGraph Scheduler Intake. **Canonical
-   pre-scheduler owner; staged Mission Ledger diagnostic code is deleted.**
+6. IntakeStageRunner ObligationGraph Scheduler Intake. **Historical
+   implementation evidence only; superseded for live intake authoring by the
+   2026-06-03 RequirementMap current slice.**
 7. Product/Spec Planning Workflow Plugin Production Proof.
 
 Scheduler Frontier implementation evidence:
@@ -1529,7 +1658,8 @@ Do not run the next Product/Spec proof until the Mission Ledger/packet
 stability boundary is repaired or this diagnostic is explicitly waived by the
 owner.
 
-Mission Ledger / ObligationGraph intake consolidation evidence:
+Mission Ledger / ObligationGraph intake consolidation evidence
+**superseded for live intake authoring on 2026-06-03**:
 
 - production `DynamicAgentTeamGraphRunner` delegates pre-scheduler intake to
   `IntakeStageRunner`;
@@ -1549,10 +1679,10 @@ Mission Ledger / ObligationGraph intake consolidation evidence:
   artifact-contract, supervisor, and dynamic runner tests passed; scoped
   TypeScript passed through repo fallback checking.
 
-Product/Spec should resume from the restored production Mission Ledger path.
-The remaining proof attention belongs downstream: packet stability without
-normal GPT rescue dependence, context handoff quality, implementation node
-readiness, non-Codex worker execution, source edits, validation, and closeout.
+Do not use this historical section as live proof guidance. Product/Spec and
+coding proofs should now resume from the RequirementMap intake architecture:
+raw prompt body ref -> `IntakeDecompositionRunner` -> `RequirementMap` ->
+`SchedulerStageRunner` / `NodeLifecycleTransitionRunner` / mission closeout.
 
 ## 2026-05-22 Product/Spec Proof Packet Boundary Follow-Up
 

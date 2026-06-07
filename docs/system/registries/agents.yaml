@@ -7,19 +7,26 @@ notes:
 requiredDurableRoot: docs/agents
 runtimeRoots:
   - .agents
-  - live-runtime:/home/node/.openclaw
+  - live-runtime:/root/.openclaw
+  - live-runtime-alias:/home/node/.openclaw
 liveRuntimeSource:
   container: openclaw-runtime
-  configPath: /home/node/.openclaw/openclaw.json
+  runtimeHome: /root/.openclaw
+  runtimeHomeAliasPath: /home/node/.openclaw
+  configPath: /root/.openclaw/openclaw.json
+  configAliasPath: /home/node/.openclaw/openclaw.json
+  aliasStatus: compatibility_alias_only
   evidenceCommand: docker exec openclaw-runtime openclaw agents list --json
 liveRuntimeAgents:
   - id: main
     title: OpenClaw
     lifecycle: live
     configured: true
-    workspacePath: /home/node/.openclaw/workspace
+    workspacePath: /root/.openclaw/workspace
+    workspaceAliasPath: /home/node/.openclaw/workspace
     workspaceStatus: present_shared_canonicalized
-    sessionStorePath: /home/node/.openclaw/agents/main/sessions/sessions.json
+    sessionStorePath: /root/.openclaw/agents/main/sessions/sessions.json
+    sessionStoreAliasPath: /home/node/.openclaw/agents/main/sessions/sessions.json
     sessionState: present
     uiVisibility:
       agentsList: true
@@ -30,9 +37,11 @@ liveRuntimeAgents:
     title: OpenClaw
     lifecycle: live
     configured: true
-    workspacePath: /home/node/.openclaw/workspace
+    workspacePath: /root/.openclaw/workspace
+    workspaceAliasPath: /home/node/.openclaw/workspace
     workspaceStatus: present_shared_intentional
-    sessionStorePath: /home/node/.openclaw/agents/chief/sessions/sessions.json
+    sessionStorePath: /root/.openclaw/agents/chief/sessions/sessions.json
+    sessionStoreAliasPath: /home/node/.openclaw/agents/chief/sessions/sessions.json
     sessionState: present
     uiVisibility:
       agentsList: true
@@ -43,9 +52,11 @@ liveRuntimeAgents:
     title: Builder
     lifecycle: live
     configured: true
-    workspacePath: /home/node/.openclaw/agent-workspaces/builder
+    workspacePath: /root/.openclaw/agent-workspaces/builder
+    workspaceAliasPath: /home/node/.openclaw/agent-workspaces/builder
     workspaceStatus: present
-    sessionStorePath: /home/node/.openclaw/agents/builder/sessions/sessions.json
+    sessionStorePath: /root/.openclaw/agents/builder/sessions/sessions.json
+    sessionStoreAliasPath: /home/node/.openclaw/agents/builder/sessions/sessions.json
     sessionState: present
     uiVisibility:
       agentsList: true
@@ -56,9 +67,11 @@ liveRuntimeAgents:
     title: Researcher
     lifecycle: live
     configured: true
-    workspacePath: /home/node/.openclaw/agent-workspaces/researcher
+    workspacePath: /root/.openclaw/agent-workspaces/researcher
+    workspaceAliasPath: /home/node/.openclaw/agent-workspaces/researcher
     workspaceStatus: present
-    sessionStorePath: /home/node/.openclaw/agents/researcher/sessions/sessions.json
+    sessionStorePath: /root/.openclaw/agents/researcher/sessions/sessions.json
+    sessionStoreAliasPath: /home/node/.openclaw/agents/researcher/sessions/sessions.json
     sessionState: absent
     uiVisibility:
       agentsList: true
@@ -69,9 +82,11 @@ liveRuntimeAgents:
     title: Web Researcher
     lifecycle: live
     configured: true
-    workspacePath: /home/node/.openclaw/agent-workspaces/web-researcher
+    workspacePath: /root/.openclaw/agent-workspaces/web-researcher
+    workspaceAliasPath: /home/node/.openclaw/agent-workspaces/web-researcher
     workspaceStatus: restored_after_drift
-    sessionStorePath: /home/node/.openclaw/agents/web-researcher/sessions/sessions.json
+    sessionStorePath: /root/.openclaw/agents/web-researcher/sessions/sessions.json
+    sessionStoreAliasPath: /home/node/.openclaw/agents/web-researcher/sessions/sessions.json
     sessionState: present
     uiVisibility:
       agentsList: true
@@ -82,9 +97,11 @@ liveRuntimeAgents:
     title: Writer
     lifecycle: live
     configured: true
-    workspacePath: /home/node/.openclaw/agent-workspaces/writer
+    workspacePath: /root/.openclaw/agent-workspaces/writer
+    workspaceAliasPath: /home/node/.openclaw/agent-workspaces/writer
     workspaceStatus: present
-    sessionStorePath: /home/node/.openclaw/agents/writer/sessions/sessions.json
+    sessionStorePath: /root/.openclaw/agents/writer/sessions/sessions.json
+    sessionStoreAliasPath: /home/node/.openclaw/agents/writer/sessions/sessions.json
     sessionState: present
     uiVisibility:
       agentsList: true
@@ -95,9 +112,11 @@ liveRuntimeAgents:
     title: X Manager
     lifecycle: live
     configured: true
-    workspacePath: /home/node/.openclaw/agent-workspaces/x-manager
+    workspacePath: /root/.openclaw/agent-workspaces/x-manager
+    workspaceAliasPath: /home/node/.openclaw/agent-workspaces/x-manager
     workspaceStatus: restored_after_drift
-    sessionStorePath: /home/node/.openclaw/agents/x-manager/sessions/sessions.json
+    sessionStorePath: /root/.openclaw/agents/x-manager/sessions/sessions.json
+    sessionStoreAliasPath: /home/node/.openclaw/agents/x-manager/sessions/sessions.json
     sessionState: present
     uiVisibility:
       agentsList: true

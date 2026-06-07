@@ -70,6 +70,12 @@ describe("resolve_openclaw_resource tool", () => {
       expect(
         parsed.resources.some((entry: { id: string }) => entry.id === "memory_ops.latest_report"),
       ).toBe(true);
+      expect(
+        parsed.roots.find((entry: { id: string }) => entry.id === "live_repo").runtimePath,
+      ).toBe(liveRepoRoot);
+      expect(
+        parsed.roots.find((entry: { id: string }) => entry.id === "operator_workspace").runtimePath,
+      ).toBe(workspaceRoot);
     });
   });
 

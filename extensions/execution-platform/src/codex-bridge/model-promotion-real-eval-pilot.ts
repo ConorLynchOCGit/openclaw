@@ -4,6 +4,7 @@ import {
   createModelPromotionAuthorityProfile,
   recordModelPromotionDryRunDecision,
 } from "./model-promotion-authority-profile.ts";
+import { DEFAULT_REPO_PATH } from "./policy.ts";
 
 export type ModelPromotionRealEvalDryRunPilotResult = {
   artifactKind: "codex_bridge_model_promotion_real_eval_dry_run_pilot";
@@ -36,7 +37,7 @@ export async function runModelPromotionRealEvalDryRunPilot(input: {
   evalEvidenceRefs?: string[];
   ownerApproval?: string | null;
 }): Promise<ModelPromotionRealEvalDryRunPilotResult> {
-  const cwd = input.cwd ?? "/root/services/openclaw-roles/live";
+  const cwd = input.cwd ?? DEFAULT_REPO_PATH;
   const candidates = input.evalEvidenceRefs ?? [
     ".artifacts/execution-platform/full-production-yolo-pilot-proof-summary.json",
     ".artifacts/execution-platform/productionization-10-step-summary.json",

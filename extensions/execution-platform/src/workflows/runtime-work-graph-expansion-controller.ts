@@ -68,6 +68,7 @@ export const ExpansionAdmissionDecisionSchema = z
     deferredEdgeIds: stringList(80),
     pendingContextRequestRefs: stringList(80, 320),
     activeImplementationOrResourceNodeIds: stringList(80),
+    blockedPrerequisiteNodeIds: stringList(80),
     prerequisiteCritical: z.boolean(),
     nextTransition: z.enum([
       "persist_admitted_page",
@@ -135,15 +136,6 @@ function asRecord(value: unknown): Record<string, unknown> {
     : {};
 }
 
-function stringArray(value: unknown, max = 80): string[] {
-  return Array.isArray(value)
-    ? unique(
-        value.filter((entry): entry is string => typeof entry === "string"),
-        max,
-      )
-    : [];
-}
-
 function mergePolicy(
   override?: Partial<RuntimeWorkGraphExpansionAdmissionPolicy> | null,
 ): RuntimeWorkGraphExpansionAdmissionPolicy {
@@ -178,11 +170,7 @@ function mergePolicy(
 }
 
 function decisionIsPrerequisiteCritical(decision: OrchestratorGraphDecision): boolean {
-  if (
-    [
-      "request_review",
-    ].includes(decision.decisionKind)
-  ) {
+  if (["request_review"].includes(decision.decisionKind)) {
     return true;
   }
   if (
@@ -236,6 +224,7 @@ export function evaluateRuntimeWorkGraphExpansionAdmission(input: {
   readyFrontierNodeIds?: string[];
   pendingContextRequestRefs?: string[];
   activeImplementationOrResourceNodeIds?: string[];
+  blockedPrerequisiteNodeIds?: string[];
   policy?: Partial<RuntimeWorkGraphExpansionAdmissionPolicy> | null;
 }): ExpansionAdmissionResult {
   const policy = mergePolicy(input.policy);
@@ -247,6 +236,7 @@ export function evaluateRuntimeWorkGraphExpansionAdmission(input: {
     input.activeImplementationOrResourceNodeIds ?? [],
     80,
   );
+  const blockedPrerequisiteNodeIds = unique(input.blockedPrerequisiteNodeIds ?? [], 80);
   const prerequisiteCritical = decisionIsPrerequisiteCritical(input.decision);
   const existingNodeIds = new Set(input.snapshotSummary.nodeSummaries.map((node) => node.nodeId));
   const expansionCreatesNovelNodes = newNodes.some((node) => !existingNodeIds.has(node.nodeId));
@@ -263,7 +253,31 @@ export function evaluateRuntimeWorkGraphExpansionAdmission(input: {
   let deferredNodes: OrchestratorGraphNodeSpec[] = [];
   let deferredEdges: NonNullable<OrchestratorGraphDecision["newEdges"]> = [];
 
-  if (
+  const downstreamValidationOrCloseoutExpansion =
+    newNodes.some((node) =>
+      ["validation", "test_review", "reviewer", "closeout"].includes(node.nodeKind),
+    ) ||
+    newNodes.some((node) => {
+      const metadata = asRecord(node.metadata);
+      const executionIntent =
+        typeof metadata.executionIntent === "string" ? metadata.executionIntent : "";
+      return ["validation", "review", "readback", "closeout"].includes(executionIntent);
+    });
+
+  if (blockedPrerequisiteNodeIds.length > 0 && downstreamValidationOrCloseoutExpansion) {
+    status = "needs_review";
+    nextTransition = "needs_review";
+    admittedNodes = [];
+    admittedEdges = [];
+    deferredNodes = newNodes;
+    deferredEdges = newEdges;
+    reasonCodes.push(
+      "expansion_blocked_by_failed_prerequisite_branch",
+      ...blockedPrerequisiteNodeIds
+        .slice(0, 20)
+        .map((nodeId) => `expansion_blocked_prerequisite_node:${nodeId}`),
+    );
+  } else if (
     newNodes.length > policy.maxAbsoluteNewNodesPerIteration ||
     newEdges.length > policy.maxAbsoluteNewEdgesPerIteration ||
     pendingContextRequestRefs.length > policy.maxPendingContextRequests ||
@@ -398,6 +412,7 @@ export function evaluateRuntimeWorkGraphExpansionAdmission(input: {
     ),
     pendingContextRequestRefs,
     activeImplementationOrResourceNodeIds,
+    blockedPrerequisiteNodeIds,
     prerequisiteCritical,
     nextTransition,
     reasonCodes: unique(reasonCodes, 120, 220),

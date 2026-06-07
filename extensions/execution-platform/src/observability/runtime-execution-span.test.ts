@@ -34,11 +34,11 @@ describe("runtime execution spans", () => {
     });
     const blockedSpan = buildRuntimeExecutionSpan({
       spanId: "span-blocked",
-      spanKind: "resource_scout",
+      spanKind: "context_scout_subagent",
       status: "needs_review",
-      phase: "resource_scout_review",
-      blockerSummary: "Context handoff missing repo refs.",
-      nextAction: "Repair resource scout packet.",
+      phase: "context_scout_subagent_review",
+      blockerSummary: "Context scout subagent result missing bounded source windows.",
+      nextAction: "Resume parent session or rerun native scout delegation.",
     });
     const events: RuntimeJobEvent[] = [staleSpan, blockedSpan].map((span, index) => ({
       eventId: `event-${index}`,

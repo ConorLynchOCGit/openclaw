@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { TeamGraphNode } from "./runtime-work-graph.ts";
 import { buildSuperstepBranchResult } from "./runtime-work-graph-superstep.ts";
+import type { TeamGraphNode } from "./runtime-work-graph.ts";
 
 function node(overrides: Partial<TeamGraphNode> = {}): TeamGraphNode {
   return {
@@ -79,7 +79,7 @@ describe("runtime work graph superstep branch result", () => {
       resultStatus: "needs_review",
       refreshedNodeStatus: "needs_review",
       refreshedMetadata: {
-        nodeLifecycleProjectionGate: "high_capability_escalation_required",
+        nodeLifecycleProjectionGate: "node_agent_session_escalation_required",
         highCapabilityEscalationStatus: "requested",
         rawPromptStored: false,
         rawResponseStored: false,
@@ -92,10 +92,10 @@ describe("runtime work graph superstep branch result", () => {
     });
 
     expect(result.failureClass).toBe("worker_capability_insufficient");
-    expect(result.branchClosureState).toBe("escalation_required");
+    expect(result.branchClosureState).toBe("node_agent_session_escalation_required");
     expect(result.branchLocalTransitionPending).toBe(true);
     expect(result.repairAction).toBe("worker.escalation.execute_high_capability");
-    expect(result.nextTransition).toBe("high_capability_escalation_required");
+    expect(result.nextTransition).toBe("node_agent_session_escalation_required");
   });
 
   it("keeps validation failure as a validation lifecycle transition, not provider collapse", () => {
@@ -107,7 +107,7 @@ describe("runtime work graph superstep branch result", () => {
       resultStatus: "needs_review",
       refreshedNodeStatus: "needs_review",
       refreshedMetadata: {
-        nodeLifecycleProjectionGate: "validation_repair_plan_required",
+        nodeLifecycleProjectionGate: "node_agent_session_ready",
         validationLifecycleStatus: "repair_required",
         rawPromptStored: false,
         rawResponseStored: false,
@@ -121,10 +121,37 @@ describe("runtime work graph superstep branch result", () => {
     });
 
     expect(result.failureClass).toBe("validation_failure_repairable");
-    expect(result.branchClosureState).toBe("validation_repair_plan_required");
+    expect(result.branchClosureState).toBe("node_agent_session_ready");
     expect(result.branchLocalTransitionPending).toBe(true);
-    expect(result.repairAction).toBe("worker.validation.request_repair");
-    expect(result.nextTransition).toBe("validation_repair_plan_required");
+    expect(result.repairAction).toBe("node.agent_session.invoke_validation_repair");
+    expect(result.nextTransition).toBe("node_agent_session_ready");
+  });
+
+  it("keeps native worker prompt authoring failures as node-local lifecycle blockers", () => {
+    const result = buildSuperstepBranchResult({
+      superstepId: "superstep-1",
+      branchId: "superstep-1:branch:1:implementation-node-1",
+      node: node(),
+      capabilityId: "capability://source-edit",
+      resultStatus: "needs_review",
+      refreshedNodeStatus: "needs_review",
+      refreshedMetadata: {
+        nodeLifecycleProjectionGate: "node_agent_session_ready",
+        lastRepairFailureClass: "node_worker_prompt_authoring_blocked",
+        rawPromptStored: false,
+        rawResponseStored: false,
+        rawProviderLogStored: false,
+      },
+      reasonCodes: [
+        "node_worker_prompt_authoring_failed",
+        "node_worker_prompt_missing_source_material",
+      ],
+    });
+
+    expect(result.failureClass).toBe("node_worker_prompt_authoring_blocked");
+    expect(result.branchClosureState).toBe("not_applicable");
+    expect(result.branchLocalTransitionPending).toBe(false);
+    expect(result.nextTransition).toBe("operator_or_orchestrator_review");
   });
 
   it("does not infer validation lifecycle transitions from reason-code bags", () => {

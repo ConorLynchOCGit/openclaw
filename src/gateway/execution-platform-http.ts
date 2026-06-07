@@ -4,11 +4,8 @@ import {
   createExecutionPlatformDatabaseRuntime,
   createExecutionPlatformHostRoutes,
   evaluateExecutionPlatformFlag,
-  CodexAppServerIntentFrontDoorRouterClient,
   LiveStructuredModelIntentRouterProvider,
-  LiveSimpleTriageRouterProvider,
   OpenRouterIntentFrontDoorRouterClient,
-  OpenRouterSimpleTriageModelClient,
   ROUTER_MODEL_POLICY_VERSION,
   RuntimeToolKernel,
   RuntimeToolRegistry,
@@ -23,7 +20,6 @@ import {
   registerValidationQaRuntimeTools,
   RuntimeJobRepository,
   RuntimeWorkGraphRepository,
-  TwoLaneStructuredModelIntentRouterProvider,
   WorkQueueEventStore,
   WorkQueueRepository,
   createFileGatewaySubmitDiagnosticsSink,
@@ -115,17 +111,6 @@ function speedConfig(
   return value === "latency" || value === "throughput" ? value : fallback;
 }
 
-export function resolveGatewayCodexAppServerCwd(
-  config: OpenClawConfig,
-  currentCwd = process.cwd(),
-): string {
-  return (
-    configValue(config, "OPENCLAW_INTENT_FRONT_DOOR_CODEX_APP_SERVER_CWD") ??
-    configValue(config, "OPENCLAW_CODEX_APP_SERVER_CWD") ??
-    currentCwd
-  );
-}
-
 function routerCandidate(input: {
   provider: string;
   model: string | null;
@@ -163,44 +148,23 @@ export function createGatewayStructuredRouterProvider(config: OpenClawConfig) {
       critical: true,
     },
   );
-  const ownerCanaryDecision = evaluateExecutionPlatformFlag(
-    flagRegistry,
-    "two_lane_router_owner_canary",
-    { critical: true },
-  );
   const nativeSubmitDecision = evaluateExecutionPlatformFlag(
     flagRegistry,
     "native_execution_submit_front_door",
     { critical: true },
   );
-  if (
-    !enableDecision.allowed ||
-    !killSwitchDecision.allowed ||
-    !ownerCanaryDecision.allowed ||
-    !nativeSubmitDecision.allowed
-  ) {
+  if (!enableDecision.allowed || !killSwitchDecision.allowed || !nativeSubmitDecision.allowed) {
     return null;
   }
   const providerProfileRef = configValue(
     config,
     "OPENCLAW_INTENT_FRONT_DOOR_ROUTER_PROVIDER_PROFILE",
   );
-  const routerModelRef = configValue(config, "OPENCLAW_INTENT_FRONT_DOOR_ROUTER_MODEL_REF");
   const routerPolicyRef = configValue(config, "OPENCLAW_INTENT_FRONT_DOOR_ROUTER_POLICY_REF");
-  const fallbackModelRef = configValue(
-    config,
-    "OPENCLAW_INTENT_FRONT_DOOR_ROUTER_FALLBACK_MODEL_REF",
-  );
-  const escalationModelRef = configValue(
-    config,
-    "OPENCLAW_INTENT_FRONT_DOOR_ROUTER_ESCALATION_MODEL_REF",
-  );
   const apiKey = configValue(config, "OPENROUTER_API_KEY");
-  const triageModelRef =
-    configValue(config, "OPENCLAW_INTENT_FRONT_DOOR_TRIAGE_ROUTER_MODEL_REF") ??
-    "qwen/qwen3-coder-next";
   const advancedModelRef =
     configValue(config, "OPENCLAW_INTENT_FRONT_DOOR_ADVANCED_ROUTER_MODEL_REF") ??
+    configValue(config, "OPENCLAW_INTENT_FRONT_DOOR_ROUTER_MODEL_REF") ??
     "qwen/qwen3-coder-next";
   const requiredAdvancedModelRef = configValue(
     config,
@@ -217,71 +181,13 @@ export function createGatewayStructuredRouterProvider(config: OpenClawConfig) {
     );
     return null;
   }
-  const triagePolicy: LiveRouterModelPolicy = {
-    artifactKind: "intent_front_door_live_router_model_policy",
-    policyId: "router-policy://intent-front-door/live-router/simple-triage",
-    routerPolicyVersion: ROUTER_MODEL_POLICY_VERSION,
-    routerProviderProfile: providerProfileRef
-      ? {
-          providerRef: "provider-profile://intent-front-door/router/openrouter/simple-triage",
-          providerKind: "openrouter",
-          baseUrlRef: "provider-base-url://openrouter/default",
-          timeoutMs: numberConfig(
-            config,
-            "OPENCLAW_INTENT_FRONT_DOOR_TRIAGE_ROUTER_TIMEOUT_MS",
-            90_000,
-          ),
-          maxAttempts: numberConfig(
-            config,
-            "OPENCLAW_INTENT_FRONT_DOOR_TRIAGE_ROUTER_MAX_ATTEMPTS",
-            2,
-          ),
-          maxTokens: numberConfig(
-            config,
-            "OPENCLAW_INTENT_FRONT_DOOR_TRIAGE_ROUTER_MAX_TOKENS",
-            600,
-          ),
-          reasoningEffort: reasoningConfig(
-            config,
-            "OPENCLAW_INTENT_FRONT_DOOR_TRIAGE_ROUTER_REASONING_EFFORT",
-            "none",
-          ),
-          speedPreference: speedConfig(
-            config,
-            "OPENCLAW_INTENT_FRONT_DOOR_TRIAGE_ROUTER_SPEED_PREFERENCE",
-            "latency",
-          ),
-        }
-      : null,
-    routerModelRef: triageModelRef,
-    routerPolicyRef: "router-policy://intent-front-door/live-router/simple-triage",
-    modelRosterRef:
-      configValue(config, "OPENCLAW_INTENT_FRONT_DOOR_ROUTER_MODEL_ROSTER_REF") ??
-      "model-roster://intent-front-door/router/live",
-    requiredCapabilities: ["structured_json", "json_schema"],
-    fallbackModelRef: null,
-    escalationModelRef: null,
-    killSwitchRef:
-      configValue(config, "OPENCLAW_INTENT_FRONT_DOOR_ROUTER_KILL_SWITCH_REF") ??
-      "kill-switch://intent-front-door/live-router",
-    killSwitchActive: configBoolean(config, "OPENCLAW_INTENT_FRONT_DOOR_ROUTER_KILL_SWITCH_ACTIVE"),
-    latencyBudget: { targetMs: 2_000, maxMs: 90_000 },
-    costBudget: { maxEstimatedUsdPerRoute: 0.005 },
-    reliabilityRequirement: {
-      minSuccessRate: 0.995,
-      maxNoContentRate: 0.005,
-      maxRateLimitRate: 0.01,
-    },
-    status: configBoolean(config, "OPENCLAW_INTENT_FRONT_DOOR_ROUTER_SUSPENDED")
-      ? "suspended"
-      : "enabled",
-  };
   const advancedPolicy: LiveRouterModelPolicy = {
     artifactKind: "intent_front_door_live_router_model_policy",
-    policyId: "router-policy://intent-front-door/live-router/advanced",
+    policyId: routerPolicyRef ?? "router-policy://intent-front-door/live-router/native-tool",
     routerPolicyVersion: ROUTER_MODEL_POLICY_VERSION,
     routerProviderProfile: {
-      providerRef: "provider-profile://intent-front-door/router/openrouter/advanced",
+      providerRef:
+        providerProfileRef ?? "provider-profile://intent-front-door/router/openrouter/native-tool",
       providerKind: "openrouter",
       baseUrlRef: "provider-base-url://openrouter/default",
       timeoutMs: numberConfig(
@@ -307,14 +213,13 @@ export function createGatewayStructuredRouterProvider(config: OpenClawConfig) {
       ),
     },
     routerModelRef: advancedModelRef,
-    routerPolicyRef: "router-policy://intent-front-door/live-router/advanced",
+    routerPolicyRef: routerPolicyRef ?? "router-policy://intent-front-door/live-router/native-tool",
     modelRosterRef:
       configValue(config, "OPENCLAW_INTENT_FRONT_DOOR_ROUTER_MODEL_ROSTER_REF") ??
       "model-roster://intent-front-door/router/live",
-    requiredCapabilities: ["structured_json", "json_schema"],
-    fallbackModelRef:
-      configValue(config, "OPENCLAW_INTENT_FRONT_DOOR_ADVANCED_ROUTER_FALLBACK_MODEL_REF") ?? null,
-    escalationModelRef: escalationModelRef ?? advancedModelRef,
+    requiredCapabilities: ["tool_calling"],
+    fallbackModelRef: null,
+    escalationModelRef: null,
     killSwitchRef:
       configValue(config, "OPENCLAW_INTENT_FRONT_DOOR_ROUTER_KILL_SWITCH_REF") ??
       "kill-switch://intent-front-door/live-router",
@@ -330,126 +235,28 @@ export function createGatewayStructuredRouterProvider(config: OpenClawConfig) {
       ? "suspended"
       : "enabled",
   };
-  const legacySinglePassPolicy: LiveRouterModelPolicy = {
-    artifactKind: "intent_front_door_live_router_model_policy",
-    policyId: routerPolicyRef ?? "router-policy://intent-front-door/live-router/missing",
-    routerPolicyVersion: ROUTER_MODEL_POLICY_VERSION,
-    routerProviderProfile: providerProfileRef
-      ? {
-          providerRef: providerProfileRef,
-          providerKind: "openrouter",
-          baseUrlRef: "provider-base-url://openrouter/default",
-          timeoutMs: numberConfig(config, "OPENCLAW_INTENT_FRONT_DOOR_ROUTER_TIMEOUT_MS", 10_000),
-          maxAttempts: numberConfig(config, "OPENCLAW_INTENT_FRONT_DOOR_ROUTER_MAX_ATTEMPTS", 1),
-          maxTokens: numberConfig(config, "OPENCLAW_INTENT_FRONT_DOOR_ROUTER_MAX_TOKENS", 8_000),
-          reasoningEffort: reasoningConfig(
-            config,
-            "OPENCLAW_INTENT_FRONT_DOOR_ROUTER_REASONING_EFFORT",
-            "none",
-          ),
-          speedPreference: speedConfig(
-            config,
-            "OPENCLAW_INTENT_FRONT_DOOR_ROUTER_SPEED_PREFERENCE",
-            null,
-          ),
-        }
-      : null,
-    routerModelRef,
-    routerPolicyRef,
-    modelRosterRef:
-      configValue(config, "OPENCLAW_INTENT_FRONT_DOOR_ROUTER_MODEL_ROSTER_REF") ??
-      "model-roster://intent-front-door/router/live",
-    requiredCapabilities: ["structured_json", "json_schema"],
-    fallbackModelRef,
-    escalationModelRef,
-    killSwitchRef:
-      configValue(config, "OPENCLAW_INTENT_FRONT_DOOR_ROUTER_KILL_SWITCH_REF") ??
-      "kill-switch://intent-front-door/live-router",
-    killSwitchActive: configBoolean(config, "OPENCLAW_INTENT_FRONT_DOOR_ROUTER_KILL_SWITCH_ACTIVE"),
-    latencyBudget: { targetMs: 1_000, maxMs: 5_000 },
-    costBudget: { maxEstimatedUsdPerRoute: 0.005 },
-    reliabilityRequirement: {
-      minSuccessRate: 0.995,
-      maxNoContentRate: 0.005,
-      maxRateLimitRate: 0.01,
-    },
-    status: configBoolean(config, "OPENCLAW_INTENT_FRONT_DOOR_ROUTER_SUSPENDED")
-      ? "suspended"
-      : "enabled",
-  };
-  const triageCandidate = routerCandidate({
-    provider: "openrouter",
-    model: triageModelRef,
-    family: "OpenRouter-hosted candidates",
-    policyRef: triageModelRef,
-    capabilities: ["structured_json", "json_schema", "low_cost"],
-  });
   const advancedCandidate = routerCandidate({
-    provider: advancedModelRef.startsWith("openai-codex/") ? "openai-codex" : "codex",
-    model: advancedModelRef,
-    family: "OpenAI-Codex",
-    policyRef: advancedModelRef,
-    capabilities: ["structured_json", "json_schema", "reasoning", "large_context"],
-  });
-  const legacyCandidate = routerCandidate({
     provider: "openrouter",
-    model: routerModelRef,
+    model: advancedModelRef,
     family: "OpenRouter-hosted candidates",
-    policyRef: routerModelRef,
-    capabilities: ["structured_json", "json_schema", "low_cost"],
-  });
-  const triageDecision = resolveLiveRouterModelPolicy({
-    policy: triagePolicy,
-    candidates: triageCandidate ? [triageCandidate] : [],
-    providerSecretConfigured: Boolean(apiKey),
+    policyRef: advancedModelRef,
+    capabilities: ["tool_calling", "reasoning", "large_context"],
   });
   const advancedDecision = resolveLiveRouterModelPolicy({
     policy: advancedPolicy,
     candidates: advancedCandidate ? [advancedCandidate] : [],
-    providerSecretConfigured: true,
-  });
-  if (triageDecision.allowed && advancedDecision.allowed && apiKey) {
-    return new TwoLaneStructuredModelIntentRouterProvider({
-      promptLengthAdvancedThreshold: numberConfig(
-        config,
-        "OPENCLAW_INTENT_FRONT_DOOR_LONG_PROMPT_ADVANCED_THRESHOLD",
-        8_000,
-      ),
-      triageProvider: new LiveSimpleTriageRouterProvider({
-        policyDecision: triageDecision,
-        client: new OpenRouterSimpleTriageModelClient({
-          apiKey,
-          retryPolicy: {
-            timeoutMs: triagePolicy.routerProviderProfile?.timeoutMs ?? 90_000,
-            maxAttempts: triagePolicy.routerProviderProfile?.maxAttempts ?? 2,
-          },
-        }),
-      }),
-      advancedProvider: new LiveStructuredModelIntentRouterProvider({
-        policyDecision: advancedDecision,
-        client: new CodexAppServerIntentFrontDoorRouterClient({
-          requestTimeoutMs: advancedPolicy.routerProviderProfile?.timeoutMs ?? 600_000,
-          cwd: resolveGatewayCodexAppServerCwd(config),
-        }),
-      }),
-    });
-  }
-
-  const legacyDecision = resolveLiveRouterModelPolicy({
-    policy: legacySinglePassPolicy,
-    candidates: legacyCandidate ? [legacyCandidate] : [],
     providerSecretConfigured: Boolean(apiKey),
   });
-  if (!legacyDecision.allowed || !apiKey) {
+  if (!advancedDecision.allowed || !apiKey) {
     return null;
   }
   return new LiveStructuredModelIntentRouterProvider({
-    policyDecision: legacyDecision,
+    policyDecision: advancedDecision,
     client: new OpenRouterIntentFrontDoorRouterClient({
       apiKey,
       retryPolicy: {
-        timeoutMs: legacySinglePassPolicy.routerProviderProfile?.timeoutMs ?? 10_000,
-        maxAttempts: legacySinglePassPolicy.routerProviderProfile?.maxAttempts ?? 1,
+        timeoutMs: advancedPolicy.routerProviderProfile?.timeoutMs ?? 90_000,
+        maxAttempts: advancedPolicy.routerProviderProfile?.maxAttempts ?? 1,
       },
     }),
   });

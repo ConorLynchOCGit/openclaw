@@ -33,6 +33,88 @@ async function withRuntime<T>(
 }
 
 describe("OpenRouter agent-team model client", () => {
+  it("forwards reasoning effort on native multi-tool calls", async () => {
+    const bodies: unknown[] = [];
+    const fetchImpl = (async (_url: string | URL | Request, init?: RequestInit) => {
+      const bodyText = typeof init?.body === "string" ? init.body : "{}";
+      bodies.push(JSON.parse(bodyText));
+      return {
+        ok: true,
+        status: 200,
+        async json() {
+          return {
+            choices: [
+              {
+                finish_reason: "tool_calls",
+                message: {
+                  tool_calls: [
+                    {
+                      id: "call-1",
+                      type: "function",
+                      function: {
+                        name: "scheduler_record_work_unit",
+                        arguments: JSON.stringify({ workUnitId: "wu-1" }),
+                      },
+                    },
+                  ],
+                },
+              },
+            ],
+            usage: { prompt_tokens: 10, completion_tokens: 20, total_tokens: 30 },
+          };
+        },
+      } as Response;
+    }) as typeof fetch;
+
+    const client = new OpenRouterAgentTeamModelClient({
+      apiKey: "test-key",
+      fetchImpl,
+      requestProfilesByModelId: {
+        "moonshotai/kimi-k2.6": {
+          responseFormatMode: "prompt_only",
+          reasoningMode: "omit",
+          maxTokens: 8_000,
+        },
+      },
+    });
+
+    const result = await client.callTools({
+      roleId: "implementation_engineer",
+      modelId: "moonshotai/kimi-k2.6",
+      modelCandidateId: "moonshotai/kimi-k2.6",
+      prompt: "Record the scheduler work unit.",
+      tools: [
+        {
+          name: "scheduler_record_work_unit",
+          description: "Record work unit.",
+          inputSchema: {
+            type: "object",
+            properties: { workUnitId: { type: "string" } },
+            required: ["workUnitId"],
+          },
+        },
+      ],
+      allowedToolNames: ["scheduler_record_work_unit"],
+      requiredToolName: "scheduler_record_work_unit",
+      maxAcceptedToolCalls: 1,
+      reasoningEffort: "xhigh",
+    });
+
+    expect(result.status).toBe("succeeded");
+    expect(bodies[0]).toMatchObject({
+      model: "moonshotai/kimi-k2.6",
+      reasoning: { effort: "xhigh" },
+      parallel_tool_calls: true,
+    });
+    expect(result.toolCalls).toEqual([
+      {
+        toolName: "scheduler_record_work_unit",
+        toolArguments: { workUnitId: "wu-1" },
+        callId: "call-1",
+      },
+    ]);
+  });
+
   it("supports a Kimi native JSON request profile without reasoning and honors call token budget", async () => {
     const bodies: unknown[] = [];
     const fetchImpl = (async (_url: string | URL | Request, init?: RequestInit) => {
@@ -213,7 +295,7 @@ describe("OpenRouter agent-team model client", () => {
     });
 
     const result = await client.callRole({
-      roleId: "resource_scout",
+      roleId: "context_scout",
       modelId: "qwen/qwen3-coder-next",
       modelCandidateId: "qwen3-coder-next-obligation-author",
       prompt: "Return packet JSON.",
@@ -311,7 +393,7 @@ describe("OpenRouter agent-team model client", () => {
     });
 
     const result = await client.callRole({
-      roleId: "resource_scout",
+      roleId: "context_scout",
       modelId: "qwen/qwen3-coder-next",
       modelCandidateId: "qwen3-coder-next-retry",
       prompt: "Return packet JSON.",
@@ -357,7 +439,7 @@ describe("OpenRouter agent-team model client", () => {
     });
 
     const result = await client.callRole({
-      roleId: "resource_scout",
+      roleId: "context_scout",
       modelId: "qwen/qwen3-coder-next",
       modelCandidateId: "qwen3-coder-next-preflight",
       prompt: "x".repeat(80_000),

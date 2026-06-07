@@ -12,6 +12,26 @@ gates.
 
 ## Current Focus
 
+2026-06-04 scheduler graph-patch update: the next Product/Spec proof is
+blocked by
+[Scheduler Graph Patch Runner](/projects/execution-platform/specs/scheduler-graph-patch-runner).
+The accepted RequirementMap is now the canonical pre-scheduler inventory, but
+the scheduler must not turn it directly into WorkIntent graph-control nodes.
+Fresh scheduling must produce `SchedulerGraphPatch` with minimal node seeds,
+edges, and requirement coverage. Runtime persists graph nodes/edges and
+`NodeLifecycleTransitionRunner` owns node-local lifecycle. WorkIntent graph
+promotion, staged scheduler JSON drafts, model-authored scheduler submit
+tools, and scheduler-owned node-local repair are retired from fresh
+production scheduling.
+
+2026-06-03 intake update: the governing pre-scheduler intake spec is
+[RequirementMap Intake Decomposition](/projects/execution-platform/specs/requirement-map-intake-decomposition).
+`IntakeStageRunner` owns source prompt readiness, full prompt window coverage,
+provider-native RequirementMap extraction/consolidation, deterministic compile,
+and payload-backed artifact persistence. Mission Ledger, ObligationGraph,
+DiscoveryBriefSet, and SchedulerIntakePacket are superseded for live
+pre-scheduler authoring.
+
 2026-05-29 transition ownership update: the next Product/Spec proof is
 blocked by
 [Node Lifecycle Transition Ownership Consolidation](/projects/execution-platform/specs/node-lifecycle-transition-ownership-consolidation).

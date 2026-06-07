@@ -7,7 +7,6 @@ export const MODEL_TASK_CLASSES = [
   "local_semantic_extraction",
   "schema_normalization",
   "tool_selection",
-  "resource_materialization",
   "implementation_patch",
   "validation_classification",
   "closeout_judgment",
@@ -20,19 +19,12 @@ export const MODEL_CONTRACT_BOUNDARY_SCHEMA_VERSION =
 
 export const MODEL_CONTRACT_BOUNDARIES = [
   "router_front_door",
-  "mission_ledger_compile",
-  "obligation_semantic_content",
-  "obligation_targeted_normalization",
+  "requirement_map_native_tool",
   "source_prompt_excerpt_interpretation",
   "work_intent_global_compile",
   "scheduler_global_reasoning",
   "scheduler_capability_selection",
   "scheduler_field_repair",
-  "context_narrowing_selector",
-  "resource_requirement_compile",
-  "resource_scout_handoff",
-  "domain_resource_selection",
-  "resource_materialization",
   "implementation_patch_author",
   "worker_local_tool_selection",
   "validation_failure_classification",
@@ -52,19 +44,11 @@ export type ModelTaskReasoningMode =
   | "xhigh"
   | null;
 
-export type ModelTaskProviderPath = "codex_app_server" | "openrouter" | "runtime_only";
+export type ModelTaskProviderPath = "codex_app_server" | "openrouter";
 
-export type ModelTaskParserMode =
-  | "runtime_json_object"
-  | "strict_json_schema"
-  | "field_patch_json"
-  | "runtime_only";
+export type ModelTaskParserMode = "runtime_json_object" | "strict_json_schema" | "field_patch_json";
 
-export type ModelTaskResponseFormatMode =
-  | "json_object"
-  | "json_schema"
-  | "prompt_only_json"
-  | "runtime_only";
+export type ModelTaskResponseFormatMode = "json_object" | "json_schema" | "prompt_only_json";
 
 export type ModelTaskRetryPolicy = {
   maxAttempts: number;
@@ -295,7 +279,7 @@ export const MODEL_TASK_POLICY_REGISTRY: Record<ModelTaskClass, ModelTaskPolicy>
     telemetryPolicy: telemetryPolicy(),
     supportedScopes: [
       "router.front_door",
-      "mission_ledger",
+      "mission_evidence_evaluation",
       "scheduler.global_reasoning",
       "closeout.maximality_review",
     ],
@@ -329,8 +313,8 @@ export const MODEL_TASK_POLICY_REGISTRY: Record<ModelTaskClass, ModelTaskPolicy>
     },
     telemetryPolicy: telemetryPolicy(),
     supportedScopes: [
-      "obligation.semantic_content",
-      "resource.scout.summary",
+      "intake.requirement_map.native_tool_batch",
+      "context.scout.summary",
       "validation.summary",
       "evidence.summary",
       "source_prompt.excerpt_interpretation",
@@ -366,7 +350,7 @@ export const MODEL_TASK_POLICY_REGISTRY: Record<ModelTaskClass, ModelTaskPolicy>
     telemetryPolicy: telemetryPolicy(),
     supportedScopes: [
       "router.enum_repair",
-      "obligation.targeted_normalization",
+      "requirement_map.targeted_repair",
       "scheduler.field_repair",
       "validation.field_repair",
     ],
@@ -399,54 +383,7 @@ export const MODEL_TASK_POLICY_REGISTRY: Record<ModelTaskClass, ModelTaskPolicy>
       terminalStatusWhenExhausted: "needs_review",
     },
     telemetryPolicy: telemetryPolicy(),
-    supportedScopes: [
-      "scheduler.capability_selection",
-      "resource.scout.narrowing_selector",
-      "resource.selection",
-      "worker.tool_selection",
-    ],
-    productionReadinessStatus: "production_primary",
-    rawPromptStored: false,
-    rawResponseStored: false,
-    rawProviderLogStored: false,
-    rawToolLogStored: false,
-  },
-  resource_materialization: {
-    artifactKind: "model_task_policy",
-    classificationVersion: MODEL_TASK_CLASSIFICATION_VERSION,
-    taskClass: "resource_materialization",
-    policyRef: "model-task-policy://resource-materialization/runtime-only",
-    modelPolicyRef: "model-task-policy://resource-materialization/runtime-only",
-    providerPath: "runtime_only",
-    preferredModelRef: null,
-    allowedFallbackModelRefs: [],
-    reasoningMode: null,
-    timeoutMs: 30_000,
-    softTimeoutMs: null,
-    maxInputBytes: null,
-    maxOutputTokens: null,
-    parserMode: "runtime_only",
-    responseFormatMode: "runtime_only",
-    retryPolicy: retryPolicy(0, [], "not_applicable"),
-    escalationPolicy: {
-      escalationModelRefs: [],
-      requiresStructuredReason: false,
-      terminalStatusWhenExhausted: "needs_review",
-    },
-    telemetryPolicy: telemetryPolicy({
-      tokenUsageRequired: false,
-      costUsageRequired: false,
-      allowEstimatedUsage: false,
-    }),
-    supportedScopes: [
-      "node.compile_execution_packet",
-      "context.resolve_target_refs",
-      "context.resolve_directory_seed",
-      "repo.snapshot_target_files",
-      "implementation.compile_task_packet",
-      "implementation.select_target_files",
-      "implementation.declare_new_file_intent",
-    ],
+    supportedScopes: ["scheduler.capability_selection", "worker.tool_selection"],
     productionReadinessStatus: "production_primary",
     rawPromptStored: false,
     rawResponseStored: false,
@@ -568,44 +505,14 @@ const MODEL_TASK_CALL_SITE_POLICY_OVERRIDES: Record<
   string,
   Partial<Record<ModelTaskClass, ModelTaskCallSitePolicyOverride>>
 > = {
-  "obligation.semantic_content": {
+  "intake.requirement_map.native_tool_batch": {
     local_semantic_extraction: {
-      policyRefSuffix: "obligation-semantic-content",
+      policyRefSuffix: "intake-requirement-map-native-tool-batch",
       timeoutMs: 180_000,
-      softTimeoutMs: 90_000,
-      maxInputBytes: 32_000,
-      maxOutputTokens: 8_000,
-      reasonCode: "model_task_call_site_bounds:obligation.semantic_content",
-    },
-  },
-  "obligation.semantic_content.fallback": {
-    local_semantic_extraction: {
-      policyRefSuffix: "obligation-semantic-content-fallback",
-      timeoutMs: 180_000,
-      softTimeoutMs: 90_000,
-      maxInputBytes: 32_000,
-      maxOutputTokens: 8_000,
-      reasonCode: "model_task_call_site_bounds:obligation.semantic_content.fallback",
-    },
-  },
-  "mission_ledger.production_single_pass": {
-    local_semantic_extraction: {
-      policyRefSuffix: "mission-ledger-production-single-pass",
-      timeoutMs: 300_000,
-      softTimeoutMs: 180_000,
-      maxInputBytes: 64_000,
-      maxOutputTokens: 8_000,
-      reasonCode: "model_task_call_site_bounds:mission_ledger.production_single_pass",
-    },
-  },
-  "mission.obligation_graph_author": {
-    local_semantic_extraction: {
-      policyRefSuffix: "mission-obligation-graph-author",
-      timeoutMs: 120_000,
-      softTimeoutMs: 90_000,
-      maxInputBytes: 32_000,
-      maxOutputTokens: 8_000,
-      reasonCode: "model_task_call_site_bounds:mission.obligation_graph_author",
+      softTimeoutMs: 120_000,
+      maxInputBytes: 96_000,
+      maxOutputTokens: 4_000,
+      reasonCode: "model_task_call_site_bounds:intake.requirement_map.native_tool_batch",
     },
   },
 };
@@ -646,28 +553,12 @@ const MODEL_CONTRACT_BOUNDARY_DEFINITIONS: Record<
     allowedOutputContractId: "intent_front_door_route_decision",
     allowedOutputContractVersion: "v1",
   },
-  mission_ledger_compile: {
-    boundaryId: "mission_ledger_compile",
-    taskClass: "global_reasoning",
-    callSite: "mission_ledger",
-    allowedToolFamily: "mission_ledger.compile",
-    allowedOutputContractId: "mission_contract_ledger",
-    allowedOutputContractVersion: "v1",
-  },
-  obligation_semantic_content: {
-    boundaryId: "obligation_semantic_content",
+  requirement_map_native_tool: {
+    boundaryId: "requirement_map_native_tool",
     taskClass: "local_semantic_extraction",
-    callSite: "obligation.semantic_content",
-    allowedToolFamily: "obligation.semantic_author",
-    allowedOutputContractId: "obligation_semantic_brief",
-    allowedOutputContractVersion: "v1",
-  },
-  obligation_targeted_normalization: {
-    boundaryId: "obligation_targeted_normalization",
-    taskClass: "schema_normalization",
-    callSite: "obligation.targeted_normalization",
-    allowedToolFamily: "obligation.field_patch",
-    allowedOutputContractId: "obligation_field_patch",
+    callSite: "intake.requirement_map.native_tool_batch",
+    allowedToolFamily: "requirement_map",
+    allowedOutputContractId: "requirement_map_native_tool_call",
     allowedOutputContractVersion: "v1",
   },
   source_prompt_excerpt_interpretation: {
@@ -708,46 +599,6 @@ const MODEL_CONTRACT_BOUNDARY_DEFINITIONS: Record<
     callSite: "scheduler.field_repair",
     allowedToolFamily: "scheduler.field_patch",
     allowedOutputContractId: "scheduler_field_patch",
-    allowedOutputContractVersion: "v1",
-  },
-  context_narrowing_selector: {
-    boundaryId: "context_narrowing_selector",
-    taskClass: "tool_selection",
-    callSite: "resource.scout.narrowing_selector",
-    allowedToolFamily: "resource.scout.narrowing_selector",
-    allowedOutputContractId: "resource_scout_exact_handle_tool_call",
-    allowedOutputContractVersion: "v1",
-  },
-  resource_requirement_compile: {
-    boundaryId: "resource_requirement_compile",
-    taskClass: "resource_materialization",
-    callSite: "resource.requirement_compile",
-    allowedToolFamily: "resource.requirement_compile",
-    allowedOutputContractId: "resource_requirement_packet",
-    allowedOutputContractVersion: "v1",
-  },
-  resource_scout_handoff: {
-    boundaryId: "resource_scout_handoff",
-    taskClass: "local_semantic_extraction",
-    callSite: "resource.scout.summary",
-    allowedToolFamily: "resource.scout_handoff",
-    allowedOutputContractId: "resource_scout_handoff",
-    allowedOutputContractVersion: "v1",
-  },
-  domain_resource_selection: {
-    boundaryId: "domain_resource_selection",
-    taskClass: "tool_selection",
-    callSite: "resource.selection",
-    allowedToolFamily: "resource.selection",
-    allowedOutputContractId: "domain_resource_selection_packet",
-    allowedOutputContractVersion: "v1",
-  },
-  resource_materialization: {
-    boundaryId: "resource_materialization",
-    taskClass: "resource_materialization",
-    callSite: "node.compile_execution_packet",
-    allowedToolFamily: "resource.materialization",
-    allowedOutputContractId: "node_execution_packet",
     allowedOutputContractVersion: "v1",
   },
   implementation_patch_author: {
@@ -879,7 +730,7 @@ export function modelContractBoundaryBindingFor(
     allowedToolFamily: definition.allowedToolFamily,
     allowedOutputContractId: definition.allowedOutputContractId,
     allowedOutputContractVersion: definition.allowedOutputContractVersion,
-    providerCallAllowed: policy.providerPath !== "runtime_only",
+    providerCallAllowed: true,
     rawPromptStored: false,
     rawResponseStored: false,
     rawProviderLogStored: false,
@@ -1002,15 +853,12 @@ export function classifyModelTaskCall(input: {
       "model_task_classified",
       `model_task_class:${input.taskClass}`,
       ...(boundaryBinding
-        ? [
-            `model_contract_boundary:${boundaryBinding.boundaryId}`,
-            "model_policy_binding_attached",
-          ]
+        ? [`model_contract_boundary:${boundaryBinding.boundaryId}`, "model_policy_binding_attached"]
         : []),
       ...(boundsOverride ? [boundsOverride.reasonCode] : []),
       ...(exception ? ["model_task_policy_exception_recorded"] : []),
     ],
-    providerCallAllowed: policy.providerPath !== "runtime_only",
+    providerCallAllowed: true,
     rawPromptStored: false,
     rawResponseStored: false,
     rawProviderLogStored: false,
@@ -1036,7 +884,7 @@ function primitiveString(value: unknown): string | number | boolean | null {
   ) {
     return value;
   }
-  return String(value ?? "");
+  return JSON.stringify(value) ?? "";
 }
 
 function addMismatch(
@@ -1261,16 +1109,6 @@ export function evaluateModelPolicyBindingPreflight(input: {
         reasonCode: "model_policy_provider_call_forbidden",
       });
     }
-  } else if (
-    input.classification.taskClass === "resource_materialization" &&
-    (input.providerCallRequested ?? true)
-  ) {
-    mismatches.push({
-      fieldPath: "providerCallRequested",
-      expected: false,
-      actual: true,
-      reasonCode: "resource_materialization_provider_call_forbidden",
-    });
   }
   const modelRef = input.actualModelRef ?? input.classification.selectedModelRef;
   if (
@@ -1296,7 +1134,9 @@ export function evaluateModelPolicyBindingPreflight(input: {
   });
   const reasonCodes = [
     "model_policy_binding_preflight_evaluated",
-    ...(binding ? [`model_contract_boundary:${binding.boundaryId}`] : ["model_contract_boundary_missing"]),
+    ...(binding
+      ? [`model_contract_boundary:${binding.boundaryId}`]
+      : ["model_contract_boundary_missing"]),
     ...mismatches.map((mismatch) => mismatch.reasonCode),
     ...cleanliness.reasonCodes,
   ];
@@ -1313,7 +1153,9 @@ export function evaluateModelPolicyBindingPreflight(input: {
     providerCallAllowed: binding?.providerCallAllowed ?? input.classification.providerCallAllowed,
     mismatches,
     proofCleanliness: cleanliness,
-    reasonCodes: accepted ? [...reasonCodes, "model_policy_binding_preflight_accepted"] : reasonCodes,
+    reasonCodes: accepted
+      ? [...reasonCodes, "model_policy_binding_preflight_accepted"]
+      : reasonCodes,
     rawPromptStored: false,
     rawResponseStored: false,
     rawProviderLogStored: false,
@@ -1378,8 +1220,5 @@ export function buildModelTaskTelemetryEnvelope(input: {
 }
 
 export function explainModelTaskPolicyDecision(classification: ModelTaskClassification): string {
-  if (classification.taskClass === "resource_materialization") {
-    return "Runtime-only resource materialization; provider calls are forbidden.";
-  }
   return `${classification.taskClass} uses ${classification.selectedModelRef ?? "no model"} via ${classification.providerPath} with ${classification.reasoningMode ?? "no"} reasoning.`;
 }

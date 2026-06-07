@@ -35,7 +35,7 @@ describe("agent-team role eval fixtures", () => {
   it("defines V4 Pro role targets without acceptance or implementation authority", () => {
     expect(V4_PRO_AGENT_TEAM_ROLE_TARGETS.map((target) => target.roleTargetId)).toEqual(
       expect.arrayContaining([
-        "resource_scout",
+        "context_scout",
         "test_engineer",
         "security_privacy_reviewer_assist",
         "reviewer_assist",

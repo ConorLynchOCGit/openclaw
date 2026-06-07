@@ -351,7 +351,7 @@ describe("native execution rpc", () => {
     }
   });
 
-  it("repairs a blocked route with a general model-level constraint review before validation", async () => {
+  it("does not run blocked-route repair after the first native route decision", async () => {
     const db = await createExecutionPlatformPgMemTestDatabase();
     try {
       await applyExecutionPlatformMigrations(db.sql);
@@ -364,30 +364,7 @@ describe("native execution rpc", () => {
         objectiveSummary: "Blocked after misreading guardrails as requested actions.",
         reasonCodes: ["prohibited_constraint_misread"],
       });
-      const repaired = createBaseCanonicalRouterOutput({
-        route: "workflow_execution",
-        responseMode: "create_runtime_job",
-        executeNow: true,
-        workflowId: "agent_team.coding",
-        jobType: "executor.agent_team",
-        confidence: 0.95,
-        objectiveSummary: "Run bounded local implementation with safety constraints.",
-        requestedActions: [
-          createCanonicalRouterAction("code_edit", "bounded local edit", 0.95),
-          createCanonicalRouterAction("test", "focused validation", 0.95),
-          createCanonicalRouterAction("closeout", "bounded closeout", 0.95),
-        ],
-        negatedActions: [
-          createCanonicalRouterAction("deploy", "do not deploy", 1),
-          createCanonicalRouterAction("outbound_send", "do not send outbound messages", 1),
-          createCanonicalRouterAction("model_promotion", "do not promote models", 1),
-        ],
-        requestedAuthority: "local_yolo",
-        sideEffectClass: "code_edit",
-        riskClass: "medium",
-        reasonCodes: ["blocked_route_repaired_constraint_misread"],
-      });
-      const provider = sequenceFrontDoorProvider([blocked, repaired]);
+      const provider = sequenceFrontDoorProvider([blocked]);
       const rpc = new NativeExecutionRpcService({
         runtimeJobs,
         structuredRouterProvider: provider,
@@ -404,21 +381,20 @@ describe("native execution rpc", () => {
         },
       });
 
-      expect(provider.requests).toHaveLength(2);
-      expect(JSON.stringify(provider.requests[1])).toContain("blocked_route_repair_attempted");
-      expect(submit.accepted).toBe(true);
-      expect(submit.runtimeJobId).toBeTruthy();
+      expect(provider.requests).toHaveLength(1);
+      expect(submit.accepted).toBe(false);
+      expect(submit.runtimeJobId).toBeNull();
       expect(submit.frontDoorSubmitDiagnostics?.map((phase) => phase.phase)).toEqual(
-        expect.arrayContaining([
+        expect.not.arrayContaining([
           "before_blocked_route_repair_model_call",
           "after_blocked_route_repair_model_call",
         ]),
       );
-      expect(submit.frontDoorRouterResult?.output?.route).toBe("workflow_execution");
+      expect(submit.frontDoorRouterResult?.output?.route).toBe("blocked");
       expect(submit.frontDoorRouterResult?.metadata.reasonCodes).toEqual(
-        expect.arrayContaining(["blocked_route_repair_attempted"]),
+        expect.not.arrayContaining(["blocked_route_repair_attempted"]),
       );
-      expect(await runtimeJobs.listRecentJobs()).toHaveLength(1);
+      expect(await runtimeJobs.listRecentJobs()).toHaveLength(0);
     } finally {
       await db.close();
     }
@@ -438,7 +414,7 @@ describe("native execution rpc", () => {
         requestedActions: [createCanonicalRouterAction("work_queue_control", "mark succeeded", 1)],
         reasonCodes: ["direct_lifecycle_mutation_requested"],
       });
-      const provider = sequenceFrontDoorProvider([blocked, blocked]);
+      const provider = sequenceFrontDoorProvider([blocked]);
       const rpc = new NativeExecutionRpcService({
         runtimeJobs,
         structuredRouterProvider: provider,
@@ -454,7 +430,7 @@ describe("native execution rpc", () => {
         },
       });
 
-      expect(provider.requests).toHaveLength(2);
+      expect(provider.requests).toHaveLength(1);
       expect(submit.accepted).toBe(false);
       expect(submit.reasonCodes).toContain("router_route_blocked");
       expect(await runtimeJobs.listRecentJobs()).toHaveLength(0);
@@ -1003,25 +979,22 @@ describe("native execution rpc", () => {
     }
   });
 
-  it("repairs executor workflow when router confuses target subject with executor", async () => {
+  it("does not run executor capability repair after a correct thin router decision", async () => {
     const db = await createExecutionPlatformPgMemTestDatabase();
     try {
       await applyExecutionPlatformMigrations(db.sql);
       const runtimeJobs = new RuntimeJobRepository(db.sql, { claimStrategy: "basic" });
-      const wrongExecutor = createBaseCanonicalRouterOutput({
+      const codingExecutor = createBaseCanonicalRouterOutput({
         route: "workflow_execution",
         responseMode: "create_runtime_job",
         executeNow: true,
-        executorWorkflowId: "agent_team.product_spec_planning",
-        workflowId: "agent_team.product_spec_planning",
-        jobType: "executor.workflow",
+        executorWorkflowId: "agent_team.coding",
+        workflowId: "agent_team.coding",
+        jobType: "executor.agent_team",
         confidence: 0.94,
         objectiveSummary: "Implement a production workflow upgrade.",
-        requestedCapabilities: ["code_edit", "test", "docs_update", "review", "closeout"],
-        requestedActions: [
-          createCanonicalRouterAction("code_edit", "implement the target workflow", 0.94),
-          createCanonicalRouterAction("test", "validate the target workflow", 0.9),
-        ],
+        requestedCapabilities: [],
+        requestedActions: [],
         subjectWorkflowIds: ["agent_team.product_spec_planning"],
         targetSubjectRefs: [
           {
@@ -1031,18 +1004,9 @@ describe("native execution rpc", () => {
           },
         ],
         sideEffectClass: "code_edit",
+        reasonCodes: ["router_primary_outcome:implement_existing_system"],
       });
-      const repairedExecutor = createBaseCanonicalRouterOutput({
-        ...wrongExecutor,
-        executorWorkflowId: "agent_team.coding",
-        workflowId: "agent_team.coding",
-        jobType: "executor.agent_team",
-        selectedExecutionReason:
-          "The requested capabilities require source edits, tests, docs, review, and closeout.",
-        targetSubjectReason:
-          "Product/Spec Planning is the workflow being upgraded, not the executor.",
-      });
-      const provider = sequenceFrontDoorProvider([wrongExecutor, repairedExecutor]);
+      const provider = sequenceFrontDoorProvider([codingExecutor]);
       const rpc = new NativeExecutionRpcService({
         runtimeJobs,
         structuredRouterProvider: provider,
@@ -1058,7 +1022,7 @@ describe("native execution rpc", () => {
       });
 
       expect(submit.accepted).toBe(true);
-      expect(provider.requests).toHaveLength(2);
+      expect(provider.requests).toHaveLength(1);
       expect(submit.workflowId).toBe("agent_team.coding");
       expect(submit.frontDoorCompiledRequest).toMatchObject({
         executorWorkflowId: "agent_team.coding",
@@ -1066,6 +1030,86 @@ describe("native execution rpc", () => {
       });
       const artifacts = await runtimeJobs.listArtifacts(submit.runtimeJobId ?? "");
       expect(JSON.stringify(artifacts)).toContain("workflow://agent_team.product_spec_planning");
+    } finally {
+      await db.close();
+    }
+  });
+
+  it("blocks internally consistent routes that violate an intake route contract without rerouting", async () => {
+    const db = await createExecutionPlatformPgMemTestDatabase();
+    try {
+      await applyExecutionPlatformMigrations(db.sql);
+      const runtimeJobs = new RuntimeJobRepository(db.sql, { claimStrategy: "basic" });
+      const planningRoute = createBaseCanonicalRouterOutput({
+        route: "workflow_execution",
+        responseMode: "create_runtime_job",
+        executeNow: true,
+        executorWorkflowId: "agent_team.product_spec_planning",
+        workflowId: "agent_team.product_spec_planning",
+        jobType: "executor.workflow",
+        confidence: 0.94,
+        objectiveSummary: "Produce planning artifacts for the Product/Spec workflow.",
+        requestedCapabilities: ["plan", "action_graph_proposal", "runtime_job_compile", "closeout"],
+        requestedActions: [createCanonicalRouterAction("plan", "produce planning output", 0.94)],
+        subjectWorkflowIds: ["agent_team.product_spec_planning"],
+        targetSubjectRefs: [
+          {
+            targetKind: "workflow",
+            targetRef: "workflow://agent_team.product_spec_planning",
+            confidence: 0.95,
+          },
+        ],
+        requestedAuthority: "local_yolo",
+        sideEffectClass: "read_only",
+        reasonCodes: ["router_primary_outcome:produce_plan"],
+      });
+      const provider = sequenceFrontDoorProvider([planningRoute]);
+      const rpc = new NativeExecutionRpcService({
+        runtimeJobs,
+        structuredRouterProvider: provider,
+      });
+      const submit = await rpc.submit({
+        prompt: "Execute this proof lane by implementing the Product/Spec workflow.",
+        auth: {
+          actorId: "operator",
+          authenticated: true,
+          role: "operator",
+          sessionId: "session-1",
+        },
+        intakeRouteContract: {
+          artifactKind: "intake_route_contract",
+          schemaVersion: "intent-front-door.intake-route-contract.v1",
+          contractId: "test-intake-contract",
+          expectedPrimaryOutcomeKinds: ["implement_existing_system", "prove_existing_system"],
+          requiredExecutorCapabilities: ["code_edit", "test", "review", "closeout"],
+          requiredRequestedActions: ["code_edit", "test", "review", "closeout"],
+          expectedSubjectKinds: ["workflow"],
+          reasonCodes: ["test_requires_coding_executor_capability_profile"],
+          rawPromptStored: false,
+          rawResponseStored: false,
+        },
+      });
+
+      expect(submit.accepted).toBe(false);
+      expect(provider.requests).toHaveLength(1);
+      expect(JSON.stringify(provider.requests[0])).not.toContain(
+        "intake_route_contract_repair_attempted",
+      );
+      expect(submit.workflowId).toBe("agent_team.product_spec_planning");
+      expect(submit.reasonCodes).toEqual(
+        expect.arrayContaining([
+          "intake_route_contract_primary_outcome_mismatch",
+          "intake_route_contract_executor_capability_missing:code_edit",
+          "intake_route_contract_executor_capability_missing:test",
+        ]),
+      );
+      expect(submit.frontDoorSubmitDiagnostics?.map((phase) => phase.phase)).not.toEqual(
+        expect.arrayContaining([
+          "before_intake_route_contract_repair_model_call",
+          "after_intake_route_contract_repair_model_call",
+        ]),
+      );
+      expect(await runtimeJobs.listRecentJobs()).toHaveLength(0);
     } finally {
       await db.close();
     }

@@ -68,28 +68,28 @@ describe("runtime work graph repository", () => {
       });
       await graphs.recordCheckpoint({
         graphId: graph.graphId,
-        checkpointId: "boundary-replay-context-scout",
-        checkpointKind: "boundary_replay_resource_scout",
-        stateSummary: "Initial resource scout checkpoint.",
-        artifactRefs: ["runtime-job://job/context-scout/a"],
+        checkpointId: "boundary-replay-node-agent",
+        checkpointKind: "boundary_replay_node_agent_session",
+        stateSummary: "Initial node agent checkpoint.",
+        artifactRefs: ["runtime-job://job/node-agent/a"],
       });
       const second = await graphs.recordCheckpoint({
         graphId: graph.graphId,
-        checkpointId: "boundary-replay-context-scout",
-        checkpointKind: "boundary_replay_resource_scout",
-        stateSummary: "Updated resource scout checkpoint.",
-        artifactRefs: ["runtime-job://job/context-scout/b"],
+        checkpointId: "boundary-replay-node-agent",
+        checkpointKind: "boundary_replay_node_agent_session",
+        stateSummary: "Updated node agent checkpoint.",
+        artifactRefs: ["runtime-job://job/node-agent/b"],
       });
       const snapshot = await graphs.readGraphSnapshot(graph.graphId);
 
-      expect(second.stateSummary).toBe("Updated resource scout checkpoint.");
+      expect(second.stateSummary).toBe("Updated node agent checkpoint.");
       expect(snapshot?.checkpoints).toHaveLength(1);
       expect(
         snapshot?.graph.checkpointRefs.filter(
-          (ref) => ref === "runtime-work-graph://checkpoint/boundary-replay-context-scout",
+          (ref) => ref === "runtime-work-graph://checkpoint/boundary-replay-node-agent",
         ),
       ).toHaveLength(1);
-      expect(snapshot?.checkpoints[0]?.artifactRefs).toEqual(["runtime-job://job/context-scout/b"]);
+      expect(snapshot?.checkpoints[0]?.artifactRefs).toEqual(["runtime-job://job/node-agent/b"]);
     });
   });
 
@@ -155,6 +155,178 @@ describe("runtime work graph repository", () => {
     });
   });
 
+  it("persists graph patch topology atomically with graph-scoped runtime ids", async () => {
+    await withGraphRepository(async ({ graphs }) => {
+      await graphs.createGraph({
+        graphId: "graph-topology-a",
+        workflowId: "agent_team.coding",
+        orchestratorModelRef: "openai-codex/gpt-5.5",
+      });
+      await graphs.createGraph({
+        graphId: "graph-topology-b",
+        workflowId: "agent_team.coding",
+        orchestratorModelRef: "openai-codex/gpt-5.5",
+      });
+
+      const first = await graphs.persistGraphTopology({
+        graphId: "graph-topology-a",
+        nodes: [
+          {
+            nodeId: "node-graph-a-impl",
+            nodeKind: "implementation",
+            assignedRole: "implementation_engineer",
+            metadata: {
+              schedulerGraphPatchNodeSeedId: "seed-shared-impl",
+              runtimeOwnedSchedulerGraphPatchNode: true,
+              rawPromptStored: false,
+              rawResponseStored: false,
+            },
+          },
+          {
+            nodeId: "node-graph-a-validation",
+            nodeKind: "validation",
+            assignedRole: "test_engineer",
+            metadata: {
+              schedulerGraphPatchNodeSeedId: "seed-shared-validation",
+              runtimeOwnedSchedulerGraphPatchNode: true,
+              rawPromptStored: false,
+              rawResponseStored: false,
+            },
+          },
+        ],
+        edges: [
+          {
+            edgeId: "edge-graph-a-impl-validation",
+            fromNodeId: "node-graph-a-impl",
+            toNodeId: "node-graph-a-validation",
+            edgeKind: "validation_depends_on",
+            reasonCodes: ["scheduler_graph_patch_mission_validation_depends_on_core"],
+            metadata: {
+              schedulerGraphPatchEdgeSeedId: "edge-seed-shared-impl-validation",
+              fromNodeSeedId: "seed-shared-impl",
+              toNodeSeedId: "seed-shared-validation",
+              runtimeOwnedSchedulerGraphPatchEdge: true,
+              rawPromptStored: false,
+              rawResponseStored: false,
+            },
+          },
+        ],
+      });
+      const replay = await graphs.persistGraphTopology({
+        graphId: "graph-topology-a",
+        nodes: [
+          {
+            nodeId: "node-graph-a-impl",
+            nodeKind: "implementation",
+            assignedRole: "implementation_engineer",
+            metadata: {
+              schedulerGraphPatchNodeSeedId: "seed-shared-impl",
+              runtimeOwnedSchedulerGraphPatchNode: true,
+              rawPromptStored: false,
+              rawResponseStored: false,
+            },
+          },
+          {
+            nodeId: "node-graph-a-validation",
+            nodeKind: "validation",
+            assignedRole: "test_engineer",
+            metadata: {
+              schedulerGraphPatchNodeSeedId: "seed-shared-validation",
+              runtimeOwnedSchedulerGraphPatchNode: true,
+              rawPromptStored: false,
+              rawResponseStored: false,
+            },
+          },
+        ],
+        edges: [
+          {
+            edgeId: "edge-graph-a-impl-validation",
+            fromNodeId: "node-graph-a-impl",
+            toNodeId: "node-graph-a-validation",
+            edgeKind: "validation_depends_on",
+            metadata: {
+              schedulerGraphPatchEdgeSeedId: "edge-seed-shared-impl-validation",
+              fromNodeSeedId: "seed-shared-impl",
+              toNodeSeedId: "seed-shared-validation",
+              runtimeOwnedSchedulerGraphPatchEdge: true,
+              rawPromptStored: false,
+              rawResponseStored: false,
+            },
+          },
+        ],
+      });
+
+      expect(first.createdNodes.map((node) => node.nodeId).toSorted()).toEqual([
+        "node-graph-a-impl",
+        "node-graph-a-validation",
+      ]);
+      expect(replay.createdNodes).toHaveLength(0);
+      expect(replay.reusedNodes.map((node) => node.nodeId).toSorted()).toEqual([
+        "node-graph-a-impl",
+        "node-graph-a-validation",
+      ]);
+      await expect(
+        graphs.persistGraphTopology({
+          graphId: "graph-topology-b",
+          nodes: [
+            {
+              nodeId: "node-graph-a-impl",
+              nodeKind: "implementation",
+              assignedRole: "implementation_engineer",
+              metadata: {
+                schedulerGraphPatchNodeSeedId: "seed-shared-impl",
+                runtimeOwnedSchedulerGraphPatchNode: true,
+                rawPromptStored: false,
+                rawResponseStored: false,
+              },
+            },
+          ],
+          edges: [],
+        }),
+      ).rejects.toThrow(/runtime_work_graph_topology_node_id_cross_graph_conflict/u);
+
+      await expect(
+        graphs.persistGraphTopology({
+          graphId: "graph-topology-b",
+          nodes: [
+            {
+              nodeId: "node-graph-b-valid",
+              nodeKind: "implementation",
+              assignedRole: "implementation_engineer",
+              metadata: {
+                schedulerGraphPatchNodeSeedId: "seed-valid",
+                runtimeOwnedSchedulerGraphPatchNode: true,
+                rawPromptStored: false,
+                rawResponseStored: false,
+              },
+            },
+          ],
+          edges: [
+            {
+              edgeId: "edge-graph-b-invalid",
+              fromNodeId: "node-graph-b-valid",
+              toNodeId: "node-graph-b-missing",
+              edgeKind: "validation_depends_on",
+              metadata: {
+                schedulerGraphPatchEdgeSeedId: "edge-seed-invalid",
+                rawPromptStored: false,
+                rawResponseStored: false,
+              },
+            },
+          ],
+        }),
+      ).rejects.toThrow();
+
+      const graphB = await graphs.readGraphSnapshot("graph-topology-b");
+      expect(graphB?.nodes).toHaveLength(0);
+      const graphA = await graphs.readGraphSnapshot("graph-topology-a");
+      expect(graphA?.edges[0]).toMatchObject({
+        fromNodeId: "node-graph-a-impl",
+        toNodeId: "node-graph-a-validation",
+      });
+    });
+  });
+
   it("rejects raw storage metadata and preserves Work Queue lifecycle boundary", async () => {
     await withGraphRepository(async ({ graphs }) => {
       await expect(
@@ -183,9 +355,9 @@ describe("runtime work graph repository", () => {
           nodeKind: "implementation",
           assignedRole: "implementation_engineer",
           metadata: {
-            nodeReadinessState: {
-              artifactKind: "node_readiness_state",
-              readinessStatus: "ready",
+            nodeExecutionSnapshot: {
+              artifactKind: "node_execution_snapshot",
+              snapshotStatus: "ready",
             },
             rawPromptStored: false,
             rawResponseStored: false,
@@ -219,10 +391,10 @@ describe("runtime work graph repository", () => {
           nodeKind: "work_intent",
           assignedRole: "planning_orchestrator",
           metadata: {
-            resourceRequirementPacket: {
+            sourceMaterialRequirementPacket: {
               artifactKind: "resource_requirement_packet",
-              resourceRequirementRef:
-                "runtime-job://job/runtime-work-graph/graph/resource-requirement/node/abc",
+              sourceMaterialRequirementRef:
+                "runtime-job://job/runtime-work-graph/graph/source-material-requirement/node/abc",
               semanticQuestions: ["Which files should this consumer inspect?"],
             },
             rawPromptStored: false,
@@ -237,8 +409,8 @@ describe("runtime work graph repository", () => {
         nodeKind: "implementation",
         assignedRole: "implementation_engineer",
         metadata: {
-          nodeReadinessStateRef:
-            "runtime-work-graph://node-readiness-state/implementation-with-manifest/abc",
+          nodeLifecycleProjectionRef:
+            "runtime-work-graph://node-lifecycle-projection/implementation-with-manifest/abc",
           nodeExecutionContractRef:
             "runtime-work-graph://node-execution-contract/implementation-with-manifest/abc",
           nodeExecutionContract: {
@@ -253,8 +425,6 @@ describe("runtime work graph repository", () => {
             executorKey: "kind:implementation",
             workerRef: "openrouter://moonshotai/kimi-k2.6",
             evidenceMode: ["changed_file_evidence"],
-            domainResourcePacketKind: "coding_resource_packet",
-            nodeExecutionPacketRequired: true,
             rawPromptStored: false,
             rawResponseStored: false,
             rawProviderLogStored: false,
@@ -263,16 +433,14 @@ describe("runtime work graph repository", () => {
             rawDbRowsStored: false,
             secretsStored: false,
           },
-          nodeExecutionPacketRef:
-            "runtime-work-graph://node-execution-packet/implementation-with-manifest/abc",
-          resourcePacketRef:
-            "runtime-work-graph://coding-resource-packet/implementation-with-manifest/abc",
-          resourceRequirement: {
-            resourceRequirementRef:
-              "runtime-job://job/runtime-work-graph/graph/resource-requirement/node/abc",
-            resourceRequirementId: "abc",
-            resourceRequirementHash: "sha256:req",
-            schemaVersion: "execution-platform.resource-requirement-packet.v1",
+          nodeExecutionSnapshotRef:
+            "runtime-work-graph://node-execution-snapshot/implementation-with-manifest/abc",
+          sourceMaterialRequirement: {
+            sourceMaterialRequirementRef:
+              "runtime-job://job/runtime-work-graph/graph/source-material-requirement/node/abc",
+            sourceMaterialRequirementId: "abc",
+            sourceMaterialRequirementHash: "sha256:req",
+            schemaVersion: "execution-platform.source-material-requirement-packet.v1",
             runtimeJobId: "job",
             workflowId: "agent_team.coding",
             graphId: "graph-manifest-only-node-metadata",
@@ -280,10 +448,10 @@ describe("runtime work graph repository", () => {
             consumerNodeId: "implementation-with-manifest",
             workIntentRef: "runtime-work-graph://node/implementation-with-manifest",
             sourceCommitmentIds: ["C-1"],
-            contextPurpose: "consumer_scoped_resource_handoff",
+            contextPurpose: "consumer_scoped_source_material",
             semanticQuestionCount: 1,
             semanticQuestionSample: ["Which files should this consumer inspect?"],
-            requiredResourceKinds: ["resource_handoff"],
+            requiredSourceMaterialKinds: ["source_material"],
             downstreamCapabilityId: "implementation_microtask",
             downstreamExecutionIntent: "source_edit",
             downstreamEvidenceMode: ["changed_file_evidence"],
@@ -293,7 +461,7 @@ describe("runtime work graph repository", () => {
             sourceContextBrokerRequestRef:
               "runtime-job://job/runtime-work-graph/graph/context-broker/request/abc",
             byteCount: 1024,
-            reasonCodes: ["resource_requirement_packet_compiled"],
+            reasonCodes: ["source_material_requirement_compiled"],
             rawPromptStored: false,
             rawResponseStored: false,
             rawProviderLogStored: false,
@@ -305,8 +473,8 @@ describe("runtime work graph repository", () => {
       });
 
       expect(node.metadata).toMatchObject({
-        nodeReadinessStateRef:
-          "runtime-work-graph://node-readiness-state/implementation-with-manifest/abc",
+        nodeLifecycleProjectionRef:
+          "runtime-work-graph://node-lifecycle-projection/implementation-with-manifest/abc",
       });
 
       const summarized = await graphs.addNode({
@@ -315,16 +483,16 @@ describe("runtime work graph repository", () => {
         nodeKind: "implementation",
         assignedRole: "implementation_engineer",
         metadata: {
-          implementationResourceMaterializationInputCounts: {
+          nodeAgentSessionInputCounts: {
             targetFileSnapshotCount: 2,
             resolvedTargetFileRefCount: 2,
             validationCommandRefCount: 1,
           },
-          implementationResourceMaterializationOutputCounts: {
+          nodeAgentSessionOutputCounts: {
             targetFileSnapshotCount: 2,
-            implementationTaskPacketCount: 1,
+            nodeExecutionSnapshotCount: 1,
           },
-          implementationResourceMaterializationMaxBounds: {
+          nodeAgentSessionMaxBounds: {
             targetFileSnapshotMax: 120,
             validationCommandRefMax: 40,
           },
@@ -334,7 +502,7 @@ describe("runtime work graph repository", () => {
       });
 
       expect(summarized.metadata).toMatchObject({
-        implementationResourceMaterializationInputCounts: {
+        nodeAgentSessionInputCounts: {
           targetFileSnapshotCount: 2,
         },
       });
@@ -357,8 +525,8 @@ describe("runtime work graph repository", () => {
         metadata: {
           providedContextSnapshotRefs: Array.from({ length: 24 }, (_, index) =>
             createContextSnapshotRef({
-              sourceRef: `resource-handoff://large-graph/${index}`,
-              sourceKind: "resource_scout_handoff",
+              sourceRef: `openclaw-session://agent%3Aexecution-node-agent%3Alarge-graph/result/${index}`,
+              sourceKind: "native_context_scout_result",
               capturedAt: "2026-05-22T00:00:00.000Z",
               graphId: "graph-context-snapshot-ref-array",
               nodeId: "implementation-with-many-snapshot-refs",

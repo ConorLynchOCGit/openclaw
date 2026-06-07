@@ -42,7 +42,6 @@ describe("architecture red-team workflow plugin", () => {
     expect(workflowPluginResolutionFor({ plugin, definition })).toMatchObject({
       workflowId: "agent_team.architecture_red_team",
       productionEnabled: true,
-      stagedSchedulerProtocolRequired: true,
       resourceReadinessPolicy: "domain_resource_manifest",
       domainResourceManifestRequiredForWorkerExecution: true,
       runtimeDerivedNodeEnvelopeRequired: true,

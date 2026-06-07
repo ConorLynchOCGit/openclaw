@@ -1,5 +1,5 @@
-import { runtimeExecutionSpanReadback } from "../../observability/runtime-execution-span.ts";
 import { buildCanonicalReadbackGate } from "../../observability/canonical-readback-gate.ts";
+import { runtimeExecutionSpanReadback } from "../../observability/runtime-execution-span.ts";
 import type {
   JsonValue,
   RuntimeJobArtifact,
@@ -184,9 +184,7 @@ export function activeGraphProgressReadback(
   const latestRunCurrent = asRecord(latestRunStateMetadata?.current);
   const latestRunProcess = asRecord(latestRunStateMetadata?.process);
   const latestRunFrontier = asRecord(latestRunStateMetadata?.activeFrontier);
-  const latestRunCanonicalReadbackGate = asRecord(
-    latestRunStateMetadata?.canonicalReadbackGate,
-  );
+  const latestRunCanonicalReadbackGate = asRecord(latestRunStateMetadata?.canonicalReadbackGate);
   const latestRunGraphPatch = asRecord(latestRunStateMetadata?.graphPatch);
   const latestRunBoundaryReplay = asRecord(latestRunStateMetadata?.boundaryReplay);
   const boundaryCheckpointProgressEvents = progressEvents.filter((event) => {
@@ -409,7 +407,7 @@ export function activeGraphProgressReadback(
           repairAction: stringValue(branch.repairAction),
           nextTransition: stringValue(branch.nextTransition),
           evidenceRefs: stringArrayValue(branch.evidenceRefs, 40),
-          readinessStateRef: stringValue(branch.readinessStateRef),
+          nodeLifecycleProjectionRef: stringValue(branch.nodeLifecycleProjectionRef),
           reasonCodes: stringArrayValue(branch.reasonCodes, 40),
         }))
         .filter((branch) => branch.nodeId.length > 0)
@@ -430,25 +428,18 @@ export function activeGraphProgressReadback(
         parentBranchId: stringValue(branch.parentBranchId),
         nodeId: stringValue(branch.nodeId) ?? "",
         nodeKind: stringValue(branch.nodeKind),
-        workIntentRef: stringValue(branch.workIntentRef),
+        sourceRequirementRef: stringValue(branch.sourceRequirementRef),
         contractRef: stringValue(branch.contractRef),
         readinessRef: stringValue(branch.readinessRef),
-        resourceRequirementRefs: stringArrayValue(branch.resourceRequirementRefs, 20),
-        nodeResourceDemandSessionRefs: stringArrayValue(branch.nodeResourceDemandSessionRefs, 20),
-        nodeResourceDemandStatus: stringValue(branch.nodeResourceDemandStatus),
-        nodeResourceLedgerManifestRefs: stringArrayValue(
-          branch.nodeResourceLedgerManifestRefs,
-          20,
-        ),
-        nodeResourceLedgerStatus: stringValue(branch.nodeResourceLedgerStatus),
+        sourceMaterialRequirementRefs: stringArrayValue(branch.sourceMaterialRequirementRefs, 20),
         domainResourceSelectionRefs: stringArrayValue(branch.domainResourceSelectionRefs, 20),
         domainResourceSelectionStatus: stringValue(branch.domainResourceSelectionStatus),
         actionGateStatus: stringValue(branch.actionGateStatus),
         actionGateMissingFields: stringArrayValue(branch.actionGateMissingFields, 20),
         providerDiagnosticRefs: stringArrayValue(branch.providerDiagnosticRefs, 20),
         providerDiagnosticStatus: stringValue(branch.providerDiagnosticStatus),
-        domainResourcePacketRef: stringValue(branch.domainResourcePacketRef),
-        resourcePacketRef: stringValue(branch.resourcePacketRef),
+        domainSourceMaterialRef: stringValue(branch.domainSourceMaterialRef),
+        sourceMaterialRef: stringValue(branch.sourceMaterialRef),
         status: stringValue(branch.status),
         blockerCode: stringValue(blocker?.code ?? branch.blockerCode),
         blockerSummary: stringValue(blocker?.summary ?? branch.blockerSummary),
@@ -492,23 +483,16 @@ export function activeGraphProgressReadback(
           nodeKind: stringValue(branch.nodeKind),
           capabilityId: stringValue(branch.capabilityId),
           contractRef: stringValue(branch.contractRef),
-          readinessRef: stringValue(branch.readinessStateRef ?? branch.readinessRef),
-          resourceRequirementRefs: stringArrayValue(branch.resourceRequirementRefs, 20),
-          nodeResourceDemandSessionRefs: stringArrayValue(branch.nodeResourceDemandSessionRefs, 20),
-          nodeResourceDemandStatus: stringValue(branch.nodeResourceDemandStatus),
-          nodeResourceLedgerManifestRefs: stringArrayValue(
-            branch.nodeResourceLedgerManifestRefs,
-            20,
-          ),
-          nodeResourceLedgerStatus: stringValue(branch.nodeResourceLedgerStatus),
+          readinessRef: stringValue(branch.nodeLifecycleProjectionRef ?? branch.readinessRef),
+          sourceMaterialRequirementRefs: stringArrayValue(branch.sourceMaterialRequirementRefs, 20),
           domainResourceSelectionRefs: stringArrayValue(branch.domainResourceSelectionRefs, 20),
           domainResourceSelectionStatus: stringValue(branch.domainResourceSelectionStatus),
           actionGateStatus: stringValue(branch.actionGateStatus),
           actionGateMissingFields: stringArrayValue(branch.actionGateMissingFields, 20),
           providerDiagnosticRefs: stringArrayValue(branch.providerDiagnosticRefs, 20),
           providerDiagnosticStatus: stringValue(branch.providerDiagnosticStatus),
-          domainResourcePacketRef: stringValue(branch.domainResourcePacketRef),
-          resourcePacketRef: stringValue(branch.resourcePacketRef),
+          domainSourceMaterialRef: stringValue(branch.domainSourceMaterialRef),
+          sourceMaterialRef: stringValue(branch.sourceMaterialRef),
           consumerRefs: stringArrayValue(branch.consumerRefs, 20),
           dependentConsumers: stringArrayValue(branch.dependentConsumers, 20),
           siblingBranchIds: stringArrayValue(branch.siblingBranchIds, 20),
@@ -522,7 +506,9 @@ export function activeGraphProgressReadback(
           status: stringValue(branch.status),
           blockerSummary: stringValue(branch.blockerSummary),
           errorPath: stringValue(branch.errorPath),
-          readinessStateRef: stringValue(branch.readinessStateRef),
+          nodeLifecycleProjectionRef: stringValue(branch.nodeLifecycleProjectionRef),
+          nodeLifecycleProjectionGate: stringValue(branch.nodeLifecycleProjectionGate),
+          nodeLifecycleProjectionStatus: stringValue(branch.nodeLifecycleProjectionStatus),
           evidenceRefs: stringArrayValue(branch.evidenceRefs, 20),
           reasonCodes: stringArrayValue(branch.reasonCodes, 20),
         }))
@@ -554,8 +540,8 @@ export function activeGraphProgressReadback(
     : null;
   const normalizeTransition = (value: string | null): string | null =>
     value === "execute_frontier" ? "run_frontier" : value;
-  const resourceRequirementRefs = collect("resourceRequirementRefs", 40);
-  const resourceRequirementStatuses = collect("resourceRequirementStatuses", 40);
+  const sourceMaterialRequirementRefs = collect("sourceMaterialRequirementRefs", 40);
+  const sourceMaterialRequirementStatuses = collect("sourceMaterialRequirementStatuses", 40);
   const contextBrokerRequestRefs = collect("contextBrokerRequestRefs", 40);
   const contextBrokerStatuses = collect("contextBrokerStatuses", 40);
   const latestRunAgreementReasonCodes = [
@@ -607,13 +593,14 @@ export function activeGraphProgressReadback(
     latestRunBranchStates.at(0) ??
     null;
   const latestOwnerBranchRecord = asRecord(latestOwnerBranch);
-  const latestOwnerReadinessRef =
-    stringValue(data.nodeReadinessStateRef) ??
+  const latestOwnerLifecycleProjectionRef =
+    stringValue(data.nodeLifecycleProjectionRef) ??
     stringValue(latestOwnerBranchRecord?.readinessRef) ??
-    stringValue(latestOwnerBranchRecord?.readinessStateRef) ??
-    stringValue(latestRunCurrent?.readinessStateRef);
-  const latestOwnerReadinessStatus =
-    stringValue(data.nodeReadinessStatus) ?? stringValue(latestRunCurrent?.readinessStatus);
+    stringValue(latestOwnerBranchRecord?.nodeLifecycleProjectionRef) ??
+    stringValue(latestRunCurrent?.nodeLifecycleProjectionRef);
+  const latestOwnerLifecycleProjectionStatus =
+    stringValue(data.nodeLifecycleProjectionStatus) ??
+    stringValue(latestRunCurrent?.nodeLifecycleProjectionStatus);
   const ownerExecutionIntent =
     collectedString("executionIntent") ?? stringValue(latestRunCurrent?.executionIntent);
   const ownerEvidenceMode = [
@@ -684,9 +671,123 @@ export function activeGraphProgressReadback(
       stringValue(latestRunProcess?.terminalStatus) ?? stringValue(data.finalizationState),
     adapterTerminalStatus: stringValue(latestRunProcess?.adapterTerminalStatus),
   });
-  const nodeResourceDemandStatus = collectedString("nodeResourceDemandStatus");
-  const nodeResourceDemandBlockerRefs =
-    nodeResourceDemandStatus === "fulfilled" ? [] : collect("nodeResourceDemandBlockerRefs", 20);
+  const latestNodeAgentSessionData = eventDataRecord(
+    progressEvents.findLast((event) => {
+      const record = eventDataRecord(event);
+      return Boolean(
+        stringValue(record.nodeRunId) ||
+        stringValue(record.nodeAgentId) ||
+        stringValue(record.nodeAgentSessionKey) ||
+        stringValue(record.nodeExecutionSnapshotRef) ||
+        stringValue(record.nodeAgentStartReceiptRef) ||
+        stringValue(record.nodeFinishArtifactRef) ||
+        asRecord(record.nodeAgentTraceEventRefs) ||
+        asRecord(record.nodeAgentTraceObservations),
+      );
+    }),
+  );
+  const latestNodeFinishArtifact = latestArtifact(artifacts, "execution_platform.node_finish");
+  const latestNodeFinishMetadata = asRecord(latestNodeFinishArtifact?.metadata);
+  const latestNodeAgentSessionTraceArtifact = latestArtifact(
+    artifacts,
+    "execution_platform.node_agent_session_trace",
+  );
+  const latestNodeAgentStartReceiptArtifact = latestArtifact(
+    artifacts,
+    "execution_platform.node_agent_start_receipt",
+  );
+  const latestNodeAgentSessionTraceMetadata = asRecord(
+    latestNodeAgentSessionTraceArtifact?.metadata,
+  );
+  const latestNodeAgentStartReceiptMetadata = asRecord(
+    latestNodeAgentStartReceiptArtifact?.metadata,
+  );
+  const latestNodeAgentSessionTraceEventRefs = {
+    ...asRecord(latestNodeAgentSessionData.nodeAgentTraceEventRefs),
+    ...asRecord(latestNodeAgentSessionTraceMetadata?.nodeAgentTraceEventRefs),
+  };
+  const latestNodeAgentSessionTraceObservations = {
+    ...asRecord(latestNodeAgentSessionData.nodeAgentTraceObservations),
+    ...asRecord(latestNodeAgentSessionTraceMetadata?.nodeAgentTraceObservations),
+  };
+  const nodeAgentSnapshotRefs = collect("nodeExecutionSnapshotRef", 30);
+  const nodeAgentSessionTraceRefs = [
+    ...new Set(
+      [...collect("nodeAgentSessionTraceRef", 20), latestNodeAgentSessionTraceArtifact?.uri].filter(
+        (ref): ref is string => Boolean(ref),
+      ),
+    ),
+  ].slice(0, 20);
+  const nodeAgentStartReceiptRefs = [
+    ...new Set(
+      [...collect("nodeAgentStartReceiptRef", 20), latestNodeAgentStartReceiptArtifact?.uri].filter(
+        (ref): ref is string => Boolean(ref),
+      ),
+    ),
+  ].slice(0, 20);
+  const nodeAgentStartBlockedTools = [
+    ...(Array.isArray(latestNodeAgentSessionData.nodeAgentStartBlockedTools)
+      ? latestNodeAgentSessionData.nodeAgentStartBlockedTools
+      : []),
+    ...(Array.isArray(latestNodeAgentStartReceiptMetadata?.nodeAgentStartBlockedTools)
+      ? latestNodeAgentStartReceiptMetadata.nodeAgentStartBlockedTools
+      : []),
+  ]
+    .map((entry): Record<string, JsonValue> | null => {
+      const record = asRecord(entry);
+      if (!record) {
+        return null;
+      }
+      const toolName = stringValue(record.toolName);
+      const agentId = stringValue(record.agentId);
+      if (!toolName && !agentId) {
+        return null;
+      }
+      return {
+        agentId: agentId ?? null,
+        toolName: toolName ?? null,
+        blockedBy: stringArrayValue(record.blockedBy, 8),
+        effectiveProfileSource: stringValue(record.effectiveProfileSource),
+        localPolicyExplicit: booleanValue(record.localPolicyExplicit),
+      };
+    })
+    .filter((entry): entry is Record<string, JsonValue> => Boolean(entry))
+    .slice(0, 20);
+  const nodeAgentStartRuntimeAliases = [
+    ...(Array.isArray(latestNodeAgentSessionData.nodeAgentStartRuntimeAliases)
+      ? latestNodeAgentSessionData.nodeAgentStartRuntimeAliases
+      : []),
+    ...(Array.isArray(latestNodeAgentStartReceiptMetadata?.nodeAgentStartRuntimeAliases)
+      ? latestNodeAgentStartReceiptMetadata.nodeAgentStartRuntimeAliases
+      : []),
+  ]
+    .map((entry): Record<string, JsonValue> | null => {
+      const record = asRecord(entry);
+      if (!record) {
+        return null;
+      }
+      const aliasPath = stringValue(record.aliasPath);
+      const canonicalPath = stringValue(record.canonicalPath);
+      if (!aliasPath || !canonicalPath) {
+        return null;
+      }
+      return {
+        aliasPath,
+        canonicalPath,
+        label: stringValue(record.label),
+      };
+    })
+    .filter((entry): entry is Record<string, JsonValue> => Boolean(entry))
+    .slice(0, 10);
+  const nodeFinishArtifactRefs = [
+    ...new Set(
+      [
+        ...collect("nodeFinishArtifactRef", 20),
+        stringValue(latestNodeAgentSessionTraceMetadata?.nodeFinishArtifactRef),
+        latestNodeFinishArtifact?.uri,
+      ].filter((ref): ref is string => Boolean(ref)),
+    ),
+  ].slice(0, 20);
   return {
     state: latest || latestRunArtifact ? "present" : "missing",
     graphId,
@@ -713,25 +814,9 @@ export function activeGraphProgressReadback(
     evidenceClaims: latestEvidenceClaims,
     nodeLocalLifecycle: {
       state:
-        collect("nodeResourceDemandSessionRefs", 1).length > 0 ||
-        collect("nodeResourceLedgerManifestRefs", 1).length > 0 ||
-        collect("domainResourceSelectionRefs", 1).length > 0 ||
-        collectedString("actionGateStatus")
+        collect("domainResourceSelectionRefs", 1).length > 0 || collectedString("actionGateStatus")
           ? "present"
           : "missing",
-      nodeResourceDemand: {
-        status: nodeResourceDemandStatus,
-        sessionRefs: collect("nodeResourceDemandSessionRefs", 30),
-        blockerRefs: nodeResourceDemandBlockerRefs,
-        missingRefs: collect("nodeResourceDemandMissingRefs", 20),
-        nextTransition: collectedString("nodeResourceDemandNextTransition"),
-      },
-      ledger: {
-        status: collectedString("nodeResourceLedgerStatus"),
-        manifestRefs: collect("nodeResourceLedgerManifestRefs", 30),
-        entryCount: collectedNumber("nodeResourceLedgerEntryCount"),
-        bodyRefs: collect("nodeResourceLedgerBodyRefs", 20),
-      },
       domainResourceSelection: {
         status: collectedString("domainResourceSelectionStatus"),
         refs: collect("domainResourceSelectionRefs", 30),
@@ -756,6 +841,167 @@ export function activeGraphProgressReadback(
       rawResponseStored: false,
       rawProviderLogStored: false,
       rawToolLogStored: false,
+    },
+    nodeAgentSession: {
+      state:
+        stringValue(latestNodeAgentSessionData.nodeRunId) ||
+        stringValue(latestNodeAgentSessionData.nodeAgentSessionKey) ||
+        stringValue(latestNodeAgentSessionTraceMetadata?.nodeRunId) ||
+        stringValue(latestNodeAgentSessionTraceMetadata?.nodeAgentSessionKey) ||
+        stringValue(latestNodeAgentStartReceiptMetadata?.nodeAgentSessionKey) ||
+        nodeAgentSnapshotRefs.length > 0 ||
+        nodeAgentStartReceiptRefs.length > 0 ||
+        nodeAgentSessionTraceRefs.length > 0 ||
+        nodeFinishArtifactRefs.length > 0
+          ? "present"
+          : "missing",
+      nodeRunId:
+        stringValue(latestNodeAgentSessionData.nodeRunId) ??
+        stringValue(latestNodeAgentSessionTraceMetadata?.nodeRunId),
+      agentId:
+        stringValue(latestNodeAgentSessionData.nodeAgentId) ??
+        stringValue(latestNodeAgentSessionTraceMetadata?.nodeAgentId),
+      sessionKey:
+        stringValue(latestNodeAgentSessionData.nodeAgentSessionKey) ??
+        stringValue(latestNodeAgentSessionTraceMetadata?.nodeAgentSessionKey) ??
+        stringValue(latestNodeAgentStartReceiptMetadata?.nodeAgentSessionKey),
+      snapshotRefs: nodeAgentSnapshotRefs,
+      startReceiptRefs: nodeAgentStartReceiptRefs,
+      startStatus:
+        stringValue(latestNodeAgentSessionData.nodeAgentStartStatus) ??
+        stringValue(latestNodeAgentStartReceiptMetadata?.nodeAgentStartStatus),
+      startBlockerKind:
+        stringValue(latestNodeAgentSessionData.nodeAgentStartBlockerKind) ??
+        stringValue(latestNodeAgentStartReceiptMetadata?.nodeAgentStartBlockerKind),
+      startConfigFingerprint:
+        stringValue(latestNodeAgentSessionData.nodeAgentStartConfigFingerprint) ??
+        stringValue(latestNodeAgentStartReceiptMetadata?.nodeAgentStartConfigFingerprint),
+      startConfigEpoch:
+        stringValue(latestNodeAgentSessionData.nodeAgentStartConfigEpoch) ??
+        stringValue(latestNodeAgentStartReceiptMetadata?.nodeAgentStartConfigEpoch),
+      startProjectRoot:
+        stringValue(latestNodeAgentSessionData.nodeAgentStartProjectRoot) ??
+        stringValue(latestNodeAgentStartReceiptMetadata?.nodeAgentStartProjectRoot),
+      startExecutionPlatformDocsRoot:
+        stringValue(latestNodeAgentSessionData.nodeAgentStartExecutionPlatformDocsRoot) ??
+        stringValue(latestNodeAgentStartReceiptMetadata?.nodeAgentStartExecutionPlatformDocsRoot),
+      startRuntimeHome:
+        stringValue(latestNodeAgentSessionData.nodeAgentStartRuntimeHome) ??
+        stringValue(latestNodeAgentStartReceiptMetadata?.nodeAgentStartRuntimeHome),
+      startRuntimeAliases: nodeAgentStartRuntimeAliases,
+      startSourceRuntimeManifestRef:
+        stringValue(latestNodeAgentSessionData.nodeAgentStartSourceRuntimeManifestRef) ??
+        stringValue(latestNodeAgentStartReceiptMetadata?.nodeAgentStartSourceRuntimeManifestRef),
+      startLockAcquisitionOutcome:
+        stringValue(latestNodeAgentSessionData.nodeAgentStartLockAcquisitionOutcome) ??
+        stringValue(latestNodeAgentStartReceiptMetadata?.nodeAgentStartLockAcquisitionOutcome),
+      startBlockedTools: nodeAgentStartBlockedTools,
+      traceRefs: nodeAgentSessionTraceRefs,
+      finishArtifactRefs: nodeFinishArtifactRefs,
+      finishStatus:
+        stringValue(latestNodeAgentSessionData.nodeFinishStatus) ??
+        stringValue(latestNodeFinishMetadata?.status),
+      finishBlockerKind:
+        stringValue(latestNodeAgentSessionData.nodeFinishBlockerKind) ??
+        stringValue(latestNodeFinishMetadata?.blockerKind),
+      latestToolId:
+        stringValue(latestNodeAgentSessionData.schedulerToolId) ??
+        (workerToolIds.includes("node.agent_session.invoke") ? "node.agent_session.invoke" : null),
+      observedToolNames: [
+        ...new Set([
+          ...stringArrayValue(latestNodeAgentSessionData.nodeAgentObservedToolNames, 80),
+          ...stringArrayValue(latestNodeAgentSessionTraceMetadata?.nodeAgentObservedToolNames, 80),
+        ]),
+      ].slice(0, 80),
+      toolCallCount:
+        numberValue(latestNodeAgentSessionData.nodeAgentToolCallCount) ??
+        numberValue(latestNodeAgentSessionTraceMetadata?.nodeAgentToolCallCount),
+      traceMissingOptics: [
+        ...new Set([
+          ...stringArrayValue(latestNodeAgentSessionData.nodeAgentTraceMissingOptics, 40),
+          ...stringArrayValue(latestNodeAgentSessionTraceMetadata?.nodeAgentTraceMissingOptics, 40),
+        ]),
+      ].slice(0, 40),
+      traceEventRefs: {
+        workerPromptAuthoredRef: stringValue(
+          latestNodeAgentSessionTraceEventRefs?.workerPromptAuthoredRef,
+        ),
+        workerPromptHashRef: stringValue(latestNodeAgentSessionTraceEventRefs?.workerPromptHashRef),
+        parentSessionKeyRef: stringValue(latestNodeAgentSessionTraceEventRefs?.parentSessionKeyRef),
+        firstPlanUpdateRef: stringValue(latestNodeAgentSessionTraceEventRefs?.firstPlanUpdateRef),
+        scoutSpawnRef: stringValue(latestNodeAgentSessionTraceEventRefs?.scoutSpawnRef),
+        childSessionKeyRef: stringValue(latestNodeAgentSessionTraceEventRefs?.childSessionKeyRef),
+        childResultRef: stringValue(latestNodeAgentSessionTraceEventRefs?.childResultRef),
+        parentSynthesisRef: stringValue(latestNodeAgentSessionTraceEventRefs?.parentSynthesisRef),
+        firstEditRef: stringValue(latestNodeAgentSessionTraceEventRefs?.firstEditRef),
+        validationActionRef: stringValue(latestNodeAgentSessionTraceEventRefs?.validationActionRef),
+        validationScoutResultRef: stringValue(
+          latestNodeAgentSessionTraceEventRefs?.validationScoutResultRef,
+        ),
+        repairLoopEvidenceRef: stringValue(
+          latestNodeAgentSessionTraceEventRefs?.repairLoopEvidenceRef,
+        ),
+        terminalNodeFinishRef: stringValue(
+          latestNodeAgentSessionTraceEventRefs?.terminalNodeFinishRef,
+        ),
+        waitingOnSubagentStateRef: stringValue(
+          latestNodeAgentSessionTraceEventRefs?.waitingOnSubagentStateRef,
+        ),
+      },
+      traceObservations: {
+        workerPromptAuthored: booleanValue(
+          latestNodeAgentSessionTraceObservations?.workerPromptAuthored,
+        ),
+        parentSessionStarted: booleanValue(
+          latestNodeAgentSessionTraceObservations?.parentSessionStarted,
+        ),
+        firstPlanUpdateObserved: booleanValue(
+          latestNodeAgentSessionTraceObservations?.firstPlanUpdateObserved,
+        ),
+        contextScoutSpawnObserved: booleanValue(
+          latestNodeAgentSessionTraceObservations?.contextScoutSpawnObserved,
+        ),
+        sessionsYieldObserved: booleanValue(
+          latestNodeAgentSessionTraceObservations?.sessionsYieldObserved,
+        ),
+        childResultObserved: booleanValue(
+          latestNodeAgentSessionTraceObservations?.childResultObserved,
+        ),
+        parentSynthesisObserved: booleanValue(
+          latestNodeAgentSessionTraceObservations?.parentSynthesisObserved,
+        ),
+        firstEditObserved: booleanValue(latestNodeAgentSessionTraceObservations?.firstEditObserved),
+        validationActionObserved: booleanValue(
+          latestNodeAgentSessionTraceObservations?.validationActionObserved,
+        ),
+        validationScoutObserved: booleanValue(
+          latestNodeAgentSessionTraceObservations?.validationScoutObserved,
+        ),
+        repairLoopEvidenceObserved: booleanValue(
+          latestNodeAgentSessionTraceObservations?.repairLoopEvidenceObserved,
+        ),
+        terminalNodeFinishObserved: booleanValue(
+          latestNodeAgentSessionTraceObservations?.terminalNodeFinishObserved,
+        ),
+        waitingOnSubagentObserved: booleanValue(
+          latestNodeAgentSessionTraceObservations?.waitingOnSubagentObserved,
+        ),
+      },
+      nativeCompactionCount:
+        numberValue(latestNodeAgentSessionData.nodeAgentNativeCompactionCount) ??
+        numberValue(latestNodeAgentSessionTraceMetadata?.nodeAgentNativeCompactionCount),
+      reasonCodes: [
+        ...new Set([
+          ...stringArrayValue(latestNodeAgentSessionData.reasonCodes, 30),
+          ...collect("nodeAgentSessionReasonCodes", 30),
+        ]),
+      ].slice(0, 30),
+      rawPromptStored: false,
+      rawResponseStored: false,
+      rawProviderLogStored: false,
+      rawToolLogStored: false,
+      rawDbRowsStored: false,
+      secretsStored: false,
     },
     acceptedCommitmentIds: latestStringArray("acceptedCommitmentIds", 12),
     rejectedCommitmentIds: latestStringArray("rejectedCommitmentIds", 12),
@@ -843,14 +1089,10 @@ export function activeGraphProgressReadback(
           stringValue(latestRunFrontier?.schedulerNextLegalTransition) ??
           stringValue(latestRunFrontier?.nextTransition),
       },
-      readiness: {
-        status: latestOwnerReadinessStatus,
-        ref: latestOwnerReadinessRef,
-        phase: collectedString("nodeReadinessPhase"),
-        projectionStatus: collectedString("readinessProjectionStatus"),
-        projectionDriftReasonCodes: collect("readinessProjectionDriftReasonCodes", 40),
-        projectionMissingFields: collect("readinessProjectionMissingFields", 40),
-        stale: booleanValue(data.nodeReadinessStale),
+      nodeLifecycleProjection: {
+        status: latestOwnerLifecycleProjectionStatus,
+        ref: latestOwnerLifecycleProjectionRef,
+        gate: collectedString("nodeLifecycleProjectionGate"),
         blockerSummary:
           stringValue(data.blockerSummary) ??
           stringValue(latestOwnerBranchRecord?.blockerSummary) ??
@@ -864,10 +1106,10 @@ export function activeGraphProgressReadback(
           stringValue(data.policyPath) ??
           stringValue(latestOwnerBranchRecord?.blockerPolicyPath) ??
           stringValue(latestRunCurrent?.policyPath),
-        nextAllowedTransitions: collect("nodeReadinessNextAllowedTransitions", 16),
+        nextAllowedTransitions: collect("nodeLifecycleNextLegalTransitions", 16),
         reasonCodes: [
           ...new Set([
-            ...collect("resourceReadinessReasonCodes", 40),
+            ...collect("nodeLifecycleReasonCodes", 40),
             ...stringArrayValue(latestOwnerBranchRecord?.reasonCodes, 40),
           ]),
         ].slice(0, 40),
@@ -890,9 +1132,9 @@ export function activeGraphProgressReadback(
             ...collect("contextRefs", 30),
             ...collect("contextSnapshotRefs", 30),
             ...collect("contextBrokerRequestRefs", 30),
-            ...collect("nodeResourceDemandSessionRefs", 30),
-            ...collect("nodeResourceLedgerManifestRefs", 30),
-            ...stringArrayValue(latestOwnerBranchRecord?.resourceRequirementRefs, 30),
+            ...collect("sourceMaterialRefs", 30),
+            ...collect("nodeAgentSessionTraceRef", 30),
+            ...stringArrayValue(latestOwnerBranchRecord?.sourceMaterialRequirementRefs, 30),
           ]),
         ].slice(0, 30),
         changedFileRefs: collect("changedFileRefs", 30),
@@ -1054,20 +1296,21 @@ export function activeGraphProgressReadback(
           ? "present"
           : "missing",
       heapPhaseSnapshotRefs: [
-        ...new Set([
-          ...stringArrayValue(latestRunProofEnvironment?.heapPhaseSnapshotRefs, 20),
-          ...stringArrayValue(data.heapPhaseSnapshotRefs, 20),
-          ...(
-            Array.isArray(latestRunProofEnvironment?.heapPhaseSnapshots)
+        ...new Set(
+          [
+            ...stringArrayValue(latestRunProofEnvironment?.heapPhaseSnapshotRefs, 20),
+            ...stringArrayValue(data.heapPhaseSnapshotRefs, 20),
+            ...(Array.isArray(latestRunProofEnvironment?.heapPhaseSnapshots)
               ? latestRunProofEnvironment.heapPhaseSnapshots
               : Array.isArray(data.heapPhaseSnapshots)
                 ? data.heapPhaseSnapshots
                 : []
-          )
-            .map((snapshot) => stringValue(asRecord(snapshot)?.snapshotRef))
-            .filter((ref): ref is string => Boolean(ref)),
-          stringValue(asRecord(data.heapPhaseSnapshot)?.snapshotRef),
-        ].filter((ref): ref is string => Boolean(ref))),
+            )
+              .map((snapshot) => stringValue(asRecord(snapshot)?.snapshotRef))
+              .filter((ref): ref is string => Boolean(ref)),
+            stringValue(asRecord(data.heapPhaseSnapshot)?.snapshotRef),
+          ].filter((ref): ref is string => Boolean(ref)),
+        ),
       ].slice(0, 20),
       largestMetadataBytes:
         numberValue(latestRunProofEnvironment?.largestMetadataBytes) ??
@@ -1135,7 +1378,7 @@ export function activeGraphProgressReadback(
       promptHash: stringValue(data.sourcePromptHash),
       promptLength: numberValue(data.sourcePromptLength),
       resolutionStatus: stringValue(data.sourcePromptResolutionStatus),
-      sectionRefs: collect("sourcePromptSectionRefs", 20),
+      sourcePromptBodyRef: stringValue(data.sourcePromptBodyRef),
       excerptRequestRefs: collect("sourcePromptExcerptRequestRefs", 20),
       excerptProvidedRefs: collect("sourcePromptExcerptProvidedRefs", 20),
       excerptDeniedRefs: collect("sourcePromptExcerptDeniedRefs", 20),
@@ -1174,132 +1417,25 @@ export function activeGraphProgressReadback(
       blockingContextReason: null,
     },
     contextScout: {
-      qualityState: stringValue(data.contextQualityState),
-      verifiedFileRefs: collect("verifiedContextFileRefs", 30),
-      handoffPacketRefs: collect("resourceHandoffPacketRefs", 20),
-      toolLoopRefs: collect("contextScoutToolLoopRefs", 20),
-      runtimeToolInvocationRefs: collect("contextScoutRuntimeToolInvocationRefs", 40),
-      executionPacketRefs: collect("contextScoutExecutionPacketRefs", 20),
-      frontierRequestRef: collectedString("resourceFrontierRequestRef"),
-      frontierStatus: collectedString("resourceFrontierStatus"),
-      shardManifestRef: collectedString("contextShardManifestRef"),
-      shardCount: collectedNumber("contextShardCount"),
-      shardUnitKind: collectedString("contextShardUnitKind"),
-      mergePacketRef: collectedString("contextMergePacketRef"),
-      singleUnitBlockerRef: collectedString("contextSingleUnitBlockerRef"),
-      executionPacketInputBytes: numberValue(data.contextScoutExecutionPacketInputBytes),
-      executionPacketMaxInputBytes: numberValue(data.contextScoutExecutionPacketMaxInputBytes),
-      providerTimeoutMs: numberValue(data.contextScoutProviderTimeoutMs),
-      packetCompileStatus: stringValue(data.contextScoutPacketCompileStatus),
-      packetCompileReasonCodes: collect("contextScoutPacketCompileReasonCodes", 20),
-      rejectedRefs: collect("contextScoutRejectedRefs", 20),
-      sufficiencySummary: stringValue(data.contextScoutSufficiencySummary),
-      repoAnalysisFindingCount: numberValue(data.contextScoutRepoAnalysisFindingCount),
-      symbolRefs: collect("contextScoutSymbolRefs", 40),
-      testRefs: collect("contextScoutTestRefs", 32),
+      qualityState:
+        booleanValue(latestNodeAgentSessionTraceObservations?.contextScoutSpawnObserved) === true
+          ? "native_subagent_spawn_observed"
+          : null,
+      verifiedFileRefs: [],
+      scoutSpawnRef: stringValue(latestNodeAgentSessionTraceEventRefs?.scoutSpawnRef),
+      childSessionKeyRef: stringValue(latestNodeAgentSessionTraceEventRefs?.childSessionKeyRef),
+      childResultRef: stringValue(latestNodeAgentSessionTraceEventRefs?.childResultRef),
+      parentSynthesisRef: stringValue(latestNodeAgentSessionTraceEventRefs?.parentSynthesisRef),
+      sessionsYieldObserved: booleanValue(
+        latestNodeAgentSessionTraceObservations?.sessionsYieldObserved,
+      ),
+      childResultObserved: booleanValue(
+        latestNodeAgentSessionTraceObservations?.childResultObserved,
+      ),
+      parentSynthesisObserved: booleanValue(
+        latestNodeAgentSessionTraceObservations?.parentSynthesisObserved,
+      ),
       openBlockers: collect("openContextBlockers", 12),
-    },
-    resourceMaterialization: {
-      state:
-        collectedString("nodeReadinessStatus") === "ready"
-          ? "ready"
-          : collectedString("nodeReadinessStatus") === "ready_with_limitations"
-            ? "ready_with_limitations"
-            : collect("resourceBlockingLimitations", 1).length > 0 ||
-                collectedString("nodeReadinessStatus") === "blocked"
-              ? "blocked"
-              : "missing",
-      materializationStatus: collectedString("implementationResourceMaterializationStatus"),
-      materializationPacketRef: collectedString("implementationResourceMaterializationPacketRef"),
-      materializationBlockingReasonCodes: collect(
-        "implementationResourceMaterializationBlockingReasonCodes",
-        40,
-      ),
-      materializationNonblockingReasonCodes: collect(
-        "implementationResourceMaterializationNonblockingReasonCodes",
-        40,
-      ),
-      materializationSchemaDiagnostics: Array.isArray(
-        data.implementationResourceMaterializationSchemaDiagnostics,
-      )
-        ? (data.implementationResourceMaterializationSchemaDiagnostics as JsonValue)
-        : ((asRecord(
-            data.implementationResourceMaterializationSchemaDiagnostics,
-          ) as JsonValue | null) ?? null),
-      materializationInputCounts:
-        (asRecord(data.implementationResourceMaterializationInputCounts) as JsonValue | null) ??
-        null,
-      materializationOutputCounts:
-        (asRecord(data.implementationResourceMaterializationOutputCounts) as JsonValue | null) ??
-        null,
-      materializationMaxBounds:
-        (asRecord(data.implementationResourceMaterializationMaxBounds) as JsonValue | null) ?? null,
-      materializationSuggestedSplitIds: collect(
-        "implementationResourceMaterializationSuggestedSplitIds",
-        40,
-      ),
-      materializationSuggestedSplitCount: collectedNumber(
-        "implementationResourceMaterializationSuggestedSplitCount",
-      ),
-      implementationContextPacketRef: collectedString("implementationContextPacketRef"),
-      implementationContextReadinessStatus: collectedString("implementationContextReadinessStatus"),
-      implementationTaskPacketRefs: collect("implementationTaskPacketRefs", 40),
-      resolvedTargetFileRefs: collect("resolvedTargetFileRefs", 40),
-      readableTargetFileRefs: collect("readableTargetFileRefs", 40),
-      missingTargetRefs: collect("missingTargetRefs", 40),
-      unreadableTargetRefs: collect("unreadableTargetRefs", 40),
-      directoryOnlyTargetRefs: collect("directoryOnlyTargetRefs", 30),
-      candidateConcreteFileRefs: collect("candidateConcreteFileRefs", 50),
-      targetFileSnapshotRefs: collect("targetFileSnapshotRefs", 40),
-      targetFileSnapshotHashes: collect("targetFileSnapshotHashes", 40),
-      implementationContextRepairAction: collectedString("implementationContextRepairAction"),
-      nodeExecutionContractRef: collectedString("nodeExecutionContractRef"),
-      nodeExecutionContractVersion: collectedString("nodeExecutionContractVersion"),
-      nodeExecutionContractHash: collectedString("nodeExecutionContractHash"),
-      nodeExecutionPacketRef: collectedString("nodeExecutionPacketRef"),
-      nodeExecutionPacketHash: collectedString("nodeExecutionPacketHash"),
-      nodeExecutionPacketStatus: collectedString("nodeExecutionPacketStatus"),
-      resourcePacketKind: collectedString("resourcePacketKind"),
-      resourcePacketRef: collectedString("resourcePacketRef"),
-      resourcePacketHash: collectedString("resourcePacketHash"),
-      nodeReadinessState: (asRecord(data.nodeReadinessState) as JsonValue | null) ?? null,
-      nodeReadinessStateRef: collectedString("nodeReadinessStateRef"),
-      nodeReadinessPhase: collectedString("nodeReadinessPhase"),
-      nodeReadinessStatus: collectedString("nodeReadinessStatus"),
-      nodeReadinessRepairAction: collectedString("nodeReadinessRepairAction"),
-      nodeReadinessNextAllowedTransitions: collect("nodeReadinessNextAllowedTransitions", 16),
-      nodeReadinessFreshnessStatus: collectedString("nodeReadinessFreshnessStatus"),
-      nodeReadinessSnapshotStatus: collectedString("nodeReadinessSnapshotStatus"),
-      nodeReadinessContextStatus: collectedString("nodeReadinessContextStatus"),
-      nodeReadinessValidationStatus: collectedString("nodeReadinessValidationStatus"),
-      nodeReadinessAuthorityStatus: collectedString("nodeReadinessAuthorityStatus"),
-      nodeReadinessEvidenceStatus: collectedString("nodeReadinessEvidenceStatus"),
-      readinessProjectionStatus: collectedString("readinessProjectionStatus"),
-      readinessProjectionDriftReasonCodes: collect("readinessProjectionDriftReasonCodes", 40),
-      readinessProjectionMissingFields: collect("readinessProjectionMissingFields", 40),
-      readinessProjectionDrift:
-        (asRecord(data.readinessProjectionDrift) as JsonValue | null) ?? null,
-      nodeReadinessStale: booleanValue(data.nodeReadinessStale),
-      readinessReasonCodes: collect("resourceReadinessReasonCodes", 40),
-      blockingLimitations: collect("resourceBlockingLimitations", 20),
-      nonblockingLimitations: collect("resourceNonblockingLimitations", 20),
-      nextDecision:
-        collect("resourceBlockingLimitations", 1).length > 0
-          ? (collectedString("nodeReadinessRepairAction") ?? "repair_node_execution_packet")
-          : collect("nodeReadinessNextAllowedTransitions", 16).includes("execute_node")
-            ? "execute_node"
-            : null,
-      eli5:
-        collect("resourceBlockingLimitations", 1).length > 0
-          ? "The worker is waiting because runtime resources for this node are incomplete."
-          : collectedString("nodeReadinessStatus") === "ready" ||
-              collectedString("nodeReadinessStatus") === "ready_with_limitations"
-            ? "Runtime compiled a worker-ready resource packet for this node."
-            : null,
-      rawPromptStored: false,
-      rawResponseStored: false,
-      rawProviderLogStored: false,
-      rawToolLogStored: false,
     },
     codeIntelligence: {
       state: codeIntelligenceState,
@@ -1378,12 +1514,12 @@ export function activeGraphProgressReadback(
     },
     contextBroker: {
       state:
-        resourceRequirementRefs.length > 0 || contextBrokerRequestRefs.length > 0
+        sourceMaterialRequirementRefs.length > 0 || contextBrokerRequestRefs.length > 0
           ? "present"
           : "missing",
-      requirementRefs: resourceRequirementRefs,
-      requirementStatuses: resourceRequirementStatuses,
-      requirementReasonCodes: collect("resourceRequirementReasonCodes", 40),
+      requirementRefs: sourceMaterialRequirementRefs,
+      requirementStatuses: sourceMaterialRequirementStatuses,
+      requirementReasonCodes: collect("sourceMaterialRequirementReasonCodes", 40),
       requestRefs: contextBrokerRequestRefs,
       statuses: contextBrokerStatuses,
       dedupeKeys: collect("contextBrokerDedupeKeys", 40),
@@ -1545,7 +1681,12 @@ export function activeGraphProgressReadback(
             nodeId: stringValue(latestRunCanonicalReadbackGate.nodeId),
             branchId: stringValue(latestRunCanonicalReadbackGate.branchId),
             contractRef: stringValue(latestRunCanonicalReadbackGate.contractRef),
-            readinessStateRef: stringValue(latestRunCanonicalReadbackGate.readinessStateRef),
+            nodeLifecycleProjectionRef: stringValue(
+              latestRunCanonicalReadbackGate.nodeLifecycleProjectionRef,
+            ),
+            nodeLifecycleProjectionGate: stringValue(
+              latestRunCanonicalReadbackGate.nodeLifecycleProjectionGate,
+            ),
             schemaPath: stringValue(latestRunCanonicalReadbackGate.schemaPath),
             nextLegalTransition: stringValue(latestRunCanonicalReadbackGate.nextLegalTransition),
             reasonCodes: stringArrayValue(latestRunCanonicalReadbackGate.reasonCodes, 40),
@@ -1582,10 +1723,11 @@ export function activeGraphProgressReadback(
             : null
           : null,
         canonicalGateMatches: latestRunCanonicalReadbackGate
-          ? stringValue(latestRunCanonicalReadbackGate.gateKind) === canonicalReadbackGate.gateKind &&
+          ? stringValue(latestRunCanonicalReadbackGate.gateKind) ===
+              canonicalReadbackGate.gateKind &&
             stringValue(latestRunCanonicalReadbackGate.nodeId) === canonicalReadbackGate.nodeId &&
-            stringValue(latestRunCanonicalReadbackGate.readinessStateRef) ===
-              canonicalReadbackGate.readinessStateRef
+            stringValue(latestRunCanonicalReadbackGate.nodeLifecycleProjectionRef) ===
+              canonicalReadbackGate.nodeLifecycleProjectionRef
           : null,
         reasonCodes: latestRunAgreementReasonCodes,
       },
@@ -1618,7 +1760,9 @@ export function activeGraphProgressReadback(
     },
     rootCause: {
       state: projectedRootCauseData ? "present" : "missing",
-      signatureHash: projectedRootCauseData ? stringValue(projectedRootCauseData.signatureHash) : null,
+      signatureHash: projectedRootCauseData
+        ? stringValue(projectedRootCauseData.signatureHash)
+        : null,
       repeatCount: projectedRootCauseData ? numberValue(projectedRootCauseData.repeatCount) : null,
       systemic: projectedRootCauseData ? booleanValue(projectedRootCauseData.systemic) : null,
       recommendedRepairBoundary: projectedRootCauseData
@@ -1710,7 +1854,9 @@ export function activeGraphProgressReadback(
       graphNodeCount: numberValue(latestSchedulerModelCallEnvelopeData?.graphNodeCount),
       graphEdgeCount: numberValue(latestSchedulerModelCallEnvelopeData?.graphEdgeCount),
       commitmentCount: numberValue(latestSchedulerModelCallEnvelopeData?.commitmentCount),
-      workIntentCount: numberValue(latestSchedulerModelCallEnvelopeData?.workIntentCount),
+      sourceRequirementCount: numberValue(
+        latestSchedulerModelCallEnvelopeData?.sourceRequirementCount,
+      ),
       activeFrontierCounts: {
         ready: numberValue(latestSchedulerModelCallFrontierCounts?.ready),
         selected: numberValue(latestSchedulerModelCallFrontierCounts?.selected),
@@ -1747,9 +1893,7 @@ export function activeGraphProgressReadback(
         : [],
       rejectedDecisionRef: stringValue(latestSchedulerModelCallEnvelopeData?.rejectedDecisionRef),
       rejectedDecisionId: stringValue(latestSchedulerModelCallEnvelopeData?.rejectedDecisionId),
-      rejectedDecisionKind: stringValue(
-        latestSchedulerModelCallEnvelopeData?.rejectedDecisionKind,
-      ),
+      rejectedDecisionKind: stringValue(latestSchedulerModelCallEnvelopeData?.rejectedDecisionKind),
       reasonCodes: latestSchedulerModelCallEnvelopeData
         ? stringArrayValue(latestSchedulerModelCallEnvelopeData.reasonCodes, 40)
         : [],

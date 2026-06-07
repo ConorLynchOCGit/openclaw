@@ -21,8 +21,8 @@ import {
   type LocalCodexSmokeTestRepository,
   type SmokeRunnerOptionsSnapshot,
 } from "./local-codex-smoke-test.ts";
+import { DEFAULT_REPO_PATH } from "./policy.ts";
 
-const DEFAULT_REPO_PATH = "/root/services/openclaw-roles/live";
 const DEFAULT_MAX_RUNTIME_MS = 120_000;
 const DEFAULT_MAX_STDOUT_BYTES = 1024 * 1024;
 const DEFAULT_MAX_STDERR_BYTES = 128 * 1024;

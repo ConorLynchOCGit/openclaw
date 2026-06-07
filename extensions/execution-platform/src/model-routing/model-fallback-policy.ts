@@ -33,7 +33,7 @@ export type ModelFallbackDecision = {
 export function defaultModelFallbackPolicies(): ModelFallbackRolePolicy[] {
   return [
     {
-      roleId: "resource_scout",
+      roleId: "context_scout",
       primaryModelId: "qwen/qwen3-coder-next",
       fallbackModelIds: [],
       fallbackAllowed: false,

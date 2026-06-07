@@ -6,7 +6,6 @@ import type { RuntimeWorkGraphNodeExecutionResult } from "./workflow-node-execut
 export const SUPERSTEP_BRANCH_RESULT_STATUSES = [
   "succeeded",
   "blocked_context",
-  "blocked_resource",
   "blocked_dependency",
   "blocked_authority",
   "blocked_human_decision",
@@ -42,17 +41,15 @@ export const SuperstepBranchResultSchema = z
       .enum([
         "not_applicable",
         "commitment_evaluation_required",
-        "validation_repair_plan_required",
-        "validation_repair_patch_required",
-        "validation_terminal_blocker",
-        "escalation_required",
+        "node_agent_session_ready",
+        "node_agent_session_escalation_required",
         "blocked_terminal",
         "closed_succeeded",
       ])
       .default("not_applicable"),
     branchLocalTransitionPending: z.boolean().default(false),
     evidenceRefs: stringList(80, 700),
-    readinessStateRef: z.string().trim().max(700).nullable(),
+    nodeLifecycleProjectionRef: z.string().trim().max(700).nullable(),
     reasonCodes: stringList(80, 260),
     rawPromptStored: z.literal(false),
     rawResponseStored: z.literal(false),
@@ -101,8 +98,59 @@ function boundedStringArray(value: unknown, max = 80, maxChars = 260): string[] 
     .slice(0, max);
 }
 
-const CONTEXT_LIFECYCLE_STATES = new Set(["resource_required", "resource_in_progress"]);
-const RESOURCE_LIFECYCLE_STATES = new Set(["resources_required", "resource_materialization_in_progress"]);
+function reasonCodeStartsWith(reasonCodes: string[], prefixes: string[]): boolean {
+  return reasonCodes.some((code) => prefixes.some((prefix) => code.startsWith(prefix)));
+}
+
+function branchFailureFromReasonCodes(input: {
+  nodeKind: string;
+  reasonCodes: string[];
+}): { failureClass: string; errorPath: string; errorSummary: string; repairAction: string } | null {
+  if (
+    reasonCodeStartsWith(input.reasonCodes, [
+      "worker_start_contract_missing",
+      "non_codex_worker_start_contract_required",
+      "file_edit_worker_start_contract_missing",
+      "worker_start_payload_attachment_host_missing",
+    ])
+  ) {
+    return {
+      failureClass: "worker_start_contract_missing",
+      errorPath: "node_lifecycle.worker_start_contract",
+      errorSummary:
+        "Worker invocation reached the executable boundary without the runner-owned worker-start contract or implementation task contract.",
+      repairAction: "rerun_node_lifecycle_worker_start_contract_attachment",
+    };
+  }
+  if (
+    input.nodeKind === "validation" &&
+    reasonCodeStartsWith(input.reasonCodes, [
+      "boundary_replay_stopped_before_worker_execution",
+      "boundary_replay_target_node_kind:validation",
+    ])
+  ) {
+    return {
+      failureClass: "replay_boundary_stop_validation_node",
+      errorPath: "boundary_replay.validation_worker_stop",
+      errorSummary:
+        "Replay selected a validation node at a worker boundary; post-work validation must wait for worker evidence unless the boundary explicitly targets validation.",
+      repairAction: "defer_validation_until_worker_evidence",
+    };
+  }
+  if (
+    reasonCodeStartsWith(input.reasonCodes, ["validation_frontier_waiting_for_worker_evidence"])
+  ) {
+    return {
+      failureClass: "validation_deferred_until_worker_evidence",
+      errorPath: "scheduler.validation_frontier_ordering",
+      errorSummary:
+        "Validation is intentionally deferred until executable worker branches produce evidence.",
+      repairAction: "wait_for_worker_evidence",
+    };
+  }
+  return null;
+}
+
 const DEPENDENCY_REASON_CODES = new Set(["node_dependencies_not_satisfied"]);
 const AUTHORITY_REASON_CODES = new Set([
   "authority_denied",
@@ -110,8 +158,6 @@ const AUTHORITY_REASON_CODES = new Set([
   "raw_storage_policy_violation",
   "path_scope_violation",
 ]);
-const RESOURCE_FAILURE_CLASSES = new Set(["resource_materialization"]);
-const CONTEXT_FAILURE_CLASSES = new Set(["resource_requirement", "resource_demand"]);
 const AUTHORITY_FAILURE_CLASSES = new Set(["authority", "policy"]);
 function hasExact(values: string[], allowed: Set<string>): boolean {
   return values.some((value) => allowed.has(value));
@@ -130,35 +176,17 @@ function statusFromStructuredSignals(input: {
   if (input.resultStatus === "waiting_for_human" || input.nodeStatus === "waiting_for_human") {
     return "blocked_human_decision";
   }
-  const lifecycleState = bounded(input.metadata.nodeLifecycleState, 120);
-  const projectionGate = bounded(input.metadata.nodeLifecycleProjectionGate, 120);
   const failureClass = bounded(
     input.metadata.lastRepairFailureClass ?? input.metadata.parallelFrontierBranchFailureClass,
     220,
   );
-  if (
-    projectionGate === "resource_demand_open" ||
-    projectionGate === "resource_demand_blocked" ||
-    projectionGate === "resource_narrowing_required" ||
-    CONTEXT_LIFECYCLE_STATES.has(lifecycleState ?? "") ||
-    CONTEXT_FAILURE_CLASSES.has(failureClass ?? "")
-  ) {
-    return "blocked_context";
-  }
-  if (
-    projectionGate === "resource_ledger_ready" ||
-    projectionGate === "domain_resource_selection_required" ||
-    projectionGate === "domain_resource_selection_blocked" ||
-    projectionGate === "domain_action_gate_blocked" ||
-    RESOURCE_LIFECYCLE_STATES.has(lifecycleState ?? "") ||
-    RESOURCE_FAILURE_CLASSES.has(failureClass ?? "")
-  ) {
-    return "blocked_resource";
-  }
   if (hasExact(input.reasonCodes, DEPENDENCY_REASON_CODES)) {
     return "blocked_dependency";
   }
-  if (AUTHORITY_FAILURE_CLASSES.has(failureClass ?? "") || hasExact(input.reasonCodes, AUTHORITY_REASON_CODES)) {
+  if (
+    AUTHORITY_FAILURE_CLASSES.has(failureClass ?? "") ||
+    hasExact(input.reasonCodes, AUTHORITY_REASON_CODES)
+  ) {
     return "blocked_authority";
   }
   if (input.unrecoverable) {
@@ -175,9 +203,7 @@ function nextTransitionForStatus(status: SuperstepBranchResultStatus): string {
     case "succeeded":
       return "evaluate_downstream";
     case "blocked_context":
-      return "open_node_resource_demand";
-    case "blocked_resource":
-      return "materialize_resources_or_split_task";
+      return "resume_node_agent_context_loop";
     case "blocked_dependency":
       return "wait_for_dependency_or_repair_edge";
     case "blocked_authority":
@@ -221,8 +247,7 @@ function branchClosureFromSignals(input: {
     const hasClosureEvidence =
       typedEvidenceClaimRefs.length > 0 ||
       evidenceClosureStatus === "accepted" ||
-      missionEvidenceStatus === "pending_application" ||
-      projectionGate === "evidence_closure";
+      missionEvidenceStatus === "pending_application";
     return {
       failureClass: null,
       repairAction: hasClosureEvidence ? "evaluate_mission_ledger" : null,
@@ -235,23 +260,20 @@ function branchClosureFromSignals(input: {
   }
   if (
     input.failureClass === "worker_capability_insufficient" ||
-    projectionGate === "high_capability_escalation_required" ||
+    projectionGate === "node_agent_session_escalation_required" ||
     escalationStatus === "requested"
   ) {
     return {
       failureClass: "worker_capability_insufficient",
       repairAction: "worker.escalation.execute_high_capability",
-      nextTransition: "high_capability_escalation_required",
-      branchClosureState: "escalation_required",
+      nextTransition: "node_agent_session_escalation_required",
+      branchClosureState: "node_agent_session_escalation_required",
       branchLocalTransitionPending: true,
     };
   }
   if (
     input.failureClass === "validation_failure_repairable" ||
     input.failureClass === "validation_failure_unrecoverable" ||
-    projectionGate === "validation_repair_plan_required" ||
-    projectionGate === "validation_repair_patch_required" ||
-    projectionGate === "validation_terminal_blocker" ||
     validationStatus === "repair_required" ||
     validationStatus === "unrecoverable"
   ) {
@@ -264,12 +286,12 @@ function branchClosureFromSignals(input: {
         ? "validation_failure_unrecoverable"
         : "validation_failure_repairable",
       repairAction: validationUnrecoverable
-        ? "worker.validation.record_blocker"
-        : "worker.validation.request_repair",
+        ? "node.finish.validation_terminal_blocker"
+        : "node.agent_session.invoke_validation_repair",
       nextTransition: validationUnrecoverable
-        ? "validation_terminal_blocker"
-        : "validation_repair_plan_required",
-      branchClosureState: validationUnrecoverable ? "validation_terminal_blocker" : "validation_repair_plan_required",
+        ? "node_lifecycle_root_cause_collapsed"
+        : "node_agent_session_ready",
+      branchClosureState: validationUnrecoverable ? "blocked_terminal" : "node_agent_session_ready",
       branchLocalTransitionPending: !validationUnrecoverable,
     };
   }
@@ -277,7 +299,8 @@ function branchClosureFromSignals(input: {
     failureClass: null,
     repairAction: null,
     nextTransition: nextTransitionForStatus(input.status),
-    branchClosureState: input.status === "failed_unrecoverable" ? "blocked_terminal" : "not_applicable",
+    branchClosureState:
+      input.status === "failed_unrecoverable" ? "blocked_terminal" : "not_applicable",
     branchLocalTransitionPending: false,
   };
 }
@@ -296,7 +319,7 @@ export function buildSuperstepBranchResult(input: {
   failureClass?: string | null;
   errorPath?: string | null;
   repairAction?: string | null;
-  readinessStateRef?: string | null;
+  nodeLifecycleProjectionRef?: string | null;
   unrecoverable?: boolean;
 }): SuperstepBranchResult {
   const metadata = asRecord(input.refreshedMetadata ?? input.node.metadata ?? null);
@@ -311,21 +334,37 @@ export function buildSuperstepBranchResult(input: {
   });
   const failureClass =
     input.failureClass ??
+    branchFailureFromReasonCodes({
+      nodeKind: input.node.nodeKind,
+      reasonCodes,
+    })?.failureClass ??
     bounded(metadata.lastRepairFailureClass, 220) ??
     bounded(metadata.parallelFrontierBranchFailureClass, 220);
   const errorPath =
     input.errorPath ??
+    branchFailureFromReasonCodes({
+      nodeKind: input.node.nodeKind,
+      reasonCodes,
+    })?.errorPath ??
     bounded(metadata.lastFailedFieldPath, 320) ??
     bounded(metadata.parallelFrontierBranchErrorPath, 320);
   const errorSummary =
     input.errorSummary ??
+    branchFailureFromReasonCodes({
+      nodeKind: input.node.nodeKind,
+      reasonCodes,
+    })?.errorSummary ??
     bounded(metadata.parallelFrontierBranchErrorSummary, 700) ??
     bounded(metadata.lastResultSummary, 700);
   const repairAction =
     input.repairAction ??
-    bounded(metadata.nodeReadinessRepairAction, 360) ??
+    branchFailureFromReasonCodes({
+      nodeKind: input.node.nodeKind,
+      reasonCodes,
+    })?.repairAction ??
     bounded(metadata.lastRepairStrategy, 360);
-  const readinessStateRef = input.readinessStateRef ?? bounded(metadata.nodeReadinessStateRef, 700);
+  const nodeLifecycleProjectionRef =
+    input.nodeLifecycleProjectionRef ?? bounded(metadata.nodeLifecycleProjectionRef, 700);
   const evidenceRefs = [
     ...(input.outputArtifactRefs ?? []),
     ...stringArray(metadata.outputArtifactRefs, 40),
@@ -357,17 +396,16 @@ export function buildSuperstepBranchResult(input: {
     blockerSummary:
       status === "succeeded"
         ? null
-        : (errorSummary ??
-          bounded(metadata.blockerSummary, 700) ??
-          bounded(metadata.nodeReadinessBlockerSummary, 700) ??
-          reasonCodes[0] ??
-          null),
-    repairAction: status === "succeeded" ? branchClosure.repairAction : (branchClosure.repairAction ?? repairAction),
+        : (errorSummary ?? bounded(metadata.blockerSummary, 700) ?? reasonCodes[0] ?? null),
+    repairAction:
+      status === "succeeded"
+        ? branchClosure.repairAction
+        : (branchClosure.repairAction ?? repairAction),
     nextTransition: branchClosure.nextTransition,
     branchClosureState: branchClosure.branchClosureState,
     branchLocalTransitionPending: branchClosure.branchLocalTransitionPending,
     evidenceRefs: boundedEvidenceRefs,
-    readinessStateRef,
+    nodeLifecycleProjectionRef,
     reasonCodes,
     rawPromptStored: false,
     rawResponseStored: false,

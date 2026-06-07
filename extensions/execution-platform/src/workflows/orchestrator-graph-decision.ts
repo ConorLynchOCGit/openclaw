@@ -5,16 +5,14 @@ import {
   flattenModelDecisionFields,
   missingField,
   repairRequestForMissingFields,
-  runtimeOwnedFieldReasonCodesForRecords,
   type ModelDecisionMissingField,
   type ModelDecisionRepairRequest,
 } from "../model-decision-contracts/index.ts";
 import type { JsonValue } from "../runtime-job-repository.ts";
-import { normalizeExecutionIntent, type ExecutionIntent } from "./execution-intent.ts";
+import type { ExecutionIntent } from "./execution-intent.ts";
 import {
   buildRuntimeNodeCapabilityManifest,
   findRuntimeNodeCapability,
-  type RuntimeNodeCapability,
   type RuntimeNodeCapabilityManifest,
 } from "./runtime-node-capability-registry.ts";
 import {
@@ -26,11 +24,6 @@ import {
   type TeamGraphEdgeKind,
   type TeamGraphNodeKind,
 } from "./runtime-work-graph.ts";
-import {
-  WORK_INTENT_NODE_KIND,
-  compileWorkIntent,
-  type CompiledWorkIntentGraphNode,
-} from "./work-intent.ts";
 
 export const ORCHESTRATOR_GRAPH_DECISION_KINDS = [
   "add_nodes",
@@ -139,7 +132,7 @@ export type OrchestratorGraphDecisionCompileOptions = {
   capabilityManifest?: RuntimeNodeCapabilityManifest;
   executableExecutorKeys?: string[];
   requireNodeCommitmentContracts?: boolean;
-  requireStagedProtocolForNodeCreation?: boolean;
+  disallowModelAuthoredRuntimeEnvelope?: boolean;
 };
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -223,16 +216,6 @@ function targetNodeIdFromDecisionRecord(record: Record<string, unknown>): string
     arrayFromAny(record, ["targetNodeIds", "targetNodeRefs", "nodeIds", "nodeRefs"])[0] ??
     null
   );
-}
-
-function slugRuntimeId(value: string, fallback: string): string {
-  const slug = value
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9_.-]+/gu, "-")
-    .replace(/^-+|-+$/gu, "")
-    .slice(0, 80);
-  return slug || fallback;
 }
 
 function firstArrayValue(record: Record<string, unknown>, keys: string[]): unknown[] {
@@ -372,7 +355,7 @@ function missingFieldsForDecision(
         "rationaleForDecision",
         "string",
         "Owner-facing readback and repair diagnostics need the model-authored reason for this decision.",
-        "Decompose the complex mission into WorkIntent roots before any node-local context demand starts.",
+        "Persist executable scheduler graph-patch nodes with clear requirement coverage and dependency ordering.",
       ),
     );
   }
@@ -716,710 +699,6 @@ function nodesFromSelectedCapabilities(
   return { nodes, diagnostics, acceptedAliasFields, reasonCodes };
 }
 
-type StagedWorkBreakdownUnit = {
-  workUnitId: string;
-  title: string;
-  objective: string;
-  commitmentIds: string[];
-  rationale: string;
-  expectedOutcome: string;
-  successCriteria: string[];
-  resourceRefs: string[];
-  inputRefs: string[];
-  dependencyWorkUnitIds: string[];
-  executionIntent: ExecutionIntent;
-};
-
-function stagedSourceRecord(record: Record<string, unknown>): {
-  source: Record<string, unknown>;
-  sourceLabel: string;
-  nested: boolean;
-} {
-  const nested = asRecord(record.stagedScheduler ?? record.stagedSchedulerProtocol);
-  if (Object.keys(nested).length > 0) {
-    return { source: nested, sourceLabel: "stagedScheduler", nested: true };
-  }
-  return { source: record, sourceLabel: "topLevel", nested: false };
-}
-
-function runtimeOwnedFieldReasonCodes(input: { records: unknown[]; pathPrefix: string }): string[] {
-  return [
-    ...runtimeOwnedFieldReasonCodesForRecords({
-      records: input.records,
-      pathPrefix: input.pathPrefix,
-      boundaryKind: "scheduler_staged_protocol",
-      codePrefix: "staged_scheduler_runtime_owned_field_rejected",
-    }),
-    ...retiredTargetRefsFieldReasonCodes(input),
-  ];
-}
-
-function retiredTargetRefsFieldReasonCodes(input: {
-  records: unknown[];
-  pathPrefix: string;
-}): string[] {
-  const reasonCodes: string[] = [];
-  const visit = (value: unknown, path: string) => {
-    if (Array.isArray(value)) {
-      value.forEach((item, index) => visit(item, `${path}[${index}]`));
-      return;
-    }
-    const record = asRecord(value);
-    if (Object.keys(record).length === 0) {
-      return;
-    }
-    if (Object.prototype.hasOwnProperty.call(record, "targetRefs")) {
-      reasonCodes.push(`staged_scheduler_retired_target_refs_field_rejected:${path}.targetRefs`);
-    }
-    for (const [key, child] of Object.entries(record)) {
-      visit(child, `${path}.${key}`);
-    }
-  };
-  input.records.forEach((record, index) => visit(record, `${input.pathPrefix}[${index}]`));
-  return reasonCodes;
-}
-
-function workIntentSourceRecord(input: {
-  unit: StagedWorkBreakdownUnit;
-  selection: StagedCapabilitySelection;
-  contract: StagedNodeContract;
-}): Record<string, unknown> {
-  return {
-    workUnit: input.unit,
-    capabilitySelection: input.selection,
-    nodeContractDraft: input.contract,
-  };
-}
-
-type StagedCapabilitySelection = {
-  workUnitId: string;
-  capabilityId: string;
-  consideredCapabilityIds: string[];
-  utilityRationale: string;
-  costRationale: string;
-  whyCheaperOptionsWereInsufficient: string | null;
-  whyThisIsNotDuplicateWork: string;
-  stopOrEscalationCondition: string;
-  selectedModelQualificationProfileId: string | null;
-  qualificationEvidenceRefs: string[];
-};
-
-type StagedNodeContract = {
-  workUnitId: string;
-  roleRationale: string;
-  objective: string;
-  inputRefs: string[];
-  expectedOutput: string;
-  successCriteria: string[];
-  downstreamConsumer: string;
-  resourceRefs: string[];
-  dependencyWorkUnitIds: string[];
-  executionIntent: ExecutionIntent;
-};
-
-function firstRecordArray(record: Record<string, unknown>, keys: string[]): unknown[] {
-  for (const key of keys) {
-    const value = record[key];
-    if (Array.isArray(value)) {
-      return value;
-    }
-  }
-  return [];
-}
-
-function sanitizeId(value: string, fallback: string): string {
-  const sanitized = value
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9_.:-]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 80);
-  return sanitized || fallback;
-}
-
-function stagedWorkUnits(record: Record<string, unknown>): StagedWorkBreakdownUnit[] {
-  return firstRecordArray(record, [
-    "workBreakdownUnits",
-    "commitmentWorkBreakdown",
-    "commitmentWorkBreakdownUnits",
-    "workUnits",
-    "decompositionWorkUnits",
-  ])
-    .map((value, index) => {
-      const unit = flattenModelDecisionFields(asRecord(value));
-      const workUnitId = sanitizeId(
-        firstString(unit, ["workUnitId", "unitId", "id", "nodeId"]) || `work-unit-${index + 1}`,
-        `work-unit-${index + 1}`,
-      );
-      return {
-        workUnitId,
-        title: firstString(unit, ["title", "name"]) || workUnitId,
-        objective: firstString(unit, ["objective", "taskObjective", "exactObjective"]),
-        commitmentIds: arrayFromAny(unit, [
-          "commitmentIds",
-          "targetCommitmentIds",
-          "commitmentIdsAdvanced",
-        ]),
-        rationale: firstString(unit, ["rationale", "whyNeeded", "roleRationale"]),
-        expectedOutcome: firstString(unit, [
-          "expectedOutcome",
-          "expectedOutput",
-          "expectedHumanReadableOutput",
-        ]),
-        successCriteria: arrayFromAny(unit, [
-          "successCriteria",
-          "acceptanceCriteria",
-          "validationCriteria",
-          "completionCriteria",
-        ]),
-        resourceRefs: arrayFromAny(unit, ["resourceRefs"]),
-        inputRefs: arrayFromAny(unit, ["inputRefs", "inputHandoffRefs", "handoffRefs"]),
-        dependencyWorkUnitIds: arrayFromAny(unit, [
-          "dependsOnWorkUnitIds",
-          "dependencyWorkUnitIds",
-          "upstreamWorkUnitIds",
-          "afterWorkUnitIds",
-          "requiresWorkUnitIds",
-          "dependsOn",
-          "dependencies",
-        ]),
-        executionIntent:
-          normalizeExecutionIntent(
-            firstString(unit, [
-              "executionIntent",
-              "workIntent",
-              "nodeExecutionIntent",
-              "taskExecutionIntent",
-            ]),
-          ) ?? "unspecified",
-      } satisfies StagedWorkBreakdownUnit;
-    })
-    .filter((unit) => unit.workUnitId && unit.objective);
-}
-
-function isRepoTargetRef(ref: string): boolean {
-  return (
-    ref.startsWith("extensions/") ||
-    ref.startsWith("src/") ||
-    ref.startsWith("ui/") ||
-    ref.startsWith("scripts/") ||
-    ref.startsWith("docs/") ||
-    ref.startsWith("packages/")
-  );
-}
-
-function splitStagedInputRefs(inputRefs: string[]): {
-  targetRefs: string[];
-  inputHandoffRefs: string[];
-} {
-  const targetRefs: string[] = [];
-  const inputHandoffRefs: string[] = [];
-  for (const ref of inputRefs) {
-    if (isRepoTargetRef(ref)) {
-      targetRefs.push(ref);
-    } else {
-      inputHandoffRefs.push(ref);
-    }
-  }
-  return {
-    targetRefs: [...new Set(targetRefs)].slice(0, 24),
-    inputHandoffRefs: [...new Set(inputHandoffRefs)].slice(0, 24),
-  };
-}
-
-function stagedAcceptanceCriteria(input: {
-  contract: StagedNodeContract;
-  unit: StagedWorkBreakdownUnit;
-}): string[] {
-  const criteria =
-    input.contract.successCriteria.length > 0
-      ? input.contract.successCriteria
-      : input.unit.successCriteria.length > 0
-        ? input.unit.successCriteria
-        : input.unit.expectedOutcome
-          ? [`Produces expected outcome: ${input.unit.expectedOutcome}`]
-          : [];
-  return [...new Set(criteria)].slice(0, 12);
-}
-
-function stagedCapabilitySelections(record: Record<string, unknown>): StagedCapabilitySelection[] {
-  return firstRecordArray(record, [
-    "capabilitySelectionsForWorkUnits",
-    "capabilitySelections",
-    "selectedCapabilitiesForWorkUnits",
-  ])
-    .map((value, index) => {
-      const selection = flattenModelDecisionFields(asRecord(value));
-      const workUnitId = sanitizeId(
-        firstString(selection, ["workUnitId", "unitId", "id", "nodeId"]) ||
-          `work-unit-${index + 1}`,
-        `work-unit-${index + 1}`,
-      );
-      return {
-        workUnitId,
-        capabilityId: firstString(selection, [
-          "selectedCapabilityId",
-          "capabilityId",
-          "capability",
-          "capabilityRef",
-        ]),
-        consideredCapabilityIds: arrayFromAny(selection, [
-          "consideredCapabilityIds",
-          "consideredCapabilities",
-        ]),
-        utilityRationale: firstString(selection, ["utilityRationale", "rationale"]),
-        costRationale: firstString(selection, ["costRationale"]),
-        whyCheaperOptionsWereInsufficient:
-          firstString(selection, ["whyCheaperOptionsWereInsufficient"]) || null,
-        whyThisIsNotDuplicateWork: firstString(selection, ["whyThisIsNotDuplicateWork"]),
-        stopOrEscalationCondition: firstString(selection, [
-          "stopOrEscalationCondition",
-          "escalationCondition",
-        ]),
-        selectedModelQualificationProfileId:
-          firstString(selection, [
-            "selectedModelQualificationProfileId",
-            "modelQualificationProfileId",
-            "qualificationProfileId",
-          ]) || null,
-        qualificationEvidenceRefs: arrayFromAny(selection, [
-          "qualificationEvidenceRefs",
-          "modelQualificationEvidenceRefs",
-        ]),
-      } satisfies StagedCapabilitySelection;
-    })
-    .filter((selection) => selection.workUnitId && selection.capabilityId);
-}
-
-function stagedNodeContracts(record: Record<string, unknown>): StagedNodeContract[] {
-  return firstRecordArray(record, [
-    "nodeContractDrafts",
-    "nodeContracts",
-    "workUnitContracts",
-    "nodeContractDefinitions",
-  ])
-    .map((value, index) => {
-      const contract = flattenModelDecisionFields(asRecord(value));
-      const workUnitId = sanitizeId(
-        firstString(contract, ["workUnitId", "unitId", "id", "nodeId"]) || `work-unit-${index + 1}`,
-        `work-unit-${index + 1}`,
-      );
-      return {
-        workUnitId,
-        roleRationale: firstString(contract, [
-          "roleRationale",
-          "whyThisRoleIsNeededNow",
-          "whyNeeded",
-        ]),
-        objective: firstString(contract, ["objective", "exactObjective", "taskObjective"]),
-        inputRefs: arrayFromAny(contract, ["inputRefs", "inputHandoffRefs", "handoffRefs"]),
-        expectedOutput: firstString(contract, [
-          "expectedOutput",
-          "expectedHumanReadableOutput",
-          "outputContract",
-        ]),
-        successCriteria: arrayFromAny(contract, [
-          "successCriteria",
-          "acceptanceCriteria",
-          "validationCriteria",
-        ]),
-        downstreamConsumer: firstString(contract, [
-          "downstreamConsumer",
-          "consumer",
-          "expectedDownstreamConsumer",
-        ]),
-        resourceRefs: arrayFromAny(contract, ["resourceRefs"]),
-        dependencyWorkUnitIds: arrayFromAny(contract, [
-          "dependsOnWorkUnitIds",
-          "dependencyWorkUnitIds",
-          "upstreamWorkUnitIds",
-          "afterWorkUnitIds",
-          "requiresWorkUnitIds",
-          "dependsOn",
-          "dependencies",
-        ]),
-        executionIntent:
-          normalizeExecutionIntent(
-            firstString(contract, [
-              "executionIntent",
-              "workIntent",
-              "nodeExecutionIntent",
-              "taskExecutionIntent",
-            ]),
-          ) ?? "unspecified",
-      } satisfies StagedNodeContract;
-    })
-    .filter((contract) => contract.workUnitId);
-}
-
-function stagedEdgeValues(record: Record<string, unknown>): {
-  edges: OrchestratorGraphEdgeSpec[];
-  parallelIndependentNodesJustification: string;
-} {
-  const structure = asRecord(
-    record.edgeOrParallelismDraft ??
-      record.edgeOrParallelism ??
-      record.graphStructure ??
-      record.structureReview,
-  );
-  const source = Object.keys(structure).length > 0 ? structure : record;
-  const edges = firstRecordArray(source, [
-    "edges",
-    "newEdges",
-    "handoffEdges",
-    "dependencyEdges",
-    "nodeEdges",
-  ])
-    .map(normalizeEdge)
-    .filter((edge): edge is OrchestratorGraphEdgeSpec => Boolean(edge));
-  const parallelIndependentNodesJustification = firstString(source, [
-    "parallelIndependentNodesJustification",
-    "parallelismRationale",
-    "parallelJustification",
-  ]);
-  return { edges, parallelIndependentNodesJustification };
-}
-
-function qualificationEvidenceForCapability(capabilityId: string): string[] {
-  if (capabilityId.includes("implementation_microtask")) {
-    return [
-      "model-profile://qwen/controller-worker-loop",
-      "model-profile://kimi/file-edit-worker-loop",
-    ];
-  }
-  if (capabilityId.includes("test_authoring")) {
-    return ["model-profile://test-authoring/validated"];
-  }
-  return [`model-profile://${capabilityId}/runtime-capability-manifest`];
-}
-
-function orchestratorNodeFromWorkIntent(
-  node: CompiledWorkIntentGraphNode,
-): OrchestratorGraphNodeSpec {
-  return {
-    nodeId: node.nodeId,
-    nodeKind: node.nodeKind,
-    assignedRole: node.assignedRole,
-    modelOrWorkerRef: node.modelOrWorkerRef,
-    inputHandoffRefs: node.inputHandoffRefs,
-    expectedOutput: node.expectedOutput,
-    acceptanceCriteria: node.acceptanceCriteria,
-    downstreamConsumer: node.downstreamConsumer,
-    commitmentIdsAdvanced: node.commitmentIdsAdvanced,
-    whyThisRoleIsNeededNow: node.whyThisRoleIsNeededNow,
-    exactObjective: node.exactObjective,
-    evidenceExpectation: node.evidenceExpectation,
-    targetRefs: node.targetRefs,
-    metadata: node.metadata,
-  };
-}
-
-function acceptIndependentWorkIntentRootNode(input: {
-  node: OrchestratorGraphNodeSpec;
-  rationale: string;
-}): OrchestratorGraphNodeSpec {
-  if (input.node.nodeKind !== WORK_INTENT_NODE_KIND) {
-    return input.node;
-  }
-  const metadata = asRecord(input.node.metadata);
-  return {
-    ...input.node,
-    metadata: jsonValue({
-      ...metadata,
-      independentRoot: true,
-      independentRootRationale: input.rationale,
-      workIntentRootAccepted: true,
-      workIntentRootAcceptanceMode: "independent_non_runnable_roots",
-      workIntentRootAcceptanceToolId: "scheduler.work_intent.accept_roots",
-      workIntentRootNextLegalTransitions: [
-        "scheduler.compile_resource_requirements_for_work_intents",
-        "scheduler.accept_work_intent_graph",
-        "scheduler.reject_work_intent_graph",
-      ],
-      rawPromptStored: false,
-      rawResponseStored: false,
-      rawProviderLogStored: false,
-    }) as JsonValue,
-  };
-}
-
-function taskFamilyForCapability(capabilityId: string): string {
-  if (capabilityId === "implementation_microtask") {
-    return "small_source_edit";
-  }
-  if (capabilityId === "test_authoring" || capabilityId === "non_codex_test_writer") {
-    return "test_writing_edit";
-  }
-  if (capabilityId === "non_codex_docs_editor") {
-    return "docs_spec_edit";
-  }
-  if (capabilityId === "non_codex_validation_failure_explainer") {
-    return "validation_failure_explanation";
-  }
-  if (capabilityId === "non_codex_frontend_editor") {
-    return "frontend_scoped_edit";
-  }
-  if (capabilityId === "implementation_complex") {
-    return "complex_codex_escalation";
-  }
-  return capabilityId;
-}
-
-function nodesFromStagedSchedulerProtocol(
-  record: Record<string, unknown>,
-  options: Required<Pick<OrchestratorGraphDecisionCompileOptions, "capabilityManifest">>,
-): {
-  nodes: OrchestratorGraphNodeSpec[];
-  edges: OrchestratorGraphEdgeSpec[];
-  diagnostics: OrchestratorGraphRejectedNodeDiagnostic[];
-  acceptedAliasFields: string[];
-  reasonCodes: string[];
-  parallelIndependentNodesJustification: string;
-} {
-  const staged = stagedSourceRecord(record);
-  const source = staged.source;
-  const workUnits = stagedWorkUnits(source);
-  const selections = stagedCapabilitySelections(source);
-  const contracts = stagedNodeContracts(source);
-  if (workUnits.length === 0 && selections.length === 0 && contracts.length === 0) {
-    return {
-      nodes: [],
-      edges: [],
-      diagnostics: [],
-      acceptedAliasFields: [],
-      reasonCodes: [],
-      parallelIndependentNodesJustification: "",
-    };
-  }
-  const diagnostics: OrchestratorGraphRejectedNodeDiagnostic[] = [];
-  const reasonCodes: string[] = [
-    ...runtimeOwnedFieldReasonCodes({
-      records: firstRecordArray(source, [
-        "workBreakdownUnits",
-        "commitmentWorkBreakdown",
-        "commitmentWorkBreakdownUnits",
-        "workUnits",
-        "decompositionWorkUnits",
-      ]),
-      pathPrefix: `${staged.sourceLabel}.workBreakdownUnits`,
-    }),
-    ...runtimeOwnedFieldReasonCodes({
-      records: firstRecordArray(source, [
-        "capabilitySelectionsForWorkUnits",
-        "capabilitySelections",
-        "selectedCapabilitiesForWorkUnits",
-      ]),
-      pathPrefix: `${staged.sourceLabel}.capabilitySelectionsForWorkUnits`,
-    }),
-    ...runtimeOwnedFieldReasonCodes({
-      records: firstRecordArray(source, [
-        "nodeContractDrafts",
-        "nodeContracts",
-        "workUnitContracts",
-        "nodeContractDefinitions",
-      ]),
-      pathPrefix: `${staged.sourceLabel}.nodeContractDrafts`,
-    }),
-  ];
-  const selectionByUnit = new Map(selections.map((selection) => [selection.workUnitId, selection]));
-  const contractByUnit = new Map(contracts.map((contract) => [contract.workUnitId, contract]));
-  const nodes: OrchestratorGraphNodeSpec[] = [];
-  for (const [index, unit] of workUnits.entries()) {
-    const selection = selectionByUnit.get(unit.workUnitId);
-    const contract = contractByUnit.get(unit.workUnitId);
-    if (!selection) {
-      reasonCodes.push(`staged_capability_selection_missing:${unit.workUnitId}`);
-      continue;
-    }
-    if (!contract) {
-      reasonCodes.push(`staged_node_contract_missing:${unit.workUnitId}`);
-      continue;
-    }
-    const capability = findRuntimeNodeCapability(
-      selection.capabilityId,
-      options.capabilityManifest,
-    );
-    if (!capability) {
-      diagnostics.push(
-        capabilityDiagnostic({
-          nodeIndex: index,
-          providedNodeKind: null,
-          providedCapabilityId: selection.capabilityId,
-          matchingCapabilityId: null,
-          expectedGraphNodeKind: null,
-          errorCode: "staged_selected_capability_unknown",
-          message: "Staged capability selection could not be found in the runtime manifest.",
-        }),
-      );
-      reasonCodes.push(`staged_selected_capability_unknown:${selection.capabilityId}`);
-      continue;
-    }
-    const modelAuthoredExecutionIntent =
-      contract.executionIntent !== "unspecified" ? contract.executionIntent : unit.executionIntent;
-    const splitInputRefs = splitStagedInputRefs([...unit.inputRefs, ...contract.inputRefs]);
-    const resourceRefs = [...new Set([...contract.resourceRefs, ...unit.resourceRefs])].slice(
-      0,
-      24,
-    );
-    const acceptanceCriteria = stagedAcceptanceCriteria({ contract, unit });
-    const expectedOutput = contract.expectedOutput || unit.expectedOutcome;
-    const roleRationale = contract.roleRationale || unit.rationale || selection.utilityRationale;
-    const exactObjective = contract.objective || unit.objective;
-    const workIntent = compileWorkIntent({
-      decisionId: firstString(record, ["decisionId"]) || "model-decision",
-      workUnitId: unit.workUnitId,
-      title: unit.title,
-      objective: exactObjective,
-      commitmentIds: unit.commitmentIds,
-      executionIntent: modelAuthoredExecutionIntent,
-      selectedCapabilityId: selection.capabilityId,
-      consideredCapabilityIds: selection.consideredCapabilityIds,
-      capabilityRationale: roleRationale,
-      costRationale:
-        selection.costRationale ||
-        `Runtime will validate ${capability.capabilityId} through the capability manifest before executable graph promotion.`,
-      whyCheaperOptionsWereInsufficient: selection.whyCheaperOptionsWereInsufficient,
-      whyThisIsNotDuplicateWork:
-        selection.whyThisIsNotDuplicateWork ||
-        `This staged work unit ${unit.workUnitId} has not produced accepted evidence yet.`,
-      expectedOutput,
-      successCriteria: acceptanceCriteria,
-      contextQuestions: [],
-      resourceRefs,
-      inputRefs: splitInputRefs.inputHandoffRefs,
-      validationNeeds: [],
-      dependencyWorkUnitIds: [
-        ...new Set([...unit.dependencyWorkUnitIds, ...contract.dependencyWorkUnitIds]),
-      ],
-      downstreamConsumer: contract.downstreamConsumer,
-      stopIfMissing: selection.stopOrEscalationCondition
-        ? [selection.stopOrEscalationCondition]
-        : [],
-      parallelismRationale: stagedEdgeValues(source).parallelIndependentNodesJustification,
-      rationale: unit.rationale || selection.utilityRationale,
-      capabilityManifest: options.capabilityManifest,
-      sourceRecord: workIntentSourceRecord({ unit, selection, contract }),
-      sourcePath: `${staged.sourceLabel}.workIntent[${index}]`,
-    });
-    diagnostics.push(
-      ...workIntent.diagnostics.map((diagnostic) =>
-        capabilityDiagnostic({
-          nodeIndex: index,
-          providedNodeKind: WORK_INTENT_NODE_KIND,
-          providedCapabilityId: selection.capabilityId,
-          matchingCapabilityId: capability.capabilityId,
-          expectedGraphNodeKind: WORK_INTENT_NODE_KIND,
-          workUnitId: unit.workUnitId,
-          selectedCapabilityId: selection.capabilityId,
-          executionIntent:
-            workIntent.capabilityValidation.executionIntent ?? modelAuthoredExecutionIntent,
-          compatibilityReason: diagnostic.errorCode,
-          path: diagnostic.path,
-          validValues: diagnostic.validValues,
-          errorCode: diagnostic.errorCode,
-          message: diagnostic.message,
-        }),
-      ),
-    );
-    reasonCodes.push(
-      ...workIntent.reasonCodes.map((code) => `staged_work_intent:${unit.workUnitId}:${code}`),
-    );
-    if (!workIntent.node) {
-      continue;
-    }
-    nodes.push(orchestratorNodeFromWorkIntent(workIntent.node));
-  }
-  const nodeIdByWorkUnit = new Map(
-    nodes
-      .map((node) => {
-        const metadata = asRecord(node.metadata);
-        return [stringValue(metadata.workUnitId), node.nodeId] as const;
-      })
-      .filter(([workUnitId]) => Boolean(workUnitId)),
-  );
-  const stagedStructure = stagedEdgeValues(source);
-  const compiledNodeIds = new Set(nodes.map((node) => node.nodeId));
-  const stagedWorkUnitIds = new Set(workUnits.map((unit) => unit.workUnitId));
-  const edges: OrchestratorGraphEdgeSpec[] = [];
-  for (const [index, edge] of stagedStructure.edges.entries()) {
-    let rejected = false;
-    const resolveEndpoint = (
-      endpoint: string | null | undefined,
-      side: "from" | "to",
-    ): string | null => {
-      if (!endpoint) {
-        return null;
-      }
-      const workUnitNodeId = nodeIdByWorkUnit.get(endpoint);
-      if (workUnitNodeId) {
-        return workUnitNodeId;
-      }
-      if (compiledNodeIds.has(endpoint)) {
-        return endpoint;
-      }
-      rejected = true;
-      reasonCodes.push(
-        stagedWorkUnitIds.has(endpoint)
-          ? `staged_scheduler_edge_${side}_work_unit_not_compiled:${endpoint}`
-          : `staged_scheduler_edge_${side}_node_ref_unresolved:${endpoint}`,
-      );
-      return null;
-    };
-    const fromNodeId = resolveEndpoint(edge.fromNodeId, "from");
-    const toNodeId = resolveEndpoint(edge.toNodeId, "to");
-    if (rejected) {
-      continue;
-    }
-    edges.push({
-      ...edge,
-      edgeId: edge.edgeId ?? `${fromNodeId ?? "start"}-to-${toNodeId ?? `node-${index + 1}`}`,
-      fromNodeId,
-      toNodeId,
-      reasonCodes: [...(edge.reasonCodes ?? []), "staged_scheduler_edge_compiled"],
-      metadata: jsonValue({
-        ...asRecord(edge.metadata),
-        stagedSchedulerProtocolCompiled: true,
-        rawPromptStored: false,
-        rawResponseStored: false,
-        rawProviderLogStored: false,
-      }) as JsonValue,
-    });
-  }
-  const runtimeDerivedEdges =
-    edges.length === 0 ? runtimeDerivedStagedEdges({ nodes, workUnits, contracts }) : [];
-  const compiledEdges = [...edges, ...runtimeDerivedEdges];
-  const parallelIndependentNodesJustification =
-    stagedStructure.parallelIndependentNodesJustification;
-  const acceptedRootNodes =
-    compiledEdges.length === 0 && parallelIndependentNodesJustification
-      ? nodes.map((node) =>
-          acceptIndependentWorkIntentRootNode({
-            node,
-            rationale: parallelIndependentNodesJustification,
-          }),
-        )
-      : nodes;
-  return {
-    nodes: acceptedRootNodes,
-    edges: compiledEdges,
-    diagnostics,
-    acceptedAliasFields: staged.nested
-      ? ["stagedSchedulerProtocol", "stagedScheduler"]
-      : ["stagedSchedulerProtocol"],
-    reasonCodes: [
-      "staged_scheduler_graph_compiled",
-      ...(runtimeDerivedEdges.length > 0
-        ? ["staged_scheduler_runtime_derived_edges_compiled"]
-        : []),
-      ...(compiledEdges.length === 0 && parallelIndependentNodesJustification
-        ? ["staged_scheduler_independent_work_intent_roots_accepted"]
-        : []),
-      ...reasonCodes,
-    ],
-    parallelIndependentNodesJustification,
-  };
-}
-
 function normalizeEdge(value: unknown): OrchestratorGraphEdgeSpec | null {
   const record = asRecord(value);
   const edgeKind = stringValue(record.edgeKind ?? record.kind ?? record.type) || "handoff";
@@ -1576,132 +855,8 @@ function normalizeEdgeKindsForGraph(input: {
   }));
 }
 
-type OrchestratorNodeRoleClass = RuntimeNodeCapability["roleClass"] | "other";
-
-const RUNTIME_NODE_ROLE_CLASSES = new Set<RuntimeNodeCapability["roleClass"]>([
-  "orchestration",
-  "context",
-  "implementation",
-  "validation",
-  "review",
-  "research",
-  "planning",
-  "docs",
-  "human",
-  "closeout",
-  "observability",
-]);
-
-function roleClassForKnownNodeKind(nodeKind: string): OrchestratorNodeRoleClass {
-  switch (nodeKind) {
-    case "work_intent":
-      return "orchestration";
-    case "implementation":
-      return "implementation";
-    case "validation":
-    case "test_review":
-    case "test_authoring":
-    case "repair":
-      return "validation";
-    case "reviewer":
-    case "security_review":
-      return "review";
-    case "orchestrator_plan":
-      return "planning";
-    case "web_research":
-      return "research";
-    case "docs_update":
-      return "docs";
-    case "human_task":
-      return "human";
-    case "closeout":
-      return "closeout";
-    case "observability_readback":
-      return "observability";
-    default:
-      return "other";
-  }
-}
-
-function nodeRoleClass(node: OrchestratorGraphNodeSpec): OrchestratorNodeRoleClass {
-  const capabilityId = node.capabilityId ?? stringValue(asRecord(node.metadata).capabilityId);
-  const capability = capabilityId ? findRuntimeNodeCapability(capabilityId) : null;
-  if (capability) {
-    return capability.roleClass;
-  }
-  const explicitRoleClass = asRecord(node.metadata).roleClass;
-  return typeof explicitRoleClass === "string" &&
-    RUNTIME_NODE_ROLE_CLASSES.has(explicitRoleClass as RuntimeNodeCapability["roleClass"])
-    ? (explicitRoleClass as RuntimeNodeCapability["roleClass"])
-    : typeof asRecord(node.metadata).targetCapabilityRoleClass === "string" &&
-        RUNTIME_NODE_ROLE_CLASSES.has(
-          asRecord(node.metadata).targetCapabilityRoleClass as RuntimeNodeCapability["roleClass"],
-        )
-      ? (asRecord(node.metadata).targetCapabilityRoleClass as RuntimeNodeCapability["roleClass"])
-      : roleClassForKnownNodeKind(node.nodeKind);
-}
-
-function nodeMatchesDownstreamConsumer(node: OrchestratorGraphNodeSpec, consumer: string): boolean {
-  const normalized = sanitizeId(consumer, "").replace(/[-:_.]+/g, "");
-  if (!normalized) {
-    return false;
-  }
-  const metadata = asRecord(node.metadata);
-  return [
-    node.nodeId,
-    node.nodeKind,
-    node.assignedRole,
-    node.capabilityId ?? "",
-    node.executorKey ?? "",
-    node.workerRef ?? "",
-    typeof metadata.workUnitId === "string" ? metadata.workUnitId : "",
-    typeof metadata.taskFamily === "string" ? metadata.taskFamily : "",
-    typeof metadata.targetCapabilityRoleClass === "string"
-      ? metadata.targetCapabilityRoleClass
-      : "",
-    typeof metadata.targetCapabilityGraphNodeKind === "string"
-      ? metadata.targetCapabilityGraphNodeKind
-      : "",
-    typeof metadata.targetCapabilityWorkerRef === "string"
-      ? metadata.targetCapabilityWorkerRef
-      : "",
-    typeof metadata.targetCapabilityExecutorKey === "string"
-      ? metadata.targetCapabilityExecutorKey
-      : "",
-  ].some((value) =>
-    sanitizeId(value, "")
-      .replace(/[-:_.]+/g, "")
-      .includes(normalized),
-  );
-}
-
-function edgeKey(edge: Pick<OrchestratorGraphEdgeSpec, "fromNodeId" | "toNodeId" | "edgeKind">) {
-  return `${edge.fromNodeId ?? ""}->${edge.toNodeId ?? ""}:${edge.edgeKind}`;
-}
-
 function nodeMetadata(node: OrchestratorGraphNodeSpec): Record<string, unknown> {
   return asRecord(node.metadata);
-}
-
-function nodeIsDiagnosticOnly(node: OrchestratorGraphNodeSpec): boolean {
-  const metadata = nodeMetadata(node);
-  return (
-    metadata.diagnosticOnly === true ||
-    metadata.lifecycleState === "diagnostic_only" ||
-    metadata.contextNodeLifecycle === "diagnostic_only"
-  );
-}
-
-function nodeIsExplicitWorkflowCoordination(node: OrchestratorGraphNodeSpec): boolean {
-  const metadata = nodeMetadata(node);
-  return (
-    (metadata.workflowDefinedCoordinationNode === true ||
-      metadata.explicitWorkflowDefinedContextNode === true) &&
-    Boolean(
-      stringValue(metadata.workflowCoordinationPolicyRef) ||
-        stringValue(metadata.contextCoordinationPolicyRef),
-    )
-  );
 }
 
 function nodeHasExplicitIndependentRootDeclaration(node: OrchestratorGraphNodeSpec): boolean {
@@ -1710,8 +865,8 @@ function nodeHasExplicitIndependentRootDeclaration(node: OrchestratorGraphNodeSp
     metadata.independentRoot === true &&
     Boolean(
       stringValue(metadata.independentRootRationale) ||
-        stringValue(metadata.parallelIndependentRootRationale) ||
-        stringValue(metadata.parallelismRationale),
+      stringValue(metadata.parallelIndependentRootRationale) ||
+      stringValue(metadata.parallelismRationale),
     )
   );
 }
@@ -1726,23 +881,10 @@ function graphStructuralInvariantReasonCodes(decision: OrchestratorGraphDecision
       reasonCodes.push("graph_multi_node_zero_edge_independent_roots_missing");
     }
   }
-  const outgoingByNodeId = new Map<string, OrchestratorGraphEdgeSpec[]>();
-  const incomingByNodeId = new Map<string, OrchestratorGraphEdgeSpec[]>();
-  for (const edge of newEdges) {
-    if (edge.fromNodeId) {
-      outgoingByNodeId.set(edge.fromNodeId, [
-        ...(outgoingByNodeId.get(edge.fromNodeId) ?? []),
-        edge,
-      ]);
-    }
-    if (edge.toNodeId) {
-      incomingByNodeId.set(edge.toNodeId, [...(incomingByNodeId.get(edge.toNodeId) ?? []), edge]);
-    }
-  }
   for (const node of newNodes) {
-    const nodeKind = String(node.nodeKind);
-    if (nodeKind === "resource_scout") {
-      reasonCodes.push(`default_resource_scout_graph_node_retired:${node.nodeId || "unknown"}`);
+    const nodeKind: string = node.nodeKind;
+    if (nodeKind === "context_scout") {
+      reasonCodes.push(`default_context_scout_graph_node_retired:${node.nodeId || "unknown"}`);
     }
     if (nodeKind === "context_synthesis") {
       reasonCodes.push(`default_context_synthesis_graph_node_retired:${node.nodeId || "unknown"}`);
@@ -1750,154 +892,8 @@ function graphStructuralInvariantReasonCodes(decision: OrchestratorGraphDecision
     if (!["implementation", "test_authoring", "docs_update", "compiler"].includes(node.nodeKind)) {
       continue;
     }
-    const metadata = nodeMetadata(node);
-    const requiresResources =
-      stringArray(metadata.resourceRequirementKinds).includes("resource_handoff") ||
-      stringArray(metadata.resourceRequirementRefs).length > 0 ||
-      stringValue(metadata.resourceRequirementRef);
-    if (
-      requiresResources &&
-      !(incomingByNodeId.get(node.nodeId) ?? []).some((edge) => edge.edgeKind === "handoff")
-    ) {
-      reasonCodes.push(`resource_node_resource_handoff_edge_missing:${node.nodeId || "unknown"}`);
-    }
   }
   return [...new Set(reasonCodes)];
-}
-
-function runtimeDerivedStagedEdges(input: {
-  nodes: OrchestratorGraphNodeSpec[];
-  workUnits: StagedWorkBreakdownUnit[];
-  contracts: StagedNodeContract[];
-}): OrchestratorGraphEdgeSpec[] {
-  const nodeIdByWorkUnit = new Map(
-    input.nodes
-      .map((node) => {
-        const metadata = asRecord(node.metadata);
-        return [stringValue(metadata.workUnitId), node.nodeId] as const;
-      })
-      .filter(([workUnitId]) => Boolean(workUnitId)),
-  );
-  const unitById = new Map(input.workUnits.map((unit) => [unit.workUnitId, unit]));
-  const contractByUnit = new Map(
-    input.contracts.map((contract) => [contract.workUnitId, contract]),
-  );
-  const edges: OrchestratorGraphEdgeSpec[] = [];
-  const addEdge = (
-    fromNodeId: string | null | undefined,
-    toNodeId: string | null | undefined,
-    edgeKind: TeamGraphEdgeKind,
-    reasonCode: string,
-  ) => {
-    if (!fromNodeId || !toNodeId || fromNodeId === toNodeId) {
-      return;
-    }
-    const candidate = { fromNodeId, toNodeId, edgeKind };
-    if (edges.some((edge) => edgeKey(edge) === edgeKey(candidate))) {
-      return;
-    }
-    edges.push({
-      edgeId: `${fromNodeId}-to-${toNodeId}`,
-      fromNodeId,
-      toNodeId,
-      edgeKind,
-      reasonCodes: [reasonCode],
-      artifactRefs: [],
-      metadata: {
-        source: "runtime_derived_staged_scheduler_structure",
-        rawPromptStored: false,
-        rawResponseStored: false,
-        rawProviderLogStored: false,
-      },
-    });
-  };
-
-  for (const node of input.nodes) {
-    const metadata = asRecord(node.metadata);
-    const workUnitId = stringValue(metadata.workUnitId);
-    const declaredDependencies = [
-      ...(unitById.get(workUnitId)?.dependencyWorkUnitIds ?? []),
-      ...(contractByUnit.get(workUnitId)?.dependencyWorkUnitIds ?? []),
-      ...(node.inputHandoffRefs ?? []),
-    ];
-    for (const dependency of declaredDependencies) {
-      const fromNodeId = nodeIdByWorkUnit.get(dependency) ?? dependency;
-      if (input.nodes.some((candidate) => candidate.nodeId === fromNodeId)) {
-        const sourceNode = input.nodes.find((candidate) => candidate.nodeId === fromNodeId);
-        addEdge(
-          fromNodeId,
-          node.nodeId,
-          edgeKindForGraphNodes(sourceNode, node, "handoff"),
-          "runtime_derived_explicit_dependency_edge",
-        );
-      }
-    }
-  }
-
-  for (const source of input.nodes) {
-    if (!source.downstreamConsumer) {
-      continue;
-    }
-    for (const target of input.nodes) {
-      if (nodeMatchesDownstreamConsumer(target, source.downstreamConsumer)) {
-        addEdge(
-          source.nodeId,
-          target.nodeId,
-          edgeKindForGraphNodes(source, target, "handoff"),
-          "runtime_derived_downstream_consumer_edge",
-        );
-      }
-    }
-  }
-
-  if (edges.length > 0) {
-    return edges;
-  }
-
-  const byRole = new Map<string, OrchestratorGraphNodeSpec[]>();
-  for (const node of input.nodes) {
-    const roleClass = nodeRoleClass(node);
-    byRole.set(roleClass, [...(byRole.get(roleClass) ?? []), node]);
-  }
-  const connect = (
-    upstreamRole: string,
-    downstreamRole: string,
-    edgeKind: TeamGraphEdgeKind,
-    reasonCode: string,
-  ) => {
-    for (const upstream of byRole.get(upstreamRole) ?? []) {
-      for (const downstream of byRole.get(downstreamRole) ?? []) {
-        addEdge(upstream.nodeId, downstream.nodeId, edgeKind, reasonCode);
-      }
-    }
-  };
-  connect(
-    "implementation",
-    "validation",
-    "handoff",
-    "runtime_derived_role_order_implementation_to_validation",
-  );
-  connect(
-    "implementation",
-    "review",
-    "handoff",
-    "runtime_derived_role_order_implementation_to_review",
-  );
-  connect("validation", "review", "handoff", "runtime_derived_role_order_validation_to_review");
-  connect(
-    "validation",
-    "observability",
-    "handoff",
-    "runtime_derived_role_order_validation_to_readback",
-  );
-  connect("review", "observability", "handoff", "runtime_derived_role_order_review_to_readback");
-  connect(
-    "observability",
-    "closeout",
-    "closeout_source",
-    "runtime_derived_role_order_readback_to_closeout",
-  );
-  return edges;
 }
 
 function decisionMetadata(record: Record<string, unknown>): JsonValue {
@@ -1935,8 +931,9 @@ function blockingCompileReasonCodes(reasonCodes: string[]): string[] {
       code.includes("_rejected") ||
       code.includes("_conflict") ||
       code.includes("_not_allowed") ||
+      code.includes("_duplicate") ||
       code.includes("runtime_owned_field") ||
-      code.includes("staged_scheduler_model_authored_runtime_envelope_not_allowed"),
+      code.includes("scheduler_graph_patch_model_authored_runtime_envelope_not_allowed"),
   );
 }
 
@@ -1982,39 +979,31 @@ export function compileOrchestratorGraphDecision(
   const selectedCapabilityNodes = nodesFromSelectedCapabilities(record.selectedCapabilities, {
     capabilityManifest,
   });
-  const stagedSchedulerNodes = nodesFromStagedSchedulerProtocol(record, {
-    capabilityManifest,
-  });
   const modelAuthoredRuntimeEnvelopeReasonCodes =
-    options.requireStagedProtocolForNodeCreation &&
+    options.disallowModelAuthoredRuntimeEnvelope &&
     ((Array.isArray(record.newNodes) && record.newNodes.length > 0) ||
       (Array.isArray(record.selectedCapabilities) && record.selectedCapabilities.length > 0))
-      ? ["staged_scheduler_model_authored_runtime_envelope_not_allowed"]
+      ? ["scheduler_graph_patch_model_authored_runtime_envelope_not_allowed"]
       : [];
   const nodeResultReasonCodes = nodeResults.flatMap((result) => result.reasonCodes);
   const selectedCapabilityReasonCodes = selectedCapabilityNodes.reasonCodes;
-  const stagedSchedulerReasonCodes = stagedSchedulerNodes.reasonCodes;
   const newNodes = [
     ...nodeResults
       .map((result) => result.node)
       .filter((node): node is OrchestratorGraphNodeSpec => Boolean(node)),
     ...selectedCapabilityNodes.nodes,
-    ...stagedSchedulerNodes.nodes,
   ];
   const rejectedNodeDiagnostics = [
     ...nodeResults.flatMap((result) => result.diagnostics),
     ...selectedCapabilityNodes.diagnostics,
-    ...stagedSchedulerNodes.diagnostics,
   ];
   const acceptedAliasFields = [
     ...nodeResults.flatMap((result) => result.acceptedAliasFields),
     ...selectedCapabilityNodes.acceptedAliasFields,
-    ...stagedSchedulerNodes.acceptedAliasFields,
   ];
   const compileReasonCodes = [
     ...nodeResultReasonCodes,
     ...selectedCapabilityReasonCodes,
-    ...stagedSchedulerReasonCodes,
     ...modelAuthoredRuntimeEnvelopeReasonCodes,
   ];
   const explicitEdges = edgeValuesFromDecision(record);
@@ -2031,18 +1020,13 @@ export function compileOrchestratorGraphDecision(
     decisionKind: decisionKind as OrchestratorGraphDecisionKind,
     rationaleForDecision: stringValue(record.rationaleForDecision),
     targetNodeId: targetNodeIdFromDecisionRecord(record),
-    runNodeId:
-      stringValue(record.runNodeId) || null,
+    runNodeId: stringValue(record.runNodeId) || null,
     newNodes,
     newEdges: canonicalizeDecisionEdges({
       decisionId: decisionId || "model-decision",
       edges: normalizeEdgeKindsForGraph({
         nodes: newNodes,
-        edges: [
-          ...newEdges,
-          ...stagedSchedulerNodes.edges,
-          ...compiledDependencyEdges,
-        ],
+        edges: [...newEdges, ...compiledDependencyEdges],
       }),
     }),
     reasonCodes: stringArray(record.reasonCodes),
@@ -2054,18 +1038,6 @@ export function compileOrchestratorGraphDecision(
     runAfterAdd: booleanValue(record.runAfterAdd),
     metadata: jsonValue({
       ...asRecord(decisionMetadata(record)),
-      ...(stagedSchedulerNodes.parallelIndependentNodesJustification
-        ? {
-            parallelIndependentNodesJustification:
-              stagedSchedulerNodes.parallelIndependentNodesJustification,
-          }
-        : {}),
-      ...(stagedSchedulerNodes.nodes.length > 0
-        ? {
-            stagedSchedulerProtocolCompiled: true,
-            stagedWorkUnitCount: stagedSchedulerNodes.nodes.length,
-          }
-        : {}),
     }) as JsonValue,
     rawPromptStored: false,
     rawResponseStored: false,
@@ -2147,12 +1119,9 @@ export function validateOrchestratorGraphDecision(
     }
   }
   if (
-    [
-      "add_nodes",
-      "split_node",
-      "request_human_decision",
-      "rerun_role",
-    ].includes(decision.decisionKind) &&
+    ["add_nodes", "split_node", "request_human_decision", "rerun_role"].includes(
+      decision.decisionKind,
+    ) &&
     (decision.newNodes ?? []).length === 0
   ) {
     reasonCodes.push("decision_new_nodes_missing");

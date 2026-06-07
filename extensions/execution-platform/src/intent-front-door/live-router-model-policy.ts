@@ -9,13 +9,7 @@ import {
 
 export const LIVE_ROUTER_MODEL_POLICY_KIND = "intent_front_door_live_router_model_policy";
 
-export type LiveRouterReasoningEffort =
-  | "none"
-  | "minimal"
-  | "low"
-  | "medium"
-  | "high"
-  | "xhigh";
+export type LiveRouterReasoningEffort = "none" | "minimal" | "low" | "medium" | "high" | "xhigh";
 
 export type LiveRouterProviderProfile = {
   providerRef: string;
@@ -92,7 +86,7 @@ export const LIVE_ROUTER_MODEL_POLICY_FIXTURE: LiveRouterModelPolicy = {
   routerModelRef: "model-route://intent-front-door/live-router/fixture",
   routerPolicyRef: "router-policy://intent-front-door/live-router/fixture",
   modelRosterRef: "model-roster://intent-front-door/router/live",
-  requiredCapabilities: ["structured_json", "json_schema"],
+  requiredCapabilities: ["tool_calling"],
   fallbackModelRef: "model-route://intent-front-door/live-router/fallback-fixture",
   escalationModelRef: "model-route://intent-front-door/live-router/escalation-fixture",
   killSwitchRef: "kill-switch://intent-front-door/live-router",
@@ -111,7 +105,7 @@ export const LIVE_ROUTER_MODEL_CANDIDATE_FIXTURE: RouterModelCandidateRef = {
   provider: "openrouter",
   model: "intent-front-door-live-router-fixture",
   family: "OpenRouter-hosted candidates",
-  capabilities: ["structured_json", "json_schema", "low_cost"],
+  capabilities: ["tool_calling", "low_cost"],
   status: "enabled",
   policyRef: "model-route://intent-front-door/live-router/fixture",
 };
@@ -162,11 +156,8 @@ export function resolveLiveRouterModelPolicy(input: {
   if (!trimOrNull(policy.modelRosterRef)) {
     reasonCodes.push("live_router_model_roster_ref_missing", "blocked_config_missing");
   }
-  if (!policy.requiredCapabilities.includes("structured_json")) {
-    reasonCodes.push("live_router_structured_output_capability_required");
-  }
-  if (!policy.requiredCapabilities.includes("json_schema")) {
-    reasonCodes.push("live_router_json_schema_capability_required");
+  if (!policy.requiredCapabilities.includes("tool_calling")) {
+    reasonCodes.push("live_router_tool_calling_capability_required");
   }
   if (input.providerSecretConfigured === false) {
     reasonCodes.push("live_router_provider_secret_missing", "blocked_config_missing");

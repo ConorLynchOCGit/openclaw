@@ -319,6 +319,7 @@ describe("installContextEngineLoopHook", () => {
     agent: ReturnType<typeof makeGuardableAgent>,
     engine: MockedEngine,
     prePromptCount?: number,
+    refreshSystemPrompt?: () => void | Promise<void>,
   ): () => void {
     return installContextEngineLoopHook({
       agent,
@@ -329,6 +330,7 @@ describe("installContextEngineLoopHook", () => {
       tokenBudget,
       modelId,
       ...(prePromptCount !== undefined ? { getPrePromptMessageCount: () => prePromptCount } : {}),
+      ...(refreshSystemPrompt ? { refreshSystemPrompt } : {}),
     });
   }
 
@@ -428,6 +430,19 @@ describe("installContextEngineLoopHook", () => {
     const transformed = await callTransform(agent, withNew);
 
     expect(transformed).toBe(compactedView);
+  });
+
+  it("refreshes dynamic system prompt context after assemble", async () => {
+    const agent = makeGuardableAgent();
+    const refreshSystemPrompt = vi.fn();
+    const engine = makeMockEngine();
+    installHook(agent, engine, 1, refreshSystemPrompt);
+
+    const messages = [makeUser("first"), makeToolResult("call_1", "result")];
+    await callTransform(agent, messages);
+
+    expect(engine.assemble).toHaveBeenCalledTimes(1);
+    expect(refreshSystemPrompt).toHaveBeenCalledTimes(1);
   });
 
   it("returns the assembled view when the engine rewrites content without changing count", async () => {

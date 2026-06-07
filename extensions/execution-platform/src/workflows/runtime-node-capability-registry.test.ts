@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { NODE_LIFECYCLE_DESCRIPTOR_TOOL_IDS } from "./node-lifecycle-transition-runner.ts";
 import {
   buildProviderCapabilityProfileRegistry,
   buildRuntimeNodeCapabilityManifest,
@@ -7,7 +8,6 @@ import {
   validateProviderCapabilityProfileRegistry,
   validateRuntimeCapabilityExecutorCoverage,
 } from "./runtime-node-capability-registry.ts";
-import { NODE_LIFECYCLE_DESCRIPTOR_TOOL_IDS } from "./node-lifecycle-transition-runner.ts";
 import { TEAM_GRAPH_NODE_KINDS } from "./runtime-work-graph.ts";
 
 describe("runtime node capability registry", () => {
@@ -28,9 +28,16 @@ describe("runtime node capability registry", () => {
         "human_decision",
       ]),
     );
+    const manifestText = JSON.stringify(manifest.capabilities);
+    expect(manifestText).not.toContain("model_agnostic_file_edit_worker");
+    expect(manifestText).not.toContain("model_agnostic_tool_worker_loop");
+    expect(manifestText).not.toContain("non_codex_tool_using_worker_loop");
+    expect(manifestText).not.toContain("non_codex_test_writer");
+    expect(manifestText).not.toContain("non_codex_docs_editor");
+    expect(manifestText).not.toContain("non_codex_validation_failure_explainer");
   });
 
-  it("describes Kimi as non-Codex worker-loop implementation and Codex as complex escalation", () => {
+  it("describes implementation microtasks as native OpenClaw node-agent sessions and Codex as complex escalation", () => {
     const manifest = buildRuntimeNodeCapabilityManifest();
     const kimi = manifest.capabilities.find(
       (capability) => capability.capabilityId === "implementation_microtask",
@@ -42,7 +49,8 @@ describe("runtime node capability registry", () => {
     expect(kimi).toMatchObject({
       graphNodeKind: "implementation",
       executorKey: "kind:implementation",
-      workerRef: "worker.kimi.file-implementation",
+      workerRef: "agent.execution-coding.native-node-session",
+      displayName: "OpenClaw-native execution-coding node agent session",
       roleId: "implementation_engineer",
       writable: true,
       canEditSource: true,
@@ -51,51 +59,36 @@ describe("runtime node capability registry", () => {
       costClass: "cheap",
       productionSelectionRequiresQualification: true,
     });
-    expect(kimi?.allowedAdapters).toContain("worker.kimi.file-implementation");
+    expect(kimi?.allowedAdapters).toEqual(["openclaw_native_node_agent_session"]);
     expect(kimi?.modelQualificationProfileIds).toContain("openrouter.moonshotai.kimi-k2.6");
     expect(kimi?.modelQualificationProfileIds).toContain("openrouter.qwen.qwen3-coder-next");
     expect(kimi?.modelPolicyRefs).toEqual(
       expect.arrayContaining([
-        "policy://codex-parity/openclaw-role/implementation-standard/qwen-controller",
-        "policy://codex-parity/openclaw-role/implementation-standard/kimi-patch-reasoning-none",
-        "policy://codex-parity/openclaw-role/implementation-standard/qwen-validation-repair",
+        "policy://openclaw-native-node/execution-coding/kimi-k2.6-high-reasoning",
+        "policy://openclaw-native-node/execution-context-scout/qwen-fast-search",
+        "policy://openclaw-native-node/execution-validation-scout/qwen-fast-validation",
       ]),
     );
-    expect(kimi?.validationResponsibilities).toContain("request_bounded_context");
-    expect(kimi?.validationResponsibilities).toContain("search_allowed_repo_scope");
-    expect(kimi?.validationResponsibilities).toContain("inspect_related_tests");
-    expect(kimi?.validationResponsibilities).toContain(
-      "select_compound_coding_tool_when_context_is_sufficient",
+    expect(kimi?.validationResponsibilities).toEqual(
+      expect.arrayContaining([
+        "create_native_update_plan",
+        "spawn_context_scout_when_target_mapping_is_weak",
+        "synthesize_inline_context_windows",
+        "spawn_validation_scout_when_validation_scope_or_failure_needs_help",
+        "finish_with_node_finish_evidence",
+      ]),
     );
-    expect(kimi?.validationResponsibilities).toContain(
-      "execute_compound_inspect_edit_validate_evidence_operation",
-    );
-    expect(kimi?.validationResponsibilities).toContain("execute_ordered_edit_steps");
-    expect(kimi?.validationResponsibilities).toContain("emit_commitment_evidence_claims");
     expect(kimi?.lifecycleTransitionProfileRef).toBe(
       "lifecycle-profile://agent_team.coding/implementation_microtask.v1",
     );
     expect(kimi?.allowedLifecycleTransitions).toEqual(
       expect.arrayContaining([
-        "resource.scout.submit_exact_handles",
-        "worker.context.request_more",
-        "worker.context.search",
-        "worker.context.open_around_match",
-        "worker.context.accept_window",
-        "resource.selection.propose",
-        "node.execution_packet.promote_worker_action_ready",
-        "worker.edit.plan",
-        "worker.validation.run_structural_default",
+        "node.agent_session.invoke",
+        "node.agent_session.invoke_high_capability",
       ]),
     );
     expect(kimi?.requiredLifecycleTools).toEqual(
-      expect.arrayContaining([
-        "node.execution_packet.promote_worker_action_ready",
-        "worker.context.request_more",
-        "worker.context.search",
-        "worker.context.open_around_match",
-        "worker.context.accept_window",
-      ]),
+      expect.arrayContaining(["node.agent_session.invoke"]),
     );
     expect(kimi).toMatchObject({
       domainProfileId: "coding",
@@ -108,7 +101,11 @@ describe("runtime node capability registry", () => {
       expect.arrayContaining(["repo_file", "bounded_file_window", "target_snapshot", "diff"]),
     );
     expect(kimi?.domainWorkerActionToolIds).toEqual(
-      expect.arrayContaining(["worker.edit.plan", "worker.validation.run_structural_default"]),
+      expect.arrayContaining(["node.agent_session.invoke"]),
+    );
+    expect(kimi?.domainWorkerActionToolIds).not.toContain("worker.edit.plan");
+    expect(kimi?.domainWorkerActionToolIds).not.toContain(
+      "worker.validation.run_structural_default",
     );
     expect(kimi?.domainWorkerActionToolIds).not.toContain("worker.patch.force_author_from_plan");
     expect(codex).toMatchObject({
@@ -132,9 +129,20 @@ describe("runtime node capability registry", () => {
     expect(testAuthoring).toMatchObject({
       roleId: "test_engineer",
       writable: true,
+      workerRef: "agent.execution-coding.native-node-session",
       canWriteTests: true,
       canRunValidation: true,
     });
+    expect(testAuthoring?.allowedAdapters).toEqual(["openclaw_native_node_agent_session"]);
+    expect(testAuthoring?.canEditSource).toBe(true);
+    expect(testAuthoring?.validationResponsibilities).toEqual(
+      expect.arrayContaining([
+        "create_native_update_plan",
+        "spawn_context_scout_when_target_mapping_is_weak",
+        "spawn_validation_scout_when_validation_scope_or_failure_needs_help",
+        "finish_with_node_finish_evidence",
+      ]),
+    );
     expect(testAuthoring?.authorityBoundaries).toContain("no_test_weakening_without_review");
   });
 
@@ -196,7 +204,7 @@ describe("runtime node capability registry", () => {
       capabilityId: "implementation_microtask",
       graphNodeKind: "implementation",
       executorKey: "kind:implementation",
-      workerRef: "worker.kimi.file-implementation",
+      workerRef: "agent.execution-coding.native-node-session",
       roleClass: "implementation",
       costClass: "cheap",
       latencyClass: "medium",
@@ -210,13 +218,10 @@ describe("runtime node capability registry", () => {
       rawProviderLogStored: false,
     });
     expect(implementation?.toolProfileRefs).toEqual(
-      expect.arrayContaining([
-        "tool-profile://model_agnostic_file_edit_worker",
-        "tool-profile://non_codex_tool_using_worker_loop",
-      ]),
+      expect.arrayContaining(["tool-profile://openclaw_native_node_agent_session"]),
     );
     expect(implementation?.qualifiedEvidenceKinds).toEqual(
-      expect.arrayContaining(["source_change", "test_validation", "resource_handoff"]),
+      expect.arrayContaining(["source_change", "test_validation", "source_material"]),
     );
 
     const contractOnly = findProviderCapabilityProfile("non_codex_frontend_editor", registry);
@@ -256,7 +261,7 @@ describe("runtime node capability registry", () => {
     );
     expect(planningCapsule).toMatchObject({
       domainProfileId: "product_spec_planning",
-      requiredResourcePacketKind: "planning_domain_resource_packet",
+      requiredResourcePacketKind: null,
     });
     expect(planningCapsule?.domainResourceKinds).toEqual(
       expect.arrayContaining([
@@ -287,8 +292,9 @@ describe("runtime node capability registry", () => {
       (entry) => entry.workflowId === "agent_team.product_spec_planning",
     )) {
       if (capability.requiresResources) {
-        expect(capability.supportedExecutionIntents).toContain("resource_demand");
+        expect(capability.supportedExecutionIntents).toContain("source_grounding");
       }
+      expect(capability.supportedExecutionIntents).not.toContain("resource_demand");
       expect(capability.supportedExecutionIntents).not.toContain("resource_fulfillment");
       expect(capability.supportedExecutionIntents).not.toContain("source_edit");
       expect(capability.supportedExecutionIntents).not.toContain("resource_materialization");
@@ -310,10 +316,7 @@ describe("runtime node capability registry", () => {
     }) as ReturnType<typeof buildRuntimeNodeCapabilityManifest>;
 
     expect(manifest.capabilities.map((capability) => capability.capabilityId)).toEqual(
-      expect.arrayContaining([
-        "implementation_microtask",
-        "implementation_complex",
-      ]),
+      expect.arrayContaining(["implementation_microtask", "implementation_complex"]),
     );
     expect(manifest.capabilities.map((capability) => capability.capabilityId)).not.toContain(
       "web_research",
@@ -333,10 +336,16 @@ describe("runtime node capability registry", () => {
     }) as ReturnType<typeof buildRuntimeNodeCapabilityManifest>;
 
     expect(manifest.capabilities.map((capability) => capability.capabilityId)).not.toContain(
-      "non_codex_resource_scout",
+      "non_codex_context_scout",
     );
     expect(manifest.capabilities.map((capability) => capability.capabilityId)).not.toContain(
       "non_codex_test_writer",
+    );
+    expect(manifest.capabilities.map((capability) => capability.capabilityId)).not.toContain(
+      "non_codex_docs_editor",
+    );
+    expect(manifest.capabilities.map((capability) => capability.capabilityId)).not.toContain(
+      "non_codex_validation_failure_explainer",
     );
   });
 
@@ -354,7 +363,11 @@ describe("runtime node capability registry", () => {
     const capabilityIds = manifest.capabilities.map((capability) => capability.capabilityId);
 
     expect(capabilityIds).toEqual(
-      expect.arrayContaining(["orchestrator_decision", "implementation_microtask", "validation_run"]),
+      expect.arrayContaining([
+        "orchestrator_decision",
+        "implementation_microtask",
+        "validation_run",
+      ]),
     );
     expect(capabilityIds).not.toContain("implementation_complex");
   });
@@ -450,22 +463,15 @@ describe("runtime node capability registry", () => {
 
   it("derives lifecycle profile tools from the runner descriptor registry", () => {
     const descriptorToolIds = new Set(NODE_LIFECYCLE_DESCRIPTOR_TOOL_IDS);
-    const allowedNonLifecycleTools = new Set([
-      "artifact.create",
-      "approval.request",
-      "review.add_issue",
-      "review.approve",
-    ]);
+    const allowedNonLifecycleTools = new Set(["artifact.create", "approval.request"]);
     const manifest = buildRuntimeNodeCapabilityManifest();
 
     for (const capability of manifest.capabilities) {
       for (const toolId of capability.allowedLifecycleTransitions) {
-        expect(
-          descriptorToolIds.has(toolId) || allowedNonLifecycleTools.has(toolId),
-        ).toBe(true);
+        expect(descriptorToolIds.has(toolId) || allowedNonLifecycleTools.has(toolId)).toBe(true);
       }
       for (const toolId of capability.requiredLifecycleTools) {
-        expect(descriptorToolIds.has(toolId)).toBe(true);
+        expect(descriptorToolIds.has(toolId) || allowedNonLifecycleTools.has(toolId)).toBe(true);
       }
     }
 
@@ -474,17 +480,13 @@ describe("runtime node capability registry", () => {
     );
     expect(implementation?.allowedLifecycleTransitions).toEqual(
       expect.arrayContaining([
-        "resource.scout.submit_exact_handles",
-        "worker.context.request_more",
-        "worker.context.search",
-        "worker.context.open_around_match",
-        "worker.context.accept_window",
-        "resource.selection.propose",
-        "node.execution_packet.promote_worker_action_ready",
-        "worker.edit.plan",
-        "worker.validation.run_structural_default",
-        "worker.evidence.claim_from_validation",
+        "node.agent_session.invoke",
+        "node.agent_session.invoke_high_capability",
       ]),
+    );
+    expect(implementation?.allowedLifecycleTransitions).not.toContain("resource.selection.propose");
+    expect(implementation?.allowedLifecycleTransitions).not.toContain(
+      "node.execution_packet.promote_worker_action_ready",
     );
   });
 });

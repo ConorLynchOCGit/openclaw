@@ -7,6 +7,7 @@ import {
   type RequestedModelCandidate,
 } from "../model-routing/model-candidate-validation-plan.ts";
 import type { JsonValue } from "../runtime-job-repository.ts";
+import { DEFAULT_WORKSPACE_DOCS_PATH } from "./policy.ts";
 import {
   createTrustedLocalYoloProfile,
   trustedLocalYoloProfileToLiveRequestAuthorityBlock,
@@ -14,9 +15,20 @@ import {
   type TrustedLocalYoloAuthorityProfile,
 } from "./trusted-local-yolo-profile.ts";
 
+const EXECUTION_PLATFORM_ROLE_DOC_ROOT = `${DEFAULT_WORKSPACE_DOCS_PATH}/roles`;
+const EXECUTION_PLATFORM_SPEC_DOC_ROOT = `${DEFAULT_WORKSPACE_DOCS_PATH}/specs`;
+
+function roleDocPath(roleId: string): string {
+  return `${EXECUTION_PLATFORM_ROLE_DOC_ROOT}/${roleId}.md`;
+}
+
+function specDocPath(specId: string): string {
+  return `${EXECUTION_PLATFORM_SPEC_DOC_ROOT}/${specId}.md`;
+}
+
 export type AgentTeamRoleId =
   | "orchestrator"
-  | "resource_scout"
+  | "context_scout"
   | "resource_specialist_subturn"
   | "architect_spec_writer"
   | "implementation_engineer"
@@ -278,11 +290,10 @@ function createRolePlans(): AgentTeamRolePlan[] {
         "missing closeout",
         "unsafe authority request",
       ],
-      localSpecRef:
-        "/root/.openclaw/workspace/docs/projects/execution-platform/roles/orchestrator.md",
+      localSpecRef: roleDocPath("orchestrator"),
     },
     {
-      roleId: "resource_scout",
+      roleId: "context_scout",
       purpose: "Find relevant code, contracts, tests, docs, and hidden dependencies before edits.",
       responsibilities: [
         "search the repo with read-only tools",
@@ -293,8 +304,7 @@ function createRolePlans(): AgentTeamRolePlan[] {
       mayRunValidation: false,
       mayAcceptWork: false,
       stopConditions: ["scope cannot be bounded", "source of truth is ambiguous"],
-      localSpecRef:
-        "/root/.openclaw/workspace/docs/projects/execution-platform/roles/resource.scout.md",
+      localSpecRef: roleDocPath("context_scout"),
     },
     {
       roleId: "architect_spec_writer",
@@ -312,8 +322,7 @@ function createRolePlans(): AgentTeamRolePlan[] {
         "unbounded scope",
         "missing rollback expectation",
       ],
-      localSpecRef:
-        "/root/.openclaw/workspace/docs/projects/execution-platform/roles/architect_spec_writer.md",
+      localSpecRef: roleDocPath("architect_spec_writer"),
     },
     {
       roleId: "implementation_engineer",
@@ -332,8 +341,7 @@ function createRolePlans(): AgentTeamRolePlan[] {
         "forbidden authority needed",
         "validation cannot be repaired",
       ],
-      localSpecRef:
-        "/root/.openclaw/workspace/docs/projects/execution-platform/roles/implementation_engineer.md",
+      localSpecRef: roleDocPath("implementation_engineer"),
     },
     {
       roleId: "test_engineer",
@@ -350,8 +358,7 @@ function createRolePlans(): AgentTeamRolePlan[] {
         "test asserts arbitrary schema instead of product behavior",
         "test requires live provider",
       ],
-      localSpecRef:
-        "/root/.openclaw/workspace/docs/projects/execution-platform/roles/test_engineer.md",
+      localSpecRef: roleDocPath("test_engineer"),
     },
     {
       roleId: "reviewer",
@@ -365,7 +372,7 @@ function createRolePlans(): AgentTeamRolePlan[] {
       mayRunValidation: false,
       mayAcceptWork: false,
       stopConditions: ["high severity finding", "missing qualitative review boundary"],
-      localSpecRef: "/root/.openclaw/workspace/docs/projects/execution-platform/roles/reviewer.md",
+      localSpecRef: roleDocPath("reviewer"),
     },
     {
       roleId: "security_privacy_reviewer",
@@ -383,8 +390,7 @@ function createRolePlans(): AgentTeamRolePlan[] {
         "unapproved authority expansion",
         "high severity finding",
       ],
-      localSpecRef:
-        "/root/.openclaw/workspace/docs/projects/execution-platform/roles/security_privacy_reviewer.md",
+      localSpecRef: roleDocPath("security_privacy_reviewer"),
     },
     {
       roleId: "refactor_engineer",
@@ -398,8 +404,7 @@ function createRolePlans(): AgentTeamRolePlan[] {
       mayRunValidation: true,
       mayAcceptWork: false,
       stopConditions: ["behavior change needed", "scope exceeds maintainability-only patch"],
-      localSpecRef:
-        "/root/.openclaw/workspace/docs/projects/execution-platform/roles/refactor_engineer.md",
+      localSpecRef: roleDocPath("refactor_engineer"),
       activation: "conditional",
     },
     {
@@ -414,8 +419,7 @@ function createRolePlans(): AgentTeamRolePlan[] {
       mayRunValidation: false,
       mayAcceptWork: false,
       stopConditions: ["production deploy requested", "cloud access would exceed approved scope"],
-      localSpecRef:
-        "/root/.openclaw/workspace/docs/projects/execution-platform/roles/devops_release_sre.md",
+      localSpecRef: roleDocPath("devops_release_sre"),
       activation: "conditional",
     },
     {
@@ -430,8 +434,7 @@ function createRolePlans(): AgentTeamRolePlan[] {
       mayRunValidation: false,
       mayAcceptWork: false,
       stopConditions: ["forbidden authority request", "raw transcript or secret storage"],
-      localSpecRef:
-        "/root/.openclaw/workspace/docs/projects/execution-platform/roles/guardrail_auditor.md",
+      localSpecRef: roleDocPath("guardrail_auditor"),
     },
     {
       roleId: "observability_scribe",
@@ -441,8 +444,7 @@ function createRolePlans(): AgentTeamRolePlan[] {
       mayRunValidation: false,
       mayAcceptWork: false,
       stopConditions: ["unbounded log capture", "missing runtime artifact pointers"],
-      localSpecRef:
-        "/root/.openclaw/workspace/docs/projects/execution-platform/roles/observability_scribe.md",
+      localSpecRef: roleDocPath("observability_scribe"),
     },
     {
       roleId: "docs_skills_writer",
@@ -459,8 +461,7 @@ function createRolePlans(): AgentTeamRolePlan[] {
         "docs assert unsupported live behavior",
         "skill text grants runtime authority",
       ],
-      localSpecRef:
-        "/root/.openclaw/workspace/docs/projects/execution-platform/roles/docs_skills_writer.md",
+      localSpecRef: roleDocPath("docs_skills_writer"),
     },
   ];
 }
@@ -484,7 +485,7 @@ function createModelAssignments(input: {
   const kimi = findCandidate(input.candidates, "kimi-2-6-coding-candidate");
   const deepseek = findCandidate(input.candidates, "deepseek-v4-coding-candidate");
   const deepseekPro = findCandidate(input.candidates, "deepseek-v4-pro-coding-candidate");
-  const v4ProContextStatus = input.v4ProRoleStatuses?.resource_scout ?? "needs_review";
+  const v4ProContextStatus = input.v4ProRoleStatuses?.context_scout ?? "needs_review";
   const v4ProSecurityStatus =
     input.v4ProRoleStatuses?.security_privacy_reviewer_assist ?? "needs_review";
   return [
@@ -501,7 +502,7 @@ function createModelAssignments(input: {
       evidenceRefs: input.evidenceRefs,
     },
     {
-      roleId: "resource_scout",
+      roleId: "context_scout",
       provider: "openrouter",
       modelId: deepseekPro.openRouterModelId,
       modelLabel: deepseekPro.modelLabel,
@@ -511,7 +512,7 @@ function createModelAssignments(input: {
       liveAuthorityGrantedNow: false,
       requiresAcceptanceBy: "orchestrator",
       evidenceRefs: input.evidenceRefs,
-      roleTargetId: "resource_scout",
+      roleTargetId: "context_scout",
       roleQualificationStatus: v4ProContextStatus,
     },
     {
@@ -815,11 +816,11 @@ export function createFirstAgentTeamImplementationPlan(
     ],
     researchSources: input.researchSources ?? AGENT_TEAM_RESEARCH_SOURCES,
     localSpecRefs: [
-      "/root/.openclaw/workspace/docs/projects/execution-platform/specs/execution-supervisor-protocol.md",
-      "/root/.openclaw/workspace/docs/projects/execution-platform/specs/live-execution-readiness-gates.md",
-      "/root/.openclaw/workspace/docs/projects/execution-platform/specs/acp-codex-bridge-readiness.md",
-      "/root/.openclaw/workspace/docs/projects/execution-platform/specs/work-queue-execution-truth.md",
-      "/root/.openclaw/workspace/docs/projects/execution-platform/roles/",
+      specDocPath("execution-supervisor-protocol"),
+      specDocPath("live-execution-readiness-gates"),
+      specDocPath("acp-codex-bridge-readiness"),
+      specDocPath("work-queue-execution-truth"),
+      `${EXECUTION_PLATFORM_ROLE_DOC_ROOT}/`,
     ],
     modelValidationEvidenceRefs,
     runtimeEvidenceRefs,
@@ -852,7 +853,7 @@ export function validateAgentTeamImplementationPlan(
   const warnings: string[] = [];
   const requiredRoles: AgentTeamRoleId[] = [
     "orchestrator",
-    "resource_scout",
+    "context_scout",
     "implementation_engineer",
     "test_engineer",
     "reviewer",

@@ -1,11 +1,11 @@
 import type { JsonValue } from "../runtime-job-repository.ts";
-import type { WorkflowEvidenceClass } from "./workflow-evidence-profile.ts";
 import {
   evaluateEvidenceClaimValidationPhase,
   normalizeRuntimeValidationPhase,
   type RuntimeValidationPhase,
   type ValidationPhaseCompatibilityStatus,
 } from "./validation-phase.ts";
+import type { WorkflowEvidenceClass } from "./workflow-evidence-profile.ts";
 import type {
   CommitmentEvidenceClaim,
   RuntimeWorkGraphNodeExecutionResult,
@@ -61,7 +61,7 @@ export type GenericWorkflowNodeExecutionResult = {
   producedOutputRefs: string[];
   evidenceClaims: GenericWorkflowEvidenceClaim[];
   evidenceClassesProduced: WorkflowEvidenceClass[];
-  resourceHandoffRefs: string[];
+  sourceMaterialRefs: string[];
   validationRefs: string[];
   validationSummaryRefs: string[];
   changedFileRefs: string[];
@@ -150,7 +150,7 @@ export function genericWorkflowNodeResultFromRuntime(input: {
   runtimeToolInvocationRefs?: string[];
   scriptJobRefs?: string[];
   dbOperationRefs?: string[];
-  resourceHandoffRefs?: string[];
+  sourceMaterialRefs?: string[];
   validationRefs?: string[];
   validationSummaryRefs?: string[];
   changedFileRefs?: string[];
@@ -209,7 +209,11 @@ export function genericWorkflowNodeResultFromRuntime(input: {
       validationPhase,
       validationPhaseCompatibility: compatibility.status,
       validationPhaseReasonCodes: unique(
-        [...(claim.validationPhaseReasonCodes ?? []), ...missingPhaseReasonCodes, ...compatibility.reasonCodes],
+        [
+          ...(claim.validationPhaseReasonCodes ?? []),
+          ...missingPhaseReasonCodes,
+          ...compatibility.reasonCodes,
+        ],
         20,
       ),
       artifactRefs,
@@ -260,7 +264,7 @@ export function genericWorkflowNodeResultFromRuntime(input: {
         .map((claim) => EVIDENCE_CLASS_BY_KIND[claim.evidenceKind])
         .filter((value): value is WorkflowEvidenceClass => Boolean(value)),
     ) as WorkflowEvidenceClass[],
-    resourceHandoffRefs: unique(input.resourceHandoffRefs ?? []),
+    sourceMaterialRefs: unique(input.sourceMaterialRefs ?? []),
     validationRefs,
     validationSummaryRefs: unique([
       ...(input.validationSummaryRefs ?? []),

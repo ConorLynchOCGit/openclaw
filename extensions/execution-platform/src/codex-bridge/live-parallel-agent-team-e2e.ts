@@ -11,14 +11,14 @@ import {
   recordAgentTeamResultReviewArtifact,
 } from "./agent-team-result-review.ts";
 import {
+  createAgentTeamRuntimeEvidence,
+  recordAgentTeamRuntimeEvidence,
+} from "./agent-team-runtime-evidence.ts";
+import {
   buildCloseoutCapsuleId,
   closeoutCapsuleToLegacyHumanSummary,
   type CloseoutCapsule,
 } from "./closeout-capsule.ts";
-import {
-  createAgentTeamRuntimeEvidence,
-  recordAgentTeamRuntimeEvidence,
-} from "./agent-team-runtime-evidence.ts";
 import {
   buildSecurityPrivacyReviewerArtifact,
   recordSecurityPrivacyReviewerArtifact,
@@ -91,7 +91,7 @@ export async function runLiveParallelAgentTeamE2E(input: {
     runtimeJobId: input.runtimeJobId,
     objective: "parallel agent-team e2e",
     roster: [
-      { roleId: "resource_scout", modelId: "deepseek/deepseek-v4-flash", status: "allowed" },
+      { roleId: "context_scout", modelId: "deepseek/deepseek-v4-flash", status: "allowed" },
       { roleId: "implementation_engineer", modelId: "moonshotai/kimi-k2.6", status: "allowed" },
       { roleId: "test_engineer", modelId: "deepseek/deepseek-v4-pro", status: "allowed" },
       {
@@ -202,7 +202,9 @@ export async function runLiveParallelAgentTeamE2E(input: {
               whatChanged: "Parallel agent-team E2E produced needs-review runtime evidence.",
               whyItChanged: "The proof records bounded reviewer state for operator follow-up.",
               filesTouched: [],
-              testsRun: [`runtime-job://${input.runtimeJobId}/agent-team/parallel-plan/${input.teamRunId}`],
+              testsRun: [
+                `runtime-job://${input.runtimeJobId}/agent-team/parallel-plan/${input.teamRunId}`,
+              ],
               result: "needs_review",
               limitations: ["validation did not pass"],
               nextStep: "Inspect runtime evidence before acceptance.",
@@ -254,7 +256,8 @@ function buildLiveParallelAgentTeamCloseoutCapsule(input: {
       taskSuccess: "satisfied",
       qualityAssessment: "The proof records validation evidence and bounded review artifacts.",
       workflowFitAssessment: "The parallel coding-team workflow fits this E2E proof lane.",
-      agentModelFitAssessment: "The local reviewer is sufficient for deterministic fixture closeout.",
+      agentModelFitAssessment:
+        "The local reviewer is sufficient for deterministic fixture closeout.",
       missingWork: [],
       validationSummary: "Parallel plan and runtime evidence were recorded.",
       riskSummary: "Residual risk is limited to live-provider execution outside this fixture.",

@@ -88,13 +88,15 @@ function validGateRun(): ArchitectureRedTeamGateRun {
         ...storageFlags,
         gapId: "gap.packet-authoring",
         questionId: "question.packet-quality",
-        codeTargetRef: "repo://extensions/execution-platform/src/workflows/worker-execution-packets.ts",
-        observedBehaviorSummary: "Packet author exists and is model-authored.",
+        codeTargetRef: "repo://extensions/execution-platform/src/workflows/node-agent-session.ts",
+        observedBehaviorSummary:
+          "Native node worker prompt authoring exists and is model-authored.",
         expectedBehaviorSummary:
-          "Packet must include concrete worker objectives and context questions.",
+          "Worker prompt must include concrete node objectives, prompt source, scout rules, validation rules, and finish gates.",
         gapRiskLevel: "P2",
-        evidenceRefs: ["artifact://code-review/packet-author"],
-        recommendedActionSummary: "Keep packet quality gate before implementation nodes.",
+        evidenceRefs: ["artifact://code-review/native-node-worker-prompt"],
+        recommendedActionSummary:
+          "Keep native node prompt quality proof before implementation nodes.",
       },
     ],
     riskRegister: [
@@ -104,9 +106,10 @@ function validGateRun(): ArchitectureRedTeamGateRun {
         assumptionId: "assumption.scheduler.packet-quality",
         questionId: "question.packet-quality",
         riskLevel: "P1",
-        riskSummary: "Weak packets can cause downstream worker failure.",
-        evidenceRefs: ["artifact://packet-quality-rubric"],
-        mitigationSummary: "Block implementation until resource scout has concrete refs.",
+        riskSummary: "Weak node worker prompts can cause downstream worker failure.",
+        evidenceRefs: ["artifact://native-node-worker-prompt-quality-rubric"],
+        mitigationSummary:
+          "Block implementation when model-authored worker prompt is missing source material.",
         ownerAcceptanceRefs: [],
         status: "mitigated",
       },
@@ -117,7 +120,7 @@ function validGateRun(): ArchitectureRedTeamGateRun {
         ...storageFlags,
         hardeningId: "hardening.context-tools",
         riskId: "risk.packet-quality",
-        hardeningSummary: "Add more worker context request tools after proof.",
+        hardeningSummary: "Improve native context-scout delegation guidance after proof.",
         recommendedQueuePosition: "after_next_proof",
         evidenceRefs: ["artifact://context-tool-roadmap"],
       },

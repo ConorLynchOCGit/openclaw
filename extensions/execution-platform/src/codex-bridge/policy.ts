@@ -1,4 +1,6 @@
 import { randomUUID } from "node:crypto";
+import path from "node:path";
+import { resolveOpenClawPathRoots } from "../../../../src/agents/workspace-topology-resolver.ts";
 import { boundDiagnosticJson } from "../observability/redaction.ts";
 import type { JsonValue } from "../runtime-job-repository.ts";
 import {
@@ -18,9 +20,20 @@ import {
   type TrustProfileId,
 } from "./types.ts";
 
-export const DEFAULT_REPO_PATH = "/root/services/openclaw-roles/live";
-export const DEFAULT_WORKSPACE_DOCS_PATH =
-  "/root/.openclaw/workspace/docs/projects/execution-platform";
+export function resolveCodexBridgeDefaultPaths(env: NodeJS.ProcessEnv = process.env): {
+  repoPath: string;
+  workspaceDocsPath: string;
+} {
+  const repoPath =
+    env.OPENCLAW_HOST_OPERATOR_REPO_ROOT?.trim() || resolveOpenClawPathRoots().liveRepoRoot;
+  return {
+    repoPath,
+    workspaceDocsPath: path.join(repoPath, "docs/projects/execution-platform"),
+  };
+}
+
+export const DEFAULT_REPO_PATH = resolveCodexBridgeDefaultPaths().repoPath;
+export const DEFAULT_WORKSPACE_DOCS_PATH = resolveCodexBridgeDefaultPaths().workspaceDocsPath;
 
 const TRUST_POLICIES: Record<TrustProfileId, TrustPolicy> = {
   observe_only: {

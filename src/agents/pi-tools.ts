@@ -1,3 +1,4 @@
+import path from "node:path";
 import { codingTools, createReadTool, readTool } from "@mariozechner/pi-coding-agent";
 import type { ModelCompatConfig } from "../config/types.models.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
@@ -21,6 +22,7 @@ import { listChannelAgentTools } from "./channel-tools.js";
 import { shouldSuppressManagedWebSearchTool } from "./codex-native-web-search.js";
 import { resolveImageSanitizationLimits } from "./image-sanitization.js";
 import type { ModelAuthMode } from "./model-auth.js";
+import type { OpenClawNodeAuthorityOverlay } from "./node-authority-overlay.js";
 import { createOpenClawTools } from "./openclaw-tools.js";
 import { wrapToolWithAbortSignal } from "./pi-tools.abort.js";
 import { wrapToolWithBeforeToolCallHook } from "./pi-tools.before-tool-call.js";
@@ -46,6 +48,7 @@ import {
   wrapToolWorkspaceRootGuard,
   wrapToolWorkspaceRootGuardWithOptions,
   wrapToolParamValidation,
+  resolveToolPathAgainstWorkspaceRoot,
 } from "./pi-tools.read.js";
 import { cleanToolSchemaForGemini, normalizeToolParameters } from "./pi-tools.schema.js";
 import type { AnyAgentTool } from "./pi-tools.types.js";
@@ -65,6 +68,8 @@ import {
   mergeAlsoAllowPolicy,
   resolveToolProfilePolicy,
 } from "./tool-policy.js";
+import { ToolAuthorizationError } from "./tools/common.js";
+import { createGlobTool, createGrepTool, createListTool } from "./tools/repo-discovery-tools.js";
 import { resolveWorkspaceRoot } from "./workspace-dir.js";
 
 function isOpenAIProvider(provider?: string) {
@@ -73,6 +78,22 @@ function isOpenAIProvider(provider?: string) {
 }
 
 const MEMORY_FLUSH_ALLOWED_TOOL_NAMES = new Set(["read", "write"]);
+const NODE_AUTHORITY_PATH_TOOL_NAMES = new Set(["read", "write", "edit", "apply_patch"]);
+const NODE_AGENT_NATIVE_TASK_ALWAYS_ALLOWED_TOOL_NAMES = new Set([
+  "update_plan",
+  "read_todo",
+  "task",
+  "openclaw_resource_read",
+  "node_finish",
+]);
+
+type ResolvedNodeAuthorityOverlay = {
+  readableRoots: string[];
+  writableRoots: string[];
+  deniedRoots: string[];
+  validationCommandRefs: string[];
+  authorityRef: string | null;
+};
 
 function createLazyExecTool(defaults?: ExecToolDefaults): AnyAgentTool {
   let loadedTool: AnyAgentTool | undefined;
@@ -119,6 +140,335 @@ function createLazyProcessTool(defaults?: ProcessToolDefaults): AnyAgentTool {
     execute: async (...args: Parameters<AnyAgentTool["execute"]>) =>
       (await loadTool()).execute(...args),
   } as AnyAgentTool;
+}
+
+function uniqueNonEmpty(values: readonly (string | null | undefined)[], max = 200): string[] {
+  return [
+    ...new Set(
+      values
+        .filter((value): value is string => typeof value === "string" && value.trim().length > 0)
+        .map((value) => value.trim()),
+    ),
+  ].slice(0, max);
+}
+
+function isPathWithinRoot(candidatePath: string, rootPath: string): boolean {
+  const relative = path.relative(rootPath, candidatePath);
+  return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
+}
+
+function normalizeNodeAuthorityPathRef(ref: string, workspaceRoot: string): string | null {
+  const trimmed = ref.trim();
+  if (!trimmed) {
+    return null;
+  }
+  if (trimmed === "repo-scope://workspace" || trimmed === "repo://workspace") {
+    return path.resolve(workspaceRoot);
+  }
+  const stripped = trimmed
+    .replace(/^repo-path:\/\//u, "")
+    .replace(/^repo-file:\/\//u, "")
+    .replace(/^repo-scope:\/\//u, "")
+    .replace(/^workspace:\/\//u, "");
+  if (!stripped || stripped === "workspace") {
+    return path.resolve(workspaceRoot);
+  }
+  if (/^[a-z][a-z0-9+.-]*:\/\//iu.test(stripped)) {
+    return null;
+  }
+  return path.resolve(workspaceRoot, stripped.startsWith("@") ? stripped.slice(1) : stripped);
+}
+
+function resolveNodeAuthorityOverlay(
+  overlay: OpenClawNodeAuthorityOverlay | undefined,
+  workspaceRoot: string,
+): ResolvedNodeAuthorityOverlay | null {
+  if (!overlay) {
+    return null;
+  }
+  const readableRoots = uniqueNonEmpty(
+    (overlay.readablePathRefs ?? []).map((ref) =>
+      normalizeNodeAuthorityPathRef(ref, workspaceRoot),
+    ),
+  );
+  const writableRoots = uniqueNonEmpty(
+    (overlay.writablePathRefs ?? []).map((ref) =>
+      normalizeNodeAuthorityPathRef(ref, workspaceRoot),
+    ),
+  );
+  const deniedRoots = uniqueNonEmpty(
+    (overlay.deniedPathRefs ?? []).map((ref) => normalizeNodeAuthorityPathRef(ref, workspaceRoot)),
+  );
+  return {
+    readableRoots,
+    writableRoots,
+    deniedRoots,
+    validationCommandRefs: uniqueNonEmpty([...(overlay.validationCommandRefs ?? [])], 80),
+    authorityRef: overlay.authorityRef?.trim() || null,
+  };
+}
+
+function resolveNodeAuthorityToolPath(input: {
+  filePath: string;
+  workspaceRoot: string;
+  sandboxContainerWorkdir?: string;
+}): string {
+  return resolveToolPathAgainstWorkspaceRoot({
+    filePath: input.filePath,
+    root: input.workspaceRoot,
+    containerWorkdir: input.sandboxContainerWorkdir,
+  });
+}
+
+function assertNodeAuthorityPath(input: {
+  toolName: string;
+  action: "read" | "write" | "execute";
+  filePath: string;
+  resolvedPath: string;
+  authority: ResolvedNodeAuthorityOverlay;
+}) {
+  const allowedRoots =
+    input.action === "write" ? input.authority.writableRoots : input.authority.readableRoots;
+  const denied = input.authority.deniedRoots.some((root) =>
+    isPathWithinRoot(input.resolvedPath, root),
+  );
+  const allowed = allowedRoots.some((root) => isPathWithinRoot(input.resolvedPath, root));
+  if (denied || !allowed) {
+    const authorityRef = input.authority.authorityRef
+      ? ` Authority: ${input.authority.authorityRef}.`
+      : "";
+    throw new ToolAuthorizationError(
+      `Node authority does not allow ${input.action} with ${input.toolName} at ${input.filePath}.${authorityRef}`,
+    );
+  }
+}
+
+function patchTargetPaths(input: string): string[] {
+  const targets: string[] = [];
+  for (const line of input.split(/\r?\n/u)) {
+    const match = line.match(/^\*\*\* (?:Add File|Delete File|Update File|Move to):\s+(.+)$/u);
+    if (match?.[1]?.trim()) {
+      targets.push(match[1].trim());
+    }
+  }
+  return uniqueNonEmpty(targets, 200);
+}
+
+function wrapToolWithNodeAuthorityOverlay(input: {
+  tool: AnyAgentTool;
+  authority: ResolvedNodeAuthorityOverlay;
+  workspaceRoot: string;
+  sandboxContainerWorkdir?: string;
+}): AnyAgentTool {
+  const { tool, authority, workspaceRoot, sandboxContainerWorkdir } = input;
+  if (!NODE_AUTHORITY_PATH_TOOL_NAMES.has(tool.name) && tool.name !== "exec") {
+    return tool;
+  }
+  return {
+    ...tool,
+    description: `${tool.description} This node session is additionally restricted by the current Execution Platform node authority snapshot.`,
+    execute: async (toolCallId, args, signal, onUpdate) => {
+      const record = getToolParamsRecord(args);
+      if (tool.name === "apply_patch") {
+        const patch = typeof record?.input === "string" ? record.input : "";
+        for (const targetPath of patchTargetPaths(patch)) {
+          const resolvedPath = resolveNodeAuthorityToolPath({
+            filePath: targetPath,
+            workspaceRoot,
+            sandboxContainerWorkdir,
+          });
+          assertNodeAuthorityPath({
+            toolName: tool.name,
+            action: "write",
+            filePath: targetPath,
+            resolvedPath,
+            authority,
+          });
+        }
+      } else if (tool.name === "exec") {
+        const workdir =
+          typeof record?.workdir === "string" && record.workdir.trim() ? record.workdir : null;
+        if (workdir) {
+          const resolvedPath = resolveNodeAuthorityToolPath({
+            filePath: workdir,
+            workspaceRoot,
+            sandboxContainerWorkdir,
+          });
+          const allowedRoots = uniqueNonEmpty([
+            ...authority.readableRoots,
+            ...authority.writableRoots,
+          ]);
+          const denied = authority.deniedRoots.some((root) => isPathWithinRoot(resolvedPath, root));
+          const allowed = allowedRoots.some((root) => isPathWithinRoot(resolvedPath, root));
+          if (denied || !allowed) {
+            throw new ToolAuthorizationError(
+              `Node authority does not allow exec workdir ${workdir}.`,
+            );
+          }
+        }
+      } else {
+        const filePath =
+          typeof record?.path === "string" && record.path.trim() ? record.path : null;
+        if (filePath) {
+          const resolvedPath = resolveNodeAuthorityToolPath({
+            filePath,
+            workspaceRoot,
+            sandboxContainerWorkdir,
+          });
+          assertNodeAuthorityPath({
+            toolName: tool.name,
+            action: tool.name === "read" ? "read" : "write",
+            filePath,
+            resolvedPath,
+            authority,
+          });
+        }
+      }
+      return tool.execute(toolCallId, args, signal, onUpdate);
+    },
+  };
+}
+
+function applyNodeAuthorityOverlay(input: {
+  tools: AnyAgentTool[];
+  overlay?: OpenClawNodeAuthorityOverlay;
+  workspaceRoot: string;
+  sandboxContainerWorkdir?: string;
+}): AnyAgentTool[] {
+  const authority = resolveNodeAuthorityOverlay(input.overlay, input.workspaceRoot);
+  if (!authority) {
+    return input.tools;
+  }
+  return input.tools.map((tool) =>
+    wrapToolWithNodeAuthorityOverlay({
+      tool,
+      authority,
+      workspaceRoot: input.workspaceRoot,
+      sandboxContainerWorkdir: input.sandboxContainerWorkdir,
+    }),
+  );
+}
+
+const NODE_PARENT_REPO_MAPPING_TOOL_NAMES = new Set(["grep", "glob", "list"]);
+
+function normalizeToolPathParam(value: unknown): string | null {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function hasPreciseReadWindow(params: Record<string, unknown>): boolean {
+  const numericWindowKeys = ["offset", "limit", "lineOffset", "lineLimit", "startLine", "endLine"];
+  return numericWindowKeys.some((key) => {
+    const value = params[key];
+    return typeof value === "number" && Number.isFinite(value);
+  });
+}
+
+function isParentRepoMappingBeforeScout(input: {
+  toolName: string;
+  params: Record<string, unknown>;
+  workspaceRoot: string;
+}): boolean {
+  if (input.toolName === "read") {
+    const filePath = normalizeToolPathParam(input.params.path);
+    if (!filePath) {
+      return true;
+    }
+    const resolved = resolveToolPathAgainstWorkspaceRoot({
+      filePath,
+      root: input.workspaceRoot,
+    });
+    return resolved === input.workspaceRoot || !hasPreciseReadWindow(input.params);
+  }
+  if (!NODE_PARENT_REPO_MAPPING_TOOL_NAMES.has(input.toolName)) {
+    return false;
+  }
+  return true;
+}
+
+function isAcceptedContextScoutSpawnResult(result: unknown): boolean {
+  const details =
+    result && typeof result === "object" && "details" in result
+      ? (result as { details?: unknown }).details
+      : null;
+  if (!details || typeof details !== "object") {
+    return false;
+  }
+  const record = details as Record<string, unknown>;
+  const status = normalizeLowercaseStringOrEmpty(
+    typeof record.status === "string" ? record.status : "",
+  );
+  const childSessionKey = typeof record.childSessionKey === "string" ? record.childSessionKey : "";
+  return status === "accepted" && childSessionKey.includes("execution-context-scout");
+}
+
+function wrapToolsWithNodeParentCrawlGuard(input: {
+  tools: AnyAgentTool[];
+  enabled?: boolean;
+  workspaceRoot: string;
+}): AnyAgentTool[] {
+  if (!input.enabled) {
+    return input.tools;
+  }
+  let contextScoutDelegated = false;
+  return input.tools.map((tool) => {
+    if (
+      tool.name !== "sessions_spawn" &&
+      tool.name !== "read" &&
+      !NODE_PARENT_REPO_MAPPING_TOOL_NAMES.has(tool.name)
+    ) {
+      return tool;
+    }
+    return {
+      ...tool,
+      execute: async (toolCallId, args, signal, onUpdate) => {
+        const params = getToolParamsRecord(args) ?? {};
+        if (tool.name === "sessions_spawn") {
+          const agentId = normalizeLowercaseStringOrEmpty(
+            typeof params.agentId === "string" ? params.agentId : "",
+          );
+          const result = await tool.execute(toolCallId, args, signal, onUpdate);
+          if (agentId === "execution-context-scout" && isAcceptedContextScoutSpawnResult(result)) {
+            contextScoutDelegated = true;
+          }
+          return result;
+        }
+        if (
+          !contextScoutDelegated &&
+          isParentRepoMappingBeforeScout({
+            toolName: tool.name,
+            params,
+            workspaceRoot: input.workspaceRoot,
+          })
+        ) {
+          throw new ToolAuthorizationError(
+            "Execution node parent crawl guard blocked parent-side repo mapping before execution-context-scout delegation. Use openclaw_resource_read for node/source refs or spawn execution-context-scout for weak repo mapping; after scout output, read precise returned windows.",
+          );
+        }
+        return tool.execute(toolCallId, args, signal, onUpdate);
+      },
+    };
+  });
+}
+
+function filterToolsForNodeAgentNativeTaskMode(input: {
+  tools: AnyAgentTool[];
+  mode?: {
+    enabled?: boolean;
+    allowedAgentIds?: readonly string[];
+    mutationToolName?: string;
+  };
+}): AnyAgentTool[] {
+  if (!input.mode?.enabled) {
+    return input.tools;
+  }
+  const mutationToolName = normalizeLowercaseStringOrEmpty(input.mode.mutationToolName ?? "edit");
+  return input.tools.filter((tool) => {
+    const toolName = normalizeLowercaseStringOrEmpty(tool.name);
+    return (
+      NODE_AGENT_NATIVE_TASK_ALWAYS_ALLOWED_TOOL_NAMES.has(toolName) ||
+      (mutationToolName && toolName === mutationToolName)
+    );
+  });
 }
 
 function applyModelProviderToolPolicy(
@@ -242,6 +592,7 @@ export const __testing = {
   wrapToolParamValidation,
   assertRequiredParams,
   applyModelProviderToolPolicy,
+  wrapToolsWithNodeParentCrawlGuard,
 } as const;
 
 export function createOpenClawCodingTools(options?: {
@@ -320,6 +671,30 @@ export function createOpenClawCodingTools(options?: {
   requireExplicitMessageTarget?: boolean;
   /** If true, omit the message tool from the tool list. */
   disableMessageTool?: boolean;
+  /** Additional caller-owned tools inserted before the shared policy pipeline. */
+  extraTools?: AnyAgentTool[];
+  /**
+   * Runner-owned native runtime tools inserted before the shared policy
+   * pipeline and therefore visible to the same effective inventory path as the
+   * rest of OpenClaw's native tools.
+   */
+  nativeRuntimeTools?: AnyAgentTool[];
+  /** Optional node-scoped authority overlay that narrows native file/exec tools. */
+  nodeAuthorityOverlay?: OpenClawNodeAuthorityOverlay;
+  /** Optional OpenClaw-native guard for execution node parent crawl behavior. */
+  nodeAgentParentCrawlGuard?: { enabled: boolean };
+  /**
+   * Native executable-node parent mode. This makes catalog filtering the
+   * primary control plane: the parent sees task/todo/mutation/resource/finish,
+   * while search/read/exec/raw-session mechanics remain owned by scouts and
+   * OpenClaw internals.
+   */
+  nodeAgentNativeTaskMode?: {
+    enabled: boolean;
+    allowedAgentIds: readonly string[];
+    mutationToolName?: string;
+    parentVisibleResultMaxChars?: number;
+  };
   /** Whether the sender is an owner (required for owner-only tools). */
   senderIsOwner?: boolean;
   /** Callback invoked when sessions_yield tool is called. */
@@ -521,8 +896,16 @@ export function createOpenClawCodingTools(options?: {
               : undefined,
           workspaceOnly: applyPatchWorkspaceOnly,
         });
+  const repoDiscoveryTools = sandboxRoot
+    ? []
+    : [
+        createListTool({ workspaceRoot }),
+        createGlobTool({ workspaceRoot }),
+        createGrepTool({ workspaceRoot }),
+      ];
   const tools: AnyAgentTool[] = [
     ...base,
+    ...repoDiscoveryTools,
     ...(sandboxRoot
       ? allowWorkspaceWrites
         ? [
@@ -595,13 +978,31 @@ export function createOpenClawCodingTools(options?: {
       modelHasVision: options?.modelHasVision,
       requireExplicitMessageTarget: options?.requireExplicitMessageTarget,
       disableMessageTool: options?.disableMessageTool,
+      forceUpdatePlanTool: options?.nodeAgentNativeTaskMode?.enabled === true,
+      ...(options?.nodeAgentNativeTaskMode?.enabled === true
+        ? {
+            nativeTask: {
+              enabled: true,
+              allowedAgentIds: options.nodeAgentNativeTaskMode.allowedAgentIds,
+              ...(typeof options.nodeAgentNativeTaskMode.parentVisibleResultMaxChars === "number"
+                ? {
+                    parentVisibleResultMaxChars:
+                      options.nodeAgentNativeTaskMode.parentVisibleResultMaxChars,
+                  }
+                : {}),
+            },
+          }
+        : {}),
       requesterAgentIdOverride: agentId,
       requesterSenderId: options?.senderId,
       senderIsOwner: options?.senderIsOwner,
       sessionId: options?.sessionId,
+      runId: options?.runId,
       onYield: options?.onYield,
       allowGatewaySubagentBinding: options?.allowGatewaySubagentBinding,
     }),
+    ...(options?.nativeRuntimeTools ?? []),
+    ...(options?.extraTools ?? []),
   ];
   const toolsForMemoryFlush =
     isMemoryFlushRun && memoryFlushWritePath
@@ -663,10 +1064,28 @@ export function createOpenClawCodingTools(options?: {
       { policy: subagentPolicy, label: "subagent tools.allow" },
     ],
   });
+  const nodeAuthorityFiltered = applyNodeAuthorityOverlay({
+    tools: subagentFiltered,
+    overlay: options?.nodeAuthorityOverlay,
+    workspaceRoot: sandboxRoot ?? workspaceRoot,
+    sandboxContainerWorkdir: sandbox?.containerWorkdir,
+  });
+  const nodeNativeTaskFiltered = filterToolsForNodeAgentNativeTaskMode({
+    tools: nodeAuthorityFiltered,
+    mode: options?.nodeAgentNativeTaskMode,
+  });
+  const nodeParentCrawlGuarded = wrapToolsWithNodeParentCrawlGuard({
+    tools: nodeNativeTaskFiltered,
+    enabled:
+      options?.nodeAgentNativeTaskMode?.enabled === true
+        ? false
+        : options?.nodeAgentParentCrawlGuard?.enabled,
+    workspaceRoot: sandboxRoot ?? workspaceRoot,
+  });
   // Always normalize tool JSON Schemas before handing them to pi-agent/pi-ai.
   // Without this, some providers (notably OpenAI) will reject root-level union schemas.
   // Provider-specific cleaning: Gemini needs constraint keywords stripped, but Anthropic expects them.
-  const normalized = subagentFiltered.map((tool) =>
+  const normalized = nodeParentCrawlGuarded.map((tool) =>
     normalizeToolParameters(tool, {
       modelProvider: options?.modelProvider,
       modelId: options?.modelId,

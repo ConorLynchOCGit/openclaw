@@ -1,5 +1,5 @@
-import type { IncomingMessage, ServerResponse } from "node:http";
 import { createHash } from "node:crypto";
+import type { IncomingMessage, ServerResponse } from "node:http";
 import type { FrontDoorSourcePromptRef } from "../intent-front-door/request-compiler.ts";
 import { GatewaySubmitDiagnosticsCollector } from "../intent-routing/gateway-submit-diagnostics.ts";
 import {
@@ -433,6 +433,7 @@ export async function handleExecutionPlatformNativeExecutionHostRoute(
             approvalRefs: readApprovalRefs(body.approvalRefs),
             sourceRoute: auth.sourceRoute,
             sourcePromptRef: readSourcePromptRef(body.sourcePromptRef),
+            intakeRouteContract: body.intakeRouteContract,
           })
         : operation === "status"
           ? await service.status(runtimeJobId)

@@ -2,6 +2,9 @@ import {
   clearSharedCodexAppServerClient,
   resolveCodexAppServerRuntimeOptions,
   type CodexAppServerRuntimeOptions,
+  type CodexDynamicToolSpec,
+  type CodexDynamicToolCallParams,
+  type JsonValue,
   type CodexServerNotification,
   type CodexThreadItem,
   type CodexThreadStartResponse,
@@ -14,6 +17,8 @@ import type {
   JsonModelExecutionResponse,
   JsonModelExecutor,
   JsonModelReasoningEffort,
+  JsonModelToolTurnExecutionRequest,
+  JsonModelToolTurnExecutionResponse,
 } from "../model-execution.ts";
 
 const DEFAULT_REQUEST_TIMEOUT_MS = 120_000;
@@ -28,6 +33,12 @@ type ParsedModelRef = {
 type AssistantCaptureState = {
   assistantTextByItem: Map<string, string>;
   assistantItemOrder: string[];
+};
+
+type CapturedDynamicToolCall = {
+  toolName: string;
+  toolArguments: unknown;
+  callId: string;
 };
 
 export type CodexAppServerJsonExecutorOptions = {
@@ -129,6 +140,27 @@ function readItem(value: unknown): CodexThreadItem | undefined {
   return value as CodexThreadItem;
 }
 
+function readDynamicToolCallParams(value: unknown): CodexDynamicToolCallParams | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+  const record = value as Record<string, unknown>;
+  const threadId = readString(record, "threadId");
+  const turnId = readString(record, "turnId");
+  const callId = readString(record, "callId");
+  const tool = readString(record, "tool");
+  if (!threadId || !turnId || !callId || !tool) {
+    return null;
+  }
+  return {
+    threadId,
+    turnId,
+    callId,
+    tool,
+    arguments: record.arguments as CodexDynamicToolCallParams["arguments"],
+  };
+}
+
 function rememberAssistantItem(state: AssistantCaptureState, itemId: string): void {
   if (!state.assistantItemOrder.includes(itemId)) {
     state.assistantItemOrder.push(itemId);
@@ -184,6 +216,42 @@ function buildCodexDeveloperInstructions(request: JsonModelExecutionRequest): st
         ].join("\n");
 
   return [request.systemPrompt, schemaInstruction].filter((section) => section.trim()).join("\n\n");
+}
+
+function buildCodexToolDeveloperInstructions(request: JsonModelToolTurnExecutionRequest): string {
+  const allowedToolNames = request.allowedToolNames ?? request.tools.map((tool) => tool.name);
+  const requiredToolName = request.requiredToolName ?? null;
+  const maxAcceptedToolCalls =
+    "maxAcceptedToolCalls" in request && typeof request.maxAcceptedToolCalls === "number"
+      ? request.maxAcceptedToolCalls
+      : 1;
+  return [
+    request.systemPrompt,
+    "Tool execution contract:",
+    `- contract: ${request.contract.contractName}/${request.contract.contractVersion}`,
+    requiredToolName
+      ? `- required tool: ${requiredToolName}`
+      : `- allowed tools: ${allowedToolNames.join(", ")}`,
+    maxAcceptedToolCalls <= 1
+      ? requiredToolName
+        ? "- Call exactly the required dynamic tool with arguments matching its input schema."
+        : "- Call exactly one allowed dynamic tool with arguments matching its input schema."
+      : `- Call one or more allowed dynamic tools as needed for this phase, up to ${maxAcceptedToolCalls} accepted calls.`,
+    "- Do not answer with prose or a JSON draft instead of calling the tool.",
+    "- If the requested action is impossible, call an allowed typed blocker/action tool permitted by the tool schema.",
+  ]
+    .filter((section) => section.trim())
+    .join("\n\n");
+}
+
+function buildCodexDynamicTools(
+  request: JsonModelToolTurnExecutionRequest,
+): CodexDynamicToolSpec[] {
+  return request.tools.map((tool) => ({
+    name: tool.name,
+    description: tool.description,
+    inputSchema: tool.inputSchema as JsonValue,
+  }));
 }
 
 function readCompletedTurn(
@@ -456,5 +524,113 @@ export class CodexAppServerJsonExecutor implements JsonModelExecutor {
       outputText: extractAssistantText(completed.turn, completed.assistantState),
       resolvedModelId: buildResolvedModelId(parsedModel, threadStarted.model),
     };
+  }
+
+  async executeTools(
+    request: JsonModelToolTurnExecutionRequest,
+  ): Promise<JsonModelToolTurnExecutionResponse> {
+    const parsedModel = parseCodexModelRef(request.contract.modelId);
+    const client = await getSharedCodexAppServerClient({
+      startOptions: this.runtime.start,
+      timeoutMs: this.requestTimeoutMs,
+    });
+    const threadStarted = await client.request<CodexThreadStartResponse>(
+      "thread/start",
+      {
+        model: parsedModel.model,
+        modelProvider: "openai",
+        cwd: this.cwd,
+        approvalPolicy: this.runtime.approvalPolicy,
+        approvalsReviewer: this.runtime.approvalsReviewer,
+        sandbox: this.runtime.sandbox,
+        ...(this.runtime.serviceTier ? { serviceTier: this.runtime.serviceTier } : {}),
+        serviceName: "OpenClaw MMV2",
+        developerInstructions: buildCodexToolDeveloperInstructions(request),
+        ephemeral: true,
+        dynamicTools: buildCodexDynamicTools(request),
+        experimentalRawEvents: true,
+        persistExtendedHistory: false,
+      },
+      { timeoutMs: this.requestTimeoutMs },
+    );
+    const capturedToolCalls: CapturedDynamicToolCall[] = [];
+    const maxAcceptedToolCalls = Math.max(1, Math.min(64, request.maxAcceptedToolCalls ?? 1));
+    const requestCleanup = client.addRequestHandler((rpcRequest) => {
+      if (rpcRequest.method !== "item/tool/call") {
+        return undefined;
+      }
+      const call = readDynamicToolCallParams(rpcRequest.params);
+      if (!call || call.threadId !== threadStarted.thread.id) {
+        return undefined;
+      }
+      const allowedToolNames = new Set(
+        request.allowedToolNames ?? request.tools.map((tool) => tool.name),
+      );
+      const success =
+        (request.requiredToolName ? call.tool === request.requiredToolName : true) &&
+        allowedToolNames.has(call.tool) &&
+        capturedToolCalls.length < maxAcceptedToolCalls;
+      const rejectedBecauseSurplus = capturedToolCalls.length >= maxAcceptedToolCalls;
+      if (success) {
+        capturedToolCalls.push({
+          toolName: call.tool,
+          toolArguments: call.arguments ?? {},
+          callId: call.callId,
+        });
+      }
+      return {
+        success,
+        contentItems: [
+          {
+            type: "inputText",
+            text: success
+              ? `Captured ${call.tool} tool call ${call.callId}.`
+              : rejectedBecauseSurplus
+                ? `Rejected surplus tool ${call.tool}; maximum accepted calls for this phase is ${maxAcceptedToolCalls}.`
+                : `Rejected unexpected tool ${call.tool}; allowed ${[...allowedToolNames].join(", ")}.`,
+          },
+        ],
+      };
+    });
+    try {
+      const completed = await waitForCompletedTurn({
+        client,
+        runtime: this.runtime,
+        requestTimeoutMs: this.requestTimeoutMs,
+        threadId: threadStarted.thread.id,
+        model: parsedModel.model,
+        cwd: this.cwd,
+        userPrompt: request.userPrompt,
+        reasoningEffort: resolveCodexReasoningEffort(
+          request.responseOptions?.reasoningEffort ?? this.defaultReasoningEffort,
+        ),
+      });
+      if (completed.turn.status === "failed") {
+        throw new Error(completed.turn.error?.message ?? "codex app-server tool turn failed");
+      }
+      if (completed.turn.status === "interrupted") {
+        throw new Error("codex app-server tool turn was interrupted");
+      }
+      if (capturedToolCalls.length === 0) {
+        throw new Error("codex app-server completed without required dynamic tool call");
+      }
+      return {
+        toolCalls: capturedToolCalls.map((call) => ({
+          toolName: call.toolName,
+          toolArguments: call.toolArguments,
+          callId: call.callId,
+        })),
+        outputText: JSON.stringify({
+          toolCalls: capturedToolCalls.map((call) => ({
+            toolName: call.toolName,
+            toolArguments: call.toolArguments,
+            callId: call.callId,
+          })),
+        }),
+        resolvedModelId: buildResolvedModelId(parsedModel, threadStarted.model),
+      };
+    } finally {
+      requestCleanup();
+    }
   }
 }

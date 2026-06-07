@@ -46,7 +46,7 @@ export const UxReplayPayloadOwnerPromptRefSchema = z
     promptLength: z.number().int().min(1),
     sourcePromptRef: boundedString(320),
     promptFileRef: boundedString(320).nullable(),
-    sourcePromptContextIndexRef: boundedString(320),
+    sourcePromptArtifactRef: boundedString(320),
     sourcePromptResolutionStatus: z.enum(["resolved", "unresolved", "not_present", "unsupported"]),
     rawPromptStored: z.literal(false),
   })
@@ -73,7 +73,7 @@ export const UxReplayPayloadRouteRefsSchema = z
     routerToolProtocolRef: boundedString(320).nullable(),
     routerToolInvocationRefs: z.array(boundedString(320)).max(40),
     requestCompilerRef: boundedString(320),
-    missionLedgerHandoffRef: boundedString(320),
+    requirementMapHandoffRef: boundedString(320),
   })
   .strict();
 
@@ -94,8 +94,8 @@ export const UxReplayPayloadMissionLedgerRefsSchema = z
     missionLedgerInputRef: boundedString(320),
     missionLedgerPromptHash: boundedString(90),
     missionLedgerRef: boundedString(320).nullable(),
-    commitmentPacketInputRef: boundedString(320),
-    commitmentPacketRef: boundedString(320).nullable(),
+    requirementMapInputRef: boundedString(320),
+    requirementMapRef: boundedString(320).nullable(),
   })
   .strict();
 
@@ -196,7 +196,7 @@ export function normalizeUxReplayPayloadForParity(
       promptLength: envelope.ownerPrompt.promptLength,
       sourcePromptRef: envelope.ownerPrompt.sourcePromptRef,
       promptFileRef: envelope.ownerPrompt.promptFileRef,
-      sourcePromptContextIndexRef: envelope.ownerPrompt.sourcePromptContextIndexRef,
+      sourcePromptArtifactRef: envelope.ownerPrompt.sourcePromptArtifactRef,
       sourcePromptResolutionStatus: envelope.ownerPrompt.sourcePromptResolutionStatus,
     },
     route: {
@@ -208,7 +208,7 @@ export function normalizeUxReplayPayloadForParity(
       executeNow: envelope.routeRefs.executeNow,
       routerToolProtocolRef: envelope.routeRefs.routerToolProtocolRef,
       routerToolInvocationRefs: envelope.routeRefs.routerToolInvocationRefs,
-      missionLedgerHandoffRef: envelope.routeRefs.missionLedgerHandoffRef,
+      requirementMapHandoffRef: envelope.routeRefs.requirementMapHandoffRef,
     },
     execution: {
       queueName: envelope.executionRefs.queueName,
@@ -273,16 +273,12 @@ export function validateUxReplayPayloadProofEligibility(
   const parsed = UxReplayPayloadParityEnvelopeSchema.parse(envelope);
   const missing = [
     parsed.ownerPrompt.sourcePromptRef ? null : "source_prompt_ref_missing",
-    parsed.ownerPrompt.sourcePromptContextIndexRef
-      ? null
-      : "source_prompt_context_index_ref_missing",
+    parsed.ownerPrompt.sourcePromptArtifactRef ? null : "source_prompt_artifact_ref_missing",
     parsed.routeRefs.routerDecisionRef ? null : "router_decision_ref_missing",
     parsed.routeRefs.requestCompilerRef ? null : "request_compiler_ref_missing",
-    parsed.routeRefs.missionLedgerHandoffRef ? null : "mission_ledger_handoff_ref_missing",
+    parsed.routeRefs.requirementMapHandoffRef ? null : "requirement_map_handoff_ref_missing",
     parsed.missionLedgerRefs.missionLedgerInputRef ? null : "mission_ledger_input_ref_missing",
-    parsed.missionLedgerRefs.commitmentPacketInputRef
-      ? null
-      : "obligation_graph_input_ref_missing",
+    parsed.missionLedgerRefs.requirementMapInputRef ? null : "requirement_map_input_ref_missing",
     parsed.schedulerRefs.schedulerHandoffRefs.length > 0 ? null : "scheduler_handoff_refs_missing",
   ].filter((code): code is string => Boolean(code));
   const surfaceAllowed =
@@ -320,14 +316,14 @@ export function summarizeUxReplayPayloadParityEnvelope(
     promptHash: envelope.ownerPrompt.promptHash,
     promptLength: envelope.ownerPrompt.promptLength,
     sourcePromptRef: envelope.ownerPrompt.sourcePromptRef,
-    sourcePromptContextIndexRef: envelope.ownerPrompt.sourcePromptContextIndexRef,
+    sourcePromptArtifactRef: envelope.ownerPrompt.sourcePromptArtifactRef,
     routeSelected: envelope.routeRefs.routeSelected,
     workflowId: envelope.routeRefs.workflowId,
     jobType: envelope.routeRefs.jobType,
     runtimeJobId: envelope.executionRefs.runtimeJobId,
     workItemId: envelope.executionRefs.workItemId,
     missionLedgerInputRef: envelope.missionLedgerRefs.missionLedgerInputRef,
-    commitmentPacketInputRef: envelope.missionLedgerRefs.commitmentPacketInputRef,
+    requirementMapInputRef: envelope.missionLedgerRefs.requirementMapInputRef,
     schedulerHandoffRefs: envelope.schedulerRefs.schedulerHandoffRefs,
     reasonCodes: envelope.reasonCodes,
     rawPromptStored: false,

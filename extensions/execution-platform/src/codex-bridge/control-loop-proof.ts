@@ -20,6 +20,7 @@ import {
   evaluateCodexBridgeEmissionGuardrails,
   type CodexBridgeEmissionGuardrailReport,
 } from "./emission-guardrails.ts";
+import { DEFAULT_REPO_PATH, DEFAULT_WORKSPACE_DOCS_PATH } from "./policy.ts";
 import {
   CodexBridgeSkillTriggerRepository,
   applyBridgeSafetySkillCoverage,
@@ -287,8 +288,8 @@ function redirectPromptForHazard(input: { hazard: string; reason: string }) {
       "Do not mutate Work Queue lifecycle.",
       "Do not execute shell commands from runtime payloads.",
     ],
-    repoPath: "/root/services/openclaw-roles/live",
-    workspaceDocsPath: "/root/.openclaw/workspace/docs/projects/execution-platform",
+    repoPath: DEFAULT_REPO_PATH,
+    workspaceDocsPath: DEFAULT_WORKSPACE_DOCS_PATH,
     safeUiBridge: { tailscaleRequired: true, descriptor: "Tailscale safe UI bridge" },
     promptText: compact(`Pause and redirect for fake-control-loop proof: ${input.reason}`),
   };

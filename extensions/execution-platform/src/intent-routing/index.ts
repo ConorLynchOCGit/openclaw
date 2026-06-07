@@ -1,5 +1,4 @@
 export * from "./intent-router-schema.ts";
-export * from "./intent-validator.ts";
 export * from "./execution-pathway-readiness-audit.ts";
 export * from "./gateway-submit-diagnostics.ts";
 export * from "./native-execution-rpc.ts";

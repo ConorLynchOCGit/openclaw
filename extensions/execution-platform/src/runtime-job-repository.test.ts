@@ -314,9 +314,9 @@ describe("runtime job repository", () => {
         await repository.enqueueJob({ jobId: "job-payload-artifact", jobType: "demo.echo" });
 
         const fullBody = {
-          artifactKind: "implementation_context_packet",
-          packetRef: "runtime-job://job-payload-artifact/packet/context",
-          content: "implementation packet body ".repeat(400),
+          artifactKind: "execution_platform.node_execution_snapshot",
+          snapshotRef: "runtime-job://job-payload-artifact/node-execution-snapshot/node-1",
+          content: "node execution snapshot body ".repeat(400),
           rawPromptStored: false,
           rawResponseStored: false,
           rawProviderLogStored: false,
@@ -324,28 +324,27 @@ describe("runtime job repository", () => {
         };
         const artifact = await repository.attachRuntimeArtifactByContract({
           jobId: "job-payload-artifact",
-          artifactType: "execution_platform.implementation_context_packet",
-          uri: "runtime-job://job-payload-artifact/packet/context",
+          artifactType: "execution_platform.node_execution_snapshot",
+          uri: "runtime-job://job-payload-artifact/node-execution-snapshot/node-1",
           body: fullBody,
-          boundedSummary: "Worker-ready implementation context packet.",
+          boundedSummary: "Node execution snapshot payload.",
           targetCommitmentIds: ["c-001"],
           targetNodeIds: ["node-1"],
-          resourcePacketKind: "implementation_context_packet",
           readinessStatus: "ready",
-          reasonCodes: ["implementation_context_packet_persisted_as_payload"],
+          reasonCodes: ["node_execution_snapshot_persisted_as_payload"],
         });
 
         expect(artifact).toMatchObject({
           jobId: "job-payload-artifact",
-          artifactType: "execution_platform.implementation_context_packet",
+          artifactType: "execution_platform.node_execution_snapshot",
           storageKind: RUNTIME_JOB_ARTIFACT_PAYLOAD_STORAGE_KIND,
-          uri: "runtime-job://job-payload-artifact/packet/context",
+          uri: "runtime-job://job-payload-artifact/node-execution-snapshot/node-1",
         });
-        expect(JSON.stringify(artifact.metadata)).not.toContain("implementation packet body");
+        expect(JSON.stringify(artifact.metadata)).not.toContain("node execution snapshot body");
         expect(artifact.metadata).toMatchObject({
           artifactKind: "runtime_job_artifact_payload_manifest",
           payloadRef: expect.stringContaining("runtime-artifact-payload://"),
-          boundedSummary: "Worker-ready implementation context packet.",
+          boundedSummary: "Node execution snapshot payload.",
           targetCommitmentIds: ["c-001"],
           targetNodeIds: ["node-1"],
           rawPromptStored: false,
@@ -367,8 +366,8 @@ describe("runtime job repository", () => {
         expect(
           events.find((event) => event.eventType === "job.artifact_contract_attached")?.data,
         ).toMatchObject({
-          artifactType: "execution_platform.implementation_context_packet",
-          contractId: "runtime-artifact.implementation-context-packet.v1",
+          artifactType: "execution_platform.node_execution_snapshot",
+          contractId: "runtime-artifact.node-execution-snapshot.v1",
           storagePolicy: "payload_required",
           hydrateToolId: "artifact.payload.get_json",
           rawPromptStored: false,
@@ -387,13 +386,13 @@ describe("runtime job repository", () => {
         await expect(
           repository.attachArtifact({
             jobId: "job-contract-required",
-            artifactType: "execution_platform.node_execution_packet",
+            artifactType: "execution_platform.node_execution_snapshot",
             storageKind: "metadata",
-            uri: "runtime-job://job-contract-required/node-execution-packet/node-001",
+            uri: "runtime-job://job-contract-required/node-execution-snapshot/node-001",
             contentType: "application/json",
             metadata: {
-              artifactKind: "execution_platform.node_execution_packet",
-              nodeExecutionPacket: { packetKind: "node_execution_packet" },
+              artifactKind: "execution_platform.node_execution_snapshot",
+              nodeExecutionSnapshot: { snapshotRef: "snapshot://node-001" },
               rawPromptStored: false,
               rawResponseStored: false,
               rawProviderLogStored: false,
@@ -404,10 +403,10 @@ describe("runtime job repository", () => {
         await expect(
           repository.attachJsonPayloadArtifact({
             jobId: "job-contract-required",
-            artifactType: "execution_platform.node_execution_packet",
-            uri: "runtime-job://job-contract-required/node-execution-packet/node-001",
+            artifactType: "execution_platform.node_execution_snapshot",
+            uri: "runtime-job://job-contract-required/node-execution-snapshot/node-001",
             body: {
-              packetKind: "node_execution_packet",
+              artifactKind: "execution_platform.node_execution_snapshot",
               nodeId: "node-001",
               rawPromptStored: false,
               rawResponseStored: false,
@@ -487,83 +486,77 @@ describe("runtime job repository", () => {
     );
   });
 
-  it("keeps resource materialization and node readiness bodies in payload storage", async () => {
+  it("keeps node worker prompt and node execution snapshot bodies in payload storage", async () => {
     await withRepository(
       async ({ repository }) => {
         await repository.enqueueJob({ jobId: "job-resource-contracts", jobType: "demo.echo" });
 
-        const resourceBody = {
-          artifactKind: "implementation_resource_materialization_result",
-          status: "ready",
-          inputCounts: { targetFileRefs: 90 },
-          outputCounts: { targetFileSnapshots: 90, implementationTaskPackets: 35 },
-          maxBounds: { targetFileSnapshots: 120 },
-          targetFileSnapshots: Array.from({ length: 60 }, (_, index) => ({
-            snapshotRef: `snapshot://${index}`,
-            contentHash: `sha256:${index}`,
-            contentPreview: "large file snapshot ".repeat(30),
-          })),
+        const workerPromptBody = {
+          artifactKind: "execution_platform.node_agent_worker_prompt",
+          promptRef: "node-agent-worker-prompt://job-resource-contracts/implementation-1",
+          nodeRunId: "node-run-1",
+          snapshotRef: "node-execution-snapshot://job-resource-contracts/implementation-1",
+          promptText: "Use update_plan, search/edit/validate, and finish with node_finish.",
+          promptHash: "sha256:worker-prompt-hash",
+          modelRunRef: "model-run://node-worker-prompt/1",
           rawPromptStored: false,
           rawResponseStored: false,
           rawProviderLogStored: false,
           rawToolLogStored: false,
         };
-        const readinessBody = {
-          artifactKind: "node_readiness_state",
-          stateRef: "node-readiness://job-resource-contracts/implementation-1",
+        const snapshotBody = {
+          artifactKind: "execution_platform.node_execution_snapshot",
+          snapshotRef: "node-execution-snapshot://job-resource-contracts/implementation-1",
           nodeId: "implementation-1",
-          readinessStatus: "ready",
-          phase: "implementation_ready",
-          nextAllowedTransitions: ["execute_node"],
+          nodeRunId: "node-run-1",
+          sessionKey: "agent:execution-coding:node:node-run-1",
           rawPromptStored: false,
           rawResponseStored: false,
           rawProviderLogStored: false,
           rawToolLogStored: false,
         };
 
-        const resourceArtifact = await repository.attachRuntimeArtifactByContract({
+        const workerPromptArtifact = await repository.attachRuntimeArtifactByContract({
           jobId: "job-resource-contracts",
-          artifactType: "execution_platform.implementation_resource_materialization_result",
-          uri: "runtime-job://job-resource-contracts/resource-materialization/implementation-1",
-          body: resourceBody,
-          boundedSummary: "Large resource materialization result with payload-only snapshots.",
+          artifactType: "execution_platform.node_agent_worker_prompt",
+          uri: workerPromptBody.promptRef,
+          body: workerPromptBody,
+          boundedSummary: "Model-authored node worker prompt.",
           targetNodeIds: ["implementation-1"],
-          resourcePacketKind: "implementation_resource_materialization_result",
           readinessStatus: "ready",
         });
-        const readinessArtifact = await repository.attachRuntimeArtifactByContract({
+        const snapshotArtifact = await repository.attachRuntimeArtifactByContract({
           jobId: "job-resource-contracts",
-          artifactType: "execution_platform.node_readiness_state",
-          uri: readinessBody.stateRef,
-          body: readinessBody,
-          boundedSummary: "Node readiness state for implementation-1.",
+          artifactType: "execution_platform.node_execution_snapshot",
+          uri: snapshotBody.snapshotRef,
+          body: snapshotBody,
+          boundedSummary: "Node execution snapshot for implementation-1.",
           targetNodeIds: ["implementation-1"],
-          resourcePacketKind: "node_readiness_state",
           readinessStatus: "ready",
         });
 
-        expect(JSON.stringify(resourceArtifact.metadata)).not.toContain("large file snapshot");
-        expect(resourceArtifact.metadata).toMatchObject({
+        expect(JSON.stringify(workerPromptArtifact.metadata)).not.toContain("worker-prompt-hash");
+        expect(workerPromptArtifact.metadata).toMatchObject({
           artifactKind: "runtime_job_artifact_payload_manifest",
           extension: {
             runtimeArtifactContract: {
-              contractId: "runtime-artifact.implementation-resource-materialization-result.v1",
+              contractId: "runtime-artifact.node-agent-worker-prompt.v1",
             },
           },
         });
-        expect(readinessArtifact.metadata).toMatchObject({
+        expect(snapshotArtifact.metadata).toMatchObject({
           extension: {
             runtimeArtifactContract: {
-              contractId: "runtime-artifact.node-readiness-state.v1",
+              contractId: "runtime-artifact.node-execution-snapshot.v1",
             },
           },
         });
         await expect(
           repository.attachJsonPayloadArtifact({
             jobId: "job-resource-contracts",
-            artifactType: "execution_platform.node_readiness_state",
-            uri: "runtime-job://job-resource-contracts/node-readiness/direct",
-            body: readinessBody,
+            artifactType: "execution_platform.node_execution_snapshot",
+            uri: "runtime-job://job-resource-contracts/node-execution-snapshot/direct",
+            body: snapshotBody,
           }),
         ).rejects.toThrow("runtime artifact contract attach API required");
       },
@@ -576,11 +569,13 @@ describe("runtime job repository", () => {
       async ({ repository }) => {
         await repository.enqueueJob({ jobId: "job-contract-hydrate", jobType: "demo.echo" });
         const body = {
-          packetKind: "resource_handoff_packet",
-          packetId: "handoff-1",
-          sourceNodeId: "context-1",
-          targetCommitmentIds: ["c-001"],
-          handoffSummaryForImplementation: "Inspect the workflow plugin and readback surfaces.",
+          artifactKind: "execution_platform.node_agent_session_trace",
+          traceRef: "node-agent-session-trace://job-contract-hydrate/node-run-1",
+          nodeRunId: "node-run-1",
+          sessionKey: "agent:execution-coding:node:node-run-1",
+          observedToolNames: ["update_plan", "sessions_spawn"],
+          traceEventRefs: ["session-event://node-run-1/update-plan"],
+          observations: ["Plan created before scout spawn."],
           rawPromptStored: false,
           rawResponseStored: false,
           rawProviderLogStored: false,
@@ -588,20 +583,18 @@ describe("runtime job repository", () => {
 
         const artifact = await repository.attachRuntimeArtifactByContract({
           jobId: "job-contract-hydrate",
-          artifactType: "execution_platform.resource_handoff_packet",
-          uri: "runtime-job://job-contract-hydrate/resource-handoff/handoff-1",
+          artifactType: "execution_platform.node_agent_session_trace",
+          uri: body.traceRef,
           body,
-          boundedSummary: body.handoffSummaryForImplementation,
+          boundedSummary: "Node agent trace with bounded native tool observations.",
         });
 
-        expect(JSON.stringify(artifact.metadata)).not.toContain(
-          'resource_handoff_packet","packetId',
-        );
+        expect(JSON.stringify(artifact.metadata)).not.toContain("Plan created before scout spawn.");
         expect(artifact.metadata).toMatchObject({
           artifactKind: "runtime_job_artifact_payload_manifest",
           extension: {
             runtimeArtifactContract: {
-              contractId: "runtime-artifact.resource-handoff-packet.v1",
+              contractId: "runtime-artifact.node-agent-session-trace.v1",
               storagePolicy: "payload_required",
             },
           },
@@ -614,7 +607,7 @@ describe("runtime job repository", () => {
           body,
           reasonCodes: expect.arrayContaining([
             "runtime_artifact_contract_payload_hydrated",
-            "runtime_artifact_contract:runtime-artifact.resource-handoff-packet.v1",
+            "runtime_artifact_contract:runtime-artifact.node-agent-session-trace.v1",
           ]),
         });
       },
@@ -622,7 +615,7 @@ describe("runtime job repository", () => {
     );
   });
 
-  it("hydrates explicitly allowed legacy metadata bodies without making them clean storage", async () => {
+  it("keeps unregistered legacy metadata bodies out of payload hydration", async () => {
     await withRepository(
       async ({ repository }) => {
         await repository.enqueueJob({ jobId: "job-contract-legacy", jobType: "demo.echo" });
@@ -636,28 +629,6 @@ describe("runtime job repository", () => {
         expect((await repository.hydrateRuntimeArtifactByContract(legacy)).status).toBe(
           "metadata_manifest_only",
         );
-
-        const registeredLegacy = {
-          ...legacy,
-          artifactType: "execution_platform.node_execution_packet",
-          metadata: {
-            artifactKind: "execution_platform.node_execution_packet",
-            nodeExecutionPacket: {
-              packetKind: "node_execution_packet",
-              nodeId: "node-001",
-              rawPromptStored: false,
-              rawResponseStored: false,
-              rawProviderLogStored: false,
-            },
-            rawPromptStored: false,
-            rawResponseStored: false,
-            rawProviderLogStored: false,
-          },
-        };
-        const hydrated = await repository.hydrateRuntimeArtifactByContract(registeredLegacy);
-        expect(hydrated.status).toBe("legacy_metadata_hydrated");
-        expect(hydrated.legacyHydrated).toBe(true);
-        expect(hydrated.reasonCodes).toContain("legacy_body_key:nodeExecutionPacket");
       },
       { maxArtifactSizeBytes: 8 * 1024, maxArtifactMetadataBytes: 8 * 1024 },
     );
@@ -673,9 +644,12 @@ describe("runtime job repository", () => {
 
         const artifact = await repository.attachRuntimeArtifactByContract({
           jobId: "job-payload-manifest-override",
-          artifactType: "execution_platform.node_execution_packet",
-          uri: "runtime-job://job-payload-manifest-override/node-execution-packet/node-1",
-          body: { packetKind: "node_execution_packet", rawPromptStored: false },
+          artifactType: "execution_platform.node_execution_snapshot",
+          uri: "runtime-job://job-payload-manifest-override/node-execution-snapshot/node-1",
+          body: {
+            artifactKind: "execution_platform.node_execution_snapshot",
+            rawPromptStored: false,
+          },
           metadata: {
             payloadRef: "runtime-artifact-payload://wrong",
             rawPromptStored: false,
@@ -708,18 +682,24 @@ describe("runtime job repository", () => {
         await expect(
           repository.attachRuntimeArtifactByContract({
             jobId: "job-payload-raw-flags",
-            artifactType: "execution_platform.node_execution_packet",
-            uri: "runtime-job://job-payload-raw-flags/node-execution-packet/body",
-            body: { packetKind: "node_execution_packet", rawPromptStored: true },
+            artifactType: "execution_platform.node_execution_snapshot",
+            uri: "runtime-job://job-payload-raw-flags/node-execution-snapshot/body",
+            body: {
+              artifactKind: "execution_platform.node_execution_snapshot",
+              rawPromptStored: true,
+            },
           }),
         ).rejects.toThrow("artifact payload.rawPromptStored must be false");
 
         await expect(
           repository.attachRuntimeArtifactByContract({
             jobId: "job-payload-raw-flags",
-            artifactType: "execution_platform.node_execution_packet",
-            uri: "runtime-job://job-payload-raw-flags/node-execution-packet/extension",
-            body: { packetKind: "node_execution_packet", rawPromptStored: false },
+            artifactType: "execution_platform.node_execution_snapshot",
+            uri: "runtime-job://job-payload-raw-flags/node-execution-snapshot/extension",
+            body: {
+              artifactKind: "execution_platform.node_execution_snapshot",
+              rawPromptStored: false,
+            },
             metadata: { rawProviderLogStored: true },
           }),
         ).rejects.toThrow("artifact payload manifest extension.rawProviderLogStored must be false");
@@ -736,10 +716,10 @@ describe("runtime job repository", () => {
         await expect(
           repository.attachRuntimeArtifactByContract({
             jobId: "job-payload-too-large",
-            artifactType: "execution_platform.implementation_task_packet",
-            uri: "runtime-job://job-payload-too-large/packet/task",
+            artifactType: "execution_platform.node_agent_worker_prompt",
+            uri: "runtime-job://job-payload-too-large/node-agent-worker-prompt/task",
             body: {
-              packetRef: "runtime-job://job-payload-too-large/packet/task",
+              promptRef: "runtime-job://job-payload-too-large/node-agent-worker-prompt/task",
               content: "x".repeat(5_000),
             },
           }),

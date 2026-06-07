@@ -3,13 +3,31 @@ import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { resolveRuntimeObjective, resolveSourcePromptText } from "./source-prompt-ref.ts";
+import {
+  defaultSessionSearchRoots,
+  resolveRuntimeObjective,
+  resolveSourcePromptText,
+} from "./source-prompt-ref.ts";
 
 function sha256Text(value: string): string {
   return createHash("sha256").update(value).digest("hex");
 }
 
 describe("source prompt ref resolution", () => {
+  it("derives default session search roots from Runtime Home aliases without stale /app fallback", () => {
+    const runtimeHome = path.join(os.tmpdir(), "openclaw-source-prompt-runtime");
+    const roots = defaultSessionSearchRoots({
+      ...process.env,
+      OPENCLAW_STATE_DIR: runtimeHome,
+    });
+
+    expect(roots).toEqual([
+      path.join(runtimeHome, "agents", "main", "sessions"),
+      "/home/node/.openclaw/agents/main/sessions",
+    ]);
+    expect(roots).not.toEqual(expect.arrayContaining(["/app/.openclaw/agents/main/sessions"]));
+  });
+
   it("resolves a gateway chat transcript prompt by hash and length without storing raw prompt", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-source-prompt-"));
     const sessionId = "source-prompt-session";

@@ -1,7 +1,9 @@
 import type { JsonValue } from "../runtime-job-repository.ts";
 import type { ConversationRoutingContext } from "./conversation-routing-context.ts";
+import type { IntakeRouteContract } from "./intake-route-contract.ts";
 import {
   CANONICAL_ROUTER_SCHEMA_VERSION,
+  normalizeCanonicalRouterReasonCodes,
   parseCanonicalRouterOutput,
   type CanonicalRouterOutput,
   type CanonicalRouterParseResult,
@@ -40,6 +42,7 @@ export type StructuredModelIntentRouterRequest = {
   sourceRoute: StructuredRouterSourceRoute;
   requestId: string;
   sessionId: string;
+  intakeRouteContract: IntakeRouteContract | null;
   reasonCodes: string[];
   rawPromptStored: false;
   rawResponseStored: false;
@@ -140,6 +143,7 @@ export function buildStructuredModelIntentRouterRequest(input: {
   sourceRoute: StructuredRouterSourceRoute;
   requestId: string;
   sessionId?: string;
+  intakeRouteContract?: IntakeRouteContract | null;
   reasonCodes?: string[];
   maxWorkflowCandidates?: number;
   maxWorkflowSummaryChars?: number;
@@ -176,8 +180,10 @@ export function buildStructuredModelIntentRouterRequest(input: {
     sourceRoute: input.sourceRoute,
     requestId: input.requestId,
     sessionId: input.sessionId ?? input.conversationContext.sessionId,
+    intakeRouteContract: input.intakeRouteContract ?? null,
     reasonCodes: [
       "structured_model_router_request_bounded",
+      ...(input.intakeRouteContract ? ["intake_route_contract_attached"] : []),
       ...(input.reasonCodes ?? []),
       ...(workflowSummaries.length === 0 ? ["workflow_summary_candidates_missing"] : []),
     ],
@@ -194,12 +200,18 @@ export class StructuredModelIntentRouter {
   ): Promise<StructuredModelIntentRouterResult> {
     const response = await this.provider.route(request);
     const parseResult = parseCanonicalRouterOutput(response.output);
-    const providerReasonCodes = response.reasonCodes ?? [];
-    const reasonCodes = [
-      ...request.reasonCodes,
-      ...providerReasonCodes,
-      ...(parseResult.valid ? ["canonical_router_schema_valid"] : parseResult.reasonCodes),
-    ].slice(0, 40);
+    const providerReasonCodes = normalizeCanonicalRouterReasonCodes(
+      response.reasonCodes ?? [],
+      80,
+    ).value;
+    const reasonCodes = normalizeCanonicalRouterReasonCodes(
+      [
+        ...request.reasonCodes,
+        ...providerReasonCodes,
+        ...(parseResult.valid ? ["canonical_router_schema_valid"] : parseResult.reasonCodes),
+      ],
+      40,
+    ).value;
 
     return {
       artifactKind: "structured_model_intent_router_result",
@@ -253,6 +265,9 @@ export function structuredRouterResultToJsonEvidence(
     valid: result.valid,
     route: result.output?.route ?? null,
     workflowId: result.output?.workflowId ?? null,
+    intakeRouteContractId: result.metadata.reasonCodes.includes("intake_route_contract_attached")
+      ? "intake_route_contract_attached"
+      : null,
     metadata: result.metadata,
   };
 }

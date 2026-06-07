@@ -14,6 +14,7 @@ import {
   resolveEffectiveModelFallbacks,
   resolveAgentModelFallbacksOverride,
   resolveAgentModelPrimary,
+  resolveAgentProjectRootDir,
   resolveRunModelFallbacksOverride,
   resolveAgentWorkspaceDir,
   resolveAgentIdByWorkspacePath,
@@ -60,6 +61,7 @@ describe("resolveAgentConfig", () => {
       name: "Main Agent",
       workspace: "~/openclaw",
       agentDir: "~/.openclaw/agents/main",
+      projectRoot: undefined,
       model: "anthropic/claude-sonnet-4-6",
       identity: undefined,
       groupChat: undefined,
@@ -513,6 +515,50 @@ describe("resolveAgentConfig", () => {
     };
     const workspace = resolveAgentWorkspaceDir(cfg, "main");
     expect(workspace).toBe(path.join(stateDir, "workspace-main"));
+  });
+
+  it("uses per-agent projectRoot for implementation source without changing workspace", () => {
+    const cfg: OpenClawConfig = {
+      agents: {
+        list: [
+          {
+            id: "execution-coding",
+            workspace: "/runtime/workspace",
+            projectRoot: "/repo/openclaw",
+          },
+        ],
+      },
+    };
+    expect(resolveAgentWorkspaceDir(cfg, "execution-coding")).toBe(
+      path.resolve("/runtime/workspace"),
+    );
+    expect(resolveAgentProjectRootDir(cfg, "execution-coding")).toBe(
+      path.resolve("/repo/openclaw"),
+    );
+  });
+
+  it("uses defaults.projectRoot before falling back to workspace", () => {
+    const cfg: OpenClawConfig = {
+      agents: {
+        defaults: { workspace: "/runtime/workspace", projectRoot: "/repo/openclaw" },
+        list: [{ id: "execution-context-scout" }],
+      },
+    };
+    expect(resolveAgentProjectRootDir(cfg, "execution-context-scout")).toBe(
+      path.resolve("/repo/openclaw"),
+    );
+  });
+
+  it("falls back to legacy defaults.repoRoot for project root", () => {
+    const cfg: OpenClawConfig = {
+      agents: {
+        defaults: { workspace: "/runtime/workspace", repoRoot: "/repo/from-repo-root" },
+        list: [{ id: "execution-validation-scout" }],
+      },
+    };
+    expect(resolveAgentProjectRootDir(cfg, "execution-validation-scout")).toBe(
+      path.resolve("/repo/from-repo-root"),
+    );
   });
 });
 

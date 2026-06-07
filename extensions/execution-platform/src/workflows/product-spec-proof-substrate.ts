@@ -285,13 +285,18 @@ const PLANNING_EXECUTOR_BLOCKED_CODING_CAPABILITIES = [
 ] as const;
 const PLANNING_EXECUTOR_REQUIRED_CAPABILITIES = ["planning"] as const;
 
-export function evaluateProductSpecProofFamily(input: ClassificationInput): ProductSpecProofFamilyGate {
+export function evaluateProductSpecProofFamily(
+  input: ClassificationInput,
+): ProductSpecProofFamilyGate {
   const executorWorkflowId = stringValue(input.executorWorkflowId) ?? stringValue(input.workflowId);
   const subjectWorkflowIds = uniqueStrings(input.subjectWorkflowIds, 20);
   const targetRefs = targetSubjectRefs(input.targetSubjectRefs, 20);
   const requestedCapabilities = uniqueStrings(input.requestedCapabilities, 20);
   const declaredFamily = proofFamilyValue(input.proofFamily);
-  const productSpecSubject = hasProductSpecSubject({ subjectWorkflowIds, targetSubjectRefs: targetRefs });
+  const productSpecSubject = hasProductSpecSubject({
+    subjectWorkflowIds,
+    targetSubjectRefs: targetRefs,
+  });
   const codingExecutor = executorWorkflowId === "agent_team.coding";
   const productSpecExecutor = executorWorkflowId === "agent_team.product_spec_planning";
   const hasCodingCapabilities = CODING_EXECUTOR_REQUIRED_CAPABILITIES.some((capability) =>
@@ -368,7 +373,7 @@ function graphContainsRetiredTopology(value: unknown): boolean {
     if (nodeKind === "context_synthesis") {
       hasRetiredNode = true;
     }
-    if (nodeId && (nodeKind === "resource_scout" || nodeKind === "web_research")) {
+    if (nodeId && (nodeKind === "context_scout" || nodeKind === "web_research")) {
       contextNodeIds.add(nodeId);
       hasRetiredNode = true;
     }
@@ -387,8 +392,8 @@ export function isProductSpecRunScopedArtifactRef(value: unknown): boolean {
   const ref = stringValue(value);
   return Boolean(
     ref &&
-      (ref.startsWith(".artifacts/execution-platform/proof-runs/") ||
-        ref.startsWith("artifact://execution-platform/proof-runs/")),
+    (ref.startsWith(".artifacts/execution-platform/proof-runs/") ||
+      ref.startsWith("artifact://execution-platform/proof-runs/")),
   );
 }
 
@@ -410,8 +415,8 @@ export function isProductSpecProofRunArtifactRefForRun(
   const expectedProofRunId = stringValue(proofRunId);
   return Boolean(
     expectedProofRunId &&
-      isProductSpecRunScopedArtifactRef(value) &&
-      productSpecProofRunIdFromArtifactRef(value) === expectedProofRunId,
+    isProductSpecRunScopedArtifactRef(value) &&
+    productSpecProofRunIdFromArtifactRef(value) === expectedProofRunId,
   );
 }
 
@@ -461,9 +466,11 @@ export function classifyProductSpecProofSource(
   return "unsupported_or_unknown_source";
 }
 
-export function evaluateProductSpecProofCleanliness(input: ClassificationInput & {
-  proofArtifactRefs?: unknown;
-}): ProductSpecProofCleanlinessGate {
+export function evaluateProductSpecProofCleanliness(
+  input: ClassificationInput & {
+    proofArtifactRefs?: unknown;
+  },
+): ProductSpecProofCleanlinessGate {
   const proofRunId = stringValue(input.proofRunId);
   const runtimeJobId = stringValue(input.runtimeJobId);
   const graphId = stringValue(input.graphId);
@@ -536,10 +543,11 @@ export function evaluateProductSpecProofCleanliness(input: ClassificationInput &
 
 const PRODUCT_SPEC_CODING_IMPLEMENTATION_REQUIRED_LIFECYCLE_GATES = [
   "proof_family_gate",
-  "worker_context_request",
-  "resource_demand",
-  "resource_ledger",
-  "domain_resource_selection",
+  "node_agent_session",
+  "update_plan",
+  "context_scout_spawn",
+  "sessions_yield",
+  "parent_synthesis",
   "domain_action_gate",
   "worker_action",
   "post_action_validation",
@@ -548,17 +556,19 @@ const PRODUCT_SPEC_CODING_IMPLEMENTATION_REQUIRED_LIFECYCLE_GATES = [
   "closeout",
 ] as const;
 
-export function evaluateProductSpecCodingSystemImplementationProof(input: ClassificationInput & {
-  proofArtifactRefs?: unknown;
-  observedLifecycleGates?: unknown;
-  changedFileRefs?: unknown;
-  validationRefs?: unknown;
-  workerResultRefs?: unknown;
-  evidenceClaimRefs?: unknown;
-  frameworkArtifactRefs?: unknown;
-  reviewRefs?: unknown;
-  closeoutRefs?: unknown;
-}): ProductSpecCodingSystemImplementationProofGate {
+export function evaluateProductSpecCodingSystemImplementationProof(
+  input: ClassificationInput & {
+    proofArtifactRefs?: unknown;
+    observedLifecycleGates?: unknown;
+    changedFileRefs?: unknown;
+    validationRefs?: unknown;
+    workerResultRefs?: unknown;
+    evidenceClaimRefs?: unknown;
+    frameworkArtifactRefs?: unknown;
+    reviewRefs?: unknown;
+    closeoutRefs?: unknown;
+  },
+): ProductSpecCodingSystemImplementationProofGate {
   const familyGate = evaluateProductSpecProofFamily(input);
   const cleanliness = evaluateProductSpecProofCleanliness(input);
   const observedLifecycleGates = uniqueStrings(input.observedLifecycleGates, 80);
@@ -569,10 +579,9 @@ export function evaluateProductSpecCodingSystemImplementationProof(input: Classi
   const frameworkArtifactRefs = uniqueStrings(input.frameworkArtifactRefs, 80);
   const reviewRefs = uniqueStrings(input.reviewRefs, 40);
   const closeoutRefs = uniqueStrings(input.closeoutRefs, 40);
-  const missingLifecycleGates =
-    PRODUCT_SPEC_CODING_IMPLEMENTATION_REQUIRED_LIFECYCLE_GATES.filter(
-      (gate) => !observedLifecycleGates.includes(gate),
-    );
+  const missingLifecycleGates = PRODUCT_SPEC_CODING_IMPLEMENTATION_REQUIRED_LIFECYCLE_GATES.filter(
+    (gate) => !observedLifecycleGates.includes(gate),
+  );
   const reasonCodes = [
     familyGate.status === "passed" ? null : "coding_system_product_spec_family_gate_failed",
     familyGate.proofFamily === "coding_executor_target_subject"
@@ -627,7 +636,8 @@ export function evaluateProductSpecCodingSystemImplementationProof(input: Classi
 export function buildProductSpecProofRunManifest(
   input: BuildManifestInput,
 ): ProductSpecProofRunManifest {
-  const proofRunManifestRef = input.proofRunManifestRef ?? defaultProofRunManifestRef(input.proofRunId);
+  const proofRunManifestRef =
+    input.proofRunManifestRef ?? defaultProofRunManifestRef(input.proofRunId);
   const familyGate = evaluateProductSpecProofFamily({
     proofFamily: input.proofFamily ?? undefined,
     executorWorkflowId: input.executorWorkflowId,
@@ -702,10 +712,10 @@ export function buildProductSpecProofRunManifest(
     rawDbRowsStored: false,
     secretsStored: false,
     manifestJsonByteCount: 0,
-	  };
-	  manifest.manifestJsonByteCount = manifestByteCount(manifest);
-	  return manifest;
-	}
+  };
+  manifest.manifestJsonByteCount = manifestByteCount(manifest);
+  return manifest;
+}
 
 export function assertProductSpecProofRunManifestBounds(
   manifest: ProductSpecProofRunManifest,
@@ -724,23 +734,18 @@ export function assertProductSpecProofRunManifestBounds(
     proofArtifactRefs.length > 0 ? null : "manifest_proof_artifact_refs_missing",
     manifest.proofFamily === "unknown" ? "manifest_proof_family_unknown" : null,
     manifest.executorWorkflowId ? null : "manifest_executor_workflow_missing",
-    proofArtifactRefs.every((ref) => isProductSpecProofRunArtifactRefForRun(ref, manifest.proofRunId))
+    proofArtifactRefs.every((ref) =>
+      isProductSpecProofRunArtifactRefForRun(ref, manifest.proofRunId),
+    )
       ? null
       : "manifest_proof_artifact_ref_scope_invalid",
-    !
-    manifest.rawPromptStored ? null : "manifest_raw_prompt_flag_invalid",
-    !
-    manifest.rawResponseStored ? null : "manifest_raw_response_flag_invalid",
-    !
-    manifest.rawProviderLogStored ? null : "manifest_raw_provider_log_flag_invalid",
-    !
-    manifest.rawToolLogStored ? null : "manifest_raw_tool_log_flag_invalid",
-    !
-    manifest.rawCommandLogStored ? null : "manifest_raw_command_log_flag_invalid",
-    !
-    manifest.rawDbRowsStored ? null : "manifest_raw_db_rows_flag_invalid",
-    !
-    manifest.secretsStored ? null : "manifest_secrets_flag_invalid",
+    !manifest.rawPromptStored ? null : "manifest_raw_prompt_flag_invalid",
+    !manifest.rawResponseStored ? null : "manifest_raw_response_flag_invalid",
+    !manifest.rawProviderLogStored ? null : "manifest_raw_provider_log_flag_invalid",
+    !manifest.rawToolLogStored ? null : "manifest_raw_tool_log_flag_invalid",
+    !manifest.rawCommandLogStored ? null : "manifest_raw_command_log_flag_invalid",
+    !manifest.rawDbRowsStored ? null : "manifest_raw_db_rows_flag_invalid",
+    !manifest.secretsStored ? null : "manifest_secrets_flag_invalid",
   ].filter((reason): reason is string => Boolean(reason));
   if (reasonCodes.length > 0) {
     throw new Error(`product_spec_proof_run_manifest_invalid:${reasonCodes.join(",")}`);

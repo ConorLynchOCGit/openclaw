@@ -12,7 +12,7 @@ describe("runtime graph patch progress compaction", () => {
       artifactKind: "agent_team_scheduler_progress",
       runtimeJobId: "job-1",
       graphId: "graph-1",
-      stage: "resource_materialization",
+      stage: "node_agent_session",
       status: "needs_review",
       nodeId: "impl-parent",
       roleId: "implementation_engineer",
@@ -44,33 +44,34 @@ describe("runtime graph patch progress compaction", () => {
         branchScopedFrontierStates: Array.from({ length: 55 }, (_, index) => ({
           branchId: `nested-branch-${index}`,
           nodeId: `nested-node-${index}`,
-          nodeKind: "resource_scout",
+          nodeKind: "implementation",
           status: index % 2 === 0 ? "blocked_context" : "ready",
           blockerSummary: "Nested branch-scoped frontier details ".repeat(90),
-          resourceRequirementRefs: Array.from(
+          sourceMaterialRequirementRefs: Array.from(
             { length: 20 },
-            (_, refIndex) => `resource-requirement://nested-node-${index}/${refIndex}`,
+            (_, refIndex) => `source-material-requirement://nested-node-${index}/${refIndex}`,
           ),
           successfulEvidenceRefs: Array.from(
             { length: 30 },
-            (_, refIndex) => `artifact://nested-context/success/${index}/${refIndex}`,
+            (_, refIndex) => `artifact://nested-implementation/success/${index}/${refIndex}`,
           ),
-          reasonCodes: Array.from({ length: 40 }, (_, reasonIndex) =>
-            `nested_resource_requirement_reason_${reasonIndex}`,
+          reasonCodes: Array.from(
+            { length: 40 },
+            (_, reasonIndex) => `nested_resource_requirement_reason_${reasonIndex}`,
           ),
         })),
       },
       branchScopedFrontierStates: Array.from({ length: 60 }, (_, index) => ({
         branchId: `branch-${index}`,
         nodeId: `node-${index}`,
-        nodeKind: "resource_scout",
-        capabilityId: "resource_scout",
+        nodeKind: "implementation",
+        capabilityId: "implementation",
         status: index % 2 === 0 ? "blocked_context" : "ready",
         blockerSummary: "Consumer-bound resource requirement details ".repeat(80),
-          nextLegalTransition: "dispatch_context_specialist_subturn",
-        resourceRequirementRefs: Array.from(
+        nextLegalTransition: "dispatch_context_specialist_subturn",
+        sourceMaterialRequirementRefs: Array.from(
           { length: 20 },
-          (_, refIndex) => `resource-requirement://node-${index}/${refIndex}`,
+          (_, refIndex) => `source-material-requirement://node-${index}/${refIndex}`,
         ),
         consumerNodeIds: Array.from({ length: 20 }, (_, refIndex) => `consumer-${refIndex}`),
         successfulEvidenceRefs: Array.from(
@@ -81,9 +82,10 @@ describe("runtime graph patch progress compaction", () => {
           { length: 30 },
           (_, refIndex) => `artifact://context/failed/${index}/${refIndex}`,
         ),
-        missingFields: ["acceptedContextSnapshotRefs", "resourceRequirementRefs"],
-        reasonCodes: Array.from({ length: 40 }, (_, reasonIndex) =>
-          `resource_requirement_reason_${reasonIndex}`,
+        missingFields: ["acceptedContextSnapshotRefs", "sourceMaterialRequirementRefs"],
+        reasonCodes: Array.from(
+          { length: 40 },
+          (_, reasonIndex) => `resource_requirement_reason_${reasonIndex}`,
         ),
       })),
       reasonCodes: ["resource_packet_bounds"],
@@ -100,8 +102,8 @@ describe("runtime graph patch progress compaction", () => {
       runtimeJobId: "job-1",
       graphId: "graph-1",
       schedulerIteration: 12,
-      patchKind: "resource_materialization",
-      stage: "resource_materialization",
+      patchKind: "node_agent_session",
+      stage: "node_agent_session",
       status: "needs_review",
       nodeId: "impl-parent",
       roleId: "implementation_engineer",
@@ -143,24 +145,25 @@ describe("runtime graph patch progress compaction", () => {
   it("keeps scheduler progress metadata bounded when branch frontier details balloon", () => {
     const heavyBranchStates = Array.from({ length: 80 }, (_, index) => ({
       branchId: `branch-${index}`,
-      nodeId: `context-scout-node-with-long-id-${index}`,
-      nodeKind: "resource_scout",
-      capabilityId: "resource_scout",
+      nodeId: `implementation-node-with-long-id-${index}`,
+      nodeKind: "implementation",
+      capabilityId: "implementation",
       status: "completed",
       blockerSummary: "No blocker; long diagnostic context ".repeat(200),
       nextLegalTransition: "orchestrator_decision",
       readinessRef: `runtime-job://job-2/readiness/${index}`,
-      resourcePacketRef: `runtime-job://job-2/resource/${index}`,
-      resourceRequirementRefs: Array.from(
+      sourceMaterialRef: `runtime-job://job-2/source-material/${index}`,
+      sourceMaterialRequirementRefs: Array.from(
         { length: 30 },
-        (_, refIndex) => `runtime-job://job-2/resource-requirement/${index}/${refIndex}`,
+        (_, refIndex) => `runtime-job://job-2/source-material-requirement/${index}/${refIndex}`,
       ),
       successfulEvidenceRefs: Array.from(
         { length: 40 },
-        (_, refIndex) => `runtime-job://job-2/context-evidence/${index}/${refIndex}`,
+        (_, refIndex) => `runtime-job://job-2/implementation-evidence/${index}/${refIndex}`,
       ),
-      reasonCodes: Array.from({ length: 60 }, (_, reasonIndex) =>
-        `branch_scoped_frontier_state_reason_${index}_${reasonIndex}`,
+      reasonCodes: Array.from(
+        { length: 60 },
+        (_, reasonIndex) => `branch_scoped_frontier_state_reason_${index}_${reasonIndex}`,
       ),
     }));
     const progressMetadata = {
@@ -169,8 +172,8 @@ describe("runtime graph patch progress compaction", () => {
       graphId: "graph-2",
       stage: "scheduler_parallel_frontier",
       status: "completed",
-      nodeId: "context-scout-node-with-long-id-79",
-      roleId: "resource_scout",
+      nodeId: "implementation-node-with-long-id-79",
+      roleId: "implementation_engineer",
       currentObjective: "Supply implementation-ready repo context. ".repeat(500),
       parallelFrontier: {
         currentSuperstep: 9,
@@ -216,8 +219,8 @@ describe("runtime graph patch progress compaction", () => {
       patchKind: "scheduler.join_superstep_frontier",
       stage: "scheduler_parallel_frontier",
       status: "completed",
-      nodeId: "context-scout-node-with-long-id-79",
-      roleId: "resource_scout",
+      nodeId: "implementation-node-with-long-id-79",
+      roleId: "implementation_engineer",
       progressMetadata,
     });
     const artifact = {

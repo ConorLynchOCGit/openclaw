@@ -97,23 +97,24 @@ describe("architecture residue source inventory", () => {
   it("fails if replay or worker surfaces resurrect non-runner lifecycle dialects", () => {
     withTempRepo(
       {
-        "scripts/execution-platform-run-product-spec-boundary-replay.mjs":
-          [
-            "buildImplementationTaskPacket({});",
-            "compileNodeExecutionPacketForImplementationTask({});",
-            'const boundary = "after_resource_materialization";',
-          ].join("\n"),
+        "scripts/execution-platform-run-product-spec-boundary-replay.mjs": [
+          "buildImplementationTaskPacket({});",
+          "compileNodeExecutionPacketForImplementationTask({});",
+          'const boundary = "after_resource_materialization";',
+        ].join("\n"),
         "scripts/execution-platform-run-product-spec-middle-lane-replay-proof.mjs":
-          'node scripts/execution-platform-run-worker-readiness-edit-evidence-real-model-proof.mjs',
+          "node scripts/execution-platform-run-worker-readiness-edit-evidence-real-model-proof.mjs",
         "extensions/execution-platform/src/workflows/boundary-replay-registry.ts":
           'export const kind = "before_resource_materialization";',
         "extensions/execution-platform/src/codex-bridge/dynamic-agent-team-graph-runner.ts":
           'artifactType: "execution_platform.implementation_resource_materialization_result";',
-        "extensions/execution-platform/src/codex-bridge/non-codex-tool-using-worker-loop.ts":
-          [
-            '"The next patch-lane turn must call worker.edit.plan, worker.edit.apply_patch";',
-            "const activeLifecycleAllows = true;",
-          ].join("\n"),
+        "extensions/execution-platform/src/codex-bridge/non-codex-tool-using-worker-loop.ts": [
+          '"The next patch-lane turn must call worker.edit.plan, worker.edit.apply_patch";',
+          "const activeLifecycleAllows = true;",
+          "const retiredTool = 'worker.context.record_basis';",
+          "function parseModelToolCalls() { return []; }",
+          "modelClient.nextTurn({});",
+        ].join("\n"),
       },
       (repoRoot) => {
         const report = runArchitectureResidueSourceInventory({ repoRoot });
@@ -131,7 +132,8 @@ describe("architecture residue source inventory", () => {
             }),
             expect.objectContaining({
               checkId: "product_spec_replay_constructs_worker_packets_outside_runner",
-              reasonCode: "product_spec_replay_must_not_construct_worker_packets_outside_node_runner",
+              reasonCode:
+                "product_spec_replay_must_not_construct_worker_packets_outside_node_runner",
             }),
             expect.objectContaining({
               checkId: "product_spec_replay_exposes_retired_resource_materialization_boundaries",
@@ -139,7 +141,8 @@ describe("architecture residue source inventory", () => {
             }),
             expect.objectContaining({
               checkId: "boundary_replay_registry_exposes_retired_resource_materialization",
-              reasonCode: "boundary_replay_registry_retired_resource_materialization_boundary_blocked",
+              reasonCode:
+                "boundary_replay_registry_retired_resource_materialization_boundary_blocked",
             }),
             expect.objectContaining({
               checkId: "dynamic_runner_does_not_attach_pre_worker_materialization_artifacts",
@@ -150,13 +153,80 @@ describe("architecture residue source inventory", () => {
               checkId: "worker_loop_reintroduces_local_lifecycle_overrides",
               reasonCode: "worker_loop_must_not_override_node_runner_legal_transitions",
             }),
+            expect.objectContaining({
+              checkId: "non_codex_worker_no_model_facing_record_basis_tool",
+              reasonCode:
+                "worker_context_basis_must_be_metadata_on_native_search_open_refine_accept_not_model_facing_tool",
+            }),
+            expect.objectContaining({
+              checkId: "non_codex_worker_no_json_shaped_tool_selection_transport",
+              reasonCode:
+                "worker_model_choices_must_use_provider_native_tools_through_runner_owned_transport",
+            }),
           ]),
         );
       },
     );
   });
 
-  it("fails if scheduler promotion can bypass the node lifecycle runner", () => {
+  it("fails if Product/Spec intake or replay resurrect deterministic source prompt context index gates", () => {
+    withTempRepo(
+      {
+        "scripts/execution-platform-run-product-spec-checkpointed-test.mjs":
+          'const gate = latestArtifact(artifacts, "execution_platform.source_prompt_context_index");',
+        "scripts/execution-platform-run-product-spec-boundary-replay.mjs":
+          'artifactRefsByType(artifacts, "execution_platform.source_prompt_context_index");',
+        "extensions/execution-platform/src/workflows/intake-stage-runner.ts":
+          "type Input = { sourcePromptContextIndexRef: string };",
+        "extensions/execution-platform/src/runtime-artifact-contracts.ts":
+          'payloadContract({ artifactType: "execution_platform.source_prompt_context_index", bodySchemaRef: "SourcePromptContextIndex" });',
+        "extensions/execution-platform/src/workflows/obligation-graph.ts":
+          'type ObligationDiscoveryBrief = { discoveryBrief: unknown }; const tool = "obligation.discovery.add_anchor";',
+        "extensions/execution-platform/src/workflows/scheduler-stage-runner.ts":
+          "const brief = input.obligation.discoveryBrief;",
+      },
+      (repoRoot) => {
+        const report = runArchitectureResidueSourceInventory({ repoRoot });
+
+        expect(report.status).toBe("failed");
+        expect(report.hardFailures).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({
+              checkId: "checkpoint_proof_source_prompt_context_index_gate_deleted",
+              reasonCode:
+                "checkpoint_proof_must_use_source_prompt_artifact_and_mission_ledger_grounding",
+            }),
+            expect.objectContaining({
+              checkId: "boundary_replay_source_prompt_context_index_gate_deleted",
+              reasonCode:
+                "boundary_replay_must_use_source_prompt_artifact_and_mission_ledger_grounding",
+            }),
+            expect.objectContaining({
+              checkId: "intake_runner_source_prompt_context_index_owner_deleted",
+              reasonCode:
+                "intake_runner_must_not_use_deterministic_source_prompt_section_index_as_semantic_grounding",
+            }),
+            expect.objectContaining({
+              checkId: "runtime_artifact_contract_source_prompt_context_index_deleted",
+              reasonCode:
+                "runtime_artifact_contracts_must_not_register_source_prompt_context_index_as_production_body_artifact",
+            }),
+            expect.objectContaining({
+              checkId: "obligation_graph_inline_discovery_brief_deleted",
+              reasonCode: "obligation_graph_must_not_own_discovery_brief_or_discovery_tool_dialect",
+            }),
+            expect.objectContaining({
+              checkId: "scheduler_stage_obligation_inline_discovery_fallback_deleted",
+              reasonCode:
+                "scheduler_stage_must_consume_discovery_brief_set_not_obligation_inline_discovery",
+            }),
+          ]),
+        );
+      },
+    );
+  });
+
+  it("fails if retired scheduler WorkIntent promotion bypass code returns", () => {
     withTempRepo(
       {
         "extensions/execution-platform/src/workflows/runtime-work-graph-scheduler.ts":
@@ -169,8 +239,105 @@ describe("architecture residue source inventory", () => {
         expect(report.hardFailures).toEqual(
           expect.arrayContaining([
             expect.objectContaining({
-              checkId: "scheduler_workintent_promotion_bypasses_lifecycle_runner",
-              reasonCode: "workintent_promotion_must_be_node_lifecycle_runner_owned",
+              checkId: "scheduler_workintent_promotion_bypass_path_deleted",
+              reasonCode: "workintent_promotion_bypass_path_must_be_deleted",
+            }),
+          ]),
+        );
+      },
+    );
+  });
+
+  it("fails if runner-owned tool phases bypass the canonical provider tool transport", () => {
+    withTempRepo(
+      {
+        "extensions/execution-platform/src/workflows/intake-stage-runner.ts":
+          "await missionModelClient.runTools({});",
+        "extensions/execution-platform/src/workflows/model-tool-turn-transport.ts":
+          "await input.modelClient.runTools({});",
+        "extensions/execution-platform/src/workflows/scheduler-stage-runner.ts":
+          "await client.callTools({});",
+        "extensions/execution-platform/src/intent-front-door/live-structured-router-provider.ts":
+          '"https://openrouter.ai/api/v1/chat/completions"; response.json().catch(() => null);',
+        "scripts/execution-platform-run-product-spec-boundary-replay.mjs":
+          "const toolBatch = await modelClient.runTools({}); schedulerCanonicalToolIdFromProviderName(toolBatch.toolName);",
+      },
+      (repoRoot) => {
+        const report = runArchitectureResidueSourceInventory({ repoRoot });
+
+        expect(report.status).toBe("failed");
+        expect(report.hardFailures).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({
+              checkId: "intake_requirement_map_uses_shared_model_tool_turn_transport",
+              reasonCode:
+                "intake_requirement_map_phases_must_use_shared_runner_owned_tool_turn_transport",
+            }),
+            expect.objectContaining({
+              checkId: "model_tool_turn_transport_uses_canonical_provider_tool_turn",
+              reasonCode:
+                "model_tool_turn_transport_must_delegate_to_canonical_provider_tool_turn_not_legacy_transport_names",
+            }),
+            expect.objectContaining({
+              checkId: "scheduler_stage_runner_uses_shared_model_tool_turn_transport",
+              reasonCode: "scheduler_stage_runner_must_use_shared_runner_owned_tool_turn_transport",
+            }),
+            expect.objectContaining({
+              checkId: "intent_front_door_router_no_direct_provider_tool_transport",
+              reasonCode:
+                "intent_front_door_router_must_use_shared_provider_tool_transport_not_direct_provider_fetch",
+            }),
+            expect.objectContaining({
+              checkId: "boundary_replay_no_direct_scheduler_provider_tool_transport",
+              reasonCode:
+                "boundary_replay_scheduler_tools_must_delegate_to_scheduler_stage_runner_transport",
+            }),
+          ]),
+        );
+      },
+    );
+  });
+
+  it("fails if native node execution bypasses OpenClaw extra tools or clamps the agent tool surface", () => {
+    withTempRepo(
+      {
+        "extensions/execution-platform/src/workflows/node-agent-session.ts": [
+          "await input.modelClient.runJson({});",
+          "runEmbeddedAgent({ toolsAllow: ['node_finish'], extraTools: [] });",
+        ].join("\n"),
+        "src/gateway/execution-platform-agent-team-runner.ts":
+          "runNodeAgentSession({ agentParams: { toolsAllow: ['node_finish'] } });",
+        "extensions/execution-platform/src/workflows/runtime-node-capability-registry.ts": [
+          '"model_agnostic_file_edit_worker";',
+          '"model_agnostic_tool_worker_loop";',
+          '"non_codex_tool_using_worker_loop";',
+        ].join("\n"),
+      },
+      (repoRoot) => {
+        const report = runArchitectureResidueSourceInventory({ repoRoot });
+
+        expect(report.status).toBe("failed");
+        expect(report.hardFailures).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({
+              checkId: "node_agent_session_no_tool_allow_override",
+              reasonCode:
+                "node_agent_session_must_not_use_tools_allow_because_it_strips_openclaw_skills_and_native_tools",
+            }),
+            expect.objectContaining({
+              checkId: "node_agent_session_no_direct_model_or_tool_transport",
+              reasonCode:
+                "node_agent_session_must_delegate_to_openclaw_agent_runtime_not_parallel_json_or_tool_transport",
+            }),
+            expect.objectContaining({
+              checkId: "gateway_node_agent_session_no_tool_allow_override",
+              reasonCode:
+                "gateway_native_node_execution_must_use_openclaw_agent_config_and_extra_tools_not_tools_allow",
+            }),
+            expect.objectContaining({
+              checkId: "runtime_capability_manifest_no_deleted_model_agnostic_worker_adapters",
+              reasonCode:
+                "runtime_capability_manifest_must_not_advertise_deleted_model_agnostic_worker_adapters",
             }),
           ]),
         );
@@ -184,11 +351,7 @@ describe("architecture residue source inventory", () => {
         "extensions/execution-platform/src/workflows/runtime-work-graph-expansion-controller.ts":
           "metadata.runtimePrerequisiteCritical === true",
         "extensions/execution-platform/src/workflows/runtime-work-graph-scheduler.ts":
-          [
-            "runtimeOwnedWorkIntentPromotion: true",
-            'lifecycleTransitionOwner: "NodeLifecycleTransitionRunner"',
-            "runtimePrerequisiteCritical: true",
-          ].join("\n"),
+          "const schedulerStage = new SchedulerStageRunner();",
       },
       (repoRoot) => {
         const report = runArchitectureResidueSourceInventory({ repoRoot });
@@ -198,12 +361,347 @@ describe("architecture residue source inventory", () => {
           expect.arrayContaining([
             expect.objectContaining({
               checkId: "expansion_admission_honors_runner_owned_lifecycle_transitions",
-              reasonCode:
-                "expansion_admission_must_not_defer_runner_owned_lifecycle_transitions",
+              reasonCode: "expansion_admission_must_not_defer_runner_owned_lifecycle_transitions",
             }),
             expect.objectContaining({
-              checkId: "workintent_promotion_marks_lifecycle_transition_prerequisite_critical",
-              reasonCode: "workintent_promotion_must_be_runner_owned_and_non_deferrable",
+              checkId: "scheduler_graph_amendment_request_wired_to_stage_runner",
+              reasonCode:
+                "runtime_scheduler_must_pass_typed_graph_amendment_requests_to_scheduler_stage_runner",
+            }),
+          ]),
+        );
+      },
+    );
+  });
+
+  it("fails if scheduler-stage phase ownership returns to RuntimeWorkGraphScheduler", () => {
+    withTempRepo(
+      {
+        "extensions/execution-platform/src/workflows/runtime-work-graph-scheduler.ts": [
+          "function evaluateSchedulerStage() {}",
+          "function applySchedulerStagedDraftPatch() {}",
+          "function validateSchedulerValidationNodePhaseOrdering() {}",
+          "const schedulerStageNoProgressCounts = new Map();",
+          "compileDecision: (compilerInput) => compilerInput",
+        ].join("\n"),
+        "extensions/execution-platform/src/workflows/scheduler-stage-runner.ts": [
+          "type SchedulerStageRunInput = { compileDecision(input: unknown): unknown };",
+          "function buildRejectionEnvelope(input: unknown) { return input; }",
+          "function hydrateSchedulerAggregateTailWorkUnits() {}",
+          "const oldTool = 'scheduler.submit_staged_graph';",
+          "const oldEnvelope = 'schedulerToolCalls';",
+        ].join("\n"),
+        "extensions/execution-platform/src/workflows/scheduler-stage-runner.test.ts":
+          "const zombie = 'applySchedulerStagedDraftPatch';",
+      },
+      (repoRoot) => {
+        const report = runArchitectureResidueSourceInventory({ repoRoot });
+
+        expect(report.status).toBe("failed");
+        expect(report.hardFailures).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({
+              checkId: "scheduler_stage_inline_phase_owner_deleted",
+              reasonCode: "scheduler_stage_phase_ownership_must_live_in_scheduler_stage_runner",
+            }),
+            expect.objectContaining({
+              checkId: "scheduler_stage_runner_no_legacy_decision_compiler_inputs",
+              reasonCode:
+                "scheduler_stage_runner_must_compile_scheduler_graph_patch_not_orchestrator_decision",
+            }),
+            expect.objectContaining({
+              checkId: "runtime_scheduler_fresh_stage_no_legacy_decision_compiler_wiring",
+              reasonCode:
+                "runtime_scheduler_must_not_wire_fresh_scheduler_stage_to_orchestrator_decision_compiler",
+            }),
+            expect.objectContaining({
+              checkId: "scheduler_stage_runner_no_retired_submit_or_json_scheduler_dialect",
+              reasonCode: "scheduler_stage_runner_retired_submit_json_dialect_blocked",
+            }),
+            expect.objectContaining({
+              checkId: "scheduler_stage_tests_no_retired_submit_or_json_scheduler_dialect",
+              reasonCode: "scheduler_stage_tests_must_not_preserve_retired_scheduler_dialect",
+            }),
+            expect.objectContaining({
+              checkId: "scheduler_stage_runner_no_mutable_aggregate_tail_draft",
+              reasonCode: "scheduler_stage_runner_must_not_hydrate_mission_tail_work_units",
+            }),
+            expect.objectContaining({
+              checkId: "runtime_scheduler_no_private_validation_tail_admission_owner",
+              reasonCode: "runtime_scheduler_must_use_shared_scheduler_graph_admission",
+            }),
+          ]),
+        );
+      },
+    );
+  });
+
+  it("fails if retired WorkIntent or staged scheduler graph tools return", () => {
+    withTempRepo(
+      {
+        "extensions/execution-platform/src/workflows/runtime-work-graph-scheduler.ts":
+          "schedulerToolCalls; scheduler.compile_staged_runtime_graph; promote_work_intent_to_executable;",
+        "extensions/execution-platform/src/workflows/scheduler-runtime-tools.ts":
+          "'scheduler.compile_work_intents'; 'scheduler.create_graph_node';",
+        "extensions/execution-platform/src/workflows/orchestrator-graph-decision.ts":
+          "type StagedWorkBreakdownUnit = {}; const old = stagedScheduler;",
+        "extensions/execution-platform/src/workflows/scheduler-stage-runner.ts":
+          "'work_intent_compiled'; 'staged_scheduler_graph_compiled';",
+        "extensions/execution-platform/src/workflows/index.ts": 'export * from "./work-intent.ts";',
+      },
+      (repoRoot) => {
+        const report = runArchitectureResidueSourceInventory({ repoRoot });
+
+        expect(report.status).toBe("failed");
+        expect(report.hardFailures).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({
+              checkId: "runtime_scheduler_no_retired_workintent_scheduler_graph_path",
+              reasonCode: "runtime_scheduler_retired_workintent_staged_graph_path_blocked",
+            }),
+            expect.objectContaining({
+              checkId: "scheduler_runtime_tools_no_retired_workintent_or_staged_graph_tools",
+              reasonCode: "scheduler_runtime_tools_retired_workintent_staged_graph_tools_blocked",
+            }),
+            expect.objectContaining({
+              checkId: "orchestrator_decision_no_retired_staged_scheduler_parser",
+              reasonCode: "orchestrator_decision_retired_staged_scheduler_parser_blocked",
+            }),
+            expect.objectContaining({
+              checkId: "scheduler_stage_runner_no_retired_workintent_trace_codes",
+              reasonCode: "scheduler_stage_runner_retired_workintent_trace_codes_blocked",
+            }),
+            expect.objectContaining({
+              checkId: "workflow_barrel_no_workintent_compiler_export",
+              reasonCode: "workflow_barrel_retired_workintent_compiler_export_blocked",
+            }),
+          ]),
+        );
+      },
+    );
+  });
+
+  it("fails if native node execution resurrects initial task brief contracts", () => {
+    withTempRepo(
+      {
+        "extensions/execution-platform/src/workflows/node-agent-session.ts": [
+          "type NodeAgentPromptSourceMaterial = {};",
+          "type NodeAgentAuthoredTaskPrompt = {};",
+          "function buildNodeAgentPromptSourceMaterial() {}",
+          "function authorNodeAgentTaskPrompt() {}",
+          "function compactNodeTaskBriefText() {}",
+        ].join("\n"),
+        "src/gateway/execution-platform-agent-team-runner.ts": [
+          "buildNodeAgentInitialTaskBrief();",
+          "runNodeAgentSession({ initialTaskBrief });",
+        ].join("\n"),
+      },
+      (repoRoot) => {
+        const report = runArchitectureResidueSourceInventory({ repoRoot });
+
+        expect(report.status).toBe("failed");
+        expect(report.hardFailures).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({
+              checkId: "node_agent_session_no_initial_task_brief_contract",
+              reasonCode:
+                "native_node_agent_session_must_use_model_authored_worker_prompt_not_task_brief_contract",
+            }),
+            expect.objectContaining({
+              checkId: "gateway_native_node_execution_no_initial_task_brief_contract",
+              reasonCode:
+                "gateway_native_node_execution_must_start_from_node_lifecycle_worker_prompt",
+            }),
+          ]),
+        );
+      },
+    );
+  });
+
+  it("requires text-turn worker prompt authoring and worker plan/subagent tools", () => {
+    withTempRepo(
+      {
+        "src/gateway/execution-platform-agent-team-runner.ts": [
+          "function createGatewayNodeAgentSessionRunner() {}",
+          "nodeAgentSessionRunner: createGatewayNodeAgentSessionRunner(input.runtimeJobs, roleModelClient)",
+          "function runNodeAgentSession() {}",
+          "function createExecutionPlatformResourceReadTool() {}",
+        ].join("\n"),
+        "extensions/execution-platform/src/workflows/node-agent-session.ts": [
+          "export const NODE_EXECUTION_ASSIGNMENT_ARTIFACT_TYPE = 'execution_platform.node_execution_assignment';",
+          "function runNodeAgentSession() { return 'node_finish_not_called'; }",
+        ].join("\n"),
+      },
+      (repoRoot) => {
+        const report = runArchitectureResidueSourceInventory({ repoRoot });
+
+        expect(report.status).toBe("failed");
+        expect(report.hardFailures).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({
+              checkId: "gateway_wires_openclaw_node_session_executor",
+              reasonCode:
+                "gateway_must_wire_native_node_execution_through_shared_openclaw_executor_and_canonical_transport",
+            }),
+            expect.objectContaining({
+              checkId: "gateway_node_start_adapter_requires_native_plan_and_subagent_tools",
+              reasonCode: "gateway_node_start_adapter_must_require_native_plan_and_subagent_tools",
+            }),
+            expect.objectContaining({
+              checkId: "node_agent_session_authors_worker_prompt_with_text_model_turn",
+              reasonCode:
+                "node_lifecycle_runner_must_author_worker_prompt_through_native_text_model_turn",
+            }),
+            expect.objectContaining({
+              checkId: "node_agent_session_treats_sessions_yield_as_nonterminal_wait",
+              reasonCode:
+                "node_agent_session_must_not_terminalize_native_subagent_wait_as_missing_node_finish",
+            }),
+            expect.objectContaining({
+              checkId: "node_agent_session_builds_bounded_runtime_trace",
+              reasonCode:
+                "native_node_agent_session_must_emit_bounded_trace_refs_for_plan_subagent_edit_validation_finish_optics",
+            }),
+            expect.objectContaining({
+              checkId: "gateway_attaches_bounded_node_agent_session_trace_artifact",
+              reasonCode:
+                "gateway_must_attach_node_agent_session_trace_artifacts_for_runtime_readback_without_raw_transcripts",
+            }),
+            expect.objectContaining({
+              checkId: "gateway_attaches_node_agent_start_receipt_artifact",
+              reasonCode: "gateway_must_attach_node_agent_start_receipts_for_native_start_readback",
+            }),
+            expect.objectContaining({
+              checkId: "runtime_artifact_contracts_require_node_agent_start_receipt_payload",
+              reasonCode:
+                "node_agent_start_receipt_artifact_must_be_manifest_backed_and_rehydratable_by_contract",
+            }),
+            expect.objectContaining({
+              checkId: "active_graph_readback_projects_node_agent_start_receipt",
+              reasonCode: "work_queue_readback_must_project_bounded_native_node_start_receipts",
+            }),
+            expect.objectContaining({
+              checkId: "canonical_readback_projects_node_agent_start_receipt",
+              reasonCode:
+                "canonical_readback_must_project_typed_node_start_receipts_without_generic_collapse",
+            }),
+            expect.objectContaining({
+              checkId: "boundary_replay_uses_runner_owned_fresh_attempt_reset",
+              reasonCode:
+                "boundary_replay_must_use_runner_owned_fresh_attempt_reset_not_hand_patch_node_session_fields",
+            }),
+            expect.objectContaining({
+              checkId: "native_session_write_lock_returns_typed_acquisition_trace",
+              reasonCode:
+                "openclaw_session_lock_acquisition_must_emit_typed_trace_for_node_lifecycle_projection",
+            }),
+            expect.objectContaining({
+              checkId: "runtime_artifact_contracts_require_node_agent_session_trace_payload",
+              reasonCode:
+                "node_agent_session_trace_artifact_must_be_manifest_backed_and_rehydratable_by_contract",
+            }),
+            expect.objectContaining({
+              checkId: "active_graph_readback_projects_node_agent_session_trace",
+              reasonCode:
+                "work_queue_readback_must_project_bounded_native_node_agent_session_optics",
+            }),
+          ]),
+        );
+      },
+    );
+  });
+
+  it("fails if SchedulerGraphPatch compiler emits runtime graph node ids", () => {
+    withTempRepo(
+      {
+        "extensions/execution-platform/src/workflows/scheduler-graph-patch.ts": [
+          "type SchedulerGraphPatchNodeSeed = { runtimeNodeId: string };",
+          "const runtimeNodeIdBySeedId = new Map();",
+          "function tailRuntimeNodeId() { return 'node-mission-validation'; }",
+        ].join("\n"),
+      },
+      (repoRoot) => {
+        const report = runArchitectureResidueSourceInventory({ repoRoot });
+
+        expect(report.status).toBe("failed");
+        expect(report.hardFailures).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({
+              checkId: "scheduler_graph_patch_compiler_no_runtime_identity",
+              reasonCode:
+                "scheduler_graph_patch_compiler_must_emit_semantic_seed_ids_runtime_persistence_owns_node_ids",
+            }),
+          ]),
+        );
+      },
+    );
+  });
+
+  it("fails if retired intake authoring or mission-ledger prework gates return", () => {
+    withTempRepo(
+      {
+        "extensions/execution-platform/src/model-tasks/model-task-classification.ts": [
+          "const callSite = 'mission_ledger.production_single_pass';",
+          "const boundary = 'obligation_semantic_content';",
+          "const repair = 'obligation.targeted_normalization';",
+        ].join("\n"),
+        "extensions/execution-platform/src/workflows/scheduler-runtime-tools.ts":
+          'export const tool = "scheduler.mission_ledger_readiness";',
+        "extensions/execution-platform/src/workflows/runtime-work-graph-scheduler.ts": [
+          "function evaluateMissionLedgerBeforeWork() {}",
+          '"mission_contract_ledger_required_for_execution_workflow"',
+          "missionLedgerSummary: input.missionLedger\n        ? summarizeMissionContractLedger(input.missionLedger)\n        : null,\n      requirementMap",
+        ].join("\n"),
+        "extensions/execution-platform/src/workflows/scheduler-stage-runner.ts":
+          "type SchedulerStageRunInput = { missionLedgerSummary: unknown };",
+        "extensions/execution-platform/src/workflows/intake-stage-runner.ts":
+          "const missionLedger = { authoring: true };",
+        "extensions/execution-platform/src/workflows/workflow-plugin.ts":
+          "type Policy = { requireMissionLedgerForExecutionWorkflow: boolean };",
+        "extensions/execution-platform/src/codex-bridge/dynamic-agent-team-graph-runner.ts":
+          "const missionLedgerMode = 'production_single_pass';",
+        "extensions/execution-platform/src/runtime-artifact-contracts.ts":
+          'payloadContract({ artifactType: "execution_platform.discovery_brief_set", bodySchemaRef: "DiscoveryBriefSet" });',
+      },
+      (repoRoot) => {
+        const report = runArchitectureResidueSourceInventory({ repoRoot });
+
+        expect(report.status).toBe("failed");
+        expect(report.hardFailures).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({
+              checkId: "model_task_registers_retired_intake_authoring_boundaries",
+              reasonCode: "retired_intake_authoring_model_task_boundary_blocked",
+            }),
+            expect.objectContaining({
+              checkId: "scheduler_runtime_tools_no_mission_ledger_readiness",
+              reasonCode: "scheduler_mission_ledger_prework_readiness_tool_blocked",
+            }),
+            expect.objectContaining({
+              checkId: "scheduler_no_mission_ledger_prework_gate",
+              reasonCode: "scheduler_must_not_gate_prework_on_mission_ledger",
+            }),
+            expect.objectContaining({
+              checkId: "scheduler_stage_runner_no_mission_ledger_inputs",
+              reasonCode:
+                "scheduler_stage_runner_must_not_consume_mission_ledger_before_scheduling",
+            }),
+            expect.objectContaining({
+              checkId: "intake_runner_no_mission_ledger_authoring_or_persistence",
+              reasonCode:
+                "intake_runner_must_not_author_or_persist_mission_ledger_before_scheduling",
+            }),
+            expect.objectContaining({
+              checkId: "workflow_plugins_no_mission_ledger_required_toggle",
+              reasonCode: "workflow_plugin_mission_ledger_required_toggle_blocked",
+            }),
+            expect.objectContaining({
+              checkId: "dynamic_runner_no_retired_mission_ledger_authoring_mode",
+              reasonCode: "dynamic_runner_retired_mission_ledger_authoring_mode_blocked",
+            }),
+            expect.objectContaining({
+              checkId: "runtime_artifact_contract_registers_retired_intake_products",
+              reasonCode: "runtime_artifact_contract_must_not_register_retired_intake_products",
             }),
           ]),
         );
@@ -263,8 +761,7 @@ describe("architecture residue source inventory", () => {
             }),
             expect.objectContaining({
               checkId: "superstep_reason_code_validation_escalation_deleted",
-              reasonCode:
-                "superstep_must_not_infer_validation_or_escalation_from_reason_code_bags",
+              reasonCode: "superstep_must_not_infer_validation_or_escalation_from_reason_code_bags",
             }),
           ]),
         );
@@ -314,8 +811,10 @@ describe("architecture residue source inventory", () => {
   it("fails when exact source guard survivors exceed their cap", () => {
     withTempRepo(
       {
-        "extensions/execution-platform/src/work-queue/execution-read-model.ts":
-          Array.from({ length: 12 }, () => "contextSynthesis").join("\n"),
+        "extensions/execution-platform/src/work-queue/execution-read-model.ts": Array.from(
+          { length: 12 },
+          () => "contextSynthesis",
+        ).join("\n"),
       },
       (repoRoot) => {
         const report = runArchitectureResidueSourceInventory({ repoRoot });
@@ -375,7 +874,8 @@ describe("architecture residue source inventory", () => {
     const manifest = buildArchitectureResidueSourceInventoryManifest({
       report,
       reportJson,
-      fullReportRef: "artifact://execution-platform/architecture-residue-source-inventory/report.json",
+      fullReportRef:
+        "artifact://execution-platform/architecture-residue-source-inventory/report.json",
     });
 
     expect(JSON.stringify(manifest).length).toBeLessThan(32 * 1024);

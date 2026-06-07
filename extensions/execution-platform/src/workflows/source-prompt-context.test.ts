@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  buildSourcePromptContextIndex,
+  buildSourcePromptArtifact,
   fulfillSourcePromptExcerptRequest,
   normalizeSourcePromptExcerptRequests,
 } from "./source-prompt-context.ts";
@@ -16,40 +16,30 @@ const resolution = {
 };
 
 describe("source prompt context", () => {
-  it("builds a bounded section index without raw prompt storage", () => {
-    const index = buildSourcePromptContextIndex({
-      promptText: [
-        "Goal:\nImplement the Product/Spec Planning workflow.",
-        "Requirements:\nAdd workflow registry, planning capsule, validation, readback.",
-      ].join("\n\n"),
+  it("builds a source prompt artifact as bounded addressing, not semantic sectioning", () => {
+    const artifact = buildSourcePromptArtifact({
+      promptText: "Implement a workflow.\n\nValidate it with runtime evidence.",
       resolution,
     });
 
-    expect(index.artifactKind).toBe("source_prompt_context_index");
-    expect(index.sections.length).toBeGreaterThan(0);
-    expect(index.sections[0]?.sectionRef).toContain("source-prompt://");
-    expect(index.rawPromptStored).toBe(false);
-    expect(index.rawResponseStored).toBe(false);
-    expect(index.rawProviderLogStored).toBe(false);
-    expect(index.sections[0]?.boundedSummary).toContain("Goal");
-    expect(index.contextSnapshotRefs.length).toBeGreaterThan(0);
-    expect(index.contextSnapshotRefs[0]).toMatchObject({
-      artifactKind: "context_snapshot_ref",
-      sourceKind: "source_prompt_index",
-      freshnessStatus: "fresh",
-      sourcePromptHash: "abc123",
-    });
+    expect(artifact.artifactKind).toBe("source_prompt_artifact");
+    expect(artifact.sourcePromptBodyRef).toBe("source-prompt://abc123/body");
+    expect(artifact.boundedPreview).toContain("Implement a workflow");
+    expect("sections" in artifact).toBe(false);
+    expect(artifact.rawPromptStored).toBe(false);
+    expect(artifact.rawResponseStored).toBe(false);
+    expect(artifact.rawProviderLogStored).toBe(false);
   });
 
   it("normalizes excerpt requests and fulfills bounded excerpts as volatile input only", () => {
     const promptText = "Goal:\n".concat("Implement robust worker handoffs. ".repeat(60));
-    const index = buildSourcePromptContextIndex({ promptText, resolution });
+    const artifact = buildSourcePromptArtifact({ promptText, resolution });
     const [request] = normalizeSourcePromptExcerptRequests({
       sourcePromptExcerptRequests: [
         {
           requestId: "req-1",
           commitmentId: "commitment-1",
-          sectionRef: index.sections[0]?.sectionRef,
+          sourcePromptBodyRef: artifact.sourcePromptBodyRef,
           reason: "Need exact owner wording for implementation handoff.",
           maxChars: 500,
           downstreamConsumer: "implementation_worker",
@@ -60,7 +50,7 @@ describe("source prompt context", () => {
       ],
     });
 
-    const result = fulfillSourcePromptExcerptRequest({ index, promptText, request: request! });
+    const result = fulfillSourcePromptExcerptRequest({ artifact, promptText, request: request! });
     expect(result.decision.status).toBe("provided");
     expect(result.decision.excerptHash).toMatch(/[a-f0-9]{64}/u);
     expect(result.volatileExcerptText).toContain("Implement robust worker handoffs");
@@ -73,8 +63,8 @@ describe("source prompt context", () => {
     expect(result.decision.rawPromptStored).toBe(false);
   });
 
-  it("denies excerpt requests for unresolved prompt refs", () => {
-    const index = buildSourcePromptContextIndex({
+  it("denies excerpt requests for unresolved prompt body refs", () => {
+    const artifact = buildSourcePromptArtifact({
       promptText: null,
       resolution: {
         ...resolution,
@@ -88,10 +78,10 @@ describe("source prompt context", () => {
         {
           requestId: "req-2",
           commitmentId: "commitment-2",
-          sectionRef: "source-prompt://missing/section-001/0-10",
+          sourcePromptBodyRef: "source-prompt://missing/body",
           reason: "Need unavailable context.",
           maxChars: 500,
-          downstreamConsumer: "resource_scout",
+          downstreamConsumer: "context_scout",
           rawPromptStored: false,
           rawResponseStored: false,
           rawProviderLogStored: false,
@@ -100,13 +90,13 @@ describe("source prompt context", () => {
     });
 
     const result = fulfillSourcePromptExcerptRequest({
-      index,
+      artifact,
       promptText: null,
       request: request!,
     });
     expect(result.decision.status).toBe("denied");
     expect(result.volatileExcerptText).toBeNull();
-    expect(result.decision.reasonCodes).toContain("source_prompt_excerpt_section_unavailable");
+    expect(result.decision.reasonCodes).toContain("source_prompt_excerpt_body_unavailable");
     expect(result.decision.contextSnapshotRefs[0]).toMatchObject({
       sourceKind: "source_prompt_excerpt",
       freshnessStatus: "missing",

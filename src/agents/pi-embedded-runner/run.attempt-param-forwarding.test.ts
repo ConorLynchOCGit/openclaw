@@ -1,5 +1,6 @@
 import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { AgentInternalEvent } from "../internal-events.js";
+import { jsonResult } from "../tools/common.js";
 import { makeAttemptResult } from "./run.overflow-compaction.fixture.js";
 import {
   loadRunOverflowCompactionHarness,
@@ -18,12 +19,35 @@ type ForwardingCase = {
 
 let runEmbeddedPiAgent: typeof import("./run.js").runEmbeddedPiAgent;
 const internalEvents: AgentInternalEvent[] = [];
+const onSessionLockAcquired = async () => {};
 const forwardingCases = [
   {
     name: "forwards toolsAllow so the per-job tool allowlist can be honored",
     runId: "forward-toolsAllow",
     params: { toolsAllow: ["exec", "read"] },
     expected: { toolsAllow: ["exec", "read"] },
+  },
+  {
+    name: "forwards nativeRuntimeTools so node sessions add lifecycle tools through the canonical OpenClaw surface",
+    runId: "forward-nativeRuntimeTools",
+    params: {
+      nativeRuntimeTools: [
+        {
+          name: "node_finish",
+          label: "Finish node",
+          description: "Finish node",
+          parameters: { type: "object", properties: {} },
+          execute: async () => jsonResult({ accepted: true }),
+        },
+      ],
+    },
+    expected: {
+      nativeRuntimeTools: [
+        expect.objectContaining({
+          name: "node_finish",
+        }),
+      ],
+    },
   },
   {
     name: "forwards bootstrapContextMode so lightContext cron jobs strip workspace bootstrap files",
@@ -36,6 +60,31 @@ const forwardingCases = [
     runId: "forward-bootstrapContextRunKind",
     params: { bootstrapContextRunKind: "cron" },
     expected: { bootstrapContextRunKind: "cron" },
+  },
+  {
+    name: "forwards skillsSnapshot so node sessions can receive active required skills",
+    runId: "forward-skillsSnapshot",
+    params: {
+      skillsSnapshot: {
+        prompt:
+          '<active_skills><active_skill name="execution-node-workflow">active</active_skill></active_skills>',
+        skills: [{ name: "execution-node-workflow" }],
+        skillFilter: ["execution-node-workflow"],
+        version: 1,
+      },
+    },
+    expected: {
+      skillsSnapshot: expect.objectContaining({
+        prompt: expect.stringContaining("<active_skills>"),
+        skillFilter: ["execution-node-workflow"],
+      }),
+    },
+  },
+  {
+    name: "forwards allowGatewaySubagentBinding so node sessions expose native scouts",
+    runId: "forward-allowGatewaySubagentBinding",
+    params: { allowGatewaySubagentBinding: true },
+    expected: { allowGatewaySubagentBinding: true },
   },
   {
     name: "forwards disableMessageTool so cron-owned delivery suppresses the messaging tool",
@@ -54,6 +103,12 @@ const forwardingCases = [
     runId: "forward-internalEvents",
     params: { internalEvents },
     expected: { internalEvents },
+  },
+  {
+    name: "forwards onSessionLockAcquired so node starts can record native lock traces",
+    runId: "forward-onSessionLockAcquired",
+    params: { onSessionLockAcquired },
+    expected: { onSessionLockAcquired },
   },
 ] satisfies ForwardingCase[];
 

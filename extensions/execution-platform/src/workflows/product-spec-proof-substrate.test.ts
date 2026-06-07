@@ -63,7 +63,8 @@ describe("Product/Spec proof substrate", () => {
         ...codingExecutorTargetSubjectFamily,
         proofSourceKind: PRODUCT_SPEC_RUNTIME_BOUNDARY_REPLAY_PROOF_SOURCE,
         proofRunId: "proof-run-current",
-        proofRunManifestRef: ".artifacts/execution-platform/proof-runs/proof-run-current/manifest.json",
+        proofRunManifestRef:
+          ".artifacts/execution-platform/proof-runs/proof-run-current/manifest.json",
         runtimeJobId: "native-exec-current",
         graphId: "runtime-graph-current",
         sourceTopologyStatus: "production_node_local_topology",
@@ -78,9 +79,11 @@ describe("Product/Spec proof substrate", () => {
       classifyProductSpecProofSource({
         proofSourceKind: PRODUCT_SPEC_RUNTIME_BOUNDARY_REPLAY_PROOF_SOURCE,
         proofRunId: "proof-run-current",
-        proofRunManifestRef: ".artifacts/execution-platform/proof-runs/proof-run-current/manifest.json",
+        proofRunManifestRef:
+          ".artifacts/execution-platform/proof-runs/proof-run-current/manifest.json",
         runtimeJobId: "product-spec-replay-mpl69vto",
-        graphId: "team-run-native-exec-12fa6ecec70ecb9a-checkpoint-replay-mpl69vtn-runtime-work-graph",
+        graphId:
+          "team-run-native-exec-12fa6ecec70ecb9a-checkpoint-replay-mpl69vtn-runtime-work-graph",
       }),
     ).toBe("stale_retired_topology_negative_fixture");
   });
@@ -90,12 +93,13 @@ describe("Product/Spec proof substrate", () => {
       classifyProductSpecProofSource({
         proofSourceKind: PRODUCT_SPEC_RUNTIME_BOUNDARY_REPLAY_PROOF_SOURCE,
         proofRunId: "proof-run-current",
-        proofRunManifestRef: ".artifacts/execution-platform/proof-runs/proof-run-current/manifest.json",
+        proofRunManifestRef:
+          ".artifacts/execution-platform/proof-runs/proof-run-current/manifest.json",
         runtimeJobId: "native-exec-current",
         graphId: "runtime-graph-current",
         afterGraph: {
           nodes: [
-            { nodeId: "context-1", nodeKind: "resource_scout" },
+            { nodeId: "context-1", nodeKind: "context_scout" },
             { nodeId: "impl-1", nodeKind: "implementation_microtask" },
           ],
           edges: [{ fromNodeId: "context-1", toNodeId: "impl-1", edgeKind: "context_supplies" }],
@@ -111,9 +115,7 @@ describe("Product/Spec proof substrate", () => {
       proofRunManifestRef: ".artifacts/execution-platform/product-spec-boundary-replay-result.json",
       runtimeJobId: "native-exec-current",
       graphId: "runtime-graph-current",
-      proofArtifactRefs: [
-        ".artifacts/execution-platform/product-spec-boundary-replay-result.json",
-      ],
+      proofArtifactRefs: [".artifacts/execution-platform/product-spec-boundary-replay-result.json"],
     });
 
     expect(gate.status).toBe("failed");
@@ -131,7 +133,8 @@ describe("Product/Spec proof substrate", () => {
       ...codingExecutorTargetSubjectFamily,
       proofSourceKind: PRODUCT_SPEC_RUNTIME_BOUNDARY_REPLAY_PROOF_SOURCE,
       proofRunId: "proof-run-current",
-      proofRunManifestRef: ".artifacts/execution-platform/proof-runs/proof-run-current/manifest.json",
+      proofRunManifestRef:
+        ".artifacts/execution-platform/proof-runs/proof-run-current/manifest.json",
       runtimeJobId: "native-exec-current",
       graphId: "runtime-graph-current",
       sourceTopologyStatus: "production_node_local_topology",
@@ -152,7 +155,8 @@ describe("Product/Spec proof substrate", () => {
       ...codingExecutorTargetSubjectFamily,
       proofSourceKind: PRODUCT_SPEC_RUNTIME_BOUNDARY_REPLAY_PROOF_SOURCE,
       proofRunId: "proof-run-current",
-      proofRunManifestRef: ".artifacts/execution-platform/proof-runs/proof-run-current/manifest.json",
+      proofRunManifestRef:
+        ".artifacts/execution-platform/proof-runs/proof-run-current/manifest.json",
       runtimeJobId: "native-exec-current",
       graphId: "runtime-graph-current",
       sourceTopologyStatus: "production_node_local_topology",
@@ -164,9 +168,13 @@ describe("Product/Spec proof substrate", () => {
       ],
       observedLifecycleGates: [
         "proof_family_gate",
-        "worker_context_request",
-        "resource_demand",
-        "resource_ledger",
+        "node_agent_session",
+        "update_plan",
+        "context_scout_spawn",
+        "sessions_yield",
+        "parent_synthesis",
+        "source_grounding",
+        "source_material",
         "domain_resource_selection",
         "domain_action_gate",
         "worker_action",
@@ -175,7 +183,9 @@ describe("Product/Spec proof substrate", () => {
         "review",
         "closeout",
       ],
-      changedFileRefs: ["repo://extensions/execution-platform/src/workflows/workflow-evidence-profile.ts"],
+      changedFileRefs: [
+        "repo://extensions/execution-platform/src/workflows/workflow-evidence-profile.ts",
+      ],
       validationRefs: ["validation://product-spec-framework-coding-proof"],
       workerResultRefs: ["worker-result://product-spec-framework-contract"],
       evidenceClaimRefs: ["evidence://product-spec-framework-contract"],
@@ -235,10 +245,7 @@ describe("Product/Spec proof substrate", () => {
 
     expect(gate.status).toBe("failed");
     expect(gate.reasonCodes).toEqual(
-      expect.arrayContaining([
-        "proof_closure_predicate_not_admitted",
-        "proof_closure_not_allowed",
-      ]),
+      expect.arrayContaining(["proof_closure_predicate_not_admitted", "proof_closure_not_allowed"]),
     );
   });
 
@@ -292,9 +299,7 @@ describe("Product/Spec proof substrate", () => {
       evidenceClaimRefs: ["evidence://claim"],
     });
 
-    expect(manifest.proofSourceClassification).toBe(
-      "fresh_product_spec_runtime_boundary_replay",
-    );
+    expect(manifest.proofSourceClassification).toBe("fresh_product_spec_runtime_boundary_replay");
     expect(manifest.boundaryCheckpointRefs).toHaveLength(40);
     expect(manifest.proofRunManifestRef).toBe(
       ".artifacts/execution-platform/proof-runs/proof-run-current/manifest.json",

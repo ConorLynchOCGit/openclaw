@@ -1,3 +1,4 @@
+import type { AgentMessage } from "@mariozechner/pi-agent-core";
 import { streamSimple } from "@mariozechner/pi-ai";
 import { describe, expect, it, vi } from "vitest";
 import type { OpenClawConfig } from "../../../config/config.js";
@@ -8,8 +9,13 @@ import {
   buildAfterTurnRuntimeContext,
   composeSystemPromptWithHookContext,
   decodeHtmlEntitiesInObject,
+  filterEffectiveToolsForNodeAgentNativeTaskMode,
+  hasDeliveredNativeTaskResultAwaitingParentTurn,
+  isDeliveredNativeTaskToolResult,
   mergeOrphanedTrailingUserPrompt,
+  NATIVE_TASK_RESULT_AWAITING_PARENT_CONTEXT_REASON,
   prependSystemPromptAddition,
+  prependSystemPromptAdditionReplacingNativeWorkingContext,
   resetEmbeddedAgentBaseStreamFnCacheForTest,
   resolveEmbeddedAgentBaseStreamFn,
   resolveAttemptFsWorkspaceOnly,
@@ -127,6 +133,139 @@ describe("resolvePromptBuildHookResult", () => {
     expect(result.prependContext).toBe("prompt context\n\nlegacy context");
     expect(result.prependSystemContext).toBe("prompt prepend\n\nlegacy prepend");
     expect(result.appendSystemContext).toBe("prompt append\n\nlegacy append");
+  });
+});
+
+describe("filterEffectiveToolsForNodeAgentNativeTaskMode", () => {
+  it("filters bundle MCP/LSP tools after final effective-tool materialization", () => {
+    const tools = filterEffectiveToolsForNodeAgentNativeTaskMode({
+      mode: { enabled: true, mutationToolName: "edit" },
+      tools: [
+        { name: "update_plan" },
+        { name: "read_todo" },
+        { name: "task" },
+        { name: "edit" },
+        { name: "node_finish" },
+        { name: "openclaw_resource_read" },
+        { name: "lsp_workspace_symbols" },
+        { name: "bundle_mcp_search" },
+        { name: "read" },
+        { name: "exec" },
+      ],
+    });
+
+    expect(tools.map((tool) => tool.name)).toEqual([
+      "update_plan",
+      "read_todo",
+      "task",
+      "edit",
+      "node_finish",
+      "openclaw_resource_read",
+    ]);
+  });
+
+  it("does not filter ordinary sessions", () => {
+    const tools = filterEffectiveToolsForNodeAgentNativeTaskMode({
+      tools: [{ name: "read" }, { name: "exec" }],
+    });
+
+    expect(tools.map((tool) => tool.name)).toEqual(["read", "exec"]);
+  });
+});
+
+describe("native task result parent-context preservation", () => {
+  function makeAssistantMessage(text: string): AgentMessage {
+    return {
+      role: "assistant",
+      content: [{ type: "text", text }],
+      timestamp: Date.now(),
+    } as AgentMessage;
+  }
+
+  function makeToolResultMessage(params: {
+    toolName: string;
+    details?: Record<string, unknown>;
+  }): AgentMessage {
+    return {
+      role: "toolResult",
+      toolName: params.toolName,
+      toolCallId: "call_task",
+      content: [{ type: "text", text: "Task result from execution-context-scout.\n\nsource" }],
+      isError: false,
+      details: params.details,
+      timestamp: Date.now(),
+    } as AgentMessage;
+  }
+
+  it("detects delivered native task results that contain parent-visible source context", () => {
+    const delivered = makeToolResultMessage({
+      toolName: "task",
+      details: {
+        status: "completed",
+        resultDeliveredToParentContext: true,
+        resultOversized: false,
+      },
+    });
+
+    expect(isDeliveredNativeTaskToolResult(delivered)).toBe(true);
+    expect(NATIVE_TASK_RESULT_AWAITING_PARENT_CONTEXT_REASON).toBe(
+      "native_task_result_awaiting_parent_context",
+    );
+  });
+
+  it("treats a delivered native task result as awaiting parent synthesis until the next assistant turn", () => {
+    const delivered = makeToolResultMessage({
+      toolName: "task",
+      details: {
+        status: "completed",
+        resultDeliveredToParentContext: true,
+        resultOversized: false,
+      },
+    });
+
+    expect(
+      hasDeliveredNativeTaskResultAwaitingParentTurn([
+        makeAssistantMessage("delegating"),
+        delivered,
+        makeToolResultMessage({ toolName: "update_plan" }),
+      ]),
+    ).toBe(true);
+
+    expect(
+      hasDeliveredNativeTaskResultAwaitingParentTurn([
+        makeAssistantMessage("delegating"),
+        delivered,
+        makeAssistantMessage("I can now synthesize this scout result."),
+      ]),
+    ).toBe(false);
+  });
+
+  it("does not protect oversized or non-task tool results as delivered scout context", () => {
+    expect(
+      hasDeliveredNativeTaskResultAwaitingParentTurn([
+        makeToolResultMessage({
+          toolName: "task",
+          details: {
+            status: "error",
+            resultDeliveredToParentContext: false,
+            resultOversized: true,
+          },
+        }),
+      ]),
+    ).toBe(false);
+
+    expect(
+      hasDeliveredNativeTaskResultAwaitingParentTurn([
+        makeToolResultMessage({
+          toolName: "read",
+          details: {
+            status: "completed",
+            resultDeliveredToParentContext: true,
+            resultOversized: false,
+          },
+        }),
+      ]),
+    ).toBe(false);
   });
 });
 
@@ -444,9 +583,7 @@ describe("resolveUnknownToolGuardThreshold", () => {
   it("falls back to the default threshold when the override is non-positive", () => {
     expect(resolveUnknownToolGuardThreshold({ unknownToolThreshold: 0 })).toBe(10);
     expect(resolveUnknownToolGuardThreshold({ unknownToolThreshold: -5 })).toBe(10);
-    expect(
-      resolveUnknownToolGuardThreshold({ unknownToolThreshold: Number.NaN }),
-    ).toBe(10);
+    expect(resolveUnknownToolGuardThreshold({ unknownToolThreshold: Number.NaN })).toBe(10);
   });
 
   it("floors fractional overrides", () => {
@@ -1739,9 +1876,11 @@ describe("wrapStreamFnSanitizeMalformedToolCalls", () => {
     );
 
     const wrapped = wrapStreamFnSanitizeMalformedToolCalls(baseFn as never, new Set(["read"]));
-    const stream = wrapped({ api: "google-gemini" } as never, { messages } as never, {} as never) as
-      | FakeWrappedStream
-      | Promise<FakeWrappedStream>;
+    const stream = wrapped(
+      { api: "google-gemini" } as never,
+      { messages } as never,
+      {} as never,
+    ) as FakeWrappedStream | Promise<FakeWrappedStream>;
     await Promise.resolve(stream);
 
     expect(baseFn).toHaveBeenCalledTimes(1);
@@ -2758,6 +2897,30 @@ describe("prependSystemPromptAddition", () => {
     });
 
     expect(result).toBe("base system");
+  });
+
+  it("replaces stale native working context instead of appending another file graph block", () => {
+    const oldWorkingContext = [
+      "<openclaw_native_working_context>",
+      "## OpenClaw Native Working Context",
+      "file_graph: old.ts -> stale.ts",
+      "</openclaw_native_working_context>",
+    ].join("\n");
+    const nextWorkingContext = [
+      "<openclaw_native_working_context>",
+      "## OpenClaw Native Working Context",
+      "file_graph: current.ts -> target.ts",
+      "</openclaw_native_working_context>",
+    ].join("\n");
+
+    const result = prependSystemPromptAdditionReplacingNativeWorkingContext({
+      systemPrompt: `${oldWorkingContext}\n\nbase system`,
+      systemPromptAddition: nextWorkingContext,
+    });
+
+    expect(result).toContain("file_graph: current.ts -> target.ts");
+    expect(result).not.toContain("file_graph: old.ts -> stale.ts");
+    expect(result.match(/<openclaw_native_working_context>/g)).toHaveLength(1);
   });
 });
 

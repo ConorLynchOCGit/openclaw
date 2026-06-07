@@ -323,7 +323,7 @@ describe("runtime worker supervisor", () => {
     });
   });
 
-  it("classifies resource materialization split boundaries without unclassified adapter errors", async () => {
+  it("does not preserve retired resource materialization as a special adapter failure class", async () => {
     await withRepository(async (repository) => {
       await repository.enqueueJob({
         jobId: "job-supervisor-resource-boundary",
@@ -349,21 +349,20 @@ describe("runtime worker supervisor", () => {
       });
 
       expect(result).toMatchObject({
-        status: "needs_review",
-        reasonCodes: [
-          "worker_adapter_threw",
-          "worker_adapter_threw:resource_materialization_boundary",
-          "worker_adapter_failure_terminalized_needs_review",
-        ],
+        status: "failed",
+        reasonCodes: ["worker_adapter_threw", "worker_adapter_threw:unclassified"],
       });
-      expect(result.reasonCodes).not.toContain("worker_adapter_threw:unclassified");
+      expect(result.reasonCodes).not.toContain(
+        "worker_adapter_threw:resource_materialization_boundary",
+      );
+      expect(result.reasonCodes).not.toContain("worker_adapter_failure_terminalized_needs_review");
     });
   });
 
   it("preserves runtime needs-review reason codes without generic worker_adapter_threw", async () => {
     await withRepository(async (repository) => {
       await repository.enqueueJob({
-        jobId: "job-supervisor-obligation-stage-blocked",
+        jobId: "job-supervisor-requirement-map-blocked",
         jobType: "executor.agent_team",
         maxAttempts: 1,
       });
@@ -375,14 +374,16 @@ describe("runtime worker supervisor", () => {
             adapterId: "worker.acp-codex.coding",
             jobTypes: ["executor.agent_team"],
             execute: async () => {
-              const error = new Error("obligation_graph_authoring_blocked:commitment-002") as Error & {
+              const error = new Error(
+                "requirement_map_authoring_blocked:requirement-002",
+              ) as Error & {
                 runtimeNeedsReviewReasonCodes: string[];
               };
               error.runtimeNeedsReviewReasonCodes = [
-                "obligation_graph_authoring_blocked",
-                "obligation_graph_missing_semantic_field",
+                "requirement_map_authoring_blocked",
+                "requirement_map_missing_semantic_field",
                 "missing_field:evidenceExpectation",
-                "blocked_commitment:commitment-002",
+                "blocked_requirement:requirement-002",
               ];
               throw error;
             },
@@ -391,30 +392,32 @@ describe("runtime worker supervisor", () => {
       });
 
       const result = await supervisor.runOnce({
-        runtimeJobId: "job-supervisor-obligation-stage-blocked",
+        runtimeJobId: "job-supervisor-requirement-map-blocked",
       });
 
       expect(result).toMatchObject({
         status: "needs_review",
         reasonCodes: [
-          "obligation_graph_authoring_blocked",
-          "obligation_graph_missing_semantic_field",
+          "requirement_map_authoring_blocked",
+          "requirement_map_missing_semantic_field",
           "missing_field:evidenceExpectation",
-          "blocked_commitment:commitment-002",
+          "blocked_requirement:requirement-002",
           "worker_adapter_failure_terminalized_needs_review",
         ],
       });
       expect(result.reasonCodes).not.toContain("worker_adapter_threw");
       expect(result.reasonCodes).not.toContain("worker_adapter_threw:unclassified");
-      await expect(repository.getJob("job-supervisor-obligation-stage-blocked")).resolves.toMatchObject({
+      await expect(
+        repository.getJob("job-supervisor-requirement-map-blocked"),
+      ).resolves.toMatchObject({
         state: "failed",
         result: {
           status: "needs_review",
           reasonCodes: [
-            "obligation_graph_authoring_blocked",
-            "obligation_graph_missing_semantic_field",
+            "requirement_map_authoring_blocked",
+            "requirement_map_missing_semantic_field",
             "missing_field:evidenceExpectation",
-            "blocked_commitment:commitment-002",
+            "blocked_requirement:requirement-002",
           ],
           retryScheduled: false,
         },

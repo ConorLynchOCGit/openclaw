@@ -9,11 +9,14 @@ import type { InputProvenance } from "../../../sessions/input-provenance.js";
 import type { ExecElevatedDefaults, ExecToolDefaults } from "../../bash-tools.exec-types.js";
 import type { AgentStreamParams, ClientToolDefinition } from "../../command/shared-types.js";
 import type { AgentInternalEvent } from "../../internal-events.js";
+import type { OpenClawNodeAuthorityOverlay } from "../../node-authority-overlay.js";
 import type { BlockReplyPayload } from "../../pi-embedded-payloads.js";
 import type {
   BlockReplyChunking,
   ToolResultFormat,
 } from "../../pi-embedded-subscribe.shared-types.js";
+import type { AnyAgentTool } from "../../pi-tools.types.js";
+import type { SessionLockAcquisitionTrace } from "../../session-write-lock.js";
 import type { SkillSnapshot } from "../../skills.js";
 export type { ClientToolDefinition } from "../../command/shared-types.js";
 
@@ -93,6 +96,28 @@ export type RunEmbeddedPiAgentParams = {
   bootstrapContextRunKind?: "default" | "heartbeat" | "cron";
   /** Optional tool allow-list; when set, only these tools are sent to the model. */
   toolsAllow?: string[];
+  /** Additional caller-owned tools sent through the normal OpenClaw tool pipeline. */
+  extraTools?: AnyAgentTool[];
+  /**
+   * Native runtime tools bound by the owning runner for this session.
+   *
+   * These tools are inserted into the canonical OpenClaw tool construction
+   * pipeline before policy filtering and inventory projection. Use this for
+   * session-scoped native tools such as node_finish and openclaw_resource_read,
+   * not for replay-only side channels.
+   */
+  nativeRuntimeTools?: AnyAgentTool[];
+  /** Optional node-scoped authority overlay that narrows native OpenClaw tools. */
+  nodeAuthorityOverlay?: OpenClawNodeAuthorityOverlay;
+  /** Optional OpenClaw-native guard for execution node parent crawl behavior. */
+  nodeAgentParentCrawlGuard?: { enabled: boolean };
+  /** Optional native task-only parent catalog mode for executable node sessions. */
+  nodeAgentNativeTaskMode?: {
+    enabled: boolean;
+    allowedAgentIds: readonly string[];
+    mutationToolName?: string;
+    parentVisibleResultMaxChars?: number;
+  };
   /** Seen bootstrap truncation warning signatures for this session (once mode dedupe). */
   bootstrapPromptWarningSignaturesSeen?: string[];
   /** Last shown bootstrap truncation warning signature for this session. */
@@ -115,6 +140,7 @@ export type RunEmbeddedPiAgentParams = {
   onReasoningEnd?: () => void | Promise<void>;
   onToolResult?: (payload: ReplyPayload) => void | Promise<void>;
   onAgentEvent?: (evt: { stream: string; data: Record<string, unknown> }) => void;
+  onSessionLockAcquired?: (trace: SessionLockAcquisitionTrace) => void | Promise<void>;
   lane?: string;
   enqueue?: CommandQueueEnqueueFn;
   extraSystemPrompt?: string;

@@ -72,6 +72,8 @@ export type AgentConfig = {
   default?: boolean;
   name?: string;
   workspace?: string;
+  /** Optional implementation/source root for coding/search/edit work. Distinct from runtime workspace/state. */
+  projectRoot?: string;
   agentDir?: string;
   /** Optional per-agent full system prompt replacement. */
   systemPromptOverride?: AgentDefaultsConfig["systemPromptOverride"];

@@ -66,17 +66,7 @@ export const SharedDomainActionGateKindSchema = z.enum([
 export type SharedDomainActionGateKind = z.infer<typeof SharedDomainActionGateKindSchema>;
 
 export const SharedDomainWorkerActionToolIdSchema = z.enum([
-  "worker.action.perform",
-  "worker.edit.plan",
-  "worker.validation.run_structural_default",
-  "worker.validation.record_result",
-  "worker.validation.request_repair",
-  "worker.validation.record_blocker",
-  "worker.escalation.request_high_capability",
-  "worker.escalation.execute_high_capability",
-  "worker.escalation.mark_unavailable",
-  "worker.evidence.claim_from_validation",
-  "mission.ledger.apply_evidence_claims",
+  "node.agent_session.invoke",
   "planning.intent.record",
   "planning.framework_contract.record",
   "planning.research.request_brief",
@@ -86,13 +76,8 @@ export const SharedDomainWorkerActionToolIdSchema = z.enum([
   "planning.compile_readiness.evaluate",
   "planning.human_decision.request",
   "planning.closeout.summarize",
-  "resource.ledger.report_relevant_resource",
-  "resource.ledger.report_planning_action_point",
-  "resource.ledger.recommend_domain_validation",
 ]);
-export type SharedDomainWorkerActionToolId = z.infer<
-  typeof SharedDomainWorkerActionToolIdSchema
->;
+export type SharedDomainWorkerActionToolId = z.infer<typeof SharedDomainWorkerActionToolIdSchema>;
 
 export const SharedDomainLifecycleProfileSchema = z
   .object({
@@ -112,9 +97,7 @@ export const SharedDomainLifecycleProfileSchema = z
     rawProviderLogStored: z.literal(false),
   })
   .strict();
-export type SharedDomainLifecycleProfile = z.infer<
-  typeof SharedDomainLifecycleProfileSchema
->;
+export type SharedDomainLifecycleProfile = z.infer<typeof SharedDomainLifecycleProfileSchema>;
 
 export type SharedDomainCapabilityTraits = {
   workflowId: string;
@@ -197,15 +180,7 @@ export function buildSharedDomainResourceLifecycleProfile(
           "readback_gate",
           "closeout_gate",
         ],
-        workerActionToolIds: [
-          "worker.edit.plan",
-          "worker.validation.run_structural_default",
-          "worker.validation.record_result",
-          "worker.validation.request_repair",
-          "worker.escalation.request_high_capability",
-          "worker.evidence.claim_from_validation",
-          "mission.ledger.apply_evidence_claims",
-        ],
+        workerActionToolIds: ["node.agent_session.invoke"],
         evidenceKinds: [
           "source_change",
           "test_validation",
@@ -213,9 +188,9 @@ export function buildSharedDomainResourceLifecycleProfile(
           "docs",
           "readback",
           "closeout",
-          "resource_handoff",
+          "source_material",
         ],
-        requiredPacketKinds: ["coding_resource_packet", "node_execution_packet"],
+        requiredPacketKinds: [],
       };
     }
     if (profileId === "product_spec_planning") {
@@ -257,9 +232,6 @@ export function buildSharedDomainResourceLifecycleProfile(
           "planning.compile_readiness.evaluate",
           "planning.human_decision.request",
           "planning.closeout.summarize",
-          "resource.ledger.report_relevant_resource",
-          "resource.ledger.report_planning_action_point",
-          "resource.ledger.recommend_domain_validation",
         ],
         evidenceKinds: [
           "planning_intent",
@@ -271,9 +243,9 @@ export function buildSharedDomainResourceLifecycleProfile(
           "compile_readiness",
           "human_decision",
           "closeout",
-          "resource_handoff",
+          "source_material",
         ],
-        requiredPacketKinds: ["planning_domain_resource_packet", "node_execution_packet"],
+        requiredPacketKinds: [],
       };
     }
     if (profileId === "architecture_red_team") {
@@ -306,8 +278,6 @@ export function buildSharedDomainResourceLifecycleProfile(
           "planning.capsule.draft",
           "planning.action_graph.propose",
           "planning.closeout.summarize",
-          "resource.ledger.report_relevant_resource",
-          "resource.ledger.recommend_domain_validation",
         ],
         evidenceKinds: [
           "review",
@@ -316,20 +286,18 @@ export function buildSharedDomainResourceLifecycleProfile(
           "planning_capsule",
           "action_graph_proposal",
           "readback",
+          "source_material",
         ],
-        requiredPacketKinds: ["planning_domain_resource_packet", "node_execution_packet"],
+        requiredPacketKinds: [],
       };
     }
     if (profileId === "research") {
       return {
         resourceKinds: ["research_brief", "citation", "source_prompt_section", "memory_pack"],
         actionGateKinds: ["research_brief_gate", "read_only_resource_gate"],
-        workerActionToolIds: [
-          "planning.research.request_brief",
-          "resource.ledger.report_relevant_resource",
-        ],
-        evidenceKinds: ["research_brief", "resource_handoff"],
-        requiredPacketKinds: ["domain_resource_packet"],
+        workerActionToolIds: ["planning.research.request_brief"],
+        evidenceKinds: ["research_brief", "source_material"],
+        requiredPacketKinds: [],
       };
     }
     if (profileId === "human_decision") {
@@ -338,7 +306,7 @@ export function buildSharedDomainResourceLifecycleProfile(
         actionGateKinds: ["human_decision_gate"],
         workerActionToolIds: ["planning.human_decision.request"],
         evidenceKinds: ["human_decision"],
-        requiredPacketKinds: ["domain_resource_packet"],
+        requiredPacketKinds: [],
       };
     }
     if (profileId === "docs") {
@@ -351,21 +319,17 @@ export function buildSharedDomainResourceLifecycleProfile(
           "validation_result",
         ],
         actionGateKinds: ["docs_update_gate", "validation_gate", "closeout_gate"],
-        workerActionToolIds: [
-          "worker.action.perform",
-          "worker.validation.run_structural_default",
-          "worker.evidence.claim_from_validation",
-        ],
-        evidenceKinds: ["docs", "validation_result", "resource_handoff"],
-        requiredPacketKinds: ["domain_resource_packet", "node_execution_packet"],
+        workerActionToolIds: ["node.agent_session.invoke"],
+        evidenceKinds: ["docs", "validation_result", "source_material"],
+        requiredPacketKinds: [],
       };
     }
     return {
       resourceKinds: ["artifact", "source_prompt_section", "memory_pack"],
       actionGateKinds: ["read_only_resource_gate"],
-      workerActionToolIds: ["worker.action.perform", "resource.ledger.report_relevant_resource"],
-      evidenceKinds: ["artifact", "resource_handoff"],
-      requiredPacketKinds: ["domain_resource_packet"],
+      workerActionToolIds: [],
+      evidenceKinds: ["artifact", "source_material"],
+      requiredPacketKinds: [],
     };
   })();
 
@@ -459,25 +423,10 @@ export function sharedDomainWorkerActionToolIdsForCapabilityTraits(
 ): SharedDomainWorkerActionToolId[] {
   const tools: Array<SharedDomainWorkerActionToolId | null> = [];
   if (input.canEditSource || input.canWriteTests) {
-    tools.push(
-      "worker.edit.plan",
-      "worker.validation.run_structural_default",
-      "worker.validation.record_result",
-      "worker.validation.request_repair",
-      "worker.escalation.request_high_capability",
-      "worker.evidence.claim_from_validation",
-      "mission.ledger.apply_evidence_claims",
-    );
+    tools.push("node.agent_session.invoke");
   }
   if (input.canRunValidation && !input.canEditSource && !input.canWriteTests) {
-    tools.push(
-      "worker.validation.run_structural_default",
-      "worker.validation.record_result",
-      "worker.validation.request_repair",
-      "worker.validation.record_blocker",
-      "worker.evidence.claim_from_validation",
-      "mission.ledger.apply_evidence_claims",
-    );
+    tools.push("node.agent_session.invoke");
   }
   if (input.canDoWebResearch && input.roleClass !== "orchestration") {
     tools.push("planning.research.request_brief");
@@ -491,17 +440,17 @@ export function sharedDomainWorkerActionToolIdsForCapabilityTraits(
   if (input.canProposeChildActions && input.roleClass !== "orchestration") {
     tools.push("planning.action_graph.propose");
   }
-  if ((input.canRequestHumanInput && input.roleClass !== "orchestration") || input.roleClass === "human") {
+  if (
+    (input.canRequestHumanInput && input.roleClass !== "orchestration") ||
+    input.roleClass === "human"
+  ) {
     tools.push("planning.human_decision.request");
   }
   if (input.roleClass === "closeout") {
     tools.push("planning.closeout.summarize");
   }
-  if (input.roleClass === "planning" || input.roleClass === "research" || input.roleClass === "review") {
-    tools.push("resource.ledger.report_relevant_resource", "resource.ledger.recommend_domain_validation");
-  }
   if (tools.length === 0 && input.roleClass !== "orchestration") {
-    tools.push("worker.action.perform");
+    tools.push("node.agent_session.invoke");
   }
   return unique(tools, 32);
 }
@@ -539,17 +488,8 @@ export function sharedDomainEvidenceKindsForCapabilityTraits(
 export function sharedDomainRequiredPacketKindsForCapabilityTraits(
   input: SharedDomainCapabilityTraits,
 ): string[] {
-  const profile = buildSharedDomainResourceLifecycleProfile(
-    sharedDomainProfileIdForCapabilityTraits(input),
-  );
-  return unique(
-    [
-      ...profile.requiredPacketKinds,
-      input.canEditSource || input.canWriteTests ? "coding_resource_packet" : null,
-      input.roleClass === "planning" ? "planning_domain_resource_packet" : null,
-    ],
-    24,
-  );
+  void input;
+  return [];
 }
 
 export function validateSharedDomainLifecycleCapability(input: {
@@ -595,9 +535,9 @@ export function validateSharedDomainLifecycleCapability(input: {
   if (
     input.workflowId === "agent_team.coding" &&
     (input.canEditSource || input.canWriteTests) &&
-    !input.domainWorkerActionToolIds.includes("worker.edit.plan")
+    !input.domainWorkerActionToolIds.includes("node.agent_session.invoke")
   ) {
-    reasonCodes.push("shared_domain_coding_edit_profile_missing_edit_plan_tool");
+    reasonCodes.push("shared_domain_coding_edit_profile_missing_node_agent_session_invoke");
   }
   if (
     input.domainResourceKinds.some((kind) =>

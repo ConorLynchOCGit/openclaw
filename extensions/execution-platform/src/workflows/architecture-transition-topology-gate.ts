@@ -82,8 +82,11 @@ export function evaluateArchitectureTransitionTopologyGate(
   const schedulerProgress = Array.isArray(input.schedulerProgress) ? input.schedulerProgress : [];
   const contextScoutGraphNodeIds = unique(
     nodes
-      .filter((node) => bounded(node.nodeKind) === "resource_scout")
-      .map((node, index) => bounded(node.nodeId) ?? `resource_scout:${index}`),
+      .filter((node) => {
+        const nodeKind = bounded(node.nodeKind);
+        return nodeKind === "context_scout" || nodeKind === "resource_scout";
+      })
+      .map((node, index) => bounded(node.nodeId) ?? `context_scout:${index}`),
   );
   const contextSynthesisNodeIds = unique(
     nodes
@@ -99,13 +102,15 @@ export function evaluateArchitectureTransitionTopologyGate(
     const checkpointKind = bounded(event.checkpointKind);
     return (
       toolId === "resource_broker.dispatch_resource_scout" ||
+      toolId === "resource_broker.dispatch_context_scout" ||
       phase === "resource_broker_dispatch_resource_scout" ||
+      phase === "resource_broker_dispatch_context_scout" ||
       checkpointKind === "runtime_policy_node_scoped_resource_fulfillment_created"
     );
   });
   const reasonCodes = [
     ...(contextScoutGraphNodeIds.length > 0 || dispatchEvents.length > 0
-      ? ["default_resource_scout_fanout_retired"]
+      ? ["default_context_scout_fanout_retired"]
       : []),
     ...(resourceFulfillmentEdgeCount > 0 ? ["legacy_resource_fulfillment_gate_retired"] : []),
     ...(contextSynthesisNodeIds.length > 0 ? ["context_synthesis_default_glue_retired"] : []),

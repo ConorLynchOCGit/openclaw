@@ -364,7 +364,6 @@ export function genericOrchestrationRuntimeResultArtifactMetadata(
             GENERIC_RUNTIME_RESULT_MANIFEST_REASON_LIMIT,
           ),
           missionLedgerStatus: schedulerResult.missionLedger?.ledgerStatus ?? null,
-          missionLedgerGate: schedulerResult.missionLedger?.missionGate ?? null,
           rawPromptStored: false,
           rawResponseStored: false,
           rawProviderLogStored: false,

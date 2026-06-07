@@ -1,3 +1,4 @@
+import { resolveStorePath } from "../config/sessions/paths.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { callGateway } from "../gateway/call.js";
 import { getActiveRuntimeWebToolsMetadata } from "../secrets/runtime.js";
@@ -23,6 +24,7 @@ import { createImageGenerateTool } from "./tools/image-generate-tool.js";
 import { createImageTool } from "./tools/image-tool.js";
 import { createMessageTool } from "./tools/message-tool.js";
 import { createMusicGenerateTool } from "./tools/music-generate-tool.js";
+import { createNativeTaskTool } from "./tools/native-task-tool.js";
 import { createNodesTool } from "./tools/nodes-tool.js";
 import { createPdfTool } from "./tools/pdf-tool.js";
 import { createResolveOpenClawPathTool } from "./tools/resolve-openclaw-path-tool.js";
@@ -35,7 +37,7 @@ import { createSessionsSpawnTool } from "./tools/sessions-spawn-tool.js";
 import { createSessionsYieldTool } from "./tools/sessions-yield-tool.js";
 import { createSubagentsTool } from "./tools/subagents-tool.js";
 import { createTtsTool } from "./tools/tts-tool.js";
-import { createUpdatePlanTool } from "./tools/update-plan-tool.js";
+import { createReadTodoTool, createUpdatePlanTool } from "./tools/update-plan-tool.js";
 import { createVideoGenerateTool } from "./tools/video-generate-tool.js";
 import { createWebFetchTool, createWebSearchTool } from "./tools/web-tools.js";
 import { resolveWorkspaceRoot } from "./workspace-dir.js";
@@ -96,12 +98,22 @@ export function createOpenClawTools(
     disableMessageTool?: boolean;
     /** If true, skip plugin tool resolution and return only shipped core tools. */
     disablePluginTools?: boolean;
+    /** Force native update_plan into this effective tool set. */
+    forceUpdatePlanTool?: boolean;
+    /** Enable the native OpenClaw task delegation surface for this session. */
+    nativeTask?: {
+      enabled: boolean;
+      allowedAgentIds: readonly string[];
+      parentVisibleResultMaxChars?: number;
+    };
     /** Trusted sender id from inbound context (not tool args). */
     requesterSenderId?: string | null;
     /** Whether the requesting sender is an owner. */
     senderIsOwner?: boolean;
     /** Ephemeral session UUID — regenerated on /new and /reset. */
     sessionId?: string;
+    /** Current native agent run id, used for session plan/todo events. */
+    runId?: string;
     /**
      * Workspace directory to pass to spawned subagents for inheritance.
      * Defaults to workspaceDir. Use this to pass the actual agent workspace when the
@@ -131,6 +143,9 @@ export function createOpenClawTools(
   const spawnWorkspaceDir = resolveWorkspaceRoot(
     options?.spawnWorkspaceDir ?? options?.workspaceDir ?? inferredWorkspaceDir,
   );
+  const sessionStorePath = resolveStorePath(resolvedConfig?.session?.store, {
+    agentId: sessionAgentId,
+  });
   const deliveryContext = normalizeDeliveryContext({
     channel: options?.agentChannel,
     to: options?.agentTo,
@@ -196,6 +211,25 @@ export function createOpenClawTools(
     sandboxed: options?.sandboxed,
     runtimeWebFetch: runtimeWebTools?.fetch,
   });
+  const nativeTaskTool =
+    options?.nativeTask?.enabled === true
+      ? createNativeTaskTool({
+          allowedAgentIds: options.nativeTask.allowedAgentIds,
+          ...(typeof options.nativeTask.parentVisibleResultMaxChars === "number"
+            ? { parentVisibleResultMaxChars: options.nativeTask.parentVisibleResultMaxChars }
+            : {}),
+          agentSessionKey: options?.agentSessionKey,
+          agentChannel: options?.agentChannel,
+          agentAccountId: options?.agentAccountId,
+          agentTo: options?.agentTo,
+          agentThreadId: options?.agentThreadId,
+          agentGroupId: options?.agentGroupId,
+          agentGroupChannel: options?.agentGroupChannel,
+          agentGroupSpace: options?.agentGroupSpace,
+          requesterAgentIdOverride: options?.requesterAgentIdOverride,
+          workspaceDir: spawnWorkspaceDir,
+        })
+      : null;
   const messageTool = options?.disableMessageTool
     ? null
     : createMessageTool({
@@ -257,14 +291,25 @@ export function createOpenClawTools(
       agentSessionKey: options?.agentSessionKey,
       requesterAgentIdOverride: options?.requesterAgentIdOverride,
     }),
-    ...(isUpdatePlanToolEnabledForOpenClawTools({
+    ...(options?.forceUpdatePlanTool === true ||
+    isUpdatePlanToolEnabledForOpenClawTools({
       config: resolvedConfig,
       agentSessionKey: options?.agentSessionKey,
       agentId: options?.requesterAgentIdOverride,
       modelProvider: options?.modelProvider,
       modelId: options?.modelId,
     })
-      ? [createUpdatePlanTool()]
+      ? [
+          createUpdatePlanTool({
+            sessionKey: options?.agentSessionKey,
+            storePath: sessionStorePath,
+            runId: options?.runId,
+          }),
+          createReadTodoTool({
+            sessionKey: options?.agentSessionKey,
+            storePath: sessionStorePath,
+          }),
+        ]
       : []),
     createSessionsListTool({
       agentSessionKey: options?.agentSessionKey,
@@ -302,6 +347,7 @@ export function createOpenClawTools(
       requesterAgentIdOverride: options?.requesterAgentIdOverride,
       workspaceDir: spawnWorkspaceDir,
     }),
+    ...collectPresentOpenClawTools([nativeTaskTool]),
     createSubagentsTool({
       agentSessionKey: options?.agentSessionKey,
     }),

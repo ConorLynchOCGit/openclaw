@@ -211,7 +211,7 @@ function compactBranchResultForManifest(value: unknown): JsonValue {
     capabilityId: bounded(branch.capabilityId, 160),
     failureClass: bounded(branch.failureClass, 160),
     nextTransition: bounded(branch.nextTransition, 180),
-    readinessStateRef: bounded(branch.readinessStateRef, 320),
+    nodeLifecycleProjectionRef: bounded(branch.nodeLifecycleProjectionRef, 320),
     blockerSummary: bounded(branch.blockerSummary, 180),
     errorPath: bounded(branch.errorPath, 180),
     errorSummary: bounded(branch.errorSummary, 180),
@@ -227,7 +227,9 @@ function compactParallelFrontierForManifest(value: unknown): JsonValue {
     return null;
   }
   const branchResults = Array.isArray(frontier.branchResults) ? frontier.branchResults : [];
-  const dependencyLayers = Array.isArray(frontier.dependencyLayers) ? frontier.dependencyLayers : [];
+  const dependencyLayers = Array.isArray(frontier.dependencyLayers)
+    ? frontier.dependencyLayers
+    : [];
   const conflictDomains = Array.isArray(frontier.conflictDomains) ? frontier.conflictDomains : [];
   const branchScopedFrontierStates = Array.isArray(frontier.branchScopedFrontierStates)
     ? frontier.branchScopedFrontierStates
@@ -302,11 +304,11 @@ function compactBranchScopedFrontierStatesForManifest(value: unknown): JsonValue
         blocker: bounded(state.blockerSummary, 180),
         nextLegalTransition: bounded(state.nextLegalTransition, 140),
         readinessRef: bounded(state.readinessRef, 220),
-        resourcePacketRef: bounded(state.resourcePacketRef, 220),
-        resourceRequirementRefCount: Array.isArray(state.resourceRequirementRefs)
-          ? state.resourceRequirementRefs.length
+        sourceMaterialRef: bounded(state.sourceMaterialRef, 220),
+        sourceMaterialRequirementRefCount: Array.isArray(state.sourceMaterialRequirementRefs)
+          ? state.sourceMaterialRequirementRefs.length
           : null,
-        resourceRequirementRefs: boundedStrings(state.resourceRequirementRefs, 2, 220),
+        sourceMaterialRequirementRefs: boundedStrings(state.sourceMaterialRequirementRefs, 2, 220),
         consumerNodeIds: boundedStrings(state.consumerNodeIds, 3, 180),
         dependentConsumerNodeIds: boundedStrings(state.dependentConsumerNodeIds, 3, 180),
         successfulEvidenceRefCount: Array.isArray(state.successfulEvidenceRefs)
@@ -500,7 +502,6 @@ function fitSchedulerProgressManifestBudget(
     "missionLedgerCanonicalCommitments",
     "expansionAdmissionDecision",
     "frontierRootCauseArtifact",
-    "nodeReadinessState",
   ]) {
     if (output[key] !== undefined) {
       output[key] = {
@@ -517,13 +518,9 @@ function fitSchedulerProgressManifestBudget(
     "targetRefs",
     "inputHandoffRefs",
     "contextSnapshotRefs",
-    "resourceRequirementRefs",
+    "sourceMaterialRequirementRefs",
     "contextBrokerRequestRefs",
-    "contextScoutRuntimeToolInvocationRefs",
-    "contextScoutExecutionPacketRefs",
     "verifiedContextFileRefs",
-    "resourceHandoffPacketRefs",
-    "implementationTaskPacketRefs",
     "candidateConcreteFileRefs",
     "targetFileSnapshotRefs",
     "workerInternalInputPacketRefs",
@@ -777,9 +774,16 @@ export function compactSchedulerProgressForManifest(
     evidenceClaimRefs: boundedStrings(metadata.evidenceClaimRefs, 20),
     reasonCodes: boundedStrings(metadata.reasonCodes, 40, 200),
     contextRequestRefs: boundedStrings(metadata.contextRequestRefs, 20),
-    resourceRequirementRefs: boundedStrings(metadata.resourceRequirementRefs, 20),
-    resourceRequirementStatuses: compactJson(metadata.resourceRequirementStatuses, 3, 6),
-    resourceRequirementReasonCodes: boundedStrings(metadata.resourceRequirementReasonCodes, 40),
+    sourceMaterialRequirementRefs: boundedStrings(metadata.sourceMaterialRequirementRefs, 20),
+    sourceMaterialRequirementStatuses: compactJson(
+      metadata.sourceMaterialRequirementStatuses,
+      3,
+      6,
+    ),
+    sourceMaterialRequirementReasonCodes: boundedStrings(
+      metadata.sourceMaterialRequirementReasonCodes,
+      40,
+    ),
     contextBrokerRequestRefs: boundedStrings(metadata.contextBrokerRequestRefs, 20),
     contextBrokerStatuses: compactJson(metadata.contextBrokerStatuses, 3, 6),
     contextBrokerDedupeKeys: boundedStrings(metadata.contextBrokerDedupeKeys, 20),
@@ -793,36 +797,9 @@ export function compactSchedulerProgressForManifest(
     contextFreshnessStatus: metadata.contextFreshnessStatus ?? null,
     contextRefreshAction: metadata.contextRefreshAction ?? null,
     contextFreshnessSummary: metadata.contextFreshnessSummary ?? null,
-    contextScoutToolLoopRefs: boundedStrings(metadata.contextScoutToolLoopRefs, 20),
-    contextScoutRuntimeToolInvocationRefs: boundedStrings(
-      metadata.contextScoutRuntimeToolInvocationRefs,
-      40,
-    ),
-    contextScoutExecutionPacketRefs: boundedStrings(
-      metadata.contextScoutExecutionPacketRefs,
-      20,
-    ),
-    contextScoutExecutionPacketInputBytes:
-      metadata.contextScoutExecutionPacketInputBytes ?? null,
-    contextScoutExecutionPacketMaxInputBytes:
-      metadata.contextScoutExecutionPacketMaxInputBytes ?? null,
-    contextScoutProviderTimeoutMs: metadata.contextScoutProviderTimeoutMs ?? null,
-    contextScoutPacketCompileStatus: metadata.contextScoutPacketCompileStatus ?? null,
-    contextScoutPacketCompileReasonCodes: boundedStrings(
-      metadata.contextScoutPacketCompileReasonCodes,
-      20,
-    ),
-    contextScoutRejectedRefs: boundedStrings(metadata.contextScoutRejectedRefs, 20),
-    contextScoutSufficiencySummary: metadata.contextScoutSufficiencySummary ?? null,
-    contextScoutRepoAnalysisFindingCount: metadata.contextScoutRepoAnalysisFindingCount ?? null,
     verifiedContextFileRefs: boundedStrings(metadata.verifiedContextFileRefs, 30),
-    resourceHandoffPacketRefs: boundedStrings(metadata.resourceHandoffPacketRefs, 20),
     contextQualityState: metadata.contextQualityState ?? null,
     openContextBlockers: boundedStrings(metadata.openContextBlockers, 12),
-    implementationContextPacketRef: metadata.implementationContextPacketRef ?? null,
-    implementationContextReadinessStatus:
-      metadata.implementationContextReadinessStatus ?? null,
-    implementationTaskPacketRefs: boundedStrings(metadata.implementationTaskPacketRefs, 40),
     resolvedTargetFileRefs: boundedStrings(metadata.resolvedTargetFileRefs, 40),
     readableTargetFileRefs: boundedStrings(metadata.readableTargetFileRefs, 40),
     missingTargetRefs: boundedStrings(metadata.missingTargetRefs, 40),
@@ -835,28 +812,11 @@ export function compactSchedulerProgressForManifest(
     nodeExecutionContractRef: metadata.nodeExecutionContractRef ?? null,
     nodeExecutionContractVersion: metadata.nodeExecutionContractVersion ?? null,
     nodeExecutionContractHash: metadata.nodeExecutionContractHash ?? null,
-    nodeExecutionPacketRef: metadata.nodeExecutionPacketRef ?? null,
-    nodeExecutionPacketStatus: metadata.nodeExecutionPacketStatus ?? null,
-    resourcePacketKind: metadata.resourcePacketKind ?? null,
-    resourcePacketRef: metadata.resourcePacketRef ?? null,
+    sourceMaterialKind: metadata.sourceMaterialKind ?? null,
+    sourceMaterialRef: metadata.sourceMaterialRef ?? null,
     resourceReadinessReasonCodes: boundedStrings(metadata.resourceReadinessReasonCodes, 40),
     resourceBlockingLimitations: boundedStrings(metadata.resourceBlockingLimitations, 20),
     resourceNonblockingLimitations: boundedStrings(metadata.resourceNonblockingLimitations, 20),
-    nodeReadinessStateStoredInline: false,
-    nodeReadinessStateRef: metadata.nodeReadinessStateRef ?? null,
-    nodeReadinessPhase: metadata.nodeReadinessPhase ?? null,
-    nodeReadinessStatus: metadata.nodeReadinessStatus ?? null,
-    nodeReadinessRepairAction: metadata.nodeReadinessRepairAction ?? null,
-    nodeReadinessNextAllowedTransitions: boundedStrings(
-      metadata.nodeReadinessNextAllowedTransitions,
-      16,
-    ),
-    nodeReadinessFreshnessStatus: metadata.nodeReadinessFreshnessStatus ?? null,
-    nodeReadinessSnapshotStatus: metadata.nodeReadinessSnapshotStatus ?? null,
-    nodeReadinessContextStatus: metadata.nodeReadinessContextStatus ?? null,
-    nodeReadinessValidationStatus: metadata.nodeReadinessValidationStatus ?? null,
-    nodeReadinessAuthorityStatus: metadata.nodeReadinessAuthorityStatus ?? null,
-    nodeReadinessEvidenceStatus: metadata.nodeReadinessEvidenceStatus ?? null,
     workerInternalInputPacketRefs: boundedStrings(metadata.workerInternalInputPacketRefs, 20),
     workerInternalContextRefs: boundedStrings(metadata.workerInternalContextRefs, 30),
     workerInternalToolStatus: metadata.workerInternalToolStatus ?? null,
@@ -896,10 +856,7 @@ export function compactSchedulerProgressForManifest(
       metadata.closeoutFinalizationEvidencePacketRefs,
       20,
     ),
-    closeoutFinalizationHandoffRefs: boundedStrings(
-      metadata.closeoutFinalizationHandoffRefs,
-      20,
-    ),
+    closeoutFinalizationHandoffRefs: boundedStrings(metadata.closeoutFinalizationHandoffRefs, 20),
     closeoutFinalizationToolInvocationRefs: boundedStrings(
       metadata.closeoutFinalizationToolInvocationRefs,
       30,
@@ -922,14 +879,12 @@ export function compactSchedulerProgressForManifest(
     noProgressSignature: compactJson(metadata.noProgressSignature, 3, 6),
     frontierRootCauseArtifact: compactJson(metadata.frontierRootCauseArtifact, 3, 6),
     expansionAdmissionDecision: compactJson(metadata.expansionAdmissionDecision, 3, 6),
-    nodeReadinessState: compactJson(metadata.nodeReadinessState, 3, 6),
     packetAuthorFanout: compactJson(metadata.packetAuthorFanout, 3, 6),
     missionLedgerCanonicalCommitments: compactJson(
       metadata.missionLedgerCanonicalCommitments,
       3,
       6,
     ),
-    missionLedgerMode: metadata.missionLedgerMode ?? null,
     boundaryReplayCheckpointKind: metadata.boundaryReplayCheckpointKind ?? null,
     boundaryReplayCheckpointRefs: boundedStrings(metadata.boundaryReplayCheckpointRefs, 40),
     boundaryReplayGraphCheckpointRefs: boundedStrings(

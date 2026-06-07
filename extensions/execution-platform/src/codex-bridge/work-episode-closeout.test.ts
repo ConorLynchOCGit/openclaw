@@ -166,7 +166,7 @@ async function seedBridgeJob(runtimeJobs: RuntimeJobRepository) {
       environment: {
         artifactKind: "environment_contract",
         repoPath: "/root/services/openclaw-roles/live",
-        workspaceDocsPath: "/root/.openclaw/workspace/docs/projects/execution-platform",
+        workspaceDocsPath: "/root/services/openclaw-roles/live/docs/projects/execution-platform",
         containerService: { supervisorBoundary: "execution-supervisor" },
         rebuildCommands: [],
         validationCommands: [],

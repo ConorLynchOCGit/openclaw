@@ -1,5 +1,93 @@
 # Execution Platform Decisions
 
+## 2026-06-04 SchedulerGraphPatch replaces WorkIntent graph-control scheduling
+
+Decision: fresh scheduling consumes an accepted `RequirementMap` and produces a
+minimal `SchedulerGraphPatch`. It no longer creates `WorkIntent` graph-control
+nodes, no longer requires WorkIntent promotion before executable node
+lifecycle, and no longer accepts full staged scheduler JSON drafts as the
+canonical scheduler product.
+
+Canonical path:
+
+```text
+RequirementMap
+  -> SchedulerStageRunner
+  -> SchedulerGraphPatch
+  -> RuntimeGraphRepository
+  -> RuntimeGraphNode / RuntimeGraphEdge
+  -> NodeLifecycleTransitionRunner
+```
+
+Rationale:
+
+- RequirementMap is a source-grounded inventory, not an executable graph.
+  Scheduler must group and classify it rather than blindly turning each
+  requirement into a node.
+- The prior path carried too many overlapping control products:
+  SchedulerRequirementInventory, staged graph draft, OrchestratorGraphDecision,
+  WorkIntent node, WorkIntent promotion, and executable node state.
+- WorkIntent graph-control nodes created a second lifecycle boundary before
+  `NodeLifecycleTransitionRunner`, which repeatedly caused readiness,
+  promotion, replay, and scheduler-repair ownership leaks.
+- Scheduler should build graph shape only. Node lifecycle, worker context,
+  action/edit, validation, repair, escalation, and evidence stay with
+  `NodeLifecycleTransitionRunner`.
+
+Consequences:
+
+- `SchedulerStageRunner` emits node seeds, edges, and requirement coverage in
+  `SchedulerGraphPatch`.
+- Runtime owns ids, refs, hashes, graph persistence, source-ref derivation,
+  obvious validation/review/closeout ordering, and unambiguous capability
+  binding.
+- Scheduler model phases are only coverage/grouping, capability binding when
+  needed, and non-obvious dependency ordering.
+- Validation/review/closeout requirements default to coverage/gates rather
+  than immediate graph nodes.
+- Graph amendment is allowed only through typed graph-level requests from
+  `NodeLifecycleTransitionRunner`, closeout, or operator scope change.
+- WorkIntent may remain only as historical/migration vocabulary or pure
+  compatibility compiler code excluded from fresh production scheduling.
+
+Retired from production fresh scheduling:
+
+- WorkIntent graph-control nodes;
+- WorkIntent promotion semantics;
+- WorkIntent-owned `nextLegalTransitions`;
+- `OrchestratorGraphDecision` as canonical scheduler output;
+- full staged scheduler JSON draft acceptance;
+- JSON-shaped `schedulerToolCalls`;
+- model-authored `scheduler.submit_*` tools;
+- scheduler-side node-local repair.
+
+Governing spec:
+[Scheduler Graph Patch Runner](/projects/execution-platform/specs/scheduler-graph-patch-runner).
+
+## 2026-06-03 RequirementMap replaces the pre-scheduler semantic intake chain
+
+Decision: fresh execution intake uses `IntakeStageRunner` to produce one
+source-prompt-backed `RequirementMap` before scheduling. The live
+pre-scheduler path no longer authors Mission Ledger, ObligationGraph,
+DiscoveryBriefSet, SchedulerIntakePacket, or RequirementMap v1 batch tools.
+
+Rationale:
+
+- downstream scheduler, worker, and closeout consumers need signal-dense access
+  to the raw operator prompt, not multiple lossy summaries;
+- every planned prompt window must be covered by a native extraction tool call
+  before RequirementMap acceptance;
+- runtime owns ids, refs, hashes, offsets, coverage, status, and submit;
+- models author only requirement text, role, and source-anchored evidence
+  excerpts;
+- scheduler, worker, and closeout runners derive acceptance/evidence wording
+  from requirement text and role, then reopen bounded prompt/context through
+  their own tools when more detail is needed;
+
+Reference:
+
+- [RequirementMap Intake Decomposition](/projects/execution-platform/specs/requirement-map-intake-decomposition)
+
 ## 2026-05-29 NodeLifecycleTransitionRunner is the only node lifecycle owner
 
 Decision: node-local lifecycle ownership is consolidated into
@@ -26,7 +114,7 @@ Consequences:
 
 - lifecycle model turns must run through
   `NodeLifecycleTransitionRunner -> ModelTaskClientRouter -> contract parser
-  / repair -> structural validation -> typed artifact refs`;
+/ repair -> structural validation -> typed artifact refs`;
 - direct provider calls for lifecycle transitions in closure proof paths are
   diagnostic-only and cannot close Work Queue items;
 - worker prompts expose only
@@ -761,7 +849,7 @@ Consequences:
 
 - context scout becomes a resource-materialized node like implementation
   nodes. It receives a bounded execution packet with target node ids,
-  target commitment ids, packet refs, source prompt section refs, repo
+  target commitment ids, packet refs, source grounding refs, repo
   context refs, context questions, downstream consumer, byte budget, and
   policy-derived provider timeout.
 - node lifecycle budget and provider-call budget are distinct. Runtime may

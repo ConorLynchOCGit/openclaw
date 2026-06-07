@@ -30,15 +30,15 @@ describe("runtime repair classification", () => {
     );
   });
 
-  it("maps runner-owned worker context failures to node execution repair strategies", () => {
+  it("maps native node assignment authoring failures to node execution repair strategies", () => {
     expect(
       failureClassFromReasonCodes({
         nodeKind: "implementation",
         status: "needs_review",
-        reasonCodes: ["worker_context_required"],
+        reasonCodes: ["node_worker_prompt_missing_source_material"],
       }),
-    ).toBe("context_insufficient");
-    expect(repairStrategyForFailureClass("context_insufficient")).toBe("request_context");
+    ).toBe("adapter_protocol_failure");
+    expect(repairStrategyForFailureClass("adapter_protocol_failure")).toBe("same_boundary_repair");
   });
 
   it("classifies artifact metadata limits as storage-bound repairs, not context failures", () => {
@@ -69,17 +69,14 @@ describe("runtime repair classification", () => {
     expect(selectedBoundaryForFailureClass(failureClass)).toBe("node_execution");
   });
 
-  it("classifies worker lifecycle blockers before generic provider text", () => {
+  it("classifies node execution protocol blockers before generic provider text", () => {
     expect(
       failureClassFromReasonCodes({
         nodeKind: "implementation",
         status: "needs_review",
-        reasonCodes: [
-          "worker_context_request_unfulfilled_missing_exact_hydrated_windows",
-          "providerPath:openrouter",
-        ],
+        reasonCodes: ["node_worker_prompt_authoring_failed", "providerPath:openrouter"],
       }),
-    ).toBe("context_insufficient");
+    ).toBe("adapter_protocol_failure");
 
     expect(
       failureClassFromReasonCodes({

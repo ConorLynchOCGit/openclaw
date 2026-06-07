@@ -2,6 +2,7 @@ import { Type } from "@sinclair/typebox";
 import {
   buildSafeWorkspaceSearchCommand,
   resolveOpenClawPath,
+  resolveOpenClawPathRoots,
   type OpenClawPathOwnerHint,
   type OpenClawPathActorProfile,
 } from "../workspace-topology-resolver.js";
@@ -67,9 +68,13 @@ export function createResolveOpenClawPathTool(opts?: {
           required: false,
         }),
       );
-      const resolution = resolveOpenClawPath(requested, {
+      const roots = resolveOpenClawPathRoots({
         workspaceRoot: opts?.workspaceDir,
         liveRepoRoot: opts?.liveRepoRoot,
+      });
+      const resolution = resolveOpenClawPath(requested, {
+        workspaceRoot: roots.workspaceRoot,
+        liveRepoRoot: roots.liveRepoRoot,
         actorProfile,
         ownerHint,
       });
@@ -77,7 +82,7 @@ export function createResolveOpenClawPathTool(opts?: {
         ...resolution,
         safeWorkspaceSearchExample: buildSafeWorkspaceSearchCommand(
           "<pattern>",
-          opts?.workspaceDir,
+          roots.workspaceRoot,
         ),
       });
     },

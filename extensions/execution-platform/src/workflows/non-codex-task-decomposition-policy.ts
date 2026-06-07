@@ -12,7 +12,7 @@ import {
 import type { RuntimeWorkGraphSchedulerSnapshotSummary } from "./runtime-work-graph-scheduler-contracts.ts";
 
 export type NonCodexTaskFamily =
-  | "repo_resource_scout"
+  | "repo_context_scout"
   | "small_source_edit"
   | "test_writing_edit"
   | "docs_spec_edit"
@@ -110,20 +110,22 @@ function capabilityIsNonCodex(capability: RuntimeNodeCapability | null): boolean
   return Boolean(
     capability &&
     (capability.productionSelectionRequiresQualification ||
-      capability.workerRef.includes("non-codex") ||
-      capability.workerRef.includes("kimi") ||
-      capability.allowedAdapters.some((adapter) =>
-        [
-          "model_agnostic_file_edit_worker",
-          "model_agnostic_tool_worker_loop",
-          "non_codex_tool_using_worker_loop",
-        ].includes(adapter),
-      )),
+      capability.workerRef.includes("agent.execution-") ||
+      capability.workerRef.includes("kimi")),
   );
 }
 
 function complexMissionCommitmentCount(ledger: MissionContractLedger | null): number {
-  return ledger ? ledger.blockingCommitments.length + ledger.nonBlockingCommitments.length : 0;
+  if (!ledger) {
+    return 0;
+  }
+  const blockingCommitments = Array.isArray(ledger.blockingCommitments)
+    ? ledger.blockingCommitments
+    : [];
+  const nonBlockingCommitments = Array.isArray(ledger.nonBlockingCommitments)
+    ? ledger.nonBlockingCommitments
+    : [];
+  return blockingCommitments.length + nonBlockingCommitments.length;
 }
 
 function workflowIsCoding(snapshotSummary: RuntimeWorkGraphSchedulerSnapshotSummary): boolean {
@@ -196,13 +198,23 @@ export function validateNonCodexTaskDecompositionDecision(input: {
   snapshotSummary: RuntimeWorkGraphSchedulerSnapshotSummary;
   missionLedger: MissionContractLedger | null;
   capabilityManifest: RuntimeNodeCapabilityManifest;
+  requiredCommitmentIds?: string[] | null;
 }): NonCodexTaskDecompositionValidation {
   const reasonCodes: string[] = [];
   const nodes = input.decision.newNodes ?? [];
-  const complexCommitmentCount = complexMissionCommitmentCount(input.missionLedger);
+  const explicitRequiredCommitmentIds =
+    input.requiredCommitmentIds && input.requiredCommitmentIds.length > 0
+      ? input.requiredCommitmentIds
+      : null;
+  const complexCommitmentCount =
+    explicitRequiredCommitmentIds?.length ?? complexMissionCommitmentCount(input.missionLedger);
   const complexCodingMission =
     workflowIsCoding(input.snapshotSummary) && complexCommitmentCount > 1;
   const isFirstGraphDecision = firstGraphDecision(input.snapshotSummary);
+  const requiredCommitmentIds =
+    explicitRequiredCommitmentIds ??
+    (input.missionLedger?.blockingCommitments ?? []).map((commitment) => commitment.commitmentId);
+  const requiresGraphDecomposition = requiredCommitmentIds.length > 1;
 
   if (complexCodingMission && isFirstGraphDecision && nodes.length > 0) {
     const progressiveContextFirst = isProgressiveContextAcquisitionFirstMove(nodes);
@@ -211,6 +223,7 @@ export function validateNonCodexTaskDecompositionDecision(input: {
     }
     if (
       !progressiveContextFirst &&
+      requiresGraphDecomposition &&
       !hasGraphStructure(input.decision) &&
       !parallelJustified(input.decision)
     ) {
@@ -222,11 +235,9 @@ export function validateNonCodexTaskDecompositionDecision(input: {
         coveredCommitments.add(commitmentId);
       }
     }
-    for (const commitment of input.missionLedger?.blockingCommitments ?? []) {
-      if (!progressiveContextFirst && !coveredCommitments.has(commitment.commitmentId)) {
-        reasonCodes.push(
-          `non_codex_decomposition_commitment_coverage_missing:${commitment.commitmentId}`,
-        );
+    for (const commitmentId of requiredCommitmentIds) {
+      if (!progressiveContextFirst && !coveredCommitments.has(commitmentId)) {
+        reasonCodes.push(`non_codex_decomposition_commitment_coverage_missing:${commitmentId}`);
       }
     }
   }

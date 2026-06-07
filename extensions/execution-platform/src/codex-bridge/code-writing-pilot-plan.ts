@@ -10,6 +10,7 @@ import type {
 import { CODEX_BRIDGE_CODE_WRITING_PILOT_READINESS_ARTIFACT_TYPE } from "./code-writing-pilot-readiness.ts";
 import { CODEX_BRIDGE_FAKE_CONTROL_LOOP_PROOF_ARTIFACT_TYPE } from "./control-loop-proof.ts";
 import { CODEX_BRIDGE_EMISSION_GUARDRAIL_ARTIFACT_TYPE } from "./emission-guardrails.ts";
+import { DEFAULT_REPO_PATH, DEFAULT_WORKSPACE_DOCS_PATH } from "./policy.ts";
 import { CODEX_BRIDGE_FAKE_REDIRECT_APPLICATION_PROOF_ARTIFACT_TYPE } from "./redirect-application-proof.ts";
 import { CODEX_BRIDGE_SKILL_AUDIT_LINT_ARTIFACT_TYPE } from "./skill-audit-lint.ts";
 import { CODEX_BRIDGE_JOB_TYPE, isCodexBridgeJobPayload } from "./types.ts";
@@ -355,10 +356,8 @@ export function selectCodeWritingPilotObjective(input: {
   workspaceDocsPath?: string;
   maxFilesAllowed?: number;
 }): CodeWritingPilotObjectiveSelectionReport {
-  const repoPath = path.resolve(input.repoPath ?? "/root/services/openclaw-roles/live");
-  const workspaceDocsPath = path.resolve(
-    input.workspaceDocsPath ?? "/root/.openclaw/workspace/docs/projects/execution-platform",
-  );
+  const repoPath = path.resolve(input.repoPath ?? DEFAULT_REPO_PATH);
+  const workspaceDocsPath = path.resolve(input.workspaceDocsPath ?? DEFAULT_WORKSPACE_DOCS_PATH);
   const maxFilesAllowed = input.maxFilesAllowed ?? 1;
   const rejectedCandidates = input.candidates
     .map((candidate) => ({

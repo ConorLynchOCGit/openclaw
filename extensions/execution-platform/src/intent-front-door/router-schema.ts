@@ -19,7 +19,6 @@ export const CANONICAL_INTENT_ROUTES = [
   "clarification_required",
   "blocked",
   "needs_review",
-  "product_spec_planning",
 ] as const;
 
 export const CANONICAL_RESPONSE_MODES = [
@@ -29,7 +28,6 @@ export const CANONICAL_RESPONSE_MODES = [
   "create_plan_only",
   "apply_control",
   "block",
-  "create_product_spec_planning",
 ] as const;
 
 export const CANONICAL_ACTION_CATEGORIES = [
@@ -48,7 +46,6 @@ export const CANONICAL_ACTION_CATEGORIES = [
   "model_promotion",
   "work_queue_control",
   "closeout",
-  "product_spec_planning",
 ] as const;
 
 export const CANONICAL_ROUTER_CAPABILITIES = [
@@ -88,11 +85,9 @@ export type CanonicalRouterCapability = (typeof CANONICAL_ROUTER_CAPABILITIES)[n
 export type CanonicalRiskClass = (typeof CANONICAL_RISK_CLASSES)[number];
 export type CanonicalSideEffectClass = (typeof CANONICAL_SIDE_EFFECT_CLASSES)[number];
 
-const boundedReasonCodeSchema = z
-  .string()
-  .min(1)
-  .max(120)
-  .regex(/^[a-z0-9_.:-]+$/u);
+const REASON_CODE_PATTERN = /^[a-z0-9_.:-]+$/u;
+
+const boundedReasonCodeSchema = z.string().min(1).max(120).regex(REASON_CODE_PATTERN);
 
 export const canonicalRouterActionSchema = z
   .object({
@@ -361,6 +356,49 @@ function boundStringArray(
   return { value: next, changed };
 }
 
+export function normalizeCanonicalRouterReasonCode(
+  value: unknown,
+  fallback = "canonical_router_reason_code_invalid",
+): string | null {
+  if (typeof value !== "string") {
+    return null;
+  }
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return null;
+  }
+  if (trimmed.length <= 120 && REASON_CODE_PATTERN.test(trimmed)) {
+    return trimmed;
+  }
+  const normalized = trimmed
+    .toLowerCase()
+    .replace(/[^a-z0-9_.:-]+/gu, "_")
+    .replace(/_+/gu, "_")
+    .replace(/^[_.:-]+|[_.:-]+$/gu, "")
+    .slice(0, 120);
+  if (normalized && REASON_CODE_PATTERN.test(normalized)) {
+    return normalized;
+  }
+  return fallback;
+}
+
+export function normalizeCanonicalRouterReasonCodes(
+  values: unknown,
+  maxItems = ROUTER_REASON_CODE_MAX_COUNT,
+): { value: string[]; changed: boolean } {
+  if (!Array.isArray(values)) {
+    return { value: [], changed: values !== undefined };
+  }
+  const normalized = values
+    .map((value) => normalizeCanonicalRouterReasonCode(value))
+    .filter((value): value is string => Boolean(value));
+  const unique = Array.from(new Set(normalized)).slice(0, maxItems);
+  const changed =
+    values.length !== unique.length ||
+    values.some((value, index) => typeof value !== "string" || value !== unique[index]);
+  return { value: unique, changed };
+}
+
 function boundNestedStringField(
   value: unknown,
   key: string,
@@ -459,7 +497,17 @@ function normalizeModelAuthoredRouterBounds(value: unknown): {
         const summary = boundRouterText(entry.boundedInputSummary, 600);
         if (summary.changed) {
           changed = true;
-          return { ...entry, boundedInputSummary: summary.value };
+          entry = { ...entry, boundedInputSummary: summary.value };
+        }
+        if (
+          Array.isArray(entry.reasonCodes) &&
+          entry.reasonCodes.length <= ROUTER_REASON_CODE_MAX_COUNT
+        ) {
+          const childReasonCodes = normalizeCanonicalRouterReasonCodes(entry.reasonCodes);
+          if (childReasonCodes.changed) {
+            changed = true;
+            entry = { ...entry, reasonCodes: childReasonCodes.value };
+          }
         }
         return entry;
       });
@@ -488,7 +536,29 @@ function normalizeModelAuthoredRouterBounds(value: unknown): {
       reasonCodes.push("canonical_router_multiIntentPlan_bounded");
     }
   }
+  if (
+    Array.isArray(candidate.reasonCodes) &&
+    candidate.reasonCodes.length <= ROUTER_REASON_CODE_MAX_COUNT
+  ) {
+    const reasonCodeBounds = normalizeCanonicalRouterReasonCodes(candidate.reasonCodes);
+    if (reasonCodeBounds.changed) {
+      candidate.reasonCodes = reasonCodeBounds.value;
+      reasonCodes.push("canonical_router_reasonCodes_bounded");
+    }
+  }
   return { value: candidate, reasonCodes };
+}
+
+function schemaIssueReasonCode(issue: z.core.$ZodIssue): string {
+  const path = issue.path.length > 0 ? issue.path.join(".") : "root";
+  if (typeof issue.message === "string" && REASON_CODE_PATTERN.test(issue.message)) {
+    return normalizeCanonicalRouterReasonCode(`canonical_router_schema_${issue.message}`)!;
+  }
+  const pathCode = normalizeCanonicalRouterReasonCode(path, "root") ?? "root";
+  return normalizeCanonicalRouterReasonCode(
+    `canonical_router_schema_${issue.code}:${pathCode}`,
+    "canonical_router_schema_invalid",
+  )!;
 }
 
 export function parseCanonicalRouterOutput(value: unknown): CanonicalRouterParseResult {
@@ -511,7 +581,7 @@ export function parseCanonicalRouterOutput(value: unknown): CanonicalRouterParse
   return {
     valid: false,
     output: null,
-    reasonCodes: parsed.error.issues.map((issue) => `canonical_router_schema_${issue.message}`),
+    reasonCodes: Array.from(new Set(parsed.error.issues.map(schemaIssueReasonCode))),
     schemaIssues: parsed.error.issues.map((issue) => {
       const candidate = issue as typeof issue & { options?: unknown };
       return {
@@ -550,6 +620,7 @@ function routerCapabilityFromAction(
 export function createBaseCanonicalRouterOutput(
   overrides: Partial<CanonicalRouterOutput> & Pick<CanonicalRouterOutput, "route" | "responseMode">,
 ): CanonicalRouterOutput {
+  const normalizedReasonCodes = normalizeCanonicalRouterReasonCodes(overrides.reasonCodes).value;
   const executorWorkflowId = overrides.executorWorkflowId ?? overrides.workflowId ?? null;
   const workflowId = overrides.workflowId ?? executorWorkflowId;
   const candidate = {
@@ -585,11 +656,12 @@ export function createBaseCanonicalRouterOutput(
       conflictingInstructions: [],
       clarificationQuestion: null,
     },
-    reasonCodes: [],
+    reasonCodes: normalizedReasonCodes,
     rawPromptStored: false,
     rawResponseStored: false,
     ...overrides,
   };
+  candidate.reasonCodes = normalizedReasonCodes;
   candidate.executorWorkflowId = candidate.executorWorkflowId ?? candidate.workflowId ?? null;
   candidate.workflowId = candidate.workflowId ?? candidate.executorWorkflowId;
   candidate.requestedCapabilities =

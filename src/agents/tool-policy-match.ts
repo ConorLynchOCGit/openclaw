@@ -19,6 +19,9 @@ function makeToolPolicyMatcher(policy: SandboxToolPolicy) {
     if (normalized === "apply_patch" && matchesAnyGlobPattern("write", deny)) {
       return false;
     }
+    if (normalized === "read_todo" && matchesAnyGlobPattern("update_plan", deny)) {
+      return false;
+    }
     if (allow.length === 0) {
       return true;
     }
@@ -26,6 +29,9 @@ function makeToolPolicyMatcher(policy: SandboxToolPolicy) {
       return true;
     }
     if (normalized === "apply_patch" && matchesAnyGlobPattern("write", allow)) {
+      return true;
+    }
+    if (normalized === "read_todo" && matchesAnyGlobPattern("update_plan", allow)) {
       return true;
     }
     return false;

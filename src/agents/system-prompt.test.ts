@@ -149,6 +149,21 @@ describe("buildAgentSystemPrompt", () => {
     );
   });
 
+  it("treats active required skills as loaded session context instead of a catalog to read", () => {
+    const prompt = buildAgentSystemPrompt({
+      workspaceDir: "/tmp/openclaw",
+      promptMode: "minimal",
+      skillsPrompt:
+        '<active_skills>\n<active_skill name="execution-node-workflow">Follow this active workflow.</active_skill>\n</active_skills>',
+    });
+
+    expect(prompt).toContain("## Skills (mandatory)");
+    expect(prompt).toContain("The following skills are already active for this session");
+    expect(prompt).toContain("Follow this active workflow.");
+    expect(prompt).not.toContain("Before replying: scan <available_skills>");
+    expect(prompt).not.toContain("read its SKILL.md");
+  });
+
   it("adds the public-web browsing contract when browsing tools are available", () => {
     const prompt = buildAgentSystemPrompt({
       workspaceDir: "/tmp/openclaw",

@@ -16,13 +16,13 @@ describe("Default router model policy", () => {
 
     expect(decision).toMatchObject({
       allowed: true,
-      selectedModel: { model: "gpt-mini-structured-json" },
+      selectedModel: { model: "qwen/qwen3-coder-next" },
       modelPromotionPerformed: false,
       providerCallMade: false,
       rawPromptStored: false,
       rawResponseStored: false,
     });
-    expect(decision.requiredCapabilities).toContain("structured_json");
+    expect(decision.requiredCapabilities).toContain("tool_calling");
   });
 
   it("fails closed when policy or roster refs are missing", () => {
@@ -41,27 +41,27 @@ describe("Default router model policy", () => {
     });
   });
 
-  it("requires structured-output capabilities", () => {
+  it("requires native tool-calling capabilities", () => {
     expect(
       resolveDefaultRouterModelPolicy({
         policy: {
           ...DEFAULT_ROUTER_MODEL_POLICY_FIXTURE,
-          requiredCapabilities: ["json_schema"],
+          requiredCapabilities: [],
         },
         candidates: [DEFAULT_ROUTER_MODEL_CANDIDATE_FIXTURE],
       }).reasonCodes,
-    ).toContain("structured_output_capability_required");
+    ).toContain("tool_calling_capability_required");
     expect(
       resolveDefaultRouterModelPolicy({
         policy: DEFAULT_ROUTER_MODEL_POLICY_FIXTURE,
         candidates: [
           {
             ...DEFAULT_ROUTER_MODEL_CANDIDATE_FIXTURE,
-            capabilities: ["json_schema"],
+            capabilities: ["low_cost"],
           },
         ],
       }).reasonCodes,
-    ).toContain("default_router_model_missing_structured_json");
+    ).toContain("default_router_model_missing_tool_calling");
   });
 
   it("rejects disabled or suspended router models", () => {

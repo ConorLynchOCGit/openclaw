@@ -1,18 +1,10 @@
 import { createHash } from "node:crypto";
 import {
-  findRuntimeNodeCapability,
-  type RuntimeNodeCapabilityManifest,
-} from "./runtime-node-capability-registry.ts";
-import {
-  graphRef,
-  type TeamGraphNode,
-  type TeamGraphNodeStatus,
-} from "./runtime-work-graph.ts";
-import type { RuntimeWorkGraphSnapshot } from "./runtime-work-graph-repository.ts";
-import {
-  compileWorkIntentContextResolution,
-  type WorkIntentContextResolution,
-} from "./work-intent-context-resolution.ts";
+  buildNodeExecutionSnapshotFromGraphNode,
+  NODE_EXECUTION_SNAPSHOT_ARTIFACT_TYPE,
+  resolveNodeExecutionAgentId,
+  type NodeExecutionSnapshot,
+} from "./node-agent-session.ts";
 import {
   isNodeLifecycleGate,
   legalTransitionsForLifecycleGate,
@@ -22,11 +14,16 @@ import {
   NODE_LIFECYCLE_GATE_TRANSITIONS,
   NODE_LIFECYCLE_GATES,
   NODE_LIFECYCLE_TRANSITION_DESCRIPTORS,
-  nodeLifecycleGateForWorkIntentContextStatus,
   validateLifecycleDescriptorToolRegistration,
   type NodeLifecycleGate,
   type NodeLifecycleTransitionDescriptor,
 } from "./node-lifecycle-transition-descriptors.ts";
+import {
+  findRuntimeNodeCapability,
+  type RuntimeNodeCapabilityManifest,
+} from "./runtime-node-capability-registry.ts";
+import type { RuntimeWorkGraphSnapshot } from "./runtime-work-graph-repository.ts";
+import { graphRef, type TeamGraphNode, type TeamGraphNodeStatus } from "./runtime-work-graph.ts";
 
 export {
   legalTransitionsForLifecycleGate,
@@ -47,10 +44,7 @@ export const NODE_LIFECYCLE_PROJECTION_ARTIFACT_TYPE =
 export const NODE_LIFECYCLE_PROJECTION_SCHEMA_VERSION =
   "execution-platform.node-lifecycle-projection.v1" as const;
 
-const HARD_TERMINAL_NODE_STATUSES = new Set<TeamGraphNodeStatus>([
-  "succeeded",
-  "failed",
-]);
+const HARD_TERMINAL_NODE_STATUSES = new Set<TeamGraphNodeStatus>(["succeeded", "failed"]);
 
 const LOCAL_LIFECYCLE_GATES = new Set<string>(NODE_LIFECYCLE_GATES);
 
@@ -158,12 +152,43 @@ export type NodeLifecycleProjectionRecordResult = {
   reasonCodes: string[];
 };
 
-export type NodeLifecyclePayloadBackedExecutionAuthority = {
-  ownsPreWorkerTransition: boolean;
-  nodeExecutionPacketRef: string | null;
-  resourcePacketRef: string | null;
+export type NodeLifecycleNodeExecutionSnapshotRecordResult = {
+  refs: string[];
   reasonCodes: string[];
 };
+
+export type NodeLifecycleAgentSessionStart = {
+  status: "accepted" | "blocked";
+  nodeExecutionSnapshot: NodeExecutionSnapshot;
+  artifactType: typeof NODE_EXECUTION_SNAPSHOT_ARTIFACT_TYPE;
+  blockerKind: string | null;
+  refs: string[];
+  reasonCodes: string[];
+  rawPromptStored: false;
+  rawResponseStored: false;
+  rawTranscriptStored: false;
+  rawProviderLogStored: false;
+  hiddenReasoningStored: false;
+};
+
+export type NodeLifecycleAgentProfileResolution =
+  | {
+      status: "accepted";
+      agentId: string;
+      reasonCodes: string[];
+    }
+  | {
+      status: "blocked";
+      agentId: string | null;
+      blockerKind:
+        | "node_agent_profile_missing"
+        | "node_agent_profile_not_allowed"
+        | "node_agent_tool_policy_insufficient"
+        | "node_agent_skill_policy_insufficient"
+        | "node_agent_subagent_policy_insufficient"
+        | "node_agent_runtime_unavailable";
+      reasonCodes: string[];
+    };
 
 export type NodeLifecycleTransitionRunnerOptions = {
   capabilityManifest: RuntimeNodeCapabilityManifest;
@@ -175,6 +200,22 @@ export type NodeLifecycleTransitionRunnerOptions = {
     projection: NodeLifecycleProjection;
     manifest: NodeLifecycleProjectionManifest;
   }) => Promise<NodeLifecycleProjectionRecordResult>;
+  recordNodeExecutionSnapshot?: (input: {
+    graphId: string;
+    iteration: number;
+    snapshot: RuntimeWorkGraphSnapshot;
+    node: TeamGraphNode;
+    nodeExecutionSnapshot: NodeExecutionSnapshot;
+  }) => Promise<NodeLifecycleNodeExecutionSnapshotRecordResult>;
+  resolveNodeAgentProfile?: (input: {
+    graphId: string;
+    iteration: number;
+    snapshot: RuntimeWorkGraphSnapshot;
+    node: TeamGraphNode;
+    proposedAgentId: string;
+    capabilityId: string | null;
+    workflowId: string;
+  }) => Promise<NodeLifecycleAgentProfileResolution> | NodeLifecycleAgentProfileResolution;
   executeTransition?: (input: {
     graphId: string;
     iteration: number;
@@ -236,26 +277,6 @@ function asRecord(value: unknown): Record<string, unknown> {
     : {};
 }
 
-export function nodeLifecyclePayloadBackedExecutionAuthorityFor(
-  node: TeamGraphNode,
-): NodeLifecyclePayloadBackedExecutionAuthority {
-  const metadata = asRecord(node.metadata);
-  const nodeExecutionPacketRef = firstString(metadata, ["nodeExecutionPacketRef"], 500);
-  const resourcePacketRef = firstString(metadata, ["resourcePacketRef"], 500);
-  const ownsPreWorkerTransition = Boolean(nodeExecutionPacketRef && resourcePacketRef);
-  return {
-    ownsPreWorkerTransition,
-    nodeExecutionPacketRef,
-    resourcePacketRef,
-    reasonCodes: ownsPreWorkerTransition
-      ? [
-          "node_lifecycle_payload_backed_execution_authority",
-          "node_lifecycle_runner_owns_pre_worker_transition",
-        ]
-      : ["node_lifecycle_payload_backed_execution_refs_missing"],
-  };
-}
-
 function firstString(metadata: Record<string, unknown>, keys: string[], max = 360): string | null {
   for (const key of keys) {
     const value = bounded(metadata[key], max);
@@ -267,7 +288,10 @@ function firstString(metadata: Record<string, unknown>, keys: string[], max = 36
 }
 
 function refList(metadata: Record<string, unknown>, keys: string[], max = 40): string[] {
-  return strings(keys.flatMap((key) => strings(metadata[key], max)), max);
+  return strings(
+    keys.flatMap((key) => strings(metadata[key], max)),
+    max,
+  );
 }
 
 function nodeLifecycleDependencySatisfied(status: string | null | undefined): boolean {
@@ -294,10 +318,6 @@ function nodeLifecycleHasUnsatisfiedDependencies(input: {
   });
 }
 
-function gateFromResolution(resolution: WorkIntentContextResolution): string {
-  return nodeLifecycleGateForWorkIntentContextStatus(resolution.status);
-}
-
 function metadataGate(metadata: Record<string, unknown>): string | null {
   const canonicalGate = firstString(
     metadata,
@@ -306,9 +326,6 @@ function metadataGate(metadata: Record<string, unknown>): string | null {
   );
   if (isNodeLifecycleGate(canonicalGate)) {
     return canonicalGate;
-  }
-  if (canonicalGate) {
-    return "node_lifecycle_root_cause_collapsed";
   }
   return null;
 }
@@ -323,26 +340,21 @@ function defaultGateForExecutableNode(input: {
   if (HARD_TERMINAL_NODE_STATUSES.has(input.node.nodeStatus)) {
     return "no_local_lifecycle_transition";
   }
-  if (input.capability && ! input.capability.canRunAsExecutable) {
+  if (input.capability && !input.capability.canRunAsExecutable) {
     return "no_local_lifecycle_transition";
   }
-  if (
-    input.capability &&
-    !input.capability.canEditSource &&
-    !input.capability.canWriteTests &&
-    input.capability.roleClass !== "implementation"
-  ) {
+  if (input.capability && input.capability.roleClass === "human") {
     return "no_local_lifecycle_transition";
   }
-  return "worker_action_ready";
+  return "node_agent_session_ready";
 }
 
 function staleMetadataGateDiagnostics(metadata: Record<string, unknown>): string[] {
   return firstString(
     metadata,
     [
-      "nodeReadinessPhase",
-      "nodeReadinessRepairAction",
+      "nodeLifecycleProjectionGate",
+      "nodeLifecycleCurrentGate",
       "progressiveState",
       "workIntentContextResolutionStatus",
       "currentPhase",
@@ -358,21 +370,7 @@ function transitionsForGate(input: {
   gate: string;
   capability: ReturnType<typeof findRuntimeNodeCapability> | null;
 }): string[] {
-  const genericTransitions = legalTransitionsForLifecycleGate(input.gate);
-  if (input.gate === "worker_action_ready" && input.capability?.domainWorkerActionToolIds.length) {
-    if (
-      !input.capability.canEditSource &&
-      !input.capability.canWriteTests &&
-      input.capability.roleClass !== "implementation"
-    ) {
-      return input.capability.domainWorkerActionToolIds.slice(0, 16);
-    }
-    return uniqueStrings(
-      [...genericTransitions, ...input.capability.domainWorkerActionToolIds],
-      32,
-    ).slice(0, 16);
-  }
-  return genericTransitions.slice(0, 16);
+  return legalTransitionsForLifecycleGate(input.gate).slice(0, 16);
 }
 
 function canCallGlobalSchedulerFor(input: {
@@ -388,7 +386,10 @@ function canCallGlobalSchedulerFor(input: {
   if (input.rejectedLifecycleTransitions.length > 0) {
     return false;
   }
-  if (input.gate === "worker_action_ready") {
+  if (
+    input.gate === "node_agent_session_ready" ||
+    input.gate === "node_agent_session_escalation_required"
+  ) {
     return false;
   }
   if (!LOCAL_LIFECYCLE_GATES.has(input.gate)) {
@@ -399,27 +400,13 @@ function canCallGlobalSchedulerFor(input: {
 
 function lifecycleProjectionPriority(projection: NodeLifecycleProjection): number {
   switch (projection.currentGate) {
-    case "worker_action_ready":
-    case "post_action_validation":
-    case "validation_repair_plan_required":
-    case "validation_repair_patch_required":
-    case "evidence_closure":
+    case "node_agent_session_ready":
+    case "node_agent_session_escalation_required":
       return 0;
-    case "resource_ledger_ready":
-    case "domain_resource_selection_required":
-    case "domain_action_gate_blocked":
-      return 1;
-    case "resource_demand_open":
-    case "resource_narrowing_required":
-      return 2;
-    case "resource_demand_blocked":
-    case "domain_resource_selection_blocked":
-    case "validation_terminal_blocker":
-      return 3;
     case "node_lifecycle_root_cause_collapsed":
-      return 4;
+      return 1;
     default:
-      return 5;
+      return 2;
   }
 }
 
@@ -486,7 +473,10 @@ function buildRootCauseSignature(input: {
   };
   const signatureHash = hashValue(body);
   return {
-    signatureRef: graphRef("node-lifecycle-root-cause-signature", `${input.node.nodeId}-${signatureHash}`),
+    signatureRef: graphRef(
+      "node-lifecycle-root-cause-signature",
+      `${input.node.nodeId}-${signatureHash}`,
+    ),
     signatureHash,
     stage: body.stage,
     nodeKind: body.nodeKind,
@@ -553,6 +543,87 @@ export function buildNodeLifecycleProjectionManifest(
 export class NodeLifecycleTransitionRunner {
   constructor(private readonly options: NodeLifecycleTransitionRunnerOptions) {}
 
+  async prepareAgentSessionStart(input: {
+    graphId: string;
+    iteration: number;
+    snapshot: RuntimeWorkGraphSnapshot;
+    node: TeamGraphNode;
+    attemptId?: string;
+  }): Promise<NodeLifecycleAgentSessionStart> {
+    const metadata = asRecord(input.node.metadata);
+    const attemptId =
+      firstString(metadata, ["nodeAttemptId", "attemptId", "executionAttemptId"], 160) ??
+      `iteration-${input.iteration}`;
+    const proposedAgentId = resolveNodeExecutionAgentId({ node: input.node });
+    const capabilityId = firstString(metadata, ["capabilityId", "selectedCapabilityId"], 180);
+    const agentResolution =
+      (await this.options.resolveNodeAgentProfile?.({
+        graphId: input.graphId,
+        iteration: input.iteration,
+        snapshot: input.snapshot,
+        node: input.node,
+        proposedAgentId,
+        capabilityId,
+        workflowId: input.snapshot.graph.workflowId,
+      })) ??
+      ({
+        status: "accepted",
+        agentId: proposedAgentId,
+        reasonCodes: ["node_agent_profile_resolution_not_configured_default_agent_accepted"],
+      } satisfies NodeLifecycleAgentProfileResolution);
+    const nodeExecutionSnapshot = buildNodeExecutionSnapshotFromGraphNode({
+      snapshot: input.snapshot,
+      graphId: input.graphId,
+      node: input.node,
+      attemptId: input.attemptId ?? attemptId,
+      agentId: agentResolution.agentId ?? proposedAgentId,
+    });
+    if (agentResolution.status === "blocked") {
+      return {
+        status: "blocked",
+        nodeExecutionSnapshot,
+        artifactType: NODE_EXECUTION_SNAPSHOT_ARTIFACT_TYPE,
+        blockerKind: agentResolution.blockerKind,
+        refs: [],
+        reasonCodes: uniqueStrings([
+          "node_lifecycle_runner_blocked_openclaw_agent_session_start",
+          agentResolution.blockerKind,
+          ...agentResolution.reasonCodes,
+        ]),
+        rawPromptStored: false,
+        rawResponseStored: false,
+        rawTranscriptStored: false,
+        rawProviderLogStored: false,
+        hiddenReasoningStored: false,
+      };
+    }
+    const persisted = await this.options.recordNodeExecutionSnapshot?.({
+      graphId: input.graphId,
+      iteration: input.iteration,
+      snapshot: input.snapshot,
+      node: input.node,
+      nodeExecutionSnapshot,
+    });
+    return {
+      status: "accepted",
+      nodeExecutionSnapshot,
+      artifactType: NODE_EXECUTION_SNAPSHOT_ARTIFACT_TYPE,
+      blockerKind: null,
+      refs: uniqueStrings([nodeExecutionSnapshot.snapshotRef, ...(persisted?.refs ?? [])]),
+      reasonCodes: uniqueStrings([
+        "node_lifecycle_runner_prepared_openclaw_agent_session_start",
+        "node_lifecycle_runner_compiled_node_execution_snapshot",
+        ...agentResolution.reasonCodes,
+        ...(persisted?.reasonCodes ?? []),
+      ]),
+      rawPromptStored: false,
+      rawResponseStored: false,
+      rawTranscriptStored: false,
+      rawProviderLogStored: false,
+      hiddenReasoningStored: false,
+    };
+  }
+
   project(input: {
     graphId: string;
     snapshot: RuntimeWorkGraphSnapshot;
@@ -564,43 +635,21 @@ export class NodeLifecycleTransitionRunner {
     const capability = capabilityId
       ? findRuntimeNodeCapability(capabilityId, this.options.capabilityManifest)
       : null;
-    let resolution: WorkIntentContextResolution | null = null;
-    if (input.node.nodeKind === "work_intent" && metadata.workIntentCompiled === true) {
-      resolution = compileWorkIntentContextResolution({
-        snapshot: input.snapshot,
-        workIntentNode: input.node,
-        capabilityManifest: this.options.capabilityManifest,
-      });
-    }
-
-    const gate = resolution
-      ? gateFromResolution(resolution)
-      : (metadataGate(metadata) ?? defaultGateForExecutableNode({ node: input.node, capability }));
+    const gate =
+      metadataGate(metadata) ?? defaultGateForExecutableNode({ node: input.node, capability });
     const currentLifecycleState =
-      resolution?.status ??
-      firstString(
-        metadata,
-        ["nodeLifecycleState", "progressiveState", "nodeReadinessPhase", "workIntentContextResolutionStatus"],
-        220,
-      ) ??
+      (gate !== "no_local_lifecycle_transition" ? gate : null) ??
+      firstString(metadata, ["nodeLifecycleState"], 220) ??
       input.node.nodeStatus;
     const baseReasonCodes = uniqueStrings(
       [
-        ...(resolution?.reasonCodes ?? []),
         ...strings(metadata.nodeLifecycleReasonCodes, 40),
         ...strings(metadata.lastStatusReasonCodes, 40),
         ...strings(metadata.reasonCodes, 40),
       ],
       60,
     );
-    const missingFields = uniqueStrings(
-      [
-        ...strings(metadata.missingFields, 20),
-        ...strings(metadata.nodeReadinessMissingFields, 20),
-        ...strings(metadata.readinessProjectionMissingFields, 20),
-      ],
-      20,
-    );
+    const missingFields = uniqueStrings([...strings(metadata.missingFields, 20)], 20);
     const candidateTransitions = transitionsForGate({ gate, capability });
     const transitionProfileRef =
       capability?.lifecycleTransitionProfileRef ??
@@ -617,7 +666,9 @@ export class NodeLifecycleTransitionRunner {
         ...baseReasonCodes,
         ...transitionProfile.reasonCodes,
         ...staleMetadataGateDiagnostics(metadata),
-        ...(resolution ? ["node_lifecycle_runner_authored_transitions"] : []),
+        ...(gate === "node_agent_session_ready"
+          ? ["node_lifecycle_runner_authorized_openclaw_agent_session"]
+          : []),
       ],
       80,
     );
@@ -643,7 +694,10 @@ export class NodeLifecycleTransitionRunner {
     return {
       artifactKind: "execution_platform.node_lifecycle_projection",
       schemaVersion: NODE_LIFECYCLE_PROJECTION_SCHEMA_VERSION,
-      projectionRef: graphRef("node-lifecycle-projection", `${input.node.nodeId}-${projectionHash}`),
+      projectionRef: graphRef(
+        "node-lifecycle-projection",
+        `${input.node.nodeId}-${projectionHash}`,
+      ),
       projectionHash,
       runtimeJobId: input.snapshot.graph.rootRuntimeJobId ?? "unknown-runtime-job",
       workflowId,
@@ -655,29 +709,17 @@ export class NodeLifecycleTransitionRunner {
       currentLifecycleState,
       currentGate: gate,
       nodeStatus: input.node.nodeStatus,
-      executionIntent:
-        resolution?.executionIntent ??
-        firstString(metadata, ["executionIntent", "downstreamExecutionIntent"], 120),
-      evidenceMode: resolution?.evidenceMode ?? strings(metadata.evidenceMode, 12, 120),
+      executionIntent: firstString(metadata, ["executionIntent", "downstreamExecutionIntent"], 120),
+      evidenceMode: strings(metadata.evidenceMode, 12, 120),
       nextLegalTransitions,
       rejectedLifecycleTransitions,
-      acceptedArtifactRefs: uniqueStrings([
-        ...(resolution?.acceptedResourceHandoffRefs ?? []),
-        ...refList(metadata, ["acceptedArtifactRefs"], 24),
-      ]),
-      blockedArtifactRefs: refList(metadata, ["blockedArtifactRefs", "nodeResourceDemandBlockerRefs"], 24),
-      requestArtifactRefs: uniqueStrings([
-        ...(resolution?.requiredResourceRequirementRefs ?? []),
-        ...refList(metadata, ["requestArtifactRefs", "nodeResourceDemandRequestRefs"], 24),
-      ]),
+      acceptedArtifactRefs: uniqueStrings([...refList(metadata, ["acceptedArtifactRefs"], 24)]),
+      blockedArtifactRefs: refList(metadata, ["blockedArtifactRefs"], 24),
+      requestArtifactRefs: uniqueStrings([...refList(metadata, ["requestArtifactRefs"], 24)]),
       diagnosticArtifactRefs: uniqueStrings([
-        resolution?.resolutionRef,
         ...refList(metadata, ["diagnosticArtifactRefs", "outputArtifactRefs"], 24),
       ]),
-      providerDiagnosticRefs: uniqueStrings([
-        ...(resolution?.providerDiagnosticRefs ?? []),
-        ...refList(metadata, ["providerDiagnosticRefs"], 24),
-      ]),
+      providerDiagnosticRefs: uniqueStrings([...refList(metadata, ["providerDiagnosticRefs"], 24)]),
       rootCauseSignature: buildRootCauseSignature({
         graphId: input.graphId,
         node: input.node,
@@ -712,7 +754,9 @@ export class NodeLifecycleTransitionRunner {
   }): NodeLifecycleProjection[] {
     return input.snapshot.nodes
       .filter((node) => !HARD_TERMINAL_NODE_STATUSES.has(node.nodeStatus))
-      .filter((node) => !nodeLifecycleHasUnsatisfiedDependencies({ snapshot: input.snapshot, node }))
+      .filter(
+        (node) => !nodeLifecycleHasUnsatisfiedDependencies({ snapshot: input.snapshot, node }),
+      )
       .map((node) => this.project({ graphId: input.graphId, snapshot: input.snapshot, node }))
       .filter((projection) => !projection.canCallGlobalScheduler)
       .toSorted((a, b) => {
@@ -745,7 +789,9 @@ export class NodeLifecycleTransitionRunner {
         if (includedNodeKinds.size === 0) {
           return true;
         }
-        const node = input.snapshot.nodes.find((candidate) => candidate.nodeId === projection.nodeId);
+        const node = input.snapshot.nodes.find(
+          (candidate) => candidate.nodeId === projection.nodeId,
+        );
         return node ? includedNodeKinds.has(node.nodeKind) : false;
       });
     if (projections.length === 0) {
@@ -777,10 +823,7 @@ export class NodeLifecycleTransitionRunner {
         manifest,
       });
       refs.push(projection.projectionRef, ...(recorded?.refs ?? []));
-      reasonCodes.push(
-        "node_lifecycle_projection_recorded",
-        ...(recorded?.reasonCodes ?? []),
-      );
+      reasonCodes.push("node_lifecycle_projection_recorded", ...(recorded?.reasonCodes ?? []));
 
       const executed = await this.options.executeTransition?.({
         graphId: input.graphId,

@@ -128,7 +128,7 @@ describe("GenericRuntimeSpine", () => {
     expect(readiness.rawPromptStored).toBe(false);
   });
 
-  it("blocks production scheduler execution when staged runtime options are absent", () => {
+  it("does not require retired node execution packet options for production scheduler execution", () => {
     const definition = requireCanonicalWorkflowDefinition("agent_team.coding");
     const executors = codingExecutors();
     const plugin = buildAgentTeamCodingWorkflowPlugin({ definition, executors });
@@ -142,20 +142,22 @@ describe("GenericRuntimeSpine", () => {
       plugin,
       schedulerOptions: {
         orchestrator: {
-          decide: async () => ({ decisionKind: "mark_needs_review" }),
+          callSchedulerTool: async () => {
+            throw new Error("scheduler_native_tool_should_not_run_in_spine_readiness_fixture");
+          },
         },
         executors,
         requireSchedulerToolKernel: true,
-        requireMissionLedgerForExecutionWorkflow: true,
         requireCostAwareCapabilityPolicy: true,
         requireEvidenceClaimsForMissionLedger: true,
         capabilityManifest: plugin.schedulerOptions.capabilityManifest,
       },
     });
 
-    expect(readiness.ready).toBe(false);
-    expect(readiness.reasonCodes).toContain(
-      "generic_orchestration_scheduler_option_staged_protocol_missing",
+    expect(readiness.ready).toBe(true);
+    expect(readiness.reasonCodes).toContain("generic_runtime_spine_scheduler_options_ready");
+    expect(readiness.reasonCodes).not.toContain(
+      "generic_orchestration_scheduler_option_node_execution_packet_missing",
     );
   });
 

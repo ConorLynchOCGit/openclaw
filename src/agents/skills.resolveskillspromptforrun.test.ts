@@ -2,8 +2,8 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { resolveSkillsPromptForRun } from "./skills.js";
-import { createCanonicalFixtureSkill } from "./skills.test-helpers.js";
+import { buildRequiredActiveSkillSnapshot, resolveSkillsPromptForRun } from "./skills.js";
+import { createCanonicalFixtureSkill, writeSkill } from "./skills.test-helpers.js";
 import type { SkillEntry } from "./skills/types.js";
 
 const tempDirs: string[] = [];
@@ -167,6 +167,38 @@ describe("resolveSkillsPromptForRun", () => {
     });
 
     expect(prompt).toBe("");
+  });
+
+  it("builds required active skill context with source refs through the native snapshot surface", async () => {
+    const workspace = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-active-skill-"));
+    tempDirs.push(workspace);
+    await writeSkill({
+      dir: path.join(workspace, "skills", "execution-node-workflow"),
+      name: "execution-node-workflow",
+      description: "Execution node workflow",
+      body: "Follow the execution-node-workflow workflow.",
+    });
+
+    const snapshot = buildRequiredActiveSkillSnapshot(workspace, {
+      requiredSkillNames: ["execution-node-workflow"],
+      skillFilter: ["ignored-by-required-builder"],
+    });
+
+    expect(snapshot.skillFilter).toEqual(["execution-node-workflow"]);
+    expect(snapshot.prompt).toContain("<active_skills>");
+    expect(snapshot.prompt).toContain('<active_skill name="execution-node-workflow"');
+    expect(snapshot.prompt).toContain('source_ref="openclaw-skill-file://');
+    expect(snapshot.prompt).toContain("Follow the execution-node-workflow workflow.");
+    expect(snapshot.prompt).not.toContain("<available_skills>");
+    expect(snapshot.activeContextSources).toEqual([
+      expect.objectContaining({
+        kind: "required_skill",
+        name: "execution-node-workflow",
+        missing: false,
+        truncated: false,
+        sourceHash: expect.any(String),
+      }),
+    ]);
   });
 });
 

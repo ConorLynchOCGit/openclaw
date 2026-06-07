@@ -248,7 +248,7 @@ const RAW_KEY_PATTERN =
 const DEFAULT_STRING_BOUND = 1_200;
 const DEFAULT_ARRAY_BOUND = 24;
 const GRAPH_METADATA_BODY_KEY_PATTERN =
-  /^(implementationContextPacket|implementationTaskPacket|codingResourcePacket|nodeExecutionContract|executionContract|contractBody|nodeExecutionPacket|nodeReadinessState|resourceRequirementPacket|contextPacket|resourceHandoffPacket|nodeResourceDemandSession|nodeResourceDemandRequest|nodeResourceDemandFulfillment|nodeResourceDemandBlocker|resourcePacket|targetFileSnapshots|fileSnapshots|splitTasks|taskPackets|packetBody|payloadBody|body)$/u;
+  /^(nodeAgentWorkerPrompt|nodeExecutionSnapshot|nodeExecutionContract|nodeFinish|executionContract|contractBody|packetBody|payloadBody|body|.*Body|.*Packet|.*Session|.*Request|.*Fulfillment|.*Blocker)$/u;
 const GRAPH_METADATA_MANIFEST_ARRAY_MAX = 120;
 const GRAPH_METADATA_MANIFEST_OBJECT_ARRAY_MAX = 8;
 
@@ -313,7 +313,7 @@ function isManifestLikeObject(value: Record<string, unknown>): boolean {
     typeof value.stateRef === "string" ||
     typeof value.contractRef === "string" ||
     typeof value.nodeExecutionContractRef === "string" ||
-    typeof value.resourceRequirementRef === "string" ||
+    typeof value.sourceMaterialRequirementRef === "string" ||
     typeof value.contentHash === "string" ||
     typeof value.sha256 === "string"
   );
@@ -344,49 +344,30 @@ function isBoundedManifestOnlyObject(value: Record<string, unknown>): boolean {
     "nodeExecutionContractRef",
     "nodeExecutionContractVersion",
     "nodeExecutionContractHash",
-    "nodeExecutionPacketRef",
-    "nodeExecutionPacketHash",
-    "resourcePacketRef",
-    "resourcePacketHash",
-    "domainResourcePacketRef",
-    "domainResourcePacketHash",
-    "nodeReadinessStateRef",
-    "nodeReadinessStatus",
-    "nodeReadinessPhase",
-    "nodeReadinessRepairAction",
-    "nodeReadinessNextAllowedTransitions",
-    "nodeReadinessFreshnessStatus",
-    "nodeReadinessSnapshotStatus",
-    "nodeReadinessContextStatus",
-    "nodeReadinessValidationStatus",
-    "nodeReadinessAuthorityStatus",
-    "nodeReadinessEvidenceStatus",
-    "nodeReadinessStale",
-    "readinessProjectionStatus",
-    "readinessProjectionDriftReasonCodes",
-    "readinessProjectionMissingFields",
-    "readinessProjectionRef",
-    "readinessProjectionHash",
+    "sourceMaterialRef",
+    "sourceMaterialHash",
+    "domainSourceMaterialRef",
+    "domainSourceMaterialHash",
     "boundaryEpoch",
     "currentBoundaryEpoch",
     "childBoundaryEpoch",
     "parentNodeId",
     "parentContractHash",
     "currentParentContractHash",
-    "parentResourcePacketHash",
-    "currentParentResourcePacketHash",
+    "parentSourceMaterialHash",
+    "currentParentSourceMaterialHash",
     "childEpochFrontierEligible",
     "childEpochStale",
     "childEpochReasonCodes",
     "childEpochSuperseded",
     "supersededByBoundaryEpoch",
-    "resourceRequirementRef",
-    "resourceRequirementId",
-    "resourceRequirementHash",
+    "sourceMaterialRequirementRef",
+    "sourceMaterialRequirementId",
+    "sourceMaterialRequirementHash",
     "contextPurpose",
     "semanticQuestionCount",
     "semanticQuestionSample",
-    "requiredResourceKinds",
+    "requiredSourceMaterialKinds",
     "downstreamCapabilityId",
     "downstreamExecutionIntent",
     "downstreamEvidenceMode",
@@ -406,8 +387,7 @@ function isBoundedManifestOnlyObject(value: Record<string, unknown>): boolean {
     "executorKey",
     "workerRef",
     "evidenceMode",
-    "domainResourcePacketKind",
-    "nodeExecutionPacketRequired",
+    "domainSourceMaterialKind",
     "rawPromptStored",
     "rawResponseStored",
     "rawProviderLogStored",

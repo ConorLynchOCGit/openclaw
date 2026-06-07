@@ -110,6 +110,77 @@ export type SessionPluginDebugEntry = {
   lines: string[];
 };
 
+export type SessionTodoStatus = "pending" | "in_progress" | "completed";
+
+export type SessionTodoPriority = "low" | "normal" | "high";
+
+export type SessionTodoItem = {
+  content: string;
+  status: SessionTodoStatus;
+  priority: SessionTodoPriority;
+  position: number;
+};
+
+export type SessionTodoUpdateEvent = {
+  eventId: string;
+  type: "todo.updated";
+  updatedAt: number;
+  itemCount: number;
+  completedCount: number;
+  inProgressCount: number;
+  sourceToolCallId?: string;
+  explanation?: string;
+  items: SessionTodoItem[];
+};
+
+export type SessionTodoState = {
+  schemaVersion: 1;
+  sessionKey: string;
+  updatedAt: number;
+  items: SessionTodoItem[];
+  history: SessionTodoUpdateEvent[];
+};
+
+export type SessionWorkingContextEntryKind = "context_scout_result" | "validation_scout_result";
+
+export type SessionWorkingContextEntry = {
+  entryId: string;
+  kind: SessionWorkingContextEntryKind;
+  createdAt: number;
+  source: "native_task";
+  sourceToolCallId?: string;
+  taskRef?: string;
+  childResultRef?: string;
+  requestedAgentId?: string;
+  childSessionKey?: string;
+  childRunId?: string;
+  textHash: string;
+  textByteCount: number;
+  text: string;
+  hasInlineContextWindows: boolean;
+  hasFileGraph: boolean;
+  fileGraphTextHash?: string;
+  fileGraphTextByteCount?: number;
+};
+
+export type SessionWorkingContextUpdateEvent = {
+  eventId: string;
+  type: "working_context.updated";
+  updatedAt: number;
+  entryCount: number;
+  activeEntryIds: string[];
+  sourceToolCallId?: string;
+  entries: Array<Omit<SessionWorkingContextEntry, "text">>;
+};
+
+export type SessionWorkingContextState = {
+  schemaVersion: 1;
+  sessionKey: string;
+  updatedAt: number;
+  activeEntries: SessionWorkingContextEntry[];
+  history: SessionWorkingContextUpdateEvent[];
+};
+
 export type SessionEntry = {
   visibilityClass?: SessionVisibilityClass;
   retentionClass?: SessionRetentionClass;
@@ -254,6 +325,10 @@ export type SessionEntry = {
   lastThreadId?: string | number;
   skillsSnapshot?: SessionSkillSnapshot;
   systemPromptReport?: SessionSystemPromptReport;
+  /** Session-owned native todo state written by the update_plan tool. */
+  todo?: SessionTodoState;
+  /** Session-owned bounded source context delivered by native task/scout results. */
+  workingContext?: SessionWorkingContextState;
   /**
    * Generic plugin-owned runtime debug entries shown in verbose status surfaces.
    * Each plugin owns and may overwrite only its own entry between turns.
@@ -445,6 +520,16 @@ export type SessionSkillSnapshot = {
   /** Normalized agent-level filter used to build this snapshot; undefined means unrestricted. */
   skillFilter?: string[];
   resolvedSkills?: Skill[];
+  activeContextSources?: Array<{
+    kind: "required_skill";
+    name: string;
+    path: string;
+    sourceRef: string;
+    sourceHash: string | null;
+    rawChars: number;
+    missing: boolean;
+    truncated: boolean;
+  }>;
   version?: number;
 };
 
@@ -486,7 +571,13 @@ export type SessionSystemPromptReport = {
   }>;
   skills: {
     promptChars: number;
-    entries: Array<{ name: string; blockChars: number }>;
+    entries: Array<{
+      name: string;
+      blockChars: number;
+      location?: string;
+      sourceRef?: string;
+      sourceHash?: string;
+    }>;
   };
   tools: {
     listChars: number;

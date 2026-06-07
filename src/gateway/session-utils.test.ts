@@ -183,6 +183,33 @@ describe("gateway session utils", () => {
     expect(target.storePath).toBe(path.resolve(storeTemplate.replace("{agentId}", "ops")));
   });
 
+  test("resolveGatewaySessionStoreTarget uses configured agentDir when no global session store is set", () => {
+    const executionAgentRoot = fs.mkdtempSync(
+      path.join(os.tmpdir(), "session-utils-execution-agent-"),
+    );
+    const cfg = {
+      session: { mainKey: "main" },
+      agents: {
+        list: [
+          { id: "main", default: true },
+          {
+            id: "execution-context-scout",
+            workspace: "/root",
+            agentDir: path.join(executionAgentRoot, "agent"),
+          },
+        ],
+      },
+    } as OpenClawConfig;
+
+    const target = resolveGatewaySessionStoreTarget({
+      cfg,
+      key: "agent:execution-context-scout:subagent:abc123",
+    });
+
+    expect(target.agentId).toBe("execution-context-scout");
+    expect(target.storePath).toBe(path.join(executionAgentRoot, "sessions", "sessions.json"));
+  });
+
   test("resolveGatewaySessionStoreTarget includes legacy mixed-case store key", () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "session-utils-case-"));
     const storePath = path.join(dir, "sessions.json");

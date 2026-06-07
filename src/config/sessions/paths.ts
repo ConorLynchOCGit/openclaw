@@ -35,6 +35,10 @@ export function resolveDefaultSessionStorePath(agentId?: string): string {
   return path.join(resolveAgentSessionsDir(agentId), "sessions.json");
 }
 
+export function resolveSessionStorePathForAgentDir(agentDir: string): string {
+  return path.join(path.dirname(path.resolve(agentDir)), "sessions", "sessions.json");
+}
+
 export type SessionFilePathOptions = {
   agentId?: string;
   sessionsDir?: string;

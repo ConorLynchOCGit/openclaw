@@ -367,10 +367,10 @@ export type WorkQueueExecutionReadModel = {
             currentToolId: string | null;
             nextLegalTransition: string | null;
           };
-          readiness: {
+          nodeLifecycleProjection: {
             status: string | null;
             ref: string | null;
-            phase: string | null;
+            gate: string | null;
             blockerSummary: string | null;
             schemaPath: string | null;
             policyPath: string | null;
@@ -427,7 +427,7 @@ export type WorkQueueExecutionReadModel = {
           promptHash: string | null;
           promptLength: number | null;
           resolutionStatus: string | null;
-          sectionRefs: string[];
+          sourcePromptBodyRef: string | null;
           excerptRequestRefs: string[];
           excerptProvidedRefs: string[];
           excerptDeniedRefs: string[];
@@ -448,74 +448,14 @@ export type WorkQueueExecutionReadModel = {
         contextScout: {
           qualityState: string | null;
           verifiedFileRefs: string[];
-          handoffPacketRefs: string[];
-          toolLoopRefs: string[];
-          runtimeToolInvocationRefs: string[];
-          executionPacketRefs: string[];
-          executionPacketInputBytes: number | null;
-          executionPacketMaxInputBytes: number | null;
-          providerTimeoutMs: number | null;
-          packetCompileStatus: string | null;
-          packetCompileReasonCodes: string[];
-          rejectedRefs: string[];
-          sufficiencySummary: string | null;
-          repoAnalysisFindingCount: number | null;
-          symbolRefs: string[];
-          testRefs: string[];
+          scoutSpawnRef: string | null;
+          childSessionKeyRef: string | null;
+          childResultRef: string | null;
+          parentSynthesisRef: string | null;
+          sessionsYieldObserved: boolean | null;
+          childResultObserved: boolean | null;
+          parentSynthesisObserved: boolean | null;
           openBlockers: string[];
-        };
-        resourceMaterialization: {
-          state: "missing" | "blocked" | "ready_with_limitations" | "ready";
-          materializationStatus: string | null;
-          materializationPacketRef: string | null;
-          materializationBlockingReasonCodes: string[];
-          materializationNonblockingReasonCodes: string[];
-          materializationSchemaDiagnostics: JsonValue | null;
-          materializationInputCounts: JsonValue | null;
-          materializationOutputCounts: JsonValue | null;
-          materializationMaxBounds: JsonValue | null;
-          materializationSuggestedSplitIds: string[];
-          materializationSuggestedSplitCount: number | null;
-          implementationContextPacketRef: string | null;
-          implementationContextReadinessStatus: string | null;
-          implementationTaskPacketRefs: string[];
-          resolvedTargetFileRefs: string[];
-          readableTargetFileRefs: string[];
-          missingTargetRefs: string[];
-          unreadableTargetRefs: string[];
-          directoryOnlyTargetRefs: string[];
-          candidateConcreteFileRefs: string[];
-          targetFileSnapshotRefs: string[];
-          targetFileSnapshotHashes: string[];
-          implementationContextRepairAction: string | null;
-          nodeExecutionContractRef: string | null;
-          nodeExecutionContractVersion: string | null;
-          nodeExecutionContractHash: string | null;
-          nodeExecutionPacketRef: string | null;
-          nodeExecutionPacketStatus: string | null;
-          resourcePacketKind: string | null;
-          resourcePacketRef: string | null;
-          nodeReadinessState: JsonValue | null;
-          nodeReadinessStateRef: string | null;
-          nodeReadinessPhase: string | null;
-          nodeReadinessStatus: string | null;
-          nodeReadinessRepairAction: string | null;
-          nodeReadinessNextAllowedTransitions: string[];
-          nodeReadinessFreshnessStatus: string | null;
-          nodeReadinessSnapshotStatus: string | null;
-          nodeReadinessContextStatus: string | null;
-          nodeReadinessValidationStatus: string | null;
-          nodeReadinessAuthorityStatus: string | null;
-          nodeReadinessEvidenceStatus: string | null;
-          readinessReasonCodes: string[];
-          blockingLimitations: string[];
-          nonblockingLimitations: string[];
-          nextDecision: string | null;
-          eli5: string | null;
-          rawPromptStored: false;
-          rawResponseStored: false;
-          rawProviderLogStored: false;
-          rawToolLogStored: false;
         };
         codeIntelligence: {
           state: "present" | "missing" | "needs_review";
@@ -651,12 +591,12 @@ export type WorkQueueExecutionReadModel = {
             parentBranchId: string | null;
             nodeId: string;
             nodeKind: string | null;
-            workIntentRef: string | null;
+            sourceRequirementRef: string | null;
             contractRef: string | null;
             readinessRef: string | null;
-            resourceRequirementRefs: string[];
-            domainResourcePacketRef: string | null;
-            resourcePacketRef: string | null;
+            sourceMaterialRequirementRefs: string[];
+            domainSourceMaterialRef: string | null;
+            sourceMaterialRef: string | null;
             status: string | null;
             blockerCode: string | null;
             blockerSummary: string | null;
@@ -695,7 +635,7 @@ export type WorkQueueExecutionReadModel = {
             repairAction: string | null;
             nextTransition: string | null;
             evidenceRefs: string[];
-            readinessStateRef: string | null;
+            nodeLifecycleProjectionRef: string | null;
             reasonCodes: string[];
           }>;
           joinReadyNodeIds: string[];
@@ -749,11 +689,13 @@ export type WorkQueueExecutionReadModel = {
             status: string | null;
             blockerSummary: string | null;
             errorPath: string | null;
-            readinessStateRef: string | null;
+            nodeLifecycleProjectionRef: string | null;
+            nodeLifecycleProjectionGate: string | null;
+            nodeLifecycleProjectionStatus: string | null;
             contractRef: string | null;
-            resourceRequirementRefs: string[];
-            domainResourcePacketRef: string | null;
-            resourcePacketRef: string | null;
+            sourceMaterialRequirementRefs: string[];
+            domainSourceMaterialRef: string | null;
+            sourceMaterialRef: string | null;
             consumerRefs: string[];
             dependentConsumers: string[];
             siblingBranchIds: string[];
@@ -777,7 +719,8 @@ export type WorkQueueExecutionReadModel = {
             nodeId: string | null;
             branchId: string | null;
             contractRef: string | null;
-            readinessStateRef: string | null;
+            nodeLifecycleProjectionRef: string | null;
+            nodeLifecycleProjectionGate: string | null;
             schemaPath: string | null;
             nextLegalTransition: string | null;
             reasonCodes: string[];
@@ -888,7 +831,7 @@ export type WorkQueueExecutionReadModel = {
           graphNodeCount: number | null;
           graphEdgeCount: number | null;
           commitmentCount: number | null;
-          workIntentCount: number | null;
+          sourceRequirementCount: number | null;
           activeFrontierCounts: {
             ready: number | null;
             selected: number | null;
@@ -2664,8 +2607,6 @@ function workflowProjection(
                     : null,
                 roleCoverageProfileId: stringValue(workflowPluginRecord?.roleCoverageProfileId),
                 completionReviewRequired: workflowPluginRecord?.completionReviewRequired === true,
-                stagedSchedulerProtocolRequired:
-                  workflowPluginRecord?.stagedSchedulerProtocolRequired === true,
                 stagedGraphAcceptanceRequired:
                   workflowPluginRecord?.stagedGraphAcceptanceRequired === true,
                 runtimeDerivedNodeEnvelopeRequired:
@@ -3054,6 +2995,7 @@ function productSpecPlanningDecisionOptions(records: Record<string, unknown>[]):
 function ownerRuntimeReadback(
   capsuleArtifact: RuntimeJobArtifact | undefined,
   artifacts: RuntimeJobArtifact[] = [],
+  hydratedMissionContractBody: JsonValue | null = null,
 ): WorkQueueExecutionRuntimeJobReadModel["ownerReadback"] {
   const capsule = asRecord(capsuleArtifact?.metadata);
   const humanReport = asRecord(capsule?.humanReport);
@@ -3061,7 +3003,9 @@ function ownerRuntimeReadback(
   const factualRefs = asRecord(capsule?.factualRefs);
   const missionArtifact = latestArtifact(artifacts, MISSION_CONTRACT_LEDGER_ARTIFACT_TYPE);
   const capsuleMissionContract = asRecord(capsule?.missionContractLedger);
-  const missionContract = capsuleMissionContract ?? asRecord(missionArtifact?.metadata);
+  const hydratedMissionContract = asRecord(hydratedMissionContractBody);
+  const missionContract =
+    capsuleMissionContract ?? hydratedMissionContract ?? asRecord(missionArtifact?.metadata);
   const missionBlockingCommitments = Array.isArray(missionContract?.blockingCommitments)
     ? missionContract.blockingCommitments
         .map((value) => asRecord(value))
@@ -3716,6 +3660,19 @@ function ownerRuntimeReadback(
     rawLogsStored: false,
     workQueueLifecycleMutationAllowed: false,
   };
+}
+
+async function hydrateLatestRuntimeArtifactBody(input: {
+  runtimeJobs: RuntimeJobRepository;
+  artifacts: RuntimeJobArtifact[];
+  artifactType: string;
+}): Promise<JsonValue | null> {
+  const artifact = latestArtifact(input.artifacts, input.artifactType);
+  if (!artifact) {
+    return null;
+  }
+  const hydrated = await input.runtimeJobs.hydrateRuntimeArtifactByContract(artifact);
+  return hydrated.body;
 }
 
 function ownerProgressReadback(input: {
@@ -4855,7 +4812,7 @@ function roleContributionSummary(roleId: string, status: string): string {
       return `Test engineer ${suffix}: checked focused validation evidence.`;
     case "reviewer":
       return `Reviewer ${suffix}: reviewed result evidence and limitations.`;
-    case "resource_scout":
+    case "context_scout":
       return `Context scout ${suffix}: identified bounded files, patterns, risks, and constraints.`;
     case "observability_scribe":
       return `Observability scribe ${suffix}: recorded closeout and readback evidence.`;
@@ -5406,7 +5363,16 @@ export async function buildWorkQueueExecutionReadModel(input: {
     const heartbeatAgeMs = heartbeat ? now.getTime() - heartbeat.eventTime.getTime() : null;
     const reviewRecord = asRecord(review?.metadata);
     const workflow = workflowProjection(job, artifacts);
-    const ownerReadback = ownerRuntimeReadback(closeoutCapsuleArtifact, artifacts);
+    const hydratedMissionContractBody = await hydrateLatestRuntimeArtifactBody({
+      runtimeJobs: input.runtimeJobs,
+      artifacts,
+      artifactType: MISSION_CONTRACT_LEDGER_ARTIFACT_TYPE,
+    });
+    const ownerReadback = ownerRuntimeReadback(
+      closeoutCapsuleArtifact,
+      artifacts,
+      hydratedMissionContractBody,
+    );
     const agentTeam = agentTeamProjection(teamEvidence, artifacts);
     const changedFileRefs = stringArrayValue(liveResultRecord?.actualFilesChanged, 40);
     const validationStatus = metadataStatus(validation, ["status"]);

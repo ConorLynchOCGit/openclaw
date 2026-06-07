@@ -6,6 +6,7 @@ import {
   listOpenClawResourceRoots,
   listOpenClawResources,
   resolveOpenClawResource,
+  resolveOpenClawResourceRegistryOptions,
 } from "./openclaw-resource-registry.js";
 
 async function seedResourceFixtures(root: string) {
@@ -65,6 +66,23 @@ async function seedResourceFixtures(root: string) {
 }
 
 describe("openclaw resource registry", () => {
+  it("derives default registry roots from the source-runtime manifest", async () => {
+    const options = await resolveOpenClawResourceRegistryOptions();
+
+    expect(options.liveRepoRoot).toBe("/root/services/openclaw-roles/live");
+    expect(options.workspaceRoot).toBe("/root/.openclaw/workspace");
+    expect(options.runtimeLiveRepoRoot).toBe(options.liveRepoRoot);
+    expect(options.runtimeWorkspaceRoot).toBe(options.workspaceRoot);
+
+    const roots = listOpenClawResourceRoots(options);
+    expect(roots.find((rootEntry) => rootEntry.id === "live_repo")?.runtimePath).toBe(
+      "/root/services/openclaw-roles/live",
+    );
+    expect(roots.find((rootEntry) => rootEntry.id === "operator_workspace")?.runtimePath).toBe(
+      "/root/.openclaw/workspace",
+    );
+  });
+
   it("lists high-value cross-root operator artifacts with stable ids and provenance", async () => {
     await withTempDir({ prefix: "openclaw-resource-registry-" }, async (root) => {
       const { liveRepoRoot, workspaceRoot } = await seedResourceFixtures(root);

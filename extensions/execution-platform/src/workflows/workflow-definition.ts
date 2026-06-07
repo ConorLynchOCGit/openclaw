@@ -169,8 +169,8 @@ export function validateWorkflowDefinition(
     reasonCodes.push("workflow_definition_allowed_capabilities_missing");
   }
   if (definition.productionEnabled && definition.resourceNeeds.some((need) => need.required)) {
-    if (!definition.sourcePromptPolicy.sourcePromptIndexRequired) {
-      reasonCodes.push("workflow_definition_context_requires_source_prompt_index");
+    if (!definition.sourcePromptPolicy.sourcePromptBodyRefRequired) {
+      reasonCodes.push("workflow_definition_context_requires_source_prompt_body_ref");
     }
   }
   const orchestrationValidation = validateWorkflowOrchestrationPolicy(

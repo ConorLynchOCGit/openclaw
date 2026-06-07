@@ -48,7 +48,7 @@ export type FrontDoorCompiledRuntimeJobRequest = {
   permissionEvidence: FrontDoorPermissionEvidence | null;
   routerToolProtocolRef: string | null;
   routerToolInvocationRefs: string[];
-  missionLedgerHandoffRef: string | null;
+  requirementMapHandoffRef: string | null;
   roleGraphRefs: string[];
   modelTransportPolicyRefs: string[];
   workQueueLink: { workItemId: string | null; runId: string | null };
@@ -210,7 +210,7 @@ export function compileFrontDoorRequest(
     ? `router-front-door-tool-protocol://${input.requestId}`
     : null;
   const routerToolInvocationRefs = input.routerToolProtocol?.toolInvocationRefs ?? [];
-  const missionLedgerHandoffRef = input.routerToolProtocol?.missionLedgerHandoffRef ?? null;
+  const requirementMapHandoffRef = input.routerToolProtocol?.requirementMapHandoffRef ?? null;
   const roleGraphRefs = input.workflow.roles.map(
     (role) => `${input.workflow!.workflowId}:${role.roleId}`,
   );
@@ -245,7 +245,7 @@ export function compileFrontDoorRequest(
     routerToolProtocolRef,
     routerToolInvocationRefs: routerToolInvocationRefs as JsonValue,
     routerToolProtocol: (input.routerToolProtocol ?? null) as unknown as JsonValue,
-    missionLedgerHandoffRef,
+    requirementMapHandoffRef,
     roleGraphRefs: roleGraphRefs as JsonValue,
     modelTransportPolicyRefs: modelTransportPolicyRefs as JsonValue,
     closeoutRequired: true,
@@ -290,7 +290,7 @@ export function compileFrontDoorRequest(
     permissionEvidence,
     routerToolProtocolRef,
     routerToolInvocationRefs,
-    missionLedgerHandoffRef,
+    requirementMapHandoffRef,
     roleGraphRefs,
     modelTransportPolicyRefs,
     workQueueLink: { workItemId: input.workItemId ?? null, runId: input.runId ?? null },

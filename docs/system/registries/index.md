@@ -14,3 +14,4 @@ Human-readable wrappers:
 3. [Runtime Inventory Registry](/system/registries/runtime-inventory)
 4. [Bootstrap Files Registry](/system/registries/bootstrap-files)
 5. [Auth Sources Registry](/system/registries/auth-sources)
+6. [Source Runtime Unification Registry](/system/registries/source-runtime-unification)

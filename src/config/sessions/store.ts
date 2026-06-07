@@ -60,7 +60,14 @@ const log = createSubsystemLogger("sessions/store");
 let sessionArchiveRuntimePromise: Promise<
   typeof import("../../gateway/session-archive.runtime.js")
 > | null = null;
-let sessionWriteLockAcquirerForTests: typeof acquireSessionWriteLock | null = null;
+type SessionWriteLockAcquirerForTests = (
+  params: Parameters<typeof acquireSessionWriteLock>[0],
+) => Promise<{
+  release: () => Promise<void>;
+  trace?: Awaited<ReturnType<typeof acquireSessionWriteLock>>["trace"];
+}>;
+
+let sessionWriteLockAcquirerForTests: SessionWriteLockAcquirerForTests | null = null;
 
 function loadSessionArchiveRuntime() {
   sessionArchiveRuntimePromise ??= import("../../gateway/session-archive.runtime.js");
@@ -122,7 +129,7 @@ export function resolveSessionStoreEntry(params: {
 }
 
 export function setSessionWriteLockAcquirerForTests(
-  acquirer: typeof acquireSessionWriteLock | null,
+  acquirer: SessionWriteLockAcquirerForTests | null,
 ): void {
   sessionWriteLockAcquirerForTests = acquirer;
 }

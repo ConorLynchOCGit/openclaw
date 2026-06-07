@@ -1,4 +1,7 @@
 import type { AgentEvent } from "@mariozechner/pi-agent-core";
+import { resolveStorePath } from "../config/sessions/paths.js";
+import type { SessionWorkingContextEntryKind } from "../config/sessions/types.js";
+import { updateSessionWorkingContext } from "../config/sessions/working-context.js";
 import type {
   AgentApprovalEventData,
   AgentCommandOutputEventData,
@@ -158,6 +161,179 @@ function readToolResultDetailsRecord(result: unknown): Record<string, unknown> |
   return details && typeof details === "object" && !Array.isArray(details)
     ? (details as Record<string, unknown>)
     : undefined;
+}
+
+function readRecord(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined;
+}
+
+function readStringField(
+  record: Record<string, unknown> | undefined,
+  key: string,
+): string | undefined {
+  const value = record?.[key];
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function readBooleanField(
+  record: Record<string, unknown> | undefined,
+  key: string,
+): boolean | undefined {
+  const value = record?.[key];
+  return typeof value === "boolean" ? value : undefined;
+}
+
+function readStringArrayField(record: Record<string, unknown> | undefined, key: string): string[] {
+  const value = record?.[key];
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.filter(
+    (entry): entry is string => typeof entry === "string" && entry.trim().length > 0,
+  );
+}
+
+function compactChildBootstrapAdmission(value: unknown): Record<string, unknown> | undefined {
+  const record = readRecord(value);
+  if (!record) {
+    return undefined;
+  }
+  return {
+    providerReportObserved: readBooleanField(record, "providerReportObserved") === true,
+    childAgentId: readStringField(record, "childAgentId") ?? "unknown",
+    canonicalDocsAdmitted: readBooleanField(record, "canonicalDocsAdmitted") === true,
+    requiredSkillAdmitted: readBooleanField(record, "requiredSkillAdmitted") === true,
+    missingRequiredSources: readStringArrayField(record, "missingRequiredSources").slice(0, 20),
+    truncatedRequiredSources: readStringArrayField(record, "truncatedRequiredSources").slice(0, 20),
+    ...(readStringField(record, "reportRef")
+      ? { reportRef: readStringField(record, "reportRef") }
+      : {}),
+    reasonCodes: readStringArrayField(record, "reasonCodes").slice(0, 20),
+  };
+}
+
+function buildNativeTaskResultEvent(params: {
+  runId: string;
+  toolCallId: string;
+  toolName: string;
+  result: unknown;
+}): Record<string, unknown> | null {
+  if (params.toolName !== "task") {
+    return null;
+  }
+  const details = readToolResultDetailsRecord(params.result) ?? readRecord(params.result);
+  if (!details) {
+    return null;
+  }
+  const childRunId = readStringField(details, "runId");
+  const childSessionKey = readStringField(details, "childSessionKey");
+  const requestedAgentId = readStringField(details, "requestedAgentId");
+  const resultDelivered = readBooleanField(details, "resultDeliveredToParentContext") === true;
+  const childResultRef =
+    resultDelivered && childSessionKey && childRunId
+      ? `openclaw-child-result://${encodeURIComponent(childSessionKey)}/${encodeURIComponent(childRunId)}`
+      : undefined;
+  return {
+    eventType: "node_agent_native_task_result",
+    taskRef: `openclaw-native-task-result://${encodeURIComponent(params.runId)}/${encodeURIComponent(
+      params.toolCallId,
+    )}`,
+    requestedAgentId,
+    childSessionKey,
+    childRunId,
+    status: readStringField(details, "status"),
+    foreground: readBooleanField(details, "foreground") === true,
+    resultDeliveredToParentContext: resultDelivered,
+    resultTruncated: readBooleanField(details, "resultTruncated") === true,
+    resultOversized: readBooleanField(details, "resultOversized") === true,
+    childIdentityVerified: readBooleanField(details, "childIdentityVerified") === true,
+    childStartFailureKind: readStringField(details, "childStartFailureKind"),
+    ...(childResultRef ? { childResultRef } : {}),
+    childBootstrapAdmission: compactChildBootstrapAdmission(details.childBootstrapAdmission),
+  };
+}
+
+function workingContextKindForNativeTaskAgent(
+  requestedAgentId: string | undefined,
+): SessionWorkingContextEntryKind | null {
+  if (requestedAgentId === "execution-context-scout") {
+    return "context_scout_result";
+  }
+  if (requestedAgentId === "execution-validation-scout") {
+    return "validation_scout_result";
+  }
+  return null;
+}
+
+async function admitNativeTaskWorkingContext(params: {
+  ctx: ToolHandlerContext;
+  event: Record<string, unknown>;
+  result: unknown;
+  toolCallId: string;
+}): Promise<Record<string, unknown>> {
+  const requestedAgentId = readStringField(params.event, "requestedAgentId");
+  const kind = workingContextKindForNativeTaskAgent(requestedAgentId);
+  if (!kind || readBooleanField(params.event, "resultDeliveredToParentContext") !== true) {
+    return params.event;
+  }
+  if (readBooleanField(params.event, "resultOversized") === true) {
+    return params.event;
+  }
+  const sessionKey = params.ctx.params.sessionKey?.trim();
+  const text = extractToolResultText(params.result);
+  if (!sessionKey || !text?.trim()) {
+    return params.event;
+  }
+  try {
+    const storePath = resolveStorePath(params.ctx.params.config?.session?.store, {
+      agentId: params.ctx.params.agentId,
+    });
+    const updateResult = await updateSessionWorkingContext({
+      storePath,
+      sessionKey,
+      entry: {
+        kind,
+        text,
+        sourceToolCallId: params.toolCallId,
+        taskRef: readStringField(params.event, "taskRef"),
+        childResultRef: readStringField(params.event, "childResultRef"),
+        requestedAgentId,
+        childSessionKey: readStringField(params.event, "childSessionKey"),
+        childRunId: readStringField(params.event, "childRunId"),
+      },
+    });
+    if (!updateResult.persisted) {
+      return {
+        ...params.event,
+        workingContextPersisted: false,
+        workingContextPersistFailureReason: updateResult.reason,
+        workingContextRef: updateResult.workingContextRef,
+      };
+    }
+    return {
+      ...params.event,
+      workingContextPersisted: true,
+      workingContextRef: updateResult.workingContextRef,
+      workingContextEntryRef: updateResult.workingContextEntryRef,
+      workingContextEntryId: updateResult.entry.entryId,
+      workingContextKind: updateResult.entry.kind,
+      workingContextHasInlineContextWindows: updateResult.entry.hasInlineContextWindows,
+      workingContextHasFileGraph: updateResult.entry.hasFileGraph,
+      workingContextFileGraphTextHash: updateResult.entry.fileGraphTextHash,
+      workingContextFileGraphTextByteCount: updateResult.entry.fileGraphTextByteCount,
+      workingContextTextHash: updateResult.entry.textHash,
+      workingContextTextByteCount: updateResult.entry.textByteCount,
+    };
+  } catch (err) {
+    return {
+      ...params.event,
+      workingContextPersisted: false,
+      workingContextPersistFailureReason: "persist_error",
+      workingContextPersistError: err instanceof Error ? err.message : String(err),
+    };
+  }
 }
 
 function readExecToolDetails(result: unknown): ExecToolDetails | null {
@@ -804,6 +980,25 @@ export async function handleToolExecutionEnd(
   ctx.state.toolMetas.push({ toolName, meta });
   ctx.state.toolMetaById.delete(toolCallId);
   ctx.state.toolSummaryById.delete(toolCallId);
+  const nativeTaskEvent = buildNativeTaskResultEvent({
+    runId,
+    toolCallId,
+    toolName,
+    result,
+  });
+  if (nativeTaskEvent) {
+    try {
+      const enrichedNativeTaskEvent = await admitNativeTaskWorkingContext({
+        ctx,
+        event: nativeTaskEvent,
+        result,
+        toolCallId,
+      });
+      await ctx.params.onAgentEvent?.({ stream: "node-agent", data: enrichedNativeTaskEvent });
+    } catch {
+      // Native task trace emission is diagnostic only; it must not alter tool semantics.
+    }
+  }
   if (isToolError) {
     const errorMessage = extractToolErrorMessage(sanitizedResult);
     ctx.state.lastToolError = {

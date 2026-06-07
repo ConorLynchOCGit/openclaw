@@ -3,6 +3,7 @@ import {
   DEFAULT_EXECUTION_WORKFLOW_REGISTRY,
   type WorkflowRegistry,
 } from "../workflows/workflow-registry.ts";
+import type { IntakeRouteContract } from "./intake-route-contract.ts";
 import { validateIntentFrontDoorDecision } from "./intent-validator.ts";
 import { evaluateRouterEscalationPolicy } from "./router-escalation-policy.ts";
 import {
@@ -35,6 +36,19 @@ function codingOutput(overrides = {}) {
     ...overrides,
   });
 }
+
+const codingProofContract: IntakeRouteContract = {
+  artifactKind: "intake_route_contract" as const,
+  schemaVersion: "intent-front-door.intake-route-contract.v1" as const,
+  contractId: "test-coding-proof-contract",
+  expectedPrimaryOutcomeKinds: ["implement_existing_system", "prove_existing_system"],
+  requiredExecutorCapabilities: ["code_edit", "test", "review", "closeout"],
+  requiredRequestedActions: ["code_edit", "test", "review", "closeout"],
+  expectedSubjectKinds: ["workflow"],
+  reasonCodes: ["test_requires_coding_executor_capability_profile"],
+  rawPromptStored: false as const,
+  rawResponseStored: false as const,
+};
 
 describe("Intent front door validator", () => {
   it("accepts valid chat/status and plan-only routes without workflow execution", () => {
@@ -91,6 +105,31 @@ describe("Intent front door validator", () => {
     });
   });
 
+  it("does not treat platform runtime-job compilation as a missing executor capability", () => {
+    const decision = validateIntentFrontDoorDecision({
+      parseResult: parseCanonicalRouterOutput(
+        codingOutput({
+          requestedCapabilities: ["code_edit", "test", "review", "closeout", "runtime_job_compile"],
+          requestedActions: [
+            createCanonicalRouterAction("code_edit", "bounded edit", 0.95),
+            createCanonicalRouterAction("test", "run validation", 0.95),
+            createCanonicalRouterAction("review", "review result", 0.95),
+            createCanonicalRouterAction("closeout", "closeout evidence", 0.95),
+          ],
+          reasonCodes: ["router_primary_outcome:harden_existing_system"],
+        }),
+      ),
+      workflowSummaryIndex: index(),
+      auth,
+      authority: {
+        snapshotFresh: true,
+        supportedAuthorityProfiles: ["read_only", "local_yolo"],
+      },
+    });
+
+    expect(decision.outcome).toBe("accepted");
+  });
+
   it("blocks invalid schema, missing auth, unknown workflow, disabled workflow, and missing ids", () => {
     expect(
       validateIntentFrontDoorDecision({
@@ -135,7 +174,7 @@ describe("Intent front door validator", () => {
     ).toContain("workflow_not_executable:disabled");
   });
 
-  it("clarifies low-confidence execution and blocks unsupported authority or stale snapshots", () => {
+  it("clarifies low-confidence execution and ignores router-authored authority while blocking stale snapshots", () => {
     expect(
       validateIntentFrontDoorDecision({
         parseResult: parseCanonicalRouterOutput(codingOutput({ confidence: 0.5 })),
@@ -145,16 +184,16 @@ describe("Intent front door validator", () => {
       }).outcome,
     ).toBe("clarification_required");
 
-    expect(
-      validateIntentFrontDoorDecision({
-        parseResult: parseCanonicalRouterOutput(
-          codingOutput({ requestedAuthority: "production_deploy" }),
-        ),
-        workflowSummaryIndex: index(),
-        auth,
-        authority: { snapshotFresh: true, supportedAuthorityProfiles: ["local_yolo"] },
-      }).reasonCodes,
-    ).toContain("requested_authority_not_supported_by_workflow");
+    const authorityIgnored = validateIntentFrontDoorDecision({
+      parseResult: parseCanonicalRouterOutput(
+        codingOutput({ requestedAuthority: "production_deploy" }),
+      ),
+      workflowSummaryIndex: index(),
+      auth,
+      authority: { snapshotFresh: true, supportedAuthorityProfiles: ["local_yolo"] },
+    });
+    expect(authorityIgnored.outcome).toBe("accepted");
+    expect(authorityIgnored.reasonCodes.some((code) => code.includes("authority"))).toBe(false);
 
     expect(
       validateIntentFrontDoorDecision({
@@ -166,7 +205,7 @@ describe("Intent front door validator", () => {
     ).toContain("authority_snapshot_stale");
   });
 
-  it("returns approval_required when a structured route requires missing approval", () => {
+  it("ignores structured router approval fields at the front door", () => {
     const output = codingOutput({
       requiresApproval: true,
       approvalKind: "local_yolo",
@@ -178,7 +217,7 @@ describe("Intent front door validator", () => {
         auth,
         authority: { snapshotFresh: true, supportedAuthorityProfiles: ["local_yolo"] },
       }).outcome,
-    ).toBe("approval_required");
+    ).toBe("accepted");
     expect(
       validateIntentFrontDoorDecision({
         parseResult: parseCanonicalRouterOutput(output),
@@ -193,7 +232,7 @@ describe("Intent front door validator", () => {
     ).toBe("accepted");
   });
 
-  it("allows owner-default coding authority to satisfy conservative low-risk approval flags", () => {
+  it("does not run owner-default approval satisfaction at the front door", () => {
     const output = codingOutput({
       requiresApproval: true,
       approvalKind: null,
@@ -211,11 +250,11 @@ describe("Intent front door validator", () => {
     });
 
     expect(decision.outcome).toBe("accepted");
-    expect(decision.reasonCodes).toContain("approval_satisfied_by_owner_default_authority");
+    expect(decision.reasonCodes).not.toContain("approval_satisfied_by_owner_default_authority");
     expect(decision.authorityGranted).toBe(false);
   });
 
-  it("allows owner-default coding authority to satisfy non-authority approval labels for low-risk work", () => {
+  it("ignores non-authority approval labels at the front door", () => {
     const output = codingOutput({
       requiresApproval: true,
       approvalKind: "operator_review",
@@ -233,10 +272,10 @@ describe("Intent front door validator", () => {
     });
 
     expect(decision.outcome).toBe("accepted");
-    expect(decision.reasonCodes).toContain("approval_satisfied_by_owner_default_authority");
+    expect(decision.reasonCodes).not.toContain("approval_satisfied_by_owner_default_authority");
   });
 
-  it("does not use owner-default coding authority to satisfy supported non-default authorities", () => {
+  it("does not block supported non-default approval labels at the front door", () => {
     const output = codingOutput({
       requiresApproval: true,
       approvalKind: "outbound_readonly",
@@ -253,10 +292,10 @@ describe("Intent front door validator", () => {
       },
     });
 
-    expect(decision.outcome).toBe("approval_required");
+    expect(decision.outcome).toBe("accepted");
   });
 
-  it("does not use owner-default coding authority for high-risk approval flags", () => {
+  it("does not convert high-risk router approval flags into front-door approval blockers", () => {
     const output = codingOutput({
       requiresApproval: true,
       approvalKind: null,
@@ -275,7 +314,7 @@ describe("Intent front door validator", () => {
       },
     });
 
-    expect(decision.outcome).toBe("approval_required");
+    expect(decision.outcome).toBe("accepted");
   });
 
   it("blocks raw storage flags, Work Queue lifecycle mutation, and production side-effect mismatch", () => {
@@ -363,5 +402,78 @@ describe("Intent front door validator", () => {
       runtimeJobCreated: false,
       workQueueLifecycleMutationAllowed: false,
     });
+  });
+
+  it("accepts an intake route contract when coding executes and the planning workflow is only the subject", () => {
+    const decision = validateIntentFrontDoorDecision({
+      parseResult: parseCanonicalRouterOutput(
+        codingOutput({
+          subjectWorkflowIds: ["agent_team.product_spec_planning"],
+          targetSubjectRefs: [
+            {
+              targetKind: "workflow",
+              targetRef: "workflow://agent_team.product_spec_planning",
+              confidence: 0.95,
+            },
+          ],
+          requestedActions: [
+            createCanonicalRouterAction("code_edit", "implement the framework", 0.95),
+            createCanonicalRouterAction("test", "run proof validation", 0.95),
+            createCanonicalRouterAction("review", "review proof output", 0.95),
+            createCanonicalRouterAction("closeout", "closeout evidence", 0.95),
+          ],
+          reasonCodes: ["router_primary_outcome:implement_existing_system"],
+        }),
+      ),
+      workflowSummaryIndex: index(),
+      auth,
+      authority: {
+        snapshotFresh: true,
+        supportedAuthorityProfiles: ["read_only", "local_yolo"],
+      },
+      intakeRouteContract: codingProofContract,
+    });
+
+    expect(decision.outcome).toBe("accepted");
+    expect(decision.reasonCodes).toContain("intake_route_contract_validated");
+  });
+
+  it("rejects a planning executor for a coding-proof intake route contract", () => {
+    const output = createBaseCanonicalRouterOutput({
+      route: "workflow_execution",
+      responseMode: "create_runtime_job",
+      executeNow: true,
+      executorWorkflowId: "agent_team.product_spec_planning",
+      workflowId: "agent_team.product_spec_planning",
+      jobType: "executor.workflow",
+      confidence: 0.95,
+      objectiveSummary: "Plan the named workflow.",
+      requestedActions: [createCanonicalRouterAction("plan", "draft planning output", 0.95)],
+      requestedCapabilities: ["plan", "action_graph_proposal", "runtime_job_compile", "closeout"],
+      requestedAuthority: "local_yolo",
+      sideEffectClass: "read_only",
+      reasonCodes: ["router_primary_outcome:produce_plan"],
+    });
+    const decision = validateIntentFrontDoorDecision({
+      parseResult: parseCanonicalRouterOutput(output),
+      workflowSummaryIndex: index(),
+      auth,
+      authority: {
+        snapshotFresh: true,
+        supportedAuthorityProfiles: ["read_only", "local_yolo"],
+      },
+      intakeRouteContract: codingProofContract,
+    });
+
+    expect(decision.outcome).toBe("needs_review");
+    expect(decision.reasonCodes).toEqual(
+      expect.arrayContaining([
+        "intake_route_contract_primary_outcome_mismatch",
+        "intake_route_contract_executor_capability_missing:code_edit",
+      ]),
+    );
+    expect(decision.reasonCodes).toContain(
+      "intake_route_contract_actions_deferred_to_requirement_map",
+    );
   });
 });

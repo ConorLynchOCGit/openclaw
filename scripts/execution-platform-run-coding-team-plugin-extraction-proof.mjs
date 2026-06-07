@@ -463,8 +463,6 @@ async function main() {
         pluginResolution,
         schedulerPolicy: plugin.schedulerPolicy,
         schedulerOptions: {
-          requireMissionLedgerForExecutionWorkflow:
-            plugin.schedulerOptions.requireMissionLedgerForExecutionWorkflow,
           requireCostAwareCapabilityPolicy:
             plugin.schedulerOptions.requireCostAwareCapabilityPolicy,
           requireEvidenceClaimsForMissionLedger:

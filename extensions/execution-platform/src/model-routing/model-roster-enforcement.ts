@@ -6,7 +6,7 @@ import type { RequestedModelCandidate } from "./model-candidate-validation-plan.
 
 export type ModelRosterRoleId =
   | "orchestrator"
-  | "resource_scout"
+  | "context_scout"
   | "implementation_engineer"
   | "test_engineer"
   | "reviewer"
@@ -120,7 +120,7 @@ export function enforceModelRoster(
     if (input.requestedModelId === "deepseek/deepseek-v4-pro") {
       reasonCodes.push("deepseek_v4_flash_must_not_alias_pro");
     }
-    if (!["test_engineer", "resource_scout", "observability_scribe"].includes(input.roleId)) {
+    if (!["test_engineer", "context_scout", "observability_scribe"].includes(input.roleId)) {
       reasonCodes.push("deepseek_v4_flash_role_not_allowed");
     }
   }

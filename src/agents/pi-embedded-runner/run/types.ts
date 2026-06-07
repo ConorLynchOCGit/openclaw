@@ -6,6 +6,7 @@ import type { SessionSystemPromptReport } from "../../../config/sessions/types.j
 import type { ContextEngine, ContextEnginePromptCacheInfo } from "../../../context-engine/types.js";
 import type { PluginHookBeforeAgentStartResult } from "../../../plugins/hook-before-agent-start.types.js";
 import type { MessagingToolSend } from "../../pi-embedded-messaging.types.js";
+import type { SessionLockAcquisitionTrace } from "../../session-write-lock.js";
 import type { ToolErrorSummary } from "../../tool-error-summary.js";
 import type { NormalizedUsage } from "../../usage.js";
 import type { EmbeddedRunReplayMetadata, EmbeddedRunReplayState } from "../replay-state.js";
@@ -64,10 +65,12 @@ export type EmbeddedRunAttemptResult = {
         route: Exclude<PreemptiveCompactionRoute, "fits">;
         handled: true;
         truncatedCount?: number;
+        reason?: string;
       }
     | {
         route: Exclude<PreemptiveCompactionRoute, "fits">;
         handled?: false;
+        reason?: string;
       };
   sessionIdUsed: string;
   bootstrapPromptWarningSignaturesSeen?: string[];
@@ -92,10 +95,15 @@ export type EmbeddedRunAttemptResult = {
   attemptUsage?: NormalizedUsage;
   promptCache?: ContextEnginePromptCacheInfo;
   compactionCount?: number;
+  /** Provider-facing native tool names after OpenClaw tool construction and filtering. */
+  effectiveToolNames?: string[];
+  /** Bounded native-node trace facts collected from OpenClaw tool/session events. */
+  nodeAgentSessionTrace?: Record<string, unknown>;
   /** Client tool call detected (OpenResponses hosted tools). */
   clientToolCall?: { name: string; params: Record<string, unknown> };
   /** True when sessions_yield tool was called during this attempt. */
   yieldDetected?: boolean;
+  sessionLockTrace?: SessionLockAcquisitionTrace;
   replayMetadata: EmbeddedRunReplayMetadata;
   itemLifecycle: {
     startedCount: number;

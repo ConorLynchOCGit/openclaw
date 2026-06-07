@@ -1,6 +1,10 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { resolveOpenClawPath, type OpenClawPathResolution } from "./workspace-topology-resolver.js";
+import {
+  resolveOpenClawPath,
+  resolveOpenClawPathRoots,
+  type OpenClawPathResolution,
+} from "./workspace-topology-resolver.js";
 
 export type OpenClawResourceRootId =
   | "live_repo"
@@ -17,6 +21,8 @@ export type OpenClawResourceRegistryOptions = {
   runtimeLiveRepoRoot?: string;
   runtimeWorkspaceRoot?: string;
 };
+
+type ResolvedOpenClawResourceRegistryOptions = Required<OpenClawResourceRegistryOptions>;
 
 export type OpenClawResourceRoot = {
   id: OpenClawResourceRootId;
@@ -66,18 +72,13 @@ export type OpenClawResourceResolution = {
   reason: string;
 };
 
-const DEFAULT_LIVE_REPO_ROOT = "/root/services/openclaw-roles/live";
-const DEFAULT_WORKSPACE_ROOT = "/root/.openclaw/workspace";
-const DEFAULT_RUNTIME_LIVE_REPO_ROOT = "/app";
-const DEFAULT_RUNTIME_WORKSPACE_ROOT = "/home/node/.openclaw/workspace";
-
 function normalizePath(value: string): string {
   return path.posix.normalize(value.replace(/\\/g, "/").trim());
 }
 
 function runtimePathFromHostPath(
   hostPath: string,
-  options: Required<OpenClawResourceRegistryOptions>,
+  options: ResolvedOpenClawResourceRegistryOptions,
 ) {
   const normalized = normalizePath(hostPath);
   const liveRepoRoot = normalizePath(options.liveRepoRoot);
@@ -95,6 +96,36 @@ function runtimePathFromHostPath(
     );
   }
   return normalized;
+}
+
+export async function resolveOpenClawResourceRegistryOptions(
+  options: OpenClawResourceRegistryOptions = {},
+): Promise<ResolvedOpenClawResourceRegistryOptions> {
+  const roots = resolveOpenClawPathRoots({
+    liveRepoRoot: options.liveRepoRoot,
+    workspaceRoot: options.workspaceRoot,
+  });
+  return {
+    liveRepoRoot: roots.liveRepoRoot,
+    workspaceRoot: roots.workspaceRoot,
+    runtimeLiveRepoRoot: normalizePath(options.runtimeLiveRepoRoot ?? roots.liveRepoRoot),
+    runtimeWorkspaceRoot: normalizePath(options.runtimeWorkspaceRoot ?? roots.workspaceRoot),
+  };
+}
+
+function resolveOpenClawResourceRegistryOptionsSync(
+  options: OpenClawResourceRegistryOptions = {},
+): ResolvedOpenClawResourceRegistryOptions {
+  const roots = resolveOpenClawPathRoots({
+    liveRepoRoot: options.liveRepoRoot,
+    workspaceRoot: options.workspaceRoot,
+  });
+  return {
+    liveRepoRoot: roots.liveRepoRoot,
+    workspaceRoot: roots.workspaceRoot,
+    runtimeLiveRepoRoot: normalizePath(options.runtimeLiveRepoRoot ?? roots.liveRepoRoot),
+    runtimeWorkspaceRoot: normalizePath(options.runtimeWorkspaceRoot ?? roots.workspaceRoot),
+  };
 }
 
 async function readFileIfPresent(filePath: string): Promise<string | null> {
@@ -185,7 +216,7 @@ function scoreAliasMatch(query: string, resource: OpenClawResourceEntry): number
 }
 
 function buildResourceRoots(
-  options: Required<OpenClawResourceRegistryOptions>,
+  options: ResolvedOpenClawResourceRegistryOptions,
 ): OpenClawResourceRoot[] {
   const liveRepoRoot = normalizePath(options.liveRepoRoot);
   const workspaceRoot = normalizePath(options.workspaceRoot);
@@ -241,16 +272,7 @@ function buildResourceRoots(
 export async function listOpenClawResources(
   options: OpenClawResourceRegistryOptions = {},
 ): Promise<OpenClawResourceEntry[]> {
-  const resolvedOptions: Required<OpenClawResourceRegistryOptions> = {
-    liveRepoRoot: normalizePath(options.liveRepoRoot ?? DEFAULT_LIVE_REPO_ROOT),
-    workspaceRoot: normalizePath(options.workspaceRoot ?? DEFAULT_WORKSPACE_ROOT),
-    runtimeLiveRepoRoot: normalizePath(
-      options.runtimeLiveRepoRoot ?? DEFAULT_RUNTIME_LIVE_REPO_ROOT,
-    ),
-    runtimeWorkspaceRoot: normalizePath(
-      options.runtimeWorkspaceRoot ?? DEFAULT_RUNTIME_WORKSPACE_ROOT,
-    ),
-  };
+  const resolvedOptions = await resolveOpenClawResourceRegistryOptions(options);
   const liveRepoRoot = resolvedOptions.liveRepoRoot;
   const workspaceRoot = resolvedOptions.workspaceRoot;
   const memoryOpsReportHost = normalizePath(
@@ -475,16 +497,7 @@ export async function listOpenClawResources(
 export function listOpenClawResourceRoots(
   options: OpenClawResourceRegistryOptions = {},
 ): OpenClawResourceRoot[] {
-  const resolvedOptions: Required<OpenClawResourceRegistryOptions> = {
-    liveRepoRoot: normalizePath(options.liveRepoRoot ?? DEFAULT_LIVE_REPO_ROOT),
-    workspaceRoot: normalizePath(options.workspaceRoot ?? DEFAULT_WORKSPACE_ROOT),
-    runtimeLiveRepoRoot: normalizePath(
-      options.runtimeLiveRepoRoot ?? DEFAULT_RUNTIME_LIVE_REPO_ROOT,
-    ),
-    runtimeWorkspaceRoot: normalizePath(
-      options.runtimeWorkspaceRoot ?? DEFAULT_RUNTIME_WORKSPACE_ROOT,
-    ),
-  };
+  const resolvedOptions = resolveOpenClawResourceRegistryOptionsSync(options);
   return buildResourceRoots(resolvedOptions);
 }
 
@@ -492,8 +505,9 @@ export async function resolveOpenClawResource(
   query: string,
   options: OpenClawResourceRegistryOptions = {},
 ): Promise<OpenClawResourceResolution> {
-  const roots = listOpenClawResourceRoots(options);
-  const resources = await listOpenClawResources(options);
+  const resolvedOptions = await resolveOpenClawResourceRegistryOptions(options);
+  const roots = buildResourceRoots(resolvedOptions);
+  const resources = await listOpenClawResources(resolvedOptions);
   const trimmedQuery = query.trim();
   if (!trimmedQuery) {
     return {
@@ -516,8 +530,8 @@ export async function resolveOpenClawResource(
       matched: true,
       matchedBy: "resource_id",
       pathResolution: resolveOpenClawPath(exactId.hostPath, {
-        liveRepoRoot: options.liveRepoRoot,
-        workspaceRoot: options.workspaceRoot,
+        liveRepoRoot: resolvedOptions.liveRepoRoot,
+        workspaceRoot: resolvedOptions.workspaceRoot,
       }),
       resource: exactId,
       roots,
@@ -536,8 +550,8 @@ export async function resolveOpenClawResource(
       matched: true,
       matchedBy: "path",
       pathResolution: resolveOpenClawPath(exactPath.hostPath, {
-        liveRepoRoot: options.liveRepoRoot,
-        workspaceRoot: options.workspaceRoot,
+        liveRepoRoot: resolvedOptions.liveRepoRoot,
+        workspaceRoot: resolvedOptions.workspaceRoot,
       }),
       resource: exactPath,
       roots,
@@ -572,8 +586,8 @@ export async function resolveOpenClawResource(
     matched: true,
     matchedBy: "alias",
     pathResolution: resolveOpenClawPath(bestMatch.resource.hostPath, {
-      liveRepoRoot: options.liveRepoRoot,
-      workspaceRoot: options.workspaceRoot,
+      liveRepoRoot: resolvedOptions.liveRepoRoot,
+      workspaceRoot: resolvedOptions.workspaceRoot,
     }),
     resource: bestMatch.resource,
     roots,

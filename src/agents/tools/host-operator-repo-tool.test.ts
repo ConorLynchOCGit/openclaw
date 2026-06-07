@@ -80,6 +80,25 @@ afterEach(async () => {
 });
 
 describe("host_operator_repo tool", () => {
+  it("defaults host-operator roots from the source-runtime manifest", async () => {
+    const tool = createHostOperatorRepoTool({
+      env: {
+        OPENCLAW_HOST_OPERATOR_AUDIT_DIR: auditDir,
+      } as NodeJS.ProcessEnv,
+      now: () => 1000,
+    });
+
+    const status = readJsonResult(
+      await tool.execute("call-manifest-defaults", { action: "status" }),
+    );
+
+    expect(status.repoRoot).toBe("/root/services/openclaw-roles/live");
+    expect(status.canonicalRepoRoot).toBe("/root/services/openclaw-roles/live");
+    expect(status.workspaceRoot).toBe("/root/.openclaw/workspace");
+    expect(status.canonicalWorkspaceRoot).toBe("/root/.openclaw/workspace");
+    expect(String(status.auditPath)).toContain(auditDir);
+  });
+
   it("reports status while disabled but blocks repo reads", async () => {
     const tool = createHostOperatorRepoTool({ env: await makeEnv(), now: () => 1000 });
 

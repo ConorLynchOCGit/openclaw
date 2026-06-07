@@ -18,6 +18,8 @@ import {
   resetModelMemoryRuntimeDirtyStateForTests,
   resolveCandidateModelRef,
   resolveLiveModelRef,
+  resolveModelMemoryBootstrapOverlay,
+  resolveModelMemoryBootstrapOverlayEnabled,
   resolveModelMemoryLiveRuntimeStatus,
   shouldAttemptLiveRetrievalContext,
   shouldSkipOrdinaryTurnCaptureForExplicitOptOut,
@@ -122,6 +124,83 @@ describe("resolveModelMemoryLiveRuntimeStatus", () => {
 
     expect(status.enabled).toBe(false);
     expect(status.source).toBe("disabled");
+  });
+});
+
+describe("model-memory bootstrap overlay sandbox", () => {
+  const liveEnabledConfig = {
+    plugins: {
+      slots: {
+        memory: "none",
+      },
+      entries: {
+        "model-memory": {
+          enabled: true,
+          config: {
+            database: {
+              url: "postgresql://user:pass@example.com:5432/model_memory_live?sslmode=require",
+            },
+            live: {
+              enabled: true,
+              includeRetrievalPacks: true,
+            },
+          },
+        },
+      },
+    },
+    agents: {
+      defaults: {
+        memorySearch: {
+          enabled: false,
+        },
+      },
+    },
+  } as OpenClawConfig;
+
+  it("keeps bootstrap overlay disabled by default even when live model-memory is enabled", async () => {
+    expect(resolveModelMemoryLiveRuntimeStatus(liveEnabledConfig, {}).enabled).toBe(true);
+    expect(resolveModelMemoryBootstrapOverlayEnabled(liveEnabledConfig, {})).toBe(false);
+
+    await expect(
+      resolveModelMemoryBootstrapOverlay({
+        config: liveEnabledConfig,
+        sessionId: "session-001",
+        sessionKey: "agent:execution-coding:node:nrun-test",
+        agentId: "execution-coding",
+        workspaceDir: "/tmp/workspace",
+        currentTurnText: "Execute a node.",
+      }),
+    ).resolves.toBeNull();
+  });
+
+  it("requires explicit opt-in before model-memory can enter bootstrap overlay assembly", () => {
+    expect(
+      resolveModelMemoryBootstrapOverlayEnabled(liveEnabledConfig, {
+        MODEL_MEMORY_BOOTSTRAP_OVERLAY_ENABLED: "true",
+      }),
+    ).toBe(true);
+    expect(
+      resolveModelMemoryBootstrapOverlayEnabled(
+        {
+          plugins: {
+            entries: {
+              "model-memory": {
+                enabled: true,
+                config: {
+                  live: {
+                    enabled: true,
+                    bootstrapOverlay: {
+                      enabled: true,
+                    },
+                  },
+                },
+              },
+            },
+          },
+        } as OpenClawConfig,
+        {},
+      ),
+    ).toBe(true);
   });
 });
 

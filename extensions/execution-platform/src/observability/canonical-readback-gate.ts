@@ -3,28 +3,20 @@ export type CanonicalReadbackGateKind =
   | "prompt_submission"
   | "front_door_routing"
   | "mission_ledger"
-  | "obligation_graph"
+  | "requirement_map"
+  | "requirement_map_blocked"
+  | "discovery_brief_required"
+  | "discovery_brief_blocked"
+  | "discovery_brief_payload_over_profile"
   | "graph_compile_invalid"
   | "work_intent_compile"
-  | "resource_requirement_compile"
-  | "resource_narrowing_required"
-  | "resource_scope_revision_required"
-  | "resource_scope_revision_blocked"
-  | "resource_ledger_ready"
-  | "resource_repair"
-  | "domain_resource_selection_required"
-  | "domain_resource_selection_blocked"
-  | "resource_materialization"
-  | "domain_action_gate_blocked"
-  | "worker_action_ready"
-  | "worker_context_window_required"
-  | "worker_edit_plan_required"
-  | "worker_patch_author_required"
+  | "node_agent_session_ready"
+  | "node_agent_session_escalation_required"
+  | "discovery_brief_missing"
+  | "discovery_brief_weak"
   | "split_child_contract"
   | "frontier_execution"
   | "worker_execution"
-  | "post_action_validation"
-  | "evidence_closure"
   | "node_lifecycle_root_cause_collapsed"
   | "review_validation"
   | "closeout"
@@ -44,7 +36,6 @@ export type CanonicalReadbackGate = {
     | "frontier_root_cause"
     | "no_progress_signature"
     | "branch_scoped_frontier"
-    | "node_readiness_state"
     | "scheduler_frontier"
     | "latest_run_state"
     | "checkpoint_boundary"
@@ -63,13 +54,29 @@ export type CanonicalReadbackGate = {
   modelRef: string | null;
   providerPath: string | null;
   contractRef: string | null;
-  nodeExecutionPacketRef: string | null;
-  readinessStateRef: string | null;
-  domainResourcePacketRef: string | null;
-  resourcePacketRef: string | null;
-  resourceRequirementRefs: string[];
-  nodeResourceDemandSessionRefs: string[];
-  nodeResourceLedgerManifestRefs: string[];
+  nodeExecutionSnapshotRef: string | null;
+  nodeWorkerPromptRef: string | null;
+  nodeWorkerPromptArtifactRef: string | null;
+  nodeWorkerPromptHash: string | null;
+  nodeWorkerPromptByteCount: number | null;
+  nodeWorkerPromptStatus: string | null;
+  nodeWorkerPromptAuthorModelRunRef: string | null;
+  nodeAgentSessionKey: string | null;
+  nodeAgentSessionMessageId: string | null;
+  nodeAgentSessionTranscriptRef: string | null;
+  nodeAgentInitialMessageHash: string | null;
+  nodeAgentPromptSessionHashMatch: boolean | null;
+  nodeAgentStartReceiptRef: string | null;
+  nodeAgentStartStatus: string | null;
+  nodeAgentStartBlockerKind: string | null;
+  nodeLifecycleProjectionRef: string | null;
+  nodeLifecycleProjectionGate: string | null;
+  domainSourceMaterialRef: string | null;
+  sourceMaterialRef: string | null;
+  sourceMaterialRequirementRefs: string[];
+  nodeAgentStartReceiptRefs: string[];
+  nodeAgentSessionTraceRefs: string[];
+  nodeAgentFinishArtifactRefs: string[];
   domainResourceSelectionRefs: string[];
   actionGateStatus: string | null;
   providerDiagnosticRefs: string[];
@@ -87,10 +94,6 @@ export type CanonicalReadbackGate = {
   failedEvidenceRefs: string[];
   validationPhase: string | null;
   validationPhaseCompatibility: string | null;
-  readinessProjectionStatus: string | null;
-  readinessProjectionDriftReasonCodes: string[];
-  readinessProjectionMissingFields: string[];
-  readinessProjectionStale: boolean | null;
   staleCheckpointKind: string | null;
   rawPromptStored: false;
   rawResponseStored: false;
@@ -127,17 +130,31 @@ type GateBranch = {
   workerRef: string | null;
   modelRef: string | null;
   contractRef: string | null;
-  readinessStateRef: string | null;
-  resourceRequirementRefs: string[];
-  nodeResourceDemandSessionRefs: string[];
-  nodeResourceLedgerManifestRefs: string[];
+  sourceMaterialRequirementRefs: string[];
+  nodeAgentStartReceiptRefs: string[];
+  nodeAgentSessionTraceRefs: string[];
+  nodeAgentFinishArtifactRefs: string[];
   domainResourceSelectionRefs: string[];
   actionGateStatus: string | null;
   providerDiagnosticRefs: string[];
   providerDiagnosticStatus: string | null;
-  domainResourcePacketRef: string | null;
-  resourcePacketRef: string | null;
-  nodeExecutionPacketRef: string | null;
+  domainSourceMaterialRef: string | null;
+  sourceMaterialRef: string | null;
+  nodeExecutionSnapshotRef: string | null;
+  nodeWorkerPromptRef: string | null;
+  nodeWorkerPromptArtifactRef: string | null;
+  nodeWorkerPromptHash: string | null;
+  nodeWorkerPromptByteCount: number | null;
+  nodeWorkerPromptStatus: string | null;
+  nodeWorkerPromptAuthorModelRunRef: string | null;
+  nodeAgentSessionKey: string | null;
+  nodeAgentSessionMessageId: string | null;
+  nodeAgentSessionTranscriptRef: string | null;
+  nodeAgentInitialMessageHash: string | null;
+  nodeAgentPromptSessionHashMatch: boolean | null;
+  nodeAgentStartReceiptRef: string | null;
+  nodeAgentStartStatus: string | null;
+  nodeAgentStartBlockerKind: string | null;
   nodeLifecycleProjectionRef: string | null;
   nodeLifecycleProjectionGate: string | null;
   status: string | null;
@@ -156,176 +173,24 @@ type GateBranch = {
   rootCauseRef: string | null;
   validationPhase: string | null;
   validationPhaseCompatibility: string | null;
-  readinessProjectionStatus: string | null;
-  readinessProjectionDriftReasonCodes: string[];
-  readinessProjectionMissingFields: string[];
-  readinessProjectionStale: boolean | null;
 };
 
-const BLOCKED_STATUSES = new Set([
-  "blocked",
-  "blocked_resource",
-  "blocked_context",
-  "needs_review",
-  "failed",
-  "resources_required",
-  "resource_required",
-  "materialization_blocked",
-]);
+const BLOCKED_STATUSES = new Set(["blocked", "blocked_context", "needs_review", "failed"]);
 
 const RUNNING_STATUSES = new Set(["running", "in_progress", "executing"]);
 const READY_STATUSES = new Set(["ready", "executable", "selected"]);
-
-const CONTEXT_PHASES = new Set([
-  "resource_requirement_compile",
-  "resource_repair",
-  "resource_frontier_single_unit_blocked",
-  "resource_frontier_shard_execution_required",
-  "resource_frontier_merge_required",
-  "resource_frontier_review_required",
-  "resource_specialist_execution_packet_blocked",
-  "create_prerequisite_resource",
-]);
-
-const CONTEXT_SCOPE_REVISION_REQUIRED_PHASES = new Set([
-  "resource_scope_revision_required",
-  "resource_single_unit_over_profile",
-  "resource_frontier_single_unit_blocked",
-]);
-
-const CONTEXT_SCOPE_REVISION_BLOCKED_PHASES = new Set([
-  "resource_scope_revision_blocked",
-  "resource_scope_revision_needs_review",
-]);
-
-const CONTEXT_SCOPE_REVISION_REASON_CODES = new Set([
-  "resource_scope_revision_required",
-  "resource_single_unit_over_profile",
-  "resource_unit_over_profile",
-  "resource_requirement_over_profile",
-  "resource_requirement_payload_over_profile",
-]);
-
-const CONTEXT_SCOPE_REVISION_BLOCKED_REASON_CODES = new Set([
-  "resource_scope_revision_blocked",
-  "resource_scope_revision_failed",
-  "resource_scope_revision_selection_invalid",
-  "resource_scope_revision_no_legal_subset",
-]);
-
-const CONTEXT_SCOPE_REVISION_TRANSITIONS = new Set([
-  "select_resource_scope",
-  "revise_resource_scope",
-  "compile_revised_resource_scope",
-  "execute_resource_scope_revision",
-]);
-
-const CONTEXT_LEDGER_READY_PHASES = new Set([
-  "resource_ledger_ready",
-  "node_resource_ledger_ready",
-]);
-
-const DOMAIN_RESOURCE_SELECTION_PHASES = new Set([
-  "domain_resource_selection_blocked",
-  "domain_resource_selection_revision_required",
-]);
-
-const DOMAIN_RESOURCE_SELECTION_REQUIRED_PHASES = new Set([
-  "domain_resource_selection_required",
-  "domain_resource_selection_missing",
-]);
-
-const DOMAIN_RESOURCE_SELECTION_REQUIRED_REASON_CODES = new Set([
-  "domain_resource_selection_required",
-  "domain_resource_selection_missing",
-  "model_authored_domain_resource_selection_required",
-  "source_edit_domain_resource_selection_required",
-  "domain_resource_selection_ref_missing",
-]);
-
-const DOMAIN_RESOURCE_SELECTION_TRANSITIONS = new Set([
-  "select_domain_resource_refs",
-  "revise_domain_resource_selection",
-  "compile_domain_resource_selection",
-]);
-
-const ACTION_GATE_BLOCKED_PHASES = new Set([
-  "domain_action_gate_blocked",
-  "hydrated_domain_action_gate_blocked",
-  "worker_domain_action_gate_blocked",
-]);
-
-const ACTION_GATE_TRANSITIONS = new Set([
-  "hydrate_action_gate",
-  "open_worker_action_gate",
-  "compile_hydrated_node_execution_packet",
-]);
-
-const WORKER_EDIT_READY_PHASES = new Set([
-  "worker_action_ready",
-  "forced_action_author_ready",
-  "worker_action_author_ready",
-]);
-
-const EVIDENCE_CLOSURE_PHASES = new Set([
-  "evidence_closure",
-  "evidence_closure_blocked",
-  "evidence_claim_required",
-]);
-
-const EVIDENCE_CLOSURE_TRANSITIONS = new Set([
-  "compile_evidence_claims",
-  "close_evidence",
-  "review_evidence_closure",
-]);
-
-const CONTEXT_TRANSITIONS = new Set([
-  "compile_resource_requirement_packet",
-  "create_prerequisite_resource",
-  "repair_resource",
-  "split_for_profile",
-  "execute_shards_then_merge_handoffs",
-  "record_single_unit_blocker",
-  "merge_handoffs",
-]);
-
-const WORKER_PHASES = new Set([
-  "worker_execution",
-  "execute_node",
-  "worker.patch",
-  "worker_loop",
-  "worker_loop_completed",
-]);
-
-const VALIDATION_PHASES = new Set([
-  "post_action_validation",
-  "review_validation",
-  "closeout_validation",
-  "pre_execution_validation",
-]);
 
 const CHECKPOINT_GATE_KIND: Record<string, CanonicalReadbackGateKind> = {
   prompt_submission: "prompt_submission",
   front_door_routing: "front_door_routing",
   mission_ledger: "mission_ledger",
-  obligation_graph: "obligation_graph",
+  requirement_map: "requirement_map",
   work_intent_compile: "work_intent_compile",
-  resource_requirement_compile: "resource_requirement_compile",
-  resource_scope_revision_required: "resource_scope_revision_required",
-  resource_scope_revision_blocked: "resource_scope_revision_blocked",
-  resource_ledger_ready: "resource_ledger_ready",
-  resource_repair: "resource_repair",
-  domain_resource_selection_required: "domain_resource_selection_required",
-  domain_resource_selection_blocked: "domain_resource_selection_blocked",
-  resource_materialization: "resource_materialization",
-  domain_action_gate_blocked: "domain_action_gate_blocked",
-  worker_action_ready: "worker_action_ready",
+  node_agent_session_ready: "node_agent_session_ready",
+  node_agent_session_escalation_required: "node_agent_session_escalation_required",
   split_child_contract: "split_child_contract",
-  before_worker_invocation: "worker_execution",
+  before_worker_invocation: "node_agent_session_ready",
   worker_execution: "worker_execution",
-  after_worker_result: "post_action_validation",
-  post_action_validation: "post_action_validation",
-  evidence_closure: "evidence_closure",
   review_validation: "review_validation",
   before_closeout: "closeout",
   closeout: "closeout",
@@ -336,28 +201,20 @@ const CANONICAL_READBACK_GATE_KIND_VALUES = new Set<CanonicalReadbackGateKind>([
   "prompt_submission",
   "front_door_routing",
   "mission_ledger",
-  "obligation_graph",
+  "requirement_map",
+  "requirement_map_blocked",
+  "discovery_brief_required",
+  "discovery_brief_blocked",
+  "discovery_brief_payload_over_profile",
   "graph_compile_invalid",
   "work_intent_compile",
-  "resource_requirement_compile",
-  "resource_narrowing_required",
-  "resource_scope_revision_required",
-  "resource_scope_revision_blocked",
-  "resource_ledger_ready",
-  "resource_repair",
-  "domain_resource_selection_required",
-  "domain_resource_selection_blocked",
-  "resource_materialization",
-  "domain_action_gate_blocked",
-  "worker_action_ready",
-  "worker_context_window_required",
-  "worker_edit_plan_required",
-  "worker_patch_author_required",
+  "node_agent_session_ready",
+  "node_agent_session_escalation_required",
+  "discovery_brief_missing",
+  "discovery_brief_weak",
   "split_child_contract",
   "frontier_execution",
   "worker_execution",
-  "post_action_validation",
-  "evidence_closure",
   "node_lifecycle_root_cause_collapsed",
   "review_validation",
   "closeout",
@@ -398,9 +255,7 @@ function boundedStrings(value: unknown, max = 24): string[] {
   return Array.isArray(value)
     ? [
         ...new Set(
-          value
-            .map((item) => bounded(item, 500))
-            .filter((item): item is string => Boolean(item)),
+          value.map((item) => bounded(item, 500)).filter((item): item is string => Boolean(item)),
         ),
       ].slice(0, max)
     : [];
@@ -414,6 +269,14 @@ function firstBounded(...values: unknown[]): string | null {
     }
   }
   return null;
+}
+
+function numberOrNull(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function booleanOrNull(value: unknown): boolean | null {
+  return typeof value === "boolean" ? value : null;
 }
 
 function branchFromRecord(value: unknown): GateBranch | null {
@@ -438,37 +301,52 @@ function branchFromRecord(value: unknown): GateBranch | null {
     workerRef: bounded(branch.workerRef, 240),
     modelRef: bounded(branch.modelRef, 240),
     contractRef: bounded(branch.contractRef, 600),
-    readinessStateRef: firstBounded(branch.readinessStateRef, branch.readinessRef),
-    resourceRequirementRefs: boundedStrings(branch.resourceRequirementRefs, 20),
-    nodeResourceDemandSessionRefs: [
-      ...new Set([
-        ...boundedStrings(branch.nodeResourceDemandSessionRefs, 20),
-        bounded(branch.nodeResourceDemandSessionRef, 600),
-      ].filter((ref): ref is string => Boolean(ref))),
+    sourceMaterialRequirementRefs: boundedStrings(branch.sourceMaterialRequirementRefs, 20),
+    nodeAgentStartReceiptRefs: [
+      ...new Set(
+        [
+          ...boundedStrings(branch.nodeAgentStartReceiptRefs, 20),
+          bounded(branch.nodeAgentStartReceiptRef, 600),
+        ].filter((ref): ref is string => Boolean(ref)),
+      ),
     ].slice(0, 20),
-    nodeResourceLedgerManifestRefs: [
-      ...new Set([
-        ...boundedStrings(branch.nodeResourceLedgerManifestRefs, 20),
-        bounded(branch.nodeResourceLedgerManifestRef, 600),
-      ].filter((ref): ref is string => Boolean(ref))),
-    ].slice(0, 20),
+    nodeAgentSessionTraceRefs: boundedStrings(branch.nodeAgentSessionTraceRefs, 20),
+    nodeAgentFinishArtifactRefs: boundedStrings(branch.nodeFinishArtifactRefs, 20),
     domainResourceSelectionRefs: [
-      ...new Set([
-        ...boundedStrings(branch.domainResourceSelectionRefs, 20),
-        bounded(branch.domainResourceSelectionRef, 600),
-      ].filter((ref): ref is string => Boolean(ref))),
+      ...new Set(
+        [
+          ...boundedStrings(branch.domainResourceSelectionRefs, 20),
+          bounded(branch.domainResourceSelectionRef, 600),
+        ].filter((ref): ref is string => Boolean(ref)),
+      ),
     ].slice(0, 20),
     actionGateStatus: bounded(branch.actionGateStatus, 160),
     providerDiagnosticRefs: [
-      ...new Set([
-        ...boundedStrings(branch.providerDiagnosticRefs, 20),
-        bounded(branch.providerDiagnosticRef, 600),
-      ].filter((ref): ref is string => Boolean(ref))),
+      ...new Set(
+        [
+          ...boundedStrings(branch.providerDiagnosticRefs, 20),
+          bounded(branch.providerDiagnosticRef, 600),
+        ].filter((ref): ref is string => Boolean(ref)),
+      ),
     ].slice(0, 20),
     providerDiagnosticStatus: bounded(branch.providerDiagnosticStatus, 160),
-    domainResourcePacketRef: bounded(branch.domainResourcePacketRef, 600),
-    resourcePacketRef: bounded(branch.resourcePacketRef, 600),
-    nodeExecutionPacketRef: bounded(branch.nodeExecutionPacketRef, 600),
+    domainSourceMaterialRef: bounded(branch.domainSourceMaterialRef, 600),
+    sourceMaterialRef: bounded(branch.sourceMaterialRef, 600),
+    nodeExecutionSnapshotRef: bounded(branch.nodeExecutionSnapshotRef, 600),
+    nodeWorkerPromptRef: bounded(branch.nodeWorkerPromptRef, 600),
+    nodeWorkerPromptArtifactRef: bounded(branch.nodeWorkerPromptArtifactRef, 600),
+    nodeWorkerPromptHash: bounded(branch.nodeWorkerPromptHash, 180),
+    nodeWorkerPromptByteCount: numberOrNull(branch.nodeWorkerPromptByteCount),
+    nodeWorkerPromptStatus: bounded(branch.nodeWorkerPromptStatus, 120),
+    nodeWorkerPromptAuthorModelRunRef: bounded(branch.nodeWorkerPromptAuthorModelRunRef, 600),
+    nodeAgentSessionKey: bounded(branch.nodeAgentSessionKey, 300),
+    nodeAgentSessionMessageId: bounded(branch.nodeAgentSessionMessageId, 700),
+    nodeAgentSessionTranscriptRef: bounded(branch.nodeAgentSessionTranscriptRef, 700),
+    nodeAgentInitialMessageHash: bounded(branch.nodeAgentInitialMessageHash, 180),
+    nodeAgentPromptSessionHashMatch: booleanOrNull(branch.nodeAgentPromptSessionHashMatch),
+    nodeAgentStartReceiptRef: bounded(branch.nodeAgentStartReceiptRef, 700),
+    nodeAgentStartStatus: bounded(branch.nodeAgentStartStatus, 120),
+    nodeAgentStartBlockerKind: bounded(branch.nodeAgentStartBlockerKind, 180),
     nodeLifecycleProjectionRef: bounded(branch.nodeLifecycleProjectionRef, 600),
     nodeLifecycleProjectionGate: bounded(branch.nodeLifecycleProjectionGate, 220),
     status: firstBounded(branch.nodeLifecycleProjectionStatus, branch.status),
@@ -503,21 +381,6 @@ function branchFromRecord(value: unknown): GateBranch | null {
     rootCauseRef: bounded(branch.rootCauseRef, 600),
     validationPhase: bounded(branch.validationPhase, 160),
     validationPhaseCompatibility: bounded(branch.validationPhaseCompatibility, 160),
-    readinessProjectionStatus: bounded(branch.readinessProjectionStatus, 160),
-    readinessProjectionDriftReasonCodes: boundedStrings(
-      branch.readinessProjectionDriftReasonCodes,
-      40,
-    ),
-    readinessProjectionMissingFields: boundedStrings(
-      branch.readinessProjectionMissingFields,
-      40,
-    ),
-    readinessProjectionStale:
-      typeof branch.readinessProjectionStale === "boolean"
-        ? branch.readinessProjectionStale
-        : typeof branch.nodeReadinessStale === "boolean"
-          ? branch.nodeReadinessStale
-          : null,
   };
 }
 
@@ -541,61 +404,50 @@ function branchRecords(input: GateInput): GateBranch[] {
     Boolean(fallbackNodeId) &&
     Boolean(
       bounded(progress.nodeLifecycleProjectionRef, 600) ||
-        bounded(progress.nodeLifecycleProjectionGate, 180) ||
-        bounded(progress.nodeLifecycleProjectionStatus, 180),
+      bounded(progress.nodeLifecycleProjectionGate, 180) ||
+      bounded(progress.nodeLifecycleProjectionStatus, 180),
     );
   const fallback = hasFallbackProjection
     ? [
-          {
-            branchId: progress.branchId,
-            nodeId: fallbackNodeId,
-            nodeKind: progress.nodeKind ?? progress.activeNodeKind,
-            workIntentRef: progress.workIntentRef ?? progress.workIntentId,
-            executionIntent: progress.executionIntent,
-            evidenceMode: progress.evidenceMode,
-            capabilityId: progress.capabilityId ?? progress.selectedCapabilityId,
-            executorKey: progress.executorKey ?? progress.selectedExecutorKey,
-            workerRef: progress.workerRef,
-            modelRef: progress.modelRef,
-            contractRef: progress.nodeExecutionContractRef,
-            readinessStateRef: progress.nodeReadinessStateRef,
-            resourceRequirementRefs: progress.resourceRequirementRefs,
-            nodeResourceDemandSessionRefs: progress.nodeResourceDemandSessionRefs,
-            nodeResourceLedgerManifestRefs: progress.nodeResourceLedgerManifestRefs,
-            domainResourceSelectionRefs: progress.domainResourceSelectionRefs,
-            actionGateStatus: progress.actionGateStatus,
-            providerDiagnosticRefs: progress.providerDiagnosticRefs,
-            providerDiagnosticStatus: progress.providerDiagnosticStatus,
-            resourcePacketRef: progress.resourcePacketRef,
-            nodeExecutionPacketRef: progress.nodeExecutionPacketRef,
-            nodeLifecycleProjectionRef: progress.nodeLifecycleProjectionRef,
-            nodeLifecycleProjectionStatus: progress.nodeLifecycleProjectionStatus,
-            nodeLifecycleProjectionGate: progress.nodeLifecycleProjectionGate,
-            nodeLifecycleNextLegalTransitions: progress.nodeLifecycleNextLegalTransitions,
-            status: progress.nodeLifecycleProjectionStatus,
-            phase: progress.nodeLifecycleProjectionGate,
-            blockerCode: progress.blockerCode,
-            blockerSummary: progress.blockerSummary,
-            blockerSchemaPath: progress.schemaPath ?? progress.errorPath,
-            blockerPolicyPath: progress.policyPath,
-            reasonCodes: [
-              ...boundedStrings(progress.resourceReadinessReasonCodes, 40),
-              ...boundedStrings(progress.readinessProjectionDriftReasonCodes, 40),
-              ...boundedStrings(progress.reasonCodes, 40),
-            ],
-            missingFields: [
-              ...boundedStrings(progress.missingFields, 40),
-              ...boundedStrings(progress.readinessProjectionMissingFields, 40),
-            ],
-            nextLegalTransitions: progress.nodeLifecycleNextLegalTransitions,
-            validationPhase: progress.validationPhase,
-            validationPhaseCompatibility: progress.validationPhaseCompatibility,
-            readinessProjectionStatus: progress.readinessProjectionStatus,
-            readinessProjectionDriftReasonCodes: progress.readinessProjectionDriftReasonCodes,
-            readinessProjectionMissingFields: progress.readinessProjectionMissingFields,
-            readinessProjectionStale: progress.nodeReadinessStale,
-          },
-        ]
+        {
+          branchId: progress.branchId,
+          nodeId: fallbackNodeId,
+          nodeKind: progress.nodeKind ?? progress.activeNodeKind,
+          workIntentRef: progress.workIntentRef ?? progress.workIntentId,
+          executionIntent: progress.executionIntent,
+          evidenceMode: progress.evidenceMode,
+          capabilityId: progress.capabilityId ?? progress.selectedCapabilityId,
+          executorKey: progress.executorKey ?? progress.selectedExecutorKey,
+          workerRef: progress.workerRef,
+          modelRef: progress.modelRef,
+          contractRef: progress.nodeExecutionContractRef,
+          sourceMaterialRequirementRefs: progress.sourceMaterialRequirementRefs,
+          nodeAgentStartReceiptRefs: progress.nodeAgentStartReceiptRefs,
+          nodeAgentSessionTraceRefs: progress.nodeAgentSessionTraceRefs,
+          nodeAgentFinishArtifactRefs: progress.nodeFinishArtifactRefs,
+          domainResourceSelectionRefs: progress.domainResourceSelectionRefs,
+          actionGateStatus: progress.actionGateStatus,
+          providerDiagnosticRefs: progress.providerDiagnosticRefs,
+          providerDiagnosticStatus: progress.providerDiagnosticStatus,
+          sourceMaterialRef: progress.sourceMaterialRef,
+          nodeExecutionSnapshotRef: progress.nodeExecutionSnapshotRef,
+          nodeLifecycleProjectionRef: progress.nodeLifecycleProjectionRef,
+          nodeLifecycleProjectionStatus: progress.nodeLifecycleProjectionStatus,
+          nodeLifecycleProjectionGate: progress.nodeLifecycleProjectionGate,
+          nodeLifecycleNextLegalTransitions: progress.nodeLifecycleNextLegalTransitions,
+          status: progress.nodeLifecycleProjectionStatus,
+          phase: progress.nodeLifecycleProjectionGate,
+          blockerCode: progress.blockerCode,
+          blockerSummary: progress.blockerSummary,
+          blockerSchemaPath: progress.schemaPath ?? progress.errorPath,
+          blockerPolicyPath: progress.policyPath,
+          reasonCodes: [...boundedStrings(progress.reasonCodes, 40)],
+          missingFields: boundedStrings(progress.missingFields, 40),
+          nextLegalTransitions: progress.nodeLifecycleNextLegalTransitions,
+          validationPhase: progress.validationPhase,
+          validationPhaseCompatibility: progress.validationPhaseCompatibility,
+        },
+      ]
     : [];
 
   return [...fromExplicit, ...fromLatestRun, ...fromBranchResults, ...fallback]
@@ -625,33 +477,77 @@ function gateKindFromCanonicalState(input: {
   schedulerFrontier: Record<string, unknown> | null;
 }): CanonicalReadbackGateKind {
   const branch = input.branch;
+  const reasonCodes = [
+    ...(branch?.reasonCodes ?? []),
+    ...boundedStrings(input.progress.reasonCodes, 40),
+    ...boundedStrings(input.rootCause?.reasonCodes, 40),
+  ];
+  const currentPhase =
+    typeof input.progress.currentPhase === "string" ? input.progress.currentPhase : "";
+  if (
+    reasonCodes.some((code) => code.includes("structured_adapter_input_exceeds_policy_bound")) ||
+    reasonCodes.some((code) => code.includes("discovery_brief_payload_over_profile"))
+  ) {
+    return "discovery_brief_payload_over_profile";
+  }
+  if (
+    currentPhase === "requirement_map_authoring" ||
+    currentPhase === "requirement_map_blocked" ||
+    currentPhase === "requirement_map_compile" ||
+    reasonCodes.some((code) => code.includes("requirement_map_authoring_blocked"))
+  ) {
+    return reasonCodes.some((code) => code.includes("requirement_map_authoring_blocked"))
+      ? "requirement_map_blocked"
+      : "requirement_map";
+  }
+  if (
+    currentPhase === "implementation_discovery_brief_authoring" ||
+    currentPhase === "implementation_discovery_brief_repair" ||
+    reasonCodes.some((code) => code.includes("worker_discovery_brief_phase:implementation"))
+  ) {
+    return reasonCodes.some((code) => code.includes("discovery_brief_blocked"))
+      ? "discovery_brief_blocked"
+      : "discovery_brief_required";
+  }
+  if (
+    reasonCodes.some(
+      (code) => code.includes("discovery_brief_missing") || code.includes("discoveryBrief"),
+    )
+  ) {
+    return "discovery_brief_missing";
+  }
+  if (
+    reasonCodes.some(
+      (code) => code.includes("discovery_brief_weak") || code.includes("discovery_brief_"),
+    )
+  ) {
+    return "discovery_brief_weak";
+  }
+  if (
+    reasonCodes.some(
+      (code) =>
+        code.includes("node_worker_prompt_authoring_failed") ||
+        code.includes("node_worker_prompt_authoring_unavailable") ||
+        code.includes("node_worker_prompt_missing_source_material") ||
+        code.includes("node_agent_session_blocked") ||
+        code.includes("node_agent_start_blocked") ||
+        code.includes("node_agent_tool_policy_insufficient") ||
+        code.includes("node_agent_required_scout_tool_policy_insufficient") ||
+        code.includes("node_agent_skill_missing") ||
+        code.includes("node_agent_asset_missing") ||
+        code.includes("node_agent_workspace_boundary_invalid") ||
+        code.includes("node_agent_session_lock_active") ||
+        code.includes("node_agent_session_lock_owner_live") ||
+        code.includes("node_agent_session_lock_unreclaimable") ||
+        code.includes("node_agent_session_lock_acquisition_timeout"),
+    )
+  ) {
+    return "node_agent_session_ready";
+  }
   const projectionGate = explicitCanonicalGateKind(
     branch?.nodeLifecycleProjectionGate ?? input.progress.nodeLifecycleProjectionGate,
   );
   if (projectionGate) {
-    const nextTransition = firstBounded(
-      branch?.nextLegalTransitions[0],
-      boundedStrings(input.progress.nodeLifecycleNextLegalTransitions, 1)[0],
-      input.progress.nextDecisionNeeded,
-    );
-    if (projectionGate === "worker_action_ready") {
-      if (nextTransition === "worker.edit.plan") {
-        return "worker_edit_plan_required";
-      }
-      if (
-        nextTransition === "worker.context.request_more" ||
-        nextTransition === "worker.context.search" ||
-        nextTransition === "worker.context.accept_window"
-      ) {
-        return "worker_context_window_required";
-      }
-      if (
-        nextTransition === "worker.patch.force_author_from_plan" ||
-        nextTransition === "worker.patch.author_edit"
-      ) {
-        return "worker_patch_author_required";
-      }
-    }
     return projectionGate;
   }
   const rootCauseGate = explicitCanonicalGateKind(
@@ -698,11 +594,7 @@ function gateStatus(
   if (!branch) {
     return "missing";
   }
-  if (
-    Boolean(branch.blockerCode) ||
-      branch.missingFields.length > 0 ||
-      branch.readinessProjectionStale === true
-  ) {
+  if (Boolean(branch.blockerCode) || branch.missingFields.length > 0) {
     return "blocked";
   }
   if (branch.status && RUNNING_STATUSES.has(branch.status)) {
@@ -727,9 +619,9 @@ function sourceRefsFor(input: {
     bounded(input.branch?.rootCauseRef, 600),
     bounded(input.branch?.nodeLifecycleProjectionRef, 600),
     bounded(input.branch?.contractRef, 600),
-    bounded(input.branch?.readinessStateRef, 600),
-    ...boundedStrings(input.branch?.nodeResourceDemandSessionRefs, 20),
-    ...boundedStrings(input.branch?.nodeResourceLedgerManifestRefs, 20),
+    ...boundedStrings(input.branch?.nodeAgentStartReceiptRefs, 20),
+    ...boundedStrings(input.branch?.nodeAgentSessionTraceRefs, 20),
+    ...boundedStrings(input.branch?.nodeAgentFinishArtifactRefs, 20),
     ...boundedStrings(input.branch?.domainResourceSelectionRefs, 20),
     ...boundedStrings(input.branch?.providerDiagnosticRefs, 20),
     bounded(input.rootCause?.artifactRef, 600),
@@ -739,6 +631,19 @@ function sourceRefsFor(input: {
   ]
     .filter((ref): ref is string => Boolean(ref))
     .slice(0, 20);
+}
+
+function progressHasIntakeGate(progress: Record<string, unknown>): boolean {
+  const currentPhase = typeof progress.currentPhase === "string" ? progress.currentPhase : "";
+  const schedulerPhase = typeof progress.schedulerPhase === "string" ? progress.schedulerPhase : "";
+  const reasonCodes = boundedStrings(progress.reasonCodes, 40);
+  return (
+    currentPhase.startsWith("requirement_map_") ||
+    currentPhase.startsWith("implementation_discovery_brief_") ||
+    schedulerPhase.startsWith("requirement_map_") ||
+    schedulerPhase.startsWith("implementation_discovery_brief_") ||
+    reasonCodes.some((code) => code.startsWith("requirement_map_"))
+  );
 }
 
 export function buildCanonicalReadbackGate(input: GateInput): CanonicalReadbackGate {
@@ -757,14 +662,6 @@ export function buildCanonicalReadbackGate(input: GateInput): CanonicalReadbackG
   const rootCauseReasonCodes = boundedStrings(rootCause?.reasonCodes, 40);
   const schedulerMissingFields = boundedStrings(schedulerModelCallEnvelope?.missingFields, 20);
   const schedulerReasonCodes = boundedStrings(schedulerModelCallEnvelope?.reasonCodes, 40);
-  const terminalReasonCodes = [
-    ...(branch?.reasonCodes ?? []),
-    ...rootCauseReasonCodes,
-    ...boundedStrings(noProgress?.reasonCodes, 40),
-    ...boundedStrings(noProgress?.blockerReasonCodes, 40),
-    ...schedulerReasonCodes,
-    ...boundedStrings(progress.reasonCodes, 40),
-  ];
   const sourceKind: CanonicalReadbackGate["sourceKind"] = terminalStatus
     ? "terminal_outcome"
     : rootCause
@@ -774,9 +671,9 @@ export function buildCanonicalReadbackGate(input: GateInput): CanonicalReadbackG
         : branch
           ? branch.contractRef ||
             branch.nodeLifecycleProjectionRef ||
-            branch.readinessStateRef ||
-            branch.nodeResourceDemandSessionRefs.length > 0 ||
-            branch.nodeResourceLedgerManifestRefs.length > 0 ||
+            branch.nodeAgentStartReceiptRefs.length > 0 ||
+            branch.nodeAgentSessionTraceRefs.length > 0 ||
+            branch.nodeAgentFinishArtifactRefs.length > 0 ||
             branch.domainResourceSelectionRefs.length > 0 ||
             branch.providerDiagnosticRefs.length > 0 ||
             branch.blockerCode
@@ -784,9 +681,11 @@ export function buildCanonicalReadbackGate(input: GateInput): CanonicalReadbackG
             : "latest_run_state"
           : input.schedulerFrontier
             ? "scheduler_frontier"
-            : checkpointKind
-              ? "checkpoint_boundary"
-              : "missing";
+            : progressHasIntakeGate(progress)
+              ? "latest_run_state"
+              : checkpointKind
+                ? "checkpoint_boundary"
+                : "missing";
   const confidence: CanonicalReadbackGate["confidence"] =
     sourceKind === "checkpoint_boundary"
       ? "stale_checkpoint_fallback"
@@ -826,7 +725,11 @@ export function buildCanonicalReadbackGate(input: GateInput): CanonicalReadbackG
     branchId: branch?.branchId ?? null,
     nodeId: firstBounded(branch?.nodeId, progress.nodeId, latestRunCurrent?.nodeId),
     nodeKind: firstBounded(branch?.nodeKind, progress.nodeKind, progress.activeNodeKind),
-    workIntentRef: firstBounded(branch?.workIntentRef, progress.workIntentRef, progress.workIntentId),
+    workIntentRef: firstBounded(
+      branch?.workIntentRef,
+      progress.workIntentRef,
+      progress.workIntentId,
+    ),
     executionIntent: firstBounded(branch?.executionIntent, progress.executionIntent),
     evidenceMode: [
       ...new Set([
@@ -835,8 +738,16 @@ export function buildCanonicalReadbackGate(input: GateInput): CanonicalReadbackG
         ...boundedStrings(latestRunCurrent?.evidenceMode, 12),
       ]),
     ].slice(0, 12),
-    capabilityId: firstBounded(branch?.capabilityId, progress.capabilityId, progress.selectedCapabilityId),
-    executorKey: firstBounded(branch?.executorKey, progress.executorKey, progress.selectedExecutorKey),
+    capabilityId: firstBounded(
+      branch?.capabilityId,
+      progress.capabilityId,
+      progress.selectedCapabilityId,
+    ),
+    executorKey: firstBounded(
+      branch?.executorKey,
+      progress.executorKey,
+      progress.selectedExecutorKey,
+    ),
     workerRef: firstBounded(branch?.workerRef, progress.workerRef, latestRunCurrent?.workerRef),
     modelRef: firstBounded(branch?.modelRef, progress.modelRef, latestRunCurrent?.modelRef),
     providerPath: firstBounded(progress.providerPath, latestRunCurrent?.providerPath),
@@ -845,32 +756,122 @@ export function buildCanonicalReadbackGate(input: GateInput): CanonicalReadbackG
       boundedStrings(rootCause?.contractRefs, 1)[0],
       progress.nodeExecutionContractRef,
     ),
-    nodeExecutionPacketRef: firstBounded(branch?.nodeExecutionPacketRef, progress.nodeExecutionPacketRef),
-    readinessStateRef: firstBounded(
-      branch?.readinessStateRef,
-      progress.nodeReadinessStateRef,
-      latestRunCurrent?.readinessStateRef,
+    nodeExecutionSnapshotRef: firstBounded(
+      branch?.nodeExecutionSnapshotRef,
+      progress.nodeExecutionSnapshotRef,
     ),
-    domainResourcePacketRef: firstBounded(branch?.domainResourcePacketRef, progress.domainResourcePacketRef),
-    resourcePacketRef: firstBounded(branch?.resourcePacketRef, progress.resourcePacketRef),
-    resourceRequirementRefs: [
+    nodeWorkerPromptRef: firstBounded(
+      branch?.nodeWorkerPromptRef,
+      progress.nodeWorkerPromptRef,
+      latestRunCurrent?.nodeWorkerPromptRef,
+    ),
+    nodeWorkerPromptArtifactRef: firstBounded(
+      branch?.nodeWorkerPromptArtifactRef,
+      progress.nodeWorkerPromptArtifactRef,
+      latestRunCurrent?.nodeWorkerPromptArtifactRef,
+    ),
+    nodeWorkerPromptHash: firstBounded(
+      branch?.nodeWorkerPromptHash,
+      progress.nodeWorkerPromptHash,
+      latestRunCurrent?.nodeWorkerPromptHash,
+    ),
+    nodeWorkerPromptByteCount:
+      numberOrNull(branch?.nodeWorkerPromptByteCount) ??
+      numberOrNull(progress.nodeWorkerPromptByteCount) ??
+      numberOrNull(latestRunCurrent?.nodeWorkerPromptByteCount),
+    nodeWorkerPromptStatus: firstBounded(
+      branch?.nodeWorkerPromptStatus,
+      progress.nodeWorkerPromptStatus,
+      latestRunCurrent?.nodeWorkerPromptStatus,
+    ),
+    nodeWorkerPromptAuthorModelRunRef: firstBounded(
+      branch?.nodeWorkerPromptAuthorModelRunRef,
+      progress.nodeWorkerPromptAuthorModelRunRef,
+      latestRunCurrent?.nodeWorkerPromptAuthorModelRunRef,
+    ),
+    nodeAgentSessionKey: firstBounded(
+      branch?.nodeAgentSessionKey,
+      progress.nodeAgentSessionKey,
+      latestRunCurrent?.nodeAgentSessionKey,
+    ),
+    nodeAgentSessionMessageId: firstBounded(
+      branch?.nodeAgentSessionMessageId,
+      progress.nodeAgentSessionMessageId,
+      latestRunCurrent?.nodeAgentSessionMessageId,
+    ),
+    nodeAgentSessionTranscriptRef: firstBounded(
+      branch?.nodeAgentSessionTranscriptRef,
+      progress.nodeAgentSessionTranscriptRef,
+      latestRunCurrent?.nodeAgentSessionTranscriptRef,
+    ),
+    nodeAgentInitialMessageHash: firstBounded(
+      branch?.nodeAgentInitialMessageHash,
+      progress.nodeAgentInitialMessageHash,
+      latestRunCurrent?.nodeAgentInitialMessageHash,
+    ),
+    nodeAgentPromptSessionHashMatch:
+      booleanOrNull(branch?.nodeAgentPromptSessionHashMatch) ??
+      booleanOrNull(progress.nodeAgentPromptSessionHashMatch) ??
+      booleanOrNull(latestRunCurrent?.nodeAgentPromptSessionHashMatch),
+    nodeAgentStartReceiptRef: firstBounded(
+      branch?.nodeAgentStartReceiptRef,
+      progress.nodeAgentStartReceiptRef,
+      latestRunCurrent?.nodeAgentStartReceiptRef,
+    ),
+    nodeAgentStartStatus: firstBounded(
+      branch?.nodeAgentStartStatus,
+      progress.nodeAgentStartStatus,
+      latestRunCurrent?.nodeAgentStartStatus,
+    ),
+    nodeAgentStartBlockerKind: firstBounded(
+      branch?.nodeAgentStartBlockerKind,
+      progress.nodeAgentStartBlockerKind,
+      latestRunCurrent?.nodeAgentStartBlockerKind,
+    ),
+    nodeLifecycleProjectionRef: firstBounded(
+      branch?.nodeLifecycleProjectionRef,
+      progress.nodeLifecycleProjectionRef,
+      latestRunCurrent?.nodeLifecycleProjectionRef,
+    ),
+    nodeLifecycleProjectionGate: firstBounded(
+      branch?.nodeLifecycleProjectionGate,
+      progress.nodeLifecycleProjectionGate,
+      latestRunCurrent?.nodeLifecycleProjectionGate,
+    ),
+    domainSourceMaterialRef: firstBounded(
+      branch?.domainSourceMaterialRef,
+      progress.domainSourceMaterialRef,
+    ),
+    sourceMaterialRef: firstBounded(branch?.sourceMaterialRef, progress.sourceMaterialRef),
+    sourceMaterialRequirementRefs: [
       ...new Set([
-        ...(branch?.resourceRequirementRefs ?? []),
-        ...boundedStrings(progress.resourceRequirementRefs, 20),
+        ...(branch?.sourceMaterialRequirementRefs ?? []),
+        ...boundedStrings(progress.sourceMaterialRequirementRefs, 20),
       ]),
     ].slice(0, 20),
-    nodeResourceDemandSessionRefs: [
+    nodeAgentStartReceiptRefs: [
+      ...new Set(
+        [
+          ...(branch?.nodeAgentStartReceiptRefs ?? []),
+          ...boundedStrings(progress.nodeAgentStartReceiptRefs, 20),
+          bounded(progress.nodeAgentStartReceiptRef, 600),
+          ...boundedStrings(latestRunCurrent?.nodeAgentStartReceiptRefs, 20),
+          bounded(latestRunCurrent?.nodeAgentStartReceiptRef, 600),
+        ].filter((ref): ref is string => Boolean(ref)),
+      ),
+    ].slice(0, 20),
+    nodeAgentSessionTraceRefs: [
       ...new Set([
-        ...(branch?.nodeResourceDemandSessionRefs ?? []),
-        ...boundedStrings(progress.nodeResourceDemandSessionRefs, 20),
-        ...boundedStrings(latestRunCurrent?.nodeResourceDemandSessionRefs, 20),
+        ...(branch?.nodeAgentSessionTraceRefs ?? []),
+        ...boundedStrings(progress.nodeAgentSessionTraceRefs, 20),
+        ...boundedStrings(latestRunCurrent?.nodeAgentSessionTraceRefs, 20),
       ]),
     ].slice(0, 20),
-    nodeResourceLedgerManifestRefs: [
+    nodeAgentFinishArtifactRefs: [
       ...new Set([
-        ...(branch?.nodeResourceLedgerManifestRefs ?? []),
-        ...boundedStrings(progress.nodeResourceLedgerManifestRefs, 20),
-        ...boundedStrings(latestRunCurrent?.nodeResourceLedgerManifestRefs, 20),
+        ...(branch?.nodeAgentFinishArtifactRefs ?? []),
+        ...boundedStrings(progress.nodeFinishArtifactRefs, 20),
+        ...boundedStrings(latestRunCurrent?.nodeFinishArtifactRefs, 20),
       ]),
     ].slice(0, 20),
     domainResourceSelectionRefs: [
@@ -957,32 +958,6 @@ export function buildCanonicalReadbackGate(input: GateInput): CanonicalReadbackG
       branch?.validationPhaseCompatibility,
       progress.validationPhaseCompatibility,
     ),
-    readinessProjectionStatus: firstBounded(
-      branch?.readinessProjectionStatus,
-      progress.readinessProjectionStatus,
-      latestRunCurrent?.readinessProjectionStatus,
-    ),
-    readinessProjectionDriftReasonCodes: [
-      ...new Set([
-        ...(branch?.readinessProjectionDriftReasonCodes ?? []),
-        ...boundedStrings(progress.readinessProjectionDriftReasonCodes, 40),
-        ...boundedStrings(latestRunCurrent?.readinessProjectionDriftReasonCodes, 40),
-      ]),
-    ].slice(0, 40),
-    readinessProjectionMissingFields: [
-      ...new Set([
-        ...(branch?.readinessProjectionMissingFields ?? []),
-        ...boundedStrings(progress.readinessProjectionMissingFields, 40),
-        ...boundedStrings(latestRunCurrent?.readinessProjectionMissingFields, 40),
-      ]),
-    ].slice(0, 40),
-    readinessProjectionStale:
-      branch?.readinessProjectionStale ??
-      (typeof progress.nodeReadinessStale === "boolean"
-        ? progress.nodeReadinessStale
-        : typeof latestRunCurrent?.readinessStale === "boolean"
-          ? latestRunCurrent.readinessStale
-          : null),
     staleCheckpointKind: confidence === "stale_checkpoint_fallback" ? checkpointKind : null,
     rawPromptStored: false,
     rawResponseStored: false,

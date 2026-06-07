@@ -97,9 +97,6 @@ export function genericRuntimeSpineSchedulerPolicyReasonCodes(
     return [];
   }
   const reasonCodes: string[] = [];
-  if (!plugin.schedulerPolicy.stagedSchedulerProtocolRequired) {
-    reasonCodes.push("generic_orchestration_staged_scheduler_protocol_required");
-  }
   if (!plugin.schedulerPolicy.stagedGraphAcceptanceRequired) {
     reasonCodes.push("generic_orchestration_staged_graph_acceptance_required");
   }
@@ -126,23 +123,6 @@ export function genericRuntimeSpineSchedulerOptionsReasonCodes(input: {
     return [];
   }
   const reasonCodes: string[] = [];
-  if (
-    input.plugin.schedulerPolicy.stagedSchedulerProtocolRequired &&
-    input.schedulerOptions.requireGenericStagedSchedulerProtocol !== true
-  ) {
-    reasonCodes.push("generic_orchestration_scheduler_option_staged_protocol_missing");
-  }
-  if (
-    input.plugin.schedulerPolicy.nodeExecutionPacketRequiredForWorkerExecution === true &&
-    input.schedulerOptions.requireNodeExecutionPacketForWorkerExecution !== true
-  ) {
-    reasonCodes.push("generic_orchestration_scheduler_option_node_execution_packet_missing");
-  }  if (
-    input.plugin.schedulerPolicy.nodeExecutionPacketRequiredForWorkerExecution === true &&
-    !input.schedulerOptions.domainResourceSelectionSelector
-  ) {
-    reasonCodes.push("generic_orchestration_scheduler_option_domain_resource_selection_selector_missing");
-  }
   return reasonCodes;
 }
 

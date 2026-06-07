@@ -19,6 +19,31 @@ const REPAIR_VALIDATION_EVIDENCE_REASON_HINTS = ["validation_evidence_adequate"]
 const INVALID_NO_OP_REPAIR_REASON_CODE =
   "invalid_no_op_repair_for_failed_validation_corrected" as const;
 
+// Architectural failure classes from the Product/Spec Planning failure investigation rule.
+// These represent open architectural questions that may benefit from narrowly targeted web research.
+export const PRODUCT_SPEC_PLANNING_ARCHITECTURAL_FAILURE_CLASSES = [
+  "input_starvation",
+  "contract_choke",
+  "step_overload",
+  "local_execution_failure",
+  "observability_gap",
+  "model_policy_mismatch",
+  "runtime_transition_failure",
+  "worker_adapter_failure",
+  "readback_or_lifecycle_projection_failure",
+] as const;
+
+export type ProductSpecPlanningArchitecturalFailureClass =
+  (typeof PRODUCT_SPEC_PLANNING_ARCHITECTURAL_FAILURE_CLASSES)[number];
+
+const ARCHITECTURAL_FAILURE_CLASS_HINTS = [
+  ...PRODUCT_SPEC_PLANNING_ARCHITECTURAL_FAILURE_CLASSES,
+  "architectural",
+  "architecture",
+  "open_question",
+  "needs_research",
+] as const;
+
 function includesAnyHint(ref: string, hints: readonly string[]): boolean {
   const normalized = ref.trim().toLowerCase();
   return hints.some((hint) => normalized.includes(hint));
@@ -29,6 +54,8 @@ export type ProductSpecPlanningValidationRepairEvidence = {
   hasRepairAttemptRef: boolean;
   hasBothFailureAndRepairRefs: boolean;
   boundedValidationRefs: string[];
+  failureClass: ProductSpecPlanningArchitecturalFailureClass | null;
+  webResearchRecommended: boolean;
   reasonCodes: string[];
 };
 
@@ -69,6 +96,36 @@ function isRepairValidationEvidenceReasonCode(reasonCode: string): boolean {
 
 function isInvalidNoOpRepairReasonCode(reasonCode: string): boolean {
   return reasonCode.trim().toLowerCase() === INVALID_NO_OP_REPAIR_REASON_CODE;
+}
+
+function extractFailureClassFromMetadata(
+  metadata: Record<string, unknown> | null | undefined,
+): ProductSpecPlanningArchitecturalFailureClass | null {
+  const raw = stringValue(metadata?.failureClass);
+  if (!raw) {
+    return null;
+  }
+  const normalized = raw.trim().toLowerCase();
+  const match = PRODUCT_SPEC_PLANNING_ARCHITECTURAL_FAILURE_CLASSES.find(
+    (cls) => cls.toLowerCase() === normalized,
+  );
+  return match ?? null;
+}
+
+function isArchitecturalFailureClassHint(reasonCode: string): boolean {
+  const normalized = reasonCode.trim().toLowerCase();
+  return ARCHITECTURAL_FAILURE_CLASS_HINTS.some((hint) => normalized.includes(hint));
+}
+
+function webResearchRecommendedForFailureClass(
+  failureClass: ProductSpecPlanningArchitecturalFailureClass | null,
+): boolean {
+  if (!failureClass) {
+    return false;
+  }
+  // All architectural failure classes in this taxonomy represent open questions
+  // that may benefit from narrowly targeted web research.
+  return PRODUCT_SPEC_PLANNING_ARCHITECTURAL_FAILURE_CLASSES.includes(failureClass);
 }
 
 function hasLinkedPassedValidationRef(input: {
@@ -197,6 +254,34 @@ export function summarizeProductSpecPlanningValidationRepairEvidence(input: {
   const hasFailureAttemptRef = metadataFailure || legacyFailure;
   const hasRepairAttemptRef = metadataRepair || legacyRepair;
 
+  // Extract the most specific architectural failure class from metadata.
+  let failureClass: ProductSpecPlanningArchitecturalFailureClass | null = null;
+  for (const artifact of [...validationArtifacts, ...repairArtifacts]) {
+    const cls = extractFailureClassFromMetadata(artifact.metadata);
+    if (cls) {
+      failureClass = cls;
+      break;
+    }
+  }
+  // If no explicit failure class, infer from reason codes.
+  if (!failureClass) {
+    for (const artifact of [...validationArtifacts, ...repairArtifacts]) {
+      const reasonCodes = stringArray(artifact.metadata?.reasonCodes);
+      for (const reasonCode of reasonCodes) {
+        if (isArchitecturalFailureClassHint(reasonCode)) {
+          // Use a generic architectural hint if no specific class is found.
+          failureClass = "observability_gap";
+          break;
+        }
+      }
+      if (failureClass) {
+        break;
+      }
+    }
+  }
+
+  const webResearchRecommended = webResearchRecommendedForFailureClass(failureClass);
+
   const reasonCodes: string[] = [];
   if (boundedValidationRefs.length === 0) {
     reasonCodes.push("product_spec_planning_validation_refs_missing");
@@ -224,6 +309,12 @@ export function summarizeProductSpecPlanningValidationRepairEvidence(input: {
     reasonCodes.push("validation_failure_classified");
     reasonCodes.push("product_spec_planning_validation_repair_observed");
   }
+  if (failureClass) {
+    reasonCodes.push(`product_spec_planning_failure_class:${failureClass}`);
+  }
+  if (webResearchRecommended) {
+    reasonCodes.push("product_spec_planning_web_research_recommended_for_architectural_failure");
+  }
   for (const artifact of repairArtifacts) {
     for (const reasonCode of stringArray(artifact.metadata?.reasonCodes)) {
       reasonCodes.push(reasonCode);
@@ -235,6 +326,8 @@ export function summarizeProductSpecPlanningValidationRepairEvidence(input: {
     hasRepairAttemptRef,
     hasBothFailureAndRepairRefs: hasFailureAttemptRef && hasRepairAttemptRef,
     boundedValidationRefs,
+    failureClass,
+    webResearchRecommended,
     reasonCodes: Array.from(new Set(reasonCodes)).slice(0, 20),
   };
 }

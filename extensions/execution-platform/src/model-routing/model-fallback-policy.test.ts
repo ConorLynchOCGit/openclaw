@@ -4,7 +4,7 @@ import { decideModelFallback, defaultModelFallbackPolicies } from "./model-fallb
 describe("model fallback policy", () => {
   it("keeps resource scout on the qualified local-context policy without Kimi or DeepSeek fallback", () => {
     const contextPolicy = defaultModelFallbackPolicies().find(
-      (policy) => policy.roleId === "resource_scout",
+      (policy) => policy.roleId === "context_scout",
     );
 
     expect(contextPolicy).toMatchObject({
@@ -15,7 +15,7 @@ describe("model fallback policy", () => {
     });
     expect(
       decideModelFallback({
-        roleId: "resource_scout",
+        roleId: "context_scout",
         failedModelId: "deepseek/deepseek-v4-pro",
         failureKind: "empty_response",
       }),

@@ -1,4 +1,4 @@
-import type { CommitmentEvidenceClaim } from "./workflow-node-execution-contracts.ts";
+import type { RuntimeEvidenceKind } from "./runtime-evidence-kind.ts";
 
 export const RUNTIME_VALIDATION_PHASES = [
   "preflight_validation",
@@ -43,7 +43,7 @@ export function normalizeRuntimeValidationPhase(value: unknown): RuntimeValidati
 }
 
 export function defaultValidationPhaseForEvidenceKind(
-  evidenceKind: CommitmentEvidenceClaim["evidenceKind"],
+  evidenceKind: RuntimeEvidenceKind,
 ): RuntimeValidationPhase {
   if (
     evidenceKind === "source_change" ||
@@ -99,7 +99,7 @@ export function validationPhaseRequirementsForEvidenceKinds(
 }
 
 export function evaluateEvidenceClaimValidationPhase(input: {
-  evidenceKind: CommitmentEvidenceClaim["evidenceKind"];
+  evidenceKind: RuntimeEvidenceKind;
   validationPhase: RuntimeValidationPhase;
   validationRefs?: readonly string[];
   changedFileRefs?: readonly string[];
@@ -110,7 +110,10 @@ export function evaluateEvidenceClaimValidationPhase(input: {
   let compatibleForCloseout = false;
   let compatibleForImplementationEvidence = false;
 
-  if (input.validationPhase === "preflight_validation" || input.validationPhase === "pre_proof_validation") {
+  if (
+    input.validationPhase === "preflight_validation" ||
+    input.validationPhase === "pre_proof_validation"
+  ) {
     reasonCodes.push("validation_phase_pre_proof_non_closing");
   }
   if (input.validationPhase === "diagnostic_validation") {
@@ -164,7 +167,10 @@ export function evaluateEvidenceClaimValidationPhase(input: {
       reasonCodes.push("validation_phase_docs_compatible");
     }
   } else if (input.evidenceKind === "review") {
-    if (input.validationPhase === "review_validation" || input.validationPhase === "integration_validation") {
+    if (
+      input.validationPhase === "review_validation" ||
+      input.validationPhase === "integration_validation"
+    ) {
       compatibleForMissionLedger = true;
       reasonCodes.push("validation_phase_review_compatible");
     } else {
@@ -182,7 +188,10 @@ export function evaluateEvidenceClaimValidationPhase(input: {
       reasonCodes.push("validation_phase_readback_requires_review_or_closeout_validation");
     }
   } else if (input.evidenceKind === "closeout") {
-    if (input.validationPhase === "closeout_validation" || input.validationPhase === "final_proof_validation") {
+    if (
+      input.validationPhase === "closeout_validation" ||
+      input.validationPhase === "final_proof_validation"
+    ) {
       compatibleForMissionLedger = true;
       compatibleForCloseout = true;
       reasonCodes.push("validation_phase_closeout_compatible");

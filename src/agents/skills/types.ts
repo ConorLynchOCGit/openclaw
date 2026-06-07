@@ -101,5 +101,15 @@ export type SkillSnapshot = {
   /** Normalized agent-level filter used to build this snapshot; undefined means unrestricted. */
   skillFilter?: string[];
   resolvedSkills?: Skill[];
+  activeContextSources?: Array<{
+    kind: "required_skill";
+    name: string;
+    path: string;
+    sourceRef: string;
+    sourceHash: string | null;
+    rawChars: number;
+    missing: boolean;
+    truncated: boolean;
+  }>;
   version?: number;
 };

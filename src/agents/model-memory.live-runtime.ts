@@ -3,6 +3,7 @@ export { parseMmV2RawJsonOutput } from "./model-memory/live-runtime/json.js";
 export {
   resolveCandidateModelRef,
   resolveLiveModelRef,
+  resolveModelMemoryBootstrapOverlayEnabled,
   resolveModelMemoryLiveRuntimeStatus,
   type ModelMemoryLiveRuntimeStatus,
 } from "./model-memory/live-runtime/config.js";

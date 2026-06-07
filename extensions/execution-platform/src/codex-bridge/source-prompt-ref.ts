@@ -1,6 +1,8 @@
 import { createHash } from "node:crypto";
 import { promises as fs } from "node:fs";
 import path from "node:path";
+import { resolveStateDir } from "../../../../src/config/paths.js";
+import { normalizeRuntimePathAliases } from "../../../../src/config/runtime-source-record.js";
 
 export type RuntimeSourcePromptRef = {
   refKind: "gateway_chat_transcript" | "native_submit";
@@ -38,11 +40,17 @@ export type ResolveRuntimeObjectiveOptions = {
   maxPromptChars?: number;
 };
 
-const DEFAULT_SESSION_SEARCH_ROOTS = [
-  "/root/.openclaw/agents/main/sessions",
-  "/home/node/.openclaw/agents/main/sessions",
-  "/app/.openclaw/agents/main/sessions",
-];
+export function defaultSessionSearchRoots(env: NodeJS.ProcessEnv = process.env): string[] {
+  const runtimeHome = resolveStateDir(env);
+  return [
+    ...new Set([
+      path.join(runtimeHome, "agents", "main", "sessions"),
+      ...normalizeRuntimePathAliases(runtimeHome).map((alias) =>
+        path.join(alias.aliasPath, "agents", "main", "sessions"),
+      ),
+    ]),
+  ];
+}
 
 function sha256Text(value: string): string {
   return createHash("sha256").update(value).digest("hex");
@@ -216,7 +224,7 @@ export async function resolveSourcePromptText(
   }
   const files = await candidateSessionFiles(
     ref,
-    options.sessionSearchRoots ?? DEFAULT_SESSION_SEARCH_ROOTS,
+    options.sessionSearchRoots ?? defaultSessionSearchRoots(),
   );
   if (files.length === 0) {
     return {

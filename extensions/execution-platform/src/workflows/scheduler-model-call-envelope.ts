@@ -49,7 +49,7 @@ export type SchedulerModelCallEnvelope = {
   inputRef: string | null;
   inputArtifactRef: string | null;
   commitmentCount: number | null;
-  workIntentCount: number | null;
+  sourceRequirementCount: number | null;
   graphNodeCount: number | null;
   graphEdgeCount: number | null;
   activeFrontierCounts: {
@@ -110,7 +110,7 @@ export type SchedulerModelCallEnvelopeBase = {
   inputRef?: string | null;
   inputArtifactRef?: string | null;
   commitmentCount?: number | null;
-  workIntentCount?: number | null;
+  sourceRequirementCount?: number | null;
   graphNodeCount?: number | null;
   graphEdgeCount?: number | null;
   activeFrontierCounts?: Partial<SchedulerModelCallEnvelope["activeFrontierCounts"]> | null;
@@ -177,7 +177,9 @@ function boundedArray(value: unknown, max = 20, itemMax = 240): string[] {
 }
 
 function numberOrNull(value: unknown): number | null {
-  return typeof value === "number" && Number.isFinite(value) ? Math.max(0, Math.trunc(value)) : null;
+  return typeof value === "number" && Number.isFinite(value)
+    ? Math.max(0, Math.trunc(value))
+    : null;
 }
 
 function record(value: unknown): Record<string, unknown> | null {
@@ -220,10 +222,8 @@ function responseShapeSummary(input: {
     : [];
   const projected = {
     inputBytes: numberOrNull(shape?.inputBytes),
-    outputBytes:
-      numberOrNull(shape?.outputBytes) ?? numberOrNull(diagnostics?.outputByteLength),
-    parsedJsonObject:
-      typeof shape?.parsedJsonObject === "boolean" ? shape.parsedJsonObject : null,
+    outputBytes: numberOrNull(shape?.outputBytes) ?? numberOrNull(diagnostics?.outputByteLength),
+    parsedJsonObject: typeof shape?.parsedJsonObject === "boolean" ? shape.parsedJsonObject : null,
     topLevelKeys: boundedArray(shape?.topLevelKeys, 40, 120),
     bodyKeys,
     choicesLength:
@@ -249,7 +249,9 @@ function responseShapeSummary(input: {
           ? structuredDiagnostics.safetyFieldPresent
           : null,
   };
-  return Object.values(projected).some((value) => (Array.isArray(value) ? value.length > 0 : value !== null))
+  return Object.values(projected).some((value) =>
+    Array.isArray(value) ? value.length > 0 : value !== null,
+  )
     ? projected
     : null;
 }
@@ -332,7 +334,7 @@ export function buildSchedulerModelCallEnvelope(
     inputRef: bounded(input.inputRef, 500),
     inputArtifactRef: bounded(input.inputArtifactRef, 500),
     commitmentCount: numberOrNull(input.commitmentCount),
-    workIntentCount: numberOrNull(input.workIntentCount),
+    sourceRequirementCount: numberOrNull(input.sourceRequirementCount),
     graphNodeCount: numberOrNull(input.graphNodeCount),
     graphEdgeCount: numberOrNull(input.graphEdgeCount),
     activeFrontierCounts: {

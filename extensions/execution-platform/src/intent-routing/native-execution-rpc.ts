@@ -9,6 +9,7 @@ import {
   enforceActionSemantics,
   evaluateRouterEscalationPolicy,
   buildRouterFrontDoorToolProtocolResult,
+  normalizeIntakeRouteContract,
   invokeRouterFrontDoorRuntimeTool,
   ROUTER_FRONT_DOOR_RUNTIME_TOOL_IDS,
   NoopRoutingTelemetryStore,
@@ -72,7 +73,14 @@ import {
   type GatewaySubmitDiagnosticsPhase,
   type GatewaySubmitDiagnosticsSink,
 } from "./gateway-submit-diagnostics.ts";
-import { type IntentValidatorApprovalRef } from "./intent-validator.ts";
+
+export type IntentValidatorApprovalRef = {
+  approvalId: string;
+  approvalKind: string;
+  workflowId?: string;
+  expiresAt: string;
+  revoked?: boolean;
+};
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   return value && typeof value === "object" && !Array.isArray(value)
@@ -107,6 +115,7 @@ export type NativeExecutionSubmitRequest = {
   sourceRoute?: NativeExecutionRpcAuth["sourceRoute"];
   uiControl?: ProtocolPreGateControlPayload | null;
   sourcePromptRef?: Omit<FrontDoorSourcePromptRef, "promptHash" | "promptLength"> | null;
+  intakeRouteContract?: unknown;
 };
 
 export type NativeExecutionSubmitResult = {
@@ -172,28 +181,6 @@ function jsonBytes(value: unknown): number | null {
   }
 }
 
-function summarizeBlockedRouterOutput(result: StructuredModelIntentRouterResult): string {
-  const output = result.output;
-  return JSON.stringify({
-    route: output?.route ?? null,
-    workflowId: output?.workflowId ?? null,
-    jobType: output?.jobType ?? null,
-    responseMode: output?.responseMode ?? null,
-    executeNow: output?.executeNow ?? null,
-    objectiveSummary: output?.objectiveSummary?.slice(0, 400) ?? "",
-    requestedActions: output?.requestedActions?.map((action) => action.action).slice(0, 10) ?? [],
-    negatedActions: output?.negatedActions?.map((action) => action.action).slice(0, 10) ?? [],
-    conditionalActions:
-      output?.conditionalActions?.map((action) => action.action).slice(0, 10) ?? [],
-    sideEffectClass: output?.sideEffectClass ?? null,
-    riskClass: output?.riskClass ?? null,
-    reasonCodes: output?.reasonCodes?.slice(0, 12) ?? [],
-    routerReasonCodes: result.metadata.reasonCodes.slice(0, 12),
-    rawPromptStored: false,
-    rawResponseStored: false,
-  });
-}
-
 function summarizeActionSeparationRouterOutput(result: StructuredModelIntentRouterResult): string {
   const output = result.output;
   return JSON.stringify({
@@ -233,65 +220,6 @@ function summarizeActionSeparationRouterOutput(result: StructuredModelIntentRout
     routerReasonCodes: result.metadata.reasonCodes.slice(0, 12),
     rawPromptStored: false,
     rawResponseStored: false,
-  });
-}
-
-function buildBlockedRouteRepairRequest(input: {
-  originalRequest: ReturnType<typeof buildStructuredModelIntentRouterRequest>;
-  originalPrompt: string;
-  firstResult: StructuredModelIntentRouterResult;
-}): ReturnType<typeof buildStructuredModelIntentRouterRequest> {
-  const firstPassSummary = summarizeBlockedRouterOutput(input.firstResult);
-  const repairContext = buildConversationRoutingContext({
-    ...input.originalRequest.conversationContext,
-    recentContextSummary: [
-      input.originalRequest.conversationContext.recentContextSummary,
-      `First pass blocked-route summary: ${firstPassSummary}`,
-    ]
-      .filter(Boolean)
-      .join(" "),
-    reasonCodes: [
-      ...input.originalRequest.conversationContext.reasonCodes,
-      "blocked_route_repair_attempted",
-      "primary_requested_outcome_constraint_review",
-    ],
-  });
-  return buildStructuredModelIntentRouterRequest({
-    promptHash: input.originalRequest.promptHash,
-    volatilePromptText: JSON.stringify({
-      repairTask:
-        "Review whether the first router pass blocked because it treated constraint text, pass criteria, or safety boundaries as the primary requested outcome. Separate the primary outcome from constraints without adding new actions. Return blocked only if the primary requested outcome itself is prohibited. Otherwise return the allowed CanonicalRouterOutput route.",
-      originalPrompt: input.originalPrompt,
-      firstPassRouterOutput: JSON.parse(firstPassSummary),
-      rawPromptStored: false,
-      rawResponseStored: false,
-    }),
-    promptSummary: input.originalRequest.promptSummary,
-    conversationContext: repairContext,
-    workflowCandidateSelection: {
-      workflowRegistryVersion: input.originalRequest.workflowRegistryVersion,
-      candidates: input.originalRequest.workflowSummaries,
-      reasonCodes: ["blocked_route_repair_reuses_workflow_candidates"],
-      finalRouteDecisionMade: false,
-      authorityGranted: false,
-      runtimeJobCreated: false,
-      workQueueLifecycleMutationAllowed: false,
-      rawPromptStored: false,
-      rawResponseStored: false,
-    },
-    authoritySnapshotRefs: input.originalRequest.authoritySnapshotRefs,
-    authoritySnapshotVersion: input.originalRequest.authoritySnapshotVersion,
-    routerModelPolicyRef: input.originalRequest.routerModelPolicyRef,
-    routerConfigVersion: `${input.originalRequest.routerConfigVersion}:blocked-route-repair`,
-    sourceRoute: input.originalRequest.sourceRoute,
-    requestId: `${input.originalRequest.requestId}:blocked-route-repair`,
-    sessionId: input.originalRequest.sessionId,
-    reasonCodes: [
-      ...input.originalRequest.reasonCodes,
-      "blocked_route_repair_attempted",
-      "first_pass_route_blocked",
-    ],
-    maxWorkflowCandidates: input.originalRequest.workflowSummaries.length,
   });
 }
 
@@ -360,6 +288,7 @@ function buildActionSeparationRepairRequest(input: {
     sourceRoute: input.originalRequest.sourceRoute,
     requestId: `${input.originalRequest.requestId}:action-separation-repair`,
     sessionId: input.originalRequest.sessionId,
+    intakeRouteContract: input.originalRequest.intakeRouteContract,
     reasonCodes: [
       ...input.originalRequest.reasonCodes,
       "action_separation_repair_attempted",
@@ -369,87 +298,10 @@ function buildActionSeparationRepairRequest(input: {
   });
 }
 
-function buildExecutorCapabilityRepairRequest(input: {
-  originalRequest: ReturnType<typeof buildStructuredModelIntentRouterRequest>;
-  originalPrompt: string;
-  currentResult: StructuredModelIntentRouterResult;
-  validation: ReturnType<typeof validateIntentFrontDoorDecision>;
-}): ReturnType<typeof buildStructuredModelIntentRouterRequest> {
-  const currentRouterSummary = summarizeActionSeparationRouterOutput(input.currentResult);
-  const validationSummary = JSON.stringify({
-    outcome: input.validation.outcome,
-    workflowId: input.validation.workflowId,
-    reasonCodes: input.validation.reasonCodes.slice(0, 20),
-    rawPromptStored: false,
-    rawResponseStored: false,
-  });
-  const repairContext = buildConversationRoutingContext({
-    ...input.originalRequest.conversationContext,
-    recentContextSummary: [
-      input.originalRequest.conversationContext.recentContextSummary,
-      `Executor capability validation summary: ${validationSummary}`,
-      `Current router output summary: ${currentRouterSummary}`,
-    ]
-      .filter(Boolean)
-      .join(" "),
-    reasonCodes: [
-      ...input.originalRequest.conversationContext.reasonCodes,
-      "executor_capability_repair_attempted",
-      "executor_subject_capability_split_review",
-    ],
-  });
-  return buildStructuredModelIntentRouterRequest({
-    promptHash: input.originalRequest.promptHash,
-    volatilePromptText: JSON.stringify({
-      repairTask:
-        "Re-emit CanonicalRouterOutput by selecting an executorWorkflowId whose executable capabilities satisfy requestedCapabilities, while preserving mentioned target workflows/systems as subjectWorkflowIds and targetSubjectRefs. Do not rewrite target subjects into executorWorkflowId unless the target workflow itself can execute the requested capabilities. Keep workflowId equal to executorWorkflowId.",
-      originalPrompt: input.originalPrompt,
-      currentRouterOutput: JSON.parse(currentRouterSummary),
-      validation: JSON.parse(validationSummary),
-      rawPromptStored: false,
-      rawResponseStored: false,
-    }),
-    promptSummary: input.originalRequest.promptSummary,
-    conversationContext: repairContext,
-    workflowCandidateSelection: {
-      workflowRegistryVersion: input.originalRequest.workflowRegistryVersion,
-      candidates: input.originalRequest.workflowSummaries,
-      reasonCodes: ["executor_capability_repair_reuses_workflow_candidates"],
-      finalRouteDecisionMade: false,
-      authorityGranted: false,
-      runtimeJobCreated: false,
-      workQueueLifecycleMutationAllowed: false,
-      rawPromptStored: false,
-      rawResponseStored: false,
-    },
-    authoritySnapshotRefs: input.originalRequest.authoritySnapshotRefs,
-    authoritySnapshotVersion: input.originalRequest.authoritySnapshotVersion,
-    routerModelPolicyRef: input.originalRequest.routerModelPolicyRef,
-    routerConfigVersion: `${input.originalRequest.routerConfigVersion}:executor-capability-repair`,
-    sourceRoute: input.originalRequest.sourceRoute,
-    requestId: `${input.originalRequest.requestId}:executor-capability-repair`,
-    sessionId: input.originalRequest.sessionId,
-    reasonCodes: [
-      ...input.originalRequest.reasonCodes,
-      "executor_capability_repair_attempted",
-      "executor_selected_without_required_capability",
-    ],
-    maxWorkflowCandidates: input.originalRequest.workflowSummaries.length,
-  });
-}
-
 function actionSemanticsNeedsModelRepair(
   actionSemantics: ReturnType<typeof enforceActionSemantics>,
 ): boolean {
   return actionSemantics.reasonCodes.some((reason) => reason.includes("conflicts_with_negation"));
-}
-
-function validationNeedsExecutorCapabilityRepair(
-  validation: ReturnType<typeof validateIntentFrontDoorDecision>,
-): boolean {
-  return validation.reasonCodes.some((reason) =>
-    reason.startsWith("executor_capability_unsupported:"),
-  );
 }
 
 function collectAuthorityProfiles(registry: WorkflowRegistry): string[] {
@@ -772,6 +624,7 @@ export class NativeExecutionRpcService {
   ): Promise<NativeExecutionSubmitResult> {
     const promptHash = submitDiagnostics.promptHash;
     const promptSummary = submitDiagnostics.promptSummary;
+    const intakeRouteContract = normalizeIntakeRouteContract(request.intakeRouteContract);
     const recordSubmitDiagnostic = async (
       phase: string,
       extra: Partial<
@@ -900,6 +753,7 @@ export class NativeExecutionRpcService {
       sourceRoute: normalizeStructuredSourceRoute(request.sourceRoute ?? request.auth.sourceRoute),
       requestId,
       sessionId: request.auth.sessionId ?? request.auth.actorId,
+      intakeRouteContract,
       reasonCodes: ["native_submit_front_door_router_request"],
     });
     await recordSubmitDiagnostic("before_router_model_call", {
@@ -921,37 +775,6 @@ export class NativeExecutionRpcService {
       providerRef: routed.metadata.providerRef ?? null,
       reasonCodes: routed.metadata.reasonCodes,
     });
-    if (routed.valid && routed.output?.route === "blocked") {
-      const repairRequest = buildBlockedRouteRepairRequest({
-        originalRequest: routerRequest,
-        originalPrompt: request.prompt,
-        firstResult: routed,
-      });
-      await recordSubmitDiagnostic("before_blocked_route_repair_model_call", {
-        workflowSummaryCount: workflowSummaryIndex.summaries.length,
-        workflowSummaryBytes: jsonBytes(workflowSummaryIndex),
-        conversationContextBytes: jsonBytes(context),
-        routerPayloadBytes: jsonBytes(repairRequest),
-        candidateCount: candidates.candidates.length,
-        selectedModelRef: routed.metadata.modelCandidateId,
-        providerRef: routed.metadata.providerRef ?? null,
-        reasonCodes: ["before_blocked_route_repair_model_call"],
-      });
-      const repaired = await router.route(repairRequest);
-      await recordSubmitDiagnostic("after_blocked_route_repair_model_call", {
-        workflowSummaryCount: workflowSummaryIndex.summaries.length,
-        workflowSummaryBytes: jsonBytes(workflowSummaryIndex),
-        conversationContextBytes: jsonBytes(context),
-        routerPayloadBytes: jsonBytes(repairRequest),
-        candidateCount: candidates.candidates.length,
-        selectedModelRef: repaired.metadata.modelCandidateId,
-        providerRef: repaired.metadata.providerRef ?? null,
-        reasonCodes: repaired.metadata.reasonCodes,
-      });
-      if (repaired.valid && repaired.output) {
-        routed = repaired;
-      }
-    }
     const invalidRouteMemoryPolicy = decidePromptRouterMemoryPolicy({
       routeKind: "advanced_intent_front_door",
       promptHash,
@@ -1021,6 +844,7 @@ export class NativeExecutionRpcService {
         approvalRefs: request.approvalRefs?.map((approval) => approval.approvalId),
         escalationDecision: currentEscalation,
         strongerRouterResultPresent: true,
+        intakeRouteContract,
       });
       const currentActionSemantics = enforceActionSemantics({
         mentionedActions: currentOutput.mentionedActions,
@@ -1084,39 +908,6 @@ export class NativeExecutionRpcService {
         stages = computeFrontDoorStages(routed);
       }
     }
-    if (validationNeedsExecutorCapabilityRepair(stages.validation)) {
-      const repairRequest = buildExecutorCapabilityRepairRequest({
-        originalRequest: routerRequest,
-        originalPrompt: request.prompt,
-        currentResult: routed,
-        validation: stages.validation,
-      });
-      await recordSubmitDiagnostic("before_executor_capability_repair_model_call", {
-        workflowSummaryCount: workflowSummaryIndex.summaries.length,
-        workflowSummaryBytes: jsonBytes(workflowSummaryIndex),
-        conversationContextBytes: jsonBytes(context),
-        routerPayloadBytes: jsonBytes(repairRequest),
-        candidateCount: candidates.candidates.length,
-        selectedModelRef: routed.metadata.modelCandidateId,
-        providerRef: routed.metadata.providerRef ?? null,
-        reasonCodes: ["before_executor_capability_repair_model_call"],
-      });
-      const repaired = await router.route(repairRequest);
-      await recordSubmitDiagnostic("after_executor_capability_repair_model_call", {
-        workflowSummaryCount: workflowSummaryIndex.summaries.length,
-        workflowSummaryBytes: jsonBytes(workflowSummaryIndex),
-        conversationContextBytes: jsonBytes(context),
-        routerPayloadBytes: jsonBytes(repairRequest),
-        candidateCount: candidates.candidates.length,
-        selectedModelRef: repaired.metadata.modelCandidateId,
-        providerRef: repaired.metadata.providerRef ?? null,
-        reasonCodes: repaired.metadata.reasonCodes,
-      });
-      if (repaired.valid && repaired.output) {
-        routed = repaired;
-        stages = computeFrontDoorStages(routed);
-      }
-    }
     const {
       output,
       frontDoorMemoryPolicy,
@@ -1159,7 +950,6 @@ export class NativeExecutionRpcService {
       validation.outcome === "approval_required" ||
       validation.outcome === "blocked" ||
       validation.outcome === "needs_review" ||
-      actionSemantics.outcome === "approval_required" ||
       actionSemantics.outcome === "blocked" ||
       actionSemantics.outcome === "needs_review"
     ) {
@@ -1325,7 +1115,7 @@ export class NativeExecutionRpcService {
               parentWorkflow: workflow,
               request: child,
               parentRuntimeJobId: requestId,
-              parentAuthorityProfile: output.requestedAuthority ?? workflow.defaultAuthorityProfile,
+              parentAuthorityProfile: workflow.defaultAuthorityProfile,
             }),
           )
         : [];
