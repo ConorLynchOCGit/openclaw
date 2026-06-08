@@ -1023,7 +1023,7 @@ describe("execution platform node agent start", () => {
     });
     expect(receipt.reasonCodes).toEqual(
       expect.arrayContaining([
-        "node_agent_start_receipt_enforces_provider_bootstrap_admission",
+        "node_agent_session_launch_enforces_provider_bootstrap_admission",
         "node_agent_parent_canonical_docs_admitted_to_provider_context",
         "node_agent_parent_required_skills_admitted_to_provider_context",
       ]),
@@ -1059,7 +1059,7 @@ describe("execution platform node agent start", () => {
     expect(accepted.effectiveToolNames).toEqual(REQUIRED_NODE_TOOL_ALLOW);
     expect(accepted.reasonCodes).toEqual(
       expect.arrayContaining([
-        "node_agent_start_receipt_records_provider_report_tool_names",
+        "node_agent_session_launch_records_provider_report_tool_names",
         "node_agent_provider_tool_catalog_admitted",
       ]),
     );
@@ -1141,9 +1141,9 @@ describe("execution platform node agent start", () => {
     expect(receipt.blockers).toContain("node_agent_prompt_session_write_mismatch");
     expect(receipt.reasonCodes).toEqual(
       expect.arrayContaining([
-        "node_agent_start_receipt_records_native_session_prompt_hash",
+        "node_agent_session_launch_records_submitted_prompt_hash",
         "node_agent_prompt_session_write_mismatch",
-        "node_agent_start_receipt_enforces_provider_bootstrap_admission",
+        "node_agent_session_launch_enforces_provider_bootstrap_admission",
       ]),
     );
   });
@@ -1197,7 +1197,7 @@ describe("execution platform node agent start", () => {
     });
     expect(receipt.reasonCodes).toEqual(
       expect.arrayContaining([
-        "node_agent_start_receipt_enforces_provider_bootstrap_admission",
+        "node_agent_session_launch_enforces_provider_bootstrap_admission",
         "node_agent_provider_bootstrap_admission_blocked",
         "node_agent_parent_canonical_docs_missing_from_provider_context",
         "node_agent_parent_required_skills_admitted_to_provider_context",
@@ -1228,8 +1228,8 @@ describe("execution platform node agent start", () => {
     expect(receipt.bootstrapAdmission.providerReportObserved).toBe(false);
     expect(receipt.reasonCodes).toEqual(
       expect.arrayContaining([
-        "node_agent_start_receipt_provider_bootstrap_admission_deferred_to_native_precheck",
-        "node_agent_start_receipt_provider_prompt_report_not_observed",
+        "node_agent_session_launch_provider_bootstrap_admission_deferred_to_native_precheck",
+        "node_agent_session_launch_provider_prompt_report_not_observed",
       ]),
     );
     expect(receipt.reasonCodes).not.toContain("node_agent_provider_bootstrap_admission_blocked");
@@ -1271,9 +1271,9 @@ describe("execution platform node agent start", () => {
     );
     expect(receipt.reasonCodes).toEqual(
       expect.arrayContaining([
-        "node_agent_start_receipt_enforces_provider_bootstrap_admission",
+        "node_agent_session_launch_enforces_provider_bootstrap_admission",
         "node_agent_provider_bootstrap_admission_blocked",
-        "node_agent_start_receipt_provider_prompt_report_not_observed",
+        "node_agent_session_launch_provider_prompt_report_not_observed",
       ]),
     );
   });
@@ -1341,7 +1341,7 @@ describe("execution platform node agent start", () => {
     ]);
     expect(receipt.reasonCodes).toEqual(
       expect.arrayContaining([
-        "node_agent_start_receipt_enforces_provider_bootstrap_admission",
+        "node_agent_session_launch_enforces_provider_bootstrap_admission",
         "node_agent_provider_bootstrap_admission_blocked",
         "node_agent_parent_canonical_docs_missing_from_provider_context",
         "node_agent_parent_required_skills_missing_from_provider_context",

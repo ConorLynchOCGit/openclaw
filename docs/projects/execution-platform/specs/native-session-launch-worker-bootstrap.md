@@ -5,7 +5,8 @@ title: "Native Session Launch Worker Bootstrap"
 
 # Native Session Launch Worker Bootstrap
 
-Status: proposed governing architecture.
+Status: implemented for the active native worker-launch path; remains the
+governing architecture for future worker-launch behavior.
 
 This spec records the cleaned-up worker-bootstrap architecture for executable
 node sessions. It supersedes worker-start designs that depend on

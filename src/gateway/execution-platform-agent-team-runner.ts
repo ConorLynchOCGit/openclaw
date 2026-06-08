@@ -550,7 +550,7 @@ export function buildNodeAgentBootstrapAdmissionFromSystemPromptReport(input: {
       canonicalAgentDocAdmissions: [],
       requiredSkillContextAdmissions: [],
       summary: emptyBootstrapAdmissionSummary(),
-      reasonCodes: ["node_agent_start_receipt_provider_prompt_report_not_observed"],
+      reasonCodes: ["node_agent_session_launch_provider_prompt_report_not_observed"],
     };
   }
 
@@ -936,8 +936,8 @@ function withNativeLockTrace(input: {
     reasonCodes: uniqueStringList([
       ...input.receipt.reasonCodes,
       trace
-        ? "node_agent_start_receipt_recorded_native_lock_trace"
-        : "node_agent_start_receipt_lock_trace_not_observed",
+        ? "node_agent_session_launch_recorded_native_lock_trace"
+        : "node_agent_session_launch_lock_trace_not_observed",
     ]),
   };
   const lockReasonCode = lockReasonCodeForReceipt(next);
@@ -1093,13 +1093,13 @@ export function withWorkerPromptSessionProof(input: {
     ]),
     reasonCodes: uniqueStringList([
       ...input.receipt.reasonCodes,
-      "node_agent_start_receipt_records_worker_prompt_ref",
-      "node_agent_start_receipt_records_native_session_prompt_hash",
+      "node_agent_session_launch_records_worker_prompt_ref",
+      "node_agent_session_launch_records_submitted_prompt_hash",
       ...(reportEffectiveToolNames.length
-        ? ["node_agent_start_receipt_records_provider_report_tool_names"]
+        ? ["node_agent_session_launch_records_provider_report_tool_names"]
         : []),
       ...(providerEffectiveToolNames.length
-        ? ["node_agent_start_receipt_records_provider_effective_tool_names"]
+        ? ["node_agent_session_launch_records_provider_effective_tool_names"]
         : []),
       ...(providerToolCatalogMismatch ? ["node_agent_provider_tool_catalog_mismatch"] : []),
       ...providerMissingRequiredTools.map(
@@ -1115,8 +1115,8 @@ export function withWorkerPromptSessionProof(input: {
         ? "node_agent_prompt_session_hash_match"
         : "node_agent_prompt_session_write_mismatch",
       ...(input.enforceProviderBootstrapAdmission === true
-        ? ["node_agent_start_receipt_enforces_provider_bootstrap_admission"]
-        : ["node_agent_start_receipt_provider_bootstrap_admission_deferred_to_native_precheck"]),
+        ? ["node_agent_session_launch_enforces_provider_bootstrap_admission"]
+        : ["node_agent_session_launch_provider_bootstrap_admission_deferred_to_native_precheck"]),
       ...(bootstrapBlocked ? ["node_agent_provider_bootstrap_admission_blocked"] : []),
       ...providerBootstrapBlockers,
       ...bootstrapAdmission.reasonCodes,
@@ -1929,7 +1929,7 @@ export function createOpenClawNodeSessionExecutor(input: {
         ...startPreparation.receipt,
         reasonCodes: uniqueStringList([
           ...startPreparation.receipt.reasonCodes,
-          "node_agent_start_receipt_prepared_before_native_session_invocation",
+          "node_agent_session_launch_prepared_before_native_session_invocation",
         ]),
       },
       workerPrompt: promptResult.workerPrompt,
