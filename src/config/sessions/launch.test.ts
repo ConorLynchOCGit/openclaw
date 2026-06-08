@@ -43,6 +43,25 @@ describe("session launch", () => {
         provider: "openrouter",
         model: "moonshotai/kimi-k2.6",
         cwd: "/repo",
+        resolvedLocation: {
+          sourceRoot: {
+            path: "/repo",
+            authorityClass: "source",
+            writable: false,
+          },
+          workspaceRoot: {
+            path: "/repo",
+            authorityClass: "workspace",
+            writable: true,
+          },
+          stateRoot: {
+            path: "/repo/.openclaw/runtime",
+            authorityClass: "state",
+            writable: true,
+          },
+        },
+        sourceIdentity: "git:/repo:abc",
+        workspaceIdentity: "git:/repo:abc",
         reasoningLevel: "stream",
         thinkingLevel: "xhigh",
         promptHash: "prompt-hash",
@@ -74,6 +93,15 @@ describe("session launch", () => {
       sessionKey,
       agentId: "execution-coding",
       admissionStatus: "accepted",
+      resolvedLocation: {
+        sourceRoot: {
+          path: "/repo",
+          authorityClass: "source",
+          writable: false,
+        },
+      },
+      sourceIdentity: "git:/repo:abc",
+      workspaceIdentity: "git:/repo:abc",
       requiredSources: [
         {
           id: "agent://execution-coding/doc/IDENTITY.md",
@@ -135,6 +163,107 @@ describe("session launch", () => {
     expect(readSessionLaunch({ storePath, sessionKey })?.latestEvent.admissionStatus).toBe(
       "blocked",
     );
+  });
+
+  it("persists child session.launch linkage to parent session, task tool call, and node run", async () => {
+    const parentSessionKey = "agent:execution-coding:node:nrun_parent";
+    const childSessionKey = "agent:execution-context-scout:subagent:child_1";
+    const storePath = await createStore({
+      [childSessionKey]: {
+        sessionId: "native_task_child_1",
+        updatedAt: 1,
+        spawnedBy: parentSessionKey,
+      },
+    });
+
+    const result = await updateSessionLaunch({
+      storePath,
+      now: 9012,
+      input: {
+        sessionKey: childSessionKey,
+        agentId: "execution-context-scout",
+        runId: "child-run-1",
+        nodeRunId: "nrun_parent",
+        parentSessionKey,
+        parentToolCallId: "tool-call-task-1",
+        admissionStatus: "accepted",
+        provider: "openrouter",
+        model: "qwen/qwen3-coder",
+        cwd: "/repo",
+        resolvedLocation: {
+          sourceRoot: {
+            path: "/repo",
+            authorityClass: "source",
+            writable: false,
+          },
+          workspaceRoot: {
+            path: "/repo",
+            authorityClass: "workspace",
+            writable: true,
+          },
+          stateRoot: {
+            path: "/repo/.openclaw/runtime",
+            authorityClass: "state",
+            writable: true,
+          },
+        },
+        sourceIdentity: "git:/repo:abc",
+        workspaceIdentity: "git:/repo:abc",
+        requiredSources: [
+          {
+            id: "agent://execution-context-scout/doc/IDENTITY.md",
+            bytes: 42,
+            truncated: false,
+            hash: "doc-hash",
+          },
+          {
+            id: "skill://execution-context-scout/SKILL.md",
+            bytes: 84,
+            truncated: false,
+            hash: "skill-hash",
+          },
+        ],
+        toolCatalogRef: "openclaw-effective-tool-inventory://execution-context-scout",
+        effectiveToolNames: ["read", "list", "glob", "grep"],
+        reasonCodes: ["session_launch_accepted"],
+      },
+    });
+
+    expect(result.persisted).toBe(true);
+    if (!result.persisted) {
+      throw new Error("expected child launch linkage to persist");
+    }
+    expect(result.event).toMatchObject({
+      type: "session.launch",
+      sessionKey: childSessionKey,
+      agentId: "execution-context-scout",
+      runId: "child-run-1",
+      nodeRunId: "nrun_parent",
+      parentSessionKey,
+      parentToolCallId: "tool-call-task-1",
+      admissionStatus: "accepted",
+      requiredSources: [
+        {
+          id: "agent://execution-context-scout/doc/IDENTITY.md",
+          bytes: 42,
+          truncated: false,
+          hash: "doc-hash",
+        },
+        {
+          id: "skill://execution-context-scout/SKILL.md",
+          bytes: 84,
+          truncated: false,
+          hash: "skill-hash",
+        },
+      ],
+      effectiveToolNames: ["read", "list", "glob", "grep"],
+    });
+    const launch = readSessionLaunch({ storePath, sessionKey: childSessionKey });
+    expect(launch?.latestEvent).toMatchObject({
+      parentSessionKey,
+      parentToolCallId: "tool-call-task-1",
+      nodeRunId: "nrun_parent",
+    });
   });
 
   it("can still report missing_session when creation is explicitly disabled", async () => {

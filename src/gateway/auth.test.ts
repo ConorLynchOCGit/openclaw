@@ -43,6 +43,20 @@ function createTailscaleForwardedReq(): never {
   } as never;
 }
 
+function createDockerProxiedTailscaleReq(): never {
+  return {
+    socket: { remoteAddress: "172.20.0.1" },
+    headers: {
+      host: "srv1425839.tailbcf154.ts.net",
+      "x-forwarded-for": "100.74.166.121",
+      "x-forwarded-proto": "https",
+      "x-forwarded-host": "srv1425839.tailbcf154.ts.net",
+      "tailscale-user-login": "peter",
+      "tailscale-user-name": "Peter",
+    },
+  } as never;
+}
+
 function createTailscaleWhois() {
   return async () => ({ login: "peter", name: "Peter" });
 }
@@ -347,6 +361,60 @@ describe("gateway auth", () => {
     expect(res.ok).toBe(true);
     expect(res.method).toBe("tailscale");
     expect(res.user).toBe("peter");
+  });
+
+  it("allows tailscale identity through a configured Docker bridge trusted proxy", async () => {
+    const res = await authorizeWsControlUiGatewayConnect({
+      auth: { mode: "token", token: "secret", allowTailscale: true },
+      connectAuth: null,
+      tailscaleWhois: createTailscaleWhois(),
+      trustedProxies: ["172.20.0.1"],
+      req: createDockerProxiedTailscaleReq(),
+    });
+
+    expect(res.ok).toBe(true);
+    expect(res.method).toBe("tailscale");
+    expect(res.user).toBe("peter");
+  });
+
+  it("allows trusted tailscale serve headers when whois is unavailable in the container", async () => {
+    const res = await authorizeWsControlUiGatewayConnect({
+      auth: { mode: "token", token: "secret", allowTailscale: true },
+      connectAuth: null,
+      tailscaleWhois: async () => null,
+      trustedProxies: ["172.20.0.1"],
+      req: createDockerProxiedTailscaleReq(),
+    });
+
+    expect(res.ok).toBe(true);
+    expect(res.method).toBe("tailscale");
+    expect(res.user).toBe("peter");
+  });
+
+  it("rejects trusted tailscale serve headers when whois proves a different user", async () => {
+    const res = await authorizeWsControlUiGatewayConnect({
+      auth: { mode: "token", token: "secret", allowTailscale: true },
+      connectAuth: null,
+      tailscaleWhois: async () => ({ login: "other@example.com" }),
+      trustedProxies: ["172.20.0.1"],
+      req: createDockerProxiedTailscaleReq(),
+    });
+
+    expect(res.ok).toBe(false);
+    expect(res.reason).toBe("tailscale_user_mismatch");
+  });
+
+  it("rejects tailscale identity through an untrusted Docker bridge proxy", async () => {
+    const res = await authorizeWsControlUiGatewayConnect({
+      auth: { mode: "token", token: "secret", allowTailscale: true },
+      connectAuth: null,
+      tailscaleWhois: createTailscaleWhois(),
+      trustedProxies: [],
+      req: createDockerProxiedTailscaleReq(),
+    });
+
+    expect(res.ok).toBe(false);
+    expect(res.reason).toBe("token_missing");
   });
 
   it("serializes async auth attempts per rate-limit key", async () => {

@@ -146,6 +146,19 @@ function createGatewayAuthRateLimiters(rateLimitConfig: AuthRateLimitConfig | un
   return { rateLimiter, browserRateLimiter };
 }
 
+export function mergeGatewayAuthConfigWithSecretsRuntimeSnapshot(params: {
+  runtimeAuth: import("../config/config.js").GatewayAuthConfig | undefined;
+  snapshotAuth: import("../config/config.js").GatewayAuthConfig | undefined;
+}): import("../config/config.js").GatewayAuthConfig | undefined {
+  if (!params.snapshotAuth) {
+    return params.runtimeAuth;
+  }
+  return {
+    ...params.runtimeAuth,
+    ...params.snapshotAuth,
+  };
+}
+
 export type GatewayServer = {
   close: (opts?: { reason?: string; restartExpectedMs?: number | null }) => Promise<void>;
 };
@@ -349,10 +362,14 @@ export async function startGatewayServer(
     tailscaleConfig,
     tailscaleMode,
   } = runtimeConfig;
+  const resolveGatewayAuthConfigForRuntime = () =>
+    mergeGatewayAuthConfigWithSecretsRuntimeSnapshot({
+      runtimeAuth: getRuntimeConfig().gateway?.auth,
+      snapshotAuth: getActiveSecretsRuntimeSnapshot()?.config.gateway?.auth,
+    });
   const getResolvedAuth = () =>
     resolveGatewayAuth({
-      authConfig:
-        getActiveSecretsRuntimeSnapshot()?.config.gateway?.auth ?? getRuntimeConfig().gateway?.auth,
+      authConfig: resolveGatewayAuthConfigForRuntime(),
       authOverride: opts.auth,
       env: process.env,
       tailscaleMode,

@@ -1,15 +1,15 @@
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
-  findExecutionPlatformAgentPackEntry,
+  findAgentPackRegistryEntry,
   loadAgentPackRegistryEntries,
   resolveAgentPackRuntimeSourceRoot,
 } from "./agent-pack-registry.js";
 
 describe("agent pack registry", () => {
-  it("resolves execution platform source-backed runtime pack paths from docs/agents registry", async () => {
+  it("resolves source-backed runtime pack paths from the native docs/agents registry", async () => {
     const entries = await loadAgentPackRegistryEntries();
-    const executionCoding = findExecutionPlatformAgentPackEntry({
+    const executionCoding = findAgentPackRegistryEntry({
       entries,
       agentId: "execution-coding",
     });
@@ -41,11 +41,11 @@ describe("agent pack registry", () => {
 
   it("resolves scout tool contracts from the native registry", async () => {
     const entries = await loadAgentPackRegistryEntries();
-    const contextScout = findExecutionPlatformAgentPackEntry({
+    const contextScout = findAgentPackRegistryEntry({
       entries,
       agentId: "execution-context-scout",
     });
-    const validationScout = findExecutionPlatformAgentPackEntry({
+    const validationScout = findAgentPackRegistryEntry({
       entries,
       agentId: "execution-validation-scout",
     });
@@ -64,14 +64,22 @@ describe("agent pack registry", () => {
     });
   });
 
-  it("does not classify ordinary main agent as an execution-platform pack", async () => {
+  it("resolves ordinary agents through the same native source-backed registry", async () => {
     const entries = await loadAgentPackRegistryEntries();
+    const main = findAgentPackRegistryEntry({
+      entries,
+      agentId: "main",
+    });
 
+    expect(main).toMatchObject({
+      id: "main",
+      runtimeSourcePath: "docs/agents/main/runtime",
+    });
     expect(
-      findExecutionPlatformAgentPackEntry({
-        entries,
-        agentId: "main",
+      resolveAgentPackRuntimeSourceRoot({
+        entry: main!,
+        defaultProjectRoot: "/unused",
       }),
-    ).toBeUndefined();
+    ).toBe(path.join(process.cwd(), "docs", "agents", "main", "runtime"));
   });
 });

@@ -23,6 +23,7 @@ import {
   resolveAuthProfileEligibility,
   markAuthProfileGood,
   markAuthProfileUsed,
+  withExternalCliAuthSyncSuppressed,
 } from "../auth-profiles.js";
 import {
   resolveSessionKeyForRequest,
@@ -65,7 +66,9 @@ import {
   parseImageSizeError,
   pickFallbackThinkingLevel,
 } from "../pi-embedded-helpers.js";
+import { discoverAuthStorage, discoverModels } from "../pi-model-discovery.js";
 import { ensureRuntimePluginsLoaded } from "../runtime-plugins.js";
+import { createNativeRunChildTask } from "../session-runtime/run-child-task-adapter.js";
 import { derivePromptTokens, normalizeUsage, type UsageLike } from "../usage.js";
 import { redactRunIdentifier, resolveRunWorkspaceDir } from "../workspace-run.js";
 import { runPostCompactionSideEffects } from "./compaction-hooks.js";
@@ -130,6 +133,24 @@ import { createUsageAccumulator, mergeUsageIntoAccumulator } from "./usage-accum
 type ApiKeyInfo = ResolvedProviderAuth;
 
 const MAX_SAME_MODEL_IDLE_TIMEOUT_RETRIES = 1;
+
+function logEmbeddedRunStartTiming(
+  label: string,
+  startedAt: number,
+  details: Record<string, unknown> = {},
+): void {
+  if (process.env.OPENCLAW_NODE_AGENT_START_TIMING !== "1") {
+    return;
+  }
+  process.stderr.write(
+    `${JSON.stringify({
+      event: "embedded_run_start_timing",
+      label,
+      elapsedMs: Date.now() - startedAt,
+      ...details,
+    })}\n`,
+  );
+}
 
 function buildTraceToolSummary(params: {
   toolMetas: Array<{ toolName: string; meta?: string }>;
@@ -198,6 +219,14 @@ function backfillSessionKey(params: {
 export async function runEmbeddedPiAgent(
   params: RunEmbeddedPiAgentParams,
 ): Promise<EmbeddedPiRunResult> {
+  return await withExternalCliAuthSyncSuppressed(async () =>
+    runEmbeddedPiAgentWithExternalCliAuthSyncSuppressed(params),
+  );
+}
+
+async function runEmbeddedPiAgentWithExternalCliAuthSyncSuppressed(
+  params: RunEmbeddedPiAgentParams,
+): Promise<EmbeddedPiRunResult> {
   // Resolve sessionKey early so all downstream consumers (hooks, LCM, compaction)
   // receive a non-null key even when callers omit it. See #60552.
   const effectiveSessionKey = backfillSessionKey({
@@ -248,6 +277,11 @@ export async function runEmbeddedPiAgent(
     return enqueueGlobal(async () => {
       throwIfAborted();
       const started = Date.now();
+      logEmbeddedRunStartTiming("entered_global_lane", started, {
+        sessionId: params.sessionId,
+        sessionKey: params.sessionKey,
+        agentId: params.agentId,
+      });
       const workspaceResolution = resolveRunWorkspaceDir({
         workspaceDir: params.workspaceDir,
         sessionKey: params.sessionKey,
@@ -267,6 +301,11 @@ export async function runEmbeddedPiAgent(
         config: params.config,
         workspaceDir: resolvedWorkspace,
         allowGatewaySubagentBinding: params.allowGatewaySubagentBinding,
+        onlyPluginIds: params.runtimePluginIds,
+      });
+      logEmbeddedRunStartTiming("runtime_plugins_loaded", started, {
+        workspaceDir: resolvedWorkspace,
+        runtimePluginIds: params.runtimePluginIds,
       });
 
       let provider = (params.provider ?? DEFAULT_PROVIDER).trim() || DEFAULT_PROVIDER;
@@ -278,7 +317,14 @@ export async function runEmbeddedPiAgent(
         agentId: params.agentId,
         sessionKey: normalizedSessionKey,
       });
-      await ensureOpenClawModelsJson(params.config, agentDir);
+      await ensureOpenClawModelsJson(params.config, agentDir, {
+        policy: params.modelsJsonPolicy,
+      });
+      logEmbeddedRunStartTiming("models_json_ensured", started, {
+        provider,
+        modelId,
+        agentDir,
+      });
       const resolvedSessionKey = normalizedSessionKey;
       const hookRunner = getGlobalHookRunner();
       const hookCtx = {
@@ -301,16 +347,47 @@ export async function runEmbeddedPiAgent(
         hookRunner,
         hookContext: hookCtx,
       });
+      logEmbeddedRunStartTiming("hook_model_selection_resolved", started, {
+        provider: hookSelection.provider,
+        modelId: hookSelection.modelId,
+      });
       provider = hookSelection.provider;
       modelId = hookSelection.modelId;
       const legacyBeforeAgentStartResult = hookSelection.legacyBeforeAgentStartResult;
 
-      const { model, error, authStorage, modelRegistry } = await resolveModelAsync(
+      const nodeNativeWorkerRun = params.nodeAgentNativeTaskMode?.enabled === true;
+      if (nodeNativeWorkerRun && (!params.authStorage || !params.modelRegistry)) {
+        throw new FailoverError(
+          "Node-bound native worker launch requires admitted authStorage and modelRegistry; refusing worker-local provider discovery.",
+          {
+            reason: "unknown",
+            provider,
+            model: modelId,
+          },
+        );
+      }
+      const authStorage =
+        params.authStorage ?? discoverAuthStorage(agentDir, { syncExternalCli: false });
+      const modelRegistry = params.modelRegistry ?? discoverModels(authStorage, agentDir);
+      logEmbeddedRunStartTiming(
+        params.authStorage || params.modelRegistry
+          ? "model_registry_reused"
+          : "model_registry_discovered",
+        started,
+        {
+          provider,
+          modelId,
+        },
+      );
+      const { model, error } = await resolveModelAsync(provider, modelId, agentDir, params.config, {
+        authStorage,
+        modelRegistry,
+      });
+      logEmbeddedRunStartTiming("model_resolved", started, {
         provider,
         modelId,
-        agentDir,
-        params.config,
-      );
+        modelFound: Boolean(model),
+      });
       if (!model) {
         throw new FailoverError(error ?? `Unknown model: ${provider}/${modelId}`, {
           reason: "model_not_found",
@@ -331,6 +408,10 @@ export async function runEmbeddedPiAgent(
 
       const authStore = ensureAuthProfileStore(agentDir, {
         allowKeychainPrompt: false,
+        syncExternalCli: false,
+      });
+      logEmbeddedRunStartTiming("auth_store_loaded", started, {
+        profileCount: Object.keys(authStore.profiles ?? {}).length,
       });
       const preferredProfileId = params.authProfileId?.trim();
       let lockedProfileId = params.authProfileIdSource === "user" ? preferredProfileId : undefined;
@@ -431,6 +512,10 @@ export async function runEmbeddedPiAgent(
       });
 
       await initializeAuthProfile();
+      logEmbeddedRunStartTiming("auth_profile_initialized", started, {
+        provider,
+        modelId,
+      });
       const { sessionAgentId } = resolveSessionAgentIds({
         sessionKey: params.sessionKey,
         config: params.config,
@@ -558,7 +643,11 @@ export async function runEmbeddedPiAgent(
       // Resolve the context engine once and reuse across retries to avoid
       // repeated initialization/connection overhead per attempt.
       ensureContextEnginesInitialized();
+      logEmbeddedRunStartTiming("context_engines_initialized", started);
       const contextEngine = await resolveContextEngine(params.config);
+      logEmbeddedRunStartTiming("context_engine_resolved", started, {
+        ownsCompaction: contextEngine.info.ownsCompaction === true,
+      });
       try {
         // When the engine owns compaction, compactEmbeddedPiSessionDirect is
         // bypassed. Fire lifecycle hooks here so recovery paths still notify
@@ -648,6 +737,10 @@ export async function runEmbeddedPiAgent(
           authRetryPending = false;
           attemptedThinking.add(thinkLevel);
           await fs.mkdir(resolvedWorkspace, { recursive: true });
+          logEmbeddedRunStartTiming("attempt_workspace_ready", started, {
+            runLoopIterations,
+            workspaceDir: resolvedWorkspace,
+          });
 
           const basePrompt =
             provider === "anthropic" ? scrubAnthropicRefusalMagic(params.prompt) : params.prompt;
@@ -668,6 +761,12 @@ export async function runEmbeddedPiAgent(
             resolvedStreamApiKey = (apiKeyInfo as ApiKeyInfo).apiKey;
           }
 
+          logEmbeddedRunStartTiming("before_attempt_backend", started, {
+            provider,
+            modelId,
+            thinkLevel,
+            reasoningLevel: params.reasoningLevel,
+          });
           const attempt = await runEmbeddedAttemptWithBackend({
             sessionId: params.sessionId,
             sessionKey: resolvedSessionKey,
@@ -697,6 +796,8 @@ export async function runEmbeddedPiAgent(
             agentDir,
             config: params.config,
             allowGatewaySubagentBinding: params.allowGatewaySubagentBinding,
+            runtimePluginIds: params.runtimePluginIds,
+            modelsJsonPolicy: params.modelsJsonPolicy,
             contextEngine,
             contextTokenBudget: ctxInfo.tokens,
             skillsSnapshot: params.skillsSnapshot,
@@ -769,6 +870,13 @@ export async function runEmbeddedPiAgent(
                     cfg: params.config,
                     agentId: workspaceResolution.agentId,
                   }),
+                  runChildTask:
+                    params.nodeAgentNativeTaskMode.runChildTask ??
+                    createNativeRunChildTask({
+                      parentContext: { ...params, authStorage, modelRegistry },
+                      resolvedWorkspace,
+                      runAgent: runEmbeddedPiAgent,
+                    }),
                 }
               : undefined,
             requiredProviderContextAdmission: params.requiredProviderContextAdmission,

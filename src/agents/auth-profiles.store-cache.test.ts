@@ -21,11 +21,17 @@ vi.mock("../plugins/provider-runtime.js", () => ({
 
 let clearRuntimeAuthProfileStoreSnapshots: typeof import("./auth-profiles.js").clearRuntimeAuthProfileStoreSnapshots;
 let ensureAuthProfileStore: typeof import("./auth-profiles.js").ensureAuthProfileStore;
+let loadAuthProfileStore: typeof import("./auth-profiles.js").loadAuthProfileStore;
+let withExternalCliAuthSyncSuppressed: typeof import("./auth-profiles.js").withExternalCliAuthSyncSuppressed;
 
 async function loadFreshAuthProfilesModuleForTest() {
   vi.resetModules();
-  ({ clearRuntimeAuthProfileStoreSnapshots, ensureAuthProfileStore } =
-    await import("./auth-profiles.js"));
+  ({
+    clearRuntimeAuthProfileStoreSnapshots,
+    ensureAuthProfileStore,
+    loadAuthProfileStore,
+    withExternalCliAuthSyncSuppressed,
+  } = await import("./auth-profiles.js"));
 }
 
 function withAgentDirEnv(prefix: string, run: (agentDir: string) => void | Promise<void>) {
@@ -75,12 +81,21 @@ function writeAuthStore(agentDir: string, key: string) {
 }
 
 describe("auth profile store cache", () => {
+  const envSnapshot = {
+    externalCliSyncSuppression: process.env.OPENCLAW_SUPPRESS_EXTERNAL_CLI_AUTH_SYNC,
+  };
+
   beforeEach(async () => {
     await loadFreshAuthProfilesModuleForTest();
   });
 
   afterEach(() => {
     vi.useRealTimers();
+    if (envSnapshot.externalCliSyncSuppression === undefined) {
+      delete process.env.OPENCLAW_SUPPRESS_EXTERNAL_CLI_AUTH_SYNC;
+    } else {
+      process.env.OPENCLAW_SUPPRESS_EXTERNAL_CLI_AUTH_SYNC = envSnapshot.externalCliSyncSuppression;
+    }
     clearRuntimeAuthProfileStoreSnapshots();
     vi.clearAllMocks();
   });
@@ -93,6 +108,56 @@ describe("auth profile store cache", () => {
       ensureAuthProfileStore(agentDir);
 
       expect(mocks.syncExternalCliCredentials).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it("does not sync external CLI credentials when disabled by the caller", async () => {
+    await withAgentDirEnv("openclaw-auth-store-no-external-sync-", (agentDir) => {
+      writeAuthStore(agentDir, "sk-test");
+
+      const store = ensureAuthProfileStore(agentDir, { syncExternalCli: false });
+
+      expect(store.profiles["openai:default"]).toMatchObject({ key: "sk-test" });
+      expect(mocks.syncExternalCliCredentials).not.toHaveBeenCalled();
+    });
+  });
+
+  it("suppresses external CLI sync across nested auth loads", async () => {
+    await withAgentDirEnv("openclaw-auth-store-scoped-no-external-sync-", async (agentDir) => {
+      writeAuthStore(agentDir, "sk-test");
+
+      const store = await withExternalCliAuthSyncSuppressed(async () =>
+        ensureAuthProfileStore(agentDir),
+      );
+
+      expect(store.profiles["openai:default"]).toMatchObject({ key: "sk-test" });
+      expect(mocks.syncExternalCliCredentials).not.toHaveBeenCalled();
+    });
+  });
+
+  it("suppresses external CLI sync for direct auth store loads", async () => {
+    await withAgentDirEnv(
+      "openclaw-auth-store-scoped-no-direct-external-sync-",
+      async (agentDir) => {
+        writeAuthStore(agentDir, "sk-test");
+
+        const store = await withExternalCliAuthSyncSuppressed(async () => loadAuthProfileStore());
+
+        expect(store.profiles["openai:default"]).toMatchObject({ key: "sk-test" });
+        expect(mocks.syncExternalCliCredentials).not.toHaveBeenCalled();
+      },
+    );
+  });
+
+  it("suppresses external CLI sync through the process-wide suppression sentinel", async () => {
+    await withAgentDirEnv("openclaw-auth-store-env-sentinel-no-external-sync-", (agentDir) => {
+      writeAuthStore(agentDir, "sk-test");
+      process.env.OPENCLAW_SUPPRESS_EXTERNAL_CLI_AUTH_SYNC = "1";
+
+      const store = ensureAuthProfileStore(agentDir);
+
+      expect(store.profiles["openai:default"]).toMatchObject({ key: "sk-test" });
+      expect(mocks.syncExternalCliCredentials).not.toHaveBeenCalled();
     });
   });
 

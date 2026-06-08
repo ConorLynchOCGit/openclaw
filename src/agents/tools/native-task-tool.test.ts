@@ -7,6 +7,7 @@ import {
   buildChildBootstrapAdmission,
   buildParentVisibleChildResult,
   classifyChildBootstrapAdmissionFailure,
+  createLegacyGatewayNativeTaskToolForTest,
   createNativeTaskTool,
   resolveRequiredChildBootstrapAdmissionSources,
   resolveParentVisibleChildResultMaxChars,
@@ -212,17 +213,18 @@ describe("native task tool", () => {
   it("tells the parent to request inline source windows and file graph from context scout", () => {
     const tool = createNativeTaskTool({
       allowedAgentIds: ["execution-context-scout", "execution-validation-scout"],
+      runChildTask: vi.fn(),
     });
 
     expect(tool.description).toContain("bounded inline source windows");
     expect(tool.description).toContain("file_graph");
   });
 
-  it("requires an explicit allowed child agent id before spawning", async () => {
-    const spawnSubagent = vi.fn();
+  it("requires an explicit allowed child agent id before running a child task", async () => {
+    const runChildTask = vi.fn();
     const tool = createNativeTaskTool({
       allowedAgentIds: ["execution-context-scout", "execution-validation-scout"],
-      spawnSubagent,
+      runChildTask,
     });
 
     await expect(
@@ -236,7 +238,15 @@ describe("native task tool", () => {
         task: "Find relevant files.",
       }),
     ).rejects.toThrow(/agentId required/i);
-    expect(spawnSubagent).not.toHaveBeenCalled();
+    expect(runChildTask).not.toHaveBeenCalled();
+  });
+
+  it("requires a native child-session runtime when constructing the production task tool", () => {
+    expect(() =>
+      createNativeTaskTool({
+        allowedAgentIds: ["execution-context-scout"],
+      } as never),
+    ).toThrow(/requires OpenClaw session-runtime runChildTask/i);
   });
 
   it("runs foreground and returns child result text to parent-visible tool output", async () => {
@@ -260,7 +270,7 @@ describe("native task tool", () => {
     };
     const spawnSubagent = vi.fn(async () => spawnResult);
     const waitForForegroundResult = vi.fn(async () => foregroundResult);
-    const tool = createNativeTaskTool({
+    const tool = createLegacyGatewayNativeTaskToolForTest({
       allowedAgentIds: ["execution-context-scout", "execution-validation-scout"],
       agentSessionKey: "agent:execution-coding:node:nrun_test",
       requesterAgentIdOverride: "execution-coding",
@@ -347,6 +357,97 @@ describe("native task tool", () => {
     expect(details).not.toHaveProperty("resultText");
   });
 
+  it("uses the native child-session runner when provided instead of gateway spawn/wait", async () => {
+    const runChildTask = vi.fn(
+      async (params): Promise<NativeTaskForegroundResult> => ({
+        status: "completed",
+        foreground: true,
+        childSessionKey: `agent:${params.childAgentId}:subagent:child-native`,
+        runId: "run-child-native",
+        waitStatus: "ok",
+        resultText:
+          "Direct answer: edit from native child context.\n\nBounded source windows:\n```ts\nexport const nativeTask = true;\n```",
+        resultDeliveredToParentContext: true,
+      }),
+    );
+    const tool = createNativeTaskTool({
+      allowedAgentIds: ["execution-context-scout"],
+      agentSessionKey: "agent:execution-coding:node:nrun_test",
+      requesterAgentIdOverride: "execution-coding",
+      workspaceDir: "/root/services/openclaw-roles/live",
+      runChildTask,
+    });
+
+    const result = await tool.execute("task-native-child-context-scout", {
+      agentId: "execution-context-scout",
+      task: "Map native child context.",
+      label: "native child",
+      runTimeoutSeconds: 11,
+    });
+
+    expect(runChildTask).toHaveBeenCalledWith(
+      expect.objectContaining({
+        parentSessionKey: "agent:execution-coding:node:nrun_test",
+        parentToolCallId: "task-native-child-context-scout",
+        childAgentId: "execution-context-scout",
+        task: "Map native child context.",
+        label: "native child",
+        runTimeoutSeconds: 11,
+        parentVisibleResultMaxChars: 12_000,
+      }),
+    );
+    expect(runChildTask.mock.calls[0]?.[0]).not.toHaveProperty("requiredProviderContextAdmission");
+    expect(runChildTask.mock.calls[0]?.[0]).not.toHaveProperty("requiredBootstrapAdmissionSources");
+    expect(readContentText(result)).toContain("export const nativeTask = true");
+    expect(readDetails(result)).toMatchObject({
+      status: "completed",
+      foreground: true,
+      sourceTool: "task",
+      requestedAgentId: "execution-context-scout",
+      childSessionKey: "agent:execution-context-scout:subagent:child-native",
+      runId: "run-child-native",
+      nativeChildSessionRuntime: true,
+      resultDeliveredToParentContext: true,
+      childIdentityVerified: true,
+    });
+  });
+
+  it("returns blocked-action guidance after native child runtime failures", async () => {
+    const runChildTask = vi.fn(
+      async (): Promise<NativeTaskForegroundResult> => ({
+        status: "error",
+        foreground: true,
+        childSessionKey: "agent:execution-context-scout:subagent:child-lock",
+        runId: "run-child-lock",
+        waitStatus: "error",
+        error: "session lock acquisition timed out",
+        resultDeliveredToParentContext: false,
+        childStartFailureKind: "child_session_lock_failed",
+      }),
+    );
+    const tool = createNativeTaskTool({
+      allowedAgentIds: ["execution-context-scout"],
+      runChildTask,
+    });
+
+    const result = await tool.execute("task-native-child-lock-failure", {
+      agentId: "execution-context-scout",
+      task: "Map native child context.",
+    });
+
+    const text = readContentText(result);
+    expect(text).toContain("did not produce parent-visible edit context");
+    expect(text).toContain("Do not probe gateway-status");
+    expect(text).toContain("Do not use openclaw_resource_read for file:// paths");
+    expect(readDetails(result)).toMatchObject({
+      status: "error",
+      requestedAgentId: "execution-context-scout",
+      childStartFailureKind: "child_session_lock_failed",
+      resultDeliveredToParentContext: false,
+      nativeChildSessionRuntime: true,
+    });
+  });
+
   it("supports independent parallel scout task calls without sharing child state", async () => {
     const spawnSubagent = vi.fn(async (params: { label?: string }) => {
       const suffix = params.label === "plugin scout" ? "plugin" : "validation";
@@ -381,7 +482,7 @@ describe("native task tool", () => {
         resultDeliveredToParentContext: true,
       }),
     );
-    const tool = createNativeTaskTool({
+    const tool = createLegacyGatewayNativeTaskToolForTest({
       allowedAgentIds: ["execution-context-scout"],
       spawnSubagent,
       waitForForegroundResult,
@@ -436,7 +537,7 @@ describe("native task tool", () => {
       waitStatus: "pending",
       resultDeliveredToParentContext: false,
     };
-    const tool = createNativeTaskTool({
+    const tool = createLegacyGatewayNativeTaskToolForTest({
       allowedAgentIds: ["execution-context-scout"],
       spawnSubagent: vi.fn(async () => spawnResult),
       waitForForegroundResult: vi.fn(async () => foregroundResult),
@@ -482,7 +583,7 @@ describe("native task tool", () => {
         resultDeliveredToParentContext: true,
       }),
     );
-    const tool = createNativeTaskTool({
+    const tool = createLegacyGatewayNativeTaskToolForTest({
       allowedAgentIds: ["execution-context-scout"],
       spawnSubagent,
       waitForForegroundResult,
@@ -530,7 +631,7 @@ describe("native task tool", () => {
     )}/${encodeURIComponent("run-child-continue")}`;
     const spawnSubagent = vi.fn();
     const waitForForegroundResult = vi.fn();
-    const tool = createNativeTaskTool({
+    const tool = createLegacyGatewayNativeTaskToolForTest({
       allowedAgentIds: ["execution-context-scout", "execution-validation-scout"],
       spawnSubagent,
       waitForForegroundResult,
@@ -577,7 +678,7 @@ describe("native task tool", () => {
         "Validation result: pnpm test:file src/agents/tools/native-task-tool.test.ts passed.",
       resultDeliveredToParentContext: true,
     };
-    const tool = createNativeTaskTool({
+    const tool = createLegacyGatewayNativeTaskToolForTest({
       allowedAgentIds: ["execution-validation-scout"],
       spawnSubagent: vi.fn(async () => spawnResult),
       waitForForegroundResult: vi.fn(async () => foregroundResult),
@@ -630,7 +731,7 @@ describe("native task tool", () => {
       resultText: oversized,
       resultDeliveredToParentContext: true,
     };
-    const tool = createNativeTaskTool({
+    const tool = createLegacyGatewayNativeTaskToolForTest({
       allowedAgentIds: ["execution-context-scout"],
       spawnSubagent: vi.fn(async () => spawnResult),
       waitForForegroundResult: vi.fn(async () => foregroundResult),
@@ -678,7 +779,7 @@ describe("native task tool", () => {
       resultText: nearlyDefaultSized,
       resultDeliveredToParentContext: true,
     };
-    const tool = createNativeTaskTool({
+    const tool = createLegacyGatewayNativeTaskToolForTest({
       allowedAgentIds: ["execution-context-scout"],
       parentVisibleResultMaxChars: 8_000,
       spawnSubagent: vi.fn(async () => spawnResult),
@@ -711,7 +812,7 @@ describe("native task tool", () => {
     };
     const spawnSubagent = vi.fn(async () => spawnResult);
     const waitForForegroundResult = vi.fn();
-    const tool = createNativeTaskTool({
+    const tool = createLegacyGatewayNativeTaskToolForTest({
       allowedAgentIds: ["execution-context-scout", "execution-validation-scout"],
       spawnSubagent,
       waitForForegroundResult,
@@ -738,7 +839,7 @@ describe("native task tool", () => {
   it("does not report a successful foreground task when spawn returns only an accepted receipt", async () => {
     const spawnSubagent = vi.fn(async () => ({ status: "accepted" as const }));
     const waitForForegroundResult = vi.fn();
-    const tool = createNativeTaskTool({
+    const tool = createLegacyGatewayNativeTaskToolForTest({
       allowedAgentIds: ["execution-context-scout"],
       spawnSubagent,
       waitForForegroundResult,
@@ -766,7 +867,7 @@ describe("native task tool", () => {
       error: "agentId is not allowed for sessions_spawn",
     }));
     const waitForForegroundResult = vi.fn();
-    const tool = createNativeTaskTool({
+    const tool = createLegacyGatewayNativeTaskToolForTest({
       allowedAgentIds: ["execution-context-scout"],
       spawnSubagent,
       waitForForegroundResult,

@@ -239,6 +239,10 @@ function buildGatewayConnectAuth(
   };
 }
 
+function isDeviceTokenMismatchCloseReason(reason: string): boolean {
+  return /\bdevice\s+token\s+mismatch\b/i.test(reason);
+}
+
 async function buildGatewayConnectDevice(params: {
   deviceIdentity: Awaited<ReturnType<typeof loadOrCreateDeviceIdentity>> | null;
   client: GatewayConnectClientInfo;
@@ -295,6 +299,7 @@ export class GatewayBrowserClient {
   private connectTimer: number | null = null;
   private backoffMs = 800;
   private pendingConnectError: GatewayErrorInfo | undefined;
+  private pendingConnectPlan: ConnectPlan | null = null;
   private pendingDeviceTokenRetry = false;
   private deviceTokenRetryBudgetUsed = false;
 
@@ -311,6 +316,7 @@ export class GatewayBrowserClient {
     this.ws?.close();
     this.ws = null;
     this.pendingConnectError = undefined;
+    this.pendingConnectPlan = null;
     this.pendingDeviceTokenRetry = false;
     this.deviceTokenRetryBudgetUsed = false;
     this.flushPending(new Error("gateway client stopped"));
@@ -330,8 +336,13 @@ export class GatewayBrowserClient {
     this.ws.addEventListener("close", (ev) => {
       const reason = ev.reason ?? "";
       const connectError = this.pendingConnectError;
+      const connectPlan = this.pendingConnectPlan;
       this.pendingConnectError = undefined;
+      this.pendingConnectPlan = null;
       this.ws = null;
+      if (connectPlan && isDeviceTokenMismatchCloseReason(reason)) {
+        this.clearStaleCachedDeviceToken(connectPlan);
+      }
       this.flushPending(new Error(`gateway closed (${ev.code}): ${reason}`));
       this.opts.onClose?.({ code: ev.code, reason, error: connectError });
       const connectErrorCode = resolveGatewayErrorDetailCode(connectError);
@@ -445,6 +456,7 @@ export class GatewayBrowserClient {
   }
 
   private handleConnectHello(hello: GatewayHelloOk, plan: ConnectPlan) {
+    this.pendingConnectPlan = null;
     this.pendingDeviceTokenRetry = false;
     this.deviceTokenRetryBudgetUsed = false;
     if (hello?.auth?.deviceToken && plan.deviceIdentity) {
@@ -496,12 +508,16 @@ export class GatewayBrowserClient {
     } else {
       this.pendingConnectError = undefined;
     }
-    if (
-      plan.selectedAuth.canFallbackToShared &&
-      plan.deviceIdentity &&
-      connectErrorCode === ConnectErrorDetailCodes.AUTH_DEVICE_TOKEN_MISMATCH
-    ) {
-      clearDeviceAuthToken({ deviceId: plan.deviceIdentity.deviceId, role: plan.role });
+    const cachedDeviceTokenWasUsedAsPrimaryAuth =
+      Boolean(plan.selectedAuth.resolvedDeviceToken) &&
+      !plan.explicitGatewayToken &&
+      !plan.selectedAuth.authPassword;
+    const staleCachedDeviceToken =
+      connectErrorCode === ConnectErrorDetailCodes.AUTH_DEVICE_TOKEN_MISMATCH ||
+      (connectErrorCode === ConnectErrorDetailCodes.AUTH_TOKEN_MISMATCH &&
+        cachedDeviceTokenWasUsedAsPrimaryAuth);
+    if (plan.deviceIdentity && staleCachedDeviceToken) {
+      this.clearStaleCachedDeviceToken(plan);
     }
     this.ws?.close(CONNECT_FAILED_CLOSE_CODE, "connect failed");
   }
@@ -514,9 +530,21 @@ export class GatewayBrowserClient {
     this.clearConnectTimer();
 
     const plan = await this.buildConnectPlan();
+    this.pendingConnectPlan = plan;
     void this.request<GatewayHelloOk>("connect", this.buildConnectParams(plan))
       .then((hello) => this.handleConnectHello(hello, plan))
       .catch((err: unknown) => this.handleConnectFailure(err, plan));
+  }
+
+  private clearStaleCachedDeviceToken(plan: ConnectPlan) {
+    const cachedDeviceTokenWasUsedAsPrimaryAuth =
+      Boolean(plan.selectedAuth.resolvedDeviceToken) &&
+      !plan.explicitGatewayToken &&
+      !plan.selectedAuth.authPassword;
+    if (!plan.deviceIdentity || !cachedDeviceTokenWasUsedAsPrimaryAuth) {
+      return;
+    }
+    clearDeviceAuthToken({ deviceId: plan.deviceIdentity.deviceId, role: plan.role });
   }
 
   private handleMessage(raw: string) {

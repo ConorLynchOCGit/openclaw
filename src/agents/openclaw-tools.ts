@@ -12,6 +12,7 @@ import {
   isUpdatePlanToolEnabledForOpenClawTools,
 } from "./openclaw-tools.registration.js";
 import type { SandboxFsBridge } from "./sandbox/fs-bridge.js";
+import type { NativeTaskRunChildTask } from "./session-runtime/native-task-types.js";
 import type { SpawnedToolContext } from "./spawned-context.js";
 import type { ToolFsPolicy } from "./tool-fs-policy.js";
 import { createAgentsListTool } from "./tools/agents-list-tool.js";
@@ -105,6 +106,7 @@ export function createOpenClawTools(
       enabled: boolean;
       allowedAgentIds: readonly string[];
       parentVisibleResultMaxChars?: number;
+      runChildTask: NativeTaskRunChildTask;
     };
     /** Trusted sender id from inbound context (not tool args). */
     requesterSenderId?: string | null;
@@ -211,6 +213,9 @@ export function createOpenClawTools(
     sandboxed: options?.sandboxed,
     runtimeWebFetch: runtimeWebTools?.fetch,
   });
+  if (options?.nativeTask?.enabled === true && !options.nativeTask.runChildTask) {
+    throw new Error("native task tool requires OpenClaw session-runtime runChildTask");
+  }
   const nativeTaskTool =
     options?.nativeTask?.enabled === true
       ? createNativeTaskTool({
@@ -218,6 +223,7 @@ export function createOpenClawTools(
           ...(typeof options.nativeTask.parentVisibleResultMaxChars === "number"
             ? { parentVisibleResultMaxChars: options.nativeTask.parentVisibleResultMaxChars }
             : {}),
+          runChildTask: options.nativeTask.runChildTask,
           agentSessionKey: options?.agentSessionKey,
           agentChannel: options?.agentChannel,
           agentAccountId: options?.agentAccountId,

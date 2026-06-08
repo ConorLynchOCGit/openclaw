@@ -201,6 +201,18 @@ export type SessionLaunchRequiredSource = {
   hash?: string | null;
 };
 
+export type SessionLaunchResolvedLocationRoot = {
+  path: string;
+  authorityClass: "source" | "workspace" | "state";
+  writable: boolean;
+};
+
+export type SessionLaunchResolvedLocation = {
+  sourceRoot?: SessionLaunchResolvedLocationRoot;
+  workspaceRoot?: SessionLaunchResolvedLocationRoot;
+  stateRoot?: SessionLaunchResolvedLocationRoot;
+};
+
 export type SessionLaunchEvent = {
   eventId: string;
   type: "session.launch";
@@ -209,11 +221,16 @@ export type SessionLaunchEvent = {
   agentId: string;
   runId: string;
   nodeRunId?: string;
+  parentSessionKey?: string;
+  parentToolCallId?: string;
   admissionStatus: "accepted" | "blocked";
   blockerKind?: string | null;
   provider?: string;
   model?: string;
   cwd?: string;
+  resolvedLocation?: SessionLaunchResolvedLocation;
+  sourceIdentity?: string | null;
+  workspaceIdentity?: string | null;
   reasoningLevel?: string;
   thinkingLevel?: string;
   promptHash?: string | null;

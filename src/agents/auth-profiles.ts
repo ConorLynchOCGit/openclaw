@@ -33,6 +33,7 @@ export {
   replaceRuntimeAuthProfileStoreSnapshots,
   loadAuthProfileStore,
   saveAuthProfileStore,
+  withExternalCliAuthSyncSuppressed,
 } from "./auth-profiles/store.js";
 export type {
   ApiKeyCredential,

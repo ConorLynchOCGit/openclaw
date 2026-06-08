@@ -4,6 +4,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
+import JSON5 from "json5";
 import { tsImport } from "tsx/esm/api";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -51,6 +52,10 @@ const { executeSchedulerStageNativeTool, executeSchedulerStageNativeToolBatch } 
   import.meta.url,
 );
 const { loadConfig } = await tsImport(path.join(root, "src/config/config.ts"), import.meta.url);
+const { resolveConfigPath } = await tsImport(
+  path.join(root, "src/config/paths.ts"),
+  import.meta.url,
+);
 const { getExecutionPlatformRuntime } = await tsImport(
   path.join(root, "src/gateway/execution-platform-http.ts"),
   import.meta.url,
@@ -103,6 +108,23 @@ async function loadEnvFile(filePath) {
         .trim()
         .replace(/^['"]|['"]$/g, "");
     }
+  }
+}
+
+function isRecord(value) {
+  return value && typeof value === "object" && !Array.isArray(value);
+}
+
+async function loadSourceBackedReplayConfig() {
+  const configPath = resolveConfigPath(process.env);
+  try {
+    const parsed = JSON5.parse(await fs.readFile(configPath, "utf8"));
+    if (!isRecord(parsed) || Object.hasOwn(parsed, "$include")) {
+      return loadConfig();
+    }
+    return parsed;
+  } catch {
+    return loadConfig();
   }
 }
 
@@ -1343,6 +1365,7 @@ async function main() {
   await loadEnvFile(".env.local");
   await loadEnvFile(".env.execution-platform-staging");
   await loadEnvFile("/root/.openclaw/.env");
+  process.env.OPENCLAW_SUPPRESS_EXTERNAL_CLI_AUTH_SYNC ??= "1";
   const runtimeJobId = flag("--runtime-job-id");
   if (!runtimeJobId) {
     throw new Error("runtime_job_id_required");
@@ -1376,7 +1399,7 @@ async function main() {
   const workerPromptFile = flag("--worker-prompt-file");
   const workerPromptFileTextTurn = await loadWorkerPromptFileTextTurnClient(workerPromptFile);
 
-  const runtime = await getExecutionPlatformRuntime(loadConfig());
+  const runtime = await getExecutionPlatformRuntime(await loadSourceBackedReplayConfig());
   replayRuntimeShutdown =
     typeof runtime.shutdown === "function" ? () => runtime.shutdown() : replayRuntimeShutdown;
   const job = await runtime.runtimeJobs.getJob(runtimeJobId);

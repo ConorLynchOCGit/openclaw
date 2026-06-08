@@ -400,6 +400,7 @@ describe("resolveBootstrapFilesForRun", () => {
     const files = await resolveBootstrapFilesForRun({
       workspaceDir,
       sessionKey: "session-1",
+      agentId: "unregistered-workspace-agent",
     });
     const memory = files.find((file) => file.name === "MEMORY.md");
     const diskContent = await fs.readFile(memoryPath, "utf8");
@@ -453,7 +454,7 @@ describe("resolveBootstrapFilesForRun", () => {
     expect(memoryFile?.content).not.toContain("stale generated memory pointer");
   });
 
-  it("loads source-backed execution-agent docs instead of mutable workspace bootstrap files", async () => {
+  it("loads source-backed agent docs instead of mutable workspace bootstrap files", async () => {
     const workspaceDir = await makeTempWorkspace("openclaw-bootstrap-");
     const staleAgentsPath = path.join(workspaceDir, "AGENTS.md");
     await fs.writeFile(staleAgentsPath, "# stale workspace agent rules\n", "utf8");
@@ -479,7 +480,7 @@ describe("resolveBootstrapFilesForRun", () => {
     expect(files.some((file) => file.name === "USER.md")).toBe(false);
   });
 
-  it("does not apply mutable workspace bootstrap hooks to source-backed execution-agent docs", async () => {
+  it("does not apply mutable workspace bootstrap hooks to source-backed agent docs", async () => {
     registerExtraBootstrapFileHook();
 
     const workspaceDir = await makeTempWorkspace("openclaw-bootstrap-");
@@ -493,7 +494,7 @@ describe("resolveBootstrapFilesForRun", () => {
     expect(files.some((file) => file.name === "AGENTS.md")).toBe(true);
   });
 
-  it("resolves execution-agent admission paths from source-backed docs, not Runtime Home", async () => {
+  it("resolves node-agent admission paths from source-backed docs, not Runtime Home", async () => {
     const paths = await resolveSourceBackedAgentBootstrapFilePaths({
       agentId: "execution-coding",
       sessionKey: "agent:execution-coding:node:nrun-test",
@@ -508,7 +509,7 @@ describe("resolveBootstrapFilesForRun", () => {
     expect(paths?.every((filePath) => !filePath.includes(".openclaw/runtime"))).toBe(true);
   });
 
-  it("keeps ordinary agents on workspace bootstrap instead of source-backed agent packs", async () => {
+  it("resolves ordinary registered agents from source-backed agent packs", async () => {
     const workspaceDir = await makeTempWorkspace("openclaw-bootstrap-");
     const agentsPath = path.join(workspaceDir, "AGENTS.md");
     await fs.writeFile(agentsPath, "# ordinary workspace rules\n", "utf8");
@@ -524,9 +525,11 @@ describe("resolveBootstrapFilesForRun", () => {
       agentId: "main",
     });
 
-    expect(files.find((file) => file.name === "AGENTS.md")?.path).toBe(agentsPath);
-    expect(files.find((file) => file.name === "AGENTS.md")?.path).not.toContain(
-      "docs/agents/main/runtime",
+    expect(files.find((file) => file.name === "AGENTS.md")?.path).toBe(
+      path.join(process.cwd(), "docs", "agents", "main", "runtime", "AGENTS.md"),
+    );
+    expect(files.find((file) => file.name === "AGENTS.md")?.content).not.toContain(
+      "ordinary workspace rules",
     );
   });
 
@@ -545,7 +548,7 @@ describe("resolveBootstrapFilesForRun", () => {
           ],
         },
       }),
-    ).rejects.toThrow(/source-backed execution agent runtime source missing/);
+    ).rejects.toThrow(/source-backed agent runtime source missing/);
   });
 });
 

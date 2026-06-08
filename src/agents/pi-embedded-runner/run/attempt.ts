@@ -9,7 +9,9 @@ import {
 } from "@mariozechner/pi-coding-agent";
 import { filterHeartbeatPairs } from "../../../auto-reply/heartbeat-filter.js";
 import { resolveChannelCapabilities } from "../../../config/channel-capabilities.js";
+import { resolveStateDir } from "../../../config/paths.js";
 import { updateSessionLaunch } from "../../../config/sessions/launch.js";
+import { buildSessionLaunchLocation } from "../../../config/sessions/location.js";
 import { resolveStorePath } from "../../../config/sessions/paths.js";
 import type { SessionSystemPromptReport } from "../../../config/sessions/types.js";
 import { stripSessionWorkingContextPromptAddition } from "../../../config/sessions/working-context.js";
@@ -59,6 +61,7 @@ import {
   resolveBootstrapContextForRun,
   resolveContextInjectionMode,
 } from "../../bootstrap-files.js";
+import { resolveBootstrapRepoRoot } from "../../bootstrap-repo-paths.js";
 import { createCacheTrace } from "../../cache-trace.js";
 import {
   listChannelSupportedActions,
@@ -111,6 +114,7 @@ import { registerProviderStreamForModel } from "../../provider-stream.js";
 import { resolveSandboxContext } from "../../sandbox.js";
 import { resolveSandboxRuntimeStatus } from "../../sandbox/runtime-status.js";
 import { repairSessionFileIfNeeded } from "../../session-file-repair.js";
+import { bindRunChildTaskToParentSessionLockHandoff } from "../../session-runtime/parent-lock-handoff.js";
 import { guardSessionManager } from "../../session-tool-result-guard-wrapper.js";
 import { sanitizeToolUseResultPairing } from "../../session-transcript-repair.js";
 import {
@@ -936,16 +940,24 @@ export async function runEmbeddedAttempt(
       agentId: sessionAgentId,
     });
 
-    const sessionLock = await acquireSessionWriteLock({
-      sessionFile: params.sessionFile,
-      maxHoldMs: resolveSessionLockMaxHoldFromTimeout({
-        timeoutMs: resolveRunTimeoutWithCompactionGraceMs({
-          runTimeoutMs: params.timeoutMs,
-          compactionTimeoutMs: resolveCompactionTimeoutMs(params.config),
-        }),
+    const sessionLockMaxHoldMs = resolveSessionLockMaxHoldFromTimeout({
+      timeoutMs: resolveRunTimeoutWithCompactionGraceMs({
+        runTimeoutMs: params.timeoutMs,
+        compactionTimeoutMs: resolveCompactionTimeoutMs(params.config),
       }),
     });
+    const sessionLock = await acquireSessionWriteLock({
+      sessionFile: params.sessionFile,
+      maxHoldMs: sessionLockMaxHoldMs,
+    });
     await params.onSessionLockAcquired?.(sessionLock.trace);
+    const parentSessionLockHandoff = bindRunChildTaskToParentSessionLockHandoff({
+      runChildTask: params.nodeAgentNativeTaskMode?.runChildTask,
+      sessionFile: params.sessionFile,
+      initialLock: sessionLock,
+      maxHoldMs: sessionLockMaxHoldMs,
+      onSessionLockAcquired: params.onSessionLockAcquired,
+    });
 
     const sessionLabel = params.sessionKey ?? params.sessionId;
     const contextInjectionMode = resolveContextInjectionMode(params.config);
@@ -1014,6 +1026,13 @@ export async function runEmbeddedAttempt(
     let queueYieldInterruptForSession: (() => void) | null = null;
     let yieldAbortSettled: Promise<void> | null = null;
     const nodeAgentSessionTraceEvents: Record<string, unknown>[] = [];
+    const nodeAgentNativeTaskMode =
+      params.nodeAgentNativeTaskMode?.enabled === true && parentSessionLockHandoff.runChildTask
+        ? {
+            ...params.nodeAgentNativeTaskMode,
+            runChildTask: parentSessionLockHandoff.runChildTask,
+          }
+        : params.nodeAgentNativeTaskMode;
     // Check if the model supports native image input
     const modelHasVision = params.model.input?.includes("image") ?? false;
     const toolsRaw = params.disableTools
@@ -1073,7 +1092,7 @@ export async function runEmbeddedAttempt(
             extraTools: params.extraTools,
             nodeAuthorityOverlay: params.nodeAuthorityOverlay,
             nodeAgentParentCrawlGuard: params.nodeAgentParentCrawlGuard,
-            nodeAgentNativeTaskMode: params.nodeAgentNativeTaskMode,
+            nodeAgentNativeTaskMode,
             onYield: (message) => {
               yieldDetected = true;
               yieldMessage = message;
@@ -2697,18 +2716,31 @@ export async function runEmbeddedAttempt(
           const sessionLaunchToolCatalogRef = `openclaw-effective-tool-inventory://${encodeURIComponent(
             params.sessionKey ?? params.sessionId,
           )}`;
+          const sessionLaunchLocation = buildSessionLaunchLocation({
+            sourceRoot: resolveBootstrapRepoRoot({
+              importMetaUrl: import.meta.url,
+              cwd: process.cwd(),
+            }),
+            workspaceRoot: effectiveWorkspace,
+            stateRoot: resolveStateDir(process.env),
+          });
           const sessionLaunch = await updateSessionLaunch({
             storePath: sessionStorePath,
             input: {
               sessionKey: params.sessionKey ?? params.sessionId,
               agentId: sessionAgentId,
               runId: params.runId,
-              nodeRunId: params.runId,
+              nodeRunId: params.nodeRunId ?? params.runId,
+              parentSessionKey: params.spawnedBy ?? null,
+              parentToolCallId: params.parentToolCallId ?? null,
               admissionStatus: launchAdmissionStatus,
               blockerKind: launchBlockers[0] ?? null,
               provider: params.provider,
               model: params.modelId,
               cwd: effectiveWorkspace,
+              resolvedLocation: sessionLaunchLocation.resolvedLocation,
+              sourceIdentity: sessionLaunchLocation.sourceIdentity,
+              workspaceIdentity: sessionLaunchLocation.workspaceIdentity,
               reasoningLevel: params.reasoningLevel,
               thinkingLevel: params.thinkLevel,
               promptHash: stableAttemptTextHash(effectivePrompt),
@@ -3242,7 +3274,7 @@ export async function runEmbeddedAttempt(
         // Client tool call detected (OpenResponses hosted tools)
         clientToolCall: clientToolCallDetected ?? undefined,
         yieldDetected: yieldDetected || undefined,
-        sessionLockTrace: sessionLock.trace,
+        sessionLockTrace: parentSessionLockHandoff.getCurrentLock().trace,
       };
     } finally {
       // Always tear down the session (and release the lock) before we leave this attempt.
@@ -3261,7 +3293,7 @@ export async function runEmbeddedAttempt(
         releaseWsSession,
         sessionId: params.sessionId,
         bundleLspRuntime,
-        sessionLock,
+        sessionLock: parentSessionLockHandoff.getCurrentLock(),
       });
     }
   } finally {

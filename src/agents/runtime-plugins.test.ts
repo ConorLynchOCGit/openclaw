@@ -35,6 +35,7 @@ describe("ensureRuntimePluginsLoaded", () => {
       config: {} as never,
       workspaceDir: "/tmp/workspace",
       allowGatewaySubagentBinding: true,
+      onlyPluginIds: [],
     });
 
     expect(hoisted.resolveRuntimePluginRegistry).toHaveBeenCalledWith({
@@ -43,6 +44,7 @@ describe("ensureRuntimePluginsLoaded", () => {
       runtimeOptions: {
         allowGatewaySubagentBinding: true,
       },
+      onlyPluginIds: [],
     });
   });
 });

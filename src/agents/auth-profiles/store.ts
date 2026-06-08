@@ -54,6 +54,25 @@ const loadedAuthStoreCache = new Map<
   }
 >();
 
+const EXTERNAL_CLI_AUTH_SYNC_SUPPRESSION_ENV = "OPENCLAW_SUPPRESS_EXTERNAL_CLI_AUTH_SYNC";
+let externalCliAuthSyncSuppressionDepth = 0;
+
+export async function withExternalCliAuthSyncSuppressed<T>(run: () => T | Promise<T>): Promise<T> {
+  const previousEnvValue = process.env[EXTERNAL_CLI_AUTH_SYNC_SUPPRESSION_ENV];
+  externalCliAuthSyncSuppressionDepth += 1;
+  process.env[EXTERNAL_CLI_AUTH_SYNC_SUPPRESSION_ENV] = "1";
+  try {
+    return await run();
+  } finally {
+    externalCliAuthSyncSuppressionDepth = Math.max(0, externalCliAuthSyncSuppressionDepth - 1);
+    if (previousEnvValue === undefined) {
+      delete process.env[EXTERNAL_CLI_AUTH_SYNC_SUPPRESSION_ENV];
+    } else {
+      process.env[EXTERNAL_CLI_AUTH_SYNC_SUPPRESSION_ENV] = previousEnvValue;
+    }
+  }
+}
+
 function cloneAuthProfileStore(store: AuthProfileStore): AuthProfileStore {
   return structuredClone(store);
 }
@@ -169,6 +188,12 @@ function syncExternalCliCredentialsTimed(
 }
 
 function shouldSyncExternalCliCredentials(options?: { syncExternalCli?: boolean }): boolean {
+  if (externalCliAuthSyncSuppressionDepth > 0) {
+    return false;
+  }
+  if (process.env[EXTERNAL_CLI_AUTH_SYNC_SUPPRESSION_ENV] === "1") {
+    return false;
+  }
   return options?.syncExternalCli !== false;
 }
 
@@ -176,7 +201,9 @@ export function loadAuthProfileStore(): AuthProfileStore {
   const asStore = loadPersistedAuthProfileStore();
   if (asStore) {
     // Sync from external CLI tools on every load.
-    syncExternalCliCredentialsTimed(asStore);
+    if (shouldSyncExternalCliCredentials()) {
+      syncExternalCliCredentialsTimed(asStore);
+    }
     return overlayExternalAuthProfiles(asStore);
   }
   const legacy = loadLegacyAuthProfileStore();
@@ -186,12 +213,16 @@ export function loadAuthProfileStore(): AuthProfileStore {
       profiles: {},
     };
     applyLegacyAuthStore(store, legacy);
-    syncExternalCliCredentialsTimed(store);
+    if (shouldSyncExternalCliCredentials()) {
+      syncExternalCliCredentialsTimed(store);
+    }
     return overlayExternalAuthProfiles(store);
   }
 
   const store: AuthProfileStore = { version: AUTH_STORE_VERSION, profiles: {} };
-  syncExternalCliCredentialsTimed(store);
+  if (shouldSyncExternalCliCredentials()) {
+    syncExternalCliCredentialsTimed(store);
+  }
   return overlayExternalAuthProfiles(store);
 }
 
@@ -321,7 +352,7 @@ export function loadAuthProfileStoreForSecretsRuntime(agentDir?: string): AuthPr
 
 export function ensureAuthProfileStore(
   agentDir?: string,
-  options?: { allowKeychainPrompt?: boolean },
+  options?: LoadAuthProfileStoreOptions,
 ): AuthProfileStore {
   const runtimeStore = resolveRuntimeAuthProfileStore(agentDir);
   if (runtimeStore) {

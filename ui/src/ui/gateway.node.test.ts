@@ -296,6 +296,43 @@ describe("GatewayBrowserClient", () => {
     expect(signedPayload).toContain("|stored-device-token|nonce-1");
   });
 
+  it("clears stale cached device tokens after device-token mismatch without shared fallback", async () => {
+    const client = new GatewayBrowserClient({
+      url: "ws://127.0.0.1:18789",
+    });
+
+    const { ws, connectFrame } = await startConnect(client);
+    expect(connectFrame.params?.auth?.token).toBe("stored-device-token");
+
+    ws.emitMessage({
+      type: "res",
+      id: connectFrame.id,
+      ok: false,
+      error: {
+        code: "INVALID_REQUEST",
+        message: "unauthorized",
+        details: { code: "AUTH_DEVICE_TOKEN_MISMATCH" },
+      },
+    });
+
+    await vi.waitFor(() =>
+      expect(loadDeviceAuthToken({ deviceId: "device-1", role: "operator" })).toBeNull(),
+    );
+  });
+
+  it("clears stale cached device tokens when the gateway closes before a connect response", async () => {
+    const client = new GatewayBrowserClient({
+      url: "ws://127.0.0.1:18789",
+    });
+
+    const { ws, connectFrame } = await startConnect(client);
+    expect(connectFrame.params?.auth?.token).toBe("stored-device-token");
+
+    ws.emitClose(1008, "unauthorized: device token mismatch (rotate/reissue device token)");
+
+    expect(loadDeviceAuthToken({ deviceId: "device-1", role: "operator" })).toBeNull();
+  });
+
   it("ignores cached operator device tokens that do not include read access", async () => {
     localStorage.clear();
     storeDeviceAuthToken({

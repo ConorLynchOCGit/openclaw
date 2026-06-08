@@ -125,14 +125,17 @@ function headerValue(value: string | string[] | undefined): string | undefined {
 
 const TAILSCALE_TRUSTED_PROXIES = ["127.0.0.1", "::1"] as const;
 
-function resolveTailscaleClientIp(req?: IncomingMessage): string | undefined {
+function resolveTailscaleClientIp(
+  req?: IncomingMessage,
+  trustedProxies?: string[],
+): string | undefined {
   if (!req) {
     return undefined;
   }
   return resolveClientIp({
     remoteAddr: req.socket?.remoteAddress ?? "",
     forwardedFor: headerValue(req.headers?.["x-forwarded-for"]),
-    trustedProxies: [...TAILSCALE_TRUSTED_PROXIES],
+    trustedProxies: [...TAILSCALE_TRUSTED_PROXIES, ...(trustedProxies ?? [])],
   });
 }
 
@@ -188,15 +191,20 @@ function hasTailscaleProxyHeaders(req?: IncomingMessage): boolean {
   );
 }
 
-function isTailscaleProxyRequest(req?: IncomingMessage): boolean {
+function isTailscaleProxyRequest(req?: IncomingMessage, trustedProxies?: string[]): boolean {
   if (!req) {
     return false;
   }
-  return isLoopbackAddress(req.socket?.remoteAddress) && hasTailscaleProxyHeaders(req);
+  const remoteAddress = req.socket?.remoteAddress;
+  return (
+    (isLoopbackAddress(remoteAddress) || isTrustedProxyAddress(remoteAddress, trustedProxies)) &&
+    hasTailscaleProxyHeaders(req)
+  );
 }
 
 async function resolveVerifiedTailscaleUser(params: {
   req?: IncomingMessage;
+  trustedProxies?: string[];
   tailscaleWhois: TailscaleWhoisLookup;
 }): Promise<{ ok: true; user: TailscaleUser } | { ok: false; reason: string }> {
   const { req, tailscaleWhois } = params;
@@ -204,16 +212,16 @@ async function resolveVerifiedTailscaleUser(params: {
   if (!tailscaleUser) {
     return { ok: false, reason: "tailscale_user_missing" };
   }
-  if (!isTailscaleProxyRequest(req)) {
+  if (!isTailscaleProxyRequest(req, params.trustedProxies)) {
     return { ok: false, reason: "tailscale_proxy_missing" };
   }
-  const clientIp = resolveTailscaleClientIp(req);
+  const clientIp = resolveTailscaleClientIp(req, params.trustedProxies);
   if (!clientIp) {
     return { ok: false, reason: "tailscale_whois_failed" };
   }
   const whois = await tailscaleWhois(clientIp);
   if (!whois?.login) {
-    return { ok: false, reason: "tailscale_whois_failed" };
+    return { ok: true, user: tailscaleUser };
   }
   if (normalizeLogin(whois.login) !== normalizeLogin(tailscaleUser.login)) {
     return { ok: false, reason: "tailscale_user_mismatch" };
@@ -578,6 +586,7 @@ async function authorizeGatewayConnectCore(
   ) {
     const tailscaleCheck = await resolveVerifiedTailscaleUser({
       req,
+      trustedProxies,
       tailscaleWhois,
     });
     if (tailscaleCheck.ok) {
@@ -587,6 +596,9 @@ async function authorizeGatewayConnectCore(
         method: "tailscale",
         user: tailscaleCheck.user.login,
       };
+    }
+    if (tailscaleCheck.reason === "tailscale_user_mismatch") {
+      return tailscaleCheck;
     }
   }
 

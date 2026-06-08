@@ -4,6 +4,7 @@ import type {
   SessionEntry,
   SessionLaunchEvent,
   SessionLaunchRequiredSource,
+  SessionLaunchResolvedLocation,
   SessionLaunchState,
 } from "./types.js";
 import { mergeSessionEntry } from "./types.js";
@@ -13,11 +14,16 @@ export type SessionLaunchInput = {
   agentId: string;
   runId: string;
   nodeRunId?: string;
+  parentSessionKey?: string | null;
+  parentToolCallId?: string | null;
   admissionStatus: "accepted" | "blocked";
   blockerKind?: string | null;
   provider?: string;
   model?: string;
   cwd?: string;
+  resolvedLocation?: SessionLaunchResolvedLocation;
+  sourceIdentity?: string | null;
+  workspaceIdentity?: string | null;
   reasoningLevel?: string;
   thinkingLevel?: string;
   promptHash?: string | null;
@@ -87,6 +93,40 @@ function normalizeRequiredSources(
     .slice(0, 100);
 }
 
+function normalizeResolvedLocation(
+  location: SessionLaunchResolvedLocation | undefined,
+): SessionLaunchResolvedLocation | undefined {
+  if (!location) {
+    return undefined;
+  }
+  const normalizeRoot = (
+    root: SessionLaunchResolvedLocation["sourceRoot"],
+  ): SessionLaunchResolvedLocation["sourceRoot"] | undefined => {
+    if (!root) {
+      return undefined;
+    }
+    const rootPath = root.path.trim();
+    if (!rootPath) {
+      return undefined;
+    }
+    return {
+      path: rootPath,
+      authorityClass: root.authorityClass,
+      writable: root.writable,
+    };
+  };
+  const resolved: SessionLaunchResolvedLocation = {
+    ...(normalizeRoot(location.sourceRoot)
+      ? { sourceRoot: normalizeRoot(location.sourceRoot) }
+      : {}),
+    ...(normalizeRoot(location.workspaceRoot)
+      ? { workspaceRoot: normalizeRoot(location.workspaceRoot) }
+      : {}),
+    ...(normalizeRoot(location.stateRoot) ? { stateRoot: normalizeRoot(location.stateRoot) } : {}),
+  };
+  return Object.keys(resolved).length > 0 ? resolved : undefined;
+}
+
 function normalizeExistingHistory(value: unknown): SessionLaunchEvent[] {
   if (!Array.isArray(value)) {
     return [];
@@ -132,6 +172,7 @@ function buildLaunchEvent(params: SessionLaunchInput & { emittedAt: number }): S
   const allowedChildAgentIds = boundedStrings(params.allowedChildAgentIds);
   const blockers = boundedStrings(params.blockers);
   const reasonCodes = boundedStrings(params.reasonCodes, 200);
+  const resolvedLocation = normalizeResolvedLocation(params.resolvedLocation);
   const eventHash = crypto
     .createHash("sha256")
     .update(
@@ -139,11 +180,16 @@ function buildLaunchEvent(params: SessionLaunchInput & { emittedAt: number }): S
         sessionKey,
         agentId,
         runId,
+        parentSessionKey: params.parentSessionKey ?? null,
+        parentToolCallId: params.parentToolCallId ?? null,
         emittedAt: params.emittedAt,
         admissionStatus: params.admissionStatus,
         blockerKind: params.blockerKind ?? null,
         promptHash: params.promptHash ?? null,
         submittedPromptHash: params.submittedPromptHash ?? null,
+        resolvedLocation,
+        sourceIdentity: params.sourceIdentity ?? null,
+        workspaceIdentity: params.workspaceIdentity ?? null,
         requiredSources,
         effectiveToolNames,
         allowedChildAgentIds,
@@ -161,11 +207,24 @@ function buildLaunchEvent(params: SessionLaunchInput & { emittedAt: number }): S
     agentId,
     runId,
     ...(params.nodeRunId?.trim() ? { nodeRunId: params.nodeRunId.trim() } : {}),
+    ...(params.parentSessionKey?.trim()
+      ? { parentSessionKey: params.parentSessionKey.trim() }
+      : {}),
+    ...(params.parentToolCallId?.trim()
+      ? { parentToolCallId: params.parentToolCallId.trim() }
+      : {}),
     admissionStatus: params.admissionStatus,
     blockerKind: params.blockerKind ?? null,
     ...(params.provider?.trim() ? { provider: params.provider.trim() } : {}),
     ...(params.model?.trim() ? { model: params.model.trim() } : {}),
     ...(params.cwd?.trim() ? { cwd: params.cwd.trim() } : {}),
+    ...(resolvedLocation ? { resolvedLocation } : {}),
+    ...(Object.prototype.hasOwnProperty.call(params, "sourceIdentity")
+      ? { sourceIdentity: params.sourceIdentity?.trim() || null }
+      : {}),
+    ...(Object.prototype.hasOwnProperty.call(params, "workspaceIdentity")
+      ? { workspaceIdentity: params.workspaceIdentity?.trim() || null }
+      : {}),
     ...(params.reasoningLevel?.trim() ? { reasoningLevel: params.reasoningLevel.trim() } : {}),
     ...(params.thinkingLevel?.trim() ? { thinkingLevel: params.thinkingLevel.trim() } : {}),
     ...(Object.prototype.hasOwnProperty.call(params, "promptHash")

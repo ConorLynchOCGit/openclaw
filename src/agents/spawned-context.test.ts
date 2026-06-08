@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   mapToolContextToSpawnedRunMetadata,
   normalizeSpawnedRunMetadata,
+  isGatewayVisibleSourceWorkspaceDir,
+  resolveGatewayVisibleSpawnedWorkspaceDir,
   resolveIngressWorkspaceOverrideForSpawnedRun,
   resolveSpawnedWorkspaceInheritance,
 } from "./spawned-context.js";
@@ -169,5 +171,70 @@ describe("resolveIngressWorkspaceOverrideForSpawnedRun", () => {
         workspaceDir: "/tmp/ws",
       }),
     ).toBeUndefined();
+  });
+});
+
+describe("resolveGatewayVisibleSpawnedWorkspaceDir", () => {
+  it("maps canonical repo workspaces to the gateway-visible repo mount", () => {
+    expect(
+      resolveGatewayVisibleSpawnedWorkspaceDir(
+        "/root/services/openclaw-roles/live/extensions/execution-platform",
+        {
+          OPENCLAW_HOST_OPERATOR_REPO_ROOT: "/home/node/.openclaw/host-operator/openclaw-live",
+        },
+      ),
+    ).toBe("/home/node/.openclaw/host-operator/openclaw-live/extensions/execution-platform");
+  });
+
+  it("maps canonical operator workspaces to the gateway-visible workspace mount", () => {
+    expect(
+      resolveGatewayVisibleSpawnedWorkspaceDir("/root/.openclaw/workspace/docs", {
+        OPENCLAW_HOST_OPERATOR_WORKSPACE_ROOT: "/home/node/.openclaw/workspace",
+      }),
+    ).toBe("/home/node/.openclaw/workspace/docs");
+  });
+
+  it("leaves unrelated workspaces unchanged", () => {
+    expect(resolveGatewayVisibleSpawnedWorkspaceDir("/tmp/agent-work", {})).toBe("/tmp/agent-work");
+  });
+
+  it("honors explicit host-operator runtime roots from environment", () => {
+    expect(
+      resolveGatewayVisibleSpawnedWorkspaceDir("/canonical/repo/src", {
+        OPENCLAW_HOST_OPERATOR_CANONICAL_REPO_ROOT: "/canonical/repo",
+        OPENCLAW_HOST_OPERATOR_REPO_ROOT: "/runtime/repo",
+      }),
+    ).toBe("/runtime/repo/src");
+  });
+});
+
+describe("isGatewayVisibleSourceWorkspaceDir", () => {
+  it("identifies the gateway-visible source root and descendants", () => {
+    expect(
+      isGatewayVisibleSourceWorkspaceDir("/home/node/.openclaw/host-operator/openclaw-live", {
+        OPENCLAW_HOST_OPERATOR_REPO_ROOT: "/home/node/.openclaw/host-operator/openclaw-live",
+      }),
+    ).toBe(true);
+    expect(
+      isGatewayVisibleSourceWorkspaceDir(
+        "/home/node/.openclaw/host-operator/openclaw-live/extensions/execution-platform",
+        {
+          OPENCLAW_HOST_OPERATOR_REPO_ROOT: "/home/node/.openclaw/host-operator/openclaw-live",
+        },
+      ),
+    ).toBe(true);
+  });
+
+  it("honors host-operator source root overrides", () => {
+    expect(
+      isGatewayVisibleSourceWorkspaceDir("/runtime/repo/src", {
+        OPENCLAW_HOST_OPERATOR_CANONICAL_REPO_ROOT: "/canonical/repo",
+        OPENCLAW_HOST_OPERATOR_REPO_ROOT: "/runtime/repo",
+      }),
+    ).toBe(true);
+  });
+
+  it("rejects unrelated workspaces", () => {
+    expect(isGatewayVisibleSourceWorkspaceDir("/home/node/.openclaw/workspace")).toBe(false);
   });
 });

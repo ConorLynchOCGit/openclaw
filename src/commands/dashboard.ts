@@ -14,6 +14,24 @@ type DashboardOptions = {
   noOpen?: boolean;
 };
 
+function canEmbedResolvedDashboardToken(params: {
+  token: string;
+  secretRefConfigured: boolean;
+  secretRef?: { source: string; provider: string; id: string };
+}): boolean {
+  if (!params.token) {
+    return false;
+  }
+  if (!params.secretRefConfigured) {
+    return true;
+  }
+  return (
+    params.secretRef?.source === "env" &&
+    params.secretRef.provider === "default" &&
+    params.secretRef.id === "OPENCLAW_GATEWAY_TOKEN"
+  );
+}
+
 export async function dashboardCommand(
   runtime: RuntimeEnv = defaultRuntime,
   options: DashboardOptions = {},
@@ -40,14 +58,18 @@ export async function dashboardCommand(
     basePath,
   });
   // Avoid embedding externally managed SecretRef tokens in terminal/clipboard/browser args.
-  const includeTokenInUrl = token.length > 0 && !resolvedToken.secretRefConfigured;
+  const includeTokenInUrl = canEmbedResolvedDashboardToken({
+    token,
+    secretRefConfigured: resolvedToken.secretRefConfigured,
+    secretRef: resolvedToken.secretRef,
+  });
   // Prefer URL fragment to avoid leaking auth tokens via query params.
   const dashboardUrl = includeTokenInUrl
     ? `${links.httpUrl}#token=${encodeURIComponent(token)}`
     : links.httpUrl;
 
   runtime.log(`Dashboard URL: ${dashboardUrl}`);
-  if (resolvedToken.secretRefConfigured && token) {
+  if (resolvedToken.secretRefConfigured && token && !includeTokenInUrl) {
     runtime.log(
       "Token auto-auth is disabled for SecretRef-managed gateway.auth.token; use your external token source if prompted.",
     );

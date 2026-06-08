@@ -1,5 +1,5 @@
 import type { OpenClawConfig } from "../config/types.openclaw.js";
-import { resolveSecretInputRef } from "../config/types.secrets.js";
+import { resolveSecretInputRef, type SecretRef } from "../config/types.secrets.js";
 import { trimToUndefined } from "./credentials.js";
 import {
   resolveConfiguredSecretInputString,
@@ -19,6 +19,7 @@ export async function resolveGatewayAuthToken(params: {
   token?: string;
   source?: GatewayAuthTokenResolutionSource;
   secretRefConfigured: boolean;
+  secretRef?: SecretRef;
   unresolvedRefReason?: string;
 }> {
   const explicitToken = trimToUndefined(params.explicitToken);
@@ -69,6 +70,7 @@ export async function resolveGatewayAuthToken(params: {
       token: resolved.value,
       source: "secretRef",
       secretRefConfigured: true,
+      secretRef: tokenRef,
     };
   }
   if (envFallback === "always" && envToken) {
@@ -76,10 +78,12 @@ export async function resolveGatewayAuthToken(params: {
       token: envToken,
       source: "env",
       secretRefConfigured: true,
+      secretRef: tokenRef,
     };
   }
   return {
     secretRefConfigured: true,
+    secretRef: tokenRef,
     unresolvedRefReason: resolved.unresolvedRefReason,
   };
 }

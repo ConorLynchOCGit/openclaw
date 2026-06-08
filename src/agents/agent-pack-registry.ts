@@ -47,6 +47,7 @@ export async function loadAgentPackRegistryEntries(): Promise<AgentPackRegistryE
     importMetaUrl: import.meta.url,
     cwd: process.cwd(),
   });
+  const registrySourceRoot = path.dirname(path.dirname(path.dirname(registryPath)));
   const parsed = rawRecord(YAML.parse(await fs.readFile(registryPath, "utf8")));
   return rawList(parsed.agents)
     .map((entry): AgentPackRegistryEntry | null => {
@@ -59,7 +60,7 @@ export async function loadAgentPackRegistryEntries(): Promise<AgentPackRegistryE
         classification: optionalString(entry.classification),
         runtimeSourcePath: optionalString(entry.runtimeSourcePath),
         sharedRuntimeSourcePath: optionalString(entry.sharedRuntimeSourcePath),
-        projectRoot: optionalString(entry.projectRoot),
+        projectRoot: optionalString(entry.projectRoot) ?? registrySourceRoot,
         requiredDocs: stringList(entry.requiredDocs).length
           ? stringList(entry.requiredDocs)
           : stringList(entry.docs),
@@ -86,10 +87,16 @@ export function findExecutionPlatformAgentPackEntry(params: {
   entries: readonly AgentPackRegistryEntry[];
   agentId: string;
 }): AgentPackRegistryEntry | undefined {
+  const entry = findAgentPackRegistryEntry(params);
+  return entry && isExecutionPlatformAgentPackEntry(entry) ? entry : undefined;
+}
+
+export function findAgentPackRegistryEntry(params: {
+  entries: readonly AgentPackRegistryEntry[];
+  agentId: string;
+}): AgentPackRegistryEntry | undefined {
   const normalizedAgentId = params.agentId.trim();
-  return params.entries.find(
-    (entry) => entry.id === normalizedAgentId && isExecutionPlatformAgentPackEntry(entry),
-  );
+  return params.entries.find((entry) => entry.id === normalizedAgentId);
 }
 
 export function resolveAgentPackRuntimeSourceRoot(params: {

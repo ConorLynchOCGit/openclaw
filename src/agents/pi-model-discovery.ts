@@ -264,8 +264,14 @@ export function addEnvBackedPiCredentials(
   return next;
 }
 
-export function resolvePiCredentialsForDiscovery(agentDir: string): PiCredentialMap {
-  const store = ensureAuthProfileStore(agentDir, { allowKeychainPrompt: false });
+export function resolvePiCredentialsForDiscovery(
+  agentDir: string,
+  options?: { syncExternalCli?: boolean },
+): PiCredentialMap {
+  const store = ensureAuthProfileStore(agentDir, {
+    allowKeychainPrompt: false,
+    syncExternalCli: options?.syncExternalCli,
+  });
   const credentials = addEnvBackedPiCredentials(resolvePiCredentialMapFromStore(store));
   for (const provider of resolveRuntimeSyntheticAuthProviderRefs()) {
     if (credentials[provider]) {
@@ -292,8 +298,11 @@ export function resolvePiCredentialsForDiscovery(agentDir: string): PiCredential
 }
 
 // Compatibility helpers for pi-coding-agent 0.50+ (discover* helpers removed).
-export function discoverAuthStorage(agentDir: string): PiAuthStorage {
-  const credentials = resolvePiCredentialsForDiscovery(agentDir);
+export function discoverAuthStorage(
+  agentDir: string,
+  options?: { syncExternalCli?: boolean },
+): PiAuthStorage {
+  const credentials = resolvePiCredentialsForDiscovery(agentDir, options);
   const authPath = path.join(agentDir, "auth.json");
   scrubLegacyStaticAuthJsonEntriesForDiscovery(authPath);
   return createAuthStorage(PiAuthStorageClass, authPath, credentials);

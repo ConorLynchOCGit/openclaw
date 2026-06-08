@@ -380,9 +380,12 @@ async function prepareAgentCommandExecution(
   const workspaceDirRaw =
     normalizedSpawned.workspaceDir ?? resolveAgentWorkspaceDir(cfg, sessionAgentId);
   const agentDir = resolveAgentDir(cfg, sessionAgentId);
+  const shouldSeedBootstrapFiles =
+    opts.seedBootstrapFiles ??
+    (!agentCfg?.skipBootstrap && !(normalizedSpawned.spawnedBy && normalizedSpawned.workspaceDir));
   const workspace = await ensureAgentWorkspace({
     dir: workspaceDirRaw,
-    ensureBootstrapFiles: !agentCfg?.skipBootstrap,
+    ensureBootstrapFiles: shouldSeedBootstrapFiles,
   });
   const workspaceDir = workspace.dir;
   const runId = opts.runId?.trim() || sessionId;

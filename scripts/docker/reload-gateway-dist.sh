@@ -14,12 +14,14 @@ usage() {
   cat <<'EOF'
 Usage: scripts/docker/reload-gateway-dist.sh [--allow-dirty-runtime-shape] [--skip-build]
 
-Fast reloads gateway/runtime TypeScript code without rebuilding the Docker image:
+Fast reloads gateway/runtime TypeScript code and source-backed OpenClaw assets
+without rebuilding the Docker image:
   1. record local pre-health
-  2. run pnpm build:docker unless --skip-build is supplied
+  2. run pnpm build:docker and pnpm ui:build unless --skip-build is supplied
   3. copy local dist/ into openclaw-runtime:/app/dist
-  4. docker compose restart openclaw-gateway
-  5. record local post-health and write bounded evidence
+  4. copy local docs/, skills/, and qa/ into openclaw-runtime:/app/
+  5. docker compose restart openclaw-gateway
+  6. record local post-health and write bounded evidence
 
 Allowed for:
   - TypeScript/JavaScript gateway, Execution Platform, workflow, router, worker, and script changes
@@ -209,6 +211,8 @@ build_status="skipped"
 if [[ "$SKIP_BUILD" != "1" ]]; then
   echo "==> Building local dist runtime"
   pnpm build:docker
+  echo "==> Building local Control UI assets"
+  pnpm ui:build
   build_status="completed"
 fi
 
@@ -216,12 +220,89 @@ if [[ ! -f "$ROOT_DIR/dist/index.js" ]]; then
   echo "dist/index.js not found after build; cannot reload gateway dist." >&2
   exit 5
 fi
+if [[ ! -f "$ROOT_DIR/dist/control-ui/index.html" ]]; then
+  echo "dist/control-ui/index.html not found after build; cannot reload gateway dist without Control UI assets." >&2
+  exit 5
+fi
 
 dist_hash="$(find "$ROOT_DIR/dist" -type f -print0 | sort -z | xargs -0 sha256sum | sha256sum | awk '{print $1}')"
+source_assets_hash="$(
+  cd "$ROOT_DIR"
+  find docs skills qa -type f -print0 \
+    | sort -z \
+    | xargs -0 sha256sum \
+    | sha256sum \
+    | awk '{print $1}'
+)"
 
-echo "==> Copying dist into $CONTAINER:/app/dist"
-docker exec "$CONTAINER" sh -lc 'mkdir -p /app/dist'
-docker cp "$ROOT_DIR/dist/." "$CONTAINER:/app/dist/"
+echo "==> Clean-replacing dist in $CONTAINER:/app/dist"
+dist_tar="/tmp/openclaw-gateway-dist-${timestamp}.tar"
+tar -C "$ROOT_DIR/dist" -cf "$dist_tar" .
+docker exec -u 0 "$CONTAINER" sh -lc 'rm -rf /app/dist.next /app/dist.previous && mkdir -p /app/dist.next'
+docker cp "$dist_tar" "$CONTAINER:/tmp/openclaw-gateway-dist.tar"
+rm -f "$dist_tar"
+docker exec -u 0 "$CONTAINER" sh -lc '
+  set -eu
+  tar -C /app/dist.next -xf /tmp/openclaw-gateway-dist.tar
+  rm -f /tmp/openclaw-gateway-dist.tar
+  if [ -d /app/dist ]; then
+    mv /app/dist /app/dist.previous
+  fi
+  mv /app/dist.next /app/dist
+  rm -rf /app/dist.previous
+'
+
+echo "==> Clean-replacing source-backed assets in $CONTAINER:/app/{docs,skills,qa}"
+assets_tar="/tmp/openclaw-gateway-source-assets-${timestamp}.tar"
+tar -C "$ROOT_DIR" -cf "$assets_tar" docs skills qa
+docker exec -u 0 "$CONTAINER" sh -lc 'rm -rf /app/source-assets.next /app/source-assets.previous && mkdir -p /app/source-assets.next'
+docker cp "$assets_tar" "$CONTAINER:/tmp/openclaw-gateway-source-assets.tar"
+rm -f "$assets_tar"
+docker exec -u 0 "$CONTAINER" sh -lc '
+  set -eu
+  tar -C /app/source-assets.next -xf /tmp/openclaw-gateway-source-assets.tar
+  rm -f /tmp/openclaw-gateway-source-assets.tar
+  mkdir -p /app/source-assets.previous
+  for name in docs skills qa; do
+    if [ -d "/app/$name" ]; then
+      mv "/app/$name" "/app/source-assets.previous/$name"
+    fi
+    mv "/app/source-assets.next/$name" "/app/$name"
+  done
+  chown -R node:node /app/docs /app/skills /app/qa
+  rm -rf /app/source-assets.next /app/source-assets.previous
+'
+container_source_assets_hash="$(
+  docker exec "$CONTAINER" sh -lc '
+    cd /app
+    find docs skills qa -type f -print0 \
+      | sort -z \
+      | xargs -0 sha256sum \
+      | sha256sum \
+      | awk "{print \$1}"
+  '
+)"
+if [[ "$container_source_assets_hash" != "$source_assets_hash" ]]; then
+  {
+    printf '{\n'
+    printf '  "artifactKind": "gateway_dist_reload_evidence",\n'
+    printf '  "status": "blocked_source_assets_hash_mismatch",\n'
+    printf '  "generatedAt": %s,\n' "$(json_escape "$(date -u +%Y-%m-%dT%H:%M:%SZ)")"
+    printf '  "service": %s,\n' "$(json_escape "$SERVICE")"
+    printf '  "container": %s,\n' "$(json_escape "$CONTAINER")"
+    printf '  "sourceAssetsHash": %s,\n' "$(json_escape "$source_assets_hash")"
+    printf '  "containerSourceAssetsHash": %s,\n' "$(json_escape "$container_source_assets_hash")"
+    printf '  "imageRebuilt": false,\n'
+    printf '  "containerRecreated": false,\n'
+    printf '  "rawPromptStored": false,\n'
+    printf '  "rawResponseStored": false,\n'
+    printf '  "rawLogsStored": false\n'
+    printf '}\n'
+  } >"$artifact"
+  echo "Source asset reload failed hash verification; use full rebuild." >&2
+  echo "Evidence: $artifact" >&2
+  exit 7
+fi
 
 echo "==> Restarting $SERVICE without image rebuild"
 docker compose restart "$SERVICE"
@@ -256,6 +337,8 @@ container_started_at="$(docker inspect --format '{{.State.StartedAt}}' "$CONTAIN
   printf '  "containerStartedAt": %s,\n' "$(json_escape "$container_started_at")"
   printf '  "buildStatus": %s,\n' "$(json_escape "$build_status")"
   printf '  "distHash": %s,\n' "$(json_escape "$dist_hash")"
+  printf '  "sourceAssetsHash": %s,\n' "$(json_escape "$source_assets_hash")"
+  printf '  "containerSourceAssetsHash": %s,\n' "$(json_escape "$container_source_assets_hash")"
   printf '  "preHealth": %s,\n' "$pre_health"
   printf '  "preReady": %s,\n' "$pre_ready"
   printf '  "postHealth": %s,\n' "$post_health"

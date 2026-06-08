@@ -27,6 +27,28 @@ export type NormalizedSpawnedRunMetadata = {
   workspaceDir?: string;
 };
 
+const DEFAULT_CANONICAL_REPO_ROOT = "/root/services/openclaw-roles/live";
+const DEFAULT_CANONICAL_WORKSPACE_ROOT = "/root/.openclaw/workspace";
+
+function normalizeWorkspacePath(value: string): string {
+  return path.resolve(value.trim());
+}
+
+function replaceRootPath(input: {
+  workspaceDir: string;
+  canonicalRoot: string;
+  runtimeRoot: string;
+}): string | null {
+  const workspaceDir = normalizeWorkspacePath(input.workspaceDir);
+  const canonicalRoot = normalizeWorkspacePath(input.canonicalRoot);
+  const runtimeRoot = normalizeWorkspacePath(input.runtimeRoot);
+  const relative = path.relative(canonicalRoot, workspaceDir);
+  if (relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative))) {
+    return path.join(runtimeRoot, relative);
+  }
+  return null;
+}
+
 export function normalizeSpawnedRunMetadata(
   value?: SpawnedRunMetadata | null,
 ): NormalizedSpawnedRunMetadata {
@@ -86,6 +108,68 @@ export function resolveSpawnedWorkspaceInheritance(params: {
     }
   }
   return targetProjectRoot;
+}
+
+export function resolveGatewayVisibleSpawnedWorkspaceDir(
+  workspaceDir?: string | null,
+  env: NodeJS.ProcessEnv = process.env,
+): string | undefined {
+  const normalized = normalizeOptionalString(workspaceDir);
+  if (!normalized) {
+    return undefined;
+  }
+  const replacements = [
+    {
+      canonicalRoot:
+        normalizeOptionalString(env.OPENCLAW_HOST_OPERATOR_CANONICAL_REPO_ROOT) ??
+        DEFAULT_CANONICAL_REPO_ROOT,
+      runtimeRoot:
+        normalizeOptionalString(env.OPENCLAW_HOST_OPERATOR_REPO_ROOT) ??
+        DEFAULT_CANONICAL_REPO_ROOT,
+    },
+    {
+      canonicalRoot:
+        normalizeOptionalString(env.OPENCLAW_HOST_OPERATOR_CANONICAL_WORKSPACE_ROOT) ??
+        DEFAULT_CANONICAL_WORKSPACE_ROOT,
+      runtimeRoot:
+        normalizeOptionalString(env.OPENCLAW_HOST_OPERATOR_WORKSPACE_ROOT) ??
+        DEFAULT_CANONICAL_WORKSPACE_ROOT,
+    },
+  ];
+  for (const replacement of replacements) {
+    const resolved = replaceRootPath({
+      workspaceDir: normalized,
+      canonicalRoot: replacement.canonicalRoot,
+      runtimeRoot: replacement.runtimeRoot,
+    });
+    if (resolved) {
+      return resolved;
+    }
+  }
+  return normalizeWorkspacePath(normalized);
+}
+
+export function isGatewayVisibleSourceWorkspaceDir(
+  workspaceDir?: string | null,
+  env: NodeJS.ProcessEnv = process.env,
+): boolean {
+  const normalized = normalizeOptionalString(workspaceDir);
+  if (!normalized) {
+    return false;
+  }
+  const sourceRoot = resolveGatewayVisibleSpawnedWorkspaceDir(
+    normalizeOptionalString(env.OPENCLAW_HOST_OPERATOR_CANONICAL_REPO_ROOT) ??
+      DEFAULT_CANONICAL_REPO_ROOT,
+    env,
+  );
+  if (!sourceRoot) {
+    return false;
+  }
+  const relative = path.relative(
+    normalizeWorkspacePath(sourceRoot),
+    normalizeWorkspacePath(normalized),
+  );
+  return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
 }
 
 export function resolveIngressWorkspaceOverrideForSpawnedRun(

@@ -11,6 +11,7 @@ import type { BootstrapContextMode } from "./bootstrap-files.js";
 import {
   mapToolContextToSpawnedRunMetadata,
   normalizeSpawnedRunMetadata,
+  resolveGatewayVisibleSpawnedWorkspaceDir,
   resolveSpawnedWorkspaceInheritance,
 } from "./spawned-context.js";
 import {
@@ -685,9 +686,12 @@ export async function spawnSubagentDirect(
       explicitWorkspaceDir: toolSpawnMetadata.workspaceDir,
     }),
   });
+  const gatewayVisibleWorkspaceDir = resolveGatewayVisibleSpawnedWorkspaceDir(
+    spawnedMetadata.workspaceDir,
+  );
   const spawnLineagePatchError = await patchChildSession({
     spawnedBy: spawnedByKey,
-    ...(spawnedMetadata.workspaceDir ? { spawnedWorkspaceDir: spawnedMetadata.workspaceDir } : {}),
+    ...(gatewayVisibleWorkspaceDir ? { spawnedWorkspaceDir: gatewayVisibleWorkspaceDir } : {}),
   });
   if (spawnLineagePatchError) {
     await cleanupFailedSpawnBeforeAgentStart({
@@ -818,7 +822,7 @@ export async function spawnSubagentDirect(
       cleanup,
       label: label || undefined,
       model: resolvedModel,
-      workspaceDir: spawnedMetadata.workspaceDir,
+      workspaceDir: gatewayVisibleWorkspaceDir,
       runTimeoutSeconds,
       expectsCompletionMessage,
       spawnMode,

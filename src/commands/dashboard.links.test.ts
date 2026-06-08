@@ -96,6 +96,28 @@ describe("dashboardCommand", () => {
     );
   });
 
+  it("embeds the default env SecretRef gateway token in the dashboard URL", async () => {
+    mockSnapshot({
+      source: "env",
+      provider: "default",
+      id: "OPENCLAW_GATEWAY_TOKEN",
+    });
+    copyToClipboardMock.mockResolvedValue(true);
+    detectBrowserOpenSupportMock.mockResolvedValue({ ok: true });
+    openUrlMock.mockResolvedValue(true);
+    resolveSecretRefValuesMock.mockResolvedValue(
+      new Map([["env:default:OPENCLAW_GATEWAY_TOKEN", "env-token"]]),
+    );
+
+    await dashboardCommand(runtime);
+
+    expect(copyToClipboardMock).toHaveBeenCalledWith("http://127.0.0.1:18789/#token=env-token");
+    expect(openUrlMock).toHaveBeenCalledWith("http://127.0.0.1:18789/#token=env-token");
+    expect(runtime.log).not.toHaveBeenCalledWith(
+      expect.stringContaining("Token auto-auth is disabled for SecretRef-managed"),
+    );
+  });
+
   it("prints SSH hint when browser cannot open", async () => {
     mockSnapshot("shhhh");
     copyToClipboardMock.mockResolvedValue(false);

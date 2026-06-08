@@ -182,6 +182,10 @@ export {
 export type { ResolvedSessionMaintenanceConfig, SessionMaintenanceWarning };
 
 type SaveSessionStoreOptions = {
+  /** Optional timeout for acquiring the session-store write lock. */
+  lockTimeoutMs?: number;
+  /** Optional stale threshold for reclaiming abandoned session-store write locks. */
+  lockStaleMs?: number;
   /** Skip pruning, capping, and rotation (e.g. during one-time migrations). */
   skipMaintenance?: boolean;
   /** Active session key for warn-only maintenance. */
@@ -459,9 +463,16 @@ export async function saveSessionStore(
   store: Record<string, SessionEntry>,
   opts?: SaveSessionStoreOptions,
 ): Promise<void> {
-  await withSessionStoreLock(storePath, async () => {
-    await saveSessionStoreUnlocked(storePath, store, opts);
-  });
+  await withSessionStoreLock(
+    storePath,
+    async () => {
+      await saveSessionStoreUnlocked(storePath, store, opts);
+    },
+    {
+      timeoutMs: opts?.lockTimeoutMs,
+      staleMs: opts?.lockStaleMs,
+    },
+  );
 }
 
 export async function updateSessionStore<T>(
@@ -469,19 +480,26 @@ export async function updateSessionStore<T>(
   mutator: (store: Record<string, SessionEntry>) => Promise<T> | T,
   opts?: SaveSessionStoreOptions,
 ): Promise<T> {
-  return await withSessionStoreLock(storePath, async () => {
-    // Always re-read inside the lock to avoid clobbering concurrent writers.
-    const store = loadSessionStore(storePath, { skipCache: true });
-    const previousAcpByKey = collectAcpMetadataSnapshot(store);
-    const result = await mutator(store);
-    preserveExistingAcpMetadata({
-      previousAcpByKey,
-      nextStore: store,
-      allowDropSessionKeys: opts?.allowDropAcpMetaSessionKeys,
-    });
-    await saveSessionStoreUnlocked(storePath, store, opts);
-    return result;
-  });
+  return await withSessionStoreLock(
+    storePath,
+    async () => {
+      // Always re-read inside the lock to avoid clobbering concurrent writers.
+      const store = loadSessionStore(storePath, { skipCache: true });
+      const previousAcpByKey = collectAcpMetadataSnapshot(store);
+      const result = await mutator(store);
+      preserveExistingAcpMetadata({
+        previousAcpByKey,
+        nextStore: store,
+        allowDropSessionKeys: opts?.allowDropAcpMetaSessionKeys,
+      });
+      await saveSessionStoreUnlocked(storePath, store, opts);
+      return result;
+    },
+    {
+      timeoutMs: opts?.lockTimeoutMs,
+      staleMs: opts?.lockStaleMs,
+    },
+  );
 }
 
 type SessionStoreLockOptions = {

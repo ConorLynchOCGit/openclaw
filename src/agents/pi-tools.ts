@@ -53,6 +53,7 @@ import {
 import { cleanToolSchemaForGemini, normalizeToolParameters } from "./pi-tools.schema.js";
 import type { AnyAgentTool } from "./pi-tools.types.js";
 import type { SandboxContext } from "./sandbox.js";
+import type { NativeTaskRunChildTask } from "./session-runtime/native-task-types.js";
 import {
   EXEC_TOOL_DISPLAY_SUMMARY,
   PROCESS_TOOL_DISPLAY_SUMMARY,
@@ -734,6 +735,7 @@ export function createOpenClawCodingTools(options?: {
     allowedAgentIds: readonly string[];
     mutationToolName?: string;
     parentVisibleResultMaxChars?: number;
+    runChildTask?: NativeTaskRunChildTask;
   };
   /** Whether the sender is an owner (required for owner-only tools). */
   senderIsOwner?: boolean;
@@ -943,6 +945,12 @@ export function createOpenClawCodingTools(options?: {
         createGlobTool({ workspaceRoot }),
         createGrepTool({ workspaceRoot }),
       ];
+  if (
+    options?.nodeAgentNativeTaskMode?.enabled === true &&
+    !options.nodeAgentNativeTaskMode.runChildTask
+  ) {
+    throw new Error("node native task mode requires OpenClaw session-runtime runChildTask");
+  }
   const tools: AnyAgentTool[] = [
     ...base,
     ...repoDiscoveryTools,
@@ -1030,6 +1038,7 @@ export function createOpenClawCodingTools(options?: {
                       options.nodeAgentNativeTaskMode.parentVisibleResultMaxChars,
                   }
                 : {}),
+              runChildTask: options.nodeAgentNativeTaskMode.runChildTask!,
             },
           }
         : {}),

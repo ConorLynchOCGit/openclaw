@@ -119,7 +119,7 @@ describe("source/runtime unification inventory", () => {
         "/root/services/openclaw-roles/live",
       );
       expect(entry?.runtimeSurfacePath, `${agentId}.runtimeSurfacePath`).toBe(
-        `/root/.openclaw/agents/${agentId}/agent`,
+        `/root/services/openclaw-roles/live/.openclaw/runtime/agents/${agentId}/agent`,
       );
       expect(entry?.runtimeSurfaceAliasPath, `${agentId}.runtimeSurfaceAliasPath`).toBe(
         `/home/node/.openclaw/agents/${agentId}/agent`,
@@ -131,9 +131,15 @@ describe("source/runtime unification inventory", () => {
     const durableRegistry = asRecord(readYaml("docs/agents/registry.yaml"));
     for (const entry of asList(durableRegistry.agents)) {
       const agentId = stringField(entry, "id");
-      expect(stringField(entry, "runtimeSurfacePath"), `${agentId}.runtimeSurfacePath`).toMatch(
-        /^\/root\/\.openclaw\/agents\//u,
-      );
+      if ((EXECUTION_AGENT_IDS as readonly string[]).includes(agentId)) {
+        expect(stringField(entry, "runtimeSurfacePath"), `${agentId}.runtimeSurfacePath`).toMatch(
+          /^\/root\/services\/openclaw-roles\/live\/\.openclaw\/runtime\/agents\//u,
+        );
+      } else {
+        expect(stringField(entry, "runtimeSurfacePath"), `${agentId}.runtimeSurfacePath`).toMatch(
+          /^\/root\/\.openclaw\/agents\//u,
+        );
+      }
       if (entry.runtimeSurfaceAliasPath) {
         expect(
           stringField(entry, "runtimeSurfaceAliasPath"),

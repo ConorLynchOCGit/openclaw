@@ -4,8 +4,7 @@ import type { AgentContextInjection } from "../config/types.agent-defaults.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { normalizeOptionalString } from "../shared/string-coerce.js";
 import {
-  findExecutionPlatformAgentPackEntry,
-  isExecutionPlatformAgentPackId,
+  findAgentPackRegistryEntry,
   loadAgentPackRegistryEntries,
   resolveAgentPackRuntimeSourceRoot,
   type AgentPackRegistryEntry,
@@ -264,6 +263,9 @@ async function resolveSourceBackedAgentBootstrapSource(params: {
   agentId?: string;
   deps?: SourceBackedAgentBootstrapDeps;
 }): Promise<SourceBackedAgentBootstrapSource | null> {
+  if (!params.agentId?.trim() && !params.sessionKey?.trim() && !params.sessionId?.trim()) {
+    return null;
+  }
   const { sessionAgentId } = resolveSessionAgentIds({
     sessionKey: params.sessionKey ?? params.sessionId,
     config: params.config,
@@ -274,19 +276,14 @@ async function resolveSourceBackedAgentBootstrapSource(params: {
   try {
     entries = await loadEntries();
   } catch (error) {
-    if (isExecutionPlatformAgentPackId(sessionAgentId)) {
-      throw error;
-    }
+    void error;
     return null;
   }
-  const entry = findExecutionPlatformAgentPackEntry({
+  const entry = findAgentPackRegistryEntry({
     entries,
     agentId: sessionAgentId,
   });
   if (!entry) {
-    if (isExecutionPlatformAgentPackId(sessionAgentId)) {
-      throw new Error(`source-backed execution agent registry entry missing: ${sessionAgentId}`);
-    }
     return null;
   }
   const defaultProjectRoot = params.config
@@ -296,8 +293,8 @@ async function resolveSourceBackedAgentBootstrapSource(params: {
     entry,
     defaultProjectRoot,
   });
-  if (!sourceRoot && isExecutionPlatformAgentPackId(sessionAgentId)) {
-    throw new Error(`source-backed execution agent runtime source missing: ${sessionAgentId}`);
+  if (!sourceRoot) {
+    throw new Error(`source-backed agent runtime source missing: ${sessionAgentId}`);
   }
   return sourceRoot
     ? {

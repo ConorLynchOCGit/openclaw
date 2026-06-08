@@ -20,6 +20,11 @@ type ForwardingCase = {
 let runEmbeddedPiAgent: typeof import("./run.js").runEmbeddedPiAgent;
 const internalEvents: AgentInternalEvent[] = [];
 const onSessionLockAcquired = async () => {};
+const admittedAuthStorage = {
+  admitted: "auth-storage",
+  setRuntimeApiKey: () => undefined,
+} as never;
+const admittedModelRegistry = { admitted: "model-registry" } as never;
 const forwardingCases = [
   {
     name: "forwards toolsAllow so the per-job tool allowlist can be honored",
@@ -111,6 +116,24 @@ const forwardingCases = [
     expected: { allowGatewaySubagentBinding: true },
   },
   {
+    name: "forwards runtimePluginIds so node sessions can use a bounded native plugin scope",
+    runId: "forward-runtimePluginIds",
+    params: { runtimePluginIds: [] },
+    expected: { runtimePluginIds: [] },
+  },
+  {
+    name: "forwards modelsJsonPolicy so node sessions can reuse the admitted runtime model catalog",
+    runId: "forward-modelsJsonPolicy",
+    params: { modelsJsonPolicy: "reuse-existing" },
+    expected: { modelsJsonPolicy: "reuse-existing" },
+  },
+  {
+    name: "forwards admitted auth storage and model registry so worker runs avoid rediscovery",
+    runId: "forward-admitted-model-registry",
+    params: { authStorage: admittedAuthStorage, modelRegistry: admittedModelRegistry },
+    expected: { authStorage: admittedAuthStorage, modelRegistry: admittedModelRegistry },
+  },
+  {
     name: "forwards disableMessageTool so cron-owned delivery suppresses the messaging tool",
     runId: "forward-disableMessageTool",
     params: { disableMessageTool: true },
@@ -155,5 +178,49 @@ describe("runEmbeddedPiAgent forwards optional params to runEmbeddedAttempt", ()
     });
 
     expect(mockedRunEmbeddedAttempt).toHaveBeenCalledWith(expect.objectContaining(expected));
+  });
+
+  it("fails node-native worker startup before attempt when admitted model runtime is missing", async () => {
+    await expect(
+      runEmbeddedPiAgent({
+        ...overflowBaseRunParams,
+        runId: "node-native-missing-admitted-model-runtime",
+        modelsJsonPolicy: "reuse-existing",
+        nodeAgentNativeTaskMode: {
+          enabled: true,
+          allowedAgentIds: ["execution-context-scout"],
+        },
+      }),
+    ).rejects.toThrow("requires admitted authStorage and modelRegistry");
+
+    expect(mockedRunEmbeddedAttempt).not.toHaveBeenCalled();
+  });
+
+  it("uses caller-admitted model runtime for node-native workers before attempt", async () => {
+    mockedRunEmbeddedAttempt.mockResolvedValueOnce(makeAttemptResult({ promptError: null }));
+
+    await runEmbeddedPiAgent({
+      ...overflowBaseRunParams,
+      runId: "node-native-admitted-model-runtime",
+      modelsJsonPolicy: "reuse-existing",
+      authStorage: admittedAuthStorage,
+      modelRegistry: admittedModelRegistry,
+      nodeAgentNativeTaskMode: {
+        enabled: true,
+        allowedAgentIds: ["execution-context-scout"],
+      },
+    });
+
+    expect(mockedRunEmbeddedAttempt).toHaveBeenCalledWith(
+      expect.objectContaining({
+        authStorage: admittedAuthStorage,
+        modelRegistry: admittedModelRegistry,
+        nodeAgentNativeTaskMode: expect.objectContaining({
+          enabled: true,
+          allowedAgentIds: ["execution-context-scout"],
+          runChildTask: expect.any(Function),
+        }),
+      }),
+    );
   });
 });

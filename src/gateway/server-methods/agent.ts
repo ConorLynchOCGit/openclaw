@@ -2,7 +2,9 @@ import { randomUUID } from "node:crypto";
 import { listAgentIds, resolveAgentWorkspaceDir } from "../../agents/agent-scope.js";
 import type { AgentInternalEvent } from "../../agents/internal-events.js";
 import {
+  isGatewayVisibleSourceWorkspaceDir,
   normalizeSpawnedRunMetadata,
+  resolveGatewayVisibleSpawnedWorkspaceDir,
   resolveIngressWorkspaceOverrideForSpawnedRun,
 } from "../../agents/spawned-context.js";
 import type { RequiredProviderContextAdmission } from "../../agents/system-prompt-report.js";
@@ -837,13 +839,34 @@ export const agentHandlers: GatewayRequestHandlers = {
       });
     }
 
+    const resolvedSessionAgentId = resolvedSessionKey
+      ? resolveAgentIdFromSessionKey(resolvedSessionKey)
+      : agentId;
+    const inheritedExecutionWorkspaceDir = resolveIngressWorkspaceOverrideForSpawnedRun({
+      spawnedBy: spawnedByValue,
+      workspaceDir: sessionEntry?.spawnedWorkspaceDir,
+    });
+    const configuredExecutionWorkspaceDir = resolvedSessionAgentId
+      ? resolveGatewayVisibleSpawnedWorkspaceDir(
+          resolveAgentWorkspaceDir(cfgForAgent ?? cfg, resolvedSessionAgentId),
+        )
+      : undefined;
+    const configuredSourceWorkspaceDir =
+      configuredExecutionWorkspaceDir &&
+      isGatewayVisibleSourceWorkspaceDir(configuredExecutionWorkspaceDir)
+        ? configuredExecutionWorkspaceDir
+        : undefined;
+    const agentExecutionWorkspaceDir =
+      inheritedExecutionWorkspaceDir ?? configuredSourceWorkspaceDir;
+    const seedBootstrapFiles =
+      agentExecutionWorkspaceDir && isGatewayVisibleSourceWorkspaceDir(agentExecutionWorkspaceDir)
+        ? false
+        : undefined;
+
     if (shouldPrependStartupContext && resolvedSessionKey) {
       const sessionAgentId = resolveAgentIdFromSessionKey(resolvedSessionKey);
       const runtimeWorkspaceDir =
-        resolveIngressWorkspaceOverrideForSpawnedRun({
-          spawnedBy: spawnedByValue,
-          workspaceDir: sessionEntry?.spawnedWorkspaceDir,
-        }) ?? resolveAgentWorkspaceDir(cfgForAgent ?? cfg, sessionAgentId);
+        agentExecutionWorkspaceDir ?? resolveAgentWorkspaceDir(cfgForAgent ?? cfg, sessionAgentId);
       const startupContextPrelude = await buildSessionStartupContextPrelude({
         workspaceDir: runtimeWorkspaceDir,
         cfg: cfgForAgent ?? cfg,
@@ -894,11 +917,9 @@ export const agentHandlers: GatewayRequestHandlers = {
         requiredProviderContextAdmission: request.requiredProviderContextAdmission,
         internalEvents: request.internalEvents,
         inputProvenance,
-        // Internal-only: allow workspace override for spawned subagent runs.
-        workspaceDir: resolveIngressWorkspaceOverrideForSpawnedRun({
-          spawnedBy: spawnedByValue,
-          workspaceDir: sessionEntry?.spawnedWorkspaceDir,
-        }),
+        // Internal-only: allow gateway/container-visible execution workspace overrides.
+        workspaceDir: agentExecutionWorkspaceDir,
+        seedBootstrapFiles,
         senderIsOwner,
         allowModelOverride,
       },

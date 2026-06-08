@@ -24,28 +24,27 @@ export function buildGatewayConnectionDetailsWithResolvers(
     url?: string;
     configPath?: string;
     urlSource?: "cli" | "env";
+    env?: NodeJS.ProcessEnv;
   } = {},
   resolvers: GatewayConnectionDetailResolvers = {},
 ): GatewayConnectionDetails {
+  const env = options.env ?? process.env;
   const config = options.config ?? resolvers.loadConfig?.() ?? {};
   const configPath =
-    options.configPath ??
-    resolvers.resolveConfigPath?.(process.env) ??
-    resolveConfigPath(process.env);
+    options.configPath ?? resolvers.resolveConfigPath?.(env) ?? resolveConfigPath(env);
   const isRemoteMode = config.gateway?.mode === "remote";
   const remote = isRemoteMode ? config.gateway?.remote : undefined;
   const tlsEnabled = config.gateway?.tls?.enabled === true;
   const configuredLocalPort =
-    resolvers.resolveGatewayPort?.(config, process.env) ?? resolveGatewayPort(config);
-  const localPort =
-    resolveDockerComposeGatewayPortOverride({ env: process.env }) ?? configuredLocalPort;
+    resolvers.resolveGatewayPort?.(config, env) ?? resolveGatewayPort(config, env);
+  const localPort = resolveDockerComposeGatewayPortOverride({ env }) ?? configuredLocalPort;
   const bindMode = config.gateway?.bind ?? "loopback";
   const scheme = tlsEnabled ? "wss" : "ws";
   const localUrl = `${scheme}://127.0.0.1:${localPort}`;
   const cliUrlOverride = normalizeOptionalString(options.url);
   const envUrlOverride = cliUrlOverride
     ? undefined
-    : normalizeOptionalString(process.env.OPENCLAW_GATEWAY_URL);
+    : normalizeOptionalString(env.OPENCLAW_GATEWAY_URL);
   const urlOverride = cliUrlOverride ?? envUrlOverride;
   const remoteUrl = normalizeOptionalString(remote?.url);
   const remoteMisconfigured = isRemoteMode && !urlOverride && !remoteUrl;
@@ -66,7 +65,7 @@ export function buildGatewayConnectionDetailsWithResolvers(
     ? "Warn: gateway.mode=remote but gateway.remote.url is missing; set gateway.remote.url or switch gateway.mode=local."
     : undefined;
 
-  const allowPrivateWs = process.env.OPENCLAW_ALLOW_INSECURE_PRIVATE_WS === "1";
+  const allowPrivateWs = env.OPENCLAW_ALLOW_INSECURE_PRIVATE_WS === "1";
   if (!isSecureWebSocketUrl(url, { allowPrivateWs })) {
     throw new Error(
       [

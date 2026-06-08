@@ -3,6 +3,7 @@ import {
   clearSessionStoreCacheForTest,
   resetSessionStoreLockRuntimeForTests,
   setSessionWriteLockAcquirerForTests,
+  updateSessionStore,
   withSessionStoreLockForTest,
 } from "./store.js";
 
@@ -45,6 +46,29 @@ describe("withSessionStoreLock", () => {
       timeoutMs: Number.POSITIVE_INFINITY,
       staleMs: 30_000,
       maxHoldMs: undefined,
+    });
+  });
+
+  it("applies explicit lock timeout and stale thresholds to session store updates", async () => {
+    await updateSessionStore(
+      "/tmp/openclaw-store.json",
+      (store) => {
+        store["agent:test:session:1"] = {
+          sessionId: "session-1",
+          updatedAt: 1,
+        };
+      },
+      {
+        lockTimeoutMs: 4_000,
+        lockStaleMs: 4_000,
+      },
+    );
+
+    expect(acquireSessionWriteLockMock).toHaveBeenCalledWith({
+      sessionFile: "/tmp/openclaw-store.json",
+      timeoutMs: 4_000,
+      staleMs: 4_000,
+      maxHoldMs: 9_000,
     });
   });
 });

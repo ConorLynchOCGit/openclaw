@@ -1,10 +1,13 @@
 import { randomUUID } from "node:crypto";
+import fs from "node:fs";
+import JSON5 from "json5";
 import { loadConfig } from "../config/io.js";
 import {
   resolveConfigPath as resolveConfigPathFromPaths,
   resolveGatewayPort as resolveGatewayPortFromPaths,
   resolveStateDir as resolveStateDirFromPaths,
 } from "../config/paths.js";
+import { readStateDirDotEnvVarsFromStateDir } from "../config/state-dir-dotenv.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { loadOrCreateDeviceIdentity } from "../infra/device-identity.js";
 import { loadGatewayTlsRuntime } from "../infra/tls/gateway.js";
@@ -45,6 +48,7 @@ type CallGatewayBaseOptions = {
   password?: string;
   tlsFingerprint?: string;
   config?: OpenClawConfig;
+  env?: NodeJS.ProcessEnv;
   method: string;
   params?: unknown;
   expectFinal?: boolean;
@@ -144,6 +148,7 @@ export function buildGatewayConnectionDetails(
     url?: string;
     configPath?: string;
     urlSource?: "cli" | "env";
+    env?: NodeJS.ProcessEnv;
   } = {},
 ): GatewayConnectionDetails {
   return buildGatewayConnectionDetailsWithResolvers(options, {
@@ -259,6 +264,7 @@ type GatewayRemoteSettings = {
 type ResolvedGatewayCallContext = {
   config: OpenClawConfig;
   configPath: string;
+  env: NodeJS.ProcessEnv;
   isRemoteMode: boolean;
   remote?: GatewayRemoteSettings;
   urlOverride?: string;
@@ -284,21 +290,90 @@ function resolveGatewayCallTimeout(timeoutValue: unknown): {
   return { timeoutMs, safeTimerTimeoutMs };
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function mergeGatewayCallEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  const stateDir = resolveGatewayStateDir(env);
+  const stateVars = readStateDirDotEnvVarsFromStateDir(stateDir);
+  return {
+    ...stateVars,
+    ...env,
+  };
+}
+
+function shouldUseFullConfigResolverForGatewaySnapshot(parsed: unknown): boolean {
+  if (!isRecord(parsed)) {
+    return false;
+  }
+  if (Object.hasOwn(parsed, "$include")) {
+    return true;
+  }
+  const gatewayText = JSON.stringify({
+    gateway: parsed.gateway,
+    secrets: parsed.secrets,
+  });
+  return gatewayText.includes("${");
+}
+
+function readGatewayOnlyConfigSnapshot(configPath: string): OpenClawConfig {
+  const parsed = JSON5.parse(fs.readFileSync(configPath, "utf8")) as unknown;
+  if (shouldUseFullConfigResolverForGatewaySnapshot(parsed)) {
+    return loadGatewayConfig();
+  }
+  if (!isRecord(parsed)) {
+    return {};
+  }
+  const snapshot: OpenClawConfig = {};
+  if (isRecord(parsed.gateway)) {
+    snapshot.gateway = parsed.gateway as OpenClawConfig["gateway"];
+  }
+  if (isRecord(parsed.secrets)) {
+    snapshot.secrets = parsed.secrets as OpenClawConfig["secrets"];
+  }
+  return snapshot;
+}
+
+function resolveGatewayConfigForCall(params: {
+  opts: CallGatewayBaseOptions;
+  canSkipConfigLoad: boolean;
+  configPath: string;
+}): OpenClawConfig {
+  if (params.opts.config) {
+    return params.opts.config;
+  }
+  if (params.canSkipConfigLoad) {
+    return {} as OpenClawConfig;
+  }
+  if (!fs.existsSync(params.configPath)) {
+    return loadGatewayConfig();
+  }
+  try {
+    return readGatewayOnlyConfigSnapshot(params.configPath);
+  } catch {
+    return loadGatewayConfig();
+  }
+}
+
 function resolveGatewayCallContext(opts: CallGatewayBaseOptions): ResolvedGatewayCallContext {
+  const env = opts.env ?? mergeGatewayCallEnv(process.env);
   const cliUrlOverride = trimToUndefined(opts.url);
   const explicitAuth = resolveExplicitGatewayAuth({ token: opts.token, password: opts.password });
-  const envUrlOverride = cliUrlOverride
-    ? undefined
-    : trimToUndefined(process.env.OPENCLAW_GATEWAY_URL);
+  const envUrlOverride = cliUrlOverride ? undefined : trimToUndefined(env.OPENCLAW_GATEWAY_URL);
   const urlOverride = cliUrlOverride ?? envUrlOverride;
   const urlOverrideSource = cliUrlOverride ? "cli" : envUrlOverride ? "env" : undefined;
+  const configPath = opts.configPath ?? resolveGatewayConfigPath(env);
   const canSkipConfigLoad = canSkipGatewayConfigLoad({
     config: opts.config,
     urlOverride,
     explicitAuth,
   });
-  const config = opts.config ?? (canSkipConfigLoad ? ({} as OpenClawConfig) : loadGatewayConfig());
-  const configPath = opts.configPath ?? resolveGatewayConfigPath(process.env);
+  const config = resolveGatewayConfigForCall({
+    opts,
+    canSkipConfigLoad,
+    configPath,
+  });
   const isRemoteMode = config.gateway?.mode === "remote";
   const remote = isRemoteMode
     ? (config.gateway?.remote as GatewayRemoteSettings | undefined)
@@ -307,6 +382,7 @@ function resolveGatewayCallContext(opts: CallGatewayBaseOptions): ResolvedGatewa
   return {
     config,
     configPath,
+    env,
     isRemoteMode,
     remote,
     urlOverride,
@@ -333,7 +409,7 @@ async function resolveGatewayCredentials(context: ResolvedGatewayCallContext): P
   token?: string;
   password?: string;
 }> {
-  return resolveGatewayCredentialsWithEnv(context, process.env);
+  return resolveGatewayCredentialsWithEnv(context, context.env);
 }
 
 async function resolveGatewayCredentialsWithEnv(
@@ -554,6 +630,7 @@ async function callGatewayWithScopes<T = Record<string, unknown>>(
     config: context.config,
     url: context.urlOverride,
     urlSource: context.urlOverrideSource,
+    env: context.env,
     ...(opts.configPath ? { configPath: opts.configPath } : {}),
   });
   const url = connectionDetails.url;

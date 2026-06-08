@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+import JSON5 from "json5";
 import {
   AcpCodexCodingWorkerAdapter,
   CodingTeamRuntimeJobRunner,
@@ -40,7 +41,7 @@ import {
 } from "../../extensions/execution-platform/runtime-api.js";
 import { CodexAppServerJsonExecutor } from "../../extensions/model-memory/src/mmv2/codex-app-server-json-executor.js";
 import {
-  findExecutionPlatformAgentPackEntry,
+  findAgentPackRegistryEntry,
   loadAgentPackRegistryEntries,
   type AgentPackRegistryEntry,
 } from "../agents/agent-pack-registry.js";
@@ -51,10 +52,12 @@ import {
   resolveAgentProjectRootDir,
   resolveAgentSkillsFilter,
 } from "../agents/agent-scope.js";
+import { withExternalCliAuthSyncSuppressed } from "../agents/auth-profiles.js";
 import { resolveSourceBackedAgentBootstrapFilePaths } from "../agents/bootstrap-files.js";
 import { DEFAULT_PROVIDER } from "../agents/defaults.js";
 import { parseModelRef } from "../agents/model-selection.js";
 import { runEmbeddedPiAgent } from "../agents/pi-embedded-runner/run.js";
+import { discoverAuthStorage, discoverModels } from "../agents/pi-model-discovery.js";
 import { resolveEffectiveToolPolicyAccess } from "../agents/pi-tools.policy.js";
 import { buildRequiredActiveSkillSnapshot, type SkillSnapshot } from "../agents/skills.js";
 import {
@@ -71,6 +74,7 @@ import {
 import { resolveStateDir } from "../config/paths.js";
 import { normalizeRuntimePathAliases } from "../config/runtime-source-record.js";
 import { updateSessionLaunch } from "../config/sessions/launch.js";
+import { buildSessionLaunchLocation } from "../config/sessions/location.js";
 import { resolveSessionFilePath, resolveStorePath } from "../config/sessions/paths.js";
 import { readSessionTodo } from "../config/sessions/todo.js";
 import type { SessionSystemPromptReport } from "../config/sessions/types.js";
@@ -168,6 +172,41 @@ function resolveGatewayAgentReasoningLevel(input: {
   return normalizeGatewayReasoningLevel(agent?.reasoningDefault);
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function loadSourceBackedConfigForNodeLaunch(): ReturnType<typeof loadConfig> {
+  const configPath = resolveConfigPath();
+  try {
+    const parsed = JSON5.parse(fs.readFileSync(configPath, "utf8")) as unknown;
+    if (!isRecord(parsed) || Object.hasOwn(parsed, "$include")) {
+      return loadConfig();
+    }
+    return parsed as ReturnType<typeof loadConfig>;
+  } catch {
+    return loadConfig();
+  }
+}
+
+function logNodeAgentStartTiming(
+  label: string,
+  startedAt: number,
+  details: Record<string, unknown> = {},
+): void {
+  if (process.env.OPENCLAW_NODE_AGENT_START_TIMING !== "1") {
+    return;
+  }
+  process.stderr.write(
+    `${JSON.stringify({
+      event: "node_agent_start_timing",
+      label,
+      elapsedMs: Date.now() - startedAt,
+      ...details,
+    })}\n`,
+  );
+}
+
 function resolveAgentSessionDir(agentDir: string): string {
   return path.join(path.dirname(path.resolve(agentDir)), "sessions");
 }
@@ -258,7 +297,7 @@ export async function resolveNodeAgentRequiredSkillNames(input: {
 }): Promise<string[]> {
   const entries = input.entries ?? (await loadAgentPackRegistryEntries());
   return nodeAgentRequiredSkillNamesFromRegistryEntry(
-    findExecutionPlatformAgentPackEntry({ entries, agentId: input.agentId }),
+    findAgentPackRegistryEntry({ entries, agentId: input.agentId }),
   );
 }
 
@@ -268,7 +307,7 @@ export async function resolveNodeAgentAllowedChildAgentIds(input: {
 }): Promise<string[]> {
   const entries = input.entries ?? (await loadAgentPackRegistryEntries());
   return nodeAgentAllowedChildAgentIdsFromRegistryEntry(
-    findExecutionPlatformAgentPackEntry({ entries, agentId: input.agentId }),
+    findAgentPackRegistryEntry({ entries, agentId: input.agentId }),
   );
 }
 
@@ -761,6 +800,11 @@ async function recordBlockedNodeSessionLaunch(input: {
   submittedPromptHash?: string | null;
   promptHashMatched?: boolean | null;
 }) {
+  const location = buildSessionLaunchLocation({
+    sourceRoot: input.receipt.sourceRuntime.projectRoot,
+    workspaceRoot: input.receipt.cwd,
+    stateRoot: input.receipt.sourceRuntime.runtimeHome,
+  });
   return await updateSessionLaunch({
     storePath: resolveStorePath(input.config.session?.store, {
       agentId: input.nodeRun.agentId,
@@ -775,6 +819,9 @@ async function recordBlockedNodeSessionLaunch(input: {
       provider: input.receipt.modelProvider ?? undefined,
       model: input.receipt.modelId ?? undefined,
       cwd: input.receipt.cwd ?? undefined,
+      resolvedLocation: location.resolvedLocation,
+      sourceIdentity: location.sourceIdentity,
+      workspaceIdentity: location.workspaceIdentity,
       reasoningLevel: input.receipt.reasoningLevel ?? undefined,
       thinkingLevel: input.receipt.thinkingLevel ?? undefined,
       ...(input.promptHash !== undefined ? { promptHash: input.promptHash } : {}),
@@ -1283,7 +1330,7 @@ export function prepareOpenClawNodeStart(input: {
   const missingSkills: Array<{ agentId: string; skillName: string }> = [];
   const missingAssets: Array<{ agentId: string; assetPath: string }> = [];
   const reasonCodes: string[] = ["node_agent_start_prepared_from_native_openclaw_surfaces"];
-  const parentAgentPackEntry = findExecutionPlatformAgentPackEntry({
+  const parentAgentPackEntry = findAgentPackRegistryEntry({
     entries: input.agentPackRegistryEntries,
     agentId: input.nodeRun.agentId,
   });
@@ -1404,7 +1451,7 @@ export function prepareOpenClawNodeStart(input: {
 
   for (const scoutAgentId of expectedChildAgentIds) {
     const scoutAgent = resolveAgentConfig(config, scoutAgentId);
-    const scoutAgentPackEntry = findExecutionPlatformAgentPackEntry({
+    const scoutAgentPackEntry = findAgentPackRegistryEntry({
       entries: input.agentPackRegistryEntries,
       agentId: scoutAgentId,
     });
@@ -1638,12 +1685,14 @@ export function resolveGatewayNodeAgentProfile(input: {
 export function createGatewayNodeAgentProfileResolver(): NonNullable<
   RuntimeWorkGraphSchedulerOptions["resolveNodeAgentProfile"]
 > {
-  return ({ proposedAgentId }) =>
-    resolveGatewayNodeAgentProfile({
-      config: loadConfig(),
-      proposedAgentId,
-      requireAgentAssets: true,
-    });
+  return async ({ proposedAgentId }) =>
+    await withExternalCliAuthSyncSuppressed(async () =>
+      resolveGatewayNodeAgentProfile({
+        config: {} as ReturnType<typeof loadConfig>,
+        proposedAgentId,
+        requireAgentAssets: true,
+      }),
+    );
 }
 
 export function createOpenClawNodeSessionExecutor(input: {
@@ -1655,602 +1704,643 @@ export function createOpenClawNodeSessionExecutor(input: {
     promptHash: string;
   } | null;
 }): RuntimeWorkGraphNodeAgentSessionRunner {
-  return async ({ node, nodeExecutionSnapshot }) => {
-    const nodeRuns = new RuntimeArtifactNodeExecutionRunStore(input.runtimeJobs, {
-      runtimeJobIdsForLookup: async () => [nodeExecutionSnapshot.runtimeJobId],
-    });
-    const nodeRun = await nodeRuns.allocateOrLoadNodeRun({
-      runtimeJobId: nodeExecutionSnapshot.runtimeJobId,
-      graphId: nodeExecutionSnapshot.graphId,
-      nodeId: nodeExecutionSnapshot.nodeId,
-      attemptId: nodeExecutionSnapshot.attemptId,
-      agentId: nodeExecutionSnapshot.agentId,
-      snapshotRef: nodeExecutionSnapshot.snapshotRef,
-    });
-    const config = loadConfig();
-    const agentPackRegistryEntries = await loadAgentPackRegistryEntries();
-    const requiredSkillNames = await resolveNodeAgentRequiredSkillNames({
-      agentId: nodeRun.agentId,
-      entries: agentPackRegistryEntries,
-    });
-    const expectedChildAgentIds = await resolveNodeAgentAllowedChildAgentIds({
-      agentId: nodeRun.agentId,
-      entries: agentPackRegistryEntries,
-    });
-    const nodeAgentPackEntry = findExecutionPlatformAgentPackEntry({
-      entries: agentPackRegistryEntries,
-      agentId: nodeRun.agentId,
-    });
-    const requiredToolNames = nodeAgentRequiredToolNamesFromRegistryEntry(nodeAgentPackEntry);
-    const forbiddenToolNames = nodeAgentForbiddenToolNamesFromRegistryEntry(nodeAgentPackEntry);
-    const requiredDocNames = nodeAgentRequiredDocNamesFromRegistryEntry(nodeAgentPackEntry);
-    const sessionFilePath = resolveSessionFilePath(nodeRun.nodeRunId, undefined, {
-      agentId: nodeRun.agentId,
-    });
-    const startPreparation = prepareOpenClawNodeStart({
-      config,
-      nodeRun,
-      nodeExecutionSnapshot,
-      sessionFilePath,
-      requiredSkillNames,
-      expectedChildAgentIds,
-      agentPackRegistryEntries,
-    });
-    if (startPreparation.status === "blocked") {
-      const blockedLaunch = await recordBlockedNodeSessionLaunch({
-        config,
-        nodeRun,
-        receipt: startPreparation.receipt,
-        blockerKind: startPreparation.blockerKind,
-        blockers: startPreparation.receipt.blockers,
-        reasonCodes: uniqueStringList([
-          ...startPreparation.reasonCodes,
-          "node_agent_start_blocked_recorded_as_native_session_launch",
-        ]),
+  return async (params) =>
+    await withExternalCliAuthSyncSuppressed(async () => {
+      const nodeAgentStartTimingStartedAt = Date.now();
+      const { node, nodeExecutionSnapshot } = params;
+      logNodeAgentStartTiming("executor_enter", nodeAgentStartTimingStartedAt, {
+        nodeId: nodeExecutionSnapshot.nodeId,
+        nodeRunId: nodeExecutionSnapshot.nodeRunId,
       });
-      const metadata: JsonValue = {
-        nodeRunId: nodeRun.nodeRunId,
-        nodeAgentId: nodeRun.agentId,
-        nodeAgentSessionKey: nodeRun.sessionKey,
-        nodeExecutionSnapshotRef: nodeExecutionSnapshot.snapshotRef,
-        nodeAgentStartReceiptRef: null,
-        nodeAgentStartBlockerKind: startPreparation.blockerKind,
-        ...nodeSessionLaunchMetadata(blockedLaunch),
-        ...nodeAgentSourceRuntimeMetadata(startPreparation.receipt),
-        rawPromptStored: false,
-        rawResponseStored: false,
-        rawProviderLogStored: false,
-        rawTranscriptStored: false,
-        hiddenReasoningStored: false,
-      };
-      return {
-        status: "blocked",
-        outputArtifactRefs: [nodeExecutionSnapshot.snapshotRef],
-        producedOutputRefs: [nodeExecutionSnapshot.snapshotRef],
-        artifactRefs: [nodeExecutionSnapshot.snapshotRef],
-        modelRunRefs: [nodeRun.sessionKey],
-        validationRefs: [],
-        changedFileRefs: [],
-        ownerSummary: `OpenClaw node start blocked: ${startPreparation.blockerKind}`,
-        eli5Summary:
-          "The node worker did not start because native OpenClaw start facts were blocked.",
-        reasonCodes: uniqueStringList([
-          ...startPreparation.reasonCodes,
-          blockedLaunch.persisted
-            ? "node_agent_start_blocked_native_session_launch_recorded"
-            : `node_agent_start_blocked_native_session_launch_not_persisted:${blockedLaunch.reason}`,
-        ]),
-        metadata,
-        rawPromptStored: false,
-        rawResponseStored: false,
-        rawProviderLogStored: false,
-        rawToolLogStored: false,
-        workQueueLifecycleMutated: false,
-        runtimeLifecycleMutated: false,
-      };
-    }
-    const recordFinishArtifact = async (finish: NodeFinish): Promise<string | null> => {
-      const artifact = await input.runtimeJobs.attachRuntimeArtifactByContract({
-        jobId: nodeExecutionSnapshot.runtimeJobId,
-        artifactType: NODE_FINISH_ARTIFACT_TYPE,
-        uri: `node-finish://${finish.nodeRunId}/${finish.status}`,
-        body: finish as unknown as JsonValue,
-        boundedSummary: finish.summary,
-        targetNodeIds: [nodeExecutionSnapshot.nodeId],
-        reasonCodes: [
-          "node_finish_payload_artifact_attached",
-          `node_finish_status:${finish.status}`,
-        ],
-        createdBy: "openclaw_node_session_executor",
-        metadata: {
-          nodeRunId: finish.nodeRunId,
-          nodeId: nodeExecutionSnapshot.nodeId,
-          graphId: nodeExecutionSnapshot.graphId,
-          sessionKey: nodeExecutionSnapshot.sessionKey,
-          status: finish.status,
-          blockerKind: finish.blockerKind ?? null,
-          evidenceRefCount: finish.evidenceRefs.length,
-          rawPromptStored: false,
-          rawResponseStored: false,
-          rawProviderLogStored: false,
-          rawTranscriptStored: false,
-          hiddenReasoningStored: false,
-        },
+      const nodeRuns = new RuntimeArtifactNodeExecutionRunStore(input.runtimeJobs, {
+        runtimeJobIdsForLookup: async () => [nodeExecutionSnapshot.runtimeJobId],
       });
-      return artifact.uri;
-    };
-    const agentModelRef = resolveAgentEffectiveModelPrimary(config, nodeRun.agentId);
-    const agentModel = agentModelRef ? parseModelRef(agentModelRef, DEFAULT_PROVIDER) : null;
-    const agentThinkingLevel = resolveGatewayAgentThinkingLevel({
-      config,
-      agentId: nodeRun.agentId,
-    });
-    const agentReasoningLevel = resolveGatewayAgentReasoningLevel({
-      config,
-      agentId: nodeRun.agentId,
-    });
-    const nodeExecutionWorkspaceDir = resolveOpenClawNodeExecutionWorkspaceDir(
-      config,
-      nodeRun.agentId,
-    );
-    const skillsSnapshot = buildNodeExecutionRequiredSkillsSnapshot({
-      config,
-      agentId: nodeRun.agentId,
-      requiredSkillNames,
-    });
-    const parentRequiredSkillSources = requiredProviderSkillSourcesFromSnapshot(skillsSnapshot);
-    const fixedWorkerPrompt = input.fixedWorkerPrompt;
-    const fixedPromptText =
-      typeof fixedWorkerPrompt?.promptText === "string" ? fixedWorkerPrompt.promptText : null;
-    const promptResult =
-      fixedWorkerPrompt && fixedPromptText !== null && fixedPromptText.length > 0
-        ? {
-            status: "accepted" as const,
-            promptText: fixedPromptText,
-            workerPrompt: buildFixedNodeAgentWorkerPrompt({
-              nodeExecutionSnapshot,
-              promptText: fixedPromptText,
-              modelRunRef: fixedWorkerPrompt.modelRunRef,
-              reasonCodes: [
-                "node_agent_worker_prompt_supplied_by_boundary_replay_fixed_artifact",
-                "node_agent_worker_prompt_authoring_bypassed_for_worker_only_proof",
-                "node_agent_worker_prompt_is_direct_native_session_input",
-              ],
-            }),
-            modelRunRef: fixedWorkerPrompt.modelRunRef,
-            responseHash: fixedWorkerPrompt.promptHash,
-            latencyMs: 0,
-            reasonCodes: [
-              "node_agent_worker_prompt_supplied_by_boundary_replay_fixed_artifact",
-              "node_agent_worker_prompt_authoring_bypassed_for_worker_only_proof",
-              "node_agent_worker_prompt_is_direct_native_session_input",
-            ],
-            rawPromptStored: false as const,
-            rawResponseStored: false as const,
-            rawProviderLogStored: false as const,
-          }
-        : await authorNodeExecutionPrompt({
-            nodeExecutionSnapshot,
-            repository: input.runtimeJobs,
-            modelClient: input.promptTextModelClient,
-            modelRef: agentModel?.model ?? null,
-            providerPath: agentModel?.provider ?? null,
-            reasoningEffort: "none",
-            maxOutputTokens: 8_000,
-            timeoutMs: 90_000,
-            maxPromptChars: 140_000,
-          });
-    if (promptResult.status === "blocked") {
-      const diagnosticArtifact = promptResult.diagnostic
-        ? await attachNodePromptAuthoringFailureDiagnosticArtifact({
-            runtimeJobs: input.runtimeJobs,
-            nodeExecutionSnapshot,
-            diagnostic: promptResult.diagnostic as unknown as JsonValue,
-          })
-        : null;
-      const metadata: JsonValue = {
+      const nodeRun = await nodeRuns.allocateOrLoadNodeRun({
+        runtimeJobId: nodeExecutionSnapshot.runtimeJobId,
+        graphId: nodeExecutionSnapshot.graphId,
+        nodeId: nodeExecutionSnapshot.nodeId,
+        attemptId: nodeExecutionSnapshot.attemptId,
+        agentId: nodeExecutionSnapshot.agentId,
+        snapshotRef: nodeExecutionSnapshot.snapshotRef,
+      });
+      logNodeAgentStartTiming("node_run_allocated", nodeAgentStartTimingStartedAt, {
         nodeRunId: nodeRun.nodeRunId,
-        nodeAgentId: nodeRun.agentId,
-        nodeAgentSessionKey: nodeRun.sessionKey,
-        nodeExecutionSnapshotRef: nodeExecutionSnapshot.snapshotRef,
-        nodeAgentStartReceiptRef: null,
-        nodeAgentSessionLaunchRef: null,
-        nodeAgentSessionLaunchEventRef: null,
-        nodeAgentSessionLaunchStatus: null,
-        nodeAgentSessionLaunchBlockerKind: null,
-        ...nodeAgentSourceRuntimeMetadata(startPreparation.receipt),
-        nodeWorkerPromptStatus: "blocked",
-        nodeWorkerPromptBlockerKind: promptResult.blockerKind,
-        nodePromptAuthoringFailureDiagnosticRef: diagnosticArtifact?.uri ?? null,
-        rawPromptStored: false,
-        rawResponseStored: false,
-        rawProviderLogStored: false,
-        rawTranscriptStored: false,
-        hiddenReasoningStored: false,
-      };
-      return {
-        status: "needs_review",
-        outputArtifactRefs: [
-          nodeExecutionSnapshot.snapshotRef,
-          ...(diagnosticArtifact ? [diagnosticArtifact.uri] : []),
-        ],
-        producedOutputRefs: [
-          nodeExecutionSnapshot.snapshotRef,
-          ...(diagnosticArtifact ? [diagnosticArtifact.uri] : []),
-        ],
-        artifactRefs: [
-          nodeExecutionSnapshot.snapshotRef,
-          ...(diagnosticArtifact ? [diagnosticArtifact.uri] : []),
-        ],
-        modelRunRefs: [nodeRun.sessionKey],
-        validationRefs: [],
-        changedFileRefs: [],
-        ownerSummary: `OpenClaw node worker prompt authoring blocked: ${promptResult.blockerKind}`,
-        eli5Summary:
-          "The node worker did not start because NodeLifecycleRunner could not author a complete worker prompt.",
-        reasonCodes: [
-          ...promptResult.reasonCodes,
-          `node_worker_prompt_blocker:${promptResult.blockerKind}`,
-        ],
-        metadata,
-        rawPromptStored: false,
-        rawResponseStored: false,
-        rawProviderLogStored: false,
-        rawToolLogStored: false,
-        workQueueLifecycleMutated: false,
-        runtimeLifecycleMutated: false,
-      };
-    }
-    const workerPromptArtifact = await attachNodeAgentWorkerPromptArtifact({
-      runtimeJobs: input.runtimeJobs,
-      nodeExecutionSnapshot,
-      workerPrompt: promptResult.workerPrompt,
-    });
-    const parentRequiredCanonicalDocPaths =
-      (await resolveSourceBackedAgentBootstrapFilePaths({
-        config,
-        sessionKey: nodeRun.sessionKey,
-        sessionId: nodeRun.nodeRunId,
+      });
+      const config = loadSourceBackedConfigForNodeLaunch();
+      logNodeAgentStartTiming("config_loaded", nodeAgentStartTimingStartedAt, {
+        agentCount: Array.isArray(config.agents?.list) ? config.agents.list.length : 0,
+      });
+      const agentPackRegistryEntries = await loadAgentPackRegistryEntries();
+      logNodeAgentStartTiming("agent_pack_registry_loaded", nodeAgentStartTimingStartedAt, {
+        entryCount: agentPackRegistryEntries.length,
+      });
+      const requiredSkillNames = await resolveNodeAgentRequiredSkillNames({
         agentId: nodeRun.agentId,
-        fileNames: requiredDocNames,
-      })) ??
-      requiredDocNames.map((docName) =>
-        path.join(
-          resolveAgentProjectRootDir(config, nodeRun.agentId),
-          "docs",
-          "agents",
-          nodeRun.agentId,
-          "runtime",
-          docName,
-        ),
-      );
-    const preSessionReceipt = withWorkerPromptSessionProof({
-      receipt: {
-        ...startPreparation.receipt,
-        reasonCodes: uniqueStringList([
-          ...startPreparation.receipt.reasonCodes,
-          "node_agent_session_launch_prepared_before_native_session_invocation",
-        ]),
-      },
-      workerPrompt: promptResult.workerPrompt,
-      workerPromptArtifactRef: workerPromptArtifact.uri,
-      sessionFilePath,
-      finalPromptText: null,
-      systemPromptReport: null,
-      effectiveToolNames: null,
-      requiredCanonicalDocNames: requiredDocNames,
-      requiredCanonicalDocPaths: parentRequiredCanonicalDocPaths,
-      requiredSkillNames,
-      requiredSkillSources: parentRequiredSkillSources,
-      requiredToolNames,
-      forbiddenToolNames,
-      enforceProviderBootstrapAdmission: false,
-    });
-    const nodeAgentStepBudget = deriveNodeAgentStepBudgetFromSnapshot(nodeExecutionSnapshot);
-    let sessionResult: Awaited<ReturnType<typeof runNodeAgentSession>>;
-    try {
-      sessionResult = await runNodeAgentSession({
-        nodeRunId: nodeRun.nodeRunId,
-        nodeRuns,
-        hydrateSnapshot: async (snapshotRef) =>
-          snapshotRef === nodeExecutionSnapshot.snapshotRef ? nodeExecutionSnapshot : null,
-        recordFinishArtifact,
-        runEmbeddedAgent: runEmbeddedPiAgent,
-        workerPromptText: promptResult.promptText,
-        stepBudget: nodeAgentStepBudget,
-        agentParams: {
-          sessionId: nodeRun.nodeRunId,
-          sessionFile: sessionFilePath,
-          workspaceDir: nodeExecutionWorkspaceDir,
-          agentDir: resolveAgentDir(config, nodeRun.agentId),
-          config,
-          skillsSnapshot,
-          ...(agentModel ? { provider: agentModel.provider, model: agentModel.model } : {}),
-          ...(agentThinkingLevel ? { thinkLevel: agentThinkingLevel } : {}),
-          ...(agentReasoningLevel ? { reasoningLevel: agentReasoningLevel } : {}),
-          trigger: "manual",
-          timeoutMs: 1_200_000,
-          runId: nodeRun.nodeRunId,
-          disableMessageTool: true,
-          requireExplicitMessageTarget: true,
-          allowGatewaySubagentBinding: true,
-          nodeAgentNativeTaskMode: {
-            enabled: true,
-            allowedAgentIds: expectedChildAgentIds,
-            mutationToolName: "edit",
-          },
-          requiredProviderContextAdmission: {
-            workspaceFileNames: parentRequiredCanonicalDocPaths,
-            skillNames: requiredSkillNames,
-            skillSources: parentRequiredSkillSources,
-            rejectTruncatedWorkspaceFiles: true,
-          },
-          bootstrapContextMode: "full",
-          bootstrapContextRunKind: "default",
-          toolResultFormat: "markdown",
-          nativeRuntimeTools: [
-            createExecutionPlatformResourceReadTool({
-              runtimeJobId: nodeExecutionSnapshot.runtimeJobId,
-              nodeExecutionSnapshot,
-              repository: input.runtimeJobs,
-            }),
-          ],
-        },
+        entries: agentPackRegistryEntries,
       });
-    } catch (error) {
-      const errorName = error instanceof Error ? error.name : "unknown_error";
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      const blockedReceipt = {
-        ...preSessionReceipt,
-        status: "blocked" as const,
-        blockerKind: "node_agent_session_invocation_failed",
-        blockers: uniqueStringList([
-          ...preSessionReceipt.blockers,
-          "node_agent_session_invocation_failed",
-        ]),
-        reasonCodes: uniqueStringList([
-          ...preSessionReceipt.reasonCodes,
-          "node_agent_session_invocation_failed",
-          `node_agent_session_invocation_error_name:${errorName}`,
-          `node_agent_session_invocation_error_hash:${stableTextHash(errorMessage).slice(0, 20)}`,
-        ]),
-      };
-      const blockedLaunch = await recordBlockedNodeSessionLaunch({
+      const expectedChildAgentIds = await resolveNodeAgentAllowedChildAgentIds({
+        agentId: nodeRun.agentId,
+        entries: agentPackRegistryEntries,
+      });
+      const nodeAgentPackEntry = findAgentPackRegistryEntry({
+        entries: agentPackRegistryEntries,
+        agentId: nodeRun.agentId,
+      });
+      const requiredToolNames = nodeAgentRequiredToolNamesFromRegistryEntry(nodeAgentPackEntry);
+      const forbiddenToolNames = nodeAgentForbiddenToolNamesFromRegistryEntry(nodeAgentPackEntry);
+      const requiredDocNames = nodeAgentRequiredDocNamesFromRegistryEntry(nodeAgentPackEntry);
+      const sessionFilePath = resolveSessionFilePath(nodeRun.nodeRunId, undefined, {
+        agentId: nodeRun.agentId,
+      });
+      const startPreparation = prepareOpenClawNodeStart({
         config,
         nodeRun,
-        receipt: blockedReceipt,
-        blockerKind: "node_agent_session_invocation_failed",
-        blockers: blockedReceipt.blockers,
-        reasonCodes: blockedReceipt.reasonCodes,
-        promptHash: blockedReceipt.promptHash,
-        submittedPromptHash: blockedReceipt.submittedPromptHash,
-        promptHashMatched: blockedReceipt.promptSessionHashMatch,
+        nodeExecutionSnapshot,
+        sessionFilePath,
+        requiredSkillNames,
+        expectedChildAgentIds,
+        agentPackRegistryEntries,
       });
-      return {
-        status: "blocked",
-        outputArtifactRefs: [nodeExecutionSnapshot.snapshotRef, workerPromptArtifact.uri],
-        producedOutputRefs: [nodeExecutionSnapshot.snapshotRef, workerPromptArtifact.uri],
-        artifactRefs: [nodeExecutionSnapshot.snapshotRef, workerPromptArtifact.uri],
-        modelRunRefs: [nodeRun.sessionKey, promptResult.workerPrompt.modelRunRef],
-        validationRefs: [],
-        changedFileRefs: [],
-        ownerSummary: `OpenClaw node agent session invocation failed before a terminal trace: ${errorName}.`,
-        eli5Summary:
-          "The node worker prompt was ready, but the native OpenClaw agent session failed before it returned a session trace.",
-        reasonCodes: uniqueStringList([
-          ...blockedReceipt.reasonCodes,
-          blockedLaunch.persisted
-            ? "node_agent_session_invocation_failed_native_session_launch_recorded"
-            : `node_agent_session_invocation_failed_native_session_launch_not_persisted:${blockedLaunch.reason}`,
-        ]),
-        metadata: {
+      logNodeAgentStartTiming("node_start_prepared", nodeAgentStartTimingStartedAt, {
+        status: startPreparation.status,
+        blockerKind: startPreparation.status === "blocked" ? startPreparation.blockerKind : null,
+      });
+      if (startPreparation.status === "blocked") {
+        const blockedLaunch = await recordBlockedNodeSessionLaunch({
+          config,
+          nodeRun,
+          receipt: startPreparation.receipt,
+          blockerKind: startPreparation.blockerKind,
+          blockers: startPreparation.receipt.blockers,
+          reasonCodes: uniqueStringList([
+            ...startPreparation.reasonCodes,
+            "node_agent_start_blocked_recorded_as_native_session_launch",
+          ]),
+        });
+        const metadata: JsonValue = {
           nodeRunId: nodeRun.nodeRunId,
           nodeAgentId: nodeRun.agentId,
           nodeAgentSessionKey: nodeRun.sessionKey,
           nodeExecutionSnapshotRef: nodeExecutionSnapshot.snapshotRef,
           nodeAgentStartReceiptRef: null,
+          nodeAgentStartBlockerKind: startPreparation.blockerKind,
           ...nodeSessionLaunchMetadata(blockedLaunch),
-          nodeWorkerPromptRef: promptResult.workerPrompt.promptRef,
-          nodeWorkerPromptArtifactRef: workerPromptArtifact.uri,
-          nodeWorkerPromptHash: promptResult.workerPrompt.promptHash,
-          nodeWorkerPromptByteCount: promptResult.workerPrompt.promptByteCount,
-          nodeWorkerPromptStatus: "accepted",
-          nodeAgentStartStatus: "blocked",
-          nodeAgentSessionInvocationErrorName: errorName,
-          nodeAgentSessionInvocationErrorHash: stableTextHash(errorMessage).slice(0, 20),
-          ...nodeAgentSourceRuntimeMetadata(blockedReceipt),
-          nodeFinishArtifactRef: null,
-          nodeFinishStatus: null,
-          nodeFinishBlockerKind: "node_agent_session_invocation_failed",
+          ...nodeAgentSourceRuntimeMetadata(startPreparation.receipt),
           rawPromptStored: false,
           rawResponseStored: false,
           rawProviderLogStored: false,
           rawTranscriptStored: false,
           hiddenReasoningStored: false,
-        },
-        rawPromptStored: false,
-        rawResponseStored: false,
-        rawProviderLogStored: false,
-        rawToolLogStored: false,
-        workQueueLifecycleMutated: false,
-        runtimeLifecycleMutated: false,
+        };
+        return {
+          status: "blocked",
+          outputArtifactRefs: [nodeExecutionSnapshot.snapshotRef],
+          producedOutputRefs: [nodeExecutionSnapshot.snapshotRef],
+          artifactRefs: [nodeExecutionSnapshot.snapshotRef],
+          modelRunRefs: [nodeRun.sessionKey],
+          validationRefs: [],
+          changedFileRefs: [],
+          ownerSummary: `OpenClaw node start blocked: ${startPreparation.blockerKind}`,
+          eli5Summary:
+            "The node worker did not start because native OpenClaw start facts were blocked.",
+          reasonCodes: uniqueStringList([
+            ...startPreparation.reasonCodes,
+            blockedLaunch.persisted
+              ? "node_agent_start_blocked_native_session_launch_recorded"
+              : `node_agent_start_blocked_native_session_launch_not_persisted:${blockedLaunch.reason}`,
+          ]),
+          metadata,
+          rawPromptStored: false,
+          rawResponseStored: false,
+          rawProviderLogStored: false,
+          rawToolLogStored: false,
+          workQueueLifecycleMutated: false,
+          runtimeLifecycleMutated: false,
+        };
+      }
+      const recordFinishArtifact = async (finish: NodeFinish): Promise<string | null> => {
+        const artifact = await input.runtimeJobs.attachRuntimeArtifactByContract({
+          jobId: nodeExecutionSnapshot.runtimeJobId,
+          artifactType: NODE_FINISH_ARTIFACT_TYPE,
+          uri: `node-finish://${finish.nodeRunId}/${finish.status}`,
+          body: finish as unknown as JsonValue,
+          boundedSummary: finish.summary,
+          targetNodeIds: [nodeExecutionSnapshot.nodeId],
+          reasonCodes: [
+            "node_finish_payload_artifact_attached",
+            `node_finish_status:${finish.status}`,
+          ],
+          createdBy: "openclaw_node_session_executor",
+          metadata: {
+            nodeRunId: finish.nodeRunId,
+            nodeId: nodeExecutionSnapshot.nodeId,
+            graphId: nodeExecutionSnapshot.graphId,
+            sessionKey: nodeExecutionSnapshot.sessionKey,
+            status: finish.status,
+            blockerKind: finish.blockerKind ?? null,
+            evidenceRefCount: finish.evidenceRefs.length,
+            rawPromptStored: false,
+            rawResponseStored: false,
+            rawProviderLogStored: false,
+            rawTranscriptStored: false,
+            hiddenReasoningStored: false,
+          },
+        });
+        return artifact.uri;
       };
-    }
-    const nativeSessionTrace = sessionResult.runResult?.meta.nodeAgentSessionTrace;
-    const startReceipt = {
-      ...withWorkerPromptSessionProof({
-        receipt: withNativeLockTrace({
-          receipt: startPreparation.receipt,
-          lockAcquisitionTrace: sessionResult.lockAcquisitionTrace,
-        }),
+      const agentModelRef = resolveAgentEffectiveModelPrimary(config, nodeRun.agentId);
+      const agentModel = agentModelRef ? parseModelRef(agentModelRef, DEFAULT_PROVIDER) : null;
+      const agentThinkingLevel = resolveGatewayAgentThinkingLevel({
+        config,
+        agentId: nodeRun.agentId,
+      });
+      const agentReasoningLevel = resolveGatewayAgentReasoningLevel({
+        config,
+        agentId: nodeRun.agentId,
+      });
+      const nodeExecutionWorkspaceDir = resolveOpenClawNodeExecutionWorkspaceDir(
+        config,
+        nodeRun.agentId,
+      );
+      const skillsSnapshot = buildNodeExecutionRequiredSkillsSnapshot({
+        config,
+        agentId: nodeRun.agentId,
+        requiredSkillNames,
+      });
+      const parentRequiredSkillSources = requiredProviderSkillSourcesFromSnapshot(skillsSnapshot);
+      const fixedWorkerPrompt = input.fixedWorkerPrompt;
+      const fixedPromptText =
+        typeof fixedWorkerPrompt?.promptText === "string" ? fixedWorkerPrompt.promptText : null;
+      const promptResult =
+        fixedWorkerPrompt && fixedPromptText !== null && fixedPromptText.length > 0
+          ? {
+              status: "accepted" as const,
+              promptText: fixedPromptText,
+              workerPrompt: buildFixedNodeAgentWorkerPrompt({
+                nodeExecutionSnapshot,
+                promptText: fixedPromptText,
+                modelRunRef: fixedWorkerPrompt.modelRunRef,
+                reasonCodes: [
+                  "node_agent_worker_prompt_supplied_by_boundary_replay_fixed_artifact",
+                  "node_agent_worker_prompt_authoring_bypassed_for_worker_only_proof",
+                  "node_agent_worker_prompt_is_direct_native_session_input",
+                ],
+              }),
+              modelRunRef: fixedWorkerPrompt.modelRunRef,
+              responseHash: fixedWorkerPrompt.promptHash,
+              latencyMs: 0,
+              reasonCodes: [
+                "node_agent_worker_prompt_supplied_by_boundary_replay_fixed_artifact",
+                "node_agent_worker_prompt_authoring_bypassed_for_worker_only_proof",
+                "node_agent_worker_prompt_is_direct_native_session_input",
+              ],
+              rawPromptStored: false as const,
+              rawResponseStored: false as const,
+              rawProviderLogStored: false as const,
+            }
+          : await authorNodeExecutionPrompt({
+              nodeExecutionSnapshot,
+              repository: input.runtimeJobs,
+              modelClient: input.promptTextModelClient,
+              modelRef: agentModel?.model ?? null,
+              providerPath: agentModel?.provider ?? null,
+              reasoningEffort: "none",
+              maxOutputTokens: 8_000,
+              timeoutMs: 90_000,
+              maxPromptChars: 140_000,
+            });
+      if (promptResult.status === "blocked") {
+        const diagnosticArtifact = promptResult.diagnostic
+          ? await attachNodePromptAuthoringFailureDiagnosticArtifact({
+              runtimeJobs: input.runtimeJobs,
+              nodeExecutionSnapshot,
+              diagnostic: promptResult.diagnostic as unknown as JsonValue,
+            })
+          : null;
+        const metadata: JsonValue = {
+          nodeRunId: nodeRun.nodeRunId,
+          nodeAgentId: nodeRun.agentId,
+          nodeAgentSessionKey: nodeRun.sessionKey,
+          nodeExecutionSnapshotRef: nodeExecutionSnapshot.snapshotRef,
+          nodeAgentStartReceiptRef: null,
+          nodeAgentSessionLaunchRef: null,
+          nodeAgentSessionLaunchEventRef: null,
+          nodeAgentSessionLaunchStatus: null,
+          nodeAgentSessionLaunchBlockerKind: null,
+          ...nodeAgentSourceRuntimeMetadata(startPreparation.receipt),
+          nodeWorkerPromptStatus: "blocked",
+          nodeWorkerPromptBlockerKind: promptResult.blockerKind,
+          nodePromptAuthoringFailureDiagnosticRef: diagnosticArtifact?.uri ?? null,
+          rawPromptStored: false,
+          rawResponseStored: false,
+          rawProviderLogStored: false,
+          rawTranscriptStored: false,
+          hiddenReasoningStored: false,
+        };
+        return {
+          status: "needs_review",
+          outputArtifactRefs: [
+            nodeExecutionSnapshot.snapshotRef,
+            ...(diagnosticArtifact ? [diagnosticArtifact.uri] : []),
+          ],
+          producedOutputRefs: [
+            nodeExecutionSnapshot.snapshotRef,
+            ...(diagnosticArtifact ? [diagnosticArtifact.uri] : []),
+          ],
+          artifactRefs: [
+            nodeExecutionSnapshot.snapshotRef,
+            ...(diagnosticArtifact ? [diagnosticArtifact.uri] : []),
+          ],
+          modelRunRefs: [nodeRun.sessionKey],
+          validationRefs: [],
+          changedFileRefs: [],
+          ownerSummary: `OpenClaw node worker prompt authoring blocked: ${promptResult.blockerKind}`,
+          eli5Summary:
+            "The node worker did not start because NodeLifecycleRunner could not author a complete worker prompt.",
+          reasonCodes: [
+            ...promptResult.reasonCodes,
+            `node_worker_prompt_blocker:${promptResult.blockerKind}`,
+          ],
+          metadata,
+          rawPromptStored: false,
+          rawResponseStored: false,
+          rawProviderLogStored: false,
+          rawToolLogStored: false,
+          workQueueLifecycleMutated: false,
+          runtimeLifecycleMutated: false,
+        };
+      }
+      const workerPromptArtifact = await attachNodeAgentWorkerPromptArtifact({
+        runtimeJobs: input.runtimeJobs,
+        nodeExecutionSnapshot,
+        workerPrompt: promptResult.workerPrompt,
+      });
+      logNodeAgentStartTiming("worker_prompt_artifact_attached", nodeAgentStartTimingStartedAt, {
+        promptHash: promptResult.workerPrompt.promptHash,
+        promptByteCount: promptResult.workerPrompt.promptByteCount,
+      });
+      const parentRequiredCanonicalDocPaths =
+        (await resolveSourceBackedAgentBootstrapFilePaths({
+          config,
+          sessionKey: nodeRun.sessionKey,
+          sessionId: nodeRun.nodeRunId,
+          agentId: nodeRun.agentId,
+          fileNames: requiredDocNames,
+        })) ??
+        requiredDocNames.map((docName) =>
+          path.join(
+            resolveAgentProjectRootDir(config, nodeRun.agentId),
+            "docs",
+            "agents",
+            nodeRun.agentId,
+            "runtime",
+            docName,
+          ),
+        );
+      logNodeAgentStartTiming("parent_bootstrap_paths_resolved", nodeAgentStartTimingStartedAt, {
+        docCount: parentRequiredCanonicalDocPaths.length,
+      });
+      const preSessionReceipt = withWorkerPromptSessionProof({
+        receipt: {
+          ...startPreparation.receipt,
+          reasonCodes: uniqueStringList([
+            ...startPreparation.receipt.reasonCodes,
+            "node_agent_session_launch_prepared_before_native_session_invocation",
+          ]),
+        },
         workerPrompt: promptResult.workerPrompt,
         workerPromptArtifactRef: workerPromptArtifact.uri,
         sessionFilePath,
-        finalPromptText: sessionResult.runResult?.meta.finalPromptText ?? null,
-        systemPromptReport: sessionResult.runResult?.meta.systemPromptReport,
-        effectiveToolNames: sessionResult.runResult?.meta.effectiveToolNames ?? null,
+        finalPromptText: null,
+        systemPromptReport: null,
+        effectiveToolNames: null,
         requiredCanonicalDocNames: requiredDocNames,
         requiredCanonicalDocPaths: parentRequiredCanonicalDocPaths,
         requiredSkillNames,
         requiredSkillSources: parentRequiredSkillSources,
         requiredToolNames,
         forbiddenToolNames,
-        enforceProviderBootstrapAdmission: true,
-      }),
-      sessionLaunchRef: stringFromRecord(nativeSessionTrace, "sessionLaunchRef"),
-      sessionLaunchEventRef: stringFromRecord(nativeSessionTrace, "sessionLaunchEventRef"),
-    };
-    const nodeStartBlocked = startReceipt.status === "blocked";
-    const finish = sessionResult.finish;
-    const finishArtifactRef = sessionResult.nodeRun.finishArtifactRef;
-    const sessionTodo = readSessionTodo({
-      storePath: resolveStorePath(config.session?.store, {
-        agentId: sessionResult.nodeRun.agentId,
-      }),
-      sessionKey: sessionResult.nodeRun.sessionKey,
+        enforceProviderBootstrapAdmission: false,
+      });
+      const nodeAgentStepBudget = deriveNodeAgentStepBudgetFromSnapshot(nodeExecutionSnapshot);
+      const nodeAgentDir = resolveAgentDir(config, nodeRun.agentId);
+      const nodeAgentAuthStorage = discoverAuthStorage(nodeAgentDir, { syncExternalCli: false });
+      const nodeAgentModelRegistry = discoverModels(nodeAgentAuthStorage, nodeAgentDir);
+      logNodeAgentStartTiming("node_model_runtime_admitted", nodeAgentStartTimingStartedAt, {
+        agentDir: nodeAgentDir,
+      });
+      let sessionResult: Awaited<ReturnType<typeof runNodeAgentSession>>;
+      try {
+        logNodeAgentStartTiming("before_run_node_agent_session", nodeAgentStartTimingStartedAt, {
+          sessionFilePath,
+          workspaceDir: nodeExecutionWorkspaceDir,
+        });
+        sessionResult = await runNodeAgentSession({
+          nodeRunId: nodeRun.nodeRunId,
+          nodeRuns,
+          hydrateSnapshot: async (snapshotRef) =>
+            snapshotRef === nodeExecutionSnapshot.snapshotRef ? nodeExecutionSnapshot : null,
+          recordFinishArtifact,
+          runEmbeddedAgent: runEmbeddedPiAgent,
+          workerPromptText: promptResult.promptText,
+          stepBudget: nodeAgentStepBudget,
+          agentParams: {
+            sessionId: nodeRun.nodeRunId,
+            sessionFile: sessionFilePath,
+            workspaceDir: nodeExecutionWorkspaceDir,
+            agentDir: nodeAgentDir,
+            config,
+            authStorage: nodeAgentAuthStorage,
+            modelRegistry: nodeAgentModelRegistry,
+            skillsSnapshot,
+            ...(agentModel ? { provider: agentModel.provider, model: agentModel.model } : {}),
+            ...(agentThinkingLevel ? { thinkLevel: agentThinkingLevel } : {}),
+            ...(agentReasoningLevel ? { reasoningLevel: agentReasoningLevel } : {}),
+            trigger: "manual",
+            timeoutMs: 1_200_000,
+            runId: nodeRun.nodeRunId,
+            disableMessageTool: true,
+            requireExplicitMessageTarget: true,
+            allowGatewaySubagentBinding: true,
+            runtimePluginIds: [],
+            modelsJsonPolicy: "reuse-existing",
+            nodeAgentNativeTaskMode: {
+              enabled: true,
+              allowedAgentIds: expectedChildAgentIds,
+              mutationToolName: "edit",
+            },
+            requiredProviderContextAdmission: {
+              workspaceFileNames: parentRequiredCanonicalDocPaths,
+              skillNames: requiredSkillNames,
+              skillSources: parentRequiredSkillSources,
+              rejectTruncatedWorkspaceFiles: true,
+            },
+            bootstrapContextMode: "full",
+            bootstrapContextRunKind: "default",
+            toolResultFormat: "markdown",
+            nativeRuntimeTools: [
+              createExecutionPlatformResourceReadTool({
+                runtimeJobId: nodeExecutionSnapshot.runtimeJobId,
+                nodeExecutionSnapshot,
+                repository: input.runtimeJobs,
+              }),
+            ],
+          },
+        });
+      } catch (error) {
+        const errorName = error instanceof Error ? error.name : "unknown_error";
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        const blockedReceipt = {
+          ...preSessionReceipt,
+          status: "blocked" as const,
+          blockerKind: "node_agent_session_invocation_failed",
+          blockers: uniqueStringList([
+            ...preSessionReceipt.blockers,
+            "node_agent_session_invocation_failed",
+          ]),
+          reasonCodes: uniqueStringList([
+            ...preSessionReceipt.reasonCodes,
+            "node_agent_session_invocation_failed",
+            `node_agent_session_invocation_error_name:${errorName}`,
+            `node_agent_session_invocation_error_hash:${stableTextHash(errorMessage).slice(0, 20)}`,
+          ]),
+        };
+        const blockedLaunch = await recordBlockedNodeSessionLaunch({
+          config,
+          nodeRun,
+          receipt: blockedReceipt,
+          blockerKind: "node_agent_session_invocation_failed",
+          blockers: blockedReceipt.blockers,
+          reasonCodes: blockedReceipt.reasonCodes,
+          promptHash: blockedReceipt.promptHash,
+          submittedPromptHash: blockedReceipt.submittedPromptHash,
+          promptHashMatched: blockedReceipt.promptSessionHashMatch,
+        });
+        return {
+          status: "blocked",
+          outputArtifactRefs: [nodeExecutionSnapshot.snapshotRef, workerPromptArtifact.uri],
+          producedOutputRefs: [nodeExecutionSnapshot.snapshotRef, workerPromptArtifact.uri],
+          artifactRefs: [nodeExecutionSnapshot.snapshotRef, workerPromptArtifact.uri],
+          modelRunRefs: [nodeRun.sessionKey, promptResult.workerPrompt.modelRunRef],
+          validationRefs: [],
+          changedFileRefs: [],
+          ownerSummary: `OpenClaw node agent session invocation failed before a terminal trace: ${errorName}.`,
+          eli5Summary:
+            "The node worker prompt was ready, but the native OpenClaw agent session failed before it returned a session trace.",
+          reasonCodes: uniqueStringList([
+            ...blockedReceipt.reasonCodes,
+            blockedLaunch.persisted
+              ? "node_agent_session_invocation_failed_native_session_launch_recorded"
+              : `node_agent_session_invocation_failed_native_session_launch_not_persisted:${blockedLaunch.reason}`,
+          ]),
+          metadata: {
+            nodeRunId: nodeRun.nodeRunId,
+            nodeAgentId: nodeRun.agentId,
+            nodeAgentSessionKey: nodeRun.sessionKey,
+            nodeExecutionSnapshotRef: nodeExecutionSnapshot.snapshotRef,
+            nodeAgentStartReceiptRef: null,
+            ...nodeSessionLaunchMetadata(blockedLaunch),
+            nodeWorkerPromptRef: promptResult.workerPrompt.promptRef,
+            nodeWorkerPromptArtifactRef: workerPromptArtifact.uri,
+            nodeWorkerPromptHash: promptResult.workerPrompt.promptHash,
+            nodeWorkerPromptByteCount: promptResult.workerPrompt.promptByteCount,
+            nodeWorkerPromptStatus: "accepted",
+            nodeAgentStartStatus: "blocked",
+            nodeAgentSessionInvocationErrorName: errorName,
+            nodeAgentSessionInvocationErrorHash: stableTextHash(errorMessage).slice(0, 20),
+            ...nodeAgentSourceRuntimeMetadata(blockedReceipt),
+            nodeFinishArtifactRef: null,
+            nodeFinishStatus: null,
+            nodeFinishBlockerKind: "node_agent_session_invocation_failed",
+            rawPromptStored: false,
+            rawResponseStored: false,
+            rawProviderLogStored: false,
+            rawTranscriptStored: false,
+            hiddenReasoningStored: false,
+          },
+          rawPromptStored: false,
+          rawResponseStored: false,
+          rawProviderLogStored: false,
+          rawToolLogStored: false,
+          workQueueLifecycleMutated: false,
+          runtimeLifecycleMutated: false,
+        };
+      }
+      const nativeSessionTrace = sessionResult.runResult?.meta.nodeAgentSessionTrace;
+      const startReceipt = {
+        ...withWorkerPromptSessionProof({
+          receipt: withNativeLockTrace({
+            receipt: startPreparation.receipt,
+            lockAcquisitionTrace: sessionResult.lockAcquisitionTrace,
+          }),
+          workerPrompt: promptResult.workerPrompt,
+          workerPromptArtifactRef: workerPromptArtifact.uri,
+          sessionFilePath,
+          finalPromptText: sessionResult.runResult?.meta.finalPromptText ?? null,
+          systemPromptReport: sessionResult.runResult?.meta.systemPromptReport,
+          effectiveToolNames: sessionResult.runResult?.meta.effectiveToolNames ?? null,
+          requiredCanonicalDocNames: requiredDocNames,
+          requiredCanonicalDocPaths: parentRequiredCanonicalDocPaths,
+          requiredSkillNames,
+          requiredSkillSources: parentRequiredSkillSources,
+          requiredToolNames,
+          forbiddenToolNames,
+          enforceProviderBootstrapAdmission: true,
+        }),
+        sessionLaunchRef: stringFromRecord(nativeSessionTrace, "sessionLaunchRef"),
+        sessionLaunchEventRef: stringFromRecord(nativeSessionTrace, "sessionLaunchEventRef"),
+      };
+      const nodeStartBlocked = startReceipt.status === "blocked";
+      const finish = sessionResult.finish;
+      const finishArtifactRef = sessionResult.nodeRun.finishArtifactRef;
+      const sessionTodo = readSessionTodo({
+        storePath: resolveStorePath(config.session?.store, {
+          agentId: sessionResult.nodeRun.agentId,
+        }),
+        sessionKey: sessionResult.nodeRun.sessionKey,
+      });
+      const sessionTrace = buildNodeAgentSessionTrace({
+        nodeRun: sessionResult.nodeRun,
+        nodeExecutionSnapshot,
+        workerPrompt: promptResult.workerPrompt,
+        workerPromptArtifactRef: workerPromptArtifact.uri,
+        sessionTodo,
+        stepBudget: nodeAgentStepBudget,
+        status: sessionResult.status,
+        runResult: sessionResult.runResult,
+        finish,
+        finishArtifactRef,
+      });
+      const sessionTraceArtifact = await input.runtimeJobs.attachRuntimeArtifactByContract({
+        jobId: nodeExecutionSnapshot.runtimeJobId,
+        artifactType: NODE_AGENT_SESSION_TRACE_ARTIFACT_TYPE,
+        uri: sessionTrace.traceRef,
+        body: sessionTrace as unknown as JsonValue,
+        boundedSummary: `Node agent session trace for ${nodeExecutionSnapshot.nodeId}: ${sessionTrace.status}.`,
+        targetNodeIds: [nodeExecutionSnapshot.nodeId],
+        reasonCodes: ["node_agent_session_trace_artifact_attached", ...sessionTrace.reasonCodes],
+        createdBy: "openclaw_node_session_executor",
+        metadata: {
+          nodeRunId: sessionTrace.nodeRunId,
+          nodeId: sessionTrace.nodeId,
+          graphId: sessionTrace.graphId,
+          nodeAgentId: sessionTrace.agentId,
+          nodeAgentSessionKey: sessionTrace.parentSessionKey,
+          nodeExecutionSnapshotRef: sessionTrace.snapshotRef,
+          nodeWorkerPromptRef: sessionTrace.workerPromptRef,
+          nodeWorkerPromptArtifactRef: sessionTrace.workerPromptArtifactRef,
+          nodeWorkerPromptHash: sessionTrace.promptHash,
+          nodeWorkerPromptAuthorModelRunRef: sessionTrace.promptAuthorModelRunRef,
+          nodeFinishArtifactRef: sessionTrace.finishArtifactRef,
+          nodeAgentSessionStatus: sessionTrace.status,
+          nodeAgentSessionStopReason: sessionTrace.stopReason,
+          nodeExecutionWaitingOnSubagent: sessionTrace.yieldedForSubagent,
+          nodeAgentObservedToolNames: sessionTrace.observedToolNames,
+          nodeAgentToolCallCount: sessionTrace.toolCallCount,
+          nodeAgentStepBudget: sessionTrace.stepBudget as unknown as JsonValue,
+          nodeAgentTraceMissingOptics: sessionTrace.missingOptics,
+          nodeAgentTraceEventRefs: sessionTrace.eventRefs as unknown as JsonValue,
+          nodeAgentSessionLaunch: sessionTrace.sessionLaunch as unknown as JsonValue,
+          nodeAgentSessionLaunchStatus: sessionTrace.sessionLaunch.admissionStatus,
+          nodeAgentSessionLaunchBlockerKind: sessionTrace.sessionLaunch.blockerKind,
+          nodeAgentSessionLaunchCwd: sessionTrace.sessionLaunch.cwd,
+          nodeAgentSessionLaunchProvider: sessionTrace.sessionLaunch.provider,
+          nodeAgentSessionLaunchModel: sessionTrace.sessionLaunch.model,
+          nodeAgentSessionLaunchReasoningLevel: sessionTrace.sessionLaunch.reasoningLevel,
+          nodeAgentSessionLaunchThinkingLevel: sessionTrace.sessionLaunch.thinkingLevel,
+          nodeAgentSessionLaunchToolCatalogRef: sessionTrace.sessionLaunch.toolCatalogRef,
+          nodeAgentTraceChildBootstrapAdmissions:
+            sessionTrace.childBootstrapAdmissions as unknown as JsonValue,
+          nodeAgentTraceObservations: sessionTrace.observations as unknown as JsonValue,
+          nodeAgentNativeCompactionCount: sessionTrace.contextManagement.nativeCompactionCount,
+          artifactPolicyRef: sessionTrace.storagePolicy.artifactPolicyRef,
+          rawStoragePolicyRef: sessionTrace.storagePolicy.rawStoragePolicyRef,
+          boundedRefsOnly: sessionTrace.storagePolicy.boundedRefsOnly,
+        },
+      });
+      const outputArtifactRefs = [
+        nodeExecutionSnapshot.snapshotRef,
+        workerPromptArtifact.uri,
+        sessionTraceArtifact.uri,
+        ...(finishArtifactRef ? [finishArtifactRef] : []),
+        ...(finish?.evidenceRefs ?? []),
+      ];
+      const ownerSummary = nodeStartBlocked
+        ? `OpenClaw node agent start blocked: ${startReceipt.blockerKind ?? "provider bootstrap admission failed"}.`
+        : (finish?.summary ??
+          (sessionResult.status === "waiting_on_subagent"
+            ? "OpenClaw node agent yielded while waiting for a native subagent result."
+            : "OpenClaw node agent session did not produce node_finish."));
+      const eli5Summary = nodeStartBlocked
+        ? "The OpenClaw node agent session did not satisfy native start proof because required bootstrap or skill context was not proven in the provider-visible prompt."
+        : sessionResult.status === "completed"
+          ? "The OpenClaw node agent finished the graph node and supplied evidence."
+          : sessionResult.status === "waiting_on_subagent"
+            ? "The OpenClaw node agent yielded while waiting for a native subagent result."
+            : "The OpenClaw node agent could not complete the graph node and returned a typed blocker.";
+      const executionStatus = nodeStartBlocked
+        ? "blocked"
+        : sessionResult.status === "completed"
+          ? "succeeded"
+          : sessionResult.status === "waiting_on_subagent"
+            ? "waiting_for_human"
+            : "blocked";
+      return {
+        status: executionStatus,
+        outputArtifactRefs,
+        producedOutputRefs: outputArtifactRefs,
+        artifactRefs: outputArtifactRefs,
+        modelRunRefs: [nodeRun.sessionKey, promptResult.workerPrompt.modelRunRef],
+        validationRefs: finish?.evidenceRefs.filter((ref) => ref.includes("validation")) ?? [],
+        changedFileRefs: finish?.evidenceRefs.filter((ref) => ref.includes("file")) ?? [],
+        ownerSummary,
+        eli5Summary,
+        reasonCodes: [
+          ...startReceipt.reasonCodes,
+          ...sessionResult.reasonCodes,
+          `node_agent_session_status:${sessionResult.status}`,
+        ],
+        metadata: {
+          nodeRunId: nodeRun.nodeRunId,
+          nodeAgentId: nodeRun.agentId,
+          nodeAgentSessionKey: nodeRun.sessionKey,
+          nodeExecutionSnapshotRef: nodeExecutionSnapshot.snapshotRef,
+          nodeAgentStartReceiptRef: null,
+          nodeAgentStartStatus: startReceipt.status,
+          nodeWorkerPromptRef: promptResult.workerPrompt.promptRef,
+          nodeWorkerPromptArtifactRef: workerPromptArtifact.uri,
+          nodeWorkerPromptHash: promptResult.workerPrompt.promptHash,
+          nodeWorkerPromptByteCount: promptResult.workerPrompt.promptByteCount,
+          nodeWorkerPromptStatus: "accepted",
+          nodeAgentSessionMessageId: startReceipt.nativeSessionMessageId,
+          nodeAgentInitialMessageHash: startReceipt.nativeSessionInitialMessageHash,
+          nodeAgentPromptSessionHashMatch: startReceipt.promptSessionHashMatch,
+          nodeAgentSessionTranscriptRef: startReceipt.nativeSessionTranscriptRef,
+          nodeAgentStartLockAcquisitionOutcome: startReceipt.lockAcquisitionOutcome,
+          nodeAgentStartConfigFingerprint: startReceipt.activeConfigFingerprint,
+          nodeAgentStartConfigEpoch: startReceipt.activeConfigEpoch,
+          ...nodeAgentSourceRuntimeMetadata(startReceipt),
+          nodeAgentSessionTraceRef: sessionTraceArtifact.uri,
+          nodeAgentSessionTraceMissingOptics: sessionTrace.missingOptics,
+          nodeAgentSessionTraceEventRefs: sessionTrace.eventRefs as unknown as JsonValue,
+          nodeFinishArtifactRef: finishArtifactRef,
+          nodeFinishStatus: finish?.status ?? null,
+          nodeFinishBlockerKind: finish?.blockerKind ?? null,
+          nodeExecutionWaitingOnSubagent: sessionResult.status === "waiting_on_subagent",
+          nodeKind: node.nodeKind ?? null,
+          assignedRole: node.assignedRole ?? null,
+          artifactPolicyRef: sessionTrace.storagePolicy.artifactPolicyRef,
+          rawStoragePolicyRef: sessionTrace.storagePolicy.rawStoragePolicyRef,
+          boundedRefsOnly: sessionTrace.storagePolicy.boundedRefsOnly,
+        } satisfies JsonValue,
+        rawPromptStored: false,
+        rawResponseStored: false,
+        rawProviderLogStored: false,
+        rawToolLogStored: false,
+        workQueueLifecycleMutated: false,
+        runtimeLifecycleMutated: false,
+      };
     });
-    const sessionTrace = buildNodeAgentSessionTrace({
-      nodeRun: sessionResult.nodeRun,
-      nodeExecutionSnapshot,
-      workerPrompt: promptResult.workerPrompt,
-      workerPromptArtifactRef: workerPromptArtifact.uri,
-      sessionTodo,
-      stepBudget: nodeAgentStepBudget,
-      status: sessionResult.status,
-      runResult: sessionResult.runResult,
-      finish,
-      finishArtifactRef,
-    });
-    const sessionTraceArtifact = await input.runtimeJobs.attachRuntimeArtifactByContract({
-      jobId: nodeExecutionSnapshot.runtimeJobId,
-      artifactType: NODE_AGENT_SESSION_TRACE_ARTIFACT_TYPE,
-      uri: sessionTrace.traceRef,
-      body: sessionTrace as unknown as JsonValue,
-      boundedSummary: `Node agent session trace for ${nodeExecutionSnapshot.nodeId}: ${sessionTrace.status}.`,
-      targetNodeIds: [nodeExecutionSnapshot.nodeId],
-      reasonCodes: ["node_agent_session_trace_artifact_attached", ...sessionTrace.reasonCodes],
-      createdBy: "openclaw_node_session_executor",
-      metadata: {
-        nodeRunId: sessionTrace.nodeRunId,
-        nodeId: sessionTrace.nodeId,
-        graphId: sessionTrace.graphId,
-        nodeAgentId: sessionTrace.agentId,
-        nodeAgentSessionKey: sessionTrace.parentSessionKey,
-        nodeExecutionSnapshotRef: sessionTrace.snapshotRef,
-        nodeWorkerPromptRef: sessionTrace.workerPromptRef,
-        nodeWorkerPromptArtifactRef: sessionTrace.workerPromptArtifactRef,
-        nodeWorkerPromptHash: sessionTrace.promptHash,
-        nodeWorkerPromptAuthorModelRunRef: sessionTrace.promptAuthorModelRunRef,
-        nodeFinishArtifactRef: sessionTrace.finishArtifactRef,
-        nodeAgentSessionStatus: sessionTrace.status,
-        nodeAgentSessionStopReason: sessionTrace.stopReason,
-        nodeExecutionWaitingOnSubagent: sessionTrace.yieldedForSubagent,
-        nodeAgentObservedToolNames: sessionTrace.observedToolNames,
-        nodeAgentToolCallCount: sessionTrace.toolCallCount,
-        nodeAgentStepBudget: sessionTrace.stepBudget as unknown as JsonValue,
-        nodeAgentTraceMissingOptics: sessionTrace.missingOptics,
-        nodeAgentTraceEventRefs: sessionTrace.eventRefs as unknown as JsonValue,
-        nodeAgentSessionLaunch: sessionTrace.sessionLaunch as unknown as JsonValue,
-        nodeAgentSessionLaunchStatus: sessionTrace.sessionLaunch.admissionStatus,
-        nodeAgentSessionLaunchBlockerKind: sessionTrace.sessionLaunch.blockerKind,
-        nodeAgentSessionLaunchCwd: sessionTrace.sessionLaunch.cwd,
-        nodeAgentSessionLaunchProvider: sessionTrace.sessionLaunch.provider,
-        nodeAgentSessionLaunchModel: sessionTrace.sessionLaunch.model,
-        nodeAgentSessionLaunchReasoningLevel: sessionTrace.sessionLaunch.reasoningLevel,
-        nodeAgentSessionLaunchThinkingLevel: sessionTrace.sessionLaunch.thinkingLevel,
-        nodeAgentSessionLaunchToolCatalogRef: sessionTrace.sessionLaunch.toolCatalogRef,
-        nodeAgentTraceChildBootstrapAdmissions:
-          sessionTrace.childBootstrapAdmissions as unknown as JsonValue,
-        nodeAgentTraceObservations: sessionTrace.observations as unknown as JsonValue,
-        nodeAgentNativeCompactionCount: sessionTrace.contextManagement.nativeCompactionCount,
-        artifactPolicyRef: sessionTrace.storagePolicy.artifactPolicyRef,
-        rawStoragePolicyRef: sessionTrace.storagePolicy.rawStoragePolicyRef,
-        boundedRefsOnly: sessionTrace.storagePolicy.boundedRefsOnly,
-      },
-    });
-    const outputArtifactRefs = [
-      nodeExecutionSnapshot.snapshotRef,
-      workerPromptArtifact.uri,
-      sessionTraceArtifact.uri,
-      ...(finishArtifactRef ? [finishArtifactRef] : []),
-      ...(finish?.evidenceRefs ?? []),
-    ];
-    const ownerSummary = nodeStartBlocked
-      ? `OpenClaw node agent start blocked: ${startReceipt.blockerKind ?? "provider bootstrap admission failed"}.`
-      : (finish?.summary ??
-        (sessionResult.status === "waiting_on_subagent"
-          ? "OpenClaw node agent yielded while waiting for a native subagent result."
-          : "OpenClaw node agent session did not produce node_finish."));
-    const eli5Summary = nodeStartBlocked
-      ? "The OpenClaw node agent session did not satisfy native start proof because required bootstrap or skill context was not proven in the provider-visible prompt."
-      : sessionResult.status === "completed"
-        ? "The OpenClaw node agent finished the graph node and supplied evidence."
-        : sessionResult.status === "waiting_on_subagent"
-          ? "The OpenClaw node agent yielded while waiting for a native subagent result."
-          : "The OpenClaw node agent could not complete the graph node and returned a typed blocker.";
-    const executionStatus = nodeStartBlocked
-      ? "blocked"
-      : sessionResult.status === "completed"
-        ? "succeeded"
-        : sessionResult.status === "waiting_on_subagent"
-          ? "waiting_for_human"
-          : "blocked";
-    return {
-      status: executionStatus,
-      outputArtifactRefs,
-      producedOutputRefs: outputArtifactRefs,
-      artifactRefs: outputArtifactRefs,
-      modelRunRefs: [nodeRun.sessionKey, promptResult.workerPrompt.modelRunRef],
-      validationRefs: finish?.evidenceRefs.filter((ref) => ref.includes("validation")) ?? [],
-      changedFileRefs: finish?.evidenceRefs.filter((ref) => ref.includes("file")) ?? [],
-      ownerSummary,
-      eli5Summary,
-      reasonCodes: [
-        ...startReceipt.reasonCodes,
-        ...sessionResult.reasonCodes,
-        `node_agent_session_status:${sessionResult.status}`,
-      ],
-      metadata: {
-        nodeRunId: nodeRun.nodeRunId,
-        nodeAgentId: nodeRun.agentId,
-        nodeAgentSessionKey: nodeRun.sessionKey,
-        nodeExecutionSnapshotRef: nodeExecutionSnapshot.snapshotRef,
-        nodeAgentStartReceiptRef: null,
-        nodeAgentStartStatus: startReceipt.status,
-        nodeWorkerPromptRef: promptResult.workerPrompt.promptRef,
-        nodeWorkerPromptArtifactRef: workerPromptArtifact.uri,
-        nodeWorkerPromptHash: promptResult.workerPrompt.promptHash,
-        nodeWorkerPromptByteCount: promptResult.workerPrompt.promptByteCount,
-        nodeWorkerPromptStatus: "accepted",
-        nodeAgentSessionMessageId: startReceipt.nativeSessionMessageId,
-        nodeAgentInitialMessageHash: startReceipt.nativeSessionInitialMessageHash,
-        nodeAgentPromptSessionHashMatch: startReceipt.promptSessionHashMatch,
-        nodeAgentSessionTranscriptRef: startReceipt.nativeSessionTranscriptRef,
-        nodeAgentStartLockAcquisitionOutcome: startReceipt.lockAcquisitionOutcome,
-        nodeAgentStartConfigFingerprint: startReceipt.activeConfigFingerprint,
-        nodeAgentStartConfigEpoch: startReceipt.activeConfigEpoch,
-        ...nodeAgentSourceRuntimeMetadata(startReceipt),
-        nodeAgentSessionTraceRef: sessionTraceArtifact.uri,
-        nodeAgentSessionTraceMissingOptics: sessionTrace.missingOptics,
-        nodeAgentSessionTraceEventRefs: sessionTrace.eventRefs as unknown as JsonValue,
-        nodeFinishArtifactRef: finishArtifactRef,
-        nodeFinishStatus: finish?.status ?? null,
-        nodeFinishBlockerKind: finish?.blockerKind ?? null,
-        nodeExecutionWaitingOnSubagent: sessionResult.status === "waiting_on_subagent",
-        nodeKind: node.nodeKind ?? null,
-        assignedRole: node.assignedRole ?? null,
-        artifactPolicyRef: sessionTrace.storagePolicy.artifactPolicyRef,
-        rawStoragePolicyRef: sessionTrace.storagePolicy.rawStoragePolicyRef,
-        boundedRefsOnly: sessionTrace.storagePolicy.boundedRefsOnly,
-      } satisfies JsonValue,
-      rawPromptStored: false,
-      rawResponseStored: false,
-      rawProviderLogStored: false,
-      rawToolLogStored: false,
-      workQueueLifecycleMutated: false,
-      runtimeLifecycleMutated: false,
-    };
-  };
 }
 
 export async function runGatewayAgentTeamRuntimeJobOnce(input: {

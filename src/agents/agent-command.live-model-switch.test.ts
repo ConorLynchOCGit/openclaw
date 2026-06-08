@@ -10,6 +10,9 @@ const state = vi.hoisted(() => ({
   clearAgentRunContextMock: vi.fn(),
   updateSessionStoreAfterAgentRunMock: vi.fn(),
   deliverAgentCommandResultMock: vi.fn(),
+  ensureAgentWorkspaceMock: vi.fn(async (params: { dir?: string }) => ({
+    dir: params.dir ?? "/tmp/workspace",
+  })),
 }));
 
 vi.mock("./model-fallback.js", () => ({
@@ -287,7 +290,7 @@ vi.mock("./timeout.js", () => ({
 }));
 
 vi.mock("./workspace.js", () => ({
-  ensureAgentWorkspace: async () => ({ dir: "/tmp/workspace" }),
+  ensureAgentWorkspace: (params: { dir?: string }) => state.ensureAgentWorkspaceMock(params),
 }));
 
 vi.mock("../acp/control-plane/manager.js", () => ({
@@ -321,6 +324,9 @@ function makeSuccessResult(provider: string, model: string) {
 describe("agentCommand – LiveSessionModelSwitchError retry", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    state.ensureAgentWorkspaceMock.mockImplementation(async (params: { dir?: string }) => ({
+      dir: params.dir ?? "/tmp/workspace",
+    }));
     state.deliverAgentCommandResultMock.mockResolvedValue(undefined);
     state.updateSessionStoreAfterAgentRunMock.mockResolvedValue(undefined);
   });
@@ -472,6 +478,60 @@ describe("agentCommand – LiveSessionModelSwitchError retry", () => {
 
     expect(capturedAuthProfileProvider).toBe("openai");
     expect(state.runWithModelFallbackMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not seed bootstrap files into inherited spawned workspaces", async () => {
+    state.runWithModelFallbackMock.mockImplementation(async (params: FallbackRunnerParams) => {
+      const result = await params.run(params.provider, params.model);
+      return {
+        result,
+        provider: params.provider,
+        model: params.model,
+        attempts: [],
+      };
+    });
+    state.runAgentAttemptMock.mockResolvedValue(makeSuccessResult("anthropic", "claude"));
+
+    const agentCommand = await getAgentCommand();
+    await agentCommand({
+      message: "hello",
+      to: "+1234567890",
+      senderIsOwner: true,
+      spawnedBy: "agent:main:subagent:parent",
+      workspaceDir: "/home/node/.openclaw/host-operator/openclaw-live",
+    });
+
+    expect(state.ensureAgentWorkspaceMock).toHaveBeenCalledWith({
+      dir: "/home/node/.openclaw/host-operator/openclaw-live",
+      ensureBootstrapFiles: false,
+    });
+  });
+
+  it("honors explicit seedBootstrapFiles false for gateway source workspaces", async () => {
+    state.runWithModelFallbackMock.mockImplementation(async (params: FallbackRunnerParams) => {
+      const result = await params.run(params.provider, params.model);
+      return {
+        result,
+        provider: params.provider,
+        model: params.model,
+        attempts: [],
+      };
+    });
+    state.runAgentAttemptMock.mockResolvedValue(makeSuccessResult("anthropic", "claude"));
+
+    const agentCommand = await getAgentCommand();
+    await agentCommand({
+      message: "hello",
+      to: "+1234567890",
+      senderIsOwner: true,
+      workspaceDir: "/home/node/.openclaw/host-operator/openclaw-live",
+      seedBootstrapFiles: false,
+    });
+
+    expect(state.ensureAgentWorkspaceMock).toHaveBeenCalledWith({
+      dir: "/home/node/.openclaw/host-operator/openclaw-live",
+      ensureBootstrapFiles: false,
+    });
   });
 
   it("updates hasSessionModelOverride for fallback resolution after switch", async () => {

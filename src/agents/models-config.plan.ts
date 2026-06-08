@@ -106,13 +106,22 @@ export async function planOpenClawModelsJsonWithDeps(
     env: NodeJS.ProcessEnv;
     existingRaw: string;
     existingParsed: unknown;
+    discoverImplicitProviders?: boolean;
   },
   deps?: {
     resolveImplicitProviders?: ResolveImplicitProvidersForModelsJson;
   },
 ): Promise<ModelsJsonPlan> {
   const { cfg, agentDir, env } = params;
-  const providers = await resolveProvidersForModelsJsonWithDeps({ cfg, agentDir, env }, deps);
+  const providers = await resolveProvidersForModelsJsonWithDeps(
+    { cfg, agentDir, env },
+    params.discoverImplicitProviders === false
+      ? {
+          ...deps,
+          resolveImplicitProviders: async () => ({}),
+        }
+      : deps,
+  );
 
   if (Object.keys(providers).length === 0) {
     return { action: "skip" };

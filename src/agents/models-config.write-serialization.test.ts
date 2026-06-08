@@ -13,12 +13,14 @@ const planOpenClawModelsJsonMock = vi.fn();
 installModelsConfigTestHooks();
 
 let ensureOpenClawModelsJson: typeof import("./models-config.js").ensureOpenClawModelsJson;
+let resetModelsJsonReadyCacheForTest: typeof import("./models-config.js").resetModelsJsonReadyCacheForTest;
 
 beforeAll(async () => {
   vi.doMock("./models-config.plan.js", () => ({
     planOpenClawModelsJson: (...args: unknown[]) => planOpenClawModelsJsonMock(...args),
   }));
-  ({ ensureOpenClawModelsJson } = await import("./models-config.js"));
+  ({ ensureOpenClawModelsJson, resetModelsJsonReadyCacheForTest } =
+    await import("./models-config.js"));
 });
 
 beforeEach(() => {
@@ -89,4 +91,16 @@ describe("models-config write serialization", () => {
       );
     });
   }, 60_000);
+
+  it("uses disk readiness after an in-memory cache reset without replanning unchanged models.json", async () => {
+    await withModelsTempHome(async () => {
+      await ensureOpenClawModelsJson(CUSTOM_PROXY_MODELS_CONFIG);
+      expect(planOpenClawModelsJsonMock).toHaveBeenCalledTimes(1);
+
+      resetModelsJsonReadyCacheForTest();
+
+      await ensureOpenClawModelsJson(CUSTOM_PROXY_MODELS_CONFIG);
+      expect(planOpenClawModelsJsonMock).toHaveBeenCalledTimes(1);
+    });
+  });
 });

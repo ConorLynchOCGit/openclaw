@@ -173,6 +173,57 @@ describe("spawnSubagentDirect workspace inheritance", () => {
     });
   });
 
+  it("stores gateway-visible repo mount for execution scout projectRoot inheritance", async () => {
+    hoisted.configOverride = createConfigOverride({
+      agents: {
+        list: [
+          {
+            id: "execution-coding",
+            workspace: "/root/.openclaw/workspace",
+            projectRoot: "/root/services/openclaw-roles/live",
+            subagents: {
+              allowAgents: ["execution-context-scout"],
+            },
+          },
+          {
+            id: "execution-context-scout",
+            workspace: "/home/node/.openclaw/workspace",
+            projectRoot: "/root/services/openclaw-roles/live",
+          },
+        ],
+      },
+    });
+
+    const result = await spawnSubagentDirect(
+      {
+        task: "map execution-platform files",
+        agentId: "execution-context-scout",
+      },
+      {
+        agentSessionKey: "agent:execution-coding:node:nrun_test",
+        agentChannel: "internal",
+        workspaceDir: "/root/services/openclaw-roles/live",
+      },
+    );
+
+    expect(result.status).toBe("accepted");
+    expect(getRegisteredRun()).toMatchObject({
+      workspaceDir: "/home/node/.openclaw/host-operator/openclaw-live",
+    });
+    const lineagePatch = hoisted.callGatewayMock.mock.calls.find(
+      ([request]) =>
+        (request as { method?: string; params?: { spawnedWorkspaceDir?: string } }).method ===
+          "sessions.patch" &&
+        Boolean(
+          (request as { params?: { spawnedWorkspaceDir?: string } }).params?.spawnedWorkspaceDir,
+        ),
+    )?.[0] as { params?: { spawnedWorkspaceDir?: string } } | undefined;
+
+    expect(lineagePatch?.params?.spawnedWorkspaceDir).toBe(
+      "/home/node/.openclaw/host-operator/openclaw-live",
+    );
+  });
+
   async function spawnAndReadAgentParams(task: Parameters<typeof spawnSubagentDirect>[0]) {
     await spawnSubagentDirect(task, {
       agentSessionKey: "agent:main:main",

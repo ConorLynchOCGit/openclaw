@@ -177,6 +177,21 @@ function makeRemotePasswordGatewayConfig(remotePassword: string, localPassword =
   };
 }
 
+function writeGatewayCallStateDir(params: {
+  stateDir: string;
+  config: Record<string, unknown>;
+  envContent?: string;
+}) {
+  fs.mkdirSync(params.stateDir, { recursive: true });
+  fs.writeFileSync(
+    path.join(params.stateDir, "openclaw.json"),
+    `${JSON.stringify(params.config, null, 2)}\n`,
+  );
+  if (params.envContent !== undefined) {
+    fs.writeFileSync(path.join(params.stateDir, ".env"), params.envContent);
+  }
+}
+
 describe("callGateway url resolution", () => {
   const envSnapshot = captureEnv([
     "OPENCLAW_ALLOW_INSECURE_PRIVATE_WS",
@@ -300,6 +315,110 @@ describe("callGateway url resolution", () => {
     expect(loadConfig).not.toHaveBeenCalled();
     expect(lastClientOptions?.url).toBe("ws://127.0.0.1:18800");
     expect(lastClientOptions?.token).toBe("test-token");
+  });
+
+  it("uses lightweight gateway config and state env credentials without full config loading", async () => {
+    const tempStateDir = fs.mkdtempSync(path.join(os.tmpdir(), "openclaw-gateway-call-"));
+    process.env.OPENCLAW_STATE_DIR = tempStateDir;
+    writeGatewayCallStateDir({
+      stateDir: tempStateDir,
+      envContent: "OPENCLAW_GATEWAY_TOKEN=state-token\n",
+      config: {
+        gateway: {
+          mode: "local",
+          bind: "loopback",
+          auth: {
+            mode: "token",
+            token: { source: "env", provider: "default", id: "OPENCLAW_GATEWAY_TOKEN" },
+          },
+        },
+        secrets: {
+          providers: {
+            default: { source: "env" },
+          },
+        },
+        agents: {
+          "execution-coding": {
+            agentDir: "/very/expensive/agent/path",
+          },
+        },
+      },
+    });
+    loadConfig.mockImplementation(() => {
+      throw new Error("loadConfig should not run");
+    });
+    resolveGatewayPort.mockReturnValue(19001);
+
+    try {
+      await callGateway({ method: "health" });
+    } finally {
+      fs.rmSync(tempStateDir, { recursive: true, force: true });
+    }
+
+    expect(loadConfig).not.toHaveBeenCalled();
+    expect(lastClientOptions?.url).toBe("ws://127.0.0.1:19001");
+    expect(lastClientOptions?.token).toBe("state-token");
+  });
+
+  it("uses lightweight gateway config for configured remote gateway URLs", async () => {
+    const tempStateDir = fs.mkdtempSync(path.join(os.tmpdir(), "openclaw-gateway-call-"));
+    process.env.OPENCLAW_STATE_DIR = tempStateDir;
+    writeGatewayCallStateDir({
+      stateDir: tempStateDir,
+      config: {
+        gateway: {
+          mode: "remote",
+          remote: {
+            url: "wss://remote.example/ws",
+            token: "remote-token",
+          },
+        },
+      },
+    });
+    loadConfig.mockImplementation(() => {
+      throw new Error("loadConfig should not run");
+    });
+    resolveGatewayPort.mockReturnValue(19001);
+
+    try {
+      await callGateway({ method: "health" });
+    } finally {
+      fs.rmSync(tempStateDir, { recursive: true, force: true });
+    }
+
+    expect(loadConfig).not.toHaveBeenCalled();
+    expect(lastClientOptions?.url).toBe("wss://remote.example/ws");
+    expect(lastClientOptions?.token).toBe("remote-token");
+  });
+
+  it("falls back to the full config loader for included gateway config", async () => {
+    const tempStateDir = fs.mkdtempSync(path.join(os.tmpdir(), "openclaw-gateway-call-"));
+    process.env.OPENCLAW_STATE_DIR = tempStateDir;
+    fs.writeFileSync(
+      path.join(tempStateDir, "openclaw.json"),
+      '{ "$include": "./gateway.json" }\n',
+    );
+    loadConfig.mockReturnValue({
+      gateway: {
+        mode: "local",
+        bind: "loopback",
+        auth: {
+          mode: "token",
+          token: "included-token",
+        },
+      },
+    });
+    resolveGatewayPort.mockReturnValue(19002);
+
+    try {
+      await callGateway({ method: "health" });
+    } finally {
+      fs.rmSync(tempStateDir, { recursive: true, force: true });
+    }
+
+    expect(loadConfig).toHaveBeenCalledTimes(1);
+    expect(lastClientOptions?.url).toBe("ws://127.0.0.1:19002");
+    expect(lastClientOptions?.token).toBe("included-token");
   });
 
   it("keeps device identity enabled for local loopback shared-token auth", async () => {

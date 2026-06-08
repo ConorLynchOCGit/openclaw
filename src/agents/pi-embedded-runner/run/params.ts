@@ -1,4 +1,5 @@
 import type { ImageContent } from "@mariozechner/pi-ai";
+import type { AuthStorage, ModelRegistry } from "@mariozechner/pi-coding-agent";
 import type { ReplyPayload } from "../../../auto-reply/reply-payload.js";
 import type { ReplyOperation } from "../../../auto-reply/reply/reply-run-registry.js";
 import type { ReasoningLevel, ThinkLevel, VerboseLevel } from "../../../auto-reply/thinking.js";
@@ -16,6 +17,7 @@ import type {
   ToolResultFormat,
 } from "../../pi-embedded-subscribe.shared-types.js";
 import type { AnyAgentTool } from "../../pi-tools.types.js";
+import type { NativeTaskRunChildTask } from "../../session-runtime/native-task-types.js";
 import type { SessionLockAcquisitionTrace } from "../../session-write-lock.js";
 import type { SkillSnapshot } from "../../skills.js";
 import type { RequiredProviderContextAdmission } from "../../system-prompt-report.js";
@@ -46,6 +48,10 @@ export type RunEmbeddedPiAgentParams = {
   groupSpace?: string | null;
   /** Parent session key for subagent policy inheritance. */
   spawnedBy?: string | null;
+  /** Parent tool call id when this session was launched by a native task tool. */
+  parentToolCallId?: string | null;
+  /** Node run id when this agent session is bound to Execution Platform node lifecycle. */
+  nodeRunId?: string | null;
   senderId?: string | null;
   senderName?: string | null;
   senderUsername?: string | null;
@@ -68,6 +74,9 @@ export type RunEmbeddedPiAgentParams = {
   disableMessageTool?: boolean;
   /** Allow runtime plugins for this run to late-bind the gateway subagent. */
   allowGatewaySubagentBinding?: boolean;
+  /** Optional runtime plugin scope for pre-run native plugin activation. */
+  runtimePluginIds?: string[];
+  modelsJsonPolicy?: "refresh" | "reuse-existing";
   sessionFile: string;
   workspaceDir: string;
   agentDir?: string;
@@ -82,6 +91,10 @@ export type RunEmbeddedPiAgentParams = {
   disableTools?: boolean;
   provider?: string;
   model?: string;
+  /** Optional caller-admitted auth storage to avoid rediscovery below session launch. */
+  authStorage?: AuthStorage;
+  /** Optional caller-admitted model registry to avoid rediscovery below session launch. */
+  modelRegistry?: ModelRegistry;
   authProfileId?: string;
   authProfileIdSource?: "auto" | "user";
   thinkLevel?: ThinkLevel;
@@ -118,6 +131,7 @@ export type RunEmbeddedPiAgentParams = {
     allowedAgentIds: readonly string[];
     mutationToolName?: string;
     parentVisibleResultMaxChars?: number;
+    runChildTask?: NativeTaskRunChildTask;
   };
   /**
    * Optional native provider-context admission gate. When set, the embedded

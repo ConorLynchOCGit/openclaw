@@ -12,13 +12,19 @@ import { parseAgentSessionKey } from "../../routing/session-key.js";
 import { normalizeLowercaseStringOrEmpty } from "../../shared/string-coerce.js";
 import type { GatewayMessageChannel } from "../../utils/message-channel.js";
 import {
-  findExecutionPlatformAgentPackEntry,
+  findAgentPackRegistryEntry,
   loadAgentPackRegistryEntries,
   type AgentPackRegistryEntry,
 } from "../agent-pack-registry.js";
 import { resolveAgentConfig, resolveAgentProjectRootDir } from "../agent-scope.js";
 import { resolveSourceBackedAgentBootstrapFilePaths } from "../bootstrap-files.js";
 import { waitForAgentRun, type AgentWaitResult } from "../run-wait.js";
+import type {
+  NativeTaskChildBootstrapAdmission,
+  NativeTaskChildStartFailureKind,
+  NativeTaskForegroundResult,
+  NativeTaskRunChildTask,
+} from "../session-runtime/native-task-types.js";
 import { buildRequiredActiveSkillSnapshot, type SkillSnapshot } from "../skills.js";
 import type { SpawnedToolContext } from "../spawned-context.js";
 import { readSubagentOutput, type SubagentRunOutcome } from "../subagent-announce-output.js";
@@ -29,13 +35,7 @@ import {
   type RequiredProviderSkillSource,
 } from "../system-prompt-report.js";
 import type { AnyAgentTool } from "./common.js";
-import {
-  jsonResult,
-  readNumberParam,
-  readStringParam,
-  textResult,
-  ToolInputError,
-} from "./common.js";
+import { readNumberParam, readStringParam, textResult, ToolInputError } from "./common.js";
 
 const DEFAULT_FOREGROUND_TASK_TIMEOUT_SECONDS = 120;
 const DEFAULT_PARENT_VISIBLE_CHILD_RESULT_MAX_CHARS = 12_000;
@@ -69,71 +69,20 @@ function normalizeAllowedAgentIds(values: readonly string[]): Set<string> {
   return new Set(values.map((value) => normalizeLowercaseStringOrEmpty(value)).filter(Boolean));
 }
 
-export type NativeTaskChildStartFailureKind =
-  | "disallowed_child_agent"
-  | "missing_child_profile"
-  | "wrong_child_identity_selected"
-  | "child_session_receipt_incomplete"
-  | "child_provider_bootstrap_report_missing"
-  | "child_provider_bootstrap_truncated"
-  | "child_docs_missing"
-  | "child_skill_missing"
-  | "child_tool_catalog_invalid"
-  | "child_workspace_unavailable"
-  | "child_session_lock_failure"
-  | "child_provider_model_failure"
-  | "child_result_oversized"
-  | "child_run_timeout"
-  | "child_run_error"
-  | "child_session_start_forbidden"
-  | "child_session_start_failed";
-
-export type NativeTaskForegroundResult = {
-  status: "completed" | "pending" | "timeout" | "error";
-  foreground: true;
-  childSessionKey: string;
-  runId: string;
-  waitStatus: AgentWaitResult["status"];
-  startedAt?: number;
-  endedAt?: number;
-  error?: string;
-  resultText?: string;
-  resultTextHash?: string;
-  resultTextByteCount?: number;
-  resultMaxParentVisibleChars?: number;
-  resultDeliveredToParentContext: boolean;
-  resultTruncated?: boolean;
-  resultOversized?: boolean;
-  childBootstrapAdmission?: NativeTaskChildBootstrapAdmission;
-  childStartFailureKind?: NativeTaskChildStartFailureKind;
-  continuationId?: string;
-};
-
-export type NativeTaskChildBootstrapAdmission = {
-  providerReportObserved: boolean;
-  childAgentId: string;
-  canonicalDocsAdmitted: boolean;
-  requiredSkillAdmitted: boolean;
-  childToolCatalogAdmitted: boolean;
-  providerToolNames: string[];
-  requiredToolNames: string[];
-  missingRequiredToolNames: string[];
-  forbiddenToolNames: string[];
-  requiredSkillSourceRef?: string | null;
-  requiredSkillSourceHash?: string | null;
-  requiredSkillLocation?: string | null;
-  missingRequiredSources: string[];
-  truncatedRequiredSources: string[];
-  reportRef?: string;
-  reasonCodes: string[];
-};
+export type {
+  NativeTaskChildBootstrapAdmission,
+  NativeTaskChildStartFailureKind,
+  NativeTaskForegroundResult,
+  NativeTaskRunChildTask,
+  NativeTaskRunChildTaskParams,
+} from "../session-runtime/native-task-types.js";
 
 type ChildSystemPromptReportReader = (params: {
   childSessionKey: string;
   childAgentId: string;
 }) => Promise<SessionSystemPromptReport | null>;
 
-type RequiredChildBootstrapAdmissionSources = {
+export type RequiredChildBootstrapAdmissionSources = {
   requiredCanonicalDocNames: string[];
   requiredCanonicalDocPaths: string[];
   requiredSkillNames: string[];
@@ -459,7 +408,7 @@ export async function resolveRequiredChildBootstrapAdmissionSources(
   try {
     const config = loadConfig();
     const registryEntries = await loadAgentPackRegistryEntries();
-    const childPackEntry = findExecutionPlatformAgentPackEntry({
+    const childPackEntry = findAgentPackRegistryEntry({
       entries: registryEntries,
       agentId: normalizedChildAgentId,
     });
@@ -725,7 +674,7 @@ function classifySpawnFailure(result: SpawnSubagentResult): NativeTaskChildStart
     return "child_workspace_unavailable";
   }
   if (error.includes("lock")) {
-    return "child_session_lock_failure";
+    return "child_session_lock_failed";
   }
   if (
     error.includes("provider") ||
@@ -904,7 +853,7 @@ function formatNativeTaskParentVisibleText(params: {
       ? `childStartFailureKind: ${params.result.childStartFailureKind}`
       : null,
     params.result.error ? `error: ${params.result.error}` : null,
-    decisionFooter,
+    params.result.status === "error" ? buildParentFailureDecisionFooter() : decisionFooter,
   ]
     .filter((line): line is string => typeof line === "string" && line.length > 0)
     .join("\n");
@@ -928,6 +877,34 @@ function buildParentDecisionFooter(requestedAgentId: string): string {
   return "";
 }
 
+function buildParentFailureDecisionFooter(): string {
+  return [
+    "",
+    "Parent decision required: update todo, then finish with node_finish blocked unless you already have enough source context to proceed safely. Do not probe gateway-status. Do not use openclaw_resource_read for file:// paths.",
+  ].join("\n");
+}
+
+function formatNativeTaskFailureParentVisibleText(params: {
+  requestedAgentId: string;
+  details: Record<string, unknown>;
+}): string {
+  const kind =
+    typeof params.details.childStartFailureKind === "string"
+      ? params.details.childStartFailureKind
+      : "unknown";
+  const status = typeof params.details.status === "string" ? params.details.status : "error";
+  const error = typeof params.details.error === "string" ? params.details.error : undefined;
+  return [
+    `Task delegation to ${params.requestedAgentId} failed before parent-visible child context was delivered.`,
+    `status: ${status}`,
+    `childStartFailureKind: ${kind}`,
+    error ? `error: ${error}` : null,
+    buildParentFailureDecisionFooter(),
+  ]
+    .filter((line): line is string => typeof line === "string" && line.length > 0)
+    .join("\n");
+}
+
 function assertChildRegistryContractComplete(
   sources: RequiredChildBootstrapAdmissionSources,
 ): void {
@@ -939,29 +916,52 @@ function assertChildRegistryContractComplete(
   );
 }
 
-export function createNativeTaskTool(
-  opts: {
-    allowedAgentIds: readonly string[];
-    agentSessionKey?: string;
-    agentChannel?: GatewayMessageChannel;
-    agentAccountId?: string;
-    agentTo?: string;
-    agentThreadId?: string | number;
-    requesterAgentIdOverride?: string;
+type NativeTaskToolInternalOptions = {
+  allowedAgentIds: readonly string[];
+  agentSessionKey?: string;
+  agentChannel?: GatewayMessageChannel;
+  agentAccountId?: string;
+  agentTo?: string;
+  agentThreadId?: string | number;
+  requesterAgentIdOverride?: string;
+  parentVisibleResultMaxChars?: number;
+  spawnSubagent?: typeof spawnSubagentDirect;
+  runChildTask?: NativeTaskRunChildTask;
+  legacyGatewayTaskRuntime?: boolean;
+  waitForForegroundResult?: (params: {
+    childSessionKey: string;
+    runId: string;
+    requestedAgentId: string;
+    runTimeoutSeconds?: number;
     parentVisibleResultMaxChars?: number;
-    spawnSubagent?: typeof spawnSubagentDirect;
-    waitForForegroundResult?: (params: {
-      childSessionKey: string;
-      runId: string;
-      requestedAgentId: string;
-      runTimeoutSeconds?: number;
-      parentVisibleResultMaxChars?: number;
-      requiredBootstrapAdmissionSources?: RequiredChildBootstrapAdmissionSources;
-      readChildSystemPromptReport?: ChildSystemPromptReportReader;
-    }) => Promise<NativeTaskForegroundResult>;
+    requiredBootstrapAdmissionSources?: RequiredChildBootstrapAdmissionSources;
     readChildSystemPromptReport?: ChildSystemPromptReportReader;
-  } & SpawnedToolContext,
+  }) => Promise<NativeTaskForegroundResult>;
+  readChildSystemPromptReport?: ChildSystemPromptReportReader;
+} & SpawnedToolContext;
+
+export function createNativeTaskTool(
+  opts: Omit<
+    NativeTaskToolInternalOptions,
+    "spawnSubagent" | "waitForForegroundResult" | "legacyGatewayTaskRuntime"
+  > & { runChildTask: NativeTaskRunChildTask },
 ): AnyAgentTool {
+  if (!opts.runChildTask) {
+    throw new Error("native task tool requires OpenClaw session-runtime runChildTask");
+  }
+  return createNativeTaskToolInternal(opts);
+}
+
+export function createLegacyGatewayNativeTaskToolForTest(
+  opts: Omit<NativeTaskToolInternalOptions, "runChildTask" | "legacyGatewayTaskRuntime">,
+): AnyAgentTool {
+  return createNativeTaskToolInternal({
+    ...opts,
+    legacyGatewayTaskRuntime: true,
+  });
+}
+
+function createNativeTaskToolInternal(opts: NativeTaskToolInternalOptions): AnyAgentTool {
   const allowedAgentIds = normalizeAllowedAgentIds(opts.allowedAgentIds);
   const allowedText = Array.from(allowedAgentIds).join(", ") || "none";
   return {
@@ -1020,6 +1020,11 @@ export function createNativeTaskTool(
         );
       }
       if (continuation) {
+        if (opts.legacyGatewayTaskRuntime !== true) {
+          throw new ToolInputError(
+            "task continuationId is unavailable for node-worker native task runtime; legacy gateway continuation is disabled.",
+          );
+        }
         const requiredBootstrapSources =
           await resolveRequiredChildBootstrapAdmissionSources(agentId);
         assertChildRegistryContractComplete(requiredBootstrapSources);
@@ -1055,8 +1060,88 @@ export function createNativeTaskTool(
         );
       }
       const task = readStringParam(params, "task", { required: true, label: "task" });
+      if (opts.runChildTask) {
+        const foregroundResult = await opts.runChildTask({
+          parentSessionKey: opts.agentSessionKey,
+          parentToolCallId: _toolCallId,
+          childAgentId: agentId,
+          task,
+          ...(label ? { label } : {}),
+          ...(typeof runTimeoutSeconds === "number" ? { runTimeoutSeconds } : {}),
+          parentVisibleResultMaxChars,
+        });
+        if (
+          !childSessionMatchesRequestedAgent({
+            childSessionKey: foregroundResult.childSessionKey,
+            requestedAgentId: agentId,
+          })
+        ) {
+          const details = {
+            ...stripParentVisibleResultText(foregroundResult),
+            status: "error",
+            error: `task child session identity mismatch; requested ${agentId} but received ${foregroundResult.childSessionKey}.`,
+            sourceTool: "task",
+            requestedAgentId: agentId,
+            foreground: true,
+            resultDeliveredToParentContext: false,
+            childStartFailureKind: "wrong_child_identity_selected",
+            childIdentityVerified: false,
+          };
+          return textResult(
+            formatNativeTaskFailureParentVisibleText({
+              requestedAgentId: agentId,
+              details,
+            }),
+            details,
+          );
+        }
+        const parentVisibleForegroundResult = enforceParentVisibleChildResultBudget(
+          {
+            ...foregroundResult,
+            continuationId: continuationIdForForegroundResult(foregroundResult),
+          },
+          parentVisibleResultMaxChars,
+        );
+        const details = {
+          ...stripParentVisibleResultText(parentVisibleForegroundResult),
+          sourceTool: "task",
+          requestedAgentId: agentId,
+          childIdentityVerified: true,
+          nativeChildSessionRuntime: true,
+        };
+        return textResult(
+          formatNativeTaskParentVisibleText({
+            requestedAgentId: agentId,
+            result: parentVisibleForegroundResult,
+          }),
+          details,
+        );
+      }
+      if (opts.legacyGatewayTaskRuntime !== true) {
+        const details = {
+          status: "blocked",
+          error:
+            "task requires native child-session runtime; legacy gateway task fallback is disabled.",
+          sourceTool: "task",
+          requestedAgentId: agentId,
+          foreground: true,
+          resultDeliveredToParentContext: false,
+          childStartFailureKind: "child_runtime_unavailable",
+        };
+        return textResult(
+          formatNativeTaskFailureParentVisibleText({
+            requestedAgentId: agentId,
+            details,
+          }),
+          details,
+        );
+      }
       const requiredBootstrapSources = await resolveRequiredChildBootstrapAdmissionSources(agentId);
       assertChildRegistryContractComplete(requiredBootstrapSources);
+      const requiredProviderContextAdmission = buildRequiredChildProviderContextAdmission({
+        childAgentId: agentId,
+        sources: requiredBootstrapSources,
+      });
       const result: SpawnSubagentResult = await spawnSubagent(
         {
           task,
@@ -1070,10 +1155,7 @@ export function createNativeTaskTool(
           lightContext: false,
           leafTask: true,
           expectsCompletionMessage: true,
-          requiredProviderContextAdmission: buildRequiredChildProviderContextAdmission({
-            childAgentId: agentId,
-            sources: requiredBootstrapSources,
-          }),
+          requiredProviderContextAdmission,
         },
         {
           agentSessionKey: opts.agentSessionKey,
@@ -1089,17 +1171,24 @@ export function createNativeTaskTool(
         },
       );
       if (result.status !== "accepted") {
-        return jsonResult({
+        const details = {
           ...result,
           sourceTool: "task",
           requestedAgentId: agentId,
           foreground: true,
           resultDeliveredToParentContext: false,
           childStartFailureKind: classifySpawnFailure(result),
-        });
+        };
+        return textResult(
+          formatNativeTaskFailureParentVisibleText({
+            requestedAgentId: agentId,
+            details,
+          }),
+          details,
+        );
       }
       if (!result.childSessionKey?.trim() || !result.runId?.trim()) {
-        return jsonResult({
+        const details = {
           ...result,
           status: "error",
           error: "task accepted without childSessionKey/runId; cannot wait for child result.",
@@ -1108,7 +1197,14 @@ export function createNativeTaskTool(
           foreground: true,
           resultDeliveredToParentContext: false,
           childStartFailureKind: "child_session_receipt_incomplete",
-        });
+        };
+        return textResult(
+          formatNativeTaskFailureParentVisibleText({
+            requestedAgentId: agentId,
+            details,
+          }),
+          details,
+        );
       }
       if (
         !childSessionMatchesRequestedAgent({
@@ -1116,7 +1212,7 @@ export function createNativeTaskTool(
           requestedAgentId: agentId,
         })
       ) {
-        return jsonResult({
+        const details = {
           ...result,
           status: "error",
           error: `task child session identity mismatch; requested ${agentId} but received ${result.childSessionKey}.`,
@@ -1126,7 +1222,14 @@ export function createNativeTaskTool(
           resultDeliveredToParentContext: false,
           childStartFailureKind: "wrong_child_identity_selected",
           childIdentityVerified: false,
-        });
+        };
+        return textResult(
+          formatNativeTaskFailureParentVisibleText({
+            requestedAgentId: agentId,
+            details,
+          }),
+          details,
+        );
       }
       const foregroundResult = await waitForForegroundResult({
         childSessionKey: result.childSessionKey,
