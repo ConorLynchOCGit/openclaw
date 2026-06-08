@@ -3,11 +3,25 @@ import path from "node:path";
 import type { AgentContextInjection } from "../config/types.agent-defaults.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { normalizeOptionalString } from "../shared/string-coerce.js";
-import { resolveAgentConfig, resolveAgentDir, resolveSessionAgentIds } from "./agent-scope.js";
+import {
+  findExecutionPlatformAgentPackEntry,
+  isExecutionPlatformAgentPackId,
+  loadAgentPackRegistryEntries,
+  resolveAgentPackRuntimeSourceRoot,
+  type AgentPackRegistryEntry,
+} from "./agent-pack-registry.js";
+import {
+  resolveAgentConfig,
+  resolveAgentDir,
+  resolveAgentProjectRootDir,
+  resolveSessionAgentIds,
+} from "./agent-scope.js";
 import { getOrLoadBootstrapFiles } from "./bootstrap-cache.js";
 import { materializeCanonicalBootstrapCompatibilityFiles } from "./bootstrap-canonicalization.js";
 import { applyBootstrapHookOverrides } from "./bootstrap-hooks.js";
+import { resolveBootstrapRepoRoot } from "./bootstrap-repo-paths.js";
 import { shouldIncludeHeartbeatGuidanceForSystemPrompt } from "./heartbeat-system-prompt.js";
+import type { ModelMemoryBootstrapOverlay } from "./model-memory.live-runtime.js";
 import type { EmbeddedContextFile } from "./pi-embedded-helpers.js";
 import {
   buildBootstrapContextFiles,
@@ -22,10 +36,17 @@ import {
   type SourceRuntimeUnificationManifest,
 } from "./source-runtime-unification.js";
 import {
+  DEFAULT_AGENTS_FILENAME,
+  DEFAULT_BOOTSTRAP_FILENAME,
   DEFAULT_HEARTBEAT_FILENAME,
+  DEFAULT_IDENTITY_FILENAME,
+  DEFAULT_MEMORY_ALT_FILENAME,
+  DEFAULT_MEMORY_FILENAME,
+  DEFAULT_TOOLS_FILENAME,
   filterBootstrapFilesForSession,
   loadWorkspaceBootstrapFiles,
   type WorkspaceBootstrapFile,
+  type WorkspaceBootstrapFileName,
 } from "./workspace.js";
 
 export type BootstrapContextMode = "full" | "lightweight";
@@ -34,12 +55,32 @@ export type BootstrapContextRunKind = "default" | "heartbeat" | "cron";
 const CONTINUATION_SCAN_MAX_TAIL_BYTES = 256 * 1024;
 const CONTINUATION_SCAN_MAX_RECORDS = 500;
 export const FULL_BOOTSTRAP_COMPLETED_CUSTOM_TYPE = "openclaw:bootstrap-context:full";
+export const SOURCE_BACKED_AGENT_REQUIRED_BOOTSTRAP_DOCS = [
+  DEFAULT_IDENTITY_FILENAME,
+  DEFAULT_AGENTS_FILENAME,
+  DEFAULT_BOOTSTRAP_FILENAME,
+  DEFAULT_TOOLS_FILENAME,
+] as const;
+const SOURCE_BACKED_AGENT_BOOTSTRAP_FILE_NAMES: ReadonlySet<WorkspaceBootstrapFileName> = new Set([
+  ...SOURCE_BACKED_AGENT_REQUIRED_BOOTSTRAP_DOCS,
+  DEFAULT_MEMORY_FILENAME,
+  DEFAULT_MEMORY_ALT_FILENAME,
+]);
 
 export type SourceRuntimeBootstrapMaterializationDeps = {
   loadManifest?: () => Promise<SourceRuntimeUnificationManifest>;
   materializeFiles?: (input: {
     manifest: SourceRuntimeUnificationManifest;
   }) => Promise<SourceRuntimeMaterializationResult>;
+};
+
+export type SourceBackedAgentBootstrapSource = {
+  agentId: string;
+  sourceRoot: string;
+};
+
+type SourceBackedAgentBootstrapDeps = {
+  loadAgentRegistryEntries?: () => Promise<AgentPackRegistryEntry[]>;
 };
 
 export type SourceRuntimeBootstrapMaterializationPreflight =
@@ -216,6 +257,114 @@ function filterHeartbeatBootstrapFile(
   return files.filter((file) => file.name !== DEFAULT_HEARTBEAT_FILENAME);
 }
 
+async function resolveSourceBackedAgentBootstrapSource(params: {
+  config?: OpenClawConfig;
+  sessionKey?: string;
+  sessionId?: string;
+  agentId?: string;
+  deps?: SourceBackedAgentBootstrapDeps;
+}): Promise<SourceBackedAgentBootstrapSource | null> {
+  const { sessionAgentId } = resolveSessionAgentIds({
+    sessionKey: params.sessionKey ?? params.sessionId,
+    config: params.config,
+    agentId: params.agentId,
+  });
+  const loadEntries = params.deps?.loadAgentRegistryEntries ?? loadAgentPackRegistryEntries;
+  let entries: AgentPackRegistryEntry[];
+  try {
+    entries = await loadEntries();
+  } catch (error) {
+    if (isExecutionPlatformAgentPackId(sessionAgentId)) {
+      throw error;
+    }
+    return null;
+  }
+  const entry = findExecutionPlatformAgentPackEntry({
+    entries,
+    agentId: sessionAgentId,
+  });
+  if (!entry) {
+    if (isExecutionPlatformAgentPackId(sessionAgentId)) {
+      throw new Error(`source-backed execution agent registry entry missing: ${sessionAgentId}`);
+    }
+    return null;
+  }
+  const defaultProjectRoot = params.config
+    ? resolveAgentProjectRootDir(params.config, sessionAgentId)
+    : resolveBootstrapRepoRoot({ importMetaUrl: import.meta.url, cwd: process.cwd() });
+  const sourceRoot = resolveAgentPackRuntimeSourceRoot({
+    entry,
+    defaultProjectRoot,
+  });
+  if (!sourceRoot && isExecutionPlatformAgentPackId(sessionAgentId)) {
+    throw new Error(`source-backed execution agent runtime source missing: ${sessionAgentId}`);
+  }
+  return sourceRoot
+    ? {
+        agentId: sessionAgentId,
+        sourceRoot,
+      }
+    : null;
+}
+
+export async function resolveSourceBackedAgentBootstrapFilePaths(params: {
+  config?: OpenClawConfig;
+  sessionKey?: string;
+  sessionId?: string;
+  agentId?: string;
+  fileNames?: readonly string[];
+  deps?: SourceBackedAgentBootstrapDeps;
+}): Promise<string[] | null> {
+  const source = await resolveSourceBackedAgentBootstrapSource(params);
+  if (!source) {
+    return null;
+  }
+  const fileNames = params.fileNames ?? SOURCE_BACKED_AGENT_REQUIRED_BOOTSTRAP_DOCS;
+  return fileNames.map((fileName) => path.join(source.sourceRoot, fileName));
+}
+
+function filterSourceBackedAgentBootstrapFiles(
+  files: WorkspaceBootstrapFile[],
+): WorkspaceBootstrapFile[] {
+  return files.filter((file) => SOURCE_BACKED_AGENT_BOOTSTRAP_FILE_NAMES.has(file.name));
+}
+
+async function resolveSourceBackedAgentBootstrapArtifactsForRun(params: {
+  config?: OpenClawConfig;
+  sessionKey?: string;
+  sessionId?: string;
+  agentId?: string;
+  warn?: (message: string) => void;
+  contextMode?: BootstrapContextMode;
+  runKind?: BootstrapContextRunKind;
+}): Promise<{
+  bootstrapFiles: WorkspaceBootstrapFile[];
+  modelMemoryOverlay: null;
+} | null> {
+  const source = await resolveSourceBackedAgentBootstrapSource(params);
+  if (!source) {
+    return null;
+  }
+  const excludeHeartbeatBootstrapFile = shouldExcludeHeartbeatBootstrapFile(params);
+  const sessionKey = params.sessionKey ?? params.sessionId;
+  const rawFiles = await loadWorkspaceBootstrapFiles(source.sourceRoot);
+  const bootstrapFiles = applyContextModeFilter({
+    files: filterBootstrapFilesForSession(
+      filterSourceBackedAgentBootstrapFiles(rawFiles),
+      sessionKey,
+    ),
+    contextMode: params.contextMode,
+    runKind: params.runKind,
+  });
+  return {
+    bootstrapFiles: sanitizeBootstrapFiles(
+      filterHeartbeatBootstrapFile(bootstrapFiles, excludeHeartbeatBootstrapFile),
+      params.warn,
+    ),
+    modelMemoryOverlay: null,
+  };
+}
+
 export async function materializeSourceRuntimeBeforeBootstrapIfNeeded(params: {
   config?: OpenClawConfig;
   sessionKey?: string;
@@ -355,10 +504,13 @@ async function resolveBootstrapArtifactsForRun(params: {
   runKind?: BootstrapContextRunKind;
 }): Promise<{
   bootstrapFiles: WorkspaceBootstrapFile[];
-  modelMemoryOverlay: Awaited<
-    ReturnType<typeof import("./model-memory.live-runtime.js").resolveModelMemoryBootstrapOverlay>
-  >;
+  modelMemoryOverlay: ModelMemoryBootstrapOverlay | null;
 }> {
+  const sourceBacked = await resolveSourceBackedAgentBootstrapArtifactsForRun(params);
+  if (sourceBacked) {
+    return sourceBacked;
+  }
+
   const excludeHeartbeatBootstrapFile = shouldExcludeHeartbeatBootstrapFile(params);
   const sessionKey = params.sessionKey ?? params.sessionId;
   const canonicalized = await materializeCanonicalBootstrapCompatibilityFiles({

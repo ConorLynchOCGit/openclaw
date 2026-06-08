@@ -112,8 +112,35 @@ agents:
     runtimeSurfaceAliasPath: /home/node/.openclaw/agents/execution-coding/agent
     projectRoot: /root/services/openclaw-roles/live
     status: source_runtime_unification_source_added
+    requiredDocs:
+      - IDENTITY.md
+      - AGENTS.md
+      - BOOTSTRAP.md
+      - TOOLS.md
     primarySkills:
       - execution-node-workflow
+    allowedChildAgents:
+      - execution-context-scout
+      - execution-validation-scout
+    requiredTools:
+      - node_finish
+      - openclaw_resource_read
+      - edit
+      - update_plan
+      - read_todo
+      - task
+    forbiddenTools:
+      - read
+      - list
+      - glob
+      - grep
+      - exec
+      - process
+      - resolve_openclaw_resource
+      - sessions_spawn
+      - sessions_yield
+      - subagents
+      - agents_list
     basePackComplete: true
   - id: execution-context-scout
     displayName: Execution Context Scout
@@ -124,8 +151,33 @@ agents:
     runtimeSurfaceAliasPath: /home/node/.openclaw/agents/execution-context-scout/agent
     projectRoot: /root/services/openclaw-roles/live
     status: source_runtime_unification_source_added
+    requiredDocs:
+      - IDENTITY.md
+      - AGENTS.md
+      - BOOTSTRAP.md
+      - TOOLS.md
     primarySkills:
       - execution-context-scout
+    requiredTools:
+      - read
+      - list
+      - glob
+      - grep
+    forbiddenTools:
+      - write
+      - edit
+      - apply_patch
+      - process
+      - update_plan
+      - read_todo
+      - task
+      - sessions_spawn
+      - sessions_yield
+      - subagents
+      - agents_list
+      - openclaw_resource_read
+      - resolve_openclaw_resource
+      - node_finish
     basePackComplete: true
   - id: execution-validation-scout
     displayName: Execution Validation Scout
@@ -136,6 +188,32 @@ agents:
     runtimeSurfaceAliasPath: /home/node/.openclaw/agents/execution-validation-scout/agent
     projectRoot: /root/services/openclaw-roles/live
     status: source_runtime_unification_source_added
+    requiredDocs:
+      - IDENTITY.md
+      - AGENTS.md
+      - BOOTSTRAP.md
+      - TOOLS.md
     primarySkills:
       - execution-validation-scout
+    requiredTools:
+      - read
+      - list
+      - glob
+      - grep
+      - exec
+    forbiddenTools:
+      - write
+      - edit
+      - apply_patch
+      - process
+      - update_plan
+      - read_todo
+      - task
+      - sessions_spawn
+      - sessions_yield
+      - subagents
+      - agents_list
+      - openclaw_resource_read
+      - resolve_openclaw_resource
+      - node_finish
     basePackComplete: true

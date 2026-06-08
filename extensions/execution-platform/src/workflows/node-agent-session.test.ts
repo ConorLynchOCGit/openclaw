@@ -1249,6 +1249,20 @@ describe("native node agent session contracts", () => {
           },
           contextManagement: { sessionCompactions: 1 },
           nodeAgentSessionTrace: {
+            sessionLaunchRef:
+              "openclaw-session-launch://agent%3Aexecution-coding%3Anode%3Anrun_trace",
+            sessionLaunchEventRef:
+              "openclaw-session-launch://agent%3Aexecution-coding%3Anode%3Anrun_trace/session_launch_1",
+            sessionLaunchStatus: "accepted",
+            sessionLaunchBlockerKind: null,
+            sessionLaunchProvider: "openrouter",
+            sessionLaunchModel: "moonshotai/kimi-k2.6",
+            sessionLaunchCwd: "/root/services/openclaw-roles/live",
+            sessionLaunchReasoningLevel: "stream",
+            sessionLaunchThinkingLevel: "xhigh",
+            sessionLaunchPromptHashMatched: true,
+            sessionLaunchToolCatalogRef:
+              "openclaw-effective-tool-inventory://agent%3Aexecution-coding%3Anode%3Anrun_trace",
             firstPlanUpdateRef: "runtime-job://job-native-node/session-event/todo-1",
             childSessionKeyRef: "agent:execution-context-scout:node:nrun_trace_context_scout",
             childResultRef: "runtime-job://job-native-node/subagent-result/context-scout-1",
@@ -1312,6 +1326,9 @@ describe("native node agent session contracts", () => {
       expect.arrayContaining(["update_plan", "task", "edit", "node_finish"]),
     );
     expect(trace.eventRefs).toMatchObject({
+      sessionLaunchRef: "openclaw-session-launch://agent%3Aexecution-coding%3Anode%3Anrun_trace",
+      sessionLaunchEventRef:
+        "openclaw-session-launch://agent%3Aexecution-coding%3Anode%3Anrun_trace/session_launch_1",
       workerPromptAuthoredRef: "runtime-job://job-native-node/node-worker-prompt/impl-1",
       childResultRef: "runtime-job://job-native-node/subagent-result/context-scout-1",
       changeSetRef: "openclaw-session-working-context://nrun_trace/change-set-1",
@@ -1321,6 +1338,21 @@ describe("native node agent session contracts", () => {
       validationScoutResultRef: "runtime-job://job-native-node/subagent-result/validation-scout-1",
       repairLoopEvidenceRef: "runtime-job://job-native-node/session-event/repair-loop-1",
       terminalNodeFinishRef: "runtime-job://job-native-node/node-finish/impl-1",
+    });
+    expect(trace.sessionLaunch).toMatchObject({
+      ref: "openclaw-session-launch://agent%3Aexecution-coding%3Anode%3Anrun_trace",
+      eventRef:
+        "openclaw-session-launch://agent%3Aexecution-coding%3Anode%3Anrun_trace/session_launch_1",
+      admissionStatus: "accepted",
+      blockerKind: null,
+      provider: "openrouter",
+      model: "moonshotai/kimi-k2.6",
+      cwd: "/root/services/openclaw-roles/live",
+      reasoningLevel: "stream",
+      thinkingLevel: "xhigh",
+      promptHashMatched: true,
+      toolCatalogRef:
+        "openclaw-effective-tool-inventory://agent%3Aexecution-coding%3Anode%3Anrun_trace",
     });
     expect(trace.childBootstrapAdmissions).toEqual([
       expect.objectContaining({
@@ -1338,6 +1370,7 @@ describe("native node agent session contracts", () => {
       }),
     ]);
     expect(trace.observations).toMatchObject({
+      nativeSessionLaunchObserved: true,
       workerPromptAuthored: true,
       parentSessionStarted: true,
       firstPlanUpdateObserved: true,

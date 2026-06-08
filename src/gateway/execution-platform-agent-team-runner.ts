@@ -10,7 +10,6 @@ import {
   NODE_AGENT_WORKER_PROMPT_ARTIFACT_TYPE,
   NODE_AGENT_WORKER_PROMPT_SCHEMA_VERSION,
   NODE_PROMPT_AUTHORING_FAILURE_DIAGNOSTIC_ARTIFACT_TYPE,
-  NODE_AGENT_START_RECEIPT_ARTIFACT_TYPE,
   NODE_AGENT_SESSION_TRACE_ARTIFACT_TYPE,
   NODE_EXECUTION_STORAGE_POLICY,
   OpenRouterAgentTeamModelClient,
@@ -21,8 +20,6 @@ import {
   createExecutionPlatformResourceReadTool,
   createOpenRouterProviderTextTurnClient,
   deriveNodeAgentStepBudgetFromSnapshot,
-  NODE_FINISH_TOOL_NAME,
-  OPENCLAW_RESOURCE_READ_TOOL_NAME,
   runNodeAgentSession,
   type RuntimeToolKernel,
   type AcpCodexCodingWorkerRunResult,
@@ -43,22 +40,27 @@ import {
 } from "../../extensions/execution-platform/runtime-api.js";
 import { CodexAppServerJsonExecutor } from "../../extensions/model-memory/src/mmv2/codex-app-server-json-executor.js";
 import {
+  findExecutionPlatformAgentPackEntry,
+  loadAgentPackRegistryEntries,
+  type AgentPackRegistryEntry,
+} from "../agents/agent-pack-registry.js";
+import {
   resolveAgentConfig,
   resolveAgentDir,
   resolveAgentEffectiveModelPrimary,
   resolveAgentProjectRootDir,
   resolveAgentSkillsFilter,
 } from "../agents/agent-scope.js";
+import { resolveSourceBackedAgentBootstrapFilePaths } from "../agents/bootstrap-files.js";
 import { DEFAULT_PROVIDER } from "../agents/defaults.js";
 import { parseModelRef } from "../agents/model-selection.js";
 import { runEmbeddedPiAgent } from "../agents/pi-embedded-runner/run.js";
 import { resolveEffectiveToolPolicyAccess } from "../agents/pi-tools.policy.js";
 import { buildRequiredActiveSkillSnapshot, type SkillSnapshot } from "../agents/skills.js";
 import {
-  materializeSourceRuntimeFiles,
-  type SourceRuntimeMaterializationResult,
-} from "../agents/source-runtime-unification.js";
-import { evaluateRequiredProviderContextAdmission } from "../agents/system-prompt-report.js";
+  evaluateRequiredProviderContextAdmission,
+  type RequiredProviderSkillSource,
+} from "../agents/system-prompt-report.js";
 import {
   getRuntimeConfigSnapshot,
   getRuntimeConfigSourceSnapshot,
@@ -68,6 +70,7 @@ import {
 } from "../config/config.js";
 import { resolveStateDir } from "../config/paths.js";
 import { normalizeRuntimePathAliases } from "../config/runtime-source-record.js";
+import { updateSessionLaunch } from "../config/sessions/launch.js";
 import { resolveSessionFilePath, resolveStorePath } from "../config/sessions/paths.js";
 import { readSessionTodo } from "../config/sessions/todo.js";
 import type { SessionSystemPromptReport } from "../config/sessions/types.js";
@@ -129,15 +132,6 @@ export function createGatewayRoleModelClient(): OpenRouterAgentTeamModelClient |
 }
 
 type GatewayThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "adaptive";
-
-type GatewaySourceRuntimeMaterializationPreflight = {
-  status: "aligned" | "blocked";
-  recordPath: string | null;
-  validationIssues: string[];
-  reasonCodes: string[];
-  errorName?: string;
-  errorHash?: string;
-};
 
 function normalizeGatewayThinkingLevel(value: unknown): GatewayThinkingLevel | undefined {
   return value === "off" ||
@@ -211,14 +205,72 @@ function existingDirectoryAvailabilityDiagnostic(input: {
   }
 }
 
-const REQUIRED_NODE_AGENT_SKILLS = ["execution-node-workflow"] as const;
-const REQUIRED_PARENT_CANONICAL_AGENT_DOCS = [
-  "IDENTITY.md",
-  "AGENTS.md",
-  "BOOTSTRAP.md",
-  "TOOLS.md",
-] as const;
 const MAX_ACTIVE_REQUIRED_SKILL_BYTES = 120_000;
+
+function nodeAgentRequiredSkillNamesFromRegistryEntry(
+  entry: AgentPackRegistryEntry | null | undefined,
+): string[] {
+  return entry?.primarySkills?.length ? [...entry.primarySkills] : [];
+}
+
+function nodeAgentRequiredDocNamesFromRegistryEntry(
+  entry: AgentPackRegistryEntry | null | undefined,
+): string[] {
+  return entry?.requiredDocs?.length ? [...entry.requiredDocs] : [];
+}
+
+function executionAgentPackContractIssues(input: {
+  agentId: string;
+  entry: AgentPackRegistryEntry | null | undefined;
+  requireAllowedChildAgents?: boolean;
+}): string[] {
+  const issues: string[] = [];
+  if (!input.entry) {
+    return [`node_agent_registry_contract_missing:${input.agentId}`];
+  }
+  if (!input.entry.requiredDocs?.length) {
+    issues.push(`node_agent_registry_contract_field_missing:${input.agentId}:requiredDocs`);
+  }
+  if (!input.entry.primarySkills?.length) {
+    issues.push(`node_agent_registry_contract_field_missing:${input.agentId}:primarySkills`);
+  }
+  if (input.requireAllowedChildAgents && !input.entry.allowedChildAgents?.length) {
+    issues.push(`node_agent_registry_contract_field_missing:${input.agentId}:allowedChildAgents`);
+  }
+  if (!input.entry.requiredTools?.length) {
+    issues.push(`node_agent_registry_contract_field_missing:${input.agentId}:requiredTools`);
+  }
+  if (!input.entry.forbiddenTools?.length) {
+    issues.push(`node_agent_registry_contract_field_missing:${input.agentId}:forbiddenTools`);
+  }
+  return issues;
+}
+
+function nodeAgentAllowedChildAgentIdsFromRegistryEntry(
+  entry: AgentPackRegistryEntry | null | undefined,
+): string[] {
+  return entry?.allowedChildAgents?.length ? [...entry.allowedChildAgents] : [];
+}
+
+export async function resolveNodeAgentRequiredSkillNames(input: {
+  agentId: string;
+  entries?: AgentPackRegistryEntry[];
+}): Promise<string[]> {
+  const entries = input.entries ?? (await loadAgentPackRegistryEntries());
+  return nodeAgentRequiredSkillNamesFromRegistryEntry(
+    findExecutionPlatformAgentPackEntry({ entries, agentId: input.agentId }),
+  );
+}
+
+export async function resolveNodeAgentAllowedChildAgentIds(input: {
+  agentId: string;
+  entries?: AgentPackRegistryEntry[];
+}): Promise<string[]> {
+  const entries = input.entries ?? (await loadAgentPackRegistryEntries());
+  return nodeAgentAllowedChildAgentIdsFromRegistryEntry(
+    findExecutionPlatformAgentPackEntry({ entries, agentId: input.agentId }),
+  );
+}
 
 export function resolveOpenClawNodeExecutionWorkspaceDir(
   config?: ReturnType<typeof loadConfig>,
@@ -249,8 +301,9 @@ function readBoundedUtf8File(filePath: string, maxBytes: number): string | null 
 export function buildNodeExecutionRequiredSkillsSnapshot(input: {
   config: ReturnType<typeof loadConfig>;
   agentId: string;
+  requiredSkillNames: readonly string[];
 }): SkillSnapshot {
-  const requiredSkillNames = [...REQUIRED_NODE_AGENT_SKILLS];
+  const requiredSkillNames = [...input.requiredSkillNames];
   const agentSkillWorkspaceDir = resolveAgentProjectRootDir(input.config, input.agentId);
   return buildRequiredActiveSkillSnapshot(agentSkillWorkspaceDir, {
     config: input.config,
@@ -258,6 +311,17 @@ export function buildNodeExecutionRequiredSkillsSnapshot(input: {
     requiredSkillNames,
     maxActiveSkillBytes: MAX_ACTIVE_REQUIRED_SKILL_BYTES,
   });
+}
+
+function requiredProviderSkillSourcesFromSnapshot(
+  snapshot: SkillSnapshot,
+): RequiredProviderSkillSource[] {
+  return (snapshot.activeContextSources ?? []).map((source) => ({
+    name: source.name,
+    path: source.path,
+    sourceRef: source.sourceRef,
+    sourceHash: source.sourceHash,
+  }));
 }
 
 function executionAgentRuntimeDiagnostics(input: {
@@ -283,89 +347,51 @@ function executionAgentRuntimeDiagnostics(input: {
   return diagnostics;
 }
 
-const REQUIRED_NODE_AGENT_TOOLS = [
-  NODE_FINISH_TOOL_NAME,
-  OPENCLAW_RESOURCE_READ_TOOL_NAME,
-  "edit",
-  "update_plan",
-  "read_todo",
-  "task",
-] as const;
-
-const FORBIDDEN_NODE_AGENT_DIRECT_ACQUISITION_TOOLS = [
-  "read",
-  "list",
-  "glob",
-  "grep",
-  "exec",
-  "process",
-  "resolve_openclaw_resource",
-  "sessions_spawn",
-  "sessions_yield",
-  "subagents",
-  "agents_list",
-] as const;
-
-const REQUIRED_SCOUT_AGENTS = ["execution-context-scout", "execution-validation-scout"] as const;
-
-const REQUIRED_SCOUT_SKILLS_BY_AGENT_ID: Record<(typeof REQUIRED_SCOUT_AGENTS)[number], string> = {
-  "execution-context-scout": "execution-context-scout",
-  "execution-validation-scout": "execution-validation-scout",
-};
 const SOURCE_RUNTIME_UNIFICATION_MANIFEST_REF =
   "repo://docs/system/registries/source-runtime-unification.yaml";
 
-const REQUIRED_SCOUT_TOOLS_BY_AGENT_ID: Record<(typeof REQUIRED_SCOUT_AGENTS)[number], string[]> = {
-  "execution-context-scout": ["read", "list", "glob", "grep"],
-  "execution-validation-scout": ["read", "list", "glob", "grep", "exec"],
-};
+function nodeAgentRequiredToolNamesFromRegistryEntry(
+  entry: AgentPackRegistryEntry | null | undefined,
+): string[] {
+  return entry?.requiredTools?.length ? [...entry.requiredTools] : [];
+}
 
-const FORBIDDEN_SCOUT_TOOLS_BY_AGENT_ID: Record<(typeof REQUIRED_SCOUT_AGENTS)[number], string[]> =
-  {
-    "execution-context-scout": [
-      "write",
-      "edit",
-      "apply_patch",
-      "process",
-      "update_plan",
-      "read_todo",
-      "task",
-      "sessions_spawn",
-      "sessions_yield",
-      "subagents",
-      "agents_list",
-      OPENCLAW_RESOURCE_READ_TOOL_NAME,
-      "resolve_openclaw_resource",
-      NODE_FINISH_TOOL_NAME,
-    ],
-    "execution-validation-scout": [
-      "write",
-      "edit",
-      "apply_patch",
-      "process",
-      "update_plan",
-      "read_todo",
-      "task",
-      "sessions_spawn",
-      "sessions_yield",
-      "subagents",
-      "agents_list",
-      OPENCLAW_RESOURCE_READ_TOOL_NAME,
-      "resolve_openclaw_resource",
-      NODE_FINISH_TOOL_NAME,
-    ],
-  };
+function nodeAgentForbiddenToolNamesFromRegistryEntry(
+  entry: AgentPackRegistryEntry | null | undefined,
+): string[] {
+  return entry?.forbiddenTools?.length ? [...entry.forbiddenTools] : [];
+}
+
+function scoutRequiredSkillNamesFromRegistryEntry(input: {
+  entry: AgentPackRegistryEntry | null | undefined;
+}): string[] {
+  return input.entry?.primarySkills?.length ? [...input.entry.primarySkills] : [];
+}
+
+function scoutRequiredToolNamesFromRegistryEntry(input: {
+  entry: AgentPackRegistryEntry | null | undefined;
+}): string[] {
+  return input.entry?.requiredTools?.length ? [...input.entry.requiredTools] : [];
+}
+
+function scoutForbiddenToolNamesFromRegistryEntry(
+  entry: AgentPackRegistryEntry | null | undefined,
+): string[] {
+  return entry?.forbiddenTools?.length ? [...entry.forbiddenTools] : [];
+}
+
+type NodeAgentLaunchProofState = Omit<NodeAgentStartReceipt, "artifactKind" | "schemaVersion">;
 
 type GatewayNodeStartPreparation =
   | {
       status: "accepted";
-      receipt: NodeAgentStartReceipt;
+      receipt: NodeAgentLaunchProofState;
       reasonCodes: string[];
     }
   | {
       status: "blocked";
       blockerKind: string;
-      receipt: NodeAgentStartReceipt;
+      receipt: NodeAgentLaunchProofState;
       reasonCodes: string[];
     };
 
@@ -377,6 +403,14 @@ function uniqueStringList(values: readonly (string | null | undefined)[], max = 
         .map((value) => value.trim()),
     ),
   ].slice(0, max);
+}
+
+function stringFromRecord(value: unknown, key: string): string | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+  const candidate = (value as Record<string, unknown>)[key];
+  return typeof candidate === "string" && candidate.trim() ? candidate.trim() : null;
 }
 
 function buildNativeTaskParentCatalogBlocker(input: {
@@ -397,13 +431,17 @@ function buildNativeTaskParentCatalogBlocker(input: {
 function resolveParentNativeTaskEffectiveToolNames(input: {
   config: ReturnType<typeof loadConfig>;
   nodeRun: NodeExecutionRunRecord;
+  requiredToolNames?: readonly string[];
+  forbiddenToolNames?: readonly string[];
   modelProvider?: string;
   modelId?: string;
 }): string[] {
-  const nativeTaskParentAllowed = new Set<string>(REQUIRED_NODE_AGENT_TOOLS);
+  const requiredToolNames = input.requiredToolNames?.length ? [...input.requiredToolNames] : [];
+  const forbiddenToolNames = input.forbiddenToolNames?.length ? [...input.forbiddenToolNames] : [];
+  const nativeTaskParentAllowed = new Set<string>(requiredToolNames);
   const candidateToolNames = uniqueStringList([
-    ...REQUIRED_NODE_AGENT_TOOLS,
-    ...FORBIDDEN_NODE_AGENT_DIRECT_ACQUISITION_TOOLS,
+    ...requiredToolNames,
+    ...forbiddenToolNames,
     "write",
     "apply_patch",
   ]);
@@ -422,13 +460,13 @@ function resolveParentNativeTaskEffectiveToolNames(input: {
 }
 
 type NodeAgentBootstrapAdmissionProjection = {
-  canonicalAgentDocAdmissions: NodeAgentStartReceipt["canonicalAgentDocAdmissions"];
-  requiredSkillContextAdmissions: NodeAgentStartReceipt["requiredSkillContextAdmissions"];
-  summary: NodeAgentStartReceipt["bootstrapAdmission"];
+  canonicalAgentDocAdmissions: NodeAgentLaunchProofState["canonicalAgentDocAdmissions"];
+  requiredSkillContextAdmissions: NodeAgentLaunchProofState["requiredSkillContextAdmissions"];
+  summary: NodeAgentLaunchProofState["bootstrapAdmission"];
   reasonCodes: string[];
 };
 
-function emptyBootstrapAdmissionSummary(): NodeAgentStartReceipt["bootstrapAdmission"] {
+function emptyBootstrapAdmissionSummary(): NodeAgentLaunchProofState["bootstrapAdmission"] {
   return {
     providerReportObserved: false,
     parentCanonicalDocsAdmitted: false,
@@ -484,9 +522,11 @@ function findProviderWorkspaceFileEntry(
 }
 
 function requiredParentCanonicalDocLookups(
+  requiredCanonicalDocNames: readonly string[] | undefined,
   requiredCanonicalDocPaths: readonly string[] | undefined,
-): Array<{ docName: (typeof REQUIRED_PARENT_CANONICAL_AGENT_DOCS)[number]; lookup: string }> {
-  return REQUIRED_PARENT_CANONICAL_AGENT_DOCS.map((docName, index) => ({
+): Array<{ docName: string; lookup: string }> {
+  const docNames = requiredCanonicalDocNames?.length ? [...requiredCanonicalDocNames] : [];
+  return docNames.map((docName, index) => ({
     docName,
     lookup: requiredCanonicalDocPaths?.[index]?.trim() || docName,
   }));
@@ -500,6 +540,8 @@ export function buildNodeAgentBootstrapAdmissionFromSystemPromptReport(input: {
   report?: SessionSystemPromptReport | null;
   parentAgentId: string;
   requiredSkillNames: readonly string[];
+  requiredSkillSources?: readonly RequiredProviderSkillSource[];
+  requiredCanonicalDocNames?: readonly string[];
   requiredCanonicalDocPaths?: readonly string[];
 }): NodeAgentBootstrapAdmissionProjection {
   const parentAgentId = input.parentAgentId.trim() || "execution-coding";
@@ -513,12 +555,16 @@ export function buildNodeAgentBootstrapAdmissionFromSystemPromptReport(input: {
   }
 
   const report = input.report;
-  const docLookups = requiredParentCanonicalDocLookups(input.requiredCanonicalDocPaths);
+  const docLookups = requiredParentCanonicalDocLookups(
+    input.requiredCanonicalDocNames,
+    input.requiredCanonicalDocPaths,
+  );
   const admissionDecision = evaluateRequiredProviderContextAdmission({
     report,
     required: {
       workspaceFileNames: docLookups.map((doc) => doc.lookup),
       skillNames: input.requiredSkillNames,
+      skillSources: input.requiredSkillSources,
       rejectTruncatedWorkspaceFiles: true,
     },
   });
@@ -562,10 +608,12 @@ export function buildNodeAgentBootstrapAdmissionFromSystemPromptReport(input: {
   );
   const requiredSkillContextAdmissions = input.requiredSkillNames.map((skillName) => {
     const entry = skillsByName.get(skillName);
+    const admitted =
+      (entry?.blockChars ?? 0) > 0 && !admissionDecision.missingSkillNames.includes(skillName);
     return {
       agentId: parentAgentId,
       skillName,
-      admitted: (entry?.blockChars ?? 0) > 0,
+      admitted,
       blockChars: entry?.blockChars ?? 0,
       sourceRef: entry?.sourceRef ?? null,
       sourceHash: entry?.sourceHash ?? null,
@@ -608,6 +656,11 @@ export function buildNodeAgentBootstrapAdmissionFromSystemPromptReport(input: {
       parentRequiredSkillsAdmitted
         ? "node_agent_parent_required_skills_admitted_to_provider_context"
         : "node_agent_parent_required_skills_missing_from_provider_context",
+      ...(admissionDecision.reasonCodes.includes(
+        "provider_context_required_skill_sources_mismatched",
+      )
+        ? ["node_agent_parent_required_skill_sources_mismatched"]
+        : []),
       ...(truncatedRequiredSources.length > 0
         ? ["node_agent_bootstrap_required_sources_truncated"]
         : []),
@@ -636,7 +689,7 @@ function toToolExplanation(input: {
 function resolveActiveConfigReceiptIdentity(input: {
   config: ReturnType<typeof loadConfig>;
 }): Pick<
-  NodeAgentStartReceipt,
+  NodeAgentLaunchProofState,
   "activeConfigPath" | "activeConfigFingerprint" | "activeConfigEpoch"
 > {
   const runtimeSnapshot = getRuntimeConfigSnapshot();
@@ -659,40 +712,88 @@ function resolveActiveConfigReceiptIdentity(input: {
 function resolveNodeAgentSourceRuntimeLaunch(input: {
   config: ReturnType<typeof loadConfig>;
   agentId: string;
-  materialization?: GatewaySourceRuntimeMaterializationPreflight | null;
-}): NodeAgentStartReceipt["sourceRuntime"] {
+}): NodeAgentLaunchProofState["sourceRuntime"] {
   const runtimeHome = resolveStateDir(process.env);
   const projectRoot = resolveAgentProjectRootDir(input.config, input.agentId);
-  const materialization = input.materialization ?? null;
   return {
     projectRoot,
     executionPlatformDocsRoot: path.join(projectRoot, "docs/projects/execution-platform"),
     runtimeHome,
     runtimeAliases: normalizeRuntimePathAliases(runtimeHome),
     manifestRef: SOURCE_RUNTIME_UNIFICATION_MANIFEST_REF,
-    materializationRecordRef: materialization?.recordPath ?? null,
-    materializationStatus: materialization?.status ?? "not_observed",
-    materializationIssueCount: materialization?.validationIssues.length ?? 0,
-    materializationIssues: uniqueStringList(materialization?.validationIssues ?? [], 20),
   };
 }
 
-function nodeAgentSourceRuntimeMetadata(receipt: NodeAgentStartReceipt): Record<string, JsonValue> {
+function nodeAgentSourceRuntimeMetadata(
+  receipt: NodeAgentLaunchProofState,
+): Record<string, JsonValue> {
   return {
     nodeAgentStartProjectRoot: receipt.sourceRuntime.projectRoot,
     nodeAgentStartExecutionPlatformDocsRoot: receipt.sourceRuntime.executionPlatformDocsRoot,
     nodeAgentStartRuntimeHome: receipt.sourceRuntime.runtimeHome,
     nodeAgentStartRuntimeAliases: receipt.sourceRuntime.runtimeAliases as unknown as JsonValue,
     nodeAgentStartSourceRuntimeManifestRef: receipt.sourceRuntime.manifestRef,
-    nodeAgentStartSourceRuntimeMaterializationRecordRef:
-      receipt.sourceRuntime.materializationRecordRef,
-    nodeAgentStartSourceRuntimeMaterializationStatus: receipt.sourceRuntime.materializationStatus,
-    nodeAgentStartSourceRuntimeMaterializationIssueCount:
-      receipt.sourceRuntime.materializationIssueCount,
   };
 }
 
-function baseNodeAgentStartReceipt(input: {
+function nodeSessionLaunchMetadata(
+  launch: Awaited<ReturnType<typeof updateSessionLaunch>>,
+): Record<string, JsonValue> {
+  return {
+    nodeAgentSessionLaunchRef: launch.launchRef,
+    nodeAgentSessionLaunchEventRef: launch.persisted ? launch.launchEventRef : null,
+    nodeAgentSessionLaunchPersisted: launch.persisted,
+    nodeAgentSessionLaunchPersistFailureReason: launch.persisted ? null : launch.reason,
+    nodeAgentSessionLaunch: launch.persisted ? (launch.event as unknown as JsonValue) : null,
+    nodeAgentSessionLaunchStatus: launch.persisted ? launch.event.admissionStatus : null,
+    nodeAgentSessionLaunchBlockerKind: launch.persisted ? (launch.event.blockerKind ?? null) : null,
+  };
+}
+
+async function recordBlockedNodeSessionLaunch(input: {
+  config: ReturnType<typeof loadConfig>;
+  nodeRun: NodeExecutionRunRecord;
+  receipt: NodeAgentLaunchProofState;
+  blockerKind: string;
+  blockers?: readonly string[];
+  reasonCodes: readonly string[];
+  promptHash?: string | null;
+  submittedPromptHash?: string | null;
+  promptHashMatched?: boolean | null;
+}) {
+  return await updateSessionLaunch({
+    storePath: resolveStorePath(input.config.session?.store, {
+      agentId: input.nodeRun.agentId,
+    }),
+    input: {
+      sessionKey: input.nodeRun.sessionKey,
+      agentId: input.nodeRun.agentId,
+      runId: input.nodeRun.nodeRunId,
+      nodeRunId: input.nodeRun.nodeRunId,
+      admissionStatus: "blocked",
+      blockerKind: input.blockerKind,
+      provider: input.receipt.modelProvider ?? undefined,
+      model: input.receipt.modelId ?? undefined,
+      cwd: input.receipt.cwd ?? undefined,
+      reasoningLevel: input.receipt.reasoningLevel ?? undefined,
+      thinkingLevel: input.receipt.thinkingLevel ?? undefined,
+      ...(input.promptHash !== undefined ? { promptHash: input.promptHash } : {}),
+      ...(input.submittedPromptHash !== undefined
+        ? { submittedPromptHash: input.submittedPromptHash }
+        : {}),
+      ...(input.promptHashMatched !== undefined
+        ? { promptHashMatched: input.promptHashMatched }
+        : {}),
+      toolCatalogRef: input.receipt.openClawEffectiveToolInventoryRef,
+      effectiveToolNames: input.receipt.effectiveToolNames,
+      allowedChildAgentIds: input.receipt.allowedSubagentIds,
+      blockers: uniqueStringList([...(input.blockers ?? []), input.blockerKind]),
+      reasonCodes: input.reasonCodes,
+    },
+  });
+}
+
+function baseNodeAgentLaunchProofState(input: {
   status: "accepted" | "blocked";
   nodeRun: NodeExecutionRunRecord;
   nodeExecutionSnapshot: NodeExecutionSnapshot;
@@ -711,19 +812,15 @@ function baseNodeAgentStartReceipt(input: {
   missingSkills?: Array<{ agentId: string; skillName: string }>;
   missingAssets?: Array<{ agentId: string; assetPath: string }>;
   workspaceFailure?: string | null;
-  sourceRuntimeMaterialization?: GatewaySourceRuntimeMaterializationPreflight | null;
   blockerKind?: string | null;
   reasonCodes: string[];
-}): NodeAgentStartReceipt {
+}): NodeAgentLaunchProofState {
   const configIdentity = resolveActiveConfigReceiptIdentity({ config: input.config });
   const sourceRuntime = resolveNodeAgentSourceRuntimeLaunch({
     config: input.config,
     agentId: input.nodeRun.agentId,
-    materialization: input.sourceRuntimeMaterialization,
   });
   return {
-    artifactKind: "execution_platform.node_agent_start_receipt",
-    schemaVersion: "execution-platform.node-agent-start-receipt.v1",
     status: input.status,
     nodeAttemptId: input.nodeRun.attemptId,
     nodeRunId: input.nodeRun.nodeRunId,
@@ -731,6 +828,8 @@ function baseNodeAgentStartReceipt(input: {
     promptRef: null,
     promptHash: null,
     submittedPromptHash: null,
+    sessionLaunchRef: null,
+    sessionLaunchEventRef: null,
     cwd: input.cwd,
     modelProvider: input.modelProvider ?? null,
     modelId: input.modelId ?? null,
@@ -749,7 +848,7 @@ function baseNodeAgentStartReceipt(input: {
     blockers: input.blockerKind ? [input.blockerKind] : [],
     ...configIdentity,
     parentAgentId: input.nodeRun.agentId,
-    scoutAgentIds: [...REQUIRED_SCOUT_AGENTS],
+    scoutAgentIds: input.allowedSubagentIds ?? [],
     acceptedRequiredToolNames: input.acceptedRequiredToolNames,
     canonicalAgentDocAdmissions: [],
     requiredSkillContextAdmissions: [],
@@ -778,7 +877,7 @@ function baseNodeAgentStartReceipt(input: {
   };
 }
 
-function lockReasonCodeForReceipt(receipt: NodeAgentStartReceipt): string | null {
+function lockReasonCodeForReceipt(receipt: NodeAgentLaunchProofState): string | null {
   switch (receipt.lockAcquisitionOutcome) {
     case "stale_lock_reclaimed_acquired":
     case "dead_pid_reclaimed_acquired":
@@ -802,7 +901,7 @@ function lockReasonCodeForReceipt(receipt: NodeAgentStartReceipt): string | null
 }
 
 function blockerKindForLockOutcome(
-  outcome: NodeAgentStartReceipt["lockAcquisitionOutcome"],
+  outcome: NodeAgentLaunchProofState["lockAcquisitionOutcome"],
 ): string | null {
   switch (outcome) {
     case "active_lock_owner_live":
@@ -817,13 +916,13 @@ function blockerKindForLockOutcome(
 }
 
 function withNativeLockTrace(input: {
-  receipt: NodeAgentStartReceipt;
-  lockAcquisitionTrace: NodeAgentStartReceipt["lockAcquisition"] | null | undefined;
-}): NodeAgentStartReceipt {
+  receipt: NodeAgentLaunchProofState;
+  lockAcquisitionTrace: NodeAgentLaunchProofState["lockAcquisition"] | null | undefined;
+}): NodeAgentLaunchProofState {
   const trace = input.lockAcquisitionTrace ?? null;
   const lockAcquisitionOutcome = trace?.outcome ?? input.receipt.lockAcquisitionOutcome;
   const lockBlockerKind = blockerKindForLockOutcome(lockAcquisitionOutcome);
-  const next: NodeAgentStartReceipt = {
+  const next: NodeAgentLaunchProofState = {
     ...input.receipt,
     status: lockBlockerKind ? "blocked" : input.receipt.status,
     lockAcquisitionOutcome,
@@ -854,51 +953,12 @@ function stableTextHash(value: string): string {
   return createHash("sha256").update(value).digest("hex");
 }
 
-function toSourceRuntimeMaterializationPreflight(
-  result: SourceRuntimeMaterializationResult,
-): GatewaySourceRuntimeMaterializationPreflight {
-  return result.status === "aligned"
-    ? {
-        status: "aligned",
-        recordPath: result.recordPath,
-        validationIssues: [],
-        reasonCodes: result.reasonCodes,
-      }
-    : {
-        status: "blocked",
-        recordPath: result.recordPath,
-        validationIssues: result.validationIssues,
-        reasonCodes: result.reasonCodes,
-      };
-}
-
-async function materializeNodeAgentSourceRuntimeBeforeStart(): Promise<GatewaySourceRuntimeMaterializationPreflight> {
-  try {
-    return toSourceRuntimeMaterializationPreflight(await materializeSourceRuntimeFiles());
-  } catch (error) {
-    const errorName = error instanceof Error ? error.name : "unknown_error";
-    const errorMessage = error instanceof Error ? error.message : String(error);
-    return {
-      status: "blocked",
-      recordPath: null,
-      validationIssues: ["source_runtime_materialization_failed_before_node_agent_start"],
-      errorName,
-      errorHash: stableTextHash(errorMessage).slice(0, 20),
-      reasonCodes: [
-        "source_runtime_materialization_failed_before_node_agent_start",
-        `source_runtime_materialization_error_name:${errorName}`,
-        `source_runtime_materialization_error_hash:${stableTextHash(errorMessage).slice(0, 20)}`,
-      ],
-    };
-  }
-}
-
 function sessionTranscriptRef(sessionFilePath: string): string {
   return `openclaw-session-file://${encodeURIComponent(sessionFilePath)}`;
 }
 
 export function withWorkerPromptSessionProof(input: {
-  receipt: NodeAgentStartReceipt;
+  receipt: NodeAgentLaunchProofState;
   workerPrompt: {
     promptRef: string;
     nodeRunId: string;
@@ -912,9 +972,14 @@ export function withWorkerPromptSessionProof(input: {
   finalPromptText?: string | null;
   systemPromptReport?: SessionSystemPromptReport | null;
   effectiveToolNames?: string[] | null;
+  requiredCanonicalDocNames?: readonly string[];
   requiredCanonicalDocPaths?: readonly string[];
+  requiredSkillNames?: readonly string[];
+  requiredSkillSources?: readonly RequiredProviderSkillSource[];
+  requiredToolNames?: readonly string[];
+  forbiddenToolNames?: readonly string[];
   enforceProviderBootstrapAdmission?: boolean;
-}): NodeAgentStartReceipt {
+}): NodeAgentLaunchProofState {
   const nativeInitialPromptText =
     typeof input.finalPromptText === "string"
       ? input.finalPromptText
@@ -932,21 +997,23 @@ export function withWorkerPromptSessionProof(input: {
     reportEffectiveToolNames.length > 0 &&
     suppliedEffectiveToolNames.length > 0 &&
     !sameStringSet(reportEffectiveToolNames, suppliedEffectiveToolNames);
+  const requiredToolNames = input.requiredToolNames?.length ? [...input.requiredToolNames] : [];
+  const forbiddenToolNames = input.forbiddenToolNames?.length ? [...input.forbiddenToolNames] : [];
   const providerMissingRequiredTools =
     input.enforceProviderBootstrapAdmission === true
-      ? REQUIRED_NODE_AGENT_TOOLS.filter((toolName) => !providerToolNameSet.has(toolName))
+      ? requiredToolNames.filter((toolName) => !providerToolNameSet.has(toolName))
       : [];
   const providerForbiddenVisibleTools =
     input.enforceProviderBootstrapAdmission === true
-      ? FORBIDDEN_NODE_AGENT_DIRECT_ACQUISITION_TOOLS.filter((toolName) =>
-          providerToolNameSet.has(toolName),
-        )
+      ? forbiddenToolNames.filter((toolName) => providerToolNameSet.has(toolName))
       : [];
   const bootstrapAdmission = buildNodeAgentBootstrapAdmissionFromSystemPromptReport({
     report: input.systemPromptReport,
     parentAgentId: input.receipt.parentAgentId,
-    requiredSkillNames: REQUIRED_NODE_AGENT_SKILLS,
+    requiredSkillNames: input.requiredSkillNames?.length ? input.requiredSkillNames : [],
+    requiredCanonicalDocNames: input.requiredCanonicalDocNames,
     requiredCanonicalDocPaths: input.requiredCanonicalDocPaths,
+    requiredSkillSources: input.requiredSkillSources,
   });
   const providerBootstrapBlockers =
     input.enforceProviderBootstrapAdmission === true
@@ -1115,95 +1182,6 @@ function buildFixedNodeAgentWorkerPrompt(input: {
   };
 }
 
-async function attachNodeAgentStartReceiptArtifact(input: {
-  runtimeJobs: RuntimeJobRepository;
-  nodeExecutionSnapshot: NodeExecutionSnapshot;
-  receipt: NodeAgentStartReceipt;
-  uriSuffix?: string;
-}) {
-  return input.runtimeJobs.attachRuntimeArtifactByContract({
-    jobId: input.nodeExecutionSnapshot.runtimeJobId,
-    artifactType: NODE_AGENT_START_RECEIPT_ARTIFACT_TYPE,
-    uri: `node-agent-start-receipt://${input.receipt.nodeRunId}/${input.receipt.status}${
-      input.uriSuffix ? `/${input.uriSuffix}` : ""
-    }`,
-    body: input.receipt as unknown as JsonValue,
-    boundedSummary: `Node agent start receipt for ${input.nodeExecutionSnapshot.nodeId}: ${input.receipt.status}.`,
-    targetNodeIds: [input.nodeExecutionSnapshot.nodeId],
-    reasonCodes: ["node_agent_start_receipt_artifact_attached", ...input.receipt.reasonCodes],
-    createdBy: "openclaw_node_session_executor",
-    metadata: {
-      nodeRunId: input.receipt.nodeRunId,
-      nodeAttemptId: input.receipt.nodeAttemptId,
-      nodeId: input.nodeExecutionSnapshot.nodeId,
-      graphId: input.nodeExecutionSnapshot.graphId,
-      nodeAgentId: input.receipt.parentAgentId,
-      nodeAgentSessionKey: input.receipt.sessionKey,
-      nodeAgentStartStatus: input.receipt.status,
-      nodeAgentStartBlockerKind: input.receipt.blockerKind,
-      nodeAgentStartBlockers: input.receipt.blockers,
-      nodeAgentStartCwd: input.receipt.cwd,
-      nodeAgentStartModelProvider: input.receipt.modelProvider,
-      nodeAgentStartModelId: input.receipt.modelId,
-      nodeAgentStartReasoningLevel: input.receipt.reasoningLevel,
-      nodeAgentStartThinkingLevel: input.receipt.thinkingLevel,
-      ...nodeAgentSourceRuntimeMetadata(input.receipt),
-      nodeAgentStartActiveSkillNames: input.receipt.activeSkillNames,
-      nodeAgentStartEffectiveToolNames: input.receipt.effectiveToolNames,
-      nodeAgentStartAllowedSubagentIds: input.receipt.allowedSubagentIds,
-      nodeAgentStartSnapshotRef: input.receipt.snapshotRef,
-      nodeAgentStartOpenClawSessionRef: input.receipt.openClawSessionRef,
-      nodeAgentStartOpenClawSystemPromptReportRef: input.receipt.openClawSystemPromptReportRef,
-      nodeAgentStartOpenClawEffectiveToolInventoryRef:
-        input.receipt.openClawEffectiveToolInventoryRef,
-      nodeAgentStartConfigPath: input.receipt.activeConfigPath,
-      nodeAgentStartConfigFingerprint: input.receipt.activeConfigFingerprint,
-      nodeAgentStartConfigEpoch: input.receipt.activeConfigEpoch,
-      nodeAgentStartSessionFilePath: input.receipt.sessionFilePath,
-      nodeWorkerPromptRef: input.receipt.workerPromptRef,
-      nodeWorkerPromptArtifactRef: input.receipt.workerPromptArtifactRef,
-      nodeWorkerPromptRefCanonical: input.receipt.promptRef,
-      nodeWorkerPromptHash: input.receipt.workerPromptHash,
-      nodeWorkerSubmittedPromptHash: input.receipt.submittedPromptHash,
-      nodeWorkerPromptByteCount: input.receipt.workerPromptByteCount,
-      nodeAgentSessionMessageId: input.receipt.nativeSessionMessageId,
-      nodeAgentInitialMessageHash: input.receipt.nativeSessionInitialMessageHash,
-      nodeAgentSessionTranscriptRef: input.receipt.nativeSessionTranscriptRef,
-      nodeAgentPromptSessionHashMatch: input.receipt.promptSessionHashMatch,
-      nodeWorkerPromptAuthorModelRunRef: input.receipt.promptAuthorModelRunRef,
-      nodeAgentStartLockAcquisitionOutcome: input.receipt.lockAcquisitionOutcome,
-      nodeAgentStartLockOwnerPid: input.receipt.lockOwnerPid,
-      nodeAgentStartLockOwnerPidAlive: input.receipt.lockOwnerPidAlive,
-      nodeAgentStartBlockedTools: input.receipt.blockedTools as unknown as JsonValue,
-      nodeAgentStartMissingSkills: input.receipt.missingSkills as unknown as JsonValue,
-      nodeAgentStartMissingAssets: input.receipt.missingAssets as unknown as JsonValue,
-      nodeAgentStartAcceptedRequiredToolNames: input.receipt.acceptedRequiredToolNames,
-      nodeAgentBootstrapProviderReportObserved:
-        input.receipt.bootstrapAdmission.providerReportObserved,
-      nodeAgentBootstrapParentCanonicalDocsAdmitted:
-        input.receipt.bootstrapAdmission.parentCanonicalDocsAdmitted,
-      nodeAgentBootstrapParentRequiredSkillsAdmitted:
-        input.receipt.bootstrapAdmission.parentRequiredSkillsAdmitted,
-      nodeAgentBootstrapMissingRequiredSources:
-        input.receipt.bootstrapAdmission.missingRequiredSources,
-      nodeAgentBootstrapTruncatedRequiredSources:
-        input.receipt.bootstrapAdmission.truncatedRequiredSources,
-      nodeAgentCanonicalAgentDocAdmissions: input.receipt
-        .canonicalAgentDocAdmissions as unknown as JsonValue,
-      nodeAgentRequiredSkillContextAdmissions: input.receipt
-        .requiredSkillContextAdmissions as unknown as JsonValue,
-      artifactPolicyRef: input.receipt.storagePolicy.artifactPolicyRef,
-      rawStoragePolicyRef: input.receipt.storagePolicy.rawStoragePolicyRef,
-      boundedRefsOnly: input.receipt.storagePolicy.boundedRefsOnly,
-      rawPromptStored: false,
-      rawResponseStored: false,
-      rawProviderLogStored: false,
-      rawTranscriptStored: false,
-      hiddenReasoningStored: false,
-    } satisfies Record<string, JsonValue>,
-  });
-}
-
 async function attachNodeAgentWorkerPromptArtifact(input: {
   runtimeJobs: RuntimeJobRepository;
   nodeExecutionSnapshot: NodeExecutionSnapshot;
@@ -1283,7 +1261,9 @@ export function prepareOpenClawNodeStart(input: {
   nodeRun: NodeExecutionRunRecord;
   nodeExecutionSnapshot: NodeExecutionSnapshot;
   sessionFilePath: string;
-  sourceRuntimeMaterialization?: GatewaySourceRuntimeMaterializationPreflight | null;
+  requiredSkillNames?: readonly string[];
+  expectedChildAgentIds?: readonly string[];
+  agentPackRegistryEntries: readonly AgentPackRegistryEntry[];
 }): GatewayNodeStartPreparation {
   const config = input.config;
   const parentAgent = resolveAgentConfig(config, input.nodeRun.agentId);
@@ -1303,8 +1283,24 @@ export function prepareOpenClawNodeStart(input: {
   const missingSkills: Array<{ agentId: string; skillName: string }> = [];
   const missingAssets: Array<{ agentId: string; assetPath: string }> = [];
   const reasonCodes: string[] = ["node_agent_start_prepared_from_native_openclaw_surfaces"];
-  const sourceRuntimeMaterialization = input.sourceRuntimeMaterialization ?? null;
-  const sourceRuntimeBlocked = sourceRuntimeMaterialization?.status === "blocked";
+  const parentAgentPackEntry = findExecutionPlatformAgentPackEntry({
+    entries: input.agentPackRegistryEntries,
+    agentId: input.nodeRun.agentId,
+  });
+  const requiredSkillNames = input.requiredSkillNames?.length
+    ? [...input.requiredSkillNames]
+    : nodeAgentRequiredSkillNamesFromRegistryEntry(parentAgentPackEntry);
+  const registryContractIssues = executionAgentPackContractIssues({
+    agentId: input.nodeRun.agentId,
+    entry: parentAgentPackEntry,
+    requireAllowedChildAgents: true,
+  });
+  const requiredParentToolNames = nodeAgentRequiredToolNamesFromRegistryEntry(parentAgentPackEntry);
+  const forbiddenParentToolNames =
+    nodeAgentForbiddenToolNamesFromRegistryEntry(parentAgentPackEntry);
+  const expectedChildAgentIds = input.expectedChildAgentIds?.length
+    ? [...input.expectedChildAgentIds]
+    : nodeAgentAllowedChildAgentIdsFromRegistryEntry(parentAgentPackEntry);
   const baseReceiptFacts = () => ({
     nodeExecutionSnapshot: input.nodeExecutionSnapshot,
     cwd,
@@ -1312,13 +1308,12 @@ export function prepareOpenClawNodeStart(input: {
     modelId: agentModel?.model ?? null,
     reasoningLevel: agentReasoningLevel ?? null,
     thinkingLevel: agentThinkingLevel ?? null,
-    activeSkillNames: [...REQUIRED_NODE_AGENT_SKILLS],
+    activeSkillNames: requiredSkillNames,
     allowedSubagentIds: parentAgent?.subagents?.allowAgents ?? [],
-    sourceRuntimeMaterialization,
   });
 
   if (!parentAgent) {
-    const receipt = baseNodeAgentStartReceipt({
+    const receipt = baseNodeAgentLaunchProofState({
       status: "blocked",
       nodeRun: input.nodeRun,
       ...baseReceiptFacts(),
@@ -1343,8 +1338,10 @@ export function prepareOpenClawNodeStart(input: {
   const agentDir = resolveAgentDir(config, input.nodeRun.agentId);
   const projectRootDir = resolveAgentProjectRootDir(config, input.nodeRun.agentId);
   const parentSkills = resolveAgentSkillsFilter(config, input.nodeRun.agentId);
-  if (parentSkills && !parentSkills.includes("execution-node-workflow")) {
-    missingSkills.push({ agentId: input.nodeRun.agentId, skillName: "execution-node-workflow" });
+  for (const requiredSkillName of requiredSkillNames) {
+    if (parentSkills && !parentSkills.includes(requiredSkillName)) {
+      missingSkills.push({ agentId: input.nodeRun.agentId, skillName: requiredSkillName });
+    }
   }
   if (!agentModel?.model || !/kimi/i.test(agentModel.model)) {
     reasonCodes.push("node_agent_model_profile_not_kimi");
@@ -1358,11 +1355,13 @@ export function prepareOpenClawNodeStart(input: {
   const parentEffectiveToolNames = resolveParentNativeTaskEffectiveToolNames({
     config,
     nodeRun: input.nodeRun,
+    requiredToolNames: requiredParentToolNames,
+    forbiddenToolNames: forbiddenParentToolNames,
     modelProvider: agentModel?.provider ?? undefined,
     modelId: agentModel?.model ?? undefined,
   });
   const parentEffectiveToolNameSet = new Set(parentEffectiveToolNames);
-  for (const toolName of REQUIRED_NODE_AGENT_TOOLS) {
+  for (const toolName of requiredParentToolNames) {
     if (parentEffectiveToolNameSet.has(toolName)) {
       acceptedRequiredToolNames.push(toolName);
     } else {
@@ -1380,7 +1379,7 @@ export function prepareOpenClawNodeStart(input: {
   const allowAnySubagent = allowedSubagents.some((value) => value.trim() === "*");
   const missingScoutPolicies = allowAnySubagent
     ? []
-    : REQUIRED_SCOUT_AGENTS.filter(
+    : expectedChildAgentIds.filter(
         (required) => !allowedSubagents.some((value) => value.trim() === required),
       );
   const requiresExplicitSubagentTarget =
@@ -1391,7 +1390,7 @@ export function prepareOpenClawNodeStart(input: {
     reasonCodes.push("node_agent_subagent_identity_policy_requires_explicit_agent_id_missing");
   }
 
-  for (const toolName of FORBIDDEN_NODE_AGENT_DIRECT_ACQUISITION_TOOLS) {
+  for (const toolName of forbiddenParentToolNames) {
     if (parentEffectiveToolNameSet.has(toolName)) {
       blockedTools.push(
         buildNativeTaskParentCatalogBlocker({
@@ -1403,29 +1402,43 @@ export function prepareOpenClawNodeStart(input: {
     }
   }
 
-  for (const scoutAgentId of REQUIRED_SCOUT_AGENTS) {
+  for (const scoutAgentId of expectedChildAgentIds) {
     const scoutAgent = resolveAgentConfig(config, scoutAgentId);
-    const scoutSkill = REQUIRED_SCOUT_SKILLS_BY_AGENT_ID[scoutAgentId];
+    const scoutAgentPackEntry = findExecutionPlatformAgentPackEntry({
+      entries: input.agentPackRegistryEntries,
+      agentId: scoutAgentId,
+    });
+    registryContractIssues.push(
+      ...executionAgentPackContractIssues({
+        agentId: scoutAgentId,
+        entry: scoutAgentPackEntry,
+      }),
+    );
+    const scoutRequiredSkillNames = scoutRequiredSkillNamesFromRegistryEntry({
+      entry: scoutAgentPackEntry,
+    });
     const scoutProjectRootDir = resolveAgentProjectRootDir(config, scoutAgentId);
     const scoutAgentDir = resolveAgentDir(config, scoutAgentId);
-    const scoutSkillPath = path.join(scoutProjectRootDir, "skills", scoutSkill, "SKILL.md");
     const scoutSkills = resolveAgentSkillsFilter(config, scoutAgentId) ?? [];
     if (!scoutAgent) {
       reasonCodes.push(`node_agent_required_scout_profile_missing:${scoutAgentId}`);
     }
-    if (!scoutSkills.includes(scoutSkill)) {
-      missingSkills.push({ agentId: scoutAgentId, skillName: scoutSkill });
+    for (const scoutSkill of scoutRequiredSkillNames) {
+      const scoutSkillPath = path.join(scoutProjectRootDir, "skills", scoutSkill, "SKILL.md");
+      if (!scoutSkills.includes(scoutSkill)) {
+        missingSkills.push({ agentId: scoutAgentId, skillName: scoutSkill });
+      }
+      if (!fs.existsSync(scoutSkillPath)) {
+        missingAssets.push({ agentId: scoutAgentId, assetPath: scoutSkillPath });
+      } else if (!readBoundedUtf8File(scoutSkillPath, MAX_ACTIVE_REQUIRED_SKILL_BYTES)?.trim()) {
+        missingAssets.push({
+          agentId: scoutAgentId,
+          assetPath: `${scoutSkillPath}#active-skill-body-unavailable`,
+        });
+      }
     }
     if (!fs.existsSync(scoutAgentDir)) {
       missingAssets.push({ agentId: scoutAgentId, assetPath: scoutAgentDir });
-    }
-    if (!fs.existsSync(scoutSkillPath)) {
-      missingAssets.push({ agentId: scoutAgentId, assetPath: scoutSkillPath });
-    } else if (!readBoundedUtf8File(scoutSkillPath, MAX_ACTIVE_REQUIRED_SKILL_BYTES)?.trim()) {
-      missingAssets.push({
-        agentId: scoutAgentId,
-        assetPath: `${scoutSkillPath}#active-skill-body-unavailable`,
-      });
     }
     for (const diagnostic of executionAgentRuntimeDiagnostics({
       agentId: scoutAgentId,
@@ -1437,7 +1450,9 @@ export function prepareOpenClawNodeStart(input: {
     const scoutAccess = resolveEffectiveToolPolicyAccess({
       config,
       agentId: scoutAgentId,
-      toolNames: REQUIRED_SCOUT_TOOLS_BY_AGENT_ID[scoutAgentId],
+      toolNames: scoutRequiredToolNamesFromRegistryEntry({
+        entry: scoutAgentPackEntry,
+      }),
     });
     for (const entry of scoutAccess) {
       if (entry.allowed) {
@@ -1449,7 +1464,7 @@ export function prepareOpenClawNodeStart(input: {
     const forbiddenScoutAccess = resolveEffectiveToolPolicyAccess({
       config,
       agentId: scoutAgentId,
-      toolNames: FORBIDDEN_SCOUT_TOOLS_BY_AGENT_ID[scoutAgentId],
+      toolNames: scoutForbiddenToolNamesFromRegistryEntry(scoutAgentPackEntry),
     });
     for (const entry of forbiddenScoutAccess) {
       if (entry.allowed) {
@@ -1468,22 +1483,19 @@ export function prepareOpenClawNodeStart(input: {
     }
   }
 
-  const requiredSkillPath = path.join(
-    projectRootDir,
-    "skills",
-    "execution-node-workflow",
-    "SKILL.md",
-  );
   if (!fs.existsSync(agentDir)) {
     missingAssets.push({ agentId: input.nodeRun.agentId, assetPath: agentDir });
   }
-  if (!fs.existsSync(requiredSkillPath)) {
-    missingAssets.push({ agentId: input.nodeRun.agentId, assetPath: requiredSkillPath });
-  } else if (!readBoundedUtf8File(requiredSkillPath, MAX_ACTIVE_REQUIRED_SKILL_BYTES)?.trim()) {
-    missingAssets.push({
-      agentId: input.nodeRun.agentId,
-      assetPath: `${requiredSkillPath}#active-skill-body-unavailable`,
-    });
+  for (const requiredSkillName of requiredSkillNames) {
+    const requiredSkillPath = path.join(projectRootDir, "skills", requiredSkillName, "SKILL.md");
+    if (!fs.existsSync(requiredSkillPath)) {
+      missingAssets.push({ agentId: input.nodeRun.agentId, assetPath: requiredSkillPath });
+    } else if (!readBoundedUtf8File(requiredSkillPath, MAX_ACTIVE_REQUIRED_SKILL_BYTES)?.trim()) {
+      missingAssets.push({
+        agentId: input.nodeRun.agentId,
+        assetPath: `${requiredSkillPath}#active-skill-body-unavailable`,
+      });
+    }
   }
   const workspaceDiagnostics = executionAgentRuntimeDiagnostics({
     agentId: input.nodeRun.agentId,
@@ -1506,29 +1518,30 @@ export function prepareOpenClawNodeStart(input: {
     workspaceDiagnostics.find((diagnostic) => diagnostic.includes("not_directory")) ??
     workspaceDiagnostics.find((diagnostic) => diagnostic.includes("unwritable")) ??
     null;
-  const blockerKind = sourceRuntimeBlocked
-    ? "node_agent_source_runtime_materialization_drift"
-    : missingSkills.length > 0
-      ? "node_agent_skill_missing"
-      : missingScoutPolicies.length > 0 || !requiresExplicitSubagentTarget
-        ? "node_agent_subagent_policy_insufficient"
-        : !agentModel?.model || !/kimi/i.test(agentModel.model)
-          ? "node_agent_model_profile_not_kimi"
-          : agentThinkingLevel !== "xhigh" ||
-              (agentReasoningLevel !== "stream" && agentReasoningLevel !== "on")
-            ? "node_agent_model_reasoning_profile_insufficient"
-            : blockedTools.length > 0
-              ? blockedTools.some((tool) => tool.agentId !== input.nodeRun.agentId)
-                ? "node_agent_required_scout_tool_policy_insufficient"
-                : "node_agent_tool_policy_insufficient"
-              : missingAssets.length > 0
-                ? "node_agent_asset_missing"
-                : workspaceFailure
-                  ? "node_agent_runtime_workspace_unavailable"
-                  : null;
+  const blockerKind =
+    registryContractIssues.length > 0
+      ? "node_agent_registry_contract_incomplete"
+      : missingSkills.length > 0
+        ? "node_agent_skill_missing"
+        : missingScoutPolicies.length > 0 || !requiresExplicitSubagentTarget
+          ? "node_agent_subagent_policy_insufficient"
+          : !agentModel?.model || !/kimi/i.test(agentModel.model)
+            ? "node_agent_model_profile_not_kimi"
+            : agentThinkingLevel !== "xhigh" ||
+                (agentReasoningLevel !== "stream" && agentReasoningLevel !== "on")
+              ? "node_agent_model_reasoning_profile_insufficient"
+              : blockedTools.length > 0
+                ? blockedTools.some((tool) => tool.agentId !== input.nodeRun.agentId)
+                  ? "node_agent_required_scout_tool_policy_insufficient"
+                  : "node_agent_tool_policy_insufficient"
+                : missingAssets.length > 0
+                  ? "node_agent_asset_missing"
+                  : workspaceFailure
+                    ? "node_agent_runtime_workspace_unavailable"
+                    : null;
 
   if (blockerKind) {
-    const receipt = baseNodeAgentStartReceipt({
+    const receipt = baseNodeAgentLaunchProofState({
       status: "blocked",
       nodeRun: input.nodeRun,
       ...baseReceiptFacts(),
@@ -1571,10 +1584,7 @@ export function prepareOpenClawNodeStart(input: {
         ...missingAssets.map(
           (entry) => `node_agent_asset_missing:${entry.agentId}:${entry.assetPath}`,
         ),
-        ...(sourceRuntimeMaterialization?.reasonCodes ?? []),
-        ...(sourceRuntimeMaterialization?.validationIssues ?? []).map(
-          (issue) => `node_agent_source_runtime_materialization_issue:${issue}`,
-        ),
+        ...registryContractIssues,
       ]),
     });
     return {
@@ -1585,7 +1595,7 @@ export function prepareOpenClawNodeStart(input: {
     };
   }
 
-  const receipt = baseNodeAgentStartReceipt({
+  const receipt = baseNodeAgentLaunchProofState({
     status: "accepted",
     nodeRun: input.nodeRun,
     ...baseReceiptFacts(),
@@ -1596,7 +1606,6 @@ export function prepareOpenClawNodeStart(input: {
     acceptedRequiredToolNames: uniqueStringList(acceptedRequiredToolNames),
     reasonCodes: uniqueStringList([
       ...reasonCodes,
-      ...(sourceRuntimeMaterialization?.reasonCodes ?? []),
       "node_agent_start_native_openclaw_facts_accepted",
       "node_agent_config_epoch_recorded",
       `node_agent_profile_resolved:${input.nodeRun.agentId}`,
@@ -1659,30 +1668,54 @@ export function createOpenClawNodeSessionExecutor(input: {
       snapshotRef: nodeExecutionSnapshot.snapshotRef,
     });
     const config = loadConfig();
+    const agentPackRegistryEntries = await loadAgentPackRegistryEntries();
+    const requiredSkillNames = await resolveNodeAgentRequiredSkillNames({
+      agentId: nodeRun.agentId,
+      entries: agentPackRegistryEntries,
+    });
+    const expectedChildAgentIds = await resolveNodeAgentAllowedChildAgentIds({
+      agentId: nodeRun.agentId,
+      entries: agentPackRegistryEntries,
+    });
+    const nodeAgentPackEntry = findExecutionPlatformAgentPackEntry({
+      entries: agentPackRegistryEntries,
+      agentId: nodeRun.agentId,
+    });
+    const requiredToolNames = nodeAgentRequiredToolNamesFromRegistryEntry(nodeAgentPackEntry);
+    const forbiddenToolNames = nodeAgentForbiddenToolNamesFromRegistryEntry(nodeAgentPackEntry);
+    const requiredDocNames = nodeAgentRequiredDocNamesFromRegistryEntry(nodeAgentPackEntry);
     const sessionFilePath = resolveSessionFilePath(nodeRun.nodeRunId, undefined, {
       agentId: nodeRun.agentId,
     });
-    const sourceRuntimeMaterialization = await materializeNodeAgentSourceRuntimeBeforeStart();
     const startPreparation = prepareOpenClawNodeStart({
       config,
       nodeRun,
       nodeExecutionSnapshot,
       sessionFilePath,
-      sourceRuntimeMaterialization,
+      requiredSkillNames,
+      expectedChildAgentIds,
+      agentPackRegistryEntries,
     });
     if (startPreparation.status === "blocked") {
-      const startReceiptArtifact = await attachNodeAgentStartReceiptArtifact({
-        runtimeJobs: input.runtimeJobs,
-        nodeExecutionSnapshot,
+      const blockedLaunch = await recordBlockedNodeSessionLaunch({
+        config,
+        nodeRun,
         receipt: startPreparation.receipt,
+        blockerKind: startPreparation.blockerKind,
+        blockers: startPreparation.receipt.blockers,
+        reasonCodes: uniqueStringList([
+          ...startPreparation.reasonCodes,
+          "node_agent_start_blocked_recorded_as_native_session_launch",
+        ]),
       });
       const metadata: JsonValue = {
         nodeRunId: nodeRun.nodeRunId,
         nodeAgentId: nodeRun.agentId,
         nodeAgentSessionKey: nodeRun.sessionKey,
         nodeExecutionSnapshotRef: nodeExecutionSnapshot.snapshotRef,
-        nodeAgentStartReceiptRef: startReceiptArtifact.uri,
+        nodeAgentStartReceiptRef: null,
         nodeAgentStartBlockerKind: startPreparation.blockerKind,
+        ...nodeSessionLaunchMetadata(blockedLaunch),
         ...nodeAgentSourceRuntimeMetadata(startPreparation.receipt),
         rawPromptStored: false,
         rawResponseStored: false,
@@ -1692,16 +1725,21 @@ export function createOpenClawNodeSessionExecutor(input: {
       };
       return {
         status: "blocked",
-        outputArtifactRefs: [nodeExecutionSnapshot.snapshotRef, startReceiptArtifact.uri],
-        producedOutputRefs: [nodeExecutionSnapshot.snapshotRef, startReceiptArtifact.uri],
-        artifactRefs: [nodeExecutionSnapshot.snapshotRef, startReceiptArtifact.uri],
+        outputArtifactRefs: [nodeExecutionSnapshot.snapshotRef],
+        producedOutputRefs: [nodeExecutionSnapshot.snapshotRef],
+        artifactRefs: [nodeExecutionSnapshot.snapshotRef],
         modelRunRefs: [nodeRun.sessionKey],
         validationRefs: [],
         changedFileRefs: [],
         ownerSummary: `OpenClaw node start blocked: ${startPreparation.blockerKind}`,
         eli5Summary:
           "The node worker did not start because native OpenClaw start facts were blocked.",
-        reasonCodes: startPreparation.reasonCodes,
+        reasonCodes: uniqueStringList([
+          ...startPreparation.reasonCodes,
+          blockedLaunch.persisted
+            ? "node_agent_start_blocked_native_session_launch_recorded"
+            : `node_agent_start_blocked_native_session_launch_not_persisted:${blockedLaunch.reason}`,
+        ]),
         metadata,
         rawPromptStored: false,
         rawResponseStored: false,
@@ -1758,7 +1796,9 @@ export function createOpenClawNodeSessionExecutor(input: {
     const skillsSnapshot = buildNodeExecutionRequiredSkillsSnapshot({
       config,
       agentId: nodeRun.agentId,
+      requiredSkillNames,
     });
+    const parentRequiredSkillSources = requiredProviderSkillSourcesFromSnapshot(skillsSnapshot);
     const fixedWorkerPrompt = input.fixedWorkerPrompt;
     const fixedPromptText =
       typeof fixedWorkerPrompt?.promptText === "string" ? fixedWorkerPrompt.promptText : null;
@@ -1808,23 +1848,16 @@ export function createOpenClawNodeSessionExecutor(input: {
             diagnostic: promptResult.diagnostic as unknown as JsonValue,
           })
         : null;
-      const startReceiptArtifact = await attachNodeAgentStartReceiptArtifact({
-        runtimeJobs: input.runtimeJobs,
-        nodeExecutionSnapshot,
-        receipt: {
-          ...startPreparation.receipt,
-          reasonCodes: uniqueStringList([
-            ...startPreparation.receipt.reasonCodes,
-            "node_agent_start_worker_prompt_blocked_before_session_acquisition",
-          ]),
-        },
-      });
       const metadata: JsonValue = {
         nodeRunId: nodeRun.nodeRunId,
         nodeAgentId: nodeRun.agentId,
         nodeAgentSessionKey: nodeRun.sessionKey,
         nodeExecutionSnapshotRef: nodeExecutionSnapshot.snapshotRef,
-        nodeAgentStartReceiptRef: startReceiptArtifact.uri,
+        nodeAgentStartReceiptRef: null,
+        nodeAgentSessionLaunchRef: null,
+        nodeAgentSessionLaunchEventRef: null,
+        nodeAgentSessionLaunchStatus: null,
+        nodeAgentSessionLaunchBlockerKind: null,
         ...nodeAgentSourceRuntimeMetadata(startPreparation.receipt),
         nodeWorkerPromptStatus: "blocked",
         nodeWorkerPromptBlockerKind: promptResult.blockerKind,
@@ -1839,17 +1872,14 @@ export function createOpenClawNodeSessionExecutor(input: {
         status: "needs_review",
         outputArtifactRefs: [
           nodeExecutionSnapshot.snapshotRef,
-          startReceiptArtifact.uri,
           ...(diagnosticArtifact ? [diagnosticArtifact.uri] : []),
         ],
         producedOutputRefs: [
           nodeExecutionSnapshot.snapshotRef,
-          startReceiptArtifact.uri,
           ...(diagnosticArtifact ? [diagnosticArtifact.uri] : []),
         ],
         artifactRefs: [
           nodeExecutionSnapshot.snapshotRef,
-          startReceiptArtifact.uri,
           ...(diagnosticArtifact ? [diagnosticArtifact.uri] : []),
         ],
         modelRunRefs: [nodeRun.sessionKey],
@@ -1876,15 +1906,30 @@ export function createOpenClawNodeSessionExecutor(input: {
       nodeExecutionSnapshot,
       workerPrompt: promptResult.workerPrompt,
     });
-    const parentRequiredCanonicalDocPaths = REQUIRED_PARENT_CANONICAL_AGENT_DOCS.map((docName) =>
-      path.join(resolveAgentDir(config, nodeRun.agentId), docName),
-    );
+    const parentRequiredCanonicalDocPaths =
+      (await resolveSourceBackedAgentBootstrapFilePaths({
+        config,
+        sessionKey: nodeRun.sessionKey,
+        sessionId: nodeRun.nodeRunId,
+        agentId: nodeRun.agentId,
+        fileNames: requiredDocNames,
+      })) ??
+      requiredDocNames.map((docName) =>
+        path.join(
+          resolveAgentProjectRootDir(config, nodeRun.agentId),
+          "docs",
+          "agents",
+          nodeRun.agentId,
+          "runtime",
+          docName,
+        ),
+      );
     const preSessionReceipt = withWorkerPromptSessionProof({
       receipt: {
         ...startPreparation.receipt,
         reasonCodes: uniqueStringList([
           ...startPreparation.receipt.reasonCodes,
-          "node_agent_start_receipt_persisted_before_native_session_invocation",
+          "node_agent_start_receipt_prepared_before_native_session_invocation",
         ]),
       },
       workerPrompt: promptResult.workerPrompt,
@@ -1893,13 +1938,13 @@ export function createOpenClawNodeSessionExecutor(input: {
       finalPromptText: null,
       systemPromptReport: null,
       effectiveToolNames: null,
+      requiredCanonicalDocNames: requiredDocNames,
+      requiredCanonicalDocPaths: parentRequiredCanonicalDocPaths,
+      requiredSkillNames,
+      requiredSkillSources: parentRequiredSkillSources,
+      requiredToolNames,
+      forbiddenToolNames,
       enforceProviderBootstrapAdmission: false,
-    });
-    const preSessionStartReceiptArtifact = await attachNodeAgentStartReceiptArtifact({
-      runtimeJobs: input.runtimeJobs,
-      nodeExecutionSnapshot,
-      receipt: preSessionReceipt,
-      uriSuffix: "pre-session",
     });
     const nodeAgentStepBudget = deriveNodeAgentStepBudgetFromSnapshot(nodeExecutionSnapshot);
     let sessionResult: Awaited<ReturnType<typeof runNodeAgentSession>>;
@@ -1931,12 +1976,13 @@ export function createOpenClawNodeSessionExecutor(input: {
           allowGatewaySubagentBinding: true,
           nodeAgentNativeTaskMode: {
             enabled: true,
-            allowedAgentIds: [...REQUIRED_SCOUT_AGENTS],
+            allowedAgentIds: expectedChildAgentIds,
             mutationToolName: "edit",
           },
           requiredProviderContextAdmission: {
             workspaceFileNames: parentRequiredCanonicalDocPaths,
-            skillNames: [...REQUIRED_NODE_AGENT_SKILLS],
+            skillNames: requiredSkillNames,
+            skillSources: parentRequiredSkillSources,
             rejectTruncatedWorkspaceFiles: true,
           },
           bootstrapContextMode: "full",
@@ -1969,46 +2015,41 @@ export function createOpenClawNodeSessionExecutor(input: {
           `node_agent_session_invocation_error_hash:${stableTextHash(errorMessage).slice(0, 20)}`,
         ]),
       };
-      const blockedStartReceiptArtifact = await attachNodeAgentStartReceiptArtifact({
-        runtimeJobs: input.runtimeJobs,
-        nodeExecutionSnapshot,
+      const blockedLaunch = await recordBlockedNodeSessionLaunch({
+        config,
+        nodeRun,
         receipt: blockedReceipt,
-        uriSuffix: "session-invocation-failed",
+        blockerKind: "node_agent_session_invocation_failed",
+        blockers: blockedReceipt.blockers,
+        reasonCodes: blockedReceipt.reasonCodes,
+        promptHash: blockedReceipt.promptHash,
+        submittedPromptHash: blockedReceipt.submittedPromptHash,
+        promptHashMatched: blockedReceipt.promptSessionHashMatch,
       });
       return {
         status: "blocked",
-        outputArtifactRefs: [
-          nodeExecutionSnapshot.snapshotRef,
-          preSessionStartReceiptArtifact.uri,
-          workerPromptArtifact.uri,
-          blockedStartReceiptArtifact.uri,
-        ],
-        producedOutputRefs: [
-          nodeExecutionSnapshot.snapshotRef,
-          preSessionStartReceiptArtifact.uri,
-          workerPromptArtifact.uri,
-          blockedStartReceiptArtifact.uri,
-        ],
-        artifactRefs: [
-          nodeExecutionSnapshot.snapshotRef,
-          preSessionStartReceiptArtifact.uri,
-          workerPromptArtifact.uri,
-          blockedStartReceiptArtifact.uri,
-        ],
+        outputArtifactRefs: [nodeExecutionSnapshot.snapshotRef, workerPromptArtifact.uri],
+        producedOutputRefs: [nodeExecutionSnapshot.snapshotRef, workerPromptArtifact.uri],
+        artifactRefs: [nodeExecutionSnapshot.snapshotRef, workerPromptArtifact.uri],
         modelRunRefs: [nodeRun.sessionKey, promptResult.workerPrompt.modelRunRef],
         validationRefs: [],
         changedFileRefs: [],
         ownerSummary: `OpenClaw node agent session invocation failed before a terminal trace: ${errorName}.`,
         eli5Summary:
           "The node worker prompt was ready, but the native OpenClaw agent session failed before it returned a session trace.",
-        reasonCodes: blockedReceipt.reasonCodes,
+        reasonCodes: uniqueStringList([
+          ...blockedReceipt.reasonCodes,
+          blockedLaunch.persisted
+            ? "node_agent_session_invocation_failed_native_session_launch_recorded"
+            : `node_agent_session_invocation_failed_native_session_launch_not_persisted:${blockedLaunch.reason}`,
+        ]),
         metadata: {
           nodeRunId: nodeRun.nodeRunId,
           nodeAgentId: nodeRun.agentId,
           nodeAgentSessionKey: nodeRun.sessionKey,
           nodeExecutionSnapshotRef: nodeExecutionSnapshot.snapshotRef,
-          nodeAgentStartReceiptRef: blockedStartReceiptArtifact.uri,
-          nodeAgentPreSessionStartReceiptRef: preSessionStartReceiptArtifact.uri,
+          nodeAgentStartReceiptRef: null,
+          ...nodeSessionLaunchMetadata(blockedLaunch),
           nodeWorkerPromptRef: promptResult.workerPrompt.promptRef,
           nodeWorkerPromptArtifactRef: workerPromptArtifact.uri,
           nodeWorkerPromptHash: promptResult.workerPrompt.promptHash,
@@ -2035,25 +2076,31 @@ export function createOpenClawNodeSessionExecutor(input: {
         runtimeLifecycleMutated: false,
       };
     }
-    const startReceipt = withWorkerPromptSessionProof({
-      receipt: withNativeLockTrace({
-        receipt: startPreparation.receipt,
-        lockAcquisitionTrace: sessionResult.lockAcquisitionTrace,
+    const nativeSessionTrace = sessionResult.runResult?.meta.nodeAgentSessionTrace;
+    const startReceipt = {
+      ...withWorkerPromptSessionProof({
+        receipt: withNativeLockTrace({
+          receipt: startPreparation.receipt,
+          lockAcquisitionTrace: sessionResult.lockAcquisitionTrace,
+        }),
+        workerPrompt: promptResult.workerPrompt,
+        workerPromptArtifactRef: workerPromptArtifact.uri,
+        sessionFilePath,
+        finalPromptText: sessionResult.runResult?.meta.finalPromptText ?? null,
+        systemPromptReport: sessionResult.runResult?.meta.systemPromptReport,
+        effectiveToolNames: sessionResult.runResult?.meta.effectiveToolNames ?? null,
+        requiredCanonicalDocNames: requiredDocNames,
+        requiredCanonicalDocPaths: parentRequiredCanonicalDocPaths,
+        requiredSkillNames,
+        requiredSkillSources: parentRequiredSkillSources,
+        requiredToolNames,
+        forbiddenToolNames,
+        enforceProviderBootstrapAdmission: true,
       }),
-      workerPrompt: promptResult.workerPrompt,
-      workerPromptArtifactRef: workerPromptArtifact.uri,
-      sessionFilePath,
-      finalPromptText: sessionResult.runResult?.meta.finalPromptText ?? null,
-      systemPromptReport: sessionResult.runResult?.meta.systemPromptReport,
-      effectiveToolNames: sessionResult.runResult?.meta.effectiveToolNames ?? null,
-      requiredCanonicalDocPaths: parentRequiredCanonicalDocPaths,
-      enforceProviderBootstrapAdmission: true,
-    });
-    const startReceiptArtifact = await attachNodeAgentStartReceiptArtifact({
-      runtimeJobs: input.runtimeJobs,
-      nodeExecutionSnapshot,
-      receipt: startReceipt,
-    });
+      sessionLaunchRef: stringFromRecord(nativeSessionTrace, "sessionLaunchRef"),
+      sessionLaunchEventRef: stringFromRecord(nativeSessionTrace, "sessionLaunchEventRef"),
+    };
+    const nodeStartBlocked = startReceipt.status === "blocked";
     const finish = sessionResult.finish;
     const finishArtifactRef = sessionResult.nodeRun.finishArtifactRef;
     const sessionTodo = readSessionTodo({
@@ -2103,6 +2150,15 @@ export function createOpenClawNodeSessionExecutor(input: {
         nodeAgentStepBudget: sessionTrace.stepBudget as unknown as JsonValue,
         nodeAgentTraceMissingOptics: sessionTrace.missingOptics,
         nodeAgentTraceEventRefs: sessionTrace.eventRefs as unknown as JsonValue,
+        nodeAgentSessionLaunch: sessionTrace.sessionLaunch as unknown as JsonValue,
+        nodeAgentSessionLaunchStatus: sessionTrace.sessionLaunch.admissionStatus,
+        nodeAgentSessionLaunchBlockerKind: sessionTrace.sessionLaunch.blockerKind,
+        nodeAgentSessionLaunchCwd: sessionTrace.sessionLaunch.cwd,
+        nodeAgentSessionLaunchProvider: sessionTrace.sessionLaunch.provider,
+        nodeAgentSessionLaunchModel: sessionTrace.sessionLaunch.model,
+        nodeAgentSessionLaunchReasoningLevel: sessionTrace.sessionLaunch.reasoningLevel,
+        nodeAgentSessionLaunchThinkingLevel: sessionTrace.sessionLaunch.thinkingLevel,
+        nodeAgentSessionLaunchToolCatalogRef: sessionTrace.sessionLaunch.toolCatalogRef,
         nodeAgentTraceChildBootstrapAdmissions:
           sessionTrace.childBootstrapAdmissions as unknown as JsonValue,
         nodeAgentTraceObservations: sessionTrace.observations as unknown as JsonValue,
@@ -2114,13 +2170,11 @@ export function createOpenClawNodeSessionExecutor(input: {
     });
     const outputArtifactRefs = [
       nodeExecutionSnapshot.snapshotRef,
-      startReceiptArtifact.uri,
       workerPromptArtifact.uri,
       sessionTraceArtifact.uri,
       ...(finishArtifactRef ? [finishArtifactRef] : []),
       ...(finish?.evidenceRefs ?? []),
     ];
-    const nodeStartBlocked = startReceipt.status === "blocked";
     const ownerSummary = nodeStartBlocked
       ? `OpenClaw node agent start blocked: ${startReceipt.blockerKind ?? "provider bootstrap admission failed"}.`
       : (finish?.summary ??
@@ -2161,8 +2215,7 @@ export function createOpenClawNodeSessionExecutor(input: {
         nodeAgentId: nodeRun.agentId,
         nodeAgentSessionKey: nodeRun.sessionKey,
         nodeExecutionSnapshotRef: nodeExecutionSnapshot.snapshotRef,
-        nodeAgentStartReceiptRef: startReceiptArtifact.uri,
-        nodeAgentPreSessionStartReceiptRef: preSessionStartReceiptArtifact.uri,
+        nodeAgentStartReceiptRef: null,
         nodeAgentStartStatus: startReceipt.status,
         nodeWorkerPromptRef: promptResult.workerPrompt.promptRef,
         nodeWorkerPromptArtifactRef: workerPromptArtifact.uri,

@@ -35,6 +35,26 @@ export const AgentEventSchema = Type.Object(
   { additionalProperties: false },
 );
 
+const RequiredProviderSkillSourceSchema = Type.Object(
+  {
+    name: NonEmptyString,
+    path: Type.Optional(Type.String()),
+    sourceRef: Type.Optional(Type.String()),
+    sourceHash: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  },
+  { additionalProperties: false },
+);
+
+const RequiredProviderContextAdmissionSchema = Type.Object(
+  {
+    workspaceFileNames: Type.Optional(Type.Array(Type.String())),
+    skillNames: Type.Optional(Type.Array(Type.String())),
+    skillSources: Type.Optional(Type.Array(RequiredProviderSkillSourceSchema)),
+    rejectTruncatedWorkspaceFiles: Type.Optional(Type.Boolean()),
+  },
+  { additionalProperties: false },
+);
+
 export const MessageActionToolContextSchema = Type.Object(
   {
     currentChannelId: Type.Optional(Type.String()),
@@ -153,6 +173,7 @@ export const AgentParamsSchema = Type.Object(
     bootstrapContextRunKind: Type.Optional(
       Type.Union([Type.Literal("default"), Type.Literal("heartbeat"), Type.Literal("cron")]),
     ),
+    requiredProviderContextAdmission: Type.Optional(RequiredProviderContextAdmissionSchema),
     internalEvents: Type.Optional(Type.Array(AgentInternalEventSchema)),
     inputProvenance: Type.Optional(InputProvenanceSchema),
     idempotencyKey: NonEmptyString,

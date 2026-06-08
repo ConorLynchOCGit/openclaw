@@ -1,3 +1,4 @@
+import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import type { SessionSystemPromptReport } from "../../config/sessions/types.js";
 import type { SpawnSubagentResult } from "../subagent-spawn.js";
@@ -7,6 +8,7 @@ import {
   buildParentVisibleChildResult,
   classifyChildBootstrapAdmissionFailure,
   createNativeTaskTool,
+  resolveRequiredChildBootstrapAdmissionSources,
   resolveParentVisibleChildResultMaxChars,
   type NativeTaskForegroundResult,
 } from "./native-task-tool.js";
@@ -44,6 +46,50 @@ function childCanonicalDocPaths(agentId: string): string[] {
   return ["IDENTITY.md", "AGENTS.md", "BOOTSTRAP.md", "TOOLS.md"].map(
     (docName) => `/root/.openclaw/agents/${agentId}/agent/${docName}`,
   );
+}
+
+const REQUIRED_CHILD_DOCS = ["IDENTITY.md", "AGENTS.md", "BOOTSTRAP.md", "TOOLS.md"];
+
+const FORBIDDEN_CHILD_TOOLS = [
+  "write",
+  "edit",
+  "apply_patch",
+  "process",
+  "update_plan",
+  "read_todo",
+  "task",
+  "sessions_spawn",
+  "sessions_yield",
+  "subagents",
+  "agents_list",
+  "openclaw_resource_read",
+  "resolve_openclaw_resource",
+  "node_finish",
+];
+
+function childAdmissionContract(agentId: string) {
+  return {
+    requiredCanonicalDocNames: REQUIRED_CHILD_DOCS,
+    requiredSkillNames: [agentId],
+    requiredToolNames: childToolNames(agentId),
+    forbiddenToolNames: FORBIDDEN_CHILD_TOOLS,
+  };
+}
+
+function sourceBackedChildCanonicalDocPaths(agentId: string): string[] {
+  return ["IDENTITY.md", "AGENTS.md", "BOOTSTRAP.md", "TOOLS.md"].map((docName) =>
+    path.join(process.cwd(), "docs", "agents", agentId, "runtime", docName),
+  );
+}
+
+function sourceBackedChildSkillSource(agentId: string) {
+  const sourcePath = path.join(process.cwd(), "skills", agentId, "SKILL.md");
+  return {
+    name: agentId,
+    path: sourcePath,
+    sourceRef: `openclaw-skill-file://${encodeURIComponent(path.resolve(sourcePath))}`,
+    sourceHash: `${agentId}-source-skill-hash`,
+  };
 }
 
 function childToolNames(agentId: string): string[] {
@@ -124,6 +170,35 @@ function makeChildProviderReport(
     ...base,
     ...overrides,
   };
+}
+
+function makeSourceBackedChildProviderReport(agentId: string): SessionSystemPromptReport {
+  const skillSource = sourceBackedChildSkillSource(agentId);
+  return makeChildProviderReport(
+    {
+      injectedWorkspaceFiles: sourceBackedChildCanonicalDocPaths(agentId).map((filePath) => ({
+        name: path.basename(filePath),
+        path: filePath,
+        missing: false,
+        rawChars: 10,
+        injectedChars: 10,
+        truncated: false,
+      })),
+      skills: {
+        promptChars: 50,
+        entries: [
+          {
+            name: skillSource.name,
+            blockChars: 50,
+            location: skillSource.path,
+            sourceRef: skillSource.sourceRef,
+            sourceHash: skillSource.sourceHash,
+          },
+        ],
+      },
+    },
+    agentId,
+  );
 }
 
 describe("native task tool", () => {
@@ -211,6 +286,18 @@ describe("native task tool", () => {
         cleanup: "keep",
         leafTask: true,
         expectsCompletionMessage: true,
+        requiredProviderContextAdmission: expect.objectContaining({
+          workspaceFileNames: sourceBackedChildCanonicalDocPaths("execution-context-scout"),
+          skillNames: ["execution-context-scout"],
+          skillSources: [
+            expect.objectContaining({
+              name: "execution-context-scout",
+              path: path.join(process.cwd(), "skills", "execution-context-scout", "SKILL.md"),
+              sourceHash: expect.any(String),
+            }),
+          ],
+          rejectTruncatedWorkspaceFiles: true,
+        }),
       }),
       expect.objectContaining({
         agentSessionKey: "agent:execution-coding:node:nrun_test",
@@ -218,14 +305,25 @@ describe("native task tool", () => {
         workspaceDir: "/root/services/openclaw-roles/live",
       }),
     );
-    expect(waitForForegroundResult).toHaveBeenCalledWith({
-      childSessionKey: "agent:execution-context-scout:subagent:child-1",
-      runId: "run-child-1",
-      requestedAgentId: "execution-context-scout",
-      runTimeoutSeconds: 7,
-      parentVisibleResultMaxChars: 12_000,
-      readChildSystemPromptReport: undefined,
-    });
+    expect(waitForForegroundResult).toHaveBeenCalledWith(
+      expect.objectContaining({
+        childSessionKey: "agent:execution-context-scout:subagent:child-1",
+        runId: "run-child-1",
+        requestedAgentId: "execution-context-scout",
+        runTimeoutSeconds: 7,
+        parentVisibleResultMaxChars: 12_000,
+        requiredBootstrapAdmissionSources: expect.objectContaining({
+          requiredCanonicalDocPaths: sourceBackedChildCanonicalDocPaths("execution-context-scout"),
+          requiredSkillSources: [
+            expect.objectContaining({
+              name: "execution-context-scout",
+              sourceHash: expect.any(String),
+            }),
+          ],
+        }),
+        readChildSystemPromptReport: undefined,
+      }),
+    );
     const details = readDetails(result);
     expect(details).toMatchObject({
       status: "completed",
@@ -396,14 +494,25 @@ describe("native task tool", () => {
     });
 
     expect(spawnSubagent).not.toHaveBeenCalled();
-    expect(waitForForegroundResult).toHaveBeenCalledWith({
-      childSessionKey,
-      runId,
-      requestedAgentId: "execution-context-scout",
-      runTimeoutSeconds: undefined,
-      parentVisibleResultMaxChars: 12_000,
-      readChildSystemPromptReport: undefined,
-    });
+    expect(waitForForegroundResult).toHaveBeenCalledWith(
+      expect.objectContaining({
+        childSessionKey,
+        runId,
+        requestedAgentId: "execution-context-scout",
+        runTimeoutSeconds: undefined,
+        parentVisibleResultMaxChars: 12_000,
+        requiredBootstrapAdmissionSources: expect.objectContaining({
+          requiredCanonicalDocPaths: sourceBackedChildCanonicalDocPaths("execution-context-scout"),
+          requiredSkillSources: [
+            expect.objectContaining({
+              name: "execution-context-scout",
+              sourceHash: expect.any(String),
+            }),
+          ],
+        }),
+        readChildSystemPromptReport: undefined,
+      }),
+    );
     expect(readContentText(result)).toContain("export const ready = true");
     expect(readDetails(result)).toMatchObject({
       status: "completed",
@@ -684,6 +793,7 @@ describe("native task tool", () => {
       childSessionKey: "agent:execution-context-scout:subagent:child-1",
       childAgentId: "execution-context-scout",
       report: makeChildProviderReport(),
+      ...childAdmissionContract("execution-context-scout"),
     });
 
     expect(admitted).toMatchObject({
@@ -725,6 +835,7 @@ describe("native task tool", () => {
           entries: [],
         },
       }),
+      ...childAdmissionContract("execution-context-scout"),
     });
 
     expect(blocked).toMatchObject({
@@ -761,9 +872,84 @@ describe("native task tool", () => {
           childSessionKey: "agent:execution-context-scout:subagent:child-1",
           childAgentId: "execution-context-scout",
           report: null,
+          ...childAdmissionContract("execution-context-scout"),
         }),
       ),
     ).toBe("child_provider_bootstrap_report_missing");
+  });
+
+  it("requires source-backed child docs and skill when child admission provides them", () => {
+    const agentId = "execution-context-scout";
+    const requiredCanonicalDocPaths = sourceBackedChildCanonicalDocPaths(agentId);
+    const requiredSkillSources = [sourceBackedChildSkillSource(agentId)];
+
+    const rejected = buildChildBootstrapAdmission({
+      childSessionKey: "agent:execution-context-scout:subagent:child-1",
+      childAgentId: agentId,
+      report: makeChildProviderReport(),
+      ...childAdmissionContract(agentId),
+      requiredCanonicalDocPaths,
+      requiredSkillSources,
+    });
+
+    expect(rejected).toMatchObject({
+      providerReportObserved: true,
+      childAgentId: agentId,
+      canonicalDocsAdmitted: false,
+      requiredSkillAdmitted: false,
+    });
+    expect(rejected.missingRequiredSources).toEqual(
+      expect.arrayContaining([
+        "agent-doc:execution-context-scout:IDENTITY.md",
+        "agent-doc:execution-context-scout:AGENTS.md",
+        "agent-doc:execution-context-scout:BOOTSTRAP.md",
+        "agent-doc:execution-context-scout:TOOLS.md",
+        "skill:execution-context-scout:execution-context-scout",
+      ]),
+    );
+    expect(rejected.reasonCodes).toEqual(
+      expect.arrayContaining([
+        "native_task_child_canonical_docs_missing_from_provider_context",
+        "native_task_child_required_skill_missing_from_provider_context",
+        "native_task_child_required_skill_sources_mismatched",
+      ]),
+    );
+    expect(classifyChildBootstrapAdmissionFailure(rejected)).toBe("child_docs_missing");
+
+    const accepted = buildChildBootstrapAdmission({
+      childSessionKey: "agent:execution-context-scout:subagent:child-1",
+      childAgentId: agentId,
+      report: makeSourceBackedChildProviderReport(agentId),
+      ...childAdmissionContract(agentId),
+      requiredCanonicalDocPaths,
+      requiredSkillSources,
+    });
+
+    expect(accepted).toMatchObject({
+      providerReportObserved: true,
+      childAgentId: agentId,
+      canonicalDocsAdmitted: true,
+      requiredSkillAdmitted: true,
+      missingRequiredSources: [],
+      truncatedRequiredSources: [],
+    });
+    expect(classifyChildBootstrapAdmissionFailure(accepted)).toBeUndefined();
+  });
+
+  it("resolves child bootstrap admission sources from the source-backed agent registry", async () => {
+    const resolved = await resolveRequiredChildBootstrapAdmissionSources("execution-context-scout");
+
+    expect(resolved.requiredCanonicalDocPaths).toEqual(
+      sourceBackedChildCanonicalDocPaths("execution-context-scout"),
+    );
+    expect(resolved.requiredSkillSources).toEqual([
+      expect.objectContaining({
+        name: "execution-context-scout",
+        path: path.join(process.cwd(), "skills", "execution-context-scout", "SKILL.md"),
+        sourceRef: expect.stringMatching(/^openclaw-skill-file:\/\//),
+        sourceHash: expect.any(String),
+      }),
+    ]);
   });
 
   it("requires validation-scout canonical docs and skill for validation child admission", () => {
@@ -772,6 +958,7 @@ describe("native task tool", () => {
       childSessionKey: "agent:execution-validation-scout:subagent:child-validate",
       childAgentId: "execution-validation-scout",
       report: makeChildProviderReport({}, "execution-validation-scout"),
+      ...childAdmissionContract("execution-validation-scout"),
       requiredCanonicalDocPaths: validationDocPaths,
     });
 
@@ -792,6 +979,7 @@ describe("native task tool", () => {
       childSessionKey: "agent:execution-validation-scout:subagent:child-validate",
       childAgentId: "execution-validation-scout",
       report: makeChildProviderReport({}, "execution-context-scout"),
+      ...childAdmissionContract("execution-validation-scout"),
       requiredCanonicalDocPaths: validationDocPaths,
     });
 
@@ -831,6 +1019,7 @@ describe("native task tool", () => {
         },
         "execution-validation-scout",
       ),
+      ...childAdmissionContract("execution-validation-scout"),
       requiredCanonicalDocPaths: validationDocPaths,
     });
 
@@ -889,6 +1078,7 @@ describe("native task tool", () => {
       childSessionKey: "agent:execution-context-scout:subagent:child-1",
       childAgentId: "execution-context-scout",
       report: wrongAgentReport,
+      ...childAdmissionContract("execution-context-scout"),
       requiredCanonicalDocPaths: [
         "/root/.openclaw/agents/execution-context-scout/agent/IDENTITY.md",
         "/root/.openclaw/agents/execution-context-scout/agent/AGENTS.md",

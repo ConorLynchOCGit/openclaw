@@ -298,7 +298,7 @@ describe("architecture residue source inventory", () => {
     );
   });
 
-  it("fails if native node execution bypasses OpenClaw extra tools or clamps the agent tool surface", () => {
+  it("fails if native node execution bypasses OpenClaw native runtime tools or clamps the agent tool surface", () => {
     withTempRepo(
       {
         "extensions/execution-platform/src/workflows/node-agent-session.ts": [
@@ -332,7 +332,7 @@ describe("architecture residue source inventory", () => {
             expect.objectContaining({
               checkId: "gateway_node_agent_session_no_tool_allow_override",
               reasonCode:
-                "gateway_native_node_execution_must_use_openclaw_agent_config_and_extra_tools_not_tools_allow",
+                "gateway_native_node_execution_must_use_openclaw_agent_config_and_native_runtime_tools_not_tools_allow",
             }),
             expect.objectContaining({
               checkId: "runtime_capability_manifest_no_deleted_model_agnostic_worker_adapters",
@@ -544,8 +544,9 @@ describe("architecture residue source inventory", () => {
                 "gateway_must_wire_native_node_execution_through_shared_openclaw_executor_and_canonical_transport",
             }),
             expect.objectContaining({
-              checkId: "gateway_node_start_adapter_requires_native_plan_and_subagent_tools",
-              reasonCode: "gateway_node_start_adapter_must_require_native_plan_and_subagent_tools",
+              checkId: "gateway_node_start_adapter_uses_registry_native_task_tool_contract",
+              reasonCode:
+                "gateway_node_start_adapter_must_use_registry_native_task_tool_contract_not_raw_parent_session_or_search_tools",
             }),
             expect.objectContaining({
               checkId: "node_agent_session_authors_worker_prompt_with_text_model_turn",
@@ -568,22 +569,19 @@ describe("architecture residue source inventory", () => {
                 "gateway_must_attach_node_agent_session_trace_artifacts_for_runtime_readback_without_raw_transcripts",
             }),
             expect.objectContaining({
-              checkId: "gateway_attaches_node_agent_start_receipt_artifact",
-              reasonCode: "gateway_must_attach_node_agent_start_receipts_for_native_start_readback",
-            }),
-            expect.objectContaining({
-              checkId: "runtime_artifact_contracts_require_node_agent_start_receipt_payload",
+              checkId: "gateway_records_blocked_node_start_as_native_session_launch",
               reasonCode:
-                "node_agent_start_receipt_artifact_must_be_manifest_backed_and_rehydratable_by_contract",
+                "gateway_must_record_blocked_node_start_as_native_session_launch_not_start_receipt_artifact",
             }),
             expect.objectContaining({
-              checkId: "active_graph_readback_projects_node_agent_start_receipt",
-              reasonCode: "work_queue_readback_must_project_bounded_native_node_start_receipts",
-            }),
-            expect.objectContaining({
-              checkId: "canonical_readback_projects_node_agent_start_receipt",
+              checkId: "native_session_launch_store_supports_launch_only_blocked_admission",
               reasonCode:
-                "canonical_readback_must_project_typed_node_start_receipts_without_generic_collapse",
+                "native_session_launch_store_must_persist_pre_session_blockers_without_ep_start_receipt",
+            }),
+            expect.objectContaining({
+              checkId: "active_graph_readback_projects_native_session_launch_first",
+              reasonCode:
+                "work_queue_readback_must_project_native_session_launch_before_legacy_start_receipts",
             }),
             expect.objectContaining({
               checkId: "boundary_replay_uses_runner_owned_fresh_attempt_reset",

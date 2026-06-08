@@ -224,6 +224,50 @@ describe("buildSystemPromptReport", () => {
     });
   });
 
+  it("requires exact active skill source when source-backed skill admission is specified", () => {
+    const report = buildSystemPromptReport({
+      source: "run",
+      generatedAt: 0,
+      bootstrapMaxChars: 20_000,
+      systemPrompt: "system",
+      bootstrapFiles: [],
+      injectedFiles: [],
+      skillsPrompt: [
+        "<active_skills>",
+        '<active_skill name="execution-node-workflow" location="/root/.openclaw/workspace/skills/execution-node-workflow/SKILL.md" source_ref="openclaw-skill-file%3A%2F%2Fruntime" source_hash="runtime-hash">',
+        "Follow the active workflow.",
+        "</active_skill>",
+        "</active_skills>",
+      ].join("\n"),
+      tools: [],
+    });
+
+    const admission = evaluateRequiredProviderContextAdmission({
+      report,
+      required: {
+        skillSources: [
+          {
+            name: "execution-node-workflow",
+            path: "/root/services/openclaw-roles/live/skills/execution-node-workflow/SKILL.md",
+            sourceRef: "openclaw-skill-file%3A%2F%2Frepo",
+            sourceHash: "repo-hash",
+          },
+        ],
+      },
+    });
+
+    expect(admission.admitted).toBe(false);
+    expect(admission.missingSkillNames).toEqual(["execution-node-workflow"]);
+    expect(admission.reasonCodes).toEqual(
+      expect.arrayContaining([
+        "provider_context_required_admission_blocked",
+        "provider_context_required_skill_sources_mismatched",
+        "provider_context_required_skills_missing",
+      ]),
+    );
+    expect(admission.message).toContain("Missing or mismatched skills");
+  });
+
   it("does not satisfy a path-specific required file with the same basename from another location", () => {
     const file = makeBootstrapFile({
       name: "AGENTS.md",

@@ -194,6 +194,47 @@ export type SessionWorkingContextState = {
   history: SessionWorkingContextUpdateEvent[];
 };
 
+export type SessionLaunchRequiredSource = {
+  id: string;
+  bytes: number;
+  truncated: boolean;
+  hash?: string | null;
+};
+
+export type SessionLaunchEvent = {
+  eventId: string;
+  type: "session.launch";
+  emittedAt: number;
+  sessionKey: string;
+  agentId: string;
+  runId: string;
+  nodeRunId?: string;
+  admissionStatus: "accepted" | "blocked";
+  blockerKind?: string | null;
+  provider?: string;
+  model?: string;
+  cwd?: string;
+  reasoningLevel?: string;
+  thinkingLevel?: string;
+  promptHash?: string | null;
+  submittedPromptHash?: string | null;
+  promptHashMatched?: boolean | null;
+  requiredSources: SessionLaunchRequiredSource[];
+  toolCatalogRef?: string | null;
+  effectiveToolNames: string[];
+  allowedChildAgentIds: string[];
+  blockers: string[];
+  reasonCodes: string[];
+};
+
+export type SessionLaunchState = {
+  schemaVersion: 1;
+  sessionKey: string;
+  updatedAt: number;
+  latestEvent: SessionLaunchEvent;
+  history: SessionLaunchEvent[];
+};
+
 export type SessionEntry = {
   visibilityClass?: SessionVisibilityClass;
   retentionClass?: SessionRetentionClass;
@@ -342,6 +383,8 @@ export type SessionEntry = {
   todo?: SessionTodoState;
   /** Session-owned bounded source context delivered by native task/scout results. */
   workingContext?: SessionWorkingContextState;
+  /** Session-owned native launch admission state for the latest agent launch. */
+  launch?: SessionLaunchState;
   /**
    * Generic plugin-owned runtime debug entries shown in verbose status surfaces.
    * Each plugin owns and may overwrite only its own entry between turns.

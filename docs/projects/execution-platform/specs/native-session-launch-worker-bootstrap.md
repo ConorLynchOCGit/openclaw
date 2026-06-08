@@ -511,6 +511,33 @@ metadata.nodeRunId
 
 ## 3. Agent Pack Owns Operating Contract
 
+Status: complete for the active launch contract. The execution-coding parent required skill list now resolves
+from the native agent-pack registry `primarySkills` entry and is threaded
+through start preflight, active skill loading, provider admission, and receipt
+projection. The execution-coding expected child-agent set now resolves from
+the native agent-pack registry `allowedChildAgents` entry and is threaded
+through start preflight and native task-mode launch. Parent and scout
+required/forbidden tool expectations now resolve from the native registry
+`requiredTools` and `forbiddenTools` fields in the active path, and focused
+registry/gateway tests prove those fields are parsed and enforced. Scout
+required skill names now resolve from the scout pack `primarySkills` entries
+in the active path. Parent and scout required bootstrap doc names now resolve
+from native registry `requiredDocs` fields in the active path. The old
+hardcoded parent/scout doc, skill, child-agent, required-tool, and
+forbidden-tool fallback constants have been removed from the gateway and native
+task helper paths; missing registry data now remains missing contract data
+rather than being reconstructed by Execution Platform defaults. `node_finish`
+and `openclaw_resource_read` are now admitted through the native runtime tool
+and provider-effective catalog path for node sessions. The active gateway
+start-preparation/provider-proof accumulator is now a local
+`NodeAgentLaunchProofState` without artifact identity, not a durable
+`NodeAgentStartReceipt`. Legacy `NodeAgentStartReceipt` contracts and readback
+fields remain only to tolerate historical runs.
+The real node-launch path now blocks before model invocation when the native
+registry contract is missing or incomplete instead of silently reconstructing
+execution-agent docs, skills, child agents, or tool expectations from fallback
+constants.
+
 OpenClaw native registry resolves:
 
 ```text
@@ -532,6 +559,18 @@ Execution Platform does not separately know or enforce which docs, skills,
 tools, permissions, or child agents belong to the agent.
 
 ## 4. `node_finish` Belongs In The Native Tool Profile
+
+Status: complete for the active node-execution path. `node_finish` is no
+longer attached as a late gateway `extraTools` artifact path. `runNodeAgentSession`
+constructs the terminal lifecycle tool as a runner-owned native runtime tool,
+then forwards it through `nativeRuntimeTools` into the normal OpenClaw tool
+construction, policy filtering, native task catalog filtering, provider
+effective-tool inventory, and `session.launch` provider-tool admission path.
+`openclaw_resource_read` uses the same `nativeRuntimeTools` surface from the
+node session executor. Focused tests prove native runtime tools are forwarded,
+provider-effective catalogs include required node tools, forbidden parent
+acquisition tools are hidden, and `node_finish` remains terminal lifecycle
+evidence rather than an Execution Platform side channel.
 
 `node_finish` availability belongs in the execution-coding agent pack/tool
 profile for node sessions.
@@ -563,10 +602,19 @@ A descriptor like this is useful only if native config lacks an equivalent:
 ```json
 {
   "id": "execution-coding",
-  "docs": ["IDENTITY.md", "AGENTS.md", "BOOTSTRAP.md", "TOOLS.md"],
+  "requiredDocs": ["IDENTITY.md", "AGENTS.md", "BOOTSTRAP.md", "TOOLS.md"],
   "requiredSkills": ["execution-node-workflow"],
   "toolProfile": "execution-coding",
-  "allowedChildAgents": ["execution-context-scout", "execution-validation-scout"]
+  "allowedChildAgents": ["execution-context-scout", "execution-validation-scout"],
+  "requiredTools": [
+    "node_finish",
+    "openclaw_resource_read",
+    "edit",
+    "update_plan",
+    "read_todo",
+    "task"
+  ],
+  "forbiddenTools": ["read", "list", "glob", "grep", "exec", "process"]
 }
 ```
 
@@ -661,6 +709,13 @@ first-party agent packs, docs, skills, tools, or permissions.
 
 ## 10. Runtime Materialized Docs/Skills Are Not Worker Bootstrap Inputs
 
+Status: complete for parent and native task child worker-bootstrap doc/skill
+source authority. Parent `execution-coding` docs and the active required
+`execution-node-workflow` skill are source-backed for worker bootstrap and
+provider admission. Native task child scout docs and active scout skills now
+use the same source-backed provider-context admission contract before child
+model invocation, without adding a second child-bootstrap registry.
+
 Worker sessions must not read runtime-materialized first-party docs or skills.
 
 Runtime-materialized copies may remain temporarily for UI or compatibility, but
@@ -684,7 +739,68 @@ and not:
 runtime copy -> provider bootstrap because it happens to be the active file
 ```
 
+Implementation checkpoint:
+
+- `src/agents/agent-pack-registry.ts` is the OpenClaw-native source-backed
+  agent-pack registry reader for this lane.
+- Execution-platform agent docs resolve from `docs/agents/registry.yaml`
+  entries, not from the source-runtime materialization manifest.
+- `execution-coding` bootstrap reads
+  `docs/agents/execution-coding/runtime/{IDENTITY.md,AGENTS.md,BOOTSTRAP.md,TOOLS.md}`.
+- Mutable workspace bootstrap hooks and workspace-root compatibility
+  canonicalization are skipped for source-backed execution-agent docs.
+- Runtime Home agent directories remain valid state/auth/session locations,
+  but are not accepted as first-party execution-agent doc source for provider
+  admission.
+- `src/agents/system-prompt-report.ts` supports exact required skill source
+  admission through `skillSources`, including location, source ref, and source
+  hash.
+- `src/gateway/execution-platform-agent-team-runner.ts` derives the expected
+  required skill source from `buildRequiredActiveSkillSnapshot` and passes that
+  native skill-context source into the provider-context admission gate before
+  the model call.
+- `src/gateway/execution-platform-agent-team-runner.ts` resolves the parent
+  required skill names from `docs/agents/registry.yaml` `primarySkills` for
+  `execution-coding`, then uses the same registry-derived list for start
+  preflight, active skill loading, provider-context admission, and receipt
+  projection.
+- `src/agents/agent-pack-registry.ts` parses `primarySkills` from
+  `docs/agents/registry.yaml`; focused registry tests prove
+  `execution-coding` declares `execution-node-workflow` there.
+- `docs/agents/registry.yaml` declares `execution-coding.allowedChildAgents`
+  as `execution-context-scout` and `execution-validation-scout`.
+- `src/agents/agent-pack-registry.ts` parses `allowedChildAgents`, and
+  `src/gateway/execution-platform-agent-team-runner.ts` resolves that list for
+  start preflight and `nodeAgentNativeTaskMode.allowedAgentIds`.
+- Runtime OpenClaw config/effective tool policy remains the permission gate:
+  the registry declares the execution-coding pack contract, while native
+  config proves those child agents are actually visible/allowed.
+- Gateway receipt projection now follows the native admission decision for
+  required skill admission instead of independently treating a non-empty skill
+  block as sufficient.
+- A stale Runtime Home `execution-node-workflow` skill with the right name is
+  rejected when the node launch expects the repo/source-backed skill source.
+- Native task child bootstrap admission resolves child scout docs from the
+  source-backed agent registry and child scout skills from the native active
+  skill snapshot.
+- `task` passes the child source-backed `requiredProviderContextAdmission`
+  contract into `spawnSubagentDirect`, and `spawnSubagentDirect` forwards it
+  through the gateway `agent` launch request so the existing embedded-runner
+  provider-context admission can block before the child provider turn.
+- Post-run child bootstrap readback uses the same resolved child source
+  contract for projection, so launch preflight and readback do not drift.
+- A stale Runtime Home child scout doc/skill report is rejected when native
+  task child admission expects source-backed child docs/skills.
+- Focused tests:
+  - `pnpm test:file src/agents/tools/native-task-tool.test.ts src/agents/subagent-spawn.workspace.test.ts src/agents/pi-embedded-runner/run.attempt-param-forwarding.test.ts src/agents/system-prompt-report.test.ts src/gateway/execution-platform-agent-team-runner.test.ts src/agents/bootstrap-files.test.ts src/agents/agent-pack-registry.test.ts`
+
 ## 11. Compatibility Materialization Sunset Is Operational
+
+Status: complete for worker-bootstrap design. Node-start source/runtime
+materialization is no longer launch authority, is not represented in worker
+launch critical fields, and has no non-test worker-start call site.
+The remaining materialization module is compatibility/migration tooling only;
+it is not worker design.
 
 Compatibility materialization belongs in migration cleanup docs, not the worker
 design.
@@ -693,6 +809,16 @@ The worker refactor should simply stop using compatibility materialization.
 
 Prove once that stale or absent runtime materialized copies do not affect worker
 bootstrap, then remove that from recurring worker success gates.
+
+Implementation checkpoint:
+
+- `materializeSourceRuntimeBeforeBootstrapIfNeeded` is not called by the
+  node-agent worker launch path.
+- Worker launch projection does not carry materialization record/status fields.
+- Source-backed parent and child provider-context admission rejects stale
+  Runtime Home docs/skills even when names match.
+- Compatibility materialization remains available only for operational
+  migration cleanup surfaces outside worker launch.
 
 Eventually:
 
@@ -713,6 +839,20 @@ They cannot replace required first-party execution docs, skills, tools,
 permissions, or child-agent bindings in worker sessions.
 
 ## 13. One Native `session.launch` Event
+
+Status: complete for the active launch path. Native session-owned `session.launch` state now exists and is
+emitted from the embedded runner at the pre-provider admission seam, before
+the model call. Native launch admission can now persist a launch-only
+session-store entry even when no prior session entry exists, which lets
+pre-model blocked admission be represented as native `session.launch` instead
+of an Execution Platform start receipt. Node-agent trace/readback can project
+the native launch ref. The redundant pre-session `NodeAgentStartReceipt`
+artifact has been removed, native-session runs that return a session trace no
+longer emit a post-session `NodeAgentStartReceipt` artifact, pre-session
+start blockers are recorded as blocked native `session.launch`, prompt
+authoring blockers keep only the prompt-authoring diagnostic, and native
+session invocation failures are recorded as blocked native `session.launch`
+with the worker-prompt artifact.
 
 Do not create separate critical-path artifacts for:
 
@@ -737,6 +877,55 @@ the artifact.
 
 If OpenClaw does not already emit `session.launch`, implement that as a native
 OpenClaw session event, not as an Execution Platform artifact.
+
+Implementation checkpoint:
+
+- `src/config/sessions/launch.ts` stores bounded session-owned launch state,
+  with `session.launch` events, refs, admission status, blocker kind,
+  provider/model/cwd, required source summaries, provider-visible tool names,
+  allowed child agents, blockers, and reason codes. It now creates a bounded
+  launch-only session entry by default when a native launch admission event is
+  emitted before a session store entry exists.
+- `src/agents/pi-embedded-runner/run/attempt.ts` emits this native launch
+  event after provider-context/bootstrap/overflow prechecks have resolved and
+  before `activeSession.prompt(...)` is called.
+- A blocked pre-provider start can produce a launch-only native trace even if
+  no tools or tasks ran.
+- The native trace now carries a compact launch projection from the
+  `session.launch` seam: launch ref, launch event ref, admission status,
+  blocker kind, provider/model, cwd, reasoning/thinking, prompt hash match,
+  and tool catalog ref.
+- `extensions/execution-platform/src/workflows/node-agent-session.ts` projects
+  `sessionLaunchRef`, `sessionLaunchEventRef`, and the compact launch
+  projection from native trace facts.
+- Work Queue active graph readback projects `sessionLaunchRef` and
+  `sessionLaunchEventRef` from native launch/session trace facts before
+  falling back to compatibility receipt metadata.
+- Work Queue active graph readback projects launch admission status, blocker
+  kind, and cwd from native launch/session trace facts before falling back to
+  compatibility receipt metadata. A native accepted launch with no blocker no
+  longer falls through to a stale legacy receipt blocker.
+- The runner no longer writes a durable pre-session start receipt before
+  native session invocation. Pre-session node-start blockers emit blocked
+  native `session.launch` events. Prompt-authoring blockers do not emit a
+  launch event because no launch input exists; they keep the bounded
+  prompt-authoring diagnostic.
+- Native session invocation failures no longer write a blocked terminal
+  compatibility receipt. They emit a blocked native `session.launch` event and
+  keep the worker-prompt artifact.
+- Native-session runs that return a session trace no longer attach a
+  post-session `NodeAgentStartReceipt` artifact, including post-session
+  provider-proof blocker cases. Their launch evidence is the native
+  `session.launch` projection carried by the node-agent session trace, plus
+  bounded result metadata and reason codes.
+- `NodeAgentStartReceipt` is no longer emitted as a durable gateway executor
+  artifact. Gateway start-preparation/provider-proof state uses local
+  launch-proof state without artifact identity; the exported
+  `NodeAgentStartReceipt` contract remains legacy readback compatibility only.
+- Focused tests:
+  - `pnpm test:file src/config/sessions/launch.test.ts src/agents/pi-embedded-runner/run/attempt.test.ts extensions/execution-platform/src/workflows/node-agent-session.test.ts`
+  - `pnpm test:file src/gateway/execution-platform-agent-team-runner.test.ts`
+  - `pnpm test:file extensions/execution-platform/src/work-queue/projections/readback-projections.test.ts`
 
 ## 14. Prompt Hash Handling
 
@@ -859,6 +1048,39 @@ execution-validation-scout
 
 Execution Platform should not separately know or enforce those skill names.
 
+Implementation checkpoint:
+
+- parent `execution-coding` required skill names now come from the native
+  `docs/agents/registry.yaml` `primarySkills` entry;
+- parent `execution-coding` expected child-agent ids now come from the native
+  `docs/agents/registry.yaml` `allowedChildAgents` entry;
+- parent `execution-coding` required bootstrap doc names now come from the
+  native `docs/agents/registry.yaml` `requiredDocs` entry in the active path;
+- parent `execution-coding` required and forbidden tool expectations now come
+  from the native `docs/agents/registry.yaml` `requiredTools` and
+  `forbiddenTools` entries in the active path;
+- native task child scout required bootstrap doc names now come from each
+  scout pack `requiredDocs` entry in the active path;
+- scout required skill names now come from each scout pack `primarySkills`
+  entry in the active path;
+- scout required and forbidden tool expectations now come from each scout pack
+  `requiredTools` and `forbiddenTools` entries in the active path;
+- the old hardcoded parent skill fallback has been removed from the gateway
+  launch-preparation and provider-admission helper path;
+- the old hardcoded scout-agent fallback has been removed from the gateway
+  launch-preparation path;
+- the old hardcoded parent/scout tool expectation fallback lists have been
+  removed from the gateway and native-task helper paths;
+- the old hardcoded parent/scout doc-name fallback lists have been removed
+  from the gateway and native-task helper paths;
+- focused tests now pass explicit registry-derived doc, skill, child-agent,
+  required-tool, and forbidden-tool contract data into helper paths that need
+  those expectations, so the tests no longer normalize hidden EP defaults;
+- real node launch now fails closed with
+  `node_agent_registry_contract_incomplete` when the execution-coding pack or
+  required scout pack contract is absent or lacks required docs, skills, child
+  agents, required tools, or forbidden tools.
+
 Missing, empty, or truncated required sources block before model invocation
 through native launch admission.
 
@@ -884,6 +1106,13 @@ Native launch blocks if:
 No "mostly configured" worker starts.
 
 ## 21. Tool Catalog Facts Stay Native
+
+Status: complete for active launch/readback projection. Provider-visible tool
+names are captured from the native effective tool inventory after native
+runtime tools, native task filtering, scout filtering, and provider/tool-policy
+filters have run. Native `session.launch` carries the compact tool-catalog
+projection/ref, and Execution Platform readback projects that native fact
+instead of computing a separate tool-catalog truth object.
 
 Use native provider-visible tool catalog facts from `session.launch`.
 
@@ -935,6 +1164,18 @@ Runtime home should not be needed to understand first-party OpenClaw behavior.
 
 ## 25. Readback Is Thin
 
+Status: complete for the active readback path. Readback now projects native `session.launch` refs from the
+node-agent trace first. It also projects launch admission status, blocker kind,
+and cwd from the compact native launch projection before falling back to
+compatibility receipt metadata. The pre-session start receipt artifact has been
+removed, and accepted native-session runs no longer emit a success-path start
+receipt artifact. Native-session runs that return a session trace no longer
+emit a post-session start receipt artifact at all. Pre-session start blockers
+and invocation failures now record blocked native `session.launch` events
+instead of compatibility start receipt artifacts. Legacy readback fields still
+accept historical `NodeAgentStartReceipt` refs for old runs, but they are not
+current worker-launch truth.
+
 Execution Platform readback stores/projects only:
 
 ```text
@@ -963,6 +1204,16 @@ Readback must not re-run path matching or become a second admission engine.
 
 ## 26. Execution Platform-Critical Fields
 
+Status: complete for active worker launch. `sessionLaunchRef` and `sessionLaunchEventRef` are now present
+as native pointers, and readback now has native launch admission/cwd projection
+through the node-agent session trace. Accepted native-session runs do not emit
+a success-path start receipt artifact, and post-session provider-proof blockers
+also avoid start receipt artifact emission once a native session trace exists.
+Pre-session start blockers and invocation failures also avoid start receipt
+artifact emission and use native blocked `session.launch` instead. The active
+gateway proof state is no longer artifact-shaped; legacy readback fields still
+tolerate historical receipt refs.
+
 Keep only:
 
 ```text
@@ -979,6 +1230,17 @@ Even `admissionStatus` and `blockerKind` should be treated as projection fields
 from the native event, not Execution Platform-owned lifecycle truth.
 
 ## 27. Drop From Worker Critical Path
+
+Status: complete for the active worker critical path. Compatibility materialization is out of the worker launch
+critical path, native launch refs exist, and `node_finish`/`openclaw_resource_read`
+now move through the native runtime tool path. The pre-session start receipt artifact is no
+longer emitted. Readback now prefers native launch/session trace fields for
+launch admission status, blocker kind, and cwd. Post-session native trace paths
+no longer emit start receipt artifacts. Pre-session start blockers and
+invocation failures now emit blocked native `session.launch` instead of start
+receipt artifacts. The active gateway proof state is no longer artifact-shaped.
+Remaining compatibility is legacy readback support for old
+`NodeAgentStartReceipt` artifacts, not active worker launch design.
 
 Drop:
 
@@ -1009,6 +1271,25 @@ compatibility materialization as part of worker design
 late EP extraTool injection for node_finish
 EP bootstrap-internal validation
 ```
+
+Current reduction:
+
+- parent execution-coding required skill names are no longer owned by the
+  gateway critical path when the native registry entry is present;
+- parent execution-coding expected child-agent ids are no longer owned by the
+  gateway critical path when the native registry entry is present;
+- parent execution-coding required bootstrap doc names are no longer owned by
+  the gateway critical path when the native registry entry is present;
+- parent execution-coding required/forbidden tool expectations are no longer
+  owned by the gateway critical path when the native registry entry is present;
+- scout required bootstrap doc names, required skill names, and
+  required/forbidden tool expectations are no longer owned by the gateway or
+  native-task critical path when native scout registry entries are present;
+- compatibility fallback doc/skill/tool constants for missing/minimal registry
+  entries have been retired from the gateway and native-task helper paths;
+- the real executor already treats missing/incomplete native registry contract
+  fields as a typed pre-model blocker rather than using those fallback
+  constants as launch authority.
 
 ## 28. Focused Launch Success Gates
 

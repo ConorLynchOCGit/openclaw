@@ -11,12 +11,23 @@ import type { SessionSystemPromptReport } from "../../config/sessions/types.js";
 import { parseAgentSessionKey } from "../../routing/session-key.js";
 import { normalizeLowercaseStringOrEmpty } from "../../shared/string-coerce.js";
 import type { GatewayMessageChannel } from "../../utils/message-channel.js";
-import { resolveAgentConfig, resolveAgentDir } from "../agent-scope.js";
+import {
+  findExecutionPlatformAgentPackEntry,
+  loadAgentPackRegistryEntries,
+  type AgentPackRegistryEntry,
+} from "../agent-pack-registry.js";
+import { resolveAgentConfig, resolveAgentProjectRootDir } from "../agent-scope.js";
+import { resolveSourceBackedAgentBootstrapFilePaths } from "../bootstrap-files.js";
 import { waitForAgentRun, type AgentWaitResult } from "../run-wait.js";
+import { buildRequiredActiveSkillSnapshot, type SkillSnapshot } from "../skills.js";
 import type { SpawnedToolContext } from "../spawned-context.js";
 import { readSubagentOutput, type SubagentRunOutcome } from "../subagent-announce-output.js";
 import { spawnSubagentDirect, type SpawnSubagentResult } from "../subagent-spawn.js";
-import { evaluateRequiredProviderContextAdmission } from "../system-prompt-report.js";
+import {
+  evaluateRequiredProviderContextAdmission,
+  type RequiredProviderContextAdmission,
+  type RequiredProviderSkillSource,
+} from "../system-prompt-report.js";
 import type { AnyAgentTool } from "./common.js";
 import {
   jsonResult,
@@ -53,23 +64,6 @@ const NativeTaskToolSchema = Type.Object({
     Type.Number({ minimum: 0, description: "Optional bounded runtime for the child task." }),
   ),
 });
-
-const REQUIRED_CHILD_CANONICAL_AGENT_DOCS = [
-  "IDENTITY.md",
-  "AGENTS.md",
-  "BOOTSTRAP.md",
-  "TOOLS.md",
-] as const;
-
-const REQUIRED_CHILD_SKILL_BY_AGENT_ID: Record<string, string> = {
-  "execution-context-scout": "execution-context-scout",
-  "execution-validation-scout": "execution-validation-scout",
-};
-
-const REQUIRED_CHILD_PROVIDER_TOOL_NAMES_BY_AGENT_ID: Record<string, readonly string[]> = {
-  "execution-context-scout": ["read", "list", "glob", "grep"],
-  "execution-validation-scout": ["read", "list", "glob", "grep", "exec"],
-};
 
 function normalizeAllowedAgentIds(values: readonly string[]): Set<string> {
   return new Set(values.map((value) => normalizeLowercaseStringOrEmpty(value)).filter(Boolean));
@@ -138,6 +132,16 @@ type ChildSystemPromptReportReader = (params: {
   childSessionKey: string;
   childAgentId: string;
 }) => Promise<SessionSystemPromptReport | null>;
+
+type RequiredChildBootstrapAdmissionSources = {
+  requiredCanonicalDocNames: string[];
+  requiredCanonicalDocPaths: string[];
+  requiredSkillNames: string[];
+  requiredSkillSources: RequiredProviderSkillSource[];
+  requiredToolNames: string[];
+  forbiddenToolNames: string[];
+  registryContractIssues: string[];
+};
 
 function outcomeFromWait(wait: AgentWaitResult): SubagentRunOutcome {
   if (wait.status === "ok") {
@@ -279,6 +283,8 @@ function uniqueStringList(values: readonly (string | null | undefined)[], max = 
 function resolveChildProviderToolCatalogAdmission(params: {
   childAgentId: string;
   report: SessionSystemPromptReport;
+  requiredToolNames?: readonly string[];
+  forbiddenToolNames?: readonly string[];
 }): Pick<
   NativeTaskChildBootstrapAdmission,
   | "childToolCatalogAdmitted"
@@ -287,11 +293,9 @@ function resolveChildProviderToolCatalogAdmission(params: {
   | "missingRequiredToolNames"
   | "forbiddenToolNames"
 > {
-  const childAgentId = normalizeLowercaseStringOrEmpty(params.childAgentId) || "unknown";
-  const requiredToolNames = uniqueStringList(
-    REQUIRED_CHILD_PROVIDER_TOOL_NAMES_BY_AGENT_ID[childAgentId] ?? [],
-  );
+  const requiredToolNames = uniqueStringList(params.requiredToolNames ?? []);
   const requiredToolNameSet = new Set(requiredToolNames);
+  const configuredForbiddenToolNameSet = new Set(uniqueStringList(params.forbiddenToolNames ?? []));
   const providerToolNames = uniqueStringList(
     params.report.tools.entries.map((entry) => normalizeLowercaseStringOrEmpty(entry.name)),
   );
@@ -299,7 +303,10 @@ function resolveChildProviderToolCatalogAdmission(params: {
   const missingRequiredToolNames = requiredToolNames.filter(
     (name) => !providerToolNameSet.has(name),
   );
-  const forbiddenToolNames = providerToolNames.filter((name) => !requiredToolNameSet.has(name));
+  const forbiddenToolNames = uniqueStringList([
+    ...providerToolNames.filter((name) => !requiredToolNameSet.has(name)),
+    ...providerToolNames.filter((name) => configuredForbiddenToolNameSet.has(name)),
+  ]);
   return {
     childToolCatalogAdmitted:
       requiredToolNames.length > 0 &&
@@ -328,32 +335,218 @@ function sourceLabel(kind: "agent-doc" | "skill", agentId: string, name: string)
 }
 
 function requiredChildCanonicalDocLookups(
+  requiredDocNames: readonly string[] | undefined,
   requiredCanonicalDocPaths: readonly string[] | undefined,
-): Array<{ docName: (typeof REQUIRED_CHILD_CANONICAL_AGENT_DOCS)[number]; lookup: string }> {
-  return REQUIRED_CHILD_CANONICAL_AGENT_DOCS.map((docName, index) => ({
+): Array<{ docName: string; lookup: string }> {
+  const docNames = requiredDocNames?.length ? [...requiredDocNames] : [];
+  return docNames.map((docName, index) => ({
     docName,
     lookup: requiredCanonicalDocPaths?.[index]?.trim() || docName,
   }));
 }
 
-function resolveRequiredChildCanonicalDocPaths(childAgentId: string): string[] | undefined {
+function unresolvedChildDocPaths(
+  childAgentId: string,
+  requiredDocNames: readonly string[],
+): string[] {
+  return requiredDocNames.map(
+    (docName) => `openclaw-required-child-doc-unresolved://${childAgentId}/${docName}`,
+  );
+}
+
+function requiredProviderSkillSourcesFromSnapshot(
+  snapshot: SkillSnapshot,
+): RequiredProviderSkillSource[] {
+  return (snapshot.activeContextSources ?? []).map((source) => ({
+    name: source.name,
+    path: source.path,
+    sourceRef: source.sourceRef,
+    sourceHash: source.sourceHash,
+  }));
+}
+
+function requiredChildDocNamesFromRegistryEntry(
+  entry: AgentPackRegistryEntry | null | undefined,
+): string[] {
+  return entry?.requiredDocs?.length ? [...entry.requiredDocs] : [];
+}
+
+function requiredChildSkillNamesFromRegistryEntry(input: {
+  entry: AgentPackRegistryEntry | null | undefined;
+}): string[] {
+  return input.entry?.primarySkills?.length ? [...input.entry.primarySkills] : [];
+}
+
+function requiredChildToolNamesFromRegistryEntry(input: {
+  entry: AgentPackRegistryEntry | null | undefined;
+}): string[] {
+  return input.entry?.requiredTools?.length ? [...input.entry.requiredTools] : [];
+}
+
+function forbiddenChildToolNamesFromRegistryEntry(
+  entry: AgentPackRegistryEntry | null | undefined,
+): string[] {
+  return entry?.forbiddenTools?.length ? [...entry.forbiddenTools] : [];
+}
+
+function childAgentPackContractIssues(input: {
+  childAgentId: string;
+  entry: AgentPackRegistryEntry | null | undefined;
+}): string[] {
+  const issues: string[] = [];
+  if (!input.entry) {
+    return [`native_task_child_registry_contract_missing:${input.childAgentId}`];
+  }
+  if (!input.entry.requiredDocs?.length) {
+    issues.push(
+      `native_task_child_registry_contract_field_missing:${input.childAgentId}:requiredDocs`,
+    );
+  }
+  if (!input.entry.primarySkills?.length) {
+    issues.push(
+      `native_task_child_registry_contract_field_missing:${input.childAgentId}:primarySkills`,
+    );
+  }
+  if (!input.entry.requiredTools?.length) {
+    issues.push(
+      `native_task_child_registry_contract_field_missing:${input.childAgentId}:requiredTools`,
+    );
+  }
+  if (!input.entry.forbiddenTools?.length) {
+    issues.push(
+      `native_task_child_registry_contract_field_missing:${input.childAgentId}:forbiddenTools`,
+    );
+  }
+  return issues;
+}
+
+function resolveRequiredChildSkillSources(input: {
+  childAgentId: string;
+  requiredSkillNames: readonly string[];
+}): RequiredProviderSkillSource[] {
+  if (input.requiredSkillNames.length === 0) {
+    return [];
+  }
   try {
     const config = loadConfig();
-    const agentDir = resolveAgentDir(config, childAgentId);
-    return REQUIRED_CHILD_CANONICAL_AGENT_DOCS.map((docName) => path.join(agentDir, docName));
+    const workspaceDir = resolveAgentProjectRootDir(config, input.childAgentId);
+    return requiredProviderSkillSourcesFromSnapshot(
+      buildRequiredActiveSkillSnapshot(workspaceDir, {
+        config,
+        agentId: input.childAgentId,
+        requiredSkillNames: input.requiredSkillNames,
+      }),
+    );
   } catch {
-    return undefined;
+    return input.requiredSkillNames.map((requiredSkillName) => ({
+      name: requiredSkillName,
+      path: `openclaw-required-child-skill-unresolved://${input.childAgentId}/${requiredSkillName}`,
+      sourceHash: null,
+    }));
   }
+}
+
+export async function resolveRequiredChildBootstrapAdmissionSources(
+  childAgentId: string,
+): Promise<RequiredChildBootstrapAdmissionSources> {
+  const normalizedChildAgentId = normalizeLowercaseStringOrEmpty(childAgentId);
+  let requiredCanonicalDocNames: string[] = [];
+  let requiredSkillNames: string[] = [];
+  let requiredToolNames: string[] = [];
+  let forbiddenToolNames: string[] = [];
+  let registryContractIssues: string[] = [];
+  let requiredCanonicalDocPaths: string[];
+  try {
+    const config = loadConfig();
+    const registryEntries = await loadAgentPackRegistryEntries();
+    const childPackEntry = findExecutionPlatformAgentPackEntry({
+      entries: registryEntries,
+      agentId: normalizedChildAgentId,
+    });
+    registryContractIssues = childAgentPackContractIssues({
+      childAgentId: normalizedChildAgentId,
+      entry: childPackEntry,
+    });
+    requiredCanonicalDocNames = requiredChildDocNamesFromRegistryEntry(childPackEntry);
+    requiredSkillNames = requiredChildSkillNamesFromRegistryEntry({
+      entry: childPackEntry,
+    });
+    requiredToolNames = requiredChildToolNamesFromRegistryEntry({
+      entry: childPackEntry,
+    });
+    forbiddenToolNames = forbiddenChildToolNamesFromRegistryEntry(childPackEntry);
+    requiredCanonicalDocPaths =
+      (await resolveSourceBackedAgentBootstrapFilePaths({
+        config,
+        agentId: normalizedChildAgentId,
+        fileNames: requiredCanonicalDocNames,
+      })) ??
+      requiredCanonicalDocNames.map((docName) =>
+        path.join(
+          resolveAgentProjectRootDir(config, normalizedChildAgentId),
+          "docs",
+          "agents",
+          normalizedChildAgentId,
+          "runtime",
+          docName,
+        ),
+      );
+  } catch {
+    registryContractIssues = [
+      `native_task_child_registry_contract_unavailable:${normalizedChildAgentId}`,
+    ];
+    requiredCanonicalDocPaths = unresolvedChildDocPaths(
+      normalizedChildAgentId,
+      requiredCanonicalDocNames,
+    );
+  }
+  return {
+    requiredCanonicalDocNames,
+    requiredCanonicalDocPaths,
+    requiredSkillNames,
+    requiredSkillSources: resolveRequiredChildSkillSources({
+      childAgentId: normalizedChildAgentId,
+      requiredSkillNames,
+    }),
+    requiredToolNames,
+    forbiddenToolNames,
+    registryContractIssues,
+  };
+}
+
+function buildRequiredChildProviderContextAdmission(params: {
+  childAgentId: string;
+  sources: RequiredChildBootstrapAdmissionSources;
+}): RequiredProviderContextAdmission {
+  return {
+    workspaceFileNames: params.sources.requiredCanonicalDocPaths,
+    skillNames: params.sources.requiredSkillNames,
+    skillSources: params.sources.requiredSkillSources,
+    rejectTruncatedWorkspaceFiles: true,
+  };
 }
 
 export function buildChildBootstrapAdmission(params: {
   childSessionKey: string;
   childAgentId: string;
   report: SessionSystemPromptReport | null;
+  requiredCanonicalDocNames?: readonly string[];
   requiredCanonicalDocPaths?: readonly string[];
+  requiredSkillNames?: readonly string[];
+  requiredSkillSources?: readonly RequiredProviderSkillSource[];
+  requiredToolNames?: readonly string[];
+  forbiddenToolNames?: readonly string[];
 }): NativeTaskChildBootstrapAdmission {
   const childAgentId = normalizeLowercaseStringOrEmpty(params.childAgentId) || "unknown";
-  const requiredSkillName = REQUIRED_CHILD_SKILL_BY_AGENT_ID[childAgentId];
+  const requiredSkillNames = params.requiredSkillNames?.length
+    ? uniqueStringList(params.requiredSkillNames)
+    : [];
+  const requiredToolNames = params.requiredToolNames?.length
+    ? uniqueStringList(params.requiredToolNames)
+    : [];
+  const requiredDocNames = params.requiredCanonicalDocNames?.length
+    ? uniqueStringList(params.requiredCanonicalDocNames)
+    : [];
   if (!params.report) {
     return {
       providerReportObserved: false,
@@ -362,30 +555,28 @@ export function buildChildBootstrapAdmission(params: {
       requiredSkillAdmitted: false,
       childToolCatalogAdmitted: false,
       providerToolNames: [],
-      requiredToolNames: uniqueStringList(
-        REQUIRED_CHILD_PROVIDER_TOOL_NAMES_BY_AGENT_ID[childAgentId] ?? [],
-      ),
-      missingRequiredToolNames: uniqueStringList(
-        REQUIRED_CHILD_PROVIDER_TOOL_NAMES_BY_AGENT_ID[childAgentId] ?? [],
-      ),
+      requiredToolNames,
+      missingRequiredToolNames: requiredToolNames,
       forbiddenToolNames: [],
       missingRequiredSources: uniqueStringList([
-        ...REQUIRED_CHILD_CANONICAL_AGENT_DOCS.map((docName) =>
-          sourceLabel("agent-doc", childAgentId, docName),
-        ),
-        requiredSkillName ? sourceLabel("skill", childAgentId, requiredSkillName) : null,
+        ...requiredDocNames.map((docName) => sourceLabel("agent-doc", childAgentId, docName)),
+        ...requiredSkillNames.map((skillName) => sourceLabel("skill", childAgentId, skillName)),
       ]),
       truncatedRequiredSources: [],
       reasonCodes: ["native_task_child_provider_prompt_report_not_observed"],
     };
   }
 
-  const docLookups = requiredChildCanonicalDocLookups(params.requiredCanonicalDocPaths);
+  const docLookups = requiredChildCanonicalDocLookups(
+    requiredDocNames,
+    params.requiredCanonicalDocPaths,
+  );
   const admissionDecision = evaluateRequiredProviderContextAdmission({
     report: params.report,
     required: {
       workspaceFileNames: docLookups.map((doc) => doc.lookup),
-      skillNames: requiredSkillName ? [requiredSkillName] : [],
+      skillNames: requiredSkillNames,
+      skillSources: params.requiredSkillSources,
       rejectTruncatedWorkspaceFiles: true,
     },
   });
@@ -395,23 +586,26 @@ export function buildChildBootstrapAdmission(params: {
   const truncatedDocs = docLookups
     .filter((doc) => admissionDecision.truncatedWorkspaceFileNames.includes(doc.lookup))
     .map((doc) => sourceLabel("agent-doc", childAgentId, doc.docName));
-  const skillEntry = requiredSkillName
-    ? params.report.skills.entries.find((entry) => entry.name.trim() === requiredSkillName)
+  const firstRequiredSkillName = requiredSkillNames[0] ?? null;
+  const skillEntry = firstRequiredSkillName
+    ? params.report.skills.entries.find((entry) => entry.name.trim() === firstRequiredSkillName)
     : undefined;
-  const requiredSkillAdmitted = requiredSkillName
-    ? !admissionDecision.missingSkillNames.includes(requiredSkillName)
-    : true;
+  const requiredSkillAdmitted = requiredSkillNames.every(
+    (skillName) => !admissionDecision.missingSkillNames.includes(skillName),
+  );
   const missingRequiredSources = uniqueStringList([
     ...missingDocs,
-    requiredSkillAdmitted || !requiredSkillName
-      ? null
-      : sourceLabel("skill", childAgentId, requiredSkillName),
+    ...requiredSkillNames
+      .filter((skillName) => admissionDecision.missingSkillNames.includes(skillName))
+      .map((skillName) => sourceLabel("skill", childAgentId, skillName)),
   ]);
   const truncatedRequiredSources = uniqueStringList(truncatedDocs);
   const canonicalDocsAdmitted = missingDocs.length === 0 && truncatedDocs.length === 0;
   const toolCatalogAdmission = resolveChildProviderToolCatalogAdmission({
     childAgentId,
     report: params.report,
+    requiredToolNames,
+    forbiddenToolNames: params.forbiddenToolNames,
   });
   return {
     providerReportObserved: true,
@@ -436,6 +630,11 @@ export function buildChildBootstrapAdmission(params: {
       requiredSkillAdmitted
         ? "native_task_child_required_skill_admitted_to_provider_context"
         : "native_task_child_required_skill_missing_from_provider_context",
+      ...(admissionDecision.reasonCodes.includes(
+        "provider_context_required_skill_sources_mismatched",
+      )
+        ? ["native_task_child_required_skill_sources_mismatched"]
+        : []),
       toolCatalogAdmission.childToolCatalogAdmitted
         ? "native_task_child_provider_tool_catalog_admitted"
         : "native_task_child_provider_tool_catalog_invalid",
@@ -559,6 +758,7 @@ async function waitForForegroundSubagentTaskResult(params: {
   requestedAgentId: string;
   runTimeoutSeconds?: number;
   parentVisibleResultMaxChars?: number;
+  requiredBootstrapAdmissionSources?: RequiredChildBootstrapAdmissionSources;
   readChildSystemPromptReport?: ChildSystemPromptReportReader;
 }): Promise<NativeTaskForegroundResult> {
   const timeoutSeconds =
@@ -581,11 +781,19 @@ async function waitForForegroundSubagentTaskResult(params: {
     resultText,
     params.parentVisibleResultMaxChars,
   );
+  const requiredBootstrapSources =
+    params.requiredBootstrapAdmissionSources ??
+    (await resolveRequiredChildBootstrapAdmissionSources(params.requestedAgentId));
   const childBootstrapAdmission = buildChildBootstrapAdmission({
     childSessionKey: params.childSessionKey,
     childAgentId: params.requestedAgentId,
     report: childReport,
-    requiredCanonicalDocPaths: resolveRequiredChildCanonicalDocPaths(params.requestedAgentId),
+    requiredCanonicalDocNames: requiredBootstrapSources.requiredCanonicalDocNames,
+    requiredCanonicalDocPaths: requiredBootstrapSources.requiredCanonicalDocPaths,
+    requiredSkillNames: requiredBootstrapSources.requiredSkillNames,
+    requiredSkillSources: requiredBootstrapSources.requiredSkillSources,
+    requiredToolNames: requiredBootstrapSources.requiredToolNames,
+    forbiddenToolNames: requiredBootstrapSources.forbiddenToolNames,
   });
   const childBootstrapFailureKind =
     wait.status === "ok"
@@ -720,6 +928,17 @@ function buildParentDecisionFooter(requestedAgentId: string): string {
   return "";
 }
 
+function assertChildRegistryContractComplete(
+  sources: RequiredChildBootstrapAdmissionSources,
+): void {
+  if (sources.registryContractIssues.length === 0) {
+    return;
+  }
+  throw new ToolInputError(
+    `task child agent registry contract incomplete: ${sources.registryContractIssues.join(", ")}`,
+  );
+}
+
 export function createNativeTaskTool(
   opts: {
     allowedAgentIds: readonly string[];
@@ -737,6 +956,7 @@ export function createNativeTaskTool(
       requestedAgentId: string;
       runTimeoutSeconds?: number;
       parentVisibleResultMaxChars?: number;
+      requiredBootstrapAdmissionSources?: RequiredChildBootstrapAdmissionSources;
       readChildSystemPromptReport?: ChildSystemPromptReportReader;
     }) => Promise<NativeTaskForegroundResult>;
     readChildSystemPromptReport?: ChildSystemPromptReportReader;
@@ -800,12 +1020,16 @@ export function createNativeTaskTool(
         );
       }
       if (continuation) {
+        const requiredBootstrapSources =
+          await resolveRequiredChildBootstrapAdmissionSources(agentId);
+        assertChildRegistryContractComplete(requiredBootstrapSources);
         const foregroundResult = await waitForForegroundResult({
           childSessionKey: continuation.childSessionKey,
           runId: continuation.runId,
           requestedAgentId: agentId,
           runTimeoutSeconds,
           parentVisibleResultMaxChars,
+          requiredBootstrapAdmissionSources: requiredBootstrapSources,
           readChildSystemPromptReport: opts.readChildSystemPromptReport,
         });
         const parentVisibleForegroundResult = enforceParentVisibleChildResultBudget(
@@ -831,6 +1055,8 @@ export function createNativeTaskTool(
         );
       }
       const task = readStringParam(params, "task", { required: true, label: "task" });
+      const requiredBootstrapSources = await resolveRequiredChildBootstrapAdmissionSources(agentId);
+      assertChildRegistryContractComplete(requiredBootstrapSources);
       const result: SpawnSubagentResult = await spawnSubagent(
         {
           task,
@@ -844,6 +1070,10 @@ export function createNativeTaskTool(
           lightContext: false,
           leafTask: true,
           expectsCompletionMessage: true,
+          requiredProviderContextAdmission: buildRequiredChildProviderContextAdmission({
+            childAgentId: agentId,
+            sources: requiredBootstrapSources,
+          }),
         },
         {
           agentSessionKey: opts.agentSessionKey,
@@ -904,6 +1134,7 @@ export function createNativeTaskTool(
         requestedAgentId: agentId,
         runTimeoutSeconds,
         parentVisibleResultMaxChars,
+        requiredBootstrapAdmissionSources: requiredBootstrapSources,
         readChildSystemPromptReport: opts.readChildSystemPromptReport,
       });
       const parentVisibleForegroundResult = enforceParentVisibleChildResultBudget(

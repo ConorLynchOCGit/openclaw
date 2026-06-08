@@ -336,6 +336,10 @@ describe("Work Queue readback projection modules", () => {
             nodeAgentToolCallCount: 6,
             nodeAgentTraceMissingOptics: [],
             nodeAgentTraceEventRefs: {
+              sessionLaunchRef:
+                "openclaw-session-launch://agent%3Aexecution-coding%3Anode%3Anrun_projection_1",
+              sessionLaunchEventRef:
+                "openclaw-session-launch://agent%3Aexecution-coding%3Anode%3Anrun_projection_1/session_launch_1",
               workerPromptAuthoredRef: "runtime-job://job-projection/node-worker-prompt/node-1",
               workerPromptHashRef:
                 "node-agent-worker-prompt-hash://sha256:node-worker-prompt-prompt",
@@ -355,6 +359,22 @@ describe("Work Queue readback projection modules", () => {
               terminalNodeFinishRef: "runtime-job://job-projection/node-finish/node-1",
               waitingOnSubagentStateRef:
                 "agent:execution-coding:node:nrun_projection_1#state/waiting_on_subagent",
+            },
+            nodeAgentSessionLaunch: {
+              ref: "openclaw-session-launch://agent%3Aexecution-coding%3Anode%3Anrun_projection_1",
+              eventRef:
+                "openclaw-session-launch://agent%3Aexecution-coding%3Anode%3Anrun_projection_1/session_launch_1",
+              admissionStatus: "accepted",
+              blockerKind: null,
+              persisted: true,
+              provider: "openrouter",
+              model: "moonshotai/kimi-k2.6",
+              cwd: "/root/services/openclaw-roles/live",
+              reasoningLevel: "stream",
+              thinkingLevel: "xhigh",
+              promptHashMatched: true,
+              toolCatalogRef:
+                "openclaw-effective-tool-inventory://agent%3Aexecution-coding%3Anode%3Anrun_projection_1",
             },
             nodeAgentTraceObservations: {
               workerPromptAuthored: true,
@@ -465,8 +485,12 @@ describe("Work Queue readback projection modules", () => {
       sessionKey: "agent:execution-coding:node:nrun_projection_1",
       snapshotRefs: ["runtime-job://job-projection/node-execution-snapshot/node-1"],
       startReceiptRefs: ["runtime-job://job-projection/node-agent-start-receipt/node-1"],
-      startStatus: "blocked",
-      startBlockerKind: "session_lock",
+      sessionLaunchRef:
+        "openclaw-session-launch://agent%3Aexecution-coding%3Anode%3Anrun_projection_1",
+      sessionLaunchEventRef:
+        "openclaw-session-launch://agent%3Aexecution-coding%3Anode%3Anrun_projection_1/session_launch_1",
+      startStatus: "accepted",
+      startBlockerKind: null,
       startConfigFingerprint: "sha256:openclaw-config",
       startConfigEpoch: "2026-05-24T00:00:00.000Z",
       startProjectRoot: "/root/services/openclaw-roles/live",

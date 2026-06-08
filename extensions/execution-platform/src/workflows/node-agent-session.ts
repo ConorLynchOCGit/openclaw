@@ -388,7 +388,23 @@ export type NodeAgentSessionTrace = {
       inProgressCount: number;
     }>;
   } | null;
+  sessionLaunch: {
+    ref: string | null;
+    eventRef: string | null;
+    admissionStatus: string | null;
+    blockerKind: string | null;
+    persisted: boolean;
+    provider: string | null;
+    model: string | null;
+    cwd: string | null;
+    reasoningLevel: string | null;
+    thinkingLevel: string | null;
+    promptHashMatched: boolean | null;
+    toolCatalogRef: string | null;
+  };
   eventRefs: {
+    sessionLaunchRef: string | null;
+    sessionLaunchEventRef: string | null;
     workerPromptAuthoredRef: string | null;
     workerPromptHashRef: string | null;
     parentSessionKeyRef: string;
@@ -441,6 +457,7 @@ export type NodeAgentSessionTrace = {
     reasonCodes: string[];
   }>;
   observations: {
+    nativeSessionLaunchObserved: boolean;
     workerPromptAuthored: boolean;
     parentSessionStarted: boolean;
     firstPlanUpdateObserved: boolean;
@@ -524,10 +541,6 @@ export type NodeAgentSourceRuntimeLaunch = {
     label?: string;
   }>;
   manifestRef: string | null;
-  materializationRecordRef: string | null;
-  materializationStatus: "not_observed" | "aligned" | "blocked";
-  materializationIssueCount: number;
-  materializationIssues: string[];
 };
 
 export type NodeAgentStartReceipt = {
@@ -540,6 +553,8 @@ export type NodeAgentStartReceipt = {
   promptRef: string | null;
   promptHash: string | null;
   submittedPromptHash: string | null;
+  sessionLaunchRef: string | null;
+  sessionLaunchEventRef: string | null;
   cwd: string | null;
   modelProvider: string | null;
   modelId: string | null;
@@ -3413,6 +3428,25 @@ export function buildNodeAgentSessionTrace(input: {
     input.workerPrompt?.promptRef ??
     traceString(nativeTrace, ["workerPromptAuthoredRef", "workerPromptRef"]) ??
     null;
+  const sessionLaunchRef = traceString(nativeTrace, ["sessionLaunchRef"]);
+  const sessionLaunchEventRef = traceString(nativeTrace, ["sessionLaunchEventRef"]);
+  const sessionLaunch = {
+    ref: sessionLaunchRef,
+    eventRef: sessionLaunchEventRef,
+    admissionStatus: traceString(nativeTrace, ["sessionLaunchStatus", "admissionStatus"]),
+    blockerKind: traceString(nativeTrace, ["sessionLaunchBlockerKind", "blockerKind"]),
+    persisted: traceBoolean(nativeTrace, ["sessionLaunchPersisted", "persisted"]) === true,
+    provider: traceString(nativeTrace, ["sessionLaunchProvider", "provider"]),
+    model: traceString(nativeTrace, ["sessionLaunchModel", "model"]),
+    cwd: traceString(nativeTrace, ["sessionLaunchCwd", "cwd"]),
+    reasoningLevel: traceString(nativeTrace, ["sessionLaunchReasoningLevel", "reasoningLevel"]),
+    thinkingLevel: traceString(nativeTrace, ["sessionLaunchThinkingLevel", "thinkingLevel"]),
+    promptHashMatched: traceBoolean(nativeTrace, [
+      "sessionLaunchPromptHashMatched",
+      "promptHashMatched",
+    ]),
+    toolCatalogRef: traceString(nativeTrace, ["sessionLaunchToolCatalogRef", "toolCatalogRef"]),
+  };
   const childResultRef = traceString(nativeTrace, [
     "childResultRef",
     "contextScoutResultRef",
@@ -3481,6 +3515,7 @@ export function buildNodeAgentSessionTrace(input: {
   ]);
 
   const observations = {
+    nativeSessionLaunchObserved: Boolean(sessionLaunchEventRef),
     workerPromptAuthored: Boolean(workerPromptAuthoredRef),
     parentSessionStarted: Boolean(input.nodeRun.startedAt),
     firstPlanUpdateObserved: Boolean(firstPlanUpdateRef) || Boolean(todoState),
@@ -3611,7 +3646,10 @@ export function buildNodeAgentSessionTrace(input: {
     },
     providerAttempt,
     todoState,
+    sessionLaunch,
     eventRefs: {
+      sessionLaunchRef,
+      sessionLaunchEventRef,
       workerPromptAuthoredRef,
       workerPromptHashRef: input.workerPrompt?.promptHash
         ? `node-agent-worker-prompt-hash://${input.workerPrompt.promptHash}`
@@ -3646,6 +3684,9 @@ export function buildNodeAgentSessionTrace(input: {
     reasonCodes: uniqueStrings(
       [
         "node_agent_session_trace_built_from_native_openclaw_session_metadata",
+        observations.nativeSessionLaunchObserved
+          ? "node_agent_session_trace_native_session_launch_observed"
+          : null,
         observations.firstPlanUpdateObserved ? "node_agent_session_trace_plan_observed" : null,
         todoState ? "node_agent_session_trace_todo_state_projected" : null,
         observations.contextScoutSpawnObserved

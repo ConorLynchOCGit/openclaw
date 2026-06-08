@@ -22,6 +22,7 @@ import { resolveSubagentCapabilities } from "./subagent-capabilities.js";
 import { getSubagentDepthFromSessionStore } from "./subagent-depth.js";
 import { countActiveRunsForSession, registerSubagentRun } from "./subagent-registry.js";
 import { resolveSubagentSpawnAcceptedNote } from "./subagent-spawn-accepted-note.js";
+import type { RequiredProviderContextAdmission } from "./system-prompt-report.js";
 export {
   SUBAGENT_SPAWN_ACCEPTED_NOTE,
   SUBAGENT_SPAWN_SESSION_ACCEPTED_NOTE,
@@ -98,6 +99,7 @@ export type SpawnSubagentParams = {
    */
   leafTask?: boolean;
   expectsCompletionMessage?: boolean;
+  requiredProviderContextAdmission?: RequiredProviderContextAdmission;
   attachments?: Array<{
     name: string;
     content: string;
@@ -730,6 +732,9 @@ export async function spawnSubagentDirect(
               bootstrapContextMode,
               bootstrapContextRunKind: "default" as const,
             }
+          : {}),
+        ...(params.requiredProviderContextAdmission
+          ? { requiredProviderContextAdmission: params.requiredProviderContextAdmission }
           : {}),
         ...publicSpawnedMetadata,
       },

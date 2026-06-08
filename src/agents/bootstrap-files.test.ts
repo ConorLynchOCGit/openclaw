@@ -16,6 +16,8 @@ import {
   resolveBootstrapContextForRun,
   resolveBootstrapFilesForRun,
   resolveContextInjectionMode,
+  resolveSourceBackedAgentBootstrapFilePaths,
+  SOURCE_BACKED_AGENT_REQUIRED_BOOTSTRAP_DOCS,
 } from "./bootstrap-files.js";
 import type {
   SourceRuntimeMaterializationResult,
@@ -449,6 +451,101 @@ describe("resolveBootstrapFilesForRun", () => {
     expect(await fs.readFile(memoryPath, "utf8")).toBe(memoryContent);
     expect(userFile?.content).not.toContain("stale generated user projection");
     expect(memoryFile?.content).not.toContain("stale generated memory pointer");
+  });
+
+  it("loads source-backed execution-agent docs instead of mutable workspace bootstrap files", async () => {
+    const workspaceDir = await makeTempWorkspace("openclaw-bootstrap-");
+    const staleAgentsPath = path.join(workspaceDir, "AGENTS.md");
+    await fs.writeFile(staleAgentsPath, "# stale workspace agent rules\n", "utf8");
+
+    const files = await resolveBootstrapFilesForRun({
+      workspaceDir,
+      config: {
+        agents: {
+          list: [{ id: "execution-coding", agentDir: path.join(workspaceDir, "agent") }],
+        },
+      } as OpenClawConfig,
+      sessionKey: "agent:execution-coding:node:nrun-test",
+      agentId: "execution-coding",
+    });
+
+    const agents = files.find((file) => file.name === "AGENTS.md");
+    expect(agents?.path).toBe(
+      path.join(process.cwd(), "docs", "agents", "execution-coding", "runtime", "AGENTS.md"),
+    );
+    expect(agents?.content).not.toContain("stale workspace agent rules");
+    expect(await fs.readFile(staleAgentsPath, "utf8")).toBe("# stale workspace agent rules\n");
+    expect(files.some((file) => file.name === "SOUL.md")).toBe(false);
+    expect(files.some((file) => file.name === "USER.md")).toBe(false);
+  });
+
+  it("does not apply mutable workspace bootstrap hooks to source-backed execution-agent docs", async () => {
+    registerExtraBootstrapFileHook();
+
+    const workspaceDir = await makeTempWorkspace("openclaw-bootstrap-");
+    const files = await resolveBootstrapFilesForRun({
+      workspaceDir,
+      sessionKey: "agent:execution-coding:node:nrun-test",
+      agentId: "execution-coding",
+    });
+
+    expect(files.some((file) => file.path === path.join(workspaceDir, "EXTRA.md"))).toBe(false);
+    expect(files.some((file) => file.name === "AGENTS.md")).toBe(true);
+  });
+
+  it("resolves execution-agent admission paths from source-backed docs, not Runtime Home", async () => {
+    const paths = await resolveSourceBackedAgentBootstrapFilePaths({
+      agentId: "execution-coding",
+      sessionKey: "agent:execution-coding:node:nrun-test",
+      fileNames: SOURCE_BACKED_AGENT_REQUIRED_BOOTSTRAP_DOCS,
+    });
+
+    expect(paths).toEqual(
+      SOURCE_BACKED_AGENT_REQUIRED_BOOTSTRAP_DOCS.map((docName) =>
+        path.join(process.cwd(), "docs", "agents", "execution-coding", "runtime", docName),
+      ),
+    );
+    expect(paths?.every((filePath) => !filePath.includes(".openclaw/runtime"))).toBe(true);
+  });
+
+  it("keeps ordinary agents on workspace bootstrap instead of source-backed agent packs", async () => {
+    const workspaceDir = await makeTempWorkspace("openclaw-bootstrap-");
+    const agentsPath = path.join(workspaceDir, "AGENTS.md");
+    await fs.writeFile(agentsPath, "# ordinary workspace rules\n", "utf8");
+
+    const files = await resolveBootstrapFilesForRun({
+      workspaceDir,
+      config: {
+        agents: {
+          list: [{ id: "main", agentDir: path.join(workspaceDir, "agent") }],
+        },
+      } as OpenClawConfig,
+      sessionKey: "agent:main:main",
+      agentId: "main",
+    });
+
+    expect(files.find((file) => file.name === "AGENTS.md")?.path).toBe(agentsPath);
+    expect(files.find((file) => file.name === "AGENTS.md")?.path).not.toContain(
+      "docs/agents/main/runtime",
+    );
+  });
+
+  it("fails closed when an execution-agent registry entry lacks a runtime source path", async () => {
+    await expect(
+      resolveSourceBackedAgentBootstrapFilePaths({
+        agentId: "execution-coding",
+        sessionKey: "agent:execution-coding:node:nrun-test",
+        deps: {
+          loadAgentRegistryEntries: async () => [
+            {
+              id: "execution-coding",
+              classification: "execution_platform_agent",
+              projectRoot: process.cwd(),
+            },
+          ],
+        },
+      }),
+    ).rejects.toThrow(/source-backed execution agent runtime source missing/);
   });
 });
 

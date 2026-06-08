@@ -173,7 +173,7 @@ describe("spawnSubagentDirect workspace inheritance", () => {
     });
   });
 
-  async function spawnAndReadAgentParams(task: { task: string; lightContext?: boolean }) {
+  async function spawnAndReadAgentParams(task: Parameters<typeof spawnSubagentDirect>[0]) {
     await spawnSubagentDirect(task, {
       agentSessionKey: "agent:main:main",
       agentChannel: "telegram",
@@ -207,6 +207,30 @@ describe("spawnSubagentDirect workspace inheritance", () => {
 
     expect(agentParams).not.toHaveProperty("bootstrapContextMode");
     expect(agentParams).not.toHaveProperty("bootstrapContextRunKind");
+  });
+
+  it("forwards required provider-context admission into child agent launch", async () => {
+    const requiredProviderContextAdmission = {
+      workspaceFileNames: ["/repo/docs/agents/execution-context-scout/runtime/IDENTITY.md"],
+      skillNames: ["execution-context-scout"],
+      skillSources: [
+        {
+          name: "execution-context-scout",
+          path: "/repo/skills/execution-context-scout/SKILL.md",
+          sourceRef: "openclaw-skill-file://repo-context-scout",
+          sourceHash: "skill-hash",
+        },
+      ],
+      rejectTruncatedWorkspaceFiles: true,
+    };
+    const agentParams = await spawnAndReadAgentParams({
+      task: "inspect workspace",
+      requiredProviderContextAdmission,
+    });
+
+    expect(agentParams).toMatchObject({
+      requiredProviderContextAdmission,
+    });
   });
 
   it("deletes the provisional child session when a non-thread subagent start fails", async () => {

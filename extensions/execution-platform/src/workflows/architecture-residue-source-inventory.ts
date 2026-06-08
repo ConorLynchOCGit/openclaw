@@ -1400,7 +1400,7 @@ const HARD_FAILURE_CHECKS: Array<{
     file: "src/gateway/execution-platform-agent-team-runner.ts",
     patterns: ["toolsAllow:"],
     reasonCode:
-      "gateway_native_node_execution_must_use_openclaw_agent_config_and_extra_tools_not_tools_allow",
+      "gateway_native_node_execution_must_use_openclaw_agent_config_and_native_runtime_tools_not_tools_allow",
   },
   {
     checkId: "node_agent_session_no_snapshot_repo_authority_overlay",
@@ -1602,23 +1602,20 @@ const REQUIRED_SOURCE_PATTERNS: Array<{
       "boundary_replay_must_use_shared_openclaw_node_executor_and_preflight_worker_transport_before_scheduling",
   },
   {
-    checkId: "gateway_node_start_adapter_requires_native_plan_and_subagent_tools",
+    checkId: "gateway_node_start_adapter_uses_registry_native_task_tool_contract",
     file: "src/gateway/execution-platform-agent-team-runner.ts",
     patterns: [
       "prepareOpenClawNodeStart(",
-      '"update_plan"',
-      '"sessions_spawn"',
-      '"sessions_yield"',
-      '"subagents"',
-      '"agents_list"',
-      '"list"',
-      '"glob"',
-      '"grep"',
-      "resolveEffectiveToolPolicyAccess({",
-      "localPolicyExplicit",
-      "effectiveProfileSource",
+      "resolveParentNativeTaskEffectiveToolNames({",
+      "requiredToolNames: requiredParentToolNames",
+      "forbiddenToolNames: forbiddenParentToolNames",
+      "nodeAgentNativeTaskMode: {",
+      "allowedAgentIds: expectedChildAgentIds",
+      "nodeAgentRequiredToolNamesFromRegistryEntry(",
+      "nodeAgentForbiddenToolNamesFromRegistryEntry(",
     ],
-    reasonCode: "gateway_node_start_adapter_must_require_native_plan_and_subagent_tools",
+    reasonCode:
+      "gateway_node_start_adapter_must_use_registry_native_task_tool_contract_not_raw_parent_session_or_search_tools",
   },
   {
     checkId: "node_agent_session_authors_worker_prompt_with_text_model_turn",
@@ -1661,49 +1658,43 @@ const REQUIRED_SOURCE_PATTERNS: Array<{
       "native_node_agent_session_must_emit_bounded_trace_refs_for_plan_subagent_edit_validation_finish_optics",
   },
   {
-    checkId: "gateway_attaches_node_agent_start_receipt_artifact",
+    checkId: "gateway_records_blocked_node_start_as_native_session_launch",
     file: "src/gateway/execution-platform-agent-team-runner.ts",
     patterns: [
-      "attachNodeAgentStartReceiptArtifact(",
-      "NODE_AGENT_START_RECEIPT_ARTIFACT_TYPE",
-      "node_agent_start_receipt_artifact_attached",
-      "nodeAgentStartReceiptRef",
-      "nodeAgentStartLockAcquisitionOutcome",
-    ],
-    reasonCode: "gateway_must_attach_node_agent_start_receipts_for_native_start_readback",
-  },
-  {
-    checkId: "runtime_artifact_contracts_require_node_agent_start_receipt_payload",
-    file: "extensions/execution-platform/src/runtime-artifact-contracts.ts",
-    patterns: [
-      'artifactType: "execution_platform.node_agent_start_receipt"',
-      'bodySchemaRef: "NodeAgentStartReceipt"',
-      "runtime-artifact.node-agent-start-receipt.v1",
+      "recordBlockedNodeSessionLaunch({",
+      "updateSessionLaunch({",
+      "node_agent_start_blocked_native_session_launch_recorded",
+      "node_agent_session_invocation_failed_native_session_launch_recorded",
+      "nodeAgentStartReceiptRef: null",
     ],
     reasonCode:
-      "node_agent_start_receipt_artifact_must_be_manifest_backed_and_rehydratable_by_contract",
+      "gateway_must_record_blocked_node_start_as_native_session_launch_not_start_receipt_artifact",
   },
   {
-    checkId: "active_graph_readback_projects_node_agent_start_receipt",
+    checkId: "native_session_launch_store_supports_launch_only_blocked_admission",
+    file: "src/config/sessions/launch.ts",
+    patterns: [
+      'type: "session.launch"',
+      "createIfMissing?: boolean",
+      "createIfMissing ?? true",
+      "sessionId: existing?.sessionId ?? `launch_${event.eventId}`",
+      "mergeSessionEntry(",
+    ],
+    reasonCode:
+      "native_session_launch_store_must_persist_pre_session_blockers_without_ep_start_receipt",
+  },
+  {
+    checkId: "active_graph_readback_projects_native_session_launch_first",
     file: "extensions/execution-platform/src/work-queue/projections/active-graph-progress.ts",
     patterns: [
-      '"execution_platform.node_agent_start_receipt"',
-      "nodeAgentStartReceiptRefs",
-      "startLockAcquisitionOutcome",
-      "startBlockedTools",
-    ],
-    reasonCode: "work_queue_readback_must_project_bounded_native_node_start_receipts",
-  },
-  {
-    checkId: "canonical_readback_projects_node_agent_start_receipt",
-    file: "extensions/execution-platform/src/observability/canonical-readback-gate.ts",
-    patterns: [
-      "nodeAgentStartReceiptRefs",
-      "node_agent_session_lock_owner_live",
-      "node_agent_tool_policy_insufficient",
+      "latestNodeAgentSessionLaunch",
+      "latestNodeAgentSessionTraceEventRefs.sessionLaunchRef",
+      "sessionLaunchRef:",
+      "sessionLaunchEventRef:",
+      "nativeSessionLaunchStatus",
     ],
     reasonCode:
-      "canonical_readback_must_project_typed_node_start_receipts_without_generic_collapse",
+      "work_queue_readback_must_project_native_session_launch_before_legacy_start_receipts",
   },
   {
     checkId: "boundary_replay_uses_runner_owned_fresh_attempt_reset",
@@ -1779,35 +1770,36 @@ const REQUIRED_SOURCE_PATTERNS: Array<{
       "gateway_profile_resolution_must_delegate_native_config_facts_to_node_start_adapter",
   },
   {
-    checkId: "node_agent_session_uses_openclaw_extra_tools_pipeline",
+    checkId: "node_agent_session_uses_openclaw_native_runtime_tools_pipeline",
     file: "extensions/execution-platform/src/workflows/node-agent-session.ts",
     patterns: [
       "createNodeFinishTool({",
       "name: NODE_FINISH_TOOL_NAME",
       "name: OPENCLAW_RESOURCE_READ_TOOL_NAME",
-      "extraTools: [finishTool, ...(inputExtraTools ?? [])]",
+      "nativeRuntimeTools: [finishTool, ...(inputNativeRuntimeTools ?? [])]",
       "runEmbeddedAgent({",
     ],
     reasonCode:
-      "node_agent_session_must_inject_only_lifecycle_resource_tools_through_openclaw_extra_tools",
+      "node_agent_session_must_bind_lifecycle_resource_tools_through_openclaw_native_runtime_tools",
   },
   {
-    checkId: "openclaw_agent_tools_accept_extra_tools",
+    checkId: "openclaw_agent_tools_accept_native_runtime_tools",
     file: "src/agents/pi-tools.ts",
-    patterns: ["extraTools?: AnyAgentTool[]", "...(options?.extraTools ?? [])"],
-    reasonCode: "openclaw_tool_factory_must_accept_execution_platform_extra_tools",
+    patterns: ["nativeRuntimeTools?: AnyAgentTool[]", "...(options?.nativeRuntimeTools ?? [])"],
+    reasonCode: "openclaw_tool_factory_must_accept_runner_owned_native_runtime_tools",
   },
   {
-    checkId: "embedded_agent_params_forward_extra_tools",
+    checkId: "embedded_agent_params_forward_native_runtime_tools",
     file: "src/agents/pi-embedded-runner/run/params.ts",
-    patterns: ["extraTools?: AnyAgentTool[]"],
-    reasonCode: "embedded_agent_runner_params_must_expose_extra_tools",
+    patterns: ["nativeRuntimeTools?: AnyAgentTool[]"],
+    reasonCode: "embedded_agent_runner_params_must_expose_native_runtime_tools",
   },
   {
-    checkId: "embedded_attempt_installs_extra_tools",
+    checkId: "embedded_attempt_installs_native_runtime_tools",
     file: "src/agents/pi-embedded-runner/run/attempt.ts",
-    patterns: ["extraTools: params.extraTools"],
-    reasonCode: "embedded_agent_attempt_must_install_extra_tools_through_openclaw_tool_factory",
+    patterns: ["nativeRuntimeTools: params.nativeRuntimeTools"],
+    reasonCode:
+      "embedded_agent_attempt_must_install_native_runtime_tools_through_openclaw_tool_factory",
   },
 ];
 

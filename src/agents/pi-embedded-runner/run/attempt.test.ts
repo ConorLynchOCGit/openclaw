@@ -366,6 +366,47 @@ describe("native task result parent-context preservation", () => {
       validationStateRef: "openclaw-session-working-context://parent/validation",
     });
   });
+
+  it("projects native session.launch events even when no tools ran", () => {
+    const trace = buildNodeAgentSessionTraceFromEvents([
+      {
+        eventType: "session_launch",
+        sessionLaunchRef: "openclaw-session-launch://agent%3Aexecution-coding%3Anode%3Anrun",
+        sessionLaunchEventRef:
+          "openclaw-session-launch://agent%3Aexecution-coding%3Anode%3Anrun/session_launch_1",
+        admissionStatus: "blocked",
+        blockerKind: "context_overflow_precheck",
+        provider: "openrouter",
+        model: "moonshotai/kimi-k2.6",
+        cwd: "/root/services/openclaw-roles/live",
+        reasoningLevel: "stream",
+        thinkingLevel: "xhigh",
+        promptHashMatched: false,
+        toolCatalogRef:
+          "openclaw-effective-tool-inventory://agent%3Aexecution-coding%3Anode%3Anrun",
+        persisted: true,
+      },
+    ]);
+
+    expect(trace).toMatchObject({
+      sessionLaunchRef: "openclaw-session-launch://agent%3Aexecution-coding%3Anode%3Anrun",
+      sessionLaunchEventRef:
+        "openclaw-session-launch://agent%3Aexecution-coding%3Anode%3Anrun/session_launch_1",
+      sessionLaunchStatus: "blocked",
+      sessionLaunchBlockerKind: "context_overflow_precheck",
+      sessionLaunchProvider: "openrouter",
+      sessionLaunchModel: "moonshotai/kimi-k2.6",
+      sessionLaunchCwd: "/root/services/openclaw-roles/live",
+      sessionLaunchReasoningLevel: "stream",
+      sessionLaunchThinkingLevel: "xhigh",
+      sessionLaunchPromptHashMatched: false,
+      sessionLaunchToolCatalogRef:
+        "openclaw-effective-tool-inventory://agent%3Aexecution-coding%3Anode%3Anrun",
+      sessionLaunchPersisted: true,
+      nativeTaskResultCount: 0,
+      nodeAgentToolResultCount: 0,
+    });
+  });
 });
 
 describe("composeSystemPromptWithHookContext", () => {

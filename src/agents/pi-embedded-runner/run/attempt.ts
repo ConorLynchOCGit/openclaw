@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import fs from "node:fs/promises";
 import os from "node:os";
 import type { AgentMessage } from "@mariozechner/pi-agent-core";
@@ -8,7 +9,9 @@ import {
 } from "@mariozechner/pi-coding-agent";
 import { filterHeartbeatPairs } from "../../../auto-reply/heartbeat-filter.js";
 import { resolveChannelCapabilities } from "../../../config/channel-capabilities.js";
+import { updateSessionLaunch } from "../../../config/sessions/launch.js";
 import { resolveStorePath } from "../../../config/sessions/paths.js";
+import type { SessionSystemPromptReport } from "../../../config/sessions/types.js";
 import { stripSessionWorkingContextPromptAddition } from "../../../config/sessions/working-context.js";
 import { formatErrorMessage } from "../../../infra/errors.js";
 import { resolveHeartbeatSummaryForAgent } from "../../../infra/heartbeat-summary.js";
@@ -470,6 +473,58 @@ function parentActionToolNameFromEvent(event: Record<string, unknown> | undefine
   return stringFromRecord(event, "toolName") ?? null;
 }
 
+function stableAttemptTextHash(value: string): string {
+  return createHash("sha256").update(value).digest("hex");
+}
+
+function requiredSourceIdForWorkspaceFile(params: {
+  agentId: string;
+  name: string;
+  filePath: string;
+}): string {
+  const normalizedPath = params.filePath.replace(/\\/gu, "/");
+  const agentRuntimeMarker = `/docs/agents/${params.agentId}/runtime/`;
+  const runtimeIndex = normalizedPath.indexOf(agentRuntimeMarker);
+  if (runtimeIndex >= 0) {
+    const docName = normalizedPath.slice(runtimeIndex + agentRuntimeMarker.length).split("/")[0];
+    if (docName) {
+      return `agent://${params.agentId}/doc/${docName}`;
+    }
+  }
+  return `workspace://${params.name || normalizedPath}`;
+}
+
+function requiredSourceIdForSkill(params: { name: string; sourceRef?: string }): string {
+  const sourceRef = params.sourceRef?.trim();
+  if (sourceRef) {
+    return sourceRef;
+  }
+  return `skill://${params.name}/SKILL.md`;
+}
+
+function launchRequiredSourcesFromSystemPromptReport(params: {
+  agentId: string;
+  report: SessionSystemPromptReport;
+}) {
+  return [
+    ...params.report.injectedWorkspaceFiles.map((file) => ({
+      id: requiredSourceIdForWorkspaceFile({
+        agentId: params.agentId,
+        name: file.name,
+        filePath: file.path,
+      }),
+      bytes: file.injectedChars,
+      truncated: file.truncated,
+    })),
+    ...params.report.skills.entries.map((skill) => ({
+      id: requiredSourceIdForSkill({ name: skill.name, sourceRef: skill.sourceRef }),
+      bytes: skill.blockChars,
+      truncated: false,
+      ...(skill.sourceHash ? { hash: skill.sourceHash } : {}),
+    })),
+  ];
+}
+
 export function buildNodeAgentSessionTraceFromEvents(
   events: readonly Record<string, unknown>[],
 ): Record<string, unknown> | undefined {
@@ -488,10 +543,12 @@ export function buildNodeAgentSessionTraceFromEvents(
   const taskEvents = nativeTaskTraceEvents(events);
   const toolEvents = nodeAgentToolResultEvents(events);
   const contextPreservationEvents = nativeTaskContextPreservationEvents(events);
+  const launchEvent = events.find((event) => event.eventType === "session_launch");
   if (
     taskEvents.length === 0 &&
     toolEvents.length === 0 &&
-    contextPreservationEvents.length === 0
+    contextPreservationEvents.length === 0 &&
+    !launchEvent
   ) {
     return undefined;
   }
@@ -578,6 +635,18 @@ export function buildNodeAgentSessionTraceFromEvents(
     validationTodoDecisionEvent,
   );
   return {
+    sessionLaunchEventRef: stringFromRecord(launchEvent, "sessionLaunchEventRef") ?? null,
+    sessionLaunchRef: stringFromRecord(launchEvent, "sessionLaunchRef") ?? null,
+    sessionLaunchStatus: stringFromRecord(launchEvent, "admissionStatus") ?? null,
+    sessionLaunchBlockerKind: stringFromRecord(launchEvent, "blockerKind") ?? null,
+    sessionLaunchProvider: stringFromRecord(launchEvent, "provider") ?? null,
+    sessionLaunchModel: stringFromRecord(launchEvent, "model") ?? null,
+    sessionLaunchCwd: stringFromRecord(launchEvent, "cwd") ?? null,
+    sessionLaunchReasoningLevel: stringFromRecord(launchEvent, "reasoningLevel") ?? null,
+    sessionLaunchThinkingLevel: stringFromRecord(launchEvent, "thinkingLevel") ?? null,
+    sessionLaunchToolCatalogRef: stringFromRecord(launchEvent, "toolCatalogRef") ?? null,
+    sessionLaunchPromptHashMatched: booleanFromRecord(launchEvent, "promptHashMatched"),
+    sessionLaunchPersisted: booleanFromRecord(launchEvent, "persisted") ?? false,
     nativeTaskResultCount: taskEvents.length,
     nodeAgentToolResultCount: toolEvents.length,
     nativeTaskRef: stringFromRecord(firstEvent, "taskRef") ?? null,
@@ -2612,6 +2681,79 @@ export async function runEmbeddedAttempt(
             );
             skipPromptSubmission = true;
           }
+
+          const preflightReasonCodes =
+            preflightRecovery && "reasonCodes" in preflightRecovery
+              ? (preflightRecovery.reasonCodes ?? [])
+              : [];
+          const launchBlockers = skipPromptSubmission
+            ? preflightReasonCodes.length
+              ? preflightReasonCodes
+              : promptErrorSource
+                ? [`${promptErrorSource}_blocked_before_model_invocation`]
+                : ["model_invocation_blocked_before_provider_submission"]
+            : [];
+          const launchAdmissionStatus = launchBlockers.length > 0 ? "blocked" : "accepted";
+          const sessionLaunchToolCatalogRef = `openclaw-effective-tool-inventory://${encodeURIComponent(
+            params.sessionKey ?? params.sessionId,
+          )}`;
+          const sessionLaunch = await updateSessionLaunch({
+            storePath: sessionStorePath,
+            input: {
+              sessionKey: params.sessionKey ?? params.sessionId,
+              agentId: sessionAgentId,
+              runId: params.runId,
+              nodeRunId: params.runId,
+              admissionStatus: launchAdmissionStatus,
+              blockerKind: launchBlockers[0] ?? null,
+              provider: params.provider,
+              model: params.modelId,
+              cwd: effectiveWorkspace,
+              reasoningLevel: params.reasoningLevel,
+              thinkingLevel: params.thinkLevel,
+              promptHash: stableAttemptTextHash(effectivePrompt),
+              submittedPromptHash: skipPromptSubmission
+                ? null
+                : stableAttemptTextHash(effectivePrompt),
+              promptHashMatched: skipPromptSubmission ? null : true,
+              requiredSources: launchRequiredSourcesFromSystemPromptReport({
+                agentId: sessionAgentId,
+                report: systemPromptReport,
+              }),
+              toolCatalogRef: sessionLaunchToolCatalogRef,
+              effectiveToolNames,
+              allowedChildAgentIds: params.nodeAgentNativeTaskMode?.allowedAgentIds ?? [],
+              blockers: launchBlockers,
+              reasonCodes: [
+                launchAdmissionStatus === "accepted"
+                  ? "session_launch_accepted_before_provider_submission"
+                  : "session_launch_blocked_before_provider_submission",
+                ...launchBlockers,
+              ],
+            },
+          });
+          nodeAgentSessionTraceEvents.push({
+            eventType: "session_launch",
+            sessionKey: params.sessionKey ?? params.sessionId,
+            agentId: sessionAgentId,
+            admissionStatus: launchAdmissionStatus,
+            blockerKind: launchBlockers[0] ?? null,
+            provider: params.provider ?? null,
+            model: params.modelId ?? null,
+            cwd: effectiveWorkspace,
+            reasoningLevel: params.reasoningLevel ?? null,
+            thinkingLevel: params.thinkLevel ?? null,
+            promptHashMatched: skipPromptSubmission ? null : true,
+            toolCatalogRef: sessionLaunchToolCatalogRef,
+            persisted: sessionLaunch.persisted,
+            sessionLaunchRef: sessionLaunch.launchRef,
+            ...(sessionLaunch.persisted
+              ? { sessionLaunchEventRef: sessionLaunch.launchEventRef }
+              : { sessionLaunchPersistFailureReason: sessionLaunch.reason }),
+            reasonCodes: sessionLaunch.persisted
+              ? ["session_launch_event_persisted"]
+              : [`session_launch_event_not_persisted:${sessionLaunch.reason}`],
+          });
 
           if (!skipPromptSubmission) {
             finalPromptText = effectivePrompt;

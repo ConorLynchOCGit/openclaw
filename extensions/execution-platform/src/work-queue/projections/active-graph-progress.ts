@@ -710,6 +710,16 @@ export function activeGraphProgressReadback(
     ...asRecord(latestNodeAgentSessionData.nodeAgentTraceObservations),
     ...asRecord(latestNodeAgentSessionTraceMetadata?.nodeAgentTraceObservations),
   };
+  const latestNodeAgentSessionLaunch = {
+    ...asRecord(latestNodeAgentSessionData.nodeAgentSessionLaunch),
+    ...asRecord(latestNodeAgentSessionTraceMetadata?.nodeAgentSessionLaunch),
+  };
+  const nativeSessionLaunchStatus =
+    stringValue(latestNodeAgentSessionLaunch.admissionStatus) ??
+    stringValue(latestNodeAgentSessionTraceMetadata?.nodeAgentSessionLaunchStatus);
+  const nativeSessionLaunchBlockerKind =
+    stringValue(latestNodeAgentSessionLaunch.blockerKind) ??
+    stringValue(latestNodeAgentSessionTraceMetadata?.nodeAgentSessionLaunchBlockerKind);
   const nodeAgentSnapshotRefs = collect("nodeExecutionSnapshotRef", 30);
   const nodeAgentSessionTraceRefs = [
     ...new Set(
@@ -867,12 +877,23 @@ export function activeGraphProgressReadback(
         stringValue(latestNodeAgentStartReceiptMetadata?.nodeAgentSessionKey),
       snapshotRefs: nodeAgentSnapshotRefs,
       startReceiptRefs: nodeAgentStartReceiptRefs,
+      sessionLaunchRef:
+        stringValue(latestNodeAgentSessionLaunch.ref) ??
+        stringValue(latestNodeAgentSessionTraceEventRefs.sessionLaunchRef) ??
+        stringValue(latestNodeAgentStartReceiptMetadata?.nodeAgentStartSessionLaunchRef),
+      sessionLaunchEventRef:
+        stringValue(latestNodeAgentSessionLaunch.eventRef) ??
+        stringValue(latestNodeAgentSessionTraceEventRefs.sessionLaunchEventRef) ??
+        stringValue(latestNodeAgentStartReceiptMetadata?.nodeAgentStartSessionLaunchEventRef),
       startStatus:
+        nativeSessionLaunchStatus ??
         stringValue(latestNodeAgentSessionData.nodeAgentStartStatus) ??
         stringValue(latestNodeAgentStartReceiptMetadata?.nodeAgentStartStatus),
       startBlockerKind:
-        stringValue(latestNodeAgentSessionData.nodeAgentStartBlockerKind) ??
-        stringValue(latestNodeAgentStartReceiptMetadata?.nodeAgentStartBlockerKind),
+        nativeSessionLaunchStatus !== null
+          ? nativeSessionLaunchBlockerKind
+          : (stringValue(latestNodeAgentSessionData.nodeAgentStartBlockerKind) ??
+            stringValue(latestNodeAgentStartReceiptMetadata?.nodeAgentStartBlockerKind)),
       startConfigFingerprint:
         stringValue(latestNodeAgentSessionData.nodeAgentStartConfigFingerprint) ??
         stringValue(latestNodeAgentStartReceiptMetadata?.nodeAgentStartConfigFingerprint),
@@ -880,6 +901,8 @@ export function activeGraphProgressReadback(
         stringValue(latestNodeAgentSessionData.nodeAgentStartConfigEpoch) ??
         stringValue(latestNodeAgentStartReceiptMetadata?.nodeAgentStartConfigEpoch),
       startProjectRoot:
+        stringValue(latestNodeAgentSessionLaunch.cwd) ??
+        stringValue(latestNodeAgentSessionTraceMetadata?.nodeAgentSessionLaunchCwd) ??
         stringValue(latestNodeAgentSessionData.nodeAgentStartProjectRoot) ??
         stringValue(latestNodeAgentStartReceiptMetadata?.nodeAgentStartProjectRoot),
       startExecutionPlatformDocsRoot:

@@ -4,9 +4,17 @@ import { buildBootstrapInjectionStats } from "./bootstrap-budget.js";
 import type { EmbeddedContextFile } from "./pi-embedded-helpers.js";
 import type { WorkspaceBootstrapFile } from "./workspace.js";
 
+export type RequiredProviderSkillSource = {
+  name: string;
+  path?: string;
+  sourceRef?: string;
+  sourceHash?: string | null;
+};
+
 export type RequiredProviderContextAdmission = {
   workspaceFileNames?: readonly string[];
   skillNames?: readonly string[];
+  skillSources?: readonly RequiredProviderSkillSource[];
   rejectTruncatedWorkspaceFiles?: boolean;
 };
 
@@ -75,6 +83,48 @@ function matchesRequiredWorkspaceFile(
   }
   const requiredName = normalizeAdmissionLookupName(required);
   return normalizeAdmissionLookupName(entry.name || entry.path) === requiredName;
+}
+
+function hasOwn(value: object, key: string): boolean {
+  return Object.prototype.hasOwnProperty.call(value, key);
+}
+
+function normalizeRequiredSkillSources(
+  sources: readonly RequiredProviderSkillSource[] | undefined,
+): RequiredProviderSkillSource[] {
+  return (sources ?? [])
+    .map((source) => ({
+      name: source.name.trim(),
+      ...(source.path?.trim() ? { path: source.path.trim() } : {}),
+      ...(source.sourceRef?.trim() ? { sourceRef: source.sourceRef.trim() } : {}),
+      ...(hasOwn(source, "sourceHash") ? { sourceHash: source.sourceHash ?? null } : {}),
+    }))
+    .filter((source) => source.name.length > 0);
+}
+
+function matchesRequiredSkillSource(
+  entry: SessionSystemPromptReport["skills"]["entries"][number],
+  required: RequiredProviderSkillSource,
+): boolean {
+  if ((entry.blockChars ?? 0) <= 0) {
+    return false;
+  }
+  if (
+    required.path &&
+    normalizeAdmissionPath(entry.location) !== normalizeAdmissionPath(required.path)
+  ) {
+    return false;
+  }
+  if (required.sourceRef && entry.sourceRef !== required.sourceRef) {
+    return false;
+  }
+  if (hasOwn(required, "sourceHash")) {
+    const expectedHash = required.sourceHash?.trim() ?? "";
+    if (!expectedHash || entry.sourceHash !== expectedHash) {
+      return false;
+    }
+  }
+  return true;
 }
 
 function parseSkillBlocks(skillsPrompt: string): SessionSystemPromptReport["skills"]["entries"] {
@@ -214,7 +264,16 @@ export function evaluateRequiredProviderContextAdmission(params: {
     new Set((params.required.workspaceFileNames ?? []).map((name) => name.trim()).filter(Boolean)),
   );
   const requiredSkillNames = Array.from(
-    new Set((params.required.skillNames ?? []).map((name) => name.trim()).filter(Boolean)),
+    new Set([
+      ...(params.required.skillNames ?? []).map((name) => name.trim()).filter(Boolean),
+      ...normalizeRequiredSkillSources(params.required.skillSources).map((source) => source.name),
+    ]),
+  );
+  const requiredSkillSourcesByName = new Map(
+    normalizeRequiredSkillSources(params.required.skillSources).map((source) => [
+      source.name,
+      source,
+    ]),
   );
   const rejectTruncatedWorkspaceFiles = params.required.rejectTruncatedWorkspaceFiles !== false;
   const filesByName = new Map(
@@ -243,9 +302,20 @@ export function evaluateRequiredProviderContextAdmission(params: {
     }
   }
 
-  const missingSkillNames = requiredSkillNames.filter(
-    (name) => (skillsByName.get(name)?.blockChars ?? 0) <= 0,
-  );
+  const missingSkillNames: string[] = [];
+  const mismatchedSkillSourceNames: string[] = [];
+  for (const name of requiredSkillNames) {
+    const entry = skillsByName.get(name);
+    if (!entry || (entry.blockChars ?? 0) <= 0) {
+      missingSkillNames.push(name);
+      continue;
+    }
+    const requiredSource = requiredSkillSourcesByName.get(name);
+    if (requiredSource && !matchesRequiredSkillSource(entry, requiredSource)) {
+      missingSkillNames.push(name);
+      mismatchedSkillSourceNames.push(name);
+    }
+  }
 
   const admitted =
     missingWorkspaceFileNames.length === 0 &&
@@ -261,6 +331,9 @@ export function evaluateRequiredProviderContextAdmission(params: {
     truncatedWorkspaceFileNames.length > 0
       ? "provider_context_required_workspace_files_truncated"
       : null,
+    mismatchedSkillSourceNames.length > 0
+      ? "provider_context_required_skill_sources_mismatched"
+      : null,
     missingSkillNames.length > 0 ? "provider_context_required_skills_missing" : null,
   ].filter((code): code is string => Boolean(code));
   const message = admitted
@@ -273,7 +346,9 @@ export function evaluateRequiredProviderContextAdmission(params: {
         truncatedWorkspaceFileNames.length > 0
           ? `Truncated workspace files: ${truncatedWorkspaceFileNames.join(", ")}.`
           : null,
-        missingSkillNames.length > 0 ? `Missing skills: ${missingSkillNames.join(", ")}.` : null,
+        missingSkillNames.length > 0
+          ? `Missing or mismatched skills: ${missingSkillNames.join(", ")}.`
+          : null,
       ]
         .filter((line): line is string => Boolean(line))
         .join(" ");

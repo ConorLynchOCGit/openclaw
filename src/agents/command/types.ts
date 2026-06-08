@@ -3,6 +3,7 @@ import type { SpawnedRunMetadata } from "../../agents/spawned-context.js";
 import type { ChannelOutboundTargetMode } from "../../channels/plugins/types.public.js";
 import type { PromptImageOrderEntry } from "../../media/prompt-image-order.js";
 import type { InputProvenance } from "../../sessions/input-provenance.js";
+import type { RequiredProviderContextAdmission } from "../system-prompt-report.js";
 import type { AgentStreamParams, ClientToolDefinition } from "./shared-types.js";
 
 /** Image content block for Claude API multimodal messages. */
@@ -82,6 +83,8 @@ export type AgentCommandOpts = {
   bootstrapContextMode?: "full" | "lightweight";
   /** Run kind hint for bootstrap context behavior. */
   bootstrapContextRunKind?: "default" | "heartbeat" | "cron";
+  /** Optional native provider-context admission gate for this run. */
+  requiredProviderContextAdmission?: RequiredProviderContextAdmission;
   internalEvents?: AgentInternalEvent[];
   inputProvenance?: InputProvenance;
   /** Per-call stream param overrides (best-effort). */
