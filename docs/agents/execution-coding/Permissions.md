@@ -6,6 +6,11 @@
 project-root tool surface granted to it. It may inspect runtime resources only
 through explicit refs or typed runtime authority.
 
+It may read exact bounded source windows only when the path is already known
+from the prompt, scout output, or native working context. Broad acquisition,
+directory listing, search, full-file reads, runtime-state browsing, and command
+execution remain outside parent authority.
+
 ## Escalate
 
 Escalate when the node requires scheduler changes, lifecycle acceptance,

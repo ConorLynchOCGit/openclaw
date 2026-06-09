@@ -162,6 +162,7 @@ describe("filterEffectiveToolsForNodeAgentNativeTaskMode", () => {
       "edit",
       "node_finish",
       "openclaw_resource_read",
+      "read",
     ]);
   });
 
@@ -225,7 +226,7 @@ describe("native task result parent-context preservation", () => {
       details: {
         status: "completed",
         resultDeliveredToParentContext: true,
-        resultOversized: false,
+        resultDeliveryStatus: "full",
       },
     });
 
@@ -241,7 +242,7 @@ describe("native task result parent-context preservation", () => {
       details: {
         status: "completed",
         resultDeliveredToParentContext: true,
-        resultOversized: false,
+        resultDeliveryStatus: "full",
       },
     });
 
@@ -262,7 +263,20 @@ describe("native task result parent-context preservation", () => {
     ).toBe(false);
   });
 
-  it("does not protect oversized or non-task tool results as delivered scout context", () => {
+  it("protects projected native task results but not rejected or non-task results", () => {
+    expect(
+      hasDeliveredNativeTaskResultAwaitingParentTurn([
+        makeToolResultMessage({
+          toolName: "task",
+          details: {
+            status: "completed",
+            resultDeliveredToParentContext: true,
+            resultDeliveryStatus: "projected",
+          },
+        }),
+      ]),
+    ).toBe(true);
+
     expect(
       hasDeliveredNativeTaskResultAwaitingParentTurn([
         makeToolResultMessage({
@@ -270,7 +284,7 @@ describe("native task result parent-context preservation", () => {
           details: {
             status: "error",
             resultDeliveredToParentContext: false,
-            resultOversized: true,
+            resultDeliveryStatus: "rejected",
           },
         }),
       ]),
@@ -283,7 +297,7 @@ describe("native task result parent-context preservation", () => {
           details: {
             status: "completed",
             resultDeliveredToParentContext: true,
-            resultOversized: false,
+            resultDeliveryStatus: "full",
           },
         }),
       ]),
@@ -299,6 +313,7 @@ describe("native task result parent-context preservation", () => {
         childSessionKey: "agent:execution-context-scout:subagent:child-context",
         childResultRef: "openclaw-child-result://context",
         resultDeliveredToParentContext: true,
+        resultDeliveryStatus: "projected",
         workingContextRef: "openclaw-session-working-context://parent",
         workingContextEntryRef: "openclaw-session-working-context://parent/context",
         workingContextHasInlineContextWindows: true,
@@ -317,6 +332,15 @@ describe("native task result parent-context preservation", () => {
         toolName: "edit",
         mutatingAction: true,
         changeSetWorkingContextEntryRef: "openclaw-session-working-context://parent/change-set",
+      },
+      {
+        eventType: "node_agent_tool_result",
+        toolResultRef: "openclaw-tool-result://run/exec-validation-output",
+        toolName: "exec",
+        mutatingAction: true,
+        managedOutputRef: "openclaw-managed-output://validation/output-1",
+        managedOutputWorkingContextEntryRef:
+          "openclaw-session-working-context://parent/managed-output",
       },
       {
         eventType: "node_agent_native_task_result",
@@ -363,7 +387,76 @@ describe("native task result parent-context preservation", () => {
       parentPostValidationActionObserved: true,
       parentPostValidationActionToolName: "update_plan",
       changeSetRef: "openclaw-session-working-context://parent/change-set",
+      managedOutputRef: "openclaw-managed-output://validation/output-1",
+      managedOutputWorkingContextEntryRef:
+        "openclaw-session-working-context://parent/managed-output",
+      managedOutputObserved: true,
       validationStateRef: "openclaw-session-working-context://parent/validation",
+      childResultDeliveryStatus: "projected",
+    });
+  });
+
+  it("projects stale edit re-grounding through context scout and successful retry", () => {
+    const trace = buildNodeAgentSessionTraceFromEvents([
+      {
+        eventType: "node_agent_tool_result",
+        toolResultRef: "openclaw-tool-result://run/edit-stale-failure",
+        toolName: "edit",
+        status: "error",
+        isError: true,
+        mutatingAction: true,
+        changedFilePaths: ["src/agents/pi-tools.host-edit.ts"],
+        changeSetWorkingContextEntryRef:
+          "openclaw-session-working-context://parent/change-set-stale-failure",
+      },
+      {
+        eventType: "node_agent_native_task_result",
+        taskRef: "openclaw-native-task-result://run/task-context-refresh",
+        requestedAgentId: "execution-context-scout",
+        childSessionKey: "agent:execution-context-scout:subagent:child-refresh",
+        childResultRef: "openclaw-child-result://context-refresh",
+        resultDeliveredToParentContext: true,
+        resultDeliveryStatus: "full",
+        workingContextRef: "openclaw-session-working-context://parent",
+        workingContextEntryRef: "openclaw-session-working-context://parent/context-refresh",
+        workingContextHasInlineContextWindows: true,
+        workingContextHasFileGraph: true,
+        parentDecisionFooterIncluded: true,
+        parentDecisionFooterKind: "minimal_edit_readiness",
+      },
+      {
+        eventType: "node_agent_tool_result",
+        toolResultRef: "openclaw-tool-result://run/plan-after-refresh",
+        toolName: "update_plan",
+      },
+      {
+        eventType: "node_agent_tool_result",
+        toolResultRef: "openclaw-tool-result://run/edit-retry-success",
+        toolName: "edit",
+        status: "completed",
+        isError: false,
+        mutatingAction: true,
+        changedFilePaths: ["src/agents/pi-tools.host-edit.ts"],
+        changeSetWorkingContextEntryRef:
+          "openclaw-session-working-context://parent/change-set-retry-success",
+      },
+    ]);
+
+    expect(trace).toMatchObject({
+      childResultObserved: true,
+      childResultDeliveryStatus: "full",
+      workingContextRef: "openclaw-session-working-context://parent",
+      workingContextEntryRef: "openclaw-session-working-context://parent/context-refresh",
+      workingContextHasInlineContextWindows: true,
+      workingContextHasFileGraph: true,
+      contextDecisionFooterObserved: true,
+      contextDecisionFooterKind: "minimal_edit_readiness",
+      contextTodoDecisionObserved: true,
+      contextTodoDecisionRef: "openclaw-tool-result://run/plan-after-refresh",
+      contextNextActionObserved: true,
+      contextNextActionRef: "openclaw-tool-result://run/edit-retry-success",
+      contextNextActionToolName: "edit",
+      changeSetRef: "openclaw-session-working-context://parent/change-set-stale-failure",
     });
   });
 

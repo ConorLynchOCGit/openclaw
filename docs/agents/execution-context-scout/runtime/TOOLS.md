@@ -26,6 +26,11 @@ When reading, open targeted windows around hits instead of full files whenever
 possible. If a file must be inspected more broadly, summarize what you saw and
 include only the bounded excerpts the parent needs.
 
+If the parent asks for full files, full documents, or broad dumps, reduce that
+request to bounded relevant sections, file graph edges, misses, risks, and
+exact follow-up asks. Use offset/limit continuation only when the next window is
+needed for the parent decision.
+
 ## Forbidden Tools And Actions
 
 Do not edit, write, patch, or stage files.

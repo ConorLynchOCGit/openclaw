@@ -58,6 +58,7 @@ import { DEFAULT_PROVIDER } from "../agents/defaults.js";
 import { parseModelRef } from "../agents/model-selection.js";
 import { runEmbeddedPiAgent } from "../agents/pi-embedded-runner/run.js";
 import { discoverAuthStorage, discoverModels } from "../agents/pi-model-discovery.js";
+import { isNodeAgentNativeTaskParentToolAllowed } from "../agents/pi-tools.js";
 import { resolveEffectiveToolPolicyAccess } from "../agents/pi-tools.policy.js";
 import { buildRequiredActiveSkillSnapshot, type SkillSnapshot } from "../agents/skills.js";
 import {
@@ -478,6 +479,10 @@ function resolveParentNativeTaskEffectiveToolNames(input: {
   const requiredToolNames = input.requiredToolNames?.length ? [...input.requiredToolNames] : [];
   const forbiddenToolNames = input.forbiddenToolNames?.length ? [...input.forbiddenToolNames] : [];
   const nativeTaskParentAllowed = new Set<string>(requiredToolNames);
+  const mutationToolName =
+    requiredToolNames.includes("apply_patch") && !requiredToolNames.includes("edit")
+      ? "apply_patch"
+      : "edit";
   const candidateToolNames = uniqueStringList([
     ...requiredToolNames,
     ...forbiddenToolNames,
@@ -493,7 +498,15 @@ function resolveParentNativeTaskEffectiveToolNames(input: {
   });
   return uniqueStringList(
     access
-      .filter((entry) => entry.allowed && nativeTaskParentAllowed.has(entry.toolName))
+      .filter(
+        (entry) =>
+          nativeTaskParentAllowed.has(entry.toolName) &&
+          (entry.allowed ||
+            isNodeAgentNativeTaskParentToolAllowed({
+              toolName: entry.toolName,
+              mutationToolName,
+            })),
+      )
       .map((entry) => entry.toolName),
   );
 }

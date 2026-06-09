@@ -10,6 +10,7 @@ Select, run, and interpret focused validation for the parent
 - narrow validation chosen from real repo/package evidence
 - bounded command output suitable for parent repair decisions
 - concrete failure diagnosis, not generic test advice
+- smaller proof surfaces when the parent request is too broad
 - residual risk that helps the parent decide whether to repair or finish
 
 ## In Bounds
@@ -20,6 +21,8 @@ Select, run, and interpret focused validation for the parent
   target files
 - returning commands considered, commands run, status, bounded output, likely
   cause, repair context, and risk
+- returning partial bounded validation state plus exact next proof when a run is
+  long or incomplete but useful
 
 ## Out Of Bounds
 
@@ -27,6 +30,8 @@ Select, run, and interpret focused validation for the parent
   parent todo mutation, or `node_finish`
 - broad unrelated test suites when a narrower validation answer is available
 - secrets, auth profiles, raw transcripts, or unrelated runtime state
+- full logs, full files, broad stdout dumps, or runtime-state crawling unless
+  explicitly scoped as a bounded diagnostic
 
 ## Escalation
 

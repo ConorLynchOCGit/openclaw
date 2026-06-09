@@ -1,6 +1,10 @@
 import type { AgentMessage } from "@mariozechner/pi-agent-core";
 import type { TextContent } from "@mariozechner/pi-ai";
 import { SessionManager } from "@mariozechner/pi-coding-agent";
+import {
+  persistManagedToolOutputSync,
+  type PersistManagedToolOutputResult,
+} from "../../config/sessions/managed-output.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import { formatErrorMessage } from "../../infra/errors.js";
 import { emitSessionTranscriptUpdate } from "../../sessions/transcript-events.js";
@@ -25,7 +29,7 @@ const MAX_TOOL_RESULT_CONTEXT_SHARE = 0.3;
  * for compaction summaries. For the live request path we still keep a bounded
  * request-local ceiling so oversized tool output cannot dominate the next turn.
  */
-export const DEFAULT_MAX_LIVE_TOOL_RESULT_CHARS = 16_000;
+export const DEFAULT_MAX_LIVE_TOOL_RESULT_CHARS = 50 * 1024;
 
 /**
  * Backwards-compatible alias for older call sites/tests.
@@ -243,6 +247,69 @@ export function getToolResultTextLength(msg: AgentMessage): number {
   return totalLength;
 }
 
+function getToolResultTextForManagedOutput(msg: AgentMessage): string {
+  if (!msg || (msg as { role?: string }).role !== "toolResult") {
+    return "";
+  }
+  const content = (msg as { content?: unknown }).content;
+  if (!Array.isArray(content)) {
+    return "";
+  }
+  return content
+    .map((block) => {
+      if (!block || typeof block !== "object" || (block as { type?: string }).type !== "text") {
+        return "";
+      }
+      const text = (block as TextContent).text;
+      return typeof text === "string" ? text : "";
+    })
+    .filter((text) => text.length > 0)
+    .join("\n\n");
+}
+
+function readToolResultStringField(
+  msg: AgentMessage,
+  key: "toolCallId" | "toolName",
+): string | undefined {
+  const value = (msg as unknown as Record<string, unknown>)[key];
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function persistManagedOutputForToolResult(params: {
+  message: AgentMessage;
+  stateRoot?: string | null;
+  sessionKey?: string;
+  reason: string;
+}): PersistManagedToolOutputResult | null {
+  const text = getToolResultTextForManagedOutput(params.message);
+  if (!text) {
+    return null;
+  }
+  return persistManagedToolOutputSync({
+    stateRoot: params.stateRoot,
+    sessionKey: params.sessionKey,
+    toolCallId: readToolResultStringField(params.message, "toolCallId"),
+    toolName: readToolResultStringField(params.message, "toolName") ?? "tool_result",
+    text,
+    outputKind: "tool_result",
+    reason: params.reason,
+  });
+}
+
+function buildManagedOutputTruncationSuffix(
+  managedOutput: PersistManagedToolOutputResult | null,
+): ((truncatedChars: number) => string) | undefined {
+  if (!managedOutput) {
+    return undefined;
+  }
+  return (truncatedChars) =>
+    [
+      formatContextLimitTruncationNotice(truncatedChars),
+      `Full output saved to managedOutputRef=${managedOutput.ref} (${managedOutput.byteCount} bytes, sha256=${managedOutput.textHash}).`,
+      "Inspect through the appropriate scout/tool path; do not read stateRoot files directly or paste raw managed-output files into context.",
+    ].join("\n");
+}
+
 /**
  * Truncate a tool result message's text content blocks to fit within maxChars.
  * Returns a new message (does not mutate the original).
@@ -366,6 +433,8 @@ function buildAggregateToolResultReplacements(params: {
   branch: ToolResultBranchEntry[];
   aggregateBudgetChars: number;
   minKeepChars?: number;
+  stateRoot?: string | null;
+  sessionKey?: string;
 }): ToolResultReplacement[] {
   const minKeepChars = params.minKeepChars ?? MIN_KEEP_CHARS;
   const minTruncatedTextChars = minKeepChars + DEFAULT_SUFFIX(1).length;
@@ -418,8 +487,15 @@ function buildAggregateToolResultReplacements(params: {
 
     const requestedReduction = Math.min(reducibleChars, remainingReduction);
     const targetChars = Math.max(minTruncatedTextChars, candidate.textLength - requestedReduction);
+    const managedOutput = persistManagedOutputForToolResult({
+      message: candidate.message,
+      stateRoot: params.stateRoot,
+      sessionKey: params.sessionKey,
+      reason: "tool_result_aggregate_truncation",
+    });
     const truncatedMessage = truncateToolResultMessage(candidate.message, targetChars, {
       minKeepChars,
+      suffix: buildManagedOutputTruncationSuffix(managedOutput),
     });
     const newLength = getToolResultTextLength(truncatedMessage);
     const actualReduction = Math.max(0, candidate.textLength - newLength);
@@ -438,6 +514,8 @@ function buildOversizedToolResultReplacements(params: {
   branch: ToolResultBranchEntry[];
   maxChars: number;
   minKeepChars?: number;
+  stateRoot?: string | null;
+  sessionKey?: string;
 }): ToolResultReplacement[] {
   const minKeepChars = params.minKeepChars ?? MIN_KEEP_CHARS;
   const replacements: ToolResultReplacement[] = [];
@@ -453,10 +531,17 @@ function buildOversizedToolResultReplacements(params: {
     if (getToolResultTextLength(msg) <= params.maxChars) {
       continue;
     }
+    const managedOutput = persistManagedOutputForToolResult({
+      message: msg,
+      stateRoot: params.stateRoot,
+      sessionKey: params.sessionKey,
+      reason: "tool_result_oversized_truncation",
+    });
     replacements.push({
       entryId: entry.id,
       message: truncateToolResultMessage(msg, params.maxChars, {
         minKeepChars,
+        suffix: buildManagedOutputTruncationSuffix(managedOutput),
       }),
     });
   }
@@ -515,6 +600,8 @@ function buildToolResultReplacementPlan(params: {
   maxChars: number;
   aggregateBudgetChars: number;
   minKeepChars?: number;
+  stateRoot?: string | null;
+  sessionKey?: string;
 }): {
   replacements: ToolResultReplacement[];
   oversizedReplacementCount: number;
@@ -527,6 +614,8 @@ function buildToolResultReplacementPlan(params: {
     branch: params.branch,
     maxChars: params.maxChars,
     minKeepChars,
+    stateRoot: params.stateRoot,
+    sessionKey: params.sessionKey,
   });
   const oversizedReducibleChars = calculateReplacementReduction(
     params.branch,
@@ -540,6 +629,8 @@ function buildToolResultReplacementPlan(params: {
     branch: oversizedTrimmedBranch,
     aggregateBudgetChars: params.aggregateBudgetChars,
     minKeepChars,
+    stateRoot: params.stateRoot,
+    sessionKey: params.sessionKey,
   });
   const aggregateReducibleChars = calculateReplacementReduction(
     oversizedTrimmedBranch,
@@ -614,6 +705,7 @@ function truncateOversizedToolResultsInExistingSessionManager(params: {
   sessionFile?: string;
   sessionId?: string;
   sessionKey?: string;
+  stateRoot?: string | null;
 }): { truncated: boolean; truncatedCount: number; reason?: string } {
   const { sessionManager, contextWindowTokens } = params;
   const maxChars = Math.max(
@@ -635,6 +727,8 @@ function truncateOversizedToolResultsInExistingSessionManager(params: {
     maxChars,
     aggregateBudgetChars,
     minKeepChars: RECOVERY_MIN_KEEP_CHARS,
+    stateRoot: params.stateRoot,
+    sessionKey: params.sessionKey ?? params.sessionId,
   });
   if (plan.replacements.length === 0) {
     return {
@@ -672,6 +766,7 @@ export function truncateOversizedToolResultsInSessionManager(params: {
   sessionFile?: string;
   sessionId?: string;
   sessionKey?: string;
+  stateRoot?: string | null;
 }): { truncated: boolean; truncatedCount: number; reason?: string } {
   try {
     return truncateOversizedToolResultsInExistingSessionManager(params);
@@ -688,6 +783,7 @@ export async function truncateOversizedToolResultsInSession(params: {
   maxCharsOverride?: number;
   sessionId?: string;
   sessionKey?: string;
+  stateRoot?: string | null;
 }): Promise<{ truncated: boolean; truncatedCount: number; reason?: string }> {
   const { sessionFile, contextWindowTokens } = params;
   let sessionLock: Awaited<ReturnType<typeof acquireSessionWriteLock>> | undefined;
@@ -702,6 +798,7 @@ export async function truncateOversizedToolResultsInSession(params: {
       sessionFile,
       sessionId: params.sessionId,
       sessionKey: params.sessionKey,
+      stateRoot: params.stateRoot,
     });
   } catch (err) {
     const errMsg = formatErrorMessage(err);

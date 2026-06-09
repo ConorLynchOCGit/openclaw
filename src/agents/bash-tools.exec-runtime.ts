@@ -1,5 +1,6 @@
 import path from "node:path";
 import type { AgentToolResult } from "@mariozechner/pi-agent-core";
+import { createManagedToolOutputStreamSync } from "../config/sessions/managed-output.js";
 import {
   DEFAULT_EXEC_APPROVAL_TIMEOUT_MS,
   resolveExecApprovalAllowedDecisions,
@@ -511,6 +512,8 @@ export async function runExecProcess(opts: {
   sessionKey?: string;
   notifyDeliveryContext?: DeliveryContext;
   timeoutSec: number | null;
+  stateRoot?: string | null;
+  toolCallId?: string | null;
   onUpdate?: (partialResult: AgentToolResult<ExecToolDetails>) => void;
 }): Promise<ExecProcessHandle> {
   const startedAt = Date.now();
@@ -545,6 +548,15 @@ export async function runExecProcess(opts: {
     pendingStderrChars: 0,
     aggregated: "",
     tail: "",
+    managedOutput: createManagedToolOutputStreamSync({
+      stateRoot: opts.stateRoot,
+      sessionKey: opts.sessionKey,
+      toolCallId: opts.toolCallId,
+      toolName: "process",
+      outputKind: "process_stream",
+      reason: "background process full output stream",
+    }),
+    managedOutputResult: null,
     exited: false,
     exitCode: undefined as number | null | undefined,
     exitSignal: undefined as NodeJS.Signals | number | null | undefined,

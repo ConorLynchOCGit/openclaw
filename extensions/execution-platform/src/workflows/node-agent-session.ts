@@ -1,4 +1,6 @@
 import { createHash } from "node:crypto";
+import fs from "node:fs";
+import path from "node:path";
 import { Type } from "@sinclair/typebox";
 import type { RunEmbeddedPiAgentParams } from "../../../../src/agents/pi-embedded-runner/run/params.js";
 import type { EmbeddedPiRunResult } from "../../../../src/agents/pi-embedded-runner/types.js";
@@ -270,6 +272,12 @@ type NodeWorkerPromptAuthoringMaterial = {
   storagePolicy: NodeExecutionStoragePolicy;
 };
 
+type PromptSourcePathRefFinding = {
+  path: string;
+  nearestCandidates: string[];
+  sourceSection: string;
+};
+
 export type NodeAgentWorkerPrompt = {
   artifactKind: typeof NODE_AGENT_WORKER_PROMPT_ARTIFACT_TYPE;
   schemaVersion: typeof NODE_AGENT_WORKER_PROMPT_SCHEMA_VERSION;
@@ -326,6 +334,7 @@ export type NodePromptAuthoringFailureDiagnostic = {
   contentType: string | null;
   contentLength: number | null;
   blockerKind: string;
+  missingPromptSourceRefs: PromptSourcePathRefFinding[];
   reasonCodes: string[];
   rawPromptStored: false;
   rawResponseStored: false;
@@ -415,6 +424,8 @@ export type NodeAgentSessionTrace = {
     childResultRef: string | null;
     workingContextRef: string | null;
     workingContextEntryRef: string | null;
+    managedOutputRef: string | null;
+    managedOutputWorkingContextEntryRef: string | null;
     changeSetRef: string | null;
     validationStateRef: string | null;
     contextTodoDecisionRef: string | null;
@@ -464,6 +475,7 @@ export type NodeAgentSessionTrace = {
     contextScoutSpawnObserved: boolean;
     sessionsYieldObserved: boolean;
     childResultObserved: boolean;
+    childResultDeliveryStatus: string | null;
     childResultOversized: boolean;
     contextDecisionFooterObserved: boolean;
     validationDecisionFooterObserved: boolean;
@@ -485,6 +497,7 @@ export type NodeAgentSessionTrace = {
     workingContextObserved: boolean;
     inlineContextWindowsObserved: boolean;
     fileGraphObserved: boolean;
+    managedOutputObserved: boolean;
     changeSetObserved: boolean;
     validationStateObserved: boolean;
   };
@@ -1392,6 +1405,51 @@ const ExecutionPlatformResourceReadToolSchema = Type.Object({
   maxBytes: Type.Optional(Type.Number({ minimum: 500, maximum: 50_000 })),
 });
 
+function looksLikeLocalSourcePathRef(ref: string): boolean {
+  const trimmed = ref.trim();
+  if (!trimmed) {
+    return false;
+  }
+  const lower = trimmed.toLowerCase();
+  if (lower.startsWith("file://")) {
+    return true;
+  }
+  if (/^(?:\/|\.\.?\/|~\/)/u.test(trimmed)) {
+    return true;
+  }
+  if (/^(?:\.openclaw|\.artifacts)(?:\/|$)/u.test(trimmed)) {
+    return true;
+  }
+  if (/^(?:docs|src|extensions|skills|scripts|tests?|packages|apps|config)\//u.test(trimmed)) {
+    return true;
+  }
+  return false;
+}
+
+function localSourcePathResourceReadRejection(ref: string): JsonValue {
+  return {
+    ref,
+    status: "unauthorized",
+    failureKind: "resource_ref_invalid",
+    resourceKind: "source_file_path_not_allowed",
+    body: {
+      artifactKind: "execution_platform_resource_read_rejected_source_path",
+      message:
+        "openclaw_resource_read accepts only exact OpenClaw runtime refs intentionally handed to this node. For source files, delegate execution-context-scout and ask for bounded context windows.",
+      nextAction: "Use native task with agentId execution-context-scout for source-file context.",
+      rawPromptStored: false,
+      rawResponseStored: false,
+      rawProviderLogStored: false,
+    },
+    byteCount: 0,
+    truncated: false,
+    reasonCodes: ["resource_ref_invalid", "resource_read_file_path_not_allowed"],
+    rawPromptStored: false,
+    rawResponseStored: false,
+    rawProviderLogStored: false,
+  };
+}
+
 function boundedHydratedBody(input: { body: JsonValue | null; remainingBytes: number }): {
   body: JsonValue | null;
   byteCount: number;
@@ -1676,11 +1734,12 @@ async function hydrateSourcePromptRefFromArtifacts(input: {
     return {
       ref: input.ref,
       status: "unauthorized",
+      failureKind: "resource_ref_invalid",
       resourceKind: null,
       body: null,
       byteCount: 0,
       truncated: false,
-      reasonCodes: ["openclaw_resource_read_ref_outside_node_authority"],
+      reasonCodes: ["resource_ref_invalid", "openclaw_resource_read_ref_outside_node_authority"],
       rawPromptStored: false,
       rawResponseStored: false,
       rawProviderLogStored: false,
@@ -1800,11 +1859,12 @@ async function hydrateSourcePromptRefFromArtifacts(input: {
   return {
     ref: input.ref,
     status: "not_found",
+    failureKind: "source_ref_missing",
     resourceKind: "execution_platform.source_prompt_exact_range",
     body: null,
     byteCount: 0,
     truncated: false,
-    reasonCodes: ["openclaw_resource_read_source_prompt_window_not_found"],
+    reasonCodes: ["source_ref_missing", "openclaw_resource_read_source_prompt_window_not_found"],
     rawPromptStored: false,
     rawResponseStored: false,
     rawProviderLogStored: false,
@@ -1875,6 +1935,9 @@ async function hydrateExecutionPlatformResourceRef(input: {
   remainingBytes: number;
 }): Promise<JsonValue> {
   const ref = input.ref.trim();
+  if (looksLikeLocalSourcePathRef(ref)) {
+    return localSourcePathResourceReadRejection(ref);
+  }
   const authorizedRefs = authorizedExecutionPlatformResourceRefs(input.nodeExecutionSnapshot);
   if (
     ref === input.nodeExecutionSnapshot.snapshotRef ||
@@ -1947,11 +2010,12 @@ async function hydrateExecutionPlatformResourceRef(input: {
     return {
       ref,
       status: "unauthorized",
+      failureKind: "resource_ref_invalid",
       resourceKind: null,
       body: null,
       byteCount: 0,
       truncated: false,
-      reasonCodes: ["openclaw_resource_read_ref_outside_node_authority"],
+      reasonCodes: ["resource_ref_invalid", "openclaw_resource_read_ref_outside_node_authority"],
       rawPromptStored: false,
       rawResponseStored: false,
       rawProviderLogStored: false,
@@ -2002,12 +2066,13 @@ async function hydrateExecutionPlatformResourceRef(input: {
       return {
         ref,
         status: "unauthorized",
+        failureKind: "resource_ref_invalid",
         resourceKind: artifact.artifactType,
         artifactUri: artifact.uri,
         body: null,
         byteCount: 0,
         truncated: false,
-        reasonCodes: ["openclaw_resource_read_ref_outside_node_authority"],
+        reasonCodes: ["resource_ref_invalid", "openclaw_resource_read_ref_outside_node_authority"],
         rawPromptStored: false,
         rawResponseStored: false,
         rawProviderLogStored: false,
@@ -2069,11 +2134,12 @@ async function hydrateExecutionPlatformResourceRef(input: {
   return {
     ref,
     status: "not_found",
+    failureKind: "resource_ref_invalid",
     resourceKind: null,
     body: null,
     byteCount: 0,
     truncated: false,
-    reasonCodes: ["openclaw_resource_read_ref_not_found"],
+    reasonCodes: ["resource_ref_invalid", "openclaw_resource_read_ref_not_found"],
     rawPromptStored: false,
     rawResponseStored: false,
     rawProviderLogStored: false,
@@ -2559,7 +2625,136 @@ function validateNodeWorkerPrompt(input: {
   if (lower.includes("## runtime-supplied source material")) {
     missing.push("node_worker_prompt_structurally_invalid_runtime_appendix_dump");
   }
+  const missingPromptSourceRefs = validatePromptSourcePathRefs(input.promptText);
+  if (missingPromptSourceRefs.length > 0) {
+    missing.push("node_worker_prompt_structurally_invalid_missing_source_path_ref");
+    missing.push(
+      ...missingPromptSourceRefs.flatMap((finding) => [
+        "source_ref_missing",
+        `prompt_source_ref_missing:${finding.path}`,
+        ...finding.nearestCandidates.map((candidate) => `prompt_source_ref_candidate:${candidate}`),
+      ]),
+    );
+  }
   return missing;
+}
+
+const REPO_SOURCE_PATH_REF_RE =
+  /(?:^|[\s"'`(])((?:\.{1,2}\/|\/|~\/)?(?:docs|src|extensions|skills|scripts|tests?|packages|apps|config|ops)\/[A-Za-z0-9._~@%+\-/]+\.(?:ts|tsx|js|jsx|mjs|cjs|md|mdx|json|json5|yaml|yml|toml|css|scss|py|go|rs|java|kt|sh|sql))(?:$|[\s"'`),.;:])/gu;
+
+function normalizePromptSourcePathRef(value: string): string {
+  return value
+    .trim()
+    .replace(/^['"`(]+/u, "")
+    .replace(/[)"'`,.;:]+$/u, "");
+}
+
+function resolvePromptSourcePathRef(pathRef: string): string {
+  const trimmed = pathRef.trim();
+  if (trimmed.startsWith("~/")) {
+    return path.resolve(process.cwd(), trimmed.slice(2));
+  }
+  if (path.isAbsolute(trimmed)) {
+    return path.resolve(trimmed);
+  }
+  return path.resolve(process.cwd(), trimmed);
+}
+
+function scorePromptSourcePathCandidate(input: {
+  targetName: string;
+  candidateName: string;
+}): number {
+  const target = input.targetName.toLowerCase();
+  const candidate = input.candidateName.toLowerCase();
+  let score = 0;
+  if (candidate === target) {
+    score += 100;
+  }
+  if (candidate.startsWith(target) || target.startsWith(candidate)) {
+    score += 40;
+  }
+  if (path.extname(candidate) === path.extname(target)) {
+    score += 8;
+  }
+  for (const term of target
+    .replace(/\.[^.]+$/u, "")
+    .split(/[^a-z0-9]+/u)
+    .filter((entry) => entry.length >= 3)) {
+    if (candidate.includes(term)) {
+      score += 6;
+    }
+  }
+  return score;
+}
+
+function nearestPromptSourcePathCandidates(pathRef: string): string[] {
+  const absolutePath = resolvePromptSourcePathRef(pathRef);
+  const parentDir = path.dirname(absolutePath);
+  const entries = (() => {
+    try {
+      return fs.readdirSync(parentDir, { withFileTypes: true });
+    } catch {
+      return [];
+    }
+  })();
+  const targetName = path.basename(absolutePath);
+  return entries
+    .filter((entry) => entry.isFile() || entry.isDirectory())
+    .map((entry) => {
+      const absoluteCandidate = path.join(parentDir, entry.name);
+      const relativeCandidate = path
+        .relative(process.cwd(), absoluteCandidate)
+        .split(path.sep)
+        .join("/");
+      return {
+        path:
+          relativeCandidate &&
+          !relativeCandidate.startsWith("..") &&
+          !path.isAbsolute(relativeCandidate)
+            ? relativeCandidate
+            : absoluteCandidate,
+        score: scorePromptSourcePathCandidate({
+          targetName,
+          candidateName: entry.name,
+        }),
+      };
+    })
+    .filter((entry) => entry.score > 0)
+    .toSorted((a, b) => b.score - a.score || a.path.localeCompare(b.path))
+    .slice(0, 3)
+    .map((entry) => entry.path);
+}
+
+function sourceLineForPromptPathRef(promptText: string, pathRef: string): string {
+  return (
+    promptText
+      .split(/\r?\n/u)
+      .find((line) => line.includes(pathRef))
+      ?.trim()
+      .slice(0, 500) ?? pathRef
+  );
+}
+
+function validatePromptSourcePathRefs(promptText: string): PromptSourcePathRefFinding[] {
+  const findings: PromptSourcePathRefFinding[] = [];
+  const seen = new Set<string>();
+  for (const match of promptText.matchAll(REPO_SOURCE_PATH_REF_RE)) {
+    const pathRef = normalizePromptSourcePathRef(match[1] ?? "");
+    if (!pathRef || seen.has(pathRef)) {
+      continue;
+    }
+    seen.add(pathRef);
+    const absolutePath = resolvePromptSourcePathRef(pathRef);
+    if (fs.existsSync(absolutePath)) {
+      continue;
+    }
+    findings.push({
+      path: pathRef,
+      nearestCandidates: nearestPromptSourcePathCandidates(pathRef),
+      sourceSection: sourceLineForPromptPathRef(promptText, pathRef),
+    });
+  }
+  return findings.slice(0, 20);
 }
 
 function promptQualityDiagnostics(input: {
@@ -2678,6 +2873,7 @@ function buildNodePromptAuthoringFailureDiagnostic(input: {
   requestedMaxOutputTokens?: number | null;
   providerDiagnostics?: JsonValue | null;
   blockerKind: string;
+  missingPromptSourceRefs?: PromptSourcePathRefFinding[];
   reasonCodes: string[];
 }): NodePromptAuthoringFailureDiagnostic {
   const providerDiagnosticsRecord = asRecord(input.providerDiagnostics);
@@ -2741,6 +2937,7 @@ function buildNodePromptAuthoringFailureDiagnostic(input: {
       firstNumber(providerDiagnosticsRecord, ["contentLength"]) ??
       firstChoiceContentLength,
     blockerKind: input.blockerKind,
+    missingPromptSourceRefs: input.missingPromptSourceRefs ?? [],
     reasonCodes: uniqueStrings(input.reasonCodes, 120),
     rawPromptStored: false,
     rawResponseStored: false,
@@ -2946,6 +3143,7 @@ export async function authorNodeExecutionPrompt(input: {
       maxPromptChars: input.maxPromptChars ?? 140_000,
     });
     if (structuralFailures.length > 0) {
+      const missingPromptSourceRefs = validatePromptSourcePathRefs(promptText);
       const reasonCodes = uniqueStrings([
         "node_worker_prompt_structurally_invalid",
         ...structuralFailures,
@@ -2967,6 +3165,7 @@ export async function authorNodeExecutionPrompt(input: {
           requestedMaxOutputTokens,
           providerDiagnostics: result.providerDiagnostics,
           blockerKind: "node_worker_prompt_structurally_invalid",
+          missingPromptSourceRefs,
           reasonCodes,
         }),
         blockerKind: "node_worker_prompt_structurally_invalid",
@@ -3465,6 +3664,11 @@ export function buildNodeAgentSessionTrace(input: {
     "changeSetWorkingContextEntryRef",
     "changeSetToolResultRef",
   ]);
+  const managedOutputRef = traceString(nativeTrace, ["managedOutputRef"]);
+  const managedOutputWorkingContextEntryRef = traceString(nativeTrace, [
+    "managedOutputWorkingContextEntryRef",
+    "managedOutputWorkingContextRef",
+  ]);
   const validationStateRef = traceString(nativeTrace, [
     "validationStateRef",
     "validationStateWorkingContextEntryRef",
@@ -3524,7 +3728,10 @@ export function buildNodeAgentSessionTrace(input: {
       yieldedForSubagent ||
       traceBoolean(nativeTrace, ["sessionsYieldObserved", "yieldObserved"]) === true,
     childResultObserved: Boolean(childResultRef),
+    childResultDeliveryStatus: traceString(nativeTrace, ["childResultDeliveryStatus"]),
     childResultOversized:
+      traceString(nativeTrace, ["childResultDeliveryStatus"]) === "projected" ||
+      traceString(nativeTrace, ["childResultDeliveryStatus"]) === "rejected" ||
       traceBoolean(nativeTrace, ["childResultOversized", "subagentResultOversized"]) === true,
     contextDecisionFooterObserved:
       traceBoolean(nativeTrace, ["contextDecisionFooterObserved"]) === true ||
@@ -3570,6 +3777,10 @@ export function buildNodeAgentSessionTrace(input: {
     fileGraphObserved:
       Boolean(workingContextEntryRef) &&
       traceBoolean(nativeTrace, ["workingContextHasFileGraph", "fileGraphObserved"]) === true,
+    managedOutputObserved:
+      Boolean(managedOutputRef) ||
+      Boolean(managedOutputWorkingContextEntryRef) ||
+      traceBoolean(nativeTrace, ["managedOutputObserved"]) === true,
     changeSetObserved:
       Boolean(changeSetRef) || traceBoolean(nativeTrace, ["changeSetObserved"]) === true,
     validationStateObserved:
@@ -3662,6 +3873,8 @@ export function buildNodeAgentSessionTrace(input: {
       childResultRef,
       workingContextRef,
       workingContextEntryRef,
+      managedOutputRef,
+      managedOutputWorkingContextEntryRef,
       changeSetRef,
       validationStateRef,
       contextTodoDecisionRef,
@@ -3725,12 +3938,21 @@ export function buildNodeAgentSessionTrace(input: {
           ? "node_agent_session_trace_inline_context_windows_observed"
           : null,
         observations.fileGraphObserved ? "node_agent_session_trace_file_graph_observed" : null,
+        observations.managedOutputObserved
+          ? "node_agent_session_trace_managed_output_observed"
+          : null,
         observations.changeSetObserved ? "node_agent_session_trace_change_set_observed" : null,
         observations.validationStateObserved
           ? "node_agent_session_trace_validation_state_observed"
           : null,
-        observations.childResultOversized
-          ? "node_agent_session_trace_child_result_oversized_not_delivered"
+        observations.childResultDeliveryStatus === "projected"
+          ? "node_agent_session_trace_child_result_projected"
+          : null,
+        observations.childResultDeliveryStatus === "rejected"
+          ? "node_agent_session_trace_child_result_rejected"
+          : null,
+        !observations.childResultDeliveryStatus && observations.childResultOversized
+          ? "node_agent_session_trace_child_result_projected_legacy_oversized"
           : null,
         observations.parentSynthesisObserved
           ? "node_agent_session_trace_parent_action_after_child_observed"

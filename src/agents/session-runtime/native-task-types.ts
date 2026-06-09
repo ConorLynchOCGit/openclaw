@@ -5,8 +5,6 @@ export type NativeTaskChildStartFailureKind =
   | "missing_child_profile"
   | "wrong_child_identity_selected"
   | "child_session_receipt_incomplete"
-  | "child_provider_bootstrap_report_missing"
-  | "child_provider_bootstrap_truncated"
   | "child_docs_missing"
   | "child_skill_missing"
   | "child_tool_catalog_invalid"
@@ -14,11 +12,14 @@ export type NativeTaskChildStartFailureKind =
   | "child_launch_blocked"
   | "child_session_lock_failed"
   | "child_provider_model_failure"
-  | "child_result_oversized"
+  | "child_provider_response_timeout"
+  | "child_result_unshaped"
   | "child_run_timeout"
   | "child_run_error"
   | "child_session_start_forbidden"
   | "child_session_start_failed";
+
+export type NativeTaskResultDeliveryStatus = "full" | "projected" | "rejected";
 
 export type NativeTaskChildBootstrapAdmission = {
   providerReportObserved: boolean;
@@ -53,8 +54,11 @@ export type NativeTaskForegroundResult = {
   resultTextByteCount?: number;
   resultMaxParentVisibleChars?: number;
   resultDeliveredToParentContext: boolean;
+  resultDeliveryStatus?: NativeTaskResultDeliveryStatus;
   resultTruncated?: boolean;
-  resultOversized?: boolean;
+  managedOutputRef?: string | null;
+  managedOutputBytes?: number;
+  managedOutputHash?: string;
   childBootstrapAdmission?: NativeTaskChildBootstrapAdmission;
   childStartFailureKind?: NativeTaskChildStartFailureKind;
   continuationId?: string;

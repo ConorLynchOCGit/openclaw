@@ -191,6 +191,40 @@ describe("createEmbeddedRunAuthController", () => {
     });
   });
 
+  it("normalizes stale OpenRouter runtime auth base URLs before updating models", async () => {
+    const harness = createMutableAuthControllerHarness();
+    harness.runtimeModel = {
+      ...harness.runtimeModel,
+      provider: "openrouter",
+      api: "openai-completions",
+      baseUrl: "https://openrouter.ai/api/v1",
+    };
+    harness.effectiveModel = { ...harness.runtimeModel };
+    const setRuntimeApiKey = vi.fn<(provider: string, apiKey: string) => void>();
+
+    mocks.getApiKeyForModel.mockResolvedValue({
+      apiKey: "source-api-key",
+      mode: "api-key",
+      profileId: "default",
+      source: "env",
+    });
+    mocks.prepareProviderRuntimeAuth.mockResolvedValue({
+      apiKey: "runtime-api-key",
+      baseUrl: "https://openrouter.ai/v1",
+    });
+
+    const controller = createMutableEmbeddedRunAuthController({
+      harness,
+      setRuntimeApiKey,
+    });
+
+    await controller.initializeAuthProfile();
+
+    expect(harness.runtimeModel.baseUrl).toBe("https://openrouter.ai/api/v1");
+    expect(harness.effectiveModel.baseUrl).toBe("https://openrouter.ai/api/v1");
+    expect(setRuntimeApiKey).toHaveBeenCalledWith("openrouter", "runtime-api-key");
+  });
+
   it("rejects privileged runtime transport overrides on the first auth exchange", async () => {
     let runtimeModel = createTestModel();
 

@@ -66,6 +66,10 @@ export type ApplyPatchResult = {
 
 export type ApplyPatchToolDetails = {
   summary: ApplyPatchSummary;
+  changedFilePaths: string[];
+  addedFilePaths: string[];
+  modifiedFilePaths: string[];
+  deletedFilePaths: string[];
 };
 
 type SandboxApplyPatchConfig = {
@@ -121,7 +125,17 @@ export function createApplyPatchTool(
 
       return {
         content: [{ type: "text", text: result.text }],
-        details: { summary: result.summary },
+        details: {
+          summary: result.summary,
+          changedFilePaths: [
+            ...result.summary.added,
+            ...result.summary.modified,
+            ...result.summary.deleted,
+          ],
+          addedFilePaths: result.summary.added,
+          modifiedFilePaths: result.summary.modified,
+          deletedFilePaths: result.summary.deleted,
+        },
       };
     },
   };

@@ -22,10 +22,15 @@ The unresolved failure is child delegation: `task` timed out through gateway RPC
 - Complete for focused run-loop scope: node-bound native worker runs now require caller-admitted `authStorage` and `modelRegistry`; `runEmbeddedPiAgent` fails closed before the attempt if a node-native worker would otherwise perform worker-local provider discovery. The Execution Platform node runner admits and passes those model runtime objects before `runNodeAgentSession`, and native child runtime propagates the same admitted objects into child sessions.
 - Complete for focused child-start lock scope: session-store updates now accept explicit lock timeout/stale thresholds, and native child session creation applies a bounded store-lock timeout/stale threshold derived from the child task timeout. This prevents child-start store-lock waits from outliving the task request envelope.
 - Complete for focused native-tool facade scope: the model-facing `task` tool no longer passes `requiredProviderContextAdmission` or `requiredBootstrapAdmissionSources` into native child runtime. The runtime adapter derives child docs, skills, required tools, forbidden tools, and provider-context admission from the child agent pack before launching the child.
+- Complete for focused skill-first scout-output scope: `execution-node-workflow` now tells Kimi to ask for the minimum useful context for the next edit, not full files or broad document dumps. `execution-context-scout` now explicitly converts parent full-file/full-document requests into bounded windows, a compact map, likely edit points, file graph edges, misses, and precise follow-up questions. The `task` tool does not hard-reject parent wording in this first pass.
+- Complete for focused oversized-output scope: structured oversized scout output is mechanically projected into bounded parent-visible context and native working context instead of being discarded. Projection is limited to recognizable structured sections such as `inline_context_windows`, bounded source/context windows, `file_graph`, high-signal refs, likely edit points, misses, next searches, and risks. Unstructured oversized output is rejected as `child_result_unshaped`.
+- Complete for focused working-context persistence scope: projected oversized task results with `resultDeliveryStatus: projected` and `resultOversized: true` still persist to the unified OpenClaw native working context, and compaction protection treats projected task results as delivered parent context.
+- Complete for focused repo-discovery state isolation scope: native `list`, `glob`, and `grep` exclude `.openclaw/runtime` by default so scouts do not crawl Runtime Home session transcripts during ordinary repo discovery.
 - Focused verification passed: `pnpm test:file src/agents/tools/native-task-tool.test.ts src/agents/pi-embedded-runner/run-child-session-runtime.test.ts src/agents/session-runtime/parent-lock-handoff.test.ts src/config/sessions/store.lock.test.ts`.
 - Focused launch-linkage verification passed: `pnpm test:file src/config/sessions/launch.test.ts src/agents/pi-embedded-runner/run-child-session-runtime.test.ts`.
 - Focused model-runtime admission verification passed: `pnpm test:file src/agents/pi-embedded-runner/run.attempt-param-forwarding.test.ts` and `pnpm test:file src/gateway/execution-platform-agent-team-runner.test.ts`.
 - Focused native task routing verification passed: `pnpm test:file src/agents/openclaw-tools.native-task.test.ts` and `pnpm test:file src/agents/openclaw-tools.sessions.test.ts`.
+- Focused scout-output verification passed: `pnpm test:file src/agents/tools/native-task-tool.test.ts src/config/sessions/working-context.test.ts src/agents/tools/repo-discovery-tools.test.ts src/agents/pi-embedded-subscribe.handlers.tools.test.ts src/agents/pi-embedded-runner/run/attempt.test.ts`.
 - Not complete: live child-result proof, full live stale-lock proof, live non-recursive runtime queue proof beyond focused contract evidence, live proof that node-worker startup no longer emits the `model_registry_discovered` cold-path timing event, and canonical worker proof rerun.
 
 **1. Native Child-Session Primitive**
@@ -53,7 +58,7 @@ First pass supports foreground only. No background mode, no ACP/thread/runtime o
 
 The task path must be append-only around parent state:
 
-1. Validate child policy.
+1. Validate child agent identity, permissions, and native pack policy.
 2. Launch child with native `sessions.launch`, carrying parent linkage.
 3. Release any parent session write lock before child execution.
 4. Run child through native session runtime/queue.
@@ -224,6 +229,21 @@ Native task emits child result/failure. A deterministic OpenClaw working-context
 
 The projector must not judge quality or infer whether Kimi understood the child output.
 
+The first pass should not add a hard prompt-text rejection layer for broad or full-file parent requests. Normal behavior comes from skills:
+
+- Kimi asks for map-first, minimum useful context for the next edit.
+- Context scout ignores full-file/full-document output shape and returns bounded windows, file graph, edit points, misses, and follow-up questions.
+- Native task projects oversized structured scout output into bounded parent-visible context and the unified working context.
+- Native task rejects only unstructured oversized output as `child_result_unshaped`, because no bounded edit context can be safely projected.
+
+Use compact delivery status:
+
+- `resultDeliveryStatus: full` for ordinary bounded delivery;
+- `resultDeliveryStatus: projected` for oversized structured output projected into bounded parent-visible context;
+- `resultDeliveryStatus: rejected` for missing or unstructured oversized output.
+
+Do not add separate result ledgers, semantic quality fields, or prompt parser gates for this first pass.
+
 **12. Continuation Footer Placement**
 
 Continuation footers must reach the parent model, but should not become durable event semantics.
@@ -253,11 +273,19 @@ The native event stores the result/failure facts. The tool result shown to Kimi 
 Update `execution-node-workflow` to mirror the native contract:
 
 - use `task` for scout delegation;
+- ask context scout for the minimum useful map and top bounded windows for the next edit, not full files or broad document dumps;
 - retry only when `task.failed.retryable === true`;
 - after non-retryable task failure, update todo and `node_finish` blocked;
 - do not probe gateway status;
 - do not use `openclaw_resource_read` for local file paths;
 - do not fall back to parent repo crawling.
+
+Update `execution-context-scout` to mirror the native contract:
+
+- if the parent asks for full files, full documents, full contents, or a broad multi-file dump, convert the request into bounded windows and a compact scout packet;
+- return `inline_context_windows`, high-signal refs, likely edit points, `file_graph` when multiple files/symbols matter, misses, next searches, and risks;
+- never paste raw full files or unbounded output;
+- keep output shaped so native task delivery can project/persist it if the raw scout result is oversized.
 
 **14. Exact Resource Read**
 

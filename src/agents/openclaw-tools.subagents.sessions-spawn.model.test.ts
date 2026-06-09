@@ -4,6 +4,7 @@ import { DEFAULT_MODEL, DEFAULT_PROVIDER } from "./defaults.js";
 import {
   resolveConfiguredSubagentRunTimeoutSeconds,
   resolveSubagentModelAndThinkingPlan,
+  splitModelRef,
 } from "./subagent-spawn-plan.js";
 
 function createConfig(overrides?: Record<string, unknown>): OpenClawConfig {
@@ -14,6 +15,13 @@ function createConfig(overrides?: Record<string, unknown>): OpenClawConfig {
 }
 
 describe("subagent spawn model + thinking plan", () => {
+  it("preserves slashful provider model ids when splitting model refs", () => {
+    expect(splitModelRef("openrouter/qwen/qwen3-coder-plus")).toEqual({
+      provider: "openrouter",
+      model: "qwen/qwen3-coder-plus",
+    });
+  });
+
   it("includes explicit model overrides in the initial patch", () => {
     const plan = resolveSubagentModelAndThinkingPlan({
       cfg: createConfig(),

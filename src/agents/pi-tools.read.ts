@@ -19,7 +19,7 @@ import { detectMime } from "../media/mime.js";
 import { sniffMimeFromBase64 } from "../media/sniff-mime-from-base64.js";
 import type { ImageSanitizationLimits } from "./image-sanitization.js";
 import { toRelativeWorkspacePath } from "./path-policy.js";
-import { wrapEditToolWithRecovery } from "./pi-tools.host-edit.js";
+import { wrapEditToolWithRecovery, wrapWriteToolWithMetadata } from "./pi-tools.host-edit.js";
 import {
   REQUIRED_PARAM_GROUPS,
   assertRequiredParams,
@@ -48,16 +48,18 @@ type ToolContentBlock = AgentToolResult<unknown>["content"][number];
 type ImageContentBlock = Extract<ToolContentBlock, { type: "image" }>;
 type TextContentBlock = Extract<ToolContentBlock, { type: "text" }>;
 
-const DEFAULT_READ_PAGE_MAX_BYTES = 32 * 1024;
-const MAX_ADAPTIVE_READ_MAX_BYTES = 128 * 1024;
+const DEFAULT_READ_PAGE_LINE_LIMIT = 2000;
+const DEFAULT_READ_PAGE_MAX_BYTES = 50 * 1024;
+const MAX_ADAPTIVE_READ_MAX_BYTES = DEFAULT_READ_PAGE_MAX_BYTES;
 const ADAPTIVE_READ_CONTEXT_SHARE = 0.1;
 const CHARS_PER_TOKEN_ESTIMATE = 4;
-const MAX_ADAPTIVE_READ_PAGES = 4;
 
 type OpenClawReadToolOptions = {
   modelContextWindowTokens?: number;
   imageSanitization?: ImageSanitizationLimits;
   workspaceRoot?: string;
+  defaultLineLimit?: number;
+  maxBytes?: number;
 };
 
 type ReadDocumentIngestArbitrationTrigger = "capped_output" | "continued_read" | "repeated_read";
@@ -101,12 +103,6 @@ type ReadDocumentIngestArbitrationOptions = {
   workspaceRoot: string;
   ingestTool?: AnyAgentTool | null;
   warn?: (message: string) => void;
-};
-
-type ReadTruncationDetails = {
-  truncated: boolean;
-  outputLines: number;
-  firstLineExceedsLimit: boolean;
 };
 
 const READ_CONTINUATION_NOTICE_RE =
@@ -183,19 +179,36 @@ function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
 }
 
+function resolveReadDefaultLineLimit(options?: OpenClawReadToolOptions): number {
+  return clamp(
+    Math.trunc(options?.defaultLineLimit ?? DEFAULT_READ_PAGE_LINE_LIMIT),
+    1,
+    DEFAULT_READ_PAGE_LINE_LIMIT,
+  );
+}
+
+function resolveConfiguredReadMaxBytes(options?: OpenClawReadToolOptions): number {
+  return clamp(
+    Math.trunc(options?.maxBytes ?? DEFAULT_READ_PAGE_MAX_BYTES),
+    1,
+    DEFAULT_READ_PAGE_MAX_BYTES,
+  );
+}
+
 function resolveAdaptiveReadMaxBytes(options?: OpenClawReadToolOptions): number {
+  const configuredMaxBytes = resolveConfiguredReadMaxBytes(options);
   const contextWindowTokens = options?.modelContextWindowTokens;
   if (
     typeof contextWindowTokens !== "number" ||
     !Number.isFinite(contextWindowTokens) ||
     contextWindowTokens <= 0
   ) {
-    return DEFAULT_READ_PAGE_MAX_BYTES;
+    return configuredMaxBytes;
   }
   const fromContext = Math.floor(
     contextWindowTokens * CHARS_PER_TOKEN_ESTIMATE * ADAPTIVE_READ_CONTEXT_SHARE,
   );
-  return clamp(fromContext, DEFAULT_READ_PAGE_MAX_BYTES, MAX_ADAPTIVE_READ_MAX_BYTES);
+  return clamp(fromContext, 1, Math.min(configuredMaxBytes, MAX_ADAPTIVE_READ_MAX_BYTES));
 }
 
 function formatBytes(bytes: number): string {
@@ -227,6 +240,13 @@ function getToolResultText(result: AgentToolResult<unknown>): string | undefined
     return undefined;
   }
   return textBlocks.join("\n");
+}
+
+function hasImageContent(result: AgentToolResult<unknown>): boolean {
+  const content = Array.isArray(result.content) ? result.content : [];
+  return content.some(
+    (block) => block && typeof block === "object" && (block as { type?: unknown }).type === "image",
+  );
 }
 
 function withToolResultText(
@@ -263,35 +283,247 @@ function withToolResultText(
   };
 }
 
-function extractReadTruncationDetails(
-  result: AgentToolResult<unknown>,
-): ReadTruncationDetails | null {
-  const details = (result as { details?: unknown }).details;
-  if (!details || typeof details !== "object") {
-    return null;
+function truncateUtf8ByBytes(text: string, maxBytes: number): { text: string; truncated: boolean } {
+  if (Buffer.byteLength(text, "utf8") <= maxBytes) {
+    return { text, truncated: false };
   }
-  const truncation = (details as { truncation?: unknown }).truncation;
-  if (!truncation || typeof truncation !== "object") {
-    return null;
+  let bytes = 0;
+  let output = "";
+  for (const char of text) {
+    const charBytes = Buffer.byteLength(char, "utf8");
+    if (bytes + charBytes > maxBytes) {
+      break;
+    }
+    output += char;
+    bytes += charBytes;
   }
-  const record = truncation as Record<string, unknown>;
-  if (record.truncated !== true) {
-    return null;
+  return { text: output.replace(/\s+$/u, ""), truncated: true };
+}
+
+function countCompleteOutputLines(text: string): number {
+  const stripped = stripReadContinuationNotice(text).trimEnd();
+  if (!stripped) {
+    return 0;
   }
-  const outputLinesRaw = record.outputLines;
-  const outputLines =
-    typeof outputLinesRaw === "number" && Number.isFinite(outputLinesRaw)
-      ? Math.max(0, Math.floor(outputLinesRaw))
-      : 0;
-  return {
-    truncated: true,
-    outputLines,
-    firstLineExceedsLimit: record.firstLineExceedsLimit === true,
-  };
+  return stripped.split(/\r?\n/u).length;
+}
+
+function capReadResultTextByBytes(params: {
+  result: AgentToolResult<unknown>;
+  maxBytes: number;
+  fallbackContinuationOffset?: number;
+}): AgentToolResult<unknown> {
+  const rawText = getToolResultText(params.result);
+  if (typeof rawText !== "string") {
+    return params.result;
+  }
+  const capped = truncateUtf8ByBytes(rawText, params.maxBytes);
+  if (!capped.truncated) {
+    return params.result;
+  }
+  const lineCount = countCompleteOutputLines(capped.text);
+  const derivedContinuationOffset = lineCount > 0 ? lineCount + 1 : null;
+  const continuationOffset =
+    typeof derivedContinuationOffset === "number"
+      ? derivedContinuationOffset
+      : typeof params.fallbackContinuationOffset === "number" &&
+          Number.isFinite(params.fallbackContinuationOffset)
+        ? Math.max(1, Math.floor(params.fallbackContinuationOffset))
+        : 1;
+  return withToolResultText(
+    params.result,
+    `${capped.text}\n\n[Read output capped at ${formatBytes(
+      params.maxBytes,
+    )} for this call. Use offset=${continuationOffset} to continue.]`,
+  );
 }
 
 function stripReadContinuationNotice(text: string): string {
-  return text.replace(READ_CONTINUATION_NOTICE_RE, "");
+  return text.replace(READ_CONTINUATION_NOTICE_RE, "").replace(READ_OUTPUT_CAPPED_NOTICE_RE, "");
+}
+
+function splitReadTextAndContinuationNotice(text: string): { body: string; notice?: string } {
+  const capped = READ_OUTPUT_CAPPED_NOTICE_RE.exec(text);
+  if (capped) {
+    return {
+      body: text.slice(0, capped.index).trimEnd(),
+      notice: capped[0].trim(),
+    };
+  }
+  const continuation = READ_CONTINUATION_NOTICE_RE.exec(text);
+  if (continuation) {
+    return {
+      body: text.slice(0, continuation.index).trimEnd(),
+      notice: continuation[0].trim(),
+    };
+  }
+  return { body: text };
+}
+
+function parseReadContinuationMetadata(text: string): {
+  moreLines?: number;
+  totalLines?: number;
+  nextOffset?: number;
+  truncatedBy?: "bytes" | "lines";
+} {
+  const capped = READ_OUTPUT_CAPPED_NOTICE_RE.exec(text);
+  if (capped) {
+    const nextOffsetMatch = /Use offset=(\d+) to continue/iu.exec(capped[0]);
+    return {
+      nextOffset: nextOffsetMatch ? Number(nextOffsetMatch[1]) : undefined,
+      truncatedBy: "bytes",
+    };
+  }
+  const showing =
+    /\[Showing lines \d+-(\d+) of (\d+)\. Use offset=(\d+) to continue\.\]\s*$/iu.exec(text);
+  if (showing) {
+    return {
+      totalLines: Number(showing[2]),
+      nextOffset: Number(showing[3]),
+      truncatedBy: "lines",
+    };
+  }
+  const more = /\[(\d+) more lines in file\. Use offset=(\d+) to continue\.\]\s*$/iu.exec(text);
+  if (more) {
+    return {
+      moreLines: Number(more[1]),
+      nextOffset: Number(more[2]),
+      truncatedBy: "lines",
+    };
+  }
+  const outputCapped =
+    /\(Output capped at [^)]+ Showing lines \d+-(\d+)\. Use offset=(\d+) to continue\.\)\s*$/iu.exec(
+      text,
+    );
+  if (outputCapped) {
+    return {
+      nextOffset: Number(outputCapped[2]),
+      truncatedBy: "bytes",
+    };
+  }
+  return {};
+}
+
+function buildReadMetadata(params: {
+  result: AgentToolResult<unknown>;
+  args: Record<string, unknown>;
+  maxBytes: number;
+}): Record<string, unknown> | null {
+  if (hasImageContent(params.result)) {
+    return null;
+  }
+  const rawText = getToolResultText(params.result);
+  if (typeof rawText !== "string") {
+    return null;
+  }
+  const contentText = stripReadContinuationNotice(rawText).trimEnd();
+  if (!contentText) {
+    return null;
+  }
+  const lineStartRaw = params.args.offset;
+  const lineStart =
+    typeof lineStartRaw === "number" && Number.isFinite(lineStartRaw) && lineStartRaw > 0
+      ? Math.floor(lineStartRaw)
+      : 1;
+  const returnedLines = contentText.split(/\r?\n/u).length;
+  const lineEnd = lineStart + returnedLines - 1;
+  const continuation = parseReadContinuationMetadata(rawText);
+  const nextOffset =
+    typeof continuation.nextOffset === "number" && Number.isFinite(continuation.nextOffset)
+      ? Math.floor(continuation.nextOffset)
+      : null;
+  const totalLines =
+    typeof continuation.totalLines === "number" && Number.isFinite(continuation.totalLines)
+      ? Math.floor(continuation.totalLines)
+      : typeof continuation.moreLines === "number" &&
+          Number.isFinite(continuation.moreLines) &&
+          nextOffset
+        ? nextOffset + Math.floor(continuation.moreLines) - 1
+        : nextOffset
+          ? null
+          : lineEnd;
+  const truncated = nextOffset !== null || continuation.truncatedBy === "bytes";
+  return {
+    type: "file",
+    lineStart,
+    lineEnd,
+    totalLines,
+    returnedLines,
+    truncated,
+    truncatedBy: truncated ? (continuation.truncatedBy ?? "lines") : null,
+    nextOffset,
+    validOffsetRange:
+      typeof totalLines === "number"
+        ? {
+            start: totalLines > 0 ? 1 : 0,
+            end: totalLines,
+          }
+        : null,
+    suggestedOffset: nextOffset,
+    bytesRead: Buffer.byteLength(contentText, "utf8"),
+    maxBytes: params.maxBytes,
+  };
+}
+
+function enrichReadToolResultDetails(params: {
+  result: AgentToolResult<unknown>;
+  args: Record<string, unknown>;
+  maxBytes: number;
+}): AgentToolResult<unknown> {
+  const existingRead = (params.result as { details?: { read?: unknown } }).details?.read;
+  if (existingRead && typeof existingRead === "object") {
+    return params.result;
+  }
+  const read = buildReadMetadata(params);
+  if (!read) {
+    return params.result;
+  }
+  return mergeReadToolDetails(params.result, { read });
+}
+
+function escapeXmlText(value: string): string {
+  return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+function lineNumberReadResultText(params: {
+  result: AgentToolResult<unknown>;
+  pathLabel: string;
+}): AgentToolResult<unknown> {
+  if (hasImageContent(params.result)) {
+    return params.result;
+  }
+  const details = (params.result as { details?: { read?: Record<string, unknown> } }).details;
+  const read = details?.read;
+  if (!read || read.type !== "file" || (details as Record<string, unknown>)?.status === "eof") {
+    return params.result;
+  }
+  const rawText = getToolResultText(params.result);
+  if (typeof rawText !== "string" || !rawText.trim() || rawText.trimStart().startsWith("<path>")) {
+    return params.result;
+  }
+  const lineStart = read.lineStart;
+  if (typeof lineStart !== "number" || !Number.isFinite(lineStart) || lineStart < 1) {
+    return params.result;
+  }
+  const { body, notice } = splitReadTextAndContinuationNotice(rawText);
+  if (!body.trim()) {
+    return params.result;
+  }
+  const numbered = body
+    .split(/\r?\n/u)
+    .map((line, index) => `${Math.floor(lineStart) + index}: ${line}`)
+    .join("\n");
+  const wrapped = [
+    `<path>${escapeXmlText(params.pathLabel)}</path>`,
+    "<type>file</type>",
+    "<content>",
+    numbered,
+    "</content>",
+    notice ? `\n${notice}` : undefined,
+  ]
+    .filter((line): line is string => typeof line === "string")
+    .join("\n");
+  return withToolResultText(params.result, wrapped);
 }
 
 function stripReadTruncationContentDetails(
@@ -337,6 +569,303 @@ function mergeReadToolDetails<TDetails extends Record<string, unknown>>(
     details: {
       ...(isRecord(existingDetails) ? existingDetails : {}),
       ...details,
+    },
+  };
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function isMissingReadPathError(error: unknown): boolean {
+  const message = errorMessage(error);
+  const code = isRecord(error) ? error.code : undefined;
+  return (
+    code === "ENOENT" ||
+    /\bENOENT\b/i.test(message) ||
+    /\bfile not found\b/i.test(message) ||
+    /\bno such file or directory\b/i.test(message) ||
+    /\bnot-found\b/i.test(message)
+  );
+}
+
+function scoreMissingPathCandidate(input: { targetName: string; candidateName: string }): number {
+  const target = input.targetName.toLowerCase();
+  const candidate = input.candidateName.toLowerCase();
+  if (!target || !candidate) {
+    return 0;
+  }
+  let score = 0;
+  if (candidate === target) {
+    score += 100;
+  }
+  if (candidate.startsWith(target) || target.startsWith(candidate)) {
+    score += 40;
+  }
+  if (path.extname(candidate) && path.extname(candidate) === path.extname(target)) {
+    score += 8;
+  }
+  const targetTerms = target
+    .replace(/\.[^.]+$/u, "")
+    .split(/[^a-z0-9]+/u)
+    .filter((term) => term.length >= 3);
+  for (const term of targetTerms) {
+    if (candidate.includes(term)) {
+      score += 6;
+    }
+  }
+  return score;
+}
+
+async function findMissingReadPathSuggestions(params: {
+  requestedPath: string;
+  workspaceRoot: string;
+}): Promise<string[]> {
+  const canonical = resolveRepoCanonicalReadPath({
+    inputPath: params.requestedPath,
+    workspaceRoot: params.workspaceRoot,
+  });
+  const requestedAbsolutePath =
+    canonical?.absolutePath ??
+    resolveToolPathAgainstWorkspaceRoot({
+      filePath: params.requestedPath,
+      root: params.workspaceRoot,
+    });
+  const parentDir = path.dirname(requestedAbsolutePath);
+  const entries = await fs.readdir(parentDir, { withFileTypes: true }).catch(() => []);
+  if (entries.length === 0) {
+    return [];
+  }
+  const targetName = path.basename(requestedAbsolutePath);
+  return entries
+    .filter((entry) => entry.isFile() || entry.isDirectory())
+    .map((entry) => {
+      const absolutePath = path.join(parentDir, entry.name);
+      const relativePath = path
+        .relative(params.workspaceRoot, absolutePath)
+        .split(path.sep)
+        .join("/");
+      return {
+        path:
+          relativePath && !relativePath.startsWith("..") && !path.isAbsolute(relativePath)
+            ? relativePath
+            : absolutePath,
+        score: scoreMissingPathCandidate({
+          targetName,
+          candidateName: entry.name,
+        }),
+      };
+    })
+    .filter((entry) => entry.score > 0)
+    .toSorted((a, b) => b.score - a.score || a.path.localeCompare(b.path))
+    .slice(0, 3)
+    .map((entry) => entry.path);
+}
+
+async function addMissingReadPathSuggestions(params: {
+  error: unknown;
+  requestedPath: string | undefined;
+  workspaceRoot: string | undefined;
+}): Promise<never> {
+  if (!params.requestedPath || !params.workspaceRoot || !isMissingReadPathError(params.error)) {
+    throw params.error;
+  }
+  const suggestions = await findMissingReadPathSuggestions({
+    requestedPath: params.requestedPath,
+    workspaceRoot: params.workspaceRoot,
+  });
+  if (suggestions.length === 0) {
+    throw params.error;
+  }
+  throw new Error(
+    `${errorMessage(params.error)}\n\nDid you mean one of these?\n${suggestions
+      .map((suggestion) => `- ${suggestion}`)
+      .join("\n")}`,
+  );
+}
+
+function parseReadOffsetBeyondEof(
+  error: unknown,
+): { requestedOffset: number; totalLines: number } | null {
+  const message = errorMessage(error);
+  const patterns = [
+    /\bOffset\s+(\d+)\s+is\s+beyond\s+end\s+of\s+file\s+\((\d+)\s+lines?\s+total\)/iu,
+    /\bOffset\s+(\d+)\s+is\s+out\s+of\s+range\s+for\s+this\s+file\s+\((\d+)\s+lines?\)/iu,
+  ];
+  for (const pattern of patterns) {
+    const match = pattern.exec(message);
+    if (!match) {
+      continue;
+    }
+    const requestedOffset = Number(match[1]);
+    const totalLines = Number(match[2]);
+    if (
+      Number.isFinite(requestedOffset) &&
+      requestedOffset > 0 &&
+      Number.isFinite(totalLines) &&
+      totalLines >= 0
+    ) {
+      return {
+        requestedOffset: Math.floor(requestedOffset),
+        totalLines: Math.floor(totalLines),
+      };
+    }
+  }
+  return null;
+}
+
+function buildReadEofResult(params: {
+  requestedPath: string | undefined;
+  requestedOffset: number;
+  totalLines: number;
+}): AgentToolResult<unknown> {
+  const pathLabel = params.requestedPath ?? "<unknown>";
+  const validOffsetRange =
+    params.totalLines > 0
+      ? {
+          start: 1,
+          end: params.totalLines,
+        }
+      : {
+          start: 0,
+          end: 0,
+        };
+  const suggestedOffset = params.totalLines > 0 ? params.totalLines : null;
+  const guidance =
+    params.totalLines > 0
+      ? `No lines were returned. Offset ${params.requestedOffset} is past EOF; the last valid offset is ${params.totalLines}. Use a smaller exact window at or before offset=${params.totalLines}, or stop reading this file.`
+      : `No lines were returned. The file is empty; stop reading this file.`;
+  return {
+    content: [
+      {
+        type: "text",
+        text: [
+          `Read reached end of file for ${pathLabel}.`,
+          "",
+          `requestedOffset: ${params.requestedOffset}`,
+          `totalLines: ${params.totalLines}`,
+          "returnedLines: 0",
+          `validOffsetRange: ${validOffsetRange.start}-${validOffsetRange.end}`,
+          "",
+          guidance,
+        ].join("\n"),
+      },
+    ],
+    details: {
+      status: "eof",
+      path: pathLabel,
+      requestedOffset: params.requestedOffset,
+      totalLines: params.totalLines,
+      returnedLines: 0,
+      truncated: false,
+      nextOffset: null,
+      validOffsetRange,
+      suggestedOffset,
+      guidance,
+    },
+  };
+}
+
+async function normalizeReadToolFailure(params: {
+  error: unknown;
+  requestedPath: string | undefined;
+  workspaceRoot: string | undefined;
+}): Promise<AgentToolResult<unknown>> {
+  const eof = parseReadOffsetBeyondEof(params.error);
+  if (eof) {
+    return buildReadEofResult({
+      requestedPath: params.requestedPath,
+      requestedOffset: eof.requestedOffset,
+      totalLines: eof.totalLines,
+    });
+  }
+  return addMissingReadPathSuggestions({
+    error: params.error,
+    requestedPath: params.requestedPath,
+    workspaceRoot: params.workspaceRoot,
+  });
+}
+
+function normalizePositiveInt(value: unknown, fallback: number): number {
+  return typeof value === "number" && Number.isFinite(value) && value > 0
+    ? Math.floor(value)
+    : fallback;
+}
+
+async function tryReadDirectoryWithPagination(params: {
+  args: Record<string, unknown>;
+  pathLabel: string;
+  workspaceRoot: string | undefined;
+  defaultLineLimit: number;
+}): Promise<AgentToolResult<unknown> | null> {
+  if (!params.workspaceRoot) {
+    return null;
+  }
+  const requestedPath = params.args.path;
+  if (typeof requestedPath !== "string" || !requestedPath.trim()) {
+    return null;
+  }
+  const workspaceRoot = path.resolve(params.workspaceRoot);
+  const absolutePath = resolveToolPathAgainstWorkspaceRoot({
+    filePath: requestedPath,
+    root: workspaceRoot,
+  });
+  const relative = path.relative(workspaceRoot, absolutePath);
+  if (relative.startsWith("..") || path.isAbsolute(relative)) {
+    return null;
+  }
+  const stat = await fs.stat(absolutePath).catch(() => null);
+  if (!stat?.isDirectory()) {
+    return null;
+  }
+  const entries = (await fs.readdir(absolutePath, { withFileTypes: true }))
+    .map((entry) => `${entry.name}${entry.isDirectory() ? "/" : ""}`)
+    .toSorted((a, b) => a.localeCompare(b));
+  const offset = normalizePositiveInt(params.args.offset, 1);
+  const limit = normalizePositiveInt(params.args.limit, params.defaultLineLimit);
+  const startIndex = Math.max(0, offset - 1);
+  const visibleEntries = entries.slice(startIndex, startIndex + limit);
+  const nextOffset =
+    startIndex + visibleEntries.length < entries.length ? offset + visibleEntries.length : null;
+  const truncated = nextOffset !== null;
+  const entryStart = visibleEntries.length > 0 ? offset : null;
+  const entryEnd = visibleEntries.length > 0 ? offset + visibleEntries.length - 1 : null;
+  const guidance = truncated
+    ? `(Showing entries ${entryStart}-${entryEnd} of ${entries.length}. Use offset=${nextOffset} to continue or narrow the directory.)`
+    : `(${entries.length} entries)`;
+  return {
+    content: [
+      {
+        type: "text",
+        text: [
+          `<path>${escapeXmlText(params.pathLabel)}</path>`,
+          "<type>directory</type>",
+          "<entries>",
+          visibleEntries.join("\n"),
+          "",
+          guidance,
+          "</entries>",
+        ].join("\n"),
+      },
+    ],
+    details: {
+      read: {
+        type: "directory",
+        path: params.pathLabel,
+        offset,
+        limit,
+        entryStart,
+        entryEnd,
+        totalEntries: entries.length,
+        returnedEntries: visibleEntries.length,
+        truncated,
+        nextOffset,
+        validOffsetRange: {
+          start: entries.length > 0 ? 1 : 0,
+          end: entries.length,
+        },
+        suggestedOffset: nextOffset,
+      },
     },
   };
 }
@@ -638,76 +1167,38 @@ async function executeReadWithAdaptivePaging(params: {
   args: Record<string, unknown>;
   signal?: AbortSignal;
   maxBytes: number;
+  defaultLineLimit: number;
 }): Promise<AgentToolResult<unknown>> {
   const userLimit = params.args.limit;
   const hasExplicitLimit =
     typeof userLimit === "number" && Number.isFinite(userLimit) && userLimit > 0;
   if (hasExplicitLimit) {
-    return await params.base.execute(params.toolCallId, params.args, params.signal);
+    const result = await params.base.execute(params.toolCallId, params.args, params.signal);
+    return capReadResultTextByBytes({
+      result,
+      maxBytes: params.maxBytes,
+    });
   }
 
   const offsetRaw = params.args.offset;
-  let nextOffset =
+  const nextOffset =
     typeof offsetRaw === "number" && Number.isFinite(offsetRaw) && offsetRaw > 0
       ? Math.floor(offsetRaw)
       : 1;
-  let firstResult: AgentToolResult<unknown> | null = null;
-  let aggregatedText = "";
-  let aggregatedBytes = 0;
-  let capped = false;
-  let continuationOffset: number | undefined;
-
-  for (let page = 0; page < MAX_ADAPTIVE_READ_PAGES; page += 1) {
-    const pageArgs = { ...params.args, offset: nextOffset };
-    const pageResult = await params.base.execute(params.toolCallId, pageArgs, params.signal);
-    firstResult ??= pageResult;
-
-    const rawText = getToolResultText(pageResult);
-    if (typeof rawText !== "string") {
-      return pageResult;
-    }
-
-    const truncation = extractReadTruncationDetails(pageResult);
-    const canContinue =
-      Boolean(truncation?.truncated) &&
-      !truncation?.firstLineExceedsLimit &&
-      (truncation?.outputLines ?? 0) > 0 &&
-      page < MAX_ADAPTIVE_READ_PAGES - 1;
-    const pageText = canContinue ? stripReadContinuationNotice(rawText) : rawText;
-    const delimiter = aggregatedText ? "\n\n" : "";
-    const nextBytes = Buffer.byteLength(`${delimiter}${pageText}`, "utf-8");
-
-    if (aggregatedText && aggregatedBytes + nextBytes > params.maxBytes) {
-      capped = true;
-      continuationOffset = nextOffset;
-      break;
-    }
-
-    aggregatedText += `${delimiter}${pageText}`;
-    aggregatedBytes += nextBytes;
-
-    if (!canContinue || !truncation) {
-      return withToolResultText(pageResult, aggregatedText);
-    }
-
-    nextOffset += truncation.outputLines;
-    continuationOffset = nextOffset;
-
-    if (aggregatedBytes >= params.maxBytes) {
-      capped = true;
-      break;
-    }
-  }
-
-  if (!firstResult) {
-    return await params.base.execute(params.toolCallId, params.args, params.signal);
-  }
-
-  let finalText = aggregatedText;
-  if (capped && continuationOffset) {
-    finalText += `\n\n[Read output capped at ${formatBytes(params.maxBytes)} for this call. Use offset=${continuationOffset} to continue.]`;
-  }
-  return withToolResultText(firstResult, finalText);
+  const defaultPageResult = await params.base.execute(
+    params.toolCallId,
+    {
+      ...params.args,
+      offset: nextOffset,
+      limit: params.defaultLineLimit,
+    },
+    params.signal,
+  );
+  return capReadResultTextByBytes({
+    result: defaultPageResult,
+    maxBytes: params.maxBytes,
+    fallbackContinuationOffset: nextOffset + params.defaultLineLimit,
+  });
 }
 
 function rewriteReadImageHeader(text: string, mimeType: string): string {
@@ -1052,6 +1543,8 @@ type SandboxToolParams = {
   bridge: SandboxFsBridge;
   modelContextWindowTokens?: number;
   imageSanitization?: ImageSanitizationLimits;
+  defaultLineLimit?: number;
+  maxBytes?: number;
 };
 
 export function createSandboxedReadTool(params: SandboxToolParams) {
@@ -1062,6 +1555,8 @@ export function createSandboxedReadTool(params: SandboxToolParams) {
     modelContextWindowTokens: params.modelContextWindowTokens,
     imageSanitization: params.imageSanitization,
     workspaceRoot: params.root,
+    defaultLineLimit: params.defaultLineLimit,
+    maxBytes: params.maxBytes,
   });
 }
 
@@ -1069,7 +1564,16 @@ export function createSandboxedWriteTool(params: SandboxToolParams) {
   const base = createWriteTool(params.root, {
     operations: createSandboxWriteOperations(params),
   }) as unknown as AnyAgentTool;
-  return wrapToolParamValidation(base, REQUIRED_PARAM_GROUPS.write);
+  const withMetadata = wrapWriteToolWithMetadata(base, {
+    root: params.root,
+    access: async (absolutePath: string) => {
+      const stat = await params.bridge.stat({ filePath: absolutePath, cwd: params.root });
+      if (!stat) {
+        throw createFsAccessError("ENOENT", absolutePath);
+      }
+    },
+  });
+  return wrapToolParamValidation(withMetadata, REQUIRED_PARAM_GROUPS.write);
 }
 
 export function createSandboxedEditTool(params: SandboxToolParams) {
@@ -1088,7 +1592,13 @@ export function createHostWorkspaceWriteTool(root: string, options?: { workspace
   const base = createWriteTool(root, {
     operations: createHostWriteOperations(root, options),
   }) as unknown as AnyAgentTool;
-  return wrapToolParamValidation(base, REQUIRED_PARAM_GROUPS.write);
+  const withMetadata = wrapWriteToolWithMetadata(base, {
+    root,
+    access: async (absolutePath: string) => {
+      await fs.access(path.resolve(expandTildeToOsHome(absolutePath)));
+    },
+  });
+  return wrapToolParamValidation(withMetadata, REQUIRED_PARAM_GROUPS.write);
 }
 
 export function createHostWorkspaceEditTool(root: string, options?: { workspaceOnly?: boolean }) {
@@ -1125,16 +1635,46 @@ export function createOpenClawReadTool(
           };
         }
       }
-      const result = await executeReadWithAdaptivePaging({
-        base,
-        toolCallId,
+      const maxBytes = resolveAdaptiveReadMaxBytes(options);
+      const defaultLineLimit = resolveReadDefaultLineLimit(options);
+      const normalizedPathLabel =
+        typeof normalizedArgs.path === "string" && normalizedArgs.path.trim()
+          ? normalizedArgs.path
+          : "<unknown>";
+      const directoryResult = await tryReadDirectoryWithPagination({
         args: normalizedArgs,
-        signal,
-        maxBytes: resolveAdaptiveReadMaxBytes(options),
+        pathLabel: requestedPath ?? normalizedPathLabel,
+        workspaceRoot: options?.workspaceRoot,
+        defaultLineLimit,
       });
+      const result =
+        directoryResult ??
+        (await executeReadWithAdaptivePaging({
+          base,
+          toolCallId,
+          args: normalizedArgs,
+          signal,
+          maxBytes,
+          defaultLineLimit,
+        }).catch((error: unknown) =>
+          normalizeReadToolFailure({
+            error,
+            requestedPath,
+            workspaceRoot: options?.workspaceRoot,
+          }),
+        ));
       const filePath = typeof record?.path === "string" ? record.path : "<unknown>";
-      const strippedDetailsResult = stripReadTruncationContentDetails(result);
-      const normalizedResult = await normalizeReadImageResult(strippedDetailsResult, filePath);
+      const enrichedResult = enrichReadToolResultDetails({
+        result,
+        args: normalizedArgs,
+        maxBytes,
+      });
+      const strippedDetailsResult = stripReadTruncationContentDetails(enrichedResult);
+      const lineNumberedResult = lineNumberReadResultText({
+        result: strippedDetailsResult,
+        pathLabel: filePath,
+      });
+      const normalizedResult = await normalizeReadImageResult(lineNumberedResult, filePath);
       return sanitizeToolResultImages(
         normalizedResult,
         `read:${filePath}`,

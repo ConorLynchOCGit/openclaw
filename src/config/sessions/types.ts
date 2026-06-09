@@ -142,6 +142,10 @@ export type SessionTodoState = {
 };
 
 export type SessionWorkingContextEntryKind =
+  | "context_window"
+  | "discovery_hint"
+  | "file_graph"
+  | "managed_output_ref"
   | "context_scout_result"
   | "validation_scout_result"
   | "change_set"
@@ -162,6 +166,8 @@ export type SessionWorkingContextEntry = {
   childSessionKey?: string;
   childRunId?: string;
   status?: string;
+  lineRangeComplete?: boolean;
+  truncatedSource?: boolean;
   changedFilePaths?: string[];
   addedFilePaths?: string[];
   modifiedFilePaths?: string[];
@@ -174,6 +180,8 @@ export type SessionWorkingContextEntry = {
   hasFileGraph: boolean;
   fileGraphTextHash?: string;
   fileGraphTextByteCount?: number;
+  fileGraphVerifiedEdgeCount?: number;
+  fileGraphUncertainAnnotationCount?: number;
 };
 
 export type SessionWorkingContextUpdateEvent = {

@@ -377,6 +377,35 @@ export function normalizeBaseUrl(
   return raw.replace(/\/+$/, "");
 }
 
+function normalizeOpenRouterRequestBaseUrl(params: {
+  provider?: string;
+  baseUrl?: string;
+}): string | undefined {
+  const baseUrl = params.baseUrl;
+  if (!baseUrl || normalizeLowercaseStringOrEmpty(params.provider) !== "openrouter") {
+    return baseUrl;
+  }
+  try {
+    const url = new URL(baseUrl);
+    if (
+      (url.protocol !== "http:" && url.protocol !== "https:") ||
+      url.hostname.toLowerCase() !== "openrouter.ai"
+    ) {
+      return baseUrl;
+    }
+    const normalizedPath = url.pathname.replace(/\/+$/, "") || "/";
+    if (normalizedPath !== "/" && normalizedPath !== "/v1") {
+      return baseUrl;
+    }
+    url.pathname = "/api/v1";
+    url.search = "";
+    url.hash = "";
+    return url.toString().replace(/\/+$/, "");
+  } catch {
+    return baseUrl;
+  }
+}
+
 export function mergeProviderRequestHeaders(
   ...headerSets: Array<Record<string, string> | undefined>
 ): Record<string, string> | undefined {
@@ -603,7 +632,10 @@ export function buildProviderRequestTlsClientOptions(
 export function resolveProviderRequestPolicyConfig(
   params: ResolveProviderRequestPolicyConfigParams,
 ): ResolvedProviderRequestPolicyConfig {
-  const baseUrl = normalizeBaseUrl(params.baseUrl, params.defaultBaseUrl);
+  const baseUrl = normalizeOpenRouterRequestBaseUrl({
+    provider: params.provider,
+    baseUrl: normalizeBaseUrl(params.baseUrl, params.defaultBaseUrl),
+  });
   const capability = params.capability ?? "llm";
   const transport = params.transport ?? "http";
   const policyInput = {

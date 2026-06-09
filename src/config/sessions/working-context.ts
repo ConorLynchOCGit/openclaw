@@ -20,6 +20,8 @@ export type SessionWorkingContextInputEntry = {
   childSessionKey?: string;
   childRunId?: string;
   status?: string;
+  lineRangeComplete?: boolean;
+  truncatedSource?: boolean;
   changedFilePaths?: string[];
   addedFilePaths?: string[];
   modifiedFilePaths?: string[];
@@ -52,6 +54,12 @@ const SESSION_WORKING_CONTEXT_PROMPT_LIMIT = 24_000;
 const SESSION_WORKING_CONTEXT_FILE_GRAPH_LIMIT = 4_000;
 const WORKING_CONTEXT_PROMPT_START = "<openclaw_native_working_context>";
 const WORKING_CONTEXT_PROMPT_END = "</openclaw_native_working_context>";
+
+type FileGraphSectionSummary = {
+  text: string;
+  verifiedEdgeCount: number;
+  uncertainAnnotationCount: number;
+};
 
 export function buildSessionWorkingContextRef(sessionKey: string): string {
   return `openclaw-session-working-context://${encodeURIComponent(sessionKey.trim())}`;
@@ -86,6 +94,113 @@ export function hasInlineContextWindows(text: string): boolean {
 
 export function hasFileGraph(text: string): boolean {
   return /\bfile[_\s-]*graph\b/i.test(text);
+}
+
+function hasReadContinuationOrCap(text: string): boolean {
+  return (
+    /\[(?:Showing lines [^\]]*?Use offset=\d+ to continue\.|\d+ more lines in file\. Use offset=\d+ to continue\.)\]\s*$/iu.test(
+      text,
+    ) ||
+    /\[Read output capped at [^\]]+ Use offset=\d+ to continue\.\]\s*$/iu.test(text) ||
+    /\(Output capped at [^)]+ Showing lines \d+-\d+\. Use offset=\d+ to continue\.\)\s*$/iu.test(
+      text,
+    ) ||
+    /\[\.\.\. \d+ more characters truncated\]\s*$/iu.test(text)
+  );
+}
+
+function resolveLineRangeComplete(params: {
+  input: SessionWorkingContextInputEntry;
+  text: string;
+}): boolean | undefined {
+  if (hasReadContinuationOrCap(params.text)) {
+    return false;
+  }
+  if (typeof params.input.lineRangeComplete === "boolean") {
+    return params.input.lineRangeComplete;
+  }
+  return params.input.kind === "context_window" ? true : undefined;
+}
+
+function resolveWorkingContextKind(params: {
+  inputKind: SessionWorkingContextEntryKind;
+  lineRangeComplete: boolean | undefined;
+}): SessionWorkingContextEntryKind {
+  if (params.inputKind === "context_window" && params.lineRangeComplete === false) {
+    return "discovery_hint";
+  }
+  return params.inputKind;
+}
+
+function hasStructuredWorkingContextSignal(text: string): boolean {
+  return /\b(?:inline[_\s-]*context[_\s-]*windows?|bounded\s+(?:source|context)\s+(?:windows?|excerpts?)|file[_\s-]*graph|likely[_\s-]*edit[_\s-]*points?|high[_\s-]*signal[_\s-]*refs?)\b/i.test(
+    text,
+  );
+}
+
+function isProjectedWorkingContextSectionHeader(line: string): boolean {
+  return /^\s*(?:#{1,6}\s*)?(?:answer|direct\s+answer|high[_\s-]*signal[_\s-]*refs?|inline[_\s-]*context[_\s-]*windows?|bounded\s+(?:source|context)\s+(?:windows?|excerpts?)|source\s+(?:windows?|excerpts?)|context\s+(?:windows?|excerpts?)|file[_\s-]*graph|likely[_\s-]*edit[_\s-]*points?|adjacent[_\s-]*context|search[_\s-]*terms(?:[_\s-]*used)?|misses|next[_\s-]*(?:searches|likely[_\s-]*pivots)|risks(?:[_\s-]*or[_\s-]*unknowns|\s*\/\s*unknowns)?|unknowns)\b.*:?\s*$/i.test(
+    line,
+  );
+}
+
+function collectProjectedWorkingContextSections(text: string, maxSectionChars: number): string[] {
+  const lines = text.split(/\r?\n/u);
+  const sections: string[] = [];
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index] ?? "";
+    if (!isProjectedWorkingContextSectionHeader(line)) {
+      continue;
+    }
+    let endIndex = lines.length;
+    for (let cursor = index + 1; cursor < lines.length; cursor += 1) {
+      if (isProjectedWorkingContextSectionHeader(lines[cursor] ?? "")) {
+        endIndex = cursor;
+        break;
+      }
+    }
+    const section = lines.slice(index, endIndex).join("\n").trim();
+    if (section) {
+      sections.push(section.slice(0, maxSectionChars).trim());
+    }
+    index = endIndex - 1;
+  }
+  return sections;
+}
+
+export function projectStructuredWorkingContextText(params: {
+  text: string;
+  maxChars: number;
+}): string | undefined {
+  const text = params.text.trim();
+  if (!hasStructuredWorkingContextSignal(text)) {
+    return undefined;
+  }
+  const maxChars = Math.max(1, Math.trunc(params.maxChars));
+  const header = [
+    "Projected oversized child result:",
+    `originalBytes=${Buffer.byteLength(text, "utf8")}`,
+    "OpenClaw projected structured scout material into bounded parent-visible context. Use the projected windows/file_graph for the next decision; delegate a narrower scout if exact source is still missing.",
+    "",
+  ].join("\n");
+  const bodyBudget = Math.max(1, maxChars - header.length - 160);
+  const sections = collectProjectedWorkingContextSections(
+    text,
+    Math.max(1, Math.floor(bodyBudget / 4)),
+  );
+  const body =
+    sections.length > 0
+      ? sections.join("\n\n")
+      : ["inline_context_windows:", text.slice(0, bodyBudget).trimEnd()].join("\n");
+  const projected = `${header}${body}`.trim();
+  if (projected.length <= maxChars) {
+    return projected;
+  }
+  const suffix = "\n[projected child result truncated to bounded parent context]";
+  if (maxChars <= suffix.length) {
+    return projected.slice(0, maxChars).trimEnd();
+  }
+  return `${projected.slice(0, Math.max(1, maxChars - suffix.length)).trimEnd()}${suffix}`;
 }
 
 function isFileGraphHeader(line: string): boolean {
@@ -129,18 +244,63 @@ export function extractFileGraphSection(text: string): string | undefined {
   return section ? section : undefined;
 }
 
+function isFileGraphEdgeLine(line: string): boolean {
+  return (
+    /(?:->|=>|imports?|exports?|calls?|callers?|references?|depends\s+on|registers?|tests?|validates?)/iu.test(
+      line,
+    ) && /[A-Za-z0-9_./-]+\.[A-Za-z0-9_.-]+/u.test(line)
+  );
+}
+
+function isEvidenceBackedFileGraphLine(line: string): boolean {
+  return (
+    /\bevidence\s*[:=]/iu.test(line) ||
+    /\b(?:lines?|window)\s+\d+(?:\s*[-:]\s*\d+)?\b/iu.test(line) ||
+    /[A-Za-z0-9_./-]+\.[A-Za-z0-9_.-]+:\d+(?:-\d+)?/u.test(line)
+  );
+}
+
+function summarizeFileGraphSection(text: string): FileGraphSectionSummary | undefined {
+  const section = extractFileGraphSection(text);
+  if (!section) {
+    return undefined;
+  }
+  let verifiedEdgeCount = 0;
+  let uncertainAnnotationCount = 0;
+  for (const line of section.split(/\r?\n/u)) {
+    if (!isFileGraphEdgeLine(line)) {
+      continue;
+    }
+    if (isEvidenceBackedFileGraphLine(line)) {
+      verifiedEdgeCount += 1;
+    } else {
+      uncertainAnnotationCount += 1;
+    }
+  }
+  return {
+    text: section,
+    verifiedEdgeCount,
+    uncertainAnnotationCount,
+  };
+}
+
 function promoteFileGraphForPrompt(text: string): string {
-  const fileGraphSection = extractFileGraphSection(text);
-  if (!fileGraphSection) {
+  const fileGraph = summarizeFileGraphSection(text);
+  if (!fileGraph) {
     return text;
   }
   const remainder = text
-    .replace(fileGraphSection, "")
+    .replace(fileGraph.text, "")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
   return [
     "Native file_graph promoted from the delivered scout result:",
-    fileGraphSection,
+    `verifiedEdges=${fileGraph.verifiedEdgeCount}`,
+    `uncertainAnnotations=${fileGraph.uncertainAnnotationCount}`,
+    fileGraph.uncertainAnnotationCount > 0
+      ? "Uncertain file_graph annotations are orientation only until a scout returns evidence lines/windows."
+      : undefined,
+    fileGraph.text,
     remainder ? "\nDelivered scout result:" : undefined,
     remainder || undefined,
   ]
@@ -201,8 +361,18 @@ export function buildSessionWorkingContextPromptAddition(
       entry.changedFilePaths?.length
         ? `changedFilePaths=${entry.changedFilePaths.join(", ")}`
         : undefined,
+      typeof entry.lineRangeComplete === "boolean"
+        ? `lineRangeComplete=${entry.lineRangeComplete}`
+        : undefined,
+      entry.truncatedSource ? "truncatedSource=true" : undefined,
       `hasInlineContextWindows=${entry.hasInlineContextWindows}`,
       `hasFileGraph=${entry.hasFileGraph}`,
+      typeof entry.fileGraphVerifiedEdgeCount === "number"
+        ? `fileGraphVerifiedEdges=${entry.fileGraphVerifiedEdgeCount}`
+        : undefined,
+      typeof entry.fileGraphUncertainAnnotationCount === "number"
+        ? `fileGraphUncertainAnnotations=${entry.fileGraphUncertainAnnotationCount}`
+        : undefined,
       `textHash=${entry.textHash}`,
       "",
       truncatePromptText(promoteFileGraphForPrompt(entry.text), Math.max(1, bodyBudget - used)),
@@ -327,10 +497,15 @@ function buildWorkingContextEntry(params: {
   if (!text) {
     return null;
   }
+  const lineRangeComplete = resolveLineRangeComplete({ input: params.input, text });
+  const kind = resolveWorkingContextKind({
+    inputKind: params.input.kind,
+    lineRangeComplete,
+  });
   const hash = crypto.createHash("sha256").update(text).digest("hex");
-  const fileGraphText = extractFileGraphSection(text);
-  const fileGraphTextHash = fileGraphText
-    ? crypto.createHash("sha256").update(fileGraphText).digest("hex")
+  const fileGraph = summarizeFileGraphSection(text);
+  const fileGraphTextHash = fileGraph
+    ? crypto.createHash("sha256").update(fileGraph.text).digest("hex")
     : undefined;
   const entryHash = crypto
     .createHash("sha256")
@@ -353,7 +528,7 @@ function buildWorkingContextEntry(params: {
   const deletedFilePaths = cleanOptionalStringArray(params.input.deletedFilePaths);
   return {
     entryId: `wctx_${entryHash}`,
-    kind: params.input.kind,
+    kind,
     createdAt: params.createdAt,
     source: params.input.source ?? "native_task",
     ...(params.input.sourceToolCallId ? { sourceToolCallId: params.input.sourceToolCallId } : {}),
@@ -364,6 +539,10 @@ function buildWorkingContextEntry(params: {
     ...(params.input.childSessionKey ? { childSessionKey: params.input.childSessionKey } : {}),
     ...(params.input.childRunId ? { childRunId: params.input.childRunId } : {}),
     ...(status ? { status } : {}),
+    ...(typeof lineRangeComplete === "boolean" ? { lineRangeComplete } : {}),
+    ...(params.input.truncatedSource || lineRangeComplete === false
+      ? { truncatedSource: true }
+      : {}),
     ...(changedFilePaths ? { changedFilePaths } : {}),
     ...(addedFilePaths ? { addedFilePaths } : {}),
     ...(modifiedFilePaths ? { modifiedFilePaths } : {}),
@@ -373,11 +552,13 @@ function buildWorkingContextEntry(params: {
     textByteCount: Buffer.byteLength(text, "utf8"),
     text,
     hasInlineContextWindows: hasInlineContextWindows(text),
-    hasFileGraph: Boolean(fileGraphText),
+    hasFileGraph: Boolean(fileGraph && fileGraph.verifiedEdgeCount > 0),
     ...(fileGraphTextHash
       ? {
           fileGraphTextHash,
-          fileGraphTextByteCount: Buffer.byteLength(fileGraphText ?? "", "utf8"),
+          fileGraphTextByteCount: Buffer.byteLength(fileGraph?.text ?? "", "utf8"),
+          fileGraphVerifiedEdgeCount: fileGraph?.verifiedEdgeCount ?? 0,
+          fileGraphUncertainAnnotationCount: fileGraph?.uncertainAnnotationCount ?? 0,
         }
       : {}),
   };

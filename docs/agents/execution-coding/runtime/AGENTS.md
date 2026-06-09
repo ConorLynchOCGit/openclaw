@@ -19,6 +19,10 @@ it. These standing rules are the authority boundary:
 - Do not invent repository targets from summaries. Delegate source acquisition
   to `execution-context-scout` through native `task` unless the worker prompt
   already contains precise edit-ready source windows.
+- You may use `read` only for exact bounded source windows from paths already
+  named in the prompt, scout result, or native working context. Provide
+  explicit `offset` and `limit`; do not use it for discovery, directories,
+  broad files, runtime state, or managed-output inspection.
 - Do not treat snapshot-provided refs as exhaustive. The coding node is
   expected to derive search signal from prompt/requirement material and ask
   scouts to map the workspace from that signal.
@@ -36,6 +40,9 @@ it. These standing rules are the authority boundary:
   and unknown edges while you decide edits.
 - Use native `task` for the child handoff. Other OpenClaw runtime control
   surfaces are internal and are not parent-facing tools in executable-node mode.
+  Task results arrive in an OpenCode-style tagged envelope with child session
+  metadata and a parent-visible decision footer; read that result, update todo,
+  then edit, ask one exact follow-up, ask a map pass, validate, or block.
 - Delegate to `execution-validation-scout` when validation command selection,
   failure interpretation, or proof scope is non-trivial.
 - Validation/review/closeout node modes are real graph work, not optional prose

@@ -1274,6 +1274,9 @@ describe("native node agent session contracts", () => {
             workingContextHasFileGraph: true,
             childProviderAdmissionObserved: true,
             contextDecisionFooterKind: "minimal_edit_readiness",
+            managedOutputRef: "openclaw-managed-output://validation/output-1",
+            managedOutputWorkingContextEntryRef:
+              "openclaw-session-working-context://nrun_trace/managed-output-1",
             changeSetRef: "openclaw-session-working-context://nrun_trace/change-set-1",
             validationStateRef: "openclaw-session-working-context://nrun_trace/validation-state-1",
             childBootstrapAdmissions: [
@@ -1331,6 +1334,9 @@ describe("native node agent session contracts", () => {
         "openclaw-session-launch://agent%3Aexecution-coding%3Anode%3Anrun_trace/session_launch_1",
       workerPromptAuthoredRef: "runtime-job://job-native-node/node-worker-prompt/impl-1",
       childResultRef: "runtime-job://job-native-node/subagent-result/context-scout-1",
+      managedOutputRef: "openclaw-managed-output://validation/output-1",
+      managedOutputWorkingContextEntryRef:
+        "openclaw-session-working-context://nrun_trace/managed-output-1",
       changeSetRef: "openclaw-session-working-context://nrun_trace/change-set-1",
       validationStateRef: "openclaw-session-working-context://nrun_trace/validation-state-1",
       parentSynthesisRef: "openclaw-tool-result://nrun_trace/plan-after-context",
@@ -1382,6 +1388,7 @@ describe("native node agent session contracts", () => {
       workingContextObserved: true,
       inlineContextWindowsObserved: true,
       fileGraphObserved: true,
+      managedOutputObserved: true,
       changeSetObserved: true,
       validationStateObserved: true,
       parentSynthesisObserved: true,
@@ -1407,6 +1414,7 @@ describe("native node agent session contracts", () => {
       expect.arrayContaining([
         "node_agent_session_trace_attempt_thinking_xhigh_observed",
         "node_agent_session_trace_attempt_reasoning_stream_observed",
+        "node_agent_session_trace_managed_output_observed",
       ]),
     );
     expect(trace.missingOptics).toEqual([]);
@@ -1772,7 +1780,7 @@ describe("native node agent session contracts", () => {
             scoutSpawnRef: "openclaw-native-task-result://run/task-oversized",
             childSessionKeyRef: "agent:execution-context-scout:subagent:child-oversized",
             childResultObserved: false,
-            childResultOversized: true,
+            childResultDeliveryStatus: "rejected",
           },
         },
       } as unknown as Parameters<typeof buildNodeAgentSessionTrace>[0]["runResult"],
@@ -1780,10 +1788,11 @@ describe("native node agent session contracts", () => {
 
     expect(trace.observations.contextScoutSpawnObserved).toBe(true);
     expect(trace.observations.childResultObserved).toBe(false);
+    expect(trace.observations.childResultDeliveryStatus).toBe("rejected");
     expect(trace.observations.childResultOversized).toBe(true);
     expect(trace.missingOptics).toEqual(expect.arrayContaining(["child_result_missing"]));
     expect(trace.reasonCodes).toEqual(
-      expect.arrayContaining(["node_agent_session_trace_child_result_oversized_not_delivered"]),
+      expect.arrayContaining(["node_agent_session_trace_child_result_rejected"]),
     );
   });
 
@@ -2356,6 +2365,138 @@ describe("native node agent session contracts", () => {
     ]);
   });
 
+  it("blocks authored worker prompts that reference missing repo source paths", async () => {
+    const executable = node({
+      requirementRefs: ["req-1"],
+      sourcePromptRefs: ["source-prompt://abc123/body/0-120"],
+    });
+    const built = buildNodeExecutionSnapshotFromGraphNode({
+      snapshot: snapshot([executable]),
+      graphId: "graph-native-node",
+      node: executable,
+      attemptId: "attempt-1",
+    });
+    const missingPath =
+      "docs/projects/execution-platform/specs/openclaw-native-node-execution-absent-proof.md";
+
+    const result = await authorNodeExecutionPrompt({
+      nodeExecutionSnapshot: built,
+      repository: repositoryForBodies({
+        artifacts: [
+          artifact({
+            artifactId: "artifact-map",
+            artifactType: "execution_platform.requirement_map",
+            uri: "runtime-job://job-native-node/requirement-map/map",
+          }),
+          artifact({
+            artifactId: "artifact-window",
+            artifactType: "execution_platform.source_prompt_window",
+            uri: "source-prompt://abc123/body/0-120",
+            metadata: {
+              windowRef: "source-prompt://abc123/body/0-120",
+              sourcePromptBodyRef: "source-prompt://abc123/body",
+              start: 0,
+              end: 120,
+            },
+          }),
+        ],
+        bodies: {
+          "artifact-map": {
+            artifactKind: "requirement_map",
+            requirements: [
+              {
+                requirementId: "req-1",
+                text: "Wire native OpenClaw node sessions into execution scheduling.",
+                role: "runnable_work",
+                doneWhen:
+                  "The execution node starts a native agent session and returns node_finish.",
+                sourceRefs: ["source-prompt://abc123/body/0-120"],
+              },
+            ],
+            rawPromptStored: false,
+            rawResponseStored: false,
+            rawProviderLogStored: false,
+          },
+          "artifact-window": {
+            artifactKind: "source_prompt_window",
+            windowRef: "source-prompt://abc123/body/0-120",
+            sourcePromptBodyRef: "source-prompt://abc123/body",
+            start: 0,
+            end: 120,
+            text: "Operator prompt: implement Product/Spec Planning through native OpenClaw node execution.",
+            rawPromptStored: false,
+            rawResponseStored: false,
+            rawProviderLogStored: false,
+            rawToolLogStored: false,
+          },
+        },
+      }),
+      modelClient: {
+        executeProviderTextTurn: async () => ({
+          modelRunRef: "openrouter://moonshotai/kimi-k2.6/prompt-author-stale-path",
+          responseHash: "worker-prompt-stale-path-response-hash",
+          latencyMs: 1,
+          responseText: [
+            "# Node Assignment: Native OpenClaw Node Session Wiring",
+            `Node: ${built.nodeId}`,
+            `Node run: ${built.nodeRunId}`,
+            "",
+            "## Mission",
+            "Wire native OpenClaw node sessions into execution scheduling.",
+            "",
+            "## Assigned Requirements",
+            "- req-1: make the execution node start a native OpenClaw agent session and return node_finish evidence. Source: source-prompt://abc123/body/0-120.",
+            "",
+            "## Suggested Starting Points",
+            `First move: call update_plan, then inspect ${missingPath} as the native source policy starting point. If repo mapping is weak call native task with agentId:"execution-context-scout".`,
+            "",
+            "## Done When",
+            "Done when native session launch and node_finish evidence are wired.",
+            "",
+            "## Required Evidence",
+            "Final evidence must include validation and node_finish status.",
+            "",
+            "## Validation",
+            "Use execution-validation-scout for non-trivial validation.",
+          ].join("\n"),
+          providerDiagnostics: {
+            providerKind: "openrouter",
+            rawPromptStored: false,
+            rawResponseStored: false,
+            rawProviderLogStored: false,
+          },
+          rawPromptStored: false,
+          rawResponseStored: false,
+          rawProviderLogStored: false,
+        }),
+      },
+      modelRef: "moonshotai/kimi-k2.6",
+      providerPath: "openrouter",
+    });
+
+    expect(result.status).toBe("blocked");
+    if (result.status !== "blocked") {
+      throw new Error("fixture expected blocked worker prompt");
+    }
+    expect(result.blockerKind).toBe("node_worker_prompt_structurally_invalid");
+    expect(result.reasonCodes).toEqual(
+      expect.arrayContaining([
+        "node_worker_prompt_structurally_invalid_missing_source_path_ref",
+        "source_ref_missing",
+        `prompt_source_ref_missing:${missingPath}`,
+      ]),
+    );
+    expect(result.diagnostic?.missingPromptSourceRefs).toEqual([
+      expect.objectContaining({
+        path: missingPath,
+        sourceSection: expect.stringContaining(missingPath),
+        nearestCandidates: expect.arrayContaining([
+          expect.stringContaining("openclaw-native-node-worker-agent-refactor.md"),
+        ]),
+      }),
+    ]);
+  });
+
   it("preserves provider diagnostics when node worker prompt authoring returns empty text", async () => {
     const executable = node({
       requirementRefs: ["req-1"],
@@ -2806,6 +2947,94 @@ describe("native node agent session contracts", () => {
     expect(parsed.requestedRefCount).toBe(1);
   });
 
+  it("rejects local source file paths through openclaw_resource_read with scout guidance", async () => {
+    const executable = node({
+      requirementRefs: ["requirement://req-1"],
+      sourcePromptRefs: ["source-prompt://abc123/body/0-120"],
+    });
+    const built = buildNodeExecutionSnapshotFromGraphNode({
+      snapshot: snapshot([executable]),
+      graphId: "graph-native-node",
+      node: executable,
+      attemptId: "attempt-1",
+    });
+    const tool = createExecutionPlatformResourceReadTool({
+      runtimeJobId: "job-native-node",
+      nodeExecutionSnapshot: built,
+      repository: {
+        attachRuntimeArtifactByContract: async () => {
+          throw new Error("not used");
+        },
+        listArtifacts: async () => {
+          throw new Error("not used");
+        },
+        hydrateRuntimeArtifactByContract: async () => {
+          throw new Error("not used");
+        },
+      },
+    });
+
+    const result = await tool.execute("resource-read-file-url", {
+      refs: [
+        "file:///workspace/src/agents/run.ts",
+        "/workspace/src/agents/run.ts",
+        "./src/agents/run.ts",
+        "../src/agents/run.ts",
+        "~/src/agents/run.ts",
+        ".openclaw/runtime/managed-output/tool-output-1.txt",
+        "docs/projects/execution-platform/specs/openclaw-native-node-execution.md",
+      ],
+    });
+    const parsed = JSON.parse(result.content.find((entry) => entry.type === "text")?.text ?? "{}");
+
+    expect(parsed.status).toBe("unauthorized");
+    expect(parsed.resources).toEqual([
+      expect.objectContaining({
+        status: "unauthorized",
+        failureKind: "resource_ref_invalid",
+        resourceKind: "source_file_path_not_allowed",
+        reasonCodes: expect.arrayContaining(["resource_read_file_path_not_allowed"]),
+      }),
+      expect.objectContaining({
+        status: "unauthorized",
+        failureKind: "resource_ref_invalid",
+        resourceKind: "source_file_path_not_allowed",
+        reasonCodes: expect.arrayContaining(["resource_read_file_path_not_allowed"]),
+      }),
+      expect.objectContaining({
+        status: "unauthorized",
+        failureKind: "resource_ref_invalid",
+        resourceKind: "source_file_path_not_allowed",
+        reasonCodes: expect.arrayContaining(["resource_read_file_path_not_allowed"]),
+      }),
+      expect.objectContaining({
+        status: "unauthorized",
+        failureKind: "resource_ref_invalid",
+        resourceKind: "source_file_path_not_allowed",
+        reasonCodes: expect.arrayContaining(["resource_read_file_path_not_allowed"]),
+      }),
+      expect.objectContaining({
+        status: "unauthorized",
+        failureKind: "resource_ref_invalid",
+        resourceKind: "source_file_path_not_allowed",
+        reasonCodes: expect.arrayContaining(["resource_read_file_path_not_allowed"]),
+      }),
+      expect.objectContaining({
+        status: "unauthorized",
+        failureKind: "resource_ref_invalid",
+        resourceKind: "source_file_path_not_allowed",
+        reasonCodes: expect.arrayContaining(["resource_read_file_path_not_allowed"]),
+      }),
+      expect.objectContaining({
+        status: "unauthorized",
+        failureKind: "resource_ref_invalid",
+        resourceKind: "source_file_path_not_allowed",
+        reasonCodes: expect.arrayContaining(["resource_read_file_path_not_allowed"]),
+      }),
+    ]);
+    expect(JSON.stringify(parsed)).toContain("delegate execution-context-scout");
+  });
+
   it("does not hydrate runtime artifacts outside the current node snapshot authority", async () => {
     const executable = node({
       requirementRefs: ["requirement://req-1"],
@@ -2907,8 +3136,9 @@ describe("native node agent session contracts", () => {
       expect.objectContaining({
         ref: "source-prompt://secret/body/0-120",
         status: "unauthorized",
+        failureKind: "resource_ref_invalid",
         body: null,
-        reasonCodes: ["openclaw_resource_read_ref_outside_node_authority"],
+        reasonCodes: expect.arrayContaining(["openclaw_resource_read_ref_outside_node_authority"]),
       }),
     ]);
     expect(JSON.stringify(unauthorizedParsed)).not.toContain("Secret unrelated prompt window body");

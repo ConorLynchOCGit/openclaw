@@ -9,10 +9,11 @@ Date: 2026-06-05
 
 Status: next major milestone for native OpenClaw node execution. This document
 records the architectural review after the first Kimi native-agent node run
-reached a repeating failure pattern. It is not a replacement for
-`openclaw-native-node-execution.md`; that spec defines the native node
-execution target. This document defines the implementation milestone that must
-close before the next live worker proof: model-authored node assignment,
+reached a repeating failure pattern. It complements
+`openclaw-native-node-worker-agent-refactor.md` and
+`native-session-launch-worker-bootstrap.md`, which define the native worker
+and launch targets. This document defines the implementation milestone that
+must close before the next live worker proof: model-authored node assignment,
 native todo/plan, native subagent yield/resume, real source in parent context,
 and deletion of the old task-brief/worker-loop paths.
 

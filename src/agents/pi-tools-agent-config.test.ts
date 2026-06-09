@@ -269,6 +269,14 @@ describe("Agent-specific tool filtering", () => {
         enabled: true,
         allowedAgentIds: ["execution-context-scout", "execution-validation-scout"],
         mutationToolName: "edit",
+        runChildTask: async () => ({
+          status: "error",
+          foreground: true,
+          childSessionKey: "agent:execution-context-scout:subagent:test",
+          runId: "run-test",
+          waitStatus: "error",
+          resultDeliveredToParentContext: false,
+        }),
       },
       nodeAgentParentCrawlGuard: { enabled: true },
       allowGatewaySubagentBinding: true,
@@ -281,11 +289,11 @@ describe("Agent-specific tool filtering", () => {
         "update_plan",
         "read_todo",
         "edit",
+        "read",
         "openclaw_resource_read",
         "node_finish",
       ]),
     );
-    expect(toolNames).not.toEqual(expect.arrayContaining(["read"]));
     expect(toolNames).not.toEqual(expect.arrayContaining(["list"]));
     expect(toolNames).not.toEqual(expect.arrayContaining(["glob"]));
     expect(toolNames).not.toEqual(expect.arrayContaining(["grep"]));
@@ -350,6 +358,14 @@ describe("Agent-specific tool filtering", () => {
         enabled: true,
         allowedAgentIds: ["execution-context-scout", "execution-validation-scout"],
         mutationToolName: "edit",
+        runChildTask: async () => ({
+          status: "error",
+          foreground: true,
+          childSessionKey: "agent:execution-context-scout:subagent:test",
+          runId: "run-test",
+          waitStatus: "error",
+          resultDeliveredToParentContext: false,
+        }),
       },
       nodeAgentParentCrawlGuard: { enabled: true },
       allowGatewaySubagentBinding: true,
@@ -362,13 +378,13 @@ describe("Agent-specific tool filtering", () => {
         "update_plan",
         "read_todo",
         "edit",
+        "read",
         "openclaw_resource_read",
         "node_finish",
       ]),
     );
     expect(toolNames).not.toEqual(
       expect.arrayContaining([
-        "read",
         "list",
         "glob",
         "grep",
@@ -432,6 +448,14 @@ describe("Agent-specific tool filtering", () => {
         enabled: true,
         allowedAgentIds: ["execution-context-scout", "execution-validation-scout"],
         mutationToolName: "apply_patch",
+        runChildTask: async () => ({
+          status: "error",
+          foreground: true,
+          childSessionKey: "agent:execution-context-scout:subagent:test",
+          runId: "run-test",
+          waitStatus: "error",
+          resultDeliveredToParentContext: false,
+        }),
       },
     });
     const toolNames = tools.map((tool) => tool.name);
@@ -441,7 +465,7 @@ describe("Agent-specific tool filtering", () => {
     );
     expect(toolNames).not.toEqual(expect.arrayContaining(["edit"]));
     expect(toolNames).not.toEqual(expect.arrayContaining(["write"]));
-    expect(toolNames).not.toEqual(expect.arrayContaining(["read", "grep", "exec"]));
+    expect(toolNames).not.toEqual(expect.arrayContaining(["grep", "exec"]));
   });
 
   it("filters execution context scout catalog to read and search tools only", () => {

@@ -32,6 +32,32 @@ export default definePluginEntry({
   name: "OpenRouter Provider",
   description: "Bundled OpenRouter provider plugin",
   register(api) {
+    function normalizeOpenRouterBaseUrl(baseUrl: string | null | undefined): string {
+      const trimmed = baseUrl?.trim();
+      if (!trimmed) {
+        return OPENROUTER_BASE_URL;
+      }
+      try {
+        const url = new URL(trimmed);
+        if (url.protocol !== "http:" && url.protocol !== "https:") {
+          return trimmed.replace(/\/+$/, "");
+        }
+        if (url.hostname.toLowerCase() !== "openrouter.ai") {
+          return trimmed.replace(/\/+$/, "");
+        }
+        const normalizedPath = url.pathname.replace(/\/+$/, "") || "/";
+        if (normalizedPath === "/" || normalizedPath === "/v1") {
+          url.pathname = "/api/v1";
+          url.search = "";
+          url.hash = "";
+          return url.toString().replace(/\/+$/, "");
+        }
+        return trimmed.replace(/\/+$/, "");
+      } catch {
+        return trimmed.replace(/\/+$/, "");
+      }
+    }
+
     function buildDynamicOpenRouterModel(
       ctx: ProviderResolveDynamicModelContext,
     ): ProviderRuntimeModel {
@@ -99,6 +125,16 @@ export default definePluginEntry({
       resolveDynamicModel: (ctx) => buildDynamicOpenRouterModel(ctx),
       prepareDynamicModel: async (ctx) => {
         await loadOpenRouterModelCapabilities(ctx.modelId);
+      },
+      normalizeTransport: (ctx) => {
+        const baseUrl = normalizeOpenRouterBaseUrl(ctx.baseUrl);
+        return baseUrl === ctx.baseUrl ? undefined : { baseUrl };
+      },
+      normalizeConfig: (ctx) => {
+        const baseUrl = normalizeOpenRouterBaseUrl(ctx.providerConfig.baseUrl);
+        return baseUrl === ctx.providerConfig.baseUrl
+          ? undefined
+          : { ...ctx.providerConfig, baseUrl };
       },
       ...PASSTHROUGH_GEMINI_REPLAY_HOOKS,
       resolveReasoningOutputMode: () => "native",

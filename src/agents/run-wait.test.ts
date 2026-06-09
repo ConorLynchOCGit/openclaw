@@ -13,6 +13,7 @@ import {
   waitForAgentRunsToDrain,
   waitForAgentRunAndReadUpdatedAssistantReply,
 } from "./run-wait.js";
+import { MAX_SAFE_AGENT_TIMEOUT_MS } from "./timeout.js";
 
 describe("readLatestAssistantReply", () => {
   beforeEach(() => {
@@ -172,6 +173,24 @@ describe("waitForAgentRun", () => {
       status: "ok",
       startedAt: 100,
       endedAt: 200,
+    });
+  });
+
+  it("treats zero timeout as max-safe wait instead of a 1ms timeout", async () => {
+    callGatewayMock.mockResolvedValue({
+      status: "ok",
+    });
+
+    const result = await waitForAgentRun({ runId: "run-no-default-cap", timeoutMs: 0 });
+
+    expect(result).toEqual({ status: "ok" });
+    expect(callGatewayMock).toHaveBeenCalledWith({
+      method: "agent.wait",
+      params: {
+        runId: "run-no-default-cap",
+        timeoutMs: MAX_SAFE_AGENT_TIMEOUT_MS,
+      },
+      timeoutMs: MAX_SAFE_AGENT_TIMEOUT_MS + 2000,
     });
   });
 });

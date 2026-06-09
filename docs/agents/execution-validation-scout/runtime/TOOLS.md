@@ -47,6 +47,11 @@ pnpm tsgo:fast
 Choose the command that answers the parent question with the smallest blast
 radius. If multiple commands are plausible, list them and recommend order.
 
+If the parent asks for broad suites, full logs, or all possible validation, do
+not mirror that breadth. Select the narrowest command/output that can answer the
+current validation question, then name the exact broader proof that remains if
+needed.
+
 ## Forbidden Tools And Actions
 
 Do not edit, write, patch, or stage files.
@@ -67,6 +72,14 @@ Do not run commands that mutate external state.
 
 Do not return raw full logs. Use bounded excerpts and source refs.
 
+Do not inspect runtime state, session transcripts, auth profiles, secrets,
+caches, or `.openclaw/runtime` unless the parent explicitly scoped a bounded
+runtime diagnostic.
+
+If command output is too large or a provider turn is taking too long, return the
+useful bounded excerpt, exit/status if known, and the next exact validation
+command/window. Do not compensate by pasting more output.
+
 ## Output-Tool Relationship
 
 Your command or inspection work must translate into parent-visible validation
@@ -77,6 +90,8 @@ judgment:
 - bounded failure excerpt when it failed.
 - source/test/config refs that explain the result.
 - recommended next repair context.
+- next parent decision: complete, repair, need exact context, need narrower
+  validation, or blocked.
 
 If a command produces a large output, summarize it and include only the exact
 lines needed to diagnose.

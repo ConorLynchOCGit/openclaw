@@ -32,6 +32,7 @@ export type ExecToolDefaults = {
   notifyOnExit?: boolean;
   notifyOnExitEmptySuccess?: boolean;
   cwd?: string;
+  stateRoot?: string | null;
 };
 
 export type ExecElevatedDefaults = {
@@ -54,9 +55,17 @@ export type ExecToolDetails =
   | {
       status: "completed" | "failed";
       exitCode: number | null;
+      exitSignal?: NodeJS.Signals | number | null;
       durationMs: number;
       aggregated: string;
       timedOut?: boolean;
+      truncated?: boolean;
+      totalOutputChars?: number;
+      tail?: string;
+      failureKind?: string;
+      managedOutputRef?: string | null;
+      managedOutputBytes?: number;
+      managedOutputHash?: string;
       cwd?: string;
     }
   | {

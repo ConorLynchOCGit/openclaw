@@ -86,7 +86,7 @@ describe("edit tool recovery hardening", () => {
     });
   }
 
-  it("adds current file contents to exact-match mismatch errors", async () => {
+  it("adds scout re-grounding guidance without dumping current file contents", async () => {
     tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-edit-recovery-"));
     const filePath = path.join(tmpDir, "demo.txt");
     await fs.writeFile(filePath, "actual current content", "utf-8");
@@ -106,7 +106,16 @@ describe("edit tool recovery hardening", () => {
         { path: filePath, edits: [{ oldText: "missing", newText: "replacement" }] },
         undefined,
       ),
-    ).rejects.toThrow(/Current file contents:\nactual current content/);
+    ).rejects.toThrow(
+      /Re-ground with an exact updated source window through execution-context-scout/,
+    );
+    await expect(
+      tool.execute(
+        "call-1",
+        { path: filePath, edits: [{ oldText: "missing", newText: "replacement" }] },
+        undefined,
+      ),
+    ).rejects.not.toThrow(/actual current content/);
   });
 
   it("recovers success after a post-write throw when CRLF output contains newText and oldText is only a substring", async () => {
@@ -141,6 +150,15 @@ describe("edit tool recovery hardening", () => {
       type: "text",
       text: `Successfully replaced text in ${filePath}.`,
     });
+    expect(result.details).toMatchObject({
+      changedFilePaths: [filePath],
+      modifiedFilePaths: [filePath],
+      editCount: 1,
+      firstChangedLine: 1,
+      recoveredAfterPostWriteFailure: true,
+    });
+    expect((result.details as { diff?: string }).diff).toContain("-1:");
+    expect((result.details as { diff?: string }).diff).toContain("+1:");
   });
 
   it("does not recover false success when the file never changed", async () => {

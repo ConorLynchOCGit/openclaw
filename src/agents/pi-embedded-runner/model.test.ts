@@ -707,6 +707,35 @@ describe("resolveModel", () => {
     });
   });
 
+  it("normalizes stale discovered OpenRouter route metadata", () => {
+    mockDiscoveredModel(discoverModels, {
+      provider: "openrouter",
+      modelId: "qwen/qwen3-coder-plus",
+      templateModel: {
+        id: "qwen/qwen3-coder-plus",
+        name: "Qwen: Qwen3 Coder Plus",
+        api: "openai-completions",
+        provider: "openrouter",
+        baseUrl: "https://openrouter.ai/v1",
+        reasoning: true,
+        input: ["text"],
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+        contextWindow: 262144,
+        maxTokens: 65536,
+      },
+    });
+
+    const result = resolveModelForTest("openrouter", "qwen/qwen3-coder-plus", "/tmp/agent");
+
+    expect(result.error).toBeUndefined();
+    expect(result.model).toMatchObject({
+      provider: "openrouter",
+      id: "qwen/qwen3-coder-plus",
+      api: "openai-completions",
+      baseUrl: "https://openrouter.ai/api/v1",
+    });
+  });
+
   it("prefers configured provider api metadata over discovered registry model", () => {
     mockDiscoveredModel(discoverModels, {
       provider: "onehub",

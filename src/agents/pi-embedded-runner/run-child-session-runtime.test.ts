@@ -6,6 +6,7 @@ import type { SessionSystemPromptReport } from "../../config/sessions/types.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import type { CommandQueueEnqueueFn } from "../../process/command-queue.types.js";
 import { createNativeRunChildTask } from "../session-runtime/run-child-task-adapter.js";
+import { MAX_SAFE_AGENT_TIMEOUT_MS } from "../timeout.js";
 import type { RunEmbeddedPiAgentParams } from "./run/params.js";
 
 const tempRoots: string[] = [];
@@ -14,6 +15,20 @@ async function makeTempRoot() {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-run-child-"));
   tempRoots.push(root);
   return root;
+}
+
+async function listFilesRecursive(dir: string): Promise<string[]> {
+  const entries = await fs.readdir(dir, { withFileTypes: true });
+  const files = await Promise.all(
+    entries.map(async (entry) => {
+      const fullPath = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        return await listFilesRecursive(fullPath);
+      }
+      return [fullPath];
+    }),
+  );
+  return files.flat();
 }
 
 function makeSystemPromptReport(params: {
@@ -66,6 +81,7 @@ function makeSystemPromptReport(params: {
 
 describe("native child session runtime", () => {
   afterEach(async () => {
+    vi.unstubAllEnvs();
     await Promise.all(
       tempRoots.splice(0).map((root) => fs.rm(root, { recursive: true, force: true })),
     );
@@ -77,8 +93,25 @@ describe("native child session runtime", () => {
     const childAgentId = "execution-context-scout";
     const parentSessionKey = "agent:execution-coding:node:nrun_parent";
     const requiredToolNames = ["read", "list", "glob", "grep"];
+    const parentAgentDir = path.join(root, "agents", "execution-coding", "agent");
+    const childAgentDir = path.join(root, "agents", childAgentId, "agent");
     const config = {
       session: { store: storePath },
+      agents: {
+        list: [
+          {
+            id: "execution-coding",
+            agentDir: parentAgentDir,
+          },
+          {
+            id: childAgentId,
+            agentDir: childAgentDir,
+            model: {
+              primary: "openrouter/qwen/qwen3-coder-plus",
+            },
+          },
+        ],
+      },
     } as OpenClawConfig;
     const enqueue: CommandQueueEnqueueFn = async (task) => {
       return await task();
@@ -92,6 +125,7 @@ describe("native child session runtime", () => {
       nodeRunId: "node-run-parent",
       sessionFile: path.join(root, "parent.jsonl"),
       workspaceDir: root,
+      agentDir: parentAgentDir,
       config,
       prompt: "Parent prompt",
       timeoutMs: 60_000,
@@ -161,18 +195,25 @@ describe("native child session runtime", () => {
         parentToolCallId: "tool-call-task-1",
         nodeRunId: "node-run-parent",
         workspaceDir: root,
+        agentDir: childAgentDir,
         config,
+        provider: "openrouter",
+        model: "qwen/qwen3-coder-plus",
         toolResultFormat: "markdown",
         disableMessageTool: true,
         requireExplicitMessageTarget: true,
         allowGatewaySubagentBinding: false,
         runtimePluginIds: [],
         modelsJsonPolicy: "reuse-existing",
-        timeoutMs: 9_000,
+        timeoutMs: MAX_SAFE_AGENT_TIMEOUT_MS,
         lane: "subagent",
         enqueue: expect.any(Function),
         authStorage,
         modelRegistry,
+        skillsSnapshot: expect.objectContaining({
+          prompt: expect.stringContaining('<active_skill name="execution-context-scout"'),
+          skillFilter: [childAgentId],
+        }),
         requiredProviderContextAdmission: expect.objectContaining({
           skillNames: [childAgentId],
           rejectTruncatedWorkspaceFiles: true,
@@ -208,5 +249,267 @@ describe("native child session runtime", () => {
     });
     expect(result.childSessionKey).toBe(childRunParams?.sessionKey);
     expect(result.runId).toBe(childRunParams?.runId);
+    const storeAfterFirstRun = JSON.parse(await fs.readFile(storePath, "utf8")) as Record<
+      string,
+      { sessionId?: string; spawnedBy?: string }
+    >;
+    expect(storeAfterFirstRun[result.childSessionKey]).toMatchObject({
+      sessionId: childRunParams?.sessionId,
+      spawnedBy: parentSessionKey,
+    });
+
+    const secondResult = await runChildTask({
+      parentSessionKey,
+      parentToolCallId: "tool-call-task-2",
+      childAgentId,
+      task: "Map the source context without an explicit runtime cap.",
+      label: "context scout no cap",
+      parentVisibleResultMaxChars: 12_000,
+    });
+
+    expect(runAgent).toHaveBeenCalledTimes(2);
+    expect(secondResult.childSessionKey).toMatch(
+      /^agent:execution-context-scout:subagent:[0-9a-f-]+$/,
+    );
+    expect(secondResult.childSessionKey).not.toBe(result.childSessionKey);
+    expect(runAgent.mock.calls[1]?.[0].sessionId).not.toBe(childRunParams?.sessionId);
+    expect(runAgent.mock.calls[1]?.[0]).toEqual(
+      expect.objectContaining({
+        timeoutMs: MAX_SAFE_AGENT_TIMEOUT_MS,
+      }),
+    );
+  });
+
+  it("classifies child provider response timeouts before bootstrap-report failures", async () => {
+    const root = await makeTempRoot();
+    const storePath = path.join(root, "sessions.json");
+    const childAgentId = "execution-context-scout";
+    const parentSessionKey = "agent:execution-coding:node:nrun_parent";
+    const config = {
+      session: { store: storePath },
+      agents: {
+        list: [
+          { id: "execution-coding", agentDir: path.join(root, "agents", "execution-coding") },
+          {
+            id: childAgentId,
+            agentDir: path.join(root, "agents", childAgentId),
+            model: { primary: "openrouter/qwen/qwen3-coder-plus" },
+          },
+        ],
+      },
+    } as OpenClawConfig;
+    const runAgent = vi.fn(async () => ({
+      payloads: [],
+      meta: {
+        durationMs: 120_000,
+        error: { message: "Provider timeout waiting for model output" },
+      },
+    }));
+    const runChildTask = createNativeRunChildTask({
+      parentContext: {
+        sessionKey: parentSessionKey,
+        nodeRunId: "node-run-parent",
+        config,
+        runId: "parent-run",
+      },
+      resolvedWorkspace: root,
+      runAgent,
+    });
+
+    const result = await runChildTask({
+      parentSessionKey,
+      parentToolCallId: "tool-call-timeout",
+      childAgentId,
+      task: "Map the source context.",
+      parentVisibleResultMaxChars: 12_000,
+    });
+
+    expect(result).toMatchObject({
+      status: "error",
+      waitStatus: "error",
+      childStartFailureKind: "child_provider_response_timeout",
+      resultDeliveredToParentContext: false,
+      error: "Provider timeout waiting for model output",
+    });
+  });
+
+  it("delivers bounded partial child output when a validation scout times out after visible progress", async () => {
+    const root = await makeTempRoot();
+    const storePath = path.join(root, "sessions.json");
+    const childAgentId = "execution-validation-scout";
+    const parentSessionKey = "agent:execution-coding:node:nrun_parent";
+    const requiredToolNames = ["read", "list", "glob", "grep", "exec"];
+    const config = {
+      session: { store: storePath },
+      agents: {
+        list: [
+          { id: "execution-coding", agentDir: path.join(root, "agents", "execution-coding") },
+          {
+            id: childAgentId,
+            agentDir: path.join(root, "agents", childAgentId),
+            model: { primary: "openrouter/qwen/qwen3-coder-plus" },
+          },
+        ],
+      },
+    } as OpenClawConfig;
+    const runAgent = vi.fn(async (params: RunEmbeddedPiAgentParams) => ({
+      payloads: [
+        {
+          text: [
+            "Validation question/scope: focused policy proof.",
+            "Commands run: pnpm test:file extensions/execution-platform/src/workflows/node-agent-session.test.ts -- -t native",
+            "Exit status: still running when provider response timed out.",
+            "Bounded output excerpts: test reached assertion setup.",
+            "Residual risk: ask narrower validation if this is insufficient.",
+          ].join("\n"),
+        },
+      ],
+      meta: {
+        durationMs: 120_000,
+        error: { message: "Provider timeout waiting for model output" },
+        systemPromptReport: makeSystemPromptReport({
+          requiredDocPaths: [
+            ...(params.requiredProviderContextAdmission?.workspaceFileNames ?? []),
+          ],
+          skillName: childAgentId,
+          skillPath:
+            params.requiredProviderContextAdmission?.skillSources?.[0]?.path ??
+            path.join(root, "skills", childAgentId, "SKILL.md"),
+          skillRef:
+            params.requiredProviderContextAdmission?.skillSources?.[0]?.sourceRef ??
+            `openclaw-skill-file://${encodeURIComponent(
+              path.join(root, "skills", childAgentId, "SKILL.md"),
+            )}`,
+          skillHash:
+            params.requiredProviderContextAdmission?.skillSources?.[0]?.sourceHash ??
+            "execution-validation-scout-skill-hash",
+          toolNames: requiredToolNames,
+        }),
+      },
+    }));
+    const runChildTask = createNativeRunChildTask({
+      parentContext: {
+        sessionKey: parentSessionKey,
+        nodeRunId: "node-run-parent",
+        config,
+        runId: "parent-run",
+      },
+      resolvedWorkspace: root,
+      runAgent,
+    });
+
+    const result = await runChildTask({
+      parentSessionKey,
+      parentToolCallId: "tool-call-validation-partial",
+      childAgentId,
+      task: "Run focused validation.",
+      parentVisibleResultMaxChars: 12_000,
+    });
+
+    expect(result).toMatchObject({
+      status: "completed",
+      waitStatus: "ok",
+      resultDeliveredToParentContext: true,
+      resultDeliveryStatus: "full",
+    });
+    expect(result).not.toHaveProperty("childStartFailureKind");
+    expect(result).not.toHaveProperty("error");
+    expect(result.resultText).toContain(
+      "Partial child result delivered after provider response timeout",
+    );
+    expect(result.resultText).toContain("Validation question/scope");
+    expect(result.childBootstrapAdmission).toMatchObject({
+      childAgentId,
+      canonicalDocsAdmitted: true,
+      requiredSkillAdmitted: true,
+      childToolCatalogAdmitted: true,
+    });
+  });
+
+  it("persists full oversized child task output to managed storage while returning a bounded projection", async () => {
+    const root = await makeTempRoot();
+    const stateRoot = path.join(root, "state");
+    vi.stubEnv("OPENCLAW_STATE_DIR", stateRoot);
+    const storePath = path.join(root, "sessions.json");
+    const childAgentId = "execution-context-scout";
+    const parentSessionKey = "agent:execution-coding:node:nrun_parent";
+    const config = {
+      session: { store: storePath },
+      agents: {
+        list: [
+          { id: "execution-coding", agentDir: path.join(root, "agents", "execution-coding") },
+          {
+            id: childAgentId,
+            agentDir: path.join(root, "agents", childAgentId),
+            model: { primary: "openrouter/qwen/qwen3-coder-plus" },
+          },
+        ],
+      },
+    } as OpenClawConfig;
+    const fullChildOutput = [
+      "Direct answer: oversized child output.",
+      "inline_context_windows:",
+      "path: src/target.ts",
+      "lines: 1-20",
+      "```ts",
+      "export const target = true;",
+      "```",
+      "x".repeat(20_000),
+    ].join("\n");
+    const runAgent = vi.fn(async (params: RunEmbeddedPiAgentParams) => ({
+      payloads: [{ text: fullChildOutput }],
+      meta: {
+        systemPromptReport: makeSystemPromptReport({
+          requiredDocPaths: [
+            ...(params.requiredProviderContextAdmission?.workspaceFileNames ?? []),
+          ],
+          skillName: childAgentId,
+          skillPath:
+            params.requiredProviderContextAdmission?.skillSources?.[0]?.path ??
+            path.join(root, "skills", childAgentId, "SKILL.md"),
+          skillRef:
+            params.requiredProviderContextAdmission?.skillSources?.[0]?.sourceRef ??
+            `openclaw-skill-file://${encodeURIComponent(
+              path.join(root, "skills", childAgentId, "SKILL.md"),
+            )}`,
+          skillHash:
+            params.requiredProviderContextAdmission?.skillSources?.[0]?.sourceHash ??
+            "execution-context-scout-skill-hash",
+          toolNames: ["read", "list", "glob", "grep"],
+        }),
+      },
+    }));
+    const runChildTask = createNativeRunChildTask({
+      parentContext: {
+        sessionKey: parentSessionKey,
+        nodeRunId: "node-run-parent",
+        config,
+        runId: "parent-run",
+      },
+      resolvedWorkspace: root,
+      runAgent,
+    });
+
+    const result = await runChildTask({
+      parentSessionKey,
+      parentToolCallId: "tool-call-oversized-child",
+      childAgentId,
+      task: "Return oversized context.",
+      parentVisibleResultMaxChars: 1_500,
+    });
+
+    expect(result).toMatchObject({
+      status: "completed",
+      resultDeliveredToParentContext: true,
+      resultDeliveryStatus: "projected",
+      managedOutputRef: expect.stringContaining("openclaw-managed-output://"),
+      managedOutputBytes: Buffer.byteLength(fullChildOutput, "utf8"),
+      managedOutputHash: expect.stringMatching(/^[a-f0-9]{64}$/),
+    });
+    expect(result.resultText?.length).toBeLessThan(fullChildOutput.length);
+    const files = await listFilesRecursive(path.join(stateRoot, "managed-tool-output"));
+    const outputFile = files.find((file) => file.endsWith(".txt"));
+    expect(outputFile).toBeDefined();
+    expect(await fs.readFile(outputFile ?? "", "utf8")).toBe(fullChildOutput);
   });
 });

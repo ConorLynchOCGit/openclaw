@@ -63,6 +63,16 @@ describe("resolveLlmIdleTimeoutMs", () => {
     expect(resolveLlmIdleTimeoutMs({ runTimeoutMs: 2_147_000_000 })).toBe(0);
   });
 
+  it("uses the default dead-call watchdog for request-idle policy even with an unbounded run timeout", () => {
+    expect(
+      resolveLlmIdleTimeoutMs({
+        cfg: { agents: { defaults: { timeoutSeconds: 48 * 60 * 60 } } } as OpenClawConfig,
+        runTimeoutMs: 2_147_000_000,
+        policy: "request-idle",
+      }),
+    ).toBe(DEFAULT_LLM_IDLE_TIMEOUT_MS);
+  });
+
   it("prefers llm.idleTimeoutSeconds over agents.defaults.timeoutSeconds", () => {
     const cfg = {
       agents: { defaults: { timeoutSeconds: 300, llm: { idleTimeoutSeconds: 120 } } },

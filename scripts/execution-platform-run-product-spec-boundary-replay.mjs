@@ -536,6 +536,120 @@ function boolFlag(name, fallback = false) {
   return ["1", "true", "yes", "on"].includes(value.toLowerCase());
 }
 
+const REPO_SOURCE_PATH_REF_RE =
+  /(?:^|[\s"'`(])((?:\.{1,2}\/|\/|~\/)?(?:docs|src|extensions|skills|scripts|tests?|packages|apps|config|ops)\/[A-Za-z0-9._~@%+\-/]+\.(?:ts|tsx|js|jsx|mjs|cjs|md|mdx|json|json5|yaml|yml|toml|css|scss|py|go|rs|java|kt|sh|sql))(?:$|[\s"'`),.;:])/gu;
+
+function normalizePromptSourcePathRef(value) {
+  return value
+    .trim()
+    .replace(/^['"`(]+/u, "")
+    .replace(/[)"'`,.;:]+$/u, "");
+}
+
+function resolvePromptSourcePathRef(pathRef) {
+  const trimmed = pathRef.trim();
+  if (trimmed.startsWith("~/")) {
+    return path.resolve(root, trimmed.slice(2));
+  }
+  if (path.isAbsolute(trimmed)) {
+    return path.resolve(trimmed);
+  }
+  return path.resolve(root, trimmed);
+}
+
+async function promptSourcePathExists(pathRef) {
+  try {
+    await fs.access(resolvePromptSourcePathRef(pathRef));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function scorePromptSourcePathCandidate({ targetName, candidateName }) {
+  const target = targetName.toLowerCase();
+  const candidate = candidateName.toLowerCase();
+  let score = 0;
+  if (candidate === target) {
+    score += 100;
+  }
+  if (candidate.startsWith(target) || target.startsWith(candidate)) {
+    score += 40;
+  }
+  if (path.extname(candidate) === path.extname(target)) {
+    score += 8;
+  }
+  for (const term of target
+    .replace(/\.[^.]+$/u, "")
+    .split(/[^a-z0-9]+/u)
+    .filter((entry) => entry.length >= 3)) {
+    if (candidate.includes(term)) {
+      score += 6;
+    }
+  }
+  return score;
+}
+
+async function nearestPromptSourcePathCandidates(pathRef) {
+  const absolutePath = resolvePromptSourcePathRef(pathRef);
+  const parentDir = path.dirname(absolutePath);
+  const entries = await fs.readdir(parentDir, { withFileTypes: true }).catch(() => []);
+  const targetName = path.basename(absolutePath);
+  return entries
+    .filter((entry) => entry.isFile() || entry.isDirectory())
+    .map((entry) => {
+      const absoluteCandidate = path.join(parentDir, entry.name);
+      const relativeCandidate = path.relative(root, absoluteCandidate).split(path.sep).join("/");
+      return {
+        path:
+          relativeCandidate &&
+          !relativeCandidate.startsWith("..") &&
+          !path.isAbsolute(relativeCandidate)
+            ? relativeCandidate
+            : absoluteCandidate,
+        score: scorePromptSourcePathCandidate({
+          targetName,
+          candidateName: entry.name,
+        }),
+      };
+    })
+    .filter((entry) => entry.score > 0)
+    .toSorted((a, b) => b.score - a.score || a.path.localeCompare(b.path))
+    .slice(0, 3)
+    .map((entry) => entry.path);
+}
+
+function sourceLineForPromptPathRef(promptText, pathRef) {
+  return (
+    promptText
+      .split(/\r?\n/u)
+      .find((line) => line.includes(pathRef))
+      ?.trim()
+      .slice(0, 500) ?? pathRef
+  );
+}
+
+async function validateWorkerPromptFileSourceRefs(promptText) {
+  const findings = [];
+  const seen = new Set();
+  for (const match of promptText.matchAll(REPO_SOURCE_PATH_REF_RE)) {
+    const pathRef = normalizePromptSourcePathRef(match[1] ?? "");
+    if (!pathRef || seen.has(pathRef)) {
+      continue;
+    }
+    seen.add(pathRef);
+    if (await promptSourcePathExists(pathRef)) {
+      continue;
+    }
+    findings.push({
+      path: pathRef,
+      nearestCandidates: await nearestPromptSourcePathCandidates(pathRef),
+      sourceSection: sourceLineForPromptPathRef(promptText, pathRef),
+    });
+  }
+  return findings.slice(0, 20);
+}
+
 async function loadWorkerPromptFileTextTurnClient(promptFile) {
   if (!promptFile) {
     return null;
@@ -546,6 +660,15 @@ async function loadWorkerPromptFileTextTurnClient(promptFile) {
   const promptText = await fs.readFile(resolvedPromptFile, "utf8");
   if (promptText.length === 0) {
     throw new Error(`worker_prompt_file_empty:${promptFile}`);
+  }
+  const missingSourceRefs = await validateWorkerPromptFileSourceRefs(promptText);
+  if (missingSourceRefs.length > 0) {
+    throw new Error(
+      `worker_prompt_file_missing_source_refs:${JSON.stringify({
+        promptFile,
+        missingSourceRefs,
+      })}`,
+    );
   }
   const responseHash = sha256(promptText);
   const promptByteCount = Buffer.byteLength(promptText, "utf8");

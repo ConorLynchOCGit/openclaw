@@ -26,6 +26,7 @@ const REQUIRED_NODE_TOOL_ALLOW = [
   "node_finish",
   "openclaw_resource_read",
   "edit",
+  "read",
   "update_plan",
   "read_todo",
   "task",
@@ -51,7 +52,6 @@ const SCOUT_FORBIDDEN_TOOLS = [
 ];
 
 const FORBIDDEN_PARENT_TOOLS = [
-  "read",
   "list",
   "glob",
   "grep",
@@ -663,7 +663,7 @@ describe("execution platform node agent start", () => {
         primarySkills: ["execution-node-workflow"],
         allowedChildAgents: ["execution-context-scout", "execution-validation-scout"],
         requiredTools: REQUIRED_NODE_TOOL_ALLOW,
-        forbiddenTools: ["read", "list", "glob", "grep", "exec"],
+        forbiddenTools: ["list", "glob", "grep", "exec"],
       },
     ];
 
@@ -997,6 +997,7 @@ describe("execution platform node agent start", () => {
         "node_finish",
         "openclaw_resource_read",
         "edit",
+        "read",
         "update_plan",
         "read_todo",
         "task",
@@ -1091,7 +1092,6 @@ describe("execution platform node agent start", () => {
       expect.arrayContaining([
         "node_agent_provider_tool_catalog_mismatch",
         "node_agent_provider_tool_catalog_missing_required_tool",
-        "node_agent_provider_forbidden_tool_visible_in_catalog",
       ]),
     );
     expect(blocked.reasonCodes).toEqual(
@@ -1100,7 +1100,7 @@ describe("execution platform node agent start", () => {
         "node_agent_provider_tool_catalog_mismatch",
         "node_agent_provider_tool_catalog_missing_required_tool:openclaw_resource_read",
         "node_agent_provider_tool_catalog_missing_required_tool:edit",
-        "node_agent_provider_forbidden_tool_visible_in_catalog:read",
+        "node_agent_provider_tool_catalog_missing_required_tool:update_plan",
       ]),
     );
   });
@@ -1122,6 +1122,7 @@ describe("execution platform node agent start", () => {
         "node_finish",
         "openclaw_resource_read",
         "edit",
+        "read",
         "update_plan",
         "read_todo",
         "task",
@@ -1169,6 +1170,7 @@ describe("execution platform node agent start", () => {
         "node_finish",
         "openclaw_resource_read",
         "edit",
+        "read",
         "update_plan",
         "read_todo",
         "task",
@@ -1249,6 +1251,7 @@ describe("execution platform node agent start", () => {
         "node_finish",
         "openclaw_resource_read",
         "edit",
+        "read",
         "update_plan",
         "read_todo",
         "task",
@@ -1308,6 +1311,7 @@ describe("execution platform node agent start", () => {
         "node_finish",
         "openclaw_resource_read",
         "edit",
+        "read",
         "update_plan",
         "read_todo",
         "task",
@@ -1433,6 +1437,7 @@ describe("execution platform node agent start", () => {
         "node_finish",
         "openclaw_resource_read",
         "edit",
+        "read",
         "update_plan",
         "read_todo",
         "task",
@@ -1466,13 +1471,14 @@ describe("execution platform node agent start", () => {
       expect.arrayContaining([
         "node_finish",
         "openclaw_resource_read",
+        "read",
         "read_todo",
         "task",
         "execution-context-scout:grep",
         "execution-validation-scout:exec",
       ]),
     );
-    expect(result.receipt.effectiveToolNames).not.toEqual(expect.arrayContaining(["read"]));
+    expect(result.receipt.effectiveToolNames).toEqual(expect.arrayContaining(["read"]));
     expect(result.receipt.effectiveToolNames).not.toEqual(expect.arrayContaining(["write"]));
     expect(result.receipt.effectiveToolNames).not.toEqual(expect.arrayContaining(["exec"]));
     expect(result.receipt.effectiveToolNames).not.toEqual(expect.arrayContaining(["list"]));
@@ -1495,7 +1501,6 @@ describe("execution platform node agent start", () => {
         parentTools: {
           allow: [
             ...REQUIRED_NODE_TOOL_ALLOW,
-            "read",
             "list",
             "glob",
             "grep",
@@ -1517,7 +1522,6 @@ describe("execution platform node agent start", () => {
     );
     expect(result.receipt.effectiveToolNames).not.toEqual(
       expect.arrayContaining([
-        "read",
         "list",
         "glob",
         "grep",

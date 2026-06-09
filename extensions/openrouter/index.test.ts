@@ -30,6 +30,29 @@ describe("openrouter provider hooks", () => {
     ).toBe("native");
   });
 
+  it("normalizes stale OpenRouter /v1 base URLs to the API route", async () => {
+    const provider = await registerSingleProviderPlugin(openrouterPlugin);
+
+    expect(
+      provider.normalizeTransport?.({
+        provider: "openrouter",
+        api: "openai-completions",
+        baseUrl: "https://openrouter.ai/v1",
+      } as never),
+    ).toEqual({ baseUrl: "https://openrouter.ai/api/v1" });
+
+    expect(
+      provider.normalizeConfig?.({
+        provider: "openrouter",
+        providerConfig: {
+          api: "openai-completions",
+          baseUrl: "https://openrouter.ai/v1",
+          models: [],
+        },
+      } as never),
+    ).toMatchObject({ baseUrl: "https://openrouter.ai/api/v1" });
+  });
+
   it("injects provider routing into compat before applying stream wrappers", async () => {
     const provider = await registerSingleProviderPlugin(openrouterPlugin);
     const baseStreamFn = vi.fn(

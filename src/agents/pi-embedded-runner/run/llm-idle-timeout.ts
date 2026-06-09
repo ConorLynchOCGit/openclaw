@@ -22,6 +22,7 @@ export function resolveLlmIdleTimeoutMs(params?: {
   cfg?: OpenClawConfig;
   trigger?: EmbeddedRunTrigger;
   runTimeoutMs?: number;
+  policy?: "run-timeout" | "request-idle";
 }): number {
   const clampTimeoutMs = (valueMs: number) => Math.min(Math.floor(valueMs), MAX_SAFE_TIMEOUT_MS);
   const raw = params?.cfg?.agents?.defaults?.llm?.idleTimeoutSeconds;
@@ -31,6 +32,10 @@ export function resolveLlmIdleTimeoutMs(params?: {
   }
   if (typeof raw === "number" && Number.isFinite(raw) && raw > 0) {
     return clampTimeoutMs(raw * 1000);
+  }
+
+  if (params?.policy === "request-idle") {
+    return DEFAULT_LLM_IDLE_TIMEOUT_MS;
   }
 
   const runTimeoutMs = params?.runTimeoutMs;

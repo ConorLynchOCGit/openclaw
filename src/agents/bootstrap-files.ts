@@ -343,13 +343,12 @@ async function resolveSourceBackedAgentBootstrapArtifactsForRun(params: {
     return null;
   }
   const excludeHeartbeatBootstrapFile = shouldExcludeHeartbeatBootstrapFile(params);
-  const sessionKey = params.sessionKey ?? params.sessionId;
   const rawFiles = await loadWorkspaceBootstrapFiles(source.sourceRoot);
+  // Source-backed agent packs are the native first-party agent contract. Do
+  // not apply the generic subagent minimal-bootstrap filter here; registry-
+  // required docs must be available before the first provider turn.
   const bootstrapFiles = applyContextModeFilter({
-    files: filterBootstrapFilesForSession(
-      filterSourceBackedAgentBootstrapFiles(rawFiles),
-      sessionKey,
-    ),
+    files: filterSourceBackedAgentBootstrapFiles(rawFiles),
     contextMode: params.contextMode,
     runKind: params.runKind,
   });

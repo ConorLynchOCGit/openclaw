@@ -9,14 +9,16 @@ import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import { formatErrorMessage } from "../../infra/errors.js";
 import type { CommandQueueEnqueueFn } from "../../process/command-queue.types.js";
 import { normalizeOptionalString } from "../../shared/string-coerce.js";
-import { resolveAgentConfig } from "../agent-scope.js";
+import { resolveAgentConfig, resolveAgentDir } from "../agent-scope.js";
 import type { AgentInternalEvent } from "../internal-events.js";
 import { AGENT_LANE_SUBAGENT } from "../lanes.js";
 import type { ToolResultFormat } from "../pi-embedded-subscribe.shared-types.js";
+import type { SkillSnapshot } from "../skills.js";
 import { resolveSubagentModelAndThinkingPlan, splitModelRef } from "../subagent-spawn-plan.js";
 import type { RequiredProviderContextAdmission } from "../system-prompt-report.js";
+import { MAX_SAFE_AGENT_TIMEOUT_MS } from "../timeout.js";
 
-const DEFAULT_NATIVE_CHILD_TASK_TIMEOUT_MS = 120_000;
+const DEFAULT_NATIVE_CHILD_TASK_TIMEOUT_MS = MAX_SAFE_AGENT_TIMEOUT_MS;
 const DEFAULT_CHILD_SESSION_START_LOCK_TIMEOUT_MS = 10_000;
 const MIN_CHILD_SESSION_START_LOCK_TIMEOUT_MS = 1_000;
 
@@ -41,6 +43,7 @@ export type NativeChildSessionAgentRunParams = {
   workspaceDir: string;
   agentDir?: string;
   config?: OpenClawConfig;
+  skillsSnapshot?: SkillSnapshot;
   authStorage?: AuthStorage;
   modelRegistry?: ModelRegistry;
   prompt: string;
@@ -109,10 +112,12 @@ export type NativeRunChildSessionParams = {
   label?: string;
   runTimeoutSeconds?: number;
   requiredProviderContextAdmission?: RequiredProviderContextAdmission;
+  requiredSkillsSnapshot?: SkillSnapshot;
 };
 
 export type NativeChildSessionFailureKind =
   | "provider_model_failure"
+  | "provider_response_timeout"
   | "session_lock_failed"
   | "run_error";
 
@@ -133,12 +138,12 @@ export type NativeRunChildSession = (
   params: NativeRunChildSessionParams,
 ) => Promise<NativeChildSessionResult>;
 
-function resolveChildTaskTimeoutMs(runTimeoutSeconds?: number): number {
-  if (typeof runTimeoutSeconds !== "number" || !Number.isFinite(runTimeoutSeconds)) {
-    return DEFAULT_NATIVE_CHILD_TASK_TIMEOUT_MS;
-  }
-  const seconds = Math.max(0, Math.trunc(runTimeoutSeconds));
-  return seconds === 0 ? 0 : seconds * 1000;
+function resolveChildTaskTimeoutMs(_runTimeoutSeconds?: number): number {
+  // Native node-worker task execution follows OpenCode-style completion/cancel
+  // semantics. Model-provided run caps are ignored here so a progressing scout
+  // is not killed by an arbitrary per-task budget. The embedded runner still
+  // needs a finite timer value, so use the max-safe sentinel.
+  return DEFAULT_NATIVE_CHILD_TASK_TIMEOUT_MS;
 }
 
 function resolveChildSessionStartLockTimeoutMs(childTaskTimeoutMs: number): number {
@@ -174,6 +179,20 @@ function visibleTextFromEmbeddedChildResult(
     .join("\n\n")
     .trim();
   return payloadText || undefined;
+}
+
+function isProviderResponseTimeoutMessage(message: string | undefined): boolean {
+  const lower = message?.toLowerCase() ?? "";
+  return (
+    lower.includes("provider timeout") ||
+    lower.includes("provider request timeout") ||
+    lower.includes("provider request timed out") ||
+    lower.includes("request timed out") ||
+    lower.includes("llm request timed out") ||
+    lower.includes("provider response timed out") ||
+    lower.includes("operation timed out") ||
+    lower.includes("etimedout")
+  );
 }
 
 export function createNativeRunChildSession(params: {
@@ -222,6 +241,9 @@ export function createNativeRunChildSession(params: {
       });
       const childConfig = params.parentContext.config;
       const childAgentConfig = childConfig ? resolveAgentConfig(childConfig, childAgentId) : null;
+      const childAgentDir = childConfig
+        ? resolveAgentDir(childConfig, childAgentId)
+        : params.parentContext.agentDir;
       const childPlan = childConfig
         ? resolveSubagentModelAndThinkingPlan({
             cfg: childConfig,
@@ -260,8 +282,9 @@ export function createNativeRunChildSession(params: {
         senderIsOwner: params.parentContext.senderIsOwner,
         sessionFile,
         workspaceDir: params.resolvedWorkspace,
-        agentDir: params.parentContext.agentDir,
+        agentDir: childAgentDir,
         config: params.parentContext.config,
+        skillsSnapshot: taskParams.requiredSkillsSnapshot,
         authStorage: params.parentContext.authStorage,
         modelRegistry: params.parentContext.modelRegistry,
         prompt: childTaskPrompt({
@@ -288,7 +311,11 @@ export function createNativeRunChildSession(params: {
         suppressToolErrorWarnings: params.parentContext.suppressToolErrorWarnings,
       });
       const resultText = visibleTextFromEmbeddedChildResult(childRun);
-      const runFailure = childRun.meta.error?.message ? "run_error" : undefined;
+      const runFailure = childRun.meta.error?.message
+        ? isProviderResponseTimeoutMessage(childRun.meta.error.message)
+          ? "provider_response_timeout"
+          : "run_error"
+        : undefined;
       return {
         status: runFailure ? "error" : "completed",
         childSessionKey,
@@ -313,7 +340,11 @@ export function createNativeRunChildSession(params: {
         startedAt,
         endedAt: Date.now(),
         error,
-        failureKind: error.toLowerCase().includes("lock") ? "session_lock_failed" : "run_error",
+        failureKind: error.toLowerCase().includes("lock")
+          ? "session_lock_failed"
+          : isProviderResponseTimeoutMessage(error)
+            ? "provider_response_timeout"
+            : "run_error",
       };
     }
   };

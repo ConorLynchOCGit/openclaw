@@ -25,7 +25,7 @@ proof:
 - `docs/projects/execution-platform/specs/product-spec-checkpointed-proof-framework.md`
 - `docs/projects/execution-platform/specs/requirement-map-intake-decomposition.md`
 - `docs/projects/execution-platform/specs/scheduler-graph-patch-runner.md`
-- `docs/projects/execution-platform/specs/openclaw-native-node-execution.md`
+- `docs/projects/execution-platform/specs/openclaw-native-node-worker-agent-refactor.md`
 - `docs/projects/execution-platform/specs/runner-owned-worker-execution-session.md`
 - `docs/projects/execution-platform/specs/node-lifecycle-transition-ownership-consolidation.md`
 - `docs/projects/execution-platform/specs/canonical-workflow-runtime-architecture.md`

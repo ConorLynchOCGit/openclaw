@@ -1,3 +1,5 @@
+import { resolveStateDir } from "../../config/paths.js";
+import { persistManagedToolOutputSync } from "../../config/sessions/managed-output.js";
 import type { RequiredProviderContextAdmission } from "../system-prompt-report.js";
 import {
   buildChildBootstrapAdmission,
@@ -34,6 +36,9 @@ function mapChildSessionFailureKind(
 ): NativeTaskChildStartFailureKind | undefined {
   if (kind === "provider_model_failure") {
     return "child_provider_model_failure";
+  }
+  if (kind === "provider_response_timeout") {
+    return "child_provider_response_timeout";
   }
   if (kind === "session_lock_failed") {
     return "child_session_lock_failed";
@@ -100,11 +105,41 @@ export function createNativeRunChildTask(params: {
       requiredProviderContextAdmission: buildRequiredChildProviderContextAdmission({
         sources: requiredBootstrapSources,
       }),
+      ...(requiredBootstrapSources.requiredSkillsSnapshot
+        ? { requiredSkillsSnapshot: requiredBootstrapSources.requiredSkillsSnapshot }
+        : {}),
     });
     const boundedResult = buildParentVisibleChildResult(
       childSession.resultText,
       taskParams.parentVisibleResultMaxChars,
     );
+    const providerTimedOutAfterVisibleProgress =
+      childSession.failureKind === "provider_response_timeout" &&
+      Boolean(boundedResult.resultText?.trim()) &&
+      boundedResult.resultDeliveryStatus !== "rejected";
+    const progressResult =
+      providerTimedOutAfterVisibleProgress && boundedResult.resultText?.trim()
+        ? buildParentVisibleChildResult(
+            [
+              "Partial child result delivered after provider response timeout. The child produced bounded parent-visible output before the provider went idle; use it only if it is enough for the next safe parent decision, otherwise ask a narrower follow-up.",
+              "",
+              boundedResult.resultText.trim(),
+            ].join("\n"),
+            taskParams.parentVisibleResultMaxChars,
+          )
+        : boundedResult;
+    const managedOutput =
+      progressResult.resultDeliveryStatus === "projected" && childSession.resultText?.trim()
+        ? persistManagedToolOutputSync({
+            stateRoot: resolveStateDir(process.env),
+            sessionKey: childSession.childSessionKey,
+            toolCallId: taskParams.parentToolCallId,
+            toolName: "task",
+            text: childSession.resultText,
+            outputKind: "child_task_result",
+            reason: "child_result_projected",
+          })
+        : null;
     const childBootstrapAdmission = buildChildBootstrapAdmission({
       childSessionKey: childSession.childSessionKey,
       childAgentId: taskParams.childAgentId,
@@ -118,13 +153,15 @@ export function createNativeRunChildTask(params: {
     });
     const bootstrapFailureKind = classifyChildBootstrapAdmissionFailure(childBootstrapAdmission);
     const resultFailureKind =
-      boundedResult.resultOversized === true
-        ? "child_result_oversized"
-        : !boundedResult.resultText?.trim()
+      progressResult.resultDeliveryStatus === "rejected"
+        ? "child_result_unshaped"
+        : !progressResult.resultText?.trim()
           ? "child_run_error"
           : undefined;
-    const runFailureKind = mapChildSessionFailureKind(childSession.failureKind);
-    const childStartFailureKind = bootstrapFailureKind ?? resultFailureKind ?? runFailureKind;
+    const runFailureKind = providerTimedOutAfterVisibleProgress
+      ? undefined
+      : mapChildSessionFailureKind(childSession.failureKind);
+    const childStartFailureKind = runFailureKind ?? bootstrapFailureKind ?? resultFailureKind;
     const status = childStartFailureKind ? "error" : "completed";
     return {
       status,
@@ -134,12 +171,19 @@ export function createNativeRunChildTask(params: {
       waitStatus: status === "completed" ? "ok" : "error",
       startedAt: childSession.startedAt,
       endedAt: childSession.endedAt,
-      ...(childSession.error ? { error: childSession.error } : {}),
-      ...boundedResult,
+      ...(childSession.error && !providerTimedOutAfterVisibleProgress
+        ? { error: childSession.error }
+        : {}),
+      ...progressResult,
+      ...(managedOutput
+        ? {
+            managedOutputRef: managedOutput.ref,
+            managedOutputBytes: managedOutput.byteCount,
+            managedOutputHash: managedOutput.textHash,
+          }
+        : {}),
       resultDeliveredToParentContext:
-        status === "completed" &&
-        boundedResult.resultOversized !== true &&
-        Boolean(boundedResult.resultText?.trim()),
+        status === "completed" && Boolean(progressResult.resultText?.trim()),
       childBootstrapAdmission,
       ...(childStartFailureKind ? { childStartFailureKind } : {}),
     };

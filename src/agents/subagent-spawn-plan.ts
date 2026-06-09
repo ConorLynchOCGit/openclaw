@@ -11,9 +11,12 @@ export function splitModelRef(ref?: string) {
   if (!trimmed) {
     return { provider: undefined, model: undefined };
   }
-  const [provider, model] = trimmed.split("/", 2);
-  if (model) {
-    return { provider, model };
+  const slashIndex = trimmed.indexOf("/");
+  if (slashIndex > 0 && slashIndex < trimmed.length - 1) {
+    return {
+      provider: trimmed.slice(0, slashIndex),
+      model: trimmed.slice(slashIndex + 1),
+    };
   }
   return { provider: undefined, model: trimmed };
 }

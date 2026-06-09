@@ -1,5 +1,6 @@
 import { callGateway } from "../gateway/call.js";
 import { formatErrorMessage } from "../infra/errors.js";
+import { MAX_SAFE_AGENT_TIMEOUT_MS } from "./timeout.js";
 import { extractAssistantText, stripToolMessages } from "./tools/chat-history-text.js";
 
 type GatewayCaller = typeof callGateway;
@@ -120,7 +121,12 @@ export async function waitForAgentRun(params: {
   timeoutMs: number;
   callGateway?: GatewayCaller;
 }): Promise<AgentWaitResult> {
-  const timeoutMs = Math.max(1, Math.floor(params.timeoutMs));
+  const timeoutMs =
+    typeof params.timeoutMs === "number" &&
+    Number.isFinite(params.timeoutMs) &&
+    Math.floor(params.timeoutMs) > 0
+      ? Math.min(Math.floor(params.timeoutMs), MAX_SAFE_AGENT_TIMEOUT_MS)
+      : MAX_SAFE_AGENT_TIMEOUT_MS;
   try {
     const wait = await (params.callGateway ?? runWaitDeps.callGateway)({
       method: "agent.wait",

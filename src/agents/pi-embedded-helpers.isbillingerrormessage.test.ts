@@ -275,6 +275,14 @@ describe("isCloudflareOrHtmlErrorPage", () => {
     const plainTextWithHtmlPrefix = "500 <!DOCTYPE html> upstream responded with partial HTML text";
     expect(isCloudflareOrHtmlErrorPage(plainTextWithHtmlPrefix)).toBe(false);
   });
+
+  it("does not treat provider HTML 404 pages as context overflow", () => {
+    const html404 =
+      "404 <!DOCTYPE html><html><head><title>Not Found | OpenRouter</title></head><body><h1>404: Not Found</h1><p>context window</p></body></html>";
+    expect(isCloudflareOrHtmlErrorPage(html404)).toBe(false);
+    expect(isContextOverflowError(html404)).toBe(false);
+    expect(isLikelyContextOverflowError(html404)).toBe(false);
+  });
 });
 
 describe("isCompactionFailureError", () => {

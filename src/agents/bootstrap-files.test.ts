@@ -509,6 +509,34 @@ describe("resolveBootstrapFilesForRun", () => {
     expect(paths?.every((filePath) => !filePath.includes(".openclaw/runtime"))).toBe(true);
   });
 
+  it("keeps registry-required source-backed docs for subagent sessions", async () => {
+    const workspaceDir = await makeTempWorkspace("openclaw-bootstrap-");
+    await fs.writeFile(path.join(workspaceDir, "BOOTSTRAP.md"), "# stale workspace bootstrap\n");
+
+    const files = await resolveBootstrapFilesForRun({
+      workspaceDir,
+      sessionKey: "agent:execution-context-scout:subagent:child-test",
+      agentId: "execution-context-scout",
+    });
+
+    expect(files.map((file) => file.name)).toEqual(
+      expect.arrayContaining([...SOURCE_BACKED_AGENT_REQUIRED_BOOTSTRAP_DOCS]),
+    );
+    expect(files.find((file) => file.name === "BOOTSTRAP.md")?.path).toBe(
+      path.join(
+        process.cwd(),
+        "docs",
+        "agents",
+        "execution-context-scout",
+        "runtime",
+        "BOOTSTRAP.md",
+      ),
+    );
+    expect(files.find((file) => file.name === "BOOTSTRAP.md")?.content).not.toContain(
+      "stale workspace bootstrap",
+    );
+  });
+
   it("resolves ordinary registered agents from source-backed agent packs", async () => {
     const workspaceDir = await makeTempWorkspace("openclaw-bootstrap-");
     const agentsPath = path.join(workspaceDir, "AGENTS.md");

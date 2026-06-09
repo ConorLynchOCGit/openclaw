@@ -1,5 +1,9 @@
 import path from "node:path";
 import type { AgentToolResult } from "@mariozechner/pi-agent-core";
+import {
+  persistManagedToolOutputSync,
+  type PersistManagedToolOutputResult,
+} from "../config/sessions/managed-output.js";
 import { analyzeShellCommand } from "../infra/exec-approvals-analysis.js";
 import { type ExecHost, loadExecApprovals, maxAsk, minSecurity } from "../infra/exec-approvals.js";
 import { resolveExecSafeBinRuntimePolicy } from "../infra/exec-safe-bin-runtime-policy.js";
@@ -63,28 +67,153 @@ export type {
   ExecToolDetails,
 } from "./bash-tools.exec-types.js";
 
-function buildExecForegroundResult(params: {
+const EXEC_FOREGROUND_OUTPUT_PREVIEW_CHARS = 50 * 1024;
+
+function buildExecOutputPreview(text: string): {
+  text: string;
+  truncated: boolean;
+  totalOutputChars: number;
+  managedOutputRef: string | null;
+  managedOutputBytes?: number;
+  managedOutputHash?: string;
+};
+function buildExecOutputPreview(
+  text: string,
+  managedOutput: {
+    stateRoot?: string | null;
+    sessionKey?: string | null;
+    toolCallId?: string | null;
+    outputKind: string;
+    reason: string;
+    existingResult?: PersistManagedToolOutputResult | null;
+  },
+): {
+  text: string;
+  truncated: boolean;
+  totalOutputChars: number;
+  managedOutputRef: string | null;
+  managedOutputBytes?: number;
+  managedOutputHash?: string;
+};
+function buildExecOutputPreview(
+  text: string,
+  managedOutput?: {
+    stateRoot?: string | null;
+    sessionKey?: string | null;
+    toolCallId?: string | null;
+    outputKind: string;
+    reason: string;
+    existingResult?: PersistManagedToolOutputResult | null;
+  },
+): {
+  text: string;
+  truncated: boolean;
+  totalOutputChars: number;
+  managedOutputRef: string | null;
+  managedOutputBytes?: number;
+  managedOutputHash?: string;
+} {
+  const totalOutputChars = text.length;
+  if (text.length <= EXEC_FOREGROUND_OUTPUT_PREVIEW_CHARS) {
+    return {
+      text,
+      truncated: false,
+      totalOutputChars,
+      managedOutputRef: null,
+    };
+  }
+  const managed =
+    managedOutput?.existingResult ??
+    persistManagedToolOutputSync({
+      stateRoot: managedOutput?.stateRoot,
+      sessionKey: managedOutput?.sessionKey,
+      toolCallId: managedOutput?.toolCallId,
+      toolName: "exec",
+      text,
+      outputKind: managedOutput?.outputKind,
+      reason: managedOutput?.reason,
+    });
+  const tailText = text.slice(text.length - EXEC_FOREGROUND_OUTPUT_PREVIEW_CHARS);
+  const managedOutputLine = managed
+    ? `Full output saved to managedOutputRef=${managed.ref} (${managed.byteCount} bytes, sha256=${managed.textHash}). Inspect through an appropriate scout/tool path; do not paste the raw managed-output file into context.`
+    : "Full output exceeded the model preview budget, but no stateRoot was available for managed-output persistence.";
+  return {
+    text: [
+      `[Exec output truncated for model context: showing last ${tailText.length} of ${totalOutputChars} characters.]`,
+      managedOutputLine,
+      tailText,
+    ].join("\n"),
+    truncated: true,
+    totalOutputChars,
+    managedOutputRef: managed?.ref ?? null,
+    ...(managed
+      ? { managedOutputBytes: managed.byteCount, managedOutputHash: managed.textHash }
+      : {}),
+  };
+}
+
+export function buildExecForegroundResult(params: {
   outcome: ExecProcessOutcome;
   cwd?: string;
   warningText?: string;
+  stateRoot?: string | null;
+  sessionKey?: string | null;
+  toolCallId?: string | null;
+  managedOutputResult?: PersistManagedToolOutputResult | null;
 }): AgentToolResult<ExecToolDetails> {
   const warningText = params.warningText?.trim() ? `${params.warningText}\n\n` : "";
+  const managedOutputBase = {
+    stateRoot: params.stateRoot,
+    sessionKey: params.sessionKey,
+    toolCallId: params.toolCallId,
+  };
+  const aggregated = buildExecOutputPreview(params.outcome.aggregated, {
+    ...managedOutputBase,
+    outputKind: "aggregated",
+    reason: "foreground exec aggregated output exceeded model preview budget",
+    existingResult: params.managedOutputResult,
+  });
   if (params.outcome.status === "failed") {
-    return failedTextResult(`${warningText}${params.outcome.reason}`, {
+    const reason = buildExecOutputPreview(params.outcome.reason, {
+      ...managedOutputBase,
+      outputKind: "failure_reason",
+      reason: "foreground exec failure reason exceeded model preview budget",
+    });
+    return failedTextResult(`${warningText}${reason.text}`, {
       status: "failed",
       exitCode: params.outcome.exitCode ?? null,
       durationMs: params.outcome.durationMs,
-      aggregated: params.outcome.aggregated,
+      aggregated: aggregated.text,
       timedOut: params.outcome.timedOut,
       cwd: params.cwd,
+      truncated: aggregated.truncated || reason.truncated,
+      totalOutputChars: aggregated.totalOutputChars,
+      tail: aggregated.text,
+      failureKind: params.outcome.failureKind,
+      exitSignal: params.outcome.exitSignal,
+      managedOutputRef: reason.managedOutputRef ?? aggregated.managedOutputRef,
+      ...((reason.managedOutputBytes ?? aggregated.managedOutputBytes)
+        ? { managedOutputBytes: reason.managedOutputBytes ?? aggregated.managedOutputBytes }
+        : {}),
+      ...((reason.managedOutputHash ?? aggregated.managedOutputHash)
+        ? { managedOutputHash: reason.managedOutputHash ?? aggregated.managedOutputHash }
+        : {}),
     });
   }
-  return textResult(`${warningText}${params.outcome.aggregated || "(no output)"}`, {
+  return textResult(`${warningText}${aggregated.text || "(no output)"}`, {
     status: "completed",
     exitCode: params.outcome.exitCode,
     durationMs: params.outcome.durationMs,
-    aggregated: params.outcome.aggregated,
+    aggregated: aggregated.text,
     cwd: params.cwd,
+    truncated: aggregated.truncated,
+    totalOutputChars: aggregated.totalOutputChars,
+    tail: aggregated.text,
+    timedOut: params.outcome.timedOut,
+    exitSignal: params.outcome.exitSignal,
+    managedOutputRef: aggregated.managedOutputRef,
+    ...(aggregated.managedOutputBytes ? { managedOutputBytes: aggregated.managedOutputBytes } : {}),
+    ...(aggregated.managedOutputHash ? { managedOutputHash: aggregated.managedOutputHash } : {}),
   });
 }
 
@@ -1710,6 +1839,8 @@ export function createExecTool(
         sessionKey: notifySessionKey,
         notifyDeliveryContext,
         timeoutSec: effectiveTimeout,
+        stateRoot: defaults?.stateRoot,
+        toolCallId: _toolCallId,
         onUpdate,
       });
 
@@ -1843,6 +1974,10 @@ export function createExecTool(
                 outcome,
                 cwd: run.session.cwd,
                 warningText: getWarningText(),
+                stateRoot: defaults?.stateRoot,
+                sessionKey: defaults?.sessionKey,
+                toolCallId: _toolCallId,
+                managedOutputResult: run.session.managedOutputResult,
               }),
             );
           })

@@ -169,6 +169,9 @@ export function createProcessTool(
             name: deriveSessionName(s.command),
             tail: s.tail,
             truncated: s.truncated,
+            managedOutputRef: s.managedOutputResult?.ref ?? s.managedOutput?.ref ?? null,
+            managedOutputBytes: s.managedOutputResult?.byteCount,
+            managedOutputHash: s.managedOutputResult?.textHash,
           }));
         const finished = listFinishedSessions()
           .filter((s) => isInScope(s))
@@ -183,6 +186,9 @@ export function createProcessTool(
             name: deriveSessionName(s.command),
             tail: s.tail,
             truncated: s.truncated,
+            managedOutputRef: s.managedOutputRef ?? null,
+            managedOutputBytes: s.managedOutputBytes,
+            managedOutputHash: s.managedOutputHash,
             exitCode: s.exitCode ?? undefined,
             exitSignal: s.exitSignal ?? undefined,
           }));
@@ -293,6 +299,9 @@ export function createProcessTool(
                   sessionId: params.sessionId,
                   exitCode: scopedFinished.exitCode ?? undefined,
                   aggregated: scopedFinished.aggregated,
+                  managedOutputRef: scopedFinished.managedOutputRef ?? null,
+                  managedOutputBytes: scopedFinished.managedOutputBytes,
+                  managedOutputHash: scopedFinished.managedOutputHash,
                   name: deriveSessionName(scopedFinished.command),
                 },
               };
@@ -356,6 +365,10 @@ export function createProcessTool(
               sessionId: params.sessionId,
               exitCode: exited ? exitCode : undefined,
               aggregated: scopedSession.aggregated,
+              managedOutputRef:
+                scopedSession.managedOutputResult?.ref ?? scopedSession.managedOutput?.ref ?? null,
+              managedOutputBytes: scopedSession.managedOutputResult?.byteCount,
+              managedOutputHash: scopedSession.managedOutputResult?.textHash,
               name: deriveSessionName(scopedSession.command),
               ...(typeof retryInMs === "number" ? { retryInMs } : {}),
             },
@@ -391,6 +404,12 @@ export function createProcessTool(
                 totalLines,
                 totalChars,
                 truncated: scopedSession.truncated,
+                managedOutputRef:
+                  scopedSession.managedOutputResult?.ref ??
+                  scopedSession.managedOutput?.ref ??
+                  null,
+                managedOutputBytes: scopedSession.managedOutputResult?.byteCount,
+                managedOutputHash: scopedSession.managedOutputResult?.textHash,
                 name: deriveSessionName(scopedSession.command),
               },
             };
@@ -415,6 +434,9 @@ export function createProcessTool(
                 totalLines,
                 totalChars,
                 truncated: scopedFinished.truncated,
+                managedOutputRef: scopedFinished.managedOutputRef ?? null,
+                managedOutputBytes: scopedFinished.managedOutputBytes,
+                managedOutputHash: scopedFinished.managedOutputHash,
                 exitCode: scopedFinished.exitCode ?? undefined,
                 exitSignal: scopedFinished.exitSignal ?? undefined,
                 name: deriveSessionName(scopedFinished.command),

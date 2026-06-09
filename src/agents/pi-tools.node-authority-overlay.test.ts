@@ -23,6 +23,80 @@ async function withTempWorkspace<T>(fn: (workspaceDir: string) => Promise<T>) {
 }
 
 describe("createOpenClawCodingTools node authority overlay", () => {
+  it("allows execution-coding parent reads only for exact bounded source windows", async () => {
+    await withTempWorkspace(async (workspaceDir) => {
+      await fs.mkdir(path.join(workspaceDir, ".openclaw", "runtime"), { recursive: true });
+      await fs.writeFile(
+        path.join(workspaceDir, ".openclaw", "runtime", "session.jsonl"),
+        "state\n",
+      );
+      const tools = createOpenClawCodingTools({
+        config: {
+          agents: {
+            list: [
+              {
+                id: "execution-coding",
+                tools: {
+                  deny: ["read", "list", "glob", "grep", "exec", "process", "write"],
+                },
+              },
+            ],
+          },
+        },
+        agentId: "execution-coding",
+        workspaceDir,
+        senderIsOwner: true,
+        nodeAgentNativeTaskMode: {
+          enabled: true,
+          allowedAgentIds: ["execution-context-scout", "execution-validation-scout"],
+          mutationToolName: "edit",
+          runChildTask: async () => ({
+            status: "error",
+            foreground: true,
+            childSessionKey: "agent:execution-context-scout:subagent:test",
+            runId: "run-test",
+            waitStatus: "error",
+            resultDeliveredToParentContext: false,
+          }),
+        },
+      });
+      const toolNames = tools.map((tool) => tool.name);
+      expect(toolNames).toContain("read");
+      expect(toolNames).not.toContain("grep");
+      expect(toolNames).not.toContain("glob");
+      expect(toolNames).not.toContain("list");
+      expect(toolNames).not.toContain("exec");
+
+      const readTool = tools.find((tool) => tool.name === "read");
+      expect(readTool).toBeDefined();
+
+      const allowedRead = await readTool?.execute("node-parent-read", {
+        path: "src/allowed.ts",
+        offset: 1,
+        limit: 20,
+      });
+      expect(getTextContent(allowedRead)).toContain("export const ok");
+
+      await expect(
+        readTool?.execute("node-parent-read-full", { path: "src/allowed.ts" }),
+      ).rejects.toThrow(/requires explicit offset and limit/);
+      await expect(
+        readTool?.execute("node-parent-read-large", {
+          path: "src/allowed.ts",
+          offset: 1,
+          limit: 301,
+        }),
+      ).rejects.toThrow(/limited to 300 lines/);
+      await expect(
+        readTool?.execute("node-parent-read-runtime", {
+          path: ".openclaw/runtime/session.jsonl",
+          offset: 1,
+          limit: 10,
+        }),
+      ).rejects.toThrow(/cannot inspect OpenClaw runtime state/);
+    });
+  });
+
   it("narrows read/write/edit/apply_patch/exec to the current node snapshot authority", async () => {
     await withTempWorkspace(async (workspaceDir) => {
       const tools = createOpenClawCodingTools({

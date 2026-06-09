@@ -67,6 +67,8 @@ title: "Execution Platform Specs"
 58. [Coding Executor Team Capability Leap](/projects/execution-platform/specs/coding-executor-team-capability-leap)
 59. [Pre-Product/Spec Assumption Audit](/projects/execution-platform/specs/pre-product-spec-assumption-audit)
 60. [Architecture Red-Team And Research Gate](/projects/execution-platform/specs/architecture-red-team-and-research-gate)
+61. [OpenClaw Native Tool Runtime OpenCode Parity](/projects/execution-platform/specs/openclaw-native-tool-runtime-opencode-parity)
+62. [OpenClaw Scout Editor Handoff OpenCode Pattern](/projects/execution-platform/specs/openclaw-scout-editor-handoff-opencode-pattern)
 
 ## Routing, Readiness, And Execution Truth
 

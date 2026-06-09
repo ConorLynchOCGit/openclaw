@@ -9,6 +9,7 @@ import {
   extractFileGraphSection,
   hasFileGraph,
   hasInlineContextWindows,
+  projectStructuredWorkingContextText,
   readSessionWorkingContext,
   stripSessionWorkingContextPromptAddition,
   updateSessionWorkingContext,
@@ -57,6 +58,44 @@ describe("session working context", () => {
     ).toBe("file_graph:\n- src/a.ts -> src/b.ts via import");
   });
 
+  it("mechanically projects oversized structured scout output into bounded context", () => {
+    const projected = projectStructuredWorkingContextText({
+      maxChars: 2_400,
+      text: [
+        "answer:",
+        "Use the native task facade.",
+        "",
+        "inline_context_windows:",
+        "src/agents/tools/native-task-tool.ts:10-20",
+        "```ts",
+        "export const marker = true;",
+        "```",
+        "",
+        "file_graph:",
+        "- src/agents/tools/native-task-tool.ts -> src/agents/openclaw-tools.ts via tool registration",
+        "",
+        "risks_or_unknowns:",
+        "- Need one follow-up for validation.",
+        "",
+        "unstructured tail:",
+        "x".repeat(8_000),
+      ].join("\n"),
+    });
+
+    expect(projected).toBeTruthy();
+    expect(projected).toContain("Projected oversized child result");
+    expect(projected).toContain("inline_context_windows");
+    expect(projected).toContain("export const marker = true");
+    expect(projected).toContain("file_graph");
+    expect(projected!.length).toBeLessThanOrEqual(2_400);
+    expect(
+      projectStructuredWorkingContextText({
+        maxChars: 2_400,
+        text: `raw unstructured output\n${"x".repeat(8_000)}`,
+      }),
+    ).toBeUndefined();
+  });
+
   it("persists bounded native task scout context on the session", async () => {
     const sessionKey = "agent:execution-coding:node:nrun_file_graph";
     const storePath = await createStore({
@@ -68,7 +107,7 @@ describe("session working context", () => {
       sessionKey,
       now: 1234,
       entry: {
-        kind: "context_scout_result",
+        kind: "context_window",
         sourceToolCallId: "task-file-graph",
         taskRef: "openclaw-native-task-result://run/task-file-graph",
         childResultRef: "openclaw-child-result://child/run",
@@ -84,7 +123,7 @@ describe("session working context", () => {
           "```",
           "",
           "file_graph:",
-          "- src/agents/tools/native-task-tool.ts -> src/agents/openclaw-tools.ts via registration",
+          "- src/agents/tools/native-task-tool.ts -> src/agents/openclaw-tools.ts via registration (evidence: src/agents/tools/native-task-tool.ts:1-4)",
         ].join("\n"),
       },
     });
@@ -95,14 +134,17 @@ describe("session working context", () => {
     }
     expect(result.workingContextRef).toBe(buildSessionWorkingContextRef(sessionKey));
     expect(result.entry).toMatchObject({
-      kind: "context_scout_result",
+      kind: "context_window",
       source: "native_task",
       sourceToolCallId: "task-file-graph",
       requestedAgentId: "execution-context-scout",
+      lineRangeComplete: true,
       hasInlineContextWindows: true,
       hasFileGraph: true,
       fileGraphTextByteCount: expect.any(Number),
       fileGraphTextHash: expect.any(String),
+      fileGraphVerifiedEdgeCount: 1,
+      fileGraphUncertainAnnotationCount: 0,
     });
     expect(result.workingContextEntryRef).toContain(encodeURIComponent(sessionKey));
 
@@ -117,6 +159,102 @@ describe("session working context", () => {
     expect(
       readSessionWorkingContext({ storePath, sessionKey })?.activeEntries[0]?.hasFileGraph,
     ).toBe(true);
+  });
+
+  it("stores file_graph claims without explicit evidence as uncertain annotations", async () => {
+    const sessionKey = "agent:execution-coding:node:nrun_uncertain_file_graph";
+    const storePath = await createStore({
+      [sessionKey]: { sessionId: "sess-parent", updatedAt: 1 },
+    });
+
+    const result = await updateSessionWorkingContext({
+      storePath,
+      sessionKey,
+      now: 1234,
+      entry: {
+        kind: "context_window",
+        requestedAgentId: "execution-context-scout",
+        text: [
+          "Bounded source windows:",
+          "```ts",
+          "export const marker = true;",
+          "```",
+          "",
+          "file_graph:",
+          "- src/a.ts -> src/b.ts via likely registration",
+        ].join("\n"),
+      },
+    });
+
+    expect(result.persisted).toBe(true);
+    if (!result.persisted) {
+      throw new Error("expected persisted working context");
+    }
+    expect(result.entry).toMatchObject({
+      hasFileGraph: false,
+      fileGraphVerifiedEdgeCount: 0,
+      fileGraphUncertainAnnotationCount: 1,
+    });
+
+    const addition = buildSessionWorkingContextPromptAddition(
+      readSessionWorkingContext({ storePath, sessionKey }),
+      { maxChars: 2_000 },
+    );
+    expect(addition).toContain("fileGraphVerifiedEdges=0");
+    expect(addition).toContain("fileGraphUncertainAnnotations=1");
+    expect(addition).toContain("Uncertain file_graph annotations are orientation only");
+  });
+
+  it("demotes truncated source windows to discovery hints until an exact follow-up window exists", async () => {
+    const sessionKey = "agent:execution-coding:node:nrun_truncated_window";
+    const storePath = await createStore({
+      [sessionKey]: { sessionId: "sess-parent", updatedAt: 1 },
+    });
+
+    const result = await updateSessionWorkingContext({
+      storePath,
+      sessionKey,
+      now: 1234,
+      entry: {
+        kind: "context_window",
+        sourceToolCallId: "task-truncated-read",
+        requestedAgentId: "execution-context-scout",
+        text: [
+          "Bounded source windows:",
+          "src/agents/example.ts:1-2000",
+          "```ts",
+          "export const maybePartial = true;",
+          "```",
+          "",
+          "[3000 more lines in file. Use offset=2001 to continue.]",
+        ].join("\n"),
+      },
+    });
+
+    expect(result.persisted).toBe(true);
+    if (!result.persisted) {
+      throw new Error("expected persisted working context");
+    }
+    expect(result.entry).toMatchObject({
+      kind: "discovery_hint",
+      lineRangeComplete: false,
+      truncatedSource: true,
+      hasInlineContextWindows: true,
+    });
+    expect(result.event.entries[0]).toMatchObject({
+      kind: "discovery_hint",
+      lineRangeComplete: false,
+      truncatedSource: true,
+    });
+
+    const addition = buildSessionWorkingContextPromptAddition(
+      readSessionWorkingContext({ storePath, sessionKey }),
+      { maxChars: 2_000 },
+    );
+    expect(addition).toContain("### discovery_hint");
+    expect(addition).toContain("lineRangeComplete=false");
+    expect(addition).toContain("truncatedSource=true");
+    expect(addition).toContain("Use offset=2001 to continue");
   });
 
   it("persists compact change sets and validation state in the same native working context", async () => {
@@ -205,14 +343,14 @@ describe("session working context", () => {
       sessionKey,
       now: 1234,
       entry: {
-        kind: "context_scout_result",
+        kind: "context_window",
         requestedAgentId: "execution-context-scout",
         text: [
           "Bounded source windows:",
           "```ts",
           "export const marker = true;",
           "```",
-          "file_graph: src/a.ts -> src/b.ts",
+          "file_graph: src/a.ts -> src/b.ts evidence=src/a.ts:1",
         ].join("\n"),
       },
     });
@@ -242,7 +380,7 @@ describe("session working context", () => {
       sessionKey,
       now: 1234,
       entry: {
-        kind: "context_scout_result",
+        kind: "context_window",
         requestedAgentId: "execution-context-scout",
         text: [
           "Bounded source windows:",
@@ -251,7 +389,7 @@ describe("session working context", () => {
           "```",
           "",
           "file_graph:",
-          "- src/late.ts -> src/target.ts via registration",
+          "- src/late.ts -> src/target.ts via registration (evidence: src/late.ts:1-5)",
           "",
           "Risks/unknowns:",
           "- none",
@@ -276,7 +414,7 @@ describe("session working context", () => {
       storePath,
       sessionKey: "agent:execution-coding:node:missing",
       entry: {
-        kind: "context_scout_result",
+        kind: "context_window",
         text: "file_graph: src/a.ts",
       },
     });

@@ -1046,7 +1046,7 @@ Shared defaults for bounded runtime context surfaces.
       contextLimits: {
         memoryGetMaxChars: 12000,
         memoryGetDefaultLines: 120,
-        toolResultMaxChars: 16000,
+        toolResultMaxChars: 51200,
         postCompactionMaxChars: 1800,
       },
     },
@@ -1074,7 +1074,7 @@ from `agents.defaults.contextLimits`.
     defaults: {
       contextLimits: {
         memoryGetMaxChars: 12000,
-        toolResultMaxChars: 16000,
+        toolResultMaxChars: 51200,
       },
     },
     list: [

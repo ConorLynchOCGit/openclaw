@@ -122,15 +122,18 @@ agents:
     allowedChildAgents:
       - execution-context-scout
       - execution-validation-scout
+    toolBudget:
+      readDefaultLineLimit: 80
+      readMaxBytes: 12288
     requiredTools:
       - node_finish
       - openclaw_resource_read
       - edit
+      - read
       - update_plan
       - read_todo
       - task
     forbiddenTools:
-      - read
       - list
       - glob
       - grep
@@ -158,6 +161,12 @@ agents:
       - TOOLS.md
     primarySkills:
       - execution-context-scout
+    toolBudget:
+      readDefaultLineLimit: 160
+      readMaxBytes: 16384
+      discoveryDefaultMaxResults: 60
+      discoveryDefaultMaxMatches: 60
+      discoveryDefaultMaxFiles: 1000
     requiredTools:
       - read
       - list
@@ -195,6 +204,12 @@ agents:
       - TOOLS.md
     primarySkills:
       - execution-validation-scout
+    toolBudget:
+      readDefaultLineLimit: 220
+      readMaxBytes: 24576
+      discoveryDefaultMaxResults: 80
+      discoveryDefaultMaxMatches: 80
+      discoveryDefaultMaxFiles: 1500
     requiredTools:
       - read
       - list

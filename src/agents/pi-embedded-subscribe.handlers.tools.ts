@@ -185,6 +185,14 @@ function readBooleanField(
   return typeof value === "boolean" ? value : undefined;
 }
 
+function readNumberField(
+  record: Record<string, unknown> | undefined,
+  key: string,
+): number | undefined {
+  const value = record?.[key];
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
 function readStringArrayField(record: Record<string, unknown> | undefined, key: string): string[] {
   const value = record?.[key];
   if (!Array.isArray(value)) {
@@ -252,8 +260,8 @@ function buildNativeTaskResultEvent(params: {
     status: readStringField(details, "status"),
     foreground: readBooleanField(details, "foreground") === true,
     resultDeliveredToParentContext: resultDelivered,
+    resultDeliveryStatus: readStringField(details, "resultDeliveryStatus"),
     resultTruncated: readBooleanField(details, "resultTruncated") === true,
-    resultOversized: readBooleanField(details, "resultOversized") === true,
     childIdentityVerified: readBooleanField(details, "childIdentityVerified") === true,
     childStartFailureKind: readStringField(details, "childStartFailureKind"),
     ...(childResultRef ? { childResultRef } : {}),
@@ -316,6 +324,15 @@ function changedFilePathsFromPatchSummary(summary: ApplyPatchSummary | null): st
   return uniqueStrings([...summary.added, ...summary.modified, ...summary.deleted]);
 }
 
+function readDiffMetadata(details: Record<string, unknown> | undefined) {
+  const diff = readStringField(details, "diff");
+  return {
+    diffAvailable: diff !== undefined,
+    diffByteCount: diff ? Buffer.byteLength(diff, "utf8") : undefined,
+    firstChangedLine: readNumberField(details, "firstChangedLine"),
+  };
+}
+
 function buildNodeAgentToolResultEvent(params: {
   runId: string;
   toolCallId: string;
@@ -332,20 +349,36 @@ function buildNodeAgentToolResultEvent(params: {
   const todoDetails = readNestedRecord(details, "todo");
   const patchSummary =
     params.toolName === "apply_patch" ? readApplyPatchSummary(params.result) : null;
+  const diffMetadata = readDiffMetadata(details);
   const changedFilePaths = uniqueStrings([
     ...readChangedFilePathsFromArgs(params.args),
+    ...readStringArrayField(details, "changedFilePaths"),
     ...changedFilePathsFromPatchSummary(patchSummary),
+  ]);
+  const addedFilePaths = uniqueStrings([
+    ...readStringArrayField(details, "addedFilePaths"),
+    ...(patchSummary?.added ?? []),
+  ]);
+  const modifiedFilePaths = uniqueStrings([
+    ...readStringArrayField(details, "modifiedFilePaths"),
+    ...(patchSummary?.modified ?? []),
+  ]);
+  const deletedFilePaths = uniqueStrings([
+    ...readStringArrayField(details, "deletedFilePaths"),
+    ...(patchSummary?.deleted ?? []),
   ]);
   const isMutationTool =
     params.completedMutatingAction ||
     params.toolName === "edit" ||
     params.toolName === "write" ||
     params.toolName === "apply_patch";
+  const managedOutputRef = readStringField(details, "managedOutputRef");
   const isRelevantNodeTool =
     params.toolName === "update_plan" ||
     params.toolName === "read_todo" ||
     params.toolName === "node_finish" ||
     params.toolName === "openclaw_resource_read" ||
+    managedOutputRef !== undefined ||
     isMutationTool;
   if (!isRelevantNodeTool) {
     return null;
@@ -360,14 +393,26 @@ function buildNodeAgentToolResultEvent(params: {
     isError: params.isToolError,
     mutatingAction: isMutationTool,
     changedFilePaths,
-    ...(patchSummary
+    ...(addedFilePaths.length > 0 || modifiedFilePaths.length > 0 || deletedFilePaths.length > 0
       ? {
-          addedFilePaths: patchSummary.added,
-          modifiedFilePaths: patchSummary.modified,
-          deletedFilePaths: patchSummary.deleted,
+          addedFilePaths,
+          modifiedFilePaths,
+          deletedFilePaths,
         }
       : {}),
+    ...(diffMetadata.diffAvailable ? { diffAvailable: true } : {}),
+    ...(diffMetadata.diffByteCount !== undefined
+      ? { diffByteCount: diffMetadata.diffByteCount }
+      : {}),
+    ...(diffMetadata.firstChangedLine !== undefined
+      ? { firstChangedLine: diffMetadata.firstChangedLine }
+      : {}),
     todoRef: readStringField(todoDetails, "todoRef"),
+    managedOutputRef,
+    managedOutputBytes: readNumberField(details, "managedOutputBytes"),
+    managedOutputHash: readStringField(details, "managedOutputHash"),
+    truncated: readBooleanField(details, "truncated"),
+    totalOutputChars: readNumberField(details, "totalOutputChars"),
     finishAccepted:
       params.toolName === "node_finish"
         ? readBooleanField(details, "accepted") === true
@@ -379,7 +424,7 @@ function workingContextKindForNativeTaskAgent(
   requestedAgentId: string | undefined,
 ): SessionWorkingContextEntryKind | null {
   if (requestedAgentId === "execution-context-scout") {
-    return "context_scout_result";
+    return "context_window";
   }
   if (requestedAgentId === "execution-validation-scout") {
     return "validation_state";
@@ -400,16 +445,25 @@ function parentDecisionFooterKindForNativeTaskAgent(
 }
 
 function buildChangeSetWorkingContextText(event: Record<string, unknown>): string | undefined {
-  if (readBooleanField(event, "mutatingAction") !== true) {
-    return undefined;
-  }
   const toolName = readStringField(event, "toolName") ?? "unknown";
-  const toolResultRef = readStringField(event, "toolResultRef");
-  const status = readStringField(event, "status") ?? "unknown";
   const changedFilePaths = readStringArrayField(event, "changedFilePaths");
   const addedFilePaths = readStringArrayField(event, "addedFilePaths");
   const modifiedFilePaths = readStringArrayField(event, "modifiedFilePaths");
   const deletedFilePaths = readStringArrayField(event, "deletedFilePaths");
+  const isFileMutationTool =
+    toolName === "edit" || toolName === "write" || toolName === "apply_patch";
+  const hasChangedFiles =
+    changedFilePaths.length > 0 ||
+    addedFilePaths.length > 0 ||
+    modifiedFilePaths.length > 0 ||
+    deletedFilePaths.length > 0;
+  if (!isFileMutationTool && !hasChangedFiles) {
+    return undefined;
+  }
+  const toolResultRef = readStringField(event, "toolResultRef");
+  const status = readStringField(event, "status") ?? "unknown";
+  const firstChangedLine = readNumberField(event, "firstChangedLine");
+  const diffByteCount = readNumberField(event, "diffByteCount");
   return [
     "Change set:",
     `tool=${toolName}`,
@@ -421,9 +475,40 @@ function buildChangeSetWorkingContextText(event: Record<string, unknown>): strin
     addedFilePaths.length > 0 ? `added=${addedFilePaths.join(", ")}` : undefined,
     modifiedFilePaths.length > 0 ? `modified=${modifiedFilePaths.join(", ")}` : undefined,
     deletedFilePaths.length > 0 ? `deleted=${deletedFilePaths.join(", ")}` : undefined,
+    firstChangedLine !== undefined ? `firstChangedLine=${firstChangedLine}` : undefined,
+    readBooleanField(event, "diffAvailable") === true ? "diffAvailable=true" : undefined,
+    diffByteCount !== undefined ? `diffByteCount=${diffByteCount}` : undefined,
     readBooleanField(event, "isError") === true
       ? "stale_edit_or_regrounding_required=true"
       : undefined,
+  ]
+    .filter((line): line is string => typeof line === "string" && line.length > 0)
+    .join("\n");
+}
+
+function buildManagedOutputWorkingContextText(event: Record<string, unknown>): string | undefined {
+  const managedOutputRef = readStringField(event, "managedOutputRef");
+  if (!managedOutputRef) {
+    return undefined;
+  }
+  const toolName = readStringField(event, "toolName") ?? "unknown";
+  const toolResultRef = readStringField(event, "toolResultRef");
+  const status = readStringField(event, "status") ?? "unknown";
+  const managedOutputBytes = readNumberField(event, "managedOutputBytes");
+  const totalOutputChars = readNumberField(event, "totalOutputChars");
+  return [
+    "Managed tool output:",
+    `tool=${toolName}`,
+    toolResultRef ? `toolResultRef=${toolResultRef}` : undefined,
+    `status=${status}`,
+    `managedOutputRef=${managedOutputRef}`,
+    managedOutputBytes !== undefined ? `managedOutputBytes=${managedOutputBytes}` : undefined,
+    readStringField(event, "managedOutputHash")
+      ? `managedOutputHash=${readStringField(event, "managedOutputHash")}`
+      : undefined,
+    totalOutputChars !== undefined ? `totalOutputChars=${totalOutputChars}` : undefined,
+    readBooleanField(event, "truncated") === true ? "truncated=true" : undefined,
+    "Do not read stateRoot files directly. Inspect this managed output only through the appropriate OpenClaw tool/scout path.",
   ]
     .filter((line): line is string => typeof line === "string" && line.length > 0)
     .join("\n");
@@ -434,57 +519,90 @@ async function admitNativeToolWorkingContext(params: {
   event: Record<string, unknown>;
   toolCallId: string;
 }): Promise<Record<string, unknown>> {
-  const text = buildChangeSetWorkingContextText(params.event);
-  if (!text) {
-    return params.event;
-  }
   const sessionKey = params.ctx.params.sessionKey?.trim();
   if (!sessionKey) {
     return params.event;
   }
+  let event = params.event;
   try {
     const storePath = resolveStorePath(params.ctx.params.config?.session?.store, {
       agentId: params.ctx.params.agentId,
     });
+    const changeSetText = buildChangeSetWorkingContextText(event);
+    if (changeSetText) {
+      const updateResult = await updateSessionWorkingContext({
+        storePath,
+        sessionKey,
+        entry: {
+          kind: "change_set",
+          source: "native_tool",
+          text: changeSetText,
+          sourceToolCallId: params.toolCallId,
+          toolResultRef: readStringField(event, "toolResultRef"),
+          status: readStringField(event, "status"),
+          changedFilePaths: readStringArrayField(event, "changedFilePaths"),
+          addedFilePaths: readStringArrayField(event, "addedFilePaths"),
+          modifiedFilePaths: readStringArrayField(event, "modifiedFilePaths"),
+          deletedFilePaths: readStringArrayField(event, "deletedFilePaths"),
+        },
+      });
+      if (!updateResult.persisted) {
+        return {
+          ...event,
+          changeSetWorkingContextPersisted: false,
+          changeSetWorkingContextPersistFailureReason: updateResult.reason,
+          changeSetWorkingContextRef: updateResult.workingContextRef,
+        };
+      }
+      event = {
+        ...event,
+        changeSetWorkingContextPersisted: true,
+        changeSetWorkingContextRef: updateResult.workingContextRef,
+        changeSetWorkingContextEntryRef: updateResult.workingContextEntryRef,
+        changeSetWorkingContextEntryId: updateResult.entry.entryId,
+        changeSetTextHash: updateResult.entry.textHash,
+        changeSetTextByteCount: updateResult.entry.textByteCount,
+      };
+    }
+    const managedOutputText = buildManagedOutputWorkingContextText(event);
+    if (!managedOutputText) {
+      return event;
+    }
     const updateResult = await updateSessionWorkingContext({
       storePath,
       sessionKey,
       entry: {
-        kind: "change_set",
+        kind: "managed_output_ref",
         source: "native_tool",
-        text,
+        text: managedOutputText,
         sourceToolCallId: params.toolCallId,
-        toolResultRef: readStringField(params.event, "toolResultRef"),
-        status: readStringField(params.event, "status"),
-        changedFilePaths: readStringArrayField(params.event, "changedFilePaths"),
-        addedFilePaths: readStringArrayField(params.event, "addedFilePaths"),
-        modifiedFilePaths: readStringArrayField(params.event, "modifiedFilePaths"),
-        deletedFilePaths: readStringArrayField(params.event, "deletedFilePaths"),
+        toolResultRef: readStringField(event, "toolResultRef"),
+        status: readStringField(event, "status"),
       },
     });
     if (!updateResult.persisted) {
       return {
-        ...params.event,
-        changeSetWorkingContextPersisted: false,
-        changeSetWorkingContextPersistFailureReason: updateResult.reason,
-        changeSetWorkingContextRef: updateResult.workingContextRef,
+        ...event,
+        managedOutputWorkingContextPersisted: false,
+        managedOutputWorkingContextPersistFailureReason: updateResult.reason,
+        managedOutputWorkingContextRef: updateResult.workingContextRef,
       };
     }
     return {
-      ...params.event,
-      changeSetWorkingContextPersisted: true,
-      changeSetWorkingContextRef: updateResult.workingContextRef,
-      changeSetWorkingContextEntryRef: updateResult.workingContextEntryRef,
-      changeSetWorkingContextEntryId: updateResult.entry.entryId,
-      changeSetTextHash: updateResult.entry.textHash,
-      changeSetTextByteCount: updateResult.entry.textByteCount,
+      ...event,
+      managedOutputWorkingContextPersisted: true,
+      managedOutputWorkingContextRef: updateResult.workingContextRef,
+      managedOutputWorkingContextEntryRef: updateResult.workingContextEntryRef,
+      managedOutputWorkingContextEntryId: updateResult.entry.entryId,
+      managedOutputTextHash: updateResult.entry.textHash,
+      managedOutputTextByteCount: updateResult.entry.textByteCount,
     };
   } catch (err) {
     return {
-      ...params.event,
-      changeSetWorkingContextPersisted: false,
-      changeSetWorkingContextPersistFailureReason: "persist_error",
-      changeSetWorkingContextPersistError: err instanceof Error ? err.message : String(err),
+      ...event,
+      toolWorkingContextPersisted: false,
+      toolWorkingContextPersistFailureReason: "persist_error",
+      toolWorkingContextPersistError: err instanceof Error ? err.message : String(err),
     };
   }
 }
@@ -498,9 +616,6 @@ async function admitNativeTaskWorkingContext(params: {
   const requestedAgentId = readStringField(params.event, "requestedAgentId");
   const kind = workingContextKindForNativeTaskAgent(requestedAgentId);
   if (!kind || readBooleanField(params.event, "resultDeliveredToParentContext") !== true) {
-    return params.event;
-  }
-  if (readBooleanField(params.event, "resultOversized") === true) {
     return params.event;
   }
   const sessionKey = params.ctx.params.sessionKey?.trim();
@@ -548,6 +663,9 @@ async function admitNativeTaskWorkingContext(params: {
       workingContextHasFileGraph: updateResult.entry.hasFileGraph,
       workingContextFileGraphTextHash: updateResult.entry.fileGraphTextHash,
       workingContextFileGraphTextByteCount: updateResult.entry.fileGraphTextByteCount,
+      workingContextFileGraphVerifiedEdgeCount: updateResult.entry.fileGraphVerifiedEdgeCount,
+      workingContextFileGraphUncertainAnnotationCount:
+        updateResult.entry.fileGraphUncertainAnnotationCount,
       workingContextTextHash: updateResult.entry.textHash,
       workingContextTextByteCount: updateResult.entry.textByteCount,
     };

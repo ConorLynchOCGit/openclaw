@@ -74,6 +74,7 @@ import { resolveOpenClawDocsPath } from "../../docs-path.js";
 import { isTimeoutError } from "../../failover-error.js";
 import { resolveHeartbeatPromptForSystemPrompt } from "../../heartbeat-system-prompt.js";
 import { resolveImageSanitizationLimits } from "../../image-sanitization.js";
+import { AGENT_LANE_SUBAGENT } from "../../lanes.js";
 import { buildModelAliasLines } from "../../model-alias-lines.js";
 import { resolveModelAuthMode } from "../../model-auth.js";
 import { recordModelMemoryCaptureSeamEvidence } from "../../model-memory.capture-seams.js";
@@ -303,10 +304,13 @@ export function isDeliveredNativeTaskToolResult(message: AgentMessage): boolean 
     return false;
   }
   const details = recordFromUnknown((message as { details?: unknown }).details);
+  const resultDeliveryStatus = stringFromRecord(details, "resultDeliveryStatus");
   return (
     stringFromRecord(details, "status") === "completed" &&
     booleanFromRecord(details, "resultDeliveredToParentContext") === true &&
-    booleanFromRecord(details, "resultOversized") !== true
+    (resultDeliveryStatus
+      ? resultDeliveryStatus !== "rejected"
+      : booleanFromRecord(details, "resultOversized") !== true)
   );
 }
 
@@ -596,10 +600,18 @@ export function buildNodeAgentSessionTraceFromEvents(
     booleanFromRecord(contextEvent, "resultDeliveredToParentContext") === true ||
     booleanFromRecord(validationEvent, "resultDeliveredToParentContext") === true ||
     taskEvents.some((event) => booleanFromRecord(event, "resultDeliveredToParentContext") === true);
+  const childResultDeliveryStatus =
+    stringFromRecord(contextEvent, "resultDeliveryStatus") ??
+    stringFromRecord(validationEvent, "resultDeliveryStatus") ??
+    taskEvents
+      .map((event) => stringFromRecord(event, "resultDeliveryStatus"))
+      .find((value): value is string => Boolean(value)) ??
+    null;
   const childResultOversized =
-    booleanFromRecord(contextEvent, "resultOversized") === true ||
-    booleanFromRecord(validationEvent, "resultOversized") === true ||
-    taskEvents.some((event) => booleanFromRecord(event, "resultOversized") === true);
+    childResultDeliveryStatus === "projected" ||
+    booleanFromRecord(contextEvent, "resultTruncated") === true ||
+    booleanFromRecord(validationEvent, "resultTruncated") === true ||
+    taskEvents.some((event) => booleanFromRecord(event, "resultTruncated") === true);
   const latestContextPreservationEvent =
     contextPreservationEvents[contextPreservationEvents.length - 1];
   const firstPlanUpdateEvent = findFirstToolResultEvent(
@@ -612,7 +624,7 @@ export function buildNodeAgentSessionTraceFromEvents(
       toolName === "edit" ||
       toolName === "write" ||
       toolName === "apply_patch" ||
-      booleanFromRecord(event, "mutatingAction") === true
+      stringFromRecord(event, "changeSetWorkingContextEntryRef") != null
     );
   });
   const terminalNodeFinishEvent = findFirstToolResultEvent(
@@ -622,6 +634,12 @@ export function buildNodeAgentSessionTraceFromEvents(
   const firstChangeSetEvent = findFirstToolResultEvent(
     events,
     (event) => stringFromRecord(event, "changeSetWorkingContextEntryRef") != null,
+  );
+  const firstManagedOutputEvent = findFirstToolResultEvent(
+    events,
+    (event) =>
+      stringFromRecord(event, "managedOutputRef") != null ||
+      stringFromRecord(event, "managedOutputWorkingContextEntryRef") != null,
   );
   const parentPostChildActionEvent = findFirstParentActionEventAfter(events, contextEvent);
   const parentPostValidationActionEvent = findFirstParentActionEventAfter(events, validationEvent);
@@ -679,6 +697,9 @@ export function buildNodeAgentSessionTraceFromEvents(
       stringFromRecord(firstChangeSetEvent, "changeSetWorkingContextEntryRef") ??
       stringFromRecord(firstChangeSetEvent, "toolResultRef") ??
       null,
+    managedOutputRef: stringFromRecord(firstManagedOutputEvent, "managedOutputRef") ?? null,
+    managedOutputWorkingContextEntryRef:
+      stringFromRecord(firstManagedOutputEvent, "managedOutputWorkingContextEntryRef") ?? null,
     workingContextPersisted:
       booleanFromRecord(contextEvent, "workingContextPersisted") === true ||
       booleanFromRecord(validationEvent, "workingContextPersisted") === true,
@@ -724,6 +745,8 @@ export function buildNodeAgentSessionTraceFromEvents(
     validationScoutResultRef: stringFromRecord(validationEvent, "childResultRef") ?? null,
     validationStateObserved: Boolean(stringFromRecord(validationEvent, "workingContextEntryRef")),
     changeSetObserved: Boolean(firstChangeSetEvent),
+    managedOutputObserved: Boolean(firstManagedOutputEvent),
+    childResultDeliveryStatus,
     childResultOversized,
     childBootstrapAdmissions,
     childStartFailures,
@@ -1914,6 +1937,7 @@ export async function runEmbeddedAttempt(
         cfg: params.config,
         trigger: params.trigger,
         runTimeoutMs: params.timeoutMs !== configuredRunTimeoutMs ? params.timeoutMs : undefined,
+        policy: params.lane === AGENT_LANE_SUBAGENT ? "request-idle" : "run-timeout",
       });
       if (idleTimeoutMs > 0) {
         activeSession.agent.streamFn = streamWithIdleTimeout(
@@ -2647,6 +2671,7 @@ export async function runEmbeddedAttempt(
               sessionFile: params.sessionFile,
               sessionId: params.sessionId,
               sessionKey: params.sessionKey,
+              stateRoot: resolveStateDir(process.env),
             });
             if (truncationResult.truncated) {
               preflightRecovery = {

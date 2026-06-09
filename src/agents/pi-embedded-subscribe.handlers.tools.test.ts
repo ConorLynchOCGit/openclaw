@@ -170,7 +170,7 @@ describe("handleToolExecutionEnd native task working context", () => {
             {
               type: "text",
               text: [
-                "Task result from execution-context-scout (completed).",
+                "Task result from execution-context-scout (completed, projected).",
                 "",
                 "Direct answer: edit src/agents/tools/native-task-tool.ts.",
                 "",
@@ -180,7 +180,7 @@ describe("handleToolExecutionEnd native task working context", () => {
                 "```",
                 "",
                 "file_graph:",
-                "- src/agents/tools/native-task-tool.ts -> src/agents/openclaw-tools.ts via registration",
+                "- src/agents/tools/native-task-tool.ts -> src/agents/openclaw-tools.ts via registration (evidence: src/agents/tools/native-task-tool.ts:1-4)",
               ].join("\n"),
             },
           ],
@@ -192,6 +192,8 @@ describe("handleToolExecutionEnd native task working context", () => {
             runId: "run-child-1",
             foreground: true,
             resultDeliveredToParentContext: true,
+            resultDeliveryStatus: "projected",
+            resultTruncated: true,
             childIdentityVerified: true,
             childBootstrapAdmission: {
               providerReportObserved: true,
@@ -213,7 +215,7 @@ describe("handleToolExecutionEnd native task working context", () => {
 
       const store = loadSessionStore(storePath, { skipCache: true });
       expect(store[sessionKey]?.workingContext?.activeEntries[0]).toMatchObject({
-        kind: "context_scout_result",
+        kind: "context_window",
         source: "native_task",
         sourceToolCallId: "task-context-scout",
         requestedAgentId: "execution-context-scout",
@@ -221,19 +223,24 @@ describe("handleToolExecutionEnd native task working context", () => {
         childRunId: "run-child-1",
         hasInlineContextWindows: true,
         hasFileGraph: true,
+        fileGraphVerifiedEdgeCount: 1,
+        fileGraphUncertainAnnotationCount: 0,
       });
       expect(onAgentEvent).toHaveBeenCalledWith({
         stream: "node-agent",
         data: expect.objectContaining({
           eventType: "node_agent_native_task_result",
+          resultDeliveryStatus: "projected",
           parentDecisionFooterIncluded: true,
           parentDecisionFooterKind: "minimal_edit_readiness",
           workingContextPersisted: true,
-          workingContextKind: "context_scout_result",
+          workingContextKind: "context_window",
           workingContextHasInlineContextWindows: true,
           workingContextHasFileGraph: true,
           workingContextFileGraphTextHash: expect.any(String),
           workingContextFileGraphTextByteCount: expect.any(Number),
+          workingContextFileGraphVerifiedEdgeCount: 1,
+          workingContextFileGraphUncertainAnnotationCount: 0,
           workingContextRef: expect.stringContaining("openclaw-session-working-context://"),
           workingContextEntryRef: expect.stringContaining("openclaw-session-working-context://"),
           childBootstrapAdmission: expect.objectContaining({
@@ -436,7 +443,15 @@ describe("handleToolExecutionEnd node-agent tool result trace", () => {
         toolName: "edit",
         toolCallId: "edit-change-set",
         isError: false,
-        result: { details: { status: "completed" } },
+        result: {
+          details: {
+            status: "completed",
+            changedFilePaths: ["src/agents/tools/native-task-tool.ts"],
+            modifiedFilePaths: ["src/agents/tools/native-task-tool.ts"],
+            diff: "--- src/agents/tools/native-task-tool.ts\n+++ src/agents/tools/native-task-tool.ts\n@@\n-before\n+after",
+            firstChangedLine: 42,
+          },
+        },
       });
 
       const store = loadSessionStore(storePath, { skipCache: true });
@@ -448,6 +463,12 @@ describe("handleToolExecutionEnd node-agent tool result trace", () => {
         status: "completed",
         changedFilePaths: ["src/agents/tools/native-task-tool.ts"],
       });
+      expect(store[sessionKey]?.workingContext?.activeEntries[0]?.text).toContain(
+        "firstChangedLine=42",
+      );
+      expect(store[sessionKey]?.workingContext?.activeEntries[0]?.text).toContain(
+        "diffAvailable=true",
+      );
       expect(onAgentEvent).toHaveBeenCalledWith({
         stream: "node-agent",
         data: expect.objectContaining({
@@ -455,6 +476,9 @@ describe("handleToolExecutionEnd node-agent tool result trace", () => {
           toolName: "edit",
           toolResultRef: "openclaw-tool-result://run-test/edit-change-set",
           changedFilePaths: ["src/agents/tools/native-task-tool.ts"],
+          modifiedFilePaths: ["src/agents/tools/native-task-tool.ts"],
+          diffAvailable: true,
+          firstChangedLine: 42,
           changeSetWorkingContextPersisted: true,
           changeSetWorkingContextEntryRef: expect.stringContaining(
             "openclaw-session-working-context://",
@@ -463,6 +487,90 @@ describe("handleToolExecutionEnd node-agent tool result trace", () => {
       });
       expect(JSON.stringify(store[sessionKey]?.workingContext)).not.toContain("before");
       expect(JSON.stringify(store[sessionKey]?.workingContext)).not.toContain("after");
+    } finally {
+      await fs.rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("persists managed-output refs as native working context without raw output", async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-managed-output-wctx-"));
+    try {
+      const sessionKey = "agent:execution-validation-scout:subagent:nrun_managed_output";
+      const storePath = path.join(dir, "sessions.json");
+      await fs.writeFile(
+        storePath,
+        JSON.stringify({
+          [sessionKey]: { sessionId: "sess-validation", updatedAt: 1 },
+        }),
+        "utf8",
+      );
+      const { ctx, onAgentEvent } = createTestContext();
+      ctx.params.sessionKey = sessionKey;
+      ctx.params.agentId = "execution-validation-scout";
+      ctx.params.config = {
+        session: { store: storePath },
+      } as never;
+
+      await handleToolExecutionStart(ctx, {
+        type: "tool_execution_start",
+        toolName: "exec",
+        toolCallId: "exec-managed-output",
+        args: { command: "pnpm test:file focused.test.ts" },
+      });
+      await handleToolExecutionEnd(ctx, {
+        type: "tool_execution_end",
+        toolName: "exec",
+        toolCallId: "exec-managed-output",
+        isError: false,
+        result: {
+          content: [
+            {
+              type: "text",
+              text: [
+                "[Exec output truncated for model context: showing last 12000 of 250000 characters.]",
+                "Full output saved to managedOutputRef=openclaw-managed-output://agent%3Aexecution-validation-scout%3Asubagent%3Anrun_managed_output/mout_test.",
+                "tail preview only",
+              ].join("\n"),
+            },
+          ],
+          details: {
+            status: "completed",
+            exitCode: 0,
+            truncated: true,
+            totalOutputChars: 250000,
+            managedOutputRef:
+              "openclaw-managed-output://agent%3Aexecution-validation-scout%3Asubagent%3Anrun_managed_output/mout_test",
+            managedOutputBytes: 250000,
+            managedOutputHash: "a".repeat(64),
+          },
+        },
+      });
+
+      const store = loadSessionStore(storePath, { skipCache: true });
+      expect(store[sessionKey]?.workingContext?.activeEntries[0]).toMatchObject({
+        kind: "managed_output_ref",
+        source: "native_tool",
+        sourceToolCallId: "exec-managed-output",
+        toolResultRef: "openclaw-tool-result://run-test/exec-managed-output",
+        status: "completed",
+      });
+      const entryText = store[sessionKey]?.workingContext?.activeEntries[0]?.text ?? "";
+      expect(entryText).toContain("managedOutputRef=openclaw-managed-output://");
+      expect(entryText).toContain("managedOutputBytes=250000");
+      expect(entryText).not.toContain("tail preview only");
+      expect(onAgentEvent).toHaveBeenCalledWith({
+        stream: "node-agent",
+        data: expect.objectContaining({
+          eventType: "node_agent_tool_result",
+          toolName: "exec",
+          managedOutputRef:
+            "openclaw-managed-output://agent%3Aexecution-validation-scout%3Asubagent%3Anrun_managed_output/mout_test",
+          managedOutputWorkingContextPersisted: true,
+          managedOutputWorkingContextEntryRef: expect.stringContaining(
+            "openclaw-session-working-context://",
+          ),
+        }),
+      });
     } finally {
       await fs.rm(dir, { recursive: true, force: true });
     }

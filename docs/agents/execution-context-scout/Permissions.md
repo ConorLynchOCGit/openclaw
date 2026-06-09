@@ -3,8 +3,9 @@
 ## Allowed
 
 `execution-context-scout` is read/search only. It may inspect the canonical
-project root broadly and inspect runtime home only when task-relevant and
-bounded by runtime file class.
+project root broadly enough to answer the parent question, but it should keep
+individual reads bounded and should exclude Runtime Home state unless the task
+explicitly grants a diagnostic scope.
 
 ## Escalate
 

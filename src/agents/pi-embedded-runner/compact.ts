@@ -73,6 +73,7 @@ import {
 import { createPreparedEmbeddedPiSettingsManager } from "../pi-project-settings.js";
 import { createOpenClawCodingTools } from "../pi-tools.js";
 import { wrapStreamFnTextTransforms } from "../plugin-text-transforms.js";
+import { resolveProviderRequestConfig } from "../provider-request-config.js";
 import { registerProviderStreamForModel } from "../provider-stream.js";
 import { ensureRuntimePluginsLoaded } from "../runtime-plugins.js";
 import { resolveSandboxContext } from "../sandbox.js";
@@ -455,7 +456,17 @@ export async function compactEmbeddedPiSessionDirect(
         },
       });
       if (preparedAuth?.baseUrl) {
-        runtimeModel = { ...runtimeModel, baseUrl: preparedAuth.baseUrl };
+        const runtimeRequestConfig = resolveProviderRequestConfig({
+          provider: runtimeModel.provider,
+          api: runtimeModel.api,
+          baseUrl: preparedAuth.baseUrl,
+          capability: "llm",
+          transport: "stream",
+        });
+        const runtimeBaseUrl = runtimeRequestConfig.baseUrl;
+        if (runtimeBaseUrl) {
+          runtimeModel = { ...runtimeModel, baseUrl: runtimeBaseUrl };
+        }
       }
       const runtimeApiKey = preparedAuth?.apiKey ?? apiKeyInfo.apiKey;
       hasRuntimeAuthExchange = Boolean(preparedAuth?.apiKey);

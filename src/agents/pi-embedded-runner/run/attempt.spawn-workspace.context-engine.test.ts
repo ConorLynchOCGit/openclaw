@@ -230,7 +230,7 @@ describe("runEmbeddedAttempt context engine sessionKey forwarding", () => {
       sessionKey,
       now: 1234,
       entry: {
-        kind: "context_scout_result",
+        kind: "context_window",
         requestedAgentId: "execution-context-scout",
         sourceToolCallId: "task-context",
         text: [

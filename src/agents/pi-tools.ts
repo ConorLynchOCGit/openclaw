@@ -1,5 +1,7 @@
+import fs from "node:fs/promises";
 import path from "node:path";
 import { codingTools, createReadTool, readTool } from "@mariozechner/pi-coding-agent";
+import { resolveStateDir } from "../config/paths.js";
 import type { ModelCompatConfig } from "../config/types.models.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import type { ToolLoopDetectionConfig } from "../config/types.tools.js";
@@ -12,6 +14,11 @@ import {
   normalizeOptionalLowercaseString,
 } from "../shared/string-coerce.js";
 import { resolveGatewayMessageChannel } from "../utils/message-channel.js";
+import {
+  findAgentPackRegistryEntry,
+  loadAgentPackRegistryEntriesSync,
+  type AgentPackToolBudgetPolicy,
+} from "./agent-pack-registry.js";
 import { resolveAgentConfig } from "./agent-scope.js";
 import { createApplyPatchTool } from "./apply-patch.js";
 import { describeExecTool, describeProcessTool } from "./bash-tools.descriptions.js";
@@ -84,9 +91,11 @@ const NODE_AGENT_NATIVE_TASK_ALWAYS_ALLOWED_TOOL_NAMES = new Set([
   "update_plan",
   "read_todo",
   "task",
+  "read",
   "openclaw_resource_read",
   "node_finish",
 ]);
+const NODE_AGENT_PARENT_EXACT_READ_MAX_LINES = 300;
 
 export function isNodeAgentNativeTaskParentToolAllowed(input: {
   toolName?: string | null;
@@ -99,6 +108,26 @@ export function isNodeAgentNativeTaskParentToolAllowed(input: {
     (NODE_AGENT_NATIVE_TASK_ALWAYS_ALLOWED_TOOL_NAMES.has(toolName) ||
       (mutationToolName && toolName === mutationToolName)),
   );
+}
+
+function stripNodeAgentNativeTaskParentDenyPolicy(input: {
+  policy?: { allow?: string[]; deny?: string[] };
+  mode?: {
+    enabled?: boolean;
+    mutationToolName?: string;
+  };
+}): typeof input.policy {
+  if (input.mode?.enabled !== true || !input.policy?.deny?.length) {
+    return input.policy;
+  }
+  const deny = input.policy.deny.filter(
+    (toolName) =>
+      !isNodeAgentNativeTaskParentToolAllowed({
+        toolName,
+        mutationToolName: input.mode?.mutationToolName,
+      }),
+  );
+  return deny.length === input.policy.deny.length ? input.policy : { ...input.policy, deny };
 }
 
 const EXECUTION_CONTEXT_SCOUT_ALLOWED_TOOL_NAMES = new Set(["read", "list", "glob", "grep"]);
@@ -408,6 +437,101 @@ function isParentRepoMappingBeforeScout(input: {
   return true;
 }
 
+function positiveIntegerParam(value: unknown): number | null {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return null;
+  }
+  const integer = Math.floor(value);
+  return integer > 0 ? integer : null;
+}
+
+function isWorkspaceStateRuntimePath(input: {
+  resolvedPath: string;
+  workspaceRoot: string;
+}): boolean {
+  const relative = path.relative(input.workspaceRoot, input.resolvedPath).split(path.sep).join("/");
+  return (
+    relative === ".openclaw" ||
+    relative === ".openclaw/runtime" ||
+    relative.startsWith(".openclaw/runtime/")
+  );
+}
+
+function isPathInsideWorkspace(input: { resolvedPath: string; workspaceRoot: string }): boolean {
+  const relative = path.relative(input.workspaceRoot, input.resolvedPath);
+  return Boolean(
+    relative && relative !== ".." && !relative.startsWith("..") && !path.isAbsolute(relative),
+  );
+}
+
+function wrapToolsWithNodeParentExactReadGuard(input: {
+  tools: AnyAgentTool[];
+  enabled?: boolean;
+  workspaceRoot: string;
+  sandboxContainerWorkdir?: string;
+}): AnyAgentTool[] {
+  if (!input.enabled) {
+    return input.tools;
+  }
+  return input.tools.map((tool) => {
+    if (tool.name !== "read") {
+      return tool;
+    }
+    return {
+      ...tool,
+      description: `${tool.description} In execution-node parent mode, use this only for exact bounded source windows from known paths. Provide path, offset, and limit; limit must be ${NODE_AGENT_PARENT_EXACT_READ_MAX_LINES} lines or fewer. Do not use it for directory listing, discovery, runtime state, or full-file crawling.`,
+      execute: async (toolCallId, args, signal, onUpdate) => {
+        const params = getToolParamsRecord(args) ?? {};
+        const filePath = normalizeToolPathParam(params.path);
+        if (!filePath) {
+          throw new ToolAuthorizationError(
+            "Execution node parent read requires an exact file path. Delegate discovery to execution-context-scout.",
+          );
+        }
+        if (/^file:/iu.test(filePath)) {
+          throw new ToolAuthorizationError(
+            "Execution node parent read does not accept file:// paths. Use a workspace-relative source path from the prompt, scout result, or working context.",
+          );
+        }
+        const offset = positiveIntegerParam(params.offset);
+        const limit = positiveIntegerParam(params.limit);
+        if (!offset || !limit) {
+          throw new ToolAuthorizationError(
+            "Execution node parent read requires explicit offset and limit for an exact source window. Delegate broad or uncertain context to execution-context-scout.",
+          );
+        }
+        if (limit > NODE_AGENT_PARENT_EXACT_READ_MAX_LINES) {
+          throw new ToolAuthorizationError(
+            `Execution node parent read is limited to ${NODE_AGENT_PARENT_EXACT_READ_MAX_LINES} lines. Ask execution-context-scout for larger mapping or bounded windows.`,
+          );
+        }
+        const resolvedPath = resolveNodeAuthorityToolPath({
+          filePath,
+          workspaceRoot: input.workspaceRoot,
+          sandboxContainerWorkdir: input.sandboxContainerWorkdir,
+        });
+        if (!isPathInsideWorkspace({ resolvedPath, workspaceRoot: input.workspaceRoot })) {
+          throw new ToolAuthorizationError(
+            "Execution node parent read must stay inside the workspace root. Delegate external or runtime diagnostics to an authorized scout.",
+          );
+        }
+        if (isWorkspaceStateRuntimePath({ resolvedPath, workspaceRoot: input.workspaceRoot })) {
+          throw new ToolAuthorizationError(
+            "Execution node parent read cannot inspect OpenClaw runtime state. Delegate bounded diagnostics to an authorized scout or finish blocked.",
+          );
+        }
+        const stat = await fs.stat(resolvedPath).catch(() => null);
+        if (stat?.isDirectory()) {
+          throw new ToolAuthorizationError(
+            "Execution node parent read cannot list directories. Delegate discovery to execution-context-scout.",
+          );
+        }
+        return tool.execute(toolCallId, args, signal, onUpdate);
+      },
+    };
+  });
+}
+
 function isAcceptedContextScoutSpawnResult(result: unknown): boolean {
   const details =
     result && typeof result === "object" && "details" in result
@@ -600,6 +724,22 @@ function resolveExecConfig(params: { cfg?: OpenClawConfig; agentId?: string }) {
   };
 }
 
+function resolveAgentToolBudgetPolicy(agentId: string | undefined): AgentPackToolBudgetPolicy {
+  const normalizedAgentId = agentId?.trim();
+  if (!normalizedAgentId) {
+    return {};
+  }
+  try {
+    const entry = findAgentPackRegistryEntry({
+      entries: loadAgentPackRegistryEntriesSync(),
+      agentId: normalizedAgentId,
+    });
+    return entry?.toolBudget ? { ...entry.toolBudget } : {};
+  } catch {
+    return {};
+  }
+}
+
 export function resolveToolLoopDetectionConfig(params: {
   cfg?: OpenClawConfig;
   agentId?: string;
@@ -655,6 +795,8 @@ export function createOpenClawCodingTools(options?: {
   memoryFlushWritePath?: string;
   agentDir?: string;
   workspaceDir?: string;
+  /** Native resolved Location.stateRoot for excluding runtime state from repo discovery. */
+  stateRoot?: string | null;
   /**
    * Workspace directory that spawned subagents should inherit.
    * When sandboxing uses a copied workspace (`ro` or `none`), workspaceDir is the
@@ -786,31 +928,87 @@ export function createOpenClawCodingTools(options?: {
   });
   const profilePolicy = resolveToolProfilePolicy(profile);
   const providerProfilePolicy = resolveToolProfilePolicy(providerProfile);
-
-  const profilePolicyWithAlsoAllow = mergeAlsoAllowPolicy(profilePolicy, profileAlsoAllow);
-  const providerProfilePolicyWithAlsoAllow = mergeAlsoAllowPolicy(
-    providerProfilePolicy,
-    providerProfileAlsoAllow,
-  );
-  // Prefer sessionKey for process isolation scope to prevent cross-session process visibility/killing.
-  // Fallback to agentId if no sessionKey is available (e.g. legacy or global contexts).
-  const scopeKey =
-    options?.exec?.scopeKey ?? options?.sessionKey ?? (agentId ? `agent:${agentId}` : undefined);
   const subagentPolicy =
     isSubagentSessionKey(options?.sessionKey) && options?.sessionKey
       ? resolveSubagentToolPolicyForSession(options.config, options.sessionKey)
       : undefined;
-  const allowBackground = isToolAllowedByPolicies("process", [
+
+  const nodeNativeTaskParentMode = options?.nodeAgentNativeTaskMode;
+  const profilePolicyWithAlsoAllow = stripNodeAgentNativeTaskParentDenyPolicy({
+    policy: mergeAlsoAllowPolicy(profilePolicy, profileAlsoAllow),
+    mode: nodeNativeTaskParentMode,
+  });
+  const providerProfilePolicyWithAlsoAllow = stripNodeAgentNativeTaskParentDenyPolicy({
+    policy: mergeAlsoAllowPolicy(providerProfilePolicy, providerProfileAlsoAllow),
+    mode: nodeNativeTaskParentMode,
+  });
+  const nodeNativeTaskGlobalPolicy = stripNodeAgentNativeTaskParentDenyPolicy({
+    policy: globalPolicy,
+    mode: nodeNativeTaskParentMode,
+  });
+  const nodeNativeTaskGlobalProviderPolicy = stripNodeAgentNativeTaskParentDenyPolicy({
+    policy: globalProviderPolicy,
+    mode: nodeNativeTaskParentMode,
+  });
+  const nodeNativeTaskAgentPolicy = stripNodeAgentNativeTaskParentDenyPolicy({
+    policy: agentPolicy,
+    mode: nodeNativeTaskParentMode,
+  });
+  const nodeNativeTaskAgentProviderPolicy = stripNodeAgentNativeTaskParentDenyPolicy({
+    policy: agentProviderPolicy,
+    mode: nodeNativeTaskParentMode,
+  });
+  const nodeNativeTaskGroupPolicy = stripNodeAgentNativeTaskParentDenyPolicy({
+    policy: groupPolicy,
+    mode: nodeNativeTaskParentMode,
+  });
+  const nativeTaskPolicyPreservesLocalDeny =
+    options?.nodeAgentNativeTaskMode?.enabled === true &&
+    [
+      profilePolicy,
+      providerProfilePolicy,
+      globalPolicy,
+      globalProviderPolicy,
+      agentPolicy,
+      agentProviderPolicy,
+      groupPolicy,
+    ].some(
+      (policy) =>
+        policy?.deny?.some((toolName) =>
+          isNodeAgentNativeTaskParentToolAllowed({
+            toolName,
+            mutationToolName: options.nodeAgentNativeTaskMode?.mutationToolName,
+          }),
+        ) === true,
+    );
+  if (nativeTaskPolicyPreservesLocalDeny) {
+    logWarn(
+      "node native task mode ignored local deny entries for first-party parent tools; exact read/mutation guards still apply",
+    );
+  }
+  const globalPolicyForToolFiltering = nodeNativeTaskGlobalPolicy;
+  const globalProviderPolicyForToolFiltering = nodeNativeTaskGlobalProviderPolicy;
+  const agentPolicyForToolFiltering = nodeNativeTaskAgentPolicy;
+  const agentProviderPolicyForToolFiltering = nodeNativeTaskAgentProviderPolicy;
+  const groupPolicyForToolFiltering = nodeNativeTaskGroupPolicy;
+  const sandboxPolicyForToolFiltering = sandboxToolPolicy;
+  const subagentPolicyForToolFiltering = subagentPolicy;
+  const nodeNativeTaskToolPolicies = [
     profilePolicyWithAlsoAllow,
     providerProfilePolicyWithAlsoAllow,
-    globalPolicy,
-    globalProviderPolicy,
-    agentPolicy,
-    agentProviderPolicy,
-    groupPolicy,
-    sandboxToolPolicy,
-    subagentPolicy,
-  ]);
+    globalPolicyForToolFiltering,
+    globalProviderPolicyForToolFiltering,
+    agentPolicyForToolFiltering,
+    agentProviderPolicyForToolFiltering,
+    groupPolicyForToolFiltering,
+    sandboxPolicyForToolFiltering,
+    subagentPolicyForToolFiltering,
+  ];
+  // Prefer sessionKey for process isolation scope to prevent cross-session process visibility/killing.
+  // Fallback to agentId if no sessionKey is available (e.g. legacy or global contexts).
+  const scopeKey =
+    options?.exec?.scopeKey ?? options?.sessionKey ?? (agentId ? `agent:${agentId}` : undefined);
+  const allowBackground = isToolAllowedByPolicies("process", [...nodeNativeTaskToolPolicies]);
   const execConfig = resolveExecConfig({ cfg: options?.config, agentId });
   const fsConfig = resolveToolFsConfig({ cfg: options?.config, agentId });
   const fsPolicy = createToolFsPolicy({
@@ -820,6 +1018,8 @@ export function createOpenClawCodingTools(options?: {
   const sandboxFsBridge = sandbox?.fsBridge;
   const allowWorkspaceWrites = sandbox?.workspaceAccess !== "ro";
   const workspaceRoot = resolveWorkspaceRoot(options?.workspaceDir);
+  const stateRoot = options?.stateRoot ?? resolveStateDir(process.env);
+  const toolBudgetPolicy = resolveAgentToolBudgetPolicy(agentId);
   const workspaceOnly = fsPolicy.workspaceOnly;
   const applyPatchConfig = execConfig.applyPatch;
   // Secure by default: apply_patch is workspace-contained unless explicitly disabled.
@@ -847,6 +1047,8 @@ export function createOpenClawCodingTools(options?: {
           bridge: sandboxFsBridge!,
           modelContextWindowTokens: options?.modelContextWindowTokens,
           imageSanitization,
+          defaultLineLimit: toolBudgetPolicy.readDefaultLineLimit,
+          maxBytes: toolBudgetPolicy.readMaxBytes,
         });
         return [
           workspaceOnly
@@ -861,6 +1063,8 @@ export function createOpenClawCodingTools(options?: {
         modelContextWindowTokens: options?.modelContextWindowTokens,
         imageSanitization,
         workspaceRoot,
+        defaultLineLimit: toolBudgetPolicy.readDefaultLineLimit,
+        maxBytes: toolBudgetPolicy.readMaxBytes,
       });
       return [workspaceOnly ? wrapToolWorkspaceRootGuard(wrapped, workspaceRoot) : wrapped];
     }
@@ -912,6 +1116,7 @@ export function createOpenClawCodingTools(options?: {
     notifyOnExit: options?.exec?.notifyOnExit ?? execConfig.notifyOnExit,
     notifyOnExitEmptySuccess:
       options?.exec?.notifyOnExitEmptySuccess ?? execConfig.notifyOnExitEmptySuccess,
+    stateRoot,
     sandbox: sandbox
       ? {
           containerName: sandbox.containerName,
@@ -941,9 +1146,22 @@ export function createOpenClawCodingTools(options?: {
   const repoDiscoveryTools = sandboxRoot
     ? []
     : [
-        createListTool({ workspaceRoot }),
-        createGlobTool({ workspaceRoot }),
-        createGrepTool({ workspaceRoot }),
+        createListTool({
+          workspaceRoot,
+          stateRoot,
+          defaultMaxResults: toolBudgetPolicy.discoveryDefaultMaxResults,
+        }),
+        createGlobTool({
+          workspaceRoot,
+          stateRoot,
+          defaultMaxResults: toolBudgetPolicy.discoveryDefaultMaxResults,
+        }),
+        createGrepTool({
+          workspaceRoot,
+          stateRoot,
+          defaultMaxMatches: toolBudgetPolicy.discoveryDefaultMaxMatches,
+          defaultMaxFiles: toolBudgetPolicy.discoveryDefaultMaxFiles,
+        }),
       ];
   if (
     options?.nodeAgentNativeTaskMode?.enabled === true &&
@@ -1008,11 +1226,11 @@ export function createOpenClawCodingTools(options?: {
       pluginToolAllowlist: collectExplicitAllowlist([
         profilePolicy,
         providerProfilePolicy,
-        globalPolicy,
-        globalProviderPolicy,
-        agentPolicy,
-        agentProviderPolicy,
-        groupPolicy,
+        globalPolicyForToolFiltering,
+        globalProviderPolicyForToolFiltering,
+        agentPolicyForToolFiltering,
+        agentProviderPolicyForToolFiltering,
+        groupPolicyForToolFiltering,
         sandboxToolPolicy,
         subagentPolicy,
       ]),
@@ -1102,11 +1320,11 @@ export function createOpenClawCodingTools(options?: {
         providerProfilePolicy: providerProfilePolicyWithAlsoAllow,
         providerProfile,
         providerProfileUnavailableCoreWarningAllowlist: providerProfilePolicy?.allow,
-        globalPolicy,
-        globalProviderPolicy,
-        agentPolicy,
-        agentProviderPolicy,
-        groupPolicy,
+        globalPolicy: globalPolicyForToolFiltering,
+        globalProviderPolicy: globalProviderPolicyForToolFiltering,
+        agentPolicy: agentPolicyForToolFiltering,
+        agentProviderPolicy: agentProviderPolicyForToolFiltering,
+        groupPolicy: groupPolicyForToolFiltering,
         agentId,
       }),
       { policy: sandboxToolPolicy, label: "sandbox tools.allow" },
@@ -1123,8 +1341,16 @@ export function createOpenClawCodingTools(options?: {
     tools: nodeAuthorityFiltered,
     mode: options?.nodeAgentNativeTaskMode,
   });
-  const executionScoutFiltered = filterToolsForExecutionScoutMode({
+  const nodeNativeTaskParentReadGuarded = wrapToolsWithNodeParentExactReadGuard({
     tools: nodeNativeTaskFiltered,
+    enabled:
+      options?.nodeAgentNativeTaskMode?.enabled === true &&
+      normalizeLowercaseStringOrEmpty(agentId ?? "") === "execution-coding",
+    workspaceRoot: sandboxRoot ?? workspaceRoot,
+    sandboxContainerWorkdir: sandbox?.containerWorkdir,
+  });
+  const executionScoutFiltered = filterToolsForExecutionScoutMode({
+    tools: nodeNativeTaskParentReadGuarded,
     agentId,
   });
   const nodeParentCrawlGuarded = wrapToolsWithNodeParentCrawlGuard({

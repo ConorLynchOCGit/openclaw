@@ -1,4 +1,8 @@
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
+import type {
+  ManagedToolOutputStream,
+  PersistManagedToolOutputResult,
+} from "../config/sessions/managed-output.js";
 import type { DeliveryContext } from "../utils/delivery-context.js";
 import { createSessionSlug as createSessionSlugId } from "./session-slug.js";
 
@@ -49,6 +53,8 @@ export interface ProcessSession {
   pendingStderrChars: number;
   aggregated: string;
   tail: string;
+  managedOutput?: ManagedToolOutputStream | null;
+  managedOutputResult?: PersistManagedToolOutputResult | null;
   exitCode?: number | null;
   exitSignal?: NodeJS.Signals | number | null;
   exited: boolean;
@@ -70,6 +76,9 @@ export interface FinishedSession {
   exitSignal?: NodeJS.Signals | number | null;
   aggregated: string;
   tail: string;
+  managedOutputRef?: string | null;
+  managedOutputBytes?: number;
+  managedOutputHash?: string;
   truncated: boolean;
   totalOutputChars: number;
 }
@@ -106,6 +115,7 @@ export function deleteSession(id: string) {
 }
 
 export function appendOutput(session: ProcessSession, stream: "stdout" | "stderr", chunk: string) {
+  session.managedOutput?.append(chunk);
   session.pendingStdout ??= [];
   session.pendingStderr ??= [];
   session.pendingStdoutChars ??= sumPendingChars(session.pendingStdout);
@@ -164,6 +174,13 @@ export function markBackgrounded(session: ProcessSession) {
 
 function moveToFinished(session: ProcessSession, status: ProcessStatus) {
   runningSessions.delete(session.id);
+  if (session.managedOutput && !session.managedOutputResult) {
+    if (session.backgrounded || session.truncated) {
+      session.managedOutputResult = session.managedOutput.finalize();
+    } else {
+      session.managedOutput.discard();
+    }
+  }
 
   // Clean up child process stdio streams to prevent FD leaks
   if (session.child) {
@@ -211,6 +228,13 @@ function moveToFinished(session: ProcessSession, status: ProcessStatus) {
     exitSignal: session.exitSignal,
     aggregated: session.aggregated,
     tail: session.tail,
+    managedOutputRef: session.managedOutputResult?.ref ?? null,
+    ...(session.managedOutputResult?.byteCount
+      ? { managedOutputBytes: session.managedOutputResult.byteCount }
+      : {}),
+    ...(session.managedOutputResult?.textHash
+      ? { managedOutputHash: session.managedOutputResult.textHash }
+      : {}),
     truncated: session.truncated,
     totalOutputChars: session.totalOutputChars,
   });

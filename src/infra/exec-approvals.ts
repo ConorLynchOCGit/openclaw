@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+import { resolveStateDir } from "../config/paths.js";
 import { DEFAULT_AGENT_ID } from "../routing/session-key.js";
 import {
   normalizeLowercaseStringOrEmpty,
@@ -170,8 +171,9 @@ const DEFAULT_SECURITY: ExecSecurity = "full";
 const DEFAULT_ASK: ExecAsk = "off";
 export const DEFAULT_EXEC_APPROVAL_ASK_FALLBACK: ExecSecurity = "full";
 const DEFAULT_AUTO_ALLOW_SKILLS = false;
-const DEFAULT_SOCKET = "~/.openclaw/exec-approvals.sock";
-const DEFAULT_FILE = "~/.openclaw/exec-approvals.json";
+const EXEC_APPROVALS_SOCKET_FILENAME = "exec-approvals.sock";
+const EXEC_APPROVALS_FILE_FILENAME = "exec-approvals.json";
+const LEGACY_STATE_HOME_PREFIX = "~/.openclaw";
 
 function hashExecApprovalsRaw(raw: string | null): string {
   return crypto
@@ -180,12 +182,37 @@ function hashExecApprovalsRaw(raw: string | null): string {
     .digest("hex");
 }
 
+function resolveExecApprovalsStateDir(env: NodeJS.ProcessEnv = process.env): string {
+  const stateDir = path.resolve(resolveStateDir(env));
+  try {
+    return fs.realpathSync.native(stateDir);
+  } catch {
+    return stateDir;
+  }
+}
+
+function expandExecApprovalRuntimePath(
+  input: string,
+  env: NodeJS.ProcessEnv = process.env,
+): string {
+  const trimmed = input.trim();
+  const normalized = trimmed.replace(/\\/gu, "/");
+  if (
+    normalized === LEGACY_STATE_HOME_PREFIX ||
+    normalized.startsWith(`${LEGACY_STATE_HOME_PREFIX}/`)
+  ) {
+    const suffix = normalized.slice(LEGACY_STATE_HOME_PREFIX.length).replace(/^\//u, "");
+    return path.join(resolveExecApprovalsStateDir(env), suffix);
+  }
+  return expandHomePrefix(trimmed, { env });
+}
+
 export function resolveExecApprovalsPath(): string {
-  return expandHomePrefix(DEFAULT_FILE);
+  return path.join(resolveExecApprovalsStateDir(), EXEC_APPROVALS_FILE_FILENAME);
 }
 
 export function resolveExecApprovalsSocketPath(): string {
-  return expandHomePrefix(DEFAULT_SOCKET);
+  return path.join(resolveExecApprovalsStateDir(), EXEC_APPROVALS_SOCKET_FILENAME);
 }
 
 function normalizeAllowlistPattern(value: string | undefined): string | null {
@@ -677,7 +704,9 @@ export function resolveExecApprovals(
     agentId,
     overrides,
     path: resolveExecApprovalsPath(),
-    socketPath: expandHomePrefix(file.socket?.path ?? resolveExecApprovalsSocketPath()),
+    socketPath: expandExecApprovalRuntimePath(
+      file.socket?.path ?? resolveExecApprovalsSocketPath(),
+    ),
     token: file.socket?.token ?? "",
   });
 }
@@ -753,7 +782,7 @@ export function resolveExecApprovalsFromFile(params: {
   ];
   return {
     path: params.path ?? resolveExecApprovalsPath(),
-    socketPath: expandHomePrefix(
+    socketPath: expandExecApprovalRuntimePath(
       params.socketPath ?? file.socket?.path ?? resolveExecApprovalsSocketPath(),
     ),
     token: params.token ?? file.socket?.token ?? "",

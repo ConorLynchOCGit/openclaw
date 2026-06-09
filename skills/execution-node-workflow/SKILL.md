@@ -83,13 +83,20 @@ whether to ask the scout for another focused pass.
 
 ## Scout-Owned Repo Mapping
 
-Repo search/read is scout-owned in executable-node mode.
+Repo discovery, search, and broad read are scout-owned in executable-node mode.
+Exact bounded parent reads are allowed only for already-known source windows.
 
 The parent should derive task-specific search signal from real source prompt
 text and hydrated requirement/source windows, then delegate search/read to
 `execution-context-scout` through native `task`. Do not use parent-owned
 repository acquisition, shell execution, raw session-control,
 subagent-control, or agent-listing surfaces in executable-node mode.
+
+If the prompt, a scout result, native working context, file graph, or changed-file
+list already names the exact path and a small missing window, use parent `read`
+with explicit `offset` and `limit` instead of spawning another scout. Do not use
+parent `read` to discover paths, list directories, inspect runtime state, browse
+managed output, or pull full files.
 
 The scout should start with the most specific terms. Then the parent/scout loop
 iterates:
@@ -113,22 +120,25 @@ Before editing, ensure the parent session has real source context for:
 - validation commands or proof scripts if provided.
 
 Do not satisfy this by parent-side repo crawling. Use direct prompt text,
-exact Execution Platform refs, or scout-returned bounded source windows. Use
-native `task` for focused scout, test-mapping, and caller-mapping tasks when
-that improves quality, and use `execution-context-scout` as the default fast
-search/read loop when repo mapping is weak, target files are unknown,
-callers/tests need exploration, or new keywords emerge during
+exact Execution Platform refs, exact bounded reads for known windows, or
+scout-returned bounded source windows. Use native `task` for focused scout,
+test-mapping, and caller-mapping tasks when that improves quality, and use
+`execution-context-scout` as the default fast search/read loop when repo mapping
+is weak, target files are unknown, callers/tests need exploration, or new
+keywords emerge during
 editing/validation. Keep subagent outputs inside the parent session. Do not
 finish until you have read and synthesized subagent output.
 
 When delegating to `execution-context-scout`, ask it to return actual bounded
 `inline_context_windows` containing the relevant code/test/config/doc excerpts,
-not just file refs. When more than one file or symbol matters, also ask for a
-compact `file_graph` that maps the relevant files/symbols and their imports,
-callers, registrations, tests, configs, scripts, and runtime entrypoints. The
-parent execution agent must use those excerpts and the graph directly. OpenClaw
-native task delivery must put those bounded windows in parent-visible context
-and persist the same bounded windows plus `file_graph` into the native
+not just file refs. Ask for the minimum context needed for the next useful
+edit: a map plus the top edit windows, not complete files or broad document
+dumps. When more than one file or symbol matters, also ask for a compact
+`file_graph` that maps the relevant files/symbols and their imports, callers,
+registrations, tests, configs, scripts, and runtime entrypoints. The parent
+execution agent must use those excerpts and the graph directly. OpenClaw native
+task delivery must put those bounded windows in parent-visible context and
+persist the same bounded windows plus `file_graph` into the native
 working-context ledger for compaction/resume/readback. Ask the scout for more
 context when adjacent windows or graph edges are missing.
 
@@ -150,6 +160,8 @@ Task content should include:
 - current known files, hits, misses, and search terms already tried.
 - the specific context question to answer.
 - whether the parent needs likely edit points, tests, callers, or config.
+- the smallest useful context target for the next edit, not a request for full
+  files.
 
 Require this in the child result:
 
@@ -184,7 +196,20 @@ You have enough to start editing when:
 - you can state the validation question for the edit.
 
 Record the decision in native `update_plan`: enough for next edit, more
-context needed, or blocked. If more context is needed, delegate another focused
+context needed, or blocked. Use the scout's `edit_start_recommendation` when
+present:
+
+- `enough_for_minimal_edit`: update todo with `Decision: start minimal edit`
+  and make the smallest useful edit from the returned bounded windows.
+- `need_exact_window`: update todo with `Decision: ask exact follow-up` and
+  delegate one `quick` context scout task for the named file/function/test
+  window.
+- `need_map_pass`: update todo with `Decision: ask map pass` and delegate one
+  `medium` or `very thorough` map pass scoped to the ambiguous subsystem.
+- `blocked_by_missing_source`: update todo with `Decision: blocked` and finish
+  blocked if the missing source is required for this node.
+
+If more context is needed, delegate another focused
 `execution-context-scout` task using the newly discovered symbol, missing graph
 edge, test, caller, command, or prompt term. Do not broad-crawl from the parent
 and do not edit from refs-only output.

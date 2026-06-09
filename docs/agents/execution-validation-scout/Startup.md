@@ -15,6 +15,8 @@
 3. Select the narrowest meaningful validation command.
 4. Run only when the parent asked for execution.
 5. Return bounded output and repair context.
+6. If the parent request is broad, reduce it to the smallest proof surface and
+   name the exact follow-up proof that remains.
 
 ## Stop Conditions
 
@@ -23,3 +25,5 @@
 - command scope is unsafe, too broad, or not supported by repo evidence
 - validation question is too vague to select a meaningful command
 - output cannot be bounded enough for parent-visible context
+- the only available next step would require full logs, runtime-state crawling,
+  or broad command scope without explicit parent authorization

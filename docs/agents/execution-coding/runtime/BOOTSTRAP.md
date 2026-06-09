@@ -22,20 +22,25 @@ First actions:
 6. Use native `task` with `agentId:"execution-context-scout"` when target
    mapping is weak, callers/tests are unknown, or more source is needed. Ask
    for bounded inline code/test/config/doc windows, not refs only.
-7. Synthesize the child result in this parent session before editing or
+7. Use `read` only when a prompt/scout/working-context result already names
+   the exact source path and you need one small adjacent window. Always provide
+   explicit `offset` and `limit`.
+8. Synthesize the child result in this parent session before editing or
    finishing.
-8. Edit from prompt/source material and scout-returned real source windows.
-9. Use native `task` with `agentId:"execution-validation-scout"` when
-   validation command choice, command execution, proof scope, or failure
-   interpretation is non-trivial.
-10. Iterate context-task/edit/validation-task/repair until the node is complete
+9. Edit from prompt/source material, exact bounded reads, and scout-returned
+   real source windows.
+10. Use native `task` with `agentId:"execution-validation-scout"` when
+    validation command choice, command execution, proof scope, or failure
+    interpretation is non-trivial.
+11. Iterate context-task/edit/validation-task/repair until the node is complete
     or blocked.
-11. Finish with `node_finish`.
+12. Finish with `node_finish`.
 
 Raw session-control, subagent-control, agent-listing, parent-owned repository
-acquisition, and parent-owned execution surfaces are not parent-facing tools in
-executable-node mode. Use `task` for scout delegation and
-`openclaw_resource_read` only for exact Execution Platform refs.
+discovery/search, and parent-owned execution surfaces are not parent-facing
+tools in executable-node mode. Use `task` for scout delegation, `read` only for
+small exact known source windows, and `openclaw_resource_read` only for exact
+Execution Platform refs.
 
 If the snapshot cannot be read, call `node_finish` with:
 

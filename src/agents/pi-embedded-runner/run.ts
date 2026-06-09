@@ -1,6 +1,7 @@
 import { randomBytes } from "node:crypto";
 import fs from "node:fs/promises";
 import type { ThinkLevel } from "../../auto-reply/thinking.js";
+import { resolveStateDir } from "../../config/paths.js";
 import { ensureContextEnginesInitialized } from "../../context-engine/init.js";
 import { resolveContextEngine } from "../../context-engine/registry.js";
 import { emitAgentPlanEvent } from "../../infra/agent-events.js";
@@ -1275,6 +1276,7 @@ async function runEmbeddedPiAgentWithExternalCliAuthSyncSuppressed(
                     }),
                     sessionId: params.sessionId,
                     sessionKey: params.sessionKey,
+                    stateRoot: resolveStateDir(process.env),
                   });
                   if (truncResult.truncated) {
                     log.info(
@@ -1323,6 +1325,7 @@ async function runEmbeddedPiAgentWithExternalCliAuthSyncSuppressed(
                   maxCharsOverride: toolResultMaxChars,
                   sessionId: params.sessionId,
                   sessionKey: params.sessionKey,
+                  stateRoot: resolveStateDir(process.env),
                 });
                 if (truncResult.truncated) {
                   log.info(

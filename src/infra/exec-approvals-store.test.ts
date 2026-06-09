@@ -29,6 +29,7 @@ let saveExecApprovals: ExecApprovalsModule["saveExecApprovals"];
 
 const tempDirs: string[] = [];
 const originalOpenClawHome = process.env.OPENCLAW_HOME;
+const originalOpenClawStateDir = process.env.OPENCLAW_STATE_DIR;
 
 beforeAll(async () => {
   ({
@@ -59,6 +60,11 @@ afterEach(() => {
   } else {
     process.env.OPENCLAW_HOME = originalOpenClawHome;
   }
+  if (originalOpenClawStateDir === undefined) {
+    delete process.env.OPENCLAW_STATE_DIR;
+  } else {
+    process.env.OPENCLAW_STATE_DIR = originalOpenClawStateDir;
+  }
   for (const dir of tempDirs.splice(0)) {
     fs.rmSync(dir, { recursive: true, force: true });
   }
@@ -68,11 +74,23 @@ function createHomeDir(): string {
   const dir = makeTempDir();
   tempDirs.push(dir);
   process.env.OPENCLAW_HOME = dir;
+  delete process.env.OPENCLAW_STATE_DIR;
   return dir;
 }
 
 function approvalsFilePath(homeDir: string): string {
   return path.join(homeDir, ".openclaw", "exec-approvals.json");
+}
+
+function createStateDir(): string {
+  const dir = makeTempDir();
+  tempDirs.push(dir);
+  process.env.OPENCLAW_STATE_DIR = dir;
+  return dir;
+}
+
+function stateApprovalsFilePath(stateDir: string): string {
+  return path.join(stateDir, "exec-approvals.json");
 }
 
 function readApprovalsFile(homeDir: string): ExecApprovalsFile {
@@ -156,6 +174,28 @@ describe("exec approvals store helpers", () => {
     expect(ensured.socket?.token).toMatch(/^[A-Za-z0-9_-]{32}$/);
     expect(raw.endsWith("\n")).toBe(true);
     expect(readApprovalsFile(dir).socket).toEqual(ensured.socket);
+  });
+
+  it("uses OPENCLAW_STATE_DIR as exec approval state root instead of symlinked home", () => {
+    const realHome = makeTempDir();
+    const linkedHome = `${realHome}-link`;
+    tempDirs.push(realHome);
+    tempDirs.push(linkedHome);
+    fs.symlinkSync(realHome, linkedHome);
+    process.env.OPENCLAW_HOME = linkedHome;
+    const stateDir = createStateDir();
+
+    const ensured = ensureExecApprovals();
+
+    expect(path.normalize(resolveExecApprovalsPath())).toBe(
+      path.normalize(stateApprovalsFilePath(stateDir)),
+    );
+    expect(path.normalize(resolveExecApprovalsSocketPath())).toBe(
+      path.normalize(path.join(stateDir, "exec-approvals.sock")),
+    );
+    expect(ensured.socket?.path).toBe(resolveExecApprovalsSocketPath());
+    expect(fs.existsSync(stateApprovalsFilePath(stateDir))).toBe(true);
+    expect(fs.existsSync(path.join(realHome, ".openclaw"))).toBe(false);
   });
 
   it("atomically replaces existing approvals files instead of mutating linked inodes", () => {

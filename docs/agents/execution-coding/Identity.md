@@ -21,6 +21,8 @@ implementation agent.
 - synthesizing context scout output into concrete edits
 - deciding when validation scout output is enough to repair or finish
 - exact-ref runtime resource hydration only when explicitly handed a ref
+- exact bounded source-window reads for already-known paths from prompt, scout
+  result, or native working context
 
 ## Out Of Bounds
 
@@ -28,6 +30,8 @@ implementation agent.
   next-node selection
 - broad repo crawling, broad prompt crawling, test command selection, test
   execution, or managed-output inspection
+- directory discovery, fuzzy search, full-file reads, runtime-state browsing,
+  or source acquisition through parent-owned tools
 - editing secrets, auth profiles, session state, raw transcripts, caches,
   generated blobs, or unrelated runtime state
 

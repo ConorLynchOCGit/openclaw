@@ -8,6 +8,7 @@ import {
 } from "../../config/sessions/paths.js";
 import { loadSessionStore, resolveSessionStoreEntry } from "../../config/sessions/store.js";
 import type { SessionSystemPromptReport } from "../../config/sessions/types.js";
+import { projectStructuredWorkingContextText } from "../../config/sessions/working-context.js";
 import { parseAgentSessionKey } from "../../routing/session-key.js";
 import { normalizeLowercaseStringOrEmpty } from "../../shared/string-coerce.js";
 import type { GatewayMessageChannel } from "../../utils/message-channel.js";
@@ -23,6 +24,7 @@ import type {
   NativeTaskChildBootstrapAdmission,
   NativeTaskChildStartFailureKind,
   NativeTaskForegroundResult,
+  NativeTaskResultDeliveryStatus,
   NativeTaskRunChildTask,
 } from "../session-runtime/native-task-types.js";
 import { buildRequiredActiveSkillSnapshot, type SkillSnapshot } from "../skills.js";
@@ -34,10 +36,10 @@ import {
   type RequiredProviderContextAdmission,
   type RequiredProviderSkillSource,
 } from "../system-prompt-report.js";
+import { MAX_SAFE_AGENT_TIMEOUT_MS } from "../timeout.js";
 import type { AnyAgentTool } from "./common.js";
 import { readNumberParam, readStringParam, textResult, ToolInputError } from "./common.js";
 
-const DEFAULT_FOREGROUND_TASK_TIMEOUT_SECONDS = 120;
 const DEFAULT_PARENT_VISIBLE_CHILD_RESULT_MAX_CHARS = 12_000;
 const PARENT_VISIBLE_CHILD_RESULT_GUARD_HEADROOM_CHARS = 512;
 const NATIVE_TASK_CONTINUATION_PREFIX = "openclaw-native-task-continuation://";
@@ -60,9 +62,6 @@ const NativeTaskToolSchema = Type.Object({
     }),
   ),
   label: Type.Optional(Type.String({ description: "Short label for the delegated task." })),
-  runTimeoutSeconds: Type.Optional(
-    Type.Number({ minimum: 0, description: "Optional bounded runtime for the child task." }),
-  ),
 });
 
 function normalizeAllowedAgentIds(values: readonly string[]): Set<string> {
@@ -87,6 +86,7 @@ export type RequiredChildBootstrapAdmissionSources = {
   requiredCanonicalDocPaths: string[];
   requiredSkillNames: string[];
   requiredSkillSources: RequiredProviderSkillSource[];
+  requiredSkillsSnapshot?: SkillSnapshot;
   requiredToolNames: string[];
   forbiddenToolNames: string[];
   registryContractIssues: string[];
@@ -166,6 +166,24 @@ export function resolveParentVisibleChildResultMaxChars(
   );
 }
 
+function projectUnstructuredChildResultPreview(params: { text: string; maxChars: number }): string {
+  const maxChars = Math.max(1, Math.trunc(params.maxChars));
+  const text = params.text.trim();
+  const header = [
+    "Projected oversized unstructured child result preview:",
+    `originalBytes=${Buffer.byteLength(text, "utf8")}`,
+    "OpenClaw preserved a bounded preview instead of rejecting the task result. Do not edit from this preview unless it contains sufficient exact source windows; otherwise update todo and ask a narrower scout follow-up.",
+    "",
+  ].join("\n");
+  const suffix = "\n[unstructured child result preview truncated]";
+  const previewBudget = Math.max(1, maxChars - header.length - suffix.length);
+  const projected = `${header}${text.slice(0, previewBudget).trimEnd()}${suffix}`;
+  if (projected.length <= maxChars) {
+    return projected;
+  }
+  return projected.slice(0, maxChars).trimEnd();
+}
+
 export function buildParentVisibleChildResult(
   text: string | undefined,
   maxParentVisibleChars = DEFAULT_PARENT_VISIBLE_CHILD_RESULT_MAX_CHARS,
@@ -174,8 +192,8 @@ export function buildParentVisibleChildResult(
   resultTextHash?: string;
   resultTextByteCount?: number;
   resultMaxParentVisibleChars: number;
+  resultDeliveryStatus: NativeTaskResultDeliveryStatus;
   resultTruncated?: boolean;
-  resultOversized?: boolean;
 } {
   const resolvedMaxParentVisibleChars = Math.max(1, Math.trunc(maxParentVisibleChars));
   const trimmed = text?.trim();
@@ -183,7 +201,7 @@ export function buildParentVisibleChildResult(
     resultMaxParentVisibleChars: resolvedMaxParentVisibleChars,
   };
   if (!trimmed) {
-    return base;
+    return { ...base, resultDeliveryStatus: "rejected" };
   }
   const resultTextByteCount = Buffer.byteLength(trimmed, "utf8");
   const resultTextHash = crypto.createHash("sha256").update(trimmed).digest("hex");
@@ -193,16 +211,35 @@ export function buildParentVisibleChildResult(
       resultText: trimmed,
       resultTextHash,
       resultTextByteCount,
+      resultDeliveryStatus: "full",
       resultTruncated: false,
-      resultOversized: false,
     };
   }
+  const projectedText = projectStructuredWorkingContextText({
+    text: trimmed,
+    maxChars: resolvedMaxParentVisibleChars,
+  });
+  if (projectedText) {
+    return {
+      ...base,
+      resultText: projectedText,
+      resultTextHash,
+      resultTextByteCount,
+      resultDeliveryStatus: "projected",
+      resultTruncated: true,
+    };
+  }
+  const previewText = projectUnstructuredChildResultPreview({
+    text: trimmed,
+    maxChars: resolvedMaxParentVisibleChars,
+  });
   return {
     ...base,
+    resultText: previewText,
     resultTextHash,
     resultTextByteCount,
-    resultTruncated: false,
-    resultOversized: true,
+    resultDeliveryStatus: "projected",
+    resultTruncated: true,
   };
 }
 
@@ -369,29 +406,36 @@ function childAgentPackContractIssues(input: {
   return issues;
 }
 
-function resolveRequiredChildSkillSources(input: {
+function resolveRequiredChildSkillContext(input: {
   childAgentId: string;
   requiredSkillNames: readonly string[];
-}): RequiredProviderSkillSource[] {
+}): {
+  requiredSkillSources: RequiredProviderSkillSource[];
+  requiredSkillsSnapshot?: SkillSnapshot;
+} {
   if (input.requiredSkillNames.length === 0) {
-    return [];
+    return { requiredSkillSources: [] };
   }
   try {
     const config = loadConfig();
     const workspaceDir = resolveAgentProjectRootDir(config, input.childAgentId);
-    return requiredProviderSkillSourcesFromSnapshot(
-      buildRequiredActiveSkillSnapshot(workspaceDir, {
-        config,
-        agentId: input.childAgentId,
-        requiredSkillNames: input.requiredSkillNames,
-      }),
-    );
+    const requiredSkillsSnapshot = buildRequiredActiveSkillSnapshot(workspaceDir, {
+      config,
+      agentId: input.childAgentId,
+      requiredSkillNames: input.requiredSkillNames,
+    });
+    return {
+      requiredSkillSources: requiredProviderSkillSourcesFromSnapshot(requiredSkillsSnapshot),
+      requiredSkillsSnapshot,
+    };
   } catch {
-    return input.requiredSkillNames.map((requiredSkillName) => ({
-      name: requiredSkillName,
-      path: `openclaw-required-child-skill-unresolved://${input.childAgentId}/${requiredSkillName}`,
-      sourceHash: null,
-    }));
+    return {
+      requiredSkillSources: input.requiredSkillNames.map((requiredSkillName) => ({
+        name: requiredSkillName,
+        path: `openclaw-required-child-skill-unresolved://${input.childAgentId}/${requiredSkillName}`,
+        sourceHash: null,
+      })),
+    };
   }
 }
 
@@ -449,14 +493,18 @@ export async function resolveRequiredChildBootstrapAdmissionSources(
       requiredCanonicalDocNames,
     );
   }
+  const requiredSkillContext = resolveRequiredChildSkillContext({
+    childAgentId: normalizedChildAgentId,
+    requiredSkillNames,
+  });
   return {
     requiredCanonicalDocNames,
     requiredCanonicalDocPaths,
     requiredSkillNames,
-    requiredSkillSources: resolveRequiredChildSkillSources({
-      childAgentId: normalizedChildAgentId,
-      requiredSkillNames,
-    }),
+    requiredSkillSources: requiredSkillContext.requiredSkillSources,
+    ...(requiredSkillContext.requiredSkillsSnapshot
+      ? { requiredSkillsSnapshot: requiredSkillContext.requiredSkillsSnapshot }
+      : {}),
     requiredToolNames,
     forbiddenToolNames,
     registryContractIssues,
@@ -603,22 +651,13 @@ export function buildChildBootstrapAdmission(params: {
 export function classifyChildBootstrapAdmissionFailure(
   admission: NativeTaskChildBootstrapAdmission,
 ): NativeTaskChildStartFailureKind | undefined {
-  if (!admission.providerReportObserved) {
-    return "child_provider_bootstrap_report_missing";
-  }
-  if (admission.truncatedRequiredSources.length > 0) {
-    return "child_provider_bootstrap_truncated";
-  }
-  if (!admission.canonicalDocsAdmitted) {
-    return "child_docs_missing";
-  }
-  if (!admission.requiredSkillAdmitted) {
-    return "child_skill_missing";
-  }
-  if (!admission.childToolCatalogAdmitted) {
-    return "child_tool_catalog_invalid";
-  }
-  return undefined;
+  return admission.providerReportObserved &&
+    admission.truncatedRequiredSources.length === 0 &&
+    admission.canonicalDocsAdmitted &&
+    admission.requiredSkillAdmitted &&
+    admission.childToolCatalogAdmitted
+    ? undefined
+    : "child_launch_blocked";
 }
 
 async function readChildSystemPromptReport(params: {
@@ -710,13 +749,15 @@ async function waitForForegroundSubagentTaskResult(params: {
   requiredBootstrapAdmissionSources?: RequiredChildBootstrapAdmissionSources;
   readChildSystemPromptReport?: ChildSystemPromptReportReader;
 }): Promise<NativeTaskForegroundResult> {
-  const timeoutSeconds =
+  const timeoutMs =
     typeof params.runTimeoutSeconds === "number" && Number.isFinite(params.runTimeoutSeconds)
-      ? Math.max(1, Math.trunc(params.runTimeoutSeconds))
-      : DEFAULT_FOREGROUND_TASK_TIMEOUT_SECONDS;
+      ? Math.trunc(params.runTimeoutSeconds) <= 0
+        ? MAX_SAFE_AGENT_TIMEOUT_MS
+        : Math.trunc(params.runTimeoutSeconds) * 1000
+      : MAX_SAFE_AGENT_TIMEOUT_MS;
   const wait = await waitForAgentRun({
     runId: params.runId,
-    timeoutMs: timeoutSeconds * 1000,
+    timeoutMs,
   });
   const outcome = outcomeFromWait(wait);
   const resultText = await readSubagentOutput(params.childSessionKey, outcome).catch(
@@ -749,8 +790,8 @@ async function waitForForegroundSubagentTaskResult(params: {
       ? classifyChildBootstrapAdmissionFailure(childBootstrapAdmission)
       : undefined;
   const childResultFailureKind =
-    wait.status === "ok" && boundedResult.resultOversized === true
-      ? "child_result_oversized"
+    wait.status === "ok" && boundedResult.resultDeliveryStatus === "rejected"
+      ? "child_result_unshaped"
       : undefined;
   const status =
     childBootstrapFailureKind || childResultFailureKind ? "error" : normalizeForegroundStatus(wait);
@@ -771,9 +812,7 @@ async function waitForForegroundSubagentTaskResult(params: {
       runId: params.runId,
     }),
     resultDeliveredToParentContext:
-      status === "completed" &&
-      boundedResult.resultOversized !== true &&
-      Boolean(boundedResult.resultText?.trim()),
+      status === "completed" && Boolean(boundedResult.resultText?.trim()),
     childBootstrapAdmission,
     ...(childStartFailureKind ? { childStartFailureKind } : {}),
   };
@@ -794,7 +833,7 @@ function enforceParentVisibleChildResultBudget(
     return result;
   }
   const bounded = buildParentVisibleChildResult(result.resultText, maxParentVisibleChars);
-  if (bounded.resultOversized !== true) {
+  if (bounded.resultDeliveryStatus !== "rejected") {
     return {
       ...result,
       ...bounded,
@@ -808,8 +847,28 @@ function enforceParentVisibleChildResultBudget(
     status: "error",
     resultText: undefined,
     resultDeliveredToParentContext: false,
-    childStartFailureKind: "child_result_oversized",
+    childStartFailureKind: "child_result_unshaped",
   };
+}
+
+function renderNativeTaskOutput(params: {
+  childSessionKey?: string;
+  state: "completed" | "running" | "error";
+  summary?: string;
+  text: string;
+}): string {
+  const tag = params.state === "error" ? "task_error" : "task_result";
+  const taskId = params.childSessionKey?.trim() || "unknown";
+  return [
+    `<task id="${taskId}" state="${params.state}">`,
+    params.summary ? `<summary>${params.summary}</summary>` : null,
+    `<${tag}>`,
+    params.text,
+    `</${tag}>`,
+    "</task>",
+  ]
+    .filter((line): line is string => typeof line === "string")
+    .join("\n");
 }
 
 function formatNativeTaskParentVisibleText(params: {
@@ -818,59 +877,95 @@ function formatNativeTaskParentVisibleText(params: {
 }): string {
   const decisionFooter = buildParentDecisionFooter(params.requestedAgentId);
   if (params.result.status === "completed" && params.result.resultText?.trim()) {
-    return [
-      `Task result from ${params.requestedAgentId} (${params.result.status}).`,
-      "",
-      params.result.resultText.trim(),
-      decisionFooter,
-    ].join("\n");
+    const projected = params.result.resultDeliveryStatus === "projected";
+    return renderNativeTaskOutput({
+      childSessionKey: params.result.childSessionKey,
+      state: "completed",
+      summary: `Task result from ${params.requestedAgentId} (${params.result.status}${projected ? ", projected" : ""}).`,
+      text: [params.result.resultText.trim(), decisionFooter].join("\n"),
+    });
   }
-  if (params.result.childStartFailureKind === "child_result_oversized") {
-    return [
-      `Task result from ${params.requestedAgentId} was too large for parent-visible edit context.`,
-      "",
-      `The child result was ${params.result.resultTextByteCount ?? "unknown"} bytes and exceeded the ${params.result.resultMaxParentVisibleChars ?? DEFAULT_PARENT_VISIBLE_CHILD_RESULT_MAX_CHARS} character parent-visible cap.`,
-      "No truncated source excerpt was delivered to the parent. Do not edit from partial context.",
-      "Delegate a narrower follow-up task asking the scout for fewer, exact bounded source windows around the specific edit target.",
-      decisionFooter,
-    ].join("\n");
+  if (params.result.childStartFailureKind === "child_result_unshaped") {
+    return renderNativeTaskOutput({
+      childSessionKey: params.result.childSessionKey,
+      state: "error",
+      summary: `Task result from ${params.requestedAgentId} was rejected.`,
+      text: [
+        `Task result from ${params.requestedAgentId} was too large and did not expose structured parent-visible edit context.`,
+        "",
+        `The child result was ${params.result.resultTextByteCount ?? "unknown"} bytes and exceeded the ${params.result.resultMaxParentVisibleChars ?? DEFAULT_PARENT_VISIBLE_CHILD_RESULT_MAX_CHARS} character parent-visible cap.`,
+        "No structured inline_context_windows/file_graph projection was available. Do not edit from partial context.",
+        "Delegate a narrower follow-up task asking the scout for one exact missing source window or finish blocked if this is repeated.",
+        decisionFooter,
+      ].join("\n"),
+    });
+  }
+  if (params.result.childStartFailureKind === "child_provider_response_timeout") {
+    const validationScout = params.requestedAgentId === "execution-validation-scout";
+    return renderNativeTaskOutput({
+      childSessionKey: params.result.childSessionKey,
+      state: "error",
+      summary: `Task delegation to ${params.requestedAgentId} timed out before parent-visible context was delivered.`,
+      text: [
+        `Task delegation to ${params.requestedAgentId} hit a provider response timeout before parent-visible child context was delivered.`,
+        `status: ${params.result.status}`,
+        "childStartFailureKind: child_provider_response_timeout",
+        params.result.error ? `error: ${params.result.error}` : null,
+        validationScout
+          ? "If retrying validation, ask for the narrowest command/result needed for the current changed files and request bounded output only."
+          : "If retrying context, ask for one exact missing source window or a smaller map pass; do not ask for full files or broad dumps.",
+        buildParentFailureDecisionFooter(),
+      ]
+        .filter((line): line is string => typeof line === "string" && line.length > 0)
+        .join("\n"),
+    });
   }
   if (params.result.status === "pending") {
-    return [
-      `Task result from ${params.requestedAgentId} is still pending at the foreground wait checkpoint.`,
-      "",
-      params.result.continuationId ? `continuationId: ${params.result.continuationId}` : null,
-      "Do not spawn duplicate scout work for the same question. Do not edit or finish from missing child output.",
-      "Parent decision required: update todo, then call task again with the same agentId and continuationId to wait for the child result, or finish/block only if the child is no longer needed.",
+    return renderNativeTaskOutput({
+      childSessionKey: params.result.childSessionKey,
+      state: "running",
+      summary: `Task result from ${params.requestedAgentId} is pending.`,
+      text: [
+        `Task result from ${params.requestedAgentId} is still pending at the foreground wait checkpoint.`,
+        "",
+        params.result.continuationId ? `continuationId: ${params.result.continuationId}` : null,
+        "Do not spawn duplicate scout work for the same question. Do not edit or finish from missing child output.",
+        "Parent decision required: update todo, then call task again with the same agentId and continuationId to wait for the child result, or finish/block only if the child is no longer needed.",
+      ]
+        .filter((line): line is string => typeof line === "string" && line.length > 0)
+        .join("\n"),
+    });
+  }
+  return renderNativeTaskOutput({
+    childSessionKey: params.result.childSessionKey,
+    state: params.result.status === "error" ? "error" : "running",
+    summary: `Task result from ${params.requestedAgentId} did not deliver parent-visible context.`,
+    text: [
+      `Task result from ${params.requestedAgentId} did not produce parent-visible edit context.`,
+      `status: ${params.result.status}`,
+      params.result.childStartFailureKind
+        ? `childStartFailureKind: ${params.result.childStartFailureKind}`
+        : null,
+      params.result.error ? `error: ${params.result.error}` : null,
+      params.result.status === "error" ? buildParentFailureDecisionFooter() : decisionFooter,
     ]
       .filter((line): line is string => typeof line === "string" && line.length > 0)
-      .join("\n");
-  }
-  return [
-    `Task result from ${params.requestedAgentId} did not produce parent-visible edit context.`,
-    `status: ${params.result.status}`,
-    params.result.childStartFailureKind
-      ? `childStartFailureKind: ${params.result.childStartFailureKind}`
-      : null,
-    params.result.error ? `error: ${params.result.error}` : null,
-    params.result.status === "error" ? buildParentFailureDecisionFooter() : decisionFooter,
-  ]
-    .filter((line): line is string => typeof line === "string" && line.length > 0)
-    .join("\n");
+      .join("\n"),
+  });
 }
 
 function buildParentDecisionFooter(requestedAgentId: string): string {
   if (requestedAgentId === "execution-context-scout") {
     return [
       "",
-      "Parent decision required: update todo, then choose one: enough for minimal edit / need more context / blocked.",
-      "If enough, make the smallest useful edit from the returned bounded source windows. If not, delegate another focused context scout task with the missing question.",
+      "Parent decision required: update todo, then choose one: enough for minimal edit / need exact follow-up / need map pass / blocked.",
+      "If enough, make the smallest useful edit from the returned bounded source windows. If one local window is missing, delegate an exact follow-up. If files or architecture are still ambiguous, delegate a map pass. If source is missing, finish with a typed blocker.",
     ].join("\n");
   }
   if (requestedAgentId === "execution-validation-scout") {
     return [
       "",
-      "Parent decision required: update todo, then choose one: node/todo complete / repair from current context / need more context / blocked.",
+      "Parent decision required: update todo, then choose one: complete / repair from current context / need more context / blocked.",
       "Then repair, delegate more context, validate again, call node_finish, or finish with a typed blocker.",
     ].join("\n");
   }
@@ -894,15 +989,23 @@ function formatNativeTaskFailureParentVisibleText(params: {
       : "unknown";
   const status = typeof params.details.status === "string" ? params.details.status : "error";
   const error = typeof params.details.error === "string" ? params.details.error : undefined;
-  return [
-    `Task delegation to ${params.requestedAgentId} failed before parent-visible child context was delivered.`,
-    `status: ${status}`,
-    `childStartFailureKind: ${kind}`,
-    error ? `error: ${error}` : null,
-    buildParentFailureDecisionFooter(),
-  ]
-    .filter((line): line is string => typeof line === "string" && line.length > 0)
-    .join("\n");
+  return renderNativeTaskOutput({
+    childSessionKey:
+      typeof params.details.childSessionKey === "string"
+        ? params.details.childSessionKey
+        : undefined,
+    state: "error",
+    summary: `Task delegation to ${params.requestedAgentId} failed.`,
+    text: [
+      `Task delegation to ${params.requestedAgentId} failed before parent-visible child context was delivered.`,
+      `status: ${status}`,
+      `childStartFailureKind: ${kind}`,
+      error ? `error: ${error}` : null,
+      buildParentFailureDecisionFooter(),
+    ]
+      .filter((line): line is string => typeof line === "string" && line.length > 0)
+      .join("\n"),
+  });
 }
 
 function assertChildRegistryContractComplete(
@@ -973,6 +1076,8 @@ function createNativeTaskToolInternal(opts: NativeTaskToolInternalOptions): AnyA
       `Allowed child agents: ${allowedText}.`,
       "Use execution-context-scout for source/search/read mapping and execution-validation-scout for validation command selection, execution, and diagnosis.",
       "For execution-context-scout, ask for bounded inline source windows plus a compact file_graph when multiple files or symbols matter.",
+      "Context scout results should include answer, edit_start_recommendation, high_signal_refs, inline_context_windows, evidence-backed file_graph edges, likely_edit_points, exact follow-up asks, and risks_or_unknowns.",
+      "Do not ask context scouts for full files or broad dumps; ask for the minimum edit-start package needed for the next safe edit.",
       "The child runs with fresh context by default and reports results back to the parent session. Do not use this for lifecycle finish; parent execution-coding owns node_finish.",
     ].join("\n"),
     parameters: NativeTaskToolSchema,
@@ -987,12 +1092,17 @@ function createNativeTaskToolInternal(opts: NativeTaskToolInternalOptions): AnyA
         );
       }
       const label = readStringParam(params, "label");
-      const rawTimeout = readNumberParam(params, "runTimeoutSeconds", {
-        integer: true,
-        label: "runTimeoutSeconds",
-      });
+      const rawTimeout =
+        opts.legacyGatewayTaskRuntime === true
+          ? readNumberParam(params, "runTimeoutSeconds", {
+              integer: true,
+              label: "runTimeoutSeconds",
+            })
+          : undefined;
       const runTimeoutSeconds =
-        typeof rawTimeout === "number" && Number.isFinite(rawTimeout)
+        opts.legacyGatewayTaskRuntime === true &&
+        typeof rawTimeout === "number" &&
+        Number.isFinite(rawTimeout)
           ? Math.max(0, Math.trunc(rawTimeout))
           : undefined;
       const spawnSubagent = opts.spawnSubagent ?? spawnSubagentDirect;

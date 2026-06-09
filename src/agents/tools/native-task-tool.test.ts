@@ -218,6 +218,11 @@ describe("native task tool", () => {
 
     expect(tool.description).toContain("bounded inline source windows");
     expect(tool.description).toContain("file_graph");
+    expect(tool.description).toContain("edit_start_recommendation");
+    expect(tool.description).toContain("high_signal_refs");
+    expect(tool.description).toContain("likely_edit_points");
+    expect(tool.description).toContain("exact follow-up asks");
+    expect(tool.description).toContain("minimum edit-start package");
   });
 
   it("requires an explicit allowed child agent id before running a child task", async () => {
@@ -348,7 +353,7 @@ describe("native task tool", () => {
     expect(readContentText(result)).toContain("Bounded excerpt");
     expect(readContentText(result)).toContain("native-task-tool.ts");
     expect(readContentText(result)).toContain(
-      "Parent decision required: update todo, then choose one: enough for minimal edit / need more context / blocked.",
+      "Parent decision required: update todo, then choose one: enough for minimal edit / need exact follow-up / need map pass / blocked.",
     );
     expect(readContentText(result)).toContain(
       "If enough, make the smallest useful edit from the returned bounded source windows.",
@@ -392,10 +397,10 @@ describe("native task tool", () => {
         childAgentId: "execution-context-scout",
         task: "Map native child context.",
         label: "native child",
-        runTimeoutSeconds: 11,
         parentVisibleResultMaxChars: 12_000,
       }),
     );
+    expect(runChildTask.mock.calls[0]?.[0]).not.toHaveProperty("runTimeoutSeconds");
     expect(runChildTask.mock.calls[0]?.[0]).not.toHaveProperty("requiredProviderContextAdmission");
     expect(runChildTask.mock.calls[0]?.[0]).not.toHaveProperty("requiredBootstrapAdmissionSources");
     expect(readContentText(result)).toContain("export const nativeTask = true");
@@ -443,6 +448,42 @@ describe("native task tool", () => {
       status: "error",
       requestedAgentId: "execution-context-scout",
       childStartFailureKind: "child_session_lock_failed",
+      resultDeliveredToParentContext: false,
+      nativeChildSessionRuntime: true,
+    });
+  });
+
+  it("gives parent-visible retry guidance for child provider response timeouts", async () => {
+    const runChildTask = vi.fn(
+      async (): Promise<NativeTaskForegroundResult> => ({
+        status: "error",
+        foreground: true,
+        childSessionKey: "agent:execution-validation-scout:subagent:child-timeout",
+        runId: "run-child-timeout",
+        waitStatus: "error",
+        error: "Provider timeout waiting for model output",
+        resultDeliveredToParentContext: false,
+        childStartFailureKind: "child_provider_response_timeout",
+      }),
+    );
+    const tool = createNativeTaskTool({
+      allowedAgentIds: ["execution-validation-scout"],
+      runChildTask,
+    });
+
+    const result = await tool.execute("task-native-child-provider-timeout", {
+      agentId: "execution-validation-scout",
+      task: "Run focused validation for changed files.",
+    });
+
+    const text = readContentText(result);
+    expect(text).toContain("hit a provider response timeout");
+    expect(text).toContain("ask for the narrowest command/result");
+    expect(text).toContain("Do not probe gateway-status");
+    expect(readDetails(result)).toMatchObject({
+      status: "error",
+      requestedAgentId: "execution-validation-scout",
+      childStartFailureKind: "child_provider_response_timeout",
       resultDeliveredToParentContext: false,
       nativeChildSessionRuntime: true,
     });
@@ -690,29 +731,36 @@ describe("native task tool", () => {
     });
 
     expect(readContentText(result)).toContain(
-      "Parent decision required: update todo, then choose one: node/todo complete / repair from current context / need more context / blocked.",
+      "Parent decision required: update todo, then choose one: complete / repair from current context / need more context / blocked.",
     );
     expect(readContentText(result)).toContain(
       "Then repair, delegate more context, validate again, call node_finish, or finish with a typed blocker.",
     );
   });
 
-  it("does not deliver mechanically truncated child output as parent edit context", async () => {
+  it("projects structured oversized child output into bounded parent edit context", async () => {
     const oversized = [
       "Direct answer: too broad.",
+      "",
+      "inline_context_windows:",
       "```ts",
       "export const value = 1;",
       "```",
+      "",
+      "file_graph:",
+      "- src/a.ts -> src/b.ts via import",
       "x".repeat(12_001),
     ].join("\n");
 
     const bounded = buildParentVisibleChildResult(oversized);
     expect(bounded).toMatchObject({
-      resultOversized: true,
-      resultTruncated: false,
+      resultTruncated: true,
       resultMaxParentVisibleChars: 12_000,
+      resultDeliveryStatus: "projected",
     });
-    expect(bounded.resultText).toBeUndefined();
+    expect(bounded.resultText).toContain("Projected oversized child result");
+    expect(bounded.resultText).toContain("export const value = 1");
+    expect(bounded.resultText).toContain("file_graph");
     expect(bounded.resultTextHash).toBeTruthy();
     expect(bounded.resultTextByteCount).toBeGreaterThan(12_000);
 
@@ -743,22 +791,84 @@ describe("native task tool", () => {
     });
 
     const text = readContentText(result);
-    expect(text).toContain("too large for parent-visible edit context");
-    expect(text).toContain("No truncated source excerpt was delivered");
-    expect(text).not.toContain("export const value = 1");
+    expect(text).toContain(
+      '<task id="agent:execution-context-scout:subagent:child-oversized" state="completed">',
+    );
+    expect(text).toContain("<task_result>");
+    expect(text).toContain("</task_result>");
+    expect(text).toContain("Task result from execution-context-scout (completed, projected).");
+    expect(text).toContain("Projected oversized child result");
+    expect(text).toContain("export const value = 1");
+    expect(text).toContain("file_graph");
     expect(readDetails(result)).toMatchObject({
-      status: "error",
-      resultDeliveredToParentContext: false,
-      resultOversized: true,
-      resultTruncated: false,
-      childStartFailureKind: "child_result_oversized",
+      status: "completed",
+      resultDeliveredToParentContext: true,
+      resultTruncated: true,
+      resultDeliveryStatus: "projected",
     });
     expect(readDetails(result)).not.toHaveProperty("resultText");
   });
 
-  it("uses the configured live guard cap when deciding whether child output is parent-visible", async () => {
+  it("projects unstructured oversized child output as a bounded preview", async () => {
+    const oversized = `raw unstructured result\n${"x".repeat(12_001)}`;
+    const bounded = buildParentVisibleChildResult(oversized);
+
+    expect(bounded).toMatchObject({
+      resultDeliveryStatus: "projected",
+      resultTruncated: true,
+    });
+    expect(bounded.resultText).toContain("Projected oversized unstructured child result preview");
+    expect(bounded.resultText).toContain("raw unstructured result");
+
+    const foregroundResult: NativeTaskForegroundResult = {
+      status: "completed",
+      foreground: true,
+      childSessionKey: "agent:execution-context-scout:subagent:child-unstructured",
+      runId: "run-child-unstructured",
+      waitStatus: "ok",
+      resultText: oversized,
+      resultDeliveredToParentContext: true,
+    };
+    const tool = createLegacyGatewayNativeTaskToolForTest({
+      allowedAgentIds: ["execution-context-scout"],
+      spawnSubagent: vi.fn(async () => ({
+        status: "accepted" as const,
+        childSessionKey: foregroundResult.childSessionKey,
+        runId: foregroundResult.runId,
+        mode: "run" as const,
+      })),
+      waitForForegroundResult: vi.fn(async () => foregroundResult),
+    });
+
+    const result = await tool.execute("task-unstructured-oversized-child-result", {
+      agentId: "execution-context-scout",
+      task: "Map relevant source windows.",
+    });
+
+    const text = readContentText(result);
+    expect(text).toContain(
+      '<task id="agent:execution-context-scout:subagent:child-unstructured" state="completed">',
+    );
+    expect(text).toContain("<task_result>");
+    expect(text).toContain("</task_result>");
+    expect(text).toContain("Projected oversized unstructured child result preview");
+    expect(text).toContain(
+      "Do not edit from this preview unless it contains sufficient exact source windows",
+    );
+    expect(readDetails(result)).toMatchObject({
+      status: "completed",
+      resultDeliveredToParentContext: true,
+      resultDeliveryStatus: "projected",
+      resultTruncated: true,
+    });
+    expect(readDetails(result)).not.toHaveProperty("childStartFailureKind");
+  });
+
+  it("uses the configured live guard cap when projecting oversized structured child output", async () => {
     const nearlyDefaultSized = [
       "Direct answer: edit-ready context.",
+      "",
+      "inline_context_windows:",
       "```ts",
       "export const target = true;",
       "```",
@@ -792,14 +902,14 @@ describe("native task tool", () => {
     });
 
     const text = readContentText(result);
-    expect(text).toContain("too large for parent-visible edit context");
-    expect(text).not.toContain("export const target = true");
+    expect(text).toContain("Task result from execution-context-scout (completed, projected).");
+    expect(text).toContain("Projected oversized child result");
+    expect(text).toContain("export const target = true");
     expect(readDetails(result)).toMatchObject({
-      status: "error",
-      resultDeliveredToParentContext: false,
+      status: "completed",
+      resultDeliveredToParentContext: true,
       resultMaxParentVisibleChars: 7_488,
-      resultOversized: true,
-      childStartFailureKind: "child_result_oversized",
+      resultDeliveryStatus: "projected",
     });
   });
 
@@ -964,9 +1074,7 @@ describe("native task tool", () => {
       ]),
     );
     expect(classifyChildBootstrapAdmissionFailure(admitted)).toBeUndefined();
-    expect(classifyChildBootstrapAdmissionFailure(blocked)).toBe(
-      "child_provider_bootstrap_truncated",
-    );
+    expect(classifyChildBootstrapAdmissionFailure(blocked)).toBe("child_launch_blocked");
     expect(
       classifyChildBootstrapAdmissionFailure(
         buildChildBootstrapAdmission({
@@ -976,7 +1084,7 @@ describe("native task tool", () => {
           ...childAdmissionContract("execution-context-scout"),
         }),
       ),
-    ).toBe("child_provider_bootstrap_report_missing");
+    ).toBe("child_launch_blocked");
   });
 
   it("requires source-backed child docs and skill when child admission provides them", () => {
@@ -1015,7 +1123,7 @@ describe("native task tool", () => {
         "native_task_child_required_skill_sources_mismatched",
       ]),
     );
-    expect(classifyChildBootstrapAdmissionFailure(rejected)).toBe("child_docs_missing");
+    expect(classifyChildBootstrapAdmissionFailure(rejected)).toBe("child_launch_blocked");
 
     const accepted = buildChildBootstrapAdmission({
       childSessionKey: "agent:execution-context-scout:subagent:child-1",
@@ -1051,6 +1159,12 @@ describe("native task tool", () => {
         sourceHash: expect.any(String),
       }),
     ]);
+    expect(resolved.requiredSkillsSnapshot).toEqual(
+      expect.objectContaining({
+        prompt: expect.stringContaining('<active_skill name="execution-context-scout"'),
+        skillFilter: ["execution-context-scout"],
+      }),
+    );
   });
 
   it("requires validation-scout canonical docs and skill for validation child admission", () => {
@@ -1098,7 +1212,7 @@ describe("native task tool", () => {
       ],
       truncatedRequiredSources: [],
     });
-    expect(classifyChildBootstrapAdmissionFailure(wrongScoutReport)).toBe("child_docs_missing");
+    expect(classifyChildBootstrapAdmissionFailure(wrongScoutReport)).toBe("child_launch_blocked");
 
     const validationDocsWrongSkill = buildChildBootstrapAdmission({
       childSessionKey: "agent:execution-validation-scout:subagent:child-validate",
@@ -1133,7 +1247,7 @@ describe("native task tool", () => {
       truncatedRequiredSources: [],
     });
     expect(classifyChildBootstrapAdmissionFailure(validationDocsWrongSkill)).toBe(
-      "child_skill_missing",
+      "child_launch_blocked",
     );
   });
 
@@ -1200,6 +1314,6 @@ describe("native task tool", () => {
       ],
       truncatedRequiredSources: [],
     });
-    expect(classifyChildBootstrapAdmissionFailure(blocked)).toBe("child_docs_missing");
+    expect(classifyChildBootstrapAdmissionFailure(blocked)).toBe("child_launch_blocked");
   });
 });

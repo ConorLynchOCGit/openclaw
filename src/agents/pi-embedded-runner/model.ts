@@ -144,6 +144,29 @@ function applyResolvedTransportFallback(params: {
   };
 }
 
+function applyResolvedProviderRequestRoutePolicy(params: {
+  provider: string;
+  model: Model<Api>;
+}): Model<Api> {
+  const requestConfig = resolveProviderRequestConfig({
+    provider: params.provider,
+    api: params.model.api,
+    baseUrl: params.model.baseUrl,
+    capability: "llm",
+    transport: "stream",
+  });
+  const nextApi = requestConfig.api ?? params.model.api;
+  const nextBaseUrl = requestConfig.baseUrl ?? params.model.baseUrl;
+  if (nextApi === params.model.api && nextBaseUrl === params.model.baseUrl) {
+    return params.model;
+  }
+  return {
+    ...params.model,
+    api: nextApi as Api,
+    baseUrl: nextBaseUrl,
+  };
+}
+
 function normalizeResolvedModel(params: {
   provider: string;
   model: Model<Api>;
@@ -202,12 +225,16 @@ function normalizeResolvedModel(params: {
       runtimeHooks,
       model: compatNormalized ?? pluginNormalized ?? normalizedInputModel,
     });
+  const providerRouteNormalized = applyResolvedProviderRequestRoutePolicy({
+    provider: params.provider,
+    model:
+      fallbackTransportNormalized ?? compatNormalized ?? pluginNormalized ?? normalizedInputModel,
+  });
   return canonicalizeLegacyResolvedModel({
     provider: params.provider,
     model: normalizeResolvedProviderModel({
       provider: params.provider,
-      model:
-        fallbackTransportNormalized ?? compatNormalized ?? pluginNormalized ?? normalizedInputModel,
+      model: providerRouteNormalized,
     }),
   });
 }

@@ -7,9 +7,9 @@ intended to be a first-class native child agent for source acquisition.
 
 ## Gaps
 
-- materialize runtime copies from this repo source with provenance
-- ensure scout sessions inherit canonical `projectRoot`
-- ensure runtime inspection remains typed and bounded
+- prove scout sessions inherit canonical `projectRoot`
+- ensure runtime inspection remains typed, explicit, and bounded
+- prove OpenCode-style bounded read/continuation behavior in live scout runs
 
 ## Follow-Up
 

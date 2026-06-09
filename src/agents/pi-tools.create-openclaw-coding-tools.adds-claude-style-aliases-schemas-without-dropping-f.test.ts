@@ -6,9 +6,52 @@ import "./test-helpers/fast-bash-tools.js";
 import "./test-helpers/fast-coding-tools.js";
 import "./test-helpers/fast-openclaw-tools.js";
 import { createOpenClawCodingTools } from "./pi-tools.js";
-import { expectReadWriteEditTools } from "./test-helpers/pi-tools-fs-helpers.js";
+import { expectReadWriteEditTools, getTextContent } from "./test-helpers/pi-tools-fs-helpers.js";
 
 describe("createOpenClawCodingTools", () => {
+  it("applies first-party execution agent tool budgets by agent role", async () => {
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-agent-tool-budget-"));
+    try {
+      const lines = Array.from({ length: 300 }, (_unused, index) => `line-${index + 1}`);
+      await fs.writeFile(path.join(tmpDir, "target.ts"), lines.join("\n"), "utf8");
+      for (let index = 0; index < 70; index += 1) {
+        await fs.writeFile(path.join(tmpDir, `file-${String(index).padStart(2, "0")}.ts`), "x");
+      }
+
+      const tools = createOpenClawCodingTools({
+        workspaceDir: tmpDir,
+        agentId: "execution-context-scout",
+      });
+      const readTool = tools.find((tool) => tool.name === "read");
+      const globTool = tools.find((tool) => tool.name === "glob");
+      expect(readTool).toBeDefined();
+      expect(globTool).toBeDefined();
+
+      const readResult = await readTool?.execute("scout-budget-read", { path: "target.ts" });
+      const readText = getTextContent(readResult);
+      const readDetails = (readResult as { details?: { read?: Record<string, unknown> } }).details
+        ?.read;
+      expect(readText).toContain("160: line-160");
+      expect(readText).not.toContain("161: line-161");
+      expect(readDetails).toMatchObject({
+        lineStart: 1,
+        lineEnd: 160,
+        totalLines: 300,
+        returnedLines: 160,
+        nextOffset: 161,
+        maxBytes: 16 * 1024,
+      });
+
+      const globResult = await globTool?.execute("scout-budget-glob", { pattern: "*.ts" });
+      expect((globResult as { details?: Record<string, unknown> }).details).toMatchObject({
+        count: 60,
+        truncated: true,
+      });
+    } finally {
+      await fs.rm(tmpDir, { recursive: true, force: true });
+    }
+  });
+
   it("accepts canonical parameters for read/write/edit", async () => {
     const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-canonical-"));
     try {
@@ -16,15 +59,26 @@ describe("createOpenClawCodingTools", () => {
       const { readTool, writeTool, editTool } = expectReadWriteEditTools(tools);
 
       const filePath = "canonical-test.txt";
-      await writeTool?.execute("tool-canonical-1", {
+      const writeResult = await writeTool?.execute("tool-canonical-1", {
         path: filePath,
         content: "hello world",
       });
+      expect(writeResult?.details).toMatchObject({
+        changedFilePaths: [filePath],
+        addedFilePaths: [filePath],
+        modifiedFilePaths: [],
+        bytesWritten: 11,
+        fullFileReplacement: true,
+      });
 
-      await editTool?.execute("tool-canonical-2", {
+      const editResult = await editTool?.execute("tool-canonical-2", {
         path: filePath,
         edits: [{ oldText: "world", newText: "universe" }],
       });
+      expect(editResult?.details).toMatchObject({
+        firstChangedLine: 1,
+      });
+      expect((editResult?.details as { diff?: string } | undefined)?.diff).toContain("universe");
 
       const result = await readTool?.execute("tool-canonical-3", {
         path: filePath,

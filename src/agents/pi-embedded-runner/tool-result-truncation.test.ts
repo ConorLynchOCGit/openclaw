@@ -96,6 +96,20 @@ async function createTmpDir(): Promise<string> {
   return tmpDir;
 }
 
+async function listFilesRecursive(dir: string): Promise<string[]> {
+  const entries = await fs.readdir(dir, { withFileTypes: true });
+  const files = await Promise.all(
+    entries.map(async (entry) => {
+      const fullPath = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        return await listFilesRecursive(fullPath);
+      }
+      return [fullPath];
+    }),
+  );
+  return files.flat();
+}
+
 describe("truncateToolResultText", () => {
   it("returns text unchanged when under limit", () => {
     const text = "hello world";
@@ -198,7 +212,7 @@ describe("calculateMaxToolResultChars", () => {
   });
 
   it("exports the live cap through both constant names", () => {
-    expect(DEFAULT_MAX_LIVE_TOOL_RESULT_CHARS).toBe(16_000);
+    expect(DEFAULT_MAX_LIVE_TOOL_RESULT_CHARS).toBe(50 * 1024);
     expect(HARD_MAX_TOOL_RESULT_CHARS).toBe(DEFAULT_MAX_LIVE_TOOL_RESULT_CHARS);
   });
 
@@ -542,6 +556,47 @@ describe("truncateOversizedToolResultsInSession", () => {
     expect(text.length).toBeLessThan(2_000);
     expect(text).toContain("truncated");
   });
+
+  it("persists full generic tool output to managed storage when truncating provider-visible history", async () => {
+    const dir = await createTmpDir();
+    const stateRoot = path.join(dir, "state");
+    const sm = SessionManager.create(path.join(dir, "session"), path.join(dir, "session"));
+    sm.appendMessage(makeUserMessage("hello"));
+    sm.appendMessage(makeAssistantMessage("calling tools"));
+    const fullOutput = `important-full-output-marker\n${"x".repeat(75_000)}`;
+    sm.appendMessage(makeToolResult(fullOutput, "call_1"));
+    const sessionFile = sm.getSessionFile()!;
+
+    const result = await truncateOversizedToolResultsInSession({
+      sessionFile,
+      contextWindowTokens: 128_000,
+      maxCharsOverride: 5_000,
+      sessionKey: "agent:execution-context-scout:subagent:test",
+      stateRoot,
+    });
+
+    expect(result.truncated).toBe(true);
+    expect(result.truncatedCount).toBe(1);
+
+    const afterBranch = SessionManager.open(sessionFile).getBranch();
+    const toolResult = afterBranch.find(
+      (entry) => entry.type === "message" && entry.message.role === "toolResult",
+    );
+    expect(toolResult?.type).toBe("message");
+    if (!toolResult || toolResult.type !== "message") {
+      throw new Error("expected truncated tool result");
+    }
+    const text = getFirstToolResultText(toolResult.message);
+    expect(text).toContain("managedOutputRef=openclaw-managed-output://");
+    expect(text).toContain("do not read stateRoot files directly");
+    expect(text.length).toBeLessThan(fullOutput.length);
+
+    const files = await listFilesRecursive(path.join(stateRoot, "managed-tool-output"));
+    const outputFile = files.find((file) => file.endsWith(".txt"));
+    expect(outputFile).toBeDefined();
+    expect(await fs.readFile(outputFile ?? "", "utf8")).toBe(fullOutput);
+  });
+
   it("combines oversized and aggregate recovery truncation in the same session rewrite", async () => {
     const dir = await createTmpDir();
     const sm = SessionManager.create(dir, dir);

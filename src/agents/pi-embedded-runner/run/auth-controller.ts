@@ -94,18 +94,18 @@ export function createEmbeddedRunAuthController(params: {
       capability: "llm",
       transport: "stream",
     });
+    const nextBaseUrl =
+      paramsForApply.preparedAuth.baseUrl && runtimeRequestConfig.baseUrl
+        ? runtimeRequestConfig.baseUrl
+        : paramsForApply.preparedAuth.baseUrl;
     params.setRuntimeModel({
       ...paramsForApply.runtimeModel,
-      ...(paramsForApply.preparedAuth.baseUrl
-        ? { baseUrl: paramsForApply.preparedAuth.baseUrl }
-        : {}),
+      ...(nextBaseUrl ? { baseUrl: nextBaseUrl } : {}),
       ...(runtimeRequestConfig.headers ? { headers: runtimeRequestConfig.headers } : {}),
     });
     params.setEffectiveModel({
       ...params.getEffectiveModel(),
-      ...(paramsForApply.preparedAuth.baseUrl
-        ? { baseUrl: paramsForApply.preparedAuth.baseUrl }
-        : {}),
+      ...(nextBaseUrl ? { baseUrl: nextBaseUrl } : {}),
       ...(runtimeRequestConfig.headers ? { headers: runtimeRequestConfig.headers } : {}),
     });
   };

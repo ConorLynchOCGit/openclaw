@@ -18,11 +18,22 @@ const DEFAULT_EXCLUDED_DIRS = new Set([
   "dist",
   "node_modules",
 ]);
+const DEFAULT_EXCLUDED_RELATIVE_ROOTS = [".openclaw/runtime"];
 const DEFAULT_MAX_FILES = 2_000;
 const DEFAULT_MAX_RESULTS = 100;
-const DEFAULT_MAX_MATCHES = 120;
+const DEFAULT_MAX_MATCHES = 100;
 const MAX_FILE_BYTES_FOR_GREP = 512 * 1024;
+const MAX_MATCH_LINE_LENGTH = 2000;
 const MAX_CONTEXT_LINES = 3;
+
+type RepoDiscoveryToolOptions = {
+  workspaceRoot: string;
+  stateRoot?: string | null;
+  ignoredRelativeRoots?: readonly string[];
+  defaultMaxResults?: number;
+  defaultMaxMatches?: number;
+  defaultMaxFiles?: number;
+};
 
 const GlobToolSchema = Type.Object({
   pattern: Type.Optional(
@@ -44,6 +55,9 @@ const ListToolSchema = Type.Object({
     Type.String({
       description: "Workspace-relative directory to list. Defaults to workspace root.",
     }),
+  ),
+  offset: Type.Optional(
+    Type.Number({ description: "One-based entry offset for paginating large directories." }),
   ),
   maxResults: Type.Optional(Type.Number({ description: "Maximum entries to return." })),
 });
@@ -91,6 +105,54 @@ function normalizeRelativePath(value: string | undefined): string {
     return ".";
   }
   return normalized.replace(/^\.\//u, "");
+}
+
+function normalizeStateRootAsRelativeRoot(input: {
+  workspaceRoot: string;
+  stateRoot?: string | null;
+}): string | null {
+  const stateRoot = input.stateRoot?.trim();
+  if (!stateRoot) {
+    return null;
+  }
+  const absoluteStateRoot = path.resolve(stateRoot);
+  if (!pathWithin(absoluteStateRoot, input.workspaceRoot)) {
+    return null;
+  }
+  const relative = path.relative(input.workspaceRoot, absoluteStateRoot).split(path.sep).join("/");
+  if (!relative || relative === "." || relative.startsWith("..") || path.isAbsolute(relative)) {
+    return null;
+  }
+  return normalizeRelativePath(relative);
+}
+
+function normalizeIgnoredRelativeRoots(input: {
+  workspaceRoot: string;
+  stateRoot?: string | null;
+  ignoredRelativeRoots?: readonly string[];
+}): string[] {
+  const stateRoot = normalizeStateRootAsRelativeRoot({
+    workspaceRoot: input.workspaceRoot,
+    stateRoot: input.stateRoot,
+  });
+  return [
+    ...new Set(
+      [
+        ...DEFAULT_EXCLUDED_RELATIVE_ROOTS,
+        ...(stateRoot ? [stateRoot] : []),
+        ...(input.ignoredRelativeRoots ?? []),
+      ]
+        .map((value) => normalizeRelativePath(value))
+        .filter((value) => value && value !== "."),
+    ),
+  ];
+}
+
+function isIgnoredRelativePath(relativePath: string, ignoredRelativeRoots: readonly string[]) {
+  const normalized = normalizeRelativePath(relativePath);
+  return ignoredRelativeRoots.some(
+    (ignoredRoot) => normalized === ignoredRoot || normalized.startsWith(`${ignoredRoot}/`),
+  );
 }
 
 function pathWithin(candidate: string, root: string): boolean {
@@ -150,6 +212,7 @@ async function walkFiles(input: {
   relativeRoot: string;
   pattern?: string;
   maxFiles: number;
+  ignoredRelativeRoots: readonly string[];
 }): Promise<{ files: string[]; truncated: boolean }> {
   const files: string[] = [];
   let truncated = false;
@@ -157,6 +220,9 @@ async function walkFiles(input: {
   async function walk(relativePath: string): Promise<void> {
     if (files.length >= input.maxFiles) {
       truncated = true;
+      return;
+    }
+    if (isIgnoredRelativePath(relativePath, input.ignoredRelativeRoots)) {
       return;
     }
     const absolute = resolveWorkspaceTarget(input.workspaceRoot, relativePath);
@@ -188,7 +254,11 @@ async function walkFiles(input: {
       if (entry.isDirectory() && isExcludedDirectory(entry.name)) {
         continue;
       }
-      await walk(normalizeRelativePath(path.join(relativePath, entry.name)));
+      const childRelativePath = normalizeRelativePath(path.join(relativePath, entry.name));
+      if (isIgnoredRelativePath(childRelativePath, input.ignoredRelativeRoots)) {
+        continue;
+      }
+      await walk(childRelativePath);
     }
   }
 
@@ -203,26 +273,59 @@ function formatFileRefs(files: string[]): string {
   return files.map((file) => file).join("\n");
 }
 
+function appendTruncationGuidance(params: {
+  text: string;
+  truncated: boolean;
+  visible: number;
+  total?: number;
+  noun: string;
+  guidance: string;
+}): string {
+  if (!params.truncated) {
+    return params.text;
+  }
+  const total = typeof params.total === "number" ? ` of ${params.total}` : "";
+  return [
+    params.text,
+    "",
+    `(Results truncated: showing ${params.visible}${total} ${params.noun}. ${params.guidance})`,
+  ].join("\n");
+}
+
 async function listDirectory(input: {
   workspaceRoot: string;
   relativePath: string;
+  offset: number;
   maxResults: number;
+  ignoredRelativeRoots: readonly string[];
 }) {
   const absolute = resolveWorkspaceTarget(input.workspaceRoot, input.relativePath);
   const entries = await fs.readdir(absolute, { withFileTypes: true }).catch((error: unknown) => {
     throw new ToolInputError(error instanceof Error ? error.message : "directory list failed");
   });
-  const normalizedEntries = entries
+  const allEntries = entries
     .filter((entry) => !isExcludedDirectory(entry.name))
+    .filter((entry) => {
+      const childRelativePath = normalizeRelativePath(path.join(input.relativePath, entry.name));
+      return !isIgnoredRelativePath(childRelativePath, input.ignoredRelativeRoots);
+    })
     .toSorted((a, b) => a.name.localeCompare(b.name))
-    .slice(0, input.maxResults)
     .map((entry) => ({
       path: normalizeRelativePath(path.join(input.relativePath, entry.name)),
       type: entry.isDirectory() ? "directory" : entry.isFile() ? "file" : "other",
     }));
+  const start = Math.max(0, input.offset - 1);
+  const normalizedEntries = allEntries.slice(start, start + input.maxResults);
+  const nextOffset = start + normalizedEntries.length + 1;
+  const truncated = nextOffset <= allEntries.length;
   return {
     entries: normalizedEntries,
-    truncated: entries.length > input.maxResults,
+    offset: input.offset,
+    totalEntries: allEntries.length,
+    returnedEntries: normalizedEntries.length,
+    hiddenCount: Math.max(0, allEntries.length - (start + normalizedEntries.length)),
+    nextOffset: truncated ? nextOffset : null,
+    truncated,
   };
 }
 
@@ -302,11 +405,15 @@ async function grepFiles(input: {
       matches.push({
         path: file,
         line: index + 1,
-        text: line.slice(0, 500),
+        text: line.slice(0, MAX_MATCH_LINE_LENGTH),
         ...(input.contextLines > 0
           ? {
-              before: lines.slice(beforeStart, index).map((entry) => entry.slice(0, 500)),
-              after: lines.slice(index + 1, afterEnd).map((entry) => entry.slice(0, 500)),
+              before: lines
+                .slice(beforeStart, index)
+                .map((entry) => entry.slice(0, MAX_MATCH_LINE_LENGTH)),
+              after: lines
+                .slice(index + 1, afterEnd)
+                .map((entry) => entry.slice(0, MAX_MATCH_LINE_LENGTH)),
             }
           : {}),
       });
@@ -334,7 +441,14 @@ function formatGrepMatches(
     .join("\n\n");
 }
 
-export function createGlobTool(opts: { workspaceRoot: string }): AnyAgentTool {
+export function createGlobTool(opts: RepoDiscoveryToolOptions): AnyAgentTool {
+  const ignoredRelativeRoots = normalizeIgnoredRelativeRoots(opts);
+  const defaultMaxResults = clampInteger(
+    opts.defaultMaxResults,
+    DEFAULT_MAX_RESULTS,
+    1,
+    DEFAULT_MAX_RESULTS,
+  );
   return {
     name: "glob",
     label: "Glob",
@@ -351,31 +465,47 @@ export function createGlobTool(opts: { workspaceRoot: string }): AnyAgentTool {
       );
       const maxResults = clampInteger(
         readNumberParam(params, "maxResults", { required: false, integer: true }),
-        DEFAULT_MAX_RESULTS,
+        defaultMaxResults,
         1,
-        500,
+        DEFAULT_MAX_RESULTS,
       );
       const result = await walkFiles({
         workspaceRoot: opts.workspaceRoot,
         relativeRoot,
         pattern,
         maxFiles: Math.max(maxResults, DEFAULT_MAX_FILES),
+        ignoredRelativeRoots,
       });
       const files = result.files.slice(0, maxResults);
+      const truncated = result.truncated || result.files.length > maxResults;
       return jsonResult({
         status: "ok",
         root: relativeRoot,
         pattern: pattern ?? null,
         files,
         count: files.length,
-        truncated: result.truncated || result.files.length > maxResults,
-        text: formatFileRefs(files),
+        truncated,
+        hiddenCount: Math.max(0, result.files.length - files.length),
+        text: appendTruncationGuidance({
+          text: formatFileRefs(files),
+          truncated,
+          visible: files.length,
+          noun: "files",
+          guidance: "Use a more specific path or glob pattern.",
+        }),
       });
     },
   };
 }
 
-export function createListTool(opts: { workspaceRoot: string }): AnyAgentTool {
+export function createListTool(opts: RepoDiscoveryToolOptions): AnyAgentTool {
+  const ignoredRelativeRoots = normalizeIgnoredRelativeRoots(opts);
+  const defaultMaxResults = clampInteger(
+    opts.defaultMaxResults,
+    DEFAULT_MAX_RESULTS,
+    1,
+    DEFAULT_MAX_RESULTS,
+  );
   return {
     name: "list",
     label: "List",
@@ -389,31 +519,55 @@ export function createListTool(opts: { workspaceRoot: string }): AnyAgentTool {
       const relativePath = normalizeRelativePath(
         readStringParam(params, "path", { required: false }),
       );
+      const offset = clampInteger(
+        readNumberParam(params, "offset", { required: false, integer: true }),
+        1,
+        1,
+        Number.MAX_SAFE_INTEGER,
+      );
       const maxResults = clampInteger(
         readNumberParam(params, "maxResults", { required: false, integer: true }),
-        DEFAULT_MAX_RESULTS,
+        defaultMaxResults,
         1,
         500,
       );
       const result = await listDirectory({
         workspaceRoot: opts.workspaceRoot,
         relativePath,
+        offset,
         maxResults,
+        ignoredRelativeRoots,
       });
+      const text =
+        result.entries.length === 0
+          ? "No entries found."
+          : result.entries.map((entry) => `${entry.type}\t${entry.path}`).join("\n");
       return jsonResult({
         status: "ok",
         path: relativePath,
         ...result,
-        text:
-          result.entries.length === 0
-            ? "No entries found."
-            : result.entries.map((entry) => `${entry.type}\t${entry.path}`).join("\n"),
+        text: appendTruncationGuidance({
+          text,
+          truncated: result.truncated,
+          visible: result.returnedEntries,
+          total: result.totalEntries,
+          noun: "entries",
+          guidance: `Use offset=${result.nextOffset} to continue or choose a narrower directory.`,
+        }),
       });
     },
   };
 }
 
-export function createGrepTool(opts: { workspaceRoot: string }): AnyAgentTool {
+export function createGrepTool(opts: RepoDiscoveryToolOptions): AnyAgentTool {
+  const ignoredRelativeRoots = normalizeIgnoredRelativeRoots(opts);
+  const defaultMaxMatches = clampInteger(
+    opts.defaultMaxMatches,
+    DEFAULT_MAX_MATCHES,
+    1,
+    DEFAULT_MAX_MATCHES,
+  );
+  const defaultMaxFiles = clampInteger(opts.defaultMaxFiles, DEFAULT_MAX_FILES, 1, 10_000);
   return {
     name: "grep",
     label: "Grep",
@@ -437,13 +591,13 @@ export function createGrepTool(opts: { workspaceRoot: string }): AnyAgentTool {
       );
       const maxMatches = clampInteger(
         readNumberParam(params, "maxMatches", { required: false, integer: true }),
-        DEFAULT_MAX_MATCHES,
+        defaultMaxMatches,
         1,
-        500,
+        DEFAULT_MAX_MATCHES,
       );
       const maxFiles = clampInteger(
         readNumberParam(params, "maxFiles", { required: false, integer: true }),
-        DEFAULT_MAX_FILES,
+        defaultMaxFiles,
         1,
         10_000,
       );
@@ -452,6 +606,7 @@ export function createGrepTool(opts: { workspaceRoot: string }): AnyAgentTool {
         relativeRoot,
         pattern: glob,
         maxFiles,
+        ignoredRelativeRoots,
       });
       const result = await grepFiles({
         workspaceRoot: opts.workspaceRoot,
@@ -462,6 +617,7 @@ export function createGrepTool(opts: { workspaceRoot: string }): AnyAgentTool {
         contextLines,
         maxMatches,
       });
+      const truncated = candidateFiles.truncated || result.truncated;
       return jsonResult({
         status: "ok",
         query,
@@ -470,8 +626,17 @@ export function createGrepTool(opts: { workspaceRoot: string }): AnyAgentTool {
         matches: result.matches,
         matchCount: result.matches.length,
         searchedFileCount: result.searchedFileCount,
-        truncated: candidateFiles.truncated || result.truncated,
-        text: formatGrepMatches(result.matches),
+        truncated,
+        hiddenCount: truncated
+          ? Math.max(0, candidateFiles.files.length - result.searchedFileCount)
+          : 0,
+        text: appendTruncationGuidance({
+          text: formatGrepMatches(result.matches),
+          truncated,
+          visible: result.matches.length,
+          noun: "matches",
+          guidance: "Use a more specific path, glob, or query before reading files.",
+        }),
       });
     },
   };

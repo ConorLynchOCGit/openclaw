@@ -80,6 +80,19 @@ describe("provider request config", () => {
     });
   });
 
+  it("normalizes stale OpenRouter /v1 request base URLs before routing", () => {
+    const resolved = resolveProviderRequestPolicyConfig({
+      provider: "openrouter",
+      api: "openai-completions",
+      baseUrl: "https://openrouter.ai/v1",
+      capability: "llm",
+      transport: "stream",
+    });
+
+    expect(resolved.baseUrl).toBe("https://openrouter.ai/api/v1");
+    expect(resolved.policy.endpointClass).toBe("openrouter");
+  });
+
   it("normalizes transport overrides into auth, extra headers, proxy, and tls slots", () => {
     const resolved = resolveProviderRequestConfig({
       provider: "custom-openai",

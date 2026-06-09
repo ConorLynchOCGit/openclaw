@@ -88,6 +88,16 @@ function hasRateLimitTpmHint(raw: string): boolean {
   return /\btpm\b/i.test(lower) || lower.includes("tokens per minute");
 }
 
+function isHtmlDocumentErrorText(raw: string): boolean {
+  const trimmed = raw.trim();
+  if (!trimmed) {
+    return false;
+  }
+  const leadingStatus = extractLeadingHttpStatus(trimmed);
+  const candidate = leadingStatus?.rest || trimmed;
+  return /^\s*(?:<!doctype\s+html\b|<html\b)/i.test(candidate) && /<\/html>/i.test(candidate);
+}
+
 export function isContextOverflowError(errorMessage?: string): boolean {
   if (!errorMessage) {
     return false;
@@ -100,6 +110,10 @@ export function isContextOverflowError(errorMessage?: string): boolean {
   }
 
   if (isReasoningConstraintErrorMessage(errorMessage)) {
+    return false;
+  }
+
+  if (isCloudflareOrHtmlErrorPage(errorMessage) || isHtmlDocumentErrorText(errorMessage)) {
     return false;
   }
 
@@ -157,6 +171,10 @@ export function isLikelyContextOverflowError(errorMessage?: string): boolean {
   }
 
   if (isReasoningConstraintErrorMessage(errorMessage)) {
+    return false;
+  }
+
+  if (isCloudflareOrHtmlErrorPage(errorMessage) || isHtmlDocumentErrorText(errorMessage)) {
     return false;
   }
 
