@@ -64,6 +64,7 @@ import {
 } from "../command/session.js";
 import { DEFAULT_MODEL, DEFAULT_PROVIDER } from "../defaults.js";
 import {
+  classifyAssistantFailoverReason,
   classifyFailoverReason,
   extractObservedOverflowTokenCount,
   type FailoverReason,
@@ -2987,12 +2988,7 @@ async function runEmbeddedAgentInternal(
           const rateLimitFailure = isRateLimitAssistantError(attemptAssistant);
           const billingFailure = isBillingAssistantError(attemptAssistant);
           const failoverFailure = isFailoverAssistantError(attemptAssistant);
-          const assistantFailoverReason = classifyFailoverReason(
-            attemptAssistant?.errorMessage ?? "",
-            {
-              provider: attemptAssistant?.provider,
-            },
-          );
+          const assistantFailoverReason = classifyAssistantFailoverReason(attemptAssistant);
           const assistantProviderStarted =
             Boolean(currentAttemptAssistant?.provider) ||
             idleTimedOut ||
